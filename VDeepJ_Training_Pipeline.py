@@ -1,7 +1,8 @@
 import pandas as pd
 import tensorflow as tf
 from tqdm.keras import TqdmCallback
-
+from tqdm.auto import tqdm
+tqdm.pandas()
 from VDeepJDataPrepper import VDeepJDataPrepper
 from VDeepJModel import VDeepJAllign
 
@@ -11,8 +12,9 @@ max_seq_length = 512
 prepper = VDeepJDataPrepper(max_seq_length)
 
 # Step 2: Load Data
-data = pd.read_table('./shm_rep_airship_0.8_flatvdj_gene.tsv',usecols=['sequence','v_call','d_call','j_call','v_sequence_end','d_sequence_start','j_sequence_start',
-                                                                'j_sequence_end','d_sequence_end','v_sequence_start'])
+data = pd.read_table(r'E:\igor_generated_5M\shm_rep_airship_0.8_flatvdj_gene.tsv',usecols=['sequence','v_call','d_call','j_call','v_sequence_end','d_sequence_start','j_sequence_start',
+                                                                'j_sequence_end','d_sequence_end','v_sequence_start'],nrows = 150000)
+
 
 # Step 3: Derive a mapping between calls and their respective family/gene/allele
 v_dict,d_dict,j_dict = prepper.get_family_gene_allele_map(data.v_call.unique(),data.d_call.unique(),data.j_call.unique())
@@ -47,7 +49,7 @@ j_gene_count   = len(j_gene_call_ohe)
 j_allele_count = len(j_allele_call_ohe)
 
 # Step 7: Get Training Parameters
-v_start,v_end,d_start,d_end,j_start,j_end,a_oh_signal,t_oh_signal,c_oh_signal,g_oh_signal = prepper.process_sequences(data,train=True)
+v_start,v_end,d_start,d_end,j_start,j_end,a_oh_signal,t_oh_signal,c_oh_signal,g_oh_signal = prepper.process_sequences(data,train=True,corrupt_beginning=True)
 
 # Step 8: Create a VDeepJ instance
 vdeepj = VDeepJAllign(max_seq_length,

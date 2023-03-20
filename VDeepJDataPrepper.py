@@ -50,6 +50,8 @@ class VDeepJDataPrepper:
             else:
                 seq = row.sequence
 
+
+
             arr, start, end = self._process_and_dpad(seq, 'A', self.max_seq_length)
             a_oh_signal.append(arr)
 
@@ -151,6 +153,8 @@ class VDeepJDataPrepper:
             #In case we added too many nucleotide to the beginning while corrupting the sequence, remove the slack
             slack = len(sequence)-self.max_seq_length
             return sequence[slack:]
+        else:
+            return sequence
 
     def _corrupt_sequence_beginning(self,sequence):
         to_remove = self._sample_add_remove_distribution()
@@ -160,6 +164,7 @@ class VDeepJDataPrepper:
         else:
             amount_to_add     = self._sample_nucleotide_add_distribution(1)
             modified_sequence = self._generate_random_nucleotide_sequence(amount_to_add)
+            modified_sequence = modified_sequence+sequence
             modified_sequence = self._fix_sequence_validity_after_corruption(modified_sequence)
         return modified_sequence
 
