@@ -48,8 +48,12 @@ d_allele_count = len(d_allele_call_ohe)
 j_gene_count   = len(j_gene_call_ohe)
 j_allele_count = len(j_allele_call_ohe)
 
-# Step 7: Get Training Parameters
-v_start,v_end,d_start,d_end,j_start,j_end,a_oh_signal,t_oh_signal,c_oh_signal,g_oh_signal = prepper.process_sequences(data,train=True,corrupt_beginning=True)
+# Step 7: Get Train Dataset
+batch_size = 64
+train_dataset = prepper.get_train_dataset(data,v_family_call_ohe_np,v_gene_call_ohe_np,v_allele_call_ohe_np,
+                                          d_family_call_ohe_np,d_gene_call_ohe_np,d_allele_call_ohe_np,
+                                          j_gene_call_ohe_np,j_allele_call_ohe_np,batch_size,
+                                          train=True,corrupt_beginning=True)
 
 # Step 8: Create a VDeepJ instance
 vdeepj = VDeepJAllign(max_seq_length,
@@ -78,68 +82,21 @@ vdeepj.compile(optimizer=tf.optimizers.Adam(),#'adam',
                                })
 
 
-# Step 10: Create batch data generator for model training stability
-# TO-DO: convert this to a separate function or merge with data prepper!
-x ={'a':a_oh_signal,'t':t_oh_signal,'c':c_oh_signal,'g':g_oh_signal,
-'a_l2':a_oh_signal,'t_l2':t_oh_signal,'c_l2':c_oh_signal,'g_l2':g_oh_signal}
-y = {'v_start':v_start,'v_end':v_end,'d_start':d_start,'d_end':d_end,'j_start':j_start,'j_end':j_end,
- 'v_family':v_family_call_ohe_np,
- 'v_gene':v_gene_call_ohe_np,
- 'v_allele':v_allele_call_ohe_np,
- 'd_family':d_family_call_ohe_np,
- 'd_gene':d_gene_call_ohe_np,
- 'd_allele':d_allele_call_ohe_np,
- 'j_gene':j_gene_call_ohe_np,
- 'j_allele':j_allele_call_ohe_np,
-
-}
-
-batch_size = 64
-B = batch_size
 
 
-def generate_batches(x, y, B):
-    num_examples = len(y['v_end'])
-    num_batches = num_examples // B
-
-    for batch_idx in range(num_batches):
-        start_idx = batch_idx * B
-        end_idx = (batch_idx + 1) * B
-
-        batch_x = {}
-        for key in x:
-            batch_x[key] = x[key][start_idx:end_idx]
-
-        batch_y = {}
-        for key in y:
-            batch_y[key] = y[key][start_idx:end_idx]
-
-        yield batch_x, batch_y
 
 
-def batch_generator(x, y, B):
-    while True:
-        for batch_x, batch_y in generate_batches(x, y, B):
-            yield batch_x, batch_y
-
-
-dataset = tf.data.Dataset.from_generator(
-    lambda: batch_generator(x, y, batch_size),
-    output_types=({k: tf.float32 for k in x}, {k: tf.float32 for k in y}),
-    output_shapes=({k: (batch_size,) + x[k].shape[1:] for k in x},
-                   {k: (batch_size,) + y[k].shape[1:] for k in y})
-)
-
-
-# Step 11: Fit Model
-steps_per_epoch = len(y['v_end']) // batch_size
+# Step 10: Fit Model
+steps_per_epoch = len(data) // batch_size
 epochs = 2
 
 history = vdeepj.fit(
-    dataset,
+    train_dataset,
     epochs=epochs,
     steps_per_epoch=steps_per_epoch,
     verbose=0,
     callbacks=[TqdmCallback(1)]
 
 )
+
+
