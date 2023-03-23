@@ -55,28 +55,32 @@ class VDeepJDataPrepper:
             else:
                 seq = row.sequence
 
-            arr, start, end = self._process_and_dpad(seq, 'A', self.max_seq_length)
+            arr, start, end,whole_half_gap = self._process_and_dpad(seq, 'A', self.max_seq_length)
             # modify start and end based on corruption
-            start = self._adjust_start(start, was_removed, amount_of_change)
+            if was_removed:
+                adjusted_start = whole_half_gap-amount_of_change
+            else:
+                start -= amount_of_change
+                adjusted_start = start
 
             a_oh_signal.append(arr)
 
-            arr, _, _ = self._process_and_dpad(seq, 'T', self.max_seq_length)
+            arr, _, _,_ = self._process_and_dpad(seq, 'T', self.max_seq_length)
             t_oh_signal.append(arr)
 
-            arr, _, _ = self._process_and_dpad(seq, 'G', self.max_seq_length)
+            arr, _, _,_ = self._process_and_dpad(seq, 'G', self.max_seq_length)
             g_oh_signal.append(arr)
 
-            arr, _, _ = self._process_and_dpad(seq, 'C', self.max_seq_length)
+            arr, _, _,_ = self._process_and_dpad(seq, 'C', self.max_seq_length)
             c_oh_signal.append(arr)
 
             if train:
                 v_start.append(start)
                 j_end.append(end)
-                v_end.append(row.v_sequence_end + start)
-                d_start.append(row.d_sequence_start + start)
-                d_end.append(row.d_sequence_end + start)
-                j_start.append(row.j_sequence_start + start)
+                v_end.append(row.v_sequence_end + adjusted_start)
+                d_start.append(row.d_sequence_start + adjusted_start)
+                d_end.append(row.d_sequence_end + adjusted_start)
+                j_start.append(row.j_sequence_start + adjusted_start)
 
         v_start = np.array(v_start)
         v_end = np.array(v_end)
@@ -192,21 +196,6 @@ class VDeepJDataPrepper:
         )
         return dataset
 
-    def _adjust_start(self, start, was_removed, amount_of_change):
-        """
-        This function adjust the v_start index based on the type and amount of corruption inserted
-        :param start:
-        :param was_removed:
-        :param amount_of_change:
-        :return:
-        """
-        if was_removed:
-            # in case we removed nucleotides v_start should move forward
-            return start + amount_of_change
-        else:
-            # in case we added nucleotides we should take v_start back
-            return start - amount_of_change
-
     def _sample_nucleotide_add_distribution(self, size):
         sample = (35 * self.nucleotide_add_distribution.rvs(size=size)).astype(int)
         if len(sample) == 1:
@@ -259,7 +248,7 @@ class VDeepJDataPrepper:
             if train:
                 start, end = whole_half_gap + 1, self.max_seq_length - whole_half_gap - 1
 
-        return trans_seq, start, end
+        return trans_seq, start, end,whole_half_gap if iseven else (whole_half_gap + 1)
 
     def _generate_random_nucleotide_sequence(self, length):
         sequence = ''.join(np.random.choice(['A', 'T', 'C', 'G'], size=length))
