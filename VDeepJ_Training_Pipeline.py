@@ -14,7 +14,7 @@ prepper = VDeepJDataPrepper(max_seq_length)
 
 # Step 2: Load Data
 data = pd.read_table(
-    r"/home/eng/eisenbr2/vdj_nlp/airrship_data/train/airrship_01_train.tsv",
+    r"/home/eng/eisenbr2/vdj_nlp/airrship_data/val/airrship_01_val.tsv",
     usecols=[
         "sequence",
         "v_call",
