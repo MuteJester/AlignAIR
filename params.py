@@ -1,6 +1,7 @@
 #
 max_seq_length = 512
 batch_size = 64
+epochs = 2
 
 # Data
 data_dir = r"/home/eng/eisenbr2/vdj_nlp/airrship_data/val/airrship_01_val.tsv"
