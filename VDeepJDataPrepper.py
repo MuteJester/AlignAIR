@@ -1,3 +1,4 @@
+import pickle
 import re
 from typing import Tuple, Dict, Union
 import numpy as np
@@ -49,38 +50,48 @@ class VDeepJDataPrepper:
             iterator = tqdm(data.itertuples(), total=len(data))
         else:
             iterator = data.itertuples()
+
+
+        LOGS = []
+
         for row in iterator:
             if train is True and corrupt_beginning is True:
-                seq, was_removed, amount_of_change = self._corrupt_sequence_beginning(row.sequence)
+                seq,was_removed, amount_changed = self._corrupt_sequence_beginning(row.sequence)
             else:
                 seq = row.sequence
 
-            arr, start, end,whole_half_gap = self._process_and_dpad(seq, 'A', self.max_seq_length)
-            # modify start and end based on corruption
-            if was_removed:
-                adjusted_start = whole_half_gap-amount_of_change
-            else:
-                start -= amount_of_change
-                adjusted_start = start
-
+            arr, start, end = self._process_and_dpad(seq, 'A', self.max_seq_length)
             a_oh_signal.append(arr)
 
-            arr, _, _,_ = self._process_and_dpad(seq, 'T', self.max_seq_length)
+            if corrupt_beginning:
+                if was_removed:
+                    # v is shorter
+                    _adjust = start - amount_changed
+                else:
+                    # v is longer
+                    _adjust = start + amount_changed
+                    start += amount_changed
+            else:
+                _adjust = start
+
+            arr, _, _ = self._process_and_dpad(seq, 'T', self.max_seq_length)
             t_oh_signal.append(arr)
 
-            arr, _, _,_ = self._process_and_dpad(seq, 'G', self.max_seq_length)
+            arr, _, _ = self._process_and_dpad(seq, 'G', self.max_seq_length)
             g_oh_signal.append(arr)
 
-            arr, _, _,_ = self._process_and_dpad(seq, 'C', self.max_seq_length)
+            arr, _, _ = self._process_and_dpad(seq, 'C', self.max_seq_length)
             c_oh_signal.append(arr)
 
-            if train:
+            if train :
                 v_start.append(start)
                 j_end.append(end)
-                v_end.append(row.v_sequence_end + adjusted_start)
-                d_start.append(row.d_sequence_start + adjusted_start)
-                d_end.append(row.d_sequence_end + adjusted_start)
-                j_start.append(row.j_sequence_start + adjusted_start)
+                v_end.append(row.v_sequence_end + _adjust)
+                d_start.append(row.d_sequence_start + _adjust)
+                d_end.append(row.d_sequence_end + _adjust)
+                j_start.append(row.j_sequence_start + _adjust)
+
+
 
         v_start = np.array(v_start)
         v_end = np.array(v_end)
@@ -93,6 +104,9 @@ class VDeepJDataPrepper:
         t_oh_signal = np.vstack(t_oh_signal)
         c_oh_signal = np.vstack(c_oh_signal)
         g_oh_signal = np.vstack(g_oh_signal)
+
+        with open('C:/Users/Tomas/Downloads/plog.pkl' , 'wb') as h:
+            pickle.dump(LOGS,h)
 
         if train:
             return v_start, v_end, d_start, d_end, j_start, j_end, a_oh_signal, t_oh_signal, c_oh_signal, g_oh_signal
@@ -248,7 +262,7 @@ class VDeepJDataPrepper:
             if train:
                 start, end = whole_half_gap + 1, self.max_seq_length - whole_half_gap - 1
 
-        return trans_seq, start, end,whole_half_gap if iseven else (whole_half_gap + 1)
+        return trans_seq, start, end if iseven else (whole_half_gap + 1)
 
     def _generate_random_nucleotide_sequence(self, length):
         sequence = ''.join(np.random.choice(['A', 'T', 'C', 'G'], size=length))
