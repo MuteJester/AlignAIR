@@ -106,7 +106,7 @@ class VDeepJDataPrepper:
         j_start = np.array(j_start)
         j_end = np.array(j_end)
 
-        seq_tokenized_list = np.vstack(seq_tokenized_list)
+        seq_tokenized_list = np.vstack(seq_tokenized_list).astype(float)
 
         # @Ran: @Thomas, not sure what these lines do
         # with open('C:/Users/Tomas/Downloads/plog.pkl' , 'wb') as h:

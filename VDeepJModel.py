@@ -205,20 +205,25 @@ class VDeepJAllign(Model):
         self.v_gene_call_gene_allele_concat = concatenate
 
     def _init_interval_regression_layers(self):
-        self.v_end_mid = Dense(32, activation="linear")  # (concatenated_path)
+        act = tf.keras.layers.LeakyReLU()
+        self.v_start_mid = Dense(32, activation=act)  # (concatenated_path)
+        self.v_start_out = Dense(1, activation="relu", name="v_start")  # (v_end_mid)
+
+        self.v_end_mid = Dense(32, activation=act)  # (concatenated_path)
+        self.v_end_mid_concat = concatenate  # ([d_end_mid,d_start_mid])
         self.v_end_out = Dense(1, activation="relu", name="v_end")  # (v_end_mid)
 
-        self.d_start_mid = Dense(32, activation="linear")  # (concatenated_path)
+        self.d_start_mid = Dense(32, activation=act)  # (concatenated_path)
         self.d_start_out = Dense(1, activation="relu", name="d_start")  # (d_start_mid)
 
-        self.d_end_mid = Dense(32, activation="linear")  # (concatenated_path)
+        self.d_end_mid = Dense(32, activation=act)  # (concatenated_path)
         self.d_end_mid_concat = concatenate  # ([d_end_mid,d_start_mid])
         self.d_end_out = Dense(1, activation="relu", name="d_end")  # (d_end_mid)
 
-        self.j_start_mid = Dense(32, activation="relu")  # (concatenated_path)
+        self.j_start_mid = Dense(32, activation=act)  # (concatenated_path)
         self.j_start_out = Dense(1, activation="relu", name="j_start")  # (j_start_mid)
 
-        self.j_end_mid = Dense(32, activation="linear")  # (concatenated_path)
+        self.j_end_mid = Dense(32, activation=act)  # (concatenated_path)
         self.j_end_mid_concat = concatenate  # ([j_end_mid,j_start_mid])
         self.j_end_out = Dense(1, activation="relu", name="j_end")  # (j_end_mid)
 
@@ -228,7 +233,11 @@ class VDeepJAllign(Model):
         return layer(a)
 
     def _predict_intervals(self, concatenated_signals):
+        v_start_middle = self.v_start_mid(concatenated_signals)
+        v_start = self.v_start_out(v_start_middle)
+
         v_end_middle = self.v_end_mid(concatenated_signals)
+        v_end_middle = self.v_end_mid_concat([v_end_middle, v_start_middle])
         # This is the predicted index where the V Gene ends
         v_end = self.v_end_out(v_end_middle)
 
@@ -250,7 +259,7 @@ class VDeepJAllign(Model):
         j_end_middle = self.j_end_mid_concat([j_end_middle, j_start_middle])
         # This is the predicted index where the J Gene ends
         j_end = self.j_end_out(j_end_middle)
-        return v_end, d_start, d_end, j_start, j_end
+        return v_start, v_end, d_start, d_end, j_start, j_end
 
     def _predict_vdj_set(self, v_feature_map, d_feature_map, j_feature_map):
         # ============================ V =============================
@@ -326,20 +335,19 @@ class VDeepJAllign(Model):
         conv_layer_1 = self.conv1d_layer1(input_embeddings)
         conv_layer_2 = self.conv1d_layer2(conv_layer_1)
         conv_layer_3 = self.conv1d_layer3(conv_layer_2)
-        last_conv_layer2 = self.conv1d_layer3(conv_layer_3)
+        last_conv_layer = self.conv1d_layer4(conv_layer_3)
 
         # STEP 2 : Concatenate and encode feature from the 4 signals
 
-        concatenated_signals = Flatten()(last_conv_layer2)
+        concatenated_signals = Flatten()(last_conv_layer)
 
         # STEP 3 : Predict The Intervals That Contatin The V,D and J Genes using (V_end,D_Start,D_End,J_Start,J_End)
-
-        v_end, d_start, d_end, j_start, j_end = self._predict_intervals(
+        v_start, v_end, d_start, d_end, j_start, j_end = self._predict_intervals(
             concatenated_signals
         )
 
         # STEP 4: Use predicted masks to create a binary vector with the appropriate intervals to  "cutout" the relevant V,D and J section from the input
-        v_mask = self.v_call_mask(v_end)
+        v_mask = self.v_call_mask([v_start, v_end])
         d_mask = self.d_call_mask([d_start, d_end])
         j_mask = self.j_call_mask([j_start, j_end])
 
@@ -372,6 +380,7 @@ class VDeepJAllign(Model):
         ) = self._predict_vdj_set(v_feature_map2, d_feature_map2, j_feature_map2)
 
         return {
+            "v_start": v_start,
             "v_end": v_end,
             "d_start": d_start,
             "d_end": d_end,
@@ -450,7 +459,7 @@ class VDeepJAllign(Model):
 
     def multi_task_loss_v2(self, y_true, y_pred):
         # Extract the regression and classification outputs
-        regression_keys = ["v_end", "d_start", "d_end", "j_start", "j_end"]
+        regression_keys = ["v_start", "v_end", "d_start", "d_end", "j_start", "j_end"]
         classification_keys = [
             "v_family",
             "v_gene",
@@ -466,8 +475,7 @@ class VDeepJAllign(Model):
         classification_true = [self.c2f32(y_true[k]) for k in classification_keys]
         classification_pred = [self.c2f32(y_pred[k]) for k in classification_keys]
 
-        v_end, d_start, d_end, j_start, j_end = regression_pred
-        v_start = 0.0
+        v_start, v_end, d_start, d_end, j_start, j_end = regression_pred
         # Compute the intersection loss
         v_intersection_loss = K.maximum(
             0.0, K.minimum(v_end, d_end) - K.maximum(v_start, d_start)
@@ -485,7 +493,7 @@ class VDeepJAllign(Model):
         # Compute the combined loss
         mse_loss = mod3_mse_regularization(
             tf.squeeze(K.stack(regression_true)), tf.squeeze(K.stack(regression_pred))
-        )
+        )  # dice_coef_loss
 
         # Compute the classification loss
         clf_v_loss = self.call_hierarchy_loss(
