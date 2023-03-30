@@ -51,12 +51,9 @@ class VDeepJDataPrepper:
         else:
             iterator = data.itertuples()
 
-
-        LOGS = []
-
         for row in iterator:
             if train is True and corrupt_beginning is True:
-                seq,was_removed, amount_changed = self._corrupt_sequence_beginning(row.sequence)
+                seq, was_removed, amount_changed = self._corrupt_sequence_beginning(row.sequence)
             else:
                 seq = row.sequence
 
@@ -83,15 +80,13 @@ class VDeepJDataPrepper:
             arr, _, _ = self._process_and_dpad(seq, 'C', self.max_seq_length)
             c_oh_signal.append(arr)
 
-            if train :
+            if train:
                 v_start.append(start)
                 j_end.append(end)
                 v_end.append(row.v_sequence_end + _adjust)
                 d_start.append(row.d_sequence_start + _adjust)
                 d_end.append(row.d_sequence_end + _adjust)
                 j_start.append(row.j_sequence_start + _adjust)
-
-
 
         v_start = np.array(v_start)
         v_end = np.array(v_end)
@@ -104,9 +99,6 @@ class VDeepJDataPrepper:
         t_oh_signal = np.vstack(t_oh_signal)
         c_oh_signal = np.vstack(c_oh_signal)
         g_oh_signal = np.vstack(g_oh_signal)
-
-        with open('C:/Users/Tomas/Downloads/plog.pkl' , 'wb') as h:
-            pickle.dump(LOGS,h)
 
         if train:
             return v_start, v_end, d_start, d_end, j_start, j_end, a_oh_signal, t_oh_signal, c_oh_signal, g_oh_signal
@@ -190,7 +182,8 @@ class VDeepJDataPrepper:
 
     def get_train_dataset(self, data: pd.DataFrame, v_family_call_ohe_np,
                           v_gene_call_ohe_np, v_allele_call_ohe_np, d_family_call_ohe_np, d_gene_call_ohe_np,
-                          d_allele_call_ohe_np, j_gene_call_ohe_np, j_allele_call_ohe_np, batch_size=64, train: bool = True, corrupt_beginning=False):
+                          d_allele_call_ohe_np, j_gene_call_ohe_np, j_allele_call_ohe_np, batch_size=64,
+                          train: bool = True, corrupt_beginning=False):
 
         output_types, output_shapes = self._get_tf_dataset_params(data, v_family_call_ohe_np,
                                                                   v_gene_call_ohe_np, v_allele_call_ohe_np,
@@ -262,7 +255,7 @@ class VDeepJDataPrepper:
             if train:
                 start, end = whole_half_gap + 1, self.max_seq_length - whole_half_gap - 1
 
-        return trans_seq, start, end if iseven else (whole_half_gap + 1)
+        return trans_seq, start, end if iseven else (end + 1)
 
     def _generate_random_nucleotide_sequence(self, length):
         sequence = ''.join(np.random.choice(['A', 'T', 'C', 'G'], size=length))
