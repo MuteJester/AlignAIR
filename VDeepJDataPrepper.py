@@ -80,7 +80,7 @@ class VDeepJDataPrepper:
             )
             seq_tokenized_list.append(seq_tokenized)
 
-            if corrupt_beginning:
+            if train is True and corrupt_beginning is True:
                 if was_removed:
                     # v is shorter
                     _adjust = start - amount_changed
@@ -128,9 +128,8 @@ class VDeepJDataPrepper:
         d_allele_call_ohe_np,
         j_gene_call_ohe_np,
         j_allele_call_ohe_np,
-        batch_size=64,
+        params,
         train: bool = True,
-        corrupt_beginning=False,
     ):
 
         (
@@ -141,7 +140,7 @@ class VDeepJDataPrepper:
             j_start,
             j_end,
             seq_tokenized,
-        ) = self.process_sequences(data, train, corrupt_beginning)
+        ) = self.process_sequences(data, train, params.corrupt_beginning)
         x = {
             "seq_tokenized": seq_tokenized,
         }
@@ -167,17 +166,16 @@ class VDeepJDataPrepper:
         self,
         data: pd.DataFrame,
         vdj_class_holder,
-        batch_size=64,
+        params,
         train: bool = True,
-        corrupt_beginning=False,
     ):
         while True:
             num_examples = len(data)
-            num_batches = num_examples // batch_size
+            num_batches = num_examples // params.batch_size
 
             for batch_idx in range(num_batches):
-                start_idx = batch_idx * batch_size
-                end_idx = (batch_idx + 1) * batch_size
+                start_idx = batch_idx * params.batch_size
+                end_idx = (batch_idx + 1) * params.batch_size
 
                 data_batch = data.iloc[start_idx:end_idx, :]
                 (
@@ -188,7 +186,7 @@ class VDeepJDataPrepper:
                     j_start,
                     j_end,
                     seq_tokenized,
-                ) = self.process_sequences(data_batch, train, corrupt_beginning)
+                ) = self.process_sequences(data_batch, train, params.corrupt_beginning)
 
                 batch_x = {
                     "seq_tokenized": seq_tokenized,
@@ -226,9 +224,8 @@ class VDeepJDataPrepper:
         self,
         data: pd.DataFrame,
         vdj_class_holder,
-        batch_size=64,
+        params,
         train: bool = True,
-        corrupt_beginning=False,
     ):
 
         start_idx, end_idx = 0, 64
@@ -242,16 +239,15 @@ class VDeepJDataPrepper:
             vdj_class_holder.d_allele_call_ohe_np[start_idx:end_idx],
             vdj_class_holder.j_gene_call_ohe_np[start_idx:end_idx],
             vdj_class_holder.j_allele_call_ohe_np[start_idx:end_idx],
-            batch_size,
+            params,
             train,
-            corrupt_beginning,
         )
 
         output_types = ({k: tf.float32 for k in x}, {k: tf.float32 for k in y})
 
         output_shapes = (
-            {k: (batch_size,) + x[k].shape[1:] for k in x},
-            {k: (batch_size,) + y[k].shape[1:] for k in y},
+            {k: (params.batch_size,) + x[k].shape[1:] for k in x},
+            {k: (params.batch_size,) + y[k].shape[1:] for k in y},
         )
 
         return output_types, output_shapes
@@ -260,26 +256,23 @@ class VDeepJDataPrepper:
         self,
         data: pd.DataFrame,
         vdj_class_holder,
-        batch_size=64,
+        params,
         train: bool = True,
-        corrupt_beginning=False,
     ):
 
         output_types, output_shapes = self._get_tf_dataset_params(
             data,
             vdj_class_holder,
-            batch_size,
+            params,
             train,
-            corrupt_beginning,
         )
 
         dataset = tf.data.Dataset.from_generator(
             lambda: self._train_generator(
                 data,
                 vdj_class_holder,
-                batch_size,
+                params,
                 train,
-                corrupt_beginning,
             ),
             output_types=output_types,
             output_shapes=output_shapes,
@@ -303,7 +296,7 @@ class VDeepJDataPrepper:
     def _sample_add_remove_distribution(self):
         return bool(self.add_remove_probability.rvs(1))
 
-    def _process_and_dpad(self, sequence, train=False):
+    def _process_and_dpad(self, sequence, train=True):
         """
         Private method, converts sequences into 4 one hot vectors and paddas them from both sides with zeros
         equal to the diffrenece between the max length and the sequence length
@@ -332,7 +325,7 @@ class VDeepJDataPrepper:
                     self.max_seq_length - whole_half_gap - 1,
                 )
 
-        return trans_seq, start, end if iseven else (whole_half_gap + 1)
+        return trans_seq, start, end if iseven else (end + 1)
 
     def _generate_random_nucleotide_sequence(self, length):
         sequence = "".join(np.random.choice(["A", "T", "C", "G"], size=length))
@@ -363,7 +356,7 @@ class VDeepJDataPrepper:
             return modified_sequence, to_remove, amount_to_add
 
     def get_family_gene_allele_map(
-        self, v_calls=None, d_calls=None, j_calls=None
+        self, params, v_calls=None, d_calls=None, j_calls=None
     ) -> Dict:
         """
         This method takes in three lists representing each of the V/D/J calls in the training sequence and creates
@@ -385,9 +378,14 @@ class VDeepJDataPrepper:
         if v_calls is not None:
             v_dict = dict()
             for i in v_calls:
-                fam, gene, allele = re.findall(
-                    r"IGHV[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*", i
-                )
+                if params.new_allels:
+                    fam, gene, allele = re.findall(
+                        r"IGHVF[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z_]*", i
+                    )
+                else:
+                    fam, gene, allele = re.findall(
+                        r"IGHV[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*", i
+                    )
                 v_dict[i] = {"family": fam, "gene": gene, "allele": allele}
         if d_calls is not None:
             d_dict = dict()
@@ -406,31 +404,104 @@ class VDeepJDataPrepper:
 
         return v_dict, d_dict, j_dict
 
-    def modify_data_table_with_family_gene_allele(self, data):
-        # TODO: modify this so it will work with Ayelts groups
+    def add_new_allels_cols(self, data, params):
+        df_allels = pd.read_csv(params.new_allels_df_dir)
+        df_allels = df_allels.rename(columns={"imgt_allele": "v_call"})
+        data = data.merge(df_allels[["v_call", "new_allele"]], on="v_call")
+        return data
+
+    def create_sub_classes_dict(self, v_dict, d_dict, j_dict):
+        def nested_get_sub_callses(d, v_d_or_j):
+            sub_cllases = {}
+            # V or D
+            if v_d_or_j in ["v", "d"]:
+                for call in d.keys():
+                    fam, gene, allele = call["family"], call["v_gene"], call["allele"]
+                    if fam not in sub_cllases.keys():
+                        sub_cllases[fam] = {}
+                        sub_cllases[fam][gene] = {allele: allele}
+                    else:
+                        if gene not in sub_cllases[fam].keys():
+                            sub_cllases[fam][gene] = {allele: allele}
+                        else:
+                            sub_cllases[fam][gene][allele] = allele
+            # J
+            elif v_d_or_j == "j":
+                for call in d.keys():
+                    gene, allele = call["gene"], call["allele"]
+                    if gene not in sub_cllases.keys():
+                        sub_cllases[gene] = {allele: allele}
+                    else:
+                        sub_cllases[gene][allele] = allele
+            return sub_cllases
+
+        sub_cllases_v = nested_get_sub_callses(v_dict, "v")
+        sub_cllases_d = nested_get_sub_callses(d_dict, "d")
+        sub_cllases_j = nested_get_sub_callses(j_dict, "j")
+
+        sub_cllases = {"v": sub_cllases_v, "d": sub_cllases_d, "j": sub_cllases_j}
+
+        return sub_cllases
+
+    def modify_data_table_with_family_gene_allele(
+        self,
+        data,
+        params,
+        v_dict=None,
+        d_dict=None,
+        j_dict=None,
+    ):
         """
         This funtion adds columns of data for V, D, J classfication
         """
-        v_dict, d_dict, j_dict = self.get_family_gene_allele_map(
-            data.v_call.unique(), data.d_call.unique(), data.j_call.unique()
-        )
+        if v_dict == None:
+            if params.new_allels:
+                data = self.add_new_allels_cols(data, params)
+                v_dict, d_dict, j_dict = self.get_family_gene_allele_map(
+                    params,
+                    data.new_allele.unique(),
+                    data.d_call.unique(),
+                    data.j_call.unique(),
+                )
+            else:
+                v_dict, d_dict, j_dict = self.get_family_gene_allele_map(
+                    params,
+                    data.v_call.unique(),
+                    data.d_call.unique(),
+                    data.j_call.unique(),
+                )
 
-        data["v_family"] = data.v_call.progress_apply(lambda x: v_dict[x]["family"])
+        if params.new_allels:
+            if "new_allele" not in data.columns:
+                data = self.add_new_allels_cols(data, params)
+            data["v_family"] = data.new_allele.progress_apply(
+                lambda x: v_dict[x]["family"]
+            )
+            data["v_gene"] = data.new_allele.progress_apply(lambda x: v_dict[x]["gene"])
+            data["v_allele"] = data.new_allele.progress_apply(
+                lambda x: v_dict[x]["allele"]
+            )
+        else:
+            data["v_family"] = data.v_call.progress_apply(lambda x: v_dict[x]["family"])
+            data["v_gene"] = data.v_call.progress_apply(lambda x: v_dict[x]["gene"])
+            data["v_allele"] = data.v_call.progress_apply(lambda x: v_dict[x]["allele"])
+
         data["d_family"] = data.d_call.progress_apply(lambda x: d_dict[x]["family"])
 
-        data["v_gene"] = data.v_call.progress_apply(lambda x: v_dict[x]["gene"])
         data["d_gene"] = data.d_call.progress_apply(lambda x: d_dict[x]["gene"])
         data["j_gene"] = data.j_call.progress_apply(lambda x: j_dict[x]["gene"])
 
-        data["v_allele"] = data.v_call.progress_apply(lambda x: v_dict[x]["allele"])
         data["d_allele"] = data.d_call.progress_apply(lambda x: d_dict[x]["allele"])
         data["j_allele"] = data.j_call.progress_apply(lambda x: j_dict[x]["allele"])
 
-        return data
+        # sub_cllases = self.create_sub_classes_dict(v_dict, d_dict, j_dict)
+        sub_cllases = {}
+
+        return data, v_dict, d_dict, j_dict, sub_cllases
 
 
 class VdjClassHolder:
-    def __init__(self, data):
+    def __init__(self, data, sub_cllases):
         (
             self.v_family_call_ohe,
             self.v_family_call_ohe_np,
@@ -441,6 +512,7 @@ class VdjClassHolder:
         ) = self.convert_calls_to_one_hot(
             data["v_gene"], data["v_allele"], data["v_family"]
         )
+        # self.
         (
             self.d_family_call_ohe,
             self.d_family_call_ohe_np,

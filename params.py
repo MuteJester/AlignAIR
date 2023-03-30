@@ -1,12 +1,20 @@
-#
+# General
 max_seq_length = 512
 batch_size = 64
-epochs = 2
-debug_forward = 0
+epochs = 1
+debug_forward = True
 
 # Data
-data_dir = r"/home/eng/eisenbr2/vdj_nlp/airrship_data/val/airrship_01_val.tsv"
-# data_dir = r"/home/eng/eisenbr2/vdj_nlp/airrship_data/train/airrship_01_train.tsv"
+# Debug Mode
+# train_data_dir = r"/home/eng/eisenbr2/vdj_nlp/airrship_data/val/airrship_01_val.tsv"
+# val_data_dir = r"/home/eng/eisenbr2/vdj_nlp/airrship_data/val/airrship_01_val.tsv"
+
+# Non Debug Mode
+train_data_dir = (
+    r"/home/bcrlab/eisenbr2/vdj_nlp/airrship_data/train/airrship_01_train.tsv"
+)
+val_data_dir = r"/home/eng/eisenbr2/vdj_nlp/airrship_data/val/airrship_01_val.tsv"
+
 data_cloumns = [
     "sequence",
     "v_call",
@@ -19,7 +27,11 @@ data_cloumns = [
     "d_sequence_end",
     "v_sequence_start",
 ]
+corrupt_beginning = True
+new_allels = False
+new_allels_df_dir = r"/home/eng/eisenbr2/vdj_nlp/data/alleles_db.csv"
 
+# Model
 compile_metrics_dict = {
     "v_start": "mae",
     "v_end": "mae",
