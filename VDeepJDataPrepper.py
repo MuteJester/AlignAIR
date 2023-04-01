@@ -63,13 +63,10 @@ class VDeepJDataPrepper:
         else:
             iterator = data.itertuples()
 
-        # LOGS = []
 
         for row in iterator:
             if train is True and corrupt_beginning is True:
-                seq, was_removed, amount_changed = self._corrupt_sequence_beginning(
-                    row.sequence
-                )
+                seq, was_removed, amount_changed = self._corrupt_sequence_beginning(row.sequence)
             else:
                 seq = row.sequence
 
@@ -91,6 +88,7 @@ class VDeepJDataPrepper:
             else:
                 _adjust = start
 
+
             if train:
                 v_start.append(start)
                 j_end.append(end)
@@ -107,10 +105,6 @@ class VDeepJDataPrepper:
         j_end = np.array(j_end)
 
         seq_tokenized_list = np.vstack(seq_tokenized_list).astype(float)
-
-        # @Ran: @Thomas, not sure what these lines do
-        # with open('C:/Users/Tomas/Downloads/plog.pkl' , 'wb') as h:
-        #     pickle.dump(LOGS,h)
 
         if train:
             return v_start, v_end, d_start, d_end, j_start, j_end, seq_tokenized_list
@@ -266,6 +260,7 @@ class VDeepJDataPrepper:
             params,
             train,
         )
+
 
         dataset = tf.data.Dataset.from_generator(
             lambda: self._train_generator(
