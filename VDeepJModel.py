@@ -1,27 +1,33 @@
 import tensorflow.keras.backend as K
+from tensorflow.keras.layers import Attention
 from tensorflow import keras
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Dense, Flatten, concatenate,Input,Embedding
 import tensorflow as tf
+from tensorflow.keras.constraints import unit_norm
+from VDeepJLayers import CutoutLayer, ExtractGeneMask, Conv2D_and_BatchNorm, mod3_mse_regularization, \
+    Conv1D_and_BatchNorm, ExtractGeneMask1D, TokenAndPositionEmbedding
 
-from VDeepJLayers import CutoutLayer, ExtractGeneMask, Conv2D_and_BatchNorm, mod3_mse_regularization
 
-
-class VDeepJAllign(Model):
+class VDeepJAllign(tf.keras.Model):
 
     def __init__(self, max_seq_length, v_family_count, v_gene_count, v_allele_count,
                  d_family_count, d_gene_count, d_allele_count, j_gene_count, j_allele_count):
         super(VDeepJAllign, self).__init__()
+        # Model Params
         self.max_seq_length = int(max_seq_length)
         self.v_family_count, self.v_gene_count, self.v_allele_count = v_family_count, v_gene_count, v_allele_count
         self.d_family_count, self.d_gene_count, self.d_allele_count = d_family_count, d_gene_count, d_allele_count
         self.j_gene_count, self.j_allele_count = j_gene_count, j_allele_count
+
+        # Hyperparams + Constants
+        self.regression_keys = ['v_start', 'v_end', 'd_start', 'd_end', 'j_start', 'j_end']
+        self.classification_keys = ['v_family', 'v_gene', 'v_allele', 'd_family', 'd_gene', 'd_allele', 'j_gene',
+                                    'j_allele']
         self.latent_size_factor = 2
 
-        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.insec_loss_tracker = tf.keras.metrics.Mean(name="insec_loss")
-        self.mod3_mse_loss_tracker = tf.keras.metrics.Mean(name="mod3_mse_loss")
-        self.total_ce_loss_tracker = tf.keras.metrics.Mean(name="total_classification_loss")
+        # Tracking
+        self.init_loss_tracking_variables()
 
         # Init Input Layers
         self._init_input_layers()
@@ -35,15 +41,16 @@ class VDeepJAllign(Model):
         self._init_masked_j_signals_encoding_layers()
 
         self.concatenate_input = concatenate
-        self.concatenated_input_embedding = Embedding(4, 32, input_length=int(max_seq_length))
+        self.concatenated_input_embedding = TokenAndPositionEmbedding(vocab_size=6, emded_dim=32,
+                                                                      maxlen=self.max_seq_length)  # Embedding(6, 32, input_length=int(max_seq_length))
+        self.initial_embedding_attention = Attention()
 
-        self.concatenate_v_mask_input = concatenate  # ([input_a,input_t,input_g,input_c])
-        self.concatenate_d_mask_input = concatenate  # ([input_a,input_t,input_g,input_c])
-        self.concatenate_j_mask_input = concatenate  # ([input_a,input_t,input_g,input_c])
-
-        self.concatenated_v_mask_input_embedding = Embedding(4, 32, input_length=int(max_seq_length))  # (concatenated)
-        self.concatenated_d_mask_input_embedding = Embedding(4, 32, input_length=int(max_seq_length))  # (concatenated)
-        self.concatenated_j_mask_input_embedding = Embedding(4, 32, input_length=int(max_seq_length))  # (concatenated)
+        self.concatenated_v_mask_input_embedding = TokenAndPositionEmbedding(vocab_size=6, emded_dim=32,
+                                                                             maxlen=self.max_seq_length)  # Embedding(6, 32, input_length=int(max_seq_length))  # (concatenated)
+        self.concatenated_d_mask_input_embedding = TokenAndPositionEmbedding(vocab_size=6, emded_dim=32,
+                                                                             maxlen=self.max_seq_length)  # Embedding(6, 32, input_length=int(max_seq_length))  # (concatenated)
+        self.concatenated_j_mask_input_embedding = TokenAndPositionEmbedding(vocab_size=6, emded_dim=32,
+                                                                             maxlen=self.max_seq_length)  # Embedding(6, 32, input_length=int(max_seq_length))  # (concatenated)
 
         # Init Interval Regression Related Layers
         self._init_interval_regression_layers()
@@ -52,9 +59,9 @@ class VDeepJAllign(Model):
         self.d_call_mask = CutoutLayer(max_seq_length, 'D', name='D_extract')  # ([d_start_out,d_end_out])
         self.j_call_mask = CutoutLayer(max_seq_length, 'J', name='J_extract')  # ([j_start_out,j_end_out])
 
-        self.v_mask_extractor = ExtractGeneMask()  # (([input_a_l2,input_t_l2,input_g_l2,input_c_l2],v_call_mask))
-        self.d_mask_extractor = ExtractGeneMask()  # (([input_a_l2,input_t_l2,input_g_l2,input_c_l2],v_call_mask))
-        self.j_mask_extractor = ExtractGeneMask()  # (([input_a_l2,input_t_l2,input_g_l2,input_c_l2],v_call_mask))
+        self.v_mask_extractor = ExtractGeneMask1D()  # (([input_a_l2,input_t_l2,input_g_l2,input_c_l2],v_call_mask))
+        self.d_mask_extractor = ExtractGeneMask1D()  # (([input_a_l2,input_t_l2,input_g_l2,input_c_l2],v_call_mask))
+        self.j_mask_extractor = ExtractGeneMask1D()  # (([input_a_l2,input_t_l2,input_g_l2,input_c_l2],v_call_mask))
 
         #  =========== V HEADS ======================
         # Init V Classification Related Layers
@@ -66,55 +73,51 @@ class VDeepJAllign(Model):
         # Init J Classification Related Layers
         self._init_j_classification_layers()
 
+    def init_loss_tracking_variables(self):
+        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+        self.insec_loss_tracker = tf.keras.metrics.Mean(name="insec_loss")
+        self.mod3_mse_loss_tracker = tf.keras.metrics.Mean(name="mod3_mse_loss")
+        self.total_ce_loss_tracker = tf.keras.metrics.Mean(name="total_classification_loss")
+
     def reshape_and_cast_input(self, input_s):
-        a = K.reshape(input_s, (-1, self.max_seq_length, 1))
+        a = K.reshape(input_s, (-1, self.max_seq_length))
         a = K.cast(a, 'float32')
         return a
 
     def _init_input_layers(self):
-        self.input_a = Input((self.max_seq_length, 1), name='a')
-
-        self.input_t = Input((self.max_seq_length, 1), name='t')
-        self.input_g = Input((self.max_seq_length, 1), name='g')
-        self.input_c = Input((self.max_seq_length, 1), name='c')
-
-        self.input_a_l2 = Input((self.max_seq_length, 1), name='a_l2')
-        self.input_t_l2 = Input((self.max_seq_length, 1), name='t_l2')
-        self.input_g_l2 = Input((self.max_seq_length, 1), name='g_l2')
-        self.input_c_l2 = Input((self.max_seq_length, 1), name='c_l2')
+        self.input_init = Input((self.max_seq_length, 1), name='seq_init')
+        self.input_for_masked = Input((self.max_seq_length, 1), name='seq_masked')
 
     def _init_raw_signals_encoding_layers(self):
-        self.conv_layer_1 = Conv2D_and_BatchNorm(filters=16, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_layer_2 = Conv2D_and_BatchNorm(filters=32, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_layer_3 = Conv2D_and_BatchNorm(filters=64, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_layer_4 = Conv2D_and_BatchNorm(filters=32, kernel=(3, 3), max_pool=(3, 1))
+        self.conv_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
+        self.conv_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
+        self.conv_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
+        self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
 
     def _init_masked_v_signals_encoding_layers(self):
-        self.conv_v_layer_1 = Conv2D_and_BatchNorm(filters=16, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_v_layer_2 = Conv2D_and_BatchNorm(filters=32, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_v_layer_3 = Conv2D_and_BatchNorm(filters=64, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_v_layer_4 = Conv2D_and_BatchNorm(filters=32, kernel=(3, 3), max_pool=(3, 1))
+        self.conv_v_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
+        self.conv_v_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
+        self.conv_v_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
+        self.conv_v_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
 
     def _init_masked_d_signals_encoding_layers(self):
-        self.conv_d_layer_1 = Conv2D_and_BatchNorm(filters=16, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_d_layer_2 = Conv2D_and_BatchNorm(filters=32, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_d_layer_3 = Conv2D_and_BatchNorm(filters=64, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_d_layer_4 = Conv2D_and_BatchNorm(filters=32, kernel=(3, 3), max_pool=(3, 1))
+        self.conv_d_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
+        self.conv_d_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
+        self.conv_d_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
+        self.conv_d_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
 
     def _init_masked_j_signals_encoding_layers(self):
-        self.conv_j_layer_1 = Conv2D_and_BatchNorm(filters=16, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_j_layer_2 = Conv2D_and_BatchNorm(filters=32, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_j_layer_3 = Conv2D_and_BatchNorm(filters=64, kernel=(3, 3), max_pool=(2, 1))
-        self.conv_j_layer_4 = Conv2D_and_BatchNorm(filters=32, kernel=(3, 3), max_pool=(3, 1))
+        self.conv_j_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
+        self.conv_j_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
+        self.conv_j_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
+        self.conv_j_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
 
     def _init_j_classification_layers(self):
-        self.j_gene_call_middle = Dense(self.j_gene_count * self.latent_size_factor,
-                                        activation=keras.layers.LeakyReLU(alpha=0.01),
+        self.j_gene_call_middle = Dense(self.j_gene_count * self.latent_size_factor, activation='relu',
                                         name='j_gene_middle')
         self.j_gene_call_head = Dense(self.j_gene_count, activation='softmax', name='j_gene')  # (v_feature_map)
 
-        self.j_allele_call_middle = Dense(self.j_allele_count * self.latent_size_factor,
-                                          activation=keras.layers.LeakyReLU(alpha=0.01),
+        self.j_allele_call_middle = Dense(self.j_allele_count * self.latent_size_factor, activation='relu',
                                           name='j_allele_middle')
         self.j_allele_call_head = Dense(self.j_allele_count, activation='softmax',
                                         name='j_allele')  # (v_feature_map)
@@ -122,19 +125,16 @@ class VDeepJAllign(Model):
         self.j_gene_call_gene_allele_concat = concatenate
 
     def _init_d_classification_layers(self):
-        self.d_family_call_middle = Dense(self.d_family_count * self.latent_size_factor,
-                                          activation=keras.layers.LeakyReLU(alpha=0.01),
+        self.d_family_call_middle = Dense(self.d_family_count * self.latent_size_factor, activation='relu',
                                           name='d_family_middle')
         self.d_family_call_head = Dense(self.d_family_count, activation='softmax',
                                         name='d_family')  # (v_feature_map)
 
-        self.d_gene_call_middle = Dense(self.d_gene_count * self.latent_size_factor,
-                                        activation=keras.layers.LeakyReLU(alpha=0.01),
+        self.d_gene_call_middle = Dense(self.d_gene_count * self.latent_size_factor, activation='relu',
                                         name='d_gene_middle')
         self.d_gene_call_head = Dense(self.d_gene_count, activation='softmax', name='d_gene')  # (v_feature_map)
 
-        self.d_allele_call_middle = Dense(self.d_allele_count * self.latent_size_factor,
-                                          activation=keras.layers.LeakyReLU(alpha=0.01),
+        self.d_allele_call_middle = Dense(self.d_allele_count * self.latent_size_factor, activation='relu',
                                           name='d_allele_middle')
         self.d_allele_call_head = Dense(self.d_allele_count, activation='softmax',
                                         name='d_allele')  # (v_feature_map)
@@ -143,19 +143,16 @@ class VDeepJAllign(Model):
         self.d_gene_call_gene_allele_concat = concatenate
 
     def _init_v_classification_layers(self):
-        self.v_family_call_middle = Dense(self.v_family_count * self.latent_size_factor,
-                                          activation=keras.layers.LeakyReLU(alpha=0.01),
+        self.v_family_call_middle = Dense(self.v_family_count * self.latent_size_factor, activation='relu',
                                           name='v_family_middle')
         self.v_family_call_head = Dense(self.v_family_count, activation='softmax',
                                         name='v_family')  # (v_feature_map)
 
-        self.v_gene_call_middle = Dense(self.v_gene_count * self.latent_size_factor,
-                                        activation=keras.layers.LeakyReLU(alpha=0.01),
+        self.v_gene_call_middle = Dense(self.v_gene_count * self.latent_size_factor, activation='relu',
                                         name='v_gene_middle')
         self.v_gene_call_head = Dense(self.v_gene_count, activation='softmax', name='v_gene')  # (v_feature_map)
 
-        self.v_allele_call_middle = Dense(self.v_allele_count * self.latent_size_factor,
-                                          activation=keras.layers.LeakyReLU(alpha=0.01),
+        self.v_allele_call_middle = Dense(self.v_allele_count * self.latent_size_factor, activation='relu',
                                           name='v_allele_middle')
         self.v_allele_call_head = Dense(self.v_allele_count, activation='softmax',
                                         name='v_allele')  # (v_feature_map)
@@ -164,25 +161,26 @@ class VDeepJAllign(Model):
         self.v_gene_call_gene_allele_concat = concatenate
 
     def _init_interval_regression_layers(self):
-        act = tf.keras.layers.LeakyReLU()
-        self.v_start_mid = Dense(32, activation=act)  # (concatenated_path)
+        # act = tf.keras.layers.LeakyReLU()
+        act = tf.keras.activations.swish
+        self.v_start_mid = Dense(32, activation=act, kernel_constraint=unit_norm())  # (concatenated_path)
         self.v_start_out = Dense(1, activation='relu', name='v_start')  # (v_end_mid)
 
-        self.v_end_mid = Dense(32, activation=act)  # (concatenated_path)
+        self.v_end_mid = Dense(32, activation=act, kernel_constraint=unit_norm())  # (concatenated_path)
         self.v_end_mid_concat = concatenate  # ([d_end_mid,d_start_mid])
         self.v_end_out = Dense(1, activation='relu', name='v_end')  # (v_end_mid)
 
-        self.d_start_mid = Dense(32, activation=act)  # (concatenated_path)
+        self.d_start_mid = Dense(32, activation=act, kernel_constraint=unit_norm())  # (concatenated_path)
         self.d_start_out = Dense(1, activation='relu', name='d_start')  # (d_start_mid)
 
-        self.d_end_mid = Dense(32, activation=act)  # (concatenated_path)
+        self.d_end_mid = Dense(32, activation=act, kernel_constraint=unit_norm())  # (concatenated_path)
         self.d_end_mid_concat = concatenate  # ([d_end_mid,d_start_mid])
         self.d_end_out = Dense(1, activation='relu', name='d_end')  # (d_end_mid)
 
-        self.j_start_mid = Dense(32, activation=act)  # (concatenated_path)
+        self.j_start_mid = Dense(32, activation=act, kernel_constraint=unit_norm())  # (concatenated_path)
         self.j_start_out = Dense(1, activation='relu', name='j_start')  # (j_start_mid)
 
-        self.j_end_mid = Dense(32, activation=act)  # (concatenated_path)
+        self.j_end_mid = Dense(32, activation=act, kernel_constraint=unit_norm())  # (concatenated_path)
         self.j_end_mid_concat = concatenate  # ([j_end_mid,j_start_mid])
         self.j_end_out = Dense(1, activation='relu', name='j_end')  # (j_end_mid)
 
@@ -277,77 +275,53 @@ class VDeepJAllign(Model):
         j_feature_map = Flatten()(j_feature_map)
         return j_feature_map
 
-    def _process_second_input_copy(self, inputs):
-        a2 = inputs['a_l2']
-        a2 = self.reshape_and_cast_input(a2)
-        t2 = inputs['t_l2']
-        t2 = self.reshape_and_cast_input(t2)
-        g2 = inputs['g_l2']
-        g2 = self.reshape_and_cast_input(g2)
-        c2 = inputs['c_l2']
-        c2 = self.reshape_and_cast_input(c2)
-
-        return a2, t2, g2, c2
-
     def call(self, inputs):
 
-        # STEP 1 : Encode A,T,G,C Signals to Features Via Conv Blocks
-        input_a = self.reshape_and_cast_input(inputs['a'])
-        input_t = self.reshape_and_cast_input(inputs['t'])
-        input_g = self.reshape_and_cast_input(inputs['g'])
-        input_c = self.reshape_and_cast_input(inputs['c'])
+        # STEP 1 : Produce embeddings for the input sequence
+        input_seq = self.reshape_and_cast_input(inputs['tokenized_sequence'])
+        concatenated_input_embedding = self.concatenated_input_embedding(input_seq)
 
-        concatenate_input = self.concatenate_input([input_a, input_t, input_g, input_c])
-        concatenated_input_embedding = self.concatenated_input_embedding(concatenate_input)
-
+        # STEP 2: Run Embedded sequence through 1D convolution to distill temporal features
         conv_layer_1 = self.conv_layer_1(concatenated_input_embedding)
         conv_layer_2 = self.conv_layer_2(conv_layer_1)
         conv_layer_3 = self.conv_layer_3(conv_layer_2)
         last_conv_layer = self.conv_layer_4(conv_layer_3)
 
-        # STEP 2 : Concatenate and encode feature from the 4 signals
-        concatenated_signals = Flatten()(last_conv_layer)
+        # STEP 3 : Flatten The Feature Derived from the 1D conv layers
+        concatenated_signals = self.initial_embedding_attention([last_conv_layer, last_conv_layer])
+        # concatenated_signals = Flatten()(last_conv_layer)
+        concatenated_signals = Flatten()(concatenated_signals)
 
-        # STEP 3 : Predict The Intervals That Contatin The V,D and J Genes using (V_end,D_Start,D_End,J_Start,J_End)
+        # STEP 4 : Predict The Intervals That Contatin The V,D and J Genes using (V_end,D_Start,D_End,J_Start,J_End)
         v_start, v_end, d_start, d_end, j_start, j_end = self._predict_intervals(concatenated_signals)
 
-        # STEP 4: Use predicted masks to create a binary vector with the appropriate intervals to  "cutout" the relevant V,D and J section from the input
+        # STEP 5: Use predicted masks to create a binary vector with the appropriate intervals to  "cutout" the relevant V,D and J section from the input
         v_mask = self.v_call_mask([v_start, v_end])
         d_mask = self.d_call_mask([d_start, d_end])
         j_mask = self.j_call_mask([j_start, j_end])
 
         # Get the second copy of the inputs
-        a2, t2, g2, c2 = self._process_second_input_copy(inputs)
+        input_seq_for_masked = self.reshape_and_cast_input(inputs['tokenized_sequence_for_masking'])
 
         # STEP 5: Multiply the mask with the input vector to turn of (set as zero) all position that dont match mask interval
-        v_call_masked_a, v_call_masked_t, v_call_masked_g, v_call_masked_c = self.v_mask_extractor(
-            ([a2, t2, g2, c2], v_mask))
-        d_call_masked_a, d_call_masked_t, d_call_masked_g, d_call_masked_c = self.d_mask_extractor(
-            ([a2, t2, g2, c2], d_mask))
-        j_call_masked_a, j_call_masked_t, j_call_masked_g, j_call_masked_c = self.j_mask_extractor(
-            ([a2, t2, g2, c2], j_mask))
+        masked_sequence_v = self.v_mask_extractor(
+            (input_seq_for_masked, v_mask))
+        masked_sequence_d = self.d_mask_extractor(
+            (input_seq_for_masked, d_mask))
+        masked_sequence_j = self.j_mask_extractor(
+            (input_seq_for_masked, j_mask))
 
-        # STEP 6: Extract new Feature for each signal (A,T,G,C) The same as we did at the begining for each gene this time
-
-        # Concatenate the A,T,G,C Masked Signals Separately for each Gene
-        concatenate_v_mask_input = self.concatenate_v_mask_input(
-            [v_call_masked_a, v_call_masked_t, v_call_masked_g, v_call_masked_c])
-
-        concatenate_d_mask_input = self.concatenate_d_mask_input(
-            [d_call_masked_a, d_call_masked_t, d_call_masked_g, d_call_masked_c])
-
-        concatenate_j_mask_input = self.concatenate_j_mask_input(
-            [j_call_masked_a, j_call_masked_t, j_call_masked_g, j_call_masked_c])
+        # STEP 6: Extract new Feature
 
         # Create Embeddings from the New 4 Channel Concatenated Signal using an Embeddings Layer - Apply for each Gene
-        concatenated_v_mask_input_embedding = self.concatenated_v_mask_input_embedding(concatenate_v_mask_input)
-        concatenated_d_mask_input_embedding = self.concatenated_d_mask_input_embedding(concatenate_d_mask_input)
-        concatenated_j_mask_input_embedding = self.concatenated_j_mask_input_embedding(concatenate_j_mask_input)
+        v_mask_input_embedding = self.concatenated_v_mask_input_embedding(masked_sequence_v)
+        d_mask_input_embedding = self.concatenated_d_mask_input_embedding(masked_sequence_d)
+        j_mask_input_embedding = self.concatenated_j_mask_input_embedding(masked_sequence_j)
 
         # Pass The Embeddings Generated Above Thorough 2D Convolutional Feature Extractor Layer
-        v_feature_map = self._encode_masked_v_signal(concatenated_v_mask_input_embedding)
-        d_feature_map = self._encode_masked_d_signal(concatenated_d_mask_input_embedding)
-        j_feature_map = self._encode_masked_j_signal(concatenated_j_mask_input_embedding)
+        v_feature_map = self._encode_masked_v_signal(v_mask_input_embedding)
+        d_feature_map = self._encode_masked_d_signal(d_mask_input_embedding)
+        j_feature_map = self._encode_masked_j_signal(j_mask_input_embedding)
 
         # STEP 8: Predict The V,D and J genes
         v_family, v_gene, v_allele, d_family, d_gene, d_allele, j_gene, j_allele = self._predict_vdj_set(v_feature_map,
@@ -365,13 +339,11 @@ class VDeepJAllign(Model):
         return K.cast(x, 'float32')
 
     def call_hierarchy_loss(self, family_true, gene_true, allele_true, family_pred, gene_pred, allele_pred):
-        #         family_true, gene_true, allele_true = y_true[0], y_true[1], y_true[2]
-        #         family_pred, gene_pred, allele_pred = y_pred[0], y_pred[1], y_pred[2]
-
         if family_true != None:
-            family_loss = (K.categorical_crossentropy(family_true, family_pred))
-        gene_loss = (K.categorical_crossentropy(gene_true, gene_pred))
-        allele_loss = (K.categorical_crossentropy(allele_true, allele_pred))
+            family_loss = (
+                tf.keras.losses.kullback_leibler_divergence(family_true, family_pred))  # K.categorical_crossentropy
+        gene_loss = (tf.keras.losses.kullback_leibler_divergence(gene_true, gene_pred))
+        allele_loss = (tf.keras.losses.kullback_leibler_divergence(allele_true, allele_pred))
 
         # family_loss_mean = K.mean(family_loss)
         # gene_loss_mean = K.mean(gene_loss)
@@ -379,12 +351,13 @@ class VDeepJAllign(Model):
 
         # Penalty for wrong family classification
         penalty_upper = K.constant([10.0])
+        penalty_mid = K.constant([5.0])
         penalty_lower = K.constant([1.0])
 
         if family_true != None:
             family_penalty = K.switch(K.not_equal(K.argmax(family_true), K.argmax(family_pred)), penalty_upper,
                                       penalty_lower)
-            gene_penalty = K.switch(K.not_equal(K.argmax(gene_true), K.argmax(gene_pred)), penalty_upper, penalty_lower)
+            gene_penalty = K.switch(K.not_equal(K.argmax(gene_true), K.argmax(gene_pred)), penalty_mid, penalty_lower)
         else:
             family_penalty = K.switch(K.not_equal(K.argmax(gene_true), K.argmax(gene_pred)), penalty_upper,
                                       penalty_lower)
@@ -412,14 +385,14 @@ class VDeepJAllign(Model):
 
     def multi_task_loss_v2(self, y_true, y_pred):
         # Extract the regression and classification outputs
-        regression_keys = ['v_start', 'v_end', 'd_start', 'd_end', 'j_start', 'j_end']
-        classification_keys = ['v_family', 'v_gene', 'v_allele', 'd_family', 'd_gene', 'd_allele', 'j_gene', 'j_allele']
-        regression_true = [self.c2f32(y_true[k]) for k in regression_keys]
-        regression_pred = [self.c2f32(y_pred[k]) for k in regression_keys]
-        classification_true = [self.c2f32(y_true[k]) for k in classification_keys]
-        classification_pred = [self.c2f32(y_pred[k]) for k in classification_keys]
+        regression_true = [self.c2f32(y_true[k]) for k in self.regression_keys]
+        regression_pred = [self.c2f32(y_pred[k]) for k in self.regression_keys]
+        classification_true = [self.c2f32(y_true[k]) for k in self.classification_keys]
+        classification_pred = [self.c2f32(y_pred[k]) for k in self.classification_keys]
 
         v_start, v_end, d_start, d_end, j_start, j_end = regression_pred
+        # ========================================================================================================================
+
         # Compute the intersection loss
         v_intersection_loss = K.maximum(0.0, K.minimum(v_end, d_end) - K.maximum(v_start, d_start)) + K.maximum(0.0,
                                                                                                                 K.minimum(
@@ -435,12 +408,15 @@ class VDeepJAllign(Model):
                                                                                                                     v_start))
         j_intersection_loss = K.maximum(0.0, K.minimum(j_end, self.max_seq_length) - K.maximum(j_start, j_end))
         total_intersection_loss = v_intersection_loss + d_intersection_loss + j_intersection_loss
+        # ========================================================================================================================
 
         # Compute the combined loss
         mse_loss = mod3_mse_regularization(tf.squeeze(K.stack(regression_true)),
-                                           tf.squeeze(K.stack(regression_pred)))  # dice_coef_loss
+                                           tf.squeeze(K.stack(regression_pred)))
+        # ========================================================================================================================
 
         # Compute the classification loss
+
         clf_v_loss = self.call_hierarchy_loss(tf.squeeze(classification_true[0]), tf.squeeze(classification_true[1]),
                                               tf.squeeze(classification_true[2]),
                                               tf.squeeze(classification_pred[0]), tf.squeeze(classification_pred[1]),
@@ -457,6 +433,8 @@ class VDeepJAllign(Model):
                                               tf.squeeze(classification_pred[7]))
 
         classification_loss = clf_v_loss + clf_d_loss + clf_j_loss
+
+        # ========================================================================================================================
 
         # Combine the two losses using a weighted sum
         regression_weight, classification_weight, intersection_weight = 0.5, 0.5, 0.5  # adjust the weights as needed
@@ -500,15 +478,10 @@ class VDeepJAllign(Model):
         return metrics
 
     def model_summary(self, input_shape):
-        x = {'a': Input(shape=input_shape), 't': Input(shape=input_shape), 'c': Input(shape=input_shape),
-             'g': Input(shape=input_shape),
-             'a_l2': Input(shape=input_shape), 't_l2': Input(shape=input_shape), 'c_l2': Input(shape=input_shape),
-             'g_l2': Input(shape=input_shape)}
+        x = {'tokenized_sequence_for_masking': Input(shape=input_shape), 'tokenized_sequence': Input(shape=input_shape)}
+
         return Model(inputs=x, outputs=self.call(x)).summary()
 
     def plot_model(self, input_shape, show_shapes=True):
-        x = {'a': Input(shape=input_shape), 't': Input(shape=input_shape), 'c': Input(shape=input_shape),
-             'g': Input(shape=input_shape),
-             'a_l2': Input(shape=input_shape), 't_l2': Input(shape=input_shape), 'c_l2': Input(shape=input_shape),
-             'g_l2': Input(shape=input_shape)}
+        x = {'tokenized_sequence_for_masking': Input(shape=input_shape), 'tokenized_sequence': Input(shape=input_shape)}
         return tf.keras.utils.plot_model(Model(inputs=x, outputs=self.call(x)), show_shapes=show_shapes)

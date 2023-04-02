@@ -1,111 +1,3 @@
-import tensorflow as tf
-import tensorflow.keras.backend as K
-from IPython.display import clear_output
-from matplotlib import pyplot as plt
-from tensorflow import keras
-from tensorflow.keras.layers import Attention, Conv2D, MaxPool2D, LeakyReLU
-from tensorflow.keras.layers import Dense, Flatten, concatenate, Conv1D, MaxPool1D, BatchNormalization, Dropout
-from tensorflow.keras.layers import Multiply, Layer
-
-
-class PlotLearning(keras.callbacks.Callback):
-    """
-    Callback to plot the learning curves of the model during training.
-    """
-
-    def on_train_begin(self, logs={}):
-        self.metrics = {}
-        for metric in logs:
-            self.metrics[metric] = []
-
-    def on_batch_end(self, epoch, logs={}):
-        # Storing metrics
-        for metric in logs:
-            if metric in self.metrics:
-                self.metrics[metric].append(logs.get(metric))
-            else:
-                self.metrics[metric] = [logs.get(metric)]
-
-        # Plotting
-        metrics = [x for x in logs if 'val' not in x]
-
-        f, axs = plt.subplots(len(metrics), 1, figsize=(6, 15))
-        clear_output(wait=True)
-
-        for i, metric in enumerate(metrics):
-            axs[i].plot(range(1, epoch + 2),
-                        self.metrics[metric],
-                        label=metric)
-            #             if logs['val_' + metric]:
-            #                 axs[i].plot(range(1, epoch + 2),
-            #                             self.metrics['val_' + metric],
-            #                             label='val_' + metric)
-
-            #             axs[i].legend()
-            axs[i].grid()
-
-        plt.tight_layout()
-        plt.show()
-
-
-class CutoutLayer(Layer):
-    def __init__(self, max_size, gene, **kwargs):
-        super(CutoutLayer, self).__init__(**kwargs)
-        self.max_size = max_size
-        self.gene = gene
-
-    def round_output(self, dense_output):
-        max_value = tf.reduce_max(dense_output, axis=-1, keepdims=True)
-        max_value = tf.clip_by_value(max_value, 0, self.max_size)
-        max_value = tf.cast(max_value, dtype=tf.float32)
-        return max_value
-
-    def _call_v(self, inputs, batch_size):
-        dense_start, dense_end = inputs
-        x = self.round_output(dense_start)
-        y = self.round_output(dense_end)
-        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
-        R = K.greater(indices, x) & K.less(indices, y)
-        R = tf.cast(R, tf.float32)
-        R = tf.reshape(R, shape=(batch_size, self.max_size, 1))
-        return R
-
-    def _call_d(self, inputs, batch_size):
-        dense_start, dense_end = inputs
-        x = self.round_output(dense_start)
-        y = self.round_output(dense_end)
-        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
-        R = K.greater(indices, x) & K.less(indices, y)
-        R = tf.cast(R, tf.float32)
-        R = tf.reshape(R, shape=(batch_size, self.max_size, 1))
-        return R
-
-    def _call_j(self, inputs, batch_size):
-        dense_start, dense_end = inputs
-        x = self.round_output(dense_start)
-        y = self.round_output(dense_end)
-        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
-        R = K.greater(indices, x) & K.less(indices, y)
-        R = tf.cast(R, tf.float32)
-        R = tf.reshape(R, shape=(batch_size, self.max_size, 1))
-        return R
-
-    def call(self, inputs):
-        if self.gene == 'V':
-            batch_size = tf.shape(inputs[0])[0]
-            return self._call_v(inputs, batch_size)
-        elif self.gene == 'D':
-            batch_size = tf.shape(inputs[0])[0]
-            return self._call_d(inputs, batch_size)
-        elif self.gene == 'J':
-            batch_size = tf.shape(inputs[0])[0]
-            return self._call_j(inputs, batch_size)
-
-    def compute_output_shape(self, input_shape):
-        return (None, self.max_size, 1)
-
-
-
 class ExtractGeneMask(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         super(ExtractGeneMask, self).__init__(**kwargs)
@@ -123,6 +15,19 @@ class ExtractGeneMask(tf.keras.layers.Layer):
         masked_c = self.mul_c([c, mask])
 
         return masked_a, masked_t, masked_g, masked_c
+
+
+class ExtractGeneMask1D(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(ExtractGeneMask1D, self).__init__(**kwargs)
+        self.mul_seq = Multiply()  # ([input_t,mid_cu])
+
+    def call(self, inputs):
+        seq, mask = inputs
+
+        masked_seq = self.mul_seq([seq, mask])
+
+        return masked_seq
 
 
 class ExtractedMaskEncode(tf.keras.layers.Layer):
@@ -187,6 +92,36 @@ class Conv2D_and_BatchNorm(tf.keras.layers.Layer):
         x = self.activation(x)
         x = self.max_pool(x)
         return x
+
+
+class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
+    def __init__(self, filters=16, kernel=3, max_pool=2, **kwargs):
+        super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
+        self.conv_2d = Conv1D(filters, kernel, padding='same', kernel_initializer='he_uniform')  # (inputs)
+        self.batch_norm = BatchNormalization()  # (concatenated_path)
+        self.activation = LeakyReLU()  # (concatenated_path)
+        self.max_pool = MaxPool1D(max_pool)  # (concatenated_path)
+
+    def call(self, inputs):
+        x = self.conv_2d(inputs)
+        x = self.batch_norm(x)
+        x = self.activation(x)
+        x = self.max_pool(x)
+        return x
+
+
+class TokenAndPositionEmbedding(tf.keras.layers.Layer):
+    def __init__(self, maxlen, vocab_size, emded_dim):
+        super(TokenAndPositionEmbedding, self).__init__()
+        self.maxlen = maxlen
+        self.token_emb = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=emded_dim)
+        self.pos_emb = tf.keras.layers.Embedding(input_dim=maxlen, output_dim=emded_dim)
+
+    def call(self, x):
+        positions = tf.range(start=0, limit=self.maxlen, delta=1)
+        positions = self.pos_emb(positions)
+        x = self.token_emb(x)
+        return x + positions
 
 
 def mod3_mse_loss(y_true, y_pred):
