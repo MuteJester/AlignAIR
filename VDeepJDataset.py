@@ -1,8 +1,6 @@
 import pandas as pd
 from tqdm.auto import tqdm
-
 from VDeepJDataPrepper import VDeepJDataPrepper
-
 
 class VDeepJDataset:
     def __init__(self, data_path, max_sequence_length=512,nrows=None):
@@ -110,3 +108,5 @@ class VDeepJDataset:
 
     def __len__(self):
         return len(self.data)
+
+

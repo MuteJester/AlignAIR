@@ -14,6 +14,7 @@ class VDeepJDataPrepper:
         self.nucleotide_add_distribution = st.beta(1, 3)
         self.nucleotide_remove_distribution = st.beta(1, 3)
         self.add_remove_probability = st.bernoulli(0.5)
+        self.batch_size = 64
 
         self.tokenizer_dictionary = {
             'A': 1,
@@ -134,6 +135,7 @@ class VDeepJDataPrepper:
                          v_gene_call_ohe_np, v_allele_call_ohe_np, d_family_call_ohe_np, d_gene_call_ohe_np,
                          d_allele_call_ohe_np, j_gene_call_ohe_np, j_allele_call_ohe_np,
                          batch_size=64, train: bool = True, corrupt_beginning=False):
+        self.batch_size = batch_size
         while True:
             num_examples = len(data)
             num_batches = num_examples // batch_size
@@ -162,10 +164,9 @@ class VDeepJDataPrepper:
 
                 yield batch_x, batch_y
 
-    def _eval_generator(self, data: pd.DataFrame, v_family_call_ohe_np,
-                        v_gene_call_ohe_np, v_allele_call_ohe_np, d_family_call_ohe_np, d_gene_call_ohe_np,
-                        d_allele_call_ohe_np, j_gene_call_ohe_np, j_allele_call_ohe_np,
+    def _eval_generator(self, data: pd.DataFrame,
                         batch_size=64, train: bool = True, corrupt_beginning=False):
+        self.batch_size = batch_size
         num_examples = len(data)
         num_batches = num_examples // batch_size
 
@@ -196,8 +197,8 @@ class VDeepJDataPrepper:
 
         output_types = ({k: tf.float32 for k in x}, {k: tf.float32 for k in y})
 
-        output_shapes = ({k: (batch_size,) + x[k].shape[1:] for k in x},
-                         {k: (batch_size,) + y[k].shape[1:] for k in y})
+        output_shapes = ({k: (self.batch_size,) + x[k].shape[1:] for k in x},
+                         {k: (self.batch_size,) + y[k].shape[1:] for k in y})
 
         return output_types, output_shapes
 
