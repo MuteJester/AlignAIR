@@ -5,14 +5,14 @@ from VDeepJDataPrepper import VDeepJDataPrepper
 
 
 class VDeepJDataset:
-    def __init__(self, data_path, max_sequence_length=512):
+    def __init__(self, data_path, max_sequence_length=512,nrows=None):
         self.max_sequence_length = max_sequence_length
         self.data_prepper = VDeepJDataPrepper(self.max_sequence_length)
         self.data = pd.read_table(data_path,
                                   usecols=['sequence', 'v_call', 'd_call', 'j_call', 'v_sequence_end',
                                            'd_sequence_start',
                                            'j_sequence_start',
-                                           'j_sequence_end', 'd_sequence_end', 'v_sequence_start'])
+                                           'j_sequence_end', 'd_sequence_end', 'v_sequence_start'],nrows=nrows)
 
 
         self.derive_call_dictionaries()
@@ -35,19 +35,19 @@ class VDeepJDataset:
     def derive_call_one_hot_representation(self):
         self.v_family_call_ohe, self.v_family_call_ohe_np, self.v_gene_call_ohe, \
         self.v_gene_call_ohe_np, self.v_allele_call_ohe, \
-        self.v_allele_call_ohe_np = self.data_prepper.convert_calls_to_one_hot(self.data['v_gene'],
-                                                                               self.data['v_allele'],
-                                                                               self.data['v_family'])
+        self.v_allele_call_ohe_np = self.data_prepper.convert_calls_to_one_hot(self.v_gene,
+                                                                               self.v_allele,
+                                                                               self.v_family)
 
         self.d_family_call_ohe, self.d_family_call_ohe_np, \
         self.d_gene_call_ohe, self.d_gene_call_ohe_np, \
         self.d_allele_call_ohe, self.d_allele_call_ohe_np = \
-            self.data_prepper.convert_calls_to_one_hot(self.data['d_gene'],
-                                                       self.data['d_allele'],
-                                                       self.data['d_family'])
+            self.data_prepper.convert_calls_to_one_hot(self.d_gene,
+                                                       self.d_allele,
+                                                       self.d_family)
 
         self.j_gene_call_ohe, self.j_gene_call_ohe_np, self.j_allele_call_ohe, self.j_allele_call_ohe_np = \
-            self.data_prepper.convert_calls_to_one_hot(self.data['j_gene'], self.data['j_allele'])
+            self.data_prepper.convert_calls_to_one_hot(self.j_gene, self.j_allele)
 
     def derive_call_sections(self):
         self.v_family = [self.v_dict[x]['family'] for x in tqdm(self.data.v_call)]

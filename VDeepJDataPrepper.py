@@ -339,3 +339,63 @@ class VDeepJDataPrepper:
                    gene_call_ohe_np, allele_call_ohe, allele_call_ohe_np
         else:
             return gene_call_ohe, gene_call_ohe_np, allele_call_ohe, allele_call_ohe_np
+
+    def get_family_gene_allele_map(self, v_calls=None, d_calls=None, j_calls=None) -> Dict:
+        """
+        This method takes in three lists representing each of the V/D/J calls in the training sequence and creates
+        a dictionary for each call, decomposing it into family, gene, and allele. The resulting dictionary for each
+        call type (V/D/J) has the following format: {'family': family_list, 'gene': gene_list, 'allele': allele_list}.
+
+        :param v_calls: A list of "V" calls in the training sequence.
+        :param d_calls: A list of "D" calls in the training sequence.
+        :param j_calls: A list of "J" calls in the training sequence.
+        :return: A dictionary containing the decomposed information for each call type:
+            - v_dict: Dictionary containing decomposed information for V calls, with the format {'family': family_list,
+              'gene': gene_list, 'allele': allele_list}.
+            - d_dict: Dictionary containing decomposed information for D calls, with the format {'family': family_list,
+              'gene': gene_list, 'allele': allele_list}.
+            - j_dict: Dictionary containing decomposed information for J calls, with the format {'family': family_list,
+              'gene': gene_list, 'allele': allele_list}.
+        """
+        v_dict, d_dict, j_dict = None, None, None
+        if v_calls is not None:
+            v_dict = dict()
+            for i in v_calls:
+                fam, gene, allele = re.findall(r'IGHV[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*', i)
+                v_dict[i] = {'family': fam, 'gene': gene, 'allele': allele}
+        if d_calls is not None:
+            d_dict = dict()
+            for i in d_calls:
+                fam, gene, allele = re.findall(r'IGHD[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*', i)
+                d_dict[i] = {'family': fam, 'gene': gene, 'allele': allele}
+        if j_calls is not None:
+            j_dict = dict()
+            for i in j_calls:
+                gene, allele = re.findall(r'IGHJ[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*', i)
+                j_dict[i] = {'gene': gene, 'allele': allele}
+
+        return v_dict, d_dict, j_dict
+
+    def convert_calls_to_one_hot(self, gene, allele, family=None) -> Tuple:
+        """
+        This method takes in three Pandas series representing each of the V/D/J call types and converts them into
+        one-hot encoded matrices. For each call level (family, gene, allele), this method returns a one-hot matrix
+        and a dictionary mapping the one-hot position to the respective family/gene/allele.
+
+        :param v_calls: Pandas series representing V call types.
+        :param d_calls: Pandas series representing D call types.
+        :param j_calls: Pandas series representing J call types.
+        :return: Tuple containing:
+            - One-hot encoded matrix and mapping dictionary for V family, gene, and allele call types.
+            - One-hot encoded matrix and mapping dictionary for D family, gene, and allele call types.
+            - One-hot encoded matrix and mapping dictionary for J gene and allele call types.
+        """
+
+        gene_call_ohe, gene_call_ohe_np = self._convert_calls(gene)
+        allele_call_ohe, allele_call_ohe_np = self._convert_calls(allele)
+        if family is not None:
+            family_call_ohe, family_call_ohe_np = self._convert_calls(family)
+            return family_call_ohe, family_call_ohe_np, gene_call_ohe, \
+                   gene_call_ohe_np, allele_call_ohe, allele_call_ohe_np
+        else:
+            return gene_call_ohe, gene_call_ohe_np, allele_call_ohe, allele_call_ohe_np
