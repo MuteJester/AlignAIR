@@ -2,11 +2,12 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Attention
 from tensorflow import keras
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Dense, Flatten, concatenate,Input,Embedding
+from tensorflow.keras.layers import Dense, Flatten, concatenate,Input,Embedding,Dropout
 import tensorflow as tf
 from tensorflow.keras.constraints import unit_norm
 from VDeepJLayers import CutoutLayer, ExtractGeneMask, Conv2D_and_BatchNorm, mod3_mse_regularization, \
     Conv1D_and_BatchNorm, ExtractGeneMask1D, TokenAndPositionEmbedding
+from tensorflow.keras import regularizers
 
 
 class VDeepJAllign(tf.keras.Model):
@@ -25,6 +26,7 @@ class VDeepJAllign(tf.keras.Model):
         self.classification_keys = ['v_family', 'v_gene', 'v_allele', 'd_family', 'd_gene', 'd_allele', 'j_gene',
                                     'j_allele']
         self.latent_size_factor = 2
+        self.classification_middle_layer_activation = 'swish'
 
         # Tracking
         self.init_loss_tracking_variables()
@@ -44,6 +46,7 @@ class VDeepJAllign(tf.keras.Model):
         self.concatenated_input_embedding = TokenAndPositionEmbedding(vocab_size=6, emded_dim=32,
                                                                       maxlen=self.max_seq_length)  # Embedding(6, 32, input_length=int(max_seq_length))
         self.initial_embedding_attention = Attention()
+        self.initial_feature_map_dropout = Dropout(0.3)
 
         self.concatenated_v_mask_input_embedding = TokenAndPositionEmbedding(vocab_size=6, emded_dim=32,
                                                                              maxlen=self.max_seq_length)  # Embedding(6, 32, input_length=int(max_seq_length))  # (concatenated)
@@ -98,44 +101,49 @@ class VDeepJAllign(tf.keras.Model):
         self.conv_v_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
         self.conv_v_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
         self.conv_v_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
-        self.conv_v_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
+        self.conv_v_layer_4 = Conv1D_and_BatchNorm(filters=64, kernel=2, max_pool=2)
 
     def _init_masked_d_signals_encoding_layers(self):
         self.conv_d_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
         self.conv_d_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
         self.conv_d_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
-        self.conv_d_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
+        self.conv_d_layer_4 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
 
     def _init_masked_j_signals_encoding_layers(self):
         self.conv_j_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
         self.conv_j_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
         self.conv_j_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
-        self.conv_j_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
+        self.conv_j_layer_4 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
 
     def _init_j_classification_layers(self):
-        self.j_gene_call_middle = Dense(self.j_gene_count * self.latent_size_factor, activation='relu',
-                                        name='j_gene_middle')
+        self.j_gene_call_middle = Dense(self.j_gene_count * self.latent_size_factor,
+                                        activation=self.classification_middle_layer_activation,
+                                        name='j_gene_middle', kernel_regularizer=regularizers.l2(0.01))
         self.j_gene_call_head = Dense(self.j_gene_count, activation='softmax', name='j_gene')  # (v_feature_map)
 
-        self.j_allele_call_middle = Dense(self.j_allele_count * self.latent_size_factor, activation='relu',
-                                          name='j_allele_middle')
+        self.j_allele_call_middle = Dense(self.j_allele_count * self.latent_size_factor,
+                                          activation=self.classification_middle_layer_activation,
+                                          name='j_allele_middle', kernel_regularizer=regularizers.l2(0.01))
         self.j_allele_call_head = Dense(self.j_allele_count, activation='softmax',
                                         name='j_allele')  # (v_feature_map)
 
         self.j_gene_call_gene_allele_concat = concatenate
 
     def _init_d_classification_layers(self):
-        self.d_family_call_middle = Dense(self.d_family_count * self.latent_size_factor, activation='relu',
-                                          name='d_family_middle')
+        self.d_family_call_middle = Dense(self.d_family_count * self.latent_size_factor,
+                                          activation=self.classification_middle_layer_activation,
+                                          name='d_family_middle', kernel_regularizer=regularizers.l2(0.01))
         self.d_family_call_head = Dense(self.d_family_count, activation='softmax',
                                         name='d_family')  # (v_feature_map)
 
-        self.d_gene_call_middle = Dense(self.d_gene_count * self.latent_size_factor, activation='relu',
-                                        name='d_gene_middle')
+        self.d_gene_call_middle = Dense(self.d_gene_count * self.latent_size_factor,
+                                        activation=self.classification_middle_layer_activation,
+                                        name='d_gene_middle', kernel_regularizer=regularizers.l2(0.01))
         self.d_gene_call_head = Dense(self.d_gene_count, activation='softmax', name='d_gene')  # (v_feature_map)
 
-        self.d_allele_call_middle = Dense(self.d_allele_count * self.latent_size_factor, activation='relu',
-                                          name='d_allele_middle')
+        self.d_allele_call_middle = Dense(self.d_allele_count * self.latent_size_factor,
+                                          activation=self.classification_middle_layer_activation,
+                                          name='d_allele_middle', kernel_regularizer=regularizers.l2(0.01))
         self.d_allele_call_head = Dense(self.d_allele_count, activation='softmax',
                                         name='d_allele')  # (v_feature_map)
 
@@ -143,17 +151,22 @@ class VDeepJAllign(tf.keras.Model):
         self.d_gene_call_gene_allele_concat = concatenate
 
     def _init_v_classification_layers(self):
-        self.v_family_call_middle = Dense(self.v_family_count * self.latent_size_factor, activation='relu',
-                                          name='v_family_middle')
+
+        self.v_family_call_middle = Dense(self.v_family_count * self.latent_size_factor,
+                                          activation=self.classification_middle_layer_activation,
+                                          name='v_family_middle', kernel_regularizer=regularizers.l2(0.01))
+
         self.v_family_call_head = Dense(self.v_family_count, activation='softmax',
                                         name='v_family')  # (v_feature_map)
 
-        self.v_gene_call_middle = Dense(self.v_gene_count * self.latent_size_factor, activation='relu',
-                                        name='v_gene_middle')
+        self.v_gene_call_middle = Dense(self.v_gene_count * self.latent_size_factor,
+                                        activation=self.classification_middle_layer_activation,
+                                        name='v_gene_middle', kernel_regularizer=regularizers.l2(0.01))
         self.v_gene_call_head = Dense(self.v_gene_count, activation='softmax', name='v_gene')  # (v_feature_map)
 
-        self.v_allele_call_middle = Dense(self.v_allele_count * self.latent_size_factor, activation='relu',
-                                          name='v_allele_middle')
+        self.v_allele_call_middle = Dense(self.v_allele_count * self.latent_size_factor,
+                                          activation=self.classification_middle_layer_activation,
+                                          name='v_allele_middle', kernel_regularizer=regularizers.l2(0.01))
         self.v_allele_call_head = Dense(self.v_allele_count, activation='softmax',
                                         name='v_allele')  # (v_feature_map)
 
@@ -291,6 +304,7 @@ class VDeepJAllign(tf.keras.Model):
         concatenated_signals = self.initial_embedding_attention([last_conv_layer, last_conv_layer])
         # concatenated_signals = Flatten()(last_conv_layer)
         concatenated_signals = Flatten()(concatenated_signals)
+        concatenated_signals = self.initial_feature_map_dropout(concatenated_signals)
 
         # STEP 4 : Predict The Intervals That Contatin The V,D and J Genes using (V_end,D_Start,D_End,J_Start,J_End)
         v_start, v_end, d_start, d_end, j_start, j_end = self._predict_intervals(concatenated_signals)

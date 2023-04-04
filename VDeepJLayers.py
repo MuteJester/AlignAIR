@@ -1,3 +1,71 @@
+import tensorflow as tf
+import tensorflow.keras.backend as K
+from IPython.display import clear_output
+from matplotlib import pyplot as plt
+from tensorflow import keras
+from tensorflow.keras.layers import Attention, Conv2D, MaxPool2D, LeakyReLU
+from tensorflow.keras.layers import Dense, Flatten, concatenate, Conv1D, MaxPool1D, BatchNormalization, Dropout
+from tensorflow.keras.layers import Multiply, Layer
+from tensorflow.keras import regularizers
+
+
+class CutoutLayer(Layer):
+    def __init__(self, max_size, gene, **kwargs):
+        super(CutoutLayer, self).__init__(**kwargs)
+        self.max_size = max_size
+        self.gene = gene
+
+    def round_output(self, dense_output):
+        max_value = tf.reduce_max(dense_output, axis=-1, keepdims=True)
+        max_value = tf.clip_by_value(max_value, 0, self.max_size)
+        max_value = tf.cast(max_value, dtype=tf.float32)
+        return max_value
+
+    def _call_v(self, inputs, batch_size):
+        dense_start, dense_end = inputs
+        x = self.round_output(dense_start)
+        y = self.round_output(dense_end)
+        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
+        R = K.greater(indices, x) & K.less(indices, y)
+        R = tf.cast(R, tf.float32)
+        R = tf.reshape(R, shape=(batch_size, self.max_size))
+        return R
+
+    def _call_d(self, inputs, batch_size):
+        dense_start, dense_end = inputs
+        x = self.round_output(dense_start)
+        y = self.round_output(dense_end)
+        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
+        R = K.greater(indices, x) & K.less(indices, y)
+        R = tf.cast(R, tf.float32)
+        R = tf.reshape(R, shape=(batch_size, self.max_size))
+        return R
+
+    def _call_j(self, inputs, batch_size):
+        dense_start, dense_end = inputs
+        x = self.round_output(dense_start)
+        y = self.round_output(dense_end)
+        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
+        R = K.greater(indices, x) & K.less(indices, y)
+        R = tf.cast(R, tf.float32)
+        R = tf.reshape(R, shape=(batch_size, self.max_size))
+        return R
+
+    def call(self, inputs):
+        if self.gene == 'V':
+            batch_size = tf.shape(inputs[0])[0]
+            return self._call_v(inputs, batch_size)
+        elif self.gene == 'D':
+            batch_size = tf.shape(inputs[0])[0]
+            return self._call_d(inputs, batch_size)
+        elif self.gene == 'J':
+            batch_size = tf.shape(inputs[0])[0]
+            return self._call_j(inputs, batch_size)
+
+    def compute_output_shape(self, input_shape):
+        return (None, self.max_size, 1)
+
+
 class ExtractGeneMask(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         super(ExtractGeneMask, self).__init__(**kwargs)
@@ -97,7 +165,8 @@ class Conv2D_and_BatchNorm(tf.keras.layers.Layer):
 class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
     def __init__(self, filters=16, kernel=3, max_pool=2, **kwargs):
         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
-        self.conv_2d = Conv1D(filters, kernel, padding='same', kernel_initializer='he_uniform')  # (inputs)
+        self.conv_2d = Conv1D(filters, kernel, padding='same',
+                              kernel_regularizer=regularizers.l2(0.01))  # kernel_initializer='he_uniform'
         self.batch_norm = BatchNormalization()  # (concatenated_path)
         self.activation = LeakyReLU()  # (concatenated_path)
         self.max_pool = MaxPool1D(max_pool)  # (concatenated_path)
