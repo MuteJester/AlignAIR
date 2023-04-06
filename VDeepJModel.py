@@ -36,6 +36,7 @@ class VDeepJAllign(tf.keras.Model):
 
         # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
         self._init_raw_signals_encoding_layers()
+        self.initial_embedding_attention = Attention()
 
         # Init V/D/J Masked Input Signal Encoding Layers
         self._init_masked_v_signals_encoding_layers()
@@ -45,7 +46,7 @@ class VDeepJAllign(tf.keras.Model):
         self.concatenate_input = concatenate
         self.concatenated_input_embedding = TokenAndPositionEmbedding(vocab_size=6, emded_dim=32,
                                                                       maxlen=self.max_seq_length)  # Embedding(6, 32, input_length=int(max_seq_length))
-        self.initial_embedding_attention = Attention()
+        self.conv_embedding_attention = Attention()
         self.initial_feature_map_dropout = Dropout(0.3)
 
         self.concatenated_v_mask_input_embedding = TokenAndPositionEmbedding(vocab_size=6, emded_dim=32,
@@ -293,6 +294,7 @@ class VDeepJAllign(tf.keras.Model):
         # STEP 1 : Produce embeddings for the input sequence
         input_seq = self.reshape_and_cast_input(inputs['tokenized_sequence'])
         concatenated_input_embedding = self.concatenated_input_embedding(input_seq)
+        concatenated_input_embedding = self.initial_embedding_attention([concatenated_input_embedding, concatenated_input_embedding])
 
         # STEP 2: Run Embedded sequence through 1D convolution to distill temporal features
         conv_layer_1 = self.conv_layer_1(concatenated_input_embedding)
@@ -301,7 +303,7 @@ class VDeepJAllign(tf.keras.Model):
         last_conv_layer = self.conv_layer_4(conv_layer_3)
 
         # STEP 3 : Flatten The Feature Derived from the 1D conv layers
-        concatenated_signals = self.initial_embedding_attention([last_conv_layer, last_conv_layer])
+        concatenated_signals = last_conv_layer
         # concatenated_signals = Flatten()(last_conv_layer)
         concatenated_signals = Flatten()(concatenated_signals)
         concatenated_signals = self.initial_feature_map_dropout(concatenated_signals)
