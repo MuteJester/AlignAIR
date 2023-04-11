@@ -357,9 +357,9 @@ class VDeepJAllign(tf.keras.Model):
     def call_hierarchy_loss(self, family_true, gene_true, allele_true, family_pred, gene_pred, allele_pred):
         if family_true != None:
             family_loss = (
-                tf.keras.losses.kullback_leibler_divergence(family_true, family_pred))  # K.categorical_crossentropy
-        gene_loss = (tf.keras.losses.kullback_leibler_divergence(gene_true, gene_pred))
-        allele_loss = (tf.keras.losses.kullback_leibler_divergence(allele_true, allele_pred))
+                K.categorical_crossentropy(family_true, family_pred))  # K.categorical_crossentropy
+        gene_loss = (K.categorical_crossentropy(gene_true, gene_pred))
+        allele_loss = (K.categorical_crossentropy(allele_true, allele_pred))
 
         # family_loss_mean = K.mean(family_loss)
         # gene_loss_mean = K.mean(gene_loss)
