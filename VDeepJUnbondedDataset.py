@@ -1,16 +1,54 @@
-from airrship.create_repertoire import generate_sequence,load_data,get_genotype
+import importlib
+
 import scipy.stats as st
 import tensorflow as tf
 import pandas as pd
 from tqdm.auto import tqdm
 import numpy as np
+from airrship.create_repertoire import generate_sequence,load_data,get_genotype,create_allele_dict
+from collections import defaultdict
+
+from VDeepJDataPrepper import VDeepJDataPrepper
+
+
+def global_genotype():
+    try:
+        path_to_data = importlib.resources.files(
+            'airrship').joinpath("data")
+    except AttributeError:
+        with importlib.resources.path('airrship', 'data') as p:
+            path_to_data = p
+    v_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHV.fasta")
+    d_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHD.fasta")
+    j_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHJ.fasta")
+
+    vdj_allele_dicts = {"V": v_alleles,
+                        "D": d_alleles,
+                        "J": j_alleles}
+
+    chromosome1, chromosome2 = defaultdict(list), defaultdict(list)
+    for segment in ["V", "D", "J"]:
+        allele_dict = vdj_allele_dicts[segment]
+        for gene in allele_dict.values():
+            for allele in gene:
+                chromosome1[segment].append(allele)
+                chromosome2[segment].append(allele)
+
+    locus = [chromosome1, chromosome2]
+    return locus
+
+
 
 class VDeepJUnbondedDataset():
-    def __init__(self, batch_size=64, max_sequence_length=512):
+    def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False):
         self.max_sequence_length = max_sequence_length
+        self.data_prepper = VDeepJDataPrepper(self.max_sequence_length)
 
         self.data_dict = load_data()
-        self.locus = get_genotype()
+        self.locus = global_genotype()
         self.max_seq_length = max_sequence_length
         self.nucleotide_add_distribution = st.beta(1, 3)
         self.nucleotide_remove_distribution = st.beta(1, 3)
@@ -28,8 +66,9 @@ class VDeepJUnbondedDataset():
         self.mutate = True
         self.flat_vdj = True
         self.no_trim_args = False
-        self.mutation_rate = 0.08
+        self.mutation_rate = mutation_rate
         self.batch_size = batch_size
+        self.shm_flat = shm_flat
 
         self.derive_call_dictionaries()
         self.derive_counts()
@@ -37,7 +76,7 @@ class VDeepJUnbondedDataset():
 
     def generate_single(self):
         return generate_sequence(self.locus, self.data_dict, mutate=self.mutate, mutation_rate=self.mutation_rate,
-                                 flat_usage='gene')
+                                 shm_flat=self.shm_flat, flat_usage='gene')
 
     def derive_counts(self):
 
