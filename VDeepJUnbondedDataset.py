@@ -41,7 +41,6 @@ def global_genotype():
     return locus
 
 
-
 class VDeepJUnbondedDataset():
     def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False):
         self.max_sequence_length = max_sequence_length
@@ -254,6 +253,21 @@ class VDeepJUnbondedDataset():
         padded_sequences = np.vstack(padded_sequences)
 
         return v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences
+
+    def get_ohe_reverse_mapping(self):
+        get_reverse_dict = lambda dic: {i: j for j, i in dic.items()}
+        call_maps = {
+            'v_family': get_reverse_dict(self.v_family_call_ohe),
+            'v_gene': get_reverse_dict(self.v_gene_call_ohe),
+            'v_allele': get_reverse_dict(self.v_allele_call_ohe),
+            'd_family': get_reverse_dict(self.d_family_call_ohe),
+            'd_gene': get_reverse_dict(self.d_gene_call_ohe),
+            'd_allele': get_reverse_dict(self.d_allele_call_ohe),
+            'j_gene': get_reverse_dict(self.j_gene_call_ohe),
+            'j_allele': get_reverse_dict(self.j_allele_call_ohe),
+
+        }
+        return call_maps
 
     def get_ohe(self, type, level, values):
         if type == 'V':
