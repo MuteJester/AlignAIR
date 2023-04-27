@@ -42,7 +42,8 @@ def global_genotype():
 
 
 class VDeepJUnbondedDataset():
-    def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False):
+    def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False,randomize_rate=False,
+                corrupt_beginning = True):
         self.max_sequence_length = max_sequence_length
         self.data_prepper = VDeepJDataPrepper(self.max_sequence_length)
 
@@ -52,6 +53,7 @@ class VDeepJUnbondedDataset():
         self.nucleotide_add_distribution = st.beta(1, 3)
         self.nucleotide_remove_distribution = st.beta(1, 3)
         self.add_remove_probability = st.bernoulli(0.5)
+        self.corrupt_beginning = corrupt_beginning
 
         self.tokenizer_dictionary = {
             'A': 1,
@@ -64,6 +66,7 @@ class VDeepJUnbondedDataset():
 
         self.mutate = True
         self.flat_vdj = True
+        self.randomize_rate = randomize_rate
         self.no_trim_args = False
         self.mutation_rate = mutation_rate
         self.batch_size = batch_size
@@ -74,8 +77,13 @@ class VDeepJUnbondedDataset():
         self.derive_call_one_hot_representation()
 
     def generate_single(self):
-        return generate_sequence(self.locus, self.data_dict, mutate=self.mutate, mutation_rate=self.mutation_rate,
-                                 shm_flat=self.shm_flat, flat_usage='gene')
+        if self.randomize_rate:
+            return generate_sequence(self.locus, self.data_dict, mutate=self.mutate,
+                                     mutation_rate=np.random.uniform(0,self.mutation_rate,1).item(),
+                                     shm_flat=self.shm_flat, flat_usage='gene')
+        else:
+            return generate_sequence(self.locus, self.data_dict, mutate=self.mutate, mutation_rate=self.mutation_rate,
+                                     shm_flat=self.shm_flat, flat_usage='gene')
 
     def derive_counts(self):
 
@@ -333,7 +341,7 @@ class VDeepJUnbondedDataset():
     def _get_single_batch(self):
         data = pd.DataFrame(self.generate_batch())
         v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences = self.process_sequences(
-            data, corrupt_beginning=True)
+            data, corrupt_beginning=self.corrupt_beginning)
         x = {'tokenized_sequence': padded_sequences, 'tokenized_sequence_for_masking': padded_sequences}
         y = {'v_start': v_start, 'v_end': v_end, 'd_start': d_start, 'd_end': d_end, 'j_start': j_start,
              'j_end': j_end,
