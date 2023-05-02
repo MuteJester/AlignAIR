@@ -109,10 +109,10 @@ class VDeepJAllign(tf.keras.Model):
         self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
 
     def _init_masked_v_signals_encoding_layers(self):
-        self.conv_v_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
-        self.conv_v_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
-        self.conv_v_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
-        self.conv_v_layer_4 = Conv1D_and_BatchNorm(filters=64, kernel=2, max_pool=2)
+        self.conv_v_layer_1 = Conv1D_and_BatchNorm(filters=128, kernel=3, max_pool=2)
+        self.conv_v_layer_2 = Conv1D_and_BatchNorm(filters=256, kernel=3, max_pool=2)
+        self.conv_v_layer_3 = Conv1D_and_BatchNorm(filters=512, kernel=3, max_pool=2)
+        self.conv_v_layer_4 = Conv1D_and_BatchNorm(filters=128, kernel=2, max_pool=2)
 
     def _init_masked_d_signals_encoding_layers(self):
         self.conv_d_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
@@ -187,6 +187,8 @@ class VDeepJAllign(tf.keras.Model):
         self.v_allele_feature_distill = Dense(self.v_family_count + self.v_gene_count + self.v_allele_count,
                                               activation=self.classification_middle_layer_activation,
                                               name='v_gene_allele_distill', kernel_regularizer=regularizers.l2(0.03))
+
+
 
         self.v_gene_call_family_gene_concat = concatenate
         self.v_gene_call_gene_allele_concat = concatenate

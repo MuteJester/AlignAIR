@@ -162,17 +162,42 @@ class Conv2D_and_BatchNorm(tf.keras.layers.Layer):
         return x
 
 
+# class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
+#     def __init__(self, filters=16, kernel=3, max_pool=2, **kwargs):
+#         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
+#         self.conv_2d = Conv1D(filters, kernel, padding='same',
+#                               kernel_regularizer=regularizers.l2(0.01))  # kernel_initializer='he_uniform'
+#         self.batch_norm = BatchNormalization()  # (concatenated_path)
+#         self.activation = LeakyReLU()  # (concatenated_path)
+#         self.max_pool = MaxPool1D(max_pool)  # (concatenated_path)
+#
+#     def call(self, inputs):
+#         x = self.conv_2d(inputs)
+#         x = self.batch_norm(x)
+#         x = self.activation(x)
+#         x = self.max_pool(x)
+#         return x
+
+
 class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
     def __init__(self, filters=16, kernel=3, max_pool=2, **kwargs):
         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
         self.conv_2d = Conv1D(filters, kernel, padding='same',
-                              kernel_regularizer=regularizers.l2(0.01))  # kernel_initializer='he_uniform'
-        self.batch_norm = BatchNormalization()  # (concatenated_path)
-        self.activation = LeakyReLU()  # (concatenated_path)
-        self.max_pool = MaxPool1D(max_pool)  # (concatenated_path)
+                              kernel_regularizer=regularizers.l2(0.01))
+        self.conv_2d_2 = Conv1D(filters, kernel, padding='same',
+                              kernel_regularizer=regularizers.l2(0.01))
+
+        self.conv_2d_3 = Conv1D(filters, kernel, padding='same',
+                                kernel_regularizer=regularizers.l2(0.01))
+
+        self.batch_norm = BatchNormalization()
+        self.activation = LeakyReLU()
+        self.max_pool = MaxPool1D(max_pool)
 
     def call(self, inputs):
         x = self.conv_2d(inputs)
+        x = self.conv_2d_2(x)
+        x = self.conv_2d_3(x)
         x = self.batch_norm(x)
         x = self.activation(x)
         x = self.max_pool(x)

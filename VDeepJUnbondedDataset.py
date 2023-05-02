@@ -43,7 +43,8 @@ def global_genotype():
 
 class VDeepJUnbondedDataset():
     def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False,randomize_rate=False,
-                corrupt_beginning = True):
+                corrupt_beginning = True,corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50
+                 ):
         self.max_sequence_length = max_sequence_length
         self.data_prepper = VDeepJDataPrepper(self.max_sequence_length)
 
@@ -54,6 +55,9 @@ class VDeepJUnbondedDataset():
         self.nucleotide_remove_distribution = st.beta(1, 3)
         self.add_remove_probability = st.bernoulli(0.5)
         self.corrupt_beginning = corrupt_beginning
+        self.corrupt_proba = corrupt_proba
+        self.nucleotide_add_coef = nucleotide_add_coef
+        self.nucleotide_remove_coef = nucleotide_remove_coef
 
         self.tokenizer_dictionary = {
             'A': 1,
@@ -225,7 +229,8 @@ class VDeepJUnbondedDataset():
             iterator = data.itertuples()
 
         for row in iterator:
-            if corrupt_beginning is True:
+            to_corrupt = bool(np.random.binomial(1,self.corrupt_proba))
+            if corrupt_beginning and to_corrupt:
                 seq, was_removed, amount_changed = self._corrupt_sequence_beginning(row.sequence)
             else:
                 seq = row.sequence
@@ -233,7 +238,7 @@ class VDeepJUnbondedDataset():
             padded_array, start, end = self._process_and_dpad(seq, self.max_seq_length)
             padded_sequences.append(padded_array)
 
-            if corrupt_beginning:
+            if corrupt_beginning and to_corrupt:
                 if was_removed:
                     # v is shorter
                     _adjust = start - amount_changed
@@ -425,14 +430,14 @@ class VDeepJUnbondedDataset():
         }
 
     def _sample_nucleotide_add_distribution(self, size):
-        sample = (35 * self.nucleotide_add_distribution.rvs(size=size)).astype(int)
+        sample = (self.nucleotide_add_coef * self.nucleotide_add_distribution.rvs(size=size)).astype(int)
         if len(sample) == 1:
             return sample.item()
         else:
             return sample
 
     def _sample_nucleotide_remove_distribution(self, size):
-        sample = (50 * self.nucleotide_remove_distribution.rvs(size=size)).astype(int)
+        sample = (self.nucleotide_remove_coef * self.nucleotide_remove_distribution.rvs(size=size)).astype(int)
         if len(sample) == 1:
             return sample.item()
         else:
