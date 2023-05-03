@@ -2,7 +2,7 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Attention
 from tensorflow import keras
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Dense, Flatten, concatenate, Input, Embedding, Dropout
+from tensorflow.keras.layers import Dense, Flatten, concatenate, Input, Embedding, Dropout,Lambda
 import tensorflow as tf
 from tensorflow.keras.constraints import unit_norm
 from VDeepJLayers import CutoutLayer, ExtractGeneMask, Conv2D_and_BatchNorm, mod3_mse_regularization, \
@@ -46,6 +46,7 @@ class VDeepJMOracleAllign(tf.keras.Model):
         # Init Mutation Oracle
         self.mutation_oracle = MutationOracleBody(activation='relu',latent_dim = 1024,name='mutation_oracle_body')
         self.mutation_oracle_head = Dense(activation='sigmoid',units=self.max_seq_length,name='mutation_oracle_head')
+        self.mutation_oracle_complement = Lambda(lambda x: 1 - x, name='mutation_oracle_complement')
 
         # Init V/D/J Masked Input Signal Encoding Layers
         self._init_masked_v_signals_encoding_layers()
@@ -335,6 +336,7 @@ class VDeepJMOracleAllign(tf.keras.Model):
         # Step 2.5 Send Embeddings to Mutation Oracle in Parallel
         mutation_oracle_latnet = self.mutation_oracle(concatenated_input_embedding)
         mutation_oracle_head = self.mutation_oracle_head(mutation_oracle_latnet)
+        mutation_oracle_complement = self.mutation_oracle_complement(mutation_oracle_head)
 
         # STEP 3 : Flatten The Feature Derived from the 1D conv layers
         concatenated_signals = last_conv_layer
@@ -361,9 +363,9 @@ class VDeepJMOracleAllign(tf.keras.Model):
             (input_seq_for_masked, j_mask))
 
         # apply attention on masked sequences
-        masked_sequence_v = self.v_mask_attention([masked_sequence_v,mutation_oracle_head])
-        masked_sequence_d = self.d_mask_attention([masked_sequence_d,mutation_oracle_head])
-        masked_sequence_j = self.j_mask_attention([masked_sequence_j,mutation_oracle_head])
+        masked_sequence_v = self.v_mask_attention([masked_sequence_v,mutation_oracle_complement])
+        masked_sequence_d = self.d_mask_attention([masked_sequence_d,mutation_oracle_complement])
+        masked_sequence_j = self.j_mask_attention([masked_sequence_j,mutation_oracle_complement])
 
         # STEP 6: Extract new Feature
         # Create Embeddings from the New 4 Channel Concatenated Signal using an Embeddings Layer - Apply for each Gene
