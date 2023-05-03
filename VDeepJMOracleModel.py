@@ -2,7 +2,7 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Attention
 from tensorflow import keras
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Dense, Flatten, concatenate, Input, Embedding, Dropout,Lambda
+from tensorflow.keras.layers import Dense, Flatten, concatenate, Input, Embedding, Dropout,Lambda,Multiply
 import tensorflow as tf
 from tensorflow.keras.constraints import unit_norm
 from VDeepJLayers import CutoutLayer, ExtractGeneMask, Conv2D_and_BatchNorm, mod3_mse_regularization, \
@@ -76,9 +76,9 @@ class VDeepJMOracleAllign(tf.keras.Model):
         self.d_mask_extractor = ExtractGeneMask1D()
         self.j_mask_extractor = ExtractGeneMask1D()
 
-        self.v_mask_attention = Attention(name='v_mask_mutation_attention')
-        self.d_mask_attention = Attention(name='d_mask_mutation_attention')
-        self.j_mask_attention = Attention(name='j_mask_mutation_attention')
+        self.v_mask_attention = Multiply(name='v_mask_mutation_attention')
+        self.d_mask_attention = Multiply(name='d_mask_mutation_attention')
+        self.j_mask_attention = Multiply(name='j_mask_mutation_attention')
 
 
         #  =========== V HEADS ======================
