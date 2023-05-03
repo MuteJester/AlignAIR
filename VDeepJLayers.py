@@ -218,6 +218,31 @@ class TokenAndPositionEmbedding(tf.keras.layers.Layer):
         return x + positions
 
 
+
+class MutationOracleBody(tf.keras.layers.Layer):
+    def __init__(self,activation='relu',latent_dim = 1024,name='mutation_oracle_body', **kwargs):
+        super(MutationOracleBody, self).__init__(**kwargs)
+
+        self.conv_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
+        self.conv_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
+        self.conv_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
+        self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
+        self.flatten_before_head = Flatten()
+        self.dense_before_head = Dense(latent_dim, activation=activation, name=name)
+        self.dropout_before_head = Dropout(0.3)
+
+    def call(self, inputs):
+        x = self.conv_layer_1(inputs)
+        x = self.conv_layer_2(x)
+        x = self.conv_layer_3(x)
+        x = self.conv_layer_4(x)
+        x = self.flatten_before_head(x)
+        x = self.dense_before_head(x)
+        x = self.dropout_before_head(x)
+        return x
+
+
+
 def mod3_mse_loss(y_true, y_pred):
     y_true_casted = K.cast(y_true, dtype='float32')
     # Compute the residual of the predicted values modulo 3

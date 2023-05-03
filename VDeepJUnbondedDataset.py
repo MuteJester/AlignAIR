@@ -7,7 +7,7 @@ from tqdm.auto import tqdm
 import numpy as np
 from airrship.create_repertoire import generate_sequence,load_data,get_genotype,create_allele_dict
 from collections import defaultdict
-
+import re
 from VDeepJDataPrepper import VDeepJDataPrepper
 
 
@@ -41,9 +41,17 @@ def global_genotype():
     return locus
 
 
+def translate_mutation_output(shm_events,max_seq_length):
+    shm_vec = np.zeros(max_seq_length, dtype=np.uint8)
+    pos = np.array(list(shm_events.keys()),dtype=np.uint8)
+    pos -=1
+    shm_vec[pos] = 1
+    return shm_vec
+
+
 class VDeepJUnbondedDataset():
     def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False,randomize_rate=False,
-                corrupt_beginning = True,corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50
+                corrupt_beginning = True,corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50,mutation_oracle_mode=False
                  ):
         self.max_sequence_length = max_sequence_length
         self.data_prepper = VDeepJDataPrepper(self.max_sequence_length)
@@ -58,7 +66,7 @@ class VDeepJUnbondedDataset():
         self.corrupt_proba = corrupt_proba
         self.nucleotide_add_coef = nucleotide_add_coef
         self.nucleotide_remove_coef = nucleotide_remove_coef
-
+        self.mutation_oracle_mode = mutation_oracle_mode
         self.tokenizer_dictionary = {
             'A': 1,
             'T': 2,
@@ -167,6 +175,8 @@ class VDeepJUnbondedDataset():
                 'd_allele': [],
                 'j_gene': [],
                 'j_allele': []}
+        if self.mutation_oracle_mode:
+            data['mutations'] = []
 
         for _ in range(self.batch_size):
             gen = self.generate_single()
@@ -189,6 +199,9 @@ class VDeepJUnbondedDataset():
             data['d_allele'].append(d_allele)
             data['j_gene'].append(j_gene)
             data['j_allele'].append(j_allele)
+            if self.mutation_oracle_mode:
+                data['mutations'].append(translate_mutation_output(gen.mutations,512))
+
         return data
 
     def _process_and_dpad(self, sequence, train=True):
@@ -344,7 +357,12 @@ class VDeepJUnbondedDataset():
                 return np.vstack(result)
 
     def _get_single_batch(self):
-        data = pd.DataFrame(self.generate_batch())
+
+        batch = self.generate_batch()
+        if self.mutation_oracle_mode:
+            mutations = batch.pop('mutations')
+            mutations = np.vstack(mutations)
+        data = pd.DataFrame(batch)
         v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences = self.process_sequences(
             data, corrupt_beginning=self.corrupt_beginning)
         x = {'tokenized_sequence': padded_sequences, 'tokenized_sequence_for_masking': padded_sequences}
@@ -360,6 +378,9 @@ class VDeepJUnbondedDataset():
              'j_allele': self.get_ohe('J', 'allele', data.j_allele),
 
              }
+
+        if self.mutation_oracle_mode:
+            y['mutations'] =  mutations
         return x, y
 
     def _get_tf_dataset_params(self):
