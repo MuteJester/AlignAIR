@@ -162,17 +162,42 @@ class Conv2D_and_BatchNorm(tf.keras.layers.Layer):
         return x
 
 
+# class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
+#     def __init__(self, filters=16, kernel=3, max_pool=2, **kwargs):
+#         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
+#         self.conv_2d = Conv1D(filters, kernel, padding='same',
+#                               kernel_regularizer=regularizers.l2(0.01))  # kernel_initializer='he_uniform'
+#         self.batch_norm = BatchNormalization()  # (concatenated_path)
+#         self.activation = LeakyReLU()  # (concatenated_path)
+#         self.max_pool = MaxPool1D(max_pool)  # (concatenated_path)
+#
+#     def call(self, inputs):
+#         x = self.conv_2d(inputs)
+#         x = self.batch_norm(x)
+#         x = self.activation(x)
+#         x = self.max_pool(x)
+#         return x
+
+
 class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
     def __init__(self, filters=16, kernel=3, max_pool=2, **kwargs):
         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
         self.conv_2d = Conv1D(filters, kernel, padding='same',
-                              kernel_regularizer=regularizers.l2(0.01))  # kernel_initializer='he_uniform'
-        self.batch_norm = BatchNormalization()  # (concatenated_path)
-        self.activation = LeakyReLU()  # (concatenated_path)
-        self.max_pool = MaxPool1D(max_pool)  # (concatenated_path)
+                              kernel_regularizer=regularizers.l2(0.01))
+        self.conv_2d_2 = Conv1D(filters, kernel, padding='same',
+                              kernel_regularizer=regularizers.l2(0.01))
+
+        self.conv_2d_3 = Conv1D(filters, kernel, padding='same',
+                                kernel_regularizer=regularizers.l2(0.01))
+
+        self.batch_norm = BatchNormalization()
+        self.activation = LeakyReLU()
+        self.max_pool = MaxPool1D(max_pool)
 
     def call(self, inputs):
         x = self.conv_2d(inputs)
+        x = self.conv_2d_2(x)
+        x = self.conv_2d_3(x)
         x = self.batch_norm(x)
         x = self.activation(x)
         x = self.max_pool(x)
@@ -191,6 +216,31 @@ class TokenAndPositionEmbedding(tf.keras.layers.Layer):
         positions = self.pos_emb(positions)
         x = self.token_emb(x)
         return x + positions
+
+
+
+class MutationOracleBody(tf.keras.layers.Layer):
+    def __init__(self,activation='relu',latent_dim = 1024,name='mutation_oracle_body', **kwargs):
+        super(MutationOracleBody, self).__init__(**kwargs)
+
+        self.conv_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
+        self.conv_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
+        self.conv_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
+        self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
+        self.flatten_before_head = Flatten()
+        self.dense_before_head = Dense(latent_dim, activation=activation, name=name)
+        self.dropout_before_head = Dropout(0.3)
+
+    def call(self, inputs):
+        x = self.conv_layer_1(inputs)
+        x = self.conv_layer_2(x)
+        x = self.conv_layer_3(x)
+        x = self.conv_layer_4(x)
+        x = self.flatten_before_head(x)
+        x = self.dense_before_head(x)
+        x = self.dropout_before_head(x)
+        return x
+
 
 
 def mod3_mse_loss(y_true, y_pred):

@@ -7,7 +7,7 @@ from tqdm.auto import tqdm
 import numpy as np
 from airrship.create_repertoire import generate_sequence,load_data,get_genotype,create_allele_dict
 from collections import defaultdict
-
+import re
 from VDeepJDataPrepper import VDeepJDataPrepper
 
 
@@ -41,8 +41,18 @@ def global_genotype():
     return locus
 
 
+def translate_mutation_output(shm_events,max_seq_length):
+    shm_vec = np.zeros(max_seq_length, dtype=np.uint8)
+    pos = np.array(list(shm_events.keys()),dtype=np.uint8)
+    pos -=1
+    shm_vec[pos] = 1
+    return shm_vec
+
+
 class VDeepJUnbondedDataset():
-    def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False):
+    def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False,randomize_rate=False,
+                corrupt_beginning = True,corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50,mutation_oracle_mode=False
+                 ):
         self.max_sequence_length = max_sequence_length
         self.data_prepper = VDeepJDataPrepper(self.max_sequence_length)
 
@@ -52,7 +62,11 @@ class VDeepJUnbondedDataset():
         self.nucleotide_add_distribution = st.beta(1, 3)
         self.nucleotide_remove_distribution = st.beta(1, 3)
         self.add_remove_probability = st.bernoulli(0.5)
-
+        self.corrupt_beginning = corrupt_beginning
+        self.corrupt_proba = corrupt_proba
+        self.nucleotide_add_coef = nucleotide_add_coef
+        self.nucleotide_remove_coef = nucleotide_remove_coef
+        self.mutation_oracle_mode = mutation_oracle_mode
         self.tokenizer_dictionary = {
             'A': 1,
             'T': 2,
@@ -64,6 +78,7 @@ class VDeepJUnbondedDataset():
 
         self.mutate = True
         self.flat_vdj = True
+        self.randomize_rate = randomize_rate
         self.no_trim_args = False
         self.mutation_rate = mutation_rate
         self.batch_size = batch_size
@@ -74,8 +89,13 @@ class VDeepJUnbondedDataset():
         self.derive_call_one_hot_representation()
 
     def generate_single(self):
-        return generate_sequence(self.locus, self.data_dict, mutate=self.mutate, mutation_rate=self.mutation_rate,
-                                 shm_flat=self.shm_flat, flat_usage='gene')
+        if self.randomize_rate:
+            return generate_sequence(self.locus, self.data_dict, mutate=self.mutate,
+                                     mutation_rate=np.random.uniform(0,self.mutation_rate,1).item(),
+                                     shm_flat=self.shm_flat, flat_usage='gene')
+        else:
+            return generate_sequence(self.locus, self.data_dict, mutate=self.mutate, mutation_rate=self.mutation_rate,
+                                     shm_flat=self.shm_flat, flat_usage='gene')
 
     def derive_counts(self):
 
@@ -155,6 +175,8 @@ class VDeepJUnbondedDataset():
                 'd_allele': [],
                 'j_gene': [],
                 'j_allele': []}
+        if self.mutation_oracle_mode:
+            data['mutations'] = []
 
         for _ in range(self.batch_size):
             gen = self.generate_single()
@@ -177,6 +199,9 @@ class VDeepJUnbondedDataset():
             data['d_allele'].append(d_allele)
             data['j_gene'].append(j_gene)
             data['j_allele'].append(j_allele)
+            if self.mutation_oracle_mode:
+                data['mutations'].append(translate_mutation_output(gen.mutations,512))
+
         return data
 
     def _process_and_dpad(self, sequence, train=True):
@@ -217,7 +242,8 @@ class VDeepJUnbondedDataset():
             iterator = data.itertuples()
 
         for row in iterator:
-            if corrupt_beginning is True:
+            to_corrupt = bool(np.random.binomial(1,self.corrupt_proba))
+            if corrupt_beginning and to_corrupt:
                 seq, was_removed, amount_changed = self._corrupt_sequence_beginning(row.sequence)
             else:
                 seq = row.sequence
@@ -225,7 +251,7 @@ class VDeepJUnbondedDataset():
             padded_array, start, end = self._process_and_dpad(seq, self.max_seq_length)
             padded_sequences.append(padded_array)
 
-            if corrupt_beginning:
+            if corrupt_beginning and to_corrupt:
                 if was_removed:
                     # v is shorter
                     _adjust = start - amount_changed
@@ -331,9 +357,14 @@ class VDeepJUnbondedDataset():
                 return np.vstack(result)
 
     def _get_single_batch(self):
-        data = pd.DataFrame(self.generate_batch())
+
+        batch = self.generate_batch()
+        if self.mutation_oracle_mode:
+            mutations = batch.pop('mutations')
+            mutations = np.vstack(mutations)
+        data = pd.DataFrame(batch)
         v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences = self.process_sequences(
-            data, corrupt_beginning=True)
+            data, corrupt_beginning=self.corrupt_beginning)
         x = {'tokenized_sequence': padded_sequences, 'tokenized_sequence_for_masking': padded_sequences}
         y = {'v_start': v_start, 'v_end': v_end, 'd_start': d_start, 'd_end': d_end, 'j_start': j_start,
              'j_end': j_end,
@@ -347,6 +378,9 @@ class VDeepJUnbondedDataset():
              'j_allele': self.get_ohe('J', 'allele', data.j_allele),
 
              }
+
+        if self.mutation_oracle_mode:
+            y['mutations'] =  mutations
         return x, y
 
     def _get_tf_dataset_params(self):
@@ -417,14 +451,14 @@ class VDeepJUnbondedDataset():
         }
 
     def _sample_nucleotide_add_distribution(self, size):
-        sample = (35 * self.nucleotide_add_distribution.rvs(size=size)).astype(int)
+        sample = (self.nucleotide_add_coef * self.nucleotide_add_distribution.rvs(size=size)).astype(int)
         if len(sample) == 1:
             return sample.item()
         else:
             return sample
 
     def _sample_nucleotide_remove_distribution(self, size):
-        sample = (50 * self.nucleotide_remove_distribution.rvs(size=size)).astype(int)
+        sample = (self.nucleotide_remove_coef * self.nucleotide_remove_distribution.rvs(size=size)).astype(int)
         if len(sample) == 1:
             return sample.item()
         else:
