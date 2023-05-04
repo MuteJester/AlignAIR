@@ -520,7 +520,7 @@ class VDeepJDataPrepper:
             v_dict = dict()
             for i in v_calls:
                 fam, gene, allele = re.findall(
-                    r"IGHV[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*", i
+                    r"IGHV[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z_]*", i
                 )
                 v_dict[i] = {"family": fam, "gene": gene, "allele": allele}
         if d_calls is not None:
