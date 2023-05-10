@@ -83,17 +83,17 @@ class VDeepJDataset:
         ) = self.data_prepper.convert_calls_to_one_hot(self.j_gene, self.j_allele)
 
         self.label_num_sub_classes_dict = {
-            "v": {
+            "V": {
                 "family": self.v_family_label_dict,
                 "gene": self.v_gene_label_dict,
                 "allele": self.v_allele_label_dict,
             },
-            "d": {
+            "D": {
                 "family": self.d_family_label_dict,
                 "gene": self.d_gene_label_dict,
                 "allele": self.d_allele_label_dict,
             },
-            "j": {
+            "J": {
                 "gene": self.j_gene_label_dict,
                 "allele": self.j_allele_label_dict,
             },
@@ -174,9 +174,7 @@ class VDeepJDataset:
         return vector
 
     def derive_sub_classes_dict(self):
-        self.label_name_sub_classes_dict = self.data_prepper.create_sub_classes_dict(
-            self.v_dict, self.d_dict, self.j_dict
-        )
+        self.label_name_sub_classes_dict = self.data_prepper.load_sub_classes_dict()
 
         self.ohe_sub_classes_dict = {
             "v": {"family": {}, "gene": {}},
@@ -193,9 +191,9 @@ class VDeepJDataset:
             "j_gene_count": self.j_gene_count,
             "j_allele_count": self.j_allele_count,
         }
-        for v_d_or_j in ["v", "d", "j"]:
+        for v_d_or_j in ["V", "D", "J"]:
             # Calculate the masked gene vectors for families
-            if v_d_or_j in ["v", "d"]:
+            if v_d_or_j in ["V", "D"]:
                 for fam in self.label_name_sub_classes_dict[v_d_or_j].keys():
                     label_num = self.label_num_sub_classes_dict[v_d_or_j]["family"][fam]
                     wanted_keys = list(
@@ -270,85 +268,85 @@ class VDeepJDataset:
                         )
 
         ### Just for assertion, can be removed later ###
-        v_family_keys = list(self.ohe_sub_classes_dict["v"]["family"].keys())
+        v_family_keys = list(self.ohe_sub_classes_dict["V"]["family"].keys())
         v_family_keys.sort()
         assert v_family_keys == list(range(self.v_family_count))
 
-        v_gene_keys = list(self.ohe_sub_classes_dict["v"]["gene"].keys())
+        v_gene_keys = list(self.ohe_sub_classes_dict["V"]["gene"].keys())
         v_gene_keys.sort()
         assert v_gene_keys == list(range(self.v_family_count))
 
-        d_family_keys = list(self.ohe_sub_classes_dict["d"]["family"].keys())
+        d_family_keys = list(self.ohe_sub_classes_dict["D"]["family"].keys())
         d_family_keys.sort()
         assert d_family_keys == list(range(self.d_family_count))
 
-        d_gene_keys = list(self.ohe_sub_classes_dict["d"]["gene"].keys())
+        d_gene_keys = list(self.ohe_sub_classes_dict["D"]["gene"].keys())
         d_gene_keys.sort()
         assert d_gene_keys == list(range(self.d_family_count))
 
-        j_gene_keys = list(self.ohe_sub_classes_dict["j"]["gene"].keys())
+        j_gene_keys = list(self.ohe_sub_classes_dict["J"]["gene"].keys())
         j_gene_keys.sort()
         assert j_gene_keys == list(range(self.j_gene_count))
         ###
 
         # Stack all vectors (by index order) for useful indexing
         # V
-        self.ohe_sub_classes_dict["v"]["family"] = np.stack(
+        self.ohe_sub_classes_dict["V"]["family"] = np.stack(
             [
-                self.ohe_sub_classes_dict["v"]["family"][i]
+                self.ohe_sub_classes_dict["V"]["family"][i]
                 for i in list(range(self.v_family_count))
             ]
         )
-        self.ohe_sub_classes_dict["v"]["family"] = tf.convert_to_tensor(
-            self.ohe_sub_classes_dict["v"]["family"], dtype=tf.float32
+        self.ohe_sub_classes_dict["V"]["family"] = tf.convert_to_tensor(
+            self.ohe_sub_classes_dict["V"]["family"], dtype=tf.float32
         )
 
         tmp_tensor = np.zeros(
             (self.v_family_count, self.v_gene_count, self.v_allele_count)
         )
-        for fam_label_num in self.ohe_sub_classes_dict["v"]["gene"].keys():
-            for gene_label_num in self.ohe_sub_classes_dict["v"]["gene"][
+        for fam_label_num in self.ohe_sub_classes_dict["V"]["gene"].keys():
+            for gene_label_num in self.ohe_sub_classes_dict["V"]["gene"][
                 fam_label_num
             ].keys():
                 tmp_tensor[fam_label_num, gene_label_num] = self.ohe_sub_classes_dict[
-                    "v"
+                    "V"
                 ]["gene"][fam_label_num][gene_label_num]
         tmp_tensor = tf.convert_to_tensor(tmp_tensor, dtype=tf.float32)
-        self.ohe_sub_classes_dict["v"]["gene"] = tmp_tensor
+        self.ohe_sub_classes_dict["V"]["gene"] = tmp_tensor
 
         # D
-        self.ohe_sub_classes_dict["d"]["family"] = np.stack(
+        self.ohe_sub_classes_dict["D"]["family"] = np.stack(
             [
-                self.ohe_sub_classes_dict["d"]["family"][i]
+                self.ohe_sub_classes_dict["D"]["family"][i]
                 for i in list(range(self.d_family_count))
             ]
         )
-        self.ohe_sub_classes_dict["d"]["family"] = tf.convert_to_tensor(
-            self.ohe_sub_classes_dict["d"]["family"], dtype=tf.float32
+        self.ohe_sub_classes_dict["D"]["family"] = tf.convert_to_tensor(
+            self.ohe_sub_classes_dict["D"]["family"], dtype=tf.float32
         )
 
         tmp_tensor = np.zeros(
             (self.d_family_count, self.d_gene_count, self.d_allele_count)
         )
-        for fam_label_num in self.ohe_sub_classes_dict["d"]["gene"].keys():
-            for gene_label_num in self.ohe_sub_classes_dict["d"]["gene"][
+        for fam_label_num in self.ohe_sub_classes_dict["D"]["gene"].keys():
+            for gene_label_num in self.ohe_sub_classes_dict["D"]["gene"][
                 fam_label_num
             ].keys():
                 tmp_tensor[fam_label_num, gene_label_num] = self.ohe_sub_classes_dict[
-                    "d"
+                    "D"
                 ]["gene"][fam_label_num][gene_label_num]
         tmp_tensor = tf.convert_to_tensor(tmp_tensor, dtype=tf.float32)
-        self.ohe_sub_classes_dict["d"]["gene"] = tmp_tensor
+        self.ohe_sub_classes_dict["D"]["gene"] = tmp_tensor
 
         # J
-        self.ohe_sub_classes_dict["j"]["gene"] = np.stack(
+        self.ohe_sub_classes_dict["J"]["gene"] = np.stack(
             [
-                self.ohe_sub_classes_dict["j"]["gene"][i]
+                self.ohe_sub_classes_dict["J"]["gene"][i]
                 for i in list(range(self.j_gene_count))
             ]
         )
-        self.ohe_sub_classes_dict["j"]["gene"] = tf.convert_to_tensor(
-            self.ohe_sub_classes_dict["j"]["gene"], dtype=tf.float32
+        self.ohe_sub_classes_dict["J"]["gene"] = tf.convert_to_tensor(
+            self.ohe_sub_classes_dict["J"]["gene"], dtype=tf.float32
         )
 
     def __len__(self):

@@ -13,20 +13,20 @@ from VDeepJModel import VDeepJAllign
 # Step 1: Create VDeepJ Dataset
 max_seq_length = 512
 # train_path = "/home/bcrlab/eisenbr2/old_vdj_nlp/vdj_nlp/airrship_data/train/airrship_01_train.tsv"
-# train_path = (
-#     "/home/bcrlab/eisenbr2/old_vdj_nlp/vdj_nlp/airrship_data/val/airrship_01_val.tsv"
-# )
-# val_path = (
-#     "/home/bcrlab/eisenbr2/old_vdj_nlp/vdj_nlp/airrship_data/val/airrship_01_val.tsv"
-# )
+train_path = (
+    "/home/bcrlab/eisenbr2/old_vdj_nlp/vdj_nlp/airrship_data/val/airrship_01_val.tsv"
+)
+val_path = (
+    "/home/bcrlab/eisenbr2/old_vdj_nlp/vdj_nlp/airrship_data/val/airrship_01_val.tsv"
+)
 
-train_path = "/localdata/alignairr_data/10M/sim_data_10M_asc.tsv"
-val_path = "/localdata/alignairr_data/1M/sim_data_1M_asc.tsv"
+# train_path = "/localdata/alignairr_data/10M/sim_data_10M_asc.tsv"
+# val_path = "/localdata/alignairr_data/1M/sim_data_1M_asc.tsv"
 
 batch_size = 64
 train_mode = 1
 eval_mode = 0
-epochs = 3
+epochs = 1
 
 
 train_vdeepJ_Dataset = VDeepJDataset(train_path, max_seq_length)

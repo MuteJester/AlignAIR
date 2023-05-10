@@ -61,7 +61,11 @@ class VDeepJAllign(tf.keras.Model):
         )
         self.j_gene_count, self.j_allele_count = j_gene_count, j_allele_count
         self.v_class_weight, self.d_class_weight, self.j_class_weight = 0.5, 0.5, 0.5
-        self.regression_weight, self.classification_weight, self.intersection_weight = 0.5, 0.5, 0.5
+        self.regression_weight, self.classification_weight, self.intersection_weight = (
+            0.5,
+            0.5,
+            0.5,
+        )
 
         self.ohe_sub_classes_dict = ohe_sub_classes_dict
 
@@ -251,10 +255,12 @@ class VDeepJAllign(tf.keras.Model):
         self.d_gene_call_gene_allele_concat = concatenate
 
     def _init_v_classification_layers(self):
-
-        self.v_family_call_middle = Dense(self.v_family_count * self.latent_size_factor,
-                                          activation=self.classification_middle_layer_activation,
-                                          name='v_family_middle', kernel_regularizer=regularizers.l2(0.03))
+        self.v_family_call_middle = Dense(
+            self.v_family_count * self.latent_size_factor,
+            activation=self.classification_middle_layer_activation,
+            name="v_family_middle",
+            kernel_regularizer=regularizers.l2(0.03),
+        )
 
         self.v_family_call_head = Dense(
             self.v_family_count, activation="softmax", name="v_family"
@@ -262,23 +268,33 @@ class VDeepJAllign(tf.keras.Model):
 
         self.v_family_dropout = Dropout(0.2)
 
-        self.v_gene_call_middle = Dense(self.v_gene_count * self.latent_size_factor,
-                                        activation=self.classification_middle_layer_activation,
-                                        name='v_gene_middle', kernel_regularizer=regularizers.l2(0.03))
-        self.v_gene_call_head = Dense(self.v_gene_count, activation='softmax', name='v_gene')  # (v_feature_map)
+        self.v_gene_call_middle = Dense(
+            self.v_gene_count * self.latent_size_factor,
+            activation=self.classification_middle_layer_activation,
+            name="v_gene_middle",
+            kernel_regularizer=regularizers.l2(0.03),
+        )
+        self.v_gene_call_head = Dense(
+            self.v_gene_count, activation="softmax", name="v_gene"
+        )  # (v_feature_map)
         self.v_gene_dropout = Dropout(0.2)
 
-        self.v_allele_call_middle = Dense(self.v_allele_count * self.latent_size_factor,
-                                          activation=self.classification_middle_layer_activation,
-                                          name='v_allele_middle', kernel_regularizer=regularizers.l2(0.03))
-        self.v_allele_call_head = Dense(self.v_allele_count, activation='softmax',
-                                        name='v_allele')  # (v_feature_map)
+        self.v_allele_call_middle = Dense(
+            self.v_allele_count * self.latent_size_factor,
+            activation=self.classification_middle_layer_activation,
+            name="v_allele_middle",
+            kernel_regularizer=regularizers.l2(0.03),
+        )
+        self.v_allele_call_head = Dense(
+            self.v_allele_count, activation="softmax", name="v_allele"
+        )  # (v_feature_map)
         self.v_allele_dropout = Dropout(0.2)
-        self.v_allele_feature_distill = Dense(self.v_family_count + self.v_gene_count + self.v_allele_count,
-                                              activation=self.classification_middle_layer_activation,
-                                              name='v_gene_allele_distill', kernel_regularizer=regularizers.l2(0.03))
-
-
+        self.v_allele_feature_distill = Dense(
+            self.v_family_count + self.v_gene_count + self.v_allele_count,
+            activation=self.classification_middle_layer_activation,
+            name="v_gene_allele_distill",
+            kernel_regularizer=regularizers.l2(0.03),
+        )
 
         self.v_gene_call_family_gene_concat = concatenate
         self.v_gene_call_gene_allele_concat = concatenate
@@ -361,37 +377,41 @@ class VDeepJAllign(tf.keras.Model):
 
         v_family_class = tf.math.argmax(v_family, 1)
         v_gene_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["v"]["family"], v_family_class, axis=0
+            self.ohe_sub_classes_dict["V"]["family"], v_family_class, axis=0
         )
 
         v_gene_middle = self.v_gene_call_middle(v_feature_map)
-        v_gene_middle = self.v_gene_call_family_gene_concat([v_gene_middle, v_family_middle])
+        v_gene_middle = self.v_gene_call_family_gene_concat(
+            [v_gene_middle, v_family_middle]
+        )
         v_gene_middle = self.v_gene_dropout(v_gene_middle)
         v_gene = self.v_gene_call_head(v_gene_middle)
-        # v_gene = tf.multiply(v_gene_classes_masks, v_gene)
+        v_gene = tf.multiply(v_gene_classes_masks, v_gene)
 
         # Add advance indexing
         v_gene_class = tf.math.argmax(v_gene, 1)
         v_allele_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["v"]["gene"], v_family_class, axis=0
+            self.ohe_sub_classes_dict["V"]["gene"], v_family_class, axis=0
         )
         v_allele_classes_masks = tf.gather(
             v_allele_classes_masks, v_gene_class, axis=1, batch_dims=1
         )
 
         v_allele_middle = self.v_allele_call_middle(v_feature_map)
-        v_allele_middle = self.v_gene_call_gene_allele_concat([v_family_middle, v_gene_middle, v_allele_middle])
+        v_allele_middle = self.v_gene_call_gene_allele_concat(
+            [v_family_middle, v_gene_middle, v_allele_middle]
+        )
         v_allele_middle = self.v_allele_dropout(v_allele_middle)
         v_allele_middle = self.v_allele_feature_distill(v_allele_middle)
         v_allele = self.v_allele_call_head(v_allele_middle)
-        # v_allele = tf.multiply(v_allele_classes_masks, v_allele)
+        v_allele = tf.multiply(v_allele_classes_masks, v_allele)
         # ============================ D =============================
         d_family_middle = self.d_family_call_middle(d_feature_map)
         d_family = self.d_family_call_head(d_family_middle)
 
         d_family_class = tf.math.argmax(d_family, 1)
         d_gene_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["d"]["family"], d_family_class, axis=0
+            self.ohe_sub_classes_dict["D"]["family"], d_family_class, axis=0
         )
 
         d_gene_middle = self.d_gene_call_middle(d_feature_map)
@@ -399,12 +419,12 @@ class VDeepJAllign(tf.keras.Model):
             [d_gene_middle, d_family_middle]
         )
         d_gene = self.d_gene_call_head(d_gene_middle)
-        # d_gene = tf.multiply(d_gene_classes_masks, d_gene)
+        d_gene = tf.multiply(d_gene_classes_masks, d_gene)
 
         # Add advance indexing
         d_gene_class = tf.math.argmax(d_gene, 1)
         d_allele_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["d"]["gene"], d_family_class, axis=0
+            self.ohe_sub_classes_dict["D"]["gene"], d_family_class, axis=0
         )
         d_allele_classes_masks = tf.gather(
             d_allele_classes_masks, d_gene_class, axis=1, batch_dims=1
@@ -415,14 +435,14 @@ class VDeepJAllign(tf.keras.Model):
             [d_allele_middle, d_gene_middle]
         )
         d_allele = self.d_allele_call_head(d_allele_middle)
-        # d_allele = tf.multiply(d_allele_classes_masks, d_allele)
+        d_allele = tf.multiply(d_allele_classes_masks, d_allele)
         # ============================ J =============================
         j_gene_middle = self.j_gene_call_middle(j_feature_map)
         j_gene = self.j_gene_call_head(j_gene_middle)
 
         j_gene_class = tf.math.argmax(j_gene, 1)
         j_allele_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["j"]["gene"], j_gene_class, axis=0
+            self.ohe_sub_classes_dict["J"]["gene"], j_gene_class, axis=0
         )
 
         j_allele_middle = self.j_allele_call_middle(j_feature_map)
@@ -430,7 +450,7 @@ class VDeepJAllign(tf.keras.Model):
             [j_allele_middle, j_gene_middle]
         )
         j_allele = self.j_allele_call_head(j_allele_middle)
-        # j_allele = tf.multiply(j_allele_classes_masks, j_allele)
+        j_allele = tf.multiply(j_allele_classes_masks, j_allele)
 
         return v_family, v_gene, v_allele, d_family, d_gene, d_allele, j_gene, j_allele
 
@@ -463,7 +483,8 @@ class VDeepJAllign(tf.keras.Model):
         input_seq = self.reshape_and_cast_input(inputs["tokenized_sequence"])
         concatenated_input_embedding = self.concatenated_input_embedding(input_seq)
         concatenated_input_embedding = self.initial_embedding_attention(
-            [concatenated_input_embedding, concatenated_input_embedding])
+            [concatenated_input_embedding, concatenated_input_embedding]
+        )
 
         # STEP 2: Run Embedded sequence through 1D convolution to distill temporal features
         conv_layer_1 = self.conv_layer_1(concatenated_input_embedding)
@@ -477,7 +498,9 @@ class VDeepJAllign(tf.keras.Model):
         concatenated_signals = self.initial_feature_map_dropout(concatenated_signals)
 
         # STEP 4 : Predict The Intervals That Contain The V,D and J Genes using (V_start,V_end,D_Start,D_End,J_Start,J_End)
-        v_start, v_end, d_start, d_end, j_start, j_end = self._predict_intervals(concatenated_signals)
+        v_start, v_end, d_start, d_end, j_start, j_end = self._predict_intervals(
+            concatenated_signals
+        )
 
         # STEP 5: Use predicted masks to create a binary vector with the appropriate intervals to  "cutout" the relevant V,D and J section from the input
         v_mask = self.v_call_mask([v_start, v_end])
@@ -661,13 +684,19 @@ class VDeepJAllign(tf.keras.Model):
             tf.squeeze(classification_pred[7]),
         )
 
-        classification_loss = self.v_class_weight * clf_v_loss + self.d_class_weight * clf_d_loss + self.j_class_weight * clf_j_loss
+        classification_loss = (
+            self.v_class_weight * clf_v_loss
+            + self.d_class_weight * clf_d_loss
+            + self.j_class_weight * clf_j_loss
+        )
 
         # ========================================================================================================================
 
         # Combine the two losses using a weighted sum
-        total_loss = ((self.regression_weight * mse_loss) + (
-                self.intersection_weight * total_intersection_loss)) + self.classification_weight * classification_loss
+        total_loss = (
+            (self.regression_weight * mse_loss)
+            + (self.intersection_weight * total_intersection_loss)
+        ) + self.classification_weight * classification_loss
 
         return total_loss, total_intersection_loss, mse_loss, classification_loss
 
@@ -741,7 +770,7 @@ class VDeepJAllign(tf.keras.Model):
             self.v_gene_call_head,
             self.v_allele_call_middle,
             self.v_allele_feature_distill,
-            self.v_allele_call_head
+            self.v_allele_call_head,
         ]:
             layer.trainable = False
 
@@ -752,16 +781,16 @@ class VDeepJAllign(tf.keras.Model):
             self.d_gene_call_middle,
             self.d_gene_call_head,
             self.d_allele_call_middle,
-            self.d_allele_call_head
+            self.d_allele_call_head,
         ]:
             layer.trainable = False
 
     def _freeze_j_classifier_component(self):
         for layer in [
-        self.j_gene_call_middle,
-        self.j_gene_call_head,
-        self.j_allele_call_middle,
-        self.j_allele_call_head
+            self.j_gene_call_middle,
+            self.j_gene_call_head,
+            self.j_allele_call_middle,
+            self.j_allele_call_head,
         ]:
             layer.trainable = False
 

@@ -6,6 +6,7 @@ import pandas as pd
 import scipy.stats as st
 from tqdm.auto import tqdm
 import tensorflow as tf
+import json
 
 
 class VDeepJDataPrepper:
@@ -540,35 +541,9 @@ class VDeepJDataPrepper:
 
         return v_dict, d_dict, j_dict
 
-    def create_sub_classes_dict(self, v_dict, d_dict, j_dict):
-        def nested_get_sub_callses(d, v_d_or_j):
-            sub_cllases = {}
-            # V or D
-            if v_d_or_j in ["v", "d"]:
-                for call in d.values():
-                    fam, gene, allele = call["family"], call["gene"], call["allele"]
-                    if fam not in sub_cllases.keys():
-                        sub_cllases[fam] = {}
-                        sub_cllases[fam][gene] = {allele: allele}
-                    else:
-                        if gene not in sub_cllases[fam].keys():
-                            sub_cllases[fam][gene] = {allele: allele}
-                        else:
-                            sub_cllases[fam][gene][allele] = allele
-            # J
-            elif v_d_or_j == "j":
-                for call in d.values():
-                    gene, allele = call["gene"], call["allele"]
-                    if gene not in sub_cllases.keys():
-                        sub_cllases[gene] = {allele: allele}
-                    else:
-                        sub_cllases[gene][allele] = allele
-            return sub_cllases
-
-        sub_cllases_v = nested_get_sub_callses(v_dict, "v")
-        sub_cllases_d = nested_get_sub_callses(d_dict, "d")
-        sub_cllases_j = nested_get_sub_callses(j_dict, "j")
-
-        sub_cllases = {"v": sub_cllases_v, "d": sub_cllases_d, "j": sub_cllases_j}
+    def load_sub_classes_dict(self):
+        # Load the dictionary from file
+        with open("airrship/data/sub_cllases.json", "r") as f:
+            sub_cllases = json.load(f)
 
         return sub_cllases
