@@ -5,28 +5,28 @@ import tensorflow as tf
 import pandas as pd
 from tqdm.auto import tqdm
 import numpy as np
-from airrship.create_repertoire import (
-    generate_sequence,
-    load_data,
-    get_genotype,
-    create_allele_dict,
-)
+from airrship.create_repertoire import generate_sequence,load_data,get_genotype,create_allele_dict
 from collections import defaultdict
 import re
-from VDeepJDataPrepper import VDeepJDataPrepper
 
 
 def global_genotype():
     try:
-        path_to_data = importlib.resources.files("airrship").joinpath("data")
+        path_to_data = importlib.resources.files(
+            'airrship').joinpath("data")
     except AttributeError:
-        with importlib.resources.path("airrship", "data") as p:
+        with importlib.resources.path('airrship', 'data') as p:
             path_to_data = p
-    v_alleles = create_allele_dict(f"{path_to_data}/imgt_human_IGHV.fasta")
-    d_alleles = create_allele_dict(f"{path_to_data}/imgt_human_IGHD.fasta")
-    j_alleles = create_allele_dict(f"{path_to_data}/imgt_human_IGHJ.fasta")
+    v_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHV.fasta")
+    d_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHD.fasta")
+    j_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHJ.fasta")
 
-    vdj_allele_dicts = {"V": v_alleles, "D": d_alleles, "J": j_alleles}
+    vdj_allele_dicts = {"V": v_alleles,
+                        "D": d_alleles,
+                        "J": j_alleles}
 
     chromosome1, chromosome2 = defaultdict(list), defaultdict(list)
     for segment in ["V", "D", "J"]:
@@ -40,30 +40,19 @@ def global_genotype():
     return locus
 
 
-def translate_mutation_output(shm_events, max_seq_length):
+def translate_mutation_output(shm_events,max_seq_length):
     shm_vec = np.zeros(max_seq_length, dtype=np.uint8)
-    pos = np.array(list(shm_events.keys()), dtype=np.uint8)
-    pos -= 1
+    pos = np.array(list(shm_events.keys()),dtype=np.uint8)
+    pos -=1
     shm_vec[pos] = 1
     return shm_vec
 
 
-class VDeepJUnbondedDataset:
-    def __init__(
-        self,
-        batch_size=64,
-        max_sequence_length=512,
-        mutation_rate=0.08,
-        shm_flat=False,
-        randomize_rate=False,
-        corrupt_beginning=True,
-        corrupt_proba=1,
-        nucleotide_add_coef=35,
-        nucleotide_remove_coef=50,
-        mutation_oracle_mode=False,
-    ):
+class VDeepJUnbondedDataset():
+    def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False,randomize_rate=False,
+                corrupt_beginning = True,corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50,mutation_oracle_mode=False
+                 ):
         self.max_sequence_length = max_sequence_length
-        self.data_prepper = VDeepJDataPrepper(self.max_sequence_length)
 
         self.data_dict = load_data()
         self.locus = global_genotype()
@@ -100,23 +89,12 @@ class VDeepJUnbondedDataset:
 
     def generate_single(self):
         if self.randomize_rate:
-            return generate_sequence(
-                self.locus,
-                self.data_dict,
-                mutate=self.mutate,
-                mutation_rate=np.random.uniform(0, self.mutation_rate, 1).item(),
-                shm_flat=self.shm_flat,
-                flat_usage="gene",
-            )
+            return generate_sequence(self.locus, self.data_dict, mutate=self.mutate,
+                                     mutation_rate=np.random.uniform(0,self.mutation_rate,1).item(),
+                                     shm_flat=self.shm_flat, flat_usage='gene')
         else:
-            return generate_sequence(
-                self.locus,
-                self.data_dict,
-                mutate=self.mutate,
-                mutation_rate=self.mutation_rate,
-                shm_flat=self.shm_flat,
-                flat_usage="gene",
-            )
+            return generate_sequence(self.locus, self.data_dict, mutate=self.mutate, mutation_rate=self.mutation_rate,
+                                     shm_flat=self.shm_flat, flat_usage='gene')
 
     def derive_counts(self):
         self.v_family_count = len(set([self.v_dict[i]["family"] for i in self.v_dict]))

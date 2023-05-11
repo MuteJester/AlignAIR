@@ -2,7 +2,7 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Attention
 from tensorflow import keras
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Dense, Flatten, concatenate, Input, Embedding, Dropout,Lambda,Multiply
+from tensorflow.keras.layers import Dense, Flatten, concatenate, Input, Embedding, Dropout,Lambda,Multiply,LeakyReLU
 import tensorflow as tf
 from tensorflow.keras.constraints import unit_norm
 from VDeepJLayers import CutoutLayer, ExtractGeneMask, Conv2D_and_BatchNorm, mod3_mse_regularization, \
@@ -44,7 +44,8 @@ class VDeepJMOracleAllign(tf.keras.Model):
         self.initial_embedding_attention = Attention()
 
         # Init Mutation Oracle
-        self.mutation_oracle = MutationOracleBody(activation='relu',latent_dim = 1024,name='mutation_oracle_body')
+        self.mutation_oracle_activation = LeakyReLU(0.2)
+        self.mutation_oracle = MutationOracleBody(activation=self.mutation_oracle_activation,latent_dim = 1024,name='mutation_oracle_body')
         self.mutation_oracle_head = Dense(activation='sigmoid',units=self.max_seq_length,name='mutation_oracle_head')
         self.mutation_oracle_complement = Lambda(lambda x: 1 - x, name='mutation_oracle_complement')
 
@@ -120,9 +121,9 @@ class VDeepJMOracleAllign(tf.keras.Model):
         self.conv_v_layer_4 = Conv1D_and_BatchNorm(filters=128, kernel=2, max_pool=2)
 
     def _init_masked_d_signals_encoding_layers(self):
-        self.conv_d_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
-        self.conv_d_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
-        self.conv_d_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
+        self.conv_d_layer_1 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
+        self.conv_d_layer_2 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
+        self.conv_d_layer_3 = Conv1D_and_BatchNorm(filters=128, kernel=3, max_pool=2)
         self.conv_d_layer_4 = Conv1D_and_BatchNorm(filters=64, kernel=2, max_pool=2)
 
     def _init_masked_j_signals_encoding_layers(self):
