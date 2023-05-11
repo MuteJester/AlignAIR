@@ -6,6 +6,7 @@ import pandas as pd
 import scipy.stats as st
 from tqdm.auto import tqdm
 import tensorflow as tf
+import json
 
 
 class VDeepJDataPrepper:
@@ -17,15 +18,21 @@ class VDeepJDataPrepper:
         self.batch_size = 64
 
         self.tokenizer_dictionary = {
-            'A': 1,
-            'T': 2,
-            'G': 3,
-            'C': 4,
-            'N': 5,
-            'P': 0  # pad token
+            "A": 1,
+            "T": 2,
+            "G": 3,
+            "C": 4,
+            "N": 5,
+            "P": 0,  # pad token
         }
 
-    def process_sequences(self, data: pd.DataFrame, train: bool = True, corrupt_beginning=False, verbose=False):
+    def process_sequences(
+        self,
+        data: pd.DataFrame,
+        train: bool = True,
+        corrupt_beginning=False,
+        verbose=False,
+    ):
         """
         This method takes in a pd.DataFrame of DNA sequences with their respective
         v/d/j start and end index positions (positions are only relevant for train) and returns the corresponding model inputs for either training or prediction
@@ -63,7 +70,9 @@ class VDeepJDataPrepper:
 
         for row in iterator:
             if train is True and corrupt_beginning is True:
-                seq, was_removed, amount_changed = self._corrupt_sequence_beginning(row.sequence)
+                seq, was_removed, amount_changed = self._corrupt_sequence_beginning(
+                    row.sequence
+                )
             else:
                 seq = row.sequence
 
@@ -104,37 +113,75 @@ class VDeepJDataPrepper:
         else:
             return padded_sequences
 
-    def _get_single_batch(self, data: pd.DataFrame, v_family_call_ohe_np,
-                          v_gene_call_ohe_np, v_allele_call_ohe_np, d_family_call_ohe_np, d_gene_call_ohe_np,
-                          d_allele_call_ohe_np, j_gene_call_ohe_np, j_allele_call_ohe_np,
-                          batch_size=64, train: bool = True, corrupt_beginning=False):
-
+    def _get_single_batch(
+        self,
+        data: pd.DataFrame,
+        v_family_call_ohe_np,
+        v_gene_call_ohe_np,
+        v_allele_call_ohe_np,
+        d_family_call_ohe_np,
+        d_gene_call_ohe_np,
+        d_allele_call_ohe_np,
+        j_gene_call_ohe_np,
+        j_allele_call_ohe_np,
+        batch_size=64,
+        train: bool = True,
+        corrupt_beginning=False,
+    ):
         if train:
-            v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences = self.process_sequences(
-                data, train, corrupt_beginning)
-            x = {'tokenized_sequence': padded_sequences, 'tokenized_sequence_for_masking': padded_sequences}
-            y = {'v_start': v_start, 'v_end': v_end, 'd_start': d_start, 'd_end': d_end, 'j_start': j_start,
-                 'j_end': j_end,
-                 'v_family': v_family_call_ohe_np,
-                 'v_gene': v_gene_call_ohe_np,
-                 'v_allele': v_allele_call_ohe_np,
-                 'd_family': d_family_call_ohe_np,
-                 'd_gene': d_gene_call_ohe_np,
-                 'd_allele': d_allele_call_ohe_np,
-                 'j_gene': j_gene_call_ohe_np,
-                 'j_allele': j_allele_call_ohe_np,
-
-                 }
+            (
+                v_start,
+                v_end,
+                d_start,
+                d_end,
+                j_start,
+                j_end,
+                padded_sequences,
+            ) = self.process_sequences(data, train, corrupt_beginning)
+            x = {
+                "tokenized_sequence": padded_sequences,
+                "tokenized_sequence_for_masking": padded_sequences,
+            }
+            y = {
+                "v_start": v_start,
+                "v_end": v_end,
+                "d_start": d_start,
+                "d_end": d_end,
+                "j_start": j_start,
+                "j_end": j_end,
+                "v_family": v_family_call_ohe_np,
+                "v_gene": v_gene_call_ohe_np,
+                "v_allele": v_allele_call_ohe_np,
+                "d_family": d_family_call_ohe_np,
+                "d_gene": d_gene_call_ohe_np,
+                "d_allele": d_allele_call_ohe_np,
+                "j_gene": j_gene_call_ohe_np,
+                "j_allele": j_allele_call_ohe_np,
+            }
             return x, y
         else:
             padded_sequences = self.process_sequences(data, train, corrupt_beginning)
-            x = {'tokenized_sequence': padded_sequences, 'tokenized_sequence_for_masking': padded_sequences}
+            x = {
+                "tokenized_sequence": padded_sequences,
+                "tokenized_sequence_for_masking": padded_sequences,
+            }
             return x
 
-    def _train_generator(self, data: pd.DataFrame, v_family_call_ohe_np,
-                         v_gene_call_ohe_np, v_allele_call_ohe_np, d_family_call_ohe_np, d_gene_call_ohe_np,
-                         d_allele_call_ohe_np, j_gene_call_ohe_np, j_allele_call_ohe_np,
-                         batch_size=64, train: bool = True, corrupt_beginning=False):
+    def _train_generator(
+        self,
+        data: pd.DataFrame,
+        v_family_call_ohe_np,
+        v_gene_call_ohe_np,
+        v_allele_call_ohe_np,
+        d_family_call_ohe_np,
+        d_gene_call_ohe_np,
+        d_allele_call_ohe_np,
+        j_gene_call_ohe_np,
+        j_allele_call_ohe_np,
+        batch_size=64,
+        train: bool = True,
+        corrupt_beginning=False,
+    ):
         self.batch_size = batch_size
         while True:
             num_examples = len(data)
@@ -145,27 +192,46 @@ class VDeepJDataPrepper:
                 end_idx = (batch_idx + 1) * batch_size
 
                 data_batch = data.iloc[start_idx:end_idx, :]
-                v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences = self.process_sequences(
-                    data_batch, train, corrupt_beginning)
+                (
+                    v_start,
+                    v_end,
+                    d_start,
+                    d_end,
+                    j_start,
+                    j_end,
+                    padded_sequences,
+                ) = self.process_sequences(data_batch, train, corrupt_beginning)
 
-                batch_x = {'tokenized_sequence': padded_sequences, 'tokenized_sequence_for_masking': padded_sequences}
-                batch_y = {'v_start': v_start, 'v_end': v_end, 'd_start': d_start, 'd_end': d_end, 'j_start': j_start,
-                           'j_end': j_end,
-                           'v_family': v_family_call_ohe_np[start_idx:end_idx],
-                           'v_gene': v_gene_call_ohe_np[start_idx:end_idx],
-                           'v_allele': v_allele_call_ohe_np[start_idx:end_idx],
-                           'd_family': d_family_call_ohe_np[start_idx:end_idx],
-                           'd_gene': d_gene_call_ohe_np[start_idx:end_idx],
-                           'd_allele': d_allele_call_ohe_np[start_idx:end_idx],
-                           'j_gene': j_gene_call_ohe_np[start_idx:end_idx],
-                           'j_allele': j_allele_call_ohe_np[start_idx:end_idx],
-
-                           }
+                batch_x = {
+                    "tokenized_sequence": padded_sequences,
+                    "tokenized_sequence_for_masking": padded_sequences,
+                }
+                batch_y = {
+                    "v_start": v_start,
+                    "v_end": v_end,
+                    "d_start": d_start,
+                    "d_end": d_end,
+                    "j_start": j_start,
+                    "j_end": j_end,
+                    "v_family": v_family_call_ohe_np[start_idx:end_idx],
+                    "v_gene": v_gene_call_ohe_np[start_idx:end_idx],
+                    "v_allele": v_allele_call_ohe_np[start_idx:end_idx],
+                    "d_family": d_family_call_ohe_np[start_idx:end_idx],
+                    "d_gene": d_gene_call_ohe_np[start_idx:end_idx],
+                    "d_allele": d_allele_call_ohe_np[start_idx:end_idx],
+                    "j_gene": j_gene_call_ohe_np[start_idx:end_idx],
+                    "j_allele": j_allele_call_ohe_np[start_idx:end_idx],
+                }
 
                 yield batch_x, batch_y
 
-    def _eval_generator(self, data: pd.DataFrame,
-                        batch_size=64, train: bool = True, corrupt_beginning=False):
+    def _eval_generator(
+        self,
+        data: pd.DataFrame,
+        batch_size=64,
+        train: bool = True,
+        corrupt_beginning=False,
+    ):
         self.batch_size = batch_size
         num_examples = len(data)
         num_batches = num_examples // batch_size
@@ -176,63 +242,123 @@ class VDeepJDataPrepper:
 
             data_batch = data.iloc[start_idx:end_idx, :]
             padded_sequences = self.process_sequences(
-                data_batch, train, corrupt_beginning)
+                data_batch, train, corrupt_beginning
+            )
 
-            batch_x = {'tokenized_sequence': padded_sequences, 'tokenized_sequence_for_masking': padded_sequences}
+            batch_x = {
+                "tokenized_sequence": padded_sequences,
+                "tokenized_sequence_for_masking": padded_sequences,
+            }
 
             yield batch_x
 
-    def _get_tf_dataset_params(self, data: pd.DataFrame, v_family_call_ohe_np,
-                               v_gene_call_ohe_np, v_allele_call_ohe_np, d_family_call_ohe_np, d_gene_call_ohe_np,
-                               d_allele_call_ohe_np, j_gene_call_ohe_np, j_allele_call_ohe_np,
-                               batch_size=64, train: bool = True, corrupt_beginning=False):
-
+    def _get_tf_dataset_params(
+        self,
+        data: pd.DataFrame,
+        v_family_call_ohe_np,
+        v_gene_call_ohe_np,
+        v_allele_call_ohe_np,
+        d_family_call_ohe_np,
+        d_gene_call_ohe_np,
+        d_allele_call_ohe_np,
+        j_gene_call_ohe_np,
+        j_allele_call_ohe_np,
+        batch_size=64,
+        train: bool = True,
+        corrupt_beginning=False,
+    ):
         start_idx, end_idx = 0, 64
-        x, y = self._get_single_batch(data[start_idx:end_idx], v_family_call_ohe_np[start_idx:end_idx],
-                                      v_gene_call_ohe_np[start_idx:end_idx], v_allele_call_ohe_np[start_idx:end_idx],
-                                      d_family_call_ohe_np[start_idx:end_idx]
-                                      , d_gene_call_ohe_np[start_idx:end_idx], d_allele_call_ohe_np[start_idx:end_idx],
-                                      j_gene_call_ohe_np[start_idx:end_idx], j_allele_call_ohe_np[start_idx:end_idx],
-                                      batch_size, train, corrupt_beginning)
+        x, y = self._get_single_batch(
+            data[start_idx:end_idx],
+            v_family_call_ohe_np[start_idx:end_idx],
+            v_gene_call_ohe_np[start_idx:end_idx],
+            v_allele_call_ohe_np[start_idx:end_idx],
+            d_family_call_ohe_np[start_idx:end_idx],
+            d_gene_call_ohe_np[start_idx:end_idx],
+            d_allele_call_ohe_np[start_idx:end_idx],
+            j_gene_call_ohe_np[start_idx:end_idx],
+            j_allele_call_ohe_np[start_idx:end_idx],
+            batch_size,
+            train,
+            corrupt_beginning,
+        )
 
         output_types = ({k: tf.float32 for k in x}, {k: tf.float32 for k in y})
 
-        output_shapes = ({k: (self.batch_size,) + x[k].shape[1:] for k in x},
-                         {k: (self.batch_size,) + y[k].shape[1:] for k in y})
+        output_shapes = (
+            {k: (self.batch_size,) + x[k].shape[1:] for k in x},
+            {k: (self.batch_size,) + y[k].shape[1:] for k in y},
+        )
 
         return output_types, output_shapes
 
-    def get_train_dataset(self, data: pd.DataFrame, v_family_call_ohe_np,
-                          v_gene_call_ohe_np, v_allele_call_ohe_np, d_family_call_ohe_np, d_gene_call_ohe_np,
-                          d_allele_call_ohe_np, j_gene_call_ohe_np, j_allele_call_ohe_np, batch_size=64,
-                          train: bool = True, corrupt_beginning=False):
-
-        output_types, output_shapes = self._get_tf_dataset_params(data, v_family_call_ohe_np,
-                                                                  v_gene_call_ohe_np, v_allele_call_ohe_np,
-                                                                  d_family_call_ohe_np, d_gene_call_ohe_np,
-                                                                  d_allele_call_ohe_np, j_gene_call_ohe_np,
-                                                                  j_allele_call_ohe_np,
-                                                                  batch_size, train, corrupt_beginning)
+    def get_train_dataset(
+        self,
+        data: pd.DataFrame,
+        v_family_call_ohe_np,
+        v_gene_call_ohe_np,
+        v_allele_call_ohe_np,
+        d_family_call_ohe_np,
+        d_gene_call_ohe_np,
+        d_allele_call_ohe_np,
+        j_gene_call_ohe_np,
+        j_allele_call_ohe_np,
+        batch_size=64,
+        train: bool = True,
+        corrupt_beginning=False,
+    ):
+        output_types, output_shapes = self._get_tf_dataset_params(
+            data,
+            v_family_call_ohe_np,
+            v_gene_call_ohe_np,
+            v_allele_call_ohe_np,
+            d_family_call_ohe_np,
+            d_gene_call_ohe_np,
+            d_allele_call_ohe_np,
+            j_gene_call_ohe_np,
+            j_allele_call_ohe_np,
+            batch_size,
+            train,
+            corrupt_beginning,
+        )
 
         if train:
             dataset = tf.data.Dataset.from_generator(
-                lambda: self._train_generator(data, v_family_call_ohe_np,
-                                              v_gene_call_ohe_np, v_allele_call_ohe_np, d_family_call_ohe_np,
-                                              d_gene_call_ohe_np, d_allele_call_ohe_np, j_gene_call_ohe_np,
-                                              j_allele_call_ohe_np,
-                                              batch_size, train, corrupt_beginning),
+                lambda: self._train_generator(
+                    data,
+                    v_family_call_ohe_np,
+                    v_gene_call_ohe_np,
+                    v_allele_call_ohe_np,
+                    d_family_call_ohe_np,
+                    d_gene_call_ohe_np,
+                    d_allele_call_ohe_np,
+                    j_gene_call_ohe_np,
+                    j_allele_call_ohe_np,
+                    batch_size,
+                    train,
+                    corrupt_beginning,
+                ),
                 output_types=output_types,
-                output_shapes=output_shapes
+                output_shapes=output_shapes,
             )
         else:
             dataset = tf.data.Dataset.from_generator(
-                lambda: self._eval_generator(data, v_family_call_ohe_np,
-                                             v_gene_call_ohe_np, v_allele_call_ohe_np, d_family_call_ohe_np,
-                                             d_gene_call_ohe_np, d_allele_call_ohe_np, j_gene_call_ohe_np,
-                                             j_allele_call_ohe_np,
-                                             batch_size, train, corrupt_beginning),
+                lambda: self._eval_generator(
+                    data,
+                    v_family_call_ohe_np,
+                    v_gene_call_ohe_np,
+                    v_allele_call_ohe_np,
+                    d_family_call_ohe_np,
+                    d_gene_call_ohe_np,
+                    d_allele_call_ohe_np,
+                    j_gene_call_ohe_np,
+                    j_allele_call_ohe_np,
+                    batch_size,
+                    train,
+                    corrupt_beginning,
+                ),
                 output_types=output_types,
-                output_shapes=output_shapes
+                output_shapes=output_shapes,
             )
 
         return dataset
@@ -260,8 +386,11 @@ class VDeepJDataPrepper:
         :return:
         """
         call_ohe = pd.get_dummies(column)
+        label_dict = {}
+        for i, label in enumerate(call_ohe.columns):
+            label_dict[label] = i
         call_ohe_np = call_ohe.to_numpy()
-        return {en: i for en, i in enumerate(call_ohe.columns)}, call_ohe_np
+        return {en: i for en, i in enumerate(call_ohe.columns)}, call_ohe_np, label_dict
 
     def _process_and_dpad(self, sequence, train=False):
         """
@@ -287,12 +416,15 @@ class VDeepJDataPrepper:
         else:
             trans_seq = [0] * (whole_half_gap + 1) + trans_seq + ([0] * whole_half_gap)
             if train:
-                start, end = whole_half_gap + 1, self.max_seq_length - whole_half_gap - 1
+                start, end = (
+                    whole_half_gap + 1,
+                    self.max_seq_length - whole_half_gap - 1,
+                )
 
         return trans_seq, start, end if iseven else (end + 1)
 
     def _generate_random_nucleotide_sequence(self, length):
-        sequence = ''.join(np.random.choice(['A', 'T', 'C', 'G'], size=length))
+        sequence = "".join(np.random.choice(["A", "T", "C", "G"], size=length))
         return sequence
 
     def _fix_sequence_validity_after_corruption(self, sequence):
@@ -314,7 +446,9 @@ class VDeepJDataPrepper:
             amount_to_add = self._sample_nucleotide_add_distribution(1)
             modified_sequence = self._generate_random_nucleotide_sequence(amount_to_add)
             modified_sequence = modified_sequence + sequence
-            modified_sequence = self._fix_sequence_validity_after_corruption(modified_sequence)
+            modified_sequence = self._fix_sequence_validity_after_corruption(
+                modified_sequence
+            )
             return modified_sequence, to_remove, amount_to_add
 
     def convert_calls_to_one_hot(self, gene, allele, family=None) -> Tuple:
@@ -332,16 +466,40 @@ class VDeepJDataPrepper:
             - One-hot encoded matrix and mapping dictionary for J gene and allele call types.
         """
 
-        gene_call_ohe, gene_call_ohe_np = self._convert_calls(gene)
-        allele_call_ohe, allele_call_ohe_np = self._convert_calls(allele)
+        gene_call_ohe, gene_call_ohe_np, gene_label_dict = self._convert_calls(gene)
+        allele_call_ohe, allele_call_ohe_np, allele_label_dict = self._convert_calls(
+            allele
+        )
         if family is not None:
-            family_call_ohe, family_call_ohe_np = self._convert_calls(family)
-            return family_call_ohe, family_call_ohe_np, gene_call_ohe, \
-                   gene_call_ohe_np, allele_call_ohe, allele_call_ohe_np
+            (
+                family_call_ohe,
+                family_call_ohe_np,
+                family_label_dict,
+            ) = self._convert_calls(family)
+            return (
+                family_label_dict,
+                family_call_ohe,
+                family_call_ohe_np,
+                gene_label_dict,
+                gene_call_ohe,
+                gene_call_ohe_np,
+                allele_label_dict,
+                allele_call_ohe,
+                allele_call_ohe_np,
+            )
         else:
-            return gene_call_ohe, gene_call_ohe_np, allele_call_ohe, allele_call_ohe_np
+            return (
+                gene_label_dict,
+                gene_call_ohe,
+                gene_call_ohe_np,
+                allele_label_dict,
+                allele_call_ohe,
+                allele_call_ohe_np,
+            )
 
-    def get_family_gene_allele_map(self, v_calls=None, d_calls=None, j_calls=None) -> Dict:
+    def get_family_gene_allele_map(
+        self, v_calls=None, d_calls=None, j_calls=None
+    ) -> Dict:
         """
         This method takes in three lists representing each of the V/D/J calls in the training sequence and creates
         a dictionary for each call, decomposing it into family, gene, and allele. The resulting dictionary for each
@@ -362,41 +520,30 @@ class VDeepJDataPrepper:
         if v_calls is not None:
             v_dict = dict()
             for i in v_calls:
-                fam, gene, allele = re.findall(r'IGHV[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*', i)
-                v_dict[i] = {'family': fam, 'gene': gene, 'allele': allele}
+                fam, gene, allele = re.findall(
+                    r"IGHV[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z_]*", i
+                )
+                v_dict[i] = {"family": fam, "gene": gene, "allele": allele}
         if d_calls is not None:
             d_dict = dict()
             for i in d_calls:
-                fam, gene, allele = re.findall(r'IGHD[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*', i)
-                d_dict[i] = {'family': fam, 'gene': gene, 'allele': allele}
+                fam, gene, allele = re.findall(
+                    r"IGHD[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*", i
+                )
+                d_dict[i] = {"family": fam, "gene": gene, "allele": allele}
         if j_calls is not None:
             j_dict = dict()
             for i in j_calls:
-                gene, allele = re.findall(r'IGHJ[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*', i)
-                j_dict[i] = {'gene': gene, 'allele': allele}
+                gene, allele = re.findall(
+                    r"IGHJ[A-ZA-Za-z0-9/]*|[0-9A-Za-z]+-?[0-9A-Za-z]*", i
+                )
+                j_dict[i] = {"gene": gene, "allele": allele}
 
         return v_dict, d_dict, j_dict
 
-    def convert_calls_to_one_hot(self, gene, allele, family=None) -> Tuple:
-        """
-        This method takes in three Pandas series representing each of the V/D/J call types and converts them into
-        one-hot encoded matrices. For each call level (family, gene, allele), this method returns a one-hot matrix
-        and a dictionary mapping the one-hot position to the respective family/gene/allele.
+    def load_sub_classes_dict(self):
+        # Load the dictionary from file
+        with open("airrship/data/sub_cllases.json", "r") as f:
+            sub_cllases = json.load(f)
 
-        :param v_calls: Pandas series representing V call types.
-        :param d_calls: Pandas series representing D call types.
-        :param j_calls: Pandas series representing J call types.
-        :return: Tuple containing:
-            - One-hot encoded matrix and mapping dictionary for V family, gene, and allele call types.
-            - One-hot encoded matrix and mapping dictionary for D family, gene, and allele call types.
-            - One-hot encoded matrix and mapping dictionary for J gene and allele call types.
-        """
-
-        gene_call_ohe, gene_call_ohe_np = self._convert_calls(gene)
-        allele_call_ohe, allele_call_ohe_np = self._convert_calls(allele)
-        if family is not None:
-            family_call_ohe, family_call_ohe_np = self._convert_calls(family)
-            return family_call_ohe, family_call_ohe_np, gene_call_ohe, \
-                   gene_call_ohe_np, allele_call_ohe, allele_call_ohe_np
-        else:
-            return gene_call_ohe, gene_call_ohe_np, allele_call_ohe, allele_call_ohe_np
+        return sub_cllases
