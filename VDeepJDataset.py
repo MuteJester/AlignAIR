@@ -4,6 +4,7 @@ from tqdm.auto import tqdm
 from VDeepJUnbondedDataset import global_genotype
 import tensorflow as tf
 import scipy.stats as st
+from collections import defaultdict
 
 class VDeepJDataset:
     def __init__(self, data_path, max_sequence_length=512,batch_size=64,nrows=None,corrupt_beginning=False,
@@ -37,9 +38,11 @@ class VDeepJDataset:
         self.locus = global_genotype()
         self.derive_call_dictionaries()
         self.derive_counts()
-        self.derive_sub_classes_dict()
         self.derive_call_one_hot_representation()
         self.derive_reverse_ohe_mapping()
+        self._calculate_sub_classes_map()
+        self._derive_sub_classes_dict()
+
         #self.derive_call_sections()
 
     def derive_counts(self):
@@ -76,6 +79,23 @@ class VDeepJDataset:
 
         self.j_gene_call_ohe = {f: i for i, f in enumerate(j_genes)}
         self.j_allele_call_ohe = {f: i for i, f in enumerate(j_alleles)}
+
+        self.label_num_sub_classes_dict = {
+            "V": {
+                "family": self.v_family_call_ohe,
+                "gene": self.v_gene_call_ohe,
+                "allele": self.v_allele_call_ohe,
+            },
+            "D": {
+                "family": self.d_family_call_ohe,
+                "gene": self.d_gene_call_ohe,
+                "allele": self.d_allele_call_ohe,
+            },
+            "J": {
+                "gene": self.j_gene_call_ohe,
+                "allele": self.j_allele_call_ohe,
+            },
+        }
 
     def derive_call_sections(self):
         self.v_family = [self.v_dict[x]["family"] for x in tqdm(self.data.v_call)]
@@ -412,31 +432,49 @@ class VDeepJDataset:
         vector[idxs] = 1
         return vector
 
-    def derive_sub_classes_dict(self):
-        self.label_name_sub_classes_dict = self.data_prepper.load_sub_classes_dict()
+    def _calculate_sub_classes_map(self):
+        self.call_sub_classes_map = {"V": defaultdict(lambda: defaultdict(dict)),
+                       "D": defaultdict(lambda: defaultdict(dict)),
+                       "J": defaultdict(dict)}
 
+        def nested_get_sub_classes(d, v_d_or_j):
+            for call in d.values():
+                if v_d_or_j in ["V", "D"]:
+                    fam, gene, allele = call["family"], call["gene"], call["allele"]
+                    self.call_sub_classes_map[v_d_or_j][fam][gene][allele] = allele
+                elif v_d_or_j == "J":
+                    gene, allele = call["gene"], call["allele"]
+                    self.call_sub_classes_map[v_d_or_j][gene][allele] = allele
+
+        nested_get_sub_classes(self.v_dict, "V")
+        nested_get_sub_classes(self.d_dict, "D")
+        nested_get_sub_classes(self.j_dict, "J")
+
+
+
+    def _derive_sub_classes_dict(self):
         self.ohe_sub_classes_dict = {
-            "v": {"family": {}, "gene": {}},
-            "d": {"family": {}, "gene": {}},
-            "j": {"gene": {}},
+            "V": {"family": {}, "gene": {}},
+            "D": {"family": {}, "gene": {}},
+            "J": {"gene": {}},
         }
         counts_dict = {
-            "v_family_count": self.v_family_count,
-            "v_gene_count": self.v_gene_count,
-            "v_allele_count": self.v_allele_count,
-            "d_family_count": self.d_family_count,
-            "d_gene_count": self.d_gene_count,
-            "d_allele_count": self.d_allele_count,
-            "j_gene_count": self.j_gene_count,
-            "j_allele_count": self.j_allele_count,
+            "V_family_count": self.v_family_count,
+            "V_gene_count": self.v_gene_count,
+            "V_allele_count": self.v_allele_count,
+            "D_family_count": self.d_family_count,
+            "D_gene_count": self.d_gene_count,
+            "D_allele_count": self.d_allele_count,
+            "J_gene_count": self.j_gene_count,
+            "J_allele_count": self.j_allele_count,
         }
         for v_d_or_j in ["V", "D", "J"]:
             # Calculate the masked gene vectors for families
             if v_d_or_j in ["V", "D"]:
-                for fam in self.label_name_sub_classes_dict[v_d_or_j].keys():
+                for fam in self.call_sub_classes_map[v_d_or_j].keys():
                     label_num = self.label_num_sub_classes_dict[v_d_or_j]["family"][fam]
                     wanted_keys = list(
-                        self.label_name_sub_classes_dict[v_d_or_j][fam].keys()
+                        self.call_sub_classes_map[v_d_or_j][fam].keys()
                     )
                     possible_idxs = []
                     for wanted_key in wanted_keys:
@@ -451,7 +489,7 @@ class VDeepJDataset:
                         possible_idxs, counts_dict[v_d_or_j + "_gene_count"]
                     )
                 # Calculate the masked allels vectors for genes
-                for fam, fam_dict in self.label_name_sub_classes_dict[v_d_or_j].items():
+                for fam, fam_dict in self.call_sub_classes_map[v_d_or_j].items():
                     fam_label_num = self.label_num_sub_classes_dict[v_d_or_j]["family"][
                         fam
                     ]
@@ -467,7 +505,7 @@ class VDeepJDataset:
                                 "gene"
                             ][gene]
                             wanted_keys = list(
-                                self.label_name_sub_classes_dict[v_d_or_j][fam][
+                                self.call_sub_classes_map[v_d_or_j][fam][
                                     gene
                                 ].keys()
                             )
@@ -485,13 +523,13 @@ class VDeepJDataset:
                             )
             else:  # J
                 # Calculate the masked allels vectors for genes
-                for gene in self.label_name_sub_classes_dict[v_d_or_j].keys():
+                for gene in self.call_sub_classes_map[v_d_or_j].keys():
                     if gene not in self.ohe_sub_classes_dict[v_d_or_j]["gene"].keys():
                         label_num = self.label_num_sub_classes_dict[v_d_or_j]["gene"][
                             gene
                         ]
                         wanted_keys = list(
-                            self.label_name_sub_classes_dict[v_d_or_j][gene].keys()
+                            self.call_sub_classes_map[v_d_or_j][gene].keys()
                         )
                         possible_idxs = []
                         for wanted_key in wanted_keys:

@@ -85,7 +85,8 @@ class VDeepJUnbondedDataset():
         self.derive_call_dictionaries()
         self.derive_counts()
         self.derive_call_one_hot_representation()
-        self.derive_sub_classes_dict()
+        self._calculate_sub_classes_map()
+        self._derive_sub_classes_dict()
 
     def generate_single(self):
         if self.randomize_rate:
@@ -518,9 +519,30 @@ class VDeepJUnbondedDataset():
     def _sample_add_remove_distribution(self):
         return bool(self.add_remove_probability.rvs(1))
 
-    def derive_sub_classes_dict(self):
-        self.label_name_sub_classes_dict = self.data_prepper.load_sub_classes_dict()
+    def create_vector(self, idxs, length):
+        vector = np.zeros(length)
+        vector[idxs] = 1
+        return vector
 
+    def _calculate_sub_classes_map(self):
+        self.call_sub_classes_map = {"V": defaultdict(lambda: defaultdict(dict)),
+                                     "D": defaultdict(lambda: defaultdict(dict)),
+                                     "J": defaultdict(dict)}
+
+        def nested_get_sub_classes(d, v_d_or_j):
+            for call in d.values():
+                if v_d_or_j in ["V", "D"]:
+                    fam, gene, allele = call["family"], call["gene"], call["allele"]
+                    self.call_sub_classes_map[v_d_or_j][fam][gene][allele] = allele
+                elif v_d_or_j == "J":
+                    gene, allele = call["gene"], call["allele"]
+                    self.call_sub_classes_map[v_d_or_j][gene][allele] = allele
+
+        nested_get_sub_classes(self.v_dict, "V")
+        nested_get_sub_classes(self.d_dict, "D")
+        nested_get_sub_classes(self.j_dict, "J")
+
+    def _derive_sub_classes_dict(self):
         self.ohe_sub_classes_dict = {
             "V": {"family": {}, "gene": {}},
             "D": {"family": {}, "gene": {}},
@@ -539,10 +561,10 @@ class VDeepJUnbondedDataset():
         for v_d_or_j in ["V", "D", "J"]:
             # Calculate the masked gene vectors for families
             if v_d_or_j in ["V", "D"]:
-                for fam in self.label_name_sub_classes_dict[v_d_or_j].keys():
+                for fam in self.call_sub_classes_map[v_d_or_j].keys():
                     label_num = self.label_num_sub_classes_dict[v_d_or_j]["family"][fam]
                     wanted_keys = list(
-                        self.label_name_sub_classes_dict[v_d_or_j][fam].keys()
+                        self.call_sub_classes_map[v_d_or_j][fam].keys()
                     )
                     possible_idxs = []
                     for wanted_key in wanted_keys:
@@ -557,23 +579,23 @@ class VDeepJUnbondedDataset():
                         possible_idxs, counts_dict[v_d_or_j + "_gene_count"]
                     )
                 # Calculate the masked allels vectors for genes
-                for fam, fam_dict in self.label_name_sub_classes_dict[v_d_or_j].items():
+                for fam, fam_dict in self.call_sub_classes_map[v_d_or_j].items():
                     fam_label_num = self.label_num_sub_classes_dict[v_d_or_j]["family"][
                         fam
                     ]
                     self.ohe_sub_classes_dict[v_d_or_j]["gene"][fam_label_num] = {}
                     for gene in fam_dict.keys():
                         if (
-                            gene
-                            not in self.ohe_sub_classes_dict[v_d_or_j]["gene"][
-                                fam_label_num
-                            ].keys()
+                                gene
+                                not in self.ohe_sub_classes_dict[v_d_or_j]["gene"][
+                            fam_label_num
+                        ].keys()
                         ):
                             label_num = self.label_num_sub_classes_dict[v_d_or_j][
                                 "gene"
                             ][gene]
                             wanted_keys = list(
-                                self.label_name_sub_classes_dict[v_d_or_j][fam][
+                                self.call_sub_classes_map[v_d_or_j][fam][
                                     gene
                                 ].keys()
                             )
@@ -591,13 +613,13 @@ class VDeepJUnbondedDataset():
                             )
             else:  # J
                 # Calculate the masked allels vectors for genes
-                for gene in self.label_name_sub_classes_dict[v_d_or_j].keys():
+                for gene in self.call_sub_classes_map[v_d_or_j].keys():
                     if gene not in self.ohe_sub_classes_dict[v_d_or_j]["gene"].keys():
                         label_num = self.label_num_sub_classes_dict[v_d_or_j]["gene"][
                             gene
                         ]
                         wanted_keys = list(
-                            self.label_name_sub_classes_dict[v_d_or_j][gene].keys()
+                            self.call_sub_classes_map[v_d_or_j][gene].keys()
                         )
                         possible_idxs = []
                         for wanted_key in wanted_keys:
@@ -612,29 +634,27 @@ class VDeepJUnbondedDataset():
                             possible_idxs, counts_dict[v_d_or_j + "_allele_count"]
                         )
 
-        # s = 4
-        if 1:
-            ### Just for assertion, can be removed later ###
-            v_family_keys = list(self.ohe_sub_classes_dict["V"]["family"].keys())
-            v_family_keys.sort()
-            assert v_family_keys == list(range(self.v_family_count))
+        ### Just for assertion, can be removed later ###
+        v_family_keys = list(self.ohe_sub_classes_dict["V"]["family"].keys())
+        v_family_keys.sort()
+        assert v_family_keys == list(range(self.v_family_count))
 
-            v_gene_keys = list(self.ohe_sub_classes_dict["V"]["gene"].keys())
-            v_gene_keys.sort()
-            assert v_gene_keys == list(range(self.v_family_count))
+        v_gene_keys = list(self.ohe_sub_classes_dict["V"]["gene"].keys())
+        v_gene_keys.sort()
+        assert v_gene_keys == list(range(self.v_family_count))
 
-            d_family_keys = list(self.ohe_sub_classes_dict["D"]["family"].keys())
-            d_family_keys.sort()
-            assert d_family_keys == list(range(self.d_family_count))
+        d_family_keys = list(self.ohe_sub_classes_dict["D"]["family"].keys())
+        d_family_keys.sort()
+        assert d_family_keys == list(range(self.d_family_count))
 
-            d_gene_keys = list(self.ohe_sub_classes_dict["D"]["gene"].keys())
-            d_gene_keys.sort()
-            assert d_gene_keys == list(range(self.d_family_count))
+        d_gene_keys = list(self.ohe_sub_classes_dict["D"]["gene"].keys())
+        d_gene_keys.sort()
+        assert d_gene_keys == list(range(self.d_family_count))
 
-            j_gene_keys = list(self.ohe_sub_classes_dict["J"]["gene"].keys())
-            j_gene_keys.sort()
-            assert j_gene_keys == list(range(self.j_gene_count))
-            ###
+        j_gene_keys = list(self.ohe_sub_classes_dict["J"]["gene"].keys())
+        j_gene_keys.sort()
+        assert j_gene_keys == list(range(self.j_gene_count))
+        ###
 
         # Stack all vectors (by index order) for useful indexing
         # V
@@ -695,11 +715,6 @@ class VDeepJUnbondedDataset():
         self.ohe_sub_classes_dict["J"]["gene"] = tf.convert_to_tensor(
             self.ohe_sub_classes_dict["J"]["gene"], dtype=tf.float32
         )
-
-    def create_vector(self, idxs, length):
-        vector = np.zeros(length)
-        vector[idxs] = 1
-        return vector
 
     def __len__(self):
         return len(self.data)
