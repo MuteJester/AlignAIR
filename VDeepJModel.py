@@ -180,10 +180,10 @@ class VDeepJAllign(tf.keras.Model):
         self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
 
     def _init_masked_v_signals_encoding_layers(self):
-        self.conv_v_layer_1 = Conv1D_and_BatchNorm(filters=128, kernel=3, max_pool=2)
-        self.conv_v_layer_2 = Conv1D_and_BatchNorm(filters=256, kernel=3, max_pool=2)
-        self.conv_v_layer_3 = Conv1D_and_BatchNorm(filters=512, kernel=3, max_pool=2)
-        self.conv_v_layer_4 = Conv1D_and_BatchNorm(filters=128, kernel=2, max_pool=2)
+        self.conv_v_layer_1 = Conv1D_and_BatchNorm(filters=128, kernel=3, max_pool=2,activation=tf.keras.layers.Activation('tanh'))
+        self.conv_v_layer_2 = Conv1D_and_BatchNorm(filters=256, kernel=3, max_pool=2,activation=tf.keras.layers.Activation('tanh'))
+        self.conv_v_layer_3 = Conv1D_and_BatchNorm(filters=256, kernel=3, max_pool=2,activation=tf.keras.layers.Activation('tanh'))
+        self.conv_v_layer_4 = Conv1D_and_BatchNorm(filters=128, kernel=2, max_pool=2,activation=tf.keras.layers.Activation('tanh'))
 
     def _init_masked_d_signals_encoding_layers(self):
         self.conv_d_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)

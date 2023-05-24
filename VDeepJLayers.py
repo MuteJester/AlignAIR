@@ -180,7 +180,7 @@ class Conv2D_and_BatchNorm(tf.keras.layers.Layer):
 
 
 class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
-    def __init__(self, filters=16, kernel=3, max_pool=2, **kwargs):
+    def __init__(self, filters=16, kernel=3, max_pool=2,activation=None, **kwargs):
         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
         self.conv_2d = Conv1D(filters, kernel, padding='same',
                               kernel_regularizer=regularizers.l2(0.01))
@@ -191,7 +191,11 @@ class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
                                 kernel_regularizer=regularizers.l2(0.01))
 
         self.batch_norm = BatchNormalization()
-        self.activation = LeakyReLU()
+
+        if activation is None:
+            self.activation = LeakyReLU()
+        else:
+            self.activation = activation
         self.max_pool = MaxPool1D(max_pool)
 
     def call(self, inputs):
