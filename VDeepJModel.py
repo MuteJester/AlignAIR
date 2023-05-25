@@ -45,6 +45,7 @@ class VDeepJAllign(tf.keras.Model):
         j_gene_count,
         j_allele_count,
         ohe_sub_classes_dict,
+        use_gene_masking = False
     ):
         super(VDeepJAllign, self).__init__()
         # Model Params
@@ -90,6 +91,7 @@ class VDeepJAllign(tf.keras.Model):
         ]
         self.latent_size_factor = 2
         self.classification_middle_layer_activation = "swish"
+        self.use_gene_masking = use_gene_masking
 
         # Tracking
         self.init_loss_tracking_variables()
@@ -375,10 +377,11 @@ class VDeepJAllign(tf.keras.Model):
         v_family_middle = self.v_family_dropout(v_family_middle)
         v_family = self.v_family_call_head(v_family_middle)
 
-        v_family_class = tf.math.argmax(v_family, 1)
-        v_gene_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["V"]["family"], v_family_class, axis=0
-        )
+        if self.use_gene_masking:
+            v_family_class = tf.math.argmax(v_family, 1)
+            v_gene_classes_masks = tf.gather(
+                self.ohe_sub_classes_dict["V"]["family"], v_family_class, axis=0
+            )
 
         v_gene_middle = self.v_gene_call_middle(v_feature_map)
         v_gene_middle = self.v_gene_call_family_gene_concat(
@@ -386,16 +389,19 @@ class VDeepJAllign(tf.keras.Model):
         )
         v_gene_middle = self.v_gene_dropout(v_gene_middle)
         v_gene = self.v_gene_call_head(v_gene_middle)
-        v_gene = tf.multiply(v_gene_classes_masks, v_gene)
+
+        if self.use_gene_masking:
+            v_gene = tf.multiply(v_gene_classes_masks, v_gene)
 
         # Add advance indexing
-        v_gene_class = tf.math.argmax(v_gene, 1)
-        v_allele_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["V"]["gene"], v_family_class, axis=0
-        )
-        v_allele_classes_masks = tf.gather(
-            v_allele_classes_masks, v_gene_class, axis=1, batch_dims=1
-        )
+        if self.use_gene_masking:
+            v_gene_class = tf.math.argmax(v_gene, 1)
+            v_allele_classes_masks = tf.gather(
+                self.ohe_sub_classes_dict["V"]["gene"], v_family_class, axis=0
+            )
+            v_allele_classes_masks = tf.gather(
+                v_allele_classes_masks, v_gene_class, axis=1, batch_dims=1
+            )
 
         v_allele_middle = self.v_allele_call_middle(v_feature_map)
         v_allele_middle = self.v_gene_call_gene_allele_concat(
@@ -404,53 +410,63 @@ class VDeepJAllign(tf.keras.Model):
         v_allele_middle = self.v_allele_dropout(v_allele_middle)
         v_allele_middle = self.v_allele_feature_distill(v_allele_middle)
         v_allele = self.v_allele_call_head(v_allele_middle)
-        v_allele = tf.multiply(v_allele_classes_masks, v_allele)
+        if self.use_gene_masking:
+            v_allele = tf.multiply(v_allele_classes_masks, v_allele)
         # ============================ D =============================
         d_family_middle = self.d_family_call_middle(d_feature_map)
         d_family = self.d_family_call_head(d_family_middle)
 
-        d_family_class = tf.math.argmax(d_family, 1)
-        d_gene_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["D"]["family"], d_family_class, axis=0
-        )
+
+        if self.use_gene_masking:
+            d_family_class = tf.math.argmax(d_family, 1)
+            d_gene_classes_masks = tf.gather(
+                self.ohe_sub_classes_dict["D"]["family"], d_family_class, axis=0
+            )
 
         d_gene_middle = self.d_gene_call_middle(d_feature_map)
         d_gene_middle = self.d_gene_call_family_gene_concat(
             [d_gene_middle, d_family_middle]
         )
         d_gene = self.d_gene_call_head(d_gene_middle)
-        d_gene = tf.multiply(d_gene_classes_masks, d_gene)
+
+        if self.use_gene_masking:
+            d_gene = tf.multiply(d_gene_classes_masks, d_gene)
 
         # Add advance indexing
-        d_gene_class = tf.math.argmax(d_gene, 1)
-        d_allele_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["D"]["gene"], d_family_class, axis=0
-        )
-        d_allele_classes_masks = tf.gather(
-            d_allele_classes_masks, d_gene_class, axis=1, batch_dims=1
-        )
+        if self.use_gene_masking:
+            d_gene_class = tf.math.argmax(d_gene, 1)
+            d_allele_classes_masks = tf.gather(
+                self.ohe_sub_classes_dict["D"]["gene"], d_family_class, axis=0
+            )
+            d_allele_classes_masks = tf.gather(
+                d_allele_classes_masks, d_gene_class, axis=1, batch_dims=1
+            )
 
         d_allele_middle = self.d_allele_call_middle(d_feature_map)
         d_allele_middle = self.d_gene_call_gene_allele_concat(
             [d_allele_middle, d_gene_middle]
         )
         d_allele = self.d_allele_call_head(d_allele_middle)
-        d_allele = tf.multiply(d_allele_classes_masks, d_allele)
+        if self.use_gene_masking:
+            d_allele = tf.multiply(d_allele_classes_masks, d_allele)
         # ============================ J =============================
         j_gene_middle = self.j_gene_call_middle(j_feature_map)
         j_gene = self.j_gene_call_head(j_gene_middle)
 
-        j_gene_class = tf.math.argmax(j_gene, 1)
-        j_allele_classes_masks = tf.gather(
-            self.ohe_sub_classes_dict["J"]["gene"], j_gene_class, axis=0
-        )
+        if self.use_gene_masking:
+            j_gene_class = tf.math.argmax(j_gene, 1)
+            j_allele_classes_masks = tf.gather(
+                self.ohe_sub_classes_dict["J"]["gene"], j_gene_class, axis=0
+            )
 
         j_allele_middle = self.j_allele_call_middle(j_feature_map)
         j_allele_middle = self.j_gene_call_gene_allele_concat(
             [j_allele_middle, j_gene_middle]
         )
         j_allele = self.j_allele_call_head(j_allele_middle)
-        j_allele = tf.multiply(j_allele_classes_masks, j_allele)
+
+        if self.use_gene_masking:
+            j_allele = tf.multiply(j_allele_classes_masks, j_allele)
 
         return v_family, v_gene, v_allele, d_family, d_gene, d_allele, j_gene, j_allele
 

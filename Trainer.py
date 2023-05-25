@@ -34,6 +34,7 @@ class Trainer:
             nucleotide_add_coef=35,
             nucleotide_remove_coef=50,
             chunked_read=False,
+            use_gene_masking = False,
             pretrained=None,
             compute_metrics=None,
             callbacks=None,
@@ -61,6 +62,7 @@ class Trainer:
         self.log_file_name = log_file_name
         self.log_to_file = log_to_file
         self.log_file_path = log_file_path
+        self.use_gene_masking = use_gene_masking
 
         self.corrupt_proba = corrupt_proba
         self.nucleotide_add_coef = nucleotide_add_coef
@@ -82,7 +84,9 @@ class Trainer:
             self._load_pretrained_model()  # only if pretrained is not None
             self._compile_model()
     def _load_pretrained_model(self):
-        self.model = self.model_type(**self.train_dataset.generate_model_params())
+        model_params = self.train_dataset.generate_model_params()
+        model_params['use_gene_masking'] = self.use_gene_masking
+        self.model = self.model_type(**model_params)
         if self.pretrained is not None:
             self.model.load_weights(self.pretrained)
 
