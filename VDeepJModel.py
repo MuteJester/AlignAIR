@@ -45,7 +45,7 @@ class VDeepJAllign(tf.keras.Model):
         j_gene_count,
         j_allele_count,
         ohe_sub_classes_dict,
-        use_gene_masking = False
+        use_gene_masking=False,
     ):
         super(VDeepJAllign, self).__init__()
         # Model Params
@@ -182,10 +182,30 @@ class VDeepJAllign(tf.keras.Model):
         self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
 
     def _init_masked_v_signals_encoding_layers(self):
-        self.conv_v_layer_1 = Conv1D_and_BatchNorm(filters=128, kernel=3, max_pool=2,activation=tf.keras.layers.Activation('tanh'))
-        self.conv_v_layer_2 = Conv1D_and_BatchNorm(filters=256, kernel=3, max_pool=2,activation=tf.keras.layers.Activation('tanh'))
-        self.conv_v_layer_3 = Conv1D_and_BatchNorm(filters=256, kernel=3, max_pool=2,activation=tf.keras.layers.Activation('tanh'))
-        self.conv_v_layer_4 = Conv1D_and_BatchNorm(filters=128, kernel=2, max_pool=2,activation=tf.keras.layers.Activation('tanh'))
+        self.conv_v_layer_1 = Conv1D_and_BatchNorm(
+            filters=128,
+            kernel=3,
+            max_pool=2,
+            activation=tf.keras.layers.Activation("tanh"),
+        )
+        self.conv_v_layer_2 = Conv1D_and_BatchNorm(
+            filters=256,
+            kernel=3,
+            max_pool=2,
+            activation=tf.keras.layers.Activation("tanh"),
+        )
+        self.conv_v_layer_3 = Conv1D_and_BatchNorm(
+            filters=256,
+            kernel=3,
+            max_pool=2,
+            activation=tf.keras.layers.Activation("tanh"),
+        )
+        self.conv_v_layer_4 = Conv1D_and_BatchNorm(
+            filters=128,
+            kernel=2,
+            max_pool=2,
+            activation=tf.keras.layers.Activation("tanh"),
+        )
 
     def _init_masked_d_signals_encoding_layers(self):
         self.conv_d_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
@@ -415,7 +435,6 @@ class VDeepJAllign(tf.keras.Model):
         # ============================ D =============================
         d_family_middle = self.d_family_call_middle(d_feature_map)
         d_family = self.d_family_call_head(d_family_middle)
-
 
         if self.use_gene_masking:
             d_family_class = tf.math.argmax(d_family, 1)
