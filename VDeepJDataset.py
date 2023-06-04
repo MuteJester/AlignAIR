@@ -5,17 +5,66 @@ from VDeepJUnbondedDataset import global_genotype
 import tensorflow as tf
 import scipy.stats as st
 from collections import defaultdict
+import csv
+
+def cast_if_int(element: any) -> bool:
+    #If you expect None to be passed:
+    if element is None:
+        return element
+    try:
+        f = int(element)
+        return f
+    except ValueError:
+        return element
+
+def count_tsv_size(path):
+    with open(path) as fp:
+        for (count, _) in enumerate(fp, 1):
+            pass
+        return count-1
+def tsv_generator(path, batch_size, usecols=None, loop=True):
+    while True:
+        with open(path, 'r') as file:
+            reader = csv.reader(file, delimiter='\t')
+            headers = next(reader)  # Skip header row
+            if len(set(usecols)&set(headers)) != len(usecols):
+                raise ValueError(f"Not all required columns were provided in train data file: {path}")
+
+            batch = {i: [] for i in headers}
+            for row in reader:
+                for en, value in enumerate(row):
+                    if any([kw in headers[en] for kw in ['start','end']]):
+                        batch[headers[en]].append(int(value))
+                    else:
+                        batch[headers[en]].append(value)
+
+                if len(batch[headers[0]]) == batch_size:
+                    yield batch
+                    batch = {i: [] for i in headers}
+
+            if len(batch) > 0:
+                yield batch
+                if not loop:
+                    break
 
 class VDeepJDataset:
     def __init__(self, data_path, max_sequence_length=512,batch_size=64,nrows=None,corrupt_beginning=False,
-                 corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50):
+                 corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50,batch_read_file = False):
         self.max_sequence_length = max_sequence_length
         self.batch_size=batch_size
-        self.data = pd.read_table(data_path,
-                                  usecols=['sequence', 'v_call', 'd_call', 'j_call', 'v_sequence_end',
-                                           'd_sequence_start',
-                                           'j_sequence_start',
-                                           'j_sequence_end', 'd_sequence_end', 'v_sequence_start'],nrows=nrows)
+        self.batch_read_file = batch_read_file
+        self.required_data_columns = ['sequence', 'v_call', 'd_call', 'j_call', 'v_sequence_end',
+                                               'd_sequence_start',
+                                               'j_sequence_start',
+                                               'j_sequence_end', 'd_sequence_end', 'v_sequence_start']
+
+        if not self.batch_read_file:
+            self.data = pd.read_table(data_path,
+                                      usecols=self.required_data_columns,nrows=nrows)
+            self.data_length = len(self.data)
+        else:
+            self.get_data_batch_generator(data_path)
+            self.data_length = count_tsv_size(data_path)
 
         self.nucleotide_add_distribution = st.beta(1, 3)
         self.nucleotide_remove_distribution = st.beta(1, 3)
@@ -33,7 +82,6 @@ class VDeepJDataset:
             'N': 5,
             'P': 0  # pad token
         }
-        self.data_length = len(self.data)
         self.corrupt_beginning = corrupt_beginning
         self.locus = global_genotype()
         self.derive_call_dictionaries()
@@ -44,6 +92,11 @@ class VDeepJDataset:
         self._derive_sub_classes_dict()
 
         #self.derive_call_sections()
+
+    def get_data_batch_generator(self,path_to_data):
+        self.data = tsv_generator(path_to_data,batch_size=self.batch_size,usecols=self.required_data_columns)
+
+
 
     def derive_counts(self):
         self.v_family_count = len(set([self.v_dict[i]['family'] for i in self.v_dict]))
@@ -96,18 +149,6 @@ class VDeepJDataset:
                 "allele": self.j_allele_call_ohe,
             },
         }
-
-    def derive_call_sections(self):
-        self.v_family = [self.v_dict[x]["family"] for x in tqdm(self.data.v_call)]
-        self.d_family = [self.d_dict[x]["family"] for x in tqdm(self.data.d_call)]
-
-        self.v_gene = [self.v_dict[x]["gene"] for x in tqdm(self.data.v_call)]
-        self.d_gene = [self.d_dict[x]["gene"] for x in tqdm(self.data.d_call)]
-        self.j_gene = [self.j_dict[x]["gene"] for x in tqdm(self.data.j_call)]
-
-        self.v_allele = [self.v_dict[x]["allele"] for x in tqdm(self.data.v_call)]
-        self.d_allele = [self.d_dict[x]["allele"] for x in tqdm(self.data.d_call)]
-        self.j_allele = [self.j_dict[x]["allele"] for x in tqdm(self.data.j_call)]
 
     @staticmethod
     def reverse_dictionary(dictionary):
@@ -316,45 +357,67 @@ class VDeepJDataset:
 
 
     def generate_batch(self,pointer):
-        data = {'sequence': [],
-                'v_sequence_start': [],
-                'v_sequence_end': [],
-                'd_sequence_start': [],
-                'd_sequence_end': [],
-                'j_sequence_start': [],
-                'j_sequence_end': [],
-                'v_family': [],
-                'v_gene': [],
-                'v_allele': [],
-                'd_family': [],
-                'd_gene': [],
-                'd_allele': [],
-                'j_gene': [],
-                'j_allele': []}
+        if not self.batch_read_file:
+            data = {'sequence': [],
+                    'v_sequence_start': [],
+                    'v_sequence_end': [],
+                    'd_sequence_start': [],
+                    'd_sequence_end': [],
+                    'j_sequence_start': [],
+                    'j_sequence_end': [],
+                    'v_family': [],
+                    'v_gene': [],
+                    'v_allele': [],
+                    'd_family': [],
+                    'd_gene': [],
+                    'd_allele': [],
+                    'j_gene': [],
+                    'j_allele': []}
+            for idx,row in self.data.iloc[(pointer-self.batch_size):pointer,:].iterrows():
+                v_family, v_gene, v_allele = self.decompose_call('V', row['v_call'])
+                d_family, d_gene, d_allele = self.decompose_call('D', row['d_call'])
+                j_gene, j_allele = self.decompose_call('J', row['j_call'])
 
-        for idx,row in self.data.iloc[(pointer-self.batch_size):pointer,:].iterrows():
-            v_family, v_gene, v_allele = self.decompose_call('V', row['v_call'])
-            d_family, d_gene, d_allele = self.decompose_call('D', row['d_call'])
-            j_gene, j_allele = self.decompose_call('J', row['j_call'])
-
-            data['sequence'].append(row['sequence'])
-            data['v_sequence_start'].append(row['v_sequence_start'])
-            data['v_sequence_end'].append(row['v_sequence_end'])
-            data['d_sequence_start'].append(row['d_sequence_start'])
-            data['d_sequence_end'].append(row['d_sequence_end'])
-            data['j_sequence_start'].append(row['j_sequence_start'])
-            data['j_sequence_end'].append(row['j_sequence_end'])
-            data['v_family'].append(v_family)
-            data['v_gene'].append(v_gene)
-            data['v_allele'].append(v_allele)
-            data['d_family'].append(d_family)
-            data['d_gene'].append(d_gene)
-            data['d_allele'].append(d_allele)
-            data['j_gene'].append(j_gene)
-            data['j_allele'].append(j_allele)
+                data['sequence'].append(row['sequence'])
+                data['v_sequence_start'].append(row['v_sequence_start'])
+                data['v_sequence_end'].append(row['v_sequence_end'])
+                data['d_sequence_start'].append(row['d_sequence_start'])
+                data['d_sequence_end'].append(row['d_sequence_end'])
+                data['j_sequence_start'].append(row['j_sequence_start'])
+                data['j_sequence_end'].append(row['j_sequence_end'])
+                data['v_family'].append(v_family)
+                data['v_gene'].append(v_gene)
+                data['v_allele'].append(v_allele)
+                data['d_family'].append(d_family)
+                data['d_gene'].append(d_gene)
+                data['d_allele'].append(d_allele)
+                data['j_gene'].append(j_gene)
+                data['j_allele'].append(j_allele)
 
 
-        return data
+            return data
+        else:
+            read_batch = next(self.data)
+            for missing_column in ['v_family','v_gene','v_allele',
+                                   'd_family','d_gene','d_allele',
+                                   'j_gene','j_allele']:
+                read_batch[missing_column] = []
+
+            for idx in range(self.batch_size):
+                v_family, v_gene, v_allele = self.decompose_call('V', read_batch['v_call'][idx])
+                d_family, d_gene, d_allele = self.decompose_call('D', read_batch['d_call'][idx])
+                j_gene, j_allele = self.decompose_call('J', read_batch['j_call'][idx])
+
+                read_batch['v_family'].append(v_family)
+                read_batch['v_gene'].append(v_gene)
+                read_batch['v_allele'].append(v_allele)
+                read_batch['d_family'].append(d_family)
+                read_batch['d_gene'].append(d_gene)
+                read_batch['d_allele'].append(d_allele)
+                read_batch['j_gene'].append(j_gene)
+                read_batch['j_allele'].append(j_allele)
+
+            return read_batch
     def _get_single_batch(self,pointer):
 
         batch = self.generate_batch(pointer)
