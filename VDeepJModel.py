@@ -23,6 +23,7 @@ from VDeepJLayers import (
 )
 from tensorflow.keras import regularizers
 from enum import Enum, auto
+import wandb
 
 
 class ModelComponents(Enum):

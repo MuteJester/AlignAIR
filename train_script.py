@@ -4,6 +4,12 @@ from Trainer import Trainer
 from VDeepJModel import VDeepJAllign
 import os
 from tensorflow.keras.callbacks import ReduceLROnPlateau
+from tensorflow.keras.callbacks import EarlyStopping
+import wandb
+from wandb.keras import WandbMetricsLogger
+
+
+### Start - CallBacks Definitions ###
 
 Reduce_lr = ReduceLROnPlateau(
     monitor="v_allele_categorical_accuracy",
@@ -14,9 +20,9 @@ Reduce_lr = ReduceLROnPlateau(
 )
 
 
-class ChangeParameterCallback(tf.keras.callbacks.Callback):
+class ChangeGeneMaskingCallback(tf.keras.callbacks.Callback):
     def __init__(self, epoch_to_change):
-        super(ChangeParameterCallback, self).__init__()
+        super(ChangeGeneMaskingCallback, self).__init__()
         self.epoch_to_change = epoch_to_change
 
     def on_epoch_end(self, epoch, logs=None):
@@ -26,16 +32,29 @@ class ChangeParameterCallback(tf.keras.callbacks.Callback):
                 print(f"Changed use_gene_masking to True at epoch {epoch+1}.")
 
 
+### End - CallBacks Definitions ###
+
+patience = 5
 epoch_to_change = 2  # Specify the epoch at which you want to change the parameter
-change_parameter_callback = ChangeParameterCallback(epoch_to_change)
+
+change_gene_masking_callback = ChangeGeneMaskingCallback(epoch_to_change)
+early_stopping = EarlyStopping(
+    monitor="loss", patience=patience, restore_best_weights=True
+)
 
 # Define your model
 model = VDeepJAllign
+
 # Define other parameters
-epochs = 5
+epochs = 20
 batch_size = 64
+noise_type = (
+    "s5f_rate"  # Can be of types: ["s5f_rate", "s5f_20", "s5f_opposite", "uniform"]
+)
+
+
 datasets_path = "/localdata/alignairr_data/2M_for_training/"
-session_name = "models_2M_version12"
+session_name = "models_2M_version16"
 session_path = os.path.join("/localdata/alignairr_data/", session_name)
 models_path = os.path.join(session_path, "saved_models")
 logs_path = os.path.join(session_path, "logs/")
@@ -49,11 +68,23 @@ if not os.path.exists(session_path):
 for file in os.listdir(datasets_path):
     if file.endswith(".tsv"):
         # For Debug ###################
-        if file != "sim_data_2M_asc_P05_model_s5f_20_rate_001.tsv" and file.endswith(
-            ".tsv"
-        ):
+        if (noise_type in file) and (file.endswith(".tsv")) and ("add_n" in file):
             train_dataset_path = os.path.join(datasets_path, file)
             model_name = file.split(".")[0]
+            noise_rate = model_name.split("_add_n")[0].split("rate_")[1]
+
+            # Initialize wandb
+            run = wandb.init(project=session_name, name=model_name)
+            wandb_callback = WandbMetricsLogger(log_freq="batch")
+            ### Hyperparameters
+            config = wandb.config
+            config.model_name = model_name
+            config.session_name = session_name
+            config.epochs = epochs
+            config.batch_size = batch_size
+            config.noise_type = noise_type if noise_type != "s5f_rate" else "s5f"
+            config.noise_rate = noise_rate
+            config.patience = patience
 
             # Create a Trainer instance with desired parameters
             trainer = Trainer(
@@ -65,7 +96,11 @@ for file in os.listdir(datasets_path):
                 log_to_file=True,
                 log_file_name=model_name,
                 log_file_path=logs_path,
-                callbacks=[change_parameter_callback],
+                callbacks=[
+                    change_gene_masking_callback,
+                    early_stopping,
+                    wandb_callback,
+                ],
                 use_gene_masking=False,
                 # For Debug ###################
                 # optimizers_params={"clipnorm": 1},
@@ -78,3 +113,8 @@ for file in os.listdir(datasets_path):
             os.mkdir(path_to_model_weights)
 
             trainer.save_model(path_to_model_weights)
+
+            # DEBUG - Only one run
+            # break
+
+            run.finish()
