@@ -34,10 +34,10 @@ model = VDeepJAllign
 # Define other parameters
 epochs = 5
 batch_size = 64
-datasets_path = "/localdata/alignairr_data/2M_for_training/"
-session_name = "models_2M_version12"
-session_path = os.path.join("/localdata/alignairr_data/", session_name)
-models_path = os.path.join(session_path, "saved_models")
+datasets_path = "/dsi/shared/ig/ig05_train"
+session_name = "models_2M_s5f_20"
+session_path = os.path.join("/dsi/shared/ig/ig05_models/", session_name)
+models_path = os.path.join(session_path, "saved_models/")
 logs_path = os.path.join(session_path, "logs/")
 
 if not os.path.exists(session_path):
@@ -49,9 +49,7 @@ if not os.path.exists(session_path):
 for file in os.listdir(datasets_path):
     if file.endswith(".tsv"):
         # For Debug ###################
-        if file != "sim_data_2M_asc_P05_model_s5f_20_rate_001.tsv" and file.endswith(
-            ".tsv"
-        ):
+        if "s5f_20" in file and file.endswith(".tsv"):
             train_dataset_path = os.path.join(datasets_path, file)
             model_name = file.split(".")[0]
 
