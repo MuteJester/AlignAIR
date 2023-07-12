@@ -150,6 +150,18 @@ class VDeepJDataset:
             },
         }
 
+    def derive_call_sections(self):
+        self.v_family = [self.v_dict[x]["family"] for x in tqdm(self.data.v_call)]
+        self.d_family = [self.d_dict[x]["family"] for x in tqdm(self.data.d_call)]
+
+        self.v_gene = [self.v_dict[x]["gene"] for x in tqdm(self.data.v_call)]
+        self.d_gene = [self.d_dict[x]["gene"] for x in tqdm(self.data.d_call)]
+        self.j_gene = [self.j_dict[x]["gene"] for x in tqdm(self.data.j_call)]
+
+        self.v_allele = [self.v_dict[x]["allele"] for x in tqdm(self.data.v_call)]
+        self.d_allele = [self.d_dict[x]["allele"] for x in tqdm(self.data.d_call)]
+        self.j_allele = [self.j_dict[x]["allele"] for x in tqdm(self.data.j_call)]
+
     @staticmethod
     def reverse_dictionary(dictionary):
         return {i: j for j, i in dictionary.items()}
