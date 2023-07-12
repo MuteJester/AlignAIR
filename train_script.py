@@ -7,7 +7,13 @@ from tensorflow.keras.callbacks import ReduceLROnPlateau
 from tensorflow.keras.callbacks import EarlyStopping
 import wandb
 from wandb.keras import WandbMetricsLogger
+import numpy as np
+import random
 
+seed = 42
+np.random.seed(seed)  # Set the random seed
+tf.random.set_seed(seed)  # Set the random seed
+random.seed(seed)  # Set the random seed
 
 ### Start - CallBacks Definitions ###
 
@@ -34,27 +40,27 @@ class ChangeGeneMaskingCallback(tf.keras.callbacks.Callback):
 
 ### End - CallBacks Definitions ###
 
-patience = 5
+patience = 3
 epoch_to_change = 2  # Specify the epoch at which you want to change the parameter
 
 change_gene_masking_callback = ChangeGeneMaskingCallback(epoch_to_change)
 early_stopping = EarlyStopping(
-    monitor="loss", patience=patience, restore_best_weights=True
+    monitor="loss", patience=patience, min_delta=0.05, restore_best_weights=True
 )
 
 # Define your model
 model = VDeepJAllign
 
 # Define other parameters
-epochs = 20
-batch_size = 64
+epochs = 5
+batch_size = 256
 noise_type = (
-    "s5f_rate"  # Can be of types: ["s5f_rate", "s5f_20", "s5f_opposite", "uniform"]
+    "S5F_rate"  # Can be of types: ["S5F_rate", "S5F_20", "s5f_opposite", "uniform"]
 )
 
 
 datasets_path = "/localdata/alignairr_data/2M_for_training/"
-session_name = "models_2M_version16"
+session_name = "models_2M_version19"
 session_path = os.path.join("/localdata/alignairr_data/", session_name)
 models_path = os.path.join(session_path, "saved_models")
 logs_path = os.path.join(session_path, "logs/")
@@ -68,7 +74,11 @@ if not os.path.exists(session_path):
 for file in os.listdir(datasets_path):
     if file.endswith(".tsv"):
         # For Debug ###################
-        if (noise_type in file) and (file.endswith(".tsv")) and ("add_n" in file):
+        if (
+            (noise_type in file)
+            and (file.endswith(".tsv"))
+            and ("add_n" in file)
+        ):
             train_dataset_path = os.path.join(datasets_path, file)
             model_name = file.split(".")[0]
             noise_rate = model_name.split("_add_n")[0].split("rate_")[1]
@@ -82,7 +92,7 @@ for file in os.listdir(datasets_path):
             config.session_name = session_name
             config.epochs = epochs
             config.batch_size = batch_size
-            config.noise_type = noise_type if noise_type != "s5f_rate" else "s5f"
+            config.noise_type = noise_type if noise_type != "S5F_rate" else "S5F"
             config.noise_rate = noise_rate
             config.patience = patience
 

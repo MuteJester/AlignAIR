@@ -11,15 +11,26 @@ model = VDeepJAllign
 batch_size = 512
 
 datasets_path = "/localdata/alignairr_data/1M_for_test/"
-models_path = "/localdata/alignairr_data/models_2M_version13/saved_models/"
-saved_pred_dict_path = "/localdata/alignairr_data/models_2M_version13/pred/"
+models_path = "/localdata/alignairr_data/models_2M_version19/saved_models/"
+saved_pred_dict_path = "/localdata/alignairr_data/models_2M_version19/pred/"
+noise_type = (
+    "S5F_rate"  # Can be of types: ["S5F_rate", "S5F_20", "s5f_opposite", "uniform"]
+)
 
 for file in tqdm(os.listdir(models_path), desc="model"):
     if ".data-" in file and "add_n" in file:
         model_name = file.split("VDeepJ")[0]
-        train_dataset_path = os.path.join(
-            datasets_path, model_name.replace("2M", "1M") + ".tsv"
-        )
+
+        if noise_type == "S5F_rate":
+            train_dataset_path = os.path.join(
+                datasets_path,
+                model_name.replace("2M", "1M").replace("_HH", "").replace("S5F", "s5f")
+                + ".tsv",
+            )
+        else:
+            train_dataset_path = os.path.join(
+                datasets_path, model_name.replace("2M", "1M") + ".tsv"
+            )
 
         # Create a Trainer instance with desired parameters
         trainer = Trainer(
@@ -36,7 +47,7 @@ for file in tqdm(os.listdir(models_path), desc="model"):
         trainer.load_model(model_path)
 
         for pred_file in tqdm(os.listdir(datasets_path), desc="data"):
-            if pred_file.endswith(".tsv"):
+            if pred_file.endswith(".tsv") and "add_n" in pred_file:
                 pred_file_path = os.path.join(datasets_path, pred_file)
 
                 pred_dict = trainer.predict(pred_file_path)
