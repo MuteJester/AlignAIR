@@ -180,17 +180,18 @@ class Conv2D_and_BatchNorm(tf.keras.layers.Layer):
 
 
 class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
-    def __init__(self, filters=16, kernel=3, max_pool=2,activation=None, **kwargs):
+    def __init__(self, filters=16, kernel=3, max_pool=2,activation=None,initializer=None, **kwargs):
         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
+        initializer_ = 'glorot_uniform' if initializer is None else initializer
         self.conv_2d = Conv1D(filters, kernel, padding='same',
-                              kernel_regularizer=regularizers.l2(0.01))
+                              kernel_regularizer=regularizers.l2(0.01),kernel_initializer = initializer_)
         self.conv_2d_2 = Conv1D(filters, kernel, padding='same',
-                              kernel_regularizer=regularizers.l2(0.01))
+                              kernel_regularizer=regularizers.l2(0.01),kernel_initializer = initializer_)
 
         self.conv_2d_3 = Conv1D(filters, kernel, padding='same',
-                                kernel_regularizer=regularizers.l2(0.01))
+                                kernel_regularizer=regularizers.l2(0.01),kernel_initializer = initializer_)
 
-        self.batch_norm = BatchNormalization()
+        self.batch_norm = BatchNormalization(momentum=0.1, epsilon=0.8, center=1.0, scale=0.02)
 
         if activation is None:
             self.activation = LeakyReLU()

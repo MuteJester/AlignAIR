@@ -49,7 +49,11 @@ class VDeepJAllign(tf.keras.Model):
         use_gene_masking=False,
     ):
         super(VDeepJAllign, self).__init__()
+
+        # weight initialization distribution
+        self.initializer = tf.keras.initializers.RandomNormal(mean=0.5, stddev=0.02)
         # Model Params
+
         self.max_seq_length = int(max_seq_length)
         self.v_family_count, self.v_gene_count, self.v_allele_count = (
             v_family_count,
@@ -177,10 +181,10 @@ class VDeepJAllign(tf.keras.Model):
         self.input_for_masked = Input((self.max_seq_length, 1), name="seq_masked")
 
     def _init_raw_signals_encoding_layers(self):
-        self.conv_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2)
-        self.conv_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2)
-        self.conv_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2)
-        self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3)
+        self.conv_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2,initializer=self.initializer)
+        self.conv_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2,initializer=self.initializer)
+        self.conv_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2,initializer=self.initializer)
+        self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3,initializer=self.initializer)
 
     def _init_masked_v_signals_encoding_layers(self):
         self.conv_v_layer_1 = Conv1D_and_BatchNorm(
@@ -326,37 +330,37 @@ class VDeepJAllign(tf.keras.Model):
         # act = tf.keras.layers.LeakyReLU()
         act = tf.keras.activations.swish
         self.v_start_mid = Dense(
-            32, activation=act, kernel_constraint=unit_norm()
+            32, activation=act, kernel_constraint=unit_norm(),kernel_initializer = self.initializer
         )  # (concatenated_path)
-        self.v_start_out = Dense(1, activation="relu", name="v_start")  # (v_end_mid)
+        self.v_start_out = Dense(1, activation="relu", name="v_start",kernel_initializer = self.initializer)  # (v_end_mid)
 
         self.v_end_mid = Dense(
-            32, activation=act, kernel_constraint=unit_norm()
+            32, activation=act, kernel_constraint=unit_norm(),kernel_initializer = self.initializer
         )  # (concatenated_path)
         self.v_end_mid_concat = concatenate  # ([d_end_mid,d_start_mid])
-        self.v_end_out = Dense(1, activation="relu", name="v_end")  # (v_end_mid)
+        self.v_end_out = Dense(1, activation="relu", name="v_end",kernel_initializer = self.initializer)  # (v_end_mid)
 
         self.d_start_mid = Dense(
-            32, activation=act, kernel_constraint=unit_norm()
+            32, activation=act, kernel_constraint=unit_norm(),kernel_initializer = self.initializer
         )  # (concatenated_path)
-        self.d_start_out = Dense(1, activation="relu", name="d_start")  # (d_start_mid)
+        self.d_start_out = Dense(1, activation="relu", name="d_start",kernel_initializer = self.initializer)  # (d_start_mid)
 
         self.d_end_mid = Dense(
-            32, activation=act, kernel_constraint=unit_norm()
+            32, activation=act, kernel_constraint=unit_norm(),kernel_initializer = self.initializer
         )  # (concatenated_path)
         self.d_end_mid_concat = concatenate  # ([d_end_mid,d_start_mid])
-        self.d_end_out = Dense(1, activation="relu", name="d_end")  # (d_end_mid)
+        self.d_end_out = Dense(1, activation="relu", name="d_end",kernel_initializer = self.initializer)  # (d_end_mid)
 
         self.j_start_mid = Dense(
-            32, activation=act, kernel_constraint=unit_norm()
+            32, activation=act, kernel_constraint=unit_norm(),kernel_initializer = self.initializer
         )  # (concatenated_path)
-        self.j_start_out = Dense(1, activation="relu", name="j_start")  # (j_start_mid)
+        self.j_start_out = Dense(1, activation="relu", name="j_start",kernel_initializer = self.initializer)  # (j_start_mid)
 
         self.j_end_mid = Dense(
-            32, activation=act, kernel_constraint=unit_norm()
+            32, activation=act, kernel_constraint=unit_norm(),kernel_initializer = self.initializer
         )  # (concatenated_path)
         self.j_end_mid_concat = concatenate  # ([j_end_mid,j_start_mid])
-        self.j_end_out = Dense(1, activation="relu", name="j_end")  # (j_end_mid)
+        self.j_end_out = Dense(1, activation="relu", name="j_end",kernel_initializer = self.initializer)  # (j_end_mid)
 
     def _encode_features(self, input, layer):
         a = input
@@ -598,6 +602,32 @@ class VDeepJAllign(tf.keras.Model):
             "j_gene": j_gene,
             "j_allele": j_allele,
         }
+
+    # def custom_post_processing(self,predictions):
+    #     processed_predictions = None
+
+    #     return processed_predictions
+
+    # def predict(self, x,batch_size=None,
+    #     verbose="auto",
+    #     steps=None,
+    #     callbacks=None,
+    #     max_queue_size=10,
+    #     workers=1,
+    #     use_multiprocessing=False):
+    #         # Call the predict method of the parent class
+    #         predictions = super(VDeepJAllign, self).predict(x,  batch_size=batch_size,
+    #                                                             verbose=verbose,
+    #                                                             steps=steps,
+    #                                                             callbacks=callbacks,
+    #                                                             max_queue_size=max_queue_size,
+    #                                                             workers=workers,
+    #                                                             use_multiprocessing=use_multiprocessing)
+
+    #         # Perform your custom post-processing step on predictions
+    #         processed_predictions = self.custom_post_processing(predictions)
+
+    #         return processed_predictions
 
     def c2f32(self, x):
         # cast keras tensor to float 32

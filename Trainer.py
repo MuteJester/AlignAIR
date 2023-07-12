@@ -33,6 +33,7 @@ class Trainer:
         nucleotide_remove_coef=50,
         chunked_read=False,
         use_gene_masking=False,
+        batch_file_reader=False,
         pretrained=None,
         compute_metrics=None,
         callbacks=None,
@@ -60,7 +61,7 @@ class Trainer:
         self.log_to_file = log_to_file
         self.log_file_path = log_file_path
         self.use_gene_masking = use_gene_masking
-
+        self.batch_file_reader = (batch_file_reader,)
         self.corrupt_proba = corrupt_proba
         self.nucleotide_add_coef = nucleotide_add_coef
         self.nucleotide_remove_coef = nucleotide_remove_coef

@@ -8,6 +8,7 @@ import numpy as np
 from airrship.create_repertoire import generate_sequence,load_data,get_genotype,create_allele_dict
 from collections import defaultdict
 import re
+import random
 
 
 def global_genotype():
@@ -49,7 +50,7 @@ def translate_mutation_output(shm_events,max_seq_length):
 
 
 class VDeepJUnbondedDataset():
-    def __init__(self, batch_size=64, max_sequence_length=512, mutation_rate=0.08, shm_flat=False,randomize_rate=False,
+    def __init__(self, batch_size=64, max_sequence_length=512, N_proportion=0.02,mutation_rate=0.08, shm_flat=False,randomize_rate=False,
                 corrupt_beginning = True,corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50,mutation_oracle_mode=False
                  ):
         self.max_sequence_length = max_sequence_length
@@ -81,21 +82,35 @@ class VDeepJUnbondedDataset():
         self.mutation_rate = mutation_rate
         self.batch_size = batch_size
         self.shm_flat = shm_flat
-
+        self.N_proportion = N_proportion
         self.derive_call_dictionaries()
         self.derive_counts()
         self.derive_call_one_hot_representation()
         self._calculate_sub_classes_map()
         self._derive_sub_classes_dict()
 
+    def insert_Ns(self,string, percentage):
+        num_replacements = int(len(string) * percentage)
+        nucleotides_list = list(string)
+
+        for _ in range(num_replacements):
+            index = random.randint(0, len(nucleotides_list) - 1)
+            nucleotides_list[index] = "N"
+
+        return ''.join(nucleotides_list)
     def generate_single(self):
         if self.randomize_rate:
-            return generate_sequence(self.locus, self.data_dict, mutate=self.mutate,
+            S = generate_sequence(self.locus, self.data_dict, mutate=self.mutate,
                                      mutation_rate=np.random.uniform(0,self.mutation_rate,1).item(),
                                      shm_flat=self.shm_flat, flat_usage='gene')
+
+            S.mutated_seq = self.insert_Ns(S.mutated_seq, self.N_proportion)
+            return S
         else:
-            return generate_sequence(self.locus, self.data_dict, mutate=self.mutate, mutation_rate=self.mutation_rate,
+            S = generate_sequence(self.locus, self.data_dict, mutate=self.mutate, mutation_rate=self.mutation_rate,
                                      shm_flat=self.shm_flat, flat_usage='gene')
+            S.mutated_seq = self.insert_Ns(S.mutated_seq, self.N_proportion)
+            return S
 
     def derive_counts(self):
         self.v_family_count = len(set([self.v_dict[i]["family"] for i in self.v_dict]))
