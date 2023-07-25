@@ -34,7 +34,7 @@ class UnboundedTrainer:
             interval_head_metric='mae',
             corrupt_proba=1,
             verbose=0,
-            nucleotide_add_coef=35,
+            nucleotide_add_coef=110,
             nucleotide_remove_coef=50,
             use_gene_masking = False,
             batch_file_reader = False,
