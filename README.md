@@ -36,6 +36,8 @@ Before using the VDeepJ model trainer, make sure you have the following prerequi
 
 ## Parameters
 
+TODO: @raneis --> Consider adding examples as some of the parameters are hard to understand (what is the **model** pararameter?)
+
 - **model**: The model parameter represents the one of the VDeepJ model architectures.
 - **epochs**: The epochs parameter specifies the number of training iterations.
 - **batch_size**: The batch_size parameter determines the number of samples processed at once.
@@ -58,7 +60,7 @@ Before using the VDeepJ model trainer, make sure you have the following prerequi
 - **optimizers**: The optimizer used for training the model.
 - **optimizers_params**: Additional parameters for the optimizer.
 
-### Creating a Trainer Instance and Training
+### Creating a Trainer Instance and Training a model
 
 To create a Trainer instance and train the VDeepJ model, follow these steps:
 
@@ -70,7 +72,7 @@ from VDeepJModel import VDeepJAllign
 
 
 # Define your model
-model =VDeepJAllign
+model = VDeepJAllign()
 # Define other parameters
 epochs = 5
 batch_size = 64
@@ -98,6 +100,8 @@ To make predictions using the trained `Trainer` object, you can use the followin
 predicted_pp = trainer.predict(r'E:\my_path\target_data.tsv', raw=False, top_k=3)
 ```
 The predict method accepts the following parameters:
+
+TODO: @raneisn --> Consider adding a csv input example, ephasize that we are using Ayelets V groups
 
 - **r'E:\my_path\target_data.tsv'**: The path to the test set file that contains the input sequences for prediction.
 - **raw**: A boolean parameter that determines the format of the prediction output. If raw is set to True, the method will return unprocessed model output. If raw is set to False, the output will be converted into a DataFrame, which is easier to work with and understand.
@@ -133,7 +137,8 @@ The dataset object contains all important data preprocessing parameters derived 
 
 1. Create a new Trainer instance:
 ```python
-lt = Trainer(VDeepJAllign, epochs=1, batch_size=64, verbose=1,
+
+lt = Trainer(VDeepJAllign(), epochs=1, batch_size=64, verbose=1,
              log_to_file=True, log_file_name='log', log_file_path='log_save_file_path')
 ```
 2. Load the dataset object:
