@@ -20,12 +20,15 @@ noise_type = (
 
 
 model_name = "s5f_unbounded"
-model_path = "/localdata/alignairr_data/models_2M_version22_sf5/saved_models/tmp"
-pred_file_path = "/localdata/alignairr_data/naive_repertoires/naive_sequences_clean_2.tsv"
-saved_pred_dict_path = "/localdata/alignairr_data/models_2M_version22_sf5/pred/"
+model_path = "/localdata/alignairr_data/sf5_unboundedadd_coef_110_v2/saved_models/tmp"
+pred_file_path = "/localdata/alignairr_data/1M_for_test/sim_data_1M_asc_s5f_rate_001.tsv"
+saved_pred_dict_path = "/localdata/alignairr_data/sf5_unboundedadd_coef_110_v2/pred/"
 train_dataset_path = (
-    "/localdata/alignairr_data/naive_repertoires/naive_sequences_clean.tsv"
+    "/localdata/alignairr_data/sf5_unboundedadd_coef_110_v2/pred/"
 )
+
+if not os.path.exists(saved_pred_dict_path):
+    os.makedirs(saved_pred_dict_path)
 
 # Create a Trainer instance with desired parameters
 trainer = Trainer(
@@ -42,10 +45,10 @@ trainer.load_model(model_path)
 
 pred_dict = trainer.predict(pred_file_path)
 
-save_pred_dict_name = "model__" + model_name + "__data__" + "naive_sequences_clean_2.pkl"
+save_pred_dict_name = "model__" + model_name + "__data__" + "sim_data_1M_asc_s5f_rate_001.pkl"
 
 save_path = os.path.join(saved_pred_dict_path, save_pred_dict_name)
-
+print(save_path)
 # Open a file and use dump()
 with open(save_path, "wb") as file:
     # A new file will be created

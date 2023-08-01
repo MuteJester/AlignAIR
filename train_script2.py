@@ -60,7 +60,7 @@ noise_type = (
 )
 
 datasets_path = "/localdata/alignairr_data/2M_for_training/"
-session_name = "sf5_unboundedadd_coef_110"
+session_name = "sf5_unboundedadd_add_remove_coef_110"
 # pretrained_path = "/localdata/alignairr_data/models_2M_version23_sf5/saved_models/tmp"
 session_path = os.path.join("/localdata/alignairr_data/", session_name)
 models_path = os.path.join(session_path, "saved_models")
@@ -75,7 +75,9 @@ if not os.path.exists(session_path):
 
 model_name = "s5f"
 # Initialize wandb
-run = wandb.init(project=session_name, name=model_name)
+run = wandb.init(
+    project=session_name, name=model_name, settings=wandb.Settings(code_dir=".")
+)
 wandb_callback = WandbMetricsLogger(log_freq="batch")
 ### Hyperparameters
 config = wandb.config
@@ -97,12 +99,12 @@ trainer = UnboundedTrainer(
     VDeepJAllign,
     epochs=epochs,
     batch_size=batch_size,
-    steps_per_epoch=1_000_000,
+    steps_per_epoch=350_000,
     verbose=1,
-    corrupt_beginning=False,
+    corrupt_beginning=True,
     classification_head_metric="categorical_accuracy",
     interval_head_metric="mae",
-    corrupt_proba=0.2,
+    corrupt_proba=0.5,
     use_gene_masking=False,
     log_to_file=True,
     log_file_name=model_name,
