@@ -227,7 +227,7 @@ class Trainer:
         print(f"Dataset Object Saved at {path}")
 
     def load_model(self, weights_path):
-        self.model.load_weights(weights_path)
+        self.model.load_weights(weights_path).expect_partial()
 
     def load_dataset_object(self, path):
         with open(path, "rb") as h:
