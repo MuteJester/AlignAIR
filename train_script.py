@@ -53,6 +53,7 @@ early_stopping = EarlyStopping(
 # Define your model
 model = VDeepJAllign
 
+
 # Define other parameters
 epochs = 5
 batch_size = 256

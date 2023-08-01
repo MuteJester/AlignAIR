@@ -2,4 +2,5 @@ sandbox_notebook.ipynb
 __pychache__/*
 *.pyc
 model/*
-wandb/
+wandb/*
+tmp/*

@@ -11,16 +11,19 @@ import pickle
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+from VDeepJUnbondedDataset import VDeepJUnbondedDataset
 
 
-class Trainer:
+class UnboundedTrainer:
     def __init__(
         self,
         model,
         epochs,
         batch_size,
-        train_dataset=None,
+        steps_per_epoch,
         input_size=512,
+        N_proportion=0.02,
+        randomize_rate=False,
         log_to_file=False,
         log_file_name=None,
         log_file_path=None,
@@ -29,9 +32,8 @@ class Trainer:
         interval_head_metric="mae",
         corrupt_proba=1,
         verbose=0,
-        nucleotide_add_coef=35,
-        nucleotide_remove_coef=50,
-        chunked_read=False,
+        nucleotide_add_coef=110,
+        nucleotide_remove_coef=110,
         use_gene_masking=False,
         batch_file_reader=False,
         pretrained=None,
@@ -46,11 +48,12 @@ class Trainer:
         self.epochs = epochs
         self.input_size = input_size
         self.batch_size = batch_size
-        self.chunked_read = chunked_read
+        self.steps_per_epoch = steps_per_epoch
+        self.N_proportion = N_proportion
         self.corrupt_beginning = corrupt_beginning
+        self.randomize_rate = randomize_rate
         self.classification_head_metric = classification_head_metric
         self.interval_head_metric = interval_head_metric
-        self.train_data = train_dataset
         self.compute_metrics = compute_metrics
         self.callbacks = callbacks
         self.optimizers = optimizers
@@ -66,26 +69,20 @@ class Trainer:
         self.nucleotide_add_coef = nucleotide_add_coef
         self.nucleotide_remove_coef = nucleotide_remove_coef
 
-        if train_dataset is not None:
-            self.train_dataset = VDeepJDataset(
-                data_path=self.train_data,
-                max_sequence_length=self.input_size,
-                corrupt_beginning=self.corrupt_beginning,
-                corrupt_proba=self.corrupt_proba,
-                nucleotide_add_coef=self.nucleotide_add_coef,
-                nucleotide_remove_coef=self.nucleotide_remove_coef,
-                batch_size=self.batch_size,
-                # nrows=10_000,  # FOR DEBUG!!! MUST DELETE WHEN RUNNING FOR REAL DATA
-            )
-        else:
-            print(
-                'Keep in Mind no Dataset Was Loaded,\n Make Sure to Use "load_dataset" to Add a Train Dataset'
-            )
+        self.train_dataset = VDeepJUnbondedDataset(
+            max_sequence_length=self.input_size,
+            corrupt_beginning=self.corrupt_beginning,
+            corrupt_proba=self.corrupt_proba,
+            nucleotide_add_coef=self.nucleotide_add_coef,
+            nucleotide_remove_coef=self.nucleotide_remove_coef,
+            batch_size=self.batch_size,
+            randomize_rate=randomize_rate,
+            N_proportion=N_proportion,
+        )
 
-        if train_dataset is not None:
-            # Set Up Trainer Instance
-            self._load_pretrained_model()  # only if pretrained is not None
-            self._compile_model()
+        # Set Up Trainer Instance
+        self._load_pretrained_model()  # only if pretrained is not None
+        self._compile_model()
 
     def _load_pretrained_model(self):
         model_params = self.train_dataset.generate_model_params()
@@ -140,7 +137,7 @@ class Trainer:
         self.history = self.model.fit(
             train_dataset,
             epochs=self.epochs,
-            steps_per_epoch=(self.train_dataset.data_length) // self.batch_size,
+            steps_per_epoch=self.steps_per_epoch // self.batch_size,
             verbose=self.verbose,
             callbacks=_callbacks,
         )
@@ -228,7 +225,7 @@ class Trainer:
         print(f"Dataset Object Saved at {path}")
 
     def load_model(self, weights_path):
-        self.model.load_weights(weights_path).expect_partial()
+        self.model.load_weights(weights_path)
 
     def load_dataset_object(self, path):
         with open(path, "rb") as h:
