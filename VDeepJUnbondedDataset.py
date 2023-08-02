@@ -10,6 +10,8 @@ from collections import defaultdict
 import re
 import random
 
+from SequenceCorruptor import SequenceCorruptor
+
 
 def global_genotype():
     try:
@@ -51,7 +53,9 @@ def translate_mutation_output(shm_events,max_seq_length):
 
 class VDeepJUnbondedDataset():
     def __init__(self, batch_size=64, max_sequence_length=512, N_proportion=0.02,mutation_rate=0.08, shm_flat=False,randomize_rate=False,
-                corrupt_beginning = True,corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50,mutation_oracle_mode=False
+                corrupt_beginning = True,corrupt_proba = 1,nucleotide_add_coef = 35,nucleotide_remove_coef=50,mutation_oracle_mode=False,
+                 random_sequence_add_proba=1, single_base_stream_proba=0, duplicate_leading_proba=0,
+                 random_allele_proba=0
                  ):
         self.max_sequence_length = max_sequence_length
 
@@ -74,6 +78,14 @@ class VDeepJUnbondedDataset():
             "N": 5,
             "P": 0,  # pad token
         }
+
+        self.sequence_corruptor = SequenceCorruptor(
+            nucleotide_add_coef=nucleotide_add_coef, nucleotide_remove_coef=nucleotide_remove_coef, max_length=512,
+            random_sequence_add_proba=random_sequence_add_proba, single_base_stream_proba=single_base_stream_proba,
+            duplicate_leading_proba=duplicate_leading_proba,
+            random_allele_proba=random_allele_proba, corrupt_proba=corrupt_proba
+        )
+
 
         self.mutate = True
         self.flat_vdj = True
@@ -278,54 +290,7 @@ class VDeepJUnbondedDataset():
     def process_sequences(
         self, data: pd.DataFrame, corrupt_beginning=False, verbose=False
     ):
-        padded_sequences = []
-        v_start, v_end, d_start, d_end, j_start, j_end = [], [], [], [], [], []
-
-        if verbose:
-            iterator = tqdm(data.itertuples(), total=len(data))
-        else:
-            iterator = data.itertuples()
-
-        for row in iterator:
-            to_corrupt = bool(np.random.binomial(1, self.corrupt_proba))
-            if corrupt_beginning and to_corrupt:
-                seq, was_removed, amount_changed = self._corrupt_sequence_beginning(
-                    row.sequence
-                )
-            else:
-                seq = row.sequence
-
-            padded_array, start, end = self._process_and_dpad(seq, self.max_seq_length)
-            padded_sequences.append(padded_array)
-
-            if corrupt_beginning and to_corrupt:
-                if was_removed:
-                    # v is shorter
-                    _adjust = start - amount_changed
-                else:
-                    # v is longer
-                    _adjust = start + amount_changed
-                    start += amount_changed
-            else:
-                _adjust = start
-
-            v_start.append(start)
-            j_end.append(end)
-            v_end.append(row.v_sequence_end + _adjust)
-            d_start.append(row.d_sequence_start + _adjust)
-            d_end.append(row.d_sequence_end + _adjust)
-            j_start.append(row.j_sequence_start + _adjust)
-
-        v_start = np.array(v_start)
-        v_end = np.array(v_end)
-        d_start = np.array(d_start)
-        d_end = np.array(d_end)
-        j_start = np.array(j_start)
-        j_end = np.array(j_end)
-
-        padded_sequences = np.vstack(padded_sequences)
-
-        return v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences
+        return self.sequence_corruptor.process_sequences(data=data,corrupt_beginning=corrupt_beginning,verbose=verbose)
 
     def get_ohe_reverse_mapping(self):
         get_reverse_dict = lambda dic: {i: j for j, i in dic.items()}

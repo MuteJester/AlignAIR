@@ -145,11 +145,11 @@ class Trainer:
             callbacks=_callbacks,
         )
 
-    def predict(self, eval_dataset_path, raw=True, top_k=1):
-        eval_dataset_ = pd.read_table(eval_dataset_path, usecols=["sequence"])[
+    def predict(self, eval_dataset_path, raw=True, top_k=1, account_for_padding=True):
+        eval_dataset = pd.read_table(eval_dataset_path, usecols=["sequence"])[
             "sequence"
         ].to_list()
-        eval_dataset_ = self.train_dataset.tokenize_sequences(eval_dataset_)
+        eval_dataset_ = self.train_dataset.tokenize_sequences(eval_dataset)
         predicted = self.model.predict(
             {
                 "tokenized_sequence": eval_dataset_,
@@ -158,6 +158,14 @@ class Trainer:
             batch_size=self.batch_size,
             verbose=self.verbose,
         )
+
+        # Adjust intervals to account for padding
+        if account_for_padding:
+            padding_sizes = np.array(
+                [(self.input_size - len(i)) // 2 for i in eval_dataset]
+            )
+            for key in ["v_start", "v_end", "d_start", "d_end", "j_start", "j_end"]:
+                predicted[key] -= padding_sizes
 
         if raw:
             return predicted
