@@ -41,6 +41,7 @@ class UnboundedTrainer:
         callbacks=None,
         optimizers=tf.keras.optimizers.Adam,
         optimizers_params=None,
+        mutation_rate=0.08,
     ):
         self.pretrained = pretrained
         self.model = model
@@ -68,6 +69,7 @@ class UnboundedTrainer:
         self.corrupt_proba = corrupt_proba
         self.nucleotide_add_coef = nucleotide_add_coef
         self.nucleotide_remove_coef = nucleotide_remove_coef
+        self.mutation_rate = mutation_rate
 
         self.train_dataset = VDeepJUnbondedDataset(
             max_sequence_length=self.input_size,
@@ -78,11 +80,14 @@ class UnboundedTrainer:
             batch_size=self.batch_size,
             randomize_rate=randomize_rate,
             N_proportion=N_proportion,
+            mutation_rate=mutation_rate,
         )
 
         # Set Up Trainer Instance
         self._load_pretrained_model()  # only if pretrained is not None
         self._compile_model()
+
+        s = 4
 
     def _load_pretrained_model(self):
         model_params = self.train_dataset.generate_model_params()
