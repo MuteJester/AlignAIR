@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-
 class Trainer:
 
     def __init__(
@@ -23,9 +22,9 @@ class Trainer:
             batch_size,
             train_dataset=None,
             input_size=512,
-            log_to_file = False,
-            log_file_name = None,
-            log_file_path = None,
+            log_to_file=False,
+            log_file_name=None,
+            log_file_path=None,
             corrupt_beginning=False,
             classification_head_metric='categorical_accuracy',
             interval_head_metric='mae',
@@ -34,8 +33,8 @@ class Trainer:
             nucleotide_add_coef=35,
             nucleotide_remove_coef=50,
             chunked_read=False,
-            use_gene_masking = False,
-            batch_file_reader = False,
+            use_gene_masking=False,
+            batch_file_reader=False,
             pretrained=None,
             compute_metrics=None,
             callbacks=None,
@@ -85,6 +84,7 @@ class Trainer:
             # Set Up Trainer Instance
             self._load_pretrained_model()  # only if pretrained is not None
             self._compile_model()
+
     def _load_pretrained_model(self):
         model_params = self.train_dataset.generate_model_params()
         model_params['use_gene_masking'] = self.use_gene_masking
@@ -105,8 +105,6 @@ class Trainer:
                     'j_allele']:
             metrics[key] = self.classification_head_metric
 
-
-
         if self.optimizers_params is not None:
             self.model.compile(optimizer=self.optimizers(**self.optimizers_params),
                                loss=None,
@@ -116,7 +114,6 @@ class Trainer:
                                loss=None,
                                metrics=metrics)
 
-
     def train(self):
 
         _callbacks = [] if self.callbacks is None else self.callbacks
@@ -124,8 +121,8 @@ class Trainer:
             if self.log_file_path is None:
                 raise ValueError('No log_file_path was given to Trainer')
 
-            file_name = str(uuid4())+'.csv' if self.log_to_file is None else self.log_file_name
-            csv_logger = CSVLogger(self.log_file_path+file_name+'.csv', append=True, separator=',')
+            file_name = str(uuid4()) + '.csv' if self.log_to_file is None else self.log_file_name
+            csv_logger = CSVLogger(self.log_file_path + file_name + '.csv', append=True, separator=',')
             _callbacks.append(csv_logger)
 
         train_dataset = self.train_dataset.get_train_dataset()
@@ -138,12 +135,19 @@ class Trainer:
 
         )
 
-    def predict(self,eval_dataset_path,raw = True,top_k = 1):
+    def predict(self, eval_dataset_path, raw=True, top_k=1, account_for_padding=True):
 
-        eval_dataset_ = pd.read_table(eval_dataset_path,usecols=['sequence'])['sequence'].to_list()
-        eval_dataset_ = self.train_dataset.tokenize_sequences(eval_dataset_)
-        predicted =  self.model.predict({'tokenized_sequence':eval_dataset_,'tokenized_sequence_for_masking':eval_dataset_}
-                                  ,batch_size = self.batch_size,verbose=self.verbose)
+        eval_dataset = pd.read_table(eval_dataset_path, usecols=['sequence'])['sequence'].to_list()
+        eval_dataset_ = self.train_dataset.tokenize_sequences(eval_dataset)
+        predicted = self.model.predict(
+            {'tokenized_sequence': eval_dataset_, 'tokenized_sequence_for_masking': eval_dataset_}
+            , batch_size=self.batch_size, verbose=self.verbose)
+
+        # Adjust intervals to account for padding
+        if account_for_padding:
+            padding_sizes = np.array([(self.input_size - len(i))//2 for i in eval_dataset])
+            for key in ['v_start', 'v_end', 'd_start', 'd_end', 'j_start', 'j_end']:
+                predicted[key] -= padding_sizes
 
         if raw:
             return predicted
@@ -164,10 +168,7 @@ class Trainer:
                         scores.append(row[sorted_].tolist())
 
                     pdf[key] = top_k_candidates
-                    pdf[key+'_scores'] = scores
-
-
-
+                    pdf[key + '_scores'] = scores
 
             for column in set(predicted.keys()) - set(self.train_dataset.reverse_ohe_mapping.keys()):
                 pdf[column] = predicted[column].astype(int).squeeze()
@@ -181,26 +182,25 @@ class Trainer:
             else:
                 return pd.DataFrame(pdf)
 
-
     def save_model(self, path):
         postfix = str(uuid4())
-        self.model.save_weights(path+f'VDeepJModel_{postfix}_weights')
+        self.model.save_weights(path + f'VDeepJModel_{postfix}_weights')
         print(f'Model Saved!\n Location: {path + f"VDeepJModel_{postfix}_weights"}')
-        return path+f'VDeepJModel_{postfix}_weights'
+        return path + f'VDeepJModel_{postfix}_weights'
 
-    def save_dataset_object(self,path):
-        with open(path,'wb') as h:
-            pickle.dump(self.train_dataset,h)
+    def save_dataset_object(self, path):
+        with open(path, 'wb') as h:
+            pickle.dump(self.train_dataset, h)
         print(f'Dataset Object Saved at {path}')
 
-    def load_model(self,weights_path):
+    def load_model(self, weights_path):
         self.model.load_weights(weights_path)
 
-    def load_dataset_object(self,path):
-        with open(path,'rb') as h:
+    def load_dataset_object(self, path):
+        with open(path, 'rb') as h:
             self.train_dataset = pickle.load(h)
 
-    def load_dataset(self,dataset_path):
+    def load_dataset(self, dataset_path):
         self.train_dataset = VDeepJDataset(data_path=dataset_path,
                                            max_sequence_length=self.input_size,
                                            corrupt_beginning=self.corrupt_beginning,
@@ -215,7 +215,7 @@ class Trainer:
     def rebuild_model(self):
         self.model = self.model_type(**self.train_dataset.generate_model_params())
 
-    def set_custom_dataset_object(self,dataset_instance):
+    def set_custom_dataset_object(self, dataset_instance):
         self.train_dataset = dataset_instance
 
     def plot_model(self):
@@ -224,7 +224,7 @@ class Trainer:
     def model_summary(self):
         self.model.model_summary((self.input_size, 1))
 
-    def plot_history(self,write_path=None):
+    def plot_history(self, write_path=None):
         num_plots = len(self.history.history)
         num_cols = 3
         num_rows = (num_plots + num_cols - 1) // num_cols  # Calculate the number of rows based on num_plots
@@ -254,7 +254,4 @@ class Trainer:
         if write_path is None:
             plt.show()
         else:
-            plt.savefig(write_path,dpi=300,facecolor='white')
-
-
-
+            plt.savefig(write_path, dpi=300, facecolor='white')

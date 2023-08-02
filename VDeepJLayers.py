@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from tensorflow import keras
 from tensorflow.keras.layers import Attention, Conv2D, MaxPool2D, LeakyReLU
 from tensorflow.keras.layers import Dense, Flatten, concatenate, Conv1D, MaxPool1D, BatchNormalization, Dropout
-from tensorflow.keras.layers import Multiply, Layer
+from tensorflow.keras.layers import Multiply, Layer,SeparableConv1D
 from tensorflow.keras import regularizers
 
 
@@ -207,6 +207,82 @@ class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
         x = self.activation(x)
         x = self.max_pool(x)
         return x
+
+class Conv1D_and_BatchNorm_Residual(tf.keras.layers.Layer):
+    def __init__(self, filters=16, kernel=3, max_pool=2, activation=None, initializer=None, **kwargs):
+        super(Conv1D_and_BatchNorm_Residual, self).__init__(**kwargs)
+        initializer_ = 'glorot_uniform' if initializer is None else initializer
+        self.conv_2d_1 = Conv1D(filters, kernel, padding='same',
+                                kernel_regularizer=regularizers.l2(0.01), kernel_initializer=initializer_)
+        self.conv_2d_2 = Conv1D(filters, kernel, padding='same',
+                                kernel_regularizer=regularizers.l2(0.01), kernel_initializer=initializer_)
+        self.conv_2d_3 = Conv1D(32, kernel, padding='same',
+                                kernel_regularizer=regularizers.l2(0.01), kernel_initializer=initializer_)
+        self.batch_norm = BatchNormalization(momentum=0.1, epsilon=0.8, center=1.0, scale=0.02)
+        if activation is None:
+            self.activation = LeakyReLU()
+        else:
+            self.activation = activation
+        self.max_pool = MaxPool1D(max_pool)
+
+    def call(self, inputs):
+        x = self.conv_2d_1(inputs)
+        x = self.conv_2d_2(x)
+        x = self.conv_2d_3(x)
+
+        # Creating a residual connection (or skip connection)
+        x = x + inputs
+
+        x = self.batch_norm(x)
+        x = self.activation(x)
+        x = self.max_pool(x)
+        return x
+
+
+class SepConv1D_and_Residual(tf.keras.layers.Layer):
+    def __init__(self, filters=16, kernel=3, max_pool=2, activation=None, initializer=None, **kwargs):
+        super(SepConv1D_and_Residual, self).__init__(**kwargs)
+        initializer_ = 'glorot_uniform' if initializer is None else initializer
+        self.sep_conv_2d_1 = SeparableConv1D(filters, kernel, padding='same',
+                                              depthwise_regularizer=regularizers.l2(0.01),
+                                              pointwise_regularizer=regularizers.l2(0.01),
+                                              depthwise_initializer=initializer_,
+                                              pointwise_initializer=initializer_)
+
+        self.sep_conv_2d_2 = SeparableConv1D(filters, kernel, padding='same',
+                                              depthwise_regularizer=regularizers.l2(0.01),
+                                              pointwise_regularizer=regularizers.l2(0.01),
+                                              depthwise_initializer=initializer_,
+                                              pointwise_initializer=initializer_)
+
+        self.sep_conv_2d_3 = SeparableConv1D(filters, kernel, padding='same',
+                                              depthwise_regularizer=regularizers.l2(0.01),
+                                              pointwise_regularizer=regularizers.l2(0.01),
+                                              depthwise_initializer=initializer_,
+                                              pointwise_initializer=initializer_)
+
+        self.batch_norm = BatchNormalization(momentum=0.1, epsilon=0.8, center=1.0, scale=0.02)
+
+        if activation is None:
+            self.activation = LeakyReLU()
+        else:
+            self.activation = activation
+
+        self.max_pool = MaxPool1D(max_pool)
+
+    def call(self, inputs):
+        x = self.sep_conv_2d_1(inputs)
+        x = self.sep_conv_2d_2(x)
+        x = self.sep_conv_2d_3(x)
+
+        # Applying residual connection
+        x = tf.keras.layers.add([x, inputs])
+
+        x = self.batch_norm(x)
+        x = self.activation(x)
+        x = self.max_pool(x)
+        return x
+
 
 
 class TokenAndPositionEmbedding(tf.keras.layers.Layer):

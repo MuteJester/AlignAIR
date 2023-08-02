@@ -1,8 +1,10 @@
 import copy
+import multiprocessing
 import shutil
 from dataclasses import asdict, dataclass, field, fields
 from typing import Optional
 from uuid import uuid4
+
 from VDeepJDataset import VDeepJDataset
 import tensorflow as tf
 from tensorflow.keras.callbacks import CSVLogger
@@ -36,6 +38,11 @@ class UnboundedTrainer:
             verbose=0,
             nucleotide_add_coef=35,
             nucleotide_remove_coef=50,
+            random_sequence_add_proba=1,
+            single_base_stream_proba=0,
+            duplicate_leading_proba=0,
+            random_allele_proba=0,
+            num_parallel_calls = 1,
             use_gene_masking = False,
             batch_file_reader = False,
             pretrained=None,
@@ -62,6 +69,7 @@ class UnboundedTrainer:
         self.optimizers = optimizers
         self.optimizers_params = optimizers_params
         self.history = None
+        self.num_parallel_calls = num_parallel_calls
         self.verbose = verbose
         self.log_file_name = log_file_name
         self.log_to_file = log_to_file
@@ -80,8 +88,13 @@ class UnboundedTrainer:
                                            nucleotide_remove_coef=self.nucleotide_remove_coef,
                                            batch_size=self.batch_size,
                                            randomize_rate=randomize_rate,
-                                           N_proportion=N_proportion
+                                           N_proportion=N_proportion,
+                                           random_sequence_add_proba=random_sequence_add_proba,
+                                           single_base_stream_proba=single_base_stream_proba,
+                                           duplicate_leading_proba=duplicate_leading_proba,
+                                           random_allele_proba=random_allele_proba
                                            )
+
 
         # Set Up Trainer Instance
         self._load_pretrained_model()  # only if pretrained is not None
@@ -130,6 +143,15 @@ class UnboundedTrainer:
             _callbacks.append(csv_logger)
 
         train_dataset = self.train_dataset.get_train_dataset()
+        train_dataset = train_dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+
+        def preprocess_data(*args):
+            return args
+        train_dataset = train_dataset.map(
+            preprocess_data,
+            num_parallel_calls=self.num_parallel_calls
+        )
+
         self.history = self.model.fit(
             train_dataset,
             epochs=self.epochs,
@@ -138,50 +160,6 @@ class UnboundedTrainer:
             callbacks=_callbacks
 
         )
-
-    def predict(self,eval_dataset_path,raw = True,top_k = 1):
-
-        eval_dataset_ = pd.read_table(eval_dataset_path,usecols=['sequence'])['sequence'].to_list()
-        eval_dataset_ = self.train_dataset.tokenize_sequences(eval_dataset_)
-        predicted =  self.model.predict({'tokenized_sequence':eval_dataset_,'tokenized_sequence_for_masking':eval_dataset_}
-                                  ,batch_size = self.batch_size,verbose=self.verbose)
-
-        if raw:
-            return predicted
-        else:
-            pdf = dict()
-            for key in self.train_dataset.reverse_ohe_mapping.keys():
-                if top_k == 1:
-                    pdf[key] = [self.train_dataset.reverse_ohe_mapping[key][np.argmax(i)] for i in predicted[key]]
-
-                elif top_k > 1:
-                    K = top_k if top_k < predicted[key].shape[1] else predicted[key].shape[1]
-                    top_k_candidates = []
-                    scores = []
-                    for row in predicted[key]:
-                        sorted_ = np.argsort(row)[::-1][:K]
-                        candidates = [self.train_dataset.reverse_ohe_mapping[key][c] for c in sorted_]
-                        top_k_candidates.append('|'.join(candidates))
-                        scores.append(row[sorted_].tolist())
-
-                    pdf[key] = top_k_candidates
-                    pdf[key+'_scores'] = scores
-
-
-
-
-            for column in set(predicted.keys()) - set(self.train_dataset.reverse_ohe_mapping.keys()):
-                pdf[column] = predicted[column].astype(int).squeeze()
-
-            if top_k == 1:
-                pred_df = pd.DataFrame(pdf)
-                pred_df['V'] = pred_df['v_family'] + '-' + pred_df['v_gene'] + '*' + pred_df['v_allele']
-                pred_df['D'] = pred_df['d_family'] + '-' + pred_df['d_gene'] + '*' + pred_df['d_allele']
-                pred_df['J'] = pred_df['j_gene'] + '*' + pred_df['j_allele']
-                return pred_df
-            else:
-                return pd.DataFrame(pdf)
-
 
     def save_model(self, path):
         postfix = str(uuid4())
