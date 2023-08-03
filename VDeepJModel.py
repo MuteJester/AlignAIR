@@ -23,6 +23,15 @@ from VDeepJLayers import (
 )
 from tensorflow.keras import regularizers
 from enum import Enum, auto
+from keras.layers import Activation
+from keras.utils.generic_utils import get_custom_objects
+
+
+def mish(x):
+    return x * tf.math.tanh(tf.math.softplus(x))
+
+
+get_custom_objects().update({'mish': Activation(mish)})
 
 
 class ModelComponents(Enum):
@@ -34,18 +43,18 @@ class ModelComponents(Enum):
 
 class VDeepJAllign(tf.keras.Model):
     def __init__(
-        self,
-        max_seq_length,
-        v_family_count,
-        v_gene_count,
-        v_allele_count,
-        d_family_count,
-        d_gene_count,
-        d_allele_count,
-        j_gene_count,
-        j_allele_count,
-        ohe_sub_classes_dict,
-        use_gene_masking = False
+            self,
+            max_seq_length,
+            v_family_count,
+            v_gene_count,
+            v_allele_count,
+            d_family_count,
+            d_gene_count,
+            d_allele_count,
+            j_gene_count,
+            j_allele_count,
+            ohe_sub_classes_dict,
+            use_gene_masking=False
     ):
         super(VDeepJAllign, self).__init__()
 
@@ -420,7 +429,6 @@ class VDeepJAllign(tf.keras.Model):
         d_family_middle = self.d_family_call_middle(d_feature_map)
         d_family = self.d_family_call_head(d_family_middle)
 
-
         if self.use_gene_masking:
             d_family_class = tf.math.argmax(d_family, 1)
             d_gene_classes_masks = tf.gather(
@@ -614,7 +622,7 @@ class VDeepJAllign(tf.keras.Model):
         return K.cast(x, "float32")
 
     def call_hierarchy_loss(
-        self, family_true, gene_true, allele_true, family_pred, gene_pred, allele_pred
+            self, family_true, gene_true, allele_true, family_pred, gene_pred, allele_pred
     ):
         if family_true != None:
             family_loss = K.categorical_crossentropy(
@@ -691,7 +699,7 @@ class VDeepJAllign(tf.keras.Model):
             0.0, K.minimum(j_end, self.max_seq_length) - K.maximum(j_start, j_end)
         )
         total_intersection_loss = (
-            v_intersection_loss + d_intersection_loss + j_intersection_loss
+                v_intersection_loss + d_intersection_loss + j_intersection_loss
         )
         # ========================================================================================================================
 
@@ -731,18 +739,18 @@ class VDeepJAllign(tf.keras.Model):
         )
 
         classification_loss = (
-            self.v_class_weight * clf_v_loss
-            + self.d_class_weight * clf_d_loss
-            + self.j_class_weight * clf_j_loss
+                self.v_class_weight * clf_v_loss
+                + self.d_class_weight * clf_d_loss
+                + self.j_class_weight * clf_j_loss
         )
 
         # ========================================================================================================================
 
         # Combine the two losses using a weighted sum
         total_loss = (
-            (self.regression_weight * mse_loss)
-            + (self.intersection_weight * total_intersection_loss)
-        ) + self.classification_weight * classification_loss
+                             (self.regression_weight * mse_loss)
+                             + (self.intersection_weight * total_intersection_loss)
+                     ) + self.classification_weight * classification_loss
 
         return total_loss, total_intersection_loss, mse_loss, classification_loss
 
