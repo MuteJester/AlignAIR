@@ -60,8 +60,8 @@ noise_type = (
 )
 
 datasets_path = "/localdata/alignairr_data/2M_for_training/"
-session_name = "sf5_unboundedadd_add_remove_coef_110"
-# pretrained_path = "/localdata/alignairr_data/models_2M_version23_sf5/saved_models/tmp"
+session_name = "sf5_unboundedadd_02082023"
+pretrained_path = "/localdata/alignairr_data/sf5_unboundedadd_02082023/saved_models/tmp"
 session_path = os.path.join("/localdata/alignairr_data/", session_name)
 models_path = os.path.join(session_path, "saved_models")
 checkpoint_path = os.path.join(models_path, "tmp")
@@ -73,7 +73,7 @@ if not os.path.exists(session_path):
     os.makedirs(logs_path)
     os.makedirs(checkpoint_path)
 
-model_name = "s5f"
+model_name = "s5f_after_additional_noise"
 # Initialize wandb
 run = wandb.init(
     project=session_name, name=model_name, settings=wandb.Settings(code_dir=".")
@@ -103,9 +103,16 @@ trainer = UnboundedTrainer(
     verbose=1,
     corrupt_beginning=True,
     classification_head_metric="categorical_accuracy",
-    interval_head_metric="mae",
-    corrupt_proba=0.5,
+    interval_head_metric=tf.keras.losses.log_cosh,
+    corrupt_proba=0.4,
     use_gene_masking=False,
+    nucleotide_add_coef=110,
+    nucleotide_remove_coef=110,
+    random_sequence_add_proba=0.25,
+    single_base_stream_proba=0.25,
+    duplicate_leading_proba=0.25,
+    random_allele_proba=0.25,
+    num_parallel_calls=45,
     log_to_file=True,
     log_file_name=model_name,
     log_file_path=logs_path,
