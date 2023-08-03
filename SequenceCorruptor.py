@@ -46,7 +46,6 @@ class SequenceCorruptor:
                  random_allele_proba=0,corrupt_proba=1):
         self.nucleotide_add_distribution = st.beta(1, 3)
         self.nucleotide_remove_distribution = st.beta(1, 3)
-        self.add_remove_probability = st.bernoulli(0.5)
         self.corrupt_proba = corrupt_proba
 
         self.max_length = max_length
@@ -89,7 +88,7 @@ class SequenceCorruptor:
             return sample
 
     def _sample_add_remove_distribution(self):
-        return bool(self.add_remove_probability.rvs(1))
+        return np.random.choice([1,2,3],size=1,p = [0.4,0.4,0.2])
 
     def _sample_corruption_method(self):
         method = random.choices([self.random_nucleotides,self.single_base_stream,self.duplicate_leading,
@@ -128,19 +127,33 @@ class SequenceCorruptor:
 
     def _corrupt_sequence_beginning(self, sequence):
         to_remove = self._sample_add_remove_distribution()
-        if to_remove:
+        if to_remove == 1: # remove
             amount_to_remove = self._sample_nucleotide_remove_distribution(1)
             modified_sequence = sequence[amount_to_remove:]
-            return modified_sequence, to_remove, amount_to_remove
+            return modified_sequence, True, amount_to_remove
 
-        else:
+        elif to_remove == 2: # add
             amount_to_add = self._sample_nucleotide_add_distribution(1)
             method = self._sample_corruption_method()
             modified_sequence = method(amount_to_add,sequence)
             modified_sequence = self._fix_sequence_validity_after_corruption(
                 modified_sequence
             )
-            return modified_sequence, to_remove, amount_to_add
+            return modified_sequence, False, amount_to_add
+        else: # add and remove
+            #remove
+            amount_to_removed = self._sample_nucleotide_remove_distribution(1)
+            modified_sequence = sequence[amount_to_removed:]
+
+
+            # add
+            amount_to_added = self._sample_nucleotide_add_distribution(1)
+            method = self._sample_corruption_method()
+            modified_sequence = method(amount_to_added,modified_sequence)
+            modified_sequence = self._fix_sequence_validity_after_corruption(
+                modified_sequence
+            )
+            return modified_sequence, True, amount_to_removed
 
     def _process_row(self, row, corrupt_beginning):
         to_corrupt = bool(np.random.binomial(1, self.corrupt_proba))
