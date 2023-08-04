@@ -1,9 +1,9 @@
 # Import the necessary libraries
 import tensorflow as tf
+import os
 from Trainer import Trainer
 from VDeepJModel import VDeepJAllign
 from UnboundedTrainer import UnboundedTrainer
-import os
 from tensorflow.keras.callbacks import ReduceLROnPlateau
 from tensorflow.keras.callbacks import EarlyStopping
 import wandb
@@ -116,7 +116,7 @@ trainer = UnboundedTrainer(
     log_to_file=True,
     log_file_name=model_name,
     log_file_path=logs_path,
-    # pretrained=pretrained_path,
+    pretrained=pretrained_path,
     callbacks=[
         reduce_lr,
         change_gene_masking_callback,
