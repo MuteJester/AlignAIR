@@ -1,9 +1,9 @@
 # Import the necessary libraries
 import tensorflow as tf
+import os
 from Trainer import Trainer
 from VDeepJModel import VDeepJAllign
 from UnboundedTrainer import UnboundedTrainer
-import os
 from tensorflow.keras.callbacks import ReduceLROnPlateau
 from tensorflow.keras.callbacks import EarlyStopping
 import wandb
@@ -60,8 +60,8 @@ noise_type = (
 )
 
 datasets_path = "/localdata/alignairr_data/2M_for_training/"
-session_name = "sf5_unboundedadd_02082023"
-pretrained_path = "/localdata/alignairr_data/sf5_unboundedadd_02082023/saved_models/tmp"
+session_name = "sf5_unboundedadd_04082023"
+# pretrained_path = "/localdata/alignairr_data/sf5_unboundedadd_02082023/saved_models/tmp"
 session_path = os.path.join("/localdata/alignairr_data/", session_name)
 models_path = os.path.join(session_path, "saved_models")
 checkpoint_path = os.path.join(models_path, "tmp")
@@ -108,8 +108,8 @@ trainer = UnboundedTrainer(
     use_gene_masking=False,
     nucleotide_add_coef=110,
     nucleotide_remove_coef=110,
-    random_sequence_add_proba=0.25,
-    single_base_stream_proba=0.25,
+    random_sequence_add_proba=0.45,
+    single_base_stream_proba=0.05,
     duplicate_leading_proba=0.25,
     random_allele_proba=0.25,
     num_parallel_calls=45,
