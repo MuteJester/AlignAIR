@@ -189,10 +189,11 @@ class VDeepJAllign(tf.keras.Model):
         self.input_for_masked = Input((self.max_seq_length, 1), name="seq_masked")
 
     def _init_raw_signals_encoding_layers(self):
-        self.conv_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2,initializer=self.initializer)
-        self.conv_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2,initializer=self.initializer)
-        self.conv_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2,initializer=self.initializer)
-        self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3,initializer=self.initializer)
+        # Resnet Influenced
+        self.conv_layer_1 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2,initializer=self.initializer)
+        self.conv_layer_2 = Conv1D_and_BatchNorm(filters=64, kernel=5, max_pool=2,initializer=self.initializer)
+        self.conv_layer_3 = Conv1D_and_BatchNorm(filters=128, kernel=5, max_pool=2,initializer=self.initializer)
+        self.conv_layer_4 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=3,initializer=self.initializer)
 
     def _init_masked_v_signals_encoding_layers(self):
         self.conv_v_layer_1 = Conv1D_and_BatchNorm(filters=128, kernel=3, max_pool=2,activation=tf.keras.layers.Activation('tanh'))
