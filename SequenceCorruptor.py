@@ -153,7 +153,7 @@ class SequenceCorruptor:
             modified_sequence = self._fix_sequence_validity_after_corruption(
                 modified_sequence
             )
-            return modified_sequence, True, amount_to_removed
+            return modified_sequence, False, amount_to_added-amount_to_removed
 
     def _process_row(self, row, corrupt_beginning):
         to_corrupt = bool(np.random.binomial(1, self.corrupt_proba))
@@ -201,13 +201,14 @@ class SequenceCorruptor:
             if corrupt_beginning and row.to_corrupt:
                 if was_removed:
                     # v is shorter
-                    _adjust = start - amount_changed
+                    _adjust = start-amount_changed
                 else:
                     # v is longer
                     _adjust = start + amount_changed
                     start += amount_changed
             else:
                 _adjust = start
+
 
             v_start.append(start)
             j_end.append(end)
@@ -244,4 +245,18 @@ class SequenceCorruptor:
         random_base = random.choice(['A','T','G','C','N'])*amount
         return random_base+sequence
 
+
+
+
+test = SequenceCorruptor()
+test_df = pd.DataFrame({'sequence':['NAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTN'],
+                        'v_sequence_start':[0],
+                        'v_sequence_end': [20],
+                        'd_sequence_start': [30],
+                        'd_sequence_end': [38],
+                        'j_sequence_start': [42],
+                        'j_sequence_end': [45]
+                        })
+
+test.process_sequences(test_df,corrupt_beginning=True)
 
