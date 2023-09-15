@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field, fields
 from typing import Optional
 from uuid import uuid4
 from VDeepJDataset import VDeepJDataset
+from VDeepJUnbondedDataset import VDeepJUnbondedDatasetSingleBeam
 import tensorflow as tf
 from tensorflow.keras.callbacks import CSVLogger
 import pandas as pd
@@ -39,7 +40,8 @@ class Trainer:
             compute_metrics=None,
             callbacks=None,
             optimizers=tf.keras.optimizers.Adam,
-            optimizers_params=None
+            optimizers_params=None,
+            unbounded=False
     ):
 
         self.pretrained = pretrained
@@ -63,20 +65,31 @@ class Trainer:
         self.log_to_file = log_to_file
         self.log_file_path = log_file_path
         self.use_gene_masking = use_gene_masking
-        self.batch_file_reader = batch_file_reader,
+        self.batch_file_reader = batch_file_reader
         self.corrupt_proba = corrupt_proba
         self.nucleotide_add_coef = nucleotide_add_coef
         self.nucleotide_remove_coef = nucleotide_remove_coef
+        self.unbounded = unbounded
 
         if train_dataset is not None:
-            self.train_dataset = VDeepJDataset(data_path=self.train_data,
-                                               max_sequence_length=self.input_size,
-                                               corrupt_beginning=self.corrupt_beginning,
-                                               corrupt_proba=self.corrupt_proba,
-                                               nucleotide_add_coef=self.nucleotide_add_coef,
-                                               nucleotide_remove_coef=self.nucleotide_remove_coef,
-                                               batch_size=self.batch_size,
-                                               batch_read_file=self.batch_file_reader)
+            if not self.unbounded:
+                self.train_dataset = VDeepJDataset(data_path=self.train_data,
+                                                max_sequence_length=self.input_size,
+                                                corrupt_beginning=self.corrupt_beginning,
+                                                corrupt_proba=self.corrupt_proba,
+                                                nucleotide_add_coef=self.nucleotide_add_coef,
+                                                nucleotide_remove_coef=self.nucleotide_remove_coef,
+                                                batch_size=self.batch_size,
+                                                batch_read_file=self.batch_file_reader)
+            else:
+                self.train_dataset = VDeepJUnbondedDatasetSingleBeam(
+                                           max_sequence_length=self.input_size,
+                                           corrupt_beginning=self.corrupt_beginning,
+                                           corrupt_proba=self.corrupt_proba,
+                                           nucleotide_add_coef=self.nucleotide_add_coef,
+                                           nucleotide_remove_coef=self.nucleotide_remove_coef,
+                                           batch_size=self.batch_size,
+                                           )
         else:
             print('Keep in Mind no Dataset Was Loaded,\n Make Sure to Use "load_dataset" to Add a Train Dataset')
 
@@ -87,7 +100,7 @@ class Trainer:
 
     def _load_pretrained_model(self):
         model_params = self.train_dataset.generate_model_params()
-        model_params['use_gene_masking'] = self.use_gene_masking
+        #model_params['use_gene_masking'] = self.use_gene_masking
         self.model = self.model_type(**model_params)
         if self.pretrained is not None:
             self.model.load_weights(self.pretrained)
@@ -135,19 +148,29 @@ class Trainer:
 
         )
 
-    def predict(self, eval_dataset_path, raw=True, top_k=1, account_for_padding=True):
+    def predict(self, eval_dataset_path, raw=True, top_k=1, account_for_padding=True,batch_size=None):
 
         eval_dataset = pd.read_table(eval_dataset_path, usecols=['sequence'])['sequence'].to_list()
         eval_dataset_ = self.train_dataset.tokenize_sequences(eval_dataset)
-        predicted = self.model.predict(
-            {'tokenized_sequence': eval_dataset_, 'tokenized_sequence_for_masking': eval_dataset_}
-            , batch_size=self.batch_size, verbose=self.verbose)
+        padded_seqs_tensor = tf.convert_to_tensor(eval_dataset_, dtype=tf.int32)
+        dataset_from_tensors = tf.data.Dataset.from_tensor_slices({
+            'tokenized_sequence': padded_seqs_tensor,
+            'tokenized_sequence_for_masking': padded_seqs_tensor
+        })
+        dataset = (
+            dataset_from_tensors
+            .batch(self.batch_size if batch_size is None else batch_size)
+            .prefetch(tf.data.AUTOTUNE)
+        )
+
+        predicted = self.model.predict(dataset, verbose=self.verbose)
 
         # Adjust intervals to account for padding
-        if account_for_padding:
-            padding_sizes = np.array([(self.input_size - len(i))//2 for i in eval_dataset])
-            for key in ['v_start', 'v_end', 'd_start', 'd_end', 'j_start', 'j_end']:
-                predicted[key] -= padding_sizes
+        #
+        # if account_for_padding:
+        #     padding_sizes = np.array([(self.input_size - len(i))//2 for i in eval_dataset])
+        #     for key in ['v_start', 'v_end', 'd_start', 'd_end', 'j_start', 'j_end']:
+        #         predicted[key] -= padding_sizes
 
         if raw:
             return predicted
