@@ -7,6 +7,63 @@ from tensorflow.keras.layers import Attention, Conv2D, MaxPool2D, LeakyReLU
 from tensorflow.keras.layers import Dense, Flatten, concatenate, Conv1D, MaxPool1D, BatchNormalization, Dropout
 from tensorflow.keras.layers import Multiply, Layer,SeparableConv1D
 from tensorflow.keras import regularizers
+from tensorflow.keras.layers import Dense, Dropout, LayerNormalization
+
+
+def soft_mask(indices, start, end, K):
+    # For positions greater than start but less than start + K, ramp up linearly
+    ramp_up = (indices - start) / K
+    ramp_up = tf.clip_by_value(ramp_up, 0, 1)
+    
+    # For positions less than end but greater than end - K, ramp down linearly
+    ramp_down = (end - indices) / K
+    ramp_down = tf.clip_by_value(ramp_down, 0, 1)
+    
+    # Use the hard mask as the base but modulate it with the soft ramping on each side
+    mask = tf.minimum(ramp_up, ramp_down)
+    
+    # For positions between start + K and end - K, the mask should be 1
+    mask = tf.where(
+        (indices >= start + K) & (indices <= end - K),
+        1.0,
+        mask
+    )
+    return mask
+
+
+def interval_iou(interval1, interval2, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
+    # interval1 and interval2 should be 1x2 tensors [start, end]
+
+    # Get the coordinates of intervals
+    b1_start, b1_end = interval1[0], interval1[1]
+    b2_start, b2_end = interval2[0], interval2[1]
+
+    # Intersection area
+    inter = K.maximum(0.0, K.minimum(b1_end, b2_end) - K.maximum(b1_start, b2_start))
+
+    # Union Area
+    len1 = b1_end - b1_start + eps
+    len2 = b2_end - b2_start + eps
+    union = len1 + len2 - inter + eps
+
+    iou = inter / union
+
+    if GIoU or DIoU or CIoU:
+        c_len = K.maximum(b1_end, b2_end) - K.minimum(b1_start, b2_start)  # convex (smallest enclosing interval) length
+        if CIoU or DIoU:  
+            c2 = c_len ** 2 + eps  # convex length squared
+            rho2 = ((b2_start + b2_end - b1_start - b1_end) ** 2) / 4  # center distance squared
+            if DIoU:
+                return iou - rho2 / c2  # DIoU
+            elif CIoU:  
+                v = (4 / (math.pi ** 2)) * K.square(tf.math.atan(len2 / (len1 + eps)))
+                alpha = v / (v - iou + (1 + eps))
+                return iou - (rho2 / c2 + v * alpha)  # CIoU
+        else:  
+            c_area = c_len + eps  # convex area
+            return iou - (c_area - union) / c_area  # GIoU
+    else:
+        return iou  # IoU
 
 
 class CutoutLayer(Layer):
@@ -47,6 +104,63 @@ class CutoutLayer(Layer):
         y = self.round_output(dense_end)
         indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
         R = K.greater(indices, x) & K.less(indices, y)
+        R = tf.cast(R, tf.float32)
+        R = tf.reshape(R, shape=(batch_size, self.max_size))
+        return R
+
+    def call(self, inputs):
+        if self.gene == 'V':
+            batch_size = tf.shape(inputs[0])[0]
+            return self._call_v(inputs, batch_size)
+        elif self.gene == 'D':
+            batch_size = tf.shape(inputs[0])[0]
+            return self._call_d(inputs, batch_size)
+        elif self.gene == 'J':
+            batch_size = tf.shape(inputs[0])[0]
+            return self._call_j(inputs, batch_size)
+
+    def compute_output_shape(self, input_shape):
+        return (None, self.max_size, 1)
+
+class SoftCutoutLayer(Layer):
+    def __init__(self, max_size, gene, **kwargs):
+        super(SoftCutoutLayer, self).__init__(**kwargs)
+        self.max_size = max_size
+        self.gene = gene
+        self.K=5
+
+    def round_output(self, dense_output):
+        max_value = tf.reduce_max(dense_output, axis=-1, keepdims=True)
+        max_value = tf.clip_by_value(max_value, 0, self.max_size)
+        max_value = tf.cast(max_value, dtype=tf.float32)
+        return max_value
+
+    def _call_v(self, inputs, batch_size):
+        dense_start, dense_end = inputs
+        x = self.round_output(dense_start)
+        y = self.round_output(dense_end)
+        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
+        R = soft_mask(indices, x, y, self.K)
+        R = tf.cast(R, tf.float32)
+        R = tf.reshape(R, shape=(batch_size, self.max_size))
+        return R
+
+    def _call_d(self, inputs, batch_size):
+        dense_start, dense_end = inputs
+        x = self.round_output(dense_start)
+        y = self.round_output(dense_end)
+        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
+        R = soft_mask(indices, x, y, self.K)
+        R = tf.cast(R, tf.float32)
+        R = tf.reshape(R, shape=(batch_size, self.max_size))
+        return R
+
+    def _call_j(self, inputs, batch_size):
+        dense_start, dense_end = inputs
+        x = self.round_output(dense_start)
+        y = self.round_output(dense_end)
+        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
+        R = soft_mask(indices, x, y, self.K)
         R = tf.cast(R, tf.float32)
         R = tf.reshape(R, shape=(batch_size, self.max_size))
         return R
@@ -324,6 +438,71 @@ class MutationOracleBody(tf.keras.layers.Layer):
 
 
 
+
+class MultiHeadSelfAttention(tf.keras.layers.Layer):
+    def __init__(self, embed_dim, num_heads):
+        super(MultiHeadSelfAttention, self).__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        if embed_dim % num_heads != 0:
+            raise ValueError(
+                f"embedding dimension = {embed_dim} should be divisible by number of heads = {num_heads}"
+            )
+        self.projection_dim = embed_dim // num_heads
+        self.query_dense = Dense(embed_dim)
+        self.key_dense = Dense(embed_dim)
+        self.value_dense = Dense(embed_dim)
+        self.combine_heads = Dense(embed_dim)
+
+    def attention(self, query, key, value):
+        score = tf.matmul(query, key, transpose_b=True)
+        dim_key = tf.cast(tf.shape(key)[-1], tf.float32)
+        scaled_score = score / tf.math.sqrt(dim_key)
+        weights = tf.nn.softmax(scaled_score, axis=-1)
+        output = tf.matmul(weights, value)
+        return output, weights
+
+    def separate_heads(self, x, batch_size):
+        x = tf.reshape(x, (batch_size, -1, self.num_heads, self.projection_dim))
+        return tf.transpose(x, perm=[0, 2, 1, 3])
+
+    def call(self, inputs):
+        batch_size = tf.shape(inputs)[0]
+        query = self.query_dense(inputs)
+        key = self.key_dense(inputs)
+        value = self.value_dense(inputs)
+        query = self.separate_heads(query, batch_size)
+        key = self.separate_heads(key, batch_size)
+        value = self.separate_heads(value, batch_size)
+        attention, weights = self.attention(query, key, value)
+        attention = tf.transpose(attention, perm=[0, 2, 1, 3])
+        concat_attention = tf.reshape(attention, (batch_size, -1, self.embed_dim))
+        output = self.combine_heads(concat_attention)
+        return output
+
+class TransformerBlock(tf.keras.layers.Layer):
+    def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1):
+        super(TransformerBlock, self).__init__()
+        self.att = MultiHeadSelfAttention(embed_dim, num_heads)
+        self.ffn = tf.keras.Sequential(
+            [Dense(ff_dim, activation="relu"), Dense(embed_dim),]
+        )
+        self.layernorm1 = LayerNormalization(epsilon=1e-6)
+        self.layernorm2 = LayerNormalization(epsilon=1e-6)
+        self.dropout1 = Dropout(rate)
+        self.dropout2 = Dropout(rate)
+
+    def call(self, inputs, training):
+        attn_output = self.att(inputs)
+        attn_output = self.dropout1(attn_output, training=training)
+        out1 = self.layernorm1(inputs + attn_output)
+        ffn_output = self.ffn(out1)
+        ffn_output = self.dropout2(ffn_output, training=training)
+        return self.layernorm2(out1 + ffn_output)
+
+
+
+
 def mod3_mse_loss(y_true, y_pred):
     y_true_casted = K.cast(y_true, dtype='float32')
     # Compute the residual of the predicted values modulo 3
@@ -357,3 +536,20 @@ def mod3_mse_regularization(y_true, y_pred):
     mod_pred = K.abs(y_pred - 3 * K.cast(K.round(y_pred / 3), 'float32'))
     mod_loss = K.mean(K.square(mod_pred))
     return mse + mod_loss
+
+def mse_no_regularization(y_true, y_pred):
+    """
+    Computes the mean squared error.
+    """
+    mse = K.mean(K.square(y_true - y_pred))
+    return mse
+
+
+def log_cosh_loss(y_true, y_pred):
+    """
+    Computes the log-cosh loss.
+    """
+    loss = tf.keras.losses.log_cosh(
+    y_true, y_pred
+    )
+    return loss
