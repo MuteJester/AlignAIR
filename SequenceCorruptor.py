@@ -4,7 +4,12 @@ import tensorflow as tf
 import pandas as pd
 from tqdm.auto import tqdm
 import numpy as np
-from airrship.create_repertoire import generate_sequence, load_data, get_genotype, create_allele_dict
+from airrship.create_repertoire import (
+    generate_sequence,
+    load_data,
+    get_genotype,
+    create_allele_dict,
+)
 from collections import defaultdict
 import re
 import random
@@ -12,21 +17,15 @@ import random
 
 def global_genotype():
     try:
-        path_to_data = importlib.resources.files(
-            'airrship').joinpath("data")
+        path_to_data = importlib.resources.files("airrship").joinpath("data")
     except AttributeError:
-        with importlib.resources.path('airrship', 'data') as p:
+        with importlib.resources.path("airrship", "data") as p:
             path_to_data = p
-    v_alleles = create_allele_dict(
-        f"{path_to_data}/imgt_human_IGHV.fasta")
-    d_alleles = create_allele_dict(
-        f"{path_to_data}/imgt_human_IGHD.fasta")
-    j_alleles = create_allele_dict(
-        f"{path_to_data}/imgt_human_IGHJ.fasta")
+    v_alleles = create_allele_dict(f"{path_to_data}/imgt_human_IGHV.fasta")
+    d_alleles = create_allele_dict(f"{path_to_data}/imgt_human_IGHD.fasta")
+    j_alleles = create_allele_dict(f"{path_to_data}/imgt_human_IGHJ.fasta")
 
-    vdj_allele_dicts = {"V": v_alleles,
-                        "D": d_alleles,
-                        "J": j_alleles}
+    vdj_allele_dicts = {"V": v_alleles, "D": d_alleles, "J": j_alleles}
 
     chromosome1, chromosome2 = defaultdict(list), defaultdict(list)
     for segment in ["V", "D", "J"]:
@@ -41,11 +40,19 @@ def global_genotype():
 
 
 class SequenceCorruptor:
-    def __init__(self, nucleotide_add_coef=100, nucleotide_remove_coef=100, max_length=512,
-                 random_sequence_add_proba=1,single_base_stream_proba=0,duplicate_leading_proba=0,
-                 random_allele_proba=0,corrupt_proba=1):
-        self.nucleotide_add_distribution = st.beta(1, 3)
-        self.nucleotide_remove_distribution = st.beta(1, 3)
+    def __init__(
+        self,
+        nucleotide_add_coef=100,
+        nucleotide_remove_coef=100,
+        max_length=512,
+        random_sequence_add_proba=1,
+        single_base_stream_proba=0,
+        duplicate_leading_proba=0,
+        random_allele_proba=0,
+        corrupt_proba=1,
+    ):
+        self.nucleotide_add_distribution = st.beta(2, 3)
+        self.nucleotide_remove_distribution = st.beta(2, 3)
         self.corrupt_proba = corrupt_proba
 
         self.max_length = max_length
@@ -70,7 +77,7 @@ class SequenceCorruptor:
 
     def _sample_nucleotide_add_distribution(self, size):
         sample = (
-                self.nucleotide_add_coef * self.nucleotide_add_distribution.rvs(size=size)
+            self.nucleotide_add_coef * self.nucleotide_add_distribution.rvs(size=size)
         ).astype(int)
         if len(sample) == 1:
             return sample.item()
@@ -79,8 +86,8 @@ class SequenceCorruptor:
 
     def _sample_nucleotide_remove_distribution(self, size):
         sample = (
-                self.nucleotide_remove_coef
-                * self.nucleotide_remove_distribution.rvs(size=size)
+            self.nucleotide_remove_coef
+            * self.nucleotide_remove_distribution.rvs(size=size)
         ).astype(int)
         if len(sample) == 1:
             return sample.item()
@@ -88,13 +95,24 @@ class SequenceCorruptor:
             return sample
 
     def _sample_add_remove_distribution(self):
-        return np.random.choice([1,2,3],size=1,p = [0.4,0.4,0.2])
+        return np.random.choice([1, 2, 3], size=1, p=[0.4, 0.4, 0.2])
 
     def _sample_corruption_method(self):
-        method = random.choices([self.random_nucleotides,self.single_base_stream,self.duplicate_leading,
-                                 self.random_allele_section],
-                       weights=[self.random_sequence_add_proba,self.single_base_stream_proba,
-                                self.duplicate_leading_proba,self.random_allele_proba],k=1)[0]
+        method = random.choices(
+            [
+                self.random_nucleotides,
+                self.single_base_stream,
+                self.duplicate_leading,
+                self.random_allele_section,
+            ],
+            weights=[
+                self.random_sequence_add_proba,
+                self.single_base_stream_proba,
+                self.duplicate_leading_proba,
+                self.random_allele_proba,
+            ],
+            k=1,
+        )[0]
         return method
 
     def _process_and_dpad(self, sequence, train=True):
@@ -127,38 +145,39 @@ class SequenceCorruptor:
 
     def _corrupt_sequence_beginning(self, sequence):
         to_remove = self._sample_add_remove_distribution()
-        if to_remove == 1: # remove
+        if to_remove == 1:  # remove
             amount_to_remove = self._sample_nucleotide_remove_distribution(1)
             modified_sequence = sequence[amount_to_remove:]
             return modified_sequence, True, amount_to_remove
 
-        elif to_remove == 2: # add
+        elif to_remove == 2:  # add
             amount_to_add = self._sample_nucleotide_add_distribution(1)
             method = self._sample_corruption_method()
-            modified_sequence = method(amount_to_add,sequence)
+            modified_sequence = method(amount_to_add, sequence)
             modified_sequence = self._fix_sequence_validity_after_corruption(
                 modified_sequence
             )
             return modified_sequence, False, amount_to_add
-        else: # add and remove
-            #remove
+        else:  # add and remove
+            # remove
             amount_to_removed = self._sample_nucleotide_remove_distribution(1)
             modified_sequence = sequence[amount_to_removed:]
-
 
             # add
             amount_to_added = self._sample_nucleotide_add_distribution(1)
             method = self._sample_corruption_method()
-            modified_sequence = method(amount_to_added,modified_sequence)
+            modified_sequence = method(amount_to_added, modified_sequence)
             modified_sequence = self._fix_sequence_validity_after_corruption(
                 modified_sequence
             )
-            return modified_sequence, False, amount_to_added-amount_to_removed
+            return modified_sequence, False, amount_to_added - amount_to_removed
 
     def _process_row(self, row, corrupt_beginning):
         to_corrupt = bool(np.random.binomial(1, self.corrupt_proba))
         if corrupt_beginning and to_corrupt:
-            seq, was_removed, amount_changed = self._corrupt_sequence_beginning(row.sequence)
+            seq, was_removed, amount_changed = self._corrupt_sequence_beginning(
+                row.sequence
+            )
         else:
             seq = row.sequence
 
@@ -177,15 +196,21 @@ class SequenceCorruptor:
             row.d_sequence_end + _adjust,
             row.j_sequence_start + _adjust,
             end,
-            padded_array
+            padded_array,
         )
 
-    def process_sequences(self, data: pd.DataFrame, corrupt_beginning=False, verbose=False):
+    def process_sequences(
+        self, data: pd.DataFrame, corrupt_beginning=False, verbose=False
+    ):
         padded_sequences = []
         v_start, v_end, d_start, d_end, j_start, j_end = [], [], [], [], [], []
 
-        data.loc[:,'to_corrupt'] = np.random.binomial(1, 0.4, size=len(data)).astype(bool)
-        iterator = tqdm(data.itertuples(), total=len(data)) if verbose else data.itertuples()
+        data.loc[:, "to_corrupt"] = np.random.binomial(1, 0.4, size=len(data)).astype(
+            bool
+        )
+        iterator = (
+            tqdm(data.itertuples(), total=len(data)) if verbose else data.itertuples()
+        )
 
         for row in iterator:
             if corrupt_beginning and row.to_corrupt:
@@ -201,14 +226,13 @@ class SequenceCorruptor:
             if corrupt_beginning and row.to_corrupt:
                 if was_removed:
                     # v is shorter
-                    _adjust = start-amount_changed
+                    _adjust = start - amount_changed
                 else:
                     # v is longer
                     _adjust = start + amount_changed
                     start += amount_changed
             else:
                 _adjust = start
-
 
             v_start.append(start)
             j_end.append(end)
@@ -229,34 +253,36 @@ class SequenceCorruptor:
         return v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences
 
     def random_nucleotides(self, amount, sequence):
-        random_seq = ''.join(random.choices(['A','T','C','G'],k=amount))
+        random_seq = "".join(random.choices(["A", "T", "C", "G"], k=amount))
         return random_seq + sequence
 
     def duplicate_leading(self, amount, sequence):
-        cap = amount if amount < len(sequence) else len(sequence)-1
-        return sequence[:cap]+sequence
+        cap = amount if amount < len(sequence) else len(sequence) - 1
+        return sequence[:cap] + sequence
 
     def random_allele_section(self, amount, sequence):
         random_allele = random.choice(self.V_alleles).ungapped_seq.upper()
-        cap = amount if amount < len(random_allele) else len(random_allele)-1
-        return random_allele[:cap]+sequence
+        cap = amount if amount < len(random_allele) else len(random_allele) - 1
+        return random_allele[:cap] + sequence
 
     def single_base_stream(self, amount, sequence):
-        random_base = random.choice(['A','T','G','C','N'])*amount
-        return random_base+sequence
-
-
+        random_base = random.choice(["A", "T", "G", "C", "N"]) * amount
+        return random_base + sequence
 
 
 test = SequenceCorruptor()
-test_df = pd.DataFrame({'sequence':['NAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTN'],
-                        'v_sequence_start':[0],
-                        'v_sequence_end': [20],
-                        'd_sequence_start': [30],
-                        'd_sequence_end': [38],
-                        'j_sequence_start': [42],
-                        'j_sequence_end': [45]
-                        })
+test_df = pd.DataFrame(
+    {
+        "sequence": [
+            "NAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTNNAGCTN"
+        ],
+        "v_sequence_start": [0],
+        "v_sequence_end": [20],
+        "d_sequence_start": [30],
+        "d_sequence_end": [38],
+        "j_sequence_start": [42],
+        "j_sequence_end": [45],
+    }
+)
 
-test.process_sequences(test_df,corrupt_beginning=True)
-
+test.process_sequences(test_df, corrupt_beginning=True)

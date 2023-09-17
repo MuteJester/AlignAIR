@@ -19,10 +19,10 @@ random.seed(seed)  # Set the random seed
 ### Start - CallBacks Definitions ###
 
 reduce_lr = ReduceLROnPlateau(
-    monitor="v_allele_categorical_accuracy",
+    monitor="v_start_log_cosh",
     factor=0.9,
     patience=1,
-    min_delta=0.0001,
+    min_delta=0.001,
     mode="max",
 )
 
@@ -41,13 +41,16 @@ class ChangeGeneMaskingCallback(tf.keras.callbacks.Callback):
 
 ### End - CallBacks Definitions ###
 
-patience = 3
+patience = 5
 epoch_to_change = 2  # Specify the epoch at which you want to change the parameter
 
 change_gene_masking_callback = ChangeGeneMaskingCallback(epoch_to_change)
-early_stopping = EarlyStopping(
-    monitor="loss", patience=patience, min_delta=0.005, restore_best_weights=True
-)
+# early_stopping = EarlyStopping(
+#     monitor="v_start_log_cosh",
+#     patience=patience,
+#     min_delta=0.005,
+#     restore_best_weights=True,
+# )
 
 # Define your model
 model = VDeepJAllign
@@ -60,11 +63,11 @@ noise_type = (
 )
 
 datasets_path = "/localdata/alignairr_data/2M_for_training/"
-session_name = "sf5_unboundedadd_04082023"
-# pretrained_path = "/localdata/alignairr_data/sf5_unboundedadd_02082023/saved_models/tmp"
+session_name = "sf5_unboundedadd_10082023"
+pretrained_path = "/localdata/alignairr_data/sf5_unboundedadd_10082023/saved_models/tmp"
 session_path = os.path.join("/localdata/alignairr_data/", session_name)
 models_path = os.path.join(session_path, "saved_models")
-checkpoint_path = os.path.join(models_path, "tmp")
+checkpoint_path = os.path.join(models_path, "tmp_continued_training_16082023")
 logs_path = os.path.join(session_path, "logs/")
 
 if not os.path.exists(session_path):
@@ -73,10 +76,13 @@ if not os.path.exists(session_path):
     os.makedirs(logs_path)
     os.makedirs(checkpoint_path)
 
-model_name = "s5f_after_additional_noise"
+model_name = "s5f_continued_training_16082023_v2"
 # Initialize wandb
 run = wandb.init(
-    project=session_name, name=model_name, settings=wandb.Settings(code_dir=".")
+    project=session_name,
+    name=model_name,
+    settings=wandb.Settings(code_dir="."),
+    entity="ran_biu",
 )
 wandb_callback = WandbMetricsLogger(log_freq="batch")
 ### Hyperparameters
@@ -106,8 +112,8 @@ trainer = UnboundedTrainer(
     interval_head_metric=tf.keras.losses.log_cosh,
     corrupt_proba=0.4,
     use_gene_masking=False,
-    nucleotide_add_coef=110,
-    nucleotide_remove_coef=110,
+    nucleotide_add_coef=210,
+    nucleotide_remove_coef=330,
     random_sequence_add_proba=0.45,
     single_base_stream_proba=0.05,
     duplicate_leading_proba=0.25,
@@ -116,17 +122,17 @@ trainer = UnboundedTrainer(
     log_to_file=True,
     log_file_name=model_name,
     log_file_path=logs_path,
-    # pretrained=pretrained_path,
+    pretrained=pretrained_path,
     callbacks=[
         reduce_lr,
         change_gene_masking_callback,
-        early_stopping,
+        # early_stopping,
         wandb_callback,
         model_checkpoint_callback,
     ],
-    optimizers_params={"clipnorm": 1},
+    optimizers_params={"clipnorm": 1, "lr": 0.001},
 )
-
+trainer.model.regression_weight = 5
 # Train the model
 trainer.train()
 
