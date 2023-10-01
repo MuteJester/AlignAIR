@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
+import pickle
+from SequenceCorruptor import SequenceCorruptor
 from VDeepJUnbondedDataset import global_genotype
 import tensorflow as tf
 import scipy.stats as st
@@ -22,10 +24,10 @@ def count_tsv_size(path):
         for (count, _) in enumerate(fp, 1):
             pass
         return count-1
-def tsv_generator(path, batch_size, usecols=None, loop=True):
+def table_generator(path, batch_size, usecols=None, loop=True,seperator='\t'):
     while True:
         with open(path, 'r') as file:
-            reader = csv.reader(file, delimiter='\t')
+            reader = csv.reader(file, delimiter=seperator)
             headers = next(reader)  # Skip header row
             if len(set(usecols)&set(headers)) != len(usecols):
                 raise ValueError(f"Not all required columns were provided in train data file: {path}")
@@ -94,7 +96,7 @@ class VDeepJDataset:
         #self.derive_call_sections()
 
     def get_data_batch_generator(self,path_to_data):
-        self.data = tsv_generator(path_to_data,batch_size=self.batch_size,usecols=self.required_data_columns)
+        self.data = table_generator(path_to_data,batch_size=self.batch_size,usecols=self.required_data_columns)
 
 
 
@@ -700,6 +702,307 @@ class VDeepJDataset:
         self.ohe_sub_classes_dict["J"]["gene"] = tf.convert_to_tensor(
             self.ohe_sub_classes_dict["J"]["gene"], dtype=tf.float32
         )
+
+    def __len__(self):
+        return len(self.data)
+
+
+class VDeepJDatasetSingleBeam():
+    def __init__(self, data_path,batch_size=64, max_sequence_length=512,batch_read_file = False,nrows=None, mutation_rate=0.08, shm_flat=False,
+                 randomize_rate=False,
+                 corrupt_beginning=True, corrupt_proba=1, nucleotide_add_coef=35, nucleotide_remove_coef=50,
+                 mutation_oracle_mode=False,
+                 random_sequence_add_proba=1, single_base_stream_proba=0, duplicate_leading_proba=0,
+                 random_allele_proba=0,allele_map_path = 'E:/Immunobiology/AlignAIRR/',
+                 seperator = ','):
+        self.max_sequence_length = max_sequence_length
+
+
+        self.locus = global_genotype()
+        self.max_seq_length = max_sequence_length
+        self.nucleotide_add_distribution = st.beta(2, 3)
+        self.nucleotide_remove_distribution = st.beta(2, 3)
+        self.add_remove_probability = st.bernoulli(0.5)
+        self.corrupt_beginning = corrupt_beginning
+        self.corrupt_proba = corrupt_proba
+        self.nucleotide_add_coef = nucleotide_add_coef
+        self.nucleotide_remove_coef = nucleotide_remove_coef
+        self.mutation_oracle_mode = mutation_oracle_mode
+        self.tokenizer_dictionary = {
+            "A": 1,
+            "T": 2,
+            "G": 3,
+            "C": 4,
+            "N": 5,
+            "P": 0,  # pad token
+        }
+        with open(allele_map_path+'V_ALLELE_SIMILARITY_MAP.pkl', 'rb') as h:
+            self.VA = pickle.load(h)
+            self.MAX_VA = max(self.VA[list(self.VA)[0]])
+
+        with open(allele_map_path+'V_ALLELE_SIMILARITY_MAP_AT_END.pkl', 'rb') as h:
+            self.VEND_SIM_MAP = pickle.load(h)
+            self.MAX_VEND = max(self.VA[list(self.VA)[0]])
+
+        self.sequence_corruptor = SequenceCorruptor(
+            nucleotide_add_coef=nucleotide_add_coef, nucleotide_remove_coef=nucleotide_remove_coef, max_length=512,
+            random_sequence_add_proba=random_sequence_add_proba, single_base_stream_proba=single_base_stream_proba,
+            duplicate_leading_proba=duplicate_leading_proba,
+            random_allele_proba=random_allele_proba,
+            corrupt_proba=self.corrupt_proba,
+            nucleotide_add_distribution=self.nucleotide_add_distribution,
+            nucleotide_remove_distribution=self.nucleotide_remove_distribution
+
+        )
+
+        self.seperator = seperator
+        self.batch_read_file = batch_read_file
+        self.required_data_columns = ['sequence', 'v_sequence_start', 'v_sequence_end', 'd_sequence_start',
+       'd_sequence_end', 'j_sequence_start', 'j_sequence_end', 'v_allele',
+       'd_allele', 'j_allele']
+
+
+
+
+        self.mutate = True
+        self.flat_vdj = True
+        self.randomize_rate = randomize_rate
+        self.no_trim_args = False
+        self.mutation_rate = mutation_rate
+        self.batch_size = batch_size
+        self.shm_flat = shm_flat
+        self.derive_call_dictionaries()
+        self.derive_call_one_hot_representation()
+
+        if not self.batch_read_file:
+            self.data = pd.read_table(data_path,
+                                      usecols=self.required_data_columns,nrows=nrows,sep=self.seperator)
+            self.data_length = len(self.data)
+        else:
+            self.get_data_batch_generator(data_path)
+            self.data_length = count_tsv_size(data_path)
+    def get_data_batch_generator(self,path_to_data):
+        self.data = table_generator(path_to_data,batch_size=self.batch_size,usecols=self.required_data_columns,
+                                    seperator=self.seperator)
+    def derive_call_one_hot_representation(self):
+
+        v_alleles = sorted(list(self.v_dict))
+        d_alleles = sorted(list(self.d_dict))
+        j_alleles = sorted(list(self.j_dict))
+
+        self.v_allele_count = len(v_alleles)
+        self.d_allele_count = len(d_alleles)
+        self.j_allele_count = len(j_alleles)
+
+        self.v_allele_call_ohe = {f: i for i, f in enumerate(v_alleles)}
+        self.d_allele_call_ohe = {f: i for i, f in enumerate(d_alleles)}
+        self.j_allele_call_ohe = {f: i for i, f in enumerate(j_alleles)}
+
+        self.properties_map = {
+            "V": {"allele_count": self.v_allele_count, "allele_call_ohe": self.v_allele_call_ohe},
+            "D": {"allele_count": self.d_allele_count, "allele_call_ohe": self.d_allele_call_ohe},
+            "J": {"allele_count": self.j_allele_count, "allele_call_ohe": self.j_allele_call_ohe},
+        }
+
+    def derive_call_dictionaries(self):
+        self.v_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['V']}
+        self.d_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['D']}
+        self.j_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['J']}
+
+    def generate_batch(self,pointer):
+        if not self.batch_read_file:
+            data = {
+                "sequence": [],
+                "v_sequence_start": [],
+                "v_sequence_end": [],
+                "d_sequence_start": [],
+                "d_sequence_end": [],
+                "j_sequence_start": [],
+                "j_sequence_end": [],
+                "v_allele": [],
+                "d_allele": [],
+                "j_allele": [],
+            }
+            for idx,row in self.data.iloc[(pointer-self.batch_size):pointer,:].iterrows():
+                data['sequence'].append(row['sequence'])
+                data['v_sequence_start'].append(row['v_sequence_start'])
+                data['v_sequence_end'].append(row['v_sequence_end'])
+                data['d_sequence_start'].append(row['d_sequence_start'])
+                data['d_sequence_end'].append(row['d_sequence_end'])
+                data['j_sequence_start'].append(row['j_sequence_start'])
+                data['j_sequence_end'].append(row['j_sequence_end'])
+                data['v_allele'].append(row['v_allele'])
+                data['d_allele'].append(row['d_allele'])
+                data['j_allele'].append(row['j_allele'])
+
+
+            return data
+        else:
+            read_batch = next(self.data)
+            return read_batch
+    def _process_and_dpad(self, sequence, train=True):
+        """
+        Private method, converts sequences into 4 one hot vectors and paddas them from both sides with zeros
+        equal to the diffrenece between the max length and the sequence length
+        :param nuc:
+        :param self.max_seq_length:
+        :return:
+        """
+
+        start, end = None, None
+        trans_seq = [self.tokenizer_dictionary[i] for i in sequence]
+
+        gap = self.max_seq_length - len(trans_seq)
+        iseven = gap % 2 == 0
+        whole_half_gap = gap // 2
+
+        if iseven:
+            trans_seq = [0] * whole_half_gap + trans_seq + ([0] * whole_half_gap)
+            if train:
+                start, end = whole_half_gap, self.max_seq_length - whole_half_gap - 1
+
+        else:
+            trans_seq = [0] * (whole_half_gap + 1) + trans_seq + ([0] * whole_half_gap)
+            if train:
+                start, end = (
+                    whole_half_gap + 1,
+                    self.max_seq_length - whole_half_gap - 1,
+                )
+
+        return trans_seq, start, end if iseven else (end + 1)
+
+    def process_sequences(
+            self, data: pd.DataFrame, corrupt_beginning=False, verbose=False
+    ):
+        return self.sequence_corruptor.process_sequences(data=data, corrupt_beginning=corrupt_beginning,
+                                                         verbose=verbose)
+
+    def get_ohe_reverse_mapping(self):
+        get_reverse_dict = lambda dic: {i: j for j, i in dic.items()}
+        call_maps = {
+            "v_allele": get_reverse_dict(self.v_allele_call_ohe),
+            "d_allele": get_reverse_dict(self.d_allele_call_ohe),
+            "j_allele": get_reverse_dict(self.j_allele_call_ohe),
+        }
+        return call_maps
+
+    def get_ohe(self, type, values):
+        allele_count = self.properties_map[type]['allele_count']
+        allele_call_ohe = self.properties_map[type]['allele_call_ohe']
+        result = []
+        for value in values:
+            ohe = np.zeros(allele_count)
+            ohe[allele_call_ohe[value]] = 1
+            result.append(ohe)
+        return np.vstack(result)
+
+    def get_expanded_ohe(self, type, values, removed,ends_at=None):
+        allele_count = self.properties_map[type]['allele_count']
+        allele_call_ohe = self.properties_map[type]['allele_call_ohe']
+        result = []
+
+        for value, remove,end in zip(values, removed,ends_at):
+            ohe = np.zeros(allele_count)
+
+            # get all alleles that are equally likely due missing nucleotides in the beginning
+            equal_alleles = self.VA[value][min(remove, self.MAX_VA)]
+            # get all allele that are equally likely due to missing nucleotides in the end
+            equal_alleles += self.VEND_SIM_MAP[value][min(end, self.MAX_VEND)]
+
+            for i in equal_alleles:
+                ohe[allele_call_ohe[i]] = 1
+            result.append(ohe)
+        return np.vstack(result)
+
+    def _get_single_batch(self,pointer):
+        batch = self.generate_batch(pointer)
+        data = pd.DataFrame(batch)
+        original_ends = data.v_sequence_end
+        (
+            v_start,
+            v_end,
+            d_start,
+            d_end,
+            j_start,
+            j_end,
+            padded_sequences,
+        ) = self.process_sequences(data, corrupt_beginning=self.corrupt_beginning)
+
+        removed = original_ends - (v_end - v_start)
+        x = {
+            "tokenized_sequence": padded_sequences,
+            "tokenized_sequence_for_masking": padded_sequences,
+        }
+        y = {
+            "v_start": v_start,
+            "v_end": v_end,
+            "d_start": d_start,
+            "d_end": d_end,
+            "j_start": j_start,
+            "j_end": j_end,
+            "v_allele": self.get_expanded_ohe("V", data.v_allele, removed,original_ends),
+            "d_allele": self.get_ohe("D", data.d_allele),
+            "j_allele": self.get_ohe("J", data.j_allele),
+        }
+        return x, y
+
+    def _get_tf_dataset_params(self):
+
+        x, y = self._get_single_batch(self.batch_size)
+
+        output_types = ({k: tf.float32 for k in x}, {k: tf.float32 for k in y})
+
+        output_shapes = ({k: (self.batch_size,) + x[k].shape[1:] for k in x},
+                         {k: (self.batch_size,) + y[k].shape[1:] for k in y})
+
+        return output_types, output_shapes
+    def _train_generator(self):
+        pointer = 0
+        while True:
+            pointer += self.batch_size
+            if pointer >= self.data_length:
+                pointer = self.batch_size
+
+            batch_x, batch_y = self._get_single_batch(pointer)
+
+            if len(batch_x['tokenized_sequence']) != self.batch_size:
+                continue
+            else:
+                yield batch_x, batch_y
+
+    def get_train_dataset(self):
+        output_types, output_shapes = self._get_tf_dataset_params()
+
+        dataset = tf.data.Dataset.from_generator(
+            lambda: self._train_generator(),
+            output_types=output_types,
+            output_shapes=output_shapes,
+        )
+
+        return dataset
+
+    def generate_model_params(self):
+        return {
+            "max_seq_length": self.max_sequence_length,
+            "v_allele_count": self.v_allele_count,
+            "d_allele_count": self.d_allele_count,
+            "j_allele_count": self.j_allele_count,
+        }
+
+    def tokenize_sequences(self, sequences, verbose=False):
+        padded_sequences = []
+
+        if verbose:
+            iterator = tqdm(sequences, total=len(sequences))
+        else:
+            iterator = sequences
+
+        for seq in iterator:
+            padded_array, start, end = self._process_and_dpad(seq, self.max_seq_length)
+            padded_sequences.append(padded_array)
+        padded_sequences = np.vstack(padded_sequences)
+
+        return padded_sequences
 
     def __len__(self):
         return len(self.data)

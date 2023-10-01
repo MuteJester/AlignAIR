@@ -1,0 +1,340 @@
+html,
+body {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background: linear-gradient(45deg, #49a09d, #5f2c82);
+    font-family: 'Roboto', sans-serif;
+    font-weight: 100;
+}
+
+.table-container {
+    margin: -10px;
+    padding: 3px;
+    border-radius: 10px;
+    max-width: 59%;
+    overflow-x: auto;
+    flex: 1;
+}
+
+table {
+    width: 800px;
+    border-collapse: collapse;
+    overflow: hidden;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+}
+
+th,
+td {
+    padding: 15px;
+    background-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+    font-family: 'Roboto', sans-serif;
+
+}
+
+.td-index {
+    font-weight: bold;
+    font-family: 'Roboto', sans-serif;
+}
+
+tr {
+    border: solid;
+    border-width: 1px 0;
+    font-family: 'Roboto', sans-serif;
+}
+
+th {
+    text-align: center;
+    color: #333;
+    background-color: aliceblue;
+    font-family: 'Roboto', sans-serif;
+
+}
+
+
+.container {
+    width: calc(30% - 20px); /* Adjusted width for 3 dropdowns per row */
+    margin: 20px; /* Adjusted margin for better spacing */
+    padding: 20px;
+    border: 2px solid #007BFF;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    background-color: #f9f9f9;
+}
+
+/* Styling the dropdown */
+.container select {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    background-color: #007BFF;
+    color: white;
+    cursor: pointer;
+    font-family: 'Roboto', sans-serif;
+}
+
+.container select:focus {
+    outline: none;
+    box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+}
+
+/* Styling the dropdown options */
+.container option {
+    padding: 10px;
+    background-color: #007BFF;
+    color: white;
+    font-family: 'Roboto', sans-serif;
+}
+
+.container option:hover {
+    background-color: #0056b3;
+}
+
+.dropdowns-row {
+    display: flex;
+    justify-content: space-between; /* Distribute space between dropdowns */
+    gap: 2%; /* Adjusted gap for better spacing */
+}
+
+.allele_selection_label {
+    display: block; /* Makes the label a block element to occupy the full width of its parent */
+    margin-bottom: 10px; /* Adds some space between the label and the dropdown */
+    font-weight: bold; /* Makes the text bold */
+    font-size: 16px; /* Sets the font size */
+    color: #333; /* Sets the text color */
+    text-transform: uppercase; /* Transforms the text to uppercase for a more stylized look */
+    letter-spacing: 1px; /* Increases spacing between letters for better readability */
+}
+
+/* Container Styling */
+.sequence-container {
+    display: block;
+    max-width: 80%;
+    margin: 20px auto;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    background-color: #f9f9f9;
+}
+
+/* Title Styling */
+.sequence-title {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    color: #333;
+    text-align: center;
+    border-bottom: 2px solid #007BFF;
+    padding-bottom: 10px;
+}
+
+/* Editable Area Styling */
+#sequence {
+    border: 1px solid #ccc;
+    padding: 5px;
+    font-size: 16px;
+    color: #555;
+    border-radius: 5px;
+}
+
+#sequence:focus {
+    border-color: #007BFF;
+    box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+}
+
+/* Button Styling */
+
+.predict-btn {
+    background-image: linear-gradient(144deg, #AF40FF, #5B42F3 50%, #00DDEB);
+    border: 0;
+    border-radius: 8px;
+    box-shadow: rgba(151, 65, 252, 0.2) 0 15px 30px -5px;
+    box-sizing: border-box;
+    color: #FFFFFF;
+    display: flex;
+    font-family: 'Roboto', sans-serif;
+    font-size: 20px;
+    justify-content: center;
+    line-height: 1em;
+    max-width: 100%;
+    min-width: 140px;
+    padding: 10px 24px;
+    text-decoration: none;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    white-space: nowrap;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.button-63:active,
+.button-63:hover {
+    outline: 0;
+}
+
+@media (min-width: 768px) {
+    .button-63 {
+        font-size: 24px;
+        min-width: 196px;
+    }
+}
+
+/* Hover effect */
+.predict-btn:hover {
+    background-color: #0056b3; /* Darken the primary color */
+}
+
+/* Active (click) effect */
+.predict-btn:active {
+    transform: scale(0.90); /* Slightly scale down the button */
+}
+
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    font-weight: bold;
+    font-family: 'Roboto', sans-serif;
+    text-align: center;
+    background-color: rgba(255, 255, 255, 0.8);
+    border-radius: 5px;
+}
+
+.color-square {
+    width: 25px;
+    height: 25px;
+    margin-right: 2px;
+    border-radius: 5px;
+}
+
+/* Color Squares Styling */
+.color1 {
+    background-color: red;
+}
+
+.color2 {
+    background-color: #07b126;
+}
+
+.color3 {
+    background-color: black;
+}
+
+.color4 {
+    background-color: #5733FF;
+}
+
+.color5 {
+    background-color: #f58231;
+}
+
+.sequence-section {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.msa-table {
+    width: 100%;
+    max-height: 300px;
+    overflow-x: auto;
+    border: 1px solid #ccc;
+    cursor: pointer;
+}
+
+.msa-row {
+    display: flex;
+    padding: 0;
+    margin: 0;
+    flex-wrap: nowrap;
+    align-content: center;
+    justify-content: space-evenly;
+    flex-direction: row;
+    align-items: stretch;
+}
+.msa-cell, .msa-column-label {
+    padding: 5px 10px;
+    margin: 0;
+    border-right: 1px solid #ddd;
+    border-left: 0;
+    border-top: 0;
+    border-bottom: 0;
+    min-width: 30px;
+    text-align: center;
+}
+
+.msa-row .msa-cell:first-child, .msa-column-labels .msa-column-label:first-child {
+    border-left: 1px solid #ddd;
+}
+
+.msa-id {
+    margin-right: 15px;
+    font-weight: bold;
+}
+
+.msa-column-labels {
+    display: flex;
+    padding: 5px;
+    border-bottom: 2px solid #aaa;
+    flex-direction: row;
+    align-content: flex-end;
+    justify-content: flex-end;
+}
+
+.msa-id-placeholder {
+    background-color: transparent;
+    border: none;
+    padding: 5px 10px;
+    margin: 0;
+    min-width: 30px;
+    text-align: center;
+}
+
+/* Colors for nucleotides */
+.A_token {
+    background-color: #FFDDC1;
+}
+
+.T_token {
+    background-color: #C1FFD7;
+}
+
+.G_token {
+    background-color: #FFC1C1;
+}
+
+.C_token {
+    background-color: #C1C8FF;
+}
+
+.pad_token {
+    background-color: #D5D5D5;
+}
+
+.mseContainer {
+    display: flex;
+    flex: 1;
+    border: 1px solid #ccc;
+    overflow-x: auto;
+    align-content: space-between;
+    flex-direction: column;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    background: white;
+}
+
+.remove_match_btn{
+    background-color: indianred;
+    border: 2px solid black;
+    border-radius: 8px;
+    margin-bottom: 2px;
+    margin-top: 2px;
+    text-align: center;
+}

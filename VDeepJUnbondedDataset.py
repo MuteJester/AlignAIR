@@ -708,7 +708,7 @@ class VDeepJUnbondedDatasetSingleBeam():
                  corrupt_beginning=True, corrupt_proba=1, nucleotide_add_coef=35, nucleotide_remove_coef=50,
                  mutation_oracle_mode=False,
                  random_sequence_add_proba=1, single_base_stream_proba=0, duplicate_leading_proba=0,
-                 random_allele_proba=0,allele_map_path = '/home/bcrlab/thomas/AlignAIRR/'
+                 random_allele_proba=0,allele_map_path = 'E:/Immunobiology/AlignAIRR/'
                  ):
         self.max_sequence_length = max_sequence_length
 
@@ -774,7 +774,7 @@ class VDeepJUnbondedDatasetSingleBeam():
     def generate_single(self):
         if self.randomize_rate:
             S = generate_sequence(self.locus, self.data_dict, mutate=self.mutate,
-                                  mutation_rate=np.random.uniform(0, self.mutation_rate, 1).item(),
+                                  mutation_rate=self.mutation_rate,
                                   shm_flat=self.shm_flat, flat_usage='allele')
 
             S.v_seq_start -=1
