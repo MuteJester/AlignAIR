@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlignAIRR - Bulk Sequence Prediction</title>
+    <link href='http://fonts.googleapis.com/css?family=Roboto' rel='stylesheet' type='text/css'>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+</head>
+
+<body>
+<!-- Toolbar-style Navigation Bar -->
+<div class="navbar">
+    <a href="/static/index.html">Single Sequence Analysis</a>
+    <a href="/static/bulk_sequence_prediction.html">Bulk Sequence Prediction</a>
+</div>
+<!-- End of Navigation Bar -->
+
+<!-- Content for Bulk Sequence Prediction -->
+<div class="bulk_sequence_upload_file">
+    <div class="frame_bulk_upload">
+        <div class="center_bulk_upload">
+            <div class="title_bulk_upload">
+                <h1>Drop file to upload (Up to 10K Sequences) </h1>
+            </div>
+
+            <div class="dropzone_bulk_upload" id = 'dropzone_upload_bulk'>
+                <img src="http://100dayscss.com/codepen/upload.svg" class="upload-icon_bulk_upload" id="uploadIcon"/>
+                <span id="fileInfo" style="display:none;"></span> <!-- Display file name and size -->
+                <input type="file" class="upload-input_bulk_upload" id="fileInput" onchange="displayFileInfo()"/>
+            </div>
+
+            <button type="button" class="btn_bulk_upload" name="uploadbutton" onclick="uploadFile()">Upload file</button>
+        </div>
+    </div>
+
+</div>
+
+<script src="/static/bulkPredict.js"></script>
+</body>
+
+</html>

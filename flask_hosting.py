@@ -1,4 +1,6 @@
-from flask import redirect
+import csv
+
+from flask import redirect, send_from_directory, Response
 import numpy as np
 import tensorflow as tf
 from airrship.create_repertoire import generate_sequence_spesific
@@ -246,6 +248,74 @@ def predict_sequence():
 
 
     return jsonify(response)
+
+@app.route('/bulk_predict', methods=['POST'])
+def bulk_predict():
+    # Check if the request has the file part
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part in the request'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    # Read the uploaded file content
+    sequences = file.read().decode('utf-8').splitlines()
+
+
+    # Check if the uploaded data is a list of sequences
+    # You can add more checks based on your requirements
+    if not sequences:
+        return jsonify({'error': 'Invalid file content'}), 400
+
+    eval_dataset_ = trainer.train_dataset.tokenize_sequences(sequences)
+    padded_seqs_tensor = tf.convert_to_tensor(eval_dataset_, dtype=tf.int32)
+    dataset_from_tensors = tf.data.Dataset.from_tensor_slices({
+        'tokenized_sequence': padded_seqs_tensor,
+        'tokenized_sequence_for_masking': padded_seqs_tensor
+    })
+    dataset = (
+        dataset_from_tensors
+        .batch(128)
+        .prefetch(tf.data.AUTOTUNE)
+    )
+
+    predicted = trainer.model.predict(dataset, verbose=True)
+
+    pads = []
+    for i in sequences:
+        start, end = getting_padding_size(i)
+        pads.append(start)
+    pads = np.array(pads)
+
+    reg_keys = ['v_start', 'v_end', 'd_start', 'd_end', 'j_start', 'j_end']
+    for key in reg_keys:
+        predicted[key] = np.round(predicted[key].flatten()-pads,0).astype(int)
+
+    V = extract_prediction_alleles(predicted['v_allele'].squeeze(), th=1)
+    D = [d_allele_call_rev_ohe[np.argmax(i)] for i in predicted['d_allele']]
+    J = [j_allele_call_rev_ohe[np.argmax(i)] for i in predicted['j_allele']]
+
+    result = pd.DataFrame({
+        key:predicted[key] for key in reg_keys
+    })
+
+    result['v_call'] = V
+    result['d_call'] = D
+    result['j_call'] = J
+    result['sequence'] = sequences
+
+    # Convert the DataFrame to a CSV string
+    csv_data = result.to_csv(index=False)
+
+    # Create a response with the CSV data
+    response = Response(csv_data, content_type="text/csv")
+
+    # Set headers to prompt the user to download the file
+    response.headers["Content-Disposition"] = "attachment; filename=results.csv"
+
+    return response
+
 
 if __name__ == '__main__':
     app.run()
