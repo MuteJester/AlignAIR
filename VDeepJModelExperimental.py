@@ -2,8 +2,8 @@ from enum import Enum, auto
 
 import tensorflow as tf
 import tensorflow.keras.backend as K
-from keras.layers import Activation
-from keras.utils.generic_utils import get_custom_objects
+from tensorflow.keras.layers import Activation
+from tensorflow.keras.utils import get_custom_objects
 from tensorflow.keras import Model
 from tensorflow.keras import regularizers
 from tensorflow.keras.constraints import unit_norm
