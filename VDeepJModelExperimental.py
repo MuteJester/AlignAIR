@@ -25,8 +25,9 @@ from VDeepJLayers import (
 )
 from tensorflow.keras import regularizers
 from enum import Enum, auto
-from keras.layers import Activation
-from keras.utils.generic_utils import get_custom_objects
+from tensorflow.keras.layers import Activation
+# from keras.utils.generic_utils import get_custom_objects
+from tensorflow.keras.utils import get_custom_objects
 import tensorflow_addons as tfa
 from tensorflow.keras.layers import Attention,BatchNormalization,LeakyReLU,MaxPool1D,LSTM,Bidirectional,RepeatVector,Lambda
 
