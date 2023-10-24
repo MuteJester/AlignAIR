@@ -8,6 +8,43 @@ from tensorflow.keras.layers import Dense, Flatten, concatenate, Conv1D, MaxPool
 from tensorflow.keras.layers import Multiply, Layer,SeparableConv1D
 from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Dense, Dropout, LayerNormalization
+from tensorflow.keras.callbacks import Callback
+import numpy as np
+from collections import defaultdict
+import importlib
+from airrship.create_repertoire import create_allele_dict
+import os
+
+
+def global_genotype():
+    try:
+        path_to_data = importlib.resources.files(
+            'airrship').joinpath("data")
+    except AttributeError:
+        with importlib.resources.path('airrship', 'data') as p:
+            path_to_data = p
+    v_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHV.fasta")
+    d_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHD.fasta")
+    j_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHJ.fasta")
+
+    vdj_allele_dicts = {"V": v_alleles,
+                        "D": d_alleles,
+                        "J": j_alleles}
+
+    chromosome1, chromosome2 = defaultdict(list), defaultdict(list)
+    for segment in ["V", "D", "J"]:
+        allele_dict = vdj_allele_dicts[segment]
+        for gene in allele_dict.values():
+            for allele in gene:
+                chromosome1[segment].append(allele)
+                chromosome2[segment].append(allele)
+
+    locus = [chromosome1, chromosome2]
+    return locus
+
 
 
 def soft_mask(indices, start, end, K):
@@ -276,22 +313,6 @@ class Conv2D_and_BatchNorm(tf.keras.layers.Layer):
         return x
 
 
-# class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
-#     def __init__(self, filters=16, kernel=3, max_pool=2, **kwargs):
-#         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
-#         self.conv_2d = Conv1D(filters, kernel, padding='same',
-#                               kernel_regularizer=regularizers.l2(0.01))  # kernel_initializer='he_uniform'
-#         self.batch_norm = BatchNormalization()  # (concatenated_path)
-#         self.activation = LeakyReLU()  # (concatenated_path)
-#         self.max_pool = MaxPool1D(max_pool)  # (concatenated_path)
-#
-#     def call(self, inputs):
-#         x = self.conv_2d(inputs)
-#         x = self.batch_norm(x)
-#         x = self.activation(x)
-#         x = self.max_pool(x)
-#         return x
-
 
 class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
     def __init__(self, filters=16, kernel=3, max_pool=2,activation=None,initializer=None, **kwargs):
@@ -413,6 +434,45 @@ class TokenAndPositionEmbedding(tf.keras.layers.Layer):
         return x + positions
 
 
+import tensorflow as tf
+import numpy as np
+
+class SinusoidalTokenAndPositionEmbedding(tf.keras.layers.Layer):
+    def __init__(self, maxlen, vocab_size, emded_dim):
+        super(SinusoidalTokenAndPositionEmbedding, self).__init__()
+        self.maxlen = maxlen
+        self.vocab_size = vocab_size
+        self.emded_dim = emded_dim
+
+        self.token_emb = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=emded_dim)
+        # Position embeddings are computed without using trainable parameters
+        self.pos_emb = self.sinusoidal_pos_emb(maxlen, emded_dim)
+
+    def get_angles(self, position, i, d_model):
+        angles = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))
+        return position * angles
+
+    def sinusoidal_pos_emb(self, maxlen, d_model):
+        angle_rads = self.get_angles(
+            np.arange(maxlen)[:, np.newaxis],
+            np.arange(d_model)[np.newaxis, :],
+            d_model
+        )
+
+        # apply sin to even indices in the array; 2i
+        angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
+
+        # apply cos to odd indices in the array; 2i+1
+        angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
+
+        pos_encoding = angle_rads[np.newaxis, ...]
+        
+        return tf.cast(pos_encoding, dtype=tf.float32)
+
+    def call(self, x):
+        x = self.token_emb(x)
+        positions = self.pos_emb[:, :tf.shape(x)[1], :]
+        return x + positions
 
 class MutationOracleBody(tf.keras.layers.Layer):
     def __init__(self,activation='relu',latent_dim = 1024,name='mutation_oracle_body', **kwargs):
@@ -499,9 +559,194 @@ class TransformerBlock(tf.keras.layers.Layer):
         ffn_output = self.ffn(out1)
         ffn_output = self.dropout2(ffn_output, training=training)
         return self.layernorm2(out1 + ffn_output)
+class ActivationMonitor(Callback):
+    def __init__(self, layer_name):
+        super(ActivationMonitor, self).__init__()
+        self.layer_name = layer_name
+
+    def on_epoch_end(self, epoch, logs=None):
+        # Get the layer output for the validation data
+        layer_output = self.get_layer_output(self.validation_data[0])
+
+        # Compute the percentage of active neurons
+        active_neurons = np.mean(layer_output > 0.5)  # Assuming ReLU activation; adjust threshold if needed
+        print(f"\nEpoch {epoch + 1}: {active_neurons * 100:.2f}% neurons active in {self.layer_name}")
+
+    def get_layer_output(self, x):
+        # Create a function to get the output of the desired layer
+        func = tf.keras.backend.function([self.model.input], [self.model.get_layer(self.layer_name).output])
+        return func([x])[0]
 
 
+class SegmentationGateLayer(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(SegmentationGateLayer, self).__init__(**kwargs)
 
+    def call(self, inputs):
+        # Assuming inputs is a list [embeddings, segmentation_mask]
+        embeddings, segmentation_mask = inputs
+
+        # Ensure that the segmentation mask has the same number of dimensions as embeddings
+        segmentation_mask = tf.broadcast_to(segmentation_mask, embeddings.shape)
+
+        # Multiply embeddings with the segmentation mask
+        gated_embeddings = tf.math.multiply(embeddings, segmentation_mask)
+
+        return gated_embeddings
+
+class SinusoidalPositionalEncoding(tf.keras.layers.Layer):
+    def __init__(self, maxlen, d_model):
+        super(SinusoidalPositionalEncoding, self).__init__()
+        self.maxlen = maxlen
+        self.d_model = d_model
+
+    def call(self, x):
+        positions = tf.range(start=0, limit=self.maxlen, delta=1)
+        angle_rates = 1 / np.power(10000, (2 * (np.arange(self.d_model) // 2)) / np.float32(self.d_model))
+        angle_rads = positions[:, np.newaxis] * angle_rates[np.newaxis, :]
+        sines = np.sin(angle_rads[:, 0::2])
+        cosines = np.cos(angle_rads[:, 1::2])
+        pos_encoding = tf.concat([sines, cosines], axis=-1)
+        return x + pos_encoding
+
+class LearnedPositionalEmbedding(tf.keras.layers.Layer):
+    def __init__(self, maxlen, vocab_size, d_model):
+        super(LearnedPositionalEmbedding, self).__init__()
+        self.maxlen = maxlen
+        self.token_emb = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=d_model)
+        self.pos_emb = tf.keras.layers.Embedding(input_dim=maxlen, output_dim=d_model)
+
+    def call(self, x):
+        positions = tf.range(start=0, limit=self.maxlen, delta=1)
+        positions = self.pos_emb(positions)
+        x = self.token_emb(x)
+        return x + positions
+
+class RelativePositionalEmbedding(tf.keras.layers.Layer):
+    def __init__(self, maxlen, d_model):
+        super(RelativePositionalEmbedding, self).__init__()
+        self.maxlen = maxlen
+        self.relative_positions = tf.keras.layers.Embedding(input_dim=2 * maxlen - 1, output_dim=d_model)
+
+    def call(self, x):
+        seq_len = tf.shape(x)[1]
+        positions = tf.range(start=0, limit=seq_len)
+        relative_positions = positions[:, None] - positions[None, :]
+        relative_positions = relative_positions + self.maxlen - 1
+        relative_positions = self.relative_positions(relative_positions)
+        return x + relative_positions
+
+class RealDataEvaluationCallback(Callback):
+    def __init__(self, validation_data, train_dataset, filepath, period=10):
+        super().__init__()
+        self.validation_data = validation_data  # validation data to be used for custom evaluation
+        self.train_dataset = train_dataset  # reference to the training dataset for tokenization
+        self.period = period  # perform evaluation every 'period' epochs
+        self.filepath = filepath  # path to save the model
+        self.best_accuracy = 0.0  # to store the best accuracy achieved
+
+        self.locus = global_genotype()
+        self.v_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['V']}
+        self.v_alleles = sorted(list(self.v_dict))
+        self.v_allele_count = len(self.v_alleles)
+        self.v_allele_call_ohe = {f: i for i, f in enumerate(self.v_alleles)}
+        self.v_allele_call_rev_ohe = {i: f for i, f in enumerate(self.v_alleles)}
+
+    def dynamic_cumulative_confidence_threshold(self,prediction, percentage=0.9):
+        sorted_indices = np.argsort(prediction)[::-1]
+        selected_labels = []
+        cumulative_confidence = 0.0
+
+        total_confidence = sum(prediction)
+        threshold = percentage * total_confidence
+
+        for idx in sorted_indices:
+            cumulative_confidence += prediction[idx]
+            selected_labels.append(idx)
+
+            if cumulative_confidence >= threshold:
+                break
+
+        return selected_labels
+
+    def extract_prediction_alleles_dynamic_sum(self,probabilites, percentage=0.9):
+        V_ratio = []
+        for v_all in (probabilites):
+            v_alleles = self.dynamic_cumulative_confidence_threshold(v_all, percentage=percentage)
+            V_ratio.append([self.v_allele_call_rev_ohe[i] for i in v_alleles])
+        return V_ratio
+
+    def on_epoch_end(self, epoch, logs=None):
+        if (epoch + 1) % self.period == 0:  # check if it's the right epoch
+            x_val, y_val = self.validation_data
+            eval_dataset_ = self.train_dataset.tokenize_sequences(x_val)
+
+            padded_seqs_tensor = tf.convert_to_tensor(eval_dataset_, dtype=tf.uint8)
+            dataset_from_tensors = tf.data.Dataset.from_tensor_slices({
+                'tokenized_sequence': padded_seqs_tensor})
+
+            dataset = (
+                dataset_from_tensors
+                .batch(512 * 20)
+                .prefetch(tf.data.AUTOTUNE)
+            )
+
+            raw_predictions = []
+
+            for i in (dataset):
+                pred = self.model.predict(i, verbose=False, batch_size=64)
+                for k in ['v', 'd', 'j']:
+                    pred[k + '_segment'] = pred[k + '_segment'].astype(np.float16)
+                raw_predictions.append(pred)
+
+            v_segment, d_segment, j_segment, v_allele, d_allele, j_allele = [], [], [], [], [], []
+            for i in raw_predictions:
+                v_allele.append(i['v_allele'])
+            v_allele = np.vstack(v_allele)
+
+            V = self.extract_prediction_alleles_dynamic_sum(v_allele, percentage=0.9)
+            hits = [len(set(i.split(',')) & set(j)) > 0 for i, j in zip(y_val, V)]
+            accuracy = sum(hits) / len(hits)
+            THH = len(list(filter(lambda x: x > 10, list(map(len, V)))))
+
+            # Check if we have the best accuracy
+            if accuracy > self.best_accuracy:
+                self.best_accuracy = accuracy
+
+                # Construct the filename with accuracy
+                filename = os.path.join(self.filepath, f"model_acc_{accuracy:.4f}")
+
+                # Save the model in TensorFlow's SavedModel format
+                self.model.save(filename, save_format='tf')  # 'tf' is optional here as it's the default format
+
+                print(
+                    f"\nEpoch {epoch + 1}: best accuracy improved to {self.best_accuracy:.4f}, saving model to {filename}")
+
+            # Log the accuracy and THH
+            logs['accuracy'] = accuracy
+            logs['THH'] = THH
+            print(f"\nEpoch {epoch + 1}: accuracy: {accuracy:.4f}, THH: {THH}")  # add your THH format
+
+    #
+
+class Mish(Layer):
+    """
+    Mish Activation Function as a Layer.
+    """
+
+    def __init__(self, **kwargs):
+        super(Mish, self).__init__(**kwargs)
+        self.supports_masking = True
+
+    def call(self, inputs):
+        return inputs * K.tanh(K.softplus(inputs))
+
+    def get_config(self):
+        base_config = super(Mish, self).get_config()
+        return {**base_config}
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
 
 def mod3_mse_loss(y_true, y_pred):
     y_true_casted = K.cast(y_true, dtype='float32')
