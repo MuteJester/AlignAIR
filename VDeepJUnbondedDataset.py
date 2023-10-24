@@ -708,7 +708,7 @@ class VDeepJUnbondedDatasetSingleBeam():
                  corrupt_beginning=True, corrupt_proba=1, nucleotide_add_coef=35, nucleotide_remove_coef=50,
                  mutation_oracle_mode=False,
                  random_sequence_add_proba=1, single_base_stream_proba=0, duplicate_leading_proba=0,
-                 random_allele_proba=0,allele_map_path = 'E:/Immunobiology/AlignAIRR/'
+                 random_allele_proba=0,allele_map_path = '/home/bcrlab/thomas/AlignAIRR/'
                  ):
         self.max_sequence_length = max_sequence_length
 
@@ -1020,3 +1020,348 @@ class VDeepJUnbondedDatasetSingleBeam():
 
     def __len__(self):
         return len(self.data)
+
+
+
+class VDeepJUnbondedDatasetSingleBeamSegmentation():
+    def __init__(self, batch_size=64, max_sequence_length=512, N_proportion=0.02, mutation_rate=0.08, shm_flat=False,
+                 randomize_rate=False,
+                 corrupt_beginning=True, corrupt_proba=1, nucleotide_add_coef=35, nucleotide_remove_coef=50,
+                 mutation_oracle_mode=False,
+                 random_sequence_add_proba=1, single_base_stream_proba=0, duplicate_leading_proba=0,
+                 random_allele_proba=0,allele_map_path = 'E:/Immunobiology/AlignAIRR/'
+                 ):
+        self.max_sequence_length = max_sequence_length
+
+        self.data_dict = load_data()
+        self.locus = global_genotype()
+        self.max_seq_length = max_sequence_length
+        self.nucleotide_add_distribution = st.beta(2, 3)
+        self.nucleotide_remove_distribution = st.beta(2, 3)
+        self.add_remove_probability = st.bernoulli(0.5)
+        self.corrupt_beginning = corrupt_beginning
+        self.corrupt_proba = corrupt_proba
+        self.nucleotide_add_coef = nucleotide_add_coef
+        self.nucleotide_remove_coef = nucleotide_remove_coef
+        self.mutation_oracle_mode = mutation_oracle_mode
+        self.tokenizer_dictionary = {
+            "A": 1,
+            "T": 2,
+            "G": 3,
+            "C": 4,
+            "N": 5,
+            "P": 0,  # pad token
+        }
+        with open(allele_map_path+'V_ALLELE_SIMILARITY_MAP.pkl', 'rb') as h:
+            self.VA = pickle.load(h)
+            self.MAX_VA = max(self.VA[list(self.VA)[0]])
+
+        with open(allele_map_path+'V_ALLELE_SIMILARITY_MAP_AT_END.pkl', 'rb') as h:
+            self.VEND_SIM_MAP = pickle.load(h)
+            self.MAX_VEND = max(self.VA[list(self.VA)[0]])
+
+        self.sequence_corruptor = SequenceCorruptor(
+            nucleotide_add_coef=nucleotide_add_coef, nucleotide_remove_coef=nucleotide_remove_coef, max_length=512,
+            random_sequence_add_proba=random_sequence_add_proba, single_base_stream_proba=single_base_stream_proba,
+            duplicate_leading_proba=duplicate_leading_proba,
+            random_allele_proba=random_allele_proba,
+            corrupt_proba=self.corrupt_proba,
+            nucleotide_add_distribution=self.nucleotide_add_distribution,
+            nucleotide_remove_distribution=self.nucleotide_remove_distribution
+
+        )
+
+        self.mutate = True
+        self.flat_vdj = True
+        self.randomize_rate = randomize_rate
+        self.no_trim_args = False
+        self.mutation_rate = mutation_rate
+        self.batch_size = batch_size
+        self.shm_flat = shm_flat
+        self.N_proportion = N_proportion
+        self.derive_call_dictionaries()
+        self.derive_call_one_hot_representation()
+
+    def insert_Ns(self, string, percentage):
+        num_replacements = int(len(string) * percentage)
+        nucleotides_list = list(string)
+
+        for _ in range(num_replacements):
+            index = random.randint(0, len(nucleotides_list) - 1)
+            nucleotides_list[index] = "N"
+
+        return ''.join(nucleotides_list)
+
+    def generate_single(self):
+        if self.randomize_rate:
+            S = generate_sequence(self.locus, self.data_dict, mutate=self.mutate,
+                                  mutation_rate=self.mutation_rate,
+                                  shm_flat=self.shm_flat, flat_usage='allele')
+
+            S.v_seq_start -=1
+            S.v_seq_end -=1
+            S.d_seq_start -=1
+            S.d_seq_end -=1
+            S.j_seq_start -=1
+            S.j_seq_end -=1
+
+            S.mutated_seq = self.insert_Ns(S.mutated_seq, self.N_proportion)
+            return S
+        else:
+            S = generate_sequence(self.locus, self.data_dict, mutate=self.mutate, mutation_rate=self.mutation_rate,
+                                  shm_flat=self.shm_flat, flat_usage='allele')
+            S.v_seq_start -= 1
+            S.v_seq_end -= 1
+            S.d_seq_start -= 1
+            S.d_seq_end -= 1
+            S.j_seq_start -= 1
+            S.j_seq_end -= 1
+
+            S.mutated_seq = self.insert_Ns(S.mutated_seq, self.N_proportion)
+            return S
+
+    def derive_call_one_hot_representation(self):
+
+        v_alleles = sorted(list(self.v_dict))
+        d_alleles = sorted(list(self.d_dict))
+        j_alleles = sorted(list(self.j_dict))
+
+        self.v_allele_count = len(v_alleles)
+        self.d_allele_count = len(d_alleles)
+        self.j_allele_count = len(j_alleles)
+
+        self.v_allele_call_ohe = {f: i for i, f in enumerate(v_alleles)}
+        self.d_allele_call_ohe = {f: i for i, f in enumerate(d_alleles)}
+        self.j_allele_call_ohe = {f: i for i, f in enumerate(j_alleles)}
+
+        self.properties_map = {
+            "V": {"allele_count": self.v_allele_count, "allele_call_ohe": self.v_allele_call_ohe},
+            "D": {"allele_count": self.d_allele_count, "allele_call_ohe": self.d_allele_call_ohe},
+            "J": {"allele_count": self.j_allele_count, "allele_call_ohe": self.j_allele_call_ohe},
+        }
+
+    def derive_call_dictionaries(self):
+        self.v_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['V']}
+        self.d_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['D']}
+        self.j_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['J']}
+
+    def generate_batch(self):
+        data = {
+            "sequence": [],
+            "v_sequence_start": [],
+            "v_sequence_end": [],
+            "d_sequence_start": [],
+            "d_sequence_end": [],
+            "j_sequence_start": [],
+            "j_sequence_end": [],
+            "v_allele": [],
+            "d_allele": [],
+            "j_allele": [],
+        }
+        if self.mutation_oracle_mode:
+            data["mutations"] = []
+
+        for _ in range(self.batch_size):
+            gen = self.generate_single()
+            v_allele = gen.v_allele.name
+            d_allele = gen.d_allele.name
+            j_allele = gen.j_allele.name
+
+            data["sequence"].append(gen.mutated_seq)
+            data["v_sequence_start"].append(gen.v_seq_start)
+            data["v_sequence_end"].append(gen.v_seq_end)
+            data["d_sequence_start"].append(gen.d_seq_start)
+            data["d_sequence_end"].append(gen.d_seq_end)
+            data["j_sequence_start"].append(gen.j_seq_start)
+            data["j_sequence_end"].append(gen.j_seq_end)
+            data["v_allele"].append(v_allele)
+            data["d_allele"].append(d_allele)
+            data["j_allele"].append(j_allele)
+            if self.mutation_oracle_mode:
+                data["mutations"].append(translate_mutation_output(gen.mutations, 512))
+
+        return data
+
+    def _process_and_dpad(self, sequence, train=True):
+        """
+        Private method, converts sequences into 4 one hot vectors and paddas them from both sides with zeros
+        equal to the diffrenece between the max length and the sequence length
+        :param nuc:
+        :param self.max_seq_length:
+        :return:
+        """
+
+        start, end = None, None
+        trans_seq = [self.tokenizer_dictionary[i] for i in sequence]
+
+        gap = self.max_seq_length - len(trans_seq)
+        iseven = gap % 2 == 0
+        whole_half_gap = gap // 2
+
+        if iseven:
+            trans_seq = [0] * whole_half_gap + trans_seq + ([0] * whole_half_gap)
+            if train:
+                start, end = whole_half_gap, self.max_seq_length - whole_half_gap - 1
+
+        else:
+            trans_seq = [0] * (whole_half_gap + 1) + trans_seq + ([0] * whole_half_gap)
+            if train:
+                start, end = (
+                    whole_half_gap + 1,
+                    self.max_seq_length - whole_half_gap - 1,
+                )
+
+        return trans_seq, start, end if iseven else (end + 1)
+
+    def process_sequences(
+            self, data: pd.DataFrame, corrupt_beginning=False, verbose=False
+    ):
+        return self.sequence_corruptor.process_sequences(data=data, corrupt_beginning=corrupt_beginning,
+                                                         verbose=verbose)
+
+    def get_ohe_reverse_mapping(self):
+        get_reverse_dict = lambda dic: {i: j for j, i in dic.items()}
+        call_maps = {
+            "v_allele": get_reverse_dict(self.v_allele_call_ohe),
+            "d_allele": get_reverse_dict(self.d_allele_call_ohe),
+            "j_allele": get_reverse_dict(self.j_allele_call_ohe),
+        }
+        return call_maps
+
+    def get_ohe(self, type, values):
+        allele_count = self.properties_map[type]['allele_count']
+        allele_call_ohe = self.properties_map[type]['allele_call_ohe']
+        result = []
+        for value in values:
+            ohe = np.zeros(allele_count)
+            ohe[allele_call_ohe[value]] = 1
+            result.append(ohe)
+        return np.vstack(result)
+
+    def get_expanded_ohe(self, type, values, removed,ends_at=None):
+        allele_count = self.properties_map[type]['allele_count']
+        allele_call_ohe = self.properties_map[type]['allele_call_ohe']
+        result = []
+
+        for value, remove,end in zip(values, removed,ends_at):
+            ohe = np.zeros(allele_count)
+
+            # get all alleles that are equally likely due missing nucleotides in the beginning
+            equal_alleles = self.VA[value][min(remove, self.MAX_VA)]
+            # get all allele that are equally likely due to missing nucleotides in the end
+            equal_alleles += self.VEND_SIM_MAP[value][min(end, self.MAX_VEND)]
+
+            for i in equal_alleles:
+                ohe[allele_call_ohe[i]] = 1
+            result.append(ohe)
+        return np.vstack(result)
+
+    def _get_single_batch(self):
+        batch = self.generate_batch()
+        data = pd.DataFrame(batch)
+        original_ends = data.v_sequence_end
+        (
+            v_start,
+            v_end,
+            d_start,
+            d_end,
+            j_start,
+            j_end,
+            padded_sequences,
+        ) = self.process_sequences(data, corrupt_beginning=self.corrupt_beginning)
+
+        removed = original_ends - (v_end - v_start)
+        x = {
+            "tokenized_sequence": padded_sequences,
+            "tokenized_sequence_for_masking": padded_sequences,
+        }
+
+        v_segment = []
+        d_segment = []
+        j_segment = []
+
+        for s,e in zip(v_start,v_end):
+            empty = np.zeros((1,self.max_seq_length))
+            empty[s:e] = 1
+            v_segment.append(empty)
+
+        for s,e in zip(d_start,d_end):
+            empty = np.zeros((1,self.max_seq_length))
+            empty[s:e] = 1
+            d_segment.append(empty)
+
+        for s,e in zip(j_start,j_end):
+            empty = np.zeros((1,self.max_seq_length))
+            empty[s:e] = 1
+            j_segment.append(empty)
+
+        v_segment = np.vstack(v_segment)
+        d_segment = np.vstack(d_segment)
+        j_segment = np.vstack(j_segment)
+
+        y = {
+            "v_segment": v_segment,
+            "d_segment": d_segment,
+            "j_segment": j_segment,
+            "v_allele": self.get_expanded_ohe("V", data.v_allele, removed,original_ends),
+            "d_allele": self.get_ohe("D", data.d_allele),
+            "j_allele": self.get_ohe("J", data.j_allele),
+        }
+        return x, y
+
+    def _get_tf_dataset_params(self):
+        x, y = self._get_single_batch()
+
+        output_types = ({k: tf.float32 for k in x}, {k: tf.float32 for k in y})
+
+        output_shapes = (
+            {k: (self.batch_size,) + x[k].shape[1:] for k in x},
+            {k: (self.batch_size,) + y[k].shape[1:] for k in y},
+        )
+
+        return output_types, output_shapes
+
+    def _train_generator(self):
+        while True:
+            batch_x, batch_y = self._get_single_batch()
+            yield batch_x, batch_y
+
+    def get_train_dataset(self):
+        output_types, output_shapes = self._get_tf_dataset_params()
+
+        dataset = tf.data.Dataset.from_generator(
+            lambda: self._train_generator(),
+            output_types=output_types,
+            output_shapes=output_shapes,
+        )
+
+        return dataset
+
+    def generate_model_params(self):
+        return {
+            "max_seq_length": self.max_sequence_length,
+            "v_allele_count": self.v_allele_count,
+            "d_allele_count": self.d_allele_count,
+            "j_allele_count": self.j_allele_count,
+        }
+
+    def tokenize_sequences(self, sequences, verbose=False):
+        padded_sequences = []
+
+        if verbose:
+            iterator = tqdm(sequences, total=len(sequences))
+        else:
+            iterator = sequences
+
+        for seq in iterator:
+            padded_array, start, end = self._process_and_dpad(seq, self.max_seq_length)
+            padded_sequences.append(padded_array)
+        padded_sequences = np.vstack(padded_sequences)
+
+        return padded_sequences
+
+    def __len__(self):
+        return len(self.data)
+
+
+

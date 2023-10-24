@@ -1,0 +1,505 @@
+import pandas as pd
+import numpy as np
+import matplotlib as mpl
+mpl.rcParams['figure.figsize'] = (10,7) 
+import seaborn as sns
+import numpy as np
+import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import seaborn as sns
+from tqdm.auto import tqdm
+import requests
+import json
+import numpy as np
+from airrship.create_repertoire import create_allele_dict
+import importlib
+import os
+import matplotlib as mpl
+from collections import defaultdict
+
+import numpy as np
+
+mpl.rcParams['figure.figsize'] = (20,11)
+sns.set_context('poster')
+tokenizer_dictionary = {
+            "A": 1,
+            "T": 2,
+            "G": 3,
+            "C": 4,
+            "N": 5,
+            "P": 0,  # pad token
+        }
+max_length=512
+
+import pickle
+
+def _process_and_dpad(sequence, train=True):
+    start, end = None, None
+    trans_seq = [tokenizer_dictionary[i] for i in sequence]
+
+    gap = max_length - len(trans_seq)
+    iseven = gap % 2 == 0
+    whole_half_gap = gap // 2
+
+    if iseven:
+        trans_seq = [0] * whole_half_gap + trans_seq + ([0] * whole_half_gap)
+        if train:
+            start, end = whole_half_gap, max_length - whole_half_gap - 1
+
+    else:
+        trans_seq = [0] * (whole_half_gap + 1) + trans_seq + ([0] * whole_half_gap)
+        if train:
+            start, end = (whole_half_gap + 1, max_length - whole_half_gap - 1)
+
+    return trans_seq, start, end if iseven else (end + 1)
+
+def process_sequences(self, data: pd.DataFrame, corrupt_beginning=False, verbose=False):
+    padded_sequences = []
+    v_start, v_end, d_start, d_end, j_start, j_end = [], [], [], [], [], []
+    iterator = tqdm(data.itertuples(), total=len(data)) if verbose else data.itertuples()
+    for row in iterator:
+        seq = row.sequence
+        padded_array, start, end = _process_and_dpad(seq, self.max_length)
+        padded_sequences.append(padded_array)
+        _adjust = start
+
+
+        v_start.append(start)
+        j_end.append(end)
+        v_end.append(row.v_sequence_end + _adjust)
+        d_start.append(row.d_sequence_start + _adjust)
+        d_end.append(row.d_sequence_end + _adjust)
+        j_start.append(row.j_sequence_start + _adjust)
+
+    v_start = np.array(v_start)
+    v_end = np.array(v_end)
+    d_start = np.array(d_start)
+    d_end = np.array(d_end)
+    j_start = np.array(j_start)
+    j_end = np.array(j_end)
+
+    padded_sequences = np.vstack(padded_sequences)
+
+    return v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences
+def global_genotype():
+    try:
+        path_to_data = importlib.resources.files(
+            'airrship').joinpath("data")
+    except AttributeError:
+        with importlib.resources.path('airrship', 'data') as p:
+            path_to_data = p
+    v_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHV.fasta")
+    d_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHD.fasta")
+    j_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHJ.fasta")
+
+    vdj_allele_dicts = {"V": v_alleles,
+                        "D": d_alleles,
+                        "J": j_alleles}
+
+    chromosome1, chromosome2 = defaultdict(list), defaultdict(list)
+    for segment in ["V", "D", "J"]:
+        allele_dict = vdj_allele_dicts[segment]
+        for gene in allele_dict.values():
+            for allele in gene:
+                chromosome1[segment].append(allele)
+                chromosome2[segment].append(allele)
+
+    locus = [chromosome1, chromosome2]
+    return locus
+
+
+def decompose_call(call):
+    family, G = call.split("-", 1)
+    gene, allele = G.split("*")
+    return family, gene, allele
+locus = global_genotype()
+
+v_dict = dict()
+for call in ["V"]:
+    for idx in range(2):
+        for N in locus[idx][call]:
+            if call == "V":
+                family, G = N.name.split("-", 1)
+                gene, allele = G.split("*")
+                v_dict[N.name] = {
+                    "family": family,
+                    "gene": gene,
+                    "allele": allele,
+                }
+
+v_families = sorted(set([v_dict[i]["family"] for i in v_dict]))
+v_genes = sorted(set([v_dict[i]["gene"] for i in v_dict]))
+v_alleles = sorted(set([v_dict[i]["allele"] for i in v_dict]))
+v_family_call_ohe = {f: i for i, f in enumerate(v_families)}
+v_gene_call_ohe = {f: i for i, f in enumerate(v_genes)}
+v_allele_call_ohe = {f: i for i, f in enumerate(v_alleles)}
+
+from VDeepJUnbondedDataset import global_genotype
+
+locus = global_genotype()
+v_dict = {i.name: i.ungapped_seq.upper() for i in locus[0]['V']}
+d_dict = {i.name: i.ungapped_seq.upper() for i in locus[0]['D']}
+j_dict = {i.name: i.ungapped_seq.upper() for i in locus[0]['J']}
+        
+v_alleles = sorted(list(v_dict))
+d_alleles = sorted(list(d_dict))
+j_alleles = sorted(list(j_dict))
+
+v_allele_count = len(v_alleles)
+d_allele_count = len(d_alleles)
+j_allele_count = len(j_alleles)
+
+
+v_allele_call_ohe = {f: i for i, f in enumerate(v_alleles)}
+d_allele_call_ohe = {f: i for i, f in enumerate(d_alleles)}
+j_allele_call_ohe = {f: i for i, f in enumerate(j_alleles)}
+
+v_allele_call_rev_ohe = {i: f for i, f in enumerate(v_alleles)}
+d_allele_call_rev_ohe = {i: f for i, f in enumerate(d_alleles)}
+j_allele_call_rev_ohe = {i: f for i, f in enumerate(j_alleles)}
+
+def encode_igb_v_call(v_call):
+    v = np.zeros(len(v_allele_call_rev_ohe))
+    for i in v_call.split(','):
+        v[v_allele_call_ohe[i]] = 1
+    return v
+label_num_sub_classes_dict = {
+    "V": {
+        "family": v_family_call_ohe,
+        "gene": v_gene_call_ohe,
+        "allele": v_allele_call_ohe}
+}
+
+import tensorflow as tf
+tokenizer_dictionary = {
+            "A": 1,
+            "T": 2,
+            "G": 3,
+            "C": 4,
+            "N": 5,
+            "P": 0,  # pad token
+        }
+
+max_seq_length = 512
+def _process_and_dpad(sequence, train=True):
+    """
+    Private method, converts sequences into 4 one hot vectors and paddas them from both sides with zeros
+    equal to the diffrenece between the max length and the sequence length
+    :param nuc:
+    :param self.max_seq_length:
+    :return:
+    """
+
+    start, end = None, None
+    trans_seq = [tokenizer_dictionary[i] for i in sequence]
+
+    gap = max_seq_length - len(trans_seq)
+    iseven = gap % 2 == 0
+    whole_half_gap = gap // 2
+
+    if iseven:
+        trans_seq = [0] * whole_half_gap + trans_seq + ([0] * whole_half_gap)
+        if train:
+            start, end = whole_half_gap, max_seq_length - whole_half_gap - 1
+
+    else:
+        trans_seq = [0] * (whole_half_gap + 1) + trans_seq + ([0] * whole_half_gap)
+        if train:
+            start, end = (
+                whole_half_gap + 1,
+                max_seq_length - whole_half_gap - 1,
+            )
+
+    return trans_seq, start, end if iseven else (end + 1)
+
+def preprocess_data(data):
+    # Implement your data preprocessing here
+    # This function should take an individual data sample or a batch of data
+    # and return the preprocessed data
+    return np.vstack([_process_and_dpad(i) for i in data])
+    
+def create_dataset(data, batch_size=128):
+    dataset = tf.data.Dataset.from_tensor_slices(data)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.map(preprocess_data, num_parallel_calls=tf.data.AUTOTUNE)
+    return dataset
+def predict_in_batches(model, dataset):
+    raw_predictions = []
+    for batch_data in dataset:
+        batch_preds = model.predict(batch_data, verbose=True)
+        raw_predictions.extend(batch_preds)
+    return raw_predictions
+def log_threshold(prediction,th=0.4):
+    ast = np.argsort(prediction)[::-1]
+    R = [ast[0]]
+    for ip in range(1,len(ast)):
+        DIFF = np.log(prediction[ast[ip-1]]/prediction[ast[ip]])
+        if DIFF<th:
+            R.append(ast[ip])
+        else:
+            break
+    return R
+def log_threshold_r21(prediction,th=0.4):
+    ast = np.argsort(prediction)[::-1]
+    R = [ast[0]]
+    for ip in range(1,len(ast)):
+        DIFF = np.log(prediction[ast[0]]/prediction[ast[ip]])
+        if DIFF<th:
+            R.append(ast[ip])
+        else:
+            break
+    return R
+def extract_prediction_alleles(probabilites,th=0.4):
+    V_ratio = []
+    for v_all in tqdm(probabilites):
+        v_alleles  = log_threshold(v_all,th=th)
+        V_ratio.append([v_allele_call_rev_ohe[i] for i in v_alleles])
+    return V_ratio
+def extract_prediction_alleles_norm(probabilites,th=0.4):
+    V_ratio = []
+    for v_all in tqdm(probabilites):
+        v_alleles  = log_threshold(v_all/v_all.max(),th=th)
+        V_ratio.append([v_allele_call_rev_ohe[i] for i in v_alleles])
+    return V_ratio
+def extract_prediction_alleles_r21(probabilites,th=0.4):
+    V_ratio = []
+    for v_all in tqdm(probabilites):
+        v_alleles  = log_threshold_r21(v_all/v_all.max(),th=th)
+        V_ratio.append([v_allele_call_rev_ohe[i] for i in v_alleles])
+    return V_ratio
+def dynamic_cumulative_confidence_threshold(prediction, percentage=0.9):
+    sorted_indices = np.argsort(prediction)[::-1]
+    selected_labels = []
+    cumulative_confidence = 0.0
+    
+    total_confidence = sum(prediction)
+    threshold = percentage * total_confidence
+    
+    for idx in sorted_indices:
+        cumulative_confidence += prediction[idx]
+        selected_labels.append(idx)
+        
+        if cumulative_confidence >= threshold:
+            break
+    
+    return selected_labels
+def extract_prediction_alleles_dynamic_sum(probabilites,percentage=0.9):
+    V_ratio = []
+    for v_all in tqdm(probabilites):
+        v_alleles  = dynamic_cumulative_confidence_threshold(v_all,percentage=percentage)
+        V_ratio.append([v_allele_call_rev_ohe[i] for i in v_alleles])
+    return V_ratio
+def binary_search_entropy_threshold(prediction, min_entropy=0.2):
+    sorted_indices = np.argsort(prediction)[::-1]
+    
+    def calculate_entropy(chunk):
+        probs = prediction[chunk]
+        entropy = -probs * np.log2(probs) - (1 - probs) * np.log2(1 - probs)
+        return np.sum(entropy)
+    
+    def search_threshold(left, right):
+        mid = (left + right) // 2
+        left_chunk = sorted_indices[:mid]
+        right_chunk = sorted_indices[mid:]
+        
+        left_entropy = calculate_entropy(left_chunk)
+        right_entropy = calculate_entropy(right_chunk)
+        
+        if left_entropy <= right_entropy:
+            return left_chunk, left_entropy
+        else:
+            return right_chunk, right_entropy
+    
+    selected_labels = []
+    left, right = 0, len(sorted_indices)
+    
+    while left < right:
+        chunk, entropy = search_threshold(left, right)
+        selected_labels.extend(chunk)
+        
+        if entropy <= min_entropy:
+            break
+        
+        if len(chunk) == right:
+            break  # Avoid an infinite loop in the unlikely event of no entropy improvement
+        
+        if len(chunk) == left:
+            left += 1  # Avoid an infinite loop in the unlikely event of no entropy improvement
+        else:
+            left, right = len(selected_labels), len(sorted_indices)
+    
+    return selected_labels
+def extract_prediction_alleles_entropy_sum(probabilites,min_entropy=0.2):
+    V_ratio = []
+    for v_all in tqdm(probabilites):
+        v_alleles  = binary_search_entropy_threshold(v_all,min_entropy=min_entropy)
+        V_ratio.append([v_allele_call_rev_ohe[i] for i in v_alleles])
+    return V_ratio
+def gini_impurity_threshold(prediction, min_impurity=0.2):
+    # Sort the probabilities in descending order and get the sorted indices
+    sorted_indices = np.argsort(prediction)[::-1]
+    selected_labels = []
+    
+    # Initialize cumulative Gini impurity and threshold
+    cumulative_impurity = 0.0
+    threshold = 0.0  # Initialize threshold to 0.0
+    
+    for idx in sorted_indices:
+        label_prob = prediction[idx]
+        
+        # Calculate the Gini impurity of the current label
+        label_impurity = 2 * label_prob * (1 - label_prob)
+        
+        # Add the label's impurity to the cumulative impurity
+        cumulative_impurity += label_impurity
+        
+        # Calculate the threshold as a function of cumulative impurity
+        threshold = cumulative_impurity / len(sorted_indices)
+        
+        selected_labels.append(idx)
+        
+        # Stop when the threshold reaches the minimum impurity
+        if threshold >= min_impurity:
+            break
+    
+    return selected_labels
+def extract_prediction_alleles_gini(probabilites,min_impurity=0.2):
+    V_ratio = []
+    for v_all in tqdm(probabilites):
+        v_alleles  = gini_impurity_threshold(v_all,min_impurity=min_impurity)
+        V_ratio.append([v_allele_call_rev_ohe[i] for i in v_alleles])
+    return V_ratio
+
+
+
+import tensorflow as tf
+from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF
+from Trainer import SingleBeamSegmentationTrainer
+trainer = SingleBeamSegmentationTrainer(
+    model=VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF,
+    data_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset.csv",
+    batch_read_file=True,
+    epochs=1,
+    batch_size=1,
+    steps_per_epoch=150_000,
+    verbose=1,
+    corrupt_beginning=True,
+    classification_head_metric=[tf.keras.metrics.AUC(),tf.keras.metrics.AUC(),tf.keras.metrics.AUC()],
+    interval_head_metric=tf.keras.losses.mae,
+    corrupt_proba=0.7,
+    airrship_mutation_rate=0.25,
+    nucleotide_add_coef=210,
+    nucleotide_remove_coef=330,
+    random_sequence_add_proba=0.45,
+    single_base_stream_proba=0.05,
+    duplicate_leading_proba=0.25,
+    random_allele_proba=0.25,
+    num_parallel_calls=32,
+)
+
+
+trainer.model.build({'tokenized_sequence':(512,1)})
+trainer.model.load_weights("/localdata/alignairr_data/sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product/saved_models/sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product_cp1")
+print('Model Loaded!')
+
+
+#load and predict baseline (data with no noise)
+baseline_dataset = pd.read_table("/localdata/alignairr_data/naive_repertoires/naive_sequences_clean.tsv",usecols=['sequence'])
+eval_dataset_ = trainer.train_dataset.tokenize_sequences(baseline_dataset.sequence.to_list())
+padded_seqs_tensor = tf.convert_to_tensor(eval_dataset_, dtype=tf.uint8)
+dataset_from_tensors = tf.data.Dataset.from_tensor_slices({
+    'tokenized_sequence': padded_seqs_tensor})
+dataset = (
+    dataset_from_tensors
+    .batch(512*20)
+    .prefetch(tf.data.AUTOTUNE)
+)
+
+raw_predictions =[]
+
+for i in tqdm(dataset):
+    pred = trainer.model.predict(i, verbose=False,batch_size=64)
+    for k in ['v','d','j']:
+        pred[k+'_segment'] = pred[k+'_segment'].astype(np.float16)
+    raw_predictions.append(pred)
+    
+v_segment,d_segment,j_segment,v_allele,d_allele,j_allele = [],[],[],[],[],[]
+for i in raw_predictions:
+    v_segment.append(i['v_segment'])
+    d_segment.append(i['d_segment'])
+    j_segment.append(i['j_segment'])
+    
+    v_allele.append(i['v_allele'])
+    d_allele.append(i['d_allele'])
+    j_allele.append(i['j_allele'])
+v_segment = np.vstack(v_segment)
+d_segment = np.vstack(d_segment)
+j_segment = np.vstack(j_segment)
+v_allele = np.vstack(v_allele)
+d_allele = np.vstack(d_allele)
+j_allele = np.vstack(j_allele)
+V_basline = extract_prediction_alleles_dynamic_sum(v_allele,percentage=0.9)
+print("Base Line V Call Predicted!")
+
+
+PATH = '/localdata/alignairr_data/p1_p11_added_noise/'
+datasets_files = os.listdir(PATH)
+datasets_files = list(filter(lambda x: '.tsv' in x , datasets_files))
+datasets_files = list(filter(lambda x: 'add_n' in x , datasets_files))
+
+results = dict()
+for pred_file in tqdm(datasets_files):
+    # Read the data from the TSV file
+    data = pd.read_table(PATH+pred_file,usecols=['sequence','v_call'])
+    data.sequence = data.sequence.apply(lambda x: x.replace('-',''))
+
+    eval_dataset_ = trainer.train_dataset.tokenize_sequences(data.sequence.to_list())
+    print('Train Dataset Encoded!')
+    padded_seqs_tensor = tf.convert_to_tensor(eval_dataset_, dtype=tf.uint8)
+    dataset_from_tensors = tf.data.Dataset.from_tensor_slices({
+        'tokenized_sequence': padded_seqs_tensor})
+    dataset = (
+        dataset_from_tensors
+        .batch(512*20)
+        .prefetch(tf.data.AUTOTUNE)
+    )
+
+    raw_predictions =[]
+
+    for i in tqdm(dataset):
+        pred = trainer.model.predict(i, verbose=False,batch_size=64)
+        for k in ['v','d','j']:
+            pred[k+'_segment'] = pred[k+'_segment'].astype(np.float16)
+        raw_predictions.append(pred)
+        
+    v_segment,d_segment,j_segment,v_allele,d_allele,j_allele = [],[],[],[],[],[]
+    for i in raw_predictions:
+        v_segment.append(i['v_segment'])
+        d_segment.append(i['d_segment'])
+        j_segment.append(i['j_segment'])
+        
+        v_allele.append(i['v_allele'])
+        d_allele.append(i['d_allele'])
+        j_allele.append(i['j_allele'])
+    v_segment = np.vstack(v_segment)
+    d_segment = np.vstack(d_segment)
+    j_segment = np.vstack(j_segment)
+
+    v_allele = np.vstack(v_allele)
+    d_allele = np.vstack(d_allele)
+    j_allele = np.vstack(j_allele)
+
+    V = extract_prediction_alleles_dynamic_sum(v_allele,percentage=0.9)
+    hits = [len( set(i) & set(j)) > 0 for i,j in zip(V_basline,V)]
+    agg = sum(hits)/len(hits)
+    THH = 10
+    total_thh = len(list(filter(lambda x: x>THH,list(map(len,V)))))
+    
+    results[pred_file] = {'agreement':agg,'above_10':total_thh}
+    print(results)
+with open('/localdata/alignairr_data/sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product/'+'P1P11AddedNoise_sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product_result.pkl','wb') as h:
+    pickle.dump(results,h)
