@@ -4,9 +4,11 @@ from airrship.create_repertoire import generate_sequence_spesific
 import numpy as np
 import tensorflow as tf
 from UnboundedTrainer import SingleBeamUnboundedTrainer
-from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeam2
+from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeam2,VDeepJAllignExperimentalSingleBeamRG
 from VDeepJUnbondedDataset import global_genotype,load_data
 import random
+from flask_ngrok import run_with_ngrok
+
 locus = global_genotype()
 v_dict = {i.name: i.ungapped_seq.upper() for i in locus[0]['V']}
 d_dict = {i.name: i.ungapped_seq.upper() for i in locus[0]['D']}
@@ -38,11 +40,11 @@ j_allele_call_rev_ohe = {i: f for i, f in enumerate(j_alleles)}
 
 #load model
 from VDeepJUnbondedDataset import VDeepJUnbondedDataset
-model = VDeepJAllignExperimentalSingleBeam2
+model = VDeepJAllignExperimentalSingleBeamRG
 trainer = SingleBeamUnboundedTrainer(model,epochs=10,steps_per_epoch=100,batch_size=32,verbose=True,batch_file_reader=True)
 trainer.model.build({'tokenized_sequence':(512,1),'tokenized_sequence_for_masking':(512,1)})
 #trainer.model.load_weights('E:\\Immunobiology\\AlignAIRR\\\\sf5_unbounded_experimentalv4_model')
-trainer.model.load_weights('E:/Immunobiology/AlignAIRR/sf5_unbounded_experimental_mh_single_beam_model')
+trainer.model.load_weights('E:/Immunobiology/AlignAIRR/sf5_unbounded_experimental_mh_single_beam_RG_end_corrected_model')
 
 
 def log_threshold(prediction, th=0.15):
@@ -148,6 +150,7 @@ class HTMLSequenceGate:
 
 
 app = Flask(__name__)
+run_with_ngrok(app)
 
 @app.route('/', methods=['POST','GET'])
 def handle_generate_button_click():
@@ -201,6 +204,17 @@ def handle_generate_button_click():
 
     return render_template('MainPage.html',v_allele_list = v_dict,d_allele_list = d_dict,j_allele_list = j_dict,
                            generated_sequence = generated_sequence_html,prediction_table=prediction_table)
+
+@app.route('/predict', methods=['POST'])
+def handle_predict_button_click():
+    # Your prediction logic here
+    # For example:
+    sequence = request.form.get('sequence')  # Assuming you send the sequence as part of the form
+    print(sequence)
+    #prediction = predict_sequence(sequence)  # Assuming you have a function to predict the sequence
+
+    # Return the prediction or render a template with the prediction
+    #return render_template('PredictionPage.html', prediction=prediction)
 
 
 if __name__ == '__main__':

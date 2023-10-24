@@ -774,7 +774,7 @@ class VDeepJUnbondedDatasetSingleBeam():
     def generate_single(self):
         if self.randomize_rate:
             S = generate_sequence(self.locus, self.data_dict, mutate=self.mutate,
-                                  mutation_rate=np.random.uniform(0, self.mutation_rate, 1).item(),
+                                  mutation_rate=self.mutation_rate,
                                   shm_flat=self.shm_flat, flat_usage='allele')
 
             S.v_seq_start -=1

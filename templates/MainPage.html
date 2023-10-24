@@ -181,6 +181,15 @@
             dAlleleSelect.value = localStorage.getItem("lastDAllele") || "";
             jAlleleSelect.value = localStorage.getItem("lastJAllele") || "";
         }
+
+    document.getElementById("predict-form").addEventListener("submit", function() {
+        // Get the content of the "generated_allele" div
+        var content = document.querySelector(".generated_allele").textContent;
+
+        // Set the content as the value of the hidden input field
+        document.getElementById("sequence-input").value = content;
+    });
+
     </script>
   </head>
 <body onload="populateSelections()">
@@ -231,10 +240,20 @@
                 </div>
                 <div class="legend-item">
                     <div class="legend-square" style="background-color: black;"></div>
-                    <div class="legend-text">Junction Distance</div>
+                    <div class="legend-text">Junction</div>
                 </div>
+
             </div>
             {{generated_sequence|safe }}
+
+           <!-- Add the "Predict" button here -->
+          <form action="/predict" method="POST" id="predict-form">
+        <input type="hidden" name="sequence" id="sequence-input"> <!-- Hidden input field -->
+        <div class="button-container">
+            <button type="submit" class="predict-button">Predict</button>
+        </div>
+    </form>
+
         </div>
     </div>
     <div class="prediction-section">
