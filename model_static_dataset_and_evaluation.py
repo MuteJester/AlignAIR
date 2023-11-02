@@ -8,8 +8,10 @@ import numpy as np
 import random
 from VDeepJDataset import VDeepJDatasetSingleBeamSegmentation
 from VDeepJLayers import RealDataEvaluationCallback
-from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF_HP, VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF
-from Trainer import SingleBeamSegmentationTrainer, SingleBeamTrainer
+from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF_HP, \
+    VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF, \
+    VDeepJAllignExperimentalSingleBeamConvSegmentationResidualIndel
+from Trainer import SingleBeamSegmentationTrainer, SingleBeamTrainer, SingleBeamSegmentationTrainerV2
 from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamRG
 import tensorflow as tf
 from sklearn.metrics import average_precision_score
@@ -63,9 +65,9 @@ noise_type = (
 
 datasets_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/"
 session_name = "sf5_alignairr_segmentation"
-session_path = os.path.join("/localdata/alignairr_data/", session_name+'_residual_s_v_d_j_HP')
+session_path = os.path.join("/localdata/alignairr_data/", session_name+'_residual_w_indels')
 models_path = os.path.join(session_path, "saved_models")
-checkpoint_path = os.path.join(models_path, "sf5_alignairr_segmentation_residual_s_v_d_j_HP")
+checkpoint_path = os.path.join(models_path, "sf5_alignairr_segmentation_residual_w_indels")
 logs_path = os.path.join(session_path, "logs/")
 eval_cps_path = os.path.join(session_path, "evaluation_checkpoints/")
 
@@ -76,7 +78,7 @@ if not os.path.exists(session_path):
     os.makedirs(checkpoint_path)
     os.makedirs(eval_cps_path)
 
-model_name = "sf5_alignairr_segmentation"
+model_name = "sf5_alignairr_segmentation_residual_w_indels"
 # Initialize wandb
 run = wandb.init(
     project=session_name,
@@ -107,7 +109,7 @@ p1_p11_data = pd.read_table("/localdata/alignairr_data/naive_repertoires/naive_s
 print('P1 P11 Dataset Loaded!...')
 
 train_dataset = VDeepJDatasetSingleBeamSegmentation(
-            data_path="/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset.csv",
+            data_path="/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset_with_MUTRATE.csv",
             max_sequence_length=512,
             corrupt_beginning=True,
             corrupt_proba=0.7,
@@ -130,9 +132,9 @@ print('Evaluation Callback Created!...')
 
 
 print('Starting The Training...')
-trainer = SingleBeamSegmentationTrainer(
-    model= VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF_HP,
-    data_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset.csv",
+trainer = SingleBeamSegmentationTrainerV2(
+    model= VDeepJAllignExperimentalSingleBeamConvSegmentationResidualIndel,
+    data_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset_with_MUTRATE.csv",
     batch_read_file=True,
     epochs=epochs,
     batch_size=batch_size,
@@ -149,6 +151,10 @@ trainer = SingleBeamSegmentationTrainer(
     single_base_stream_proba=0.05,
     duplicate_leading_proba=0.15,
     random_allele_proba=0.15,
+    insertion_proba=0.5,
+    deletions_proba=0.5,
+    deletion_coef=10,
+    insertion_coef=10,
     num_parallel_calls=32,
     log_to_file=True,
     log_file_name=model_name,
