@@ -983,6 +983,7 @@ class SingleBeamSegmentationTrainerV2:
             log_file_name=None,
             log_file_path=None,
             corrupt_beginning=False,
+            include_v_deletions=False,
             classification_head_metric='categorical_accuracy',
             interval_head_metric='mae',
             corrupt_proba=1,
@@ -1041,6 +1042,7 @@ class SingleBeamSegmentationTrainerV2:
         self.deletions_proba = deletions_proba,
         self.deletion_coef = deletion_coef,
         self.insertion_coef = insertion_coef,
+        self.include_v_deletions = include_v_deletions
 
 
         self.train_dataset = VDeepJDatasetSingleBeamSegmentationV2(
@@ -1055,6 +1057,7 @@ class SingleBeamSegmentationTrainerV2:
             deletion_coef=self.deletion_coef,
             insertion_coef=self.insertion_coef,
             batch_size=self.batch_size,
+            include_v_deletions=self.include_v_deletions,
             randomize_rate=randomize_rate,
             mutation_rate=airrship_mutation_rate,
             random_sequence_add_proba=random_sequence_add_proba,

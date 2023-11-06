@@ -1685,6 +1685,7 @@ class VDeepJDatasetSingleBeamSegmentationV2():
                  deletions_proba=0.5,
                  deletion_coef=10,
                  insertion_coef=10,
+                 include_v_deletions = False,
                  random_sequence_add_proba=1, single_base_stream_proba=0, duplicate_leading_proba=0,
                  random_allele_proba=0, allele_map_path='/home/bcrlab/thomas/AlignAIRR/',
                  seperator=','):
@@ -1701,6 +1702,7 @@ class VDeepJDatasetSingleBeamSegmentationV2():
         self.insertion_coef=insertion_coef
         self.corrupt_beginning = corrupt_beginning
         self.corrupt_proba = corrupt_proba
+        self.include_v_deletions = include_v_deletions
         self.nucleotide_add_coef = nucleotide_add_coef
         self.nucleotide_remove_coef = nucleotide_remove_coef
         self.mutation_oracle_mode = mutation_oracle_mode
@@ -1954,6 +1956,7 @@ class VDeepJDatasetSingleBeamSegmentationV2():
         d_segment = np.vstack(d_segment)
         j_segment = np.vstack(j_segment)
 
+
         y = {
             "v_segment": v_segment,
             "d_segment": d_segment,
@@ -1963,9 +1966,11 @@ class VDeepJDatasetSingleBeamSegmentationV2():
             "j_allele": self.get_ohe("J", data.j_allele),
             'mutation_rate':data.mutation_rate.values,
             'v_deletion':v_deletion,
-            'd_deletion':d_deletion,
             'j_deletion':j_deletion
         }
+        if self.include_v_deletions:
+            y['d_deletion'] = d_deletion
+
         return x, y
 
     def _get_tf_dataset_params(self):
