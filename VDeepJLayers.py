@@ -14,6 +14,7 @@ from collections import defaultdict
 import importlib
 from airrship.create_repertoire import create_allele_dict
 import os
+from tensorflow.keras.constraints import Constraint
 
 
 def global_genotype():
@@ -437,6 +438,18 @@ class TokenAndPositionEmbedding(tf.keras.layers.Layer):
 import tensorflow as tf
 import numpy as np
 
+class MinMaxValueConstraint(Constraint):
+    def __init__(self, min_value, max_value):
+        self.min_value = min_value
+        self.max_value = max_value
+
+    def __call__(self, w):
+        return K.clip(w, self.min_value, self.max_value)
+
+    def get_config(self):
+        return {'min_value': self.min_value, 'max_value': self.max_value}
+
+
 class SinusoidalTokenAndPositionEmbedding(tf.keras.layers.Layer):
     def __init__(self, maxlen, vocab_size, emded_dim):
         super(SinusoidalTokenAndPositionEmbedding, self).__init__()
@@ -679,9 +692,9 @@ class RealDataEvaluationCallback(Callback):
     def on_epoch_end(self, epoch, logs=None):
         if (epoch + 1) % self.period == 0:  # check if it's the right epoch
             x_val, y_val = self.validation_data
-            eval_dataset_ = self.train_dataset.tokenize_sequences(x_val)
+            #eval_dataset_ = self.train_dataset.tokenize_sequences(x_val)
 
-            padded_seqs_tensor = tf.convert_to_tensor(eval_dataset_, dtype=tf.uint8)
+            padded_seqs_tensor = tf.convert_to_tensor(x_val, dtype=tf.uint8)
             dataset_from_tensors = tf.data.Dataset.from_tensor_slices({
                 'tokenized_sequence': padded_seqs_tensor})
 

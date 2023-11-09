@@ -147,6 +147,7 @@ j_dict = {i.name: i.ungapped_seq.upper() for i in locus[0]['J']}
         
 v_alleles = sorted(list(v_dict))
 d_alleles = sorted(list(d_dict))
+d_alleles = d_alleles + ['Short-D']
 j_alleles = sorted(list(j_dict))
 
 v_allele_count = len(v_alleles)
@@ -175,6 +176,8 @@ label_num_sub_classes_dict = {
 }
 
 import tensorflow as tf
+from multiprocessing import Pool, cpu_count
+
 tokenizer_dictionary = {
             "A": 1,
             "T": 2,
@@ -374,19 +377,70 @@ def gini_impurity_threshold(prediction, min_impurity=0.2):
     
     return selected_labels
 def extract_prediction_alleles_gini(probabilites,min_impurity=0.2):
+    
     V_ratio = []
     for v_all in tqdm(probabilites):
         v_alleles  = gini_impurity_threshold(v_all,min_impurity=min_impurity)
         V_ratio.append([v_allele_call_rev_ohe[i] for i in v_alleles])
     return V_ratio
+def _process_and_dpad(sequence, max_seq_length, tokenizer_dictionary):
+    trans_seq = [tokenizer_dictionary.get(i, 0) for i in sequence]  # Use .get() to handle unknown characters
+    gap = max_seq_length - len(trans_seq)
+    iseven = gap % 2 == 0
+    whole_half_gap = gap // 2
+
+    if iseven:
+        trans_seq = [0] * whole_half_gap + trans_seq + ([0] * whole_half_gap)
+    else:
+        trans_seq = [0] * (whole_half_gap + 1) + trans_seq + ([0] * whole_half_gap)
+
+    return trans_seq
+
+
+def tokenize_chunk(chunk, max_seq_length, tokenizer_dictionary):
+    return [(index, _process_and_dpad(sequence, max_seq_length, tokenizer_dictionary)) for index, sequence in chunk]
+
+
+def chunkify(lst, n):
+    return [lst[i::n] for i in range(n)]
+
+
+def tokenize_sequences(sequences, max_seq_length, tokenizer_dictionary, verbose=False):
+    num_cpus = cpu_count()
+    indexed_sequences = list(enumerate(sequences))
+    chunks = chunkify(indexed_sequences, num_cpus)
+
+    # Create a partial function that includes the fixed arguments
+    from functools import partial
+    tokenize_partial = partial(tokenize_chunk, max_seq_length=max_seq_length, tokenizer_dictionary=tokenizer_dictionary)
+
+    with Pool(num_cpus) as pool:
+        if verbose:
+            results = list(tqdm(pool.imap(tokenize_partial, chunks), total=len(chunks)))
+        else:
+            results = pool.map(tokenize_partial, chunks)
+
+    # Flatten the list of lists and sort by the original index to maintain order
+    tokenized_sequences = [seq for chunk in results for seq in chunk]
+    tokenized_sequences.sort(key=lambda x: x[0])
+
+    # Remove the indices and extract the tokenized sequences
+    tokenized_sequences = [seq for index, seq in tokenized_sequences]
+    return np.vstack(tokenized_sequences)
+
+
+def process_csv_and_tokenize(sequences, max_seq_length, tokenizer_dictionary):
+    tokenized_matrix = tokenize_sequences(sequences, max_seq_length, tokenizer_dictionary, verbose=True)
+
+    return tokenized_matrix
 
 
 
 import tensorflow as tf
-from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF
-from Trainer import SingleBeamSegmentationTrainer
-trainer = SingleBeamSegmentationTrainer(
-    model=VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF,
+from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF,VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR_ONLY_ALLELES
+from Trainer import SingleBeamSegmentationTrainerV1__5
+trainer = SingleBeamSegmentationTrainerV1__5(
+    model=VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR_ONLY_ALLELES,
     data_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset.csv",
     batch_read_file=True,
     epochs=1,
@@ -409,22 +463,32 @@ trainer = SingleBeamSegmentationTrainer(
 
 
 trainer.model.build({'tokenized_sequence':(512,1)})
-trainer.model.load_weights("/localdata/alignairr_data/sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product/saved_models/sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product_cp1")
+#trainer.model.load_weights("/localdata/alignairr_data/sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product/saved_models/sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product_cp1")
+trainer.model.load_weights("/localdata/alignairr_data/VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR/evaluation_checkpoints/model_acc_0.9946/variables/variables")
 print('Model Loaded!')
 
 
-PATH ='/localdata/alignairr_data/1M_for_test/'
+PATH ='/localdata/alignairr_data/test_data_flat_usage/'
 datasets_files = os.listdir(PATH)
 datasets_files = list(filter(lambda x: '.tsv' in x , datasets_files))
 datasets_files = list(filter(lambda x: 'add_n' in x , datasets_files))
-
+tokenizer_dictionary =  {
+            "A": 1,
+            "T": 2,
+            "G": 3,
+            "C": 4,
+            "N": 5,
+            "P": 0,  # pad token
+        }
 results = {'v_call':dict(),'d_call':dict(),'j_call':dict()}
 
 for pred_file in tqdm(datasets_files):
     # Read the data from the TSV file
     data = pd.read_table(PATH+pred_file,usecols=['sequence','v_call','d_call','j_call'])
 
-    eval_dataset_ = trainer.train_dataset.tokenize_sequences(data.sequence.to_list())
+    eval_dataset_ = process_csv_and_tokenize(data['sequence'],512,tokenizer_dictionary)
+    
+    
     print('Train Dataset Encoded!')
     padded_seqs_tensor = tf.convert_to_tensor(eval_dataset_, dtype=tf.uint8)
     dataset_from_tensors = tf.data.Dataset.from_tensor_slices({
@@ -438,24 +502,16 @@ for pred_file in tqdm(datasets_files):
     raw_predictions =[]
 
     for i in tqdm(dataset):
-        pred = trainer.model.predict(i, verbose=False,batch_size=64)
-        for k in ['v','d','j']:
-            pred[k+'_segment'] = pred[k+'_segment'].astype(np.float16)
+        pred = trainer.model.predict(i, verbose=False,batch_size=512)
         raw_predictions.append(pred)
         
-    v_segment,d_segment,j_segment,v_allele,d_allele,j_allele = [],[],[],[],[],[]
+    mutation_rate,v_allele,d_allele,j_allele = [],[],[],[]
     for i in raw_predictions:
-        v_segment.append(i['v_segment'])
-        d_segment.append(i['d_segment'])
-        j_segment.append(i['j_segment'])
-        
+        mutation_rate.append(i['mutation_rate'])
         v_allele.append(i['v_allele'])
         d_allele.append(i['d_allele'])
         j_allele.append(i['j_allele'])
-    v_segment = np.vstack(v_segment)
-    d_segment = np.vstack(d_segment)
-    j_segment = np.vstack(j_segment)
-
+    mutation_rate = np.vstack(mutation_rate)
     v_allele = np.vstack(v_allele)
     d_allele = np.vstack(d_allele)
     j_allele = np.vstack(j_allele)
@@ -463,12 +519,21 @@ for pred_file in tqdm(datasets_files):
     allele_m = {'v_call':v_allele,'d_call':d_allele,'j_call':j_allele}
     
     for call in ['v_call','d_call','j_call']:
-        X = extract_prediction_alleles_dynamic_sum(allele_m[call],percentage=0.9,type=call.split('_')[0])
+        X = extract_prediction_alleles_dynamic_sum(allele_m[call],percentage=0.95,type=call.split('_')[0])
         hits = [len( set(i.split(',')) &set(j)) > 0 for i,j in zip(data[call],X)]
         agg = sum(hits)/len(hits)
-        THH = 10
-        total_thh = len(list(filter(lambda x: x>THH,list(map(len,X)))))
-        results[call][pred_file] = {'agreement':agg,'above_10':total_thh}
-        print(results)
-with open('/localdata/alignairr_data/sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product/'+'all_1M_sf5_alignairr_segmentation_residual_s_v_d_j_embedding_product_result.pkl','wb') as h:
+        
+        above_10 = len(list(filter(lambda x: x>10,list(map(len,X)))))
+        above_5= len(list(filter(lambda x: x>10,list(map(len,X)))))
+        above_3= len(list(filter(lambda x: x>10,list(map(len,X)))))
+        above_2= len(list(filter(lambda x: x>10,list(map(len,X)))))
+
+        results[call][pred_file] = {'agreement':agg,'above_10':above_10,'above_5':above_5,'above_3':above_3,'above_2':above_2,
+                                    'mean_mutation_rate':np.mean(mutation_rate),'std_mutation_rate':np.std(mutation_rate)}
+    print(results)
+    print('===========================================================================')
+    print('XVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVXVX')
+    print('===========================================================================')
+
+with open('/localdata/alignairr_data/VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR/'+'test_data_flat_usage_VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR_result.pkl','wb') as h:
     pickle.dump(results,h)

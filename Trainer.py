@@ -756,6 +756,7 @@ class SingleBeamSegmentationTrainerV1__5:
             corrupt_proba=1,
             verbose=0,
             airrship_mutation_rate=0.2,
+            N_proportion=0.02,
             nucleotide_add_coef=35,
             nucleotide_remove_coef=50,
             random_sequence_add_proba=1,
@@ -801,6 +802,7 @@ class SingleBeamSegmentationTrainerV1__5:
         self.allele_map_path = allele_map_path
         self.data_path =data_path
         self.batch_read_file= batch_read_file
+        self.N_proportion = N_proportion
 
         self.train_dataset = VDeepJDatasetSingleBeamSegmentationV1__5(
             data_path=data_path,
@@ -812,6 +814,7 @@ class SingleBeamSegmentationTrainerV1__5:
             batch_size=self.batch_size,
             randomize_rate=randomize_rate,
             mutation_rate=airrship_mutation_rate,
+            N_proportion = self.N_proportion,
             random_sequence_add_proba=random_sequence_add_proba,
             single_base_stream_proba=single_base_stream_proba,
             duplicate_leading_proba=duplicate_leading_proba,

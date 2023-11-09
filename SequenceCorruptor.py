@@ -252,7 +252,10 @@ def global_genotype():
 
 
 class SequenceCorruptor:
-    def __init__(self, nucleotide_add_coef=100, nucleotide_remove_coef=100, nucleotide_add_remove_coef=50,
+    def __init__(self,
+                 nucleotide_add_coef=100,
+                 nucleotide_remove_coef=100,
+                 nucleotide_add_remove_coef=50,
                  max_length=512,
                  random_sequence_add_proba=1, single_base_stream_proba=0, duplicate_leading_proba=0,
                  random_allele_proba=0, corrupt_proba=1,
