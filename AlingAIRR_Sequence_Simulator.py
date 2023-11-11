@@ -1,3 +1,4 @@
+import base64
 import enum
 import pickle
 import random
@@ -5,6 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.stats as st
 from airrship.create_repertoire import generate_sequence, load_data, global_genotype
+import base64
 
 
 # Corruption Events
@@ -35,6 +37,8 @@ class SequenceSimulatorArguments:
     random_allele_proba: The probability of adding a random allele.
     corrupt_proba: The probability of corrupting the sequence from the start.
     short_d_length: The minimum length required from the D allele to not be tagged as "Short-D"
+    save_mutations_record: Whether to save the mutations that were in the sequence or not (saved as base64 dictionary)
+    save_ns_record: Whether to save the N's that were in the sequence or not (saved as base64 dictionary)
     """
     min_mutation_rate: float = 0.003
     max_mutation_rate: float = 0.25
@@ -51,7 +55,8 @@ class SequenceSimulatorArguments:
     random_allele_proba: float = 0
     corrupt_proba: float = 0.7
     short_d_length: int = 3
-
+    save_mutations_record: bool = False
+    save_ns_record: bool = False
 
 class SequenceSimulator:
 
@@ -82,6 +87,8 @@ class SequenceSimulator:
 
         # Class Misc
         self.v_allele_map_path = args.v_allele_map_path
+        self.save_mutations_record = args.save_mutations_record
+        self.save_ns_record = args.save_ns_record
         self.v_alleles = self.locus[0]["V"]
         self.max_v_length = max(map(lambda x: len(x.ungapped_seq), self.v_alleles))
         self.max_sequence_length = args.max_sequence_length
@@ -108,15 +115,35 @@ class SequenceSimulator:
                 self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
 
     # Noise Introducing Methods
-    def insert_Ns(self, string):
-        num_replacements = int(len(string) * self.n_ratio)
-        nucleotides_list = list(string)
+    def insert_Ns(self, simulated):
+        sequence = simulated['sequence']
+        # Calculate how many Ns we should insert
+        num_replacements = int(len(sequence) * self.n_ratio)
+        nucleotides_list = list(sequence)
 
         for _ in range(num_replacements):
+            # Get random position in the sequence
             index = random.randint(0, len(nucleotides_list) - 1)
+            # Log the N insertion event in the sequence metadata
+            simulated['Ns'][index] = nucleotides_list[index] + '>' + 'N'
+            # Make the N insertion
             nucleotides_list[index] = "N"
 
-        return ''.join(nucleotides_list)
+        # Concatenate the list back into a string
+        simulated['sequence'] = ''.join(nucleotides_list)
+
+        # Sort the N's insertion log
+        simulated['Ns'] = {pos:simulated['Ns'][pos] for pos in sorted(simulated['Ns'])}
+
+        # Adjust mutation rate to account for added "N's" by adding the ratio of N's added to the mutation rate
+        # because we randomly sample position we might get a ratio of N's less than what was defined by the n_ratio
+        # property, thus we recalculate the actual inserted ration of N's
+        # Also make sure we only count the N's the were inserted in the sequence and not in the added slack
+        # as we might consider all the slack as noise in general
+        Ns_in_pure_sequence = [i for i in simulated['Ns'] if simulated['v_sequence_start']<=i<=simulated['j_sequence_end']]
+        pure_sequence_length = simulated['j_sequence_end'] - simulated['v_sequence_start']
+        simulated_n_ratio = len(Ns_in_pure_sequence) / pure_sequence_length
+        simulated['mutation_rate'] += simulated_n_ratio
 
     def remove_event(self, simulated):
         # Update Simulation Metadata
@@ -128,13 +155,19 @@ class SequenceSimulator:
         simulated['sequence'] = simulated['sequence'][amount_to_remove:]
         # Update Simulation Metadata
         simulated['corruption_remove_amount'] = amount_to_remove
+        # Update mutation log, remove the mutations that were removed with the remove event
+        # and while updating the mutations log correct the position of the mutations accordingly
+        simulated['mutations'] = {i-amount_to_remove: j for i, j in simulated['mutations'].items() if i > amount_to_remove}
+        # Adjust mutation rate
+        self.correct_mutation_rate(simulated)
+
         # Adjust Start/End Position Accordingly
         simulated['v_sequence_start'] = 0
         simulated['v_sequence_end'] -= amount_to_remove
         simulated['d_sequence_start'] -= amount_to_remove
         simulated['d_sequence_end'] -= amount_to_remove
         simulated['j_sequence_start'] -= amount_to_remove
-        simulated['j_sequence_start'] -= amount_to_remove
+        simulated['j_sequence_end'] -= amount_to_remove
 
         # Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
         self.correct_for_v_start_cut(simulated)
@@ -156,6 +189,8 @@ class SequenceSimulator:
 
         # Update Simulation Metadata
         simulated['corruption_add_amount'] = amount_to_add
+        # Update mutation log positions
+        simulated['mutations'] = {i+amount_to_add: j for i, j in simulated['mutations'].items()}
 
         # Adjust Start/End Position Accordingly
         simulated['v_sequence_start'] = amount_to_add
@@ -163,7 +198,7 @@ class SequenceSimulator:
         simulated['d_sequence_start'] += amount_to_add
         simulated['d_sequence_end'] += amount_to_add
         simulated['j_sequence_start'] += amount_to_add
-        simulated['j_sequence_start'] += amount_to_add
+        simulated['j_sequence_end'] += amount_to_add
 
     def remove_before_add_event(self, simulated):
         # ----- REMOVE PART -----#
@@ -224,6 +259,24 @@ class SequenceSimulator:
             min(removed, self.max_v_start_correction_map_value)]
         simulated['v_allele'] = simulated['v_allele'] + equivalent_alleles
 
+    def correct_mutation_rate(self, simulated):
+        """
+        After we insert N's into the sequence or make any kind of removal or modification to the sequence, we might
+        change the actual mutation rate by overwriting / changing a simulated mutation, thus the porpuse of this function
+        is the update the mutation log appropriately as well as the mutation rate in the simulation log so that it will
+        match the actual ratio of mutation in the simulataed sequence
+        :param simulated:
+        :return:
+        """
+
+        # recalculate the mutation ratio based on the current mutation log
+        n_mutations = len(simulated['mutations'])
+        # the actual sequence length without any noise at the start or at the end
+        sequence_length = simulated['j_sequence_end'] - simulated['v_sequence_start']
+        mutation_ratio = n_mutations / sequence_length
+        # update the mutation_rate in the simulation log
+        simulated['mutation_rate'] = mutation_ratio
+
     def validate_sequence_length_after_addition(self, sequence, added):
         # In case we added too many nucleotides to the beginning while corrupting the sequence, remove the slack
         if len(sequence) > self.max_sequence_length:
@@ -261,10 +314,31 @@ class SequenceSimulator:
             'corruption_event': 'no-corruption',
             'corruption_add_amount': 0,
             'corruption_remove_amount': 0,
+            'mutations': {pos:gen.mutations[pos] for pos in sorted(gen.mutations)}, # sort the mutations by position
+            "Ns": dict()
         }
         return data
 
     # Interface
+    def process_before_return(self,simulated):
+        """
+        this method makes final adjustments to the output format
+        :return:
+        """
+        # Convert Allele From List to Comma Seperated String
+        for gene in ['v', 'd', 'j']:
+            simulated[f'{gene}_allele'] = ','.join(simulated[f'{gene}_allele'])
+
+        # convert mutations and N log to base64 for proper tabular preservation
+        if self.save_ns_record:
+            simulated['Ns'] = base64.b64encode(str(simulated['Ns']).encode('ascii'))
+        else:
+            simulated.pop('Ns')
+
+        if self.save_mutations_record:
+            simulated['mutations'] = base64.b64encode(str(simulated['mutations']).encode('ascii'))
+        else:
+            simulated.pop('mutations')
     def get_sequence(self):
         # 1. Simulate a Sequence from AIRRship
         simulated = self.query_airrship()
@@ -272,27 +346,20 @@ class SequenceSimulator:
         # 1.1 Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
         self.correct_for_v_end_cut(simulated)
 
-        # 2. Add N's
-        simulated['sequence'] = self.insert_Ns(simulated['sequence'])
-        # 2.1 Adjust mutation rate to account for added "N's" by adding the ratio of N's added to the mutation rate
-        simulated['mutation_rate'] = simulated['mutation_rate'] + self.n_ratio
-        # 2.2 Consider Adding Correction For the True Allele Set Based on the Positions the N's were inserted too
-
-        # 3. Corrupt Begging of Sequence ( V Start )
+        #2. Corrupt Begging of Sequence ( V Start )
         if self.perform_corruption():
             # Inside this method, based on the corruption event we will also adjust the respective ground truth v
             # alleles
             self.corrupt_sequence_beginning(simulated)
 
+        # 3. Add N's
+        self.insert_Ns(simulated)
+
         # 4. Adjust D Allele , if the simulated length is smaller than short_d_length
         # class property, change the d allele to the "Short-D" label
         self.short_d_validation(simulated)
 
-        # To-Do adjust mutation rate based on how many actually left after start removal and + N insertion
-
-        # Convert Allele From List to Comma Seperated String
-        for gene in ['v','d','j']:
-            simulated[f'{gene}_allele'] = ','.join(simulated[f'{gene}_allele'])
+        self.process_before_return(simulated)
 
         return simulated
 
@@ -327,3 +394,22 @@ class SequenceSimulator:
                                 weights=[self.random_sequence_add_proba, self.single_base_stream_proba,
                                          self.duplicate_leading_proba, self.random_allele_proba], k=1)[0]
         return method
+
+    @property
+    def columns(self):
+        return [
+            "v_sequence_end",
+            "sequence",
+            "v_sequence_start",
+            "d_sequence_start",
+            "d_sequence_end",
+            "j_sequence_start",
+            "j_sequence_end",
+            "v_allele",
+            "d_allele",
+            "j_allele",
+            'mutation_rate',
+            'corruption_event',
+            'corruption_add_amount',
+            'corruption_remove_amount',
+        ]
