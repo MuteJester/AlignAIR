@@ -26,17 +26,14 @@ class SlackCallback:
             self.last_time = current_time
 
 #path_to_data = '/home/bcrlab/thomas/anaconda3/lib/python3.9/site-packages/airrship/data/'
-mutate = True
-data_dict = load_data()
-locus = global_genotype()
-save_path = '/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/'
-BATCH_SIZE = 1000
+save_path = '/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset_SeqSimulator.csv'
+BATCH_SIZE = 100_000
 #slack_callback = SlackCallback("https://hooks.slack.com/services/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", interval=60)
-num_samples = 30_000_000
+num_samples = 50_000_000
 
 
 def generate_samples(n, queue):
-    args = SequenceSimulatorArguments()
+    args = SequenceSimulatorArguments(v_allele_map_path='/home/bcrlab/thomas/AlignAIRR/')
     simulator = SequenceSimulator(args)
     for _ in range(n):
         simulation = simulator.get_sequence()
@@ -63,7 +60,7 @@ def writer_thread(queue):
             df = pd.DataFrame(buffer)
             df.to_csv(save_path, mode='a', header=False, index=False)
             written_count += BATCH_SIZE
-            #print(f"Total sequences written to file: {written_count}")
+            print(f"Total sequences written to file: {written_count}")
 
             buffer = []
 
@@ -80,7 +77,7 @@ if __name__ == '__main__':
     writer.start()
 
     # Create initial CSV with headers
-    args = SequenceSimulatorArguments()
+    args = SequenceSimulatorArguments(v_allele_map_path='/home/bcrlab/thomas/AlignAIRR/')
     simulator = SequenceSimulator(args)
     df = pd.DataFrame(columns=simulator.columns)
     df.to_csv(save_path, index=False)

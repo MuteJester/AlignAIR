@@ -485,6 +485,44 @@ class SequenceCorruptor:
 
         return v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences
 
+    def process_sequences_silent(self, data: pd.DataFrame, corrupt_beginning=False, verbose=False):
+        padded_sequences = []
+        v_start, v_end, d_start, d_end, j_start, j_end = [], [], [], [], [], []
+
+        iterator = tqdm(data.itertuples(), total=len(data)) if verbose else data.itertuples()
+
+        for row in iterator:
+            seq = row['sequence']
+            padded_array, start, end = self._process_and_dpad(seq, self.max_length)
+            pad_size = start
+            padded_sequences.append(padded_array)
+
+            adjusted_v_start = row['v_sequence_start'] + pad_size
+            adjusted_v_end = row['v_sequence_end'] + pad_size
+            adjusted_d_start = row['d_sequence_start'] +pad_size
+            adjusted_d_end = row['d_sequence_end'] + pad_size
+            adjusted_j_start = row['j_sequence_start'] + pad_size
+            adjusted_j_end = row['j_sequence_end'] + pad_size
+
+            v_start.append(adjusted_v_start)
+            v_end.append(adjusted_v_end)
+            d_start.append(adjusted_d_start)
+            d_end.append(adjusted_d_end)
+            j_start.append(adjusted_j_start)
+            j_end.append(adjusted_j_end)
+
+        v_start = np.array(v_start)
+        v_end = np.array(v_end)
+        d_start = np.array(d_start)
+        d_end = np.array(d_end)
+        j_start = np.array(j_start)
+        j_end = np.array(j_end)
+
+        padded_sequences = np.vstack(padded_sequences)
+
+        return v_start, v_end, d_start, d_end, j_start, j_end, padded_sequences
+
+
     def random_nucleotides(self, amount, sequence):
         random_seq = ''.join(random.choices(['A', 'T', 'C', 'G'], k=amount))
         return random_seq + sequence

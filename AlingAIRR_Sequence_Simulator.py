@@ -114,6 +114,9 @@ class SequenceSimulator:
             self.max_v_end_correction_map_value = max(
                 self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
 
+        with open(self.v_allele_map_path+'d_allele_trim_map.pkl','rb') as h:
+            self.d_trim_correction_map = pickle.load(h)
+
     # Noise Introducing Methods
     def insert_Ns(self, simulated):
         sequence = simulated['sequence']
@@ -193,7 +196,7 @@ class SequenceSimulator:
         simulated['mutations'] = {i+amount_to_add: j for i, j in simulated['mutations'].items()}
 
         # Adjust Start/End Position Accordingly
-        simulated['v_sequence_start'] = amount_to_add
+        simulated['v_sequence_start'] += amount_to_add
         simulated['v_sequence_end'] += amount_to_add
         simulated['d_sequence_start'] += amount_to_add
         simulated['d_sequence_end'] += amount_to_add
@@ -253,6 +256,13 @@ class SequenceSimulator:
             min(simulated['v_sequence_end'], self.max_v_end_correction_map_value)]
         simulated['v_allele'] = simulated['v_allele'] + equivalent_alleles
 
+    def correct_for_d_trims(self,simulated):
+        # Get the 5' and 3' trims of the d allele in the simulated sequence
+        trim_5 = simulated['d_trim_5']
+        trim_3 = simulated['d_trim_3']
+        # infer the precalculated map what alleles should be the ground truth for this sequence based on the trim
+        simulated['d_allele'] = list(self.d_trim_correction_map[simulated['d_allele'][0]][(trim_5,trim_3)])
+
     def correct_for_v_start_cut(self, simulated):
         removed = simulated['corruption_remove_amount']
         equivalent_alleles = self.v_start_allele_correction_map[simulated['v_allele'][0]][
@@ -311,6 +321,12 @@ class SequenceSimulator:
             "d_allele": [gen.d_allele.name],
             "j_allele": [gen.j_allele.name],
             'mutation_rate': mutation_rate,
+            'v_trim_5':gen.v_trim_5,
+            'v_trim_3':gen.v_trim_3,
+            'd_trim_5': gen.d_trim_5,
+            'd_trim_3': gen.d_trim_3,
+            'j_trim_5': gen.j_trim_5,
+            'j_trim_3': gen.j_trim_3,
             'corruption_event': 'no-corruption',
             'corruption_add_amount': 0,
             'corruption_remove_amount': 0,
@@ -345,6 +361,9 @@ class SequenceSimulator:
 
         # 1.1 Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
         self.correct_for_v_end_cut(simulated)
+
+        # 1.2 Correction - Add All D Alleles That Cant be Distinguished Based on the 5' and 3' Trims
+        self.correct_for_d_trims(simulated)
 
         #2. Corrupt Begging of Sequence ( V Start )
         if self.perform_corruption():

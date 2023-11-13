@@ -30,8 +30,8 @@ def count_tsv_size(path):
 
 
 def table_generator(path, batch_size, usecols=None, loop=True, seperator='\t'):
-    while True:
-        with open(path, 'r') as file:
+    with open(path, 'r') as file:
+        while True:
             reader = csv.reader(file, delimiter=seperator)
             headers = next(reader)  # Skip header row
             if len(set(usecols) & set(headers)) != len(usecols):
@@ -48,11 +48,7 @@ def table_generator(path, batch_size, usecols=None, loop=True, seperator='\t'):
                 if len(batch[headers[0]]) == batch_size:
                     yield batch
                     batch = {i: [] for i in headers}
-
-            if len(batch) > 0:
-                yield batch
-                if not loop:
-                    break
+            file.seek(0)  # Reset file pointer to the beginning
 
 
 class VDeepJDataset:
@@ -1688,7 +1684,6 @@ class VDeepJDatasetSingleBeamSegmentationV1__5():
     def __len__(self):
         return len(self.data)
 
-
 class VDeepJDatasetSingleBeamSegmentationV2():
     """
     In this version of the dataset we add insertions and deletions as well as the y variables
@@ -2565,6 +2560,25 @@ class VDeepJDatasetRefactored:
             encoded_sequence = np.pad(encoded_sequence, (pad_size, pad_size + 1), 'constant', constant_values=(0, 0))
         return encoded_sequence, pad_size
 
+    def encode_and_pad_sequence_end(self, sequence):
+        """Encodes a sequence of nucleotides and pads it to the specified maximum length, only at the end.
+
+        Args:
+            sequence: A sequence of nucleotides.
+
+        Returns:
+            A padded sequence, and the start index of the unpadded sequence.
+        """
+
+        encoded_sequence = np.array([self.tokenizer_dictionary[i] for i in sequence])
+        padding_length = self.max_seq_length - len(encoded_sequence)
+
+        # Pad only at the end
+        encoded_sequence = np.pad(encoded_sequence, (0, padding_length), 'constant', constant_values=(0, 0))
+
+        # The start index of the unpadded sequence is always 0 since we're not padding at the start
+        return encoded_sequence, 0
+
     def get_ohe_reverse_mapping(self):
         get_reverse_dict = lambda dic: {i: j for j, i in dic.items()}
         call_maps = {
@@ -2578,9 +2592,10 @@ class VDeepJDatasetRefactored:
         allele_count = self.properties_map[gene]['allele_count']
         allele_call_ohe = self.properties_map[gene]['allele_call_ohe']
         result = []
-        for allele in ground_truth_labels:
+        for sample in ground_truth_labels:
             ohe = np.zeros(allele_count)
-            ohe[allele_call_ohe[allele]] = 1
+            for allele in sample:
+                ohe[allele_call_ohe[allele]] = 1
             result.append(ohe)
         return np.vstack(result)
 
@@ -2619,9 +2634,9 @@ class VDeepJDatasetRefactored:
             segments[_gene] = np.vstack(segments[_gene])
 
         # Convert Comma Seperated Allele Ground Truth Labels into Lists
-        v_alleles = batch.v_allele.apply(lambda x: x.split(','))
-        d_alleles = batch.d_allele.apply(lambda x: x.split(','))
-        j_alleles = batch.j_allele.apply(lambda x: x.split(','))
+        v_alleles = batch.v_allele.apply(lambda x: set(x.split(',')))
+        d_alleles = batch.d_allele.apply(lambda x: set(x.split(',')))
+        j_alleles = batch.j_allele.apply(lambda x: set(x.split(',')))
 
         y = {
             "v_segment": segments['v'],
@@ -2655,6 +2670,7 @@ class VDeepJDatasetRefactored:
             batch_x, batch_y = self._get_single_batch(pointer)
 
             if len(batch_x['tokenized_sequence']) != self.batch_size:
+                pointer = 0
                 continue
             else:
                 yield batch_x, batch_y
