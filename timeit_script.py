@@ -8,8 +8,24 @@ import time
 
 # gpus = tf.config.experimental.list_physical_devices("GPU")
 # tf.config.experimental.set_memory_growth(gpus[1], True)
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-# s = 4
+# if 0:
+#     # from tensorflow.compat.v1 import ConfigProto
+#     # from tensorflow.compat.v1 import InteractiveSession
+
+#     # def fix_gpu():
+#     #     config = ConfigProto()
+#     #     config.gpu_options.allow_growth = True
+#     #     session = InteractiveSession(config=config)
+
+#     # fix_gpu()
+#     # s = 4
+
+#     physical_devices = tf.config.experimental.list_physical_devices("GPU")
+#     # physical_devices = tf.config.experimental.list_physical_devices('CPU')
+#     print("physical_devices-------------", len(physical_devices))
+#     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 Reduce_lr = ReduceLROnPlateau(
     monitor="v_allele_categorical_accuracy",
@@ -42,9 +58,10 @@ model = VDeepJAllign
 # Define other parameters
 epochs = 5
 batch_size = 64
-specific_dataset = "sim_data_1M_asc_P05_model_s5f_20_rate_001_add_n.tsv"
-datasets_path = "/dsi/shared/ig/ig05_test/"  # Only change this
-train_dataset_path = os.path.join(datasets_path, specific_dataset)
+# specific_dataset = "sim_data_1M_S5F_20_rate_001_add_n.tsv"
+# datasets_path = "/dsi/shared/ig/ig05_test/"  # Only change this
+# train_dataset_path = os.path.join(datasets_path, specific_dataset)
+train_dataset_path = os.path.join(r"sim_data_1M_S5F_20_rate_001_add_n.tsv")
 
 trainer = Trainer(
     model=model,

@@ -47,6 +47,7 @@ class VDeepJAllign(tf.keras.Model):
         j_allele_count,
         ohe_sub_classes_dict,
         use_gene_masking=False,
+        emb_dim=32
     ):
         super(VDeepJAllign, self).__init__()
 
@@ -115,19 +116,19 @@ class VDeepJAllign(tf.keras.Model):
 
         self.concatenate_input = concatenate
         self.concatenated_input_embedding = TokenAndPositionEmbedding(
-            vocab_size=6, emded_dim=32, maxlen=self.max_seq_length
+            vocab_size=6, emded_dim=emb_dim, maxlen=self.max_seq_length
         )  # Embedding(6, 32, input_length=int(max_seq_length))
         self.conv_embedding_attention = Attention()
         self.initial_feature_map_dropout = Dropout(0.3)
 
         self.concatenated_v_mask_input_embedding = TokenAndPositionEmbedding(
-            vocab_size=6, emded_dim=32, maxlen=self.max_seq_length
+            vocab_size=6, emded_dim=emb_dim, maxlen=self.max_seq_length
         )  # Embedding(6, 32, input_length=int(max_seq_length))  # (concatenated)
         self.concatenated_d_mask_input_embedding = TokenAndPositionEmbedding(
-            vocab_size=6, emded_dim=32, maxlen=self.max_seq_length
+            vocab_size=6, emded_dim=emb_dim, maxlen=self.max_seq_length
         )  # Embedding(6, 32, input_length=int(max_seq_length))  # (concatenated)
         self.concatenated_j_mask_input_embedding = TokenAndPositionEmbedding(
-            vocab_size=6, emded_dim=32, maxlen=self.max_seq_length
+            vocab_size=6, emded_dim=emb_dim, maxlen=self.max_seq_length
         )  # Embedding(6, 32, input_length=int(max_seq_length))  # (concatenated)
 
         # Init Interval Regression Related Layers

@@ -49,6 +49,7 @@ class UnboundedTrainer:
         optimizers=tf.keras.optimizers.Adam,
         optimizers_params=None,
         mutation_rate=0.08,
+        emb_dim=32
     ):
         self.pretrained = pretrained
         self.model = model
@@ -78,6 +79,7 @@ class UnboundedTrainer:
         self.nucleotide_add_coef = nucleotide_add_coef
         self.nucleotide_remove_coef = nucleotide_remove_coef
         self.mutation_rate = mutation_rate
+        self.emb_dim = emb_dim
 
         self.train_dataset = VDeepJUnbondedDataset(
             max_sequence_length=self.input_size,
@@ -103,6 +105,7 @@ class UnboundedTrainer:
     def _load_pretrained_model(self):
         model_params = self.train_dataset.generate_model_params()
         model_params["use_gene_masking"] = self.use_gene_masking
+        model_params["emb_dim"] = self.emb_dim
         self.model = self.model_type(**model_params)
         if self.pretrained is not None:
             self.model.load_weights(self.pretrained)

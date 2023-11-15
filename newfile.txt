@@ -1,0 +1,32 @@
+ceback (most recent call last):
+  File "timeit_script.py", line 78, in <module>
+    trainer.train()
+  File "/home/dsi/eisenbr2/AlignAIRR/Trainer.py", line 140, in train
+    self.history = self.model.fit(
+  File "/home/dsi/eisenbr2/anaconda3/envs/vdj/lib/python3.8/site-packages/tensorflow/python/keras/engine/training.py", line 1100, in fit
+    tmp_logs = self.train_function(iterator)
+  File "/home/dsi/eisenbr2/anaconda3/envs/vdj/lib/python3.8/site-packages/tensorflow/python/eager/def_function.py", line 828, in __call__
+    result = self._call(*args, **kwds)
+  File "/home/dsi/eisenbr2/anaconda3/envs/vdj/lib/python3.8/site-packages/tensorflow/python/eager/def_function.py", line 888, in _call
+    return self._stateless_fn(*args, **kwds)
+  File "/home/dsi/eisenbr2/anaconda3/envs/vdj/lib/python3.8/site-packages/tensorflow/python/eager/function.py", line 2942, in __call__
+    return graph_function._call_flat(
+  File "/home/dsi/eisenbr2/anaconda3/envs/vdj/lib/python3.8/site-packages/tensorflow/python/eager/function.py", line 1918, in _call_flat
+    return self._build_call_outputs(self._inference_function.call(
+  File "/home/dsi/eisenbr2/anaconda3/envs/vdj/lib/python3.8/site-packages/tensorflow/python/eager/function.py", line 555, in call
+    outputs = execute.execute(
+  File "/home/dsi/eisenbr2/anaconda3/envs/vdj/lib/python3.8/site-packages/tensorflow/python/eager/execute.py", line 59, in quick_execute
+    tensors = pywrap_tfe.TFE_Py_Execute(ctx._handle, device_name, op_name,
+tensorflow.python.framework.errors_impl.InternalError: 2 root error(s) found.
+  (0) Internal:  Failed to load in-memory CUBIN: CUDA_ERROR_NO_BINARY_FOR_GPU: no kernel image is available for execution on the device
+         [[node Abs_4 (defined at /home/dsi/eisenbr2/AlignAIRR/VDeepJModel.py:793) ]]
+         [[gradient_tape/v_deep_j_allign/token_and_position_embedding_3/embedding_6/embedding_lookup/Reshape_1/_66]]
+  (1) Internal:  Failed to load in-memory CUBIN: CUDA_ERROR_NO_BINARY_FOR_GPU: no kernel image is available for execution on the device
+         [[node Abs_4 (defined at /home/dsi/eisenbr2/AlignAIRR/VDeepJModel.py:793) ]]
+0 successful operations.
+0 derived errors ignored. [Op:__inference_train_function_15272]
+
+Function call stack:qqqqqq
+train_function -> train_function
+
+2023-09-14 13:38:02.031250: Wtensorflot vimtmux exit vimtmux exit vimtmux exit vimtmux exit vimtmux exit vimtmux exit vimtmux exit vimtmux exit vimtmux exit vimwefsdsdfqq/core/kernels/data/generator_dataset_op.cc:107] Error occurred when finalizing GeneratorDataset iterator: Failed precondition: Python interpreter state is not initialized. The process may be ter
