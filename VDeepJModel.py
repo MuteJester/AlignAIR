@@ -23,7 +23,15 @@ from VDeepJLayers import (
 )
 from tensorflow.keras import regularizers
 from enum import Enum, auto
-import wandb
+from keras.layers import Activation
+from keras.utils.generic_utils import get_custom_objects
+
+
+def mish(x):
+    return x * tf.math.tanh(tf.math.softplus(x))
+
+
+get_custom_objects().update({'mish': Activation(mish)})
 
 
 class ModelComponents(Enum):
@@ -35,19 +43,18 @@ class ModelComponents(Enum):
 
 class VDeepJAllign(tf.keras.Model):
     def __init__(
-        self,
-        max_seq_length,
-        v_family_count,
-        v_gene_count,
-        v_allele_count,
-        d_family_count,
-        d_gene_count,
-        d_allele_count,
-        j_gene_count,
-        j_allele_count,
-        ohe_sub_classes_dict,
-        use_gene_masking=False,
-        emb_dim=32
+            self,
+            max_seq_length,
+            v_family_count,
+            v_gene_count,
+            v_allele_count,
+            d_family_count,
+            d_gene_count,
+            d_allele_count,
+            j_gene_count,
+            j_allele_count,
+            ohe_sub_classes_dict,
+            use_gene_masking=False
     ):
         super(VDeepJAllign, self).__init__()
 
@@ -182,10 +189,11 @@ class VDeepJAllign(tf.keras.Model):
         self.input_for_masked = Input((self.max_seq_length, 1), name="seq_masked")
 
     def _init_raw_signals_encoding_layers(self):
-        self.conv_layer_1 = Conv1D_and_BatchNorm(filters=16, kernel=3, max_pool=2,initializer=self.initializer)
-        self.conv_layer_2 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2,initializer=self.initializer)
-        self.conv_layer_3 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=2,initializer=self.initializer)
-        self.conv_layer_4 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=3,initializer=self.initializer)
+        # Resnet Influenced
+        self.conv_layer_1 = Conv1D_and_BatchNorm(filters=32, kernel=3, max_pool=2,initializer=self.initializer)
+        self.conv_layer_2 = Conv1D_and_BatchNorm(filters=64, kernel=5, max_pool=2,initializer=self.initializer)
+        self.conv_layer_3 = Conv1D_and_BatchNorm(filters=128, kernel=5, max_pool=2,initializer=self.initializer)
+        self.conv_layer_4 = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=3,initializer=self.initializer)
 
     def _init_masked_v_signals_encoding_layers(self):
         self.conv_v_layer_1 = Conv1D_and_BatchNorm(
@@ -635,7 +643,7 @@ class VDeepJAllign(tf.keras.Model):
         return K.cast(x, "float32")
 
     def call_hierarchy_loss(
-        self, family_true, gene_true, allele_true, family_pred, gene_pred, allele_pred
+            self, family_true, gene_true, allele_true, family_pred, gene_pred, allele_pred
     ):
         if family_true != None:
             family_loss = K.categorical_crossentropy(
@@ -712,7 +720,7 @@ class VDeepJAllign(tf.keras.Model):
             0.0, K.minimum(j_end, self.max_seq_length) - K.maximum(j_start, j_end)
         )
         total_intersection_loss = (
-            v_intersection_loss + d_intersection_loss + j_intersection_loss
+                v_intersection_loss + d_intersection_loss + j_intersection_loss
         )
         # ========================================================================================================================
 
@@ -752,18 +760,18 @@ class VDeepJAllign(tf.keras.Model):
         )
 
         classification_loss = (
-            self.v_class_weight * clf_v_loss
-            + self.d_class_weight * clf_d_loss
-            + self.j_class_weight * clf_j_loss
+                self.v_class_weight * clf_v_loss
+                + self.d_class_weight * clf_d_loss
+                + self.j_class_weight * clf_j_loss
         )
 
         # ========================================================================================================================
 
         # Combine the two losses using a weighted sum
         total_loss = (
-            (self.regression_weight * mse_loss)
-            + (self.intersection_weight * total_intersection_loss)
-        ) + self.classification_weight * classification_loss
+                             (self.regression_weight * mse_loss)
+                             + (self.intersection_weight * total_intersection_loss)
+                     ) + self.classification_weight * classification_loss
 
         return total_loss, total_intersection_loss, mse_loss, classification_loss
 
