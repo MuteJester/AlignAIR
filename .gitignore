@@ -4,3 +4,11 @@ __pychache__/*
 model/*
 wandb/*
 tmp/*
+v_call_mathces/*
+v_call_missmatches/*
+tmp.png
+tmp2.png
+tmp3.png
+tmp4.png
+tmp5.png
+clustalo-1.2.4-Ubuntu-x86_64

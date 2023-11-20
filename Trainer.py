@@ -572,7 +572,7 @@ class SingleBeamSegmentationTrainer:
             callbacks=None,
             optimizers=tf.keras.optimizers.Adam,
             optimizers_params=None,
-            allele_map_path = '/home/bcrlab/thomas/AlignAIRR/'
+            allele_map_path = '/home/eisenbr2/thomas/AlignAIRR/'
 
     ):
 

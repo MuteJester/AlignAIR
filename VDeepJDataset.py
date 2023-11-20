@@ -713,7 +713,7 @@ class VDeepJDatasetSingleBeam():
                  corrupt_beginning=True, corrupt_proba=1, nucleotide_add_coef=35, nucleotide_remove_coef=50,
                  mutation_oracle_mode=False,
                  random_sequence_add_proba=1, single_base_stream_proba=0, duplicate_leading_proba=0,
-                 random_allele_proba=0,allele_map_path = '/home/bcrlab/thomas/AlignAIRR/',
+                 random_allele_proba=0,allele_map_path = '/home/eisenbr2/thomas/AlignAIRR/',
                  seperator = ','):
         self.max_sequence_length = max_sequence_length
 
@@ -1013,7 +1013,7 @@ class VDeepJDatasetSingleBeamSegmentation():
                  corrupt_beginning=True, corrupt_proba=1, nucleotide_add_coef=35, nucleotide_remove_coef=50,
                  mutation_oracle_mode=False,
                  random_sequence_add_proba=1, single_base_stream_proba=0, duplicate_leading_proba=0,
-                 random_allele_proba=0,allele_map_path = '/home/bcrlab/thomas/AlignAIRR/',
+                 random_allele_proba=0,allele_map_path = '/home/bcrlab/eisenbr2/AlignAIRR/',
                  seperator = ','):
         self.max_sequence_length = max_sequence_length
 
