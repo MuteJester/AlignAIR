@@ -8,9 +8,11 @@ import numpy as np
 import random
 from VDeepJDataset import VDeepJDatasetSingleBeamSegmentation
 from VDeepJLayers import RealDataEvaluationCallback
-from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF_HP, VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF
-from Trainer import SingleBeamSegmentationTrainer, SingleBeamTrainer
-from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamRG
+from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF_HP, \
+    VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF, \
+    VDeepJAllignExperimentalSingleBeamConvSegmentationResidualIndel
+from Trainer import SingleBeamSegmentationTrainerV2,SingleBeamSegmentationTrainerV2,SingleBeamSegmentationTrainerV1__5
+from VDeepJModelExperimental import VDeepJAlignExperimentalSingleBeamConvSegmentationResidualV3,VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR
 import tensorflow as tf
 from sklearn.metrics import average_precision_score
 import pandas as pd
@@ -61,11 +63,12 @@ noise_type = (
 )
 
 
+model_name = "VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR"
 datasets_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/"
 session_name = "sf5_alignairr_segmentation"
-session_path = os.path.join("/localdata/alignairr_data/", session_name+'_residual_s_v_d_j_HP')
+session_path = os.path.join("/localdata/alignairr_data/", model_name)
 models_path = os.path.join(session_path, "saved_models")
-checkpoint_path = os.path.join(models_path, "sf5_alignairr_segmentation_residual_s_v_d_j_HP")
+checkpoint_path = os.path.join(models_path, model_name)
 logs_path = os.path.join(session_path, "logs/")
 eval_cps_path = os.path.join(session_path, "evaluation_checkpoints/")
 
@@ -76,7 +79,6 @@ if not os.path.exists(session_path):
     os.makedirs(checkpoint_path)
     os.makedirs(eval_cps_path)
 
-model_name = "sf5_alignairr_segmentation"
 # Initialize wandb
 run = wandb.init(
     project=session_name,
@@ -123,16 +125,18 @@ train_dataset = VDeepJDatasetSingleBeamSegmentation(
             batch_read_file=True
         )
 
-p1p11_evaluation_callback = RealDataEvaluationCallback(validation_data=(p1_p11_data.sequence.to_list(), p1_p11_data.v_call.to_list()),train_dataset=train_dataset,
+
+x_tokenized = train_dataset.train_dataset.tokenize_sequences(p1_p11_data.sequence.to_list())
+p1p11_evaluation_callback = RealDataEvaluationCallback(validation_data=(x_tokenized, p1_p11_data.v_call.to_list()),train_dataset=train_dataset,
                                                        filepath=eval_cps_path,
-                                                       period=10)
+                                                       period=20)
 print('Evaluation Callback Created!...')
 
 
 print('Starting The Training...')
-trainer = SingleBeamSegmentationTrainer(
-    model= VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF_HP,
-    data_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset.csv",
+trainer = SingleBeamSegmentationTrainerV1__5(
+    model= VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR,
+    data_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset_with_MUTRATE.csv",
     batch_read_file=True,
     epochs=epochs,
     batch_size=batch_size,
@@ -144,7 +148,7 @@ trainer = SingleBeamSegmentationTrainer(
     corrupt_proba=0.7,
     airrship_mutation_rate=0.25,
     nucleotide_add_coef=210,
-    nucleotide_remove_coef=320,
+    nucleotide_remove_coef=310,
     random_sequence_add_proba=0.65,
     single_base_stream_proba=0.05,
     duplicate_leading_proba=0.15,
