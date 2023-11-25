@@ -3,12 +3,44 @@ import pandas as pd
 from tqdm.auto import tqdm
 import pickle
 from SequenceCorruptor import SequenceCorruptor, SequenceCorruptorV2, SequenceCorruptorV2
-from VDeepJUnbondedDataset import global_genotype
 import tensorflow as tf
 import scipy.stats as st
-from collections import defaultdict
 import csv
 import random
+from airrship.create_repertoire import generate_sequence,load_data,get_genotype,create_allele_dict
+from collections import defaultdict
+import importlib
+
+
+
+def global_genotype():
+    try:
+        path_to_data = importlib.resources.files(
+            'airrship').joinpath("data")
+    except AttributeError:
+        with importlib.resources.path('airrship', 'data') as p:
+            path_to_data = p
+    v_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHV.fasta")
+    d_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHD.fasta")
+    j_alleles = create_allele_dict(
+        f"{path_to_data}/imgt_human_IGHJ.fasta")
+
+    vdj_allele_dicts = {"V": v_alleles,
+                        "D": d_alleles,
+                        "J": j_alleles}
+
+    chromosome1, chromosome2 = defaultdict(list), defaultdict(list)
+    for segment in ["V", "D", "J"]:
+        allele_dict = vdj_allele_dicts[segment]
+        for gene in allele_dict.values():
+            for allele in gene:
+                chromosome1[segment].append(allele)
+                chromosome2[segment].append(allele)
+
+    locus = [chromosome1, chromosome2]
+    return locus
 
 
 def cast_if_int(element: any) -> bool:

@@ -1857,13 +1857,7 @@ def generate_sequence(locus, data_dict, mutate=False, flat_usage=False, no_trim_
                 attempts += 1
                 if attempts > 40:
                     break
-                sequence.gapped_seq = sequence.get_nuc_seq(no_trim_list,
-                                                           trim_dicts,
-                                                           no_np_list,
-                                                           NP_lengths,
-                                                           NP_transitions,
-                                                           NP_first_bases,
-                                                           gapped=True)
+                sequence.gapped_seq = sequence.simulate_sequence(no_trim_list)
                 sequence.ungapped_seq = sequence.gapped_seq.replace(".", "")
                 sequence.junction_length = sequence.get_junction_length()
                 this_loop = 0
@@ -1873,13 +1867,7 @@ def generate_sequence(locus, data_dict, mutate=False, flat_usage=False, no_trim_
                         print(
                             f"couldn't make productive (before mutation): {sequence.v_allele.name}, {sequence.d_allele.name}, {sequence.j_allele.name}")
                         break
-                    sequence.gapped_seq = sequence.get_nuc_seq(no_trim_list,
-                                                               trim_dicts,
-                                                               no_np_list,
-                                                               NP_lengths,
-                                                               NP_transitions,
-                                                               NP_first_bases,
-                                                               gapped=True)
+                    sequence.gapped_seq = sequence.simulate_sequence(no_trim_list)
                     sequence.ungapped_seq = sequence.gapped_seq.replace(
                         ".", "")
                     sequence.junction_length = sequence.get_junction_length()
@@ -1942,13 +1930,7 @@ def generate_sequence(locus, data_dict, mutate=False, flat_usage=False, no_trim_
                 attempts += 1
                 if attempts > 40:
                     break
-                sequence.gapped_seq = sequence.get_nuc_seq(no_trim_list,
-                                                           trim_dicts,
-                                                           no_np_list,
-                                                           NP_lengths,
-                                                           NP_transitions,
-                                                           NP_first_bases,
-                                                           gapped=True)
+                sequence.gapped_seq = sequence.simulate_sequence(no_trim_list)
                 sequence.ungapped_seq = sequence.gapped_seq.replace(
                     ".", "").upper()
                 sequence.junction_length = sequence.get_junction_length()
@@ -1960,13 +1942,7 @@ def generate_sequence(locus, data_dict, mutate=False, flat_usage=False, no_trim_
                         print(
                             f"couldn't make productive: {sequence.v_allele.name}, {sequence.d_allele.name}, {sequence.j_allele.name}")
                         break
-                    sequence.gapped_seq = sequence.get_nuc_seq(no_trim_list,
-                                                               trim_dicts,
-                                                               no_np_list,
-                                                               NP_lengths,
-                                                               NP_transitions,
-                                                               NP_first_bases,
-                                                               gapped=True)
+                    sequence.gapped_seq = sequence.simulate_sequence(no_trim_list)
                     sequence.ungapped_seq = sequence.gapped_seq.replace(
                         ".", "").upper()
                     sequence.junction_length = sequence.get_junction_length()
@@ -2200,13 +2176,7 @@ def alignairr_generate_sequence(locus, data_dict, mutate=False, flat_usage=False
         sequence = random_sequence(
             locus, gene_use_dict, family_use_dict, ["V", "D", "J"], flat_usage)
 
-        sequence.gapped_seq = sequence.get_nuc_seq(no_trim_list,
-                                                   trim_dicts,
-                                                   no_np_list,
-                                                   NP_lengths,
-                                                   NP_transitions,
-                                                   NP_first_bases,
-                                                   gapped=True)
+        sequence.gapped_seq = sequence.simulate_sequence(no_trim_list)
         sequence.ungapped_seq = sequence.gapped_seq.replace(".", "")
         sequence.junction_length = sequence.get_junction_length()
         sequence.mutations = ""
@@ -2246,13 +2216,7 @@ def alignairr_generate_sequence(locus, data_dict, mutate=False, flat_usage=False
     else:
         sequence = random_sequence(
             locus, gene_use_dict, family_use_dict, ["V", "D", "J"], flat_usage)
-        sequence.gapped_seq = sequence.get_nuc_seq(no_trim_list,
-                                                   trim_dicts,
-                                                   no_np_list,
-                                                   NP_lengths,
-                                                   NP_transitions,
-                                                   NP_first_bases,
-                                                   gapped=True)
+        sequence.gapped_seq = sequence.simulate_sequence(no_trim_list)
         sequence.ungapped_seq = sequence.gapped_seq.replace(
             ".", "").upper()
         sequence.junction_length = sequence.get_junction_length()

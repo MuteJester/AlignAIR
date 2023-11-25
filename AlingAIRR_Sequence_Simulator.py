@@ -58,6 +58,7 @@ class SequenceSimulatorArguments:
     save_mutations_record: bool = False
     save_ns_record: bool = False
 
+
 class SequenceSimulator:
 
     def __init__(self, args: SequenceSimulatorArguments = SequenceSimulatorArguments()):
@@ -90,6 +91,11 @@ class SequenceSimulator:
         self.save_mutations_record = args.save_mutations_record
         self.save_ns_record = args.save_ns_record
         self.v_alleles = self.locus[0]["V"]
+        self.d_alleles = self.locus[0]["D"]
+        self.j_alleles = self.locus[0]["J"]
+        self.v_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['V']}
+        self.d_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['D']}
+        self.j_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['J']}
         self.max_v_length = max(map(lambda x: len(x.ungapped_seq), self.v_alleles))
         self.max_sequence_length = args.max_sequence_length
         self.short_d_length = args.short_d_length
@@ -114,7 +120,7 @@ class SequenceSimulator:
             self.max_v_end_correction_map_value = max(
                 self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
 
-        with open(self.v_allele_map_path+'d_allele_trim_map.pkl','rb') as h:
+        with open(self.v_allele_map_path + 'd_allele_trim_map.pkl', 'rb') as h:
             self.d_trim_correction_map = pickle.load(h)
 
     # Noise Introducing Methods
@@ -136,14 +142,15 @@ class SequenceSimulator:
         simulated['sequence'] = ''.join(nucleotides_list)
 
         # Sort the N's insertion log
-        simulated['Ns'] = {pos:simulated['Ns'][pos] for pos in sorted(simulated['Ns'])}
+        simulated['Ns'] = {pos: simulated['Ns'][pos] for pos in sorted(simulated['Ns'])}
 
         # Adjust mutation rate to account for added "N's" by adding the ratio of N's added to the mutation rate
         # because we randomly sample position we might get a ratio of N's less than what was defined by the n_ratio
         # property, thus we recalculate the actual inserted ration of N's
         # Also make sure we only count the N's the were inserted in the sequence and not in the added slack
         # as we might consider all the slack as noise in general
-        Ns_in_pure_sequence = [i for i in simulated['Ns'] if simulated['v_sequence_start']<=i<=simulated['j_sequence_end']]
+        Ns_in_pure_sequence = [i for i in simulated['Ns'] if
+                               simulated['v_sequence_start'] <= i <= simulated['j_sequence_end']]
         pure_sequence_length = simulated['j_sequence_end'] - simulated['v_sequence_start']
         simulated_n_ratio = len(Ns_in_pure_sequence) / pure_sequence_length
         simulated['mutation_rate'] += simulated_n_ratio
@@ -160,7 +167,8 @@ class SequenceSimulator:
         simulated['corruption_remove_amount'] = amount_to_remove
         # Update mutation log, remove the mutations that were removed with the remove event
         # and while updating the mutations log correct the position of the mutations accordingly
-        simulated['mutations'] = {i-amount_to_remove: j for i, j in simulated['mutations'].items() if i > amount_to_remove}
+        simulated['mutations'] = {i - amount_to_remove: j for i, j in simulated['mutations'].items() if
+                                  i > amount_to_remove}
         # Adjust mutation rate
         self.correct_mutation_rate(simulated)
 
@@ -193,7 +201,7 @@ class SequenceSimulator:
         # Update Simulation Metadata
         simulated['corruption_add_amount'] = amount_to_add
         # Update mutation log positions
-        simulated['mutations'] = {i+amount_to_add: j for i, j in simulated['mutations'].items()}
+        simulated['mutations'] = {i + amount_to_add: j for i, j in simulated['mutations'].items()}
 
         # Adjust Start/End Position Accordingly
         simulated['v_sequence_start'] += amount_to_add
@@ -256,12 +264,12 @@ class SequenceSimulator:
             min(simulated['v_sequence_end'], self.max_v_end_correction_map_value)]
         simulated['v_allele'] = simulated['v_allele'] + equivalent_alleles
 
-    def correct_for_d_trims(self,simulated):
+    def correct_for_d_trims(self, simulated):
         # Get the 5' and 3' trims of the d allele in the simulated sequence
         trim_5 = simulated['d_trim_5']
         trim_3 = simulated['d_trim_3']
         # infer the precalculated map what alleles should be the ground truth for this sequence based on the trim
-        simulated['d_allele'] = list(self.d_trim_correction_map[simulated['d_allele'][0]][(trim_5,trim_3)])
+        simulated['d_allele'] = list(self.d_trim_correction_map[simulated['d_allele'][0]][(trim_5, trim_3)])
 
     def correct_for_v_start_cut(self, simulated):
         removed = simulated['corruption_remove_amount']
@@ -302,6 +310,94 @@ class SequenceSimulator:
         if d_length < self.short_d_length:
             simulated['d_allele'] = ['Short-D']
 
+    def fix_v_position_after_trimming_index_ambiguity(self, simulation):
+        # Extract Current V Metadata
+        v_start, v_end = simulation['v_sequence_start'], simulation['v_sequence_end']
+        v_allele_remainder = simulation['sequence'][v_start:v_end]
+        v_allele_ref = self.v_dict[simulation['v_allele'][0]]
+
+        # Get the junction inserted after trimming to the sequence
+        junction_3 = simulation['sequence'][v_end:simulation['d_sequence_start']]
+
+        # Get the trimming lengths
+        v_trim_3 = simulation['v_trim_3']
+
+        # Get the trimmed off sections from the reference
+        trimmed_3 = v_allele_ref[len(v_allele_ref) - v_trim_3:]
+
+        # check for overlap between generated junction and reference in the 3' trim
+        for a, b in zip(trimmed_3, junction_3):
+            # in case the current poistion in the junction matches the reference exapnd the d segment
+            if a == b:
+                v_end += 1
+            else:  # if the continuous streak is broken or non-existent break!
+                break
+
+        simulation['v_sequence_end'] = v_end
+
+    def fix_d_position_after_trimming_index_ambiguity(self, simulation):
+        # Extract Current D Metadata
+        d_start, d_end = simulation['d_sequence_start'], simulation['d_sequence_end']
+        d_allele_remainder = simulation['sequence'][d_start:d_end]
+        d_allele_ref = self.d_dict[simulation['d_allele'][0]]
+
+        # Get the junction inserted after trimming to the sequence
+        junction_5 = simulation['sequence'][simulation['v_sequence_end']:d_start]
+        junction_3 = simulation['sequence'][d_end:simulation['j_sequence_start']]
+
+        # Get the trimming lengths
+        d_trim_5 = simulation['d_trim_5'] + 1
+        d_trim_3 = simulation['d_trim_3']
+
+        # Get the trimmed off sections from the reference
+        trimmed_5 = d_allele_ref[:d_trim_5]
+        trimmed_3 = d_allele_ref[len(d_allele_ref) - d_trim_3:]
+
+        # check for overlap between generated junction and reference in the 5' trim
+        for a, b in zip(trimmed_5[::-1], junction_5[::-1]):
+            # in case the current poistion in the junction matches the reference exapnd the d segment
+            if a == b:
+                d_start -= 1
+            else:  # if the continuous streak is broken or non-existent break!
+                break
+
+        # check for overlap between generated junction and reference in the 3' trim
+        for a, b in zip(trimmed_3, junction_3):
+            # in case the current poistion in the junction matches the reference exapnd the d segment
+            if a == b:
+                d_end += 1
+            else:  # if the continious streak is broken or non existant break!
+                break
+
+        simulation['d_sequence_start'] = d_start
+        simulation['d_sequence_end'] = d_end
+
+    def fix_j_position_after_trimming_index_ambiguity(self,simulation):
+        # Extract Current J Metadata
+        j_start, j_end = simulation['j_sequence_start'], simulation['j_sequence_end']
+        j_allele_remainder = simulation['sequence'][j_start:j_end]
+        j_allele_ref = self.j_dict[simulation['j_allele'][0]]
+
+        # Get the junction inserted after trimming to the sequence
+        junction_5 = simulation['sequence'][simulation['d_sequence_end']:j_start]
+
+        # Get the trimming lengths
+        j_trim_5 = simulation['j_trim_5'] + 1
+
+        # Get the trimmed off sections from the reference
+        trimmed_5 = j_allele_ref[:j_trim_5]
+
+        # check for overlap between generated junction and reference in the 5' trim
+        for a, b in zip(trimmed_5[::-1], junction_5[::-1]):
+            # in case the current poistion in the junction matches the reference exapnd the d segment
+            if a == b:
+                j_start -= 1
+            else:  # if the continuous streak is broken or non-existent break!
+                break
+
+        simulation['j_sequence_start'] = j_start
+
+
     # AIRRship
     def query_airrship(self):
         mutation_rate = np.random.uniform(self.min_mutation_rate, self.max_mutation_rate, 1).item()
@@ -311,7 +407,7 @@ class SequenceSimulator:
                                 shm_flat=self.mutation_model.lower() != 's5f', flat_usage='allele')
         data = {
             "sequence": gen.mutated_seq,
-            "v_sequence_start": gen.v_seq_start,
+            "v_sequence_start": gen.v_seq_start - 1,  # airrship fix for always skipping first v nucleotide
             "v_sequence_end": gen.v_seq_end,
             "d_sequence_start": gen.d_seq_start,
             "d_sequence_end": gen.d_seq_end,
@@ -321,8 +417,8 @@ class SequenceSimulator:
             "d_allele": [gen.d_allele.name],
             "j_allele": [gen.j_allele.name],
             'mutation_rate': mutation_rate,
-            'v_trim_5':gen.v_trim_5,
-            'v_trim_3':gen.v_trim_3,
+            'v_trim_5': gen.v_trim_5,
+            'v_trim_3': gen.v_trim_3,
             'd_trim_5': gen.d_trim_5,
             'd_trim_3': gen.d_trim_3,
             'j_trim_5': gen.j_trim_5,
@@ -330,13 +426,13 @@ class SequenceSimulator:
             'corruption_event': 'no-corruption',
             'corruption_add_amount': 0,
             'corruption_remove_amount': 0,
-            'mutations': {pos:gen.mutations[pos] for pos in sorted(gen.mutations)}, # sort the mutations by position
+            'mutations': {pos: gen.mutations[pos] for pos in sorted(gen.mutations)},  # sort the mutations by position
             "Ns": dict()
         }
         return data
 
     # Interface
-    def process_before_return(self,simulated):
+    def process_before_return(self, simulated):
         """
         this method makes final adjustments to the output format
         :return:
@@ -355,17 +451,23 @@ class SequenceSimulator:
             simulated['mutations'] = base64.b64encode(str(simulated['mutations']).encode('ascii'))
         else:
             simulated.pop('mutations')
+
     def get_sequence(self):
         # 1. Simulate a Sequence from AIRRship
         simulated = self.query_airrship()
 
-        # 1.1 Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
+        # 1.1 Correction - Correct Start/End Positions Based on Generated Junctions
+        self.fix_v_position_after_trimming_index_ambiguity(simulated)
+        self.fix_d_position_after_trimming_index_ambiguity(simulated)
+        self.fix_j_position_after_trimming_index_ambiguity(simulated)
+
+        # 1.2 Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
         self.correct_for_v_end_cut(simulated)
 
-        # 1.2 Correction - Add All D Alleles That Cant be Distinguished Based on the 5' and 3' Trims
+        # 1.3 Correction - Add All D Alleles That Cant be Distinguished Based on the 5' and 3' Trims
         self.correct_for_d_trims(simulated)
 
-        #2. Corrupt Begging of Sequence ( V Start )
+        # 2. Corrupt Begging of Sequence ( V Start )
         if self.perform_corruption():
             # Inside this method, based on the corruption event we will also adjust the respective ground truth v
             # alleles
@@ -416,19 +518,4 @@ class SequenceSimulator:
 
     @property
     def columns(self):
-        return [
-            "v_sequence_end",
-            "sequence",
-            "v_sequence_start",
-            "d_sequence_start",
-            "d_sequence_end",
-            "j_sequence_start",
-            "j_sequence_end",
-            "v_allele",
-            "d_allele",
-            "j_allele",
-            'mutation_rate',
-            'corruption_event',
-            'corruption_add_amount',
-            'corruption_remove_amount',
-        ]
+        return list(self.get_sequence())

@@ -26,10 +26,10 @@ class SlackCallback:
             self.last_time = current_time
 
 #path_to_data = '/home/bcrlab/thomas/anaconda3/lib/python3.9/site-packages/airrship/data/'
-save_path = '/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset_SeqSimulator.csv'
+save_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset_SeqSimulator.csv"
 BATCH_SIZE = 100_000
 #slack_callback = SlackCallback("https://hooks.slack.com/services/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", interval=60)
-num_samples = 50_000_000
+num_samples = 20_000_000
 
 
 def generate_samples(n, queue):
