@@ -1,10 +1,6 @@
-import random
-
 from SequenceSimulation.alleles import AlleleTypes
 from abc import ABC, abstractmethod
 
-from SequenceSimulation.sequence import NP_Region
-from SequenceSimulation.utilities import NP
 from SequenceSimulation.utilities.data_config import DataConfig
 
 
@@ -26,9 +22,6 @@ class BaseSequence(ABC):
         gapped_mutated_seq (str): Ungapped mutated nucleotide sequence.
         mutated_seq (str): Ungapped mutated nucleotide sequence.
         junction (str): Nucleotide sequence of junction region.
-        v_seq (str):  Nucleotide sequence of V region.
-        d_seq (str): Nucleotide sequence of D region.
-        j_seq (str): Nucleotide sequence of J region.
         v_seq_start (int): Start position of V region.
         d_seq_start (int): Start position of D region.
         j_seq_start (int): Start position of J region.
@@ -56,9 +49,6 @@ class BaseSequence(ABC):
         self.NP1_length = 0
         self.NP2_length = 0
         self.junction = ""
-        self.v_seq = ""
-        self.d_seq = ""
-        self.j_seq = ""
         self.v_seq_start = 0
         self.d_seq_start = 0
         self.j_seq_start = 0
@@ -66,8 +56,10 @@ class BaseSequence(ABC):
         self.d_seq_end = 0
         self.j_seq_end = 0
         self.mutations = ""
-        self.mut_count = 0
-        self.mut_freq = 0
+        self.mutation_count = 0
+        self.mutation_freq = 0
+        self.functional = False
+        self.seq_stop_codon = False
         self.ungapped_seq = ""
         self.mutated_seq = None
         self.gapped_seq = ""
@@ -75,7 +67,6 @@ class BaseSequence(ABC):
 
     @abstractmethod
     def simulate_sequence(self, dataconfig: DataConfig):
-
         """Creates the recombined nucleotide sequence with trimming and np addition.
 
                 Args:
@@ -112,82 +103,8 @@ class BaseSequence(ABC):
         """
         pass
 
-
-class HeavyChainSequence(BaseSequence):
-
-    def __init__(self,alleles,dataconfig: DataConfig):
-        super().__init__(alleles)
-        self.gapped_seq = self.simulate_sequence(dataconfig)
-        self.ungapped_seq = self.gapped_seq.replace(".", "")
-        self.junction_length = self.get_junction_length()
+    @abstractmethod
+    def update_metadata(self):
+        pass
 
 
-    def simulate_sequence(self, dataconfig: DataConfig):
-
-        #trim_dicts, np_usage, NP_lengths, NP_transitions, NP_first_bases,
-                    #gapped=False, trim_modes=None
-
-        v_allele = self.v_allele
-        d_allele = self.d_allele
-        j_allele = self.j_allele
-
-        if dataconfig.np_usage != NP.NONE:
-            if dataconfig.np_usage == NP.NP1_ONLY or dataconfig.np_usage == NP.NP1_NP2:
-                self.NP1_region = NP_Region.create_np_region(dataconfig.NP_lengths, dataconfig.NP_transitions, "NP1", dataconfig.NP_first_bases)
-            if dataconfig.np_usage != NP.NP2_ONLY or dataconfig.np_usage == NP.NP1_NP2:
-                self.NP2_region = NP_Region.create_np_region(dataconfig.NP_lengths, dataconfig.NP_transitions, "NP2", dataconfig.NP_first_bases)
-
-        self.NP1_length = len(self.NP1_region)
-        self.NP2_length = len(self.NP2_region)
-
-        v_trimmed_seq, v_trim_5, v_trim_3 = v_allele.get_trimmed(dataconfig.trim_dicts, dataconfig.trim_modes['V'], dataconfig.gapped)
-        d_trimmed_seq, d_trim_5, d_trim_3 = d_allele.get_trimmed(dataconfig.trim_dicts, dataconfig.trim_modes['D'], dataconfig.gapped)
-        j_trimmed_seq, j_trim_5, j_trim_3 = j_allele.get_trimmed(dataconfig.trim_dicts, dataconfig.trim_modes['J'], dataconfig.gapped)
-
-        nuc_seq = (
-                v_trimmed_seq
-                + self.NP1_region
-                + d_trimmed_seq
-                + self.NP2_region
-                + j_trimmed_seq
-        )
-
-        # log trims
-        self.v_trim_5 = v_trim_5
-        self.v_trim_3 = v_trim_3
-        self.d_trim_5 = d_trim_5
-        self.d_trim_3 = d_trim_3
-        self.j_trim_5 = j_trim_5
-        self.j_trim_3 = j_trim_3
-
-        return nuc_seq.upper()
-
-    def get_junction_length(self):
-        """Calculates the junction length of the sequence (CDR3 region plus both
-        anchor residues).
-
-        Returns:
-            junction_length (int): Number of nucleotides in junction (CDR3 + anchors)
-        """
-
-        junction_length = self.v_allele.length - (
-                self.v_allele.anchor - 1) - self.v_trim_3 + self.NP1_length + self.d_allele.length - \
-                          self.d_trim_5 - self.d_trim_3 + \
-                          self.NP2_length + (self.j_allele.anchor + 2) - self.j_trim_5
-        return junction_length
-
-    @classmethod
-    def create_random(cls, dataconfig: DataConfig):
-        """
-        Creates a random instance of HeavyChainSequence with a random V, D, and J allele.
-
-        Args:
-            dataconfig (Type[DataConfig]): DataConfig Object with Allele Infomration
-
-        Returns:
-            HeavyChainSequence: An instance of HeavyChainSequence with randomly selected alleles.
-        """
-        random_v_allele = random.choice([i for j in dataconfig.v_alleles for i in dataconfig.v_alleles[j]])
-        random_d_allele = random.choice([i for j in dataconfig.d_alleles for i in dataconfig.d_alleles[j]])
-        random_j_allele = random.choice([i for j in dataconfig.j_alleles for i in dataconfig.j_alleles[j]])
-        return cls([random_v_allele, random_d_allele, random_j_allele],dataconfig)

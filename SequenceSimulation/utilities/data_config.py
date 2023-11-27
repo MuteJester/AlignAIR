@@ -10,12 +10,13 @@ from SequenceSimulation.utilities.data_utilities import create_allele_dict
 
 
 class DataConfig:
-    def __init__(self, data_folder: Optional[str] = None, mutate: bool = False, locus_type=LocusType.GENOTYPE,
-                 haplotype_ratios=None,trim_modes=None,np_usage = NP.DEFAULT,gapped=False):
+    def __init__(self, data_folder: Optional[str] = None,mutations=None , locus_type=LocusType.GENOTYPE,
+                 haplotype_ratios=None,trim_modes=None,np_usage = NP.DEFAULT,gapped=False,
+                 mutated_files: bool = False):
         self.haplotype_ratios = haplotype_ratios
         self.locus_type = locus_type
         self.data_folder = data_folder
-        self.mutate = mutate
+        self.mutated_files = mutated_files
 
         # Config Variables
         self.family_use_dict = {}
@@ -36,6 +37,7 @@ class DataConfig:
             else trim_modes
         self.np_usage = np_usage
         self.gapped = gapped
+        self.mutations = mutations
 
     def _load_gene_usage(self):
         # Family Usage
@@ -91,14 +93,14 @@ class DataConfig:
 
     def _load_np_transition_probabilities(self):
         NP1_transitions, NP2_transitions = None, None
-        if self.mutate == False:
+        if self.mutated_files == False:
             NP1_transitions = create_NP_position_transition_dict(
                 f"{self.data_folder}/np1_transition_probs_per_position_igdm.csv")
 
             NP2_transitions = create_NP_position_transition_dict(
                 f"{self.data_folder}/np2_transition_probs_per_position_igdm.csv")
 
-        if self.mutate == True:
+        if self.mutated_files == True:
             NP1_transitions = create_NP_position_transition_dict(
                 f"{self.data_folder}/np1_transition_probs_per_position_igag.csv")
 

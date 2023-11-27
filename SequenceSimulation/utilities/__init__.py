@@ -1,6 +1,7 @@
 from .modes import TrimMode
 from .modes import NP
 from .misc import weighted_choice
+from .misc import translate
 from .file_utilities import parse_fasta
 from .data_utilities import create_family_use_dict
 from .data_utilities import create_trimming_dict

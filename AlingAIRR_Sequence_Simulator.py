@@ -346,7 +346,7 @@ class SequenceSimulator:
         junction_3 = simulation['sequence'][d_end:simulation['j_sequence_start']]
 
         # Get the trimming lengths
-        d_trim_5 = simulation['d_trim_5'] + 1
+        d_trim_5 = simulation['d_trim_5']
         d_trim_3 = simulation['d_trim_3']
 
         # Get the trimmed off sections from the reference
@@ -382,7 +382,7 @@ class SequenceSimulator:
         junction_5 = simulation['sequence'][simulation['d_sequence_end']:j_start]
 
         # Get the trimming lengths
-        j_trim_5 = simulation['j_trim_5'] + 1
+        j_trim_5 = simulation['j_trim_5']
 
         # Get the trimmed off sections from the reference
         trimmed_5 = j_allele_ref[:j_trim_5]
@@ -407,7 +407,7 @@ class SequenceSimulator:
                                 shm_flat=self.mutation_model.lower() != 's5f', flat_usage='allele')
         data = {
             "sequence": gen.mutated_seq,
-            "v_sequence_start": gen.v_seq_start - 1,  # airrship fix for always skipping first v nucleotide
+            "v_sequence_start": gen.v_seq_start,
             "v_sequence_end": gen.v_seq_end,
             "d_sequence_start": gen.d_seq_start,
             "d_sequence_end": gen.d_seq_end,

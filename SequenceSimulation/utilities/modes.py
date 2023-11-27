@@ -14,3 +14,4 @@ class TrimMode(Enum):
     NO_3_PRIME = auto()
     NO_5_PRIME = auto()
     NO_5_AND_3_PRIME = auto()
+
