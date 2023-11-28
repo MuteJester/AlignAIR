@@ -742,6 +742,142 @@ class RealDataEvaluationCallback(Callback):
 
     #
 
+class AlignAIRREvaluationCallback(Callback):
+    def __init__(self, validation_x,validation_y, train_dataset, filepath, period=10,tokenized_x = True,monitor='v'):
+        super().__init__()
+        self.validation_x = validation_x
+        self.validation_y = validation_y
+        self. tokenized_x = tokenized_x
+        self.train_dataset = train_dataset  # reference to the training dataset for tokenization
+        self.period = period  # perform evaluation every 'period' epochs
+        self.filepath = filepath  # path to save the model
+        self.best_accuracy = 0.0  # to store the best accuracy achieved
+
+        self.locus = global_genotype()
+        self.init_maps()
+        self.monitor = monitor
+
+        if not tokenized_x:
+            self.validation_x = self.train_dataset.tokenize_sequences(validation_x)
+
+
+    def init_maps(self):
+        self.v_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['V']}
+        self.d_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['D']}
+        self.j_dict = {i.name: i.ungapped_seq.upper() for i in self.locus[0]['J']}
+
+        self.v_alleles = sorted(list(self.v_dict))
+        self.d_alleles = sorted(list(self.d_dict))
+        self.d_alleles = self.d_alleles + ['Short-D']
+        self.j_alleles = sorted(list(self.j_dict))
+
+        self.v_allele_count = len(self.v_alleles)
+        self.d_allele_count = len(self.d_alleles)
+        self.j_allele_count = len(self.j_alleles)
+
+        self.v_allele_call_ohe = {f: i for i, f in enumerate(self.v_alleles)}
+        self.d_allele_call_ohe = {f: i for i, f in enumerate(self.d_alleles)}
+        self.j_allele_call_ohe = {f: i for i, f in enumerate(self.j_alleles)}
+
+        self.v_allele_call_rev_ohe = {i: f for i, f in enumerate(self.v_alleles)}
+        self.d_allele_call_rev_ohe = {i: f for i, f in enumerate(self.d_alleles)}
+        self.j_allele_call_rev_ohe = {i: f for i, f in enumerate(self.j_alleles)}
+
+    def dynamic_cumulative_confidence_threshold(self,prediction, percentage=0.9):
+        sorted_indices = np.argsort(prediction)[::-1]
+        selected_labels = []
+        cumulative_confidence = 0.0
+
+        total_confidence = sum(prediction)
+        threshold = percentage * total_confidence
+
+        for idx in sorted_indices:
+            cumulative_confidence += prediction[idx]
+            selected_labels.append(idx)
+
+            if cumulative_confidence >= threshold:
+                break
+
+        return selected_labels
+
+
+    def extract_prediction_alleles_dynamic_sum(self,probabilites, percentage=0.9, type='v'):
+        V_ratio = []
+        for v_all in (probabilites):
+            v_alleles = self.dynamic_cumulative_confidence_threshold(v_all, percentage=percentage)
+            if type == 'v':
+                V_ratio.append([self.v_allele_call_rev_ohe[i] for i in v_alleles])
+            elif type == 'd':
+                V_ratio.append([self.d_allele_call_rev_ohe[i] for i in v_alleles])
+            elif type == 'j':
+                V_ratio.append([self.j_allele_call_rev_ohe[i] for i in v_alleles])
+        return V_ratio
+
+    def get_processed_predictions(self,dataset):
+        raw_predictions = []
+        for i in dataset:
+            pred = self.model.predict(i, verbose=False, batch_size=64)
+            for k in ['v', 'd', 'j']:
+                pred[k + '_segment'] = pred[k + '_segment'].astype(np.float16)
+            raw_predictions.append(pred)
+        v_allele, d_allele, j_allele = [], [], []
+        mutation_rate = []
+        for i in raw_predictions:
+            v_allele.append(i['v_allele'])
+            d_allele.append(i['d_allele'])
+            j_allele.append(i['j_allele'])
+            mutation_rate.append(i['mutation_rate'])
+        v_allele = np.vstack(v_allele)
+        d_allele = np.vstack(d_allele)
+        j_allele = np.vstack(j_allele)
+        mutation_rate = np.vstack(mutation_rate)
+        return v_allele,d_allele,j_allele,mutation_rate
+
+    def on_epoch_end(self, epoch, logs=None):
+        if (epoch + 1) % self.period == 0:  # check if it's the right epoch
+            x_val, y_val = self.validation_x,self.validation_y
+
+            padded_seqs_tensor = tf.convert_to_tensor(x_val, dtype=tf.uint8)
+            dataset_from_tensors = tf.data.Dataset.from_tensor_slices({
+                'tokenized_sequence': padded_seqs_tensor})
+
+            dataset = (
+                dataset_from_tensors
+                .batch(512 * 20)
+                .prefetch(tf.data.AUTOTUNE)
+            )
+
+            v_allele, d_allele, j_allele,mutation_rate = self.get_processed_predictions(dataset)
+            allele_m = {'v_call': v_allele, 'd_call': d_allele, 'j_call': j_allele}
+            for call in ['v_call', 'd_call', 'j_call']:
+                X = self.extract_prediction_alleles_dynamic_sum(allele_m[call], percentage=0.9, type=call.split('_')[0])
+                hits = [len(set(i.split(',') if i==i else ['']) & set(j)) > 0 for i, j in zip(y_val[call], X)]
+                agg = sum(hits) / len(hits)
+                above_10 = len(list(filter(lambda x: x > 10, list(map(len, X)))))
+                above_5 = len(list(filter(lambda x: x > 5, list(map(len, X)))))
+                above_2 = len(list(filter(lambda x: x > 2, list(map(len, X)))))
+
+                logs[call+'_agreement'] = agg
+                logs[call+'_>10c'] = above_10
+                logs[call+'_>5c'] = above_5
+                logs[call+'_>2c'] = above_2
+                if self.monitor+'_call' == call:
+                    accuracy = agg
+            logs['mean_mutation_rate'] = np.mean(mutation_rate)
+
+            # Check if we have the best accuracy
+            
+            if accuracy > self.best_accuracy:
+                self.best_accuracy = accuracy
+
+                # Construct the filename with accuracy
+                filename = os.path.join(self.filepath, f"model_acc_{accuracy:.4f}")
+
+                # Save the model in TensorFlow's SavedModel format
+                self.model.save(filename, save_format='tf')  # 'tf' is optional here as it's the default format
+
+                print(
+                    f"\nEpoch {epoch + 1}: best accuracy improved to {self.best_accuracy:.4f}, saving model to {filename}")
 class Mish(Layer):
     """
     Mish Activation Function as a Layer.

@@ -6,16 +6,15 @@ import wandb
 from wandb.keras import WandbMetricsLogger
 import numpy as np
 import random
-from VDeepJDataset import VDeepJDatasetSingleBeamSegmentation
-from VDeepJLayers import RealDataEvaluationCallback
-from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF_HP, \
-    VDeepJAllignExperimentalSingleBeamConvSegmentationResidualRF, \
-    VDeepJAllignExperimentalSingleBeamConvSegmentationResidualIndel
-from Trainer import SingleBeamSegmentationTrainerV2,SingleBeamSegmentationTrainerV2,SingleBeamSegmentationTrainerV1__5
-from VDeepJModelExperimental import VDeepJAlignExperimentalSingleBeamConvSegmentationResidualV3,VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR
+from VDeepJDataset import VDeepJDatasetSingleBeamSegmentation, VDeepJDatasetRefactored
+from VDeepJLayers import AlignAIRREvaluationCallback
+from Models import AlignAIRR
+from Trainer import Trainer,SingleBeamSegmentationTrainerV1__5
+from VDeepJModelExperimental import VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR
 import tensorflow as tf
 from sklearn.metrics import average_precision_score
 import pandas as pd
+from tensorflow_addons.optimizers import CyclicalLearningRate
 
 def average_precision(y_true, y_pred):
     # Calculate AP for each class
@@ -63,9 +62,9 @@ noise_type = (
 )
 
 
-model_name = "VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR"
+model_name = "AlignAIRR_Refactored_d_loss_new_data_routine"
 datasets_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/"
-session_name = "sf5_alignairr_segmentation"
+session_name = "S5F_AlignAIRR"
 session_path = os.path.join("/localdata/alignairr_data/", model_name)
 models_path = os.path.join(session_path, "saved_models")
 checkpoint_path = os.path.join(models_path, model_name)
@@ -105,55 +104,39 @@ model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
 )
 
 
-p1_p11_data = pd.read_table("/localdata/alignairr_data/naive_repertoires/naive_sequences_clean.tsv",usecols=['sequence','v_call'])
+p1_p11_data = pd.read_table("/localdata/alignairr_data/naive_repertoires/naive_sequences_clean.tsv",usecols=['sequence','v_call','d_call','j_call'])
 print('P1 P11 Dataset Loaded!...')
 
-train_dataset = VDeepJDatasetSingleBeamSegmentation(
-            data_path="/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset.csv",
+train_dataset = VDeepJDatasetRefactored(
+            data_path="/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset_SeqSimulator.csv",
             max_sequence_length=512,
-            corrupt_beginning=True,
-            corrupt_proba=0.7,
-            nucleotide_add_coef=33,
-            nucleotide_remove_coef=33,
+            batch_read_file=True,
             batch_size=1,
-            randomize_rate=False,
-            mutation_rate=0.25,
-            random_sequence_add_proba=0.65,
-            single_base_stream_proba=0.05,
-            duplicate_leading_proba=0.15,
-            random_allele_proba=0.15,
-            batch_read_file=True
         )
 
 
-x_tokenized = train_dataset.train_dataset.tokenize_sequences(p1_p11_data.sequence.to_list())
-p1p11_evaluation_callback = RealDataEvaluationCallback(validation_data=(x_tokenized, p1_p11_data.v_call.to_list()),train_dataset=train_dataset,
+x_tokenized = train_dataset.tokenize_sequences(p1_p11_data.sequence.to_list())
+
+p1p11_evaluation_callback = AlignAIRREvaluationCallback(validation_x=x_tokenized,
+                                                        validation_y = p1_p11_data[['v_call','d_call','j_call']],
+                                                        train_dataset=train_dataset,
                                                        filepath=eval_cps_path,
                                                        period=20)
 print('Evaluation Callback Created!...')
 
 
+
 print('Starting The Training...')
-trainer = SingleBeamSegmentationTrainerV1__5(
-    model= VDeepJAllignExperimentalSingleBeamConvSegmentationResidual_DC_MR,
-    data_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Large_Train_Dataset_with_MUTRATE.csv",
+trainer = Trainer(
+    model= AlignAIRR,
+    data_path = "/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/AlignAIRR_Train_Dataset_airrship_DataConfig.csv",
     batch_read_file=True,
     epochs=epochs,
     batch_size=batch_size,
     steps_per_epoch=150_000,
     verbose=1,
-    corrupt_beginning=True,
     classification_head_metric=[tf.keras.metrics.AUC(),tf.keras.metrics.AUC(),tf.keras.metrics.AUC()],
     interval_head_metric=tf.keras.losses.binary_crossentropy,
-    corrupt_proba=0.7,
-    airrship_mutation_rate=0.25,
-    nucleotide_add_coef=210,
-    nucleotide_remove_coef=310,
-    random_sequence_add_proba=0.65,
-    single_base_stream_proba=0.05,
-    duplicate_leading_proba=0.15,
-    random_allele_proba=0.15,
-    num_parallel_calls=32,
     log_to_file=True,
     log_file_name=model_name,
     log_file_path=logs_path,
@@ -164,8 +147,7 @@ trainer = SingleBeamSegmentationTrainerV1__5(
         wandb_callback,
         model_checkpoint_callback,
     ],
-    optimizers_params={"clipnorm": 1}
-
+    optimizers_params={"clipnorm": 1},
 )
 
 # Train the model
