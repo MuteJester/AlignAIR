@@ -525,4 +525,4 @@ class SequenceAugmentor:
 
     @property
     def columns(self):
-        return list(self.simulate_agumented_sequence())
+        return list(self.simulate_augmented_sequence())

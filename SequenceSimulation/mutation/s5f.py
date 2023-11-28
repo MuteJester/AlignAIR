@@ -128,7 +128,10 @@ class S5F(MutationModel):
         mutations = dict()
 
         # 2. Extract 5-Mers
-        fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq)
+        fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq,self.mutability)
+
+        # add a failsafe to insure while loop does not get locked
+        patience = 0
 
         while len(mutations) < target_number_of_mutations:
             # 3. Mutability, Weighted Choice of Position Based on 5-Mer Likelihoods
@@ -150,9 +153,19 @@ class S5F(MutationModel):
             # This will also update all relevant 5-MERS and their likelihood with pointer like logic
             sampled_position.change_center(mutation_to_apply, self.mutability)
 
+            patience += 1
+            # Patience logic
+            if patience > (target_number_of_mutations * 10) and target_number_of_mutations > 1:
+                patience = 0
+                # restart process
+                mutation_rate = random.uniform(self.min_mutation_rate, self.max_mutation_rate)
+                target_number_of_mutations = int(mutation_rate * len(sequence_object.ungapped_seq))
+                mutations = dict()
+                # 2. Extract 5-Mers
+                fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
+
         mutated_sequence = FiveMER.five_mers_to_dna(fiver_mers)
         return mutated_sequence, mutations, mutation_rate
-
 
     def _mutate_base(self, base):
         return random.choice(list(self.bases - {base}))
