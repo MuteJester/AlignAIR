@@ -83,7 +83,7 @@ class FiveMER:
 
         # Iterate over the remaining FiveMERs and append only the last nucleotide of each
         for five_mer in five_mers[1:-1]:  # Skip the last FiveMER with padding
-            dna_sequence += five_mer.nucleotides[-1].value
+            dna_sequence += five_mer.nucleotides[2].value
 
         # Add the central nucleotide of the last FiveMER (which is the actual last nucleotide of the DNA)
         dna_sequence += five_mers[-1].nucleotides[2].value
@@ -96,6 +96,7 @@ class S5F(MutationModel):
         self.max_mutation_rate = max_mutation_rate
         self.min_mutation_rate = min_mutation_rate
         self.bases = {'A', 'T', 'C', 'G'}
+        self.loaded_metadata = False
 
     def load_metadata(self, sequence):
         from SequenceSimulation.sequence import HeavyChainSequence
@@ -115,7 +116,9 @@ class S5F(MutationModel):
 
     def apply_mutation(self, sequence_object):
         # 1. Load the Likelihoods File
-        self.load_metadata(sequence_object)
+        if not self.loaded_metadata:
+            self.load_metadata(sequence_object)
+            self.loaded_metadata = True
 
         # 1.1 Sample Mutation Rate
         mutation_rate = random.uniform(self.min_mutation_rate, self.max_mutation_rate)
@@ -144,7 +147,11 @@ class S5F(MutationModel):
             mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
 
             # log
-            mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
+            if sampled_position.position not in mutations:
+                mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
+            else:
+                mutations[sampled_position.position] += f'>{mutation_to_apply}'
+
             # if mutation reverted previous mutation back to naive state, drop that record from the log
             if mutation_to_apply == naive_sequence[sampled_position.position]:
                 mutations.pop(sampled_position.position)
@@ -155,7 +162,7 @@ class S5F(MutationModel):
 
             patience += 1
             # Patience logic
-            if patience > (target_number_of_mutations * 10) and target_number_of_mutations > 1:
+            if patience > (target_number_of_mutations * 30) and target_number_of_mutations > 1:
                 patience = 0
                 # restart process
                 mutation_rate = random.uniform(self.min_mutation_rate, self.max_mutation_rate)
@@ -176,3 +183,6 @@ class S5F(MutationModel):
         # Choose an index instead of the object
         chosen_index = random.choices(range(len(five_mers)), weights, k=1)[0]
         return five_mers[chosen_index]
+
+
+

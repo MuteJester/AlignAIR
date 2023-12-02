@@ -29,7 +29,7 @@ class Uniform(MutationModel):
         mutation_rate = random.uniform(self.min_mutation_rate, self.max_mutation_rate)
         number_of_mutations = int(mutation_rate*len(sequence))
         positions_to_mutate = self.mutable_positions(sequence_object)
-        positions_to_mutate = random.choices(positions_to_mutate,k=number_of_mutations)
+        positions_to_mutate = random.sample(positions_to_mutate,k=number_of_mutations)
 
         # log mutations
         mutations = dict()

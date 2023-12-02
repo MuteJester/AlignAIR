@@ -407,8 +407,6 @@ class SequenceAugmentor:
 
     # Sequence Simulation
     def simulate_sequence(self):
-        mutation_rate = np.random.uniform(self.min_mutation_rate, self.max_mutation_rate, 1).item()
-
         gen = HeavyChainSequence.create_random(self.dataconfig)
         gen.mutate(self.mutation_model)
 
@@ -423,7 +421,7 @@ class SequenceAugmentor:
             "v_allele": [gen.v_allele.name],
             "d_allele": [gen.d_allele.name],
             "j_allele": [gen.j_allele.name],
-            'mutation_rate': mutation_rate,
+            'mutation_rate': gen.mutation_freq,
             'v_trim_5': gen.v_trim_5,
             'v_trim_3': gen.v_trim_3,
             'd_trim_5': gen.d_trim_5,
