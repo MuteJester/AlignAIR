@@ -53,7 +53,6 @@ class VAllele(Allele):
     type = AlleleTypes.V
 
     def _find_anchor(self):
-        cys = self.gapped_seq[309:312]
         cys_wider = self.gapped_seq[306:315]
         self.anchor = self.ungapped_seq.rfind(cys_wider) + 3
 

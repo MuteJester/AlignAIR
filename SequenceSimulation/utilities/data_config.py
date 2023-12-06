@@ -30,7 +30,8 @@ class DataConfig:
         self.v_alleles = None
         self.d_alleles = None
         self.j_alleles = None
-        self._load_data()
+        if data_folder is not None:
+            self._load_data()
 
         # Settings
         self.trim_modes = {'V': TrimMode.DEFAULT, 'D': TrimMode.DEFAULT, 'J': TrimMode.DEFAULT} if trim_modes is None\

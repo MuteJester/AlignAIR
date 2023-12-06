@@ -179,7 +179,7 @@ class S5F(MutationModel):
 
     @staticmethod
     def weighted_choice(five_mers):
-        weights = [fm.likelihood for fm in five_mers]
+        weights = [fm.likelihood if fm.likelihood==fm.likelihood else 0 for fm in five_mers]
         # Choose an index instead of the object
         chosen_index = random.choices(range(len(five_mers)), weights, k=1)[0]
         return five_mers[chosen_index]

@@ -6,7 +6,6 @@ from uuid import uuid4
 from VDeepJDataset import VDeepJDataset, VDeepJDatasetSingleBeam, VDeepJDatasetSingleBeamSegmentation, \
     VDeepJDatasetSingleBeamSegmentationV2, VDeepJDatasetSingleBeamSegmentationV1__5, \
     VDeepJDatasetSingleBeamSegmentationV2, VDeepJDatasetRefactored
-from VDeepJUnbondedDataset import VDeepJUnbondedDatasetSingleBeam
 import tensorflow as tf
 from tensorflow.keras.callbacks import CSVLogger
 import pandas as pd
