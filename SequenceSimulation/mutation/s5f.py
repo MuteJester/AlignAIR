@@ -131,7 +131,7 @@ class S5F(MutationModel):
         mutations = dict()
 
         # 2. Extract 5-Mers
-        fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq,self.mutability)
+        fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
 
         # add a failsafe to insure while loop does not get locked
         patience = 0
@@ -179,10 +179,7 @@ class S5F(MutationModel):
 
     @staticmethod
     def weighted_choice(five_mers):
-        weights = [fm.likelihood if fm.likelihood==fm.likelihood else 0 for fm in five_mers]
+        weights = [fm.likelihood if fm.likelihood == fm.likelihood else 0 for fm in five_mers]
         # Choose an index instead of the object
         chosen_index = random.choices(range(len(five_mers)), weights, k=1)[0]
         return five_mers[chosen_index]
-
-
-
