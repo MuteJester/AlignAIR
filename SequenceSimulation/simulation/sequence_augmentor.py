@@ -407,7 +407,11 @@ class SequenceAugmentor:
 
     # Sequence Simulation
     def simulate_sequence(self):
-        gen = HeavyChainSequence.create_random(self.dataconfig)
+
+        if self.dataconfig.d_alleles is None:  # If No D, Then it most be light chain
+            pass
+        else:  # it is a heavy chain sequence
+            gen = HeavyChainSequence.create_random(self.dataconfig)
         gen.mutate(self.mutation_model)
 
         data = {

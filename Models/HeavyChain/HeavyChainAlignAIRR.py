@@ -30,13 +30,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
           ... (other attributes)
       """
 
-    def __init__(
-            self,
-            max_seq_length,
-            v_allele_count,
-            d_allele_count,
-            j_allele_count,
-    ):
+    def __init__(self, max_seq_length, v_allele_count, d_allele_count, j_allele_count):
         super(HeavyChainAlignAIRR, self).__init__()
 
         # weight initialization distribution
@@ -49,23 +43,18 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         self.j_allele_count = j_allele_count
 
         # Hyperparams + Constants
-        self.classification_keys = [
-            "v_allele",
-            "d_allele",
-            "j_allele",
-        ]
+        self.classification_keys = ["v_allele", "d_allele", "j_allele"]
         self.latent_size_factor = 2
         self.classification_middle_layer_activation = "swish"
         self.v_class_weight, self.d_class_weight, self.j_class_weight = 0.5, 0.5, 0.5
-        self.segmentation_weight, self.classification_weight, self.intersection_weight = (
-            0.5,
-            0.5,
-            0.5,
-        )
+        self.segmentation_weight, self.classification_weight, self.intersection_weight = (0.5, 0.5, 0.5)
 
         # Tracking
         self.setup_performance_metrics()
 
+        self.setup_model()
+
+    def setup_model(self):
         # Init Input Layers
         self._init_input_layers()
 
@@ -77,7 +66,8 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         self.segmentation_feature_extractor_block = ConvResidualFeatureExtractionBlock(filter_size=64,
                                                                                        num_conv_batch_layers=5,
                                                                                        kernel_size=5,
-                                                                                       max_pool_size=2)
+                                                                                       max_pool_size=2,
+                                                                                       initializer=self.initializer)
 
         # Init V/D/J Masked Input Signal Encoding Layers
         self.v_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
@@ -85,21 +75,24 @@ class HeavyChainAlignAIRR(tf.keras.Model):
                                                                              kernel_size=3,
                                                                              max_pool_size=2,
                                                                              conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'))
+                                                                                 'tanh'),
+                                                                             initializer=self.initializer)
 
         self.d_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=64,
                                                                              num_conv_batch_layers=4,
                                                                              kernel_size=3,
                                                                              max_pool_size=2,
                                                                              conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'))
+                                                                                 'tanh'),
+                                                                             initializer=self.initializer)
 
         self.j_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=64,
                                                                              num_conv_batch_layers=4,
                                                                              kernel_size=3,
                                                                              max_pool_size=2,
                                                                              conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'))
+                                                                                 'tanh'),
+                                                                             initializer=self.initializer)
 
         # Init Interval Regression Related Layers
         self._init_segmentation_predictions()

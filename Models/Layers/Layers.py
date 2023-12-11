@@ -37,9 +37,10 @@ class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
 
 class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
     def __init__(self, filter_size=64, num_conv_batch_layers=5, kernel_size=5, max_pool_size=2,
-                 conv_activation = None, **kwargs):
+                 conv_activation = None,initializer=None, **kwargs):
         super(ConvResidualFeatureExtractionBlock, self).__init__(**kwargs)
 
+        self.initializer = tf.keras.initializers.RandomNormal(mean=0.1, stddev=0.02) if initializer is None else initializer
         self.conv_activation = conv_activation
         self.conv_layers = [Conv1D_and_BatchNorm(filters=filter_size, kernel=kernel_size, max_pool=max_pool_size,
                                                  initializer=self.initializer,
