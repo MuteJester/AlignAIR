@@ -1,10 +1,15 @@
 import random
-
+from enum import Enum, auto
 from SequenceSimulation.mutation import MutationModel
 from SequenceSimulation.sequence import NP_Region
 from SequenceSimulation.sequence.sequence import BaseSequence
 from SequenceSimulation.utilities import NP, translate
 from SequenceSimulation.utilities.data_config import DataConfig
+
+
+class LightChainType(Enum):
+    KAPPA = auto()
+    LAMBDA =  auto()
 
 
 class LightChainSequence(BaseSequence):
@@ -133,4 +138,4 @@ class LightChainSequence(BaseSequence):
         v_part = f"{self.v_seq_start}|{'-' * v_length}V({self.v_allele.name})|{self.v_seq_end}"
         j_part = f"{self.j_seq_start}|{'-' * j_length}J({self.j_allele.name})|{self.j_seq_end}"
 
-        return f"{v_part}{j_part}"
+        return f"{v_part}|{j_part}"

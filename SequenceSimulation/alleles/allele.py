@@ -77,7 +77,7 @@ class VAllele(Allele):
 
             trim_3 = weighted_choice(prob_dict)
 
-        return trim_5, trim_3
+        return int(trim_5), int(trim_3) # make sure type is not float
 
     def get_trimmed(self,trim_dict,trim_mode=TrimMode.DEFAULT,gapped=False):
         sequence = self.gapped_seq if gapped else self.ungapped_seq
@@ -119,7 +119,7 @@ class DAllele(Allele):
             prob_3_dict = {amount: prob_3_dict[amount] for amount in valid_d3_trim_amounts}
 
             trim_3 = weighted_choice(prob_3_dict)
-        return trim_5,trim_3
+        return int(trim_5), int(trim_3) # make sure type is not float
 
     def get_trimmed(self, trim_dict, trim_mode=TrimMode.DEFAULT,gapped=False):
         sequence = self.gapped_seq if gapped else self.ungapped_seq
@@ -150,7 +150,7 @@ class JAllele(Allele):
             valid_5_trims = filter(lambda t5: (t5 < self.length) or (t5 < self.anchor),prob_dict)
             prob_dict = {amount:prob_dict[amount] for amount in valid_5_trims}
             trim_5 = weighted_choice(prob_dict)
-        return trim_5,trim_3
+        return int(trim_5), int(trim_3) # make sure type is not float
 
     def get_trimmed(self,trim_dict,trim_mode=TrimMode.DEFAULT,gapped=False):
         trim_5, trim_3 = self._get_trim_length(trim_dict, trim_mode)
