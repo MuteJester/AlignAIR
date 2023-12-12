@@ -34,7 +34,8 @@ class NP_Region:
         """
 
         base = weighted_choice(
-            {next_base: self.transition_probs[position][current_base][next_base] for next_base in self.bases})
+            {next_base: self.transition_probs[position][current_base][next_base] for next_base in \
+             list(self.transition_probs[position][current_base])})
         return base
 
     def generate_np_seq(self):
