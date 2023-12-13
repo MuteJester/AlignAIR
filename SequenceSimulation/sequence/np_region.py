@@ -33,10 +33,20 @@ class NP_Region:
             base (str): Next base in the NP region sequence.
         """
 
+        next_base_options = list(self.transition_probs[position][current_base])
         base = weighted_choice(
-            {next_base: self.transition_probs[position][current_base][next_base] for next_base in \
-             list(self.transition_probs[position][current_base])})
+            {next_base: self.transition_probs[position][current_base][next_base] for next_base in next_base_options})
         return base
+
+    def validate_next_base(self,current_base,position):
+        """
+        Check if in the current position has the required nucleotide information (In cases where very long NP
+        region are generated, due to the probabilities originating in empiric data we might not have observed
+        some events thus we halt the generation of an NP region.
+        :return:
+        """
+        return True if current_base in self.transition_probs[position] else False
+
 
     def generate_np_seq(self):
         """Creates an NP region sequence using a first order Markov chain.
@@ -48,9 +58,15 @@ class NP_Region:
         current_base = self.first_base
         sequence += current_base
         for i in range(self.length - 1):
-            next_base = self.next_base(current_base, i)
-            sequence += next_base
-            current_base = next_base
+
+            if self.validate_next_base(current_base,i): # valid position
+                next_base = self.next_base(current_base, i)
+                sequence += next_base
+                current_base = next_base
+            else: #not way to continue halt and update metadata!
+                self.length = len(sequence)
+                return sequence.lower()
+
         return sequence.lower()
 
     @classmethod

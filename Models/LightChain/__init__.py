@@ -1,1 +1,1 @@
-from .LightChainAlignAIRR import *
+from .LightChainAlignAIRR import LightChainAlignAIRR

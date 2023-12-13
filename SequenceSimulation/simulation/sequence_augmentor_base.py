@@ -137,7 +137,13 @@ class SequenceAugmentorBase(ABC):
         Ns_in_pure_sequence = [i for i in simulated['Ns'] if
                                simulated['v_sequence_start'] <= i <= simulated['j_sequence_end']]
         pure_sequence_length = simulated['j_sequence_end'] - simulated['v_sequence_start']
-        simulated_n_ratio = len(Ns_in_pure_sequence) / pure_sequence_length
+
+        # exception handling
+        if pure_sequence_length == 0:
+            # handle division by zero
+            simulated_n_ratio = 0
+        else:
+            simulated_n_ratio = len(Ns_in_pure_sequence) / pure_sequence_length
         simulated['mutation_rate'] += simulated_n_ratio
 
     def remove_event(self, simulated):

@@ -10,3 +10,5 @@ from .data_utilities import create_first_base_dict
 from .data_utilities import create_NP_position_transition_dict
 from .data_utilities import create_mut_rate_per_seq_dict
 from .data_utilities import create_kmer_base_dict
+from .data_config import DataConfig
+

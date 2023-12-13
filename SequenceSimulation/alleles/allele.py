@@ -66,7 +66,7 @@ class VAllele(Allele):
             if self.family in trim_3_dict:
                 prob_dict = trim_3_dict[self.family]
             else:
-                print(self.family, 'NOT IN TRIM PROBABILITY DICTIONARY!, CHOOSING RANDOM!')
+                #print(self.family, 'NOT IN TRIM PROBABILITY DICTIONARY!, CHOOSING RANDOM!')
                 prob_dict = random.choice(list(trim_3_dict.values()))
 
             # prevent entire allele or anchor from being removed

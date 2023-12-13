@@ -244,3 +244,7 @@ class LightChainKappaLambdaSequenceAugmentor:
             return self.kappa_augmentor.simulate_augmented_sequence()
         else:
             return self.lambda_augmentor.simulate_augmented_sequence()
+
+    @property
+    def columns(self):
+        return self.kappa_augmentor.columns
