@@ -7,17 +7,19 @@ from SequenceSimulation.utilities import DataConfig
 
 
 class LightChainDataset(DatasetBase):
-    def __init__(self, data_path, dataconfig: DataConfig, batch_size=64, max_sequence_length=512, batch_read_file=False,
+    def __init__(self, data_path, lambda_dataconfig: DataConfig,
+                 kappa_dataconfig: DataConfig,batch_size=64, max_sequence_length=512, batch_read_file=False,
                  nrows=None, seperator=','):
-        super().__init__(data_path, dataconfig, batch_size, max_sequence_length, batch_read_file, nrows, seperator)
+        super().__init__(data_path, kappa_dataconfig, batch_size, max_sequence_length, batch_read_file, nrows, seperator)
 
+        self.dataconfig = [kappa_dataconfig,lambda_dataconfig]
         self.required_data_columns = ['sequence', 'v_sequence_start', 'v_sequence_end',
                                       'j_sequence_start', 'j_sequence_end', 'v_allele',
-                                      'd_allele', 'j_allele', 'type', 'mutation_rate']
+                                      'j_allele', 'type', 'mutation_rate']
 
     def derive_call_one_hot_representation(self):
-        v_alleles = sorted(list(self.v_dict))
-        j_alleles = sorted(list(self.j_dict))
+        v_alleles = sorted(list(self.v_kappa_dict)) + sorted(list(self.v_lambda_dict))
+        j_alleles = sorted(list(self.j_kappa_dict)) + sorted(list(self.j_lambda_dict))
 
         self.v_allele_count = len(v_alleles)
         self.j_allele_count = len(j_alleles)
@@ -31,10 +33,15 @@ class LightChainDataset(DatasetBase):
         }
 
     def derive_call_dictionaries(self):
-        self.v_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.v_alleles for j in
-                       self.dataconfig.v_alleles[i]}
-        self.j_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.j_alleles for j in
-                       self.dataconfig.j_alleles[i]}
+        self.v_kappa_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig[0].v_alleles for j in
+                              self.dataconfig[0].v_alleles[i]}
+        self.j_kappa_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig[0].j_alleles for j in
+                              self.dataconfig[0].j_alleles[i]}
+
+        self.v_lambda_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig[1].v_alleles for j in
+                       self.dataconfig[1].v_alleles[i]}
+        self.j_lambda_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig[1].j_alleles for j in
+                       self.dataconfig[1].j_alleles[i]}
 
     def get_ohe_reverse_mapping(self):
         get_reverse_dict = lambda dic: {i: j for j, i in dic.items()}
@@ -56,7 +63,7 @@ class LightChainDataset(DatasetBase):
             for _position in ['start', 'end']:
                 batch.loc[:, _gene + '_' + _position] += paddings
 
-        segments = {'v': [], 'd': [], 'j': []}
+        segments = {'v': [], 'j': []}
 
         for ax, row in batch.iterrows():
             for _gene in ['v', 'j']:
@@ -78,7 +85,6 @@ class LightChainDataset(DatasetBase):
 
         y = {
             "v_segment": segments['v'],
-            "d_segment": segments['d'],
             "j_segment": segments['j'],
             "v_allele": self.one_hot_encode_allele("V", v_alleles),
             "j_allele": self.one_hot_encode_allele("J", j_alleles),

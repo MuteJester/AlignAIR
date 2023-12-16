@@ -33,7 +33,7 @@ class LightChainAlignAIRR(tf.keras.Model):
         super(LightChainAlignAIRR, self).__init__()
 
         # weight initialization distribution
-        self.initializer = tf.keras.initializers.RandomNormal(mean=0.1, stddev=0.02)
+        self.initializer = tf.keras.initializers.GlorotUniform()
 
         # Model Params
         self.max_seq_length = int(max_seq_length)
@@ -323,6 +323,9 @@ class LightChainAlignAIRR(tf.keras.Model):
         mutation_rate_loss = tf.keras.metrics.mean_absolute_error(self.c2f32(y_true['mutation_rate']),
                                                                   self.c2f32(y_pred['mutation_rate']))
 
+        chain_type_loss = tf.keras.metrics.binary_crossentropy(self.c2f32(y_true['type']),
+                                                                  self.c2f32(y_pred['type']))
+
         classification_loss = (
                 self.v_class_weight * clf_v_loss
                 + self.j_class_weight * clf_j_loss
@@ -333,7 +336,7 @@ class LightChainAlignAIRR(tf.keras.Model):
                 self.segmentation_weight * total_segmentation_loss
                 + self.intersection_weight * total_intersection_loss
                 + self.classification_weight * classification_loss
-                + mutation_rate_loss
+                + mutation_rate_loss + chain_type_loss
 
         )
 

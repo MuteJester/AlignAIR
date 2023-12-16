@@ -34,7 +34,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         super(HeavyChainAlignAIRR, self).__init__()
 
         # weight initialization distribution
-        self.initializer = tf.keras.initializers.RandomNormal(mean=0.1, stddev=0.02)
+        self.initializer = tf.keras.initializers.GlorotUniform()
 
         # Model Params
         self.max_seq_length = int(max_seq_length)
@@ -65,14 +65,14 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
         self.segmentation_feature_extractor_block = ConvResidualFeatureExtractionBlock(filter_size=64,
                                                                                        num_conv_batch_layers=5,
-                                                                                       kernel_size=5,
+                                                                                       kernel_size=[2,5,5,3,5,5],
                                                                                        max_pool_size=2,
                                                                                        initializer=self.initializer)
 
         # Init V/D/J Masked Input Signal Encoding Layers
         self.v_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
                                                                              num_conv_batch_layers=6,
-                                                                             kernel_size=3,
+                                                                             kernel_size=[3,3,3,2,2,2,5],
                                                                              max_pool_size=2,
                                                                              conv_activation=tf.keras.layers.Activation(
                                                                                  'tanh'),
@@ -80,18 +80,14 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
         self.d_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=64,
                                                                              num_conv_batch_layers=4,
-                                                                             kernel_size=3,
+                                                                             kernel_size=[3,3,3,3,5],
                                                                              max_pool_size=2,
-                                                                             conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'),
                                                                              initializer=self.initializer)
 
         self.j_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=64,
                                                                              num_conv_batch_layers=4,
-                                                                             kernel_size=3,
+                                                                             kernel_size=[3,3,3,2,5],
                                                                              max_pool_size=2,
-                                                                             conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'),
                                                                              initializer=self.initializer)
 
         # Init Interval Regression Related Layers

@@ -103,7 +103,7 @@ class DAllele(Allele):
                 prob_5_dict = trim_5_dict[self.family]
             else:
                 prob_5_dict = random.choice(list(trim_5_dict.values()))
-                print(self.family, 'NOT IN TRIM PROBABILITY DICTIONARY!, CHOOSING RANDOM!')
+                #print(self.family, 'NOT IN TRIM PROBABILITY DICTIONARY!, CHOOSING RANDOM!')
             trim_5 = weighted_choice(prob_5_dict)
 
         if trim_mode != TrimMode.NO_3_PRIME:
@@ -112,7 +112,7 @@ class DAllele(Allele):
                 prob_3_dict = trim_3_dict[self.family]
             else:
                 prob_3_dict = random.choice(list(trim_3_dict.values()))
-                print(self.family, 'NOT IN TRIM PROBABILITY DICTIONARY!, CHOOSING RANDOM!')
+                #print(self.family, 'NOT IN TRIM PROBABILITY DICTIONARY!, CHOOSING RANDOM!')
 
             valid_d3_trim_amounts = filter(lambda amount: amount + trim_5 < self.length, prob_3_dict)
 
@@ -145,7 +145,7 @@ class JAllele(Allele):
                 prob_dict = trim_5_dict[self.family]
             else:
                 prob_dict = random.choice(list(trim_5_dict.values()))
-                print(self.family, 'NOT IN TRIM PROBABILITY DICTIONARY!, CHOOSING RANDOM!')
+                #print(self.family, 'NOT IN TRIM PROBABILITY DICTIONARY!, CHOOSING RANDOM!')
 
             valid_5_trims = filter(lambda t5: (t5 < self.length) or (t5 < self.anchor),prob_dict)
             prob_dict = {amount:prob_dict[amount] for amount in valid_5_trims}
