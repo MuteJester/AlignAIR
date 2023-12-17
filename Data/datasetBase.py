@@ -31,6 +31,7 @@ class DatasetBase(ABC):
         self.batch_size = batch_size
         self.derive_call_dictionaries()
         self.derive_call_one_hot_representation()
+        self.data_path = data_path
 
         if not self.batch_read_file:
             self.data = pd.read_table(data_path, usecols=self.required_data_columns, nrows=nrows, sep=self.seperator)
@@ -159,6 +160,7 @@ class DatasetBase(ABC):
                 yield batch_x, batch_y
 
     def get_train_dataset(self):
+        self.get_data_batch_generator(self.data_path)
         output_types, output_shapes = self._get_tf_dataset_params()
 
         dataset = tf.data.Dataset.from_generator(
@@ -205,7 +207,10 @@ class DatasetBase(ABC):
             while True:
                 reader = csv.reader(file, delimiter=seperator)
                 headers = next(reader)  # Skip header row
-                if len(set(usecols) & set(headers)) != len(usecols):
+                if len(set(usecols) & set(headers)) < len(usecols):
+                    for col in usecols:
+                        if col not in headers:
+                            print('!!!!!!!!!!!!!!!!!!!!!!!!!!',col,'!!!!!!!!!!!!!!!')
                     raise ValueError(f"Not all required columns were provided in train data file: {path}")
 
                 batch = {i: [] for i in headers}

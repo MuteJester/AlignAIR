@@ -10,7 +10,7 @@ class LightChainDataset(DatasetBase):
     def __init__(self, data_path, lambda_dataconfig: DataConfig,
                  kappa_dataconfig: DataConfig,batch_size=64, max_sequence_length=512, batch_read_file=False,
                  nrows=None, seperator=','):
-        super().__init__(data_path, kappa_dataconfig, batch_size, max_sequence_length, batch_read_file, nrows, seperator)
+        super().__init__(data_path, [kappa_dataconfig,lambda_dataconfig], batch_size, max_sequence_length, batch_read_file, nrows, seperator)
 
         self.dataconfig = [kappa_dataconfig,lambda_dataconfig]
         self.required_data_columns = ['sequence', 'v_sequence_start', 'v_sequence_end',
@@ -99,3 +99,5 @@ class LightChainDataset(DatasetBase):
             "v_allele_count": self.v_allele_count,
             "j_allele_count": self.j_allele_count,
         }
+
+

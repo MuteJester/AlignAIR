@@ -29,7 +29,7 @@ class LightChainAlignAIRR(tf.keras.Model):
           ... (other attributes)
       """
 
-    def __init__(self, max_seq_length, v_allele_count, d_allele_count, j_allele_count):
+    def __init__(self, max_seq_length, v_allele_count, j_allele_count):
         super(LightChainAlignAIRR, self).__init__()
 
         # weight initialization distribution
@@ -93,8 +93,6 @@ class LightChainAlignAIRR(tf.keras.Model):
 
         #  =========== V HEADS ======================
         self._init_v_classification_layers()
-        # =========== D HEADS ======================
-        self._init_d_classification_layers()
         # =========== J HEADS ======================
         self._init_j_classification_layers()
 
@@ -207,7 +205,7 @@ class LightChainAlignAIRR(tf.keras.Model):
 
         return v_segment, j_segment, mutation_rate,chain_type
 
-    def _predict_vdj_set(self, v_feature_map, d_feature_map, j_feature_map):
+    def _predict_vdj_set(self, v_feature_map, j_feature_map):
         # ============================ V =============================
         v_allele_middle = self.v_allele_mid(v_feature_map)
         v_allele = self.v_allele_call_head(v_allele_middle)
@@ -238,13 +236,12 @@ class LightChainAlignAIRR(tf.keras.Model):
         j_feature_map = self.j_feature_extraction_block(masked_sequence_j)
 
         # STEP 8: Predict The V,D and J genes
-        v_allele, d_allele, j_allele = self._predict_vdj_set(v_feature_map, d_feature_map, j_feature_map)
+        v_allele, j_allele = self._predict_vdj_set(v_feature_map, j_feature_map)
 
         return {
             "v_segment": v_segment,
             "j_segment": j_segment,
             "v_allele": v_allele,
-            "d_allele": d_allele,
             "j_allele": j_allele,
             'mutation_rate': mutation_rate,
             'type':chain_type
@@ -263,7 +260,7 @@ class LightChainAlignAIRR(tf.keras.Model):
 
         segmentation_features = self.segmentation_feature_extractor_block(input_embeddings)
 
-        v_segment, d_segment, j_segment, mutation_rate = self.predict_segments(segmentation_features)
+        v_segment, j_segment, mutation_rate,chain_type = self.predict_segments(segmentation_features)
 
         reshape_masked_sequence_v = self.v_mask_reshape(v_segment)
 
@@ -281,17 +278,17 @@ class LightChainAlignAIRR(tf.keras.Model):
 
         segmentation_features = self.segmentation_feature_extractor_block(input_embeddings)
 
-        v_segment, d_segment, j_segment, mutation_rate = self.predict_segments(segmentation_features)
+        v_segment, j_segment, mutation_rate,chain_type = self.predict_segments(segmentation_features)
 
-        reshape_masked_sequence_d = self.d_mask_reshape(d_segment)
+        reshape_masked_sequence_j = self.j_mask_reshape(j_segment)
 
-        masked_sequence_d = self.d_mask_gate([reshape_masked_sequence_d, input_embeddings])
+        masked_sequence_j = self.d_mask_gate([reshape_masked_sequence_j, input_embeddings])
 
-        d_feature_map = self.d_feature_extraction_block(masked_sequence_d)
+        j_feature_map = self.j_feature_extraction_block(masked_sequence_j)
 
-        d_allele_latent = self.d_allele_mid(d_feature_map)
+        j_allele_latent = self.j_allele_mid(j_feature_map)
 
-        return d_allele_latent
+        return j_allele_latent
 
     def c2f32(self, x):
         # cast keras tensor to float 32
