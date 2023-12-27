@@ -32,11 +32,4 @@ Before using the VDeepJ model trainer, make sure you have the following prerequi
 - see requirements.txt for more detailed list
 
 
-## Plotting the Training History
-```python
-trainer.plot_history()
-```
-You can add a save path as a parameter to save the figure,
-in general after each call to `.train()` a history object is created/
-updated as an attribute of the `Trainer` object, use
-`trainer.history` to access it.
+
