@@ -4,6 +4,19 @@ import random
 def weighted_choice(choices):
     return random.choices(population=list(choices.keys()), weights=choices.values(), k=1)[0]
 
+
+def weighted_choice_zero_break(choices):
+    """
+    return zero if choices is empty
+    :param choices:
+    :return:
+    """
+    if len(choices) < 1:
+        return 0
+    else:
+        return weighted_choice(choices)
+
+
 def translate(seq):
     """Translates a nucleotide sequence to an amino acid sequence.
 

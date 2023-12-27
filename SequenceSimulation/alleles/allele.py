@@ -1,7 +1,7 @@
 import re
 import random
 from abc import ABC, abstractmethod
-from SequenceSimulation.utilities import weighted_choice, TrimMode
+from SequenceSimulation.utilities import weighted_choice, TrimMode,weighted_choice_zero_break
 from enum import Enum, auto
 
 class AlleleTypes(Enum):
@@ -75,7 +75,7 @@ class VAllele(Allele):
 
             prob_dict = {amount: prob_dict[amount] for amount in valid_trim_amounts}
 
-            trim_3 = weighted_choice(prob_dict)
+            trim_3 = weighted_choice_zero_break(prob_dict)
 
         return int(trim_5), int(trim_3) # make sure type is not float
 
@@ -104,7 +104,7 @@ class DAllele(Allele):
             else:
                 prob_5_dict = random.choice(list(trim_5_dict.values()))
                 #print(self.family, 'NOT IN TRIM PROBABILITY DICTIONARY!, CHOOSING RANDOM!')
-            trim_5 = weighted_choice(prob_5_dict)
+            trim_5 = weighted_choice_zero_break(prob_5_dict)
 
         if trim_mode != TrimMode.NO_3_PRIME:
             trim_3_dict = trim_dicts["D_3"]
@@ -118,7 +118,9 @@ class DAllele(Allele):
 
             prob_3_dict = {amount: prob_3_dict[amount] for amount in valid_d3_trim_amounts}
 
-            trim_3 = weighted_choice(prob_3_dict)
+            trim_3 = weighted_choice_zero_break(prob_3_dict)
+
+
         return int(trim_5), int(trim_3) # make sure type is not float
 
     def get_trimmed(self, trim_dict, trim_mode=TrimMode.DEFAULT,gapped=False):
@@ -149,7 +151,7 @@ class JAllele(Allele):
 
             valid_5_trims = filter(lambda t5: (t5 < self.length) or (t5 < self.anchor),prob_dict)
             prob_dict = {amount:prob_dict[amount] for amount in valid_5_trims}
-            trim_5 = weighted_choice(prob_dict)
+            trim_5 = weighted_choice_zero_break(prob_dict)
         return int(trim_5), int(trim_3) # make sure type is not float
 
     def get_trimmed(self,trim_dict,trim_mode=TrimMode.DEFAULT,gapped=False):
