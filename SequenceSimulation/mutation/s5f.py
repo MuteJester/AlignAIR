@@ -92,27 +92,35 @@ class FiveMER:
 
 
 class S5F(MutationModel):
-    def __init__(self, min_mutation_rate=0, max_mutation_rate=0):
+    def __init__(self, min_mutation_rate=0, max_mutation_rate=0,custom_model=None):
+        self.targeting = None
+        self.substitution = None
+        self.mutability = None
         self.max_mutation_rate = max_mutation_rate
         self.min_mutation_rate = min_mutation_rate
         self.bases = {'A', 'T', 'C', 'G'}
         self.loaded_metadata = False
+        self.custom_model = custom_model
 
     def load_metadata(self, sequence):
         from SequenceSimulation.sequence import HeavyChainSequence
         from SequenceSimulation.sequence.light_chain import LightChainSequence
         from importlib import resources
 
-        if type(sequence) == HeavyChainSequence:
-            with resources.path('SequenceSimulation.data', 'HH_S5F_META.pkl') as data_path:
-                with open(data_path, 'rb') as h:
-                    self.mutability, self.substitution, self.targeting = pickle.load(h)
-        elif type(sequence) == LightChainSequence:
-            with resources.path('SequenceSimulation.data', 'HKL_S5F_META.pkl') as data_path:
-                with open(data_path, 'rb') as h:
-                    self.mutability, self.substitution, self.targeting = pickle.load(h)
+        if self.custom_model is None:
+            if type(sequence) == HeavyChainSequence:
+                with resources.path('SequenceSimulation.data', 'HH_S5F_META.pkl') as data_path:
+                    with open(data_path, 'rb') as h:
+                        self.mutability, self.substitution, self.targeting = pickle.load(h)
+            elif type(sequence) == LightChainSequence:
+                with resources.path('SequenceSimulation.data', 'HKL_S5F_META.pkl') as data_path:
+                    with open(data_path, 'rb') as h:
+                        self.mutability, self.substitution, self.targeting = pickle.load(h)
+            else:
+                raise ValueError('Unsupported Sequence Type')
         else:
-            raise ValueError('Unsupported Sequence Type')
+            with open(self.custom_model, 'rb') as h:
+                self.mutability, self.substitution, self.targeting = pickle.load(h)
 
     def apply_mutation(self, sequence_object):
         # 1. Load the Likelihoods File

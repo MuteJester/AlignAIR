@@ -1,2 +1,3 @@
 from .AlleleSelector import DynamicConfidenceThreshold
 from .AlleleSelector import DynamicMaskedConfidenceThreshold
+from .AlleleSelector import DynamicDualThreshold
