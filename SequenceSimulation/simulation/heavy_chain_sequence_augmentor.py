@@ -12,9 +12,10 @@ import base64
 
 
 class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
-    alleles_used = ['v','d','j']
+    alleles_used = ['v', 'd', 'j']
+
     def __init__(self, dataconfig: DataConfig, args: SequenceAugmentorArguments = SequenceAugmentorArguments()):
-        super().__init__(dataconfig,args)
+        super().__init__(dataconfig, args)
 
         self.nucleotide_add_distribution = st.beta(2, 3)
         self.nucleotide_remove_distribution = st.beta(2, 3)
@@ -52,6 +53,10 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         with resources.path('SequenceSimulation.data', 'IGHD_TRIM_SIMILARITY_MAP.pkl') as data_path:
             with open(data_path, 'rb') as h:
                 self.d_trim_correction_map = pickle.load(h)
+
+        with resources.path('SequenceSimulation.data', 'IGHV_N_AMBIGUITY_CORRECTION_GRAPH.pkl') as data_path:
+            with open(data_path, 'rb') as h:
+                self.v_n_ambiguity_comparer = pickle.load(h)
 
     def correct_for_d_trims(self, simulated):
         # Get the 5' and 3' trims of the d allele in the simulated sequence

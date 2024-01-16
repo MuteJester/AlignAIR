@@ -46,6 +46,7 @@ class SequenceAugmentorArguments:
     n_ratio: float = 0.02
     max_sequence_length: int = 512
     mutation_model: MutationModel = S5F
+    custom_mutation_model_path: str = None
     nucleotide_add_coefficient: float = 210
     nucleotide_remove_coefficient: float = 310
     nucleotide_add_after_remove_coefficient: float = 50
@@ -62,13 +63,18 @@ class SequenceAugmentorArguments:
 
 class SequenceAugmentorBase(ABC):
     alleles_used = None
+
     def __init__(self, dataconfig: DataConfig, args: SequenceAugmentorArguments = SequenceAugmentorArguments()):
 
         # Sequence Generation Parameters
         self.dataconfig = dataconfig
         self.min_mutation_rate = args.min_mutation_rate
         self.max_mutation_rate = args.max_mutation_rate
-        self.mutation_model = args.mutation_model(self.min_mutation_rate, self.max_mutation_rate)
+        if args.custom_mutation_model_path is not None:
+            self.mutation_model = args.mutation_model(self.min_mutation_rate, self.max_mutation_rate,
+                                                      custom_model=args.custom_mutation_model_path)
+        else:
+            self.mutation_model = args.mutation_model(self.min_mutation_rate, self.max_mutation_rate)
 
         # Noising Parameters
         self.n_ratio = args.n_ratio
@@ -108,6 +114,35 @@ class SequenceAugmentorBase(ABC):
     def load_correction_maps(self):
         pass
 
+    def get_original_index(self, corrupted_index, simulated):
+        """
+        Translates an index from the corrupted sequence back to the corresponding index in the original sequence.
+        """
+        corruption_event = simulated['corruption_event']
+        amount_added = simulated['corruption_add_amount']
+        amount_removed = simulated['corruption_remove_amount']
+
+        if corruption_event == 'add':
+            # If characters were added at the beginning, the original index is shifted to the right
+            return corrupted_index - amount_added if corrupted_index >= amount_added else None
+        elif corruption_event == 'remove':
+            # If characters were removed from the beginning, the original index is shifted to the left
+            return corrupted_index + amount_removed
+        elif corruption_event == 'remove_before_add':
+            # Combined effect of removal and addition
+            adjusted_index = corrupted_index + amount_removed
+            return adjusted_index - amount_added if adjusted_index >= amount_added else None
+        else:
+            # If no corruption or unknown corruption event, assume the index is unchanged
+            return corrupted_index
+
+    def get_allele_spesific_n_positions(self, simulated, n_positions, allele):
+        return [i for i in n_positions if
+                simulated[f'{allele}_sequence_start'] <= i <= simulated[f'{allele}_sequence_end']]
+
+    def get_v_ambiguous_alleles_due_to_n_addition(self, simulated, add_ns):
+        pass
+
     # Noise Introducing Methods
     def insert_Ns(self, simulated):
         sequence = simulated['sequence']
@@ -129,6 +164,16 @@ class SequenceAugmentorBase(ABC):
         # Sort the N's insertion log
         simulated['Ns'] = {pos: simulated['Ns'][pos] for pos in sorted(simulated['Ns'])}
 
+        # Get All the N Poistion Inserted to the V Allele
+        v_allele_n_positions = self.get_allele_spesific_n_positions(simulated, list(simulated['Ns']), 'v')
+        # Get Original Positions For Correction
+        v_allele_n_positions_original = [self.get_original_index(i, simulated) for i in v_allele_n_positions]
+
+        indistinguishable_v_alleles = self.v_n_ambiguity_comparer.find_indistinguishable_alleles(
+            simulated['v_allele'][0], v_allele_n_positions_original)
+        simulated['v_allele'] = simulated['v_allele'] + list(
+            set(indistinguishable_v_alleles) - set(simulated['v_allele']))
+
         # Adjust mutation rate to account for added "N's" by adding the ratio of N's added to the mutation rate
         # because we randomly sample position we might get a ratio of N's less than what was defined by the n_ratio
         # property, thus we recalculate the actual inserted ration of N's
@@ -146,7 +191,7 @@ class SequenceAugmentorBase(ABC):
             simulated_n_ratio = len(Ns_in_pure_sequence) / pure_sequence_length
         simulated['mutation_rate'] += simulated_n_ratio
 
-    def remove_event(self, simulated):
+    def remove_event(self, simulated, autocorrect=True):
         # Update Simulation Metadata
         simulated['corruption_event'] = 'remove'
         # Sample how much to remove
@@ -172,7 +217,8 @@ class SequenceAugmentorBase(ABC):
         simulated['j_sequence_end'] -= amount_to_remove
 
         # Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
-        self.correct_for_v_start_cut(simulated)
+        if autocorrect:
+            self.correct_for_v_start_cut(simulated)
 
     def add_event(self, simulated, amount=None):
         # Update Simulation Metadata
@@ -205,15 +251,20 @@ class SequenceAugmentorBase(ABC):
     def remove_before_add_event(self, simulated):
         # ----- REMOVE PART -----#
         # Sample how much to remove
-        self.remove_event(simulated)
-
-        # Update Simulation Metadata
-        simulated['corruption_event'] = 'remove_before_add'
+        self.remove_event(simulated, autocorrect=False)  # Dont Correct For Removed Section YET! First Lets Add
 
         # ----- ADD PART -----#
         # Sample how much to add after removal occurred
         amount_to_add = self._sample_nucleotide_add_after_remove_distribution()
         self.add_event(simulated, amount=amount_to_add)
+
+        # Update Simulation Metadata
+        simulated['corruption_event'] = 'remove_before_add'
+
+        # Check If The Addition Recreated Some of the Removed Section by Chance
+        self.correct_for_v_start_add(simulated)
+        # Correct for the removed section of the V now that we have check for the reconstruction by chance
+        self.correct_for_v_start_cut(simulated)
 
     def corrupt_sequence_beginning(self, simulated):
         # Sample Corruption Event
@@ -222,7 +273,6 @@ class SequenceAugmentorBase(ABC):
             self.remove_event(simulated)
         elif event is Event.Add:
             self.add_event(simulated)
-
         elif event is Event.Remove_Before_Add:
             self.remove_before_add_event(simulated)
         else:
@@ -253,14 +303,43 @@ class SequenceAugmentorBase(ABC):
     def correct_for_v_end_cut(self, simulated):
         equivalent_alleles = self.v_end_allele_correction_map[simulated['v_allele'][0]][
             min(simulated['v_sequence_end'], self.max_v_end_correction_map_value)]
-        simulated['v_allele'] = simulated['v_allele'] + list(set(equivalent_alleles)-set(simulated['v_allele']))
-
+        simulated['v_allele'] = simulated['v_allele'] + list(set(equivalent_alleles) - set(simulated['v_allele']))
 
     def correct_for_v_start_cut(self, simulated):
         removed = simulated['corruption_remove_amount']
         equivalent_alleles = self.v_start_allele_correction_map[simulated['v_allele'][0]][
             min(removed, self.max_v_start_correction_map_value)]
-        simulated['v_allele'] = simulated['v_allele'] + list(set(equivalent_alleles)-set(simulated['v_allele']))
+        simulated['v_allele'] = simulated['v_allele'] + list(set(equivalent_alleles) - set(simulated['v_allele']))
+
+    def correct_for_v_start_add(self, simulated):
+        """
+        this method will take the simulated sequence and check whether it had an Remove event and then an Add event,
+        In such a case we should test the add section and validated that it didnt recreate the section that was removed
+        if it does, we should adjust the v start and position accordingly.
+        :param simulated:
+        :return:
+        """
+
+        if simulated['corruption_event'] == 'remove_before_add':
+            amount_added = simulated['corruption_add_amount']
+            amount_removed = simulated['corruption_remove_amount']
+
+            add_section = simulated['sequence'][:amount_added]
+            removed_section = self.v_dict[simulated['v_allele'][0]][:amount_removed]
+
+            min_length = min(len(add_section), len(removed_section))
+            to_adjust = 0
+            for i in range(1, min_length + 1):
+                # Compare characters from the end
+                if add_section[-i] == removed_section[-i]:
+                    to_adjust += 1
+                else:  # Mismatch found, halt the iteration
+                    break
+
+            # Adjust V Start
+            simulated['v_sequence_start'] -= to_adjust
+            # Adjust Removed Amount
+            simulated['corruption_remove_amount'] -= to_adjust
 
     def correct_mutation_rate(self, simulated):
         """
