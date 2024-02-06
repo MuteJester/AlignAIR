@@ -140,9 +140,6 @@ class SequenceAugmentorBase(ABC):
         return [i for i in n_positions if
                 simulated[f'{allele}_sequence_start'] <= i <= simulated[f'{allele}_sequence_end']]
 
-    def get_v_ambiguous_alleles_due_to_n_addition(self, simulated, add_ns):
-        pass
-
     # Noise Introducing Methods
     def insert_Ns(self, simulated):
         sequence = simulated['sequence']

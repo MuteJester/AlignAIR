@@ -2,6 +2,7 @@ import pickle
 import random
 import numpy as np
 import scipy.stats as st
+from SequenceSimulation.utilities import AlleleNComparer
 
 from AlingAIRR_Sequence_Simulator import Event
 from SequenceSimulation.sequence import HeavyChainSequence
@@ -9,7 +10,6 @@ from SequenceSimulation.simulation import SequenceAugmentorArguments
 from SequenceSimulation.simulation.sequence_augmentor_base import SequenceAugmentorBase
 from SequenceSimulation.utilities.data_config import DataConfig
 import base64
-
 
 class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
     alleles_used = ['v', 'd', 'j']
@@ -55,8 +55,8 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
                 self.d_trim_correction_map = pickle.load(h)
 
         with resources.path('SequenceSimulation.data', 'IGHV_N_AMBIGUITY_CORRECTION_GRAPH.pkl') as data_path:
-            with open(data_path, 'rb') as h:
-                self.v_n_ambiguity_comparer = pickle.load(h)
+            self.v_n_ambiguity_comparer =  AlleleNComparer()
+            self.v_n_ambiguity_comparer.load(data_path)
 
     def correct_for_d_trims(self, simulated):
         # Get the 5' and 3' trims of the d allele in the simulated sequence

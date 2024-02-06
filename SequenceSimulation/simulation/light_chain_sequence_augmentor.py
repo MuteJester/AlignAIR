@@ -1,14 +1,13 @@
 import pickle
 import random
-
 import numpy as np
 import scipy.stats as st
+from SequenceSimulation.utilities import AlleleNComparer
 from SequenceSimulation.sequence import LightChainType
 from SequenceSimulation.sequence import LightChainSequence
 from SequenceSimulation.simulation import SequenceAugmentorArguments
 from SequenceSimulation.simulation.sequence_augmentor_base import SequenceAugmentorBase
 from SequenceSimulation.utilities.data_config import DataConfig
-
 
 class LightChainSequenceAugmentor(SequenceAugmentorBase):
     alleles_used = ['v', 'j']
@@ -46,6 +45,11 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
                     self.v_end_allele_correction_map = pickle.load(h)
                     self.max_v_end_correction_map_value = max(
                         self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
+
+            with resources.path('SequenceSimulation.data', 'IGKV_N_AMBIGUITY_CORRECTION_GRAPH.pkl') as data_path:
+                self.v_n_ambiguity_comparer = AlleleNComparer()
+                self.v_n_ambiguity_comparer.load(data_path)
+
         else:
             # for lambda
             with resources.path('SequenceSimulation.data', 'IGLV_ALLELE_5_PRIME_SIMILARITY_MAP.pkl') as data_path:
@@ -59,6 +63,12 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
                     self.v_end_allele_correction_map = pickle.load(h)
                     self.max_v_end_correction_map_value = max(
                         self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
+
+            with resources.path('SequenceSimulation.data', 'IGLV_N_AMBIGUITY_CORRECTION_GRAPH.pkl') as data_path:
+                self.v_n_ambiguity_comparer = AlleleNComparer()
+                self.v_n_ambiguity_comparer.load(data_path)
+ 
+
 
     # Sequence Simulation
     def simulate_sequence(self):

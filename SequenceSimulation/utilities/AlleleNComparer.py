@@ -1,3 +1,5 @@
+import pickle
+
 class AlleleNComparer:
     def __init__(self):
         self.alleles = {}  # Stores the sequences of each allele
@@ -12,17 +14,11 @@ class AlleleNComparer:
         target_sequence = self.alleles[allele_id]
         indistinguishable_alleles = set()
 
-        # Iterate through all alleles and compare them at non-N positions
         for other_allele_id, sequence in self.alleles.items():
             is_indistinguishable = True
-
-            # Only compare up to the length of the shorter allele
             for pos in range(min(len(target_sequence), len(sequence))):
-                # Skip comparison at 'N' positions
                 if pos in n_positions:
                     continue
-
-                # If nucleotides differ at any non-'N' position, alleles are distinguishable
                 if target_sequence[pos] != sequence[pos]:
                     is_indistinguishable = False
                     break
@@ -31,3 +27,14 @@ class AlleleNComparer:
                 indistinguishable_alleles.add(other_allele_id)
 
         return indistinguishable_alleles
+
+    def save(self, filename):
+        """Saves the alleles dictionary to a file using pickle."""
+        with open(filename, 'wb') as file:
+            pickle.dump(self.alleles, file)
+
+    def load(self, filename):
+        """Loads the alleles dictionary from a file using pickle."""
+        with open(filename, 'rb') as file:
+            self.alleles = pickle.load(file)
+
