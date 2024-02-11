@@ -4,7 +4,6 @@ import numpy as np
 import scipy.stats as st
 from SequenceSimulation.utilities import AlleleNComparer
 
-from AlingAIRR_Sequence_Simulator import Event
 from SequenceSimulation.sequence import HeavyChainSequence
 from SequenceSimulation.simulation import SequenceAugmentorArguments
 from SequenceSimulation.simulation.sequence_augmentor_base import SequenceAugmentorBase

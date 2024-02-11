@@ -12,7 +12,7 @@ from tensorflow.keras.layers import (
 )
 from Models.HeavyChain.losses import d_loss
 from Models.Layers.Layers import ConvResidualFeatureExtractionBlock
-from VDeepJLayers import (
+from Models.Layers import (
     TokenAndPositionEmbedding, MinMaxValueConstraint
 )
 

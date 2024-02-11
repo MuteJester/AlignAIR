@@ -242,7 +242,16 @@ def create_allele_dict(fasta):
     allele_class_map = {'V':VAllele,'D':DAllele,'J':JAllele}
     with open(fasta) as f:
         for header, seq in parse_fasta(f):
-            allele = header.split("|")[1]
+            
+            header = header.replace(">","") # clean the fasta sequence tag
+            seq = seq.lower() # make sure the sequences is in lower cases
+            
+            allele = header.split("|") # leave the IMGT option, but allow OGRDB reference
+            if len(allele) == 1:
+                allele = allele[0]
+            else:
+                allele = allele[1]
+                
             segment = None
 
             if "-" in allele:
@@ -265,9 +274,15 @@ def create_allele_dict(fasta):
                 segment = 'J'
 
             gene = allele.split("*")[0]
-            coding = header.split("|")[3]
-            ungapped_length = header.split("|")[6].split(" ")[0]
-
+            
+            coding = header.split("|") # extract the coding tag from IMGT references, OGRDB only include functional sequences 
+            if len(coding) == 1:
+                coding = "F"
+            else:
+                coding = coding[3]  
+                
+            ungapped_length = len(seq.replace(".","")) # get the length of the sequence
+            
             if "partial" not in header and (coding == "F" or coding == "ORF"):
                 if segment is not None:
                     allele_dict[gene].append(allele_class_map[segment](allele, seq, ungapped_length))

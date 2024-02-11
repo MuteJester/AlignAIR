@@ -33,6 +33,9 @@ class DataConfig:
         if data_folder is not None:
             self._load_data()
 
+        self.correction_maps = dict()
+        self.asc_tables = dict()
+
         # Settings
         self.trim_modes = {'V': TrimMode.DEFAULT, 'D': TrimMode.DEFAULT, 'J': TrimMode.DEFAULT} if trim_modes is None\
             else trim_modes
@@ -181,3 +184,5 @@ class DataConfig:
 
         # GENERATE LOCUS
         self._load_locus()
+
+
