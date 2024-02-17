@@ -37,25 +37,18 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         of a given allele what option are equally likely
         :return:
         """
-        with resources.path('SequenceSimulation.data', 'IGHV_ALLELE_5_PRIME_SIMILARITY_MAP.pkl') as data_path:
-            with open(data_path, 'rb') as h:
-                self.v_start_allele_correction_map = pickle.load(h)
-                self.max_v_start_correction_map_value = max(
-                    self.v_start_allele_correction_map[list(self.v_start_allele_correction_map)[0]])
 
-        with resources.path('SequenceSimulation.data', 'IGHV_ALLELE_3_PRIME_SIMILARITY_MAP.pkl') as data_path:
-            with open(data_path, 'rb') as h:
-                self.v_end_allele_correction_map = pickle.load(h)
-                self.max_v_end_correction_map_value = max(
-                    self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
+        self.v_start_allele_correction_map = self.dataconfig.correction_maps['V_5_TRIM_SIMILARITY_MAP']
+        self.max_v_start_correction_map_value = max(
+        self.v_start_allele_correction_map[list(self.v_start_allele_correction_map)[0]])
 
-        with resources.path('SequenceSimulation.data', 'IGHD_TRIM_SIMILARITY_MAP.pkl') as data_path:
-            with open(data_path, 'rb') as h:
-                self.d_trim_correction_map = pickle.load(h)
+        self.v_end_allele_correction_map = self.dataconfig.correction_maps['V_3_TRIM_SIMILARITY_MAP']
+        self.max_v_end_correction_map_value = max(
+        self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
 
-        with resources.path('SequenceSimulation.data', 'IGHV_N_AMBIGUITY_CORRECTION_GRAPH.pkl') as data_path:
-            self.v_n_ambiguity_comparer =  AlleleNComparer()
-            self.v_n_ambiguity_comparer.load(data_path)
+        self.d_trim_correction_map = self.dataconfig.correction_maps['D_5_3_TRIM_SIMILARITY_MAP']
+
+        self.v_n_ambiguity_comparer =  self.dataconfig.correction_maps['V_N_AMBIGUITY_CORRECTION_GRAPH']
 
     def correct_for_d_trims(self, simulated):
         # Get the 5' and 3' trims of the d allele in the simulated sequence

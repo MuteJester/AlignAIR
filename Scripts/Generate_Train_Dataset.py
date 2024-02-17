@@ -22,6 +22,16 @@ import requests
 import argparse
 from SequenceSimulation.utilities import AlleleNComparer
 
+import os
+
+def get_script_path(script_name):
+    # Get the directory of the current file
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Construct the path to the script
+    script_path = os.path.join(current_dir, script_name)
+
+    return script_path
 
 parameters = {
     

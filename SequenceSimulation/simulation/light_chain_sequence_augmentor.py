@@ -32,41 +32,16 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         :return:
         """
 
-        # for kappa
-        if self.chain_type == LightChainType.KAPPA:
-            with resources.path('SequenceSimulation.data', 'IGKV_ALLELE_5_PRIME_SIMILARITY_MAP.pkl') as data_path:
-                with open(data_path, 'rb') as h:
-                    self.v_start_allele_correction_map = pickle.load(h)
-                    self.max_v_start_correction_map_value = max(
-                        self.v_start_allele_correction_map[list(self.v_start_allele_correction_map)[0]])
+        self.v_start_allele_correction_map = self.dataconfig.correction_maps['V_5_TRIM_SIMILARITY_MAP']
+        self.max_v_start_correction_map_value = max(
+        self.v_start_allele_correction_map[list(self.v_start_allele_correction_map)[0]])
 
-            with resources.path('SequenceSimulation.data', 'IGKV_ALLELE_3_PRIME_SIMILARITY_MAP.pkl') as data_path:
-                with open(data_path, 'rb') as h:
-                    self.v_end_allele_correction_map = pickle.load(h)
-                    self.max_v_end_correction_map_value = max(
-                        self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
+        self.v_end_allele_correction_map = self.dataconfig.correction_maps['V_3_TRIM_SIMILARITY_MAP']
+        self.max_v_end_correction_map_value = max(
+        self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
 
-            with resources.path('SequenceSimulation.data', 'IGKV_N_AMBIGUITY_CORRECTION_GRAPH.pkl') as data_path:
-                self.v_n_ambiguity_comparer = AlleleNComparer()
-                self.v_n_ambiguity_comparer.load(data_path)
+        self.v_n_ambiguity_comparer = self.dataconfig.correction_maps['V_N_AMBIGUITY_CORRECTION_GRAPH']
 
-        else:
-            # for lambda
-            with resources.path('SequenceSimulation.data', 'IGLV_ALLELE_5_PRIME_SIMILARITY_MAP.pkl') as data_path:
-                with open(data_path, 'rb') as h:
-                    self.v_start_allele_correction_map = pickle.load(h)
-                    self.max_v_start_correction_map_value = max(
-                        self.v_start_allele_correction_map[list(self.v_start_allele_correction_map)[0]])
-
-            with resources.path('SequenceSimulation.data', 'IGLV_ALLELE_3_PRIME_SIMILARITY_MAP.pkl') as data_path:
-                with open(data_path, 'rb') as h:
-                    self.v_end_allele_correction_map = pickle.load(h)
-                    self.max_v_end_correction_map_value = max(
-                        self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
-
-            with resources.path('SequenceSimulation.data', 'IGLV_N_AMBIGUITY_CORRECTION_GRAPH.pkl') as data_path:
-                self.v_n_ambiguity_comparer = AlleleNComparer()
-                self.v_n_ambiguity_comparer.load(data_path)
  
 
 
