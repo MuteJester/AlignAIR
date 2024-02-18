@@ -113,7 +113,7 @@ class Trainer:
         self.history = self.model.fit(
             train_dataset,
             epochs=self.epochs,
-            steps_per_epoch=self.steps_per_epoch // self.batch_size,
+            steps_per_epoch=max(1,self.steps_per_epoch // self.batch_size),
             verbose=self.verbose,
             callbacks=_callbacks
 
