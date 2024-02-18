@@ -1,0 +1,27 @@
+parameter,value,description
+chain_type,heavy,What chain type to simulate data for and which model to use
+data_config_heavy,E:\Immunobiology\AlignAIRR\SequenceSimulation\data\HeavyChain_DataConfig_OGRDB_V2.pkl,Path to heavy chain data config file
+data_config_kappa,,Path to kappa data config file
+data_config_lambda,,Path to lambda data config file
+number_of_train_samples,10000,Number of samples to generate for traininig
+min_mutation_rate,0.003,The minimum mutation rate
+max_mutation_rate,0.25,The maximum mutation rate.
+n_ratio,0.02,The ratio of N's inserted to the sequence.
+max_sequence_length,512,The Maximum Sequence Length
+mutation_model,S5F,The Mutation Model Used to Mutate Sequences
+nucleotide_add_coefficient,210,The coefficient for the nucleotide add distribution
+nucleotide_remove_coefficient,310,The coefficient for the nucleotide remove distribution
+nucleotide_add_after_remove_coefficient,50,The coefficient for the nucleotide add after remove distribution
+random_sequence_add_proba,1,The probability of adding a random sequence to the 5 prime end of the v allele
+single_base_stream_proba,0,The probability of adding a single base stream  to the 5 prime end of the v allele
+duplicate_leading_proba,0,The probability of duplicating the leading base  to the 5 prime end of the v allele
+random_allele_proba,0,The probability of adding a random allele  to the 5 prime end of the v allele
+corrupt_proba,0.7,The probability of corrupting the sequence from the start
+short_d_length,5,"The minimum length required from the D allele to not be tagged as ""Short-D"""
+kappa_lambda_ratio,0.5,The Ratio of Kappa to Lambda Sequences in a Light Chain Dataset
+save_mutations_record,0,Whether to save the mutation records for each sequences
+save_ns_record,0,Whether to save the N records for each sequence
+data_save_path,C:\Users\Tomas\Downloads\train_dataset.csv,Where to save training dataset
+model_save_path,C:\Users\Tomas\Downloads\,where to save trained model
+training_epochs,2,Number of training epochs
+training_batch_size,512,Training batch size

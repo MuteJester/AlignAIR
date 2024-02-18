@@ -17,11 +17,10 @@ from Trainers import Trainer
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='AlingAIRR Model Trainer from Scratch')
-    #parser.add_argument('--parameter_csv_file', type=str, required=True, help='data config path for heavy chain or lambda chain')
-    #args = parser.parse_args()
+    parser.add_argument('--parameter_csv_file', type=str, required=True, help='data config path for heavy chain or lambda chain')
+    args = parser.parse_args()
 
-    #parameters_df = pd.read_csv(args.parameter_csv_file,encoding='utf8')
-    parameters_df = pd.read_csv('E:\Immunobiology\AlignAIRR\API\MTFS_parameters.csv',encoding='utf8')
+    parameters_df = pd.read_csv(args.parameter_csv_file,encoding='utf8')
     # Convert parameters DataFrame to a dictionary
     parameters = parameters_df.set_index('parameter')['value'].to_dict()
     # Convert all non-string values to strings
