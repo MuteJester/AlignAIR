@@ -18,18 +18,10 @@ from multiprocessing import Pool, cpu_count
 from PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
 from PostProcessing.AlleleSelector import DynamicConfidenceThreshold, CappedDynamicConfidenceThreshold
 import logging
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-
-tokenizer_dictionary = {
-    "A": 1,
-    "T": 2,
-    "G": 3,
-    "C": 4,
-    "N": 5,
-    "P": 0,  # pad token
-}
 
 
 def encode_and_equal_pad_sequence(sequence, max_seq_length, tokenizer_dictionary):
@@ -91,72 +83,41 @@ def process_csv_and_tokenize(sequences, max_seq_length, tokenizer_dictionary):
 
     return tokenized_matrix
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='AlingAIRR Model Prediction')
-    parser.add_argument('--model_checkpoint', type=str, required=True, help='path to saved alignairr weights')
-    parser.add_argument('--save_path', type=str, required=True, help='where to save the outputed predictions')
-    parser.add_argument('--chain_type', type=str, required=True, help='heavy / light')
-    parser.add_argument('--sequences', type=str, required=True,
-                        help='path to csv/tsv file with sequences in a column called "sequence" ')
-    parser.add_argument('--lambda_data_config', type=str, required=False, help='path to lambda chain data config')
-    parser.add_argument('--kappa_data_config', type=str, required=False, help='path to  kappa chain data config')
-    parser.add_argument('--heavy_data_config', type=str, required=False, help='path to heavy chain  data config')
-
-    parser.add_argument('--v_allele_threshold', type=float, default=0.9, help='threshold for v allele prediction')
-    parser.add_argument('--d_allele_threshold', type=float, default=0.2, help='threshold for d allele prediction')
-    parser.add_argument('--j_allele_threshold', type=float, default=0.8, help='threshold for j allele prediction')
-    parser.add_argument('--v_cap', type=int, default=3, help='cap for v allele calls')
-    parser.add_argument('--d_cap', type=int, default=3, help='cap for d allele calls')
-    parser.add_argument('--j_cap', type=int, default=3, help='cap for j allele calls')
-
-    args = parser.parse_args()
-    chain_type = args.chain_type
+def setup_logging():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-    ################################### LOAD MODEL #############################################
-    logging.info('Loading Dataset Object')
+def load_config(chain_type, config_paths):
     if chain_type == 'heavy':
-        with open(args.heavy_data_config, 'rb') as h:
-            heavychain_config = pickle.load(h)
-
-        dataset = HeavyChainDataset(data_path=args.sequences,
-                                    dataconfig=heavychain_config, batch_read_file=True)
-
+        with open(config_paths['heavy'], 'rb') as h:
+            return {'heavy':pickle.load(h)}
     elif chain_type == 'light':
-        with open(args.kappa_data_config, 'rb') as h:
-            lightchain_kappa_config = pickle.load(h)
-        with open(args.lambda_data_config, 'rb') as h:
-            lightchain_lambda_config = pickle.load(h)
-
-        dataset = LightChainDataset(data_path=args.sequences,
-                                    lambda_dataconfig=lightchain_lambda_config,
-                                    kappa_dataconfig=lightchain_kappa_config,
-                                    batch_read_file=True)
+        with open(config_paths['kappa'], 'rb') as h:
+            kappa_config = pickle.load(h)
+        with open(config_paths['lambda'], 'rb') as h:
+            lambda_config = pickle.load(h)
+        return {'kappa':kappa_config, 'lambda':lambda_config}
     else:
         raise ValueError(f'Unknown Chain Type: {chain_type}')
 
+def read_sequences(file_path):
+    sep = ',' if '.csv' in file_path else '\t'
+    return pd.read_csv(file_path, usecols=['sequence'], sep=sep)
 
-    ################################### LOAD DATA #############################################
-    logging.info('Reading Target Sequences')
-    sep = ',' if '.csv' in args.sequences else '\t'
 
-    try:
-        data = pd.read_csv(args.sequences, usecols=['sequence'], sep=sep)
-    except ValueError:
-        data = pd.read_csv(args.sequences, usecols=['sequence'], sep=sep)
+def load_model(chain_type, model_checkpoint, config=None):
 
-    file_name = args.sequences.split('/')[-1].split('.')[0]
 
-    if args.save_path == 'None':
-        args.save_path = args.model_checkpoint.split('saved_models')[0]
-
-    logging.info('Tokenizing Sequences')
-    eval_dataset_ = process_csv_and_tokenize(data['sequence'].to_list(), 512, tokenizer_dictionary)
-    print('Train Dataset Encoded!', eval_dataset_.shape)
-
-    logging.info('Loading Model')
-    print('Init Model..', '> ', args.model_checkpoint)
+    if chain_type == 'heavy':
+        dataset = HeavyChainDataset(data_path=args.sequences,
+                                    dataconfig=config['heavy'], batch_read_file=True)
+    elif chain_type == 'light':
+        dataset = LightChainDataset(data_path=args.sequences,
+                                    lambda_dataconfig=config['lambda'],
+                                    kappa_dataconfig=config['kappa'],
+                                    batch_read_file=True)
+    else:
+        raise ValueError(f'Unknown Chain Type: {chain_type}')
 
     trainer = Trainer(
         model=LightChainAlignAIRR if chain_type == 'light' else HeavyChainAlignAIRR,
@@ -168,36 +129,31 @@ if __name__ == '__main__':
 
     trainer.model.build({'tokenized_sequence': (512, 1)})
 
-    MODEL_CHECKPOINT = args.model_checkpoint
+    MODEL_CHECKPOINT = model_checkpoint
     print('Loading: ', MODEL_CHECKPOINT.split('/')[-1])
     trainer.model.load_weights(
         MODEL_CHECKPOINT)
-    model = trainer.model
     print('Model Loaded!')
 
-    padded_seqs_tensor = tf.convert_to_tensor(eval_dataset_, dtype=tf.uint8)
-    dataset_from_tensors = tf.data.Dataset.from_tensor_slices({
-        'tokenized_sequence': padded_seqs_tensor})
-    dataset = (
-        dataset_from_tensors
-        .batch(512 * 20)
-        .prefetch(tf.data.AUTOTUNE)
-    )
-
-    ################################### PASS DATA THROUGH MODEL #############################################
+    return trainer.model
 
 
-    raw_predictions = []
+def make_predictions(model, sequences, batch_size=512):
+    dataset = tf.data.Dataset.from_tensor_slices({'tokenized_sequence': sequences})
+    dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-    for i in tqdm(dataset):
-        pred = trainer.model.predict(i, verbose=False, batch_size=256)
-        raw_predictions.append(pred)
+    predictions = []
+    for batch in tqdm(dataset):
+        predictions.append(model.predict(batch, verbose=0))
 
+    return predictions
+
+def post_process_results(predictions, chain_type, config,sequences):
     mutation_rate, v_allele, d_allele, j_allele = [], [], [], []
     v_segment, d_segment, j_segment = [], [], []
     type_ = []
 
-    for i in raw_predictions:
+    for i in predictions:
         mutation_rate.append(i['mutation_rate'])
         v_allele.append(i['v_allele'])
 
@@ -236,17 +192,17 @@ if __name__ == '__main__':
     predicted_alleles = {}
     predicted_allele_likelihoods = {}
     threshold_objects = {}
+
     for _gene in alleles:
         if chain_type == 'heavy':
-            extractor = CappedDynamicConfidenceThreshold(heavy_dataconfig=heavychain_config)
+            extractor = CappedDynamicConfidenceThreshold(heavy_dataconfig=config['heavy'])
         else:
-            extractor = CappedDynamicConfidenceThreshold(kappa_dataconfig=lightchain_kappa_config,
-                                                         lambda_dataconfig=lightchain_lambda_config)
+            extractor = CappedDynamicConfidenceThreshold(kappa_dataconfig=config['kappa'],
+                                                         lambda_dataconfig=config['lambda'])
 
         threshold_objects[_gene] = extractor
         selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene], n_process=1,
                                                  cap=caps[_gene], allele=_gene)
-
 
         predicted_alleles[_gene] = [i[0] for i in selected_alleles]
         predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
@@ -257,42 +213,106 @@ if __name__ == '__main__':
 
     germline_alignmnets = {}
 
-
     for _gene in segments:
         reference_alleles = threshold_objects[_gene].reference_map[_gene]
         mapper = HeuristicReferenceMatcher(reference_alleles)
-        mappings = mapper.match(sequences=data['sequence'].to_list(), segments=segments[_gene],
+        mappings = mapper.match(sequences=sequences, segments=segments[_gene],
                                 alleles=[i[0] for i in predicted_alleles[_gene]])
         germline_alignmnets[_gene] = mappings
 
-    ################################### GENERATE FINAL OUTPUT CSV #############################################
+    results = {
+        'predicted_alleles':predicted_alleles,
+        'germline_alignmnets':germline_alignmnets,
+        'predicted_allele_likelihoods':predicted_allele_likelihoods,
+        'mutation_rate':mutation_rate
+    }
+    if chain_type == 'light':
+        results['type_']=type_
+    return results
 
+
+def save_results(results, save_path,file_name,sequences):
     final_csv = pd.DataFrame({
-        'sequence': data['sequence'],
-        'v_call': [','.join(i) for i in predicted_alleles['v']],
-        'j_call': [','.join(i) for i in predicted_alleles['j']],
-        'v_sequence_start': [i['start_in_seq'] for i in germline_alignmnets['v']],
-        'v_sequence_end': [i['end_in_seq'] for i in germline_alignmnets['v']],
-        'j_sequence_start': [i['start_in_seq'] for i in germline_alignmnets['j']],
-        'j_sequence_end': [i['end_in_seq'] for i in germline_alignmnets['j']],
-        'v_germline_start': [max(0,i['start_in_ref']) for i in germline_alignmnets['v']],
-        'v_germline_end': [i['end_in_ref'] for i in germline_alignmnets['v']],
-        'j_germline_start': [max(0,i['start_in_ref']) for i in germline_alignmnets['j']],
-        'j_germline_end': [i['end_in_ref'] for i in germline_alignmnets['j']],
-        'v_likelihoods': predicted_allele_likelihoods['v'],
-        'j_likelihoods': predicted_allele_likelihoods['j']
+        'sequence': sequences,
+        'v_call': [','.join(i) for i in results['predicted_alleles']['v']],
+        'j_call': [','.join(i) for i in results['predicted_alleles']['j']],
+        'v_sequence_start': [i['start_in_seq'] for i in results['germline_alignmnets']['v']],
+        'v_sequence_end': [i['end_in_seq'] for i in results['germline_alignmnets']['v']],
+        'j_sequence_start': [i['start_in_seq'] for i in results['germline_alignmnets']['j']],
+        'j_sequence_end': [i['end_in_seq'] for i in results['germline_alignmnets']['j']],
+        'v_germline_start': [max(0, i['start_in_ref']) for i in results['germline_alignmnets']['v']],
+        'v_germline_end': [i['end_in_ref'] for i in results['germline_alignmnets']['v']],
+        'j_germline_start': [max(0, i['start_in_ref']) for i in results['germline_alignmnets']['j']],
+        'j_germline_end': [i['end_in_ref'] for i in results['germline_alignmnets']['j']],
+        'v_likelihoods': results['predicted_allele_likelihoods']['v'],
+        'j_likelihoods': results['predicted_allele_likelihoods']['j']
 
     })
     if chain_type == 'heavy':
-        final_csv['d_sequence_start'] = [i['start_in_seq'] for i in germline_alignmnets['d']]
-        final_csv['d_sequence_end'] = [i['end_in_seq'] for i in germline_alignmnets['d']]
-        final_csv['d_germline_start'] = [abs(i['start_in_ref']) for i in germline_alignmnets['d']]
-        final_csv['d_germline_end'] = [i['end_in_ref'] for i in germline_alignmnets['d']]
-        final_csv['d_call'] = [','.join(i) for i in predicted_alleles['d']]
+        final_csv['d_sequence_start'] = [i['start_in_seq'] for i in results['germline_alignmnets']['d']]
+        final_csv['d_sequence_end'] = [i['end_in_seq'] for i in results['germline_alignmnets']['d']]
+        final_csv['d_germline_start'] = [abs(i['start_in_ref']) for i in results['germline_alignmnets']['d']]
+        final_csv['d_germline_end'] = [i['end_in_ref'] for i in results['germline_alignmnets']['d']]
+        final_csv['d_call'] = [','.join(i) for i in results['predicted_alleles']['d']]
         final_csv['type'] = 'heavy'
     else:
-        final_csv['type'] = ['kappa' if i == 1 else 'lambda' for i in type_.astype(int).squeeze()]
+        final_csv['type'] = ['kappa' if i == 1 else 'lambda' for i in results['type_'].astype(int).squeeze()]
 
-    final_csv['mutation_rate'] = mutation_rate
+    final_csv['mutation_rate'] = results['mutation_rate']
 
-    final_csv.to_csv(args.save_path + file_name + '_alignairr_results.csv', index=False)
+    final_csv.to_csv(save_path + file_name + '_alignairr_results.csv', index=False)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='AlingAIRR Model Prediction')
+    parser.add_argument('--model_checkpoint', type=str, required=True, help='path to saved alignairr weights')
+    parser.add_argument('--save_path', type=str, required=True, help='where to save the outputed predictions')
+    parser.add_argument('--chain_type', type=str, required=True, help='heavy / light')
+    parser.add_argument('--sequences', type=str, required=True,
+                        help='path to csv/tsv file with sequences in a column called "sequence" ')
+    parser.add_argument('--lambda_data_config', type=str, required=False, help='path to lambda chain data config')
+    parser.add_argument('--kappa_data_config', type=str, required=False, help='path to  kappa chain data config')
+    parser.add_argument('--heavy_data_config', type=str, required=False, help='path to heavy chain  data config')
+    parser.add_argument('--max_input_size', type=int, default=512, help='maximum model input size')
+
+    parser.add_argument('--v_allele_threshold', type=float, default=0.9, help='threshold for v allele prediction')
+    parser.add_argument('--d_allele_threshold', type=float, default=0.2, help='threshold for d allele prediction')
+    parser.add_argument('--j_allele_threshold', type=float, default=0.8, help='threshold for j allele prediction')
+    parser.add_argument('--v_cap', type=int, default=3, help='cap for v allele calls')
+    parser.add_argument('--d_cap', type=int, default=3, help='cap for d allele calls')
+    parser.add_argument('--j_cap', type=int, default=3, help='cap for j allele calls')
+
+    args = parser.parse_args()
+    chain_type = args.chain_type
+    tokenizer_dictionary = {"A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0}  # pad token
+
+
+
+    # Load configuration
+    config_paths = {'heavy': args.heavy_data_config, 'kappa': args.kappa_data_config, 'lambda': args.lambda_data_config}
+    config = load_config(args.chain_type, config_paths)
+
+    # Read sequences
+    sequences = read_sequences(args.sequences)['sequence'].tolist()
+    file_name = args.sequences.split('/')[-1].split('.')[0]
+
+
+    # Tokenize sequences
+    tokenized_sequences = tokenize_sequences(sequences, args.max_input_size, tokenizer_dictionary, verbose=True)
+
+    # Load model
+    model = load_model(args.chain_type, args.model_checkpoint, config)
+
+    # Make predictions
+    predictions = make_predictions(model, tokenized_sequences)
+
+    # Post-process results
+    results = post_process_results(predictions, args.chain_type, config,sequences)
+
+    # Save results
+    save_results(results, args.save_path,file_name,sequences)
+
+
+
+
+
