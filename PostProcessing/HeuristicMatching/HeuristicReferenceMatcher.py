@@ -171,6 +171,22 @@ class HeuristicReferenceMatcher:
 
         return best_pos
 
+    def find_best_aligning_window(self, long_segment, ref_seq):
+        ref_length = len(ref_seq)
+        max_similarity = -1
+        best_start = 0
+        best_end = ref_length
+
+        for i in range(len(long_segment) - ref_length + 1):
+            window = long_segment[i:i + ref_length]
+            similarity = self.hamming_similarity(window, ref_seq)
+            if similarity > max_similarity:
+                max_similarity = similarity
+                best_start = i
+                best_end = i + ref_length
+
+        return best_start, best_end, max_similarity
+
     def match(self, sequences, segments, alleles):
         starts, ends = self.apply_segment_thresholding(segments, t=0.2)
         padding_sizes = np.array([calculate_pad_size(seq) for seq in sequences])
