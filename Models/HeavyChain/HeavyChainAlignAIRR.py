@@ -31,7 +31,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
       """
 
     def __init__(self, max_seq_length, v_allele_count, d_allele_count, j_allele_count):
-        super(HcExperimental, self).__init__()
+        super(HeavyChainAlignAIRR, self).__init__()
 
         # weight initialization distribution
         self.initializer = tf.keras.initializers.GlorotUniform()#RandomNormal(mean=0.1, stddev=0.02)
