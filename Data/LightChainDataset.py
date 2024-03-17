@@ -15,7 +15,7 @@ class LightChainDataset(DatasetBase):
         self.dataconfig = [kappa_dataconfig,lambda_dataconfig]
         self.required_data_columns = ['sequence', 'v_sequence_start', 'v_sequence_end',
                                       'j_sequence_start', 'j_sequence_end', 'v_allele',
-                                      'j_allele', 'type', 'mutation_rate']
+                                      'j_allele', 'type', 'mutation_rate','indels']
 
     def derive_call_one_hot_representation(self):
         v_alleles = sorted(list(self.v_kappa_dict)) + sorted(list(self.v_lambda_dict))
@@ -64,11 +64,17 @@ class LightChainDataset(DatasetBase):
                 batch.loc[:, _gene + '_' + _position] += paddings
 
         segments = {'v': [], 'j': []}
+        indel_counts = []
 
         for ax, row in batch.iterrows():
+            indels = eval(row['indels'])
+            insertions = [i for i in indels if 'I' in indels[i]]
+            indel_counts.append(len(indels))
             for _gene in ['v', 'j']:
                 empty = np.zeros((1, self.max_seq_length))
                 empty[0, row[_gene + '_sequence_start']:row[_gene + '_sequence_end']] = 1
+                for I in insertions:
+                    empty[0, I] = 0
                 segments[_gene].append(empty)
 
         for _gene in ['v', 'j']:
@@ -89,7 +95,9 @@ class LightChainDataset(DatasetBase):
             "v_allele": self.one_hot_encode_allele("V", v_alleles),
             "j_allele": self.one_hot_encode_allele("J", j_alleles),
             'mutation_rate': batch.mutation_rate.values.reshape(-1, 1),
-            'type': np.array(chain_type).reshape(-1, 1)
+            'type': np.array(chain_type).reshape(-1, 1),
+            'indel_count': np.array(indel_counts).reshape(-1, 1)
+
         }
         return x, y
 

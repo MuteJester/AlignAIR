@@ -245,8 +245,9 @@ def save_results(results, save_path,file_name,sequences):
         'j_germline_start': [max(0, i['start_in_ref']) for i in results['germline_alignmnets']['j']],
         'j_germline_end': [i['end_in_ref'] for i in results['germline_alignmnets']['j']],
         'v_likelihoods': results['predicted_allele_likelihoods']['v'],
-        'j_likelihoods': results['predicted_allele_likelihoods']['j']
-
+        'j_likelihoods': results['predicted_allele_likelihoods']['j'],
+        'j_indel': [i['indel'] for i in results['germline_alignmnets']['j']],
+        'v_indel': [i['indel'] for i in results['germline_alignmnets']['v']]
     })
     if chain_type == 'heavy':
         final_csv['d_sequence_start'] = [i['start_in_seq'] for i in results['germline_alignmnets']['d']]
@@ -255,6 +256,7 @@ def save_results(results, save_path,file_name,sequences):
         final_csv['d_germline_end'] = [i['end_in_ref'] for i in results['germline_alignmnets']['d']]
         final_csv['d_call'] = [','.join(i) for i in results['predicted_alleles']['d']]
         final_csv['type'] = 'heavy'
+        final_csv['d_indel'] = [i['indel'] for i in results['germline_alignmnets']['d']]
     else:
         final_csv['type'] = ['kappa' if i == 1 else 'lambda' for i in results['type_'].astype(int).squeeze()]
 

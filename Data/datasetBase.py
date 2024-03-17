@@ -104,7 +104,6 @@ class DatasetBase(ABC):
         # The start index of the unpadded sequence is always 0 since we're not padding at the start
         return encoded_sequence, 0
 
-
     @abstractmethod
     def get_ohe_reverse_mapping(self):
         pass
@@ -116,7 +115,8 @@ class DatasetBase(ABC):
         for sample in ground_truth_labels:
             ohe = np.zeros(allele_count)
             for allele in sample:
-                ohe[allele_call_ohe[allele]] = 1
+                if allele in allele_call_ohe:
+                    ohe[allele_call_ohe[allele]] = 1
             result.append(ohe)
         return np.vstack(result)
 
@@ -171,7 +171,6 @@ class DatasetBase(ABC):
 
         return dataset
 
-
     @abstractmethod
     def generate_model_params(self):
         pass
@@ -210,7 +209,7 @@ class DatasetBase(ABC):
                 if len(set(usecols) & set(headers)) < len(usecols):
                     for col in usecols:
                         if col not in headers:
-                            print('!!!!!!!!!!!!!!!!!!!!!!!!!!',col,'!!!!!!!!!!!!!!!')
+                            print('!!!!!!!!!!!!!!!!!!!!!!!!!!', col, '!!!!!!!!!!!!!!!')
                     raise ValueError(f"Not all required columns were provided in train data file: {path}")
 
                 batch = {i: [] for i in headers}

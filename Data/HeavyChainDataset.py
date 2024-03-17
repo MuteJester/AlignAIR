@@ -7,13 +7,12 @@ from SequenceSimulation.utilities import DataConfig
 
 class HeavyChainDataset(DatasetBase):
     def __init__(self, data_path, dataconfig: DataConfig, batch_size=64, max_sequence_length=512, batch_read_file=False,
-                 nrows=None,seperator=','):
-        super().__init__(data_path, dataconfig,batch_size,max_sequence_length,batch_read_file,nrows,seperator)
+                 nrows=None, seperator=','):
+        super().__init__(data_path, dataconfig, batch_size, max_sequence_length, batch_read_file, nrows, seperator)
 
         self.required_data_columns = ['sequence', 'v_sequence_start', 'v_sequence_end', 'd_sequence_start',
-                                      'd_sequence_end', 'j_sequence_start', 'j_sequence_end', 'v_allele',
-                                      'd_allele', 'j_allele', 'mutation_rate']
-
+                                      'd_sequence_end', 'j_sequence_start', 'j_sequence_end', 'v_call',
+                                      'd_call', 'j_call', 'mutation_rate', 'indels']
 
     def derive_call_one_hot_representation(self):
 
@@ -34,14 +33,14 @@ class HeavyChainDataset(DatasetBase):
         self.properties_map = {
             "V": {"allele_count": self.v_allele_count, "allele_call_ohe": self.v_allele_call_ohe},
             "J": {"allele_count": self.j_allele_count, "allele_call_ohe": self.j_allele_call_ohe},
-            "D":{"allele_count": self.d_allele_count, "allele_call_ohe": self.d_allele_call_ohe}
-            }
+            "D": {"allele_count": self.d_allele_count, "allele_call_ohe": self.d_allele_call_ohe}
+        }
 
     def derive_call_dictionaries(self):
         self.v_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.v_alleles for j in
                        self.dataconfig.v_alleles[i]}
         self.d_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.d_alleles for j in
-                           self.dataconfig.d_alleles[i]}
+                       self.dataconfig.d_alleles[i]}
         self.j_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.j_alleles for j in
                        self.dataconfig.j_alleles[i]}
 
@@ -69,20 +68,25 @@ class HeavyChainDataset(DatasetBase):
         x = {"tokenized_sequence": encoded_sequences}
 
         segments = {'v': [], 'd': [], 'j': []}
-
+        indel_counts = []
         for ax, row in batch.iterrows():
+            indels = eval(row['indels'])
+            insertions = [i for i in indels if 'I' in indels[i]]
+            indel_counts.append(len(indels))
             for _gene in ['v', 'd', 'j']:
                 empty = np.zeros((1, self.max_seq_length))
                 empty[0, row[_gene + '_sequence_start']:row[_gene + '_sequence_end']] = 1
+                for I in insertions:
+                    empty[0, I] = 0
                 segments[_gene].append(empty)
 
         for _gene in ['v', 'd', 'j']:
             segments[_gene] = np.vstack(segments[_gene])
 
         # Convert Comma Seperated Allele Ground Truth Labels into Lists
-        v_alleles = batch.v_allele.apply(lambda x: set(x.split(',')))
-        d_alleles = batch.d_allele.apply(lambda x: set(x.split(',')))
-        j_alleles = batch.j_allele.apply(lambda x: set(x.split(',')))
+        v_alleles = batch.v_call.apply(lambda x: set(x.split(',')))
+        d_alleles = batch.d_call.apply(lambda x: set(x.split(',')))
+        j_alleles = batch.j_call.apply(lambda x: set(x.split(',')))
 
         y = {
             "v_segment": segments['v'],
@@ -91,7 +95,9 @@ class HeavyChainDataset(DatasetBase):
             "v_allele": self.one_hot_encode_allele("V", v_alleles),
             "d_allele": self.one_hot_encode_allele("D", d_alleles),
             "j_allele": self.one_hot_encode_allele("J", j_alleles),
-            'mutation_rate': batch.mutation_rate.values.reshape(-1, 1)
+            'mutation_rate': batch.mutation_rate.values.reshape(-1, 1),
+            'indel_count': np.array(indel_counts).reshape(-1, 1)
+
         }
         return x, y
 

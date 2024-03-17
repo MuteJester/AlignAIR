@@ -187,7 +187,7 @@ class HeuristicReferenceMatcher:
 
         return best_start, best_end, max_similarity
 
-    def match(self, sequences, segments, alleles):
+    def match(self, sequences, segments, alleles,k=15,s=30):
         starts, ends = self.apply_segment_thresholding(segments, t=0.2)
         padding_sizes = np.array([calculate_pad_size(seq) for seq in sequences])
         starts -= padding_sizes
@@ -197,8 +197,7 @@ class HeuristicReferenceMatcher:
         ends[ends < 0] = 0
 
         results = []
-        k = 15
-        s = 30
+
 
         for sequence, start, end, allele in tqdm(zip(sequences, starts, ends, alleles), total=len(starts)):
             segmented_sequence = sequence[start:end]

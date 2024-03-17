@@ -31,10 +31,10 @@ class HeavyChainAlignAIRR(tf.keras.Model):
       """
 
     def __init__(self, max_seq_length, v_allele_count, d_allele_count, j_allele_count):
-        super(HeavyChainAlignAIRR, self).__init__()
+        super(HcExperimental, self).__init__()
 
         # weight initialization distribution
-        self.initializer = tf.keras.initializers.GlorotUniform()
+        self.initializer = tf.keras.initializers.GlorotUniform()#RandomNormal(mean=0.1, stddev=0.02)
 
         # Model Params
         self.max_seq_length = int(max_seq_length)
@@ -130,6 +130,9 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         self.classification_loss_tracker = tf.keras.metrics.Mean(name="classification_loss")
         # Track the mutation rate loss
         self.mutation_rate_loss_tracker = tf.keras.metrics.Mean(name="mutation_rate_loss")
+        # Track the mutation indel count
+        self.indel_count_loss_tracker = tf.keras.metrics.Mean(name="indel_count_loss")
+
 
     def reshape_and_cast_input(self, input_s):
         a = K.reshape(input_s, (-1, self.max_seq_length))
@@ -141,11 +144,11 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
     def _init_masking_layers(self):
         self.v_mask_gate = Multiply()
-        self.v_mask_reshape = Reshape((512, 1))
+        self.v_mask_reshape = Reshape((self.max_seq_length, 1))
         self.d_mask_gate = Multiply()
-        self.d_mask_reshape = Reshape((512, 1))
+        self.d_mask_reshape = Reshape((self.max_seq_length, 1))
         self.j_mask_gate = Multiply()
-        self.j_mask_reshape = Reshape((512, 1))
+        self.j_mask_reshape = Reshape((self.max_seq_length, 1))
 
     def _init_v_classification_layers(self):
         self.v_allele_mid = Dense(
@@ -208,6 +211,16 @@ class HeavyChainAlignAIRR(tf.keras.Model):
             , kernel_constraint=MinMaxValueConstraint(0, 1)
         )
 
+        self.indel_count_mid = Dense(
+            self.max_seq_length // 2, activation=act, name="indel_count_mid", kernel_initializer=self.initializer
+        )
+        self.indel_count_dropout = Dropout(0.05)
+        self.indel_count_head = Dense(
+            1, activation='relu', name="indel_count", kernel_initializer=self.initializer
+            , kernel_constraint=MinMaxValueConstraint(0, 50)
+        )
+
+
     def predict_segments(self, concatenated_signals):
         v_segment_mid = self.v_segment_mid(concatenated_signals)
         v_segment = self.v_segment_out(v_segment_mid)
@@ -222,7 +235,11 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         mutation_rate_mid = self.mutation_rate_dropout(mutation_rate_mid)
         mutation_rate = self.mutation_rate_head(mutation_rate_mid)
 
-        return v_segment, d_segment, j_segment, mutation_rate
+        indel_count_mid = self.indel_count_mid(concatenated_signals)
+        indel_count_mid = self.indel_count_dropout(indel_count_mid)
+        indel_count = self.indel_count_head(indel_count_mid)
+
+        return v_segment, d_segment, j_segment, mutation_rate,indel_count
 
     def _predict_vdj_set(self, v_feature_map, d_feature_map, j_feature_map):
         # ============================ V =============================
@@ -246,7 +263,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
         segmentation_features = self.segmentation_feature_extractor_block(input_embeddings)
 
-        v_segment, d_segment, j_segment, mutation_rate = self.predict_segments(segmentation_features)
+        v_segment, d_segment, j_segment, mutation_rate, indel_count = self.predict_segments(segmentation_features)
 
         reshape_masked_sequence_v = self.v_mask_reshape(v_segment)
         reshape_masked_sequence_d = self.d_mask_reshape(d_segment)
@@ -271,7 +288,8 @@ class HeavyChainAlignAIRR(tf.keras.Model):
             "v_allele": v_allele,
             "d_allele": d_allele,
             "j_allele": j_allele,
-            'mutation_rate': mutation_rate
+            'mutation_rate': mutation_rate,
+            'indel_count':indel_count
         }
 
     def get_segmentation_feature_map(self, inputs):
@@ -373,6 +391,10 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         mutation_rate_loss = tf.keras.metrics.mean_absolute_error(self.c2f32(y_true['mutation_rate']),
                                                                   self.c2f32(y_pred['mutation_rate']))
 
+        indel_count_loss = tf.keras.metrics.mean_absolute_error(self.c2f32(y_true['indel_count']),
+                                                                  self.c2f32(y_pred['indel_count']))
+
+
         classification_loss = (
                 self.v_class_weight * clf_v_loss
                 + self.d_class_weight * clf_d_loss
@@ -384,11 +406,11 @@ class HeavyChainAlignAIRR(tf.keras.Model):
                 self.segmentation_weight * total_segmentation_loss
                 + self.intersection_weight * total_intersection_loss
                 + self.classification_weight * classification_loss
-                + mutation_rate_loss
+                + mutation_rate_loss+indel_count_loss
 
         )
 
-        return total_loss, total_intersection_loss, total_segmentation_loss, classification_loss, mutation_rate_loss
+        return total_loss, total_intersection_loss, total_segmentation_loss, classification_loss, mutation_rate_loss,indel_count_loss
 
     def train_step(self, data):
         x, y = data
@@ -397,7 +419,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
             y_pred = self(x, training=True)  # Forward pass
 
             (
-                total_loss, total_intersection_loss, total_segmentation_loss, classification_loss, mutation_rate_loss
+                total_loss, total_intersection_loss, total_segmentation_loss, classification_loss, mutation_rate_loss,indel_count_loss
             ) = self.multi_task_loss(y, y_pred)  # loss function
 
         # Compute gradients
@@ -409,20 +431,21 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         self.compiled_metrics.update_state(y, y_pred)
 
         self.log_metrics(total_loss, total_intersection_loss, total_segmentation_loss, classification_loss,
-                         mutation_rate_loss)
+                         mutation_rate_loss,indel_count_loss)
 
         metrics = self.get_metrics_log()
 
         return metrics
 
     def log_metrics(self, total_loss, total_intersection_loss, total_segmentation_loss, classification_loss,
-                    mutation_rate_loss):
+                    mutation_rate_loss,indel_count_loss):
         # Compute our own metrics
         self.loss_tracker.update_state(total_loss)
         self.intersection_loss_tracker.update_state(total_intersection_loss)
         self.total_segmentation_loss_tracker.update_state(total_segmentation_loss)
         self.classification_loss_tracker.update_state(classification_loss)
         self.mutation_rate_loss_tracker.update_state(mutation_rate_loss)
+        self.indel_count_loss_tracker.update_state(indel_count_loss)
 
     def get_metrics_log(self):
         metrics = {m.name: m.result() for m in self.metrics}
@@ -431,6 +454,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         metrics["segmentation_loss"] = self.total_segmentation_loss_tracker.result()
         metrics["classification_loss"] = self.classification_loss_tracker.result()
         metrics["mutation_rate_loss"] = self.mutation_rate_loss_tracker.result()
+        metrics["indel_count_loss"] = self.indel_count_loss_tracker.result()
         return metrics
 
     def model_summary(self, input_shape):
