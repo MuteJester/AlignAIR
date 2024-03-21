@@ -2,3 +2,4 @@ sandbox_notebook.ipynb
 __pychache__/*
 *.pyc
 model/*
+/src/AlignAIR/Scripts/
