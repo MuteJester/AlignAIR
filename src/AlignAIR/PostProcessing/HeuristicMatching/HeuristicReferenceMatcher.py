@@ -25,7 +25,6 @@ class HeuristicReferenceMatcher:
     def __init__(self ,reference_alleles ,segment_threshold=0.2):
         self.reference_alleles = reference_alleles
 
-
     @staticmethod
     def apply_segment_thresholding(segments, t=0.3):
         mask = segments > t
@@ -44,10 +43,6 @@ class HeuristicReferenceMatcher:
     @staticmethod
     def hamming_distance(s1, s2):
         return sum(c1 != c2 for c1, c2 in zip(s1, s2)) + abs(len(s1 ) -len(s2))
-
-    @staticmethod
-    def hamming_similarity(s1, s2):
-        return sum(c1 == c2 for c1, c2 in zip(s1, s2)) - abs(len(s1) - len(s2))
 
     @staticmethod
     def calculate_pad_size(sequence, max_length=512):
@@ -96,7 +91,7 @@ class HeuristicReferenceMatcher:
 
         return alignment_score
 
-    def detect_indels(self, short_segment, ref_seq, k=20 ,s=25):
+    def align_with_germline(self, short_segment, ref_seq, k=20, s=25):
         if len(short_segment) < 20:
             indel_flag = False
             return indel_flag, -1, -1
@@ -146,62 +141,32 @@ class HeuristicReferenceMatcher:
                 if difference == 0:
                     break
 
-        # Indel flagging based on alignment length discrepancy
-        best_match_length = best_end_pos - best_start_pos
-        if best_match_length != L_seg:
-            indel_flag = True
-        else:
-            indel_flag = False
 
-        return indel_flag, best_start_pos, best_end_pos
 
-    def find_best_end_match(self, short_end_segment, ref_seq, k):
-        # Similar logic to find_best_start_match but starting from the end of ref_seq
-        min_difference = np.inf
-        best_pos = None
-        L_ref = len(ref_seq)
-        L_seg = len(short_end_segment)
+        return best_start_pos, best_end_pos
 
-        for offset in range(0, min(k + 1, L_ref - L_seg + 1)):
-            ref_window = ref_seq[L_ref - L_seg - offset:L_ref - offset]
-            difference = self.hamming_distance(short_end_segment, ref_window)
-            if difference < min_difference:
-                min_difference = difference
-                best_pos = (L_ref - L_seg - offset, L_ref - offset)
+    def match(self, sequences, segments, alleles,k=15,s=30,threshold=0.1,max_sequence_length=576):
 
-        return best_pos
-
-    def find_best_aligning_window(self, long_segment, ref_seq):
-        ref_length = len(ref_seq)
-        max_similarity = -1
-        best_start = 0
-        best_end = ref_length
-
-        for i in range(len(long_segment) - ref_length + 1):
-            window = long_segment[i:i + ref_length]
-            similarity = self.hamming_similarity(window, ref_seq)
-            if similarity > max_similarity:
-                max_similarity = similarity
-                best_start = i
-                best_end = i + ref_length
-
-        return best_start, best_end, max_similarity
-
-    def match(self, sequences, segments, alleles,k=15,s=30):
-        starts, ends = self.apply_segment_thresholding(segments, t=0.2)
-        padding_sizes = np.array([calculate_pad_size(seq) for seq in sequences])
+        # apply thresholding to extract start and end position from segmentation vector
+        starts, ends = self.apply_segment_thresholding(segments, t=threshold)
+        # extract padding sizes from sequences
+        padding_sizes = np.array([calculate_pad_size(seq,max_length=max_sequence_length) for seq in sequences])
+        # correct for the padding that was applied to the sequence prior to passing it into the model
         starts -= padding_sizes
         ends -= padding_sizes
-        # correct for including some part of the mask by mistake
+        # correct for including some part of the mask due to errors
         starts[starts < 0] = 0
         ends[ends < 0] = 0
 
         results = []
 
-
+        # iterate over each sequence with its respective start and end positions as well as predicted allele
         for sequence, start, end, allele in tqdm(zip(sequences, starts, ends, alleles), total=len(starts)):
+            # extract the portion of the sequence that based on the model predicted start and end positions
             segmented_sequence = sequence[start:end]
+            # extract the reference allele
             reference_sequence = self.reference_alleles[allele]
+            # calculate the reference and the germeline allele lengths
             segment_length = end - start
             reference_length = len(reference_sequence)
             match_found = False
@@ -209,29 +174,27 @@ class HeuristicReferenceMatcher:
             if segment_length == reference_length:
                 # if both extracted segment and reference are the same length we naively return the reference bounds
                 results.append({'start_in_seq': start, 'end_in_seq': end,
-                                'start_in_ref': 0, 'end_in_ref': reference_length, 'indel': False})
+                                'start_in_ref': 0, 'end_in_ref': reference_length})
 
 
             # Case 2: Extracted Segment is Longer than Reference
             elif segment_length > reference_length:
                 # In this case one of two things could have caused this, either the AlignAIRR made a bad segmentation
                 # Taking more bases than needed at the start or at the end, OR there were insertions in the sequence
-                best_start, best_end, _ = self.find_best_aligning_window(segmented_sequence, reference_sequence)
-                results.append({'start_in_seq': start + best_start, 'end_in_seq': start + best_end,
-                                'start_in_ref': 0, 'end_in_ref': len(reference_sequence),
-                                'indel': False})
+                ref_start, ref_end = self.align_with_germline(segmented_sequence, reference_sequence, k=k, s=s)
+                results.append({'start_in_seq': start, 'end_in_seq': end,
+                                'start_in_ref': ref_start, 'end_in_ref': ref_end})
 
             # Case 3: Extracted Segment is Shorter than Reference
             elif segment_length < reference_length:
                 # In this case one of two things could have caused this, either the AlignAIRR made a bad segmentation
                 # Taking less bases than needed at the start or at the end, OR there were deletions in the sequence
 
-                indel_flag, ref_start, ref_end = self.detect_indels(segmented_sequence, reference_sequence, k=k, s=s)
+                ref_start, ref_end = self.align_with_germline(segmented_sequence, reference_sequence, k=k, s=s)
 
                 if ref_start is not None:
                     results.append({'start_in_seq': start, 'end_in_seq': end,
-                                    'start_in_ref': ref_start, 'end_in_ref': ref_end,
-                                    'indel': indel_flag})
+                                    'start_in_ref': ref_start, 'end_in_ref': ref_end})
                 else:
 
                     # align sequences using local alignment
