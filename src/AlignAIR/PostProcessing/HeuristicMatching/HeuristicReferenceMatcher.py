@@ -117,9 +117,9 @@ class HeuristicReferenceMatcher:
 
         # Start window search refined
         min_difference = np.inf
-        best_start_pos = None
         start_window = short_segment[:k]
         end_based_start = best_end_pos - L_seg
+        best_start_pos = end_based_start
         # start_history = dict()
         # Adjust the search range based on potential indels
         start_search_range = min(9, L_diff)

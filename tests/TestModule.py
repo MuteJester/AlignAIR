@@ -1,5 +1,6 @@
 import os
 
+from src.AlignAIR.Metadata import RandomDataConfigGenerator
 from src.AlignAIR.Models.LightChain import LightChainAlignAIRR
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
