@@ -7,22 +7,27 @@ import numpy as np
 import random
 import tensorflow as tf
 import pandas as pd
-from ..Data import HeavyChainDataset, LightChainDataset
+from Data import HeavyChainDataset, LightChainDataset
+from Data.HC_Dataset_Experimental import HeavyChainDatasetExperimental
 from GenAIRR.sequence import LightChainSequence
 import pickle
-from ..Models.HeavyChain import HeavyChainAlignAIRR
-from ..Models.LightChain import LightChainAlignAIRR
-from ..Trainers import Trainer
+from Models.HeavyChain import HeavyChainAlignAIRR
+from Models.LightChain import LightChainAlignAIRR
+from Trainers import Trainer
 from tqdm.auto import tqdm
 from multiprocessing import Pool, cpu_count
-from ..PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
-from ..PostProcessing.AlleleSelector import DynamicConfidenceThreshold, CappedDynamicConfidenceThreshold
+from PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
+from PostProcessing.AlleleSelector import DynamicConfidenceThreshold, CappedDynamicConfidenceThreshold
 import logging
-from GenAIRR.data import builtin_kappa_chain_data_config,builtin_lambda_chain_data_config,builtin_heavy_chain_data_config
+from GenAIRR.data import builtin_kappa_chain_data_config, builtin_lambda_chain_data_config, \
+    builtin_heavy_chain_data_config
+from Models.HeavyChain.Experimental_V3_with_productivity import HcExperimental_v3WP, HeavyChainDatasetExperimental
+from multiprocessing import Process, Queue
+import multiprocessing
+import time
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 
 
 def encode_and_equal_pad_sequence(sequence, max_seq_length, tokenizer_dictionary):
@@ -84,6 +89,7 @@ def process_csv_and_tokenize(sequences, max_seq_length, tokenizer_dictionary):
 
     return tokenized_matrix
 
+
 def setup_logging():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -91,9 +97,9 @@ def setup_logging():
 def load_config(chain_type, config_paths):
     if chain_type == 'heavy':
         if config_paths['heavy'] == 'D':
-            return builtin_heavy_chain_data_config()
+            return {'heavy': builtin_heavy_chain_data_config()}
         with open(config_paths['heavy'], 'rb') as h:
-            return {'heavy':pickle.load(h)}
+            return {'heavy': pickle.load(h)}
     elif chain_type == 'light':
 
         if config_paths['kappa'] == 'D':
@@ -107,31 +113,43 @@ def load_config(chain_type, config_paths):
         else:
             with open(config_paths['lambda'], 'rb') as h:
                 lambda_config = pickle.load(h)
-        return {'kappa':kappa_config, 'lambda':lambda_config}
+        return {'kappa': kappa_config, 'lambda': lambda_config}
     else:
         raise ValueError(f'Unknown Chain Type: {chain_type}')
+
 
 def read_sequences(file_path):
     sep = ',' if '.csv' in file_path else '\t'
     return pd.read_csv(file_path, usecols=['sequence'], sep=sep)
 
 
-def load_model(chain_type, model_checkpoint,max_sequence_size, config=None):
+def sequence_generator(file_path, batch_size=256):
+    sep = ',' if '.csv' in file_path else '\t'
+    for chunk in pd.read_csv(file_path, usecols=['sequence'], sep=sep, chunksize=batch_size):
+        yield chunk['sequence'].tolist()
 
 
+def tokenize_sequences_batch(sequences, max_seq_length, tokenizer_dictionary):
+    tokenized_sequences = [encode_and_equal_pad_sequence(seq, max_seq_length, tokenizer_dictionary) for seq in
+                           sequences]
+    return np.vstack(tokenized_sequences)
+
+
+def load_model(chain_type, model_checkpoint, max_sequence_size, config=None):
     if chain_type == 'heavy':
-        dataset = HeavyChainDataset(data_path=args.sequences,
-                                    dataconfig=config['heavy'], batch_read_file=True,max_sequence_length=max_sequence_size)
+        dataset = HeavyChainDatasetExperimental(data_path=args.sequences,
+                                                dataconfig=config['heavy'], batch_read_file=True,
+                                                max_sequence_length=max_sequence_size)
     elif chain_type == 'light':
         dataset = LightChainDataset(data_path=args.sequences,
                                     lambda_dataconfig=config['lambda'],
                                     kappa_dataconfig=config['kappa'],
-                                    batch_read_file=True,max_sequence_length=max_sequence_size)
+                                    batch_read_file=True, max_sequence_length=max_sequence_size)
     else:
         raise ValueError(f'Unknown Chain Type: {chain_type}')
 
     trainer = Trainer(
-        model=LightChainAlignAIRR if chain_type == 'light' else HeavyChainAlignAIRR,
+        model=LightChainAlignAIRR if chain_type == 'light' else HcExperimental_v3WP,
         dataset=dataset,
         epochs=1,
         steps_per_epoch=1,
@@ -141,15 +159,16 @@ def load_model(chain_type, model_checkpoint,max_sequence_size, config=None):
     trainer.model.build({'tokenized_sequence': (max_sequence_size, 1)})
 
     MODEL_CHECKPOINT = model_checkpoint
-    print('Loading: ', MODEL_CHECKPOINT.split('/')[-1])
+    logging.info(f"Loading: {MODEL_CHECKPOINT.split('/')[-1]}")
+
     trainer.model.load_weights(
         MODEL_CHECKPOINT)
-    print('Model Loaded!')
+    logging.info(f"Model Loaded Successfully")
 
     return trainer.model
 
 
-def make_predictions(model, sequences, batch_size=512):
+def make_predictions(model, sequences, batch_size=256):
     dataset = tf.data.Dataset.from_tensor_slices({'tokenized_sequence': sequences})
     dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
@@ -159,10 +178,50 @@ def make_predictions(model, sequences, batch_size=512):
 
     return predictions
 
-def post_process_results(predictions, chain_type, config,sequences):
+
+def count_rows(filename):
+    with open(filename, 'r', encoding='utf-8') as file:
+        row_count = sum(1 for row in file)
+    return row_count - 1
+
+
+def sequence_tokenizer_worker(file_path, queue, max_seq_length, tokenizer_dictionary, batch_size=256):
+    sep = ',' if '.csv' in file_path else '\t'
+    for chunk in pd.read_csv(file_path, usecols=['sequence'], sep=sep, chunksize=batch_size):
+        sequences = chunk['sequence'].tolist()
+        tokenized_sequences = [encode_and_equal_pad_sequence(seq, max_seq_length, tokenizer_dictionary) for seq in
+                               sequences]
+        tokenized_batch = np.vstack(tokenized_sequences)
+        queue.put(tokenized_batch)
+    queue.put(None)
+
+
+def start_tokenizer_process(file_path, max_seq_length, tokenizer_dictionary, batch_size=256):
+    queue = multiprocessing.Queue(maxsize=10)  # Control the prefetching size
+    process = Process(target=sequence_tokenizer_worker,
+                      args=(file_path, queue, max_seq_length, tokenizer_dictionary, batch_size))
+    process.start()
+    logging.info('Producer Process Started!')
+    return queue, process
+
+
+def make_predictions(model, sequence_generator, max_sequence_size, total_samples, batch_size=2048):
+    predictions = []
+    for sequences in tqdm(sequence_generator, total=total_samples // batch_size):
+        tokenized_sequences = tokenize_sequences_batch(sequences, max_sequence_size, tokenizer_dictionary)
+        # dataset = tf.data.Dataset.from_tensor_slices({'tokenized_sequence': tokenized_sequences})
+        # dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        # for batch in dataset:
+        predictions.append(model.predict({'tokenized_sequence': tokenized_sequences}, verbose=0, batch_size=batch_size))
+    return predictions
+
+
+def post_process_results(predictions, chain_type, config, sequences):
     mutation_rate, v_allele, d_allele, j_allele = [], [], [], []
     v_segment, d_segment, j_segment = [], [], []
     type_ = []
+    productive = []
+    indels = []
 
     for i in predictions:
         mutation_rate.append(i['mutation_rate'])
@@ -174,6 +233,9 @@ def post_process_results(predictions, chain_type, config,sequences):
 
         j_segment.append(i['j_segment'])
 
+        productive.append(i['productive'])
+        indels.append(i['indel_count'])
+
         if chain_type == 'light':
             type_.append(i['type'])
         else:
@@ -181,6 +243,9 @@ def post_process_results(predictions, chain_type, config,sequences):
             d_allele.append(i['d_allele'])
 
     mutation_rate = np.vstack(mutation_rate)
+    productive = np.vstack(productive)
+    indels = np.vstack(indels)
+
     v_allele = np.vstack(v_allele)
     j_allele = np.vstack(j_allele)
     v_segment = np.vstack(v_segment).astype(np.float16)
@@ -196,6 +261,7 @@ def post_process_results(predictions, chain_type, config,sequences):
     alleles = {'v': v_allele, 'j': j_allele}
     threshold = {'v': args.v_allele_threshold, 'd': args.d_allele_threshold, 'j': args.j_allele_threshold}
     caps = {'v': args.v_cap, 'd': args.d_cap, 'j': args.j_cap}
+    segmentation_threshold = {'v': args.v_seg_threshold, 'd': args.d_seg_threshold, 'j': args.j_seg_threshold}
 
     if chain_type == 'heavy':
         alleles['d'] = d_allele
@@ -212,7 +278,7 @@ def post_process_results(predictions, chain_type, config,sequences):
                                                          lambda_dataconfig=config['lambda'])
 
         threshold_objects[_gene] = extractor
-        selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene], n_process=1,
+        selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene], n_process=6,
                                                  cap=caps[_gene], allele=_gene)
 
         predicted_alleles[_gene] = [i[0] for i in selected_alleles]
@@ -226,23 +292,27 @@ def post_process_results(predictions, chain_type, config,sequences):
 
     for _gene in segments:
         reference_alleles = threshold_objects[_gene].reference_map[_gene]
-        mapper = HeuristicReferenceMatcher(reference_alleles)
+        mapper = HeuristicReferenceMatcher(reference_alleles, segment_threshold=segmentation_threshold[_gene])
         mappings = mapper.match(sequences=sequences, segments=segments[_gene],
-                                alleles=[i[0] for i in predicted_alleles[_gene]])
+                                alleles=[i[0] for i in predicted_alleles[_gene]],
+                                threshold=segmentation_threshold[_gene])
+
         germline_alignmnets[_gene] = mappings
 
     results = {
-        'predicted_alleles':predicted_alleles,
-        'germline_alignmnets':germline_alignmnets,
-        'predicted_allele_likelihoods':predicted_allele_likelihoods,
-        'mutation_rate':mutation_rate
+        'predicted_alleles': predicted_alleles,
+        'germline_alignmnets': germline_alignmnets,
+        'predicted_allele_likelihoods': predicted_allele_likelihoods,
+        'mutation_rate': mutation_rate,
+        'productive': productive,
+        'indel_count': indels
     }
     if chain_type == 'light':
-        results['type_']=type_
+        results['type_'] = type_
     return results
 
 
-def save_results(results, save_path,file_name,sequences):
+def save_results(results, save_path, file_name, sequences):
     final_csv = pd.DataFrame({
         'sequence': sequences,
         'v_call': [','.join(i) for i in results['predicted_alleles']['v']],
@@ -257,8 +327,6 @@ def save_results(results, save_path,file_name,sequences):
         'j_germline_end': [i['end_in_ref'] for i in results['germline_alignmnets']['j']],
         'v_likelihoods': results['predicted_allele_likelihoods']['v'],
         'j_likelihoods': results['predicted_allele_likelihoods']['j'],
-        'j_indel': [i['indel'] for i in results['germline_alignmnets']['j']],
-        'v_indel': [i['indel'] for i in results['germline_alignmnets']['v']]
     })
     if chain_type == 'heavy':
         final_csv['d_sequence_start'] = [i['start_in_seq'] for i in results['germline_alignmnets']['d']]
@@ -267,11 +335,12 @@ def save_results(results, save_path,file_name,sequences):
         final_csv['d_germline_end'] = [i['end_in_ref'] for i in results['germline_alignmnets']['d']]
         final_csv['d_call'] = [','.join(i) for i in results['predicted_alleles']['d']]
         final_csv['type'] = 'heavy'
-        final_csv['d_indel'] = [i['indel'] for i in results['germline_alignmnets']['d']]
     else:
         final_csv['type'] = ['kappa' if i == 1 else 'lambda' for i in results['type_'].astype(int).squeeze()]
 
     final_csv['mutation_rate'] = results['mutation_rate']
+    final_csv['ar_indels'] = results['indel_count']
+    final_csv['ar_productive'] = results['productive']
 
     final_csv.to_csv(save_path + file_name + '_alignairr_results.csv', index=False)
 
@@ -287,10 +356,14 @@ if __name__ == '__main__':
     parser.add_argument('--kappa_data_config', type=str, default='D', help='path to  kappa chain data config')
     parser.add_argument('--heavy_data_config', type=str, default='D', help='path to heavy chain  data config')
     parser.add_argument('--max_input_size', type=int, default=576, help='maximum model input size')
+    parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
 
     parser.add_argument('--v_allele_threshold', type=float, default=0.9, help='threshold for v allele prediction')
     parser.add_argument('--d_allele_threshold', type=float, default=0.2, help='threshold for d allele prediction')
     parser.add_argument('--j_allele_threshold', type=float, default=0.8, help='threshold for j allele prediction')
+    parser.add_argument('--v_seg_threshold', type=float, default=0.1, help='threshold for v allele segmentation')
+    parser.add_argument('--d_seg_threshold', type=float, default=0.01, help='threshold for d allele segmentation')
+    parser.add_argument('--j_seg_threshold', type=float, default=0.01, help='threshold for j allele segmentation')
     parser.add_argument('--v_cap', type=int, default=3, help='cap for v allele calls')
     parser.add_argument('--d_cap', type=int, default=3, help='cap for d allele calls')
     parser.add_argument('--j_cap', type=int, default=3, help='cap for j allele calls')
@@ -299,31 +372,74 @@ if __name__ == '__main__':
     chain_type = args.chain_type
     tokenizer_dictionary = {"A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0}  # pad token
 
-
-
     # Load configuration
     config_paths = {'heavy': args.heavy_data_config, 'kappa': args.kappa_data_config, 'lambda': args.lambda_data_config}
     config = load_config(args.chain_type, config_paths)
+    logging.info('Data Config Loaded Successfully')
 
-    # Read sequences
-    sequences = read_sequences(args.sequences)['sequence'].tolist()
+    # # Read sequences
+    # sequences = read_sequences(args.sequences)['sequence'].tolist()
     file_name = args.sequences.split('/')[-1].split('.')[0]
+    logging.info(f'Target File : {file_name}')
 
+    # # Tokenize sequences
+    # tokenized_sequences = tokenize_sequences(sequences, args.max_input_size, tokenizer_dictionary, verbose=True)
 
-    # Tokenize sequences
-    tokenized_sequences = tokenize_sequences(sequences, args.max_input_size, tokenizer_dictionary, verbose=True)
+    # # Load model
+    # model = load_model(args.chain_type, args.model_checkpoint,args.max_input_size, config)
+
+    # # Make predictions
+    # predictions = make_predictions(model, tokenized_sequences,args.max_input_size)
+
+    # Count Rows
+    number_of_samples = count_rows(args.sequences)
+    logging.info(f'There are : {number_of_samples} Samples for the Model to Predict')
+    # Setup the generator
+    # sequence_gen = sequence_generator(args.sequences,batch_size=args.batch_size)
 
     # Load model
-    model = load_model(args.chain_type, args.model_checkpoint,args.max_input_size, config)
+    model = load_model(args.chain_type, args.model_checkpoint, args.max_input_size, config)
 
     # Make predictions
-    predictions = make_predictions(model, tokenized_sequences,args.max_input_size)
+    # predictions = make_predictions(model, sequence_gen, args.max_input_size,total_samples=number_of_samples,batch_size=args.batch_size)
+    # Process tokenized batches as they become available
+    queue, process = start_tokenizer_process(args.sequences, args.max_input_size, tokenizer_dictionary, args.batch_size)
+    predictions = []
+    batch_number = 0
+    batch_times = []
+    start_time = time.time()
+    total_batches = int(np.ceil(number_of_samples / args.batch_size))
+    while True:
+        tokenized_batch = queue.get()
+        if tokenized_batch is None:
+            break
+
+        batch_start_time = time.time()
+        predictions.append(
+            model.predict({'tokenized_sequence': tokenized_batch}, verbose=0, batch_size=args.batch_size))
+        batch_duration = time.time() - batch_start_time
+        batch_times.append(batch_duration)
+
+        batch_number += 1
+        avg_batch_time = sum(batch_times) / len(batch_times)
+        estimated_time_remaining = avg_batch_time * (total_batches - batch_number)
+        time_elapsed = time.time() - start_time
+
+        logging.info(
+            f"Processed Batch {batch_number}/{total_batches}. Time Elapsed: {time_elapsed:.2f} seconds. Estimated Time Remaining: {estimated_time_remaining:.2f} seconds.")
+    total_duration = time.time() - start_time
+    logging.info(f"All batches processed in {total_duration:.2f} seconds.")
+    process.join()
 
     # Post-process results
-    results = post_process_results(predictions, args.chain_type, config,sequences)
+    sequence_gen = sequence_generator(args.sequences, args.max_input_size)
+    sequences = [i for j in sequence_gen for i in j]
+    results = post_process_results(predictions, args.chain_type, config, sequences)
 
     # Save results
-    save_results(results, args.save_path,file_name,sequences)
+    save_results(results, args.save_path, file_name, sequences)
+    logging.info(f"Processed Results Saved Successfully at {args.save_path + file_name + '_alignairr_results.csv'}")
+
 
 
 
