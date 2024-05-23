@@ -52,7 +52,7 @@ class Trainer:
         self.log_file_path = log_file_path
         self.batch_file_reader = batch_file_reader,
         self.train_dataset = dataset
-        self.allele_types = ['v','j'] if isinstance(self.train_dataset,LightChainDataset) else ['v','d','j']
+        self.allele_types = ['v', 'j'] if isinstance(self.train_dataset, LightChainDataset) else ['v', 'd', 'j']
 
         # Set Up Trainer Instance
         self._load_pretrained_model()  # only if pretrained is not None
@@ -66,20 +66,25 @@ class Trainer:
 
     def _compile_model(self):
 
-        metrics = {key+'_segment': self.segmentation_head_metric for key in self.allele_types}
+        metrics = {}
+        for gene in self.allele_types:
+            for pos in ['start', 'end']:
+                metrics[gene + '_' + pos] = self.segmentation_head_metric
 
         if type(self.classification_head_metric) == list:
             for key, m in zip(self.allele_types, self.classification_head_metric):
                 if type(m) == list:
                     for met in m:
-                        metrics[key+'_allele'] = met
+                        metrics[key + '_allele'] = met
                 else:
-                    metrics[key+'_allele'] = m
+                    metrics[key + '_allele'] = m
         else:
 
             for key in self.allele_types:
-                metrics[key+'_allele'] = self.classification_head_metric
+                metrics[key + '_allele'] = self.classification_head_metric
 
+        # import pdb
+        # pdb.set_trace()
         if self.optimizers_params is not None:
             self.model.compile(optimizer=self.optimizers(**self.optimizers_params),
                                loss=None,

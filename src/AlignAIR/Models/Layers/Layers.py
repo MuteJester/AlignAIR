@@ -46,7 +46,7 @@ class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
 
 class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
     def __init__(self, filter_size=64, num_conv_batch_layers=5, kernel_size=5, max_pool_size=2,
-                 conv_activation=None, initializer=None, **kwargs):
+                 conv_activation=None, out_shape=576, initializer=None, **kwargs):
         super(ConvResidualFeatureExtractionBlock, self).__init__(**kwargs)
 
         self.initializer = tf.keras.initializers.RandomNormal(mean=0.1,
@@ -71,11 +71,11 @@ class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
                                            kernel_regularizer=regularizers.l2(0.01),
                                            kernel_initializer=self.initializer)
 
-
         self.max_pool_layers = [MaxPool1D(2) for _ in range(num_conv_batch_layers)]
         self.activation_layers = [LeakyReLU() for _ in range(num_conv_batch_layers)]
         self.add_layers = [Add() for _ in range(num_conv_batch_layers)]
 
+        self.dense_reshaper = Dense(out_shape, activation='linear')
         self.segmentation_feature_flatten = Flatten()
 
     def call(self, embeddings):
@@ -96,6 +96,7 @@ class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
             residual_end = self.activation_layers[index](residual_end)
 
         residual_end = self.segmentation_feature_flatten(residual_end)
+        residual_end = self.dense_reshaper(residual_end)
         return residual_end
 
 
@@ -134,6 +135,22 @@ def global_genotype():
 
     locus = [chromosome1, chromosome2]
     return locus
+
+
+class RegularizedConstrainedLogVar(tf.keras.layers.Layer):
+    def __init__(self, initial_value=1.0, min_log_var=-3, max_log_var=1, regularizer_weight=0.01):
+        super().__init__()
+        self.log_var = self.add_weight(name="log_var",
+                                       shape=(),
+                                       initializer=tf.keras.initializers.Constant(value=tf.math.log(initial_value)),
+                                       constraint=lambda x: tf.clip_by_value(x, min_log_var, max_log_var),
+                                       trainable=True)
+        self.regularizer_weight = regularizer_weight
+
+    def call(self, inputs):
+        regularization_loss = self.regularizer_weight * tf.nn.relu(-self.log_var - 2)  # Soft threshold at log(var)=2
+        self.add_loss(regularization_loss)
+        return tf.exp(-self.log_var)  # Returns the precision as exp(-log(var))
 
 
 def soft_mask(indices, start, end, K):
@@ -190,6 +207,7 @@ def interval_iou(interval1, interval2, GIoU=False, DIoU=False, CIoU=False, eps=1
             return iou - (c_area - union) / c_area  # GIoU
     else:
         return iou  # IoU
+
 
 
 class CutoutLayer(Layer):
@@ -510,17 +528,18 @@ class SepConv1D_and_Residual(tf.keras.layers.Layer):
 
 
 class TokenAndPositionEmbedding(tf.keras.layers.Layer):
-    def __init__(self, maxlen, vocab_size, emded_dim):
+    def __init__(self, maxlen, vocab_size, embed_dim):
         super(TokenAndPositionEmbedding, self).__init__()
         self.maxlen = maxlen
-        self.token_emb = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=emded_dim)
-        self.pos_emb = tf.keras.layers.Embedding(input_dim=maxlen, output_dim=emded_dim)
+        self.token_emb = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embed_dim)
+        self.pos_emb = tf.keras.layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
 
     def call(self, x):
         positions = tf.range(start=0, limit=self.maxlen, delta=1)
         positions = self.pos_emb(positions)
         x = self.token_emb(x)
         return x + positions
+
 
 
 

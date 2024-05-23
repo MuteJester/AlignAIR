@@ -1,5 +1,9 @@
+import numpy as np
+import pandas as pd
 import tensorflow as tf
 import tensorflow.keras.backend as K
+from GenAIRR.data import builtin_heavy_chain_data_config
+from GenAIRR.utilities import DataConfig
 from tensorflow.keras import Model
 from tensorflow.keras import regularizers
 from tensorflow.keras.constraints import unit_norm
@@ -8,18 +12,33 @@ from tensorflow.keras.layers import (
     Input,
     Dropout,
     Multiply,
-    Reshape,
-    Flatten
-)
-from ..HeavyChain.losses import d_loss
-from ..Layers import Conv1D_and_BatchNorm, CutoutLayer
-from ...Models.Layers import ConvResidualFeatureExtractionBlock, RegularizedConstrainedLogVar
-from ...Models.Layers import (
-    TokenAndPositionEmbedding, MinMaxValueConstraint
+    Reshape, Flatten
 )
 
+from src.AlignAIR.Data import LightChainDataset
+from src.AlignAIR.Data.datasetBase import DatasetBase
+from src.AlignAIR.Models.HeavyChain.losses import d_loss
+from src.AlignAIR.Models.Layers.Layers import ConvResidualFeatureExtractionBlock, Conv1D_and_BatchNorm
+from src.AlignAIR.Models.Layers.Layers import TokenAndPositionEmbedding, CutoutLayer, MinMaxValueConstraint
 
-class HeavyChainAlignAIRR(tf.keras.Model):
+
+class RegularizedConstrainedLogVar(tf.keras.layers.Layer):
+    def __init__(self, initial_value=1.0, min_log_var=-3, max_log_var=1, regularizer_weight=0.01):
+        super().__init__()
+        self.log_var = self.add_weight(name="log_var",
+                                       shape=(),
+                                       initializer=tf.keras.initializers.Constant(value=tf.math.log(initial_value)),
+                                       constraint=lambda x: tf.clip_by_value(x, min_log_var, max_log_var),
+                                       trainable=True)
+        self.regularizer_weight = regularizer_weight
+
+    def call(self, inputs):
+        regularization_loss = self.regularizer_weight * tf.nn.relu(-self.log_var - 2)  # Soft threshold at log(var)=2
+        self.add_loss(regularization_loss)
+        return tf.exp(-self.log_var)  # Returns the precision as exp(-log(var))
+
+
+class HcExperimental_V7(tf.keras.Model):
     """
       The AlignAIRR model for performing segmentation, mutation rate estimation,
       and allele classification tasks in heavy chain sequences.
@@ -33,7 +52,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
       """
 
     def __init__(self, max_seq_length, v_allele_count, d_allele_count, j_allele_count):
-        super(HeavyChainAlignAIRR, self).__init__()
+        super(HcExperimental_V7, self).__init__()
 
         # weight initialization distribution
         self.initializer = tf.keras.initializers.GlorotUniform()  # RandomNormal(mean=0.1, stddev=0.02)
@@ -674,3 +693,299 @@ class HeavyChainAlignAIRR(tf.keras.Model):
             Model(inputs=x, outputs=self.call(x)), show_shapes=show_shapes
         )
 
+
+
+class HeavyChainDatasetExperimental(DatasetBase):
+    def __init__(self, data_path, dataconfig: DataConfig, batch_size=64, max_sequence_length=512, batch_read_file=False,
+                 nrows=None, seperator=','):
+        super().__init__(data_path, dataconfig, batch_size, max_sequence_length, batch_read_file, nrows, seperator)
+
+        self.required_data_columns = ['sequence', 'v_sequence_start', 'v_sequence_end', 'd_sequence_start',
+                                      'd_sequence_end', 'j_sequence_start', 'j_sequence_end', 'v_call',
+                                      'd_call', 'j_call', 'mutation_rate', 'indels', 'productive']
+
+    def derive_call_one_hot_representation(self):
+
+        v_alleles = sorted(list(self.v_dict))
+        d_alleles = sorted(list(self.d_dict))
+        j_alleles = sorted(list(self.j_dict))
+        # Add Short D Label as Last Label
+        d_alleles = d_alleles + ['Short-D']
+
+        self.v_allele_count = len(v_alleles)
+        self.d_allele_count = len(d_alleles)
+        self.j_allele_count = len(j_alleles)
+
+        self.v_allele_call_ohe = {f: i for i, f in enumerate(v_alleles)}
+        self.d_allele_call_ohe = {f: i for i, f in enumerate(d_alleles)}
+        self.j_allele_call_ohe = {f: i for i, f in enumerate(j_alleles)}
+
+        self.properties_map = {
+            "V": {"allele_count": self.v_allele_count, "allele_call_ohe": self.v_allele_call_ohe},
+            "J": {"allele_count": self.j_allele_count, "allele_call_ohe": self.j_allele_call_ohe},
+            "D": {"allele_count": self.d_allele_count, "allele_call_ohe": self.d_allele_call_ohe}
+        }
+
+    def derive_call_dictionaries(self):
+        self.v_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.v_alleles for j in
+                       self.dataconfig.v_alleles[i]}
+        self.d_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.d_alleles for j in
+                       self.dataconfig.d_alleles[i]}
+        self.j_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.j_alleles for j in
+                       self.dataconfig.j_alleles[i]}
+
+    def get_ohe_reverse_mapping(self):
+        get_reverse_dict = lambda dic: {i: j for j, i in dic.items()}
+        call_maps = {
+            "v_allele": get_reverse_dict(self.v_allele_call_ohe),
+            "d_allele": get_reverse_dict(self.d_allele_call_ohe),
+            "j_allele": get_reverse_dict(self.j_allele_call_ohe),
+        }
+        return call_maps
+
+    def _get_single_batch(self, pointer):
+        # Read Batch from Dataset
+        batch = self.generate_batch(pointer)
+        batch = pd.DataFrame(batch)
+
+        # Encoded sequence in batch and collect the padding sizes applied to each sequences
+        encoded_sequences, paddings = self.encode_and_pad_sequences(batch['sequence'])
+        # use the padding sizes collected to adjust the start/end positions of the alleles
+        for _gene in ['v_sequence', 'd_sequence', 'j_sequence']:
+            for _position in ['start', 'end']:
+                batch.loc[:, _gene + '_' + _position] += paddings
+
+        x = {"tokenized_sequence": encoded_sequences}
+
+        segments = {'v': [], 'd': [], 'j': []}
+        indel_counts = []
+        productive = []
+        for ax, row in batch.iterrows():
+            indels = eval(row['indels'])
+            indel_counts.append(len(indels))
+
+        # Convert Comma Seperated Allele Ground Truth Labels into Lists
+        v_alleles = batch.v_call.apply(lambda x: set(x.split(',')))
+        d_alleles = batch.d_call.apply(lambda x: set(x.split(',')))
+        j_alleles = batch.j_call.apply(lambda x: set(x.split(',')))
+
+        y = {
+            "v_start": batch.v_sequence_start.values.reshape(-1, 1),
+            "v_end": batch.v_sequence_end.values.reshape(-1, 1),
+            "d_start": batch.d_sequence_start.values.reshape(-1, 1),
+            "d_end": batch.d_sequence_end.values.reshape(-1, 1),
+            "j_start": batch.j_sequence_start.values.reshape(-1, 1),
+            "j_end": batch.j_sequence_end.values.reshape(-1, 1),
+            "v_allele": self.one_hot_encode_allele("V", v_alleles),
+            "d_allele": self.one_hot_encode_allele("D", d_alleles),
+            "j_allele": self.one_hot_encode_allele("J", j_alleles),
+            'mutation_rate': batch.mutation_rate.values.reshape(-1, 1),
+            'indel_count': np.array(indel_counts).reshape(-1, 1),
+            'productive': np.array([float(eval(i)) for i in batch.productive]).reshape(-1, 1)
+
+        }
+        return x, y
+
+    def generate_model_params(self):
+        return {
+            "max_seq_length": self.max_sequence_length,
+            "v_allele_count": self.v_allele_count,
+            "d_allele_count": self.d_allele_count,
+            "j_allele_count": self.j_allele_count,
+        }
+
+
+from uuid import uuid4
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras.callbacks import CSVLogger
+
+
+class Trainer:
+    def __init__(
+            self,
+            dataset: DatasetBase,
+            model,
+            epochs,
+            steps_per_epoch,
+            num_parallel_calls=8,
+            log_to_file=False,
+            log_file_name=None,
+            log_file_path=None,
+            classification_metric='categorical_accuracy',
+            regression_metric='mae',
+            verbose=0,
+            batch_file_reader=False,
+            pretrained=None,
+            compute_metrics=None,
+            callbacks=None,
+            optimizers=tf.keras.optimizers.Adam,
+            optimizers_params=None,
+    ):
+
+        self.pretrained = pretrained
+        self.model = model
+        self.model_type = model
+        self.epochs = epochs
+        self.input_size = dataset.max_sequence_length
+        self.num_parallel_calls = num_parallel_calls
+        self.batch_size = dataset.batch_size
+        self.steps_per_epoch = steps_per_epoch
+        self.classification_head_metric = classification_metric
+        self.segmentation_head_metric = regression_metric
+        self.compute_metrics = compute_metrics
+        self.callbacks = callbacks
+        self.optimizers = optimizers
+        self.optimizers_params = optimizers_params
+        self.history = None
+        self.verbose = verbose
+        self.log_file_name = log_file_name
+        self.log_to_file = log_to_file
+        self.log_file_path = log_file_path
+        self.batch_file_reader = batch_file_reader,
+        self.train_dataset = dataset
+        self.allele_types = ['v', 'j'] if isinstance(self.train_dataset, LightChainDataset) else ['v', 'd', 'j']
+
+        # Set Up Trainer Instance
+        self._load_pretrained_model()  # only if pretrained is not None
+        self._compile_model()
+
+    def _load_pretrained_model(self):
+        model_params = self.train_dataset.generate_model_params()
+        self.model = self.model_type(**model_params)
+        if self.pretrained is not None:
+            self.model.load_weights(self.pretrained)
+
+    def _compile_model(self):
+
+        metrics = {}
+        for gene in self.allele_types:
+            for pos in ['start', 'end']:
+                metrics[gene + '_' + pos] = self.segmentation_head_metric
+
+        if type(self.classification_head_metric) == list:
+            for key, m in zip(self.allele_types, self.classification_head_metric):
+                if type(m) == list:
+                    for met in m:
+                        metrics[key + '_allele'] = met
+                else:
+                    metrics[key + '_allele'] = m
+        else:
+
+            for key in self.allele_types:
+                metrics[key + '_allele'] = self.classification_head_metric
+
+        # import pdb
+        # pdb.set_trace()
+        if self.optimizers_params is not None:
+            self.model.compile(optimizer=self.optimizers(**self.optimizers_params),
+                               loss=None,
+                               metrics=metrics)
+        else:
+            self.model.compile(optimizer=self.optimizers(),
+                               loss=None,
+                               metrics=metrics)
+
+    def train(self):
+
+        _callbacks = [] if self.callbacks is None else self.callbacks
+        if self.log_to_file:
+            if self.log_file_path is None:
+                raise ValueError('No log_file_path was given to Trainer')
+
+            file_name = str(uuid4()) + '.csv' if self.log_to_file is None else self.log_file_name
+            csv_logger = CSVLogger(self.log_file_path + file_name + '.csv', append=True, separator=',')
+            _callbacks.append(csv_logger)
+
+        train_dataset = self.train_dataset.get_train_dataset()
+        train_dataset = train_dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+
+        def preprocess_data(*args):
+            return args
+
+        train_dataset = train_dataset.map(
+            preprocess_data,
+            num_parallel_calls=self.num_parallel_calls
+        )
+
+        self.history = self.model.fit(
+            train_dataset,
+            epochs=self.epochs,
+            steps_per_epoch=self.steps_per_epoch // self.batch_size,
+            verbose=self.verbose,
+            callbacks=_callbacks
+
+        )
+
+    def save_model(self, path):
+        postfix = str(uuid4())
+        self.model.save_weights(path + f'{postfix}_weights')
+        print(f'Model Saved!\n Location: {path + f"{postfix}_weights"}')
+        return path + f'{postfix}_weights'
+
+    def load_model(self, weights_path):
+        self.model.load_weights(weights_path)
+
+    def rebuild_model(self):
+        self.model = self.model_type(**self.train_dataset.generate_model_params())
+
+    def set_custom_dataset_object(self, dataset_instance):
+        self.train_dataset = dataset_instance
+
+    def plot_model(self):
+        self.model.plot_model((self.input_size, 1))
+
+    def model_summary(self):
+        self.model.model_summary((self.input_size, 1))
+
+    def plot_history(self, write_path=None):
+        num_plots = len(self.history.history)
+        num_cols = 3
+        num_rows = (num_plots + num_cols - 1) // num_cols  # Calculate the number of rows based on num_plots
+
+        fig, axes = plt.subplots(num_rows, num_cols, figsize=(25, 5 * num_rows))
+
+        for i, column in enumerate(list(self.history.history)):
+            row = i // num_cols  # Calculate the row index for the current subplot
+            col = i % num_cols  # Calculate the column index for the current subplot
+
+            ax = axes[row, col] if num_rows > 1 else axes[col]  # Handle single row case
+
+            ax.plot(self.history.epoch, self.history.history[column])
+            ax.set_xlabel('Epoch')
+            # ax.set_ylabel(column)
+            ax.set_title(column)
+            ax.grid(lw=2, ls=':')
+
+        # Remove any empty subplots
+        if num_plots < num_rows * num_cols:
+            for i in range(num_plots, num_rows * num_cols):
+                row = i // num_cols
+                col = i % num_cols
+                fig.delaxes(axes[row, col])
+
+        plt.tight_layout()
+        if write_path is None:
+            plt.show()
+        else:
+            plt.savefig(write_path, dpi=300, facecolor='white')
+
+
+train_dataset = HeavyChainDatasetExperimental(data_path='./sample_HeavyChain_dataset.csv'
+                                              , dataconfig=builtin_heavy_chain_data_config(),
+                                              batch_size=32,
+                                              max_sequence_length=576,
+                                              batch_read_file=True)
+
+trainer = Trainer(
+    model=HcExperimental_V7,
+    dataset=train_dataset,
+    epochs=1,
+    steps_per_epoch=1,
+    verbose=1,
+)
+trainer.model.build({'tokenized_sequence': (576, 1)})
+
+MODEL_CHECKPOINT = './AlignAIRR_S5F_OGRDB_Experimental_New_Loss_V7'
+trainer.model.load_weights(MODEL_CHECKPOINT)
+print(trainer.model.log_var_v_end.weights[0].numpy())

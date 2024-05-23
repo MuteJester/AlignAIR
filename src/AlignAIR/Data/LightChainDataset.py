@@ -15,7 +15,7 @@ class LightChainDataset(DatasetBase):
         self.dataconfig = [kappa_dataconfig,lambda_dataconfig]
         self.required_data_columns = ['sequence', 'v_sequence_start', 'v_sequence_end',
                                       'j_sequence_start', 'j_sequence_end', 'v_call',
-                                      'j_call', 'type', 'mutation_rate','indels']
+                                      'j_call', 'mutation_rate', 'indels', 'productive']
 
     def derive_call_one_hot_representation(self):
         v_alleles = sorted(list(self.v_kappa_dict)) + sorted(list(self.v_lambda_dict))
@@ -63,22 +63,10 @@ class LightChainDataset(DatasetBase):
             for _position in ['start', 'end']:
                 batch.loc[:, _gene + '_' + _position] += paddings
 
-        segments = {'v': [], 'j': []}
         indel_counts = []
-
         for ax, row in batch.iterrows():
             indels = eval(row['indels'])
-            insertions = [i for i in indels if 'I' in indels[i]]
             indel_counts.append(len(indels))
-            for _gene in ['v', 'j']:
-                empty = np.zeros((1, self.max_seq_length))
-                empty[0, row[_gene + '_sequence_start']:row[_gene + '_sequence_end']] = 1
-                for I in insertions:
-                    empty[0, I] = 0
-                segments[_gene].append(empty)
-
-        for _gene in ['v', 'j']:
-            segments[_gene] = np.vstack(segments[_gene])
 
         # Convert Comma Seperated Allele Ground Truth Labels into Lists
         v_alleles = batch.v_call.apply(lambda x: set(x.split(',')))
@@ -90,13 +78,16 @@ class LightChainDataset(DatasetBase):
         x = {"tokenized_sequence": encoded_sequences}
 
         y = {
-            "v_segment": segments['v'],
-            "j_segment": segments['j'],
+            "v_start": batch.v_sequence_start.values.reshape(-1, 1),
+            "v_end": batch.v_sequence_end.values.reshape(-1, 1),
+            "j_start": batch.j_sequence_start.values.reshape(-1, 1),
+            "j_end": batch.j_sequence_end.values.reshape(-1, 1),
             "v_allele": self.one_hot_encode_allele("V", v_alleles),
             "j_allele": self.one_hot_encode_allele("J", j_alleles),
             'mutation_rate': batch.mutation_rate.values.reshape(-1, 1),
+            'indel_count': np.array(indel_counts).reshape(-1, 1),
+            'productive': np.array([float(eval(i)) for i in batch.productive]).reshape(-1, 1),
             'type': np.array(chain_type).reshape(-1, 1),
-            'indel_count': np.array(indel_counts).reshape(-1, 1)
 
         }
         return x, y
