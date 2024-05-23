@@ -1,30 +1,23 @@
-import subprocess
-import pandas as pd
 import argparse
-import tensorflow as tf
-import os
-import numpy as np
-import random
-import tensorflow as tf
-import pandas as pd
-from Data import HeavyChainDataset, LightChainDataset
-from Data.HC_Dataset_Experimental import HeavyChainDatasetExperimental
-from GenAIRR.sequence import LightChainSequence
-import pickle
-from Models.HeavyChain import HeavyChainAlignAIRR
-from Models.LightChain import LightChainAlignAIRR
-from Trainers import Trainer
-from tqdm.auto import tqdm
-from multiprocessing import Pool, cpu_count
-from PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
-from PostProcessing.AlleleSelector import DynamicConfidenceThreshold, CappedDynamicConfidenceThreshold
+import argparse
 import logging
+import multiprocessing
+import pickle
+import time
+from multiprocessing import Pool, cpu_count
+from multiprocessing import Process
+import numpy as np
+import pandas as pd
+import tensorflow as tf
 from GenAIRR.data import builtin_kappa_chain_data_config, builtin_lambda_chain_data_config, \
     builtin_heavy_chain_data_config
-from Models.HeavyChain.Experimental_V3_with_productivity import HcExperimental_v3WP, HeavyChainDatasetExperimental
-from multiprocessing import Process, Queue
-import multiprocessing
-import time
+from tqdm.auto import tqdm
+
+from src.AlignAIR.Data import LightChainDataset, HeavyChainDataset
+from src.AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
+from src.AlignAIR.Models.LightChain import LightChainAlignAIRR
+from src.AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
+from src.AlignAIR.Trainers import Trainer
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -137,7 +130,7 @@ def tokenize_sequences_batch(sequences, max_seq_length, tokenizer_dictionary):
 
 def load_model(chain_type, model_checkpoint, max_sequence_size, config=None):
     if chain_type == 'heavy':
-        dataset = HeavyChainDatasetExperimental(data_path=args.sequences,
+        dataset = HeavyChainDataset(data_path=args.sequences,
                                                 dataconfig=config['heavy'], batch_read_file=True,
                                                 max_sequence_length=max_sequence_size)
     elif chain_type == 'light':
@@ -149,7 +142,7 @@ def load_model(chain_type, model_checkpoint, max_sequence_size, config=None):
         raise ValueError(f'Unknown Chain Type: {chain_type}')
 
     trainer = Trainer(
-        model=LightChainAlignAIRR if chain_type == 'light' else HcExperimental_v3WP,
+        model=LightChainAlignAIRR if chain_type == 'light' else HeavyChainAlignAIRR,
         dataset=dataset,
         epochs=1,
         steps_per_epoch=1,
@@ -218,43 +211,51 @@ def make_predictions(model, sequence_generator, max_sequence_size, total_samples
 
 def post_process_results(predictions, chain_type, config, sequences):
     mutation_rate, v_allele, d_allele, j_allele = [], [], [], []
-    v_segment, d_segment, j_segment = [], [], []
+    v_start, v_end = [], []
+    d_start, d_end = [], []
+    j_start, j_end = [], []
+    indel_count = []
     type_ = []
     productive = []
-    indels = []
-
     for i in predictions:
         mutation_rate.append(i['mutation_rate'])
         v_allele.append(i['v_allele'])
-
         j_allele.append(i['j_allele'])
-
-        v_segment.append(i['v_segment'])
-
-        j_segment.append(i['j_segment'])
-
+        indel_count.append(i['indel_count'])
         productive.append(i['productive'])
-        indels.append(i['indel_count'])
+
+        v_start.append(i['v_start'])
+        v_end.append(i['v_end'])
+        j_start.append(i['j_start'])
+        j_end.append(i['j_end'])
 
         if chain_type == 'light':
             type_.append(i['type'])
         else:
-            d_segment.append(i['d_segment'])
+            d_start.append(i['d_start'])
             d_allele.append(i['d_allele'])
+            d_end.append(i['d_end'])
 
     mutation_rate = np.vstack(mutation_rate)
+    indel_count = np.vstack(indel_count)
     productive = np.vstack(productive)
-    indels = np.vstack(indels)
 
     v_allele = np.vstack(v_allele)
+    d_allele = np.vstack(d_allele)
     j_allele = np.vstack(j_allele)
-    v_segment = np.vstack(v_segment).astype(np.float16)
-    j_segment = np.vstack(j_segment).astype(np.float16)
+
+    v_start = np.vstack(v_start)
+    v_end = np.vstack(v_end)
+
+    j_start = np.vstack(j_start)
+    j_end = np.vstack(j_end)
+
     if chain_type == 'light':
         type_ = np.vstack(type_)
     else:
         d_allele = np.vstack(d_allele)
-        d_segment = np.vstack(d_segment).astype(np.float16)
+        d_start = np.vstack(d_start)
+        d_end = np.vstack(d_end)
 
     ################################### POST PROCESS AND SAVE RESULTS #############################################
     # DynamicConfidenceThreshold
@@ -283,21 +284,64 @@ def post_process_results(predictions, chain_type, config, sequences):
 
         predicted_alleles[_gene] = [i[0] for i in selected_alleles]
         predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
+
     # HeuristicReferenceMatcher
-    segments = {'v': v_segment, 'j': j_segment}
+    # segments = {'v': v_segment, 'j': j_segment}
+    # if chain_type == 'heavy':
+    #     segments['d'] = d_segment
+
+    # germline_alignmnets = {}
+
+    # for _gene in segments:
+    #     reference_alleles = threshold_objects[_gene].reference_map[_gene]
+    #     mapper = HeuristicReferenceMatcher(reference_alleles,segment_threshold=segmentation_threshold[_gene])
+    #     mappings = mapper.match(sequences=sequences, segments=segments[_gene],
+    #                             alleles=[i[0] for i in predicted_alleles[_gene]],threshold=segmentation_threshold[_gene])
+
+    #     germline_alignmnets[_gene] = mappings
+
+    def calculate_pad_size(sequence, max_length=576):
+        """
+        Calculates the size of padding applied to each side of the sequence
+        to achieve the specified maximum length.
+
+        Args:
+            sequence_length: The length of the original sequence before padding.
+            max_length: The maximum length to which the sequence is padded.
+
+        Returns:
+            The size of the padding applied to the start of the sequence.
+            If the total padding is odd, one additional unit of padding is applied to the end.
+        """
+
+        total_padding = max_length - len(sequence)
+        pad_size = total_padding // 2
+
+        return pad_size
+
+    paddings = np.array([calculate_pad_size(i) for i in sequences])
+    v_start = np.round((v_start.squeeze() - paddings)).astype(int)
+    v_end = np.round((v_end.squeeze() - paddings)).astype(int)
+
+    j_start = np.round((j_start.squeeze() - paddings)).astype(int)
+    j_end = np.round((j_end.squeeze() - paddings)).astype(int)
+
     if chain_type == 'heavy':
-        segments['d'] = d_segment
+        d_start = np.round((d_start.squeeze() - paddings)).astype(int)
+        d_end = np.round((d_end.squeeze() - paddings)).astype(int)
 
     germline_alignmnets = {}
+    germline_alignmnets['v'] = [{'start_in_seq': start, 'end_in_seq': end,
+                                 'start_in_ref': -1, 'end_in_ref': -1} for start, end in zip(v_start, v_end)
+                                ]
+    germline_alignmnets['j'] = [{'start_in_seq': start, 'end_in_seq': end,
+                                 'start_in_ref': -1, 'end_in_ref': -1} for start, end in zip(j_start, j_end)
+                                ]
 
-    for _gene in segments:
-        reference_alleles = threshold_objects[_gene].reference_map[_gene]
-        mapper = HeuristicReferenceMatcher(reference_alleles, segment_threshold=segmentation_threshold[_gene])
-        mappings = mapper.match(sequences=sequences, segments=segments[_gene],
-                                alleles=[i[0] for i in predicted_alleles[_gene]],
-                                threshold=segmentation_threshold[_gene])
-
-        germline_alignmnets[_gene] = mappings
+    if chain_type == 'heavy':
+        germline_alignmnets['d'] = [{'start_in_seq': start, 'end_in_seq': end,
+                                     'start_in_ref': -1, 'end_in_ref': -1} for start, end in zip(d_start, d_end)
+                                    ]
 
     results = {
         'predicted_alleles': predicted_alleles,
@@ -305,7 +349,7 @@ def post_process_results(predictions, chain_type, config, sequences):
         'predicted_allele_likelihoods': predicted_allele_likelihoods,
         'mutation_rate': mutation_rate,
         'productive': productive,
-        'indel_count': indels
+        'indel_count': indel_count
     }
     if chain_type == 'light':
         results['type_'] = type_
@@ -358,12 +402,12 @@ if __name__ == '__main__':
     parser.add_argument('--max_input_size', type=int, default=576, help='maximum model input size')
     parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
 
-    parser.add_argument('--v_allele_threshold', type=float, default=0.9, help='threshold for v allele prediction')
+    parser.add_argument('--v_allele_threshold', type=float, default=0.95, help='threshold for v allele prediction')
     parser.add_argument('--d_allele_threshold', type=float, default=0.2, help='threshold for d allele prediction')
     parser.add_argument('--j_allele_threshold', type=float, default=0.8, help='threshold for j allele prediction')
     parser.add_argument('--v_seg_threshold', type=float, default=0.1, help='threshold for v allele segmentation')
     parser.add_argument('--d_seg_threshold', type=float, default=0.01, help='threshold for d allele segmentation')
-    parser.add_argument('--j_seg_threshold', type=float, default=0.01, help='threshold for j allele segmentation')
+    parser.add_argument('--j_seg_threshold', type=float, default=0.001, help='threshold for j allele segmentation')
     parser.add_argument('--v_cap', type=int, default=3, help='cap for v allele calls')
     parser.add_argument('--d_cap', type=int, default=3, help='cap for d allele calls')
     parser.add_argument('--j_cap', type=int, default=3, help='cap for j allele calls')

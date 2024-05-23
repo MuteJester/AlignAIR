@@ -1,45 +1,9 @@
 import numpy as np
 from tqdm.auto import tqdm
 
-
-def calculate_pad_size(sequence, max_length=512):
-    """
-    Calculates the size of padding applied to each side of the sequence
-    to achieve the specified maximum length.
-
-    Args:
-        sequence_length: The length of the original sequence before padding.
-        max_length: The maximum length to which the sequence is padded.
-
-    Returns:
-        The size of the padding applied to the start of the sequence.
-        If the total padding is odd, one additional unit of padding is applied to the end.
-    """
-
-    total_padding = max_length - len(sequence)
-    pad_size = total_padding // 2
-
-    return pad_size
-
 class HeuristicReferenceMatcher:
     def __init__(self ,reference_alleles ,segment_threshold=0.2):
         self.reference_alleles = reference_alleles
-
-    @staticmethod
-    def apply_segment_thresholding(segments, t=0.3):
-        mask = segments > t
-
-        first_indices = np.full(mask.shape[0], -1, dtype=int)  # Fill with -1 to indicate "not found"
-        last_indices = np.full(mask.shape[0], -1, dtype=int)
-
-        for i, row in enumerate(mask):
-            true_indices = np.where(row)[0]  # Find indices of True values in the row
-            if true_indices.size > 0:
-                first_indices[i] = true_indices[0]
-                last_indices[i] = true_indices[-1]
-
-        return first_indices, last_indices
-
     @staticmethod
     def hamming_distance(s1, s2):
         return sum(c1 != c2 for c1, c2 in zip(s1, s2)) + abs(len(s1 ) -len(s2))
@@ -93,8 +57,7 @@ class HeuristicReferenceMatcher:
 
     def align_with_germline(self, short_segment, ref_seq, k=20, s=25):
         if len(short_segment) < 20:
-            indel_flag = False
-            return indel_flag, -1, -1
+            return -1,-1
 
         # take K bases from the start for the short segment and K bases from the end of the short segment
         L_seg =len(short_segment)
@@ -145,19 +108,7 @@ class HeuristicReferenceMatcher:
 
         return best_start_pos, best_end_pos
 
-    def match(self, sequences, segments, alleles,k=15,s=30,threshold=0.1,max_sequence_length=576):
-
-        # apply thresholding to extract start and end position from segmentation vector
-        starts, ends = self.apply_segment_thresholding(segments, t=threshold)
-        # extract padding sizes from sequences
-        padding_sizes = np.array([calculate_pad_size(seq,max_length=max_sequence_length) for seq in sequences])
-        # correct for the padding that was applied to the sequence prior to passing it into the model
-        starts -= padding_sizes
-        ends -= padding_sizes
-        # correct for including some part of the mask due to errors
-        starts[starts < 0] = 0
-        ends[ends < 0] = 0
-
+    def match(self, sequences, starts, ends, alleles,k=15,s=30):
         results = []
 
         # iterate over each sequence with its respective start and end positions as well as predicted allele
@@ -169,6 +120,8 @@ class HeuristicReferenceMatcher:
             # calculate the reference and the germeline allele lengths
             segment_length = end - start
             reference_length = len(reference_sequence)
+
+
             match_found = False
             # Case 1: Exact Length Match
             if segment_length == reference_length:
@@ -201,14 +154,3 @@ class HeuristicReferenceMatcher:
                     raise ValueError('Error')
 
         return results
-
-# # Example usage
-# reference_alleles = {i.name: i.ungapped_seq.upper() for j in heavychain_config.v_alleles for i in
-#                      heavychain_config.v_alleles[j]}
-# sequences = ground_truth.sequence.to_list()
-# mutation_ratios = mutation_rate.squeeze()
-# top_references = predicted_alleles
-#
-# # Example usage
-# mapper = HeuristicReferenceMatcher(reference_alleles)
-# mappings = mapper.match(sequences=sequences, segments=v_segments, alleles=[i[0] for i in predicted_alleles])
