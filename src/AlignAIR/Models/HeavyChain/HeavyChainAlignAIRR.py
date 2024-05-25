@@ -422,23 +422,6 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         # cast keras tensor to float 32
         return K.cast(x, "float32")
 
-    @staticmethod
-    def compute_iou(y_true, y_pred):
-        intersection = K.sum(K.abs(y_true * y_pred), axis=-1)
-        sum_ = K.sum(K.abs(y_true) + K.abs(y_pred), axis=-1)
-        iou = (intersection + 1e-7) / (sum_ - intersection + 1e-7)
-        return K.mean(iou)
-
-    @staticmethod
-    def dice_coefficient(y_true, y_pred):
-        intersection = K.sum(y_true * y_pred)
-        return (2. * intersection + 1e-7) / (K.sum(y_true) + K.sum(y_pred) + 1e-7)
-
-    @staticmethod
-    def constraint_penalty(start_idx, end_idx):
-        penalty = tf.maximum(0.0, end_idx - start_idx)
-        return penalty ** 2  # Squaring to increase penalty for larger violations
-
     def hierarchical_loss(self, y_true, y_pred):
         # Extract the segmentation and classification outputs
         # segmentation_true = [self.c2f32(y_true[k]) for k in ['v_segment', 'd_segment', 'j_segment']]
@@ -543,60 +526,6 @@ class HeavyChainAlignAIRR(tf.keras.Model):
                       productive_loss)
 
         return total_loss, classification_loss, indel_count_loss, mutation_rate_loss, segmentation_loss, productive_loss
-
-    def multi_task_loss(self, y_true, y_pred):
-        # Extract the segmentation and classification outputs
-        segmentation_true = [self.c2f32(y_true[k]) for k in ['v_segment', 'd_segment', 'j_segment']]
-        segmentation_pred = [self.c2f32(y_pred[k]) for k in ['v_segment', 'd_segment', 'j_segment']]
-
-        classification_true = [self.c2f32(y_true[k]) for k in self.classification_keys]
-        classification_pred = [self.c2f32(y_pred[k]) for k in self.classification_keys]
-
-        # Compute the segmentation loss
-        v_segment_loss = tf.keras.metrics.binary_crossentropy(segmentation_true[0], segmentation_pred[0])
-        d_segment_loss = tf.keras.metrics.binary_crossentropy(segmentation_true[1], segmentation_pred[1])
-        j_segment_loss = tf.keras.metrics.binary_crossentropy(segmentation_true[2], segmentation_pred[2])
-
-        total_segmentation_loss = v_segment_loss + d_segment_loss + j_segment_loss
-
-        # Compute the intersection loss
-        v_d_intersection = K.sum(segmentation_pred[0] * segmentation_pred[1])
-        v_j_intersection = K.sum(segmentation_pred[0] * segmentation_pred[2])
-        d_j_intersection = K.sum(segmentation_pred[1] * segmentation_pred[2])
-
-        total_intersection_loss = v_d_intersection + v_j_intersection + d_j_intersection
-
-        # Compute the classification loss
-        clf_v_loss = tf.keras.metrics.binary_crossentropy(classification_true[0], classification_pred[0])
-        # origianl
-        # clf_d_loss = tf.keras.metrics.binary_crossentropy(classification_true[1], classification_pred[1])
-        clf_d_loss = d_loss(classification_true[1], classification_pred[1], penalty_factor=1,
-                            last_label_penalty_factor=3)
-
-        clf_j_loss = tf.keras.metrics.binary_crossentropy(classification_true[2], classification_pred[2])
-
-        mutation_rate_loss = tf.keras.metrics.mean_absolute_error(self.c2f32(y_true['mutation_rate']),
-                                                                  self.c2f32(y_pred['mutation_rate']))
-
-        indel_count_loss = tf.keras.metrics.mean_absolute_error(self.c2f32(y_true['indel_count']),
-                                                                self.c2f32(y_pred['indel_count']))
-
-        classification_loss = (
-                self.v_class_weight * clf_v_loss
-                + self.d_class_weight * clf_d_loss
-                + self.j_class_weight * clf_j_loss
-        )
-
-        # Combine the losses using a weighted sum
-        total_loss = (
-                self.segmentation_weight * total_segmentation_loss
-                + self.intersection_weight * total_intersection_loss
-                + self.classification_weight * classification_loss
-                + mutation_rate_loss + indel_count_loss
-
-        )
-
-        return total_loss, total_intersection_loss, total_segmentation_loss, classification_loss, mutation_rate_loss, indel_count_loss
 
     def train_step(self, data):
         x, y = data

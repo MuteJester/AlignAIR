@@ -56,8 +56,9 @@ class HeuristicReferenceMatcher:
         return alignment_score
 
     def align_with_germline(self, short_segment, ref_seq, k=20, s=25):
-        if len(short_segment) < 20:
-            return -1,-1
+        # if len(short_segment) < k: # rethink this
+        #     return -1,-1
+
 
         # take K bases from the start for the short segment and K bases from the end of the short segment
         L_seg =len(short_segment)
