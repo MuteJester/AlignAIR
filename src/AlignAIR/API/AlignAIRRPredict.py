@@ -19,75 +19,16 @@ from AlignAIR.Models.LightChain import LightChainAlignAIRR
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
 from AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
 from AlignAIR.Trainers import Trainer
+from AlignAIR.Utilities.consumer_producer import sequence_tokenizer_worker
+from AlignAIR.Utilities.file_processing import count_rows, tabular_sequence_generator
+from AlignAIR.Utilities.sequence_processing import tokenize_sequences_batch
+import os
+import tensorflow as tf
+tf.get_logger().setLevel('ERROR')
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 tokenizer_dictionary = {"A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0}  # pad token
-
-
-def encode_and_equal_pad_sequence(sequence, max_seq_length, tokenizer_dictionary):
-    """Encodes a sequence of nucleotides and pads it to the specified maximum length, equally from both sides.
-
-    Args:
-        sequence: A sequence of nucleotides.
-
-    Returns:
-        A padded sequence, and the start and end indices of the unpadded sequence.
-    """
-
-    encoded_sequence = np.array([tokenizer_dictionary[i] for i in sequence])
-    padding_length = max_seq_length - len(encoded_sequence)
-    iseven = padding_length % 2 == 0
-    pad_size = padding_length // 2
-    if iseven:
-        encoded_sequence = np.pad(encoded_sequence, (pad_size, pad_size), 'constant', constant_values=(0, 0))
-    else:
-        encoded_sequence = np.pad(encoded_sequence, (pad_size, pad_size + 1), 'constant', constant_values=(0, 0))
-    return encoded_sequence
-
-
-def tokenize_chunk(chunk, max_seq_length, tokenizer_dictionary):
-    return [(index, encode_and_equal_pad_sequence(sequence, max_seq_length, tokenizer_dictionary)) for index, sequence
-            in chunk]
-
-
-def chunkify(lst, n):
-    return [lst[i::n] for i in range(n)]
-
-
-def tokenize_sequences(sequences, max_seq_length, tokenizer_dictionary, verbose=False):
-    num_cpus = cpu_count()
-    indexed_sequences = list(enumerate(sequences))
-    chunks = chunkify(indexed_sequences, num_cpus)
-
-    # Create a partial function that includes the fixed arguments
-    from functools import partial
-    tokenize_partial = partial(tokenize_chunk, max_seq_length=max_seq_length, tokenizer_dictionary=tokenizer_dictionary)
-
-    with Pool(num_cpus) as pool:
-        if verbose:
-            results = list(tqdm(pool.imap(tokenize_partial, chunks), total=len(chunks)))
-        else:
-            results = pool.map(tokenize_partial, chunks)
-
-    # Flatten the list of lists and sort by the original index to maintain order
-    tokenized_sequences = [seq for chunk in results for seq in chunk]
-    tokenized_sequences.sort(key=lambda x: x[0])
-
-    # Remove the indices and extract the tokenized sequences
-    tokenized_sequences = [seq for index, seq in tokenized_sequences]
-    return np.vstack(tokenized_sequences)
-
-
-def process_csv_and_tokenize(sequences, max_seq_length, tokenizer_dictionary):
-    tokenized_matrix = tokenize_sequences(sequences, max_seq_length, tokenizer_dictionary, verbose=True)
-
-    return tokenized_matrix
-
-
-def setup_logging():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 
 def load_config(chain_type, config_paths):
     if chain_type == 'heavy':
@@ -111,24 +52,6 @@ def load_config(chain_type, config_paths):
         return {'kappa': kappa_config, 'lambda': lambda_config}
     else:
         raise ValueError(f'Unknown Chain Type: {chain_type}')
-
-
-def read_sequences(file_path):
-    sep = ',' if '.csv' in file_path else '\t'
-    return pd.read_csv(file_path, usecols=['sequence'], sep=sep)
-
-
-def sequence_generator(file_path, batch_size=256):
-    sep = ',' if '.csv' in file_path else '\t'
-    for chunk in pd.read_csv(file_path, usecols=['sequence'], sep=sep, chunksize=batch_size):
-        yield chunk['sequence'].tolist()
-
-
-def tokenize_sequences_batch(sequences, max_seq_length, tokenizer_dictionary):
-    tokenized_sequences = [encode_and_equal_pad_sequence(seq, max_seq_length, tokenizer_dictionary) for seq in
-                           sequences]
-    return np.vstack(tokenized_sequences)
-
 
 def load_model(sequences,chain_type, model_checkpoint, max_sequence_size, config=None):
     if chain_type == 'heavy':
@@ -163,35 +86,6 @@ def load_model(sequences,chain_type, model_checkpoint, max_sequence_size, config
 
     return trainer.model
 
-
-def make_predictions(model, sequences, batch_size=256):
-    dataset = tf.data.Dataset.from_tensor_slices({'tokenized_sequence': sequences})
-    dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
-
-    predictions = []
-    for batch in tqdm(dataset):
-        predictions.append(model.predict(batch, verbose=0))
-
-    return predictions
-
-
-def count_rows(filename):
-    with open(filename, 'r', encoding='utf-8') as file:
-        row_count = sum(1 for row in file)
-    return row_count - 1
-
-
-def sequence_tokenizer_worker(file_path, queue, max_seq_length, tokenizer_dictionary, batch_size=256):
-    sep = ',' if '.csv' in file_path else '\t'
-    for chunk in pd.read_csv(file_path, usecols=['sequence'], sep=sep, chunksize=batch_size):
-        sequences = chunk['sequence'].tolist()
-        tokenized_sequences = [encode_and_equal_pad_sequence(seq, max_seq_length, tokenizer_dictionary) for seq in
-                               sequences]
-        tokenized_batch = np.vstack(tokenized_sequences)
-        queue.put(tokenized_batch)
-    queue.put(None)
-
-
 def start_tokenizer_process(file_path, max_seq_length, tokenizer_dictionary, batch_size=256):
     queue = multiprocessing.Queue(maxsize=10)  # Control the prefetching size
     process = Process(target=sequence_tokenizer_worker,
@@ -211,8 +105,26 @@ def make_predictions(model, sequence_generator, max_sequence_size, total_samples
         predictions.append(model.predict({'tokenized_sequence': tokenized_sequences}, verbose=0, batch_size=batch_size))
     return predictions
 
+def calculate_pad_size(sequence, max_length=576):
+        """
+        Calculates the size of padding applied to each side of the sequence
+        to achieve the specified maximum length.
 
-def post_process_results(args,predictions, chain_type, config, sequences):
+        Args:
+            sequence_length: The length of the original sequence before padding.
+            max_length: The maximum length to which the sequence is padded.
+
+        Returns:
+            The size of the padding applied to the start of the sequence.
+            If the total padding is odd, one additional unit of padding is applied to the end.
+        """
+
+        total_padding = max_length - len(sequence)
+        pad_size = total_padding // 2
+
+        return pad_size
+
+def clean_and_arrange_predictions(predictions,chain_type):
     mutation_rate, v_allele, d_allele, j_allele = [], [], [], []
     v_start, v_end = [], []
     d_start, d_end = [], []
@@ -241,7 +153,7 @@ def post_process_results(args,predictions, chain_type, config, sequences):
 
     mutation_rate = np.vstack(mutation_rate)
     indel_count = np.vstack(indel_count)
-    productive = np.vstack(productive)>0.5
+    productive = np.vstack(productive) > 0.5
 
     v_allele = np.vstack(v_allele)
     d_allele = np.vstack(d_allele)
@@ -253,25 +165,17 @@ def post_process_results(args,predictions, chain_type, config, sequences):
     j_start = np.vstack(j_start)
     j_end = np.vstack(j_end)
 
-    def calculate_pad_size(sequence, max_length=576):
-        """
-        Calculates the size of padding applied to each side of the sequence
-        to achieve the specified maximum length.
+    if chain_type == 'light':
+        type_ = np.vstack(type_)
+    else:
+        d_start = np.vstack(d_start)
+        d_end = np.vstack(d_end)
+        d_allele = np.vstack(d_allele)
 
-        Args:
-            sequence_length: The length of the original sequence before padding.
-            max_length: The maximum length to which the sequence is padded.
+    return (v_allele,d_allele,j_allele,v_start,v_end,d_start,d_end,
+            j_start,j_end,mutation_rate,indel_count,productive,type_)
 
-        Returns:
-            The size of the padding applied to the start of the sequence.
-            If the total padding is odd, one additional unit of padding is applied to the end.
-        """
-
-        total_padding = max_length - len(sequence)
-        pad_size = total_padding // 2
-
-        return pad_size
-
+def correct_segments_for_paddings(sequences,chain_type,v_start,v_end,d_start,d_end,j_start,j_end):
     paddings = np.array([calculate_pad_size(i) for i in sequences])
 
     v_start = np.round((v_start.squeeze() - paddings)).astype(int)
@@ -280,24 +184,13 @@ def post_process_results(args,predictions, chain_type, config, sequences):
     j_start = np.round((j_start.squeeze() - paddings)).astype(int)
     j_end = np.round((j_end.squeeze() - paddings)).astype(int)
 
-    if chain_type == 'light':
-        type_ = np.vstack(type_)
-    else:
-        d_start = np.vstack(d_start)
-        d_end = np.vstack(d_end)
-        d_allele = np.vstack(d_allele)
+    if chain_type == 'heavy':
         d_start = np.round(np.vstack(d_start).squeeze()).astype(int)
         d_end = np.round(np.vstack(d_end).squeeze()).astype(int)
 
-    ################################### POST PROCESS AND SAVE RESULTS #############################################
-    # DynamicConfidenceThreshold
-    alleles = {'v': v_allele, 'j': j_allele}
-    threshold = {'v': args.v_allele_threshold, 'd': args.d_allele_threshold, 'j': args.j_allele_threshold}
-    caps = {'v': args.v_cap, 'd': args.d_cap, 'j': args.j_cap}
+    return v_start,v_end,d_start,d_end,j_start,j_end
 
-    if chain_type == 'heavy':
-        alleles['d'] = d_allele
-
+def extract_likelihoods_and_labels_from_calls(alleles,threshold,caps,config,chain_type):
     predicted_alleles = {}
     predicted_allele_likelihoods = {}
     threshold_objects = {}
@@ -310,17 +203,16 @@ def post_process_results(args,predictions, chain_type, config, sequences):
                                                          lambda_dataconfig=config['lambda'])
 
         threshold_objects[_gene] = extractor
-        selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene], n_process=6,
+        selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene],
                                                  cap=caps[_gene], allele=_gene)
 
         predicted_alleles[_gene] = [i[0] for i in selected_alleles]
         predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
 
-    #HeuristicReferenceMatcher
-    segments = {'v': [v_start,v_end], 'j': [j_start,j_end]}
-    if chain_type == 'heavy':
-        segments['d'] = [d_start,d_end]
+    return predicted_alleles,predicted_allele_likelihoods,threshold_objects
 
+
+def align_with_germline(segments,threshold_objects,predicted_alleles,sequences):
     germline_alignmnets = {}
 
     for _gene in segments:
@@ -331,10 +223,41 @@ def post_process_results(args,predictions, chain_type, config, sequences):
         starts,ends = segments[_gene]
         mapper = HeuristicReferenceMatcher(reference_alleles)
         mappings = mapper.match(sequences=sequences, starts=starts,ends=ends,
-                                alleles=[i[0] for i in predicted_alleles[_gene]])
+                                alleles=[i[0] for i in predicted_alleles[_gene]],_gene=_gene)
 
         germline_alignmnets[_gene] = mappings
 
+    return germline_alignmnets
+
+def post_process_results(args,predictions, chain_type, config, sequences):
+
+
+    (v_allele,d_allele,j_allele,
+     v_start,v_end,
+     d_start,d_end,
+     j_start,j_end,
+     mutation_rate,indel_count,productive,type_) = clean_and_arrange_predictions(predictions,args.chain_type)
+
+    v_start, v_end, d_start, d_end, j_start, j_end = correct_segments_for_paddings(sequences,args.chain_type,v_start,
+                                                                                   v_end,d_start,d_end,j_start,j_end)
+
+    # DynamicConfidenceThreshold
+    alleles = {'v': v_allele, 'j': j_allele}
+    threshold = {'v': args.v_allele_threshold, 'd': args.d_allele_threshold, 'j': args.j_allele_threshold}
+    caps = {'v': args.v_cap, 'd': args.d_cap, 'j': args.j_cap}
+
+    if chain_type == 'heavy':
+        alleles['d'] = d_allele
+
+    predicted_alleles,predicted_allele_likelihoods,threshold_objects = (
+        extract_likelihoods_and_labels_from_calls(alleles,threshold,caps,config,args.chain_type))
+
+
+    segments = {'v': [v_start,v_end], 'j': [j_start,j_end]}
+    if chain_type == 'heavy':
+        segments['d'] = [d_start,d_end]
+
+    germline_alignmnets = align_with_germline(segments, threshold_objects, predicted_alleles, sequences)
 
 
     results = {
@@ -466,7 +389,7 @@ def main():
     process.join()
 
     # Post-process results
-    sequence_gen = sequence_generator(args.sequences, args.max_input_size)
+    sequence_gen = tabular_sequence_generator(args.sequences, args.max_input_size)
     sequences = [i for j in sequence_gen for i in j]
     results = post_process_results(args,predictions, args.chain_type, config, sequences)
 

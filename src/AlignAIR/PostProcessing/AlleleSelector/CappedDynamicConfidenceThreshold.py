@@ -56,11 +56,6 @@ class CappedDynamicConfidenceThreshold:
                 'j': self.j_heavy_dict,
             }
 
-
-
-
-
-
     def derive_call_one_hot_representation(self):
         if self.chain == 'light':
 
@@ -119,12 +114,21 @@ class CappedDynamicConfidenceThreshold:
 
         return selected_labels,likelihoods
 
-    def get_alleles(self, likelihood_vectors, confidence=0.9, allele='v', n_process=1,cap=3):
+    def get_alleles_mt(self, likelihood_vectors, confidence=0.9, allele='v', n_process=1,cap=3):
         def process_vector(vec):
             selected_alleles_index,likelihoods = self.dynamic_cumulative_confidence_threshold(vec, percentage=confidence,cap=cap)
             return [self[allele][i] for i in selected_alleles_index],likelihoods
 
         results = Parallel(n_jobs=n_process)(delayed(process_vector)(vec) for vec in tqdm(likelihood_vectors))
+        return results
+
+    def get_alleles(self, likelihood_vectors, confidence=0.9, allele='v',cap=3):
+        results = []
+        desc = f'Processing {allele.upper()} Likelihoods'
+        for vec in tqdm(likelihood_vectors,desc=desc):
+            selected_alleles_index,likelihoods = self.dynamic_cumulative_confidence_threshold(vec, percentage=confidence,cap=cap)
+            results.append(([self[allele][i] for i in selected_alleles_index],likelihoods))
+
         return results
 
     def agreement_score(self, allele_true, allele_pred):
