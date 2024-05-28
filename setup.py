@@ -7,7 +7,7 @@ with open('requirements.txt') as f:
 
 setup(
     name='AlignAIR',
-    version='0.1.0',
+    version='0.1.1',
     author='Thomas Konstantinovsky & Ayelet Peres',
     author_email='thomaskon90@gmail.com',
     description='IG Sequence Alignment Tool Based on Deep Convolutional Neural Networks',
@@ -32,5 +32,11 @@ setup(
         'Programming Language :: Python :: 3.9',
     ],
     keywords='immunogenetics, sequence alignment, bioinformatics',
-    python_requires='>=3.7',
+    python_requires='>=3.9, <3.12',  # Specify compatible Python versions
+    entry_points={
+        'console_scripts': [
+            'alignair_predict=AlignAIR.API.AlignAIRRPredict:main',
+        ],
+    },
 )
+

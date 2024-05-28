@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/API/bash
 
 # Define the models
 models=("S5F") #"Uniform" "S5F_60" "S5F_Opposite")

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/API/bash
 
 # Usage function to display help
 usage() {

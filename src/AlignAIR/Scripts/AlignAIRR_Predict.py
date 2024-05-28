@@ -1,5 +1,3 @@
-import subprocess
-import pandas as pd
 import argparse
 import tensorflow as tf
 import os
@@ -7,24 +5,22 @@ import numpy as np
 import random
 import tensorflow as tf
 import pandas as pd
-from Data import HeavyChainDataset, LightChainDataset
-from Data.HC_Dataset_Experimental import HeavyChainDatasetExperimental
+from ..Data import HeavyChainDataset, LightChainDataset
 from GenAIRR.sequence import LightChainSequence
 import pickle
-from Models.HeavyChain import HeavyChainAlignAIRR
-from Models.LightChain import LightChainAlignAIRR
-from Trainers import Trainer
+from ..Models.HeavyChain import HeavyChainAlignAIRR
+from ..Models.LightChain import LightChainAlignAIRR
+from ..Trainers import Trainer
 from tqdm.auto import tqdm
 from multiprocessing import Pool, cpu_count
-from PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
-from PostProcessing.AlleleSelector import DynamicConfidenceThreshold, CappedDynamicConfidenceThreshold
+from ..PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
+from ..PostProcessing.AlleleSelector import DynamicConfidenceThreshold, CappedDynamicConfidenceThreshold
 import logging
 from GenAIRR.data import builtin_kappa_chain_data_config, builtin_lambda_chain_data_config, \
     builtin_heavy_chain_data_config
 from multiprocessing import Process, Queue
 import multiprocessing
 import time
-from Models.HeavyChain.Experimental_V7 import HcExperimental_V7, HeavyChainDatasetExperimental, Trainer
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -137,7 +133,7 @@ def tokenize_sequences_batch(sequences, max_seq_length, tokenizer_dictionary):
 
 def load_model(chain_type, model_checkpoint, max_sequence_size, config=None):
     if chain_type == 'heavy':
-        dataset = HeavyChainDatasetExperimental(data_path=args.sequences,
+        dataset = HeavyChainDataset(data_path=args.sequences,
                                                 dataconfig=config['heavy'], batch_read_file=True,
                                                 max_sequence_length=max_sequence_size)
     elif chain_type == 'light':
@@ -149,7 +145,7 @@ def load_model(chain_type, model_checkpoint, max_sequence_size, config=None):
         raise ValueError(f'Unknown Chain Type: {chain_type}')
 
     trainer = Trainer(
-        model=LightChainAlignAIRR if chain_type == 'light' else HcExperimental_V7,
+        model=LightChainAlignAIRR if chain_type == 'light' else HeavyChainAlignAIRR,
         dataset=dataset,
         epochs=1,
         steps_per_epoch=1,

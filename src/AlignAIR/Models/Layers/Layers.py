@@ -11,8 +11,19 @@ from tensorflow.keras.layers import Attention, Conv2D, MaxPool2D, LeakyReLU
 from tensorflow.keras.layers import Dense, Dropout, LayerNormalization
 from tensorflow.keras.layers import Flatten, concatenate, Conv1D, MaxPool1D, BatchNormalization
 from tensorflow.keras.layers import Multiply, Layer, SeparableConv1D
-
 import numpy as np
+from tensorflow.keras.constraints import Constraint
+
+class ClipConstraint(Constraint):
+    def __init__(self, min_value, max_value):
+        self.min_value = min_value
+        self.max_value = max_value
+
+    def __call__(self, w):
+        return tf.clip_by_value(w, self.min_value, self.max_value)
+
+    def get_config(self):
+        return {'min_value': self.min_value, 'max_value': self.max_value}
 
 class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
     def __init__(self, filters=16, kernel=3, max_pool=2, activation=None, initializer=None, **kwargs):
@@ -143,7 +154,7 @@ class RegularizedConstrainedLogVar(tf.keras.layers.Layer):
         self.log_var = self.add_weight(name="log_var",
                                        shape=(),
                                        initializer=tf.keras.initializers.Constant(value=tf.math.log(initial_value)),
-                                       constraint=lambda x: tf.clip_by_value(x, min_log_var, max_log_var),
+                                       constraint=ClipConstraint(min_log_var, max_log_var),
                                        trainable=True)
         self.regularizer_weight = regularizer_weight
 

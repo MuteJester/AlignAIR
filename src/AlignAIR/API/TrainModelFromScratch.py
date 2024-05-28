@@ -8,12 +8,12 @@ import numpy as np
 import random
 import tensorflow as tf
 import pandas as pd
-from ..Data import HeavyChainDataset,LightChainDataset
+from AlignAIR.Data import HeavyChainDataset,LightChainDataset
 from GenAIRR.sequence import LightChainSequence
 import pickle
-from ..Models.HeavyChain import HeavyChainAlignAIRR
-from ..Models.LightChain import LightChainAlignAIRR
-from ..Trainers import Trainer
+from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
+from AlignAIR.Models.LightChain import LightChainAlignAIRR
+from AlignAIR.Trainers import Trainer
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='AlingAIRR Model Trainer from Scratch')

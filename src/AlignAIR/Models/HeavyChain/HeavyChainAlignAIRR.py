@@ -11,7 +11,7 @@ from tensorflow.keras.layers import (
     Reshape,
     Flatten
 )
-from ..HeavyChain.losses import d_loss
+
 from ..Layers import Conv1D_and_BatchNorm, CutoutLayer
 from ...Models.Layers import ConvResidualFeatureExtractionBlock, RegularizedConstrainedLogVar
 from ...Models.Layers import (
@@ -51,111 +51,110 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         self.v_class_weight, self.d_class_weight, self.j_class_weight = 0.5, 0.5, 0.5
         self.segmentation_weight, self.classification_weight, self.intersection_weight = (0.5, 0.5, 0.5)
 
+
+        # Tracking
+        self.setup_performance_metrics()
+        self.setup_model()
         # Define task-specific log variances for dynamic weighting
+        self.setup_log_variances()
+
+    def setup_model(self):
+            # Init Input Layers
+            self._init_input_layers()
+
+            self.input_embeddings = TokenAndPositionEmbedding(
+                vocab_size=6, embed_dim=32, maxlen=self.max_seq_length
+            )
+
+            # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
+            # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
+            self.meta_feature_extractor_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                                   num_conv_batch_layers=6,
+                                                                                   kernel_size=[3, 3, 3, 2, 2, 2, 5],
+                                                                                   max_pool_size=2,
+                                                                                   conv_activation=tf.keras.layers.Activation(
+                                                                                       'tanh'),
+                                                                                   initializer=self.initializer)
+
+            self.v_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                                   num_conv_batch_layers=4,
+                                                                                   kernel_size=[3, 3, 3, 2, 5],
+                                                                                   max_pool_size=2,
+                                                                                   conv_activation=tf.keras.layers.Activation(
+                                                                                       'tanh'),
+                                                                                   initializer=self.initializer)
+            self.d_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                                   num_conv_batch_layers=4,
+                                                                                   kernel_size=[3, 3, 3, 2, 5],
+                                                                                   max_pool_size=2,
+                                                                                   conv_activation=tf.keras.layers.Activation(
+                                                                                       'tanh'),
+                                                                                   initializer=self.initializer)
+            self.j_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                                   num_conv_batch_layers=4,
+                                                                                   kernel_size=[3, 3, 3, 2, 5],
+                                                                                   max_pool_size=2,
+                                                                                   conv_activation=tf.keras.layers.Activation(
+                                                                                       'tanh'),
+                                                                                   initializer=self.initializer)
+
+            self.v_mask_layer = CutoutLayer(gene='V', max_size=self.max_seq_length)
+            self.d_mask_layer = CutoutLayer(gene='D', max_size=self.max_seq_length)
+            self.j_mask_layer = CutoutLayer(gene='J', max_size=self.max_seq_length)
+
+            # Init V/D/J Masked Input Signal Encoding Layers
+            # Init V/D/J Masked Input Signal Encoding Layers
+            self.v_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                                 num_conv_batch_layers=6,
+                                                                                 kernel_size=[3, 3, 3, 2, 2, 2, 5],
+                                                                                 max_pool_size=2,
+                                                                                 conv_activation=tf.keras.layers.Activation(
+                                                                                     'tanh'),
+                                                                                 initializer=self.initializer)
+
+            self.d_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=64,
+                                                                                 num_conv_batch_layers=4,
+                                                                                 kernel_size=[3, 3, 3, 3, 5],
+                                                                                 max_pool_size=2,
+                                                                                 conv_activation=tf.keras.layers.Activation(
+                                                                                     'tanh'),
+                                                                                 initializer=self.initializer)
+
+            self.j_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                                 num_conv_batch_layers=6,
+                                                                                 kernel_size=[3, 3, 3, 2, 2, 2, 5],
+                                                                                 max_pool_size=2,
+                                                                                 conv_activation=tf.keras.layers.Activation(
+                                                                                     'tanh'),
+                                                                                 initializer=self.initializer)
+
+            # Init Interval Regression Related Layers
+            self._init_segmentation_predictions()
+
+            # Init the masking layer that will leverage the predicted segmentation mask
+            self._init_masking_layers()
+
+            #  =========== V HEADS ======================
+            self._init_v_classification_layers()
+            # =========== D HEADS ======================
+            self._init_d_classification_layers()
+            # =========== J HEADS ======================
+            self._init_j_classification_layers()
+
+    def setup_log_variances(self):
+        """Initialize log variances for dynamic weighting."""
         self.log_var_v_start = RegularizedConstrainedLogVar()
         self.log_var_v_end = RegularizedConstrainedLogVar()
-
         self.log_var_d_start = RegularizedConstrainedLogVar()
         self.log_var_d_end = RegularizedConstrainedLogVar()
-
         self.log_var_j_start = RegularizedConstrainedLogVar()
         self.log_var_j_end = RegularizedConstrainedLogVar()
-
         self.log_var_v_classification = RegularizedConstrainedLogVar()
         self.log_var_d_classification = RegularizedConstrainedLogVar()
         self.log_var_j_classification = RegularizedConstrainedLogVar()
         self.log_var_mutation = RegularizedConstrainedLogVar()
         self.log_var_indel = RegularizedConstrainedLogVar()
         self.log_var_productivity = RegularizedConstrainedLogVar()
-
-        # Tracking
-        self.setup_performance_metrics()
-
-        self.setup_model()
-
-    def setup_model(self):
-        # Init Input Layers
-        self._init_input_layers()
-
-        self.input_embeddings = TokenAndPositionEmbedding(
-            vocab_size=6, embed_dim=32, maxlen=self.max_seq_length
-        )
-
-        # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
-        # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
-        self.meta_feature_extractor_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                               num_conv_batch_layers=6,
-                                                                               kernel_size=[3, 3, 3, 2, 2, 2, 5],
-                                                                               max_pool_size=2,
-                                                                               conv_activation=tf.keras.layers.Activation(
-                                                                                   'tanh'),
-                                                                               initializer=self.initializer)
-
-        self.v_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                               num_conv_batch_layers=4,
-                                                                               kernel_size=[3, 3, 3, 2, 5],
-                                                                               max_pool_size=2,
-                                                                               conv_activation=tf.keras.layers.Activation(
-                                                                                   'tanh'),
-                                                                               initializer=self.initializer)
-        self.d_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                               num_conv_batch_layers=4,
-                                                                               kernel_size=[3, 3, 3, 2, 5],
-                                                                               max_pool_size=2,
-                                                                               conv_activation=tf.keras.layers.Activation(
-                                                                                   'tanh'),
-                                                                               initializer=self.initializer)
-        self.j_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                               num_conv_batch_layers=4,
-                                                                               kernel_size=[3, 3, 3, 2, 5],
-                                                                               max_pool_size=2,
-                                                                               conv_activation=tf.keras.layers.Activation(
-                                                                                   'tanh'),
-                                                                               initializer=self.initializer)
-
-        self.v_mask_layer = CutoutLayer(gene='V', max_size=self.max_seq_length)
-        self.d_mask_layer = CutoutLayer(gene='D', max_size=self.max_seq_length)
-        self.j_mask_layer = CutoutLayer(gene='J', max_size=self.max_seq_length)
-
-        # Init V/D/J Masked Input Signal Encoding Layers
-        # Init V/D/J Masked Input Signal Encoding Layers
-        self.v_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                             num_conv_batch_layers=6,
-                                                                             kernel_size=[3, 3, 3, 2, 2, 2, 5],
-                                                                             max_pool_size=2,
-                                                                             conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'),
-                                                                             initializer=self.initializer)
-
-        self.d_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=64,
-                                                                             num_conv_batch_layers=4,
-                                                                             kernel_size=[3, 3, 3, 3, 5],
-                                                                             max_pool_size=2,
-                                                                             conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'),
-                                                                             initializer=self.initializer)
-
-        self.j_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                             num_conv_batch_layers=6,
-                                                                             kernel_size=[3, 3, 3, 2, 2, 2, 5],
-                                                                             max_pool_size=2,
-                                                                             conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'),
-                                                                             initializer=self.initializer)
-
-        # Init Interval Regression Related Layers
-        self._init_segmentation_predictions()
-
-        # Init the masking layer that will leverage the predicted segmentation mask
-        self._init_masking_layers()
-
-        #  =========== V HEADS ======================
-        self._init_v_classification_layers()
-        # =========== D HEADS ======================
-        self._init_d_classification_layers()
-        # =========== J HEADS ======================
-        self._init_j_classification_layers()
-
     def setup_performance_metrics(self):
         """
            Sets up metrics to track various aspects of model performance during training.

@@ -13,14 +13,16 @@ from GenAIRR.data import builtin_kappa_chain_data_config, builtin_lambda_chain_d
     builtin_heavy_chain_data_config
 from tqdm.auto import tqdm
 
-from src.AlignAIR.Data import LightChainDataset, HeavyChainDataset
-from src.AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
-from src.AlignAIR.Models.LightChain import LightChainAlignAIRR
-from src.AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
-from src.AlignAIR.Trainers import Trainer
+from AlignAIR.Data import LightChainDataset, HeavyChainDataset
+from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
+from AlignAIR.Models.LightChain import LightChainAlignAIRR
+from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
+from AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
+from AlignAIR.Trainers import Trainer
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+tokenizer_dictionary = {"A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0}  # pad token
 
 
 def encode_and_equal_pad_sequence(sequence, max_seq_length, tokenizer_dictionary):
@@ -128,13 +130,13 @@ def tokenize_sequences_batch(sequences, max_seq_length, tokenizer_dictionary):
     return np.vstack(tokenized_sequences)
 
 
-def load_model(chain_type, model_checkpoint, max_sequence_size, config=None):
+def load_model(sequences,chain_type, model_checkpoint, max_sequence_size, config=None):
     if chain_type == 'heavy':
-        dataset = HeavyChainDataset(data_path=args.sequences,
+        dataset = HeavyChainDataset(data_path=sequences,
                                                 dataconfig=config['heavy'], batch_read_file=True,
                                                 max_sequence_length=max_sequence_size)
     elif chain_type == 'light':
-        dataset = LightChainDataset(data_path=args.sequences,
+        dataset = LightChainDataset(data_path=sequences,
                                     lambda_dataconfig=config['lambda'],
                                     kappa_dataconfig=config['kappa'],
                                     batch_read_file=True, max_sequence_length=max_sequence_size)
@@ -152,10 +154,11 @@ def load_model(chain_type, model_checkpoint, max_sequence_size, config=None):
     trainer.model.build({'tokenized_sequence': (max_sequence_size, 1)})
 
     MODEL_CHECKPOINT = model_checkpoint
+
+    trainer.model.load_weights(MODEL_CHECKPOINT)
+
     logging.info(f"Loading: {MODEL_CHECKPOINT.split('/')[-1]}")
 
-    trainer.model.load_weights(
-        MODEL_CHECKPOINT)
     logging.info(f"Model Loaded Successfully")
 
     return trainer.model
@@ -209,7 +212,7 @@ def make_predictions(model, sequence_generator, max_sequence_size, total_samples
     return predictions
 
 
-def post_process_results(predictions, chain_type, config, sequences):
+def post_process_results(args,predictions, chain_type, config, sequences):
     mutation_rate, v_allele, d_allele, j_allele = [], [], [], []
     v_start, v_end = [], []
     d_start, d_end = [], []
@@ -238,7 +241,7 @@ def post_process_results(predictions, chain_type, config, sequences):
 
     mutation_rate = np.vstack(mutation_rate)
     indel_count = np.vstack(indel_count)
-    productive = np.vstack(productive)
+    productive = np.vstack(productive)>0.5
 
     v_allele = np.vstack(v_allele)
     d_allele = np.vstack(d_allele)
@@ -250,19 +253,47 @@ def post_process_results(predictions, chain_type, config, sequences):
     j_start = np.vstack(j_start)
     j_end = np.vstack(j_end)
 
+    def calculate_pad_size(sequence, max_length=576):
+        """
+        Calculates the size of padding applied to each side of the sequence
+        to achieve the specified maximum length.
+
+        Args:
+            sequence_length: The length of the original sequence before padding.
+            max_length: The maximum length to which the sequence is padded.
+
+        Returns:
+            The size of the padding applied to the start of the sequence.
+            If the total padding is odd, one additional unit of padding is applied to the end.
+        """
+
+        total_padding = max_length - len(sequence)
+        pad_size = total_padding // 2
+
+        return pad_size
+
+    paddings = np.array([calculate_pad_size(i) for i in sequences])
+
+    v_start = np.round((v_start.squeeze() - paddings)).astype(int)
+    v_end = np.round((v_end.squeeze() - paddings)).astype(int)
+
+    j_start = np.round((j_start.squeeze() - paddings)).astype(int)
+    j_end = np.round((j_end.squeeze() - paddings)).astype(int)
+
     if chain_type == 'light':
         type_ = np.vstack(type_)
     else:
-        d_allele = np.vstack(d_allele)
         d_start = np.vstack(d_start)
         d_end = np.vstack(d_end)
+        d_allele = np.vstack(d_allele)
+        d_start = np.round(np.vstack(d_start).squeeze()).astype(int)
+        d_end = np.round(np.vstack(d_end).squeeze()).astype(int)
 
     ################################### POST PROCESS AND SAVE RESULTS #############################################
     # DynamicConfidenceThreshold
     alleles = {'v': v_allele, 'j': j_allele}
     threshold = {'v': args.v_allele_threshold, 'd': args.d_allele_threshold, 'j': args.j_allele_threshold}
     caps = {'v': args.v_cap, 'd': args.d_cap, 'j': args.j_cap}
-    segmentation_threshold = {'v': args.v_seg_threshold, 'd': args.d_seg_threshold, 'j': args.j_seg_threshold}
 
     if chain_type == 'heavy':
         alleles['d'] = d_allele
@@ -285,63 +316,26 @@ def post_process_results(predictions, chain_type, config, sequences):
         predicted_alleles[_gene] = [i[0] for i in selected_alleles]
         predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
 
-    # HeuristicReferenceMatcher
-    # segments = {'v': v_segment, 'j': j_segment}
-    # if chain_type == 'heavy':
-    #     segments['d'] = d_segment
-
-    # germline_alignmnets = {}
-
-    # for _gene in segments:
-    #     reference_alleles = threshold_objects[_gene].reference_map[_gene]
-    #     mapper = HeuristicReferenceMatcher(reference_alleles,segment_threshold=segmentation_threshold[_gene])
-    #     mappings = mapper.match(sequences=sequences, segments=segments[_gene],
-    #                             alleles=[i[0] for i in predicted_alleles[_gene]],threshold=segmentation_threshold[_gene])
-
-    #     germline_alignmnets[_gene] = mappings
-
-    def calculate_pad_size(sequence, max_length=576):
-        """
-        Calculates the size of padding applied to each side of the sequence
-        to achieve the specified maximum length.
-
-        Args:
-            sequence_length: The length of the original sequence before padding.
-            max_length: The maximum length to which the sequence is padded.
-
-        Returns:
-            The size of the padding applied to the start of the sequence.
-            If the total padding is odd, one additional unit of padding is applied to the end.
-        """
-
-        total_padding = max_length - len(sequence)
-        pad_size = total_padding // 2
-
-        return pad_size
-
-    paddings = np.array([calculate_pad_size(i) for i in sequences])
-    v_start = np.round((v_start.squeeze() - paddings)).astype(int)
-    v_end = np.round((v_end.squeeze() - paddings)).astype(int)
-
-    j_start = np.round((j_start.squeeze() - paddings)).astype(int)
-    j_end = np.round((j_end.squeeze() - paddings)).astype(int)
-
+    #HeuristicReferenceMatcher
+    segments = {'v': [v_start,v_end], 'j': [j_start,j_end]}
     if chain_type == 'heavy':
-        d_start = np.round((d_start.squeeze() - paddings)).astype(int)
-        d_end = np.round((d_end.squeeze() - paddings)).astype(int)
+        segments['d'] = [d_start,d_end]
 
     germline_alignmnets = {}
-    germline_alignmnets['v'] = [{'start_in_seq': start, 'end_in_seq': end,
-                                 'start_in_ref': -1, 'end_in_ref': -1} for start, end in zip(v_start, v_end)
-                                ]
-    germline_alignmnets['j'] = [{'start_in_seq': start, 'end_in_seq': end,
-                                 'start_in_ref': -1, 'end_in_ref': -1} for start, end in zip(j_start, j_end)
-                                ]
 
-    if chain_type == 'heavy':
-        germline_alignmnets['d'] = [{'start_in_seq': start, 'end_in_seq': end,
-                                     'start_in_ref': -1, 'end_in_ref': -1} for start, end in zip(d_start, d_end)
-                                    ]
+    for _gene in segments:
+        reference_alleles = threshold_objects[_gene].reference_map[_gene]
+        if _gene == 'd':
+            reference_alleles['Short-D'] = ''
+
+        starts,ends = segments[_gene]
+        mapper = HeuristicReferenceMatcher(reference_alleles)
+        mappings = mapper.match(sequences=sequences, starts=starts,ends=ends,
+                                alleles=[i[0] for i in predicted_alleles[_gene]])
+
+        germline_alignmnets[_gene] = mappings
+
+
 
     results = {
         'predicted_alleles': predicted_alleles,
@@ -356,7 +350,7 @@ def post_process_results(predictions, chain_type, config, sequences):
     return results
 
 
-def save_results(results, save_path, file_name, sequences):
+def save_results(results, save_path, file_name, sequences,chain_type):
     final_csv = pd.DataFrame({
         'sequence': sequences,
         'v_call': [','.join(i) for i in results['predicted_alleles']['v']],
@@ -389,7 +383,7 @@ def save_results(results, save_path, file_name, sequences):
     final_csv.to_csv(save_path + file_name + '_alignairr_results.csv', index=False)
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='AlingAIR Model Prediction')
     parser.add_argument('--model_checkpoint', type=str, required=True, help='path to saved alignairr weights')
     parser.add_argument('--save_path', type=str, required=True, help='where to save the outputed predictions')
@@ -405,16 +399,12 @@ if __name__ == '__main__':
     parser.add_argument('--v_allele_threshold', type=float, default=0.95, help='threshold for v allele prediction')
     parser.add_argument('--d_allele_threshold', type=float, default=0.2, help='threshold for d allele prediction')
     parser.add_argument('--j_allele_threshold', type=float, default=0.8, help='threshold for j allele prediction')
-    parser.add_argument('--v_seg_threshold', type=float, default=0.1, help='threshold for v allele segmentation')
-    parser.add_argument('--d_seg_threshold', type=float, default=0.01, help='threshold for d allele segmentation')
-    parser.add_argument('--j_seg_threshold', type=float, default=0.001, help='threshold for j allele segmentation')
     parser.add_argument('--v_cap', type=int, default=3, help='cap for v allele calls')
     parser.add_argument('--d_cap', type=int, default=3, help='cap for d allele calls')
     parser.add_argument('--j_cap', type=int, default=3, help='cap for j allele calls')
 
     args = parser.parse_args()
     chain_type = args.chain_type
-    tokenizer_dictionary = {"A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0}  # pad token
 
     # Load configuration
     config_paths = {'heavy': args.heavy_data_config, 'kappa': args.kappa_data_config, 'lambda': args.lambda_data_config}
@@ -442,7 +432,7 @@ if __name__ == '__main__':
     # sequence_gen = sequence_generator(args.sequences,batch_size=args.batch_size)
 
     # Load model
-    model = load_model(args.chain_type, args.model_checkpoint, args.max_input_size, config)
+    model = load_model(args.sequences,args.chain_type, args.model_checkpoint, args.max_input_size, config)
 
     # Make predictions
     # predictions = make_predictions(model, sequence_gen, args.max_input_size,total_samples=number_of_samples,batch_size=args.batch_size)
@@ -478,14 +468,12 @@ if __name__ == '__main__':
     # Post-process results
     sequence_gen = sequence_generator(args.sequences, args.max_input_size)
     sequences = [i for j in sequence_gen for i in j]
-    results = post_process_results(predictions, args.chain_type, config, sequences)
+    results = post_process_results(args,predictions, args.chain_type, config, sequences)
 
     # Save results
-    save_results(results, args.save_path, file_name, sequences)
+    save_results(results, args.save_path, file_name, sequences,args.chain_type)
     logging.info(f"Processed Results Saved Successfully at {args.save_path + file_name + '_alignairr_results.csv'}")
 
 
-
-
-
-
+if __name__ == '__main__':
+    main()
