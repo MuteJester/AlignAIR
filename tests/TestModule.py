@@ -1,8 +1,6 @@
 import os
-
 from src.AlignAIR.Metadata import RandomDataConfigGenerator
 from src.AlignAIR.Models.LightChain import LightChainAlignAIRR
-
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import unittest
 import pandas as pd
@@ -14,7 +12,9 @@ from src.AlignAIR.Trainers import Trainer
 import tensorflow as tf
 import numpy as np
 from src.AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
-
+import os
+import subprocess
+import shutil
 # Define a test case class inheriting from unittest.TestCase
 class TestModule(unittest.TestCase):
 
@@ -24,6 +24,7 @@ class TestModule(unittest.TestCase):
         self.light_chain_dataset_path = './sample_LightChain_dataset.csv'
         self.heavy_chain_dataset = pd.read_csv(self.heavy_chain_dataset_path)
         self.light_chain_dataset = pd.read_csv(self.light_chain_dataset_path)
+        self.test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 
 
     # Define a teardown method if you need to clean up after each test method (optional)
@@ -119,13 +120,92 @@ class TestModule(unittest.TestCase):
             alleles = ['IGHVF1-G1*01','IGHVF1-G1*01']
 
             matcher = HeuristicReferenceMatcher(IGHV_refence)
-            results = matcher.match(sequences, starts,ends, alleles)
+            results = matcher.match(sequences, starts,ends, alleles,_gene='v')
 
             self.assertEqual(results[0]['start_in_ref'],0)
             self.assertEqual(results[0]['end_in_ref'],301)
 
             self.assertEqual(results[1]['start_in_ref'], 0)
             self.assertEqual(results[1]['end_in_ref'], 301)
+
+    def test_predict_script(self):
+
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API'))
+        script_path = os.path.join(base_dir, 'AlignAIRRPredict.py')
+
+
+        # Ensure the script exists
+        self.assertTrue(os.path.exists(script_path), "Predict script not found at path: " + script_path)
+
+        # Define the command with absolute paths
+        command = [
+            'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
+            '--model_checkpoint', os.path.join(self.test_dir, 'AlignAIRR_S5F_OGRDB_Experimental_New_Loss_V7'),
+            '--save_path', str(self.test_dir)+'/',
+            '--chain_type', 'heavy',
+            '--sequences', self.heavy_chain_dataset_path,
+            '--batch_size', '32'
+        ]
+
+        # Execute the script
+        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, "Script failed to run with error: " + result.stderr)
+
+
+        # Check if the CSV was created
+        file_name = self.heavy_chain_dataset_path.split('/')[-1].split('.')[0]
+        save_name = file_name + '_alignairr_results.csv'
+
+        output_csv = os.path.join(self.test_dir, save_name)
+        self.assertTrue(os.path.isfile(output_csv), "Output CSV file not created")
+
+        # Read the output CSV and validate its contents
+        df = pd.read_csv(output_csv)
+        self.assertFalse(df.empty, "Output CSV is empty")
+        # Additional assertions can be added here
+
+        # Cleanup
+        os.remove(output_csv)
+
+    def test_train_model_script(self):
+        # Set base directory and script path
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API'))
+        script_path = os.path.join(base_dir, 'TrainModel.py')  # Name of your training script
+
+        # Ensure the script exists
+        self.assertTrue(os.path.exists(script_path), "Training script not found at path: " + script_path)
+
+        # Define the command with absolute paths
+        command = [
+            'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
+            '--chain_type', 'heavy',
+            '--train_dataset', self.heavy_chain_dataset_path,
+            '--session_path', './',
+            '--epochs', '1',
+            '--batch_size', '32',
+            '--steps_per_epoch', '32',
+            '--max_sequence_length', '576',
+            '--model_name', 'TestModel'
+        ]
+
+        # Execute the script
+        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, "Training script failed to run with error: " + result.stderr)
+
+        # Check if the model weights were created
+        models_path = os.path.join('./', 'saved_models', 'TestModel')
+        expected_weights_path = os.path.join(models_path, 'TestModel_weights_final_epoch.data-00000-of-00001')
+        self.assertTrue(os.path.isfile(expected_weights_path), "Model weights file not created")
+
+        # Optionally, check for the log file
+        expected_log_path = os.path.join('./', 'TestModel.csv')
+        self.assertTrue(os.path.isfile(expected_log_path), "Log file not created")
+
+        # Cleanup
+        if os.path.exists(models_path):
+            shutil.rmtree(os.path.join('./', 'saved_models'))  # Remove the saved_models directory and all its contents
+        if os.path.exists(expected_log_path):
+            os.remove(expected_log_path)  # Remove the log file if it exists
 
 
 if __name__ == '__main__':
