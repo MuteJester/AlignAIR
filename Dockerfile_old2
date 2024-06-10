@@ -1,0 +1,66 @@
+# Use the continuumio/anaconda3 image as the base
+FROM continuumio/anaconda3
+
+# Install dependencies
+RUN apt-get update && apt-get install -y wget alien && rm -rf /var/lib/apt/lists/*
+
+# Download CUDA repository package
+RUN wget --quiet --no-check-certificate https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo
+
+# Create yum repos directory if it doesn't exist
+RUN mkdir -p /etc/yum.repos.d/
+
+# Move the CUDA repository package
+RUN mv cuda-rhel7.repo /etc/yum.repos.d/cuda-rhel7.repo
+
+# Download CUDA repo rpm
+RUN wget --quiet --no-check-certificate https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-repo-rhel7-10.2.89-1.x86_64.rpm
+
+# Install CUDA repo rpm using alien
+RUN alien -i cuda-repo-rhel7-10.2.89-1.x86_64.rpm
+
+# Clean up CUDA repo rpm
+RUN rm cuda-repo-rhel7-10.2.89-1.x86_64.rpm
+
+# Download libcudnn rpm
+RUN wget --quiet --no-check-certificate https://developer.download.nvidia.com/compute/machine-learning/repos/rhel7/x86_64/libcudnn8-8.0.4.30-1.cuda11.1.x86_64.rpm
+
+# Install libcudnn rpm using alien
+RUN alien -i libcudnn8-8.0.4.30-1.cuda11.1.x86_64.rpm
+
+# Clean up libcudnn rpm
+RUN rm libcudnn8-8.0.4.30-1.cuda11.1.x86_64.rpm
+
+# Create the python39 conda environment
+RUN conda create -n python39 python=3.9 -y
+
+# Set environment variables
+ENV PATH="/opt/conda/bin:/opt/conda/envs/python39/bin:$PATH"
+ENV LD_LIBRARY_PATH="/opt/conda/envs/python39/lib"
+
+# Setup work directory
+RUN mkdir -p /work
+WORKDIR /work
+COPY . .
+
+# Install Python dependencies in the python39 environment
+RUN /opt/conda/bin/conda run -n python39 pip install -e .
+
+RUN /opt/conda/bin/conda install -n python39 cudatoolkit cudnn -y
+
+# RUN /opt/conda/bin/conda install -n python39 omegaconf -y
+
+
+
+# Install Python dependencies with pip in the python39 environment
+SHELL ["conda", "run", "-n", "python39", "/bin/bash", "-c"]
+RUN pip install omegaconf
+
+# Set the default command to bash
+CMD ["/bin/bash"]
+
+# Set entrypoint
+# ENTRYPOINT ["/bin/bash"]
+
+# docker build --no-cache -t alignair2:latest .
+# docker run --rm -it --gpus all alignair:latest

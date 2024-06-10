@@ -24,6 +24,8 @@ from AlignAIR.Trainers import Trainer
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 tokenizer_dictionary = {"A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0}  # pad token
 
+from omegaconf import OmegaConf
+
 
 def encode_and_equal_pad_sequence(sequence, max_seq_length, tokenizer_dictionary):
     """Encodes a sequence of nucleotides and pads it to the specified maximum length, equally from both sides.
@@ -385,25 +387,29 @@ def save_results(results, save_path, file_name, sequences,chain_type):
 
 def main():
     parser = argparse.ArgumentParser(description='AlingAIR Model Prediction')
-    parser.add_argument('--model_checkpoint', type=str, required=True, help='path to saved alignairr weights')
-    parser.add_argument('--save_path', type=str, required=True, help='where to save the outputed predictions')
-    parser.add_argument('--chain_type', type=str, required=True, help='heavy / light')
-    parser.add_argument('--sequences', type=str, required=True,
-                        help='path to csv/tsv file with sequences in a column called "sequence" ')
-    parser.add_argument('--lambda_data_config', type=str, default='D', help='path to lambda chain data config')
-    parser.add_argument('--kappa_data_config', type=str, default='D', help='path to  kappa chain data config')
-    parser.add_argument('--heavy_data_config', type=str, default='D', help='path to heavy chain  data config')
-    parser.add_argument('--max_input_size', type=int, default=576, help='maximum model input size')
-    parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
+    parser.add_argument('--yaml_config', type=str, required=True, help='path to yaml config file')
+    # parser.add_argument('--model_checkpoint', type=str, required=True, help='path to saved alignairr weights')
+    # parser.add_argument('--save_path', type=str, required=True, help='where to save the outputed predictions')
+    # parser.add_argument('--chain_type', type=str, required=True, help='heavy / light')
+    # parser.add_argument('--sequences', type=str, required=True,
+    #                     help='path to csv/tsv file with sequences in a column called "sequence" ')
+    # parser.add_argument('--lambda_data_config', type=str, default='D', help='path to lambda chain data config')
+    # parser.add_argument('--kappa_data_config', type=str, default='D', help='path to  kappa chain data config')
+    # parser.add_argument('--heavy_data_config', type=str, default='D', help='path to heavy chain  data config')
+    # parser.add_argument('--max_input_size', type=int, default=576, help='maximum model input size')
+    # parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
 
-    parser.add_argument('--v_allele_threshold', type=float, default=0.95, help='threshold for v allele prediction')
-    parser.add_argument('--d_allele_threshold', type=float, default=0.2, help='threshold for d allele prediction')
-    parser.add_argument('--j_allele_threshold', type=float, default=0.8, help='threshold for j allele prediction')
-    parser.add_argument('--v_cap', type=int, default=3, help='cap for v allele calls')
-    parser.add_argument('--d_cap', type=int, default=3, help='cap for d allele calls')
-    parser.add_argument('--j_cap', type=int, default=3, help='cap for j allele calls')
+    # parser.add_argument('--v_allele_threshold', type=float, default=0.95, help='threshold for v allele prediction')
+    # parser.add_argument('--d_allele_threshold', type=float, default=0.2, help='threshold for d allele prediction')
+    # parser.add_argument('--j_allele_threshold', type=float, default=0.8, help='threshold for j allele prediction')
+    # parser.add_argument('--v_cap', type=int, default=3, help='cap for v allele calls')
+    # parser.add_argument('--d_cap', type=int, default=3, help='cap for d allele calls')
+    # parser.add_argument('--j_cap', type=int, default=3, help='cap for j allele calls')
 
     args = parser.parse_args()
+
+    args = OmegaConf.load(args.yaml_config)
+
     chain_type = args.chain_type
 
     # Load configuration

@@ -1,0 +1,15 @@
+model_checkpoint: '/work/AlignAIRR_S5F_OGRDB_Experimental_New_Loss_V7'
+save_path: './'
+chain_type: 'heavy'
+sequences: '/work/tests/sample_HeavyChain_dataset.csv'
+lambda_data_config: 'D'
+kappa_data_config: 'D'
+heavy_data_config: 'D'
+max_input_size: 576
+batch_size: 2048
+v_allele_threshold: 0.95
+d_allele_threshold: 0.2
+j_allele_threshold: 0.8
+v_cap: 3
+d_cap: 3
+j_cap: 3

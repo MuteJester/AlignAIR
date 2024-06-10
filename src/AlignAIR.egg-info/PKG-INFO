@@ -1,0 +1,55 @@
+Metadata-Version: 2.1
+Name: AlignAIR
+Version: 0.1.1
+Summary: IG Sequence Alignment Tool Based on Deep Convolutional Neural Networks
+Home-page: https://github.com/MuteJester/AlignAIR
+Author: Thomas Konstantinovsky & Ayelet Peres
+Author-email: thomaskon90@gmail.com
+Project-URL: Bug Tracker, https://github.com/MuteJester/AlignAIR/issues
+Keywords: immunogenetics,sequence alignment,bioinformatics
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Requires-Python: >=3.9, <3.12
+Description-Content-Type: text/markdown
+
+# AlignAIRR
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+## Introduction
+
+This repository provides a Python implementation of the VDeepJ architecture model trainer, which allows you to train and predict using the VDeepJ model.
+
+## Table of Contents
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Parameters](#parameters)
+  - [Creating a Trainer Instance and Training](#creating-a-trainer-instance-and-training)
+  - [Predicting using the Trainer class](#predicting-using-the-trainer-class)
+  - [Saving and Loading a Model](#saving-and-loading-a-model)
+  - [Plotting the Training History](#plotting-the-training-history)
+- [License](#license)
+
+## Prerequisites
+
+Before using the VDeepJ model trainer, make sure you have the following prerequisites installed:
+
+- Python 3.8
+- numpy==1.21.5
+- tensorflow==2.5.0
+- tensorflow-addons==0.16.1
+- tensorflow-gpu==2.9.1
+- pandas==1.3.5
+- scipy==1.9.1
+- seaborn==0.12.1
+- see requirements.txt for more detailed list
+
+
+

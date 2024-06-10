@@ -1,0 +1,152 @@
+# FROM centos:7
+
+# # Install development tools and dependencies, including GCC
+# RUN yum -y groupinstall "Development tools" \
+#     && yum -y install wget zlib-devel bzip2-devel openssl-devel ncurses-devel libxml2-devel libxslt-devel readline-devel tk-devel gdbm-devel db4-devel libpcap-devel xz-devel libjpeg-devel \
+#     && yum -y install gcc gcc-c++
+
+# # Download and make the CUDA installer executable
+# # RUN wget https://developer.download.nvidia.com/compute/cuda/11.1.0/local_installers/cuda_11.1.0_455.23.05_linux.run -O /tmp/cuda_installer.run \
+# RUN wget https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo -O /tmp/cuda_installer.run \
+#     && chmod +x /tmp/cuda_installer.run
+# # Install CUDA toolkit silently
+# RUN /tmp/cuda_installer.run --toolkit --silent
+# RUN rm /tmp/cuda_installer.run
+
+
+# RUN wget https://developer.download.nvidia.com/compute/machine-learning/repos/rhel7/x86_64/libcudnn8-8.0.4.30-1.cuda11.1.x86_64.rpm
+# RUN rpm -i libcudnn8-8.0.4.30-1.cuda11.1.x86_64.rpm
+# # RUN yum install libcudnn8-8.0.4.30-1.cuda11.1.x86_64.rpm
+# RUN yum -y install libcudnn8
+
+# # Clean up the installer
+# RUN rm /tmp/cuda_installer.run
+
+# # Remove development tools and clean up packages
+# RUN yum -y groupremove "Development tools" \
+#     && yum -y remove wget zlib-devel bzip2-devel openssl-devel ncurses-devel libxml2-devel libxslt-devel readline-devel tk-devel gdbm-devel db4-devel libpcap-devel xz-devel libjpeg-devel \
+#     && yum clean all
+
+# # Set environment variables for Anaconda
+# ENV PATH="/opt/conda/bin:$PATH"
+# ARG PYTHON_VERSION=3.9
+
+# # Check for updates or continue even if it fails
+# RUN yum check-update || true
+
+# # Install development tools
+# RUN yum -y groupinstall "Development tools"
+
+# # Install wget and bzip2
+# RUN yum -y install wget bzip2
+
+# # Download Anaconda installer script
+# RUN wget --quiet --no-check-certificate https://repo.anaconda.com/archive/Anaconda3-2021.11-Linux-x86_64.sh -O /tmp/anaconda.sh
+
+# # Run Anaconda installer script
+# RUN /bin/bash /tmp/anaconda.sh -b -p /opt/conda
+
+# # Remove the Anaconda installer script
+# RUN rm /tmp/anaconda.sh
+
+# # Initialize conda
+# RUN /opt/conda/bin/conda init
+
+# # Remove development tools
+# RUN yum -y groupremove "Development tools"
+
+# # Remove wget and bzip2
+# RUN yum -y remove wget bzip2
+
+# # Clean up
+# RUN yum clean all
+
+# # Create a new Anaconda environment with Python 3.9
+# RUN conda create -n python39 python=$PYTHON_VERSION
+
+# # Activate the environment
+# SHELL ["conda", "run", "-n", "python39", "/bin/bash", "-c"]
+
+
+# RUN mkdir -p /work
+# WORKDIR /work
+# COPY . .
+
+
+# # RUN conda activate python39
+# RUN echo "conda activate python39" >> ~/.bashrc
+# ENV PATH /opt/conda/envs/myenv/bin:$PATH
+# RUN pip install -e .
+# RUN conda install cudatoolkit
+# RUN conda install cudnn
+# RUN export LD_LIBRARY_PATH="/opt/conda/envs/python39/lib"
+# # RUN pip install -r requirements.txt
+# # RUN rm -rf /opt/conda/envs/python38/lib/python3.8/site-packages/airrship/data
+# # RUN cp -r data /opt/conda/envs/python38/lib/python3.8/site-packages/airrship/
+
+# # Start a Bash shell by default
+# CMD ["/bin/bash"]
+
+FROM centos:7
+
+
+# Install development tools and dependencies, including GCC
+RUN yum -y groupinstall "Development tools" \
+    && yum -y install wget zlib-devel bzip2-devel openssl-devel ncurses-devel libxml2-devel libxslt-devel readline-devel tk-devel gdbm-devel db4-devel libpcap-devel xz-devel libjpeg-devel gcc gcc-c++ \
+    && wget https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo -O /etc/yum.repos.d/cuda.repo \
+    && yum clean all
+
+# Download the CUDA installer, install CUDA toolkit silently, download and install cuDNN, and clean up
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo -O /tmp/cuda_installer.run \
+    && chmod +x /tmp/cuda_installer.run \
+    && /tmp/cuda_installer.run --toolkit --silent \
+    && rm /tmp/cuda_installer.run \
+    && wget https://developer.download.nvidia.com/compute/machine-learning/repos/rhel7/x86_64/libcudnn8-8.0.4.30-1.cuda11.1.x86_64.rpm \
+    && rpm -i libcudnn8-8.0.4.30-1.cuda11.1.x86_64.rpm \
+    && yum -y install libcudnn8 \
+    && rm libcudnn8-8.0.4.30-1.cuda11.1.x86_64.rpm
+
+# Install Anaconda
+RUN wget --quiet --no-check-certificate https://repo.anaconda.com/archive/Anaconda3-2021.11-Linux-x86_64.sh -O /tmp/anaconda.sh \
+    && /bin/bash /tmp/anaconda.sh -b -p /opt/conda \
+    && rm /tmp/anaconda.sh \
+    && /opt/conda/bin/conda init \
+    && /opt/conda/bin/conda create -n python39 python=3.9 \
+    && yum -y groupremove "Development tools" \
+    && yum -y remove wget bzip2 zlib-devel bzip2-devel openssl-devel ncurses-devel libxml2-devel libxslt-devel readline-devel tk-devel gdbm-devel db4-devel libpcap-devel xz-devel libjpeg-devel gcc gcc-c++ \
+    && yum clean all
+
+# Set environment variables
+ENV PATH="/opt/conda/bin:/opt/conda/envs/python39/bin:$PATH"
+ENV LD_LIBRARY_PATH="/opt/conda/envs/python39/lib"
+
+# Setup work directory
+RUN mkdir -p /work
+WORKDIR /work
+COPY . .
+
+# Install Python dependencies
+# RUN /opt/conda/bin/conda run -n python39 pip install -e . \
+#     && /opt/conda/bin/conda install -n python39 cudatoolkit cudnn \
+#     # && /opt/conda/bin/conda install omegaconf
+# SHELL ["conda", "run", "-n", "python39", "/bin/bash", "-c"]
+# RUN pip install omegaconf
+
+# Install Python dependencies
+RUN /opt/conda/bin/conda run -n python39 bash -c "pip install -e . && /opt/conda/bin/conda install -n python39 cudatoolkit cudnn" \
+    && pip install omegaconf
+
+# Set the default command to bash
+CMD ["/bin/bash"]
+
+
+
+# docker build --no-cache -t alignair:latest .
+# docker build -t alignair:latest .
+
+# docker run --rm -it --gpus all -v /dsi/shared/ig/alignairr_data/:/work/alignairr_data  alignairr:latest 
+# docker run --rm -it --gpus all alignair:latest 
+
+# docker build --no-cache -t alignair2:latest .
+
+# alignair_predict --model_checkpoint /work/AlignAIRR_S5F_OGRDB_Experimental_New_Loss_V7 --save_path ./  --chain_type heavy --sequences /work/tests/sample_HeavyChain_dataset.csv
