@@ -1,31 +1,23 @@
-import sys
+# import sys
+#
+# # Let's say your module is in '/path/to/your/module'
+# module_dir = '/home/bcrlab/thomas/AlignAIRR/'
+#
+# # Append this directory to sys.path
+# if module_dir not in sys.path:
+#     sys.path.append(module_dir)
 
-# Let's say your module is in '/path/to/your/module'
-module_dir = '/home/bcrlab/thomas/AlignAIRR/'
-
-# Append this directory to sys.path
-if module_dir not in sys.path:
-    sys.path.append(module_dir)
-
-import tensorflow as tf
-import os
 from tensorflow.keras.callbacks import ReduceLROnPlateau
 import wandb
 from wandb.keras import WandbMetricsLogger
 import numpy as np
 import random
 import tensorflow as tf
-from sklearn.metrics import average_precision_score
-import pandas as pd
-from tensorflow_addons.optimizers import CyclicalLearningRate
-from Data import HeavyChainDataset
-from SequenceSimulation.sequence import LightChainSequence
-from VDeepJLayers import AlignAIRREvaluationCallback
-import pickle
-from Models.HeavyChain import HeavyChainAlignAIRR
-from Trainers import Trainer
-with open('/home/bcrlab/thomas/AlignAIRR/SequenceSimulation/data/HeavyChain_DataConfig_OGRDB.pkl','rb') as h:
-    heavychain_config = pickle.load(h)
+from ..Data import HeavyChainDataset
+from ..Models.HeavyChain import HeavyChainAlignAIRR
+from ..Trainers import Trainer
+from GenAIRR.data import builtin_heavy_chain_data_config
+heavychain_config = builtin_heavy_chain_data_config()
 
 
 seed = 42
@@ -100,7 +92,7 @@ model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
 )
 
 
-TRAIN_DATASET = f"/localdata/alignairr_data/AlignAIRR_Large_Train_Dataset/HeavyChain_OGRDB_DataConfig_AlignAIRR_{model}_15M_with_Corruption_Mrate_003__025.csv"
+TRAIN_DATASET = "TRAIN DATASET LOCATION"
 train_dataset = HeavyChainDataset(data_path=TRAIN_DATASET
                                   ,dataconfig=heavychain_config,
                                   batch_size=batch_size,

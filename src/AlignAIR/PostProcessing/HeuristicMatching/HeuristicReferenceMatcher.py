@@ -109,11 +109,11 @@ class HeuristicReferenceMatcher:
 
         return best_start_pos, best_end_pos
 
-    def match(self, sequences, starts, ends, alleles,k=15,s=30):
+    def match(self, sequences, starts, ends, alleles,k=15,s=30,_gene=None):
         results = []
-
+        desc = f'Matching {_gene.upper()} Germlines'
         # iterate over each sequence with its respective start and end positions as well as predicted allele
-        for sequence, start, end, allele in tqdm(zip(sequences, starts, ends, alleles), total=len(starts)):
+        for sequence, start, end, allele in tqdm(zip(sequences, starts, ends, alleles), total=len(starts),desc=desc):
             # extract the portion of the sequence that based on the model predicted start and end positions
             segmented_sequence = sequence[start:end]
             # extract the reference allele
