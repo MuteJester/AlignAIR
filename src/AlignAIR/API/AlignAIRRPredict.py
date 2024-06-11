@@ -208,7 +208,7 @@ def extract_likelihoods_and_labels_from_calls(args,alleles,threshold,caps,config
         selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene],
                                                  cap=caps[_gene], allele=_gene)
 
-        if args.translate_to_imgt:
+        if not args.translate_to_asc:
             predicted_alleles[_gene] = [[translator.translate(j) for j in i[0]] for i in selected_alleles]
         else:
             predicted_alleles[_gene] = [i[0] for i in selected_alleles]
@@ -334,8 +334,8 @@ def main():
     parser.add_argument('--j_cap', type=int, default=3, help='cap for j allele calls')
 
     # For Post Processing
-    parser.add_argument('--translate_to_imgt', action='store_true',
-                        help='Translate names back to IMGT names from ASC\'s')
+    parser.add_argument('--translate_to_asc', action='store_true',
+                        help='Translate names back to ASCs names from IMGT')
 
     args = parser.parse_args()
     chain_type = args.chain_type

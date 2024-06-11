@@ -144,7 +144,7 @@ class TestModule(unittest.TestCase):
             '--chain_type', 'heavy',
             '--sequences', self.heavy_chain_dataset_path,
             '--batch_size', '32',
-            '--translate_to_imgt'
+            '--translate_to_asc'
         ]
 
         # Execute the script
