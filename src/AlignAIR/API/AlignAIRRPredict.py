@@ -22,6 +22,7 @@ from AlignAIR.Trainers import Trainer
 from AlignAIR.Utilities.consumer_producer import sequence_tokenizer_worker
 from AlignAIR.Utilities.file_processing import count_rows, tabular_sequence_generator
 from AlignAIR.Utilities.sequence_processing import tokenize_sequences_batch
+from AlignAIR.PostProcessing.AlleleNameTranslation import TranslateToIMGT
 import os
 import tensorflow as tf
 tf.get_logger().setLevel('ERROR')
@@ -190,10 +191,11 @@ def correct_segments_for_paddings(sequences,chain_type,v_start,v_end,d_start,d_e
 
     return v_start,v_end,d_start,d_end,j_start,j_end
 
-def extract_likelihoods_and_labels_from_calls(alleles,threshold,caps,config,chain_type):
+def extract_likelihoods_and_labels_from_calls(args,alleles,threshold,caps,config,chain_type):
     predicted_alleles = {}
     predicted_allele_likelihoods = {}
     threshold_objects = {}
+    translator = TranslateToIMGT(config)
 
     for _gene in alleles:
         if chain_type == 'heavy':
@@ -206,7 +208,12 @@ def extract_likelihoods_and_labels_from_calls(alleles,threshold,caps,config,chai
         selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene],
                                                  cap=caps[_gene], allele=_gene)
 
-        predicted_alleles[_gene] = [i[0] for i in selected_alleles]
+        if args.translate_to_imgt:
+            predicted_alleles[_gene] = [[translator.translate(j) for j in i[0]] for i in selected_alleles]
+        else:
+            predicted_alleles[_gene] = [i[0] for i in selected_alleles]
+
+
         predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
 
     return predicted_alleles,predicted_allele_likelihoods,threshold_objects
@@ -250,7 +257,7 @@ def post_process_results(args,predictions, chain_type, config, sequences):
         alleles['d'] = d_allele
 
     predicted_alleles,predicted_allele_likelihoods,threshold_objects = (
-        extract_likelihoods_and_labels_from_calls(alleles,threshold,caps,config,args.chain_type))
+        extract_likelihoods_and_labels_from_calls(args,alleles,threshold,caps,config,args.chain_type))
 
 
     segments = {'v': [v_start,v_end], 'j': [j_start,j_end]}
@@ -325,6 +332,10 @@ def main():
     parser.add_argument('--v_cap', type=int, default=3, help='cap for v allele calls')
     parser.add_argument('--d_cap', type=int, default=3, help='cap for d allele calls')
     parser.add_argument('--j_cap', type=int, default=3, help='cap for j allele calls')
+
+    # For Post Processing
+    parser.add_argument('--translate_to_imgt', action='store_true',
+                        help='Translate names back to IMGT names from ASC\'s')
 
     args = parser.parse_args()
     chain_type = args.chain_type

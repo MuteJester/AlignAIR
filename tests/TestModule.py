@@ -104,7 +104,6 @@ class TestModule(unittest.TestCase):
 
         self.assertIsNotNone(predicted)
 
-
     def test_heuristic_matcher_basic(self):
             # Test case where there is an indel, causing the segment and reference lengths to differ
             IGHV_dc = builtin_heavy_chain_data_config()
@@ -144,7 +143,8 @@ class TestModule(unittest.TestCase):
             '--save_path', str(self.test_dir)+'/',
             '--chain_type', 'heavy',
             '--sequences', self.heavy_chain_dataset_path,
-            '--batch_size', '32'
+            '--batch_size', '32',
+            '--translate_to_imgt'
         ]
 
         # Execute the script
