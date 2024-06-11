@@ -14,5 +14,8 @@ class TranslateToIMGT:
             self.v_asc_table = pd.concat([dck.asc_tables['V'].set_index('new_allele')['imgt_allele'],dcl.asc_tables['V'].set_index('new_allele')['imgt_allele']])
 
     def translate(self,allele_name):
-        return self.v_asc_table[allele_name]
+        if "V" in allele_name:
+            return self.v_asc_table[allele_name]
+        else:
+            return allele_name
 
