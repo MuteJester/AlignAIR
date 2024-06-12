@@ -22,6 +22,7 @@ COPY . .
 
 
 RUN pip install -e . 
+RUN pip install omegaconf
 
 
 # Clean up unnecessary packages to reduce image size

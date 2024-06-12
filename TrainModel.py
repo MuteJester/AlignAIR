@@ -6,9 +6,9 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 import logging
 # Assuming the following modules are in your package structure
-from AlignAIR.Data import HeavyChainDataset,LightChainDataset
-from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
-from AlignAIR.Trainers import Trainer
+from src.AlignAIR.Data import HeavyChainDataset,LightChainDataset
+from src.AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
+from src.AlignAIR.Trainers import Trainer
 from GenAIRR.data import builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,builtin_lambda_chain_data_config
 
 
