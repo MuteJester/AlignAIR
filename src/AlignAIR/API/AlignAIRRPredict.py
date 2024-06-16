@@ -19,8 +19,9 @@ from AlignAIR.Models.LightChain import LightChainAlignAIRR
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
 from AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
 from AlignAIR.Trainers import Trainer
-from AlignAIR.Utilities.consumer_producer import sequence_tokenizer_worker
-from AlignAIR.Utilities.file_processing import count_rows, tabular_sequence_generator
+from AlignAIR.Utilities.consumer_producer import sequence_tokenizer_worker, READER_WORKER_TYPES
+from AlignAIR.Utilities.file_processing import count_rows, tabular_sequence_generator, FILE_SEQUENCE_GENERATOR, \
+    FILE_ROW_COUNTERS
 from AlignAIR.Utilities.sequence_processing import tokenize_sequences_batch
 from AlignAIR.PostProcessing.AlleleNameTranslation import TranslateToIMGT
 import os
@@ -89,7 +90,9 @@ def load_model(sequences,chain_type, model_checkpoint, max_sequence_size, config
 
 def start_tokenizer_process(file_path, max_seq_length, tokenizer_dictionary, batch_size=256):
     queue = multiprocessing.Queue(maxsize=10)  # Control the prefetching size
-    process = Process(target=sequence_tokenizer_worker,
+    file_type = file_path.split('.')[-1] # get the file type i.e .csv,.tsv or .fasta
+    worker_reading_type = READER_WORKER_TYPES[file_type]
+    process = Process(target=worker_reading_type,
                       args=(file_path, queue, max_seq_length, tokenizer_dictionary, batch_size))
     process.start()
     logging.info('Producer Process Started!')
@@ -195,7 +198,6 @@ def extract_likelihoods_and_labels_from_calls(args,alleles,threshold,caps,config
     predicted_alleles = {}
     predicted_allele_likelihoods = {}
     threshold_objects = {}
-    translator = TranslateToIMGT(config)
 
     for _gene in alleles:
         if chain_type == 'heavy':
@@ -208,10 +210,8 @@ def extract_likelihoods_and_labels_from_calls(args,alleles,threshold,caps,config
         selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene],
                                                  cap=caps[_gene], allele=_gene)
 
-        if not args.translate_to_asc:
-            predicted_alleles[_gene] = [[translator.translate(j) for j in i[0]] for i in selected_alleles]
-        else:
-            predicted_alleles[_gene] = [i[0] for i in selected_alleles]
+
+        predicted_alleles[_gene] = [i[0] for i in selected_alleles]
 
 
         predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
@@ -266,6 +266,9 @@ def post_process_results(args,predictions, chain_type, config, sequences):
 
     germline_alignmnets = align_with_germline(segments, threshold_objects, predicted_alleles, sequences)
 
+    if not args.translate_to_asc:
+        translator = TranslateToIMGT(config)
+        predicted_alleles['v'] = [[translator.translate(j) for j in i] for i in predicted_alleles['v']]
 
     results = {
         'predicted_alleles': predicted_alleles,
@@ -281,6 +284,7 @@ def post_process_results(args,predictions, chain_type, config, sequences):
 
 
 def save_results(results, save_path, file_name, sequences,chain_type):
+
     final_csv = pd.DataFrame({
         'sequence': sequences,
         'v_call': [','.join(i) for i in results['predicted_alleles']['v']],
@@ -348,6 +352,7 @@ def main():
     # # Read sequences
     # sequences = read_sequences(args.sequences)['sequence'].tolist()
     file_name = args.sequences.split('/')[-1].split('.')[0]
+    file_type = args.sequences.split('.')[-1]
     logging.info(f'Target File : {file_name}')
 
     # # Tokenize sequences
@@ -360,7 +365,8 @@ def main():
     # predictions = make_predictions(model, tokenized_sequences,args.max_input_size)
 
     # Count Rows
-    number_of_samples = count_rows(args.sequences)
+    row_counter = FILE_ROW_COUNTERS[file_type]
+    number_of_samples = row_counter(args.sequences)
     logging.info(f'There are : {number_of_samples} Samples for the Model to Predict')
     # Setup the generator
     # sequence_gen = sequence_generator(args.sequences,batch_size=args.batch_size)
@@ -368,8 +374,6 @@ def main():
     # Load model
     model = load_model(args.sequences,args.chain_type, args.model_checkpoint, args.max_input_size, config)
 
-    # Make predictions
-    # predictions = make_predictions(model, sequence_gen, args.max_input_size,total_samples=number_of_samples,batch_size=args.batch_size)
     # Process tokenized batches as they become available
     queue, process = start_tokenizer_process(args.sequences, args.max_input_size, tokenizer_dictionary, args.batch_size)
     predictions = []
@@ -400,8 +404,11 @@ def main():
     process.join()
 
     # Post-process results
-    sequence_gen = tabular_sequence_generator(args.sequences, args.max_input_size)
+    sequence_genereator = FILE_SEQUENCE_GENERATOR[file_type]
+    sequence_gen = sequence_genereator(args.sequences, args.max_input_size)
     sequences = [i for j in sequence_gen for i in j]
+
+
     results = post_process_results(args,predictions, args.chain_type, config, sequences)
 
     # Save results

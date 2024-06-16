@@ -15,7 +15,9 @@ class TranslateToIMGT:
 
     def translate(self,allele_name):
         if "V" in allele_name:
-            return self.v_asc_table[allele_name]
+            asc_alleles = self.v_asc_table[allele_name]
+            asc_alleles = ','.join(asc_alleles) if type(asc_alleles) != str else asc_alleles
+            return asc_alleles
         else:
             return allele_name
 
