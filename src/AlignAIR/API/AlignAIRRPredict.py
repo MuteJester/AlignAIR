@@ -88,12 +88,12 @@ def load_model(sequences,chain_type, model_checkpoint, max_sequence_size, config
 
     return trainer.model
 
-def start_tokenizer_process(file_path, max_seq_length, tokenizer_dictionary, batch_size=256):
+def start_tokenizer_process(file_path, max_seq_length, tokenizer_dictionary,logger, batch_size=256):
     queue = multiprocessing.Queue(maxsize=10)  # Control the prefetching size
     file_type = file_path.split('.')[-1] # get the file type i.e .csv,.tsv or .fasta
     worker_reading_type = READER_WORKER_TYPES[file_type]
     process = Process(target=worker_reading_type,
-                      args=(file_path, queue, max_seq_length, tokenizer_dictionary, batch_size))
+                      args=(file_path, queue, max_seq_length, tokenizer_dictionary, batch_size,logger))
     process.start()
     logging.info('Producer Process Started!')
     return queue, process
@@ -316,8 +316,7 @@ def save_results(results, save_path, file_name, sequences,chain_type):
 
     final_csv.to_csv(save_path + file_name + '_alignairr_results.csv', index=False)
 
-
-def main():
+def parse_arguments():
     parser = argparse.ArgumentParser(description='AlingAIR Model Prediction')
     parser.add_argument('--model_checkpoint', type=str, required=True, help='path to saved alignairr weights')
     parser.add_argument('--save_path', type=str, required=True, help='where to save the outputed predictions')
@@ -327,7 +326,7 @@ def main():
     parser.add_argument('--lambda_data_config', type=str, default='D', help='path to lambda chain data config')
     parser.add_argument('--kappa_data_config', type=str, default='D', help='path to  kappa chain data config')
     parser.add_argument('--heavy_data_config', type=str, default='D', help='path to heavy chain  data config')
-    parser.add_argument('--max_input_size', type=int, default=576, help='maximum model input size')
+    parser.add_argument('--max_input_size', type=int, default=576, help='maximum model input size, NOTE! this is with respect to the dimensions the model was trained on, do not increase for pretrained models')
     parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
 
     parser.add_argument('--v_allele_threshold', type=float, default=0.95, help='threshold for v allele prediction')
@@ -342,34 +341,29 @@ def main():
                         help='Translate names back to ASCs names from IMGT')
 
     args = parser.parse_args()
+    return args
+def main():
+    args = parse_arguments()
     chain_type = args.chain_type
 
     # Load configuration
-    config_paths = {'heavy': args.heavy_data_config, 'kappa': args.kappa_data_config, 'lambda': args.lambda_data_config}
+    config_paths = {'heavy': args.heavy_data_config,
+                    'kappa': args.kappa_data_config,
+                    'lambda': args.lambda_data_config
+                    }
+
     config = load_config(args.chain_type, config_paths)
     logging.info('Data Config Loaded Successfully')
 
     # # Read sequences
-    # sequences = read_sequences(args.sequences)['sequence'].tolist()
     file_name = args.sequences.split('/')[-1].split('.')[0]
     file_type = args.sequences.split('.')[-1]
     logging.info(f'Target File : {file_name}')
-
-    # # Tokenize sequences
-    # tokenized_sequences = tokenize_sequences(sequences, args.max_input_size, tokenizer_dictionary, verbose=True)
-
-    # # Load model
-    # model = load_model(args.chain_type, args.model_checkpoint,args.max_input_size, config)
-
-    # # Make predictions
-    # predictions = make_predictions(model, tokenized_sequences,args.max_input_size)
 
     # Count Rows
     row_counter = FILE_ROW_COUNTERS[file_type]
     number_of_samples = row_counter(args.sequences)
     logging.info(f'There are : {number_of_samples} Samples for the Model to Predict')
-    # Setup the generator
-    # sequence_gen = sequence_generator(args.sequences,batch_size=args.batch_size)
 
     # Load model
     model = load_model(args.sequences,args.chain_type, args.model_checkpoint, args.max_input_size, config)
