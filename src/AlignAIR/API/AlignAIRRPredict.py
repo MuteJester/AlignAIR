@@ -1,5 +1,4 @@
 import argparse
-import argparse
 import logging
 import multiprocessing
 import pickle
@@ -18,6 +17,7 @@ from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
 from AlignAIR.Models.LightChain import LightChainAlignAIRR
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
 from AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
+from AlignAIR.PretrainedComponents import builtin_orientation_classifier
 from AlignAIR.Trainers import Trainer
 from AlignAIR.Utilities.consumer_producer import sequence_tokenizer_worker, READER_WORKER_TYPES
 from AlignAIR.Utilities.file_processing import count_rows, tabular_sequence_generator, FILE_SEQUENCE_GENERATOR, \
@@ -88,12 +88,12 @@ def load_model(sequences,chain_type, model_checkpoint, max_sequence_size, config
 
     return trainer.model
 
-def start_tokenizer_process(file_path, max_seq_length, tokenizer_dictionary,logger, batch_size=256):
-    queue = multiprocessing.Queue(maxsize=10)  # Control the prefetching size
+def start_tokenizer_process(file_path, max_seq_length, tokenizer_dictionary,logger,orientation_pipeline, batch_size=256):
+    queue = multiprocessing.Queue(maxsize=64)  # Control the prefetching size
     file_type = file_path.split('.')[-1] # get the file type i.e .csv,.tsv or .fasta
     worker_reading_type = READER_WORKER_TYPES[file_type]
     process = Process(target=worker_reading_type,
-                      args=(file_path, queue, max_seq_length, tokenizer_dictionary, batch_size,logger))
+                      args=(file_path, queue, max_seq_length, tokenizer_dictionary, batch_size,logger,orientation_pipeline))
     process.start()
     logging.info('Producer Process Started!')
     return queue, process
@@ -318,8 +318,8 @@ def save_results(results, save_path, file_name, sequences,chain_type):
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='AlingAIR Model Prediction')
-    parser.add_argument('--model_checkpoint', type=str, required=True, help='path to saved alignairr weights')
-    parser.add_argument('--save_path', type=str, required=True, help='where to save the outputed predictions')
+    parser.add_argument('--model_checkpoint', type=str, required=True, help='path to saved alignair weights')
+    parser.add_argument('--save_path', type=str, required=True, help='where to save the alignment')
     parser.add_argument('--chain_type', type=str, required=True, help='heavy / light')
     parser.add_argument('--sequences', type=str, required=True,
                         help='path to csv/tsv file with sequences in a column called "sequence" ')
@@ -339,6 +339,13 @@ def parse_arguments():
     # For Post Processing
     parser.add_argument('--translate_to_asc', action='store_true',
                         help='Translate names back to ASCs names from IMGT')
+
+    # For Pre Processing
+    parser.add_argument('--fix_orientation', type=bool,default=True,
+                        help='Adds a preprocessing steps that tests and fixes the DNA orientation, in case it is '
+                             'reversed,compliment or reversed and compliment')
+    parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None,
+                        help='a path to a custom orientation model created for a custom reference')
 
     args = parser.parse_args()
     return args
@@ -368,17 +375,34 @@ def main():
     # Load model
     model = load_model(args.sequences,args.chain_type, args.model_checkpoint, args.max_input_size, config)
 
+    # Load DNA orientation model
+    orientation_pipeline = None
+    if args.fix_orientation:
+        if args.custom_orientation_pipeline_path is not None:
+            with open(args.custom_orientation_pipeline_path,'rb') as h:
+                orientation_pipeline = pickle.load(h)
+        else:
+            orientation_pipeline = builtin_orientation_classifier()
+    logging.info('Orientation Pipeline Loaded Successfully')
+
+
+
     # Process tokenized batches as they become available
-    queue, process = start_tokenizer_process(args.sequences, args.max_input_size, tokenizer_dictionary, args.batch_size)
+    queue, process = start_tokenizer_process(args.sequences, args.max_input_size, tokenizer_dictionary,orientation_pipeline,
+                                             args.batch_size,)
     predictions = []
+    sequences = []
     batch_number = 0
     batch_times = []
     start_time = time.time()
     total_batches = int(np.ceil(number_of_samples / args.batch_size))
     while True:
-        tokenized_batch = queue.get()
-        if tokenized_batch is None:
+        batch = queue.get()
+        if batch is None:
             break
+        else:
+            tokenized_batch,orientation_fixed_sequences = batch
+            sequences += orientation_fixed_sequences
 
         batch_start_time = time.time()
         predictions.append(
@@ -398,9 +422,9 @@ def main():
     process.join()
 
     # Post-process results
-    sequence_genereator = FILE_SEQUENCE_GENERATOR[file_type]
-    sequence_gen = sequence_genereator(args.sequences, args.max_input_size)
-    sequences = [i for j in sequence_gen for i in j]
+    # sequence_genereator = FILE_SEQUENCE_GENERATOR[file_type]
+    # sequence_gen = sequence_genereator(args.sequences, args.max_input_size)
+    # sequences = [i for j in sequence_gen for i in j]
 
 
     results = post_process_results(args,predictions, args.chain_type, config, sequences)
