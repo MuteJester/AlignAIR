@@ -19,7 +19,7 @@ setup(
     },
     package_dir={'': 'src'},
     packages=find_packages(where='src'),
-    include_package_data=True,  # Include everything in source control
+    include_package_data=True,  # Include everything in source contro
     install_requires=requirements,
     classifiers=[
         'Development Status :: 3 - Alpha',
