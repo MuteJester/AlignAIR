@@ -5,6 +5,8 @@ import tensorflow as tf
 
 from AlignAIR.PostProcessing.FullModelEvaluationPipeline.create_likelihood_figure_step import \
     ModelLikelihoodSummaryPlotStep
+from AlignAIR.PostProcessing.FullModelEvaluationPipeline.create_mutation_rate_figure_step import \
+    MutationRateSummaryPlotStep
 from AlignAIR.PostProcessing.FullModelEvaluationPipeline.create_segmentation_and_productivity_figure_step import \
     SegmentationProductivitySummaryPlotStep
 from AlignAIR.PostProcessing.OptimalAlleleThresholdSearch.find_threshold_step import OptimalAlleleThresholdSearchStep
@@ -75,7 +77,7 @@ def main():
         ThresholdApplicationStep("Apply Dynamic Threshold to Distill Assignments", logger),
         ModelLikelihoodSummaryPlotStep('Generate Model Likelihood Function Figure',logger),
         SegmentationProductivitySummaryPlotStep('Generate Model Segmentation&Productivity Function Figure',logger),
-
+        MutationRateSummaryPlotStep('Generate Model Mutation Rate Figure',logger),
     ]
 
     # Run the pipeline

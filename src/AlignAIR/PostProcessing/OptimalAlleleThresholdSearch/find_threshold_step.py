@@ -1,4 +1,5 @@
 import pickle
+import random
 
 import pandas as pd
 import seaborn as sns
@@ -48,29 +49,59 @@ class OptimalAlleleThresholdSearchStep(Step):
         # Example usage:
         cap_range = range(1, 4)  # Example range for cap
         confidence_range = np.arange(0.1, 1.0, 0.05)  # Example range for confidence
+        max_samples = 300_000
+
+        # Function to get random or all indexes
+        def get_indexes(data_length):
+            if data_length > max_samples:
+                return random.sample(range(data_length), max_samples)
+            else:
+                return list(range(data_length))
+
+        # Function to sample data
+        def sample_data(cleaned_data, ground_truth):
+            indexes = get_indexes(len(cleaned_data))
+            sampled_cleaned_data = [cleaned_data[i] for i in indexes]
+            sampled_ground_truth = [ground_truth[i] for i in indexes]
+            return sampled_cleaned_data, sampled_ground_truth
 
         # Assuming likelihoods and ground_truth are already defined
         self.log("Starting to Search for Optimal Cap and Threshold for V Alleles")
 
+        v_cleaned_data, v_ground_truth = sample_data(
+            predict_object.results['cleaned_data']['v_allele'],
+            predict_object.groundtruth_table.v_call.apply(lambda x: x.split(',')).tolist()
+        )
+
         extractor = CappedDynamicConfidenceThreshold(predict_object.data_config['heavy'])
-        v_results_df = find_optimal_hyperparameters(predict_object.results['cleaned_data']['v_allele'],
-                                                    predict_object.groundtruth_table.v_call.apply(lambda x: x.split(',')),
-                                                    extractor, get_agreement, cap_range, confidence_range)
+        v_results_df = find_optimal_hyperparameters(
+            v_cleaned_data, v_ground_truth, extractor, get_agreement, cap_range, confidence_range
+        )
 
-        # Assuming likelihoods and ground_truth are already defined
         self.log("Starting to Search for Optimal Cap and Threshold for D Alleles")
-        d_results_df = find_optimal_hyperparameters(predict_object.results['cleaned_data']['d_allele'],
-                                                    predict_object.groundtruth_table.d_call.apply(lambda x: x.split(',')),
-                                                    extractor, get_agreement, cap_range, confidence_range, allele='d')
 
-        # Assuming likelihoods and ground_truth are already defined
+        d_cleaned_data, d_ground_truth = sample_data(
+            predict_object.results['cleaned_data']['d_allele'],
+            predict_object.groundtruth_table.d_call.apply(lambda x: x.split(',')).tolist()
+        )
+
+        d_results_df = find_optimal_hyperparameters(
+            d_cleaned_data, d_ground_truth, extractor, get_agreement, cap_range, confidence_range, allele='d'
+        )
+
         self.log("Starting to Search for Optimal Cap and Threshold for J Alleles")
-        j_results_df = find_optimal_hyperparameters(predict_object.results['cleaned_data']['j_allele'],
-                                                    predict_object.groundtruth_table.j_call.apply(lambda x: x.split(',')),
-                                                    extractor, get_agreement, cap_range, confidence_range, allele='j')
 
-        with open(predict_object.script_arguments.save_path + 'cap_confidence_selection_chart_data.pkl','wb') as h:
-            pickle.dump(({'v':v_results_df,'d':d_results_df,'j':j_results_df}),h)
+        j_cleaned_data, j_ground_truth = sample_data(
+            predict_object.results['cleaned_data']['j_allele'],
+            predict_object.groundtruth_table.j_call.apply(lambda x: x.split(',')).tolist()
+        )
+
+        j_results_df = find_optimal_hyperparameters(
+            j_cleaned_data, j_ground_truth, extractor, get_agreement, cap_range, confidence_range, allele='j'
+        )
+
+        with open(predict_object.script_arguments.save_path + 'cap_confidence_selection_chart_data.pkl', 'wb') as h:
+            pickle.dump({'v': v_results_df, 'd': d_results_df, 'j': j_results_df}, h)
 
         def select_best_hyperparameters(results_df, weight_hits=0.7, weight_labels=0.3):
             # Normalize the num_hits and avg_labels_returned
