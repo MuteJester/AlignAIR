@@ -122,10 +122,15 @@ class CappedDynamicConfidenceThreshold:
         results = Parallel(n_jobs=n_process)(delayed(process_vector)(vec) for vec in tqdm(likelihood_vectors))
         return results
 
-    def get_alleles(self, likelihood_vectors, confidence=0.9, allele='v',cap=3):
+    def get_alleles(self, likelihood_vectors, confidence=0.9, allele='v',cap=3,verbose=False):
         results = []
         desc = f'Processing {allele.upper()} Likelihoods'
-        for vec in tqdm(likelihood_vectors,desc=desc):
+        if verbose:
+            iterator = tqdm(likelihood_vectors,desc=desc)
+        else:
+            iterator = likelihood_vectors
+
+        for vec in iterator:
             selected_alleles_index,likelihoods = self.dynamic_cumulative_confidence_threshold(vec, percentage=confidence,cap=cap)
             results.append(([self[allele][i] for i in selected_alleles_index],likelihoods))
 

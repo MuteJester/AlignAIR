@@ -34,10 +34,12 @@ class SegmentCorrectionStep(Step):
         j_end = np.round((j_end.squeeze() - paddings)).astype(int)
 
         if chain_type == 'heavy':
-            d_start = np.round(np.vstack(d_start).squeeze()).astype(int)
-            d_end = np.round(np.vstack(d_end).squeeze()).astype(int)
+            d_start = np.round(np.vstack(d_start).squeeze() - paddings).astype(int)
+            d_end = np.round(np.vstack(d_end).squeeze() - paddings).astype(int)
 
-        return v_start, v_end, d_start, d_end, j_start, j_end
+        return {'v_start':v_start, 'v_end':v_end,
+                'd_start':d_start, 'd_end':d_end,
+                'j_start':j_start, 'j_end':j_end}
     def execute(self, predict_object):
         self.log("Correcting segments for paddings...")
         cleaned_data = predict_object.results['cleaned_data']

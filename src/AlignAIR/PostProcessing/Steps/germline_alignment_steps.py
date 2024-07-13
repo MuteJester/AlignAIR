@@ -24,9 +24,10 @@ class AlleleAlignmentStep(Step):
         self.log("Aligning with germline...")
         allele_info = predict_object.results['allele_info']
         corrected_segments = predict_object.results['corrected_segments']
-        segments = {'v': corrected_segments[0:2], 'j': corrected_segments[4:6]}
+        segments = {'v': [corrected_segments['v_start'],corrected_segments['v_end']],
+                    'j': [corrected_segments['j_start'],corrected_segments['j_end']]}
         if predict_object.chain_type == 'heavy':
-            segments['d'] = corrected_segments[2:4]
+            segments['d'] = [corrected_segments['d_start'],corrected_segments['d_end']]
 
         predict_object.results['germline_alignments'] = self.align_with_germline(
             segments, allele_info[-1], allele_info[0], predict_object.sequences)

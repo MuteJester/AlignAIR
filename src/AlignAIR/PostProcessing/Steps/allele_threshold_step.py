@@ -19,7 +19,7 @@ class ThresholdApplicationStep(Step):
 
             threshold_objects[_gene] = extractor
             selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene],
-                                                     cap=caps[_gene], allele=_gene)
+                                                     cap=caps[_gene], allele=_gene,verbose=True)
 
             predicted_alleles[_gene] = [i[0] for i in selected_alleles]
 

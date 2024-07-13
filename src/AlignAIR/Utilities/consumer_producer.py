@@ -21,6 +21,7 @@ def sequence_tokenizer_worker(file_path, queue, max_seq_length, tokenizer_dictio
                                sequences]
         tokenized_batch = np.vstack(tokenized_sequences)
         queue.put((tokenized_batch,sequences))
+
     queue.put(None)
 
 

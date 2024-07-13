@@ -58,7 +58,7 @@ class BatchProcessingStep(Step):
                 batch_number += 1
                 avg_batch_time = sum(batch_times) / len(batch_times)
                 estimated_time_remaining = avg_batch_time * (total_batches - batch_number)
-                self.log(f"Processed Batch {batch_number}/{total_batches}. Estimated Time Remaining: {estimated_time_remaining:.2f} seconds.")
+                self.log(f"Processed Batch {batch_number}/{total_batches}. Queue Size {queue.qsize()}  > Estimated Time Remaining: {estimated_time_remaining:.2f} seconds.")
         finally:
             total_duration = time.time() - start_time
             self.log(f"All batches processed in {total_duration:.2f} seconds.")

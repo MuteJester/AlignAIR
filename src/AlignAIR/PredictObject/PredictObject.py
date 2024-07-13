@@ -16,6 +16,7 @@ class PredictObject:
             additional_data (dict, optional): Any additional data that might be needed during processing.
         """
         self.sequences = sequences
+        self.groundtruth_table = None
         self.config = config
         self.model = model
         self.results = results or {}
