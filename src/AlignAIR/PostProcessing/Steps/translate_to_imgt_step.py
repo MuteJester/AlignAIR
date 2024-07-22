@@ -10,7 +10,7 @@ class TranslationStep(Step):
         self.log("Translating allele names...")
         # Check if translation is needed
         if not predict_object.script_arguments.translate_to_asc:
-            translator = TranslateToIMGT(predict_object.config)
+            translator = TranslateToIMGT(predict_object.data_config)
             # Assuming 'v' allele needs translation and it's stored in a specific key
             predict_object.results['allele_info'][0]['v'] = [
                 [translator.translate(j) for j in i] for i in predict_object.results['allele_info'][0]['v']]

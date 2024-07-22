@@ -40,6 +40,7 @@ class ModelLikelihoodSummaryPlotStep(Step):
         likelihood_bins = np.linspace(0, 1, 25)
         self.extractor = CappedDynamicConfidenceThreshold(predict_object.data_config['heavy'])
 
+
         alignair_likelihood_hit_function = dict()
         alignair_likelihood_hit_total = dict()
 

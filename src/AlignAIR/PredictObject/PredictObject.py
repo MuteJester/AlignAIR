@@ -31,6 +31,7 @@ class PredictObject:
         self.orientation_pipeline=None
         self.model = None
         self.final_results = None
+        self.candidate_sequence_extractor = None
 
     def log(self, message):
         """

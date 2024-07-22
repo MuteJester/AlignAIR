@@ -10,14 +10,14 @@ from AlignAIR.Utilities.consumer_producer import READER_WORKER_TYPES
 
 class BatchProcessingStep(Step):
 
-    def start_tokenizer_process(self,file_path, max_seq_length, logger, orientation_pipeline, batch_size=256):
+    def start_tokenizer_process(self,file_path, max_seq_length, logger, orientation_pipeline,candidate_sequence_extractor, batch_size=256):
         tokenizer_dictionary = {"A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0}  # pad token
         queue = multiprocessing.Queue(maxsize=64)  # Control the prefetching size
         file_type = file_path.split('.')[-1]  # get the file type i.e .csv,.tsv or .fasta
         worker_reading_type = READER_WORKER_TYPES[file_type]
         process = Process(target=worker_reading_type,
                           args=(file_path, queue, max_seq_length, tokenizer_dictionary, batch_size, logger,
-                                orientation_pipeline))
+                                orientation_pipeline,candidate_sequence_extractor))
         process.start()
         self.log('Producer Process Started!')
         return queue, process
@@ -29,6 +29,7 @@ class BatchProcessingStep(Step):
             predict_object.script_arguments.sequences,
             predict_object.script_arguments.max_input_size,
             predict_object.orientation_pipeline,
+            predict_object.candidate_sequence_extractor,
             predict_object.script_arguments.batch_size,
         )
 

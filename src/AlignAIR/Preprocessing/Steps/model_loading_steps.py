@@ -5,6 +5,7 @@ from multiprocessing import Process
 from AlignAIR.Data import HeavyChainDataset, LightChainDataset
 from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
 from AlignAIR.Models.LightChain import LightChainAlignAIRR
+from AlignAIR.Preprocessing.LongSequence.FastKmerDensityExtractor import FastKmerDensityExtractor
 from AlignAIR.PretrainedComponents import builtin_orientation_classifier
 from AlignAIR.Step.Step import Step
 from AlignAIR.Trainers import Trainer
@@ -76,4 +77,16 @@ class ModelLoadingStep(Step):
                 predict_object.orientation_pipeline = builtin_orientation_classifier()
             self.log('Orientation Pipeline Loaded Successfully')
 
+        self.log("Loading Fitting Kmer Density Model...")
+
+        data_config = predict_object.data_config[predict_object.chain_type]
+        hc_alleles = [i.ungapped_seq.upper() for j in data_config.v_alleles for i in data_config.v_alleles[j]]
+        hc_alleles += [i.ungapped_seq.upper() for j in data_config.j_alleles for i in data_config.j_alleles[j]]
+
+        if predict_object.chain_type == 'heavy':
+            hc_alleles += [i.ungapped_seq.upper() for j in data_config.d_alleles for i in data_config.d_alleles[j]]
+
+        predict_object.candidate_sequence_extractor = FastKmerDensityExtractor(11, max_length=576, allowed_mismatches=0)
+        predict_object.candidate_sequence_extractor.fit(hc_alleles)
+        self.log("Kmer Density Model Fitted Successfully...")
         return predict_object
