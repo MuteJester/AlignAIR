@@ -34,6 +34,8 @@ def sequence_tokenizer_worker_fasta(file_path, queue, max_seq_length, tokenizer_
 
     sequences = []
     for record in SeqIO.parse(file_path, "fasta"):
+        sequences.append(str(record.seq))
+
         if len(sequences) == batch_size:
             # Fix Orientation
             # validate sequence length and use candidate extractor in case a long sequence is observed
