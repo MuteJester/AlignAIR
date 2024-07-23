@@ -68,9 +68,12 @@ def main():
     args = parse_arguments()
 
     args_a = args
+    args_a.model_checkpoint = args.model_checkpoint_a
+    args_b = args
+    args_b.model_checkpoint = args.model_checkpoint_b
 
-    predict_object_a = PredictObject(args, logger=logger)
-    predict_object_b = PredictObject(args, logger=logger)
+    predict_object_a = PredictObject(args_a, logger=logger)
+    predict_object_b = PredictObject(args_b, logger=logger)
 
     # Define the steps in the pipeline
     steps = [
@@ -84,9 +87,9 @@ def main():
         SegmentCorrectionStep("Correct Segmentations", logger),
         OptimalAlleleThresholdSearchStep("Optimal Allele Search", logger),
         ThresholdApplicationStep("Apply Dynamic Threshold to Distill Assignments", logger),
-        ModelLikelihoodSummaryPlotStep('Generate Model Likelihood Function Figure', logger),
-        SegmentationProductivitySummaryPlotStep('Generate Model Segmentation&Productivity Function Figure', logger),
-        MutationRateSummaryPlotStep('Generate Model Mutation Rate Figure', logger),
+        #ModelLikelihoodSummaryPlotStep('Generate Model Likelihood Function Figure', logger),
+        #SegmentationProductivitySummaryPlotStep('Generate Model Segmentation&Productivity Function Figure', logger),
+        #MutationRateSummaryPlotStep('Generate Model Mutation Rate Figure', logger),
     ]
 
     # Run the pipeline
@@ -95,6 +98,8 @@ def main():
     logger.info("Starting Pipeline for model B")
 
     final_predict_object_b = run_pipeline(predict_object_b, steps)
+
+
 
 
 
