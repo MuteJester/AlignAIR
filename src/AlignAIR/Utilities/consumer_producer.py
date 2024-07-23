@@ -34,10 +34,6 @@ def sequence_tokenizer_worker_fasta(file_path, queue, max_seq_length, tokenizer_
 
     sequences = []
     for record in SeqIO.parse(file_path, "fasta"):
-        if len(str(record.seq)) < max_seq_length:
-            sequences.append(str(record.seq))
-        else:
-            logger.warning('Encountered a sequence that is longer than the maximum length of the model, skipping it...')
         if len(sequences) == batch_size:
             # Fix Orientation
             # validate sequence length and use candidate extractor in case a long sequence is observed
