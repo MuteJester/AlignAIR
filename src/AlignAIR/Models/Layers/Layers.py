@@ -1021,6 +1021,27 @@ class Mish(Layer):
         return input_shape
 
 
+class AverageLastLabel(tf.keras.metrics.Mean):
+    def __init__(self, name="average_last_label", **kwargs):
+        super(AverageLastLabel, self).__init__(name=name, **kwargs)
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Get the last label of the predicted D allele
+        last_label = y_pred["d_allele"][:, -1]
+        return super(AverageLastLabel, self).update_state(last_label, sample_weight)
+
+
+class EntropyMetric(tf.keras.metrics.Mean):
+    def __init__(self, allele_name, **kwargs):
+        super(EntropyMetric, self).__init__(name=f"{allele_name}_entropy", **kwargs)
+        self.allele_name = allele_name
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Calculate entropy for the specified allele prediction
+        entropy = -tf.reduce_sum(y_pred[self.allele_name] * tf.math.log(y_pred[self.allele_name] + 1e-9), axis=-1)
+        return super(EntropyMetric, self).update_state(entropy, sample_weight)
+
+
 def mod3_mse_loss(y_true, y_pred):
     y_true_casted = K.cast(y_true, dtype='float32')
     # Compute the residual of the predicted values modulo 3

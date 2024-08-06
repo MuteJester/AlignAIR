@@ -12,10 +12,13 @@ from tensorflow.keras.layers import (
     Flatten
 )
 from ..HeavyChain.losses import d_loss
-from ..Layers import ConvResidualFeatureExtractionBlock, RegularizedConstrainedLogVar, CutoutLayer, Conv1D_and_BatchNorm
+from ..Layers import ConvResidualFeatureExtractionBlock, RegularizedConstrainedLogVar, CutoutLayer, \
+    Conv1D_and_BatchNorm, EntropyMetric
 from ..Layers import (
     TokenAndPositionEmbedding, MinMaxValueConstraint
 )
+
+
 
 
 class LightChainAlignAIRR(tf.keras.Model):
@@ -26,7 +29,6 @@ class LightChainAlignAIRR(tf.keras.Model):
       Attributes:
           max_seq_length (int): Maximum sequence length.
           v_allele_count (int): Number of V alleles.
-          d_allele_count (int): Number of D alleles.
           j_allele_count (int): Number of J alleles.
           ... (other attributes)
       """
@@ -49,24 +51,13 @@ class LightChainAlignAIRR(tf.keras.Model):
         self.v_class_weight, self.j_class_weight = 0.5, 0.5
         self.segmentation_weight, self.classification_weight, self.intersection_weight = (0.5, 0.5, 0.5)
 
-        # Define task-specific log variances for dynamic weighting
-        self.log_var_v_start = RegularizedConstrainedLogVar()
-        self.log_var_v_end = RegularizedConstrainedLogVar()
-
-        self.log_var_j_start = RegularizedConstrainedLogVar()
-        self.log_var_j_end = RegularizedConstrainedLogVar()
-
-        self.log_var_v_classification = RegularizedConstrainedLogVar()
-        self.log_var_j_classification = RegularizedConstrainedLogVar()
-        self.log_var_mutation = RegularizedConstrainedLogVar()
-        self.log_var_indel = RegularizedConstrainedLogVar()
-        self.log_var_productivity = RegularizedConstrainedLogVar()
-        self.log_var_chain_type = RegularizedConstrainedLogVar()
+        self.BCE_SMOOTH = tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1)
 
         # Tracking
         self.setup_performance_metrics()
-
         self.setup_model()
+        # Define task-specific log variances for dynamic weighting
+        self.setup_log_variances()
 
     def setup_model(self):
         # Init Input Layers
@@ -75,15 +66,17 @@ class LightChainAlignAIRR(tf.keras.Model):
         self.input_embeddings = TokenAndPositionEmbedding(
             vocab_size=6, embed_dim=32, maxlen=self.max_seq_length
         )
+        self.fblock_activation = 'tanh'
+        print(self.fblock_activation)
 
         # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
         # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
         self.meta_feature_extractor_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                               num_conv_batch_layers=6,
-                                                                               kernel_size=[3, 3, 3, 2, 2, 2, 5],
+                                                                               num_conv_batch_layers=4,
+                                                                               kernel_size=[3, 3, 3, 2, 5],
                                                                                max_pool_size=2,
                                                                                conv_activation=tf.keras.layers.Activation(
-                                                                                   'tanh'),
+                                                                                   self.fblock_activation),
                                                                                initializer=self.initializer)
 
         self.v_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
@@ -91,16 +84,15 @@ class LightChainAlignAIRR(tf.keras.Model):
                                                                                kernel_size=[3, 3, 3, 2, 5],
                                                                                max_pool_size=2,
                                                                                conv_activation=tf.keras.layers.Activation(
-                                                                                   'tanh'),
+                                                                                   self.fblock_activation),
                                                                                initializer=self.initializer)
-
 
         self.j_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
                                                                                num_conv_batch_layers=4,
                                                                                kernel_size=[3, 3, 3, 2, 5],
                                                                                max_pool_size=2,
                                                                                conv_activation=tf.keras.layers.Activation(
-                                                                                   'tanh'),
+                                                                                   self.fblock_activation),
                                                                                initializer=self.initializer)
 
         self.v_mask_layer = CutoutLayer(gene='V', max_size=self.max_seq_length)
@@ -113,16 +105,15 @@ class LightChainAlignAIRR(tf.keras.Model):
                                                                              kernel_size=[3, 3, 3, 2, 2, 2, 5],
                                                                              max_pool_size=2,
                                                                              conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'),
+                                                                                 self.fblock_activation),
                                                                              initializer=self.initializer)
-
 
         self.j_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
                                                                              num_conv_batch_layers=6,
                                                                              kernel_size=[3, 3, 3, 2, 2, 2, 5],
                                                                              max_pool_size=2,
                                                                              conv_activation=tf.keras.layers.Activation(
-                                                                                 'tanh'),
+                                                                                 self.fblock_activation),
                                                                              initializer=self.initializer)
 
         # Init Interval Regression Related Layers
@@ -133,8 +124,22 @@ class LightChainAlignAIRR(tf.keras.Model):
 
         #  =========== V HEADS ======================
         self._init_v_classification_layers()
+
         # =========== J HEADS ======================
         self._init_j_classification_layers()
+
+    def setup_log_variances(self):
+        """Initialize log variances for dynamic weighting."""
+        self.log_var_v_start = RegularizedConstrainedLogVar()
+        self.log_var_v_end = RegularizedConstrainedLogVar()
+        self.log_var_j_start = RegularizedConstrainedLogVar()
+        self.log_var_j_end = RegularizedConstrainedLogVar()
+        self.log_var_v_classification = RegularizedConstrainedLogVar()
+        self.log_var_j_classification = RegularizedConstrainedLogVar()
+        self.log_var_mutation = RegularizedConstrainedLogVar()
+        self.log_var_indel = RegularizedConstrainedLogVar()
+        self.log_var_productivity = RegularizedConstrainedLogVar()
+        self.log_var_chain_type = RegularizedConstrainedLogVar()
 
     def setup_performance_metrics(self):
         """
@@ -166,6 +171,10 @@ class LightChainAlignAIRR(tf.keras.Model):
         # Track the mutation rate loss
         self.segmentation_loss_tracker = tf.keras.metrics.Mean(name="segmentation_loss")
 
+        # Add custom metrics for monitoring
+        self.v_allele_entropy_tracker = EntropyMetric(allele_name="v_allele")
+        self.j_allele_entropy_tracker = EntropyMetric(allele_name="j_allele")
+
     def reshape_and_cast_input(self, input_s):
         a = K.reshape(input_s, (-1, self.max_seq_length))
         a = K.cast(a, "float32")
@@ -188,6 +197,7 @@ class LightChainAlignAIRR(tf.keras.Model):
         )
 
         self.v_allele_call_head = Dense(self.v_allele_count, activation="sigmoid", name="v_allele")
+
     def _init_j_classification_layers(self):
         self.j_allele_mid = Dense(
             self.j_allele_count * self.latent_size_factor,
@@ -207,13 +217,6 @@ class LightChainAlignAIRR(tf.keras.Model):
         )
         self.v_end_out = Dense(
             1, activation=act, kernel_constraint=unit_norm(), kernel_initializer=self.initializer, name='v_end'
-        )
-
-        self.d_start_out = Dense(
-            1, activation=act, kernel_constraint=unit_norm(), kernel_initializer=self.initializer, name='d_start'
-        )
-        self.d_end_out = Dense(
-            1, activation=act, kernel_constraint=unit_norm(), kernel_initializer=self.initializer, name='d_end'
         )
 
         self.j_start_out = Dense(
@@ -241,7 +244,11 @@ class LightChainAlignAIRR(tf.keras.Model):
             , kernel_constraint=MinMaxValueConstraint(0, 50)
         )
 
-
+        self.chain_type_mid = Dense(self.max_seq_length, activation=act, name="chain_type_mid",
+                                    kernel_initializer=self.initializer
+                                    )
+        self.chain_type_dropout = Dropout(0.05)
+        self.chain_type_head = Dense(1, activation='sigmoid', name="chain_type", kernel_initializer=self.initializer)
 
         self.productivity_feature_block = Conv1D_and_BatchNorm(filters=64, kernel=3, max_pool=1,
                                                                initializer=self.initializer)
@@ -252,23 +259,39 @@ class LightChainAlignAIRR(tf.keras.Model):
             1, activation='sigmoid', name="productive", kernel_initializer=self.initializer
         )
 
-        self.chain_type_mid = Dense(
-            self.max_seq_length, activation=act, name="chain_type_mid", kernel_initializer=self.initializer
-        )
-        self.chain_type_dropout = Dropout(0.05)
-        self.chain_type_head = Dense(1, activation='sigmoid', name="chain_type", kernel_initializer=self.initializer)
-
     def _predict_vdj_set(self, v_feature_map, j_feature_map):
         # ============================ V =============================
         v_allele_middle = self.v_allele_mid(v_feature_map)
         v_allele = self.v_allele_call_head(v_allele_middle)
-
 
         # ============================ J =============================
         j_allele_middle = self.j_allele_mid(j_feature_map)
         j_allele = self.j_allele_call_head(j_allele_middle)
 
         return v_allele, j_allele
+
+    def mask_embeddings(self, input_embeddings, end_positions):
+        """
+        Masks the input embeddings up to the given end positions.
+
+        Args:
+        - input_embeddings: Tensor of shape (batch_size, seq_length, embedding_dim)
+        - end_positions: Tensor of shape (batch_size, 1) with the end positions to mask up to
+
+        Returns:
+        - masked_embeddings: Tensor of the same shape as input_embeddings with values up to end_positions masked to zero
+        """
+        batch_size, seq_length, embedding_dim = tf.shape(input_embeddings)[0], tf.shape(input_embeddings)[1], \
+        tf.shape(input_embeddings)[2]
+
+        # Create a mask for each position in the batch
+        mask = tf.sequence_mask(end_positions, seq_length, dtype=tf.float32)
+        mask = tf.expand_dims(mask, -1)  # Shape: (batch_size, seq_length, 1)
+        mask = tf.tile(mask, [1, 1, embedding_dim])  # Shape: (batch_size, seq_length, embedding_dim)
+
+        # Apply the mask to the input embeddings
+        masked_embeddings = input_embeddings * mask
+        return masked_embeddings
 
     def call(self, inputs):
         # STEP 1 : Produce embeddings for the input sequence
@@ -298,19 +321,15 @@ class LightChainAlignAIRR(tf.keras.Model):
         productivity_features = self.productivity_dropout(productivity_features)
         is_productive = self.productivity_head(productivity_features)
 
-        chain_type_mid = self.chain_type_mid(meta_features)
-        chain_type_mid = self.chain_type_dropout(chain_type_mid)
-        chain_type = self.chain_type_head(chain_type_mid)
-
-
         reshape_masked_sequence_v = self.v_mask_layer([v_start, v_end])
         reshape_masked_sequence_j = self.j_mask_layer([j_start, j_end])
 
         reshape_masked_sequence_v = tf.expand_dims(reshape_masked_sequence_v, -1)
         reshape_masked_sequence_j = tf.expand_dims(reshape_masked_sequence_j, -1)
 
-        # import pdb
-        # pdb.set_trace()
+        chain_type_mid = self.chain_type_mid(meta_features)
+        chain_type_mid = self.chain_type_dropout(chain_type_mid)
+        chain_type = self.chain_type_head(chain_type_mid)
 
         masked_sequence_v = self.v_mask_gate([input_embeddings, reshape_masked_sequence_v])
         masked_sequence_j = self.j_mask_gate([input_embeddings, reshape_masked_sequence_j])
@@ -332,7 +351,7 @@ class LightChainAlignAIRR(tf.keras.Model):
             'mutation_rate': mutation_rate,
             'indel_count': indel_count,
             'productive': is_productive,
-            'type':chain_type
+            'type': chain_type
         }
 
     def get_segmentation_feature_map(self, inputs):
@@ -374,23 +393,6 @@ class LightChainAlignAIRR(tf.keras.Model):
         # cast keras tensor to float 32
         return K.cast(x, "float32")
 
-    @staticmethod
-    def compute_iou(y_true, y_pred):
-        intersection = K.sum(K.abs(y_true * y_pred), axis=-1)
-        sum_ = K.sum(K.abs(y_true) + K.abs(y_pred), axis=-1)
-        iou = (intersection + 1e-7) / (sum_ - intersection + 1e-7)
-        return K.mean(iou)
-
-    @staticmethod
-    def dice_coefficient(y_true, y_pred):
-        intersection = K.sum(y_true * y_pred)
-        return (2. * intersection + 1e-7) / (K.sum(y_true) + K.sum(y_pred) + 1e-7)
-
-    @staticmethod
-    def constraint_penalty(start_idx, end_idx):
-        penalty = tf.maximum(0.0, end_idx - start_idx)
-        return penalty ** 2  # Squaring to increase penalty for larger violations
-
     def hierarchical_loss(self, y_true, y_pred):
         # Extract the segmentation and classification outputs
         # segmentation_true = [self.c2f32(y_true[k]) for k in ['v_segment', 'd_segment', 'j_segment']]
@@ -399,17 +401,12 @@ class LightChainAlignAIRR(tf.keras.Model):
         classification_true = [self.c2f32(y_true[k]) for k in self.classification_keys]
         classification_pred = [self.c2f32(y_pred[k]) for k in self.classification_keys]
 
-
         # Segmentation Loss
         v_start_loss = tf.keras.losses.mean_absolute_error(y_true['v_start'], y_pred['v_start'])
         v_end_loss = tf.keras.losses.mean_absolute_error(y_true['v_end'], y_pred['v_end'])
 
-
         j_start_loss = tf.keras.losses.mean_absolute_error(y_true['j_start'], y_pred['j_start'])
         j_end_loss = tf.keras.losses.mean_absolute_error(y_true['j_end'], y_pred['j_end'])
-
-        # v_d_penalty = self.constraint_penalty(y_pred['v_end'], y_pred['d_start'])
-        # d_j_penalty = self.constraint_penalty(y_pred['d_end'], y_pred['j_start'])
 
         # Calculate the precision as the inverse of the exponential of each task's log variance
         weighted_v_start = v_start_loss * self.log_var_v_start(v_start_loss)
@@ -424,13 +421,11 @@ class LightChainAlignAIRR(tf.keras.Model):
 
         # Classification Loss
 
-        clf_v_loss = tf.keras.losses.binary_focal_crossentropy(classification_true[0], classification_pred[0])
-
-        clf_j_loss = tf.keras.losses.binary_focal_crossentropy(classification_true[1], classification_pred[1])
+        clf_v_loss = tf.keras.losses.binary_crossentropy(classification_true[0], classification_pred[0])
+        clf_j_loss = tf.keras.losses.binary_crossentropy(classification_true[1], classification_pred[1])
 
         precision_v_classification = self.log_var_v_classification(clf_v_loss)
         precision_j_classification = self.log_var_j_classification(clf_j_loss)
-
         classification_loss = precision_v_classification * clf_v_loss + precision_j_classification * clf_j_loss
 
         # Mutation Loss
@@ -441,9 +436,7 @@ class LightChainAlignAIRR(tf.keras.Model):
         # Compute Productivity Loss
         productive_loss = tf.keras.losses.binary_crossentropy(y_true['productive'], y_pred['productive'])
 
-        # Compute chain_type Loss
-        chain_type_loss = tf.keras.metrics.binary_crossentropy(self.c2f32(y_true['type']),self.c2f32(y_pred['type']))
-
+        chain_type_loss = tf.keras.metrics.binary_crossentropy(self.c2f32(y_true['type']), self.c2f32(y_pred['type']))
 
         precision_mutation = self.log_var_mutation(mutation_rate_loss)
         precision_indel = self.log_var_indel(indel_count_loss)
@@ -460,7 +453,7 @@ class LightChainAlignAIRR(tf.keras.Model):
         # Sum weighted losses
         total_loss = (segmentation_loss + classification_loss +
                       mutation_rate_loss + indel_count_loss +
-                      productive_loss+chain_type_loss)
+                      productive_loss + chain_type_loss)
 
         return total_loss, classification_loss, indel_count_loss, mutation_rate_loss, segmentation_loss, productive_loss
 
@@ -499,6 +492,9 @@ class LightChainAlignAIRR(tf.keras.Model):
 
         self.log_metrics(total_loss, scaled_classification_loss, scaled_indel_count_loss, scaled_mutation_rate_loss,
                          segmentation_loss, scaled_productive_loss)
+        # Update custom metrics
+        self.v_allele_entropy_tracker.update_state(y, y_pred)
+        self.j_allele_entropy_tracker.update_state(y, y_pred)
 
         metrics = self.get_metrics_log()
 
@@ -522,6 +518,8 @@ class LightChainAlignAIRR(tf.keras.Model):
         metrics["mutation_rate_loss"] = self.scaled_mutation_rate_loss_tracker.result()
         metrics["indel_count_loss"] = self.scaled_indel_count_loss_tracker.result()
         metrics['productive_loss'] = self.scaled_productivity_loss_tracker.result()
+        metrics['v_allele_entropy'] = self.v_allele_entropy_tracker.result()
+        metrics['j_allele_entropy'] = self.j_allele_entropy_tracker.result()
         return metrics
 
     def model_summary(self, input_shape):
@@ -538,3 +536,4 @@ class LightChainAlignAIRR(tf.keras.Model):
         return tf.keras.utils.plot_model(
             Model(inputs=x, outputs=self.call(x)), show_shapes=show_shapes
         )
+

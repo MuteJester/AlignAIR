@@ -3,7 +3,7 @@ import logging
 import yaml
 import questionary
 import tensorflow as tf
-from AlignAIR.PostProcessing.Steps.allele_threshold_step import ThresholdApplicationStep
+from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPercentageThresholdApplicationStep
 from AlignAIR.PostProcessing.Steps.clean_up_steps import CleanAndArrangeStep
 from AlignAIR.PostProcessing.Steps.finalization_and_packaging_steps import FinalizationStep
 from AlignAIR.PostProcessing.Steps.germline_alignment_steps import AlleleAlignmentStep
@@ -34,9 +34,10 @@ def parse_arguments():
     parser.add_argument('--heavy_data_config', type=str, default='D', help='Path to heavy chain data config')
     parser.add_argument('--max_input_size', type=int, default=576, help='Maximum model input size, NOTE! this is with respect to the dimensions the model was trained on, do not increase for pretrained models')
     parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
-    parser.add_argument('--v_allele_threshold', type=float, default=0.75, help='Threshold for V allele prediction')
-    parser.add_argument('--d_allele_threshold', type=float, default=0.3, help='Threshold for D allele prediction')
-    parser.add_argument('--j_allele_threshold', type=float, default=0.8, help='Threshold for J allele prediction')
+    parser.add_argument('--v_allele_threshold', type=float, default=0.2, help='Percentage for V allele assignment '
+                                                                               'selection')
+    parser.add_argument('--d_allele_threshold', type=float, default=0.25, help='Percentage for D allele assignment selection')
+    parser.add_argument('--j_allele_threshold', type=float, default=0.2, help='Percentage for J allele assignment selection')
     parser.add_argument('--v_cap', type=int, default=3, help='Cap for V allele calls')
     parser.add_argument('--d_cap', type=int, default=3, help='Cap for D allele calls')
     parser.add_argument('--j_cap', type=int, default=3, help='Cap for J allele calls')
@@ -101,7 +102,7 @@ def main():
         BatchProcessingStep("Process and Predict Batches", logger),
         CleanAndArrangeStep("Clean Up Raw Prediction", logger),
         SegmentCorrectionStep("Correct Segmentations", logger),
-        ThresholdApplicationStep("Apply Dynamic Threshold to Distill Assignments", logger),
+        MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments", logger),
         AlleleAlignmentStep("Align Predicted Segments with Germline", logger),
         TranslationStep("Translate ASC's to IMGT Alleles", logger),
         FinalizationStep("Finalize Post Processing and Save Csv", logger)

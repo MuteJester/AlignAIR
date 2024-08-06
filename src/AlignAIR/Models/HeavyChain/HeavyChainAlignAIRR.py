@@ -12,7 +12,7 @@ from tensorflow.keras.layers import (
     Flatten
 )
 
-from ..Layers import Conv1D_and_BatchNorm, CutoutLayer
+from ..Layers import Conv1D_and_BatchNorm, CutoutLayer, AverageLastLabel, EntropyMetric
 from ...Models.Layers import ConvResidualFeatureExtractionBlock, RegularizedConstrainedLogVar
 from ...Models.Layers import (
     TokenAndPositionEmbedding, MinMaxValueConstraint
@@ -51,6 +51,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         self.v_class_weight, self.d_class_weight, self.j_class_weight = 0.5, 0.5, 0.5
         self.segmentation_weight, self.classification_weight, self.intersection_weight = (0.5, 0.5, 0.5)
 
+        self.BCE_SMOOTH = tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1)
 
         # Tracking
         self.setup_performance_metrics()
@@ -59,87 +60,89 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         self.setup_log_variances()
 
     def setup_model(self):
-            # Init Input Layers
-            self._init_input_layers()
+        # Init Input Layers
+        self._init_input_layers()
 
-            self.input_embeddings = TokenAndPositionEmbedding(
-                vocab_size=6, embed_dim=32, maxlen=self.max_seq_length
-            )
+        self.input_embeddings = TokenAndPositionEmbedding(
+            vocab_size=6, embed_dim=32, maxlen=self.max_seq_length
+        )
+        self.fblock_activation = 'tanh'
+        print(self.fblock_activation)
 
-            # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
-            # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
-            self.meta_feature_extractor_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                                   num_conv_batch_layers=6,
-                                                                                   kernel_size=[3, 3, 3, 2, 2, 2, 5],
-                                                                                   max_pool_size=2,
-                                                                                   conv_activation=tf.keras.layers.Activation(
-                                                                                       'tanh'),
-                                                                                   initializer=self.initializer)
+        # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
+        # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
+        self.meta_feature_extractor_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                               num_conv_batch_layers=4,
+                                                                               kernel_size=[3, 3, 3, 2, 5],
+                                                                               max_pool_size=2,
+                                                                               conv_activation=tf.keras.layers.Activation(
+                                                                                   self.fblock_activation),
+                                                                               initializer=self.initializer)
 
-            self.v_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                                   num_conv_batch_layers=4,
-                                                                                   kernel_size=[3, 3, 3, 2, 5],
-                                                                                   max_pool_size=2,
-                                                                                   conv_activation=tf.keras.layers.Activation(
-                                                                                       'tanh'),
-                                                                                   initializer=self.initializer)
-            self.d_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                                   num_conv_batch_layers=4,
-                                                                                   kernel_size=[3, 3, 3, 2, 5],
-                                                                                   max_pool_size=2,
-                                                                                   conv_activation=tf.keras.layers.Activation(
-                                                                                       'tanh'),
-                                                                                   initializer=self.initializer)
-            self.j_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                                   num_conv_batch_layers=4,
-                                                                                   kernel_size=[3, 3, 3, 2, 5],
-                                                                                   max_pool_size=2,
-                                                                                   conv_activation=tf.keras.layers.Activation(
-                                                                                       'tanh'),
-                                                                                   initializer=self.initializer)
+        self.v_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                               num_conv_batch_layers=4,
+                                                                               kernel_size=[3, 3, 3, 2, 5],
+                                                                               max_pool_size=2,
+                                                                               conv_activation=tf.keras.layers.Activation(
+                                                                                   self.fblock_activation),
+                                                                               initializer=self.initializer)
+        self.d_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                               num_conv_batch_layers=4,
+                                                                               kernel_size=[3, 3, 3, 2, 5],
+                                                                               max_pool_size=2,
+                                                                               conv_activation=tf.keras.layers.Activation(
+                                                                                   self.fblock_activation),
+                                                                               initializer=self.initializer)
+        self.j_segmentation_feature_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                               num_conv_batch_layers=4,
+                                                                               kernel_size=[3, 3, 3, 2, 5],
+                                                                               max_pool_size=2,
+                                                                               conv_activation=tf.keras.layers.Activation(
+                                                                                   self.fblock_activation),
+                                                                               initializer=self.initializer)
 
-            self.v_mask_layer = CutoutLayer(gene='V', max_size=self.max_seq_length)
-            self.d_mask_layer = CutoutLayer(gene='D', max_size=self.max_seq_length)
-            self.j_mask_layer = CutoutLayer(gene='J', max_size=self.max_seq_length)
+        self.v_mask_layer = CutoutLayer(gene='V', max_size=self.max_seq_length)
+        self.d_mask_layer = CutoutLayer(gene='D', max_size=self.max_seq_length)
+        self.j_mask_layer = CutoutLayer(gene='J', max_size=self.max_seq_length)
 
-            # Init V/D/J Masked Input Signal Encoding Layers
-            # Init V/D/J Masked Input Signal Encoding Layers
-            self.v_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                                 num_conv_batch_layers=6,
-                                                                                 kernel_size=[3, 3, 3, 2, 2, 2, 5],
-                                                                                 max_pool_size=2,
-                                                                                 conv_activation=tf.keras.layers.Activation(
-                                                                                     'tanh'),
-                                                                                 initializer=self.initializer)
+        # Init V/D/J Masked Input Signal Encoding Layers
+        # Init V/D/J Masked Input Signal Encoding Layers
+        self.v_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                             num_conv_batch_layers=6,
+                                                                             kernel_size=[3, 3, 3, 2, 2, 2, 5],
+                                                                             max_pool_size=2,
+                                                                             conv_activation=tf.keras.layers.Activation(
+                                                                                 self.fblock_activation),
+                                                                             initializer=self.initializer)
 
-            self.d_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=64,
-                                                                                 num_conv_batch_layers=4,
-                                                                                 kernel_size=[3, 3, 3, 3, 5],
-                                                                                 max_pool_size=2,
-                                                                                 conv_activation=tf.keras.layers.Activation(
-                                                                                     'tanh'),
-                                                                                 initializer=self.initializer)
+        self.d_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                             num_conv_batch_layers=4,
+                                                                             kernel_size=[3, 3, 2, 2, 5],
+                                                                             max_pool_size=2,
+                                                                             conv_activation=tf.keras.layers.Activation(
+                                                                                 self.fblock_activation),
+                                                                             initializer=self.initializer)
 
-            self.j_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
-                                                                                 num_conv_batch_layers=6,
-                                                                                 kernel_size=[3, 3, 3, 2, 2, 2, 5],
-                                                                                 max_pool_size=2,
-                                                                                 conv_activation=tf.keras.layers.Activation(
-                                                                                     'tanh'),
-                                                                                 initializer=self.initializer)
+        self.j_feature_extraction_block = ConvResidualFeatureExtractionBlock(filter_size=128,
+                                                                             num_conv_batch_layers=6,
+                                                                             kernel_size=[3, 3, 3, 2, 2, 2, 5],
+                                                                             max_pool_size=2,
+                                                                             conv_activation=tf.keras.layers.Activation(
+                                                                                 self.fblock_activation),
+                                                                             initializer=self.initializer)
 
-            # Init Interval Regression Related Layers
-            self._init_segmentation_predictions()
+        # Init Interval Regression Related Layers
+        self._init_segmentation_predictions()
 
-            # Init the masking layer that will leverage the predicted segmentation mask
-            self._init_masking_layers()
+        # Init the masking layer that will leverage the predicted segmentation mask
+        self._init_masking_layers()
 
-            #  =========== V HEADS ======================
-            self._init_v_classification_layers()
-            # =========== D HEADS ======================
-            self._init_d_classification_layers()
-            # =========== J HEADS ======================
-            self._init_j_classification_layers()
+        #  =========== V HEADS ======================
+        self._init_v_classification_layers()
+        # =========== D HEADS ======================
+        self._init_d_classification_layers()
+        # =========== J HEADS ======================
+        self._init_j_classification_layers()
 
     def setup_log_variances(self):
         """Initialize log variances for dynamic weighting."""
@@ -155,6 +158,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         self.log_var_mutation = RegularizedConstrainedLogVar()
         self.log_var_indel = RegularizedConstrainedLogVar()
         self.log_var_productivity = RegularizedConstrainedLogVar()
+
     def setup_performance_metrics(self):
         """
            Sets up metrics to track various aspects of model performance during training.
@@ -185,6 +189,12 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         # Track the mutation rate loss
         self.segmentation_loss_tracker = tf.keras.metrics.Mean(name="segmentation_loss")
 
+        # Add custom metrics for monitoring
+        self.average_last_label_tracker = AverageLastLabel(name="average_last_label")
+        self.v_allele_entropy_tracker = EntropyMetric(allele_name="v_allele")
+        self.d_allele_entropy_tracker = EntropyMetric(allele_name="d_allele")
+        self.j_allele_entropy_tracker = EntropyMetric(allele_name="j_allele")
+
     def reshape_and_cast_input(self, input_s):
         a = K.reshape(input_s, (-1, self.max_seq_length))
         a = K.cast(a, "float32")
@@ -212,13 +222,13 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
     def _init_d_classification_layers(self):
         self.d_allele_mid = Dense(
-            self.d_allele_count * self.latent_size_factor,
+            self.d_allele_count * self.latent_size_factor, kernel_regularizer=regularizers.l2(0.01),
             activation=self.classification_middle_layer_activation,
             name="d_allele_middle",
         )
 
         self.d_allele_call_head = Dense(
-            self.d_allele_count, activation="sigmoid", name="d_allele", kernel_regularizer=regularizers.l1(0.01)
+            self.d_allele_count, activation="sigmoid", name="d_allele", kernel_regularizer=regularizers.l2(0.05)
         )
 
     def _init_j_classification_layers(self):
@@ -298,6 +308,29 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
         return v_allele, d_allele, j_allele
 
+    def mask_embeddings(self, input_embeddings, end_positions):
+        """
+        Masks the input embeddings up to the given end positions.
+
+        Args:
+        - input_embeddings: Tensor of shape (batch_size, seq_length, embedding_dim)
+        - end_positions: Tensor of shape (batch_size, 1) with the end positions to mask up to
+
+        Returns:
+        - masked_embeddings: Tensor of the same shape as input_embeddings with values up to end_positions masked to zero
+        """
+        batch_size, seq_length, embedding_dim = tf.shape(input_embeddings)[0], tf.shape(input_embeddings)[1], \
+        tf.shape(input_embeddings)[2]
+
+        # Create a mask for each position in the batch
+        mask = tf.sequence_mask(end_positions, seq_length, dtype=tf.float32)
+        mask = tf.expand_dims(mask, -1)  # Shape: (batch_size, seq_length, 1)
+        mask = tf.tile(mask, [1, 1, embedding_dim])  # Shape: (batch_size, seq_length, embedding_dim)
+
+        # Apply the mask to the input embeddings
+        masked_embeddings = input_embeddings * mask
+        return masked_embeddings
+
     def call(self, inputs):
         # STEP 1 : Produce embeddings for the input sequence
         input_seq = self.reshape_and_cast_input(inputs["tokenized_sequence"])
@@ -305,8 +338,8 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
         meta_features = self.meta_feature_extractor_block(input_embeddings)
         v_segment_features = self.v_segmentation_feature_block(input_embeddings)
-        d_segment_features = self.d_segmentation_feature_block(input_embeddings)
         j_segment_features = self.j_segmentation_feature_block(input_embeddings)
+        d_segment_features = self.d_segmentation_feature_block(input_embeddings)
 
         v_start = self.v_start_out(v_segment_features)
         v_end = self.v_end_out(v_segment_features)
@@ -432,6 +465,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         # Short-D Scaling Factor
         short_d_prob = classification_pred[1][:, -1]  # Probabilities for the bad input
         short_d_scaling_factor = 1.0 - short_d_prob
+        d_length_pred = y_pred['d_end'] - y_pred['d_start']
 
         # Segmentation Loss
         v_start_loss = tf.keras.losses.mean_absolute_error(y_true['v_start'], y_pred['v_start'])
@@ -450,8 +484,8 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         weighted_v_start = v_start_loss * self.log_var_v_start(v_start_loss)
         weighted_v_end = v_end_loss * self.log_var_v_end(v_end_loss)
 
-        weighted_d_start = d_start_loss * self.log_var_d_start(d_start_loss) * short_d_scaling_factor
-        weighted_d_end = d_end_loss * self.log_var_d_end(d_end_loss) * short_d_scaling_factor
+        weighted_d_start = d_start_loss * self.log_var_d_start(d_start_loss)
+        weighted_d_end = d_end_loss * self.log_var_d_end(d_end_loss)
 
         weighted_j_start = j_start_loss * self.log_var_j_start(j_start_loss)
         weighted_j_end = j_end_loss * self.log_var_j_end(j_end_loss)
@@ -462,36 +496,28 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
         # Classification Loss
 
-        clf_v_loss = tf.keras.losses.binary_focal_crossentropy(classification_true[0], classification_pred[0])
+        clf_v_loss = tf.keras.losses.binary_crossentropy(classification_true[0], classification_pred[0])
         # D loss
         penalty_factor = 1.0
         last_label_penalty_factor = 1.0
         # Binary crossentropy
-        bce = tf.keras.metrics.binary_focal_crossentropy(classification_true[1], classification_pred[1])
-        # # Calculate the total sum of the prediction vectors
-        # total_sum = K.sum(y_pred, axis=-1)
-        # # Calculate the threshold which is 90% of the total sum
-        # threshold = 0.9 * total_sum
-        # # Count how many labels are above this threshold
-        # labels_above_threshold = K.sum(K.cast(y_pred > threshold[:, None], tf.float32), axis=1)
-        # # Apply penalty if count of labels above threshold is greater than 5
-        # extra_penalty = penalty_factor * K.cast(labels_above_threshold > 5, tf.float32)
-        # # Additional penalty if the last label's likelihood is above 0.5 and any other label is above zero
-        last_label_high_confidence = K.cast(K.greater(classification_pred[1][:, -1], 0.5),
-                                            tf.float32)  # Check if last label > 0.5
-        other_labels_above_zero = K.cast(K.any(K.greater(classification_pred[1][:, :-1], 0), axis=1),
-                                         tf.float32)  # Check if any other label > 0
-        last_label_penalty = last_label_penalty_factor * last_label_high_confidence * other_labels_above_zero
-        # Combined loss with both penalties
-        clf_d_loss = (bce + last_label_penalty)
+        bce = self.BCE_SMOOTH(classification_true[1], classification_pred[1])
+        clf_d_loss = bce  # (bce + last_label_penalty)
 
-        clf_j_loss = tf.keras.losses.binary_focal_crossentropy(classification_true[2], classification_pred[2])
+        clf_j_loss = tf.keras.losses.binary_crossentropy(classification_true[2], classification_pred[2])
 
         precision_v_classification = self.log_var_v_classification(clf_v_loss)
         precision_d_classification = self.log_var_d_classification(clf_d_loss)
         precision_j_classification = self.log_var_j_classification(clf_j_loss)
-
         classification_loss = precision_v_classification * clf_v_loss + precision_d_classification * clf_d_loss + precision_j_classification * clf_j_loss
+
+        # Custom penalty for short D lengths with high short D likelihood
+        threshold = 5
+        penalty_factor = 1.0
+        short_d_length_penalty = tf.reduce_mean(
+            penalty_factor * tf.cast(d_length_pred < threshold, tf.float32) * short_d_prob
+        )
+        classification_loss += short_d_length_penalty
 
         # Mutation Loss
         mutation_rate_loss = tf.keras.losses.mean_absolute_error(y_true['mutation_rate'], y_pred['mutation_rate'])
@@ -561,6 +587,11 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
         self.log_metrics(total_loss, scaled_classification_loss, scaled_indel_count_loss, scaled_mutation_rate_loss,
                          segmentation_loss, scaled_productive_loss)
+        # Update custom metrics
+        self.average_last_label_tracker.update_state(y, y_pred)
+        self.v_allele_entropy_tracker.update_state(y, y_pred)
+        self.d_allele_entropy_tracker.update_state(y, y_pred)
+        self.j_allele_entropy_tracker.update_state(y, y_pred)
 
         metrics = self.get_metrics_log()
 
@@ -584,6 +615,10 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         metrics["mutation_rate_loss"] = self.scaled_mutation_rate_loss_tracker.result()
         metrics["indel_count_loss"] = self.scaled_indel_count_loss_tracker.result()
         metrics['productive_loss'] = self.scaled_productivity_loss_tracker.result()
+        metrics['average_last_label'] = self.average_last_label_tracker.result()
+        metrics['v_allele_entropy'] = self.v_allele_entropy_tracker.result()
+        metrics['d_allele_entropy'] = self.d_allele_entropy_tracker.result()
+        metrics['j_allele_entropy'] = self.j_allele_entropy_tracker.result()
         return metrics
 
     def model_summary(self, input_shape):
