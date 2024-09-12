@@ -92,7 +92,7 @@ class TestModule(unittest.TestCase):
         )
         trainer.model.build({'tokenized_sequence': (576, 1)})
 
-        MODEL_CHECKPOINT = './AlignAIRR_S5F_OGRDB_Experimental_New_Loss_V7'
+        MODEL_CHECKPOINT = './AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2'
         trainer.model.load_weights(MODEL_CHECKPOINT)
         self.assertNotEqual(trainer.model.log_var_v_end.weights[0].numpy(),0.0)
 
@@ -138,7 +138,7 @@ class TestModule(unittest.TestCase):
         # Define the command with absolute paths
         command = [
             'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
-            '--model_checkpoint', os.path.join(self.test_dir, 'AlignAIRR_S5F_OGRDB_Experimental_New_Loss_V7'),
+            '--model_checkpoint', os.path.join(self.test_dir, 'AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2'),
             '--save_path', str(self.test_dir)+'/',
             '--chain_type', 'heavy',
             '--sequences', self.heavy_chain_dataset_path,

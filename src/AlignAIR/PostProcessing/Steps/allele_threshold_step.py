@@ -59,9 +59,11 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
                 extractor = MaxLikelihoodPercentageThreshold(kappa_dataconfig=config['kappa'],
                                                              lambda_dataconfig=config['lambda'])
 
+
             threshold_objects[_gene] = extractor
             selected_alleles = extractor.get_alleles(alleles[_gene], percentage=threshold[_gene],
                                                      cap=caps[_gene], allele=_gene,verbose=True)
+
 
             predicted_alleles[_gene] = [i[0] for i in selected_alleles]
 
@@ -83,4 +85,5 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         predict_object.results['allele_info'] = self.extract_likelihoods_and_labels_from_calls(
             predict_object.script_arguments, alleles, thresholds,
             caps, predict_object.data_config)
+
         return predict_object

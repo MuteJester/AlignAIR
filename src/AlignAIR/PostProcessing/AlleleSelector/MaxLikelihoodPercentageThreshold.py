@@ -116,7 +116,7 @@ class MaxLikelihoodPercentageThreshold:
         indices = indices[np.argsort(-prediction[indices])]
         indices = indices[:cap] if len(indices) > cap else indices
         likelihoods = prediction[indices]
-        return np.array(indices.tolist()), likelihoods
+        return indices, likelihoods
 
     def get_alleles_mt(self, likelihood_vectors, percentage=0.21, allele='v', n_process=1,cap=3):
         def process_vector(vec):
