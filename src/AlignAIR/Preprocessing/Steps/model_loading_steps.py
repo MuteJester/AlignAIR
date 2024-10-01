@@ -79,14 +79,28 @@ class ModelLoadingStep(Step):
 
         self.log("Loading Fitting Kmer Density Model...")
 
-        data_config = predict_object.data_config[predict_object.chain_type]
-        hc_alleles = [i.ungapped_seq.upper() for j in data_config.v_alleles for i in data_config.v_alleles[j]]
-        hc_alleles += [i.ungapped_seq.upper() for j in data_config.j_alleles for i in data_config.j_alleles[j]]
-
+        ref_alleles = None
         if predict_object.chain_type == 'heavy':
+            data_config = predict_object.data_config[predict_object.chain_type]
+            hc_alleles = [i.ungapped_seq.upper() for j in data_config.v_alleles for i in data_config.v_alleles[j]]
+            hc_alleles += [i.ungapped_seq.upper() for j in data_config.j_alleles for i in data_config.j_alleles[j]]
             hc_alleles += [i.ungapped_seq.upper() for j in data_config.d_alleles for i in data_config.d_alleles[j]]
+            ref_alleles = hc_alleles
+        elif predict_object.chain_type == 'light':
+            data_config_lambda = predict_object.data_config['lambda']
+            data_config_kappa = predict_object.data_config['kappa']
+
+            lc_alleles = [i.ungapped_seq.upper() for j in data_config_lambda.v_alleles for i in
+                          data_config_lambda.v_alleles[j]] + \
+                         [i.ungapped_seq.upper() for j in data_config_lambda.v_alleles for i in
+                          data_config_lambda.v_alleles[j]]
+            lc_alleles += [i.ungapped_seq.upper() for j in data_config_kappa.j_alleles for i in
+                           data_config_kappa.j_alleles[j]] + \
+                          [i.ungapped_seq.upper() for j in data_config_kappa.j_alleles for i in
+                           data_config_kappa.j_alleles[j]]
+            ref_alleles = lc_alleles
 
         predict_object.candidate_sequence_extractor = FastKmerDensityExtractor(11, max_length=576, allowed_mismatches=0)
-        predict_object.candidate_sequence_extractor.fit(hc_alleles)
+        predict_object.candidate_sequence_extractor.fit(ref_alleles)
         self.log("Kmer Density Model Fitted Successfully...")
         return predict_object
