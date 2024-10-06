@@ -5,7 +5,7 @@ from AlignAIR.Step.Step import Step
 
 class CleanAndArrangeStep(Step):
 
-    def clean_and_arrange_predictions(self,predictions, chain_type):
+    def clean_and_arrange_predictions(self, predictions, chain_type):
         mutation_rate, v_allele, d_allele, j_allele = [], [], [], []
         v_start, v_end = [], []
         d_start, d_end = [], []
@@ -40,9 +40,9 @@ class CleanAndArrangeStep(Step):
         indel_count = indel_count.squeeze()
         mutation_rate = mutation_rate.squeeze()
 
-
         v_allele = np.vstack(v_allele)
-        d_allele = np.vstack(d_allele)
+        if chain_type == 'heavy':
+            d_allele = np.vstack(d_allele)
         j_allele = np.vstack(j_allele)
 
         v_start = np.vstack(v_start)
@@ -58,13 +58,15 @@ class CleanAndArrangeStep(Step):
             d_end = np.vstack(d_end)
             d_allele = np.vstack(d_allele)
 
-        return {'v_allele':v_allele, 'd_allele':d_allele,
-                'j_allele':j_allele, 'v_start':v_start, 'v_end':v_end,
-                'd_start':d_start, 'd_end':d_end,
-                'j_start':j_start, 'j_end':j_end,
-                'mutation_rate':mutation_rate, 'indel_count':indel_count,
-                'productive':productive, 'type_':type_
-        }
+        output = {'v_allele': v_allele, 'd_allele': d_allele,
+                  'j_allele': j_allele, 'v_start': v_start, 'v_end': v_end,
+                  'd_start': d_start, 'd_end': d_end,
+                  'j_start': j_start, 'j_end': j_end,
+                  'mutation_rate': mutation_rate, 'indel_count': indel_count,
+                  'productive': productive, 'type_': type_
+                  }
+
+        return output
     def execute(self, predict_object):
         self.log("Cleaning and arranging predictions...")
         predict_object.results['cleaned_data'] = self.clean_and_arrange_predictions(
