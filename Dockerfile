@@ -1,22 +1,18 @@
-# Use an official TensorFlow runtime as a parent image
-FROM python:3.9-alpine3.20
+# Start from a lightweight Python image
+FROM python:3.9-slim
 
-# Set the working directory in the container
-WORKDIR /usr/AlignAIRR
+# Set the working directory
+WORKDIR /app
 
-# Copy the current directory contents into the container at /usr/AlignAIRR
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the entire repository into the container
 COPY . .
 
-# Set the virtual environment path
-ENV VIRTUAL_ENV=/usr/AlignAIRR/AlignAIR_ENV
-ENV PATH="$VIRTUAL_ENV/Scripts:$PATH"
+# Install the current repository in developer mode
+RUN pip install -e .
 
-
-# Install any needed packages specified in requirements.txt
-#RUN pip install --no-cache-dir -r requirements.txt
-
-# Make port 80 available to the world outside this container
-EXPOSE 80
-
-# Run main.py when the container launches
-CMD ["python", "main.py"]
+# Set the entrypoint to run the interactive CLI tool
+ENTRYPOINT ["python", "app.py"]
