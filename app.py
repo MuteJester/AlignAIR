@@ -195,7 +195,7 @@ def show_menu():
             config = interactive_mode()
             execute_pipeline(config)
         elif choice == '4':
-            print(f"{GREEN}Exiting the TensorFlow Model CLI Tool. Goodbye!{RESET}")
+            print(f"{GREEN}Exiting the AlignAIR. Goodbye!{RESET}")
             break
         else:
             print(f"{RED}Invalid choice. Please select a valid option (1-4).{RESET}")

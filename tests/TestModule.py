@@ -51,6 +51,8 @@ class TestModule(unittest.TestCase):
         # Train the model
         trainer.train()
 
+
+
         self.assertIsNotNone(trainer.history)
 
     def test_light_chain_model_training(self):
