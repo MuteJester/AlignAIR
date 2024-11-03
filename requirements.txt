@@ -1,6 +1,6 @@
 pandas~=1.5.3
 numpy~=1.24.3
-GenAIRR
+GenAIRR==0.2.0
 tqdm~=4.65.0
 matplotlib~=3.7.2
 seaborn~=0.12.2
@@ -13,4 +13,6 @@ tensorflow==2.9.1
 questionary==2.0.1
 PyYAML==6.0.1
 setuptools==68.0.0
+wandb==0.17.1
+flask==3.0.3
 biopython==1.83

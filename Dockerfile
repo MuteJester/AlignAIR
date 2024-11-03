@@ -14,5 +14,9 @@ COPY . .
 # Install the current repository in developer mode
 RUN pip install -e .
 
-# Set the entrypoint to run the interactive CLI tool
-ENTRYPOINT ["python", "app.py"]
+EXPOSE 8000
+
+ENV APP_FILE="app.py"
+
+# Entrypoint that runs based on the selected app file
+ENTRYPOINT ["sh", "-c", "python ${APP_FILE}"]
