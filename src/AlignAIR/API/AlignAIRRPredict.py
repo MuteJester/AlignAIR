@@ -16,12 +16,22 @@ from AlignAIR.Preprocessing.Steps.dataconfig_steps import ConfigLoadStep
 from AlignAIR.Preprocessing.Steps.file_steps import FileNameExtractionStep, FileSampleCounterStep
 from AlignAIR.Preprocessing.Steps.model_loading_steps import ModelLoadingStep
 
+# Set TensorFlow logging level to ERROR
 tf.get_logger().setLevel('ERROR')
 class Args:
+    """
+       A class to convert dictionary entries to class attributes.
+    """
     def __init__(self, **entries):
         self.__dict__.update(entries)
 
 def parse_arguments():
+    """
+        Parse command line arguments.
+
+        Returns:
+            argparse.Namespace: Parsed command line arguments.
+    """
     parser = argparse.ArgumentParser(description='AlignAIR Model Prediction')
     parser.add_argument('--mode', type=str, default='cli', choices=['cli', 'yaml', 'interactive'],
                         help='Mode of input: cli, yaml, interactive')
@@ -49,11 +59,26 @@ def parse_arguments():
     return parser.parse_args()
 
 def load_yaml_config(config_file):
+    """
+        Load configuration from a YAML file.
+
+        Args:
+            config_file (str): Path to the YAML configuration file.
+
+        Returns:
+            Args: Configuration loaded into an Args object.
+    """
     with open(config_file, 'r') as file:
         config = yaml.safe_load(file)
     return Args(**config)
 
 def interactive_mode():
+    """
+        Collect configuration interactively using questionary.
+
+        Returns:
+            Args: Configuration collected interactively.
+    """
     config = {}
     config['model_checkpoint'] = questionary.text("Path to saved AlignAIR weights:").ask()
     config['save_path'] = questionary.text("Where to save the alignment:").ask()
@@ -76,10 +101,20 @@ def interactive_mode():
     return Args(**config)
 
 def run_pipeline(predict_object, steps):
+    """
+        Execute a series of processing steps on the predict object.
+
+        Args:
+            predict_object (PredictObject): The object to be processed.
+            steps (list): List of processing steps to execute.
+    """
     for step in steps:
         predict_object = step.execute(predict_object)
 
 def main():
+    """
+        Main function to execute the AlignAIR prediction pipeline.
+    """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logger = logging.getLogger('PipelineLogger')
     args = parse_arguments()
