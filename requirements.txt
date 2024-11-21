@@ -1,6 +1,6 @@
 pandas~=1.5.3
 numpy~=1.24.3
-GenAIRR==0.2.0
+GenAIRR==0.3.0
 tqdm~=4.65.0
 matplotlib~=3.7.2
 seaborn~=0.12.2

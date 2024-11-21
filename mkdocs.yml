@@ -1,0 +1,12 @@
+site_name: AlignAIR Documentation
+nav:
+  - Home: index.md
+  - Getting Started: getting_started.md
+  - Model Training and Inference via Jupyter Notebook: tutorials/AlignAIR_On_Jupyter_Notebooks.ipynb
+
+theme:
+  name: readthedocs
+  locale: en
+  color_mode: dark
+plugins:
+    - mkdocs-jupyter
