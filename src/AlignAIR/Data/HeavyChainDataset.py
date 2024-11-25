@@ -6,6 +6,24 @@ from GenAIRR.utilities import DataConfig
 
 
 class HeavyChainDataset(DatasetBase):
+    """
+    A dataset class for mounting heavy chain repertoire data.
+    Attributes:
+        required_data_columns (list): List of required columns in the dataset.
+    Methods:
+        __init__(data_path, dataconfig, batch_size=64, max_sequence_length=512, batch_read_file=False, nrows=None, seperator=','):
+            Initializes the HeavyChainDataset with the given parameters.
+        derive_call_one_hot_representation():
+            Derives one-hot encoding representations for V, D, and J alleles.
+        derive_call_dictionaries():
+            Derives dictionaries for V, D, and J alleles from the dataconfig.
+        get_ohe_reverse_mapping():
+            Returns the reverse mapping of one-hot encoded alleles.
+        _get_single_batch(pointer):
+            Retrieves a single batch of data from the dataset and processes it.
+        generate_model_params():
+            Generates model parameters based on the dataset attributes.
+    """
     def __init__(self, data_path, dataconfig: DataConfig, batch_size=64, max_sequence_length=512, batch_read_file=False,
                  nrows=None, seperator=','):
         super().__init__(data_path, dataconfig, batch_size, max_sequence_length, batch_read_file, nrows, seperator)

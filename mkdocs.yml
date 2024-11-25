@@ -2,6 +2,7 @@ site_name: AlignAIR Documentation
 nav:
   - Home: index.md
   - Getting Started: getting_started.md
+  - The Different Steps of the AlignAIR Pipeline: alignair_steps_brakdown.md
   - Model Training and Inference via Jupyter Notebook: tutorials/AlignAIR_On_Jupyter_Notebooks.ipynb
 
 theme:
