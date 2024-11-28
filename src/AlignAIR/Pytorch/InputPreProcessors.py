@@ -61,6 +61,7 @@ class HeavyChainInputPreProcessor:
             "j_allele": get_reverse_dict(self.j_allele_call_ohe),
         }
         return call_maps
+
     def _encode_and_equal_pad_sequence(self, sequence):
         encoded_sequence = [self.tokenizer_dictionary.get(i, 0) for i in sequence]
         padding_length = self.max_sequence_length - len(encoded_sequence)
@@ -129,3 +130,34 @@ class HeavyChainInputPreProcessor:
         }
 
         return {'x': x, 'y': y}
+
+
+class SequenceTokenizer:
+    def __init__(self, heavy_chain_dataconfig, max_sequence_length=576,return_original_sequence=False):
+        self.dataconfig = heavy_chain_dataconfig
+        self.max_sequence_length = max_sequence_length
+        self.return_original_sequence = return_original_sequence
+        self.tokenizer_dictionary = {
+            "A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0  # Pad token
+        }
+
+    def _encode_and_equal_pad_sequence(self, sequence):
+        encoded_sequence = [self.tokenizer_dictionary.get(i, 0) for i in sequence]
+        padding_length = self.max_sequence_length - len(encoded_sequence)
+        pad_size = padding_length // 2
+        iseven = (padding_length % 2) == 0
+        if iseven:
+            encoded_sequence = np.pad(encoded_sequence, (pad_size, pad_size), constant_values=0)
+        else:
+            encoded_sequence = np.pad(encoded_sequence, (pad_size, pad_size + 1), constant_values=0)
+
+        return encoded_sequence
+
+    def __call__(self, sample):
+        encoded_sequence = self._encode_and_equal_pad_sequence(sample['sequence'])
+        if self.return_original_sequence:
+            return {'x': encoded_sequence,'x_original':sample['sequence']}
+        else:
+            return {'x': encoded_sequence}
+
+

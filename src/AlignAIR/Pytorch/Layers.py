@@ -50,7 +50,6 @@ class Conv1D_and_BatchNorm(nn.Module):
 
         return x
 
-
 class CutoutLayer(nn.Module):
     def __init__(self, max_size, gene):
         """
@@ -64,30 +63,34 @@ class CutoutLayer(nn.Module):
         self.max_size = max_size
         self.gene = gene
 
-    def round_output(self, dense_output):
-        """
-        Rounds the output values to the range [0, max_size] and casts to float.
-        """
-        max_value, _ = torch.max(dense_output, dim=-1, keepdim=True)
-        max_value = torch.clamp(max_value, min=0, max=self.max_size)
-        return max_value.float()
-
     def _create_mask(self, dense_start, dense_end, batch_size):
         """
         Creates a binary mask based on start and end predictions.
-        Includes the end position in the mask.
+        Rounds the start and end positions to the nearest integers.
+
+        Args:
+            dense_start (torch.Tensor): Predicted start indices (batch_size, 1).
+            dense_end (torch.Tensor): Predicted end indices (batch_size, 1).
+            batch_size (int): The batch size.
+
+        Returns:
+            torch.Tensor: A binary mask with shape (batch_size, max_size).
         """
-        x = self.round_output(dense_start)
-        y = self.round_output(dense_end)
+        # Round start and end to the nearest integers
+        start = torch.round(dense_start).long()
+        end = torch.round(dense_end).long()
+
+        # Clamp start and end to ensure they are within valid range
+        start = torch.clamp(start, min=0, max=self.max_size - 1)
+        end = torch.clamp(end, min=0, max=self.max_size - 1)
 
         # Create a range tensor [0, max_size)
-        indices = torch.arange(0, self.max_size, device=dense_start.device).float().view(1, -1)
+        indices = torch.arange(0, self.max_size, device=dense_start.device).view(1, -1)
         indices = indices.expand(batch_size, -1)  # Shape: (batch_size, max_size)
 
         # Generate the binary mask (inclusive of the end position)
-        R = (indices >= x) & (indices <= y)
-        R = R.float()
-        return R
+        mask = (indices >= start) & (indices <= end)
+        return mask.float()
 
     def forward(self, inputs):
         """
@@ -106,12 +109,6 @@ class CutoutLayer(nn.Module):
             return self._create_mask(dense_start, dense_end, batch_size)
         else:
             raise ValueError(f"Unsupported gene type: {self.gene}")
-
-    def compute_output_shape(self, input_shape):
-        """
-        Compute the output shape for the layer (not used in PyTorch, added for completeness).
-        """
-        return (None, self.max_size)
 class SegmentationConvResidualFeatureExtractionBlock(nn.Module):
     def __init__(self, in_channels=32, filters=128, out_shape=576, conv_activation=None):
         super(SegmentationConvResidualFeatureExtractionBlock, self).__init__()
@@ -276,7 +273,7 @@ class TokenAndPositionEmbedding(nn.Module):
 class MinMaxValueConstraint:
     def __init__(self, min_value, max_value):
         """
-        Constraint that clips weights to be within a specified range.
+        Constraint that clips values (not weights) to be within a specified range.
 
         Parameters:
         - min_value: Minimum allowed value.
@@ -285,17 +282,17 @@ class MinMaxValueConstraint:
         self.min_value = min_value
         self.max_value = max_value
 
-    def __call__(self, w):
+    def __call__(self, x):
         """
-        Applies the constraint by clipping the weights.
+        Applies the constraint by clipping the values.
 
         Parameters:
-        - w: The tensor to constrain.
+        - x: The tensor to constrain.
 
         Returns:
         - Clipped tensor.
         """
-        return torch.clamp(w, self.min_value, self.max_value)
+        return torch.clamp(x, self.min_value, self.max_value)
 
     def get_config(self):
         """
@@ -314,12 +311,14 @@ class UnitNormConstraint:
 
 
 class StartEndOutputNode(nn.Module):
-    def __init__(self, in_features, out_features, initializer=nn.init.xavier_uniform_):
+    def __init__(self, in_features, out_features, initializer=nn.init.xavier_uniform_,max_sequence_length=576):
         super(StartEndOutputNode, self).__init__()
         self.linear = nn.Linear(in_features, out_features)
-        self.activation = F.gelu
+        self.activation = nn.SiLU()
+        self.max_sequence_length = max_sequence_length
         self.initializer = initializer
         self.unit_norm_constraint = UnitNormConstraint()
+        self.constraint = MinMaxValueConstraint(0, self.max_sequence_length)
 
         # Initialize weights
         self.initializer(self.linear.weight)
@@ -329,6 +328,8 @@ class StartEndOutputNode(nn.Module):
         x = self.linear(x)
         # Apply the activation function
         x = self.activation(x)
+        # clip value between 0 and max sequences length
+        x = self.constraint(x)
         # Apply the unit norm constraint to weights
         self.linear.weight.data = self.unit_norm_constraint(self.linear.weight.data)
         return x
@@ -351,8 +352,8 @@ class MutationRateHead(nn.Module):
         x = self.linear(x)
         x = self.activation(x)
 
-        # Apply the constraint to the weights
-        self.linear.weight.data = self.constraint(self.linear.weight.data)
+        # Apply the constraint to the output values
+        x = self.constraint(x)
         return x
 
 
@@ -375,7 +376,7 @@ class IndelCountHead(nn.Module):
         x = self.activation(x)
 
         # Apply the weight constraint
-        self.linear.weight.data = self.constraint(self.linear.weight.data)
+        x = self.constraint(x)
         return x
 
 
