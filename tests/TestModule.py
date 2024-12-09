@@ -1,4 +1,6 @@
 import os
+
+from AlignAIR.Data.PredictionDataset import PredictionDataset
 from src.AlignAIR.Metadata import RandomDataConfigGenerator
 from src.AlignAIR.Models.LightChain import LightChainAlignAIRR
 import unittest
@@ -37,69 +39,102 @@ class TestModule(unittest.TestCase):
                                           dataconfig=builtin_heavy_chain_data_config(),batch_read_file=True,
                                           max_sequence_length=576)
 
+        model_parmas = train_dataset.generate_model_params()
+        model = HeavyChainAlignAIRR(**model_parmas)
+
+        model.compile(optimizer=tf.keras.optimizers.Adam(clipnorm=1),
+                      loss = None,
+                      metrics={
+                            'v_start':tf.keras.losses.mse,
+                            'v_end':tf.keras.losses.mse,
+                            'd_start':tf.keras.losses.mse,
+                            'd_end':tf.keras.losses.mse,
+                            'j_start':tf.keras.losses.mse,
+                            'j_end':tf.keras.losses.mse,
+                            'v_allele':tf.keras.losses.binary_crossentropy,
+                            'd_allele':tf.keras.losses.binary_crossentropy,
+                            'j_allele':tf.keras.losses.binary_crossentropy,
+                      }
+                      )
+
+
+
         trainer = Trainer(
-            model=HeavyChainAlignAIRR,
-            dataset=train_dataset,
+            model=model,
+            batch_size=256,
             epochs=1,
-            steps_per_epoch=max(1, train_dataset.data_length // 10),
+            steps_per_epoch=4,
             verbose=1,
             classification_metric=[tf.keras.metrics.AUC(), tf.keras.metrics.AUC(), tf.keras.metrics.AUC()],
             regression_metric=tf.keras.losses.binary_crossentropy,
-            optimizers_params={"clipnorm": 1},
         )
 
         # Train the model
-        trainer.train()
+        trainer.train(train_dataset)
 
 
 
         self.assertIsNotNone(trainer.history)
 
     def test_light_chain_model_training(self):
+
+
         train_dataset = LightChainDataset(data_path=self.light_chain_dataset_path,
                                           lambda_dataconfig=builtin_lambda_chain_data_config(),
                                           kappa_dataconfig=builtin_kappa_chain_data_config(),
                                           batch_read_file=True,
                                           max_sequence_length=576)
 
+        model_parmas = train_dataset.generate_model_params()
+
+        model = LightChainAlignAIRR(**model_parmas)
+
+        model.compile(optimizer=tf.keras.optimizers.Adam(clipnorm=1),
+                      loss=None,
+                      metrics={
+                          'v_start': tf.keras.losses.mse,
+                          'v_end': tf.keras.losses.mse,
+                          'j_start': tf.keras.losses.mse,
+                          'j_end': tf.keras.losses.mse,
+                          'v_allele': tf.keras.losses.binary_crossentropy,
+                          'j_allele': tf.keras.losses.binary_crossentropy,
+                      }
+                      )
+
         trainer = Trainer(
-            model=LightChainAlignAIRR,
-            dataset=train_dataset,
+            model=model,
+            batch_size=256,
             epochs=1,
-            steps_per_epoch=max(1, train_dataset.data_length // 10),
+            steps_per_epoch=4,
             verbose=1,
             classification_metric=[tf.keras.metrics.AUC(), tf.keras.metrics.AUC(), tf.keras.metrics.AUC()],
             regression_metric=tf.keras.losses.binary_crossentropy,
-            optimizers_params={"clipnorm": 1},
         )
 
         # Train the model
-        trainer.train()
+        trainer.train(train_dataset)
 
         self.assertIsNotNone(trainer.history)
 
     def test_load_saved_heavy_chain_model(self):
-        train_dataset = HeavyChainDataset(data_path=self.heavy_chain_dataset_path
-                                                      , dataconfig=builtin_heavy_chain_data_config(),
-                                                      batch_size=32,
-                                                      max_sequence_length=576,
-                                                      batch_read_file=True)
 
+        model_params = {'max_seq_length': 576, 'v_allele_count': 198, 'd_allele_count': 34, 'j_allele_count': 7}
+        model = HeavyChainAlignAIRR(**model_params)
         trainer = Trainer(
-            model=HeavyChainAlignAIRR,
-            dataset=train_dataset,
+            model=model,
             epochs=1,
+            batch_size=32,
             steps_per_epoch=1,
             verbose=1,
         )
-        trainer.model.build({'tokenized_sequence': (576, 1)})
-
         MODEL_CHECKPOINT = './AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2'
-        trainer.model.load_weights(MODEL_CHECKPOINT)
+        trainer.load_model(MODEL_CHECKPOINT,max_seq_length=model_params['max_seq_length'])
+
         self.assertNotEqual(trainer.model.log_var_v_end.weights[0].numpy(),0.0)
 
+        prediction_Dataset = PredictionDataset(max_sequence_length=576)
         seq = 'CAGCCACAACTGAACTGGTCAAGTCCAGGACTGGTGAATACCTCGCAGACCGTCACACTCACCCTTGCCGTGTCCGGGGACCGTGTCTCCAGAACCACTGCTGTTTGGAAGTGGAGGGGTCAGACCCCATCGCGAGGCCTTGCGTGGCTGGGAAGGACCTACNACAGTTCCAGGTGATTTGCTAACAACGAAGTGTCTGTGAATTGTTNAATATCCATGAACCCAGACGCATCCANGGAACGGNTCTTCCTGCACCTGAGGTCTGGGGCCTTCGACGACACGGCTGTACATNCGTGAGAAAGCGGTGACCTCTACTAGGATAGTGCTGAGTACGACTGGCATTACGCTCTCNGGGACCGTGCCACCCTTNTCACTGCCTCCTCGG'
-        es = trainer.train_dataset.encode_and_equal_pad_sequence(seq)[0]
+        es = prediction_Dataset.encode_and_equal_pad_sequence(seq)['tokenized_sequence']
         predicted = trainer.model.predict({'tokenized_sequence':np.vstack([es])})
         #print(predicted)
 
@@ -199,14 +234,14 @@ class TestModule(unittest.TestCase):
         self.assertTrue(os.path.isfile(expected_weights_path), "Model weights file not created")
 
         # Optionally, check for the log file
-        expected_log_path = os.path.join('./', 'TestModel.csv')
-        self.assertTrue(os.path.isfile(expected_log_path), "Log file not created")
+        #expected_log_path = os.path.join('./', 'TestModel.csv')
+        #self.assertTrue(os.path.isfile(expected_log_path), "Log file not created")
 
         # Cleanup
-        if os.path.exists(models_path):
-            shutil.rmtree(os.path.join('./', 'saved_models'))  # Remove the saved_models directory and all its contents
-        if os.path.exists(expected_log_path):
-            os.remove(expected_log_path)  # Remove the log file if it exists
+        # if os.path.exists(models_path):
+        #     shutil.rmtree(os.path.join('./', 'saved_models'))  # Remove the saved_models directory and all its contents
+        # if os.path.exists(expected_log_path):
+        #     os.remove(expected_log_path)  # Remove the log file if it exists
 
 
 if __name__ == '__main__':

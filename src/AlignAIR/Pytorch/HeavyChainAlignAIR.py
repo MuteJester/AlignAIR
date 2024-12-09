@@ -131,11 +131,8 @@ class HeavyChainAlignAIR(nn.Module):
         self.indel_count_dropout = nn.Dropout(0.05)
         self.indel_count_head = IndelCountHead(self.max_seq_length)
 
-        self.productivity_feature_block = nn.Sequential(
-            nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3, padding=1),
-            nn.BatchNorm1d(64),
-            nn.MaxPool1d(kernel_size=1)
-        )
+        self.productivity_feature_block = Conv1D_and_BatchNorm(in_channels=64, filters=64, kernel=3,
+                                                               max_pool=1)
         self.productivity_flatten = nn.Flatten()
 
         self.productivity_dropout = nn.Dropout(0.05)

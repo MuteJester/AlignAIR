@@ -122,3 +122,22 @@ class HeavyChainDataset(DatasetBase):
             "j_allele_count": self.j_allele_count,
         }
 
+    def encode_and_equal_pad_sequence(self, sequence):
+        """Encodes a sequence of nucleotides and pads it to the specified maximum length, equally from both sides.
+
+        Args:
+            sequence: A sequence of nucleotides.
+
+        Returns:
+            A padded sequence, and the start and end indices of the unpadded sequence.
+        """
+
+        encoded_sequence = np.array([self.tokenizer_dictionary[i] for i in sequence])
+        padding_length = self.max_seq_length - len(encoded_sequence)
+        iseven = padding_length % 2 == 0
+        pad_size = padding_length // 2
+        if iseven:
+            encoded_sequence = np.pad(encoded_sequence, (pad_size, pad_size), 'constant', constant_values=(0, 0))
+        else:
+            encoded_sequence = np.pad(encoded_sequence, (pad_size, pad_size + 1), 'constant', constant_values=(0, 0))
+        return encoded_sequence, pad_size

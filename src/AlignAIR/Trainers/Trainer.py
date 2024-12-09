@@ -3,177 +3,178 @@ from uuid import uuid4
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras.callbacks import CSVLogger
-
-from ..Data import LightChainDataset
-from ..Data.datasetBase import DatasetBase
-
-
+from pathlib import Path
 
 class Trainer:
+    """
+    A flexible and user-friendly trainer class for training TensorFlow models.
+
+    Attributes:
+        model (tf.keras.Model): The model to train.
+        epochs (int): Number of epochs to train.
+        steps_per_epoch (int): Steps per epoch.
+        batch_size (int): Batch size for training.
+        classification_metric (str or list): Metric(s) for classification tasks.
+        regression_metric (str): Metric for regression tasks.
+        callbacks (list): List of custom callbacks.
+        pretrained_path (str): Path to pretrained model weights.
+        log_to_file (bool): Whether to log training details to a file.
+        log_file_name (str): Name of the log file.
+        log_file_path (str): Path to save the log file.
+    """
     def __init__(
-            self,
-            dataset: DatasetBase,
-            model,
-            epochs,
-            steps_per_epoch,
-            num_parallel_calls=8,
-            log_to_file=False,
-            log_file_name=None,
-            log_file_path=None,
-            classification_metric='categorical_accuracy',
-            regression_metric='mae',
-            verbose=0,
-            batch_file_reader=False,
-            pretrained=None,
-            compute_metrics=None,
-            callbacks=None,
-            optimizers=tf.keras.optimizers.Adam,
-            optimizers_params=None,
+        self,
+        model,
+        epochs,
+        steps_per_epoch,
+        batch_size,
+        classification_metric='categorical_accuracy',
+        regression_metric='mae',
+        numbers_of_parallel_calls=8,
+        pretrained_path=None,
+        log_to_file=False,
+        log_file_name=None,
+        log_file_path=None,
+        callbacks=None,
+        optimizers=tf.keras.optimizers.Adam,
+        optimizer_params=None,
+        verbose=0,
     ):
-
-        self.pretrained = pretrained
         self.model = model
-        self.model_type = model
         self.epochs = epochs
-        self.input_size = dataset.max_sequence_length
-        self.num_parallel_calls = num_parallel_calls
-        self.batch_size = dataset.batch_size
         self.steps_per_epoch = steps_per_epoch
-        self.classification_head_metric = classification_metric
-        self.segmentation_head_metric = regression_metric
-        self.compute_metrics = compute_metrics
-        self.callbacks = callbacks
-        self.optimizers = optimizers
-        self.optimizers_params = optimizers_params
-        self.history = None
-        self.verbose = verbose
-        self.log_file_name = log_file_name
+        self.batch_size = batch_size
+        self.numbers_of_parallel_calls = numbers_of_parallel_calls
+        self.classification_metric = classification_metric
+        self.regression_metric = regression_metric
+        self.callbacks = callbacks or []
+        self.pretrained_path = pretrained_path
         self.log_to_file = log_to_file
+        self.log_file_name = log_file_name
         self.log_file_path = log_file_path
-        self.batch_file_reader = batch_file_reader,
-        self.train_dataset = dataset
-        self.allele_types = ['v', 'j'] if isinstance(self.train_dataset, LightChainDataset) else ['v', 'd', 'j']
+        self.optimizers = optimizers
+        self.optimizer_params = optimizer_params or {}
+        self.verbose = verbose
+        self.history = None
 
-        # Set Up Trainer Instance
-        self._load_pretrained_model()  # only if pretrained is not None
-        self._compile_model()
+        if self.pretrained_path:
+            self.load_model(self.pretrained_path)
 
-    def _load_pretrained_model(self):
-        model_params = self.train_dataset.generate_model_params()
-        self.model = self.model_type(**model_params)
-        if self.pretrained is not None:
-            self.model.load_weights(self.pretrained)
+    def compile_model(self, loss=None):
+        """
+        Compiles the model with the provided optimizer and metrics.
+        """
+        optimizer = self.optimizers(**self.optimizer_params)
+        metrics = {
+            'classification': self.classification_metric,
+            'regression': self.regression_metric
+        }
+        self.model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
 
-    def _compile_model(self):
+    def train(self, train_dataset):
+        """
+        Trains the model on the provided dataset.
 
-        metrics = {}
-        for gene in self.allele_types:
-            for pos in ['start', 'end']:
-                metrics[gene + '_' + pos] = self.segmentation_head_metric
-
-        if type(self.classification_head_metric) == list:
-            for key, m in zip(self.allele_types, self.classification_head_metric):
-                if type(m) == list:
-                    for met in m:
-                        metrics[key + '_allele'] = met
-                else:
-                    metrics[key + '_allele'] = m
-        else:
-
-            for key in self.allele_types:
-                metrics[key + '_allele'] = self.classification_head_metric
-
-        # import pdb
-        # pdb.set_trace()
-        if self.optimizers_params is not None:
-            self.model.compile(optimizer=self.optimizers(**self.optimizers_params),
-                               loss=None,
-                               metrics=metrics)
-        else:
-            self.model.compile(optimizer=self.optimizers(),
-                               loss=None,
-                               metrics=metrics)
-
-    def train(self):
-
-        _callbacks = [] if self.callbacks is None else self.callbacks
-        if self.log_to_file:
-            if self.log_file_path is None:
-                raise ValueError('No log_file_path was given to Trainer')
-
-            file_name = str(uuid4()) + '.csv' if self.log_to_file is None else self.log_file_name
-            csv_logger = CSVLogger(self.log_file_path + file_name + '.csv', append=True, separator=',')
-            _callbacks.append(csv_logger)
-
-        train_dataset = self.train_dataset.get_train_dataset()
-        train_dataset = train_dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+        Args:
+            train_dataset (DatasetBase): A custom dataset object that provides a TensorFlow dataset.
+            validation_dataset (DatasetBase, optional): An optional validation dataset object.
+        """
+        # Preprocess the training dataset
+        train_dataset = train_dataset.get_train_dataset().prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+#        train_dataset = train_dataset.map(lambda *args: args, num_parallel_calls=self.numbers_of_parallel_calls)
 
         def preprocess_data(*args):
             return args
 
         train_dataset = train_dataset.map(
             preprocess_data,
-            num_parallel_calls=self.num_parallel_calls
+            num_parallel_calls=self.numbers_of_parallel_calls
         )
 
+        # Add CSVLogger callback if logging is enabled
+        if self.log_to_file:
+            if not self.log_file_path:
+                raise ValueError("Log file path must be specified when logging is enabled.")
+            log_file_path = Path(self.log_file_path) / (self.log_file_name or f"{uuid4()}.csv")
+            csv_logger = CSVLogger(log_file_path.as_posix(), append=True)
+            self.callbacks.append(csv_logger)
+
+        # Train the model
         self.history = self.model.fit(
             train_dataset,
+            #validation_data=validation_dataset,
             epochs=self.epochs,
-            steps_per_epoch=self.steps_per_epoch // self.batch_size,
+            steps_per_epoch=self.steps_per_epoch,
             verbose=self.verbose,
-            callbacks=_callbacks
-
+            callbacks=self.callbacks,
         )
 
-    def save_model(self, path):
-        postfix = str(uuid4())
-        self.model.save_weights(path + f'{postfix}_weights')
-        print(f'Model Saved!\n Location: {path + f"{postfix}_weights"}')
-        return path + f'{postfix}_weights'
+    def load_model(self, weights_path, max_seq_length=None):
+        """
+        Loads pretrained model weights. Builds the model if it is not already built.
 
-    def load_model(self, weights_path):
+        Args:
+            weights_path (str): Path to the weights file.
+            max_seq_length (tuple, optional): Input shape required to build the model if not built.
+        """
+        # Check if the model is built
+        if not self.model.built:
+            if max_seq_length is None:
+                raise ValueError(
+                    "Model is not built and input_shape is required to build the model."
+                )
+            # Build the model with the provided input shape
+            self.model.build(input_shape={'tokenized_sequence': (max_seq_length, 1)})
+            print(f"Model built with input shape: ({max_seq_length},1)")
+
+        # Load weights
         self.model.load_weights(weights_path)
+        print(f"Model weights loaded from {weights_path}.")
 
-    def rebuild_model(self):
-        self.model = self.model_type(**self.train_dataset.generate_model_params())
+    def save_model(self, save_path):
+        """
+        Saves the model weights.
+        """
+        save_path = Path(save_path) / f"{uuid4()}_weights"
+        self.model.save_weights(save_path.as_posix())
+        print(f"Model saved at {save_path}")
+        return save_path.as_posix()
 
-    def set_custom_dataset_object(self, dataset_instance):
-        self.train_dataset = dataset_instance
+    def save_history(self, save_path):
+        """
+        Saves the training history to a file.
+        """
+        save_path = Path(save_path)
+        with open(save_path, 'wb') as f:
+            pickle.dump(self.history.history, f)
+        print(f"Training history saved at {save_path}")
 
-    def plot_model(self):
-        self.model.plot_model((self.input_size, 1))
+    def plot_history(self, save_path=None):
+        """
+        Plots the training history.
+        """
+        if not self.history:
+            raise ValueError("No training history available to plot.")
 
-    def model_summary(self):
-        self.model.model_summary((self.input_size, 1))
-
-    def plot_history(self, write_path=None):
         num_plots = len(self.history.history)
         num_cols = 3
-        num_rows = (num_plots + num_cols - 1) // num_cols  # Calculate the number of rows based on num_plots
+        num_rows = (num_plots + num_cols - 1) // num_cols
 
         fig, axes = plt.subplots(num_rows, num_cols, figsize=(25, 5 * num_rows))
+        axes = axes.flatten()
 
-        for i, column in enumerate(list(self.history.history)):
-            row = i // num_cols  # Calculate the row index for the current subplot
-            col = i % num_cols  # Calculate the column index for the current subplot
+        for i, (metric, values) in enumerate(self.history.history.items()):
+            axes[i].plot(values)
+            axes[i].set_title(metric)
+            axes[i].set_xlabel("Epochs")
+            axes[i].grid(True)
 
-            ax = axes[row, col] if num_rows > 1 else axes[col]  # Handle single row case
-
-            ax.plot(self.history.epoch, self.history.history[column])
-            ax.set_xlabel('Epoch')
-            # ax.set_ylabel(column)
-            ax.set_title(column)
-            ax.grid(lw=2, ls=':')
-
-        # Remove any empty subplots
-        if num_plots < num_rows * num_cols:
-            for i in range(num_plots, num_rows * num_cols):
-                row = i // num_cols
-                col = i % num_cols
-                fig.delaxes(axes[row, col])
+        for i in range(len(self.history.history), len(axes)):
+            fig.delaxes(axes[i])
 
         plt.tight_layout()
-        if write_path is None:
-            plt.show()
+        if save_path:
+            plt.savefig(save_path)
+            print(f"Training plot saved to {save_path}")
         else:
-            plt.savefig(write_path, dpi=300, facecolor='white')
+            plt.show()

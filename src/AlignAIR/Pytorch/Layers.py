@@ -50,7 +50,63 @@ class Conv1D_and_BatchNorm(nn.Module):
 
         return x
 
+
 class CutoutLayer(nn.Module):
+    def __init__(self, max_size, gene):
+        """
+        A PyTorch implementation of the CutoutLayer.
+
+        Args:
+            max_size (int): The maximum size of the binary mask.
+            gene (str): The type of gene ('V', 'D', or 'J') to determine specific behavior.
+        """
+        super(CutoutLayer, self).__init__()
+        self.max_size = max_size
+        self.gene = gene
+
+    def round_output(self, dense_output):
+        """
+        Rounds the output values to the range [0, max_size] and casts to float.
+        """
+        max_value, _ = torch.max(dense_output, dim=-1, keepdim=True)
+        max_value = torch.clamp(max_value, min=0, max=self.max_size)
+        return max_value.float()
+
+    def _create_mask(self, dense_start, dense_end, batch_size):
+        """
+        Creates a binary mask based on start and end predictions.
+        Includes the end position in the mask.
+        """
+        x = self.round_output(dense_start)
+        y = self.round_output(dense_end)
+
+        # Create a range tensor [0, max_size)
+        indices = torch.arange(0, self.max_size, device=dense_start.device).float().view(1, -1)
+        indices = indices.expand(batch_size, -1)  # Shape: (batch_size, max_size)
+
+        # Generate the binary mask (inclusive of the end position)
+        R = (indices >= x) & (indices <= y)
+        R = R.float()
+        return R
+
+    def forward(self, inputs):
+        """
+        Forward pass for the CutoutLayer.
+
+        Args:
+            inputs (tuple): A tuple containing dense_start and dense_end tensors.
+
+        Returns:
+            torch.Tensor: A binary mask with shape (batch_size, max_size).
+        """
+        dense_start, dense_end = inputs
+        batch_size = dense_start.size(0)
+
+        if self.gene in {'V', 'D', 'J'}:
+            return self._create_mask(dense_start, dense_end, batch_size)
+        else:
+            raise ValueError(f"Unsupported gene type: {self.gene}")
+class CutoutLayerV2(nn.Module):
     def __init__(self, max_size, gene):
         """
         A PyTorch implementation of the CutoutLayer.
@@ -293,6 +349,40 @@ class MinMaxValueConstraint:
         - Clipped tensor.
         """
         return torch.clamp(x, self.min_value, self.max_value)
+
+    def get_config(self):
+        """
+        Returns the configuration of the constraint.
+
+        Returns:
+        - Dictionary containing min and max values.
+        """
+        return {'min_value': self.min_value, 'max_value': self.max_value}
+
+class MinMaxWeightConstraint:
+    def __init__(self, min_value, max_value):
+        """
+        Constraint that clips weights to be within a specified range.
+
+        Parameters:
+        - min_value: Minimum allowed weight value.
+        - max_value: Maximum allowed weight value.
+        """
+        self.min_value = min_value
+        self.max_value = max_value
+
+    def __call__(self, module):
+        """
+        Applies the constraint by clipping the weights of the given module.
+
+        Parameters:
+        - module: The PyTorch module to constrain (e.g., nn.Linear or nn.Conv2d).
+
+        Modifies:
+        - module.weight: Clipped in place to be within the range [min_value, max_value].
+        """
+        if hasattr(module, 'weight') and module.weight is not None:
+            module.weight.data = torch.clamp(module.weight.data, self.min_value, self.max_value)
 
     def get_config(self):
         """

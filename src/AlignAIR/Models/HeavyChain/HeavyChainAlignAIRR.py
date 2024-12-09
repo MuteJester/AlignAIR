@@ -1,3 +1,4 @@
+import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
@@ -32,7 +33,8 @@ class HeavyChainAlignAIRR(tf.keras.Model):
           ... (other attributes)
       """
 
-    def __init__(self, max_seq_length, v_allele_count, d_allele_count, j_allele_count):
+    def __init__(self, max_seq_length, v_allele_count, d_allele_count, j_allele_count, v_allele_latent_size=None,
+                 d_allele_latent_size=None, j_allele_latent_size=None):
         super(HeavyChainAlignAIRR, self).__init__()
 
         # weight initialization distribution
@@ -43,6 +45,9 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         self.v_allele_count = v_allele_count
         self.d_allele_count = d_allele_count
         self.j_allele_count = j_allele_count
+        self.v_allele_latent_size = v_allele_latent_size
+        self.d_allele_latent_size = d_allele_latent_size
+        self.j_allele_latent_size = j_allele_latent_size
 
         # Hyperparams + Constants
         self.classification_keys = ["v_allele", "d_allele", "j_allele"]
@@ -213,7 +218,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
     def _init_v_classification_layers(self):
         self.v_allele_mid = Dense(
-            self.v_allele_count * self.latent_size_factor,
+            self.v_allele_count * self.latent_size_factor if self.v_allele_latent_size is None else self.v_allele_latent_size,
             activation=self.classification_middle_layer_activation,
             name="v_allele_middle", kernel_initializer=self.initializer,
         )
@@ -222,7 +227,8 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
     def _init_d_classification_layers(self):
         self.d_allele_mid = Dense(
-            self.d_allele_count * self.latent_size_factor, kernel_regularizer=regularizers.l2(0.01),
+            self.d_allele_count * self.latent_size_factor if self.d_allele_latent_size is None else self.d_allele_latent_size,
+            kernel_regularizer=regularizers.l2(0.01),
             activation=self.classification_middle_layer_activation,
             name="d_allele_middle",
         )
@@ -233,7 +239,7 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
     def _init_j_classification_layers(self):
         self.j_allele_mid = Dense(
-            self.j_allele_count * self.latent_size_factor,
+            self.j_allele_count * self.latent_size_factor if self.j_allele_latent_size is None else self.j_allele_latent_size,
             activation=self.classification_middle_layer_activation,
             name="j_allele_middle",
         )
@@ -456,8 +462,6 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
     def hierarchical_loss(self, y_true, y_pred):
         # Extract the segmentation and classification outputs
-        # segmentation_true = [self.c2f32(y_true[k]) for k in ['v_segment', 'd_segment', 'j_segment']]
-        # segmentation_pred = [self.c2f32(y_pred[k]) for k in ['v_segment', 'd_segment', 'j_segment']]
 
         classification_true = [self.c2f32(y_true[k]) for k in self.classification_keys]
         classification_pred = [self.c2f32(y_pred[k]) for k in self.classification_keys]
@@ -476,9 +480,6 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
         j_start_loss = tf.keras.losses.mean_absolute_error(y_true['j_start'], y_pred['j_start'])
         j_end_loss = tf.keras.losses.mean_absolute_error(y_true['j_end'], y_pred['j_end'])
-
-        # v_d_penalty = self.constraint_penalty(y_pred['v_end'], y_pred['d_start'])
-        # d_j_penalty = self.constraint_penalty(y_pred['d_end'], y_pred['j_start'])
 
         # Calculate the precision as the inverse of the exponential of each task's log variance
         weighted_v_start = v_start_loss * self.log_var_v_start(v_start_loss)
@@ -523,14 +524,6 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         mutation_rate_loss = tf.keras.losses.mean_absolute_error(y_true['mutation_rate'], y_pred['mutation_rate'])
         # Indel Count Loss
         indel_count_loss = tf.keras.losses.mean_absolute_error(y_true['indel_count'], y_pred['indel_count'])
-
-        # Compute segmentation confidence directly from segmentation masks
-        # Assuming segmentation_true and segmentation_pred are lists of [v_segment, d_segment, j_segment]
-        # iou_scores = [self.compute_iou(true, pred) for true, pred in zip(segmentation_true, segmentation_pred)]
-        # dice_scores = [self.dice_coefficient(true, pred) for true, pred in zip(segmentation_true, segmentation_pred)]
-
-        # Use either IoU or Dice scores as confidence; here we use IoU
-        # segmentation_confidence = K.mean(K.stack(dice_scores), axis=0)
 
         # Compute Productivity Loss
         productive_loss = tf.keras.losses.binary_crossentropy(y_true['productive'], y_pred['productive'])

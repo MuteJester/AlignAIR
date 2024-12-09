@@ -12,7 +12,7 @@ class HeavyChainInputPreProcessor:
             'sequence': str, 'v_sequence_start': np.float32, 'v_sequence_end': np.float32,
             'd_sequence_start': np.float32, 'd_sequence_end': np.float32, 'j_sequence_start': np.float32,
             'j_sequence_end': np.float32, 'v_call': str, 'd_call': str, 'j_call': str,
-            'mutation_rate': np.float32, 'indels': eval, 'productive': lambda x: np.float32(bool(x))
+            'mutation_rate': np.float32, 'indels': eval, 'productive': lambda x: np.float32(eval(x))
         }
         self.required_data_columns = list(self.column_types.keys())
         self.tokenizer_dictionary = {

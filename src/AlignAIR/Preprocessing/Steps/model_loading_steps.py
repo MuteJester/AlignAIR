@@ -5,6 +5,9 @@ from multiprocessing import Process
 import torch
 from torch.utils.data import DataLoader
 
+from AlignAIR.Data import HeavyChainDataset, LightChainDataset
+from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
+from AlignAIR.Models.LightChain import LightChainAlignAIRR
 #from AlignAIR.Data import HeavyChainDataset, LightChainDataset
 #from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
 #from AlignAIR.Models.LightChain import LightChainAlignAIRR
@@ -16,6 +19,7 @@ from AlignAIR.Pytorch.InputPreProcessors import HeavyChainInputPreProcessor
 from AlignAIR.Pytorch.Loss import AlignAIRHeavyChainLoss
 from AlignAIR.Pytorch.Trainer import AlignAIRTrainer
 from AlignAIR.Step.Step import Step
+from AlignAIR.Trainers import Trainer
 # from AlignAIR.Trainers import Trainer
 from AlignAIR.Utilities.consumer_producer import READER_WORKER_TYPES
 
@@ -39,25 +43,17 @@ class ModelLoadingStep(Step):
         else:
             raise ValueError(f'Unknown Chain Type: {chain_type}')
 
-        trainer = Trainer(
-            model=LightChainAlignAIRR if chain_type == 'light' else HeavyChainAlignAIRR,
-            dataset=dataset,
-            epochs=1,
-            steps_per_epoch=1,
-            verbose=1,
-        )
+        model_params = dataset.generate_model_params()
 
-        trainer.model.build({'tokenized_sequence': (max_sequence_size, 1)})
-
+        model = LightChainAlignAIRR if chain_type == 'light' else HeavyChainAlignAIRR
+        model = model(**model_params)
+        model.build({'tokenized_sequence': (max_sequence_size, 1)})
         MODEL_CHECKPOINT = model_checkpoint
-
-        trainer.model.load_weights(MODEL_CHECKPOINT)
-
+        model.load_weights(MODEL_CHECKPOINT)
         self.log(f"Loading: {MODEL_CHECKPOINT.split('/')[-1]}")
-
         self.log(f"Model Loaded Successfully")
 
-        return trainer.model
+        return model
 
 
     def process(self, predict_object):

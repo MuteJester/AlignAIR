@@ -8,6 +8,7 @@ import logging
 # Assuming the following modules are in your package structure
 from AlignAIR.Data import HeavyChainDataset,LightChainDataset
 from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
+from AlignAIR.Models.LightChain import LightChainAlignAIRR
 from AlignAIR.Trainers import Trainer
 from GenAIRR.data import builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,builtin_lambda_chain_data_config
 
@@ -99,11 +100,46 @@ def main():
 
     logging.info("Dataset is loaded and prepared.")
 
+    model_parmas = train_dataset.generate_model_params()
+    if args.chain_type == 'heavy':
+        model_parmas['max_seq_length'] = args.max_sequence_length
+        model = HeavyChainAlignAIRR(**model_parmas)
+        model.compile(optimizer=tf.keras.optimizers.Adam(clipnorm=1),
+                      loss=None,
+                      metrics={
+                          'v_start': tf.keras.losses.mse,
+                          'v_end': tf.keras.losses.mse,
+                          'd_start': tf.keras.losses.mse,
+                          'd_end': tf.keras.losses.mse,
+                          'j_start': tf.keras.losses.mse,
+                          'j_end': tf.keras.losses.mse,
+                          'v_allele': tf.keras.losses.binary_crossentropy,
+                          'd_allele': tf.keras.losses.binary_crossentropy,
+                          'j_allele': tf.keras.losses.binary_crossentropy,
+                      }
+                      )
+        logging.info("Model is Built")
+    elif args.chain_type == 'light':
+        model_parmas['max_seq_length'] = args.max_sequence_length
+        model = LightChainAlignAIRR(**model_parmas)
+        model.compile(optimizer=tf.keras.optimizers.Adam(clipnorm=1),
+                      loss=None,
+                      metrics={
+                          'v_start': tf.keras.losses.mse,
+                          'v_end': tf.keras.losses.mse,
+                          'j_start': tf.keras.losses.mse,
+                          'j_end': tf.keras.losses.mse,
+                          'v_allele': tf.keras.losses.binary_crossentropy,
+                          'j_allele': tf.keras.losses.binary_crossentropy,
+                      }
+                      )
+        logging.info("Model is Built")
+
     # Initialize the model and trainer
     trainer = Trainer(
-        model=HeavyChainAlignAIRR,
-        dataset=train_dataset,
+        model=model,
         epochs=args.epochs,
+        batch_size=args.batch_size,
         steps_per_epoch=int(args.steps_per_epoch),
         verbose=1,
         classification_metric=[tf.keras.metrics.AUC(), tf.keras.metrics.AUC(), tf.keras.metrics.AUC()],
@@ -112,11 +148,10 @@ def main():
         log_file_name=args.model_name,
         log_file_path=logs_path,
         callbacks=[reduce_lr, model_checkpoint_callback],
-        optimizers_params={"clipnorm": 1},
     )
 
     logging.info("Starting model training.")
-    trainer.train()
+    trainer.train(train_dataset)
 
     # Save model and weights
     path_to_model_weights = os.path.join(models_path, args.model_name)
