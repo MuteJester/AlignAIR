@@ -243,6 +243,52 @@ class TestModule(unittest.TestCase):
         # if os.path.exists(expected_log_path):
         #     os.remove(expected_log_path)  # Remove the log file if it exists
 
+    def test_backbone_loader(self):
+        from src.AlignAIR.Finetuning.CustomClassificationHeadLoader import CustomClassificationHeadLoader
+        tf.get_logger().setLevel('ERROR')
+
+        TEST_V_ALLELE_SIZE = 200
+        TEST_D_ALLELE_SIZE = 20
+        TEST_J_ALLELE_SIZE = 2
+
+        loader = CustomClassificationHeadLoader(
+            pretrained_path='./AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2',
+            model_class=HeavyChainAlignAIRR,
+            max_seq_length=576,
+            pretrained_v_allele_head_size=198,
+            pretrained_d_allele_head_size=34,
+            pretrained_j_allele_head_size=7,
+            custom_v_allele_head_size=TEST_V_ALLELE_SIZE,
+            custom_d_allele_head_size=TEST_D_ALLELE_SIZE,
+            custom_j_allele_head_size=TEST_J_ALLELE_SIZE
+        )
+
+        # check v_allele,d_allele and j_allele layers are the same dim as the test size
+        for layer in loader.model.layers:
+            if 'v_allele' == layer.name:
+                self.assertEqual(layer.weights[0].shape[1], TEST_V_ALLELE_SIZE) # Check the number of neurons in the layer
+            if 'd_allele' == layer.name:
+                self.assertEqual(layer.weights[0].shape[1], TEST_D_ALLELE_SIZE)
+            if 'j_allele' == layer.name:
+                self.assertEqual(layer.weights[0].shape[1], TEST_J_ALLELE_SIZE)
+
+        # check the model has the same number of layers as the pretrained model
+        self.assertEqual(len(loader.model.layers), len(loader.pretrained_model.layers))
+
+        # check the weights in the frozen weight custom model are  the same as the pretrained model
+        for layer, pretrained_layer in zip(loader.model.layers, loader.pretrained_model.layers):
+            # Filter only layers with 'embedding' in the name
+            if 'embedding' in layer.name and 'embedding' in pretrained_layer.name:
+                weights_model1 = layer.get_weights()
+                weights_model2 = pretrained_layer.get_weights()
+
+                # Compare weights
+                for w1, w2 in zip(weights_model1, weights_model2):
+                    try:
+                        tf.debugging.assert_equal(w1, w2)  # Tensor equality
+                    except tf.errors.InvalidArgumentError as e:
+                        self.fail(f"Weights mismatch in embedding layer '{layer.name}': {e}")
+
 
 if __name__ == '__main__':
     unittest.main()
