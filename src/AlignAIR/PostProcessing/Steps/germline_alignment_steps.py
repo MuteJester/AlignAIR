@@ -4,7 +4,10 @@ from AlignAIR.Step.Step import Step
 
 class AlleleAlignmentStep(Step):
 
-    def align_with_germline(self,segments, threshold_objects, predicted_alleles, sequences):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def align_with_germline(self, segments, threshold_objects, predicted_alleles, sequences):
         germline_alignmnets = {}
 
         for _gene in segments:
@@ -20,15 +23,20 @@ class AlleleAlignmentStep(Step):
             germline_alignmnets[_gene] = mappings
 
         return germline_alignmnets
-    def execute(self, predict_object):
-        self.log("Aligning with germline...")
-        allele_info = predict_object.results['allele_info']
-        corrected_segments = predict_object.results['corrected_segments']
-        segments = {'v': [corrected_segments['v_start'],corrected_segments['v_end']],
-                    'j': [corrected_segments['j_start'],corrected_segments['j_end']]}
-        if predict_object.chain_type == 'heavy':
-            segments['d'] = [corrected_segments['d_start'],corrected_segments['d_end']]
 
-        predict_object.results['germline_alignments'] = self.align_with_germline(
-            segments, allele_info[-1], allele_info[0], predict_object.sequences)
+    def execute(self, predict_object):
+        self.log("Aligning with germline alleles...")
+
+        processed_predictions = predict_object.processed_predictions
+        segments = {}
+        for gene in ['v', 'd', 'j']:
+            segments[f'{gene}'] = (processed_predictions[f'{gene}_start'], processed_predictions[f'{gene}_end'])
+
+        predict_object.germline_alignments = self.align_with_germline(
+            segments=segments,
+            threshold_objects=predict_object.threshold_extractor_instances,
+            predicted_alleles=predict_object.selected_allele_calls,
+            sequences=predict_object.sequences
+        )
+
         return predict_object

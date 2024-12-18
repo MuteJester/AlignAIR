@@ -1,63 +1,52 @@
 import pandas as pd
 
+from AlignAIR.PredictObject.PredictObject import PredictObject
 from AlignAIR.Step.Step import Step
 
 
 class FinalizationStep(Step):
-    def __init__(self, name, logger=None):
-        super().__init__(name, logger)
+    def __init__(self, name):
+        super().__init__(name)
 
-    def execute(self, predict_object):
+    def execute(self, predict_object: PredictObject):
         self.log("Finalizing results and saving to CSV...")
-        cleaned_data = predict_object.results['cleaned_data']
-        alignments = predict_object.results['germline_alignments']
-        predict_object.final_results = {
-            'predicted_alleles': predict_object.results['allele_info'][0],
-            'germline_alignments': alignments,
-            'predicted_allele_likelihoods': predict_object.results['allele_info'][1],
-            'mutation_rate': cleaned_data['mutation_rate'],
-            'productive': cleaned_data['productive'],
-            'indel_count': cleaned_data['indel_count']
-        }
-        if predict_object.chain_type == 'light':
-            predict_object.final_results['type_'] = cleaned_data['type_']
+        cleaned_data = predict_object.processed_predictions
+        germline_alignments = predict_object.germline_alignments
 
-
-        results = predict_object.final_results
         sequences = predict_object.sequences
-        chain_type = predict_object.script_arguments.chain_type
         save_path = predict_object.script_arguments.save_path
-        file_name = predict_object.file_name  # Ensure this is part of predict_object.config or similar
+        file_name = predict_object.file_info.file_name
 
         # Compile results into a DataFrame
         final_csv = pd.DataFrame({
             'sequence': sequences,
-            'v_call': [','.join(i) for i in results['predicted_alleles']['v']],
-            'j_call': [','.join(i) for i in results['predicted_alleles']['j']],
-            'v_sequence_start': [i['start_in_seq'] for i in results['germline_alignments']['v']],
-            'v_sequence_end': [i['end_in_seq'] for i in results['germline_alignments']['v']],
-            'j_sequence_start': [i['start_in_seq'] for i in results['germline_alignments']['j']],
-            'j_sequence_end': [i['end_in_seq'] for i in results['germline_alignments']['j']],
-            'v_germline_start': [max(0, i['start_in_ref']) for i in results['germline_alignments']['v']],
-            'v_germline_end': [i['end_in_ref'] for i in results['germline_alignments']['v']],
-            'j_germline_start': [max(0, i['start_in_ref']) for i in results['germline_alignments']['j']],
-            'j_germline_end': [i['end_in_ref'] for i in results['germline_alignments']['j']],
-            'v_likelihoods': results['predicted_allele_likelihoods']['v'],
-            'j_likelihoods': results['predicted_allele_likelihoods']['j'],
-            'mutation_rate': results['mutation_rate'],
-            'ar_indels': results['indel_count'],
-            'ar_productive': results['productive'],
+            'v_call': [','.join(i) for i in predict_object.selected_allele_calls['v']],
+            'j_call': [','.join(i) for i in predict_object.selected_allele_calls['j']],
+            'v_sequence_start': [i['start_in_seq'] for i in predict_object.germline_alignments['v']],
+            'v_sequence_end': [i['end_in_seq'] for i in predict_object.germline_alignments['v']],
+            'j_sequence_start': [i['start_in_seq'] for i in predict_object.germline_alignments['j']],
+            'j_sequence_end': [i['end_in_seq'] for i in predict_object.germline_alignments['j']],
+            'v_germline_start': [max(0, i['start_in_ref']) for i in predict_object.germline_alignments['v']],
+            'v_germline_end': [i['end_in_ref'] for i in predict_object.germline_alignments['v']],
+            'j_germline_start': [max(0, i['start_in_ref']) for i in predict_object.germline_alignments['j']],
+            'j_germline_end': [i['end_in_ref'] for i in predict_object.germline_alignments['j']],
+            'v_likelihoods': predict_object.likelihoods_of_selected_alleles['v'],
+            'j_likelihoods': predict_object.likelihoods_of_selected_alleles['j'],
+            'mutation_rate': predict_object.processed_predictions['mutation_rate'],
+            'ar_indels': predict_object.processed_predictions['indel_count'],
+            'ar_productive': predict_object.processed_predictions['productive'],
         })
 
-        if chain_type == 'heavy':
-            final_csv['d_sequence_start'] = [i['start_in_seq'] for i in results['germline_alignments']['d']]
-            final_csv['d_sequence_end'] = [i['end_in_seq'] for i in results['germline_alignments']['d']]
-            final_csv['d_germline_start'] = [abs(i['start_in_ref']) for i in results['germline_alignments']['d']]
-            final_csv['d_germline_end'] = [i['end_in_ref'] for i in results['germline_alignments']['d']]
-            final_csv['d_call'] = [','.join(i) for i in results['predicted_alleles']['d']]
+        if predict_object.data_config_library.mounted == 'heavy':
+            final_csv['d_sequence_start'] = [i['start_in_seq'] for i in predict_object.germline_alignments['d']]
+            final_csv['d_sequence_end'] = [i['end_in_seq'] for i in predict_object.germline_alignments['d']]
+            final_csv['d_germline_start'] = [abs(i['start_in_ref']) for i in predict_object.germline_alignments['d']]
+            final_csv['d_germline_end'] = [i['end_in_ref'] for i in predict_object.germline_alignments['d']]
+            final_csv['d_call'] = [','.join(i) for i in predict_object.selected_allele_calls['d']]
+            final_csv['d_likelihoods'] = predict_object.likelihoods_of_selected_alleles['d']
             final_csv['type'] = 'heavy'
         else:
-            final_csv['type'] = ['kappa' if i == 1 else 'lambda' for i in results['type_'].astype(int).squeeze()]
+            final_csv['type'] = ['kappa' if i == 1 else 'lambda' for i in predict_object.processed_predictions['type_'].astype(int).squeeze()]
 
         # Save to CSV
         final_csv_path = f"{save_path}{file_name}_alignairr_results.csv"

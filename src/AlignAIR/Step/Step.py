@@ -5,8 +5,11 @@ class Step(ABC):
     """
     Abstract base class for processing steps, with optional logging.
     """
-
-    def __init__(self, name, logger=None):
+    logger = None
+    @classmethod
+    def set_logger(cls, logger):
+        cls.logger = logger
+    def __init__(self, name):
         """
         Initialize the Step with a name and an optional logger.
 
@@ -15,7 +18,6 @@ class Step(ABC):
             logger (logging.Logger, optional): Logger instance for logging. Defaults to None.
         """
         self.name = name
-        self.logger = logger
 
     def log(self, message):
         """

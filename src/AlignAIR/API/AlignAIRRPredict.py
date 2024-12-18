@@ -15,6 +15,7 @@ from AlignAIR.Preprocessing.Steps.batch_processing_steps import BatchProcessingS
 from AlignAIR.Preprocessing.Steps.dataconfig_steps import ConfigLoadStep
 from AlignAIR.Preprocessing.Steps.file_steps import FileNameExtractionStep, FileSampleCounterStep
 from AlignAIR.Preprocessing.Steps.model_loading_steps import ModelLoadingStep
+from AlignAIR.Step.Step import Step
 
 # Set TensorFlow logging level to ERROR
 tf.get_logger().setLevel('ERROR')
@@ -111,13 +112,8 @@ def run_pipeline(predict_object, steps):
     for step in steps:
         predict_object = step.execute(predict_object)
 
-def main():
-    """
-        Main function to execute the AlignAIR prediction pipeline.
-    """
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger('PipelineLogger')
-    args = parse_arguments()
+def process_args (args):
+    config = None
 
     if args.mode == 'cli':
         config = args
@@ -128,20 +124,33 @@ def main():
     elif args.mode == 'interactive':
         config = interactive_mode()
 
+    return config
+
+def main():
+    """
+        Main function to execute the AlignAIR prediction pipeline.
+    """
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger('PipelineLogger')
+    Step.set_logger(logger)
+    args = parse_arguments()
+
+    config = process_args(args)
+
     predict_object = PredictObject(config, logger=logger)
 
     steps = [
-        ConfigLoadStep("Load Config", logger),
-        FileNameExtractionStep('Get File Name', logger),
-        FileSampleCounterStep('Count Samples in File', logger),
-        ModelLoadingStep('Load Models', logger),
-        BatchProcessingStep("Process and Predict Batches", logger),
-        CleanAndArrangeStep("Clean Up Raw Prediction", logger),
-        SegmentCorrectionStep("Correct Segmentations", logger),
-        MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments", logger),
-        AlleleAlignmentStep("Align Predicted Segments with Germline", logger),
-        TranslationStep("Translate ASC's to IMGT Alleles", logger),
-        FinalizationStep("Finalize Post Processing and Save Csv", logger)
+        ConfigLoadStep("Load Config"),
+        FileNameExtractionStep('Get File Name'),
+        FileSampleCounterStep('Count Samples in File'),
+        ModelLoadingStep('Load Models'),
+        BatchProcessingStep("Process and Predict Batches"),
+        CleanAndArrangeStep("Clean Up Raw Prediction"),
+        SegmentCorrectionStep("Correct Segmentations"),
+        MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments"),
+        AlleleAlignmentStep("Align Predicted Segments with Germline"),
+        TranslationStep("Translate ASC's to IMGT Alleles"),
+        FinalizationStep("Finalize Post Processing and Save Csv")
     ]
 
     run_pipeline(predict_object, steps)

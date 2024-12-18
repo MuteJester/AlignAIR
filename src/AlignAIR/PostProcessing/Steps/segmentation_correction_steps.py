@@ -4,6 +4,8 @@ from AlignAIR.Step.Step import Step
 
 
 class SegmentCorrectionStep(Step):
+    def __init__(self,name):
+        super().__init__(name)
 
     def calculate_pad_size(self,sequence, max_length=576):
         """
@@ -11,6 +13,7 @@ class SegmentCorrectionStep(Step):
         to achieve the specified maximum length.
 
         Args:
+            sequence:
             sequence_length: The length of the original sequence before padding.
             max_length: The maximum length to which the sequence is padded.
 
@@ -36,17 +39,25 @@ class SegmentCorrectionStep(Step):
         if chain_type == 'heavy':
             d_start = np.round(np.vstack(d_start).squeeze() - paddings).astype(int)
             d_end = np.round(np.vstack(d_end).squeeze() - paddings).astype(int)
+        else:
+            d_start = None
+            d_end = None
 
         return {'v_start':v_start, 'v_end':v_end,
                 'd_start':d_start, 'd_end':d_end,
                 'j_start':j_start, 'j_end':j_end}
+
     def execute(self, predict_object):
         self.log("Correcting segments for paddings...")
-        cleaned_data = predict_object.results['cleaned_data']
-        predict_object.results['corrected_segments'] = self.correct_segments_for_paddings(
+        cleaned_data = predict_object.processed_predictions
+        corrected_segments = self.correct_segments_for_paddings(
             predict_object.sequences, predict_object.script_arguments.chain_type,
             cleaned_data['v_start'], cleaned_data['v_end'],
             cleaned_data['d_start'], cleaned_data['d_end'],
             cleaned_data['j_start'], cleaned_data['j_end']
         )
+        for allele in ['v','d','j']:
+            for segment in ['start','end']:
+                predict_object.processed_predictions[f'{allele}_{segment}'] = corrected_segments[f'{allele}_{segment}']
+
         return predict_object

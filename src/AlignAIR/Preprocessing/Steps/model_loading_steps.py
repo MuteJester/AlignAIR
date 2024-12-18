@@ -22,39 +22,44 @@ from AlignAIR.Step.Step import Step
 from AlignAIR.Trainers import Trainer
 # from AlignAIR.Trainers import Trainer
 from AlignAIR.Utilities.consumer_producer import READER_WORKER_TYPES
-
-
+from AlignAIR.Utilities.step_utilities import DataConfigLibrary, FileInfo
 
 
 class ModelLoadingStep(Step):
-    def __init__(self, name, logger=None):
-        super().__init__(name, logger)
+    def __init__(self, name):
+        super().__init__(name)
 
-    def load_model(self,sequences, chain_type, model_checkpoint, max_sequence_size, config=None):
-        if chain_type == 'heavy':
-            dataset = HeavyChainDataset(data_path=sequences,
-                                        dataconfig=config['heavy'], batch_read_file=True,
+    @staticmethod
+    def get_dataset_object(file_info: FileInfo, data_config_library: DataConfigLibrary, max_sequence_size):
+        if data_config_library.mounted == 'heavy':
+            dataset = HeavyChainDataset(data_path=file_info.path,
+                                        dataconfig=data_config_library.config(), batch_read_file=True,
                                         max_sequence_length=max_sequence_size)
-        elif chain_type == 'light':
-            dataset = LightChainDataset(data_path=sequences,
-                                        lambda_dataconfig=config['lambda'],
-                                        kappa_dataconfig=config['kappa'],
+        elif data_config_library.mounted == 'light':
+            dataset = LightChainDataset(data_path=file_info.path,
+                                        lambda_dataconfig=data_config_library.config('lambda'),
+                                        kappa_dataconfig=data_config_library.config('kappa'),
                                         batch_read_file=True, max_sequence_length=max_sequence_size)
         else:
-            raise ValueError(f'Unknown Chain Type: {chain_type}')
+            raise ValueError(f'Unknown Chain Type: {data_config_library.mounted}')
+        return dataset
+
+    def load_model(self, file_info: FileInfo,
+                   data_config_library: DataConfigLibrary,
+                   model_checkpoint: str,
+                   max_sequence_size: int):
+
+        dataset = self.get_dataset_object(file_info, data_config_library, max_sequence_size)
 
         model_params = dataset.generate_model_params()
 
-        model = LightChainAlignAIRR if chain_type == 'light' else HeavyChainAlignAIRR
-        model = model(**model_params)
+        model = data_config_library.matching_alignair_model(**model_params)
         model.build({'tokenized_sequence': (max_sequence_size, 1)})
-        MODEL_CHECKPOINT = model_checkpoint
-        model.load_weights(MODEL_CHECKPOINT)
-        self.log(f"Loading: {MODEL_CHECKPOINT.split('/')[-1]}")
+        model.load_weights(model_checkpoint)
+        self.log(f"Loading: {model_checkpoint.split('/')[-1]}")
         self.log(f"Model Loaded Successfully")
 
         return model
-
 
     def process(self, predict_object):
         return predict_object
@@ -62,11 +67,10 @@ class ModelLoadingStep(Step):
     def execute(self, predict_object):
         self.log("Loading main model...")
         predict_object.model = self.load_model(
-            predict_object.script_arguments.sequences,
-            predict_object.script_arguments.chain_type,
+            predict_object.file_info,
+            predict_object.data_config_library,
             predict_object.script_arguments.model_checkpoint,
             predict_object.script_arguments.max_input_size,
-            predict_object.data_config
         )
         self.log("Main Model Loaded...")
 
@@ -84,25 +88,12 @@ class ModelLoadingStep(Step):
         self.log("Loading Fitting Kmer Density Model...")
 
         ref_alleles = None
-        if predict_object.chain_type == 'heavy':
-            data_config = predict_object.data_config[predict_object.chain_type]
-            hc_alleles = [i.ungapped_seq.upper() for j in data_config.v_alleles for i in data_config.v_alleles[j]]
-            hc_alleles += [i.ungapped_seq.upper() for j in data_config.j_alleles for i in data_config.j_alleles[j]]
-            hc_alleles += [i.ungapped_seq.upper() for j in data_config.d_alleles for i in data_config.d_alleles[j]]
-            ref_alleles = hc_alleles
-        elif predict_object.chain_type == 'light':
-            data_config_lambda = predict_object.data_config['lambda']
-            data_config_kappa = predict_object.data_config['kappa']
+        ref_alleles = (
+            predict_object.data_config_library.reference_allele_sequences('v')+
+            predict_object.data_config_library.reference_allele_sequences('d')+
+            predict_object.data_config_library.reference_allele_sequences('j')
+        )
 
-            lc_alleles = [i.ungapped_seq.upper() for j in data_config_lambda.v_alleles for i in
-                          data_config_lambda.v_alleles[j]] + \
-                         [i.ungapped_seq.upper() for j in data_config_lambda.v_alleles for i in
-                          data_config_lambda.v_alleles[j]]
-            lc_alleles += [i.ungapped_seq.upper() for j in data_config_kappa.j_alleles for i in
-                           data_config_kappa.j_alleles[j]] + \
-                          [i.ungapped_seq.upper() for j in data_config_kappa.j_alleles for i in
-                           data_config_kappa.j_alleles[j]]
-            ref_alleles = lc_alleles
 
         predict_object.candidate_sequence_extractor = FastKmerDensityExtractor(11, max_length=576, allowed_mismatches=0)
         predict_object.candidate_sequence_extractor.fit(ref_alleles)
@@ -114,9 +105,8 @@ class PytorchModelLoadingStep(Step):
     def __init__(self, name, logger=None):
         super().__init__(name, logger)
 
-    def load_model(self,sequences, chain_type, model_checkpoint, max_sequence_size, config=None):
+    def load_model(self, sequences, chain_type, model_checkpoint, max_sequence_size, config=None):
         if chain_type == 'heavy':
-
 
             pre_processor = HeavyChainInputPreProcessor(heavy_chain_dataconfig=config['heavy'])
             dataset = CSVReaderDataset(
@@ -162,7 +152,6 @@ class PytorchModelLoadingStep(Step):
             batches_per_epoch=64
         )
 
-
         MODEL_CHECKPOINT = model_checkpoint
 
         trainer.load_model(MODEL_CHECKPOINT)
@@ -170,7 +159,6 @@ class PytorchModelLoadingStep(Step):
         self.log(f"Loading: {MODEL_CHECKPOINT.split('/')[-1]}")
         self.log(f"Model Loaded Successfully")
         return trainer.model
-
 
     def process(self, predict_object):
         return predict_object
