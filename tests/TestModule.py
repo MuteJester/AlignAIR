@@ -1,5 +1,7 @@
 import os
 
+import yaml
+
 from AlignAIR.Data.PredictionDataset import PredictionDataset
 from src.AlignAIR.Metadata import RandomDataConfigGenerator
 from src.AlignAIR.Models.LightChain import LightChainAlignAIRR
@@ -338,6 +340,113 @@ class TestModule(unittest.TestCase):
                         tf.debugging.assert_equal(w1, w2)  # Tensor equality
                     except tf.errors.InvalidArgumentError as e:
                         self.fail(f"Weights mismatch in embedding layer '{layer.name}': {e}")
+
+    def test_genotype_correction(self):
+        import  pickle
+        # read genotype data config
+        with open('Genotyped_DataConfig.pkl', 'rb') as file:
+            genotype_datconfig = pickle.load(file)
+
+        ref_dataconfig = builtin_heavy_chain_data_config()
+
+        v_alleles = [i.name  for j in genotype_datconfig.v_alleles for i in genotype_datconfig.v_alleles[j]]
+        d_alleles = [i.name  for j in genotype_datconfig.d_alleles for i in genotype_datconfig.d_alleles[j]]
+        d_alleles += ['Short-D']
+        j_alleles = [i.name  for j in genotype_datconfig.j_alleles for i in genotype_datconfig.j_alleles[j]]
+
+        v_alleles_ref = [i.name for j in ref_dataconfig.v_alleles for i in ref_dataconfig.v_alleles[j]]
+        d_alleles_ref = [i.name for j in ref_dataconfig.d_alleles for i in ref_dataconfig.d_alleles[j]]
+        d_alleles_ref += ['Short-D']
+        j_alleles_ref = [i.name for j in ref_dataconfig.j_alleles for i in ref_dataconfig.j_alleles[j]]
+
+        # create mock yamal file tat we will delete after test is finished
+        with open('genotype.yaml', 'w') as file:
+            yaml.dump({'v':v_alleles,'d':d_alleles,'j':j_alleles}, file)
+
+        mock_model_params = {'v_allele_latent_size':2*len(v_alleles_ref),
+                                'd_allele_latent_size':2*len(d_alleles_ref),
+                                'j_allele_latent_size':2*len(j_alleles_ref),
+                             'v_allele_count': len(v_alleles), 'd_allele_count': len(d_alleles), 'j_allele_count': len(j_alleles)}
+
+        with open('model_params.yaml', 'w') as file:
+            yaml.dump(mock_model_params, file)
+
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API'))
+        script_path = os.path.join(base_dir, 'AlignAIRRPredict.py')
+
+        # Ensure the script exists
+
+        # Define the command with absolute paths
+        command = [
+            'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
+            '--model_checkpoint', os.path.join(self.test_dir, 'AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2'),
+            '--save_path', str(self.test_dir) + '/',
+            '--chain_type', 'heavy',
+            '--sequences', self.heavy_chain_dataset_path,
+            '--batch_size', '32',
+            '--translate_to_asc',
+            '--save_predict_object',
+            '--custom_genotype', 'genotype.yaml'
+
+        ]
+
+        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, "Script failed to run with error: " + result.stderr)
+
+        #####################################################################################
+        # Check if the CSV was created
+        file_name = self.heavy_chain_dataset_path.split('/')[-1].split('.')[0]
+        save_name = file_name + '_alignairr_results.csv'
+
+        output_csv = os.path.join(self.test_dir, save_name)
+
+        # Read the output CSV and validate its contents
+        file_name = self.heavy_chain_dataset_path.split('/')[-1].split('.')[0]
+        save_name = file_name + '_alignairr_results.csv'
+        predictobject_path = save_name.replace('_alignairr_results.csv', '_alignair_results_predictObject.pkl')
+
+        with open(predictobject_path, 'rb') as file:
+            predictobject_full_nodel = pickle.load(file)
+
+        command = [
+            'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
+            '--model_checkpoint', os.path.join(self.test_dir, 'Genotyped_Frozen_Heavy_Chain_AlignAIRR_S5F_OGRDB_S5F_576_Balanced'),
+            '--save_path', str(self.test_dir) + '/',
+            '--chain_type', 'heavy',
+            '--sequences', self.heavy_chain_dataset_path,
+            '--heavy_data_config', 'Genotyped_DataConfig.pkl',
+            '--batch_size', '32',
+            '--translate_to_asc',
+            '--save_predict_object',
+            '--finetuned_model_params_yaml', 'model_params.yaml',
+            '--custom_genotype', 'genotype.yaml'
+        ]
+
+        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, "Script failed to run with error: " + result.stderr)
+
+        file_name = self.heavy_chain_dataset_path.split('/')[-1].split('.')[0]
+        save_name = file_name + '_alignairr_results.csv'
+        predictobject_path = save_name.replace('_alignairr_results.csv','_alignair_results_predictObject.pkl')
+
+        with open(predictobject_path, 'rb') as file:
+            predictobject_genotype_nodel = pickle.load(file)
+
+
+
+        # correct and test the error between the two models
+
+        v_mean_mae = np.mean(np.abs(predictobject_full_nodel.processed_predictions['v_allele'] - predictobject_genotype_nodel.processed_predictions['v_allele']))
+        d_mean_mae = np.mean(np.abs(predictobject_full_nodel.processed_predictions['d_allele'] - predictobject_genotype_nodel.processed_predictions['d_allele']))
+        j_mean_mae = np.mean(np.abs(predictobject_full_nodel.processed_predictions['j_allele'] - predictobject_genotype_nodel.processed_predictions['j_allele']))
+
+        print(v_mean_mae,d_mean_mae,j_mean_mae)
+
+        os.remove('genotype.yaml')
+        os.remove('model_params.yaml')
+        os.remove(predictobject_path)
+        os.remove(output_csv)
+
 
 
 if __name__ == '__main__':

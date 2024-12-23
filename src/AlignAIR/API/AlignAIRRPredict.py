@@ -6,6 +6,7 @@ import tensorflow as tf
 from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPercentageThresholdApplicationStep, \
     ConfidenceMethodThresholdApplicationStep
 from AlignAIR.PostProcessing.Steps.clean_up_steps import CleanAndArrangeStep
+from AlignAIR.PostProcessing.Steps.correct_likelihood_for_genotype_step import GenotypeBasedLikelihoodAdjustmentStep
 from AlignAIR.PostProcessing.Steps.finalization_and_packaging_steps import FinalizationStep
 from AlignAIR.PostProcessing.Steps.germline_alignment_steps import AlleleAlignmentStep
 from AlignAIR.PostProcessing.Steps.segmentation_correction_steps import SegmentCorrectionStep
@@ -56,7 +57,10 @@ def parse_arguments():
     parser.add_argument('--translate_to_asc', action='store_true', help='Translate names back to ASCs names from IMGT')
     parser.add_argument('--fix_orientation', type=bool, default=True, help='Adds a preprocessing steps that tests and fixes the DNA orientation, in case it is reversed, complement or reversed and complement')
     parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None, help='A path to a custom orientation model created for a custom reference')
-
+    parser.add_argument('--custom_genotype', type=str, default=None, help='Path to a custom genotype yaml file')
+    parser.add_argument('--save_predict_object', action='store_true', help='Save the predict object (Warning this can be large)')
+    # parameters for the model yaml, if specified this will change the loading of the model to a finetuned one with differnt head sizes
+    parser.add_argument('--finetuned_model_params_yaml', type=str, default=None, help='Path to a yaml file with the parameters of a fine tuned model (new head sizes and latent sizes)')
     return parser.parse_args()
 
 def load_yaml_config(config_file):
@@ -99,6 +103,9 @@ def interactive_mode():
     config['translate_to_asc'] = questionary.confirm("Translate names back to ASCs names from IMGT?").ask()
     config['fix_orientation'] = questionary.confirm("Fix DNA orientation if reversed or complement?").ask()
     config['custom_orientation_pipeline_path'] = questionary.text("Path to a custom orientation model:", default='').ask()
+    config['custom_genotype'] = questionary.text("Path to a custom genotype yaml file:", default='').ask()
+    config['save_predict_object'] = questionary.confirm("Save the predict object (Warning this can be large)?").ask()
+    config['finetuned_model_params_yaml'] = questionary.text("Path to a yaml file with the parameters of a fine tuned model:", default='').ask()
     return Args(**config)
 
 def run_pipeline(predict_object, steps):
@@ -132,9 +139,11 @@ def main():
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logger = logging.getLogger('PipelineLogger')
+    # mount logger to all step objects
     Step.set_logger(logger)
+    # Parse command line arguments
     args = parse_arguments()
-
+    # Process arguments based on mode
     config = process_args(args)
 
     predict_object = PredictObject(config, logger=logger)
@@ -146,6 +155,7 @@ def main():
         ModelLoadingStep('Load Models'),
         BatchProcessingStep("Process and Predict Batches"),
         CleanAndArrangeStep("Clean Up Raw Prediction"),
+        GenotypeBasedLikelihoodAdjustmentStep("Adjust Likelihoods for Genotype"),
         SegmentCorrectionStep("Correct Segmentations"),
         MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments"),
         AlleleAlignmentStep("Align Predicted Segments with Germline"),
@@ -155,6 +165,18 @@ def main():
 
     run_pipeline(predict_object, steps)
     logger.info("Pipeline execution complete.")
+
+    if config.save_predict_object:
+        save_path = predict_object.script_arguments.save_path
+        file_name = predict_object.file_info.file_name
+
+        path = f"{save_path}{file_name}_alignair_results_predictObject.pkl"
+        logger.info('Detaching model from predict object before saving')
+        predict_object.model = None
+        predict_object.save(path)
+
+        logger.info("Predict Object Saved At: {}".format(path))
+
 
 if __name__ == '__main__':
     main()

@@ -20,6 +20,7 @@ from AlignAIR.Pytorch.Loss import AlignAIRHeavyChainLoss
 from AlignAIR.Pytorch.Trainer import AlignAIRTrainer
 from AlignAIR.Step.Step import Step
 from AlignAIR.Trainers import Trainer
+from AlignAIR.Utilities.CustomModelParamsYaml import CustomModelParamsYaml
 # from AlignAIR.Trainers import Trainer
 from AlignAIR.Utilities.consumer_producer import READER_WORKER_TYPES
 from AlignAIR.Utilities.step_utilities import DataConfigLibrary, FileInfo
@@ -47,13 +48,24 @@ class ModelLoadingStep(Step):
     def load_model(self, file_info: FileInfo,
                    data_config_library: DataConfigLibrary,
                    model_checkpoint: str,
-                   max_sequence_size: int):
+                   max_sequence_size: int,
+                   custom_model_parameters: CustomModelParamsYaml = None):
 
         dataset = self.get_dataset_object(file_info, data_config_library, max_sequence_size)
 
         model_params = dataset.generate_model_params()
 
+        if custom_model_parameters:
+            for key in custom_model_parameters.accepted_keys:
+                if hasattr(custom_model_parameters, key):
+                    model_params[key] = getattr(custom_model_parameters, key)
+
+
+            self.log(f"Custom Model Parameters: {model_params} loaded successfully...")
+
+
         model = data_config_library.matching_alignair_model(**model_params)
+
         model.build({'tokenized_sequence': (max_sequence_size, 1)})
         model.load_weights(model_checkpoint)
         self.log(f"Loading: {model_checkpoint.split('/')[-1]}")
@@ -66,11 +78,21 @@ class ModelLoadingStep(Step):
 
     def execute(self, predict_object):
         self.log("Loading main model...")
+
+        if predict_object.script_arguments.finetuned_model_params_yaml:
+            self.log("Custom model parameters detected... Assuming custom finetuned model is being loaded...")
+            custom_model_parameters = CustomModelParamsYaml(predict_object.script_arguments.finetuned_model_params_yaml)
+            self.log("Custom model parameters loaded successfully...")
+        else:
+            custom_model_parameters = None
+
+
         predict_object.model = self.load_model(
             predict_object.file_info,
             predict_object.data_config_library,
             predict_object.script_arguments.model_checkpoint,
             predict_object.script_arguments.max_input_size,
+            custom_model_parameters
         )
         self.log("Main Model Loaded...")
 

@@ -2,6 +2,7 @@ import logging
 from typing import List, Dict, Optional, Any
 import pickle
 
+from AlignAIR.Utilities.GenotypeYamlParser import GenotypeYamlParser
 from AlignAIR.Utilities.step_utilities import DataConfigLibrary, FileInfo
 
 class PredictObject:
@@ -29,17 +30,15 @@ class PredictObject:
     """
 
     def __init__(self, args: Any, sequences: Optional[List[str]] = None,
-                 config: Optional[Dict[str, Any]] = None, model: Optional[Any] = None,
-                 results: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None,
+                 model: Optional[Any] = None,
+                 logger: Optional[logging.Logger] = None,
                  additional_data: Optional[Dict[str, Any]] = None):
         """
         Initialize the PredictObject with default values.
 
         Args:
             sequences (Optional[List[str]]): List or array of sequences to be processed.
-            config (Optional[Dict[str, Any]]): Configuration data for various steps.
             model (Optional[Any]): The model that will be used for predictions.
-            results (Optional[Dict[str, Any]]): Dictionary to store results of predictions and post-processings.
             logger (Optional[logging.Logger]): Logger instance for logging.
             additional_data (Optional[Dict[str, Any]]): Any additional data that might be needed during processing.
         """
@@ -54,7 +53,7 @@ class PredictObject:
         self.orientation_pipeline: Optional[Any] = None
         self.final_results: Optional[Any] = None
         self.candidate_sequence_extractor: Optional[Any] = None
-
+        self.genotype = None
         # results
         self.raw_predictions: Optional[Any] = None
         self.processed_predictions: Optional[Any] = None
@@ -66,6 +65,18 @@ class PredictObject:
 
         # germline alignment results
         self.germline_alignments: Optional[Any] = None
+
+        # required processing methods
+
+
+    def mount_genotype_list(self):
+        """ Mount genotype from yaml file if provided and validate it matches the data config """
+        if self.script_arguments.custom_genotype is not None:
+            # parse the genotype yaml file
+            genotype = GenotypeYamlParser(self.script_arguments.custom_genotype)
+            # test if the genotype alleles intersect with the data config alleles, the genotype should be a subset of the data config used to train the model
+            genotype.test_intersection_with_data_config(self.data_config_library)
+            self.genotype = genotype
 
     def log(self, message: str):
         """

@@ -27,6 +27,7 @@ class ConfigLoadStep(Step):
                                                 custom_lambda_data_config=args.lambda_data_config)
         data_config_library.mount_type(chain_type)
         predict_object.data_config_library = data_config_library
+        predict_object.mount_genotype_list()
         self.log("Data Config loaded successfully, Type Mounted : {}".format(chain_type))
 
         return predict_object

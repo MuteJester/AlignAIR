@@ -104,6 +104,53 @@ class DataConfigLibrary:
         else:
             raise ValueError('No Chain Type Mounted / Unknown Chain Type {}'.format(self.mounted))
 
+    def reference_allele_names(self, allele: str):
+        """
+        Get the reference allele sequences for the given allele type.
+        Args:
+            allele:
+
+        Returns:
+
+        """
+        if allele not in ['v', 'd', 'j']:
+            raise ValueError("Allele must be one of 'v', 'd', or 'j'")
+
+        if self.mounted == 'heavy':
+            allele_dict = getattr(self.config(), f'{allele}_alleles')
+            return [i.name for j in allele_dict for i in allele_dict[j]]
+        elif self.mounted == 'light':
+            if allele == 'd':
+                return []
+
+            allele_dict = getattr(self.config('kappa'), f'{allele}_alleles')
+            alleles_kappa = [i.name for j in allele_dict for i in allele_dict[j]]
+            allele_dict = getattr(self.config('lambda'), f'{allele}_alleles')
+            alleles_lambda = [i.name for j in allele_dict for i in allele_dict[j]]
+            return alleles_kappa + alleles_lambda
+        else:
+            raise ValueError('No Chain Type Mounted / Unknown Chain Type {}'.format(self.mounted))
+
+    def get_allele_dict(self, allele: str):
+        """for a given allele type will return a dictionary of allele names and sequences"""
+        if allele not in ['v', 'd', 'j']:
+            raise ValueError("Allele must be one of 'v', 'd', or 'j'")
+
+        if self.mounted == 'heavy':
+            allele_dict = getattr(self.config(), f'{allele}_alleles')
+            return {i.name: i.ungapped_seq.upper() for j in allele_dict for i in allele_dict[j]}
+        elif self.mounted == 'light':
+            if allele == 'd':
+                return {}
+
+            allele_dict = getattr(self.config('kappa'), f'{allele}_alleles')
+            alleles_kappa = {i.name: i.ungapped_seq.upper() for j in allele_dict for i in allele_dict[j]}
+            allele_dict = getattr(self.config('lambda'), f'{allele}_alleles')
+            alleles_lambda = {i.name: i.ungapped_seq.upper() for j in allele_dict for i in allele_dict[j]}
+            return {**alleles_kappa, **alleles_lambda}
+        else:
+            raise ValueError('No Chain Type Mounted / Unknown Chain Type {}'.format(self.mounted))
+
 
 class FileInfo:
     def __init__(self, path):
