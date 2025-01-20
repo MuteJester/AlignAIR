@@ -125,9 +125,12 @@ def generate_partial_uniform_test_dataset(n_samples = 100_000,chain_type='heavy'
     partial_uniform_test_sequences = []
     partial_uniform_test_labels = []
     partial_labels = []
+    sampling_type_set = ['Only V', 'Only D', 'Only J', 'VD', 'VJ', 'DJ']
+    if chain_type == 'light':
+        sampling_type_set = ['Only V', 'Only J', 'VJ']
 
-    def get_partial_sequence(simulated):
-        partial_label = random.choice(['Only V', 'Only D', 'Only J', 'VD', 'VJ', 'DJ'])
+    def get_partial_sequence(simulated,sampling_type_set):
+        partial_label = random.choice(sampling_type_set)
         sequence = None
         if partial_label == 'Only V':
             sequence = simulated['sequence'][simulated['v_sequence_start']:simulated['v_sequence_end']]
@@ -151,7 +154,7 @@ def generate_partial_uniform_test_dataset(n_samples = 100_000,chain_type='heavy'
 
     for _ in tqdm(range(n_samples)):
         heavy_sequence = heavy_augmentor.simulate_augmented_sequence()
-        sequence, partial_label = get_partial_sequence(heavy_sequence)
+        sequence, partial_label = get_partial_sequence(heavy_sequence,sampling_type_set)
         partial_labels.append(partial_label)
         heavy_sequence['sequence'] = sequence
         label = random.choice(["Normal", 'Reversed', 'Complement', 'Reverse Complement'])
