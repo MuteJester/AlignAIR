@@ -3,6 +3,8 @@ import os
 import yaml
 
 from AlignAIR.Data.PredictionDataset import PredictionDataset
+from AlignAIR.Preprocessing.LongSequence.FastKmerDensityExtractor import FastKmerDensityExtractor
+from AlignAIR.Utilities.step_utilities import DataConfigLibrary
 from src.AlignAIR.Metadata import RandomDataConfigGenerator
 from src.AlignAIR.Models.LightChain import LightChainAlignAIRR
 import unittest
@@ -571,6 +573,44 @@ class TestModule(unittest.TestCase):
         # Assertions
         mock_row_counter.assert_called_with('./sample_HeavyChain_dataset.csv')
         self.assertEqual(result, mock_predict_object)
+
+    def test_fast_kmer_density_extractor(self):
+
+        # test heavy chain detection
+        data_config_library = DataConfigLibrary(*['D'] * 3)
+        data_config_library.mount_type('heavy')
+
+        ref_alleles = (
+                data_config_library.reference_allele_sequences('v') +
+                data_config_library.reference_allele_sequences('d') +
+                data_config_library.reference_allele_sequences('j')
+        )
+
+        candidate_sequence_extractor = FastKmerDensityExtractor(11, max_length=576, allowed_mismatches=0)
+        candidate_sequence_extractor.fit(ref_alleles)
+
+        import json
+        with open('C:/Users/tomas/Desktop/AlignAIRR/tests/KMer_Density_Extractor_HeavyChainTests.json', 'r') as f:
+            tests = json.load(f)
+
+        results = [candidate_sequence_extractor.transform_holt(noise)[0] for true, noise in tests]
+
+        def is_within_mismatch_limit(true_seq, result_seq, max_mismatch=5):
+            """Check if true_seq is fully contained in result_seq with up to max_mismatch from start or end."""
+            true_len = len(true_seq)
+            for i in range(max_mismatch + 1):
+                # Allow mismatches from start
+                if true_seq[i:] in result_seq:
+                    return True
+                # Allow mismatches from end
+                if true_seq[:true_len - i] in result_seq:
+                    return True
+            return False
+
+        for s, (result, (true, _)) in enumerate(zip(results, tests)):
+            self.assertTrue(len(result) <= 576, f"Test {s} failed: Result length exceeds 576")
+            self.assertTrue(is_within_mismatch_limit(true, result),
+                            f"Test {s} failed: True sequence not found within mismatch limit")
 
 
 
