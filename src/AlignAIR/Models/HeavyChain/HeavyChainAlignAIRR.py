@@ -250,7 +250,18 @@ class HeavyChainAlignAIRR(tf.keras.Model):
 
     def _init_segmentation_predictions(self):
         # act = tf.keras.layers.LeakyReLU()
+        # def gelu_custom(x):
+        #     """
+        #     Custom implementation of GELU activation.
+        #     """
+        #     pi = tf.constant(3.141592653589793, dtype=x.dtype)  # Define π
+        #     cdf = 0.5 * (1.0 + tf.tanh((tf.sqrt(2 / pi) * (x + 0.044715 * tf.pow(x, 3)))))
+        #     return x * cdf
+        # act = gelu_custom
+
+
         act = tf.keras.activations.gelu
+
         self.v_start_out = Dense(
             1, activation=act, kernel_constraint=unit_norm(), kernel_initializer=self.initializer, name='v_start'
         )
@@ -373,9 +384,12 @@ class HeavyChainAlignAIRR(tf.keras.Model):
         reshape_masked_sequence_d = self.d_mask_layer([d_start, d_end])
         reshape_masked_sequence_j = self.j_mask_layer([j_start, j_end])
 
-        reshape_masked_sequence_v = tf.expand_dims(reshape_masked_sequence_v, -1)
-        reshape_masked_sequence_d = tf.expand_dims(reshape_masked_sequence_d, -1)
-        reshape_masked_sequence_j = tf.expand_dims(reshape_masked_sequence_j, -1)
+        # reshape_masked_sequence_v = tf.expand_dims(reshape_masked_sequence_v, -1)
+        # reshape_masked_sequence_d = tf.expand_dims(reshape_masked_sequence_d, -1)
+        # reshape_masked_sequence_j = tf.expand_dims(reshape_masked_sequence_j, -1)
+        reshape_masked_sequence_v = self.v_mask_reshape(reshape_masked_sequence_v)
+        reshape_masked_sequence_d = self.d_mask_reshape(reshape_masked_sequence_d)
+        reshape_masked_sequence_j = self.j_mask_reshape(reshape_masked_sequence_j)
 
         # import pdb
         # pdb.set_trace()

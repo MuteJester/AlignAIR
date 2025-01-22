@@ -17,6 +17,8 @@ trainer = Trainer(
     verbose=1,
 )
 MODEL_CHECKPOINT = model_weights_path
+trainer.model.build({"tokenized_sequence": (None, model_params['max_seq_length'])})
+
 trainer.load_model(MODEL_CHECKPOINT,max_seq_length=model_params['max_seq_length'])
 
 
@@ -24,6 +26,11 @@ prediction_Dataset = PredictionDataset(max_sequence_length=576)
 seq = 'CAGCCACAACTGAACTGGTCAAGTCCAGGACTGGTGAATACCTCGCAGACCGTCACACTCACCCTTGCCGTGTCCGGGGACCGTGTCTCCAGAACCACTGCTGTTTGGAAGTGGAGGGGTCAGACCCCATCGCGAGGCCTTGCGTGGCTGGGAAGGACCTACNACAGTTCCAGGTGATTTGCTAACAACGAAGTGTCTGTGAATTGTTNAATATCCATGAACCCAGACGCATCCANGGAACGGNTCTTCCTGCACCTGAGGTCTGGGGCCTTCGACGACACGGCTGTACATNCGTGAGAAAGCGGTGACCTCTACTAGGATAGTGCTGAGTACGACTGGCATTACGCTCTCNGGGACCGTGCCACCCTTNTCACTGCCTCCTCGG'
 es = prediction_Dataset.encode_and_equal_pad_sequence(seq)['tokenized_sequence']
 predicted = trainer.model.predict({'tokenized_sequence':np.vstack([es])})
+
+dummy_input = {
+    "tokenized_sequence": np.zeros((1, model_params['max_seq_length']), dtype=np.float32),
+}
+_ = trainer.model(dummy_input)  # Build the model by invoking it
 
 
 trainer.model.save('C:/Users/tomas/Downloads/latest_alignair_model')

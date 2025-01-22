@@ -14,6 +14,10 @@ from tensorflow.keras.layers import Multiply, Layer, SeparableConv1D
 import numpy as np
 from tensorflow.keras.constraints import Constraint
 
+import importlib
+import os
+from collections import defaultdict
+
 class ClipConstraint(Constraint):
     def __init__(self, min_value, max_value):
         self.min_value = min_value
@@ -60,37 +64,67 @@ class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
                  conv_activation=None, out_shape=576, initializer=None, **kwargs):
         super(ConvResidualFeatureExtractionBlock, self).__init__(**kwargs)
 
-        self.initializer = tf.keras.initializers.RandomNormal(mean=0.1,
-                                                              stddev=0.02) if initializer is None else initializer
+        self.filter_size = filter_size
+        self.num_conv_batch_layers = num_conv_batch_layers
+        self.kernel_size = kernel_size
+        self.max_pool_size = max_pool_size
         self.conv_activation = conv_activation
+        self.out_shape = out_shape
 
-        if isinstance(kernel_size, int):
-            self.conv_layers = [Conv1D_and_BatchNorm(filters=filter_size, kernel=kernel_size, max_pool=max_pool_size,
-                                                     initializer=self.initializer,
-                                                     activation=self.conv_activation) for _ in
-                                range(num_conv_batch_layers)]
-            self.residual_channel = Conv1D(filter_size, kernel_size, padding='same',
-                                           kernel_regularizer=regularizers.l2(0.01),
-                                           kernel_initializer=self.initializer)
+        self.initializer = (
+            tf.keras.initializers.RandomNormal(mean=0.1, stddev=0.02)
+            if initializer is None else initializer
+        )
 
-        elif isinstance(kernel_size, list):
-            self.conv_layers = [Conv1D_and_BatchNorm(filters=filter_size, kernel=ks, max_pool=max_pool_size,
-                                                     initializer=self.initializer,
-                                                     activation=self.conv_activation) for ks in
-                                kernel_size[:-1]]
-            self.residual_channel = Conv1D(filter_size, kernel_size[-1], padding='same',
-                                           kernel_regularizer=regularizers.l2(0.01),
-                                           kernel_initializer=self.initializer)
+    def build(self, input_shape):
+        # Dynamically initialize layers based on input shape
+        if isinstance(self.kernel_size, int):
+            self.conv_layers = [
+                Conv1D_and_BatchNorm(
+                    filters=self.filter_size,
+                    kernel=self.kernel_size,
+                    max_pool=self.max_pool_size,
+                    initializer=self.initializer,
+                    activation=self.conv_activation,
+                ) for _ in range(self.num_conv_batch_layers)
+            ]
+            self.residual_channel = Conv1D(
+                self.filter_size,
+                self.kernel_size,
+                padding='same',
+                kernel_regularizer=regularizers.l2(0.01),
+                kernel_initializer=self.initializer
+            )
+        elif isinstance(self.kernel_size, list):
+            self.conv_layers = [
+                Conv1D_and_BatchNorm(
+                    filters=self.filter_size,
+                    kernel=ks,
+                    max_pool=self.max_pool_size,
+                    initializer=self.initializer,
+                    activation=self.conv_activation,
+                ) for ks in self.kernel_size[:-1]
+            ]
+            self.residual_channel = Conv1D(
+                self.filter_size,
+                self.kernel_size[-1],
+                padding='same',
+                kernel_regularizer=regularizers.l2(0.01),
+                kernel_initializer=self.initializer
+            )
 
-        self.max_pool_layers = [MaxPool1D(2) for _ in range(num_conv_batch_layers)]
-        self.activation_layers = [LeakyReLU() for _ in range(num_conv_batch_layers)]
-        self.add_layers = [Add() for _ in range(num_conv_batch_layers)]
+        self.max_pool_layers = [MaxPool1D(2) for _ in range(self.num_conv_batch_layers)]
+        self.activation_layers = [LeakyReLU() for _ in range(self.num_conv_batch_layers)]
+        self.add_layers = [Add() for _ in range(self.num_conv_batch_layers)]
 
-        self.dense_reshaper = Dense(out_shape, activation='linear')
+        self.dense_reshaper = Dense(self.out_shape, activation='linear')
         self.segmentation_feature_flatten = Flatten()
 
+        # Call parent build to set up tracking
+        super(ConvResidualFeatureExtractionBlock, self).build(input_shape)
+
     def call(self, embeddings):
-        # Residual
+        # Residual stream
         residual_stream = self.residual_channel(embeddings)
         residual_end = self.max_pool_layers[0](residual_stream)
 
@@ -100,7 +134,7 @@ class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
         residual_end = self.max_pool_layers[0](residual_end)
 
         for index in range(1, len(self.max_pool_layers)):
-            # get F(x)
+            # Get F(x)
             feature_stream = self.conv_layers[index](residual_end)
             residual_end = self.max_pool_layers[index](residual_end)
             residual_end = self.add_layers[index]([feature_stream, residual_end])
@@ -111,9 +145,6 @@ class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
         return residual_end
 
 
-import importlib
-import os
-from collections import defaultdict
 
 
 
@@ -151,17 +182,29 @@ def global_genotype():
 class RegularizedConstrainedLogVar(tf.keras.layers.Layer):
     def __init__(self, initial_value=1.0, min_log_var=-3, max_log_var=1, regularizer_weight=0.01):
         super().__init__()
-        self.log_var = self.add_weight(name="log_var",
-                                       shape=(),
-                                       initializer=tf.keras.initializers.Constant(value=tf.math.log(initial_value)),
-                                       constraint=ClipConstraint(min_log_var, max_log_var),
-                                       trainable=True)
+        self.initial_value = initial_value
+        self.min_log_var = min_log_var
+        self.max_log_var = max_log_var
         self.regularizer_weight = regularizer_weight
 
+    def build(self, input_shape):
+        # Dynamically initialize the log_var weight
+        self.log_var = self.add_weight(
+            name="log_var",
+            shape=(),  # Scalar weight
+            initializer=tf.keras.initializers.Constant(value=tf.math.log(self.initial_value)),
+            constraint=ClipConstraint(self.min_log_var, self.max_log_var),
+            trainable=True
+        )
+        # Call the parent's build method
+        super(RegularizedConstrainedLogVar, self).build(input_shape)
+
     def call(self, inputs):
+        # Add a regularization loss
         regularization_loss = self.regularizer_weight * tf.nn.relu(-self.log_var - 2)  # Soft threshold at log(var)=2
         self.add_loss(regularization_loss)
-        return tf.exp(-self.log_var)  # Returns the precision as exp(-log(var))
+        # Return precision as exp(-log(var))
+        return tf.exp(-self.log_var)
 
 
 def soft_mask(indices, start, end, K):
@@ -221,11 +264,21 @@ def interval_iou(interval1, interval2, GIoU=False, DIoU=False, CIoU=False, eps=1
 
 
 
-class CutoutLayer(Layer):
+class CutoutLayer(tf.keras.layers.Layer):
     def __init__(self, max_size, gene, **kwargs):
         super(CutoutLayer, self).__init__(**kwargs)
         self.max_size = max_size
         self.gene = gene
+
+    def build(self, input_shape):
+        """
+        Initialize any configuration dependent on input shape.
+        """
+        # Create a tensor for indices (common for all gene types)
+        self.indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
+
+        # Call parent's build method to finalize setup
+        super(CutoutLayer, self).build(input_shape)
 
     def round_output(self, dense_output):
         max_value = tf.reduce_max(dense_output, axis=-1, keepdims=True)
@@ -233,48 +286,29 @@ class CutoutLayer(Layer):
         max_value = tf.cast(max_value, dtype=tf.float32)
         return max_value
 
-    def _call_v(self, inputs, batch_size):
+    def _call_generic(self, inputs, batch_size):
+        """
+        Generic implementation for V, D, and J calls to avoid duplication.
+        """
         dense_start, dense_end = inputs
         x = self.round_output(dense_start)
         y = self.round_output(dense_end)
-        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
-        R = K.greater(indices, x) & K.less(indices, y)
-        R = tf.cast(R, tf.float32)
-        R = tf.reshape(R, shape=(batch_size, self.max_size))
-        return R
-
-    def _call_d(self, inputs, batch_size):
-        dense_start, dense_end = inputs
-        x = self.round_output(dense_start)
-        y = self.round_output(dense_end)
-        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
-        R = K.greater(indices, x) & K.less(indices, y)
-        R = tf.cast(R, tf.float32)
-        R = tf.reshape(R, shape=(batch_size, self.max_size))
-        return R
-
-    def _call_j(self, inputs, batch_size):
-        dense_start, dense_end = inputs
-        x = self.round_output(dense_start)
-        y = self.round_output(dense_end)
-        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
-        R = K.greater(indices, x) & K.less(indices, y)
+        R = tf.keras.backend.greater(self.indices, x) & tf.keras.backend.less(self.indices, y)
         R = tf.cast(R, tf.float32)
         R = tf.reshape(R, shape=(batch_size, self.max_size))
         return R
 
     def call(self, inputs):
-        if self.gene == 'V':
-            batch_size = tf.shape(inputs[0])[0]
-            return self._call_v(inputs, batch_size)
-        elif self.gene == 'D':
-            batch_size = tf.shape(inputs[0])[0]
-            return self._call_d(inputs, batch_size)
-        elif self.gene == 'J':
-            batch_size = tf.shape(inputs[0])[0]
-            return self._call_j(inputs, batch_size)
+        """
+        Dispatch to the appropriate function based on gene type.
+        """
+        batch_size = tf.shape(inputs[0])[0]
+        return self._call_generic(inputs, batch_size)
 
     def compute_output_shape(self, input_shape):
+        """
+        Define the output shape based on the input shape.
+        """
         return (None, self.max_size, 1)
 
 
@@ -435,22 +469,36 @@ class Conv2D_and_BatchNorm(tf.keras.layers.Layer):
 class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
     def __init__(self, filters=16, kernel=3, max_pool=2, activation=None, initializer=None, **kwargs):
         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
-        initializer_ = 'glorot_uniform' if initializer is None else initializer
-        self.conv_2d = Conv1D(filters, kernel, padding='same',
-                              kernel_regularizer=regularizers.l2(0.01), kernel_initializer=initializer_)
-        self.conv_2d_2 = Conv1D(filters, kernel, padding='same',
-                                kernel_regularizer=regularizers.l2(0.01), kernel_initializer=initializer_)
+        self.filters = filters
+        self.kernel = kernel
+        self.max_pool_size = max_pool
+        self.initializer = 'glorot_uniform' if initializer is None else initializer
+        self.activation = activation if activation is not None else LeakyReLU()
 
-        self.conv_2d_3 = Conv1D(filters, kernel, padding='same',
-                                kernel_regularizer=regularizers.l2(0.01), kernel_initializer=initializer_)
+    def build(self, input_shape):
+        # Dynamically initialize sub-layers based on the input shape
+        self.conv_2d = Conv1D(
+            self.filters, self.kernel, padding='same',
+            kernel_regularizer=regularizers.l2(0.01),
+            kernel_initializer=self.initializer
+        )
+        self.conv_2d_2 = Conv1D(
+            self.filters, self.kernel, padding='same',
+            kernel_regularizer=regularizers.l2(0.01),
+            kernel_initializer=self.initializer
+        )
+        self.conv_2d_3 = Conv1D(
+            self.filters, self.kernel, padding='same',
+            kernel_regularizer=regularizers.l2(0.01),
+            kernel_initializer=self.initializer
+        )
+        self.batch_norm = BatchNormalization(
+            momentum=0.1, epsilon=0.8, center=True, scale=True
+        )
+        self.max_pool = MaxPool1D(self.max_pool_size)
 
-        self.batch_norm = BatchNormalization(momentum=0.1, epsilon=0.8, center=1.0, scale=0.02)
-
-        if activation is None:
-            self.activation = LeakyReLU()
-        else:
-            self.activation = activation
-        self.max_pool = MaxPool1D(max_pool)
+        # Call parent's build method
+        super(Conv1D_and_BatchNorm, self).build(input_shape)
 
     def call(self, inputs):
         x = self.conv_2d(inputs)
@@ -460,6 +508,7 @@ class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
         x = self.activation(x)
         x = self.max_pool(x)
         return x
+
 
 
 class Conv1D_and_BatchNorm_Residual(tf.keras.layers.Layer):
@@ -542,14 +591,36 @@ class TokenAndPositionEmbedding(tf.keras.layers.Layer):
     def __init__(self, maxlen, vocab_size, embed_dim):
         super(TokenAndPositionEmbedding, self).__init__()
         self.maxlen = maxlen
-        self.token_emb = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embed_dim)
-        self.pos_emb = tf.keras.layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
+        self.vocab_size = vocab_size
+        self.embed_dim = embed_dim
+
+    def build(self, input_shape):
+        """
+        Initialize the embedding layers dynamically.
+        """
+        self.token_emb = tf.keras.layers.Embedding(
+            input_dim=self.vocab_size,
+            output_dim=self.embed_dim
+        )
+        self.pos_emb = tf.keras.layers.Embedding(
+            input_dim=self.maxlen,
+            output_dim=self.embed_dim
+        )
+
+        # Call parent's build method to finalize setup
+        super(TokenAndPositionEmbedding, self).build(input_shape)
 
     def call(self, x):
+        """
+        Add token embeddings and positional embeddings.
+        """
+        # Generate positional indices
         positions = tf.range(start=0, limit=self.maxlen, delta=1)
-        positions = self.pos_emb(positions)
-        x = self.token_emb(x)
+        positions = self.pos_emb(positions)  # Get positional embeddings
+
+        x = self.token_emb(x)  # Get token embeddings
         return x + positions
+
 
 
 
