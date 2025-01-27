@@ -173,7 +173,7 @@ class TestModule(unittest.TestCase):
             self.assertEqual(results[1]['start_in_ref'], 0)
             self.assertEqual(results[1]['end_in_ref'], 301)
 
-    def test_predict_script(self):
+    def test_predict_script_heavy_chain(self):
 
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API'))
         script_path = os.path.join(base_dir, 'AlignAIRRPredict.py')
@@ -221,6 +221,56 @@ class TestModule(unittest.TestCase):
 
         # Cleanup
         os.remove(output_csv)
+
+    def test_predict_script_light_chain(self):
+
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API'))
+        script_path = os.path.join(base_dir, 'AlignAIRRPredict.py')
+
+
+        # Ensure the script exists
+        self.assertTrue(os.path.exists(script_path), "Predict script not found at path: " + script_path)
+
+        # Define the command with absolute paths
+        command = [
+            'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
+            '--model_checkpoint', os.path.join(self.test_dir, 'LightChain_AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced'),
+            '--save_path', str(self.test_dir)+'/',
+            '--chain_type', 'light',
+            '--sequences', self.light_chain_dataset_path,
+            '--batch_size', '32',
+            '--translate_to_asc'
+        ]
+
+        # Execute the script
+        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, "Script failed to run with error: " + result.stderr)
+
+
+        # Check if the CSV was created
+        file_name = self.light_chain_dataset_path.split('/')[-1].split('.')[0]
+        save_name = file_name + '_alignairr_results.csv'
+
+        output_csv = os.path.join(self.test_dir, save_name)
+        self.assertTrue(os.path.isfile(output_csv), "Output CSV file not created")
+
+        # Read the output CSV and validate its contents
+        df = pd.read_csv(output_csv)
+        #df.drop(columns=['d_likelihoods'], inplace=True)
+        validation = pd.read_csv('./lightchain_predict_validation.csv')
+
+        # Compare dataframes cell by cell
+        for i in range(df.shape[0]):
+            for j in range(df.shape[1]):
+                self.assertEqual(df.iloc[i, j], validation.iloc[i, j],
+                                 f"Mismatch at row {i}, column {j}: {df.iloc[i, j]} != {validation.iloc[i, j]}")
+
+        self.assertFalse(df.empty, "Output CSV is empty")
+        # Additional assertions can be added here
+
+        # Cleanup
+        os.remove(output_csv)
+
 
     def test_train_model_script(self):
         # Set base directory and script path
@@ -622,6 +672,7 @@ class TestModule(unittest.TestCase):
             self.assertTrue(len(result) <= 576, f"Test {s} failed: Result length exceeds 576")
             self.assertTrue(is_within_mismatch_limit(true, result),
                             f"Test {s} failed: True sequence not found within mismatch limit")
+
 
 
 

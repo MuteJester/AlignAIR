@@ -211,6 +211,16 @@ class LightChainAlignAIRR(tf.keras.Model):
 
     def _init_segmentation_predictions(self):
         # act = tf.keras.layers.LeakyReLU()
+        act = tf.keras.layers.LeakyReLU()
+        # def gelu_custom(x):
+        #     """
+        #     Custom implementation of GELU activation.
+        #     """
+        #     pi = tf.constant(3.141592653589793, dtype=x.dtype)  # Define π
+        #     cdf = 0.5 * (1.0 + tf.tanh((tf.sqrt(2 / pi) * (x + 0.044715 * tf.pow(x, 3)))))
+        #     return x * cdf
+        # act = gelu_custom
+
         act = tf.keras.activations.gelu
         self.v_start_out = Dense(
             1, activation=act, kernel_constraint=unit_norm(), kernel_initializer=self.initializer, name='v_start'

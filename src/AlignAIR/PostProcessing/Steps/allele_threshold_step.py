@@ -1,4 +1,5 @@
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold, MaxLikelihoodPercentageThreshold
+from AlignAIR.PredictObject.PredictObject import PredictObject
 from AlignAIR.Step.Step import Step
 from AlignAIR.Utilities.step_utilities import DataConfigLibrary
 
@@ -56,6 +57,7 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         predicted_allele_likelihoods = {}
         threshold_objects = {}
 
+
         for _gene in alleles:
             if data_config_library.mounted == 'heavy':
                 extractor = MaxLikelihoodPercentageThreshold(heavy_dataconfig=data_config_library.config())
@@ -83,14 +85,15 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         """extract v,d,j caps from args"""
         return {'v': args.v_cap, 'd': args.d_cap, 'j': args.j_cap}
 
-    def execute(self, predict_object):
+    def execute(self, predict_object : PredictObject):
         self.log("Applying Max Likelihood thresholds...")
         args = predict_object.script_arguments
 
         alleles = {'v': predict_object.processed_predictions['v_allele'],
                    'j': predict_object.processed_predictions['j_allele'],
-                   'd': predict_object.processed_predictions['d_allele']
                    }
+        if predict_object.data_config_library.mounted == 'heavy':
+            alleles['d'] = predict_object.processed_predictions['d_allele']
 
         thresholds = self.get_thresholds(args)
         caps = self.get_caps(args)

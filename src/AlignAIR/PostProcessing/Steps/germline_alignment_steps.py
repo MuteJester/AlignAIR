@@ -29,7 +29,11 @@ class AlleleAlignmentStep(Step):
 
         processed_predictions = predict_object.processed_predictions
         segments = {}
-        for gene in ['v', 'd', 'j']:
+        iterator = ['v','j']
+        if predict_object.data_config_library.mounted == 'heavy':
+            iterator.append('d')
+
+        for gene in iterator:
             segments[f'{gene}'] = (processed_predictions[f'{gene}_start'], processed_predictions[f'{gene}_end'])
 
         predict_object.germline_alignments = self.align_with_germline(
