@@ -38,6 +38,7 @@ class Trainer:
         callbacks=None,
         optimizers=tf.keras.optimizers.Adam,
         optimizer_params=None,
+        max_seq_length=None,
         verbose=0,
     ):
         self.model = model
@@ -56,6 +57,7 @@ class Trainer:
         self.optimizer_params = optimizer_params or {}
         self.verbose = verbose
         self.history = None
+        self.max_seq_length = max_seq_length
 
         if self.pretrained_path:
             self.load_model(self.pretrained_path)
@@ -119,13 +121,13 @@ class Trainer:
         """
         # Check if the model is built
         if not self.model.built:
-            if max_seq_length is None:
+            if self.max_seq_length is None:
                 raise ValueError(
                     "Model is not built and input_shape is required to build the model."
                 )
             # Build the model with the provided input shape
-            self.model.build(input_shape={'tokenized_sequence': (max_seq_length, 1)})
-            print(f"Model built with input shape: ({max_seq_length},1)")
+            self.model.build(input_shape={'tokenized_sequence': (self.max_seq_length, 1)})
+            print(f"Model built with input shape: ({self.max_seq_length},1)")
 
         # Load weights
         self.model.load_weights(weights_path)

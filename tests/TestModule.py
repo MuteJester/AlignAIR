@@ -651,7 +651,7 @@ class TestModule(unittest.TestCase):
         candidate_sequence_extractor.fit(ref_alleles)
 
         import json
-        with open('C:/Users/tomas/Desktop/AlignAIRR/tests/KMer_Density_Extractor_HeavyChainTests.json', 'r') as f:
+        with open('./KMer_Density_Extractor_HeavyChainTests.json', 'r') as f:
             tests = json.load(f)
 
         results = [candidate_sequence_extractor.transform_holt(noise)[0] for true, noise in tests]

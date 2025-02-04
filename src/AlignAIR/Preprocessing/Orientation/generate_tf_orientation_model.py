@@ -209,7 +209,7 @@ def create_and_fit_pipeline(train_sequences,train_labels,min_k=3,max_k=5,max_fea
     train_sequences = np.array(train_sequences, dtype=str)
     train_labels = np.array(train_labels, dtype=np.int32)
 
-    model.fit(train_sequences, train_labels, epochs=100, batch_size=32)
+    model.fit(train_sequences, train_labels, epochs=40, batch_size=32)
 
     logging.info('Pipeline was Fitted Successfully!')
     return model
