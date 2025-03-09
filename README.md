@@ -1,5 +1,3 @@
-# AlignAIR
-
 ![AlignAIR Logo](https://alignair.ai/_next/static/media/logo_alignair14bw.b74a41a0.svg) <!-- Add your project logo here if you have one -->
 
 **AlignAIR**: A Deep Learning-Powered Sequence Alignment Tool for Adaptive Immune Receptors
