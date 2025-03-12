@@ -10,6 +10,7 @@ import tensorflow as tf
 from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPercentageThresholdApplicationStep, ConfidenceMethodThresholdApplicationStep
 from AlignAIR.PostProcessing.Steps.clean_up_steps import CleanAndArrangeStep
 from AlignAIR.PostProcessing.Steps.finalization_and_packaging_steps import FinalizationStep
+from AlignAIR.PostProcessing.Steps.airr_finalization_and_packaging_steps import AIRRFinalizationStep
 from AlignAIR.PostProcessing.Steps.germline_alignment_steps import AlleleAlignmentStep
 from AlignAIR.PostProcessing.Steps.segmentation_correction_steps import SegmentCorrectionStep
 from AlignAIR.PostProcessing.Steps.translate_to_imgt_step import TranslationStep
@@ -103,6 +104,7 @@ def parse_arguments():
     parser.add_argument('--j_cap', type=int, default=3, help='Cap for J allele calls')
     parser.add_argument('--translate_to_asc', action='store_true', help='Translate names back to ASCs names from IMGT')
     parser.add_argument('--fix_orientation', type=bool, default=True, help='Fix DNA orientation if reversed')
+    parser.add_argument('--airr_format', action='store_true', help='Adds a step to format the results to AIRR format')
     parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None, help='Path to custom orientation model')
 
     return parser.parse_args()
@@ -131,6 +133,7 @@ def interactive_mode():
         'j_cap': int(questionary.text("Cap for J allele calls:", default='3').ask()),
         'translate_to_asc': questionary.confirm("Translate names back to ASCs names from IMGT?").ask(),
         'fix_orientation': questionary.confirm("Fix DNA orientation if reversed?").ask(),
+        'airr_format': questionary.confirm("Format the results to AIRR format?").ask(),
         'custom_orientation_pipeline_path': questionary.text("Path to a custom orientation model:", default='').ask(),
     }
     return Args(**config)
@@ -152,11 +155,15 @@ def execute_pipeline(config):
         CleanAndArrangeStep("Clean Up Raw Prediction", logger),
         SegmentCorrectionStep("Correct Segmentations", logger),
         MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments", logger),
-        AlleleAlignmentStep("Align Predicted Segments with Germline", logger),
-        TranslationStep("Translate ASC's to IMGT Alleles", logger),
-        FinalizationStep("Finalize Post Processing and Save Csv", logger)
+        AlleleAlignmentStep("Align Predicted Segments with Germline", logger)
     ]
-
+    
+    if config.airr_format:
+        steps.append(AIRRFinalizationStep("Finalize Results", logger))
+    else:
+        steps.append(TranslationStep("Translate ASC's to IMGT Alleles", logger))
+        steps.append(FinalizationStep("Finalize Results", logger))
+        
     run_pipeline(predict_object, steps)
     logger.info("Pipeline execution complete.")
 

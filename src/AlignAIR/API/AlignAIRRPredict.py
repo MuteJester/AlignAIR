@@ -8,6 +8,7 @@ from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPer
 from AlignAIR.PostProcessing.Steps.clean_up_steps import CleanAndArrangeStep
 from AlignAIR.PostProcessing.Steps.correct_likelihood_for_genotype_step import GenotypeBasedLikelihoodAdjustmentStep
 from AlignAIR.PostProcessing.Steps.finalization_and_packaging_steps import FinalizationStep
+from AlignAIR.PostProcessing.Steps.airr_finalization_and_packaging_steps import AIRRFinalizationStep
 from AlignAIR.PostProcessing.Steps.germline_alignment_steps import AlleleAlignmentStep
 from AlignAIR.PostProcessing.Steps.segmentation_correction_steps import SegmentCorrectionStep
 from AlignAIR.PostProcessing.Steps.translate_to_imgt_step import TranslationStep
@@ -59,6 +60,7 @@ def parse_arguments():
     parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None, help='A path to a custom orientation model created for a custom reference')
     parser.add_argument('--custom_genotype', type=str, default=None, help='Path to a custom genotype yaml file')
     parser.add_argument('--save_predict_object', action='store_true', help='Save the predict object (Warning this can be large)')
+    parser.add_argument('--airr_format', action='store_true', help='Adds a step to format the results to AIRR format')
     # parameters for the model yaml, if specified this will change the loading of the model to a finetuned one with differnt head sizes
     parser.add_argument('--finetuned_model_params_yaml', type=str, default=None, help='Path to a yaml file with the parameters of a fine tuned model (new head sizes and latent sizes)')
     return parser.parse_args()
@@ -105,6 +107,7 @@ def interactive_mode():
     config['custom_orientation_pipeline_path'] = questionary.text("Path to a custom orientation model:", default='').ask()
     config['custom_genotype'] = questionary.text("Path to a custom genotype yaml file:", default='').ask()
     config['save_predict_object'] = questionary.confirm("Save the predict object (Warning this can be large)?").ask()
+    config['airr_format'] = questionary.confirm("Format the results to AIRR format?").ask()
     config['finetuned_model_params_yaml'] = questionary.text("Path to a yaml file with the parameters of a fine tuned model:", default='').ask()
     return Args(**config)
 
@@ -158,10 +161,14 @@ def main():
         GenotypeBasedLikelihoodAdjustmentStep("Adjust Likelihoods for Genotype"),
         SegmentCorrectionStep("Correct Segmentations"),
         MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments"),
-        AlleleAlignmentStep("Align Predicted Segments with Germline"),
-        TranslationStep("Translate ASC's to IMGT Alleles"),
-        FinalizationStep("Finalize Post Processing and Save Csv")
+        AlleleAlignmentStep("Align Predicted Segments with Germline")
     ]
+    
+    if config.airr_format:
+        steps.append(AIRRFinalizationStep("Finalize Results"))
+    else:
+        steps.append(TranslationStep("Translate ASC's to IMGT Alleles"))
+        steps.append(FinalizationStep("Finalize Results"))
 
     run_pipeline(predict_object, steps)
     logger.info("Pipeline execution complete.")

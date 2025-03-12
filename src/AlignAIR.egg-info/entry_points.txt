@@ -1,0 +1,2 @@
+[console_scripts]
+alignair_predict = AlignAIR.API.AlignAIRRPredict:main
