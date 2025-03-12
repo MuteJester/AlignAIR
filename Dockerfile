@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire repository into the container
 COPY . .
 
+COPY checkpoints /app/pretrained_models
+
+
 # Install the current repository in developer mode
 RUN pip install -e .
 

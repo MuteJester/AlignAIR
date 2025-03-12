@@ -19,6 +19,7 @@ from AlignAIR.Preprocessing.Steps.batch_processing_steps import BatchProcessingS
 from AlignAIR.Preprocessing.Steps.dataconfig_steps import ConfigLoadStep
 from AlignAIR.Preprocessing.Steps.file_steps import FileNameExtractionStep, FileSampleCounterStep
 from AlignAIR.Preprocessing.Steps.model_loading_steps import ModelLoadingStep
+from AlignAIR.Step.Step import Step
 
 # ANSI color codes for styling
 BLUE = "\033[94m"
@@ -103,9 +104,17 @@ def parse_arguments():
     parser.add_argument('--d_cap', type=int, default=3, help='Cap for D allele calls')
     parser.add_argument('--j_cap', type=int, default=3, help='Cap for J allele calls')
     parser.add_argument('--translate_to_asc', action='store_true', help='Translate names back to ASCs names from IMGT')
-    parser.add_argument('--fix_orientation', type=bool, default=True, help='Fix DNA orientation if reversed')
+    parser.add_argument('--fix_orientation', type=bool, default=True,
+                        help='Adds a preprocessing steps that tests and fixes the DNA orientation, in case it is reversed, complement or reversed and complement')
+    parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None,
+                        help='A path to a custom orientation model created for a custom reference')
+    parser.add_argument('--custom_genotype', type=str, default=None, help='Path to a custom genotype yaml file')
+    parser.add_argument('--save_predict_object', action='store_true',
+                        help='Save the predict object (Warning this can be large)')
     parser.add_argument('--airr_format', action='store_true', help='Adds a step to format the results to AIRR format')
-    parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None, help='Path to custom orientation model')
+    # parameters for the model yaml, if specified this will change the loading of the model to a finetuned one with differnt head sizes
+    parser.add_argument('--finetuned_model_params_yaml', type=str, default=None,
+                        help='Path to a yaml file with the parameters of a fine tuned model (new head sizes and latent sizes)')
 
     return parser.parse_args()
 
@@ -135,6 +144,9 @@ def interactive_mode():
         'fix_orientation': questionary.confirm("Fix DNA orientation if reversed?").ask(),
         'airr_format': questionary.confirm("Format the results to AIRR format?").ask(),
         'custom_orientation_pipeline_path': questionary.text("Path to a custom orientation model:", default='').ask(),
+        'custom_genotype': questionary.text("Path to a custom genotype yaml file:", default='').ask(),
+        'save_predict_object': questionary.confirm("Save the predict object?").ask(),
+        'finetuned_model_params_yaml': questionary.text("Path to a yaml file with fine-tuned model parameters:", default='').ask()
     }
     return Args(**config)
 
@@ -145,24 +157,25 @@ def run_pipeline(predict_object, steps):
 def execute_pipeline(config):
     logger = logging.getLogger('PipelineLogger')
     predict_object = PredictObject(config, logger=logger)
+    Step.set_logger(logger=logger)
 
     steps = [
-        ConfigLoadStep("Load Config", logger),
-        FileNameExtractionStep('Get File Name', logger),
-        FileSampleCounterStep('Count Samples in File', logger),
-        ModelLoadingStep('Load Models', logger),
-        BatchProcessingStep("Process and Predict Batches", logger),
-        CleanAndArrangeStep("Clean Up Raw Prediction", logger),
-        SegmentCorrectionStep("Correct Segmentations", logger),
-        MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments", logger),
-        AlleleAlignmentStep("Align Predicted Segments with Germline", logger)
+        ConfigLoadStep("Load Config"),
+        FileNameExtractionStep('Get File Name'),
+        FileSampleCounterStep('Count Samples in File'),
+        ModelLoadingStep('Load Models'),
+        BatchProcessingStep("Process and Predict Batches"),
+        CleanAndArrangeStep("Clean Up Raw Prediction"),
+        SegmentCorrectionStep("Correct Segmentations"),
+        MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments"),
+        AlleleAlignmentStep("Align Predicted Segments with Germline")
     ]
     
     if config.airr_format:
-        steps.append(AIRRFinalizationStep("Finalize Results", logger))
+        steps.append(AIRRFinalizationStep("Finalize Results"))
     else:
-        steps.append(TranslationStep("Translate ASC's to IMGT Alleles", logger))
-        steps.append(FinalizationStep("Finalize Results", logger))
+        steps.append(TranslationStep("Translate ASC's to IMGT Alleles"))
+        steps.append(FinalizationStep("Finalize Results"))
         
     run_pipeline(predict_object, steps)
     logger.info("Pipeline execution complete.")

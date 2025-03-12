@@ -63,6 +63,7 @@ def parse_arguments():
     parser.add_argument('--airr_format', action='store_true', help='Adds a step to format the results to AIRR format')
     # parameters for the model yaml, if specified this will change the loading of the model to a finetuned one with differnt head sizes
     parser.add_argument('--finetuned_model_params_yaml', type=str, default=None, help='Path to a yaml file with the parameters of a fine tuned model (new head sizes and latent sizes)')
+
     return parser.parse_args()
 
 def load_yaml_config(config_file):
