@@ -61,7 +61,7 @@ AlignAIR is a tool for aligning adaptive immune receptor (AIR) sequences. It add
        --model_checkpoint /app/pretrained_models/IGH_S5F_576 \
        --save_path /data/output \
        --chain_type heavy \
-       --sequences /data/test01.fasta
+       --sequences /data/test01.fasta/tsv/csv
    ```
    - `-v /path/to/local/data:/data` mounts your local directory to `/data` in the container.
    - `--model_checkpoint /app/pretrained_models/IGH_S5F_576` uses the pretrained heavy chain model.
