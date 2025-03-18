@@ -50,7 +50,6 @@ AlignAIR is a tool for aligning adaptive immune receptor (AIR) sequences. It add
    ```sh
    docker pull thomask90/alignair:latest
    ```
-   *(Replace `thomask90` with your Docker Hub username or the correct repository if different.)*
 
 2. **Run the Docker container**  
    If you just want a **quick CLI run**, do:
