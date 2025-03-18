@@ -57,15 +57,23 @@ AlignAIR is a tool for aligning adaptive immune receptor (AIR) sequences. It add
    docker run -it --rm \
        -v /path/to/local/data:/data \
        thomask90/alignair:latest \
-       --mode cli \
-       --model_checkpoint /app/pretrained_models/IGH_S5F_576 \
-       --save_path /data/output \
-       --chain_type heavy \
-       --sequences /data/test01.fasta/tsv/csv
+
    ```
    - `-v /path/to/local/data:/data` mounts your local directory to `/data` in the container.
+   
+Now we are greeted by the AlignAIR menu:
+the next example shows how to run the model in CLI mode (Option 1) with the heavy chain model and a test file.
+   ```shell
+          --model_checkpoint /app/pretrained_models/IGH_S5F_576 \
+          --save_path /data/output \
+          --chain_type heavy \
+          --sequences /data/test01.fasta
+   ```   
+
    - `--model_checkpoint /app/pretrained_models/IGH_S5F_576` uses the pretrained heavy chain model.
    - `--sequences /data/test01.fasta` reads your input file (which must be in the mounted local directory).
+   
+   Here we load a fasta file to the model, but csv and tsv files are also supported.
 
 ### Local Setup
 
