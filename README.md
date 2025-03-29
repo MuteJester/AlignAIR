@@ -50,30 +50,43 @@ AlignAIR is a tool for aligning adaptive immune receptor (AIR) sequences. It add
    ```sh
    docker pull thomask90/alignair:latest
    ```
+   This command retrieves the latest AlignAIR Docker image from Docker Hub.
 
-2. **Run the Docker container**  
-   If you just want a **quick CLI run**, do:
+2. **Run the Docker container (Interactive Mode)**  
+   If you run the container **without** extra arguments, you will be greeted by the AlignAIR menu, which allows you to choose **interactive** or **YAML** modes:
+   ```sh
+   docker run -it --rm \
+       -v /path/to/local/data:/data \
+       thomask90/alignair:latest
+   ```
+   - `-v /path/to/local/data:/data` mounts a local directory (`/path/to/local/data`) to `/data` inside the container.  
+
+3. **Run the Docker container (CLI Mode)**  
+   To **bypass** the menu and run AlignAIR directly with your parameters, add `--mode=cli` plus the other required flags:
    ```sh
    docker run -it --rm \
        -v /path/to/local/data:/data \
        thomask90/alignair:latest \
-
+       --mode=cli \
+       --model_checkpoint /app/pretrained_models/IGH_S5F_576 \
+       --save_path /data/output \
+       --chain_type heavy \
+       --sequences /data/test.fasta
    ```
-   - `-v /path/to/local/data:/data` mounts your local directory to `/data` in the container.
-   
-Now we are greeted by the AlignAIR menu:
-the next example shows how to run the model in CLI mode (Option 1) with the heavy chain model and a test file.
-   ```shell
-          --model_checkpoint /app/pretrained_models/IGH_S5F_576 \
-          --save_path /data/output \
-          --chain_type heavy \
-          --sequences /data/test01.fasta
-   ```   
+   - `--model_checkpoint /app/pretrained_models/IGH_S5F_576` points to a pretrained heavy-chain model included in the container.  
+   - `--sequences /data/test.fasta` references your input file (must reside in the mounted `/path/to/local/data` folder).  
+   - `--save_path /data/output` is where results will be written inside the container (which maps back to your local folder).
 
-   - `--model_checkpoint /app/pretrained_models/IGH_S5F_576` uses the pretrained heavy chain model.
-   - `--sequences /data/test01.fasta` reads your input file (which must be in the mounted local directory).
-   
-   Here we load a fasta file to the model, but csv and tsv files are also supported.
+4. **Input File Format**  
+   - You can provide FASTA, TSV, or CSV files.  
+   - If using CSV/TSV, ensure there's a column called `sequence` which holds your sequences.
+
+5. **Output Files**  
+   - Results will appear in the directory you mapped to the container (e.g., `-v /path/to/local/data:/data`) in the location specified by `--save_path` (e.g., `/data/output`).
+
+This setup allows you to either:
+- **Explore** via the interactive menu by running with no extra arguments.  
+- **Automate** quickly via CLI arguments by specifying `--mode=cli` and any other flags directly.  
 
 ### Local Setup
 

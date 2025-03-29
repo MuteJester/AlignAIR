@@ -1,4 +1,3 @@
-# app.py
 import argparse
 import logging
 import os
@@ -7,7 +6,9 @@ import sys
 import yaml
 import questionary
 import tensorflow as tf
-from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPercentageThresholdApplicationStep, ConfidenceMethodThresholdApplicationStep
+
+from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPercentageThresholdApplicationStep, \
+    ConfidenceMethodThresholdApplicationStep
 from AlignAIR.PostProcessing.Steps.clean_up_steps import CleanAndArrangeStep
 from AlignAIR.PostProcessing.Steps.finalization_and_packaging_steps import FinalizationStep
 from AlignAIR.PostProcessing.Steps.airr_finalization_and_packaging_steps import AIRRFinalizationStep
@@ -32,9 +33,11 @@ RESET = "\033[0m"
 
 tf.get_logger().setLevel('ERROR')
 
+
 class Args:
     def __init__(self, **entries):
         self.__dict__.update(entries)
+
 
 def display_header():
     """Display the header with a B cell receptor ASCII art and welcome message."""
@@ -73,7 +76,8 @@ def display_header():
   .    .   ..   ..   .       .   %            #,.                    .          
    . .   .                .      %        .   #, .                              
          ..          .          .%.           #,        .             .         
-    .    .  .   .     . ..  .   .% ..      .. #,     .                           {RESET}
+    .    .  .   .     . ..  .   .% ..      .. #,     .                          
+{RESET}
 
 {BOLD}{YELLOW}                               AlignAIR CLI Tool{RESET}
 {CYAN}                             ========================================{RESET}
@@ -88,10 +92,11 @@ def parse_arguments():
     parser.add_argument('--mode', type=str, default='cli', choices=['cli', 'yaml', 'interactive'],
                         help='Mode of input: cli, yaml, interactive')
     parser.add_argument('--config_file', type=str, help='Path to YAML configuration file')
-    parser.add_argument('--model_checkpoint', type=str, help='Path to saved AlignAIR weights', required=True)
-    parser.add_argument('--save_path', type=str, help='Where to save the alignment', required=True)
-    parser.add_argument('--chain_type', type=str, help='heavy / light', required=True)
-    parser.add_argument('--sequences', type=str, help='Path to csv/tsv/fasta file with sequences in a column called "sequence"', required=True)
+    parser.add_argument('--model_checkpoint', type=str, help='Path to saved AlignAIR weights')
+    parser.add_argument('--save_path', type=str, help='Where to save the alignment')
+    parser.add_argument('--chain_type', type=str, help='heavy / light')
+    parser.add_argument('--sequences', type=str,
+                        help='Path to csv/tsv/fasta file with sequences in a column called "sequence"')
     parser.add_argument('--lambda_data_config', type=str, default='D', help='Path to lambda chain data config')
     parser.add_argument('--kappa_data_config', type=str, default='D', help='Path to kappa chain data config')
     parser.add_argument('--heavy_data_config', type=str, default='D', help='Path to heavy chain data config')
@@ -105,30 +110,32 @@ def parse_arguments():
     parser.add_argument('--j_cap', type=int, default=3, help='Cap for J allele calls')
     parser.add_argument('--translate_to_asc', action='store_true', help='Translate names back to ASCs names from IMGT')
     parser.add_argument('--fix_orientation', type=bool, default=True,
-                        help='Adds a preprocessing steps that tests and fixes the DNA orientation, in case it is reversed, complement or reversed and complement')
+                        help='Adds a preprocessing step that tests/fixes orientation if reversed/complement')
     parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None,
-                        help='A path to a custom orientation model created for a custom reference')
+                        help='Path to a custom orientation model created for a custom reference')
     parser.add_argument('--custom_genotype', type=str, default=None, help='Path to a custom genotype yaml file')
     parser.add_argument('--save_predict_object', action='store_true',
                         help='Save the predict object (Warning this can be large)')
     parser.add_argument('--airr_format', action='store_true', help='Adds a step to format the results to AIRR format')
-    # parameters for the model yaml, if specified this will change the loading of the model to a finetuned one with differnt head sizes
+    # parameters for the model yaml, if specified, changes loading to a fine-tuned model with different head sizes
     parser.add_argument('--finetuned_model_params_yaml', type=str, default=None,
-                        help='Path to a yaml file with the parameters of a fine tuned model (new head sizes and latent sizes)')
-
+                        help='Path to a yaml file with the parameters of a fine-tuned model')
     return parser.parse_args()
+
 
 def load_yaml_config(config_file):
     with open(config_file, 'r') as file:
         config = yaml.safe_load(file)
     return Args(**config)
 
+
 def interactive_mode():
+    """Prompt-based config in 'interactive' mode."""
     config = {
         'model_checkpoint': questionary.text("Path to saved AlignAIR weights:").ask(),
         'save_path': questionary.text("Where to save the alignment:").ask(),
         'chain_type': questionary.select("Chain type:", choices=['heavy', 'light']).ask(),
-        'sequences': questionary.text("Path to csv/tsv file with sequences in a column called 'sequence':").ask(),
+        'sequences': questionary.text("Path to csv/tsv/fasta file with sequences in a column called 'sequence':").ask(),
         'lambda_data_config': questionary.text("Path to lambda chain data config:", default='D').ask(),
         'kappa_data_config': questionary.text("Path to kappa chain data config:", default='D').ask(),
         'heavy_data_config': questionary.text("Path to heavy chain data config:", default='D').ask(),
@@ -146,13 +153,16 @@ def interactive_mode():
         'custom_orientation_pipeline_path': questionary.text("Path to a custom orientation model:", default='').ask(),
         'custom_genotype': questionary.text("Path to a custom genotype yaml file:", default='').ask(),
         'save_predict_object': questionary.confirm("Save the predict object?").ask(),
-        'finetuned_model_params_yaml': questionary.text("Path to a yaml file with fine-tuned model parameters:", default='').ask()
+        'finetuned_model_params_yaml': questionary.text("Path to a yaml file with fine-tuned model parameters:",
+                                                        default='').ask()
     }
     return Args(**config)
+
 
 def run_pipeline(predict_object, steps):
     for step in steps:
         predict_object = step.execute(predict_object)
+
 
 def execute_pipeline(config):
     logger = logging.getLogger('PipelineLogger')
@@ -170,17 +180,20 @@ def execute_pipeline(config):
         MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments"),
         AlleleAlignmentStep("Align Predicted Segments with Germline")
     ]
-    
+
+    # Decide final steps based on AIRR or not
     if config.airr_format:
         steps.append(AIRRFinalizationStep("Finalize Results"))
     else:
         steps.append(TranslationStep("Translate ASC's to IMGT Alleles"))
         steps.append(FinalizationStep("Finalize Results"))
-        
+
     run_pipeline(predict_object, steps)
     logger.info("Pipeline execution complete.")
 
+
 def show_menu():
+    """Fallback menu if user runs with no arguments or explicitly chooses interactive mode."""
     display_header()
     menu = f"""
 {BOLD}{CYAN}========================================{RESET}
@@ -196,14 +209,13 @@ def show_menu():
         choice = input(f"{BLUE}Your choice (1-4): {RESET}").strip()
 
         if choice == '1':
-            # Prompt the user to enter command-line arguments as a string
+            # Prompt the user to enter CLI arguments as a string
             cli_command = input(
                 f"{BLUE}Enter CLI arguments (e.g., --model_checkpoint path/to/checkpoint --save_path path/to/save ...): {RESET}").strip()
             if cli_command:
                 # Use shlex.split to parse the command-line string into a list of arguments
-                sys.argv = [sys.argv[0]] + shlex.split(cli_command)  # Replace sys.argv with the new command
+                sys.argv = [sys.argv[0]] + shlex.split(cli_command)
                 config = parse_arguments()
-                print(config)
                 execute_pipeline(config)
             else:
                 print(f"{RED}No arguments provided. Returning to menu.{RESET}")
@@ -215,11 +227,37 @@ def show_menu():
             config = interactive_mode()
             execute_pipeline(config)
         elif choice == '4':
-            print(f"{GREEN}Exiting the AlignAIR. Goodbye!{RESET}")
+            print(f"{GREEN}Exiting AlignAIR. Goodbye!{RESET}")
             break
         else:
             print(f"{RED}Invalid choice. Please select a valid option (1-4).{RESET}")
 
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    show_menu()
+
+    # First, parse arguments.
+    # The user can set --mode=cli or --mode=yaml or --mode=interactive.
+    args = parse_arguments()
+
+    # If user didn't provide any arguments besides the default,
+    # or if "mode" is "interactive", we can show the menu or interactive flow.
+    if len(sys.argv) == 1:
+        # Means user just typed 'python app.py' with no arguments
+        show_menu()
+    else:
+        if args.mode == 'interactive':
+            # Let user fill out config with questionary
+            config = interactive_mode()
+            execute_pipeline(config)
+        elif args.mode == 'yaml':
+            # Must have --config_file specified
+            if not args.config_file:
+                print(f"{RED}No config_file specified. Please use --config_file /path/to/config.yaml{RESET}")
+                sys.exit(1)
+            config = load_yaml_config(args.config_file)
+            execute_pipeline(config)
+        else:
+            # Otherwise, "cli" mode
+            config = args  # directly use parsed arguments
+            execute_pipeline(config)
