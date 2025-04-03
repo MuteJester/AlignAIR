@@ -12,8 +12,4 @@ RUN pip install -e .
 
 EXPOSE 8000
 
-# This is the key change: direct entrypoint that appends arguments to app.py
-ENTRYPOINT ["python", "app.py"]
-
-# Optional: if you want a default command, do:
-# CMD ["--mode=interactive"]
+CMD ["/bin/bash"]

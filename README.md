@@ -45,37 +45,42 @@ AlignAIR is a tool for aligning adaptive immune receptor (AIR) sequences. It add
 ## Installation
 
 ### Docker Setup
-
 1. **Pull the Docker image**  
    ```sh
    docker pull thomask90/alignair:latest
    ```
    This command retrieves the latest AlignAIR Docker image from Docker Hub.
 
-2. **Run the Docker container (Interactive Mode)**  
-   If you run the container **without** extra arguments, you will be greeted by the AlignAIR menu, which allows you to choose **interactive** or **YAML** modes:
+---
+
+2. **Run the Docker container (Open Shell Mode)**  
+   The Docker container now opens a bash terminal by default, allowing you to **manually execute commands**.
+
    ```sh
    docker run -it --rm \
        -v /path/to/local/data:/data \
        thomask90/alignair:latest
    ```
    - `-v /path/to/local/data:/data` mounts a local directory (`/path/to/local/data`) to `/data` inside the container.  
+   - You will be dropped into a bash shell within the container, ready to execute commands manually.
 
-3. **Run the Docker container (CLI Mode)**  
-   To **bypass** the menu and run AlignAIR directly with your parameters, add `--mode=cli` plus the other required flags:
+---
+
+3. **Run the Model (CLI Mode)**  
+   From within the Docker container’s bash shell, you can manually run AlignAIR by providing your desired parameters:
+
    ```sh
-   docker run -it --rm \
-       -v /path/to/local/data:/data \
-       thomask90/alignair:latest \
-       --mode=cli \
-       --model_checkpoint /app/pretrained_models/IGH_S5F_576 \
-       --save_path /data/output \
+   python app.py --mode cli \
+       --model_checkpoint /data/AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2 \
+       --save_path /data/ \
        --chain_type heavy \
-       --sequences /data/test.fasta
+       --sequences /data/test01.fasta
    ```
-   - `--model_checkpoint /app/pretrained_models/IGH_S5F_576` points to a pretrained heavy-chain model included in the container.  
-   - `--sequences /data/test.fasta` references your input file (must reside in the mounted `/path/to/local/data` folder).  
-   - `--save_path /data/output` is where results will be written inside the container (which maps back to your local folder).
+   - `--model_checkpoint /data/AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2` points to a pretrained model accessible from the mounted `/data` directory.  
+   - `--sequences /data/test01.fasta` references your input file (it must be located in your local folder mounted to `/data`).  
+   - `--save_path /data/` specifies the output directory for the results (which maps back to your local folder).  
+
+---
 
 4. **Input File Format**  
    - You can provide FASTA, TSV, or CSV files.  
