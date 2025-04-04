@@ -1,6 +1,7 @@
+import pandas as pd
 from AlignAIR.PredictObject.PredictObject import PredictObject
 from AlignAIR.Step.Step import Step
-from AlignAIR.PostProcessing import AIRRFormatManagerOptimized
+from AlignAIR.PostProcessing import AIRRFormatManager
 from AlignAIR.PostProcessing import TranslateToIMGT
 
 class AIRRFinalizationStep(Step):
@@ -13,7 +14,7 @@ class AIRRFinalizationStep(Step):
         save_path = predict_object.script_arguments.save_path
         file_name = predict_object.file_info.file_name
         
-        airr_formatter = AIRRFormatManagerOptimized(predict_object)
+        airr_formatter = AIRRFormatManager(predict_object)
         final_tsv = airr_formatter.build_dataframe()
         
         if not predict_object.script_arguments.translate_to_asc:

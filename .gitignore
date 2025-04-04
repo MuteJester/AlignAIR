@@ -3,3 +3,4 @@ __pychache__/*
 *.pyc
 model/*
 /src/AlignAIR/Scripts/
+MANIFEST.in

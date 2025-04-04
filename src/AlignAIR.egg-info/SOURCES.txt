@@ -1,3 +1,4 @@
+MANIFEST.in
 README.md
 setup.py
 src/AlignAIR/__init__.py
@@ -41,6 +42,7 @@ src/AlignAIR/Plots/LikelihoodCalibrationPlot.py
 src/AlignAIR/Plots/Plotter.py
 src/AlignAIR/Plots/__init__.py
 src/AlignAIR/PostProcessing/AIRRFormatManager.py
+src/AlignAIR/PostProcessing/AIRRFormatManager2.py
 src/AlignAIR/PostProcessing/AlleleNameTranslation.py
 src/AlignAIR/PostProcessing/__init__.py
 src/AlignAIR/PostProcessing/AlleleSelector/CappedDynamicConfidenceThreshold.py
@@ -87,6 +89,8 @@ src/AlignAIR/Preprocessing/Steps/file_steps.py
 src/AlignAIR/Preprocessing/Steps/fix_orientation_step.py
 src/AlignAIR/Preprocessing/Steps/load_groundtruth_table_step.py
 src/AlignAIR/Preprocessing/Steps/model_loading_steps.py
+src/AlignAIR/PretrainedComponents/Human_IGH_HeavyChain_DNA_Orientation_Pipeline.pkl
+src/AlignAIR/PretrainedComponents/Human_IGH_LightChain_DNA_Orientation_Pipeline.pkl
 src/AlignAIR/PretrainedComponents/__init__.py
 src/AlignAIR/Pytorch/Dataset.py
 src/AlignAIR/Pytorch/HeavyChainAlignAIR.py
