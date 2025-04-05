@@ -1,4 +1,3 @@
-MANIFEST.in
 README.md
 setup.py
 src/AlignAIR/__init__.py
@@ -42,7 +41,6 @@ src/AlignAIR/Plots/LikelihoodCalibrationPlot.py
 src/AlignAIR/Plots/Plotter.py
 src/AlignAIR/Plots/__init__.py
 src/AlignAIR/PostProcessing/AIRRFormatManager.py
-src/AlignAIR/PostProcessing/AIRRFormatManager2.py
 src/AlignAIR/PostProcessing/AlleleNameTranslation.py
 src/AlignAIR/PostProcessing/__init__.py
 src/AlignAIR/PostProcessing/AlleleSelector/CappedDynamicConfidenceThreshold.py
@@ -125,3 +123,4 @@ src/AlignAIR/Utilities/file_processing.py
 src/AlignAIR/Utilities/gpu_utilities.py
 src/AlignAIR/Utilities/sequence_processing.py
 src/AlignAIR/Utilities/step_utilities.py
+tests/TestModule.py

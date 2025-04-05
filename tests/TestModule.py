@@ -126,13 +126,14 @@ class TestModule(unittest.TestCase):
         model = HeavyChainAlignAIRR(**model_params)
         trainer = Trainer(
             model=model,
+            max_seq_length = model_params['max_seq_length'],
             epochs=1,
             batch_size=32,
             steps_per_epoch=1,
             verbose=1,
         )
         MODEL_CHECKPOINT = './AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2'
-        trainer.load_model(MODEL_CHECKPOINT,max_seq_length=model_params['max_seq_length'])
+        trainer.load_model(MODEL_CHECKPOINT)
 
         # Trigger model building
         dummy_input = {
