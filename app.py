@@ -21,6 +21,12 @@ from AlignAIR.Preprocessing.Steps.dataconfig_steps import ConfigLoadStep
 from AlignAIR.Preprocessing.Steps.file_steps import FileNameExtractionStep, FileSampleCounterStep
 from AlignAIR.Preprocessing.Steps.model_loading_steps import ModelLoadingStep
 from AlignAIR.Step.Step import Step
+import psutil
+import platform
+import tensorflow as tf
+
+
+
 
 # ANSI color codes for styling
 BLUE = "\033[94m"
@@ -85,7 +91,61 @@ def display_header():
     print(art)
     print(f"{YELLOW}                               Welcome to the AlignAIR CLI!{RESET}")
     print(f"{CYAN}                             ========================================{RESET}")
+def display_system_stats():
+    """Display various system statistics in a pretty ASCII table."""
 
+    # Number of processes
+    number_of_processes = len(psutil.pids())
+
+    # Free RAM in gigabytes
+    free_ram_gb = psutil.virtual_memory().available / (1024 ** 3)
+
+    # TensorFlow device info
+    gpu_devices = tf.config.list_physical_devices('GPU')
+    cpu_devices = tf.config.list_physical_devices('CPU')
+    gpu_support = "Yes" if gpu_devices else "No"
+
+    # Prepare data for the ASCII table
+    table_data = [
+        ["Number of Processes", number_of_processes],
+        ["Free RAM (GB)", f"{free_ram_gb:.2f}"],
+        ["TensorFlow GPU Support", gpu_support],
+        ["GPU Devices Detected", ", ".join(d.name for d in gpu_devices) if gpu_devices else "None"],
+        ["CPU Devices Detected", ", ".join(d.name for d in cpu_devices) if cpu_devices else "None"],
+        ["Operating System", platform.platform()],
+        ["Python Version", platform.python_version()]
+    ]
+
+    def print_ascii_table(data, title=None):
+        """Helper to print a list of [key, value] rows in a pretty ASCII table."""
+        # Calculate column widths
+        left_col_width = max(len(str(row[0])) for row in data)
+        right_col_width = max(len(str(row[1])) for row in data)
+
+        total_width = left_col_width + right_col_width + 7  # padding for separators
+
+        # Print top border
+        print("+" + "-" * (total_width - 2) + "+")
+
+        if title:
+            # Center the title within the table width
+            print("| " + title.center(total_width - 4) + " |")
+            print("+" + "-" * (total_width - 2) + "+")
+
+        # Print each row
+        for key, val in data:
+            left_cell = str(key).ljust(left_col_width)
+            right_cell = str(val).ljust(right_col_width)
+            print(f"| {left_cell} | {right_cell} |")
+
+        # Print bottom border
+        print("+" + "-" * (total_width - 2) + "+")
+
+    # Print the ASCII table
+    print_ascii_table(table_data, title="System Statistics")
+
+display_header()
+display_system_stats()
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='AlignAIR Model Prediction')
