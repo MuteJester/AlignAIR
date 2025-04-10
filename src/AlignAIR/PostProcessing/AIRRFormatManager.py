@@ -92,6 +92,12 @@ class AIRRFormatManager:
                 metadata_string = '|'.join(metadata_strs[1:])  # Join the rest into one string
                 metadata_pairs = re.findall(metadata_pattern, metadata_string)
                 for key, value in metadata_pairs:
+                    ## to keep with airr format, change dupcount to duplicate_count and conscount to consensus_count
+                    if key.lower() == 'conscount':
+                        key = 'consensus_count'
+                    elif key.lower() == 'dupcount':
+                        key = 'duplicate_count'
+                        
                     metadata_dict[key.lower()] = value
 
             for key, value in metadata_dict.items():
