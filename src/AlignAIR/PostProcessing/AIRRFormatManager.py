@@ -208,6 +208,7 @@ class AIRRFormatManager:
 
         airr_dict['v_alignment_start'] = v_start
         airr_dict['v_alignment_end'] = v_end
+        airr_dict['v_germline_end'] = v_end ## add the gaps of the v germline to the end of the v segment
         airr_dict['d_alignment_start'] = d_start
         airr_dict['d_alignment_end'] = d_end
         airr_dict['j_alignment_start'] = j_start
