@@ -208,6 +208,7 @@ class AIRRFormatManager:
 
         airr_dict['v_alignment_start'] = v_start
         airr_dict['v_alignment_end'] = v_end
+        airr_dict['v_germline_start'] = v_start ## aligning the v germline start to 0 with the addition of gapps in the beginning of the sequence alignment
         airr_dict['v_germline_end'] = v_end ## add the gaps of the v germline to the end of the v segment
         airr_dict['d_alignment_start'] = d_start
         airr_dict['d_alignment_end'] = d_end
@@ -331,18 +332,18 @@ class AIRRFormatManager:
 
         if self.chain == 'heavy':
             airr_dict['np1'] = [
-                airr_dict['sequence'][i][airr_dict['v_sequence_end'][i]:airr_dict['d_sequence_start'][i]]
+                airr_dict['sequence'][i][(airr_dict['v_sequence_end'][i]+1):airr_dict['d_sequence_start'][i]] # start one after v end
                 if not airr_dict['skip_processing'][i] else None
                 for i in range(n)
             ]
             airr_dict['np2'] = [
-                airr_dict['sequence'][i][airr_dict['d_sequence_end'][i]:airr_dict['j_sequence_start'][i]]
+                airr_dict['sequence'][i][(airr_dict['d_sequence_end'][i]+1):airr_dict['j_sequence_start'][i]] # start one after d end
                 if not airr_dict['skip_processing'][i] else None
                 for i in range(n)
             ]
         else:
             airr_dict['np1'] = [
-                airr_dict['sequence'][i][airr_dict['v_sequence_end'][i]:airr_dict['j_sequence_start'][i]]
+                airr_dict['sequence'][i][(airr_dict['v_sequence_end'][i]+1):airr_dict['j_sequence_start'][i]] # start one after v end
                 if not airr_dict['skip_processing'][i] else None
                 for i in range(n)
             ]
