@@ -80,10 +80,12 @@ class HeuristicReferenceMatcher:
                     break
 
         # Start window search refined
-        min_difference = np.inf
         start_window = short_segment[:k]
+
         end_based_start = best_end_pos - L_seg
         best_start_pos = end_based_start
+        min_difference = self.AA_Score(start_window, ref_seq[best_start_pos:best_end_pos])
+
         # start_history = dict()
         # Adjust the search range based on potential indels
         start_search_range = min(9, L_diff)

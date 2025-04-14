@@ -208,8 +208,7 @@ class TestModule(unittest.TestCase):
 
         # Read the output CSV and validate its contents
         df = pd.read_csv(output_csv)
-        df.drop(columns=['d_likelihoods'], inplace=True)
-        validation = pd.read_csv('./heavychain_predict_validation.csv',index_col=0)
+        validation = pd.read_csv('./heavychain_predict_validation.csv')
 
         # Compare dataframes cell by cell
         for i in range(df.shape[0]):
