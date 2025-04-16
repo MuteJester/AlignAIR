@@ -49,12 +49,13 @@ class AIRRFormatManager:
             for allele in group
         }
 
-    def _get_reference_seq(self, row, call_type, start_key, end_key=None):
+    def _get_reference_seq(self, row, call_type, end_key, start_key=None):
         call = row.get(f"{call_type}_call", "").split(",")[0]
         ref_seq = self.reference_map.get(call_type, {}).get(call, "")
         if not ref_seq:
             return ""
-        return ref_seq[:row[start_key]] if end_key is None else ref_seq[row[start_key]:row[end_key]]
+        end_seq = row[end_key] + np.char.count(ref_seq, '.')
+        return ref_seq[:end_seq] if start_key is None else ref_seq[row[start_key]:end_seq]
     
     def _extract_sequence_id_from_csv(self, file_path):
         sep = ',' if '.csv' in file_path else '\t'
@@ -112,11 +113,14 @@ class AIRRFormatManager:
         v_ref = self.reference_map['v'].get(v_call, '')
         if not v_ref:
             return ''
-        v_ref = v_ref[:row['v_germline_end']]
-        seq = row['sequence'][row['v_sequence_start']:row['j_sequence_end']]
+        gapps = np.char.count(v_ref, '.')
+        v_germline_end = row['v_germline_end'] + gapps
+        v_ref = v_ref[:v_germline_end]
+        seq_to_gapp = row['sequence'][row['v_sequence_start']:row['v_sequence_end']]
+        seq_remain = row['sequence'][row['v_sequence_end']:row['j_sequence_end']]
         if row['v_germline_start'] > 0:
-            seq = '.' * row['v_germline_start'] + seq
-        seq_iter = iter(seq)
+            seq_to_gapp = '.' * row['v_germline_start'] + seq_to_gapp
+        seq_iter = iter(seq_to_gapp)
         aligned_seq = []
         started = False
         for ref_base in v_ref:
@@ -125,35 +129,65 @@ class AIRRFormatManager:
                 aligned_seq.append(next(seq_iter, '.'))
             else:
                 aligned_seq.append('.' if started else next(seq_iter, '.'))
-        aligned_seq.extend(seq_iter)
-        return ''.join(aligned_seq)
+        aligned_seq = ''.join(aligned_seq) + seq_remain
+        return aligned_seq
+    
+    def _get_np_regions(self, airr_dict):
+        n = len(airr_dict['sequence'])
+
+        if self.chain == 'heavy':
+            airr_dict['np1'] = [
+                airr_dict['sequence'][i][airr_dict['v_sequence_end'][i]:airr_dict['d_sequence_start'][i]] # start one after v end
+                if not airr_dict['skip_processing'][i] else None
+                for i in range(n)
+            ]
+            airr_dict['np2'] = [
+                airr_dict['sequence'][i][airr_dict['d_sequence_end'][i]:airr_dict['j_sequence_start'][i]] # start one after d end
+                if not airr_dict['skip_processing'][i] else None
+                for i in range(n)
+            ]
+        else:
+            airr_dict['np1'] = [
+                airr_dict['sequence'][i][airr_dict['v_sequence_end'][i]:airr_dict['j_sequence_start'][i]] # start one after v end
+                if not airr_dict['skip_processing'][i] else None
+                for i in range(n)
+            ]
+            airr_dict['np2'] = [None] * n
+
+        airr_dict['np1_length'] = [len(x) if x is not None else None for x in airr_dict['np1']]
+        airr_dict['np2_length'] = [len(x) if x is not None else None for x in airr_dict['np2']]
+
+        return airr_dict
 
     def _get_germline_alignment(self, row):
-        v_ref = self._get_reference_seq(row, 'v', 'v_germline_end')
-        j_ref = self._get_reference_seq(row, 'j', 'j_germline_start', 'j_germline_end')
+        v_ref = self._get_reference_seq(row=row, call_type='v', start_key=None, end_key='v_germline_end')
+        j_ref = self._get_reference_seq(row=row, call_type='j', start_key='j_germline_start', end_key='j_germline_end')
         if self.chain == 'heavy':
             d_call = row.get('d_call', '').split(',')[0]
-            if d_call == 'Short-D':
+            if 'Short-D' in d_call:
                 d_region = row['sequence'][row['v_sequence_end']:row['j_sequence_start']]
+                #row['d_germline_alignment'] = None
             else:
-                d_ref = self._get_reference_seq(row, 'd', 'd_germline_start', 'd_germline_end')
-                np1 = row['sequence'][row['v_sequence_end']:row['d_sequence_start']]
-                np2 = row['sequence'][row['d_sequence_end']:row['j_sequence_start']]
+                d_ref = self._get_reference_seq(row=row, call_type='d', start_key='d_germline_start', end_key='d_germline_end')
+                np1 = row['np1']
+                np2 = row['np2']
                 d_region = np1 + d_ref + np2
             return v_ref + d_region + j_ref
         else:
-            np1 = row['sequence'][row['v_sequence_end']:row['j_sequence_start']]
+            np1 = row['np1']
             return v_ref + np1 + j_ref
     
     
     def _get_alignments(self, airr_dict, n):
         
-        airr_dict['skip_processing'] = [(p is False and (a or 0) > 1) for p, a in zip(airr_dict['productive'], airr_dict['ar_indels'])]
+        #airr_dict['skip_processing'] = [(p is False and (a or 0) > 1) for p, a in zip(airr_dict['productive'], airr_dict['ar_indels'])]
 
         airr_dict['sequence_alignment'] = [
             self._get_sequence_alignment({k: airr_dict[k][i] for k in airr_dict}) if not airr_dict['skip_processing'][i] else None
             for i in range(n)
         ]
+        
+        airr_dict = self._get_np_regions(airr_dict)
 
         airr_dict['germline_alignment'] = [
             self._get_germline_alignment({k: airr_dict[k][i] for k in airr_dict}) if not airr_dict['skip_processing'][i] else None
@@ -188,23 +222,31 @@ class AIRRFormatManager:
         j_end = [None] * n
         v_start = [0] * n
 
-        seqs = np.array(airr_dict['sequence_alignment'], dtype=object)
+        seqs = np.array(airr_dict['sequence_alignment'], dtype=object) 
         skip = np.array(airr_dict['skip_processing'])
-        gaps = np.char.count(seqs.astype(str), '.')
 
         for i in range(n):
             if skip[i] or seqs[i] is None:
                 continue
-
-            gap = gaps[i]
+            
+            v_call = airr_dict['v_call'][i].split(',')[0]
+            v_ref = self.reference_map['v'].get(v_call, '')
+            if not v_ref:
+                gap = 0
+            else:
+                gap = np.char.count(v_ref, '.')
+            
             v_end[i] = airr_dict['v_germline_end'][i] + gap
 
+            v_sequence_start = airr_dict['v_sequence_start'][i]
+            
+            ## we need to remove the v_sequence_start to align with zero
             if self.chain == 'heavy' and airr_dict['d_sequence_start'][i] is not None:
-                d_start[i] = airr_dict['d_sequence_start'][i] + gap
-                d_end[i] = airr_dict['d_sequence_end'][i] + gap
+                d_start[i] = airr_dict['d_sequence_start'][i] - v_sequence_start + gap
+                d_end[i] = airr_dict['d_sequence_end'][i] - v_sequence_start + gap
 
-            j_start[i] = airr_dict['j_sequence_start'][i] + gap
-            j_end[i] = airr_dict['j_sequence_end'][i] + gap
+            j_start[i] = airr_dict['j_sequence_start'][i] - v_sequence_start + gap
+            j_end[i] = airr_dict['j_sequence_end'][i] - v_sequence_start + gap
 
         airr_dict['v_alignment_start'] = v_start
         airr_dict['v_alignment_end'] = v_end
@@ -237,7 +279,7 @@ class AIRRFormatManager:
                 if not airr_dict['skip_processing'][i] and airr_dict[s_col][i] is not None and airr_dict[e_col][i] is not None else None
                 for i in range(n)
             ]
-
+            
             airr_dict[f'{seg}_germline_alignment'] = [
                 airr_dict['germline_alignment'][i][airr_dict[s_col][i]:airr_dict[e_col][i]]
                 if not airr_dict['skip_processing'][i] and airr_dict[s_col][i] is not None and airr_dict[e_col][i] is not None else None
@@ -326,35 +368,6 @@ class AIRRFormatManager:
         airr_dict.update(cols)
         return airr_dict
     
-    
-    def _add_np_regions(self, airr_dict):
-        n = len(airr_dict['sequence'])
-
-        if self.chain == 'heavy':
-            airr_dict['np1'] = [
-                airr_dict['sequence'][i][(airr_dict['v_sequence_end'][i]+1):airr_dict['d_sequence_start'][i]] # start one after v end
-                if not airr_dict['skip_processing'][i] else None
-                for i in range(n)
-            ]
-            airr_dict['np2'] = [
-                airr_dict['sequence'][i][(airr_dict['d_sequence_end'][i]+1):airr_dict['j_sequence_start'][i]] # start one after d end
-                if not airr_dict['skip_processing'][i] else None
-                for i in range(n)
-            ]
-        else:
-            airr_dict['np1'] = [
-                airr_dict['sequence'][i][(airr_dict['v_sequence_end'][i]+1):airr_dict['j_sequence_start'][i]] # start one after v end
-                if not airr_dict['skip_processing'][i] else None
-                for i in range(n)
-            ]
-            airr_dict['np2'] = [None] * n
-
-        airr_dict['np1_length'] = [len(x) if x is not None else None for x in airr_dict['np1']]
-        airr_dict['np2_length'] = [len(x) if x is not None else None for x in airr_dict['np2']]
-
-        return airr_dict
-    
-    
     def _add_productivity_flags(self, airr_dict):
         n = len(airr_dict['sequence'])
 
@@ -404,7 +417,7 @@ class AIRRFormatManager:
 
         # 1-based indexing
         for col in airr_dict:
-            if col.endswith('_start') or col.endswith('_end'):
+            if col.endswith('_start'):
                 airr_dict[col] = [x + 1 for x in airr_dict[col]]
 
         # Convert booleans to 'T'/'F'
@@ -434,10 +447,20 @@ class AIRRFormatManager:
             metadata_data = self._parse_sequence_id(sequence_ids)
             po.metadata = pd.DataFrame(metadata_data)
 
-            
+        
+        def to_list(x):
+            return [x] * n if not isinstance(x, (list, tuple, np.ndarray)) or (hasattr(x, 'shape') and x.shape == ()) else list(x)
+        
+        indel_counts = to_list(po.processed_predictions.get('indel_count'))
+        productive = to_list(po.processed_predictions['productive'])
+        mutation_rate = to_list(po.processed_predictions['mutation_rate'])
+        
+
+        
+        
         airr_dict = {
             'sequence': po.sequences,
-            'productive': po.processed_predictions['productive'],
+            'productive': productive,
             'v_call': [','.join(i) for i in po.selected_allele_calls['v']],
             'j_call': [','.join(i) for i in po.selected_allele_calls['j']],
             'v_sequence_start': [i['start_in_seq'] for i in po.germline_alignments['v']],
@@ -448,16 +471,17 @@ class AIRRFormatManager:
             'j_sequence_end': [i['end_in_seq'] for i in po.germline_alignments['j']],
             'j_germline_start': [max(0, i['start_in_ref']) for i in po.germline_alignments['j']],
             'j_germline_end': [i['end_in_ref'] for i in po.germline_alignments['j']],
-            'mutation_rate': po.processed_predictions.get('mutation_rate', [None]*n),
-            'ar_indels': po.processed_predictions.get('indel_count', [None]*n),
+            'mutation_rate': mutation_rate,
+            'ar_indels': indel_counts,
             'v_likelihoods': po.likelihoods_of_selected_alleles.get('v', [None]*n),
             'j_likelihoods': po.likelihoods_of_selected_alleles.get('j', [None]*n),
             'd_likelihoods': po.likelihoods_of_selected_alleles.get('d', [None]*n) if self.chain == 'heavy' else [None]*n,
+            'skip_processing': [(p is False and (a or 0) > 1) for p, a in zip(productive, indel_counts)]
         }
 
-        if self.chain == 'heavy':
+        if self.chain == 'heavy':            
             airr_dict['d_sequence_start'] = [i['start_in_seq'] for i in po.germline_alignments['d']]
-            airr_dict['d_sequence_end'] = [i['end_in_seq'] for i in po.germline_alignments['d']]
+            airr_dict['d_sequence_end'] = [i['end_in_seq'] for i in po.germline_alignments['d']]            
             airr_dict['d_germline_start'] = [abs(i['start_in_ref']) for i in po.germline_alignments['d']]
             airr_dict['d_germline_end'] = [i['end_in_ref'] for i in po.germline_alignments['d']]
             airr_dict['d_call'] = [','.join(i) for i in po.selected_allele_calls['d']]
@@ -468,15 +492,14 @@ class AIRRFormatManager:
             airr_dict['d_germline_start'] = [None] * n
             airr_dict['d_germline_end'] = [None] * n
             airr_dict['d_call'] = [''] * n
-            airr_dict['locus'] = ['IGK' if i == 1 else 'IGL' for i in po['type_'].astype(int).squeeze()]
-              
+            airr_dict['locus'] = ['IGK' if i == 1 else 'IGL' for i in po['type_'].astype(int).squeeze()]       
+       
         airr_dict = self._get_alignments(airr_dict, n)
         airr_dict = self._translate_alignments(airr_dict)
         airr_dict = self._map_segment_alignment_positions(airr_dict)
         airr_dict = self._populate_segment_alignment_columns(airr_dict)
         airr_dict = self._add_region_columns(airr_dict)
         airr_dict = self._add_cdr3_and_junction_columns(airr_dict)
-        airr_dict = self._add_np_regions(airr_dict)
         airr_dict = self._add_productivity_flags(airr_dict)
         airr_dict = self._reorder_and_finalize_columns(airr_dict)
         
@@ -485,5 +508,7 @@ class AIRRFormatManager:
             
         cols = ['sequence_id'] + [col for col in airr_dict if col != 'sequence_id']
         airr_dict = {col: airr_dict[col] for col in cols}
+        
+        
         
         return pd.DataFrame(airr_dict)
