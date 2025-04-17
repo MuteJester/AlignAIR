@@ -30,12 +30,21 @@ def process_args (args):
 dsf = Path(r'C:\Users\tomas\Desktop\AlignAIRR\tests\sample_HeavyChain_dataset.csv')
 
 if __name__ == '__main__':
-    target_seq = 'CAGGTGCAGCTACAGCAGTGGGGCGCAGGACTGTTGAAGCCTTCGGAGACCCTGTCCCTCACCTGCGCTGTCTATGGTGGGTCCTTCAGTGGTTACTACTGGAGCTGGATCCGCCAGCCCCCAGGGAAGGGGCTGGAGTGGATTGGGGAAATCAATCATAGTGGAAGCACCAACTACAACCCGTCCCTCAAGAGTCGAGTCACCATATCAGTAGACACGTCCAAGAACCAGTTCTCCCTGAAGCTGAGCTCTGTGACCGCCGCGGACACGGCTGTGTATTACTGTGCGAGAGGCCGGCTGGCTGGAACGGCCCTCTGGGGCCAGGGAACCCTGGTCACCGTCTCCTCAG'
+    target_seq = 'GAGCTCTGGGAGAGGAGCCCAGCACTAGAAGTCGGCGGTGTTTCCATTCGGTGATCAGCACTGAACACAGAGGACTCACCATGGAGTTTGGGCTGAGCTGGGTTTTCCTCGTTGCTCTTTTAAGAGGTGTCCAGCCTGTGCAGCGTCTGGATTCACCTTCAGTAGTTATGGCATGCACTGGGTCCGCCAGGCTCCAGGCAAGGGGCTGGAGTGGGTGNCAGTTATATGGTATGATGGAAGTAATAAATACTATGCAGACTCCGTGAAGGGCCGATTCACCATCTCCAGAGACAATTCCAAGAACACGCTGTATCTGCAAATGAACAGCCTGGGAGCCGAGGACACGGCTGTGTATTACTGTGCGAGAGATCTGAGTGCCGGATACAGCTATGCCTGTGACTACTGGGGCCAGGGAACCCTGGTCACCGTCTCCTCAGGGAGTGCATCCGCCCCAACCCTTTTCCC'
 
     # save mock fasta file
     records = [
         SeqRecord(Seq(target_seq), id=f"test_seq_{i+1}", description="Copy of test sequence")
         for i in range(3)
+    ]
+    mock_fasta_path = Path(r'C:\Users\tomas\Desktop\AlignAIRR\tests\test_seq_.fasta')
+    SeqIO.write(records, mock_fasta_path, "fasta")
+    #
+    import pandas as pd
+    table = pd.read_table('C:/Users/tomas/Downloads/test_seq_test_seq__alignairr_results.csv', sep=',')
+    records = [
+        SeqRecord(Seq(seq), id=f"test_seq_{i + 1}", description="Copy of test sequence")
+        for i,seq in enumerate(table['sequence'])
     ]
     mock_fasta_path = Path(r'C:\Users\tomas\Desktop\AlignAIRR\tests\test_seq_.fasta')
     SeqIO.write(records, mock_fasta_path, "fasta")
@@ -124,8 +133,8 @@ if __name__ == '__main__':
 
     saved_name = 'test_seq_test_seq__alignairr_results.csv'
     # remove the file if it exists
-    if os.path.exists(saved_name):
-        os.remove(saved_name)
+    # if os.path.exists(saved_name):
+    #     os.remove(saved_name)
 
 
     print('Done')

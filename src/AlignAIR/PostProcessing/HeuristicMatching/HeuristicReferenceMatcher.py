@@ -55,22 +55,23 @@ class HeuristicReferenceMatcher:
 
         return alignment_score
 
-    def align_with_germline(self, short_segment, ref_seq, k=20, s=25):
+    def align_with_germline(self, short_segment, ref_seq,indel_count, k=20, s=25):
         # if len(short_segment) < k: # rethink this
         #     return -1,-1
 
 
         # take K bases from the start for the short segment and K bases from the end of the short segment
-        L_seg =len(short_segment)
-        L_ref = len(ref_seq)
-        L_diff = L_ref - L_seg
-        s = min(L_diff, s) + 1
-        end_window = short_segment[-k:]
+        L_seg =len(short_segment) # length of the sequence segment
+        L_ref = len(ref_seq) # length of the reference sequence
+        L_diff = abs(L_ref - L_seg) # length difference between the reference and the segment
+        s = min(L_diff, s) + 1 # s is the search range
+        end_window = short_segment[-k:] # take the last k bases from the short segment
 
         # slide over the reference segment and look for the best poistion for the start and end
         min_difference = np.inf
-        best_end_pos = L_ref
-        for offset in range(0, s):  # +1 to include the last position
+        best_end_pos = L_ref # we start by setting the best end position to the end of the reference sequence
+
+        for offset in range(0, s):
             ref_window = ref_seq[L_ref - (k + offset):(L_ref - offset)]
             difference = self.AA_Score(end_window, ref_window)
             if difference < min_difference:
@@ -80,16 +81,23 @@ class HeuristicReferenceMatcher:
                     break
 
         # Start window search refined
-        start_window = short_segment[:k]
+        start_window = short_segment[:k] # take the first k bases from the short segment
 
-        end_based_start = best_end_pos - L_seg
+        end_based_start = max(0,best_end_pos - L_seg) #set the start position based on the best end position
         best_start_pos = end_based_start
-        min_difference = self.AA_Score(start_window, ref_seq[best_start_pos:best_end_pos])
+        min_difference = self.AA_Score(start_window, ref_seq[best_start_pos:best_start_pos+k])
 
         # start_history = dict()
         # Adjust the search range based on potential indels
-        start_search_range = min(9, L_diff)
-        for offset in range(-start_search_range - 1, start_search_range + 1):
+        if indel_count > 0:
+            start_search_range = min(indel_count, L_diff)
+            search_iterator = range(-start_search_range - 1, start_search_range + 1)
+        else:
+            search_iterator = range(- 1,  1)
+
+
+
+        for offset in search_iterator:
             current_start = max(0, end_based_start + offset)
             current_end = min(current_start + k, L_ref)
             ref_window = ref_seq[current_start:current_end]
@@ -111,11 +119,11 @@ class HeuristicReferenceMatcher:
 
         return best_start_pos, best_end_pos
 
-    def match(self, sequences, starts, ends, alleles,k=15,s=30,_gene=None):
+    def match(self, sequences, starts, ends, alleles,indel_counts,k=15,s=30,_gene=None):
         results = []
         desc = f'Matching {_gene.upper()} Germlines'
         # iterate over each sequence with its respective start and end positions as well as predicted allele
-        for sequence, start, end, allele in tqdm(zip(sequences, starts, ends, alleles), total=len(starts),desc=desc):
+        for sequence, start, end, allele,indels in tqdm(zip(sequences, starts, ends, alleles,indel_counts), total=len(starts),desc=desc):
             # extract the portion of the sequence that based on the model predicted start and end positions
             segmented_sequence = sequence[start:end]
             # extract the reference allele
@@ -123,6 +131,8 @@ class HeuristicReferenceMatcher:
             # calculate the reference and the germeline allele lengths
             segment_length = end - start
             reference_length = len(reference_sequence)
+
+            predicted_indel_counts = []
 
 
             match_found = False
@@ -137,7 +147,7 @@ class HeuristicReferenceMatcher:
             elif segment_length > reference_length:
                 # In this case one of two things could have caused this, either the AlignAIRR made a bad segmentation
                 # Taking more bases than needed at the start or at the end, OR there were insertions in the sequence
-                ref_start, ref_end = self.align_with_germline(segmented_sequence, reference_sequence, k=k, s=s)
+                ref_start, ref_end = self.align_with_germline(segmented_sequence, reference_sequence,indels, k=k, s=s)
                 results.append({'start_in_seq': start, 'end_in_seq': end,
                                 'start_in_ref': ref_start, 'end_in_ref': ref_end})
 
@@ -146,7 +156,7 @@ class HeuristicReferenceMatcher:
                 # In this case one of two things could have caused this, either the AlignAIRR made a bad segmentation
                 # Taking less bases than needed at the start or at the end, OR there were deletions in the sequence
 
-                ref_start, ref_end = self.align_with_germline(segmented_sequence, reference_sequence, k=k, s=s)
+                ref_start, ref_end = self.align_with_germline(segmented_sequence, reference_sequence,indels, k=k, s=s)
 
                 if ref_start is not None:
                     results.append({'start_in_seq': start, 'end_in_seq': end,

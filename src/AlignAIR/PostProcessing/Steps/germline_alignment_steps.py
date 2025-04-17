@@ -7,7 +7,7 @@ class AlleleAlignmentStep(Step):
     def __init__(self, name):
         super().__init__(name)
 
-    def align_with_germline(self, segments, threshold_objects, predicted_alleles, sequences):
+    def align_with_germline(self, segments, threshold_objects, predicted_alleles, sequences,indel_counts):
         germline_alignmnets = {}
 
         for _gene in segments:
@@ -18,7 +18,7 @@ class AlleleAlignmentStep(Step):
             starts, ends = segments[_gene]
             mapper = HeuristicReferenceMatcher(reference_alleles)
             mappings = mapper.match(sequences=sequences, starts=starts, ends=ends,
-                                    alleles=[i[0] for i in predicted_alleles[_gene]], _gene=_gene)
+                                    alleles=[i[0] for i in predicted_alleles[_gene]], _gene=_gene,indel_counts=indel_counts)
 
             germline_alignmnets[_gene] = mappings
 
@@ -36,11 +36,15 @@ class AlleleAlignmentStep(Step):
         for gene in iterator:
             segments[f'{gene}'] = (processed_predictions[f'{gene}_start'], processed_predictions[f'{gene}_end'])
 
+        indel_counts = processed_predictions['indel_count'].round().astype(int)
+
         predict_object.germline_alignments = self.align_with_germline(
             segments=segments,
             threshold_objects=predict_object.threshold_extractor_instances,
             predicted_alleles=predict_object.selected_allele_calls,
-            sequences=predict_object.sequences
+            sequences=predict_object.sequences,
+            indel_counts=indel_counts
+
         )
 
         return predict_object
