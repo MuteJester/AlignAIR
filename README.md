@@ -1,281 +1,179 @@
-![AlignAIR Logo](https://alignair.ai/_next/static/media/logo_alignair14bw.b74a41a0.svg)
 
-# AlignAIR
-A Deep Learning-Powered Sequence Alignment Tool for Adaptive Immune Receptors
+<p align="center">
+  <img src="https://alignair.ai/_next/static/media/logo_alignair14bw.b74a41a0.svg" width="240" alt="AlignAIR logo">
+</p>
 
-AlignAIR is a state-of-the-art sequence alignment tool designed to handle the complexities of V(D)J recombination and somatic hypermutation (SHM) in immunoglobulin (Ig) and T cell receptor (TCR) sequences. Leveraging advanced multi-task deep supervised learning, AlignAIR delivers accuracy and efficiency in allele assignment, productivity assessments, and sequence segmentation.
-
+<h1 align="center">AlignAIR</h1>
+<p align="center">
+  <strong>Deep‑learning sequence aligner for immunoglobulin &amp; T‑cell receptor repertoires</strong><br>
+  <a href="https://hub.docker.com/r/thomask90/alignair">
+    <img alt="Docker pulls" src="https://img.shields.io/docker/pulls/thomask90/alignair">
+  </a>
+  <a href="https://zenodo.org/record/XXXXXXXX">
+    <img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXXX.svg">
+  </a>
+  <a href="LICENSE">
+    <img alt="MIT" src="https://img.shields.io/badge/license-MIT-green.svg">
+  </a>
+</p>
+ 
 ---
 
-## Table of Contents
+### ✨ Quick Start
 
-- [Introduction](#introduction)
-- [Key Features](#key-features)
+```bash
+docker run --rm -v "$PWD:/data" thomask90/alignair:latest \
+       alignair_predict --mode cli \
+       --model_checkpoint /app/pretrained_models/IGH_S5F_576 \
+       --sequences /data/my_reads.fasta \
+       --save_path /data
+```
+
+<details>
+<summary>Table of contents</summary>
+
+- [Key features](#key-features)
 - [Installation](#installation)
-  - [Docker Setup](#docker-setup)
-  - [Local Setup](#local-setup)
 - [Usage](#usage)
-  - [Command Line Interface (CLI)](#command-line-interface-cli)
-  - [YAML Configuration](#yaml-configuration)
-  - [Interactive Mode](#interactive-mode)
-- [Detailed Docker Usage](#detailed-docker-usage)
+- [Docker in depth](#docker-in-depth)
 - [Examples](#examples)
-- [Data Availability](#data-availability)
+- [Data availability](#data-availability)
+- [Citation](#citation)
 - [Contributing](#contributing)
 - [License](#license)
 - [Contact](#contact)
 
----
-
-## Introduction
-
-AlignAIR is a tool for aligning adaptive immune receptor (AIR) sequences. It addresses the challenges posed by V(D)J recombination and somatic hypermutation (SHM) through a robust multi-task deep learning framework. Whether you're working with immunoglobulin (Ig) or T cell receptor (TCR) sequences, AlignAIR provides high-accuracy allele assignment, sequence segmentation, and productivity assessments—making it an essential tool for AIRR-seq pipelines.
+</details>
 
 ---
 
-## Key Features
-
-- **High Accuracy**: Outperforms existing aligners in allele assignment and sequence segmentation tasks.
-- **Scalability**: Efficiently processes millions of sequences with Docker support for consistent environments.
-- **Seamless Integration**: Designed to integrate effortlessly with existing AIRR-seq workflows.
-- **User-Friendly**: Offers multiple usage modes (CLI, YAML, Interactive) for ease of use.
+## Key features
+- **State‑of‑the‑art accuracy** for V, D, J allele calling and junction segmentation  
+- **Multi‑task deep network** jointly optimises alignment, productivity, and indel detection  
+- **Scales to millions** of AIRR‑seq reads with GPU support  
+- **Three interfaces** – CLI, YAML, fully interactive wizard  
+- **Drop‑in integration** with AIRR schema & downstream tools (IgBLAST, MiAIRR)
 
 ---
 
 ## Installation
 
-### Docker Setup
-1. **Pull the Docker image**  
-   ```sh
-   docker pull thomask90/alignair:latest
-   ```
-   This command retrieves the latest AlignAIR Docker image from Docker Hub.
+### Docker (recommended)
 
----
+```bash
+# 1 — pull once
+docker pull thomask90/alignair:latest
 
-2. **Run the Docker container (Open Shell Mode)**  
-   The Docker container now opens a bash terminal by default, allowing you to **manually execute commands**.
+# 2 — open shell (mount local data to /data)
+docker run -it --rm -v /path/to/local/data:/data thomask90/alignair:latest
+```
 
-   ```sh
-   docker run -it --rm \
-       -v /path/to/local/data:/data \
-       thomask90/alignair:latest
-   ```
-   - `-v /path/to/local/data:/data` mounts a local directory (`/path/to/local/data`) to `/data` inside the container.  
-   - You will be dropped into a bash shell within the container, ready to execute commands manually.
+> **Prerequisites:** Nvidia GPU + CUDA 11 recommended (CPU works, slower).
 
----
+### Local (advanced)
 
-3. **Run the Model (CLI Mode)**  
-   From within the Docker container’s bash shell, you can manually run AlignAIR by providing your desired parameters:
-
-   ```sh
-   python app.py --mode cli \
-       --model_checkpoint /data/AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2 \
-       --save_path /data/ \
-       --chain_type heavy \
-       --sequences /data/test01.fasta
-   ```
-   - `--model_checkpoint /data/AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2` points to a pretrained model accessible from the mounted `/data` directory.  
-   - `--sequences /data/test01.fasta` references your input file (it must be located in your local folder mounted to `/data`).  
-   - `--save_path /data/` specifies the output directory for the results (which maps back to your local folder).  
-
----
-
-4. **Input File Format**  
-   - You can provide FASTA, TSV, or CSV files.  
-   - If using CSV/TSV, ensure there's a column called `sequence` which holds your sequences.
-
-5. **Output Files**  
-   - Results will appear in the directory you mapped to the container (e.g., `-v /path/to/local/data:/data`) in the location specified by `--save_path` (e.g., `/data/output`).
-
-This setup allows you to either:
-- **Explore** via the interactive menu by running with no extra arguments.  
-- **Automate** quickly via CLI arguments by specifying `--mode=cli` and any other flags directly.  
-
-### Local Setup
-
-1. **Clone the repository**:
-   ```sh
-   git clone https://github.com/MuteJester/AlignAIRR.git
-   cd AlignAIRR
-   ```
-2. **Install dependencies**:
-   ```sh
-   pip install -r requirements.txt
-   ```
-3. **Run the model**:
-   ```sh
-   alignair_predict \
-       --mode cli \
-       --model_checkpoint /path/to/model_checkpoint.h5 \
-       --save_path /path/to/output \
-       --chain_type heavy \
-       --sequences /path/to/input_sequences.fasta
-   ```
+```bash
+git clone https://github.com/MuteJester/AlignAIR.git
+cd AlignAIR && pip install -r requirements.txt
+```
 
 ---
 
 ## Usage
 
-AlignAIR supports three primary modes of operation: **Command Line Interface (CLI)**, **YAML Configuration**, and **Interactive Mode**.
+### CLI
 
-### Command Line Interface (CLI)
-
-```sh
+```bash
 alignair_predict \
-    --mode cli \
-    --model_checkpoint /path/to/model_checkpoint.h5 \
-    --save_path /path/to/output_results \
+    --model_checkpoint /models/IGH_S5F_576 \
+    --sequences my_reads.fasta \
     --chain_type heavy \
-    --sequences /path/to/input_sequences.fasta
+    --save_path results/
 ```
 
-#### CLI Arguments (Partial List)
-| Argument  | Description                                                                 |
-|-----------|-----------------------------------------------------------------------------|
-| `--mode`  | Mode of input (`cli`, `yaml`, `interactive`)                                |
-| `--model_checkpoint` | Path to saved AlignAIR weights                                   |
-| `--save_path`        | Directory to save alignment results                              |
-| `--chain_type`       | Type of chain (`heavy`/`light`)                                  |
-| `--sequences`        | Path to CSV/TSV/FASTA file containing sequences                  |
-| `--batch_size`       | Batch size for model prediction (default: 2048)                  |
-| `--v_allele_threshold` | Threshold for V allele prediction (default: 0.75)             |
-| `...`                | *See code for additional parameters*                             |
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--batch_size` | inference batch size | `2048` |
+| `--v_allele_threshold` | minimum posterior probability | `0.75` |
+| `--v_cap` | max V calls returned | `3` |
+| *full list:* | `alignair_predict --help` | — |
 
----
+### YAML
 
-### YAML Configuration
-
-For reusable configurations, use a YAML file. For example:
-
-```yaml
-mode: yaml
-model_checkpoint: /path/to/model_checkpoint.h5
-save_path: /path/to/output_results
-chain_type: heavy
-sequences: /path/to/input_sequences.fasta
-batch_size: 2048
-v_allele_threshold: 0.75
-d_allele_threshold: 0.3
-j_allele_threshold: 0.8
-v_cap: 3
-d_cap: 3
-j_cap: 3
-translate_to_asc: true
-fix_orientation: true
+```bash
+alignair_predict --mode yaml --config_file configs/heavy.yaml
 ```
 
-Then run:
+### Interactive wizard
 
-```sh
-alignair_predict --mode yaml --config_file /path/to/config.yaml
-```
-
----
-
-### Interactive Mode
-
-If you prefer a guided setup, run:
-
-```sh
+```bash
 alignair_predict --mode interactive
 ```
 
-You will be prompted to provide the model checkpoint path, save path, chain type, sequence file path, etc.
-
 ---
 
-## Detailed Docker Usage
+## Docker in depth
+<details>
+<summary>Step‑by‑step guide</summary>
 
-If you want a step-by-step guide for running AlignAIR **interactively inside Docker** and selecting the CLI mode:
-
-1. **Pull the Docker image** (only needed once):  
-   ```sh
+1. **Pull image**  
+   ```bash
    docker pull thomask90/alignair:latest
    ```
-2. **Run the container in interactive mode**:
-   ```sh
+
+2. **Run container**  
+   ```bash
    docker run -it --rm \
        -v "/path/to/local/data:/data" \
        thomask90/alignair:latest
    ```
-   - `-it` opens an interactive terminal session.
-   - `--rm` removes the container when it exits.
-   - `-v "/path/to/local/data:/data"` mounts your local directory to `/data` in the container.
 
-3. **Select CLI Mode**  
-   Inside the container, you’ll see a menu:
-   ```
-   1. Run Model in CLI Mode
-   2. Run Model with YAML Configuration
-   3. Run Model in Interactive Mode
-   4. Exit
-   ```
-   Type `1` and press **Enter**.
+3. **Choose option 1: CLI mode** from the menu.
 
-4. **Enter Your Model Parameters**  
-   You’ll be prompted to paste CLI arguments. For example:
+4. **Paste CLI arguments**, e.g.  
    ```bash
    --model_checkpoint="/app/pretrained_models/IGH_S5F_576" \
-   --save_path="/data/" \
+   --save_path="/data" \
    --chain_type=heavy \
    --sequences="/data/test01.fasta"
    ```
-   - **`/app/pretrained_models/IGH_S5F_576`** is a built-in pretrained heavy-chain model.
-   - **`/app/pretrained_models/IGL_S5F_576`** is a built-in pretrained light-chain model.
-   - **`/data/`** is your mounted local directory inside the container.
-   - **`test01.fasta`** is your input file, which must be located in the local folder you mounted.
-
-That’s it! Your results will be saved to `/data/` inside the container, which corresponds to your local directory outside the container.
+   Results are written back to your mounted `/data` folder.
+</details>
 
 ---
 
 ## Examples
+See the **`examples/`** folder for Jupyter notebooks:
 
-### Basic CLI Usage
-```sh
-alignair_predict \
-    --mode cli \
-    --model_checkpoint /path/to/model_checkpoint.h5 \
-    --save_path /path/to/output_results \
-    --chain_type heavy \
-    --sequences /path/to/input_sequences.fasta
-```
-
-### YAML Configuration Usage
-```sh
-alignair_predict --mode yaml --config_file /path/to/config.yaml
-```
-
-### Interactive Mode Usage
-```sh
-alignair_predict --mode interactive
-```
+1. End‑to‑end heavy‑chain pipeline  
+2. Benchmark vs. IgBLAST on 10 K reads  
+3. Snakemake batch processing  
 
 ---
 
-## Data Availability
+## Data availability
+Training & benchmark datasets are archived on Zenodo: `doi:10.5281/zenodo.XXXXXXXX`
 
-The datasets used for training and evaluating AlignAIR are available on Zenodo:
 
-- [Training Datasets](https://zenodo.org/record/training_datasets)
-- [Evaluation Datasets](https://zenodo.org/record/evaluation_datasets)
 
 ---
 
 ## Contributing
+Pull requests are welcome! Please:
 
-We welcome contributions from the community! Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started.
+1. Run `pre-commit run --all-files`
+2. Ensure `pytest` passes
+3. Update `CHANGELOG.md`
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
 
 ---
 
 ## License
-
-AlignAIR is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT – see [LICENSE](LICENSE).
 
 ---
 
 ## Contact
-
-For questions, feedback, or support, please reach out to the project maintainer at [thomaskon90@gmail.com](mailto:thomaskon90@gmail.com).
+Open an issue or email **thomaskon90@gmail.com**.  
+For announcements, visit <https://alignair.ai> or join our Slack.

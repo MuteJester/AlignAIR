@@ -673,6 +673,72 @@ class TestModule(unittest.TestCase):
             self.assertTrue(is_within_mismatch_limit(true, result),
                             f"Test {s} failed: True sequence not found within mismatch limit")
 
+    def test_heuristic_matcher_comprehensive(self):
+        """
+        Exercise the matcher on a grid of real‑world edge cases:
+        1. Exact match
+        2. Left over‑segmentation  (+3 nt)
+        3. Right over‑segmentation (+4 nt)
+        4. Over‑segmentation on both ends (+2/+2 nt)
+        5. Left deletion          (‑5 nt  , indels = 5)
+        6. Right deletion         (‑6 nt  , indels = 6)
+        7. Both‑side deletions    (‑3/‑4 nt, indels = 7)
+        8. Internal insertion     (+4 nt  , indels = 4)
+        9. Two point mismatches   (same length, indels = 0)
+       10. Mixed: left over‑segmentation + internal insertion + 2 mismatches
+        """
+        # --- reference sequence & matcher -------------------------------------------------
+        ref_seq  = "ATGCGTACGTCAGTACGTCAGTACGTTAGC"           # length = 30
+        allele   = "TEST*01"
+        matcher  = HeuristicReferenceMatcher({allele: ref_seq})
+
+        def mutate(seq, pos, base):
+            return seq[:pos] + base + seq[pos+1:]
+
+        # --- catalogue of test‑cases ------------------------------------------------------
+        cases = [
+            # name                  segment builder (lambda)                indels exp_start exp_end
+            ("exact",               lambda: ref_seq,                        0,     0,        30),
+            ("overhang_left",       lambda: "GGG" + ref_seq,                0,     0,        30),
+            ("overhang_right",      lambda: ref_seq + "TTTT",               0,     0,        30),
+            ("overhang_both",       lambda: "AA"  + ref_seq + "CC",         0,     0,        30),
+            ("del_left",            lambda: ref_seq[5:],                    5,     5,        30),
+            ("del_right",           lambda: ref_seq[:-6],                   6,     0,        24),
+            ("del_both",            lambda: ref_seq[3:-4],                  7,     3,        26),
+            ("internal_insert",     lambda: ref_seq[:10] + "NNNN" + ref_seq[10:], 4, 0,     30),
+            ("two_mismatches",      lambda: mutate(mutate(ref_seq, 5,"A"), 15,"C"), 0, 0,   30),
+            ("mixed_combo",
+             lambda: "GG" + ref_seq[:12] + "NN" + mutate(ref_seq[12:], 5,"G"), 2, 0,        30),
+        ]
+
+        # --- pack into matcher inputs -----------------------------------------------------
+        sequences, starts, ends, alleles, indel_counts = [], [], [], [], []
+        for _, builder, indels, *_ in cases:
+            seg = builder()
+            sequences.append(seg)
+            starts.append(0)                # we give the whole segment
+            ends.append(len(seg))
+            alleles.append(allele)
+            indel_counts.append(indels)
+
+        # --- run matcher ------------------------------------------------------------------
+        results = matcher.match(
+            sequences, starts, ends, alleles,
+            indel_counts, _gene="v"          # gene label only affects tqdm text
+        )
+
+        # --- validate ---------------------------------------------------------------------
+        for (name, _, _, exp_start, exp_end), res in zip(cases, results):
+            with self.subTest(case=name):
+                self.assertEqual(
+                    res["start_in_ref"], exp_start,
+                    f"{name}: start_in_ref mismatch (got {res['start_in_ref']}, want {exp_start})"
+                )
+                self.assertEqual(
+                    res["end_in_ref"],   exp_end,
+                    f"{name}: end_in_ref mismatch (got {res['end_in_ref']}, want {exp_end})"
+                )
+
 
 
 
