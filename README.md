@@ -10,7 +10,7 @@
     <img alt="Docker pulls" src="https://img.shields.io/docker/pulls/thomask90/alignair">
   </a>
   <a href="https://zenodo.org/record/XXXXXXXX">
-    <img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXXX.svg">
+    <img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXXX.zsvg">
   </a>
   <a href="LICENSE">
     <img alt="MIT" src="https://img.shields.io/badge/license-MIT-green.svg">
