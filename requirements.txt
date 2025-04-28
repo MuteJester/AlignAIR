@@ -16,3 +16,4 @@ setuptools==68.0.0
 wandb==0.17.1
 flask==3.0.3
 biopython==1.83
+typer==0.15.2

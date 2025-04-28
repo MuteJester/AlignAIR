@@ -1,34 +1,47 @@
-import argparse
-import logging
+from __future__ import annotations
 import os
-import shlex
-import sys
-import yaml
-import questionary
-import tensorflow as tf
+import warnings
+from sklearn.exceptions import InconsistentVersionWarning
+warnings.filterwarnings(
+    "ignore",
+    category=InconsistentVersionWarning,
+)
+# 0 = all logs | 1 = filter INFO | 2 = filter WARNING | 3 = filter ERROR
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPercentageThresholdApplicationStep, \
-    ConfidenceMethodThresholdApplicationStep
-from AlignAIR.PostProcessing.Steps.clean_up_steps import CleanAndArrangeStep
-from AlignAIR.PostProcessing.Steps.finalization_and_packaging_steps import FinalizationStep
-from AlignAIR.PostProcessing.Steps.airr_finalization_and_packaging_steps import AIRRFinalizationStep
-from AlignAIR.PostProcessing.Steps.germline_alignment_steps import AlleleAlignmentStep
-from AlignAIR.PostProcessing.Steps.segmentation_correction_steps import SegmentCorrectionStep
-from AlignAIR.PostProcessing.Steps.translate_to_imgt_step import TranslationStep
-from AlignAIR.PredictObject.PredictObject import PredictObject
-from AlignAIR.Preprocessing.Steps.batch_processing_steps import BatchProcessingStep
-from AlignAIR.Preprocessing.Steps.dataconfig_steps import ConfigLoadStep
-from AlignAIR.Preprocessing.Steps.file_steps import FileNameExtractionStep, FileSampleCounterStep
-from AlignAIR.Preprocessing.Steps.model_loading_steps import ModelLoadingStep
-from AlignAIR.Step.Step import Step
+import logging
+import pathlib
+from typing import Optional
+import typer
+from rich import box
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+import yaml
 import psutil
 import platform
 import tensorflow as tf
 
+from AlignAIR.PredictObject.PredictObject import PredictObject
+from AlignAIR.Step.Step import Step
+from AlignAIR.Preprocessing.Steps.batch_processing_steps import BatchProcessingStep
+from AlignAIR.Preprocessing.Steps.dataconfig_steps import ConfigLoadStep
+from AlignAIR.Preprocessing.Steps.file_steps import FileNameExtractionStep, FileSampleCounterStep
+from AlignAIR.Preprocessing.Steps.model_loading_steps import ModelLoadingStep
+from AlignAIR.PostProcessing.Steps.clean_up_steps import CleanAndArrangeStep
+from AlignAIR.PostProcessing.Steps.segmentation_correction_steps import SegmentCorrectionStep
+from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPercentageThresholdApplicationStep
+from AlignAIR.PostProcessing.Steps.translate_to_imgt_step import TranslationStep
+from AlignAIR.PostProcessing.Steps.germline_alignment_steps import AlleleAlignmentStep
+from AlignAIR.PostProcessing.Steps.finalization_and_packaging_steps import FinalizationStep
+from AlignAIR.PostProcessing.Steps.airr_finalization_and_packaging_steps import AIRRFinalizationStep
 
+app = typer.Typer(add_completion=False)
+console = Console()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+tf.get_logger().setLevel("ERROR")
 
-
-# ANSI color codes for styling
+# # ANSI color codes for styling
 BLUE = "\033[94m"
 CYAN = "\033[96m"
 GREEN = "\033[92m"
@@ -36,288 +49,200 @@ RED = "\033[91m"
 YELLOW = "\033[93m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
-
-tf.get_logger().setLevel('ERROR')
-
-
-class Args:
-    def __init__(self, **entries):
-        self.__dict__.update(entries)
-
-
-def display_header():
-    """Display the header with a B cell receptor ASCII art and welcome message."""
-    art = f"""
-{BLUE}                               .         ..  .                            .                      .       .     
-                              ..   .                                    ..  .     .   ..            
-                                                   .   .    .                   
-                                      . .                                  .   . .      
-                          .                     ..    .              . .     .  .          
-      .       .   .            .          .      .                    .       . 
-          .           /.         .      .               /     .                  
-               ... .%#//%.    ..                   .  ##//%*   .              . 
-     .       ..*#/////////%,       .                %#/////////%       .      . 
-..          .  %(///////////%*.           .       %#///////////%*    .          
-   .       .#  .%#////////////%/              ..%(////////////%.   /*   .       
- .. .  (#////#% ..%#////////////%(          ..%(////////////%.   (%/////%  .    
- .  .  .%//////(%.  %#////////////%(       .%/////////////%.   #%//////#/       
-  ..   /#////////(%   %#////////////%#   ,%/////////////%,   ##////////(#    .  
-    . (#////////////%. .%(///////////%*  %////////////%, . %#///////////(%. .  . 
- .      ##////////////%. .%(/////////%*  %//////////%*...%#///////////(%.       
-      ..  ##////////////%, /#////////%*  %/////////%  .%(///////////(%. ..      
+ASCII_ART = f"""
+{BLUE}` .     ..  .                            .                      .       .
+`                    ..   .                                    ..  .     .   ..
+                                           .   .    .
+                                  . .                                  .   . .
+                     .                     ..    .              . .     .  .`
+      .       .   .            .          .      .                    .       .
+          .           /.         .      .               /     .
+               ... .%#//%.    ..                   .  ##//%*   .              .
+     .       ..*#/////////%,       .                %#/////////%       .      .
+..          .  %(///////////%*.           .       %#///////////%*    .
+   .       .#  .%#////////////%/              ..%(////////////%.   /*   .
+ .. .  (#////#% ..%#////////////%(          ..%(////////////%.   (%/////%  .
+ .  .  .%//////(% .  %#////////////%(       .%/////////////%.   #%//////#/
+  ..   /#////////(%   %#////////////%#   ,%/////////////%,   ##////////(#    .
+    . (#////////////%. .%(///////////%*  %////////////%, . %#///////////(%. .  .
+ .      ##////////////%. .%(/////////%*  %//////////%*...%#///////////(%.
+      ..  ##////////////%, /#////////%*  %/////////%  .%(///////////(%. ..
  .      ..  #%///////////#%/#////////%,  %/////////% (%///////////(%          ..
              .(%///////#%. /#////////%,  %/////////%   /%///////#% ..        . .
-                (%///#%    /#////////%,  %/////////%     /%///#% .      .  .    
-          .       /%#      /#////////%.  %/////////%       /%%       .  .       
-    .  .                   /#////////%.  %/////////%     .               .      
-     .                     /#////////%.  %/////////%.      .   .  .    .      . 
-. .                .  .    /#////////%.  %/////////%     .  ..                   
-.  .  .     ..  .. .. .    /#////////%.  %/////////%                        .   
-     .       ..            /#////////%.  %/////////%              .             
-. . ....                  ./#////////%. .%/////////%           ...    .      .  
-                 .    .    /#////////%.  %/////////%          ..                
-  . ...  .           ..    *%////////%.  ##///////(#..  ...               ..  . 
- ..             ..         ..%%%%%%%%  . .#%%%%%%%(           . .    .     .    
-    .      .       .         . ..%            #,        .      .                
-  .    .   ..   ..   .       .   %            #,.                    .          
-   . .   .                .      %        .   #, .                              
-         ..          .          .%.           #,        .             .         
-    .    .  .   .     . ..  .   .% ..      .. #,     .                          
+                (%///#%    /#////////%,  %/////////%     /%///#% .      .  .
+          .       /%#      /#////////%.  %/////////%       /%%       .  .
+    .  .                   /#////////%.  %/////////%     .               .
+     .                     /#////////%.  %/////////%.      .   .  .    .      .
+. .                .  .    /#////////%.  %/////////%     .  ..
+.  .  .     ..  .. .. .    /#////////%.  %/////////%                        .
+     .       ..            /#////////%.  %/////////%              .
+. . ....                  ./#////////%. .%/////////%           ...    .      .
+                 .    .    /#////////%.  %/////////%          ..
+  . ...  .           ..    *%////////%.  ##///////(#..  ...               ..  .
+ ..             ..         ..%%%%%%%%  . .#%%%%%%%(           . .    .     .
+    .      .       .         . ..%            #,        .      .
+  .    .   ..   ..   .       .   %            #,.                    .
+   . .   .                .      %        .   #, .
+         ..          .          .%.           #,        .             .
+    .    .  .   .     . ..  .   .% ..      .. #,     .
 {RESET}
-
-{BOLD}{YELLOW}                               AlignAIR CLI Tool{RESET}
-{CYAN}                             ========================================{RESET}
 """
-    print(art)
-    print(f"{YELLOW}                               Welcome to the AlignAIR CLI!{RESET}")
-    print(f"{CYAN}                             ========================================{RESET}")
-def display_system_stats():
-    """Display various system statistics in a pretty ASCII table."""
+# ────────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ────────────────────────────────────────────────────────────────────────────────
 
-    # Number of processes
-    number_of_processes = len(psutil.pids())
-
-    # Free RAM in gigabytes
-    free_ram_gb = psutil.virtual_memory().available / (1024 ** 3)
-
-    # TensorFlow device info
-    gpu_devices = tf.config.list_physical_devices('GPU')
-    cpu_devices = tf.config.list_physical_devices('CPU')
-    gpu_support = "Yes" if gpu_devices else "No"
-
-    # Prepare data for the ASCII table
-    table_data = [
-        ["Number of Processes", number_of_processes],
-        ["Free RAM (GB)", f"{free_ram_gb:.2f}"],
-        ["TensorFlow GPU Support", gpu_support],
-        ["GPU Devices Detected", ", ".join(d.name for d in gpu_devices) if gpu_devices else "None"],
-        ["CPU Devices Detected", ", ".join(d.name for d in cpu_devices) if cpu_devices else "None"],
-        ["Operating System", platform.platform()],
-        ["Python Version", platform.python_version()]
-    ]
-
-    def print_ascii_table(data, title=None):
-        """Helper to print a list of [key, value] rows in a pretty ASCII table."""
-        # Calculate column widths
-        left_col_width = max(len(str(row[0])) for row in data)
-        right_col_width = max(len(str(row[1])) for row in data)
-
-        total_width = left_col_width + right_col_width + 7  # padding for separators
-
-        # Print top border
-        print("+" + "-" * (total_width - 2) + "+")
-
-        if title:
-            # Center the title within the table width
-            print("| " + title.center(total_width - 4) + " |")
-            print("+" + "-" * (total_width - 2) + "+")
-
-        # Print each row
-        for key, val in data:
-            left_cell = str(key).ljust(left_col_width)
-            right_cell = str(val).ljust(right_col_width)
-            print(f"| {left_cell} | {right_cell} |")
-
-        # Print bottom border
-        print("+" + "-" * (total_width - 2) + "+")
-
-    # Print the ASCII table
-    print_ascii_table(table_data, title="System Statistics")
-
-display_header()
-display_system_stats()
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(description='AlignAIR Model Prediction')
-    parser.add_argument('--mode', type=str, default='cli', choices=['cli', 'yaml', 'interactive'],
-                        help='Mode of input: cli, yaml, interactive')
-    parser.add_argument('--config_file', type=str, help='Path to YAML configuration file')
-    parser.add_argument('--model_checkpoint', type=str, help='Path to saved AlignAIR weights')
-    parser.add_argument('--save_path', type=str, help='Where to save the alignment')
-    parser.add_argument('--chain_type', type=str, help='heavy / light')
-    parser.add_argument('--sequences', type=str,
-                        help='Path to csv/tsv/fasta file with sequences in a column called "sequence"')
-    parser.add_argument('--lambda_data_config', type=str, default='D', help='Path to lambda chain data config')
-    parser.add_argument('--kappa_data_config', type=str, default='D', help='Path to kappa chain data config')
-    parser.add_argument('--heavy_data_config', type=str, default='D', help='Path to heavy chain data config')
-    parser.add_argument('--max_input_size', type=int, default=576, help='Maximum model input size')
-    parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
-    parser.add_argument('--v_allele_threshold', type=float, default=0.1, help='Percentage for V allele assignment')
-    parser.add_argument('--d_allele_threshold', type=float, default=0.1, help='Percentage for D allele assignment')
-    parser.add_argument('--j_allele_threshold', type=float, default=0.1, help='Percentage for J allele assignment')
-    parser.add_argument('--v_cap', type=int, default=3, help='Cap for V allele calls')
-    parser.add_argument('--d_cap', type=int, default=3, help='Cap for D allele calls')
-    parser.add_argument('--j_cap', type=int, default=3, help='Cap for J allele calls')
-    parser.add_argument('--translate_to_asc', action='store_true', help='Translate names back to ASCs names from IMGT')
-    parser.add_argument('--fix_orientation', type=bool, default=True,
-                        help='Adds a preprocessing step that tests/fixes orientation if reversed/complement')
-    parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None,
-                        help='Path to a custom orientation model created for a custom reference')
-    parser.add_argument('--custom_genotype', type=str, default=None, help='Path to a custom genotype yaml file')
-    parser.add_argument('--save_predict_object', action='store_true',
-                        help='Save the predict object (Warning this can be large)')
-    parser.add_argument('--airr_format', action='store_true', help='Adds a step to format the results to AIRR format')
-    # parameters for the model yaml, if specified, changes loading to a fine-tuned model with different head sizes
-    parser.add_argument('--finetuned_model_params_yaml', type=str, default=None,
-                        help='Path to a yaml file with the parameters of a fine-tuned model')
-    return parser.parse_args()
+def _human(bytes_: int, prec: int = 2) -> str:
+    return f"{bytes_ / 1024 ** 3:.{prec}f} GB"
 
 
-def load_yaml_config(config_file):
-    with open(config_file, 'r') as file:
-        config = yaml.safe_load(file)
-    return Args(**config)
+def header() -> None:
+    panel = Panel("AlignAIR", subtitle="CLI", style="bold cyan", expand=False)
+    console.print(Panel.fit(ASCII_ART, title="[bold cyan]AlignAIR", border_style="cyan"))
 
 
-def interactive_mode():
-    """Prompt-based config in 'interactive' mode."""
-    config = {
-        'model_checkpoint': questionary.text("Path to saved AlignAIR weights:").ask(),
-        'save_path': questionary.text("Where to save the alignment:").ask(),
-        'chain_type': questionary.select("Chain type:", choices=['heavy', 'light']).ask(),
-        'sequences': questionary.text("Path to csv/tsv/fasta file with sequences in a column called 'sequence':").ask(),
-        'lambda_data_config': questionary.text("Path to lambda chain data config:", default='D').ask(),
-        'kappa_data_config': questionary.text("Path to kappa chain data config:", default='D').ask(),
-        'heavy_data_config': questionary.text("Path to heavy chain data config:", default='D').ask(),
-        'max_input_size': int(questionary.text("Maximum model input size:", default='576').ask()),
-        'batch_size': int(questionary.text("Batch size for the model prediction:", default='2048').ask()),
-        'v_allele_threshold': float(questionary.text("Threshold for V allele prediction:", default='0.75').ask()),
-        'd_allele_threshold': float(questionary.text("Threshold for D allele prediction:", default='0.3').ask()),
-        'j_allele_threshold': float(questionary.text("Threshold for J allele prediction:", default='0.8').ask()),
-        'v_cap': int(questionary.text("Cap for V allele calls:", default='3').ask()),
-        'd_cap': int(questionary.text("Cap for D allele calls:", default='3').ask()),
-        'j_cap': int(questionary.text("Cap for J allele calls:", default='3').ask()),
-        'translate_to_asc': questionary.confirm("Translate names back to ASCs names from IMGT?").ask(),
-        'fix_orientation': questionary.confirm("Fix DNA orientation if reversed?").ask(),
-        'airr_format': questionary.confirm("Format the results to AIRR format?").ask(),
-        'custom_orientation_pipeline_path': questionary.text("Path to a custom orientation model:", default='').ask(),
-        'custom_genotype': questionary.text("Path to a custom genotype yaml file:", default='').ask(),
-        'save_predict_object': questionary.confirm("Save the predict object?").ask(),
-        'finetuned_model_params_yaml': questionary.text("Path to a yaml file with fine-tuned model parameters:",
-                                                        default='').ask()
-    }
-    return Args(**config)
+def system_stats() -> None:
+    tbl = Table(box=box.SIMPLE, highlight=True)
+    tbl.add_column("Key", style="bold")
+    tbl.add_column("Value")
+    tbl.add_row("Processes", str(len(psutil.pids())))
+    tbl.add_row("Free RAM", _human(psutil.virtual_memory().available))
+    gpus = tf.config.list_physical_devices("GPU")
+    tbl.add_row("GPUs", ", ".join(d.name for d in gpus) or "None")
+    cpus = tf.config.list_physical_devices("CPU")
+    tbl.add_row("CPUs", ", ".join(d.name for d in cpus))
+    tbl.add_row("OS", platform.platform())
+    tbl.add_row("Python", platform.python_version())
+    console.print(tbl)
 
 
-def run_pipeline(predict_object, steps):
-    for step in steps:
-        predict_object = step.execute(predict_object)
-
-
-def execute_pipeline(config):
-    logger = logging.getLogger('PipelineLogger')
-    predict_object = PredictObject(config, logger=logger)
-    Step.set_logger(logger=logger)
-
+def _build_steps(airr: bool):
     steps = [
         ConfigLoadStep("Load Config"),
-        FileNameExtractionStep('Get File Name'),
-        FileSampleCounterStep('Count Samples in File'),
-        ModelLoadingStep('Load Models'),
-        BatchProcessingStep("Process and Predict Batches"),
-        CleanAndArrangeStep("Clean Up Raw Prediction"),
-        SegmentCorrectionStep("Correct Segmentations"),
-        MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments"),
-        AlleleAlignmentStep("Align Predicted Segments with Germline")
+        FileNameExtractionStep("Get File Name"),
+        FileSampleCounterStep("Count Samples"),
+        ModelLoadingStep("Load Models"),
+        BatchProcessingStep("Predict Batches"),
+        CleanAndArrangeStep("Clean Raw Predictions"),
+        SegmentCorrectionStep("Correct Segments"),
+        MaxLikelihoodPercentageThresholdApplicationStep("Apply Thresholds"),
+        AlleleAlignmentStep("Align With Germline"),
     ]
-
-    # Decide final steps based on AIRR or not
-    if config.airr_format:
-        steps.append(AIRRFinalizationStep("Finalize Results"))
+    if airr:
+        steps.append(AIRRFinalizationStep("Finalize (AIRR)"))
     else:
-        steps.append(TranslationStep("Translate ASC's to IMGT Alleles"))
-        steps.append(FinalizationStep("Finalize Results"))
-
-    run_pipeline(predict_object, steps)
-    logger.info("Pipeline execution complete.")
-
-
-def show_menu():
-    """Fallback menu if user runs with no arguments or explicitly chooses interactive mode."""
-    display_header()
-    menu = f"""
-{BOLD}{CYAN}========================================{RESET}
-{BOLD}{YELLOW} Please choose an option below:{RESET}
-{CYAN}========================================{RESET}
-1. Run Model in CLI Mode
-2. Run Model with YAML Configuration
-3. Run Model in Interactive Mode
-4. Exit
-"""
-    while True:
-        print(menu)
-        choice = input(f"{BLUE}Your choice (1-4): {RESET}").strip()
-
-        if choice == '1':
-            # Prompt the user to enter CLI arguments as a string
-            cli_command = input(
-                f"{BLUE}Enter CLI arguments (e.g., --model_checkpoint path/to/checkpoint --save_path path/to/save ...): {RESET}").strip()
-            if cli_command:
-                # Use shlex.split to parse the command-line string into a list of arguments
-                sys.argv = [sys.argv[0]] + shlex.split(cli_command)
-                config = parse_arguments()
-                execute_pipeline(config)
-            else:
-                print(f"{RED}No arguments provided. Returning to menu.{RESET}")
-        elif choice == '2':
-            config_file = input(f"{BLUE}Enter the path to the YAML config file: {RESET}").strip()
-            config = load_yaml_config(config_file)
-            execute_pipeline(config)
-        elif choice == '3':
-            config = interactive_mode()
-            execute_pipeline(config)
-        elif choice == '4':
-            print(f"{GREEN}Exiting AlignAIR. Goodbye!{RESET}")
-            break
-        else:
-            print(f"{RED}Invalid choice. Please select a valid option (1-4).{RESET}")
+        steps.extend([
+            TranslationStep("Translate to IMGT"),
+            FinalizationStep("Finalize Results"),
+        ])
+    return steps
 
 
+def _run_pipeline(cfg):
+    logger = logging.getLogger("AlignAIR")
+    Step.set_logger(logger)
+    po = PredictObject(cfg, logger=logger)
+    for s in _build_steps(cfg.airr_format):
+        po = s.execute(po)
+    logger.info("✅ Alignment finished – results stored at %s", cfg.save_path)
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Commands
+# ────────────────────────────────────────────────────────────────────────────────
+
+@app.command()
+def doctor():
+    """Print system diagnostics and exit."""
+    header()
+    system_stats()
+
+
+@app.command()
+def run(
+    # General
+    config_file: Optional[pathlib.Path] = typer.Option(None, help="YAML with parameters (flags override)"),
+    model_checkpoint: Optional[str] = typer.Option(None, help="Path to saved weights"),
+    save_path: Optional[str] = typer.Option(None, help="Where to write alignment output"),
+    chain_type: Optional[str] = typer.Option(None, help="heavy / light"),
+    sequences: Optional[str] = typer.Option(None, help="CSV/TSV/FASTA containing sequences ('sequence' column)"),
+    # Performance
+    batch_size: Optional[int] = typer.Option(None),
+    max_input_size: Optional[int] = typer.Option(None),
+    # Thresholds
+    v_allele_threshold: Optional[float] = typer.Option(None),
+    d_allele_threshold: Optional[float] = typer.Option(None),
+    j_allele_threshold: Optional[float] = typer.Option(None),
+    v_cap: Optional[int] = typer.Option(None),
+    d_cap: Optional[int] = typer.Option(None),
+    j_cap: Optional[int] = typer.Option(None),
+    # Flags
+    translate_to_asc: bool = typer.Option(False),
+    airr_format: bool = typer.Option(False),
+    fix_orientation: bool = typer.Option(True),
+    # Misc paths
+    lambda_data_config: Optional[str] = typer.Option(None),
+    kappa_data_config: Optional[str] = typer.Option(None),
+    heavy_data_config: Optional[str] = typer.Option(None),
+    custom_orientation_pipeline_path: Optional[str] = typer.Option(None),
+    custom_genotype: Optional[str] = typer.Option(None),
+    finetuned_model_params_yaml: Optional[str] = typer.Option(None),
+    save_predict_object: bool = typer.Option(False),
+):
+    """Run the AlignAIR pipeline."""
+    header()
+    system_stats()
+
+    cfg_dict = {}
+    if config_file:
+        cfg_dict.update(yaml.safe_load(config_file.read_text()))
+
+    defaults = {
+        "model_checkpoint": None,
+        "save_path": None,
+        "chain_type": None,
+        "sequences": None,
+        "batch_size": 2048,
+        "max_input_size": 576,
+        "v_allele_threshold": 0.1,
+        "d_allele_threshold": 0.1,
+        "j_allele_threshold": 0.1,
+        "v_cap": 3,
+        "d_cap": 3,
+        "j_cap": 3,
+        "translate_to_asc": False,
+        "airr_format": False,
+        "fix_orientation": True,
+        "lambda_data_config": "D",
+        "kappa_data_config": "D",
+        "heavy_data_config": "D",
+        "custom_orientation_pipeline_path": None,
+        "custom_genotype": None,
+        "finetuned_model_params_yaml": None,
+        "save_predict_object": False,
+    }
+
+    # Build dict of non‑None overrides from function locals excluding cfg_dict/config_file
+    overrides = {
+        k: v for k, v in locals().items()
+        if k not in {"cfg_dict", "config_file"} and v is not None
+    }
+
+    # Merge: defaults < config_file < CLI overrides
+    cfg_dict = {**defaults, **cfg_dict, **overrides}
+
+    # SimpleNamespace keeps it lightweight and attribute‑style
+    from types import SimpleNamespace
+    cfg = SimpleNamespace(**cfg_dict)
+
+    _run_pipeline(cfg)
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Entrypoint
+# ────────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    try:
+        app()
+    except Exception as exc:  # pragma: no cover
+        console.print(f"[bold red]🛑  Error:[/bold red] {exc}")
+        raise
 
-    # First, parse arguments.
-    # The user can set --mode=cli or --mode=yaml or --mode=interactive.
-    args = parse_arguments()
 
-    # If user didn't provide any arguments besides the default,
-    # or if "mode" is "interactive", we can show the menu or interactive flow.
-    if len(sys.argv) == 1:
-        # Means user just typed 'python app.py' with no arguments
-        show_menu()
-    else:
-        if args.mode == 'interactive':
-            # Let user fill out config with questionary
-            config = interactive_mode()
-            execute_pipeline(config)
-        elif args.mode == 'yaml':
-            # Must have --config_file specified
-            if not args.config_file:
-                print(f"{RED}No config_file specified. Please use --config_file /path/to/config.yaml{RESET}")
-                sys.exit(1)
-            config = load_yaml_config(args.config_file)
-            execute_pipeline(config)
-        else:
-            # Otherwise, "cli" mode
-            config = args  # directly use parsed arguments
-            execute_pipeline(config)
