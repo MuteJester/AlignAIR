@@ -201,7 +201,7 @@ if BACKEND_ENGINE == 'torch':
             self.log("Loading Fitting Kmer Density Model...")
 
             ref_alleles = None
-            if predict_object.chain_type == 'heavy':
+            if predict_object.chain_type in ['heavy','tcrb']:
                 data_config = predict_object.data_config[predict_object.chain_type]
                 hc_alleles = [i.ungapped_seq.upper() for j in data_config.v_alleles for i in data_config.v_alleles[j]]
                 hc_alleles += [i.ungapped_seq.upper() for j in data_config.j_alleles for i in data_config.j_alleles[j]]

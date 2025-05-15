@@ -10,7 +10,8 @@ from src.AlignAIR.Models.LightChain import LightChainAlignAIRR
 import unittest
 import pandas as pd
 from importlib import resources
-from GenAIRR.data import builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,builtin_lambda_chain_data_config
+from GenAIRR.data import builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,builtin_lambda_chain_data_config\
+    , builtin_tcrb_data_config
 from src.AlignAIR.Data import HeavyChainDataset, LightChainDataset
 from src.AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
 from src.AlignAIR.Trainers import Trainer
@@ -20,24 +21,21 @@ from src.AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatc
 import os
 import subprocess
 import shutil
-# Define a test case class inheriting from unittest.TestCase
 class TestModule(unittest.TestCase):
 
-    # Define a setup method if you need to prepare anything before each test method (optional)
     def setUp(self):
         self.heavy_chain_dataset_path = './sample_HeavyChain_dataset.csv'
         self.light_chain_dataset_path = './sample_LightChain_dataset.csv'
+        self.tcrb_chain_dataset_path = './TCRB_Sample_Data.csv'
         self.heavy_chain_dataset = pd.read_csv(self.heavy_chain_dataset_path)
         self.light_chain_dataset = pd.read_csv(self.light_chain_dataset_path)
         self.test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 
 
-    # Define a teardown method if you need to clean up after each test method (optional)
     def tearDown(self):
         # Teardown code here, e.g., closing files or connections
         pass
 
-    # Define your test methods, each starting with 'test_'
     def test_heavy_chain_model_training(self):
         train_dataset = HeavyChainDataset(data_path=self.heavy_chain_dataset_path,
                                           dataconfig=builtin_heavy_chain_data_config(),batch_read_file=True,
@@ -120,6 +118,49 @@ class TestModule(unittest.TestCase):
 
         self.assertIsNotNone(trainer.history)
 
+    def test_tcrb_chain_model_training(self):
+        train_dataset = HeavyChainDataset(data_path=self.tcrb_chain_dataset_path,
+                                          dataconfig=builtin_tcrb_data_config(),batch_read_file=True,
+                                          max_sequence_length=576)
+
+        model_parmas = train_dataset.generate_model_params()
+        model = HeavyChainAlignAIRR(**model_parmas)
+
+        model.compile(optimizer=tf.keras.optimizers.Adam(clipnorm=1),
+                      loss = None,
+                      metrics={
+                            'v_start':tf.keras.losses.mse,
+                            'v_end':tf.keras.losses.mse,
+                            'd_start':tf.keras.losses.mse,
+                            'd_end':tf.keras.losses.mse,
+                            'j_start':tf.keras.losses.mse,
+                            'j_end':tf.keras.losses.mse,
+                            'v_allele':tf.keras.losses.binary_crossentropy,
+                            'd_allele':tf.keras.losses.binary_crossentropy,
+                            'j_allele':tf.keras.losses.binary_crossentropy,
+                      }
+                      )
+
+
+
+        trainer = Trainer(
+            model=model,
+            batch_size=256,
+            epochs=10,
+            steps_per_epoch=4,
+            verbose=1,
+            classification_metric=[tf.keras.metrics.AUC(), tf.keras.metrics.AUC(), tf.keras.metrics.AUC()],
+            regression_metric=tf.keras.losses.binary_crossentropy,
+        )
+
+        # Train the model
+        trainer.train(train_dataset)
+
+
+
+        self.assertIsNotNone(trainer.history)
+
+
     def test_load_saved_heavy_chain_model(self):
 
         model_params = {'max_seq_length': 576, 'v_allele_count': 198, 'd_allele_count': 34, 'j_allele_count': 7}
@@ -161,12 +202,13 @@ class TestModule(unittest.TestCase):
                          ]
             starts = [3,5]
             ends = [303,305]
+            indel_counts = [0,0]
 
 
             alleles = ['IGHVF1-G1*01','IGHVF1-G1*01']
 
             matcher = HeuristicReferenceMatcher(IGHV_refence)
-            results = matcher.match(sequences, starts,ends, alleles,_gene='v')
+            results = matcher.match(sequences, starts,ends, alleles,indel_counts=indel_counts,_gene='v')
 
             self.assertEqual(results[0]['start_in_ref'],0)
             self.assertEqual(results[0]['end_in_ref'],301)
@@ -254,10 +296,61 @@ class TestModule(unittest.TestCase):
         output_csv = os.path.join(self.test_dir, save_name)
         self.assertTrue(os.path.isfile(output_csv), "Output CSV file not created")
 
+
         # Read the output CSV and validate its contents
         df = pd.read_csv(output_csv)
         #df.drop(columns=['d_likelihoods'], inplace=True)
         validation = pd.read_csv('./lightchain_predict_validation.csv')
+
+        # Compare dataframes cell by cell
+        for i in range(df.shape[0]):
+            for j in range(df.shape[1]):
+                self.assertEqual(df.iloc[i, j], validation.iloc[i, j],
+                                 f"Mismatch at row {i}, column {j}: {df.iloc[i, j]} != {validation.iloc[i, j]}")
+
+        self.assertFalse(df.empty, "Output CSV is empty")
+        # Additional assertions can be added here
+
+        # Cleanup
+        os.remove(output_csv)
+
+    def test_predict_script_tcrb(self):
+
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API'))
+        script_path = os.path.join(base_dir, 'AlignAIRRPredict.py')
+
+
+        # Ensure the script exists
+        self.assertTrue(os.path.exists(script_path), "Predict script not found at path: " + script_path)
+
+        # Define the command with absolute paths
+        command = [
+            'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
+            '--model_checkpoint', os.path.join(self.test_dir, 'AlignAIRR_TCRB_Model_checkpoint'),
+            '--save_path', str(self.test_dir)+'/',
+            '--chain_type', 'tcrb',
+            '--sequences', self.tcrb_chain_dataset_path,
+            '--batch_size', '32',
+            '--translate_to_asc',
+        ]
+
+        # Execute the script
+        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, "Script failed to run with error: " + result.stderr)
+
+
+        # Check if the CSV was created
+        file_name = self.tcrb_chain_dataset_path.split('/')[-1].split('.')[0]
+        save_name = file_name + '_alignairr_results.csv'
+
+        output_csv = os.path.join(self.test_dir, save_name)
+        self.assertTrue(os.path.isfile(output_csv), "Output CSV file not created")
+
+        # Read the output CSV and validate its contents
+        df = pd.read_csv(output_csv)
+        validation = pd.read_csv('./tcrb_predict_validation.csv')
+
+
 
         # Compare dataframes cell by cell
         for i in range(df.shape[0]):
@@ -638,7 +731,7 @@ class TestModule(unittest.TestCase):
     def test_fast_kmer_density_extractor(self):
 
         # test heavy chain detection
-        data_config_library = DataConfigLibrary(*['D'] * 3)
+        data_config_library = DataConfigLibrary()
         data_config_library.mount_type('heavy')
 
         ref_alleles = (
@@ -738,6 +831,7 @@ class TestModule(unittest.TestCase):
                     res["end_in_ref"],   exp_end,
                     f"{name}: end_in_ref mismatch (got {res['end_in_ref']}, want {exp_end})"
                 )
+
 
 
 

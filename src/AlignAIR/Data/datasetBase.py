@@ -26,8 +26,8 @@ class DatasetBase(ABC):
         self.seperator = seperator
         self.batch_read_file = batch_read_file
         self.required_data_columns = ['sequence', 'v_sequence_start', 'v_sequence_end', 'd_sequence_start',
-                                      'd_sequence_end', 'j_sequence_start', 'j_sequence_end', 'v_allele',
-                                      'd_allele', 'j_allele', 'mutation_rate']
+                                      'd_sequence_end', 'j_sequence_start', 'j_sequence_end', 'v_call',
+                                      'd_call', 'j_call', 'mutation_rate']
         self.batch_size = batch_size
         self.derive_call_dictionaries()
         self.derive_call_one_hot_representation()

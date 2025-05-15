@@ -1,3 +1,5 @@
+from typing import Any
+
 import tensorflow as tf
 import tensorflow as tf
 from tensorflow.keras.layers import Layer, Conv1D, BatchNormalization, LeakyReLU, MaxPool1D, Add, Flatten, Activation
@@ -17,6 +19,67 @@ from tensorflow.keras.constraints import Constraint
 import importlib
 import os
 from collections import defaultdict
+from tensorflow.keras import layers, regularizers, constraints, metrics
+from functools import partial
+
+
+class SegmentationHead(layers.Layer):
+    """Returns two tensors: (start, end) each with shape (B, 1)."""
+    def __init__(self, name: str,
+                 act: str  = "gelu",
+                 init: str = "glorot_uniform"):
+        super().__init__(name=name)
+        dense = partial(
+            layers.Dense,
+            units=1,
+            activation=act,
+            kernel_initializer=init,
+            kernel_constraint=constraints.unit_norm(),
+        )
+        self.start = dense(name=f"{name}_start")
+        self.end   = dense(name=f"{name}_end")
+
+    def call(
+        self,
+        inputs: tf.Tensor,
+        *args: Any,
+        **kwargs: Any,
+    ) -> tuple[tf.Tensor, tf.Tensor]:
+        return self.start(inputs), self.end(inputs)
+
+
+
+class GeneClassificationHead(layers.Layer):
+    """Latent dense → sigmoid output."""
+    def __init__(
+        self,
+        alleles: int,
+        cfg,
+        name: str,
+        reg = None,
+    ):
+        super().__init__(name=name)
+
+        latent_size = cfg.latent_factor * alleles
+        self.mid = layers.Dense(
+            latent_size,
+            activation=cfg.mid_activation,
+            kernel_initializer=cfg.weight_init,
+            name=f"{name}_mid",
+            kernel_regularizer=reg,
+        )
+        self.out = layers.Dense(
+            alleles,
+            activation="sigmoid",
+            name=name,
+        )
+
+    # full, type-correct override
+    def call(self,inputs: tf.Tensor,*args: Any, **kwargs: Any,) -> tf.Tensor:
+        x = self.mid(inputs)
+        return self.out(x)
+
+
 
 class ClipConstraint(Constraint):
     def __init__(self, min_value, max_value):

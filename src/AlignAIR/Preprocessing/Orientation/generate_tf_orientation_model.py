@@ -12,17 +12,30 @@ import random
 from GenAIRR.simulation import HeavyChainSequenceAugmentor, LightChainSequenceAugmentor, SequenceAugmentorArguments, \
     LightChainKappaLambdaSequenceAugmentor
 from GenAIRR.utilities import DataConfig
-from GenAIRR.data import builtin_heavy_chain_data_config,builtin_lambda_chain_data_config,builtin_kappa_chain_data_config
+from GenAIRR.data import builtin_heavy_chain_data_config,builtin_lambda_chain_data_config,builtin_kappa_chain_data_config,builtin_tcrb_data_config
 from GenAIRR.mutation import Uniform
 import tensorflow as tf
 from AlignAIR.Preprocessing.Orientation.OrientationTF import *
 from AlignAIR.Preprocessing.Orientation import reverse_sequence, complement_sequence, reverse_complement_sequence
-
+from GenAIRR.pipeline import AugmentationPipeline
+from GenAIRR.steps import AugmentationStep
+from GenAIRR.utilities import DataConfig
+from GenAIRR.data import builtin_heavy_chain_data_config, builtin_kappa_chain_data_config
+from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_LAMBDA,CHAIN_TYPE_BCR_LIGHT_KAPPA,CHAIN_TYPE_TCR_BETA
 # Initialize DataConfig
 data_config_builtin = builtin_heavy_chain_data_config()
+tcrb_dataconfig = builtin_tcrb_data_config()
 kappa_data_config_builtin = builtin_kappa_chain_data_config()
 lambda_data_config_builtin = builtin_lambda_chain_data_config()
-
+from GenAIRR.pipeline import AugmentationPipeline
+from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity
+from GenAIRR.mutation import S5F
+from GenAIRR.data import builtin_heavy_chain_data_config
+from GenAIRR.steps.StepBase import AugmentationStep
+from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY
+from GenAIRR.steps import SimulateSequence,FixVPositionAfterTrimmingIndexAmbiguity,FixDPositionAfterTrimmingIndexAmbiguity,FixJPositionAfterTrimmingIndexAmbiguity
+from GenAIRR.steps import CorrectForVEndCut,CorrectForDTrims,CorruptSequenceBeginning,InsertNs,InsertIndels,ShortDValidation,DistillMutationRate
+from GenAIRR.mutation import S5F
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def parse_arguments():
@@ -37,14 +50,39 @@ def parse_arguments():
 
     args = parser.parse_args()
     return args
+
+
 def generate_train_dataset(n_samples = 100_000,chain_type='heavy'):
+
+
+
     if chain_type == 'heavy':
-        heavy_augmentor = HeavyChainSequenceAugmentor(data_config_builtin, SequenceAugmentorArguments())
-    elif chain_type == 'light':
-        heavy_augmentor = LightChainKappaLambdaSequenceAugmentor(kappa_dataconfig=kappa_data_config_builtin,
-                                                           lambda_dataconfig=lambda_data_config_builtin,
-                                                           lambda_args=SequenceAugmentorArguments(),
-                                                           kappa_args=SequenceAugmentorArguments())
+        AugmentationStep.set_dataconfig(data_config_builtin, chain_type=CHAIN_TYPE_BCR_HEAVY)
+    elif chain_type == 'tcrb':
+        AugmentationStep.set_dataconfig(tcrb_dataconfig, chain_type=CHAIN_TYPE_TCR_BETA)
+    elif chain_type == 'kappa':
+        AugmentationStep.set_dataconfig(kappa_data_config_builtin, chain_type=CHAIN_TYPE_BCR_LIGHT_KAPPA)
+    elif chain_type == 'lambda':
+        AugmentationStep.set_dataconfig(lambda_data_config_builtin, chain_type=CHAIN_TYPE_BCR_LIGHT_LAMBDA)
+
+    pipeline = AugmentationPipeline([
+        SimulateSequence(mutation_model=S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
+        FixVPositionAfterTrimmingIndexAmbiguity(),
+        FixDPositionAfterTrimmingIndexAmbiguity(),
+        FixJPositionAfterTrimmingIndexAmbiguity(),
+        CorrectForVEndCut(),
+        CorrectForDTrims(),
+        CorruptSequenceBeginning(corruption_probability=0.7, corrupt_events_proba=[0.4, 0.4, 0.2],
+                                 max_sequence_length=576, nucleotide_add_coefficient=210,
+                                 nucleotide_remove_coefficient=310, nucleotide_add_after_remove_coefficient=50,
+                                 random_sequence_add_proba=1,
+                                 single_base_stream_proba=0, duplicate_leading_proba=0, random_allele_proba=0),
+        InsertNs(n_ratio=0.02, proba=0.5),
+        ShortDValidation(short_d_length=5),
+        InsertIndels(indel_probability=0.5, max_indels=5, insertion_proba=0.5, deletion_proba=0.5),
+        DistillMutationRate()
+    ])
+
 
 
 

@@ -37,7 +37,7 @@ class FinalizationStep(Step):
             'ar_productive': predict_object.processed_predictions['productive'],
         })
 
-        if predict_object.data_config_library.mounted == 'heavy':
+        if predict_object.data_config_library.mounted in ['heavy','tcrb']:
             final_csv['d_sequence_start'] = [i['start_in_seq'] for i in predict_object.germline_alignments['d']]
             final_csv['d_sequence_end'] = [i['end_in_seq'] for i in predict_object.germline_alignments['d']]
             final_csv['d_germline_start'] = [abs(i['start_in_ref']) for i in predict_object.germline_alignments['d']]

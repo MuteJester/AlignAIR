@@ -102,11 +102,11 @@ class Trainer:
             self.callbacks.append(csv_logger)
 
         # Train the model
-        self.history = self .model.fit(
+        self.history = self.model.fit(
             train_dataset,
             #validation_data=validation_dataset,
             epochs=self.epochs,
-            steps_per_epoch=self.steps_per_epoch,
+            steps_per_epoch=self.steps_per_epoch//self.batch_size,
             verbose=self.verbose,
             callbacks=self.callbacks,
         )

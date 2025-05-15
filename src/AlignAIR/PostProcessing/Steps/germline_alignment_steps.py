@@ -30,7 +30,7 @@ class AlleleAlignmentStep(Step):
         processed_predictions = predict_object.processed_predictions
         segments = {}
         iterator = ['v','j']
-        if predict_object.data_config_library.mounted == 'heavy':
+        if predict_object.data_config_library.mounted in ['heavy','tcrb']:
             iterator.append('d')
 
         for gene in iterator:

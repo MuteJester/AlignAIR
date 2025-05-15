@@ -14,12 +14,18 @@ class ModelLoadingStep(Step):
 
     @staticmethod
     def get_dataset_object(file_info: FileInfo, data_config_library: DataConfigLibrary, max_sequence_size):
-        if data_config_library.mounted == 'heavy':
-            dataset = HeavyChainDataset(data_path=file_info.path,
+        dataset_object = data_config_library.matching_dataset_object
+        if data_config_library.mounted in ['heavy']:
+            dataset = dataset_object(data_path=file_info.path,
                                         dataconfig=data_config_library.config(), batch_read_file=True,
                                         max_sequence_length=max_sequence_size)
+        elif data_config_library.mounted in ['tcrb']:
+            dataset = dataset_object(data_path=file_info.path,
+                                     dataconfig=data_config_library.config('tcrb'), batch_read_file=True,
+                                     max_sequence_length=max_sequence_size)
+
         elif data_config_library.mounted == 'light':
-            dataset = LightChainDataset(data_path=file_info.path,
+            dataset = dataset_object(data_path=file_info.path,
                                         lambda_dataconfig=data_config_library.config('lambda'),
                                         kappa_dataconfig=data_config_library.config('kappa'),
                                         batch_read_file=True, max_sequence_length=max_sequence_size)
@@ -86,7 +92,7 @@ class ModelLoadingStep(Step):
                 with open(path, 'rb') as h:
                     predict_object.orientation_pipeline = pickle.load(h)
             else:
-                predict_object.orientation_pipeline = builtin_orientation_classifier()
+                predict_object.orientation_pipeline = builtin_orientation_classifier(predict_object.data_config_library.mounted)
             self.log('Orientation Pipeline Loaded Successfully')
 
         self.log("Loading Fitting Kmer Density Model...")

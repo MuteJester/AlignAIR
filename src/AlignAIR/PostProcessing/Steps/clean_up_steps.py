@@ -29,7 +29,7 @@ class CleanAndArrangeStep(Step):
         d_end = None
         type_ = None
 
-        if chain_type == 'heavy':
+        if chain_type in ['heavy','tcrb']:
             d_allele = np.vstack(extract_values('d_allele'))
             d_start = np.vstack(extract_values('d_start'))
             d_end = np.vstack(extract_values('d_end'))
@@ -38,12 +38,12 @@ class CleanAndArrangeStep(Step):
 
         output = {
             'v_allele': v_allele,
-            'd_allele': d_allele if chain_type == 'heavy' else None,
+            'd_allele': d_allele if chain_type in ['heavy','tcrb'] else None,
             'j_allele': j_allele,
             'v_start': v_start,
             'v_end': v_end,
-            'd_start': d_start if chain_type == 'heavy' else None,
-            'd_end': d_end if chain_type == 'heavy' else None,
+            'd_start': d_start if chain_type in ['heavy','tcrb'] else None,
+            'd_end': d_end if chain_type in ['heavy','tcrb'] else None,
             'j_start': j_start,
             'j_end': j_end,
             'mutation_rate': mutation_rate,

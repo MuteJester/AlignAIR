@@ -36,7 +36,7 @@ class SegmentCorrectionStep(Step):
         j_start = np.round((j_start.squeeze() - paddings)).astype(int)
         j_end = np.round((j_end.squeeze() - paddings)).astype(int)
 
-        if chain_type == 'heavy':
+        if chain_type in ['heavy','tcrb']:
             d_start = np.round(np.vstack(d_start).squeeze() - paddings).astype(int)
             d_end = np.round(np.vstack(d_end).squeeze() - paddings).astype(int)
         else:

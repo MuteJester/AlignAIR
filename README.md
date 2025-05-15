@@ -76,6 +76,9 @@ docker run -it --rm -v /path/to/local/data:/data thomask90/alignair:latest
 git clone https://github.com/MuteJester/AlignAIR.git
 cd AlignAIR && pip install -r requirements.txt
 ```
+* Note that the local version comes without pretrained model weights and is mainly
+used for custom model and pipeline development, testing, and debugging.
+It is mainly recommended for developers, contributors and advanced users.
 
 ---
 

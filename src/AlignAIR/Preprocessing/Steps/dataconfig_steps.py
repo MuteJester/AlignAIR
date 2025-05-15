@@ -22,9 +22,12 @@ class ConfigLoadStep(Step):
         args = predict_object.script_arguments
 
         self.log(f"Loading Data Config")
-        data_config_library = DataConfigLibrary(custom_heavy_data_config=args.heavy_data_config,
-                                                custom_kappa_data_config=args.kappa_data_config,
-                                                custom_lambda_data_config=args.lambda_data_config)
+        custom_data_configs = {
+            "heavy": args.heavy_data_config,
+            "kappa": args.kappa_data_config,
+            "lambda": args.lambda_data_config
+        }
+        data_config_library = DataConfigLibrary(custom_data_configs=custom_data_configs)
         data_config_library.mount_type(chain_type)
         predict_object.data_config_library = data_config_library
         predict_object.mount_genotype_list()

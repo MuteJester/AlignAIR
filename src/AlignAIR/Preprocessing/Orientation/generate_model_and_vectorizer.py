@@ -3,6 +3,7 @@ import logging
 import pickle
 import numpy as np
 from matplotlib import pyplot as plt
+from numpy.lib.function_base import piecewise
 from scikitplot.metrics import plot_confusion_matrix
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -12,15 +13,24 @@ import random
 from GenAIRR.simulation import HeavyChainSequenceAugmentor, LightChainSequenceAugmentor, SequenceAugmentorArguments, \
     LightChainKappaLambdaSequenceAugmentor
 from GenAIRR.utilities import DataConfig
-from GenAIRR.data import builtin_heavy_chain_data_config,builtin_lambda_chain_data_config,builtin_kappa_chain_data_config
+from GenAIRR.data import builtin_heavy_chain_data_config,builtin_lambda_chain_data_config,builtin_kappa_chain_data_config,builtin_tcrb_data_config
 from GenAIRR.mutation import Uniform
 
 from AlignAIR.Preprocessing.Orientation import reverse_sequence, complement_sequence, reverse_complement_sequence
-
-# Initialize DataConfig
 data_config_builtin = builtin_heavy_chain_data_config()
+tcrb_dataconfig = builtin_tcrb_data_config()
 kappa_data_config_builtin = builtin_kappa_chain_data_config()
 lambda_data_config_builtin = builtin_lambda_chain_data_config()
+from GenAIRR.pipeline import AugmentationPipeline
+from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity
+from GenAIRR.mutation import S5F
+from GenAIRR.data import builtin_heavy_chain_data_config
+from GenAIRR.steps.StepBase import AugmentationStep
+from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY
+from GenAIRR.steps import SimulateSequence,FixVPositionAfterTrimmingIndexAmbiguity,FixDPositionAfterTrimmingIndexAmbiguity,FixJPositionAfterTrimmingIndexAmbiguity
+from GenAIRR.steps import CorrectForVEndCut,CorrectForDTrims,CorruptSequenceBeginning,InsertNs,InsertIndels,ShortDValidation,DistillMutationRate
+from GenAIRR.mutation import S5F
+from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_LAMBDA,CHAIN_TYPE_BCR_LIGHT_KAPPA,CHAIN_TYPE_TCR_BETA
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -37,14 +47,38 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 def generate_train_dataset(n_samples = 100_000,chain_type='heavy'):
-    if chain_type == 'heavy':
-        heavy_augmentor = HeavyChainSequenceAugmentor(data_config_builtin, SequenceAugmentorArguments())
-    elif chain_type == 'light':
-        heavy_augmentor = LightChainKappaLambdaSequenceAugmentor(kappa_dataconfig=kappa_data_config_builtin,
-                                                           lambda_dataconfig=lambda_data_config_builtin,
-                                                           lambda_args=SequenceAugmentorArguments(),
-                                                           kappa_args=SequenceAugmentorArguments())
 
+    if chain_type == 'heavy':
+        AugmentationStep.set_dataconfig(data_config_builtin, chain_type=CHAIN_TYPE_BCR_HEAVY)
+        naive_simulator = SimulateSequence(mutation_model=S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True)
+    elif chain_type == 'tcrb':
+        AugmentationStep.set_dataconfig(tcrb_dataconfig, chain_type=CHAIN_TYPE_TCR_BETA)
+        naive_simulator = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                           productive=True)
+    elif chain_type == 'kappa':
+        AugmentationStep.set_dataconfig(kappa_data_config_builtin, chain_type=CHAIN_TYPE_BCR_LIGHT_KAPPA)
+        naive_simulator = SimulateSequence(mutation_model=S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True)
+    elif chain_type == 'lambda':
+        AugmentationStep.set_dataconfig(lambda_data_config_builtin, chain_type=CHAIN_TYPE_BCR_LIGHT_LAMBDA)
+        naive_simulator = SimulateSequence(mutation_model=S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True)
+
+    pipeline = AugmentationPipeline([naive_simulator
+        ,
+        FixVPositionAfterTrimmingIndexAmbiguity(),
+        FixDPositionAfterTrimmingIndexAmbiguity(),
+        FixJPositionAfterTrimmingIndexAmbiguity(),
+        CorrectForVEndCut(),
+        CorrectForDTrims(),
+        CorruptSequenceBeginning(corruption_probability=0.7, corrupt_events_proba=[0.4, 0.4, 0.2],
+                                 max_sequence_length=576, nucleotide_add_coefficient=210,
+                                 nucleotide_remove_coefficient=310, nucleotide_add_after_remove_coefficient=50,
+                                 random_sequence_add_proba=1,
+                                 single_base_stream_proba=0, duplicate_leading_proba=0, random_allele_proba=0),
+        InsertNs(n_ratio=0.02, proba=0.5),
+        ShortDValidation(short_d_length=5),
+        InsertIndels(indel_probability=0.5, max_indels=5, insertion_proba=0.5, deletion_proba=0.5),
+        DistillMutationRate()
+    ])
 
 
     train_sequences = []
@@ -52,7 +86,7 @@ def generate_train_dataset(n_samples = 100_000,chain_type='heavy'):
 
     logging.info('Staring To Generate S5F Portion of Train Dataset')
     for _ in tqdm(range(n_samples//2)):
-        heavy_sequence = heavy_augmentor.simulate_augmented_sequence()
+        heavy_sequence = pipeline.execute()
         label = random.choice(["Normal", 'Reversed', 'Complement', 'Reverse Complement'])
         train_labels.append(label)
         if label == 'Normal':
@@ -63,12 +97,14 @@ def generate_train_dataset(n_samples = 100_000,chain_type='heavy'):
             train_sequences.append(complement_sequence(heavy_sequence['sequence']))
         elif label == 'Reverse Complement':
             train_sequences.append(reverse_complement_sequence(heavy_sequence['sequence']))
-    heavy_augmentor = HeavyChainSequenceAugmentor(data_config_builtin,
-                                                  SequenceAugmentorArguments(mutation_model=Uniform))
+
+
+    pipeline.steps[0] = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                       productive=True)
 
     logging.info('Staring To Generate Uniform Portion of Train Dataset')
     for _ in tqdm(range(n_samples//2)):
-        heavy_sequence = heavy_augmentor.simulate_augmented_sequence()
+        heavy_sequence = pipeline.execute()
         label = random.choice(["Normal", 'Reversed', 'Complement', 'Reverse Complement'])
         train_labels.append(label)
         if label == 'Normal':
@@ -86,18 +122,50 @@ def generate_train_dataset(n_samples = 100_000,chain_type='heavy'):
 
 def generate_uniform_test_dataset(n_samples = 100_000,chain_type='heavy'):
     if chain_type == 'heavy':
-        heavy_augmentor = HeavyChainSequenceAugmentor(data_config_builtin, SequenceAugmentorArguments(mutation_model=Uniform))
-    elif chain_type == 'light':
-        heavy_augmentor = LightChainKappaLambdaSequenceAugmentor(kappa_dataconfig=kappa_data_config_builtin,
-                                                                 lambda_dataconfig=lambda_data_config_builtin,
-                                                                 lambda_args=SequenceAugmentorArguments(mutation_model=Uniform),
-                                                                 kappa_args=SequenceAugmentorArguments(mutation_model=Uniform))
+        AugmentationStep.set_dataconfig(data_config_builtin, chain_type=CHAIN_TYPE_BCR_HEAVY)
+        naive_simulator = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                           productive=True)
+    elif chain_type == 'tcrb':
+        AugmentationStep.set_dataconfig(tcrb_dataconfig, chain_type=CHAIN_TYPE_TCR_BETA)
+        naive_simulator = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                           productive=True)
+    elif chain_type == 'kappa':
+        AugmentationStep.set_dataconfig(kappa_data_config_builtin, chain_type=CHAIN_TYPE_BCR_LIGHT_KAPPA)
+        naive_simulator = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                           productive=True)
+    elif chain_type == 'lambda':
+        AugmentationStep.set_dataconfig(lambda_data_config_builtin, chain_type=CHAIN_TYPE_BCR_LIGHT_LAMBDA)
+        naive_simulator = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                           productive=True)
+
+    pipeline = AugmentationPipeline([naive_simulator
+                                        ,
+                                     FixVPositionAfterTrimmingIndexAmbiguity(),
+                                     FixDPositionAfterTrimmingIndexAmbiguity(),
+                                     FixJPositionAfterTrimmingIndexAmbiguity(),
+                                     CorrectForVEndCut(),
+                                     CorrectForDTrims(),
+                                     CorruptSequenceBeginning(corruption_probability=0.7,
+                                                              corrupt_events_proba=[0.4, 0.4, 0.2],
+                                                              max_sequence_length=576, nucleotide_add_coefficient=210,
+                                                              nucleotide_remove_coefficient=310,
+                                                              nucleotide_add_after_remove_coefficient=50,
+                                                              random_sequence_add_proba=1,
+                                                              single_base_stream_proba=0, duplicate_leading_proba=0,
+                                                              random_allele_proba=0),
+                                     InsertNs(n_ratio=0.02, proba=0.5),
+                                     ShortDValidation(short_d_length=5),
+                                     InsertIndels(indel_probability=0.5, max_indels=5, insertion_proba=0.5,
+                                                  deletion_proba=0.5),
+                                     DistillMutationRate()
+                                     ])
+
     uniform_test_sequences = []
     uniform_test_labels = []
 
     logging.info('Starting to Generate Uniform Mutation Model Test Samples')
     for _ in tqdm(range(n_samples)):
-        heavy_sequence = heavy_augmentor.simulate_augmented_sequence()
+        heavy_sequence = pipeline.execute()
         label = random.choice(["Normal", 'Reversed', 'Complement', 'Reverse Complement'])
         uniform_test_labels.append(label)
         if label == 'Normal':
@@ -115,12 +183,43 @@ def generate_uniform_test_dataset(n_samples = 100_000,chain_type='heavy'):
 
 def generate_partial_uniform_test_dataset(n_samples = 100_000,chain_type='heavy'):
     if chain_type == 'heavy':
-        heavy_augmentor = HeavyChainSequenceAugmentor(data_config_builtin, SequenceAugmentorArguments(mutation_model=Uniform))
-    elif chain_type == 'light':
-        heavy_augmentor = LightChainKappaLambdaSequenceAugmentor(kappa_dataconfig=kappa_data_config_builtin,
-                                                                 lambda_dataconfig=lambda_data_config_builtin,
-                                                                 lambda_args=SequenceAugmentorArguments(mutation_model=Uniform),
-                                                                 kappa_args=SequenceAugmentorArguments(mutation_model=Uniform))
+        AugmentationStep.set_dataconfig(data_config_builtin, chain_type=CHAIN_TYPE_BCR_HEAVY)
+        naive_simulator = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                           productive=True)
+    elif chain_type == 'tcrb':
+        AugmentationStep.set_dataconfig(tcrb_dataconfig, chain_type=CHAIN_TYPE_TCR_BETA)
+        naive_simulator = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                           productive=True)
+    elif chain_type == 'kappa':
+        AugmentationStep.set_dataconfig(kappa_data_config_builtin, chain_type=CHAIN_TYPE_BCR_LIGHT_KAPPA)
+        naive_simulator = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                           productive=True)
+    elif chain_type == 'lambda':
+        AugmentationStep.set_dataconfig(lambda_data_config_builtin, chain_type=CHAIN_TYPE_BCR_LIGHT_LAMBDA)
+        naive_simulator = SimulateSequence(mutation_model=Uniform(min_mutation_rate=0.003, max_mutation_rate=0.25),
+                                           productive=True)
+
+    pipeline = AugmentationPipeline([naive_simulator
+                                        ,
+                                     FixVPositionAfterTrimmingIndexAmbiguity(),
+                                     FixDPositionAfterTrimmingIndexAmbiguity(),
+                                     FixJPositionAfterTrimmingIndexAmbiguity(),
+                                     CorrectForVEndCut(),
+                                     CorrectForDTrims(),
+                                     CorruptSequenceBeginning(corruption_probability=0.7,
+                                                              corrupt_events_proba=[0.4, 0.4, 0.2],
+                                                              max_sequence_length=576, nucleotide_add_coefficient=210,
+                                                              nucleotide_remove_coefficient=310,
+                                                              nucleotide_add_after_remove_coefficient=50,
+                                                              random_sequence_add_proba=1,
+                                                              single_base_stream_proba=0, duplicate_leading_proba=0,
+                                                              random_allele_proba=0),
+                                     InsertNs(n_ratio=0.02, proba=0.5),
+                                     ShortDValidation(short_d_length=5),
+                                     InsertIndels(indel_probability=0.5, max_indels=5, insertion_proba=0.5,
+                                                  deletion_proba=0.5),
+                                     DistillMutationRate()
+                                     ])
 
     partial_uniform_test_sequences = []
     partial_uniform_test_labels = []
@@ -153,7 +252,7 @@ def generate_partial_uniform_test_dataset(n_samples = 100_000,chain_type='heavy'
     logging.info('Starting to Generate Uniform Mutation Model Partial Test Samples')
 
     for _ in tqdm(range(n_samples)):
-        heavy_sequence = heavy_augmentor.simulate_augmented_sequence()
+        heavy_sequence = pipeline.execute()
         sequence, partial_label = get_partial_sequence(heavy_sequence,sampling_type_set)
         partial_labels.append(partial_label)
         heavy_sequence['sequence'] = sequence

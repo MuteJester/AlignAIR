@@ -75,7 +75,7 @@ class PredictionDataset:
         else:
             raise ValueError("Input data must be a list of sequences or a file path.")
 
-        return [self.encode_and_equal_pad_sequence(seq) for seq in sequences]
+        return {'tokenized_sequence':np.vstack([self.encode_and_equal_pad_sequence(seq)['tokenized_sequence'] for seq in sequences])}
 
     def _read_csv(self, file_path):
         """

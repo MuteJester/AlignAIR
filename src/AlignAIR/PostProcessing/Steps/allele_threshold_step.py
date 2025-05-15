@@ -15,6 +15,8 @@ class ConfidenceMethodThresholdApplicationStep(Step):
         for _gene in alleles:
             if chain_type == 'heavy':
                 extractor = CappedDynamicConfidenceThreshold(heavy_dataconfig=config['heavy'])
+            elif chain_type =='tcrb':
+                extractor = CappedDynamicConfidenceThreshold(heavy_dataconfig=config['tcrb'])
             else:
                 extractor = CappedDynamicConfidenceThreshold(kappa_dataconfig=config['kappa'],
                                                              lambda_dataconfig=config['lambda'])
@@ -37,7 +39,7 @@ class ConfidenceMethodThresholdApplicationStep(Step):
         thresholds = {'v': args.v_allele_threshold, 'd': args.d_allele_threshold, 'j': args.j_allele_threshold}
         caps = {'v': args.v_cap, 'd': args.d_cap, 'j': args.j_cap}
 
-        if args.chain_type == 'heavy':
+        if args.chain_type in ['heavy','tcrb']:
             alleles['d'] = predict_object.results['cleaned_data']['d_allele']
 
         predict_object.results['allele_info'] = self.extract_likelihoods_and_labels_from_calls(
@@ -61,6 +63,8 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         for _gene in alleles:
             if data_config_library.mounted == 'heavy':
                 extractor = MaxLikelihoodPercentageThreshold(heavy_dataconfig=data_config_library.config())
+            elif data_config_library.mounted == 'tcrb':
+                extractor = MaxLikelihoodPercentageThreshold(heavy_dataconfig=data_config_library.config('tcrb'))
             else:
                 extractor = MaxLikelihoodPercentageThreshold(kappa_dataconfig=data_config_library.config('kappa'),
                                                              lambda_dataconfig=data_config_library.config('lambda'))
@@ -92,7 +96,7 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         alleles = {'v': predict_object.processed_predictions['v_allele'],
                    'j': predict_object.processed_predictions['j_allele'],
                    }
-        if predict_object.data_config_library.mounted == 'heavy':
+        if predict_object.data_config_library.mounted in ['heavy','tcrb']:
             alleles['d'] = predict_object.processed_predictions['d_allele']
 
         thresholds = self.get_thresholds(args)
