@@ -1,5 +1,5 @@
 import numpy as np
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
 
 from AlignAIR.PredictObject.PredictObject import PredictObject
 from AlignAIR.Step.Step import Step

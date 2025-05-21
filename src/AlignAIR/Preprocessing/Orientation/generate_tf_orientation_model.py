@@ -11,7 +11,7 @@ from tqdm.auto import tqdm
 import random
 from GenAIRR.simulation import HeavyChainSequenceAugmentor, LightChainSequenceAugmentor, SequenceAugmentorArguments, \
     LightChainKappaLambdaSequenceAugmentor
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
 from GenAIRR.data import builtin_heavy_chain_data_config,builtin_lambda_chain_data_config,builtin_kappa_chain_data_config,builtin_tcrb_data_config
 from GenAIRR.mutation import Uniform
 import tensorflow as tf
@@ -19,7 +19,7 @@ from AlignAIR.Preprocessing.Orientation.OrientationTF import *
 from AlignAIR.Preprocessing.Orientation import reverse_sequence, complement_sequence, reverse_complement_sequence
 from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.steps import AugmentationStep
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
 from GenAIRR.data import builtin_heavy_chain_data_config, builtin_kappa_chain_data_config
 from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_LAMBDA,CHAIN_TYPE_BCR_LIGHT_KAPPA,CHAIN_TYPE_TCR_BETA
 # Initialize DataConfig

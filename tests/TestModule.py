@@ -65,7 +65,7 @@ class TestModule(unittest.TestCase):
             model=model,
             batch_size=256,
             epochs=1,
-            steps_per_epoch=4,
+            steps_per_epoch=512,
             verbose=1,
             classification_metric=[tf.keras.metrics.AUC(), tf.keras.metrics.AUC(), tf.keras.metrics.AUC()],
             regression_metric=tf.keras.losses.binary_crossentropy,
@@ -107,7 +107,7 @@ class TestModule(unittest.TestCase):
             model=model,
             batch_size=256,
             epochs=1,
-            steps_per_epoch=4,
+            steps_per_epoch=512,
             verbose=1,
             classification_metric=[tf.keras.metrics.AUC(), tf.keras.metrics.AUC(), tf.keras.metrics.AUC()],
             regression_metric=tf.keras.losses.binary_crossentropy,
@@ -146,8 +146,8 @@ class TestModule(unittest.TestCase):
         trainer = Trainer(
             model=model,
             batch_size=256,
-            epochs=10,
-            steps_per_epoch=4,
+            epochs=1,
+            steps_per_epoch=512,
             verbose=1,
             classification_metric=[tf.keras.metrics.AUC(), tf.keras.metrics.AUC(), tf.keras.metrics.AUC()],
             regression_metric=tf.keras.losses.binary_crossentropy,
@@ -159,7 +159,6 @@ class TestModule(unittest.TestCase):
 
 
         self.assertIsNotNone(trainer.history)
-
 
     def test_load_saved_heavy_chain_model(self):
 

@@ -3,7 +3,7 @@ import pandas as pd
 
 from ..Data.datasetBase import DatasetBase
 from GenAIRR.sequence import LightChainType
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
 
 
 class LightChainDataset(DatasetBase):

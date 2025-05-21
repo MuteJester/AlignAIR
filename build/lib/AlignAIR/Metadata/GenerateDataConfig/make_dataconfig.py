@@ -1,4 +1,4 @@
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
 from GenAIRR.utilities.data_utilities import create_allele_dict
 from GenAIRR.utilities.asc_utilities import create_asc_germline_set
 from GenAIRR.utilities import AlleleNComparer

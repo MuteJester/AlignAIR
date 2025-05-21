@@ -11,7 +11,7 @@ from tqdm.auto import tqdm
 import random
 from GenAIRR.simulation import HeavyChainSequenceAugmentor, LightChainSequenceAugmentor, SequenceAugmentorArguments, \
     LightChainKappaLambdaSequenceAugmentor
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
 from GenAIRR.data import builtin_heavy_chain_data_config,builtin_lambda_chain_data_config,builtin_kappa_chain_data_config
 from GenAIRR.mutation import Uniform
 import tensorflow as tf

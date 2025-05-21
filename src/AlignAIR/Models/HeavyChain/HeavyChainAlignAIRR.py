@@ -72,8 +72,6 @@ class HeavyChainAlignAIRR(tf.keras.Model):
             vocab_size=6, embed_dim=32, maxlen=self.max_seq_length
         )
         self.fblock_activation = 'tanh'
-        print(self.fblock_activation)
-
         # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
         # Init layers that Encode the Initial 4 RAW A-T-G-C Signals
         self.meta_feature_extractor_block = ConvResidualFeatureExtractionBlock(filter_size=128,

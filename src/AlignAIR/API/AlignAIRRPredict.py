@@ -80,38 +80,6 @@ def load_yaml_config(config_file):
         config = yaml.safe_load(file)
     return Args(**config)
 
-def interactive_mode():
-    """
-        Collect configuration interactively using questionary.
-
-        Returns:
-            Args: Configuration collected interactively.
-    """
-    config = {}
-    config['model_checkpoint'] = questionary.text("Path to saved AlignAIR weights:").ask()
-    config['save_path'] = questionary.text("Where to save the alignment:").ask()
-    config['chain_type'] = questionary.select("Chain type:", choices=['heavy', 'light']).ask()
-    config['sequences'] = questionary.text("Path to csv/tsv file with sequences in a column called 'sequence':").ask()
-    config['lambda_data_config'] = questionary.text("Path to lambda chain data config:", default='D').ask()
-    config['kappa_data_config'] = questionary.text("Path to kappa chain data config:", default='D').ask()
-    config['heavy_data_config'] = questionary.text("Path to heavy chain data config:", default='D').ask()
-    config['max_input_size'] = int(questionary.text("Maximum model input size:", default='576').ask())
-    config['batch_size'] = int(questionary.text("Batch size for the model prediction:", default='2048').ask())
-    config['v_allele_threshold'] = float(questionary.text("Threshold for V allele prediction:", default='0.75').ask())
-    config['d_allele_threshold'] = float(questionary.text("Threshold for D allele prediction:", default='0.3').ask())
-    config['j_allele_threshold'] = float(questionary.text("Threshold for J allele prediction:", default='0.8').ask())
-    config['v_cap'] = int(questionary.text("Cap for V allele calls:", default='3').ask())
-    config['d_cap'] = int(questionary.text("Cap for D allele calls:", default='3').ask())
-    config['j_cap'] = int(questionary.text("Cap for J allele calls:", default='3').ask())
-    config['translate_to_asc'] = questionary.confirm("Translate names back to ASCs names from IMGT?").ask()
-    config['fix_orientation'] = questionary.confirm("Fix DNA orientation if reversed or complement?").ask()
-    config['custom_orientation_pipeline_path'] = questionary.text("Path to a custom orientation model:", default='').ask()
-    config['custom_genotype'] = questionary.text("Path to a custom genotype yaml file:", default='').ask()
-    config['save_predict_object'] = questionary.confirm("Save the predict object (Warning this can be large)?").ask()
-    config['airr_format'] = questionary.confirm("Format the results to AIRR format?").ask()
-    config['finetuned_model_params_yaml'] = questionary.text("Path to a yaml file with the parameters of a fine tuned model:", default='').ask()
-    return Args(**config)
-
 def run_pipeline(predict_object, steps):
     """
         Execute a series of processing steps on the predict object.
@@ -132,8 +100,6 @@ def process_args (args):
         if not args.config_file:
             raise ValueError("YAML mode requires --config_file argument")
         config = load_yaml_config(args.config_file)
-    elif args.mode == 'interactive':
-        config = interactive_mode()
 
     return config
 

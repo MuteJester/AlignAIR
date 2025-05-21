@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from ..Data.datasetBase import DatasetBase
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
 
 
 class HeavyChainDataset(DatasetBase):

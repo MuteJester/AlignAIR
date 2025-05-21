@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import csv
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
 import tensorflow as tf
 from tqdm.auto import tqdm
 from abc import ABC, abstractmethod

@@ -4,7 +4,6 @@ from multiprocessing import Process
 
 from tqdm.auto import tqdm
 import numpy as np
-
 from AlignAIR.PredictObject.PredictObject import PredictObject
 from AlignAIR.Step.Step import Step
 from AlignAIR.Utilities.consumer_producer import READER_WORKER_TYPES
