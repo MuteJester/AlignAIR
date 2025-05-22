@@ -134,13 +134,13 @@ def tokenize_sequences_batch(sequences, max_seq_length, tokenizer_dictionary):
 def load_model(chain_type, model_checkpoint, max_sequence_size, config=None):
     if chain_type == 'heavy':
         dataset = HeavyChainDataset(data_path=args.sequences,
-                                                dataconfig=config['heavy'], batch_read_file=True,
-                                                max_sequence_length=max_sequence_size)
+                                    dataconfig=config['heavy'], use_streaming=True,
+                                    max_sequence_length=max_sequence_size)
     elif chain_type == 'light':
         dataset = LightChainDataset(data_path=args.sequences,
                                     lambda_dataconfig=config['lambda'],
                                     kappa_dataconfig=config['kappa'],
-                                    batch_read_file=True, max_sequence_length=max_sequence_size)
+                                    use_streaming=True, max_sequence_length=max_sequence_size)
     else:
         raise ValueError(f'Unknown Chain Type: {chain_type}')
 

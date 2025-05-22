@@ -94,10 +94,10 @@ model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
 
 TRAIN_DATASET = "TRAIN DATASET LOCATION"
 train_dataset = HeavyChainDataset(data_path=TRAIN_DATASET
-                                  ,dataconfig=heavychain_config,
+                                  , dataconfig=heavychain_config,
                                   batch_size=batch_size,
                                   max_sequence_length=512,
-                                  batch_read_file=True)
+                                  use_streaming=True)
 
 
 

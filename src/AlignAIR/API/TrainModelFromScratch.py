@@ -101,7 +101,7 @@ if __name__ == '__main__':
                                               , dataconfig=heavychain_config,
                                               batch_size=int(parameters['training_batch_size']),
                                               max_sequence_length=int(parameters['max_sequence_length']),
-                                              batch_read_file=True)
+                                              use_streaming=True)
 
             print('Starting The Training...')
             print('Train Dataset Path: ', TRAIN_DATASET)
@@ -148,7 +148,7 @@ if __name__ == '__main__':
                                           kappa_dataconfig=kappa_config,
                                           batch_size=int(parameters['training_batch_size']),
                                           max_sequence_length=int(parameters['max_sequence_length']),
-                                          batch_read_file=True)
+                                          use_streaming=True)
 
         print('Starting The Training...')
         print('Train Dataset Path: ', TRAIN_DATASET)

@@ -46,7 +46,7 @@ def get_train_dataset(chain_type, data_path,batch_size,max_sequence_length):
             dataconfig=data_config,
             batch_size=batch_size,
             max_sequence_length=max_sequence_length,
-            batch_read_file=True
+            use_streaming=True
         )
     elif chain_type == 'light':
         train_dataset = LightChainDataset(data_path=data_path
@@ -54,7 +54,7 @@ def get_train_dataset(chain_type, data_path,batch_size,max_sequence_length):
                                           kappa_dataconfig=data_config[0],
                                           batch_size=batch_size,
                                           max_sequence_length=max_sequence_length,
-                                          batch_read_file=True)
+                                          use_streaming=True)
     return train_dataset
 
 

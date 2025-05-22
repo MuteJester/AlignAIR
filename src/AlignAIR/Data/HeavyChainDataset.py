@@ -24,9 +24,9 @@ class HeavyChainDataset(DatasetBase):
         generate_model_params():
             Generates model parameters based on the dataset attributes.
     """
-    def __init__(self, data_path, dataconfig: DataConfig, batch_size=64, max_sequence_length=512, batch_read_file=False,
+    def __init__(self, data_path, dataconfig: DataConfig, batch_size=64, max_sequence_length=512, use_streaming=False,
                  nrows=None, seperator=','):
-        super().__init__(data_path, dataconfig, batch_size, max_sequence_length, batch_read_file, nrows, seperator)
+        super().__init__(data_path, dataconfig, batch_size, max_sequence_length, use_streaming, nrows, seperator)
 
         self.required_data_columns = ['sequence', 'v_sequence_start', 'v_sequence_end', 'd_sequence_start',
                                       'd_sequence_end', 'j_sequence_start', 'j_sequence_end', 'v_call',
@@ -44,15 +44,10 @@ class HeavyChainDataset(DatasetBase):
         self.d_allele_count = len(d_alleles)
         self.j_allele_count = len(j_alleles)
 
-        self.v_allele_call_ohe = {f: i for i, f in enumerate(v_alleles)}
-        self.d_allele_call_ohe = {f: i for i, f in enumerate(d_alleles)}
-        self.j_allele_call_ohe = {f: i for i, f in enumerate(j_alleles)}
+        self.allele_encoder.register_gene("V", v_alleles,sort=False)
+        self.allele_encoder.register_gene("D", d_alleles,sort=False)
+        self.allele_encoder.register_gene("J", j_alleles,sort=False)
 
-        self.properties_map = {
-            "V": {"allele_count": self.v_allele_count, "allele_call_ohe": self.v_allele_call_ohe},
-            "J": {"allele_count": self.j_allele_count, "allele_call_ohe": self.j_allele_call_ohe},
-            "D": {"allele_count": self.d_allele_count, "allele_call_ohe": self.d_allele_call_ohe}
-        }
 
     def derive_call_dictionaries(self):
         self.v_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.v_alleles for j in
@@ -62,22 +57,14 @@ class HeavyChainDataset(DatasetBase):
         self.j_dict = {j.name: j.ungapped_seq.upper() for i in self.dataconfig.j_alleles for j in
                        self.dataconfig.j_alleles[i]}
 
-    def get_ohe_reverse_mapping(self):
-        get_reverse_dict = lambda dic: {i: j for j, i in dic.items()}
-        call_maps = {
-            "v_allele": get_reverse_dict(self.v_allele_call_ohe),
-            "d_allele": get_reverse_dict(self.d_allele_call_ohe),
-            "j_allele": get_reverse_dict(self.j_allele_call_ohe),
-        }
-        return call_maps
 
     def _get_single_batch(self, pointer):
         # Read Batch from Dataset
-        batch = self.generate_batch(pointer)
+        batch = self.reader.get_batch(pointer)
         batch = pd.DataFrame(batch)
 
         # Encoded sequence in batch and collect the padding sizes applied to each sequences
-        encoded_sequences, paddings = self.encode_and_pad_sequences(batch['sequence'])
+        encoded_sequences, paddings = self.tokenizer.encode_and_pad_center(batch['sequence'])
         # use the padding sizes collected to adjust the start/end positions of the alleles
         for _gene in ['v_sequence', 'd_sequence', 'j_sequence']:
             for _position in ['start', 'end']:
@@ -121,23 +108,3 @@ class HeavyChainDataset(DatasetBase):
             "d_allele_count": self.d_allele_count,
             "j_allele_count": self.j_allele_count,
         }
-
-    def encode_and_equal_pad_sequence(self, sequence):
-        """Encodes a sequence of nucleotides and pads it to the specified maximum length, equally from both sides.
-
-        Args:
-            sequence: A sequence of nucleotides.
-
-        Returns:
-            A padded sequence, and the start and end indices of the unpadded sequence.
-        """
-
-        encoded_sequence = np.array([self.tokenizer_dictionary[i] for i in sequence])
-        padding_length = self.max_seq_length - len(encoded_sequence)
-        iseven = padding_length % 2 == 0
-        pad_size = padding_length // 2
-        if iseven:
-            encoded_sequence = np.pad(encoded_sequence, (pad_size, pad_size), 'constant', constant_values=(0, 0))
-        else:
-            encoded_sequence = np.pad(encoded_sequence, (pad_size, pad_size + 1), 'constant', constant_values=(0, 0))
-        return encoded_sequence, pad_size

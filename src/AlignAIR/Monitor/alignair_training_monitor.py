@@ -921,10 +921,10 @@ chain_type = 'tcrb'
 
 
 train_dataset = HeavyChainDataset(data_path=TRAIN_DATASET,
-                                dataconfig=builtin_tcrb_data_config(),
-                                batch_size=batch_size,
-                                max_sequence_length=576,
-                                batch_read_file=True)
+                                  dataconfig=builtin_tcrb_data_config(),
+                                  batch_size=batch_size,
+                                  max_sequence_length=576,
+                                  use_streaming=True)
 
 
 
@@ -999,7 +999,7 @@ if __name__ == "__main__":
     data_path = r'C:\Users\tomas\Desktop\AlignAIRR\tests\edf_sample.csv'
     sample_data  = pd.read_csv(data_path)
     train_dataset = HeavyChainDataset(data_path=data_path,
-                                      dataconfig=builtin_tcrb_data_config(), batch_read_file=True,
+                                      dataconfig=builtin_tcrb_data_config(), use_streaming=True,
                                       max_sequence_length=576)
 
     n_v_alleles = (train_dataset.v_allele_count)

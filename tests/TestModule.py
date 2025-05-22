@@ -5,7 +5,7 @@ import yaml
 from AlignAIR.Data.PredictionDataset import PredictionDataset
 from AlignAIR.Preprocessing.LongSequence.FastKmerDensityExtractor import FastKmerDensityExtractor
 from AlignAIR.Utilities.step_utilities import DataConfigLibrary
-from src.AlignAIR.Metadata import RandomDataConfigGenerator
+from GenAIRR.dataconfig.make import RandomDataConfigBuilder
 from src.AlignAIR.Models.LightChain import LightChainAlignAIRR
 import unittest
 import pandas as pd
@@ -38,7 +38,7 @@ class TestModule(unittest.TestCase):
 
     def test_heavy_chain_model_training(self):
         train_dataset = HeavyChainDataset(data_path=self.heavy_chain_dataset_path,
-                                          dataconfig=builtin_heavy_chain_data_config(),batch_read_file=True,
+                                          dataconfig=builtin_heavy_chain_data_config(), use_streaming=True,
                                           max_sequence_length=576)
 
         model_parmas = train_dataset.generate_model_params()
@@ -84,7 +84,7 @@ class TestModule(unittest.TestCase):
         train_dataset = LightChainDataset(data_path=self.light_chain_dataset_path,
                                           lambda_dataconfig=builtin_lambda_chain_data_config(),
                                           kappa_dataconfig=builtin_kappa_chain_data_config(),
-                                          batch_read_file=True,
+                                          use_streaming=True,
                                           max_sequence_length=576)
 
         model_parmas = train_dataset.generate_model_params()
@@ -120,7 +120,7 @@ class TestModule(unittest.TestCase):
 
     def test_tcrb_chain_model_training(self):
         train_dataset = HeavyChainDataset(data_path=self.tcrb_chain_dataset_path,
-                                          dataconfig=builtin_tcrb_data_config(),batch_read_file=True,
+                                          dataconfig=builtin_tcrb_data_config(), use_streaming=True,
                                           max_sequence_length=576)
 
         model_parmas = train_dataset.generate_model_params()

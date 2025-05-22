@@ -16,13 +16,13 @@ class ModelLoadingStep(Step):
     def get_dataset_object(file_info: FileInfo, data_config_library: DataConfigLibrary, max_sequence_size):
         if data_config_library.mounted == 'heavy':
             dataset = HeavyChainDataset(data_path=file_info.path,
-                                        dataconfig=data_config_library.config(), batch_read_file=True,
+                                        dataconfig=data_config_library.config(), use_streaming=True,
                                         max_sequence_length=max_sequence_size)
         elif data_config_library.mounted == 'light':
             dataset = LightChainDataset(data_path=file_info.path,
                                         lambda_dataconfig=data_config_library.config('lambda'),
                                         kappa_dataconfig=data_config_library.config('kappa'),
-                                        batch_read_file=True, max_sequence_length=max_sequence_size)
+                                        use_streaming=True, max_sequence_length=max_sequence_size)
         else:
             raise ValueError(f'Unknown Chain Type: {data_config_library.mounted}')
         return dataset

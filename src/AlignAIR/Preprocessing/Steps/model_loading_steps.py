@@ -17,18 +17,18 @@ class ModelLoadingStep(Step):
         dataset_object = data_config_library.matching_dataset_object
         if data_config_library.mounted in ['heavy']:
             dataset = dataset_object(data_path=file_info.path,
-                                        dataconfig=data_config_library.config(), batch_read_file=True,
+                                        dataconfig=data_config_library.config(), use_streaming=True,
                                         max_sequence_length=max_sequence_size)
         elif data_config_library.mounted in ['tcrb']:
             dataset = dataset_object(data_path=file_info.path,
-                                     dataconfig=data_config_library.config('tcrb'), batch_read_file=True,
+                                     dataconfig=data_config_library.config('tcrb'), use_streaming=True,
                                      max_sequence_length=max_sequence_size)
 
         elif data_config_library.mounted == 'light':
             dataset = dataset_object(data_path=file_info.path,
                                         lambda_dataconfig=data_config_library.config('lambda'),
                                         kappa_dataconfig=data_config_library.config('kappa'),
-                                        batch_read_file=True, max_sequence_length=max_sequence_size)
+                                        use_streaming=True, max_sequence_length=max_sequence_size)
         else:
             raise ValueError(f'Unknown Chain Type: {data_config_library.mounted}')
         return dataset
