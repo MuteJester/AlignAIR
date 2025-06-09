@@ -17,7 +17,7 @@ from src.AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
 from src.AlignAIR.Trainers import Trainer
 import tensorflow as tf
 import numpy as np
-from src.AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
+from AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
 import os
 import subprocess
 import shutil
@@ -362,7 +362,6 @@ class TestModule(unittest.TestCase):
 
         # Cleanup
         os.remove(output_csv)
-
 
     def test_train_model_script(self):
         # Set base directory and script path

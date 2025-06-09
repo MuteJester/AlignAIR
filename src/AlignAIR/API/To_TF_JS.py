@@ -3,12 +3,22 @@ import numpy as np
 from AlignAIR.Data.PredictionDataset import PredictionDataset
 from AlignAIR.Trainers import Trainer
 
-model_weights_path = 'C:/Users/tomas/Desktop/AlignAIRR/tests/LightChain_AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced'
-model_type = 'light'
+model_weights_path = 'C:/Users/tomas/Desktop/AlignAIRR/tests/AlignAIRR_TCRB_Model_checkpoint'
+model_type = 'tcrb'
 
 if model_type == 'heavy':
     from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
     model_params = {'max_seq_length': 576, 'v_allele_count': 198, 'd_allele_count': 34, 'j_allele_count': 7}
+    model = HeavyChainAlignAIRR(**model_params)
+elif model_type == 'tcrb':
+    from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
+    from GenAIRR.data import builtin_tcrb_data_config
+    data_config = builtin_tcrb_data_config()
+    print(dir(data_config))
+    model_params = {'max_seq_length': 576,
+                    'v_allele_count': data_config.number_of_v_alleles,
+                    'd_allele_count': data_config.number_of_d_alleles+1,
+                    'j_allele_count': data_config.number_of_j_alleles}
     model = HeavyChainAlignAIRR(**model_params)
 else:
     from AlignAIR.Models.LightChain import LightChainAlignAIRR
@@ -51,9 +61,9 @@ dummy_input = {
 _ = trainer.model(dummy_input)  # Build the model by invoking it
 
 
-trainer.model.save('C:/Users/tomas/Downloads/latest_lightchain_alignair_model')
+trainer.model.save('C:/Users/tomas/Downloads/alignair_tcrb_js')
 # validate folder in saved path
 import os
-folder_path = 'C:/Users/tomas/Downloads/latest_lightchain_alignair_model'
+folder_path = 'C:/Users/tomas/Downloads/alignair_tcrb_js'
 status = os.path.exists(folder_path)
 print("Converted model saved in folder: ", status)

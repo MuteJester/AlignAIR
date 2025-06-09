@@ -1,4 +1,3 @@
-
 <p align="center">
   <img src="https://alignair.ai/_next/static/media/logo_alignair14bw.b74a41a0.svg" width="240" alt="AlignAIR logo">
 </p>
@@ -10,7 +9,7 @@
     <img alt="Docker pulls" src="https://img.shields.io/docker/pulls/thomask90/alignair">
   </a>
   <a href="https://zenodo.org/record/XXXXXXXX">
-    <img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXXX.zsvg">
+    <img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXXX.svg">
   </a>
   <a href="LICENSE">
     <img alt="MIT" src="https://img.shields.io/badge/license-MIT-green.svg">
@@ -22,11 +21,17 @@
 ### ✨ Quick Start
 
 ```bash
-docker run --rm -v "$PWD:/data" thomask90/alignair:latest \
-       alignair_predict --mode cli \
-       --model_checkpoint /app/pretrained_models/IGH_S5F_576 \
-       --sequences /data/my_reads.fasta \
-       --save_path /data
+docker pull thomask90/alignair:latest
+docker run -it --rm \
+  -v ~/data:/data \
+  thomask90/alignair:latest
+
+# Inside the container:
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGH_S5F_576 \
+  --save-path=/data/output \
+  --chain-type=heavy \
+  --sequences=/app/tests/sample_HeavyChain_dataset.csv
 ```
 
 <details>
@@ -35,8 +40,10 @@ docker run --rm -v "$PWD:/data" thomask90/alignair:latest \
 - [Key features](#key-features)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Available Models](#available-models)
 - [Docker in depth](#docker-in-depth)
 - [Examples](#examples)
+- [Parameter Reference](#parameter-reference)
 - [Data availability](#data-availability)
 - [Citation](#citation)
 - [Contributing](#contributing)
@@ -51,8 +58,8 @@ docker run --rm -v "$PWD:/data" thomask90/alignair:latest \
 - **State‑of‑the‑art accuracy** for V, D, J allele calling and junction segmentation  
 - **Multi‑task deep network** jointly optimises alignment, productivity, and indel detection  
 - **Scales to millions** of AIRR‑seq reads with GPU support  
-- **Three interfaces** – CLI, YAML, fully interactive wizard  
-- **Drop‑in integration** with AIRR schema & downstream tools (IgBLAST, MiAIRR)
+- **Pre-trained models** for IGH, IGL, and TCRB chains included
+- **Drop‑in integration** with AIRR schema & downstream tools
 
 ---
 
@@ -61,10 +68,10 @@ docker run --rm -v "$PWD:/data" thomask90/alignair:latest \
 ### Docker (recommended)
 
 ```bash
-# 1 — pull once
+# Pull the latest image
 docker pull thomask90/alignair:latest
 
-# 2 — open shell (mount local data to /data)
+# Start interactive container (mount local data to /data)
 docker run -it --rm -v /path/to/local/data:/data thomask90/alignair:latest
 ```
 
@@ -84,34 +91,63 @@ It is mainly recommended for developers, contributors and advanced users.
 
 ## Usage
 
-### CLI
+### Basic Usage
 
 ```bash
-alignair_predict \
-    --model_checkpoint /models/IGH_S5F_576 \
-    --sequences my_reads.fasta \
-    --chain_type heavy \
-    --save_path results/
+python app.py run \
+    --model-checkpoint=/app/pretrained_models/IGH_S5F_576 \
+    --chain-type=heavy \
+    --sequences=/data/input/sequences.csv \
+    --save-path=/data/output
 ```
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--batch_size` | inference batch size | `2048` |
-| `--v_allele_threshold` | minimum posterior probability | `0.75` |
-| `--v_cap` | max V calls returned | `3` |
-| *full list:* | `alignair_predict --help` | — |
+### Example Commands
 
-### YAML
-
+**Heavy Chain Analysis:**
 ```bash
-alignair_predict --mode yaml --config_file configs/heavy.yaml
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGH_S5F_576 \
+  --chain-type=heavy \
+  --sequences=/data/input/heavy_sequences.csv \
+  --save-path=/data/output/heavy_results \
+  --v-allele-threshold=0.75 \
+  --d-allele-threshold=0.3 \
+  --j-allele-threshold=0.8
 ```
 
-### Interactive wizard
-
+**Light Chain Analysis:**
 ```bash
-alignair_predict --mode interactive
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+  --chain-type=light \
+  --sequences=/data/input/light_sequences.csv \
+  --save-path=/data/output/light_results \
+  --airr-format \
+  --fix-orientation
 ```
+
+**T-Cell Receptor Beta Chain:**
+```bash
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/TCRB_S5F_576 \
+  --chain-type=tcrb \
+  --sequences=/data/input/tcr_sequences.csv \
+  --save-path=/data/output/tcr_results
+```
+
+---
+
+## Available Models
+
+The Docker container ships with three pre-trained models:
+
+| Model | Chain Type | Checkpoint Path | Use Case |
+|-------|------------|-----------------|----------|
+| **IGH Heavy Chain** | `heavy` | `/app/pretrained_models/IGH_S5F_576` | B-cell heavy chain analysis |
+| **IGL Light Chain** | `light` | `/app/pretrained_models/IGL_S5F_576` | B-cell lambda light chain analysis |
+| **TCRB Beta Chain** | `tcrb` | `/app/pretrained_models/TCRB_S5F_576` | T-cell receptor beta chain analysis |
+
+All models are trained on human sequences using IMGT v3.1.25 reference sets with S5F mutation patterns.
 
 ---
 
@@ -131,17 +167,56 @@ alignair_predict --mode interactive
        thomask90/alignair:latest
    ```
 
-3. **Choose option 1: CLI mode** from the menu.
-
-4. **Paste CLI arguments**, e.g.  
+3. **Inside the container, run AlignAIR:**  
    ```bash
-   --model_checkpoint="/app/pretrained_models/IGH_S5F_576" \
-   --save_path="/data" \
-   --chain_type=heavy \
-   --sequences="/data/test01.fasta"
+   python app.py run \
+     --model-checkpoint="/app/pretrained_models/IGH_S5F_576" \
+     --save-path="/data" \
+     --chain-type=heavy \
+     --sequences="/data/test01.csv"
    ```
    Results are written back to your mounted `/data` folder.
+
+4. **For help and all parameters:**
+   ```bash
+   python app.py run --help
+   ```
 </details>
+
+---
+
+## Parameter Reference
+
+### Core Parameters
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--model-checkpoint` | Path to model weights | Required |
+| `--chain-type` | Specify heavy, light, or tcrb | Required |
+| `--sequences` | Input file path (CSV/TSV/FASTA) | Required |
+| `--save-path` | Output directory | Required |
+
+### Model Settings
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--max-input-size` | Maximum input window size | `576` |
+| `--batch-size` | Sequences per batch | `2048` |
+
+### Thresholds
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--v-allele-threshold` | V allele calling threshold | `0.75` |
+| `--d-allele-threshold` | D allele calling threshold | `0.30` |
+| `--j-allele-threshold` | J allele calling threshold | `0.80` |
+| `--v-cap` / `--d-cap` / `--j-cap` | Maximum calls per segment | `3` |
+
+### Output Options
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--airr-format` | Output full AIRR Schema | `false` |
+| `--fix-orientation` | Auto-correct orientations | `true` |
+| `--translate-to-asc` | Output ASC allele names | `false` |
+
+For complete parameter list: `python app.py run --help`
 
 ---
 
@@ -150,14 +225,18 @@ See the **`examples/`** folder for Jupyter notebooks:
 
 1. End‑to‑end heavy‑chain pipeline  
 2. Benchmark vs. IgBLAST on 10 K reads  
-3. Snakemake batch processing  
+3. Batch processing workflows
 
 ---
 
 ## Data availability
 Training & benchmark datasets are archived on Zenodo: `doi:10.5281/zenodo.XXXXXXXX`
 
+---
 
+## Documentation
+For comprehensive documentation, examples, and technical details, visit:
+**[https://alignair.ai/docs](https://alignair.ai/docs)**
 
 ---
 
