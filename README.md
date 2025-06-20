@@ -8,12 +8,10 @@
   <a href="https://hub.docker.com/r/thomask90/alignair">
     <img alt="Docker pulls" src="https://img.shields.io/docker/pulls/thomask90/alignair">
   </a>
-  <a href="https://zenodo.org/record/XXXXXXXX">
-    <img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXXX.svg">
-  </a>
-  <a href="LICENSE">
-    <img alt="MIT" src="https://img.shields.io/badge/license-MIT-green.svg">
-  </a>
+<a href="https://doi.org/10.5281/zenodo.15687939"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.15687939.svg" alt="DOI"></a>
+<a href="LICENSE">
+  <img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue.svg">
+</a>
 </p>
  
 ---
@@ -252,7 +250,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
 ---
 
 ## License
-MIT – see [LICENSE](LICENSE).
+This project is licensed under the terms of the [GNU General Public License v3.0 or later (GPLv3+)](LICENSE).
 
 ---
 

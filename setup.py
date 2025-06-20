@@ -19,8 +19,9 @@ setup(
     },
     package_dir={'': 'src'},
     packages=find_packages(where='src'),
-    include_package_data=True,  # Include everything in source contro
+    include_package_data=True,
     install_requires=requirements,
+    license="GNU General Public License v3.0 or later (GPLv3+)",
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Science/Research',
@@ -32,11 +33,10 @@ setup(
         'Programming Language :: Python :: 3.9',
     ],
     keywords='immunogenetics, sequence alignment, bioinformatics',
-    python_requires='>=3.9, <3.12',  # Specify compatible Python versions
+    python_requires='>=3.9, <3.12',
     entry_points={
         'console_scripts': [
             'alignair_predict=AlignAIR.API.AlignAIRRPredict:main',
         ],
     },
 )
-
