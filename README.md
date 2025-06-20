@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://alignair.ai/_next/static/media/logo_alignair14bw.b74a41a0.svg" width="240" alt="AlignAIR logo">
+  <img src="https://alignair.ai/_next/static/media/logo_alignair11bw.17e5d8d6.svg" width="240" alt="AlignAIR logo">
 </p>
 
 <h1 align="center">AlignAIR</h1>
