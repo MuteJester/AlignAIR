@@ -1,23 +1,30 @@
 import pandas as pd
 
 class TranslateToIMGT:
-    def __init__(self,dataconfig):
+    def __init__(self, dataconfig):
         self.dataconfig = dataconfig
-        #maybe hard code into here the IMGT names, also note that each dataconfig object has the ASC table that
-        #can be used to do the translation
+        # dataconfig is a dict mapping chain_type to DataConfig
+        # Build a combined ASC table for V alleles from all chains
+        v_asc_tables = []
+        for chain, dc in self.dataconfig.items():
+            if hasattr(dc, 'asc_tables') and 'V' in dc.asc_tables:
+                v_asc = dc.asc_tables['V']
+                v_asc_tables.append(v_asc.set_index('new_allele')['imgt_allele'])
+        if v_asc_tables:
+            self.v_asc_table = pd.concat(v_asc_tables)
+        else:
+            self.v_asc_table = pd.Series(dtype=object)
 
-        if len(self.dataconfig) == 1: # heavy chain
-            self.v_asc_table = self.dataconfig['heavy'].asc_tables['V'].set_index('new_allele')['imgt_allele']
-        elif len(self.dataconfig) == 2: # both kappa and lambda of the light chain
-            dck = self.dataconfig['kappa'] # kappa chain
-            dcl = self.dataconfig['lambda'] # lambda chain
-            self.v_asc_table = pd.concat([dck.asc_tables['V'].set_index('new_allele')['imgt_allele'],dcl.asc_tables['V'].set_index('new_allele')['imgt_allele']])
-
-    def translate(self,allele_name):
+    def translate(self, allele_name):
+        # Only translate V alleles using the combined ASC table
         if "V" in allele_name:
-            asc_alleles = self.v_asc_table[allele_name]
-            asc_alleles = ','.join(asc_alleles) if type(asc_alleles) != str else asc_alleles
-            return asc_alleles
+            try:
+                asc_alleles = self.v_asc_table[allele_name]
+                asc_alleles = ','.join(asc_alleles) if not isinstance(asc_alleles, str) else asc_alleles
+                return asc_alleles
+            except KeyError:
+                # If allele not found, return original name
+                return allele_name
         else:
             return allele_name
 

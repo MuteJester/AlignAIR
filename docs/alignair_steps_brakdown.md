@@ -15,22 +15,54 @@
    - [IMGT Translation](#translation-step)
    - [Results Finalization](#finalization-step)
 
+# AlignAIR v2.0 Pipeline Steps Documentation
+
+## Table of Contents
+1. [Configuration Loading](#config-load-step)
+2. [File Processing](#file-processing-steps)
+   - [File Name Extraction](#file-name-extraction-step)
+   - [Sample Counting](#sample-counter-step)
+3. [Model Setup](#model-loading-step)
+4. [Batch Processing and Prediction](#batch-processing-step)
+5. [Post-Processing Steps](#post-processing-steps)
+   - [Raw Prediction Cleanup](#clean-and-arrange-step)
+   - [Segmentation Correction](#segment-correction-step)
+   - [Threshold Application](#allele-threshold-application-steps)
+   - [Germline Alignment](#germline-alignment-step)
+   - [IMGT Translation](#translation-step)
+   - [Results Finalization](#finalization-step)
+
+## Architecture Overview
+
+AlignAIR v2.0 introduces a unified pipeline that automatically detects single-chain vs. multi-chain scenarios:
+
+- **Single-Chain Mode**: Uses `SingleChainAlignAIR` with `SingleChainDataset`
+- **Multi-Chain Mode**: Uses `MultiChainAlignAIR` with `MultiChainDataset` and `MultiDataConfigContainer`
+- **Dynamic Detection**: Based on the number of GenAIRR dataconfigs provided
+
 ## Pipeline Steps Details
 ---
 
 ### [Config Load Step](#config-load-step)
-**Purpose**: Loads configuration settings (GenAIRR DataConfig Instance) for different chain types (heavy/light)
+**Purpose**: Loads GenAIRR DataConfig(s) and determines single vs. multi-chain mode
 
 **Class**: `ConfigLoadStep`
 
-**Input**: Chain type and custom configuration (DataConfig) path / built in GenAIRR DataConfig Instance
+**Input**: GenAIRR dataconfig identifier(s) or path(s) to custom dataconfig pickle files
 
-**Output**: Loaded configuration object
+**Output**: 
+- Single-chain: Loaded DataConfig object
+- Multi-chain: MultiDataConfigContainer with multiple DataConfigs
 
 **Key Features**:
-- Supports heavy chain configuration
-- Supports kappa and lambda chain configurations
-- Handles both built-in and custom configurations
+- Supports built-in GenAIRR dataconfigs: `HUMAN_IGH_OGRDB`, `HUMAN_IGK_OGRDB`, `HUMAN_IGL_OGRDB`, `HUMAN_TCRB_IMGT`
+- Handles custom dataconfig pickle files
+- Multi-chain support with comma-separated configs
+- Automatic chain type detection and D-gene presence validation
+
+**Dependencies**:
+- GenAIRR utilities for loading built-in dataconfigs
+- MultiDataConfigContainer for multi-chain scenarios
 ---
 
 ### [File Processing Steps](#file-processing-steps)
@@ -87,54 +119,69 @@
 ---
 
 ### [Model Loading Step](#model-loading-step)
-**Purpose**: Loads and initializes the AlignAIR model and related components
+**Purpose**: Loads and initializes the unified AlignAIR model architecture and related components
 
 **Class**: `ModelLoadingStep`
 
 **Input**: 
-
-- Sequences
-- Chain type (heavy/light)
+- GenAIRR dataconfig(s) (single or multiple)
 - Model checkpoint path
 - Maximum sequence size
 - Configuration data
 
 **Key Components**:
 
-1. **Main Model Loading**
-    - Creates appropriate dataset (HeavyChainDataset or LightChainDataset)
-    - Initializes Trainer with model architecture
-    - Builds model with specified input shape
+1. **Architecture Detection and Model Loading**
+    - Detects single-chain vs. multi-chain mode based on dataconfig count
+    - Single-chain: Creates SingleChainDataset + SingleChainAlignAIR
+    - Multi-chain: Creates MultiChainDataset + MultiChainAlignAIR with MultiDataConfigContainer
+    - Automatically determines model parameters from dataconfig(s)
+    - Builds model with appropriate input shape
     - Loads pre-trained weights from checkpoint
 
-2. **Orientation Pipeline** (Optional)
+2. **Universal Dataset Creation**
+    - SingleChainDataset: For single receptor type analysis
+    - MultiChainDataset: For mixed receptor analysis with batch partitioning
+    - Automatic chain type encoding and batch type management
+    - Dynamic allele mapping from GenAIRR dataconfigs
+
+3. **Model Architecture Selection**
+    - SingleChainAlignAIR: V/D/J segmentation + allele calling + productivity
+    - MultiChainAlignAIR: Above + chain type classification + multi-chain optimization
+    - Dynamic D-gene support based on dataconfig metadata
+    - Adaptive latent dimensions and output heads
+
+4. **Orientation Pipeline** (Optional)
     - Loads DNA orientation classifier
     - Supports both built-in and custom orientation models
     - Enabled via `fix_orientation` flag
 
-3. **Kmer Density Model**
+5. **Kmer Density Model**
     - Initializes FastKmerDensityExtractor
-    - Processes reference alleles based on chain type:
-     - Heavy chain: V, D, J alleles
-     - Light chain: V, J alleles from both kappa and lambda
-    - Fits extractor with reference sequences
+    - Processes reference alleles from all dataconfigs
+    - Unified handling of V, D, J alleles across chain types
+    - Fits extractor with combined reference sequences
 
 **Key Features**:
-    - Handles both heavy and light chain models
-    - Supports custom model checkpoints
-    - Integrates orientation correction
-    - Initializes sequence analysis components
-    - Configurable sequence length and parameters
+    - Unified architecture supporting any GenAIRR dataconfig combination
+    - Automatic single vs. multi-chain detection
+    - Dynamic model parameter inference
+    - Built-in chain type management
+    - Extensible to custom receptor types
 
 **Output**: PredictObject updated with:
-    - Loaded main model
+    - Loaded unified model (SingleChainAlignAIR or MultiChainAlignAIR)
+    - Appropriate dataset (SingleChainDataset or MultiChainDataset)
     - Orientation pipeline (if enabled)
     - Fitted kmer density extractor
+    - Model architecture metadata
 
 **Dependencies**:
-    - HeavyChainAlignAIRR/LightChainAlignAIRR models
+    - SingleChainAlignAIR/MultiChainAlignAIR models
+    - SingleChainDataset/MultiChainDataset classes
+    - MultiDataConfigContainer for multi-chain scenarios
     - FastKmerDensityExtractor
-    - Built-in orientation classifier
+    - GenAIRR utilities for dataconfig loading
 ---
 
 ### [Batch Processing Step](#batch-processing-step)

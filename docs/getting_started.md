@@ -1,15 +1,68 @@
-# Getting Started with AlignAIR
+# Getting Started with AlignAIR v2.0
 
-**AlignAIR** is a multi-task deep learning based immunoglobulin (Ig) sequence alignment suite.
-It combines a sophisticated pipeline with extensive preprocessing steps leading up to the model ensuring optimal and
-correct input adjustment, including detection and correction of sequence orientation, handling of long read sequences.
-After the model there are several post processing steps that ensure a uniform format following the AIRR schema ensuring compatibility with other sequence processing and analysis algorithms.
+**AlignAIR v2.0** introduces a revolutionary unified architecture for immunoglobulin (Ig) and T-cell receptor (TCR) sequence alignment. The new system features dynamic GenAIRR integration, universal model architectures, and native multi-chain support, making it faster and more flexible than ever.
+
+## What's New in v2.0
+
+### Unified Architecture
+- **SingleChainAlignAIR**: Optimized for single receptor type analysis
+- **MultiChainAlignAIR**: Native multi-chain support with automatic chain type classification
+- **Universal Datasets**: SingleChainDataset and MultiChainDataset classes that work with any GenAIRR dataconfig
+
+### Dynamic GenAIRR Integration
+- Built-in dataconfigs: `HUMAN_IGH_OGRDB`, `HUMAN_IGK_OGRDB`, `HUMAN_IGL_OGRDB`, `HUMAN_TCRB_IMGT`
+- Custom dataconfig support via pickle files
+- Automatic chain type detection and model selection
+
+### Enhanced Multi-Chain Capabilities
+- Mixed light chain analysis (IGK + IGL)
+- Simultaneous processing of different receptor types
+- Chain type classification as model output
+- Optimized batch processing for multi-chain scenarios
+
+## Basic Usage Examples
+
+### Single Heavy Chain Analysis
+```bash
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGH_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGH_OGRDB \
+  --sequences=heavy_sequences.csv \
+  --save-path=results/
+```
+
+### Single Light Chain Analysis (Lambda)
+```bash
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGL_OGRDB \
+  --sequences=lambda_sequences.csv \
+  --save-path=results/
+```
+
+### Multi-Chain Light Chain Analysis
+```bash
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/MultiLight_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB \
+  --sequences=mixed_light_sequences.csv \
+  --save-path=results/
+```
+
+### TCR Beta Chain Analysis
+```bash
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/TCRB_S5F_576 \
+  --genairr-dataconfig=HUMAN_TCRB_IMGT \
+  --sequences=tcr_sequences.csv \
+  --save-path=results/
+```
 
 ## Tutorials and Examples
 
 To start aligning sequences you can either train your own custom model finetuned to your specific reference/species or use our pretrained models. Below are examples for different use cases and useful tutorials:
 
-- **[Training and Using AlignAIR in Jupyter IDE](tutorials/AlignAIR_On_Jupyter_Notebooks.ipynb)**: Browse a collection of example models that showcase different capabilities of GenAIRR, providing insights into how to build and extend the framework for specific needs.
+- **[Training and Using AlignAIR v2.0 in Jupyter IDE](tutorials/AlignAIR_On_Jupyter_Notebooks.ipynb)**: Comprehensive guide to the new unified architecture with examples of both single-chain and multi-chain workflows.
 
 ### Community and Support
 

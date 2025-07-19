@@ -1,16 +1,24 @@
 # AlignAIR
 
-[AlignAIR](https://github.com/MuteJester/AlignAIR) is an AGPL-3 licensed sequence alignment tool specifically designed for Adaptive Immune Receptor Repertoire (AIRR) sequences. AlignAIR is a comprehensive suite developed for researchers and practitioners who need precise and efficient analysis and alignment of Ig sequences.
+[AlignAIR](https://github.com/MuteJester/AlignAIR) is an AGPL-3 licensed sequence alignment tool specifically designed for Adaptive Immune Receptor Repertoire (AIRR) sequences. AlignAIR v2.0 features a unified architecture that dynamically supports both single-chain and multi-chain analysis with seamless GenAIRR integration.
 
 ## Overview
 
-AlignAIR combines advanced sequence alignment algorithms with a user-friendly, modular interface that allows for extensive customization and integration. The suite is designed to handle large-scale AIRR data, supporting various sequence types and facilitating comparative studies and benchmarking of alignment methods.
+AlignAIR v2.0 represents a major architectural advancement, combining powerful sequence alignment algorithms with a unified, modular interface. The new system features:
+
+- **Unified Model Architecture**: SingleChainAlignAIR and MultiChainAlignAIR models that automatically adapt to different receptor types
+- **Dynamic GenAIRR Integration**: Built-in support for GenAIRR dataconfigs with automatic chain type detection
+- **Multi-Chain Analysis**: Native support for analyzing mixed receptor populations (e.g., IGK + IGL light chains)
+- **Flexible Data Handling**: Universal dataset classes that work with any combination of chain types
 
 ## Features
 
-- **Multi-Task Deep Learning Framework**: AlignAIR is built with a deep learning model capable of handling complex alignments while preserving accuracy.
-- **Built-in Support for Common Datasets**: The package includes configurations for AIRR datasets, enabling easy setup and use.
-- **Robust Ambiguity Resolution**: Provides reliable allele calls and ensures precise meta-information for each sequence.
+- **Unified Multi-Chain Framework**: AlignAIR v2.0 introduces a revolutionary unified architecture that seamlessly handles single-chain and multi-chain scenarios
+- **Dynamic GenAIRR Integration**: Built-in support for GenAIRR dataconfigs with automatic chain type detection and configuration
+- **Universal Model Architecture**: SingleChainAlignAIR and MultiChainAlignAIR models that adapt to any receptor combination
+- **Enhanced Multi-Task Learning**: Joint optimization of V/D/J segmentation, allele calling, chain type classification, and sequence analysis
+- **Scalable Performance**: Optimized for large-scale AIRR data with efficient batch processing and GPU acceleration
+- **Comprehensive Chain Support**: Native support for IGH, IGK, IGL, TCRB, and custom receptor types
 
 ## Installation Options
 
@@ -31,11 +39,17 @@ pip install .
 ## Quick Start Guide
 
 1. **Input Preparation**: Ensure your input data is in a compatible format (e.g., FASTA or CSV with sequences).
-2. **Running AlignAIR**: Use the CLI or Python script to initiate the alignment process:
+2. **Choose Configuration**: Select appropriate GenAIRR dataconfig(s) for your receptor type(s):
+   - Single chain: `--genairr-dataconfig=HUMAN_IGH_OGRDB`
+   - Multi-chain: `--genairr-dataconfig=HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB`
+3. **Running AlignAIR**: Use the unified CLI interface:
     ```bash
-    alignair --input my_sequences.fasta --output results/
+    python app.py run --model-checkpoint=model_path \
+                     --genairr-dataconfig=HUMAN_IGH_OGRDB \
+                     --sequences=my_sequences.csv \
+                     --save-path=results/
     ```
-3. **Customization**: Modify configuration files for specific alignment needs or custom modules.
+4. **Results**: AlignAIR automatically detects single vs. multi-chain scenarios and adapts accordingly.
 
 ## Docker Support
 

@@ -9,6 +9,19 @@ from GenAIRR.dataconfig import DataConfig
 # from GenAIRR.dataconfig import DataConfig, _CONFIG_NAMES, data
 
 class MultiDataConfigContainer:
+    def packaged_config(self) -> Dict[str, DataConfig]:
+        """
+        Return a dictionary mapping chain types to their DataConfig objects.
+        For single-chain, returns {chain_type: DataConfig}.
+        For multi-chain, returns {chain_type: DataConfig, ...}.
+        """
+        result = {}
+        for dc in self.dataconfigs:
+            chain_type = getattr(dc.metadata, 'chain_type', None)
+            if chain_type is None:
+                raise ValueError(f"DataConfig missing chain_type in metadata: {dc}")
+            result[chain_type] = dc
+        return result
     """
     A container for one or more DataConfig objects.
 

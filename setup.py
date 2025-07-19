@@ -7,10 +7,10 @@ with open('requirements.txt') as f:
 
 setup(
     name='AlignAIR',
-    version='0.2',
+    version='2.0.0',
     author='Thomas Konstantinovsky & Ayelet Peres',
     author_email='thomaskon90@gmail.com',
-    description='IG Sequence Alignment Tool Based on Deep Convolutional Neural Networks',
+    description='Unified Multi-Chain IG/TCR Sequence Alignment Tool with Dynamic GenAIRR Integration',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/MuteJester/AlignAIR',

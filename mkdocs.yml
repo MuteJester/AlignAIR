@@ -1,7 +1,9 @@
-site_name: AlignAIR Documentation
+site_name: AlignAIR v2.0 Documentation
 nav:
   - Home: index.md
   - Getting Started: getting_started.md
+  - AlignAIR v2.0 Architecture Guide: architecture_guide.md
+  - Migration Guide (v1.x to v2.0): migration_guide.md
   - The Different Steps of the AlignAIR Pipeline: alignair_steps_brakdown.md
   - Model Training and Inference via Jupyter Notebook: tutorials/AlignAIR_On_Jupyter_Notebooks.ipynb
 

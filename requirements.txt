@@ -17,3 +17,6 @@ wandb==0.17.1
 flask==3.0.3
 biopython==1.83
 typer==0.15.2
+rich>=10.0.0
+psutil>=5.8.0
+docutils>=0.18.0

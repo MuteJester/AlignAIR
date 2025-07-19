@@ -91,8 +91,9 @@ def _human(bytes_: int, prec: int = 2) -> str:
 
 
 def header() -> None:
-    panel = Panel("AlignAIR", subtitle="CLI", style="bold cyan", expand=False)
-    console.print(Panel.fit(ASCII_ART, title="[bold cyan]AlignAIR", border_style="cyan"))
+    panel = Panel("AlignAIR v2.0", subtitle="Unified Multi-Chain Architecture", style="bold cyan", expand=False)
+    console.print(Panel.fit(ASCII_ART, title="[bold cyan]AlignAIR v2.0 - Unified Architecture", border_style="cyan"))
+    console.print("[bold yellow]🔬 v2.0 Features:[/bold yellow] [green]SingleChainAlignAIR & MultiChainAlignAIR with GenAIRR Integration[/green]")
 
 
 def system_stats() -> None:
@@ -157,9 +158,8 @@ def run(
     config_file: Optional[pathlib.Path] = typer.Option(None, help="YAML with parameters (flags override)"),
     model_checkpoint: Optional[str] = typer.Option(None, help="Path to saved weights"),
     save_path: Optional[str] = typer.Option(None, help="Where to write alignment output"),
-    chain_type: Optional[str] = typer.Option(None, help="heavy / light"),
-    sequences: Optional[str] = typer.Option(None, help="CSV/TSV/FASTA containing sequences ('sequence' column). For multi-chain training, use comma-separated paths."),
-    genairr_dataconfig: Optional[str] = typer.Option(None, help="GenAIRR DataConfig identifier(s). Use comma-separated for multi-chain (e.g., 'HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB')"),
+    sequences: Optional[str] = typer.Option(None, help="CSV/TSV/FASTA containing sequences ('sequence' column). For multi-chain analysis, use comma-separated paths."),
+    genairr_dataconfig: Optional[str] = typer.Option(None, help="GenAIRR DataConfig identifier(s). Single: 'HUMAN_IGH_OGRDB'. Multi-chain: 'HUMAN_IGH_OGRDB,HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB'. Available: HUMAN_IGH_OGRDB, HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB, HUMAN_TCRB_IMGT"),
     # Performance
     batch_size: Optional[int] = typer.Option(None),
     max_input_size: Optional[int] = typer.Option(None),
@@ -174,16 +174,18 @@ def run(
     translate_to_asc: bool = typer.Option(False),
     airr_format: bool = typer.Option(False),
     fix_orientation: bool = typer.Option(True),
-    # Misc paths (deprecated - use genairr_dataconfig instead)
+    # Legacy support (deprecated - use genairr_dataconfig instead)
+    chain_type: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead. heavy / light"),
     lambda_data_config: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead"),
     kappa_data_config: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead"),
     heavy_data_config: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead"),
+    # Misc paths
     custom_orientation_pipeline_path: Optional[str] = typer.Option(None),
     custom_genotype: Optional[str] = typer.Option(None),
     finetuned_model_params_yaml: Optional[str] = typer.Option(None),
     save_predict_object: bool = typer.Option(False),
 ):
-    """Run the AlignAIR pipeline."""
+    """Run the AlignAIR v2.0 pipeline with unified single/multi-chain architecture."""
     header()
     system_stats()
 
@@ -194,7 +196,6 @@ def run(
     defaults = {
         "model_checkpoint": None,
         "save_path": None,
-        "chain_type": None,
         "sequences": None,
         "genairr_dataconfig": "HUMAN_IGH_OGRDB",  # Default single heavy chain
         "batch_size": 2048,
@@ -208,7 +209,8 @@ def run(
         "translate_to_asc": False,
         "airr_format": False,
         "fix_orientation": True,
-        # Legacy support - will be converted to genairr_dataconfig
+        # Legacy support - deprecated in v2.0 (will be converted to genairr_dataconfig)
+        "chain_type": None,
         "lambda_data_config": "D",
         "kappa_data_config": "D", 
         "heavy_data_config": "D",
@@ -227,11 +229,57 @@ def run(
     # Merge: defaults < config_file < CLI overrides
     cfg_dict = {**defaults, **cfg_dict, **overrides}
 
+    # v2.0 validation and warnings
+    _validate_v2_config(cfg_dict)
+
     # SimpleNamespace keeps it lightweight and attribute‑style
     from types import SimpleNamespace
     cfg = SimpleNamespace(**cfg_dict)
 
     _run_pipeline(cfg)
+
+
+def _validate_v2_config(cfg_dict):
+    """Validate v2.0 configuration and show deprecation warnings."""
+    # Show deprecation warnings for legacy parameters
+    legacy_params = {
+        'chain_type': 'genairr_dataconfig',
+        'heavy_data_config': 'genairr_dataconfig', 
+        'kappa_data_config': 'genairr_dataconfig',
+        'lambda_data_config': 'genairr_dataconfig'
+    }
+    
+    for old_param, new_param in legacy_params.items():
+        if cfg_dict.get(old_param) and cfg_dict[old_param] not in [None, "D"]:
+            warnings.warn(
+                f"Parameter '{old_param}' is deprecated in AlignAIR v2.0. "
+                f"Use '{new_param}' instead for better performance and multi-chain support.",
+                DeprecationWarning,
+                stacklevel=3
+            )
+    
+    # Validate genairr_dataconfig
+    valid_configs = {
+        'HUMAN_IGH_OGRDB', 'HUMAN_IGK_OGRDB', 
+        'HUMAN_IGL_OGRDB', 'HUMAN_TCRB_IMGT'
+    }
+    
+    genairr_config = cfg_dict.get('genairr_dataconfig', '')
+    if genairr_config:
+        configs = [c.strip() for c in genairr_config.split(',')]
+        for config in configs:
+            if config not in valid_configs and not config.endswith('.pkl'):
+                console.print(f"[yellow]⚠️  Warning:[/yellow] '{config}' is not a recognized built-in GenAIRR dataconfig.")
+                console.print(f"[yellow]   Available built-in configs: {', '.join(valid_configs)}[/yellow]")
+                console.print(f"[yellow]   Or provide a path to a custom .pkl dataconfig file.[/yellow]")
+        
+        # Show info about multi-chain detection
+        if len(configs) > 1:
+            console.print(f"[green]🔗 Multi-chain analysis detected:[/green] {len(configs)} dataconfigs")
+            console.print(f"[green]   Will use MultiChainAlignAIR model automatically[/green]")
+        else:
+            console.print(f"[blue]🔍 Single-chain analysis:[/blue] {configs[0]}")
+            console.print(f"[blue]   Will use SingleChainAlignAIR model automatically[/blue]")
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Entrypoint
