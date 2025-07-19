@@ -1,4 +1,5 @@
 import numpy as np
+from GenAIRR.dataconfig import DataConfig
 
 from AlignAIR.Step.Step import Step
 
@@ -27,7 +28,7 @@ class SegmentCorrectionStep(Step):
 
         return pad_size
 
-    def correct_segments_for_paddings(self,sequences, chain_type, v_start, v_end, d_start, d_end, j_start, j_end):
+    def correct_segments_for_paddings(self,sequences, dataconfig:DataConfig, v_start, v_end, d_start, d_end, j_start, j_end):
         paddings = np.array([self.calculate_pad_size(i) for i in sequences])
 
         v_start = np.round((v_start.squeeze() - paddings)).astype(int)
@@ -36,7 +37,7 @@ class SegmentCorrectionStep(Step):
         j_start = np.round((j_start.squeeze() - paddings)).astype(int)
         j_end = np.round((j_end.squeeze() - paddings)).astype(int)
 
-        if chain_type in ['heavy','tcrb']:
+        if dataconfig.metadata.has_d:
             d_start = np.round(np.vstack(d_start).squeeze() - paddings).astype(int)
             d_end = np.round(np.vstack(d_end).squeeze() - paddings).astype(int)
         else:
@@ -50,8 +51,9 @@ class SegmentCorrectionStep(Step):
     def execute(self, predict_object):
         self.log("Correcting segments for paddings...")
         cleaned_data = predict_object.processed_predictions
+
         corrected_segments = self.correct_segments_for_paddings(
-            predict_object.sequences, predict_object.script_arguments.chain_type,
+            predict_object.sequences, predict_object.dataconfig,
             cleaned_data['v_start'], cleaned_data['v_end'],
             cleaned_data['d_start'], cleaned_data['d_end'],
             cleaned_data['j_start'], cleaned_data['j_end']

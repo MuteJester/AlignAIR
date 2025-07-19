@@ -1,38 +1,18 @@
 import numpy as np
 from GenAIRR.dataconfig import DataConfig
-
-from AlignAIR.PredictObject.PredictObject import PredictObject
-from AlignAIR.Step.Step import Step
-from AlignAIR.Utilities.GenotypeYamlParser import GenotypeYamlParser
-from AlignAIR.Utilities.step_utilities import DataConfigLibrary
+from ...PredictObject.PredictObject import PredictObject
+from ...Step.Step import Step
+from ...Utilities.GenotypeYamlParser import GenotypeYamlParser
 from tqdm.auto import tqdm
 
 class IsInGenotype:
-    def __init__(self, data_config):
-        if type(data_config) is DataConfig:
-            if 'v_alleles' in hasattr(data_config, 'v_alleles'):
-                self.v_alleles = {i.name for j in data_config.v_alleles for i in data_config.v_alleles[j]}
-            if 'd_alleles' in hasattr(data_config, 'd_alleles'):
-                self.d_alleles = {i.name for j in data_config.d_alleles for i in data_config.d_alleles[j]}
-            if 'j_alleles' in hasattr(data_config, 'j_alleles'):
-                self.j_alleles = {i.name for j in data_config.j_alleles for i in data_config.j_alleles[j]}
-        elif type(data_config) is DataConfigLibrary:
-            self.v_alleles = data_config.reference_allele_names('v')
-            self.d_alleles = data_config.reference_allele_names('d')
-            self.j_alleles = data_config.reference_allele_names('j')
-        elif type(data_config) is GenotypeYamlParser:
-            self.v_alleles = data_config.v
-            self.d_alleles = data_config.d
-            self.j_alleles = data_config.j
-        else:
-            raise ValueError("data_config must be of type DataConfig or DataConfigLibrary")
+    def __init__(self,dataconfig:DataConfig):
+        self.dataconfig = dataconfig
+        self.allele_names = list(map(lambda x: x.name, dataconfig.allele_list('v') + dataconfig.allele_list('d') + dataconfig.allele_list('j')))
 
-    def __getitem__(self, key):
-        allele_type = 'V' if 'V' in key else 'D' if 'D' in key else 'J'
-        return key in getattr(self, f"{allele_type.lower()}_alleles")
 
     def is_in_genotype(self, allele):
-        return self[allele]
+        return True if allele in self.allele_names else False
 
 
 class GenotypeBasedLikelihoodAdjustmentStep(Step):
@@ -49,7 +29,7 @@ class GenotypeBasedLikelihoodAdjustmentStep(Step):
         self.genotype_checker = None
 
     def is_in_genotype(self, allele):
-        return self.genotype_checker[allele]
+        return self.genotype_checker.is_in_genotype(allele)
 
     def genotype_alleles(self, predicted_alleles):
         genotype_alleles = {allele: likelihood for allele, likelihood in predicted_alleles.items() if
@@ -88,7 +68,7 @@ class GenotypeBasedLikelihoodAdjustmentStep(Step):
 
         return genotype_alleles
 
-    def initialize_allele_index_translation_maps(self, dataconfig_library: DataConfigLibrary):
+    def initialize_allele_index_translation_maps(self, dataconfig:DataConfig):
         """
         Initializes the allele name to index and index to name mappings for each gene.
         Args:
@@ -98,9 +78,9 @@ class GenotypeBasedLikelihoodAdjustmentStep(Step):
         """
 
         # sorted lists of allele name for each gene just like the dataset class does
-        alleles_dict = {'v': sorted(list(dataconfig_library.get_allele_dict('v'))),
-                        'd': sorted(list(dataconfig_library.get_allele_dict('d'))),
-                        'j': sorted(list(dataconfig_library.get_allele_dict('j')))
+        alleles_dict = {'v': sorted(list(map(lambda x: x.name,dataconfig.allele_list('v')))),
+                        'd': sorted(list(map(lambda x: x.name, dataconfig.allele_list('d')))),
+                        'j': sorted(list(map(lambda x: x.name, dataconfig.allele_list('j'))))
                         }
 
         # Add Short D Label as Last Label
@@ -153,11 +133,11 @@ class GenotypeBasedLikelihoodAdjustmentStep(Step):
         else:
             self.log("Adjusting Likelihood Given Genotype...")
             if predict_object.script_arguments.custom_genotype is not None:
-                self.genotype_checker = IsInGenotype(predict_object.genotype)
+                self.genotype_checker = IsInGenotype(dataconfig=predict_object.dataconfig)
             else:
-                self.genotype_checker = IsInGenotype(predict_object.data_config_library)
+                self.genotype_checker = IsInGenotype(dataconfig=predict_object.dataconfig)
 
-            self.initialize_allele_index_translation_maps(predict_object.data_config_library)
+            self.initialize_allele_index_translation_maps(predict_object.dataconfig)
 
             # iterate over the predicted likelihoods remove non-genotype outputs and redistribute the likelihoods
             for allele in ['v', 'd', 'j']:

@@ -1,11 +1,6 @@
 from __future__ import annotations
 import os
 import warnings
-from sklearn.exceptions import InconsistentVersionWarning
-warnings.filterwarnings(
-    "ignore",
-    category=InconsistentVersionWarning,
-)
 # 0 = all logs | 1 = filter INFO | 2 = filter WARNING | 3 = filter ERROR
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
@@ -163,7 +158,8 @@ def run(
     model_checkpoint: Optional[str] = typer.Option(None, help="Path to saved weights"),
     save_path: Optional[str] = typer.Option(None, help="Where to write alignment output"),
     chain_type: Optional[str] = typer.Option(None, help="heavy / light"),
-    sequences: Optional[str] = typer.Option(None, help="CSV/TSV/FASTA containing sequences ('sequence' column)"),
+    sequences: Optional[str] = typer.Option(None, help="CSV/TSV/FASTA containing sequences ('sequence' column). For multi-chain training, use comma-separated paths."),
+    genairr_dataconfig: Optional[str] = typer.Option(None, help="GenAIRR DataConfig identifier(s). Use comma-separated for multi-chain (e.g., 'HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB')"),
     # Performance
     batch_size: Optional[int] = typer.Option(None),
     max_input_size: Optional[int] = typer.Option(None),
@@ -178,10 +174,10 @@ def run(
     translate_to_asc: bool = typer.Option(False),
     airr_format: bool = typer.Option(False),
     fix_orientation: bool = typer.Option(True),
-    # Misc paths
-    lambda_data_config: Optional[str] = typer.Option(None),
-    kappa_data_config: Optional[str] = typer.Option(None),
-    heavy_data_config: Optional[str] = typer.Option(None),
+    # Misc paths (deprecated - use genairr_dataconfig instead)
+    lambda_data_config: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead"),
+    kappa_data_config: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead"),
+    heavy_data_config: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead"),
     custom_orientation_pipeline_path: Optional[str] = typer.Option(None),
     custom_genotype: Optional[str] = typer.Option(None),
     finetuned_model_params_yaml: Optional[str] = typer.Option(None),
@@ -200,6 +196,7 @@ def run(
         "save_path": None,
         "chain_type": None,
         "sequences": None,
+        "genairr_dataconfig": "HUMAN_IGH_OGRDB",  # Default single heavy chain
         "batch_size": 2048,
         "max_input_size": 576,
         "v_allele_threshold": 0.1,
@@ -211,8 +208,9 @@ def run(
         "translate_to_asc": False,
         "airr_format": False,
         "fix_orientation": True,
+        # Legacy support - will be converted to genairr_dataconfig
         "lambda_data_config": "D",
-        "kappa_data_config": "D",
+        "kappa_data_config": "D", 
         "heavy_data_config": "D",
         "custom_orientation_pipeline_path": None,
         "custom_genotype": None,

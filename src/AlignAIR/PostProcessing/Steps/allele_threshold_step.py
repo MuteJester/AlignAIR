@@ -1,35 +1,39 @@
+from typing import Dict
+
+import numpy as np
+from GenAIRR.dataconfig import DataConfig
+
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold, MaxLikelihoodPercentageThreshold
 from AlignAIR.PredictObject.PredictObject import PredictObject
 from AlignAIR.Step.Step import Step
-from AlignAIR.Utilities.step_utilities import DataConfigLibrary
 
 
 class ConfidenceMethodThresholdApplicationStep(Step):
 
-    def extract_likelihoods_and_labels_from_calls(self, args, alleles, threshold, caps, config):
+    def extract_likelihoods_and_labels_from_calls(self,
+                                                  args,
+                                                  predicted_allele_likelihoods: np.ndarray,
+                                                  likelihood_thresholds: Dict[str, float],
+                                                  call_caps: Dict[str, int],
+                                                  dataconfig: DataConfig):
         predicted_alleles = {}
-        predicted_allele_likelihoods = {}
+        processed_predicted_allele_likelihoods = {}
         threshold_objects = {}
-        chain_type = args.chain_type
+        extractor = CappedDynamicConfidenceThreshold(dataconfig=dataconfig)
 
-        for _gene in alleles:
-            if chain_type == 'heavy':
-                extractor = CappedDynamicConfidenceThreshold(heavy_dataconfig=config['heavy'])
-            elif chain_type =='tcrb':
-                extractor = CappedDynamicConfidenceThreshold(heavy_dataconfig=config['tcrb'])
-            else:
-                extractor = CappedDynamicConfidenceThreshold(kappa_dataconfig=config['kappa'],
-                                                             lambda_dataconfig=config['lambda'])
-
+        for _gene in likelihood_thresholds:
             threshold_objects[_gene] = extractor
-            selected_alleles = extractor.get_alleles(alleles[_gene], confidence=threshold[_gene],
-                                                     cap=caps[_gene], allele=_gene, verbose=True)
+            selected_alleles = extractor.get_alleles(predicted_allele_likelihoods[_gene],
+                                                     confidence=likelihood_thresholds[_gene],
+                                                     cap=call_caps[_gene],
+                                                     allele=_gene,
+                                                     verbose=True)
 
             predicted_alleles[_gene] = [i[0] for i in selected_alleles]
 
-            predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
+            processed_predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
 
-        return predicted_alleles, predicted_allele_likelihoods, threshold_objects
+        return predicted_alleles, processed_predicted_allele_likelihoods, threshold_objects
 
     def execute(self, predict_object):
         self.log("Applying dynamic confidence thresholds...")
@@ -53,31 +57,31 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
     def __init__(self, name):
         super().__init__(name)
 
-    def extract_likelihoods_and_labels_from_calls(self, alleles, threshold, caps,
-                                                  data_config_library: DataConfigLibrary):
+    def extract_likelihoods_and_labels_from_calls(self,
+                                                  predicted_allele_likelihoods,
+                                                  likelihood_thresholds,
+                                                  call_caps,
+                                                  dataconfig:DataConfig):
         predicted_alleles = {}
-        predicted_allele_likelihoods = {}
+        processed_predicted_allele_likelihoods = {}
         threshold_objects = {}
 
+        extractor = MaxLikelihoodPercentageThreshold(dataconfig=dataconfig)
 
-        for _gene in alleles:
-            if data_config_library.mounted == 'heavy':
-                extractor = MaxLikelihoodPercentageThreshold(heavy_dataconfig=data_config_library.config())
-            elif data_config_library.mounted == 'tcrb':
-                extractor = MaxLikelihoodPercentageThreshold(heavy_dataconfig=data_config_library.config('tcrb'))
-            else:
-                extractor = MaxLikelihoodPercentageThreshold(kappa_dataconfig=data_config_library.config('kappa'),
-                                                             lambda_dataconfig=data_config_library.config('lambda'))
-
+        for _gene in likelihood_thresholds:
             threshold_objects[_gene] = extractor
-            selected_alleles = extractor.get_alleles(alleles[_gene], percentage=threshold[_gene],
-                                                     cap=caps[_gene], allele=_gene, verbose=True)
+            selected_alleles = extractor.get_alleles(predicted_allele_likelihoods[_gene],
+                                                     percentage=likelihood_thresholds[_gene],
+                                                     cap=call_caps[_gene],
+                                                     allele=_gene,
+                                                     verbose=True)
 
             predicted_alleles[_gene] = [i[0] for i in selected_alleles]
 
-            predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
+            processed_predicted_allele_likelihoods[_gene] = [i[1] for i in selected_alleles]
 
-        return predicted_alleles, predicted_allele_likelihoods, threshold_objects
+        return predicted_alleles, processed_predicted_allele_likelihoods, threshold_objects
+
 
     @staticmethod
     def get_thresholds(args):
@@ -96,7 +100,7 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         alleles = {'v': predict_object.processed_predictions['v_allele'],
                    'j': predict_object.processed_predictions['j_allele'],
                    }
-        if predict_object.data_config_library.mounted in ['heavy','tcrb']:
+        if predict_object.dataconfig.metadata.has_d:
             alleles['d'] = predict_object.processed_predictions['d_allele']
 
         thresholds = self.get_thresholds(args)
@@ -109,7 +113,7 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
                                                                 alleles,
                                                                 thresholds,
                                                                 caps,
-                                                                predict_object.data_config_library
+                                                                predict_object.dataconfig
                                                             )
 
         return predict_object

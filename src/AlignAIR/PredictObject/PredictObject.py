@@ -2,8 +2,11 @@ import logging
 from typing import List, Dict, Optional, Any
 import pickle
 
+from GenAIRR.dataconfig import DataConfig
+
+from AlignAIR.Data import MultiDataConfigContainer
 from AlignAIR.Utilities.GenotypeYamlParser import GenotypeYamlParser
-from AlignAIR.Utilities.step_utilities import DataConfigLibrary, FileInfo
+from AlignAIR.Utilities.step_utilities import FileInfo
 
 class PredictObject:
     """
@@ -16,7 +19,7 @@ class PredictObject:
         logger (Optional[logging.Logger]): Logger instance for logging.
         additional_data (Dict[str, Any]): Any additional data that might be needed during processing.
         script_arguments (Any): Arguments passed to the script.
-        data_config_library (DataConfigLibrary): Configuration library for data.
+        dataconfig (MultiDataConfigContainer): MultiDataConfigContainer Containing a single or multiple DataConfig Objects from GenAIRR.
         file_info (FileInfo): Information about the file being processed.
         orientation_pipeline (Optional[Any]): Pipeline for orientation processing.
         final_results (Optional[Any]): Final results of the prediction process.
@@ -48,7 +51,7 @@ class PredictObject:
         self.logger: Optional[logging.Logger] = logger
         self.additional_data: Dict[str, Any] = additional_data or {}
         self.script_arguments: Any = args
-        self.data_config_library: DataConfigLibrary
+        self.dataconfig: MultiDataConfigContainer = None
         self.file_info: FileInfo
         self.orientation_pipeline: Optional[Any] = None
         self.final_results: Optional[Any] = None
@@ -75,7 +78,7 @@ class PredictObject:
             # parse the genotype yaml file
             genotype = GenotypeYamlParser(self.script_arguments.custom_genotype)
             # test if the genotype alleles intersect with the data config alleles, the genotype should be a subset of the data config used to train the model
-            genotype.test_intersection_with_data_config(self.data_config_library)
+            genotype.test_intersection_with_data_config(self.dataconfig)
             self.genotype = genotype
 
     def log(self, message: str):

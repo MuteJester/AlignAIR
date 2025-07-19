@@ -70,7 +70,8 @@ class AlleleEncoder:
         return {
             gene: {
                 "allele_count": enc.count,
-                "allele_call_ohe": enc.allele_to_index
+                "allele_call_ohe": enc.allele_to_index,
+                'reverse_mapping': enc.index_to_allele
             }
             for gene, enc in self.gene_encodings.items()
         }

@@ -1,16 +1,18 @@
 import os
 import argparse
+import pickle
+
 import numpy as np
 import random
 import tensorflow as tf
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 import logging
 # Assuming the following modules are in your package structure
-from AlignAIR.Data import HeavyChainDataset,LightChainDataset
+from AlignAIR.Data import SingleChainDataset
 from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
 from AlignAIR.Models.LightChain import LightChainAlignAIRR
+from AlignAIR.Models.SingleChainAlignAIR.SingleChainAlignAIR import SingleChainAlignAIR
 from AlignAIR.Trainers import Trainer
-from GenAIRR.data import builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,builtin_lambda_chain_data_config
 
 
 def setup_logging():
@@ -19,7 +21,7 @@ def setup_logging():
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train AlignAIRR Model")
-    parser.add_argument("--chain_type", required=True, help="heavy/light")
+    parser.add_argument("--genairr_dataconfig", required=True, help="a name of a builtin GenAIRR dataconfig or a path to a custom genairr dataconfig pkl file")
     parser.add_argument("--train_dataset", required=True, help="Path to the training dataset")
     parser.add_argument("--session_path", required=True, help="Base directory for session output")
     parser.add_argument("--epochs", type=int, default=5, help="Number of epochs to train")
@@ -30,32 +32,21 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def get_dataconfig(chain_type):
-    if chain_type == 'heavy':
-        return builtin_heavy_chain_data_config()
-    elif chain_type == 'light':
-        return builtin_kappa_chain_data_config(),builtin_lambda_chain_data_config()
-
-def get_train_dataset(chain_type, data_path,batch_size,max_sequence_length):
-    data_config = get_dataconfig(chain_type)
-    train_dataset = None
-
-    if chain_type == 'heavy':
-        train_dataset = HeavyChainDataset(
-            data_path=data_path,
-            dataconfig=data_config,
-            batch_size=batch_size,
-            max_sequence_length=max_sequence_length,
-            use_streaming=True
-        )
-    elif chain_type == 'light':
-        train_dataset = LightChainDataset(data_path=data_path
-                                          , lambda_dataconfig=data_config[1],
-                                          kappa_dataconfig=data_config[0],
-                                          batch_size=batch_size,
-                                          max_sequence_length=max_sequence_length,
-                                          use_streaming=True)
-    return train_dataset
+def get_dataconfig(dataconfig):
+    import GenAIRR.data as data
+    # check if the dataconfig is a path to a pkl file
+    if os.path.exists(dataconfig):
+        # load pickled dataconfig
+        with open(dataconfig, 'rb') as f:
+            data_config = pickle.load(f)
+        return data_config
+    elif dataconfig in data._CONFIG_NAMES:
+        # check if the dataconfig is a builtin GenAIRR dataconfig
+        data_config = getattr(data, dataconfig)
+        return data_config
+    else:
+        # if the dataconfig is not a path or a builtin GenAIRR dataconfig, raise an error
+        raise ValueError(f"Invalid dataconfig: {dataconfig}. It should be a path to a pkl file or a builtin GenAIRR dataconfig name.")
 
 
 def main():
@@ -69,7 +60,7 @@ def main():
     random.seed(seed)
 
     logging.info("Configuration setup is done.")
-    logging.info(f"The Script will train a {args.chain_type} AlignAIR")
+    logging.info(f"The Script will train a {args.genairr_dataconfig} AlignAIR")
 
 
     models_path = os.path.join(args.session_path, "saved_models")
@@ -96,44 +87,36 @@ def main():
     logging.info("Callbacks are defined.")
 
     # Prepare dataset
-    train_dataset = get_train_dataset(args.chain_type,args.train_dataset,args.batch_size,args.max_sequence_length)
+    dataconfig = get_dataconfig(args.genairr_dataconfig)
+    train_dataset = SingleChainDataset(data_path = args.train_dataset,dataconfig=dataconfig,batch_size=args.batch_size,
+                                       max_sequence_length = args.max_sequence_length,use_streaming=True)
 
     logging.info("Dataset is loaded and prepared.")
 
     model_parmas = train_dataset.generate_model_params()
-    if args.chain_type == 'heavy':
-        model_parmas['max_seq_length'] = args.max_sequence_length
-        model = HeavyChainAlignAIRR(**model_parmas)
-        model.compile(optimizer=tf.keras.optimizers.Adam(clipnorm=1),
-                      loss=None,
-                      metrics={
-                          'v_start': tf.keras.losses.mse,
-                          'v_end': tf.keras.losses.mse,
-                          'd_start': tf.keras.losses.mse,
-                          'd_end': tf.keras.losses.mse,
-                          'j_start': tf.keras.losses.mse,
-                          'j_end': tf.keras.losses.mse,
-                          'v_allele': tf.keras.losses.binary_crossentropy,
-                          'd_allele': tf.keras.losses.binary_crossentropy,
-                          'j_allele': tf.keras.losses.binary_crossentropy,
-                      }
-                      )
-        logging.info("Model is Built")
-    elif args.chain_type == 'light':
-        model_parmas['max_seq_length'] = args.max_sequence_length
-        model = LightChainAlignAIRR(**model_parmas)
-        model.compile(optimizer=tf.keras.optimizers.Adam(clipnorm=1),
-                      loss=None,
-                      metrics={
-                          'v_start': tf.keras.losses.mse,
-                          'v_end': tf.keras.losses.mse,
-                          'j_start': tf.keras.losses.mse,
-                          'j_end': tf.keras.losses.mse,
-                          'v_allele': tf.keras.losses.binary_crossentropy,
-                          'j_allele': tf.keras.losses.binary_crossentropy,
-                      }
-                      )
-        logging.info("Model is Built")
+
+    model = SingleChainAlignAIR(**model_parmas)
+    metrics = {
+        'v_start': tf.keras.losses.mse,
+        'v_end': tf.keras.losses.mse,
+        'j_start': tf.keras.losses.mse,
+        'j_end': tf.keras.losses.mse,
+        'v_allele': tf.keras.losses.binary_crossentropy,
+        'j_allele': tf.keras.losses.binary_crossentropy,
+        }
+    if dataconfig.metadata.has_d:
+        metrics.update({
+            'd_start': tf.keras.losses.mse,
+            'd_end': tf.keras.losses.mse,
+            'd_allele': tf.keras.losses.binary_crossentropy,
+        })
+
+    model.compile(optimizer=tf.keras.optimizers.Adam(clipnorm=1),
+                  loss=None,
+                    metrics=metrics
+                  )
+
+    logging.info("Model is Built")
 
     # Initialize the model and trainer
     trainer = Trainer(

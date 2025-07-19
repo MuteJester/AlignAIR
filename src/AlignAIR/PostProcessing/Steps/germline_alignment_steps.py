@@ -1,3 +1,5 @@
+from GenAIRR.dataconfig import DataConfig
+
 from AlignAIR.PostProcessing import HeuristicReferenceMatcher
 from AlignAIR.Step.Step import Step
 
@@ -7,14 +9,17 @@ class AlleleAlignmentStep(Step):
     def __init__(self, name):
         super().__init__(name)
 
-    def align_with_germline(self, segments, threshold_objects, predicted_alleles, sequences,indel_counts):
+    def align_with_germline(self, segments,dataconfig:DataConfig, predicted_alleles, sequences,indel_counts):
         germline_alignmnets = {}
+        reference_map = {}
+        reference_map['v'] = {i.name:i.ungapped_seq.upper() for i in dataconfig.allele_list('v')}
+        reference_map['j'] = {i.name:i.ungapped_seq.upper() for i in dataconfig.allele_list('j')}
+        if dataconfig.metadata.has_d:
+            reference_map['d'] = {i.name:i.ungapped_seq.upper() for i in dataconfig.allele_list('d')}
+            reference_map['d']['Short-D'] = ''
 
         for _gene in segments:
-            reference_alleles = threshold_objects[_gene].reference_map[_gene]
-            if _gene == 'd':
-                reference_alleles['Short-D'] = ''
-
+            reference_alleles = reference_map[_gene]
             starts, ends = segments[_gene]
             mapper = HeuristicReferenceMatcher(reference_alleles)
             mappings = mapper.match(sequences=sequences, starts=starts, ends=ends,
@@ -30,7 +35,7 @@ class AlleleAlignmentStep(Step):
         processed_predictions = predict_object.processed_predictions
         segments = {}
         iterator = ['v','j']
-        if predict_object.data_config_library.mounted in ['heavy','tcrb']:
+        if predict_object.dataconfig.metadata.has_d:
             iterator.append('d')
 
         for gene in iterator:
@@ -40,7 +45,7 @@ class AlleleAlignmentStep(Step):
 
         predict_object.germline_alignments = self.align_with_germline(
             segments=segments,
-            threshold_objects=predict_object.threshold_extractor_instances,
+            dataconfig=predict_object.dataconfig,
             predicted_alleles=predict_object.selected_allele_calls,
             sequences=predict_object.sequences,
             indel_counts=indel_counts

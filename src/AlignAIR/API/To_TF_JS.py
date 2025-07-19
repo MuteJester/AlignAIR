@@ -3,12 +3,21 @@ import numpy as np
 from AlignAIR.Data.PredictionDataset import PredictionDataset
 from AlignAIR.Trainers import Trainer
 
-model_weights_path = 'C:/Users/tomas/Desktop/AlignAIRR/tests/AlignAIRR_TCRB_Model_checkpoint'
-model_type = 'tcrb'
+model_weights_path = 'C:/Users/tomas/Downloads/AlignAIR_IGH_EXT_Model_weights_final_epoch'
+model_type = 'heavy'
 
 if model_type == 'heavy':
     from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
-    model_params = {'max_seq_length': 576, 'v_allele_count': 198, 'd_allele_count': 34, 'j_allele_count': 7}
+    dataconfig = None
+    with open('C:/Users/tomas/Downloads/IGH_EXTENDED_DATACONFIG.pkl', 'rb') as f:
+        from GenAIRR.dataconfig import DataConfig
+        import pickle
+        dataconfig = pickle.load(f)
+
+
+    model_params = {'max_seq_length': 576, 'v_allele_count': dataconfig.number_of_v_alleles,
+                    'd_allele_count': dataconfig.number_of_d_alleles+1,
+                    'j_allele_count': dataconfig.number_of_j_alleles}
     model = HeavyChainAlignAIRR(**model_params)
 elif model_type == 'tcrb':
     from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
@@ -60,10 +69,10 @@ dummy_input = {
 }
 _ = trainer.model(dummy_input)  # Build the model by invoking it
 
+folder_path = 'C:/Users/tomas/Downloads/alignair-ihgv-extended-js'
 
-trainer.model.save('C:/Users/tomas/Downloads/alignair_tcrb_js')
+trainer.model.save(folder_path)
 # validate folder in saved path
 import os
-folder_path = 'C:/Users/tomas/Downloads/alignair_tcrb_js'
 status = os.path.exists(folder_path)
 print("Converted model saved in folder: ", status)

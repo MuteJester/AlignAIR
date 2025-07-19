@@ -1,7 +1,7 @@
 pandas~=1.5.3
 numpy~=1.24.3
-GenAIRR==0.3.2
-tqdm~=4.65.0
+GenAIRR==0.5.1
+tqdm~=4.67.1
 matplotlib~=3.7.2
 seaborn~=0.12.2
 scikit-learn~=1.3.0
@@ -16,3 +16,4 @@ setuptools==68.0.0
 wandb==0.17.1
 flask==3.0.3
 biopython==1.83
+typer==0.15.2

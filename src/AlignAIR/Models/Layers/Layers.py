@@ -243,17 +243,18 @@ def global_genotype():
 
 
 class RegularizedConstrainedLogVar(tf.keras.layers.Layer):
-    def __init__(self, initial_value=1.0, min_log_var=-3, max_log_var=1, regularizer_weight=0.01):
+    def __init__(self,layer_name='log_var', initial_value=1.0, min_log_var=-3, max_log_var=1, regularizer_weight=0.01):
         super().__init__()
         self.initial_value = initial_value
         self.min_log_var = min_log_var
         self.max_log_var = max_log_var
         self.regularizer_weight = regularizer_weight
+        self.layer_name = layer_name
 
     def build(self, input_shape):
         # Dynamically initialize the log_var weight
         self.log_var = self.add_weight(
-            name="log_var",
+            name=self.layer_name,
             shape=(),  # Scalar weight
             initializer=tf.keras.initializers.Constant(value=tf.math.log(self.initial_value)),
             constraint=ClipConstraint(self.min_log_var, self.max_log_var),
@@ -1160,8 +1161,14 @@ class AverageLastLabel(tf.keras.metrics.Mean):
         super(AverageLastLabel, self).__init__(name=name, **kwargs)
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        # Get the last label of the predicted D allele
-        last_label = y_pred["d_allele"][:, -1]
+        # Get the last label of the predicted D allele if it exists
+        if "d_allele" in y_pred:
+            last_label = y_pred["d_allele"][:, -1]
+        else:
+            # If no D allele, use a default value or skip update
+            # For now, we'll use zeros to maintain the metric structure
+            batch_size = tf.shape(list(y_pred.values())[0])[0]
+            last_label = tf.zeros((batch_size,), dtype=tf.float32)
         return super(AverageLastLabel, self).update_state(last_label, sample_weight)
 
 

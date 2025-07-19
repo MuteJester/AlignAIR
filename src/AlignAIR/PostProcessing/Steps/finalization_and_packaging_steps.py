@@ -37,14 +37,14 @@ class FinalizationStep(Step):
             'ar_productive': predict_object.processed_predictions['productive'],
         })
 
-        if predict_object.data_config_library.mounted in ['heavy','tcrb']:
+        if predict_object.dataconfig.metadata.has_d:
             final_csv['d_sequence_start'] = [i['start_in_seq'] for i in predict_object.germline_alignments['d']]
             final_csv['d_sequence_end'] = [i['end_in_seq'] for i in predict_object.germline_alignments['d']]
             final_csv['d_germline_start'] = [abs(i['start_in_ref']) for i in predict_object.germline_alignments['d']]
             final_csv['d_germline_end'] = [i['end_in_ref'] for i in predict_object.germline_alignments['d']]
             final_csv['d_call'] = [','.join(i) for i in predict_object.selected_allele_calls['d']]
             final_csv['d_likelihoods'] = predict_object.likelihoods_of_selected_alleles['d']
-            final_csv['type'] = 'heavy'
+            final_csv['type'] = predict_object.dataconfig.metadata.chain_type
         else:
             final_csv['type'] = ['kappa' if i == 1 else 'lambda' for i in predict_object.processed_predictions['type_'].astype(int).squeeze()]
 

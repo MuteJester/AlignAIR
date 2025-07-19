@@ -7,7 +7,7 @@ with open('requirements.txt') as f:
 
 setup(
     name='AlignAIR',
-    version='0.1.1',
+    version='0.2',
     author='Thomas Konstantinovsky & Ayelet Peres',
     author_email='thomaskon90@gmail.com',
     description='IG Sequence Alignment Tool Based on Deep Convolutional Neural Networks',

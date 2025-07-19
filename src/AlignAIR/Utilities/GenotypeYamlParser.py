@@ -1,6 +1,5 @@
 import yaml
-
-from AlignAIR.Utilities.step_utilities import DataConfigLibrary
+from GenAIRR.dataconfig import DataConfig
 
 
 class GenotypeYamlParser:
@@ -49,7 +48,7 @@ class GenotypeYamlParser:
         except yaml.YAMLError as e:
             raise ValueError(f"Error parsing YAML file: {e}")
 
-    def test_intersection_with_data_config(self, data_config_library:DataConfigLibrary):
+    def test_intersection_with_data_config(self, dataconfig:DataConfig):
         """
         Test if the genotype alleles intersect with the data config alleles.
         this will raise an error if there are any alleles in the provided genotype that are not in the data config.
@@ -58,13 +57,14 @@ class GenotypeYamlParser:
         """
 
         for gene in  ['v','d','j']:
-            dataconfig_alleles = set(data_config_library.reference_allele_names(gene))
+            dataconfig_allele_names = dataconfig.allele_list(gene)
+            dataconfig_allele_names = set([i.name for i in dataconfig_allele_names])
             current_alleles = set(getattr(self,gene))
-            if 'Short-D' in dataconfig_alleles:
-                dataconfig_alleles.remove('Short-D')
+            if 'Short-D' in dataconfig_allele_names:
+                dataconfig_allele_names.remove('Short-D')
             if 'Short-D' in current_alleles:
                 current_alleles.remove('Short-D')
-            if (len(dataconfig_alleles) > 0) and (len(current_alleles - dataconfig_alleles) > 0):
+            if (len(dataconfig_allele_names) > 0) and (len(current_alleles - dataconfig_allele_names) > 0):
                 raise ValueError(f"Alleles in the genotype yaml file for {gene} are not present in the data config file")
 
 

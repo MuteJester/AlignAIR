@@ -1,7 +1,5 @@
 import yaml
 
-from AlignAIR.Utilities.step_utilities import DataConfigLibrary
-
 
 class CustomModelParamsYaml:
     accepted_keys = ['v_allele_latent_size', 'd_allele_latent_size', 'j_allele_latent_size',
