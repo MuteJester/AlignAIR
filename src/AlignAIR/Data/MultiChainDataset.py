@@ -237,6 +237,18 @@ class MultiChainDataset(DatasetBase):
             y['d_start'] = batch['d_sequence_start'].reshape(-1, 1)
             y['d_end'] = batch['d_sequence_end'].reshape(-1, 1)
 
+
+        # shuffle the order of the values in x and y to ensure the batches are shuffled
+        num_samples = x['tokenized_sequence'].shape[0]
+        indices = np.arange(num_samples)
+        np.random.shuffle(indices)
+
+        # Shuffle x and y dictionaries using the same shuffled indices
+        for key in x:
+            x[key] = x[key][indices]
+        for key in y:
+            y[key] = y[key][indices]
+
         return x, y
 
     def _get_tf_dataset_params(self):
