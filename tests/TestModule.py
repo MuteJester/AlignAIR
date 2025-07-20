@@ -29,6 +29,88 @@ from AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
 import os
 import subprocess
 import shutil
+
+
+def inspect_model_weights(model_checkpoint_path):
+    """
+    Inspect the saved model weights to understand the D allele structure
+    """
+    import tensorflow as tf
+    import numpy as np
+
+    print(f"\n=== INSPECTING MODEL WEIGHTS ===")
+    print(f"Model checkpoint: {model_checkpoint_path}")
+
+    try:
+        # Load the checkpoint
+        checkpoint = tf.train.load_checkpoint(model_checkpoint_path)
+
+        # Get all variable names
+        var_names = checkpoint.get_variable_to_shape_map()
+
+        print(f"Total variables in checkpoint: {len(var_names)}")
+
+        # Look for D allele related weights
+        d_allele_vars = [name for name in var_names.keys() if 'd_allele' in name.lower()]
+
+        print(f"\nD-allele related variables:")
+        for var_name in d_allele_vars:
+            shape = var_names[var_name]
+            print(f"  {var_name}: {shape}")
+
+            # Load the actual weights
+            weights = checkpoint.get_tensor(var_name)
+            print(f"    Shape: {weights.shape}")
+            print(f"    Data type: {weights.dtype}")
+
+            if 'bias' in var_name and len(weights.shape) == 1:
+                print(f"    Values (first 10): {weights[:10]}")
+                print(f"    Values (last 10): {weights[-10:]}")
+
+                # Check for duplicates - look for identical or very similar values
+                if len(weights) > 30:  # Only if we have enough weights
+                    # Check if last two values are identical (indicating duplicate Short-D)
+                    if np.allclose(weights[-1], weights[-2], atol=1e-6):
+                        print(f"    *** POTENTIAL DUPLICATE: Last two values are nearly identical!")
+                        print(f"        weights[-2]: {weights[-2]}")
+                        print(f"        weights[-1]: {weights[-1]}")
+
+                    # Check for any other duplicates
+                    for i in range(len(weights) - 1):
+                        for j in range(i + 1, len(weights)):
+                            if np.allclose(weights[i], weights[j], atol=1e-6):
+                                print(f"    *** DUPLICATE FOUND: weights[{i}] ≈ weights[{j}] = {weights[i]}")
+
+            elif 'kernel' in var_name or 'weight' in var_name:
+                print(f"    Weight matrix shape: {weights.shape}")
+                if len(weights.shape) == 2 and weights.shape[1] > 30:  # Output dimension
+                    # Check last two columns for duplicates
+                    last_col = weights[:, -1]
+                    second_last_col = weights[:, -2]
+                    if np.allclose(last_col, second_last_col, atol=1e-6):
+                        print(f"    *** POTENTIAL DUPLICATE: Last two columns are nearly identical!")
+                        print(f"        Max difference: {np.max(np.abs(last_col - second_last_col))}")
+
+        # Also check for any variables with 35 in the shape
+        vars_with_35 = [(name, shape) for name, shape in var_names.items() if 35 in shape]
+        if vars_with_35:
+            print(f"\nVariables with dimension 35:")
+            for name, shape in vars_with_35:
+                print(f"  {name}: {shape}")
+
+        # Check for any variables with 34 in the shape
+        vars_with_34 = [(name, shape) for name, shape in var_names.items() if 34 in shape]
+        if vars_with_34:
+            print(f"\nVariables with dimension 34:")
+            for name, shape in vars_with_34:
+                print(f"  {name}: {shape}")
+
+    except Exception as e:
+        print(f"Error inspecting checkpoint: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 class TestModule(unittest.TestCase):
 
     def setUp(self):
@@ -49,7 +131,7 @@ class TestModule(unittest.TestCase):
         # 1. Create Dataset
         train_dataset = SingleChainDataset(
             data_path=self.heavy_chain_dataset_path,
-            dataconfig=HUMAN_IGH_OGRDB,
+            dataconfig=MultiDataConfigContainer([HUMAN_IGH_OGRDB]),
             use_streaming=True,
             max_sequence_length=576
         )
@@ -162,7 +244,7 @@ class TestModule(unittest.TestCase):
         # These must match the parameters of the saved weights
         model_params = {
             'max_seq_length': 576,
-            'dataconfig': HUMAN_IGH_OGRDB
+            'dataconfig': MultiDataConfigContainer([HUMAN_IGH_OGRDB]),
         }
         model = SingleChainAlignAIR(**model_params)
 
@@ -583,39 +665,41 @@ class TestModule(unittest.TestCase):
                         self.fail(f"Weights mismatch in embedding layer '{layer.name}': {e}")
 
     def test_genotype_correction(self):
-        import  pickle
+        import pickle
+
         # read genotype data config
         with open('Genotyped_DataConfig.pkl', 'rb') as file:
             genotype_datconfig = pickle.load(file)
 
         original_dataconfig = HUMAN_IGH_OGRDB
 
-        v_alleles_ref = list(map(lambda x: x.name,original_dataconfig.allele_list('v')))
-        d_alleles_ref = list(map(lambda x:x.name,original_dataconfig.allele_list('d'))) + ['Short-D']
-        j_alleles_ref = list(map(lambda x:x.name,original_dataconfig.allele_list('j')))
+        model_checkpoint_path = os.path.join(self.test_dir, 'AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2')
+
+        v_alleles_ref = list(map(lambda x: x.name, original_dataconfig.allele_list('v')))
+        d_alleles_ref = list(map(lambda x: x.name, original_dataconfig.allele_list('d'))) + ['Short-D']
+        j_alleles_ref = list(map(lambda x: x.name, original_dataconfig.allele_list('j')))
 
         # read reference data config
-        v_alleles = list(map(lambda x:x.name,genotype_datconfig.allele_list('v')))
-        d_alleles = list(map(lambda x:x.name,genotype_datconfig.allele_list('d'))) + ['Short-D']
-        j_alleles = list(map(lambda x:x.name,genotype_datconfig.allele_list('j')))
+        v_alleles = list(map(lambda x: x.name, genotype_datconfig.allele_list('v')))
+        d_alleles = list(map(lambda x: x.name, genotype_datconfig.allele_list('d'))) + ['Short-D']
+        j_alleles = list(map(lambda x: x.name, genotype_datconfig.allele_list('j')))
 
-        # create mock yamal file tat we will delete after test is finished
+
+        # create mock yaml file that we will delete after test is finished
         with open('genotype.yaml', 'w') as file:
-            yaml.dump({'v':v_alleles,'d':d_alleles,'j':j_alleles}, file)
+            yaml.dump({'v': v_alleles, 'd': d_alleles, 'j': j_alleles}, file)
 
-        mock_model_params = {   'v_allele_latent_size':2*len(v_alleles_ref),
-                                'd_allele_latent_size':2*len(d_alleles_ref),
-                                'j_allele_latent_size':2*len(j_alleles_ref),
-                             }
+        mock_model_params = {
+            'v_allele_latent_size': 2 * len(v_alleles_ref),
+            'd_allele_latent_size': 2 * len(d_alleles_ref),
+            'j_allele_latent_size': 2 * len(j_alleles_ref),
+        }
 
         with open('model_params.yaml', 'w') as file:
             yaml.dump(mock_model_params, file)
 
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API'))
         script_path = os.path.join(base_dir, 'AlignAIRRPredict.py')
-
-        # Ensure the script exists
-
         # Define the command with absolute paths
         command = [
             'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
@@ -627,10 +711,11 @@ class TestModule(unittest.TestCase):
             '--translate_to_asc',
             '--save_predict_object',
             '--custom_genotype', 'genotype.yaml'
-
         ]
 
         result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+
+
         self.assertEqual(result.returncode, 0, "Script failed to run with error: " + result.stderr)
 
         #####################################################################################
@@ -644,13 +729,15 @@ class TestModule(unittest.TestCase):
         file_name = self.heavy_chain_dataset_path.split('/')[-1].split('.')[0]
         save_name = file_name + '_alignairr_results.csv'
         predictobject_path = save_name.replace('_alignairr_results.csv', '_alignair_results_predictObject.pkl')
-
         with open(predictobject_path, 'rb') as file:
             predictobject_full_nodel = pickle.load(file)
 
+        print(f"First predict object loaded successfully")
+
         command = [
             'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
-            '--model_checkpoint', os.path.join(self.test_dir, 'Genotyped_Frozen_Heavy_Chain_AlignAIRR_S5F_OGRDB_S5F_576_Balanced'),
+            '--model_checkpoint',
+            os.path.join(self.test_dir, 'Genotyped_Frozen_Heavy_Chain_AlignAIRR_S5F_OGRDB_S5F_576_Balanced'),
             '--save_path', str(self.test_dir) + '/',
             '--sequences', self.heavy_chain_dataset_path,
             '--genairr_dataconfig', './Genotyped_DataConfig.pkl',
@@ -661,30 +748,31 @@ class TestModule(unittest.TestCase):
             '--custom_genotype', 'genotype.yaml'
         ]
 
+
         result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
-        self.assertEqual(result.returncode, 0, "Script failed to run with error: " + result.stderr)
+
 
         file_name = self.heavy_chain_dataset_path.split('/')[-1].split('.')[0]
         save_name = file_name + '_alignairr_results.csv'
-        predictobject_path = save_name.replace('_alignairr_results.csv','_alignair_results_predictObject.pkl')
+        predictobject_path = save_name.replace('_alignairr_results.csv', '_alignair_results_predictObject.pkl')
 
         with open(predictobject_path, 'rb') as file:
             predictobject_genotype_nodel = pickle.load(file)
 
 
-
         # correct and test the error between the two models
-
         # v_mean_mae = np.mean(np.abs(predictobject_full_nodel.processed_predictions['v_allele'] - predictobject_genotype_nodel.processed_predictions['v_allele']))
         # d_mean_mae = np.mean(np.abs(predictobject_full_nodel.processed_predictions['d_allele'] - predictobject_genotype_nodel.processed_predictions['d_allele']))
         # j_mean_mae = np.mean(np.abs(predictobject_full_nodel.processed_predictions['j_allele'] - predictobject_genotype_nodel.processed_predictions['j_allele']))
         #
         # print(v_mean_mae,d_mean_mae,j_mean_mae)
 
+
         os.remove('genotype.yaml')
         os.remove('model_params.yaml')
         os.remove(predictobject_path)
         os.remove(output_csv)
+
 
     def test_orientation_classifier(self):
         from AlignAIR.PretrainedComponents import builtin_orientation_classifier

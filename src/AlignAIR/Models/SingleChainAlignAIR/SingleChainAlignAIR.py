@@ -81,7 +81,7 @@ class SingleChainAlignAIR(Model):
         self.j_allele_latent_size = j_allele_latent_size
 
         if self.has_d_gene:
-            self.d_allele_count = self.dataconfig.number_of_d_alleles+1 # +1 for "Short-D" allele
+            self.d_allele_count = self.dataconfig.number_of_d_alleles
             self.d_allele_latent_size = d_allele_latent_size
 
         # --- Hyperparameters ---

@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 # --- Import your project's modules ---
-from AlignAIR.Data import SingleChainDataset, MultiChainDataset
+from AlignAIR.Data import SingleChainDataset, MultiChainDataset, MultiDataConfigContainer
 from AlignAIR.Models import SingleChainAlignAIR, MultiChainAlignAIR
 from AlignAIR.Trainers import Trainer
 import GenAIRR.data as genairr_data
@@ -114,7 +114,7 @@ def create_dataset(is_multi_chain, data_paths, dataconfigs, args):
         )
     else:
         return SingleChainDataset(
-            data_path=data_paths[0], dataconfig=dataconfigs[0], batch_size=args.batch_size,
+            data_path=data_paths[0], dataconfig=dataconfigs, batch_size=args.batch_size,
             max_sequence_length=args.max_sequence_length, use_streaming=True
         )
 
@@ -134,12 +134,14 @@ def main():
     logging.info(f"Starting {run_type} training run.")
 
     train_dataconfigs = [get_dataconfig(dc) for dc in args.genairr_dataconfigs]
+    train_dataconfigs = MultiDataConfigContainer(train_dataconfigs)
     train_dataset = create_dataset(is_multi_chain, args.train_datasets, train_dataconfigs, args)
 
     validation_dataset = None
     if args.validation_datasets:
         logging.info("Creating validation dataset.")
         validation_dataconfigs = [get_dataconfig(dc) for dc in args.validation_dataconfigs]
+        validation_dataconfigs = MultiDataConfigContainer(validation_dataconfigs)
         validation_dataset = create_dataset(is_multi_chain, args.validation_datasets, validation_dataconfigs, args)
 
     model_params = train_dataset.generate_model_params()
