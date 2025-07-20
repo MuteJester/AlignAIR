@@ -468,7 +468,7 @@ class SingleChainAlignAIR(Model):
     def get_metrics_log(self):
         """Constructs the dictionary of metrics to be logged."""
         # Start with metrics from compile()
-        metrics = {m.name: m.result() for m in self.metrics}
+        metrics = {m.name: m.result() for m in self.compiled_metrics.metrics}  # Use self.compiled_metrics
         # Add our custom loss trackers
         metrics.update({
             "loss": self.loss_tracker.result(),
@@ -487,8 +487,14 @@ class SingleChainAlignAIR(Model):
 
     @property
     def metrics(self):
-        """Lists all metrics tracked by the model."""
-        # This ensures all trackers are properly registered with the model.
+        """
+        Lists all metrics tracked by the model.
+
+        *** THIS IS THE CRITICAL FIX ***
+        This now includes both the custom loss trackers AND the standard
+        metrics passed to model.compile() (e.g., AUC, accuracy).
+        """
+        # Start with the custom loss trackers
         metric_list = [
             self.loss_tracker,
             self.segmentation_loss_tracker,
@@ -502,8 +508,12 @@ class SingleChainAlignAIR(Model):
         ]
         if self.has_d_gene:
             metric_list.append(self.d_allele_entropy_tracker)
-        return metric_list
 
+        # Add the metrics from compile()
+        if self.compiled_metrics is not None:
+            metric_list += self.compiled_metrics.metrics
+
+        return metric_list
     def get_latent_representation(self, inputs, gene_type: str):
         """
         Extracts the latent representation for a specific gene (V, D, or J).

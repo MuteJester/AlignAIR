@@ -1,4 +1,2 @@
-from . import HeavyChain
-from . import LightChain
-from . import SingleChainAlignAIR
-from . import MultiChainAlignAIR
+from .SingleChainAlignAIR import SingleChainAlignAIR
+from .MultiChainAlignAIR import MultiChainAlignAIR
