@@ -461,14 +461,34 @@ class TestModule(unittest.TestCase):
         # if os.path.exists(expected_log_path):
         #     os.remove(expected_log_path)  # Remove the log file if it exists
 
-    def test_train_multi_chain(self):
-        # Set base directory and script path
+    def test_train_model_script_multi_chain_cli(self):
+        """Tests running the unified training script for multiple chains from the CLI."""
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API'))
-        script_path = os.path.join(base_dir, 'TrainModel.py')
-        # Ensure the script exists
-        self.assertTrue(os.path.exists(script_path), "Training script not found at path: " + script_path)
-        # Define the command with absolute paths
+        script_path = os.path.join(base_dir, 'TrainModel.py')  # Name of your training script
 
+        self.assertTrue(os.path.exists(script_path), "Training script not found at path: " + script_path)
+
+        # Define the command for a multi-chain run
+        command = [
+            'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
+            '--genairr_dataconfigs', 'HUMAN_IGH_OGRDB', 'HUMAN_IGK_OGRDB',
+            '--train_datasets', str(self.heavy_chain_dataset_path), str(self.light_chain_dataset_path),
+            '--session_path', str('./'),
+            '--epochs', '1',
+            '--batch_size', '16',  # Use a batch size divisible by the number of datasets
+            '--samples_per_epoch', '32',
+            '--max_sequence_length', '576',
+            '--model_name', 'TestModelMultiCLI'
+        ]
+
+        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+
+        self.assertEqual(result.returncode, 0,
+                         f"Multi-chain training script failed to run.\nSTDERR: {result.stderr}\nSTDOUT: {result.stdout}")
+        expected_weights_path = './TestModelMultiCLI_final.weights.h5'
+        from pathlib import Path
+        expected_weights_path = Path(expected_weights_path)
+        self.assertTrue(expected_weights_path.is_file(), "Multi-chain model weights file not created by CLI script.")
 
     def test_heavy_chain_backbone_loader(self):
         from src.AlignAIR.Finetuning.CustomClassificationHeadLoader import CustomClassificationHeadLoader

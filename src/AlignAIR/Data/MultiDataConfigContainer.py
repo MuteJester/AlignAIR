@@ -122,24 +122,20 @@ class MultiDataConfigContainer:
         return 0 < configs_with_d < total_configs
 
     def equal_batch_partitioning(self, total_batch_size: int) -> List[int]:
-        """
-        Divide total batch size equally among DataConfigs.
-        
-        Args:
-            total_batch_size: The total batch size to distribute
-            
-        Returns:
-            List of batch sizes for each DataConfig
-        """
         n_configs = len(self.dataconfigs)
-        equal_batch_size = total_batch_size // n_configs
+        base_size = total_batch_size // n_configs
         remainder = total_batch_size % n_configs
-        
-        batch_sizes = [equal_batch_size] * n_configs
-        # Add remainder to the last config
-        if remainder > 0:
-            batch_sizes[-1] += remainder
-            
+
+        batch_sizes = []
+        for i in range(n_configs):
+            # Distribute remainder evenly across configs
+            size = base_size + (1 if i < remainder else 0)
+            batch_sizes.append(size)
+
+        # Ensure total equals expected batch size
+        assert sum(
+            batch_sizes) == total_batch_size, f"Batch partitioning error: {sum(batch_sizes)} != {total_batch_size}"
+
         return batch_sizes
 
     @property
@@ -158,15 +154,20 @@ class MultiDataConfigContainer:
         """
         Get the total number of unique D alleles across all DataConfigs.
         Includes the "Short-D" allele for compatibility.
-        
+
         Returns:
             int: Combined count of D alleles (including Short-D)
         """
         if not self.has_at_least_one_d():
             return 0
         combined_dicts = self.derive_combined_allele_dictionaries()
-        return len(combined_dicts.get('d_dict', {}))
+        d_dict_size = len(combined_dicts.get('d_dict', {}))
 
+        # Add 1 for 'Short-D' if not already in the dictionary
+        if 'Short-D' not in combined_dicts.get('d_dict', {}):
+            d_dict_size += 1
+
+        return d_dict_size
     @property
     def number_of_j_alleles(self) -> int:
         """

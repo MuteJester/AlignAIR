@@ -48,6 +48,7 @@ class MultiChainDataset(DatasetBase):
         self.batch_size = batch_size
         self.batch_sizes = self.dataconfig_container.equal_batch_partitioning(batch_size)
 
+
         self.max_sequence_length = max_sequence_length
 
         self.tokenizer = CenterPaddedSequenceTokenizer(max_length=max_sequence_length)
@@ -106,7 +107,9 @@ class MultiChainDataset(DatasetBase):
         self.allele_encoder.register_gene("J", j_alleles, sort=False)
 
         if self.has_d:
-            d_alleles = sorted(list(self.d_dict)) + ['Short-D']
+            d_alleles = sorted(list(self.d_dict))
+            if 'Short-D' not in d_alleles:
+                d_alleles.append('Short-D')
             self.allele_encoder.register_gene("D", d_alleles, sort=False)
             self.d_allele_count = self.dataconfig_container.number_of_d_alleles
 
@@ -145,15 +148,15 @@ class MultiChainDataset(DatasetBase):
 
     def _correct_for_missing_d(self, batchs):
         # if there are no missing D segments, return the batchs as is.
-        if self._has_missing_d():
+        if not self._has_missing_d():
             return batchs
 
         # at least one dataset has D, so we need to correct the batches and add all the d labels to the batches that do not have D.
-        # with dummy "Short-D" allele calls, and empty start/end positions. setting them the start and end positions to v_sequence_end
-        for batch,dcf in zip(batchs,self.dataconfigs):
+        for batch, dcf in zip(batchs, self.dataconfigs):
             if not dcf.metadata.has_d:
-                # add the d_call, d_sequence_start, d_sequence_end columns to the batch
-                batch['d_call'] = ['Short-D'] * len(batch)
+                # Use the sequence length as the reference for batch size
+                batch_size = len(batch['sequence'])  # ← Use sequence as the reliable reference
+                batch['d_call'] = ['Short-D'] * batch_size
                 batch['d_sequence_start'] = batch['v_sequence_end']
                 batch['d_sequence_end'] = batch['v_sequence_end']
         return batchs
@@ -234,7 +237,6 @@ class MultiChainDataset(DatasetBase):
             y['d_start'] = batch['d_sequence_start'].reshape(-1, 1)
             y['d_end'] = batch['d_sequence_end'].reshape(-1, 1)
 
-
         return x, y
 
     def _get_tf_dataset_params(self):
@@ -250,18 +252,15 @@ class MultiChainDataset(DatasetBase):
 
     def _train_generator(self):
         pointer = 0
+        batch_count = 0
         while True:
             pointer += self.batch_size
             if pointer >= self.data_length:
                 pointer = self.batch_size
 
             batch_x, batch_y = self._get_single_batch(pointer)
-
-            if len(batch_x['tokenized_sequence']) != self.batch_size:
-                pointer = 0
-                continue
-            else:
-                yield batch_x, batch_y
+            batch_count += 1
+            yield batch_x, batch_y
 
     def get_train_dataset(self):
         output_types, output_shapes = self._get_tf_dataset_params()
