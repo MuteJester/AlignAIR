@@ -38,15 +38,14 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='AlignAIR Model Prediction')
     parser.add_argument('--mode', type=str, default='cli', choices=['cli', 'yaml'],
                         help='Mode of input: cli, yaml, interactive')
-    parser.add_argument('--config_file', type=str, help='Path to YAML configuration file')
+    parser.add_argument('--genairr_dataconfig', type=str, default='HUMAN_IGH_OGRDB', help='A name of a builtin GenAIRR data config, or a path to a custom data config pkl file, in the case of a multi chain model this should be a comma separated list of configs, e.g. "HUMAN_IGH_OGRDB,HUMAN_TCRB_IMGT", can also be paths to custom data config pkl files')
     parser.add_argument('--model_checkpoint', type=str, help='Path to saved AlignAIR weights',required=True)
     parser.add_argument('--save_path', type=str, help='Where to save the alignment',required=True)
     parser.add_argument('--sequences', type=str, help='Path to csv/tsv/fasta file with sequences in a column called "sequence"',required=True)
-    parser.add_argument('--genairr_dataconfig', type=str, default='HUMAN_IGH_OGRDB', help='A name of a builtin GenAIRR data config, or a path to a custom data config pkl file, in the case of a multi chain model this should be a comma separated list of configs, e.g. "HUMAN_IGH_OGRDB,HUMAN_TCRB_IMGT", can also be paths to custom data config pkl files')
     parser.add_argument('--max_input_size', type=int, default=576, help='Maximum model input size, NOTE! this is with respect to the dimensions the model was trained on, do not increase for pretrained models')
     parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
-    parser.add_argument('--v_allele_threshold', type=float, default=0.1, help='Percentage for V allele assignment '
-                                                                              'selection')
+    parser.add_argument('--config_file', type=str, help='Path to YAML configuration file')
+    parser.add_argument('--v_allele_threshold', type=float, default=0.1, help='Percentage for V allele assignment ')
     parser.add_argument('--d_allele_threshold', type=float, default=0.1, help='Percentage for D allele assignment selection')
     parser.add_argument('--j_allele_threshold', type=float, default=0.1, help='Percentage for J allele assignment selection')
     parser.add_argument('--v_cap', type=int, default=3, help='Cap for V allele calls')

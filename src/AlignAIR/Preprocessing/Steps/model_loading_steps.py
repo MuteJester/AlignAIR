@@ -60,6 +60,9 @@ class ModelLoadingStep(Step):
                 data_path=data_path,
                 dataconfig=dataconfig,  # MultiDataConfigContainer acts as proxy for single config
                 max_sequence_length=max_sequence_size,
+                evaluation_only = True,
+                use_streaming=True,
+
             )
 
         model_params = dataset.generate_model_params()
