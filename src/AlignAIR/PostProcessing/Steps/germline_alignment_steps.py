@@ -1,5 +1,6 @@
 from GenAIRR.dataconfig import DataConfig
 
+from AlignAIR.Data import MultiDataConfigContainer
 from AlignAIR.PostProcessing import HeuristicReferenceMatcher
 from AlignAIR.Step.Step import Step
 
@@ -14,7 +15,7 @@ class AlleleAlignmentStep(Step):
         reference_map = {}
         reference_map['v'] = {i.name:i.ungapped_seq.upper() for i in dataconfig.allele_list('v')}
         reference_map['j'] = {i.name:i.ungapped_seq.upper() for i in dataconfig.allele_list('j')}
-        if dataconfig.metadata.has_d:
+        if self.has_d:
             reference_map['d'] = {i.name:i.ungapped_seq.upper() for i in dataconfig.allele_list('d')}
             reference_map['d']['Short-D'] = ''
 
@@ -35,7 +36,16 @@ class AlleleAlignmentStep(Step):
         processed_predictions = predict_object.processed_predictions
         segments = {}
         iterator = ['v','j']
-        if predict_object.dataconfig.metadata.has_d:
+
+        if isinstance(predict_object.dataconfig,DataConfig):
+            self.has_d = predict_object.dataconfig.metadata.has_d
+        elif isinstance(predict_object.dataconfig,MultiDataConfigContainer):
+            self.has_d = predict_object.dataconfig.has_at_least_one_d()
+        else:
+            raise ValueError("dataconfig should be either a DataConfig or MultiDataConfigContainer")
+
+
+        if self.has_d:
             iterator.append('d')
 
         for gene in iterator:

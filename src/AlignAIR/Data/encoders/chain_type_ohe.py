@@ -41,20 +41,28 @@ class ChainTypeOneHotEncoder:
         """
         if len(one_hot_vector) != len(self.chain_types):
             raise ValueError("One-hot vector length does not match number of chain types.")
-        index = np.argmax(one_hot_vector)
+        index = np.argmax(one_hot_vector).astype(int)
         return self.index_to_type[index]
 
-    def decode(self, one_hot_vector):
+    def decode(self, one_hot_vectors: np.ndarray) -> Union[ChainType, List[ChainType]]:
         """
-        Decode a one-hot vector back to a chain type.
+        Decodes a single one-hot vector (1D array) or a batch of vectors
+        (2D array) back to their corresponding chain types.
         """
-        if one_hot_vector.shape[1] != len(self.chain_types):
-            raise ValueError("One-hot vector length does not match number of chain types.")
+        # Ensure input is a numpy array
+        if not isinstance(one_hot_vectors, np.ndarray):
+            one_hot_vectors = np.array(one_hot_vectors)
 
-        decoded = []
-        for i in range(one_hot_vector.shape[0]):
-            decoded.append(self._decode_single(one_hot_vector[i]))
-        return decoded
+        # If the array is 2-dimensional, it's a batch of vectors
+        if one_hot_vectors.ndim == 2:
+            # Decode each vector (row) in the 2D array
+            return [self._decode_single(vec) for vec in one_hot_vectors]
+        # If the array is 1-dimensional, it's a single vector
+        elif one_hot_vectors.ndim == 1:
+            # Decode just that single vector
+            return self._decode_single(one_hot_vectors)
+        else:
+            raise ValueError(f"Input must be a 1D or 2D array, but got a {one_hot_vectors.ndim}D array.")
 
     def __repr__(self):
         return f"ChainTypeOneHotEncoder(chain_types={self.chain_types})"

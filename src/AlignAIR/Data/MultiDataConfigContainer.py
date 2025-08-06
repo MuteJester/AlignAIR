@@ -2,6 +2,7 @@ import pathlib
 import pickle
 from typing import List, Union, Dict
 
+from GenAIRR.alleles.allele import Allele
 from GenAIRR.dataconfig import DataConfig
 
 
@@ -137,6 +138,28 @@ class MultiDataConfigContainer:
             batch_sizes) == total_batch_size, f"Batch partitioning error: {sum(batch_sizes)} != {total_batch_size}"
 
         return batch_sizes
+
+
+    # def _unfold_alleles(self, gene_segment: str) -> List[str]:
+    #     """Unfolds the alleles for a given gene segment (v, d, j, c) into a flat list."""
+    #     alleles_dict = getattr(self, f"{gene_segment}_alleles")
+    #     if alleles_dict is None:
+    #         return []
+    #     # This comprehension is clearer: iterate through the lists of alleles and flatten them.
+    #     return [allele for allele_list in alleles_dict.values() for allele in allele_list]
+    #
+    def allele_list(self, gene_segment: str) -> List[Allele]:
+        """
+        Get a dictionary of alleles for a specific gene segment (v, d, j).
+
+        Args:
+            gene_segment (str): The gene segment to retrieve alleles for ('v', 'd', 'j').
+
+        Returns:
+            Dict[str, Allele]: Dictionary of Allele objects for the specified gene segment.
+        """
+        combined_dicts = self.derive_combined_allele_dictionaries()
+        return list(combined_dicts.get(f'{gene_segment}_dict', {}).values())
 
     @property
     def number_of_v_alleles(self) -> int:

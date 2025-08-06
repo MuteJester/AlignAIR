@@ -35,12 +35,14 @@ class MultiChainDataset(DatasetBase):
     def __init__(self, data_paths:List[str], dataconfigs: Union[List[DataConfig], MultiDataConfigContainer], batch_size=64, max_sequence_length=512, use_streaming=False,
                  nrows=None, seperator=','):
 
+
         # Convert to MultiDataConfigContainer if needed
         if isinstance(dataconfigs, list):
             self.dataconfig_container = MultiDataConfigContainer(dataconfigs)
         else:
             self.dataconfig_container = dataconfigs
-        
+
+
         self.dataconfigs = list(self.dataconfig_container)  # For backward compatibility
 
         self.nrows = nrows
@@ -64,7 +66,8 @@ class MultiChainDataset(DatasetBase):
         self.seperator = seperator
         self.use_streaming = use_streaming
 
-        self.required_data_column_sets = [ColumnSet(has_d=dcf.metadata.has_d) for dcf in self.dataconfigs ]
+        self.required_data_column_sets = [ColumnSet(has_d=dcf.metadata.has_d) for dcf in self.dataconfigs]
+
 
         self.batch_size = batch_size
         self.derive_call_dictionaries()

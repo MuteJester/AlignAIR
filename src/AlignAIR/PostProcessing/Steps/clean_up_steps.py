@@ -1,4 +1,9 @@
+from typing import Union
+
 import numpy as np
+from GenAIRR.dataconfig import DataConfig
+
+from AlignAIR.Data import MultiDataConfigContainer
 from AlignAIR.Step.Step import Step
 
 
@@ -9,9 +14,14 @@ class CleanAndArrangeStep(Step):
 
 
 
-    def clean_and_arrange_predictions(self, predictions, dataconfig):
+    def clean_and_arrange_predictions(self, predictions, dataconfig:Union[DataConfig, MultiDataConfigContainer]):
         def extract_values(key):
             return [i[key] for i in predictions]
+
+        if isinstance(dataconfig, MultiDataConfigContainer):
+            has_d = dataconfig.has_at_least_one_d()
+        else:
+            has_d = dataconfig.metadata.has_d
 
         mutation_rate = np.squeeze(np.vstack(extract_values('mutation_rate')))
         indel_count = np.squeeze(np.vstack(extract_values('indel_count')))
@@ -24,7 +34,7 @@ class CleanAndArrangeStep(Step):
         j_start = np.vstack(extract_values('j_start'))
         j_end = np.vstack(extract_values('j_end'))
 
-        if dataconfig.metadata.has_d:
+        if has_d:
             d_allele = np.vstack(extract_values('d_allele'))
             d_start = np.vstack(extract_values('d_start'))
             d_end = np.vstack(extract_values('d_end'))
@@ -32,9 +42,6 @@ class CleanAndArrangeStep(Step):
             d_allele = None
             d_start = None
             d_end = None
-
-        type_ = None
-
 
         output = {
             'v_allele': v_allele,
@@ -48,10 +55,13 @@ class CleanAndArrangeStep(Step):
             'productive': productive,
             #'type_': type_ if chain_type == 'light' else None
         }
-        if dataconfig.metadata.has_d:
+        if has_d:
             output[ 'd_allele'] =  d_allele
             output['d_start'] = d_start
             output['d_end'] = d_end
+
+        if isinstance(dataconfig, MultiDataConfigContainer):
+            output['type_'] = np.vstack(extract_values('chain_type'))
 
         return output
     def execute(self, predict_object):

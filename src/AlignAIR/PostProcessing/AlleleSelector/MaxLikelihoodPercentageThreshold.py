@@ -1,8 +1,11 @@
+from typing import Union
+
 import numpy as np
 from GenAIRR.dataconfig import DataConfig
 from joblib import delayed, Parallel
 from tqdm.auto import tqdm
 
+from AlignAIR.Data import MultiDataConfigContainer
 from AlignAIR.Data.encoders import AlleleEncoder
 
 
@@ -19,17 +22,24 @@ def deterministic_coef_method(likelihoods,th=0.1):
 
 
 class MaxLikelihoodPercentageThreshold:
-    def __init__(self, dataconfig:DataConfig):
+    def __init__(self, dataconfig:Union[DataConfig, MultiDataConfigContainer]):
 
         self.dataconfig = dataconfig
         self.allele_encoder = AlleleEncoder()
 
-        self.has_d = dataconfig.metadata.has_d
-        self.chain = dataconfig.metadata.chain_type
         self.add_allele_dictionaries()
         self.register_alleles_to_ohe()
 
         self.properties_map = self.allele_encoder.get_properties_map()
+
+    @property
+    def has_d(self):
+        if isinstance(self.dataconfig, DataConfig):
+            return self.dataconfig.metadata.has_d
+        elif isinstance(self.dataconfig, MultiDataConfigContainer):
+            return self.dataconfig.has_at_least_one_d()
+        else:
+            raise ValueError("dataconfig must be either a DataConfig or MultiDataConfigContainer instance")
 
     def add_allele_dictionaries(self):
 

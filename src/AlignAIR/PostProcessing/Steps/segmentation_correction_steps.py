@@ -1,6 +1,9 @@
+from typing import Union
+
 import numpy as np
 from GenAIRR.dataconfig import DataConfig
 
+from AlignAIR.Data import MultiDataConfigContainer
 from AlignAIR.Step.Step import Step
 
 
@@ -28,7 +31,15 @@ class SegmentCorrectionStep(Step):
 
         return pad_size
 
-    def correct_segments_for_paddings(self,sequences, dataconfig:DataConfig, v_start, v_end, d_start, d_end, j_start, j_end):
+    def correct_segments_for_paddings(self,sequences, dataconfig:Union[DataConfig, MultiDataConfigContainer], v_start, v_end, d_start, d_end, j_start, j_end):
+
+        if isinstance(dataconfig, MultiDataConfigContainer):
+            self.has_d = dataconfig.has_at_least_one_d()
+        else:
+            self.has_d = dataconfig.metadata.has_d
+
+
+
         paddings = np.array([self.calculate_pad_size(i) for i in sequences])
 
         v_start = np.round((v_start.squeeze() - paddings)).astype(int)
@@ -37,20 +48,28 @@ class SegmentCorrectionStep(Step):
         j_start = np.round((j_start.squeeze() - paddings)).astype(int)
         j_end = np.round((j_end.squeeze() - paddings)).astype(int)
 
-        if dataconfig.metadata.has_d:
+        if self.has_d:
             d_start = np.round(np.vstack(d_start).squeeze() - paddings).astype(int)
             d_end = np.round(np.vstack(d_end).squeeze() - paddings).astype(int)
         else:
             d_start = None
             d_end = None
 
-        return {'v_start':v_start, 'v_end':v_end,
+        cleaned_values = {'v_start':v_start, 'v_end':v_end,
                 'd_start':d_start, 'd_end':d_end,
                 'j_start':j_start, 'j_end':j_end}
+
+        return cleaned_values
 
     def execute(self, predict_object):
         self.log("Correcting segments for paddings...")
         cleaned_data = predict_object.processed_predictions
+
+        # add empty d_start and d_end if not present
+        if 'd_start' not in cleaned_data:
+            cleaned_data['d_start'] = None
+        if 'd_end' not in cleaned_data:
+            cleaned_data['d_end'] = None
 
         corrected_segments = self.correct_segments_for_paddings(
             predict_object.sequences, predict_object.dataconfig,

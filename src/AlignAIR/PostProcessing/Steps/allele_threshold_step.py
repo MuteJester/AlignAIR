@@ -3,6 +3,7 @@ from typing import Dict
 import numpy as np
 from GenAIRR.dataconfig import DataConfig
 
+from AlignAIR.Data import MultiDataConfigContainer
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold, MaxLikelihoodPercentageThreshold
 from AlignAIR.PredictObject.PredictObject import PredictObject
 from AlignAIR.Step.Step import Step
@@ -83,10 +84,13 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         return predicted_alleles, processed_predicted_allele_likelihoods, threshold_objects
 
 
-    @staticmethod
-    def get_thresholds(args):
+    def get_thresholds(self,args):
         """extract v,d,j thresholds from args"""
-        return {'v': args.v_allele_threshold, 'd': args.d_allele_threshold, 'j': args.j_allele_threshold}
+        ths =  {'v': args.v_allele_threshold,  'j': args.j_allele_threshold}
+        if self.has_d:
+            ths['d'] = args.d_allele_threshold
+
+        return ths
 
     @staticmethod
     def get_caps(args):
@@ -97,10 +101,17 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         self.log("Applying Max Likelihood thresholds...")
         args = predict_object.script_arguments
 
+        if isinstance(predict_object.dataconfig, DataConfig):
+            self.has_d = predict_object.dataconfig.metadata.has_d
+        elif isinstance(predict_object.dataconfig,MultiDataConfigContainer):
+            self.has_d = predict_object.dataconfig.has_at_least_one_d()
+        else:
+            raise ValueError("dataconfig should be a DataConfig or MultiDataConfigContainer instance")
+
         alleles = {'v': predict_object.processed_predictions['v_allele'],
                    'j': predict_object.processed_predictions['j_allele'],
                    }
-        if predict_object.dataconfig.metadata.has_d:
+        if self.has_d:
             alleles['d'] = predict_object.processed_predictions['d_allele']
 
         thresholds = self.get_thresholds(args)
