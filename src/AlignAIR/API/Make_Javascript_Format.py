@@ -19,7 +19,6 @@ from AlignAIR.Trainers import Trainer
 from AlignAIR.Utilities.CustomModelParamsYaml import CustomModelParamsYaml
 
 
-
 def parse_arguments():
     """
         Parse command line arguments.
@@ -34,7 +33,17 @@ def parse_arguments():
     parser.add_argument('--sequences', type=str, help='Path to csv/tsv/fasta file with sequences in a column called "sequence"',required=True)
     parser.add_argument('--max_input_size', type=int, default=576, help='Maximum model input size, NOTE! this is with respect to the dimensions the model was trained on, do not increase for pretrained models')
     parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
+    parser.add_argument('--translate_to_asc', action='store_true', help='Translate names back to ASCs names from IMGT')
+    parser.add_argument('--fix_orientation', type=bool, default=True, help='Adds a preprocessing steps that tests and fixes the DNA orientation, in case it is reversed, complement or reversed and complement')
+    parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None, help='A path to a custom orientation model created for a custom reference')
+    parser.add_argument('--custom_genotype', type=str, default=None, help='Path to a custom genotype yaml file')
+    parser.add_argument('--save_predict_object', action='store_true', help='Save the predict object (Warning this can be large)')
+    parser.add_argument('--airr_format', action='store_true', help='Adds a step to format the results to AIRR format')
+    # parameters for the model yaml, if specified this will change the loading of the model to a finetuned one with differnt head sizes
+    parser.add_argument('--finetuned_model_params_yaml', type=str, default=None, help='Path to a yaml file with the parameters of a fine tuned model (new head sizes and latent sizes)')
+
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
