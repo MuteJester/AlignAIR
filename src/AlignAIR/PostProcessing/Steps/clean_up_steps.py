@@ -61,7 +61,8 @@ class CleanAndArrangeStep(Step):
             output['d_end'] = d_end
 
         if isinstance(dataconfig, MultiDataConfigContainer):
-            output['type_'] = np.vstack(extract_values('chain_type'))
+            if 'chain_type' in predictions[0]:
+                output['type_'] = np.vstack(extract_values('chain_type'))
 
         return output
     def execute(self, predict_object):

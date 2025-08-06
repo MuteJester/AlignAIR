@@ -60,10 +60,11 @@ class FinalizationStep(Step):
             final_csv['chain_type'] = predict_object.dataconfig.metadata.chain_type
 
         if isinstance(predict_object.dataconfig, MultiDataConfigContainer):
-          chaintype_ohe = ChainTypeOneHotEncoder(chain_types=predict_object.dataconfig.chain_types())
-          decoded_types = chaintype_ohe.decode(predict_object.processed_predictions['type_'])
+            if 'type_' in predict_object.processed_predictions:
+              chaintype_ohe = ChainTypeOneHotEncoder(chain_types=predict_object.dataconfig.chain_types())
+              decoded_types = chaintype_ohe.decode(predict_object.processed_predictions['type_'])
 
-          final_csv['chain_type'] = decoded_types
+              final_csv['chain_type'] = decoded_types
 
         path_obj = Path(save_path)
        # Check if the provided path ends with '.csv'

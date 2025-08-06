@@ -326,9 +326,12 @@ class TestModule(unittest.TestCase):
         validation = pd.read_csv('./heavychain_predict_validation.csv')
 
         # drop type column
-        df.drop(columns=['type'], inplace=True)
+        # if 'chain_type' in df.col
+        # df.drop(columns=['type'], inplace=True)
 
         # Compare dataframes cell by cell
+        validation.chain_type = validation.chain_type.str.replace('heavy','ChainType.BCR_HEAVY')
+
         for i in range(df.shape[0]):
             for j in range(df.shape[1]):
                 self.assertEqual(df.iloc[i, j], validation.iloc[i, j],
