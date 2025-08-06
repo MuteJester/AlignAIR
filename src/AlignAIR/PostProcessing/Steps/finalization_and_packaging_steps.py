@@ -46,8 +46,8 @@ class FinalizationStep(Step):
             'v_likelihoods': predict_object.likelihoods_of_selected_alleles['v'],
             'j_likelihoods': predict_object.likelihoods_of_selected_alleles['j'],
             'mutation_rate': predict_object.processed_predictions['mutation_rate'],
-            'ar_indels': predict_object.processed_predictions['indel_count'],
-            'ar_productive': predict_object.processed_predictions['productive'],
+            'indels': predict_object.processed_predictions['indel_count'],
+            'productive': predict_object.processed_predictions['productive'],
         })
 
         if self.has_d:

@@ -411,7 +411,7 @@ class TestModule(unittest.TestCase):
             'C:/Users/tomas/Desktop/AlignAIRR/AlignAIR_ENV/Scripts/python', script_path,
             '--sequences', test_file,
             '--model_checkpoint', os.path.join(self.test_dir, 'AlignAIR_MultiChain_LightChain'),
-            '--genairr_dataconfig', 'C:/Users/tomas/Downloads/HUMAN_IGK_OGRDB.pkl,C:/Users/tomas/Downloads/HUMAN_IGL_OGRDB.pkl',  # Multi-chain config
+            '--genairr_dataconfig', 'C:/Users/tomas/Downloads/HUMAN_IGL_OGRDB.pkl,C:/Users/tomas/Downloads/HUMAN_IGK_OGRDB.pkl',  # Multi-chain config
             '--save_path', output_csv,
             '--batch_size', '64',
             '--max_input_size', '576'

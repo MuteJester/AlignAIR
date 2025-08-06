@@ -30,6 +30,7 @@ class MaxLikelihoodPercentageThreshold:
         self.add_allele_dictionaries()
         self.register_alleles_to_ohe()
 
+
         self.properties_map = self.allele_encoder.get_properties_map()
 
     @property
@@ -55,8 +56,8 @@ class MaxLikelihoodPercentageThreshold:
         Returns:
 
         """
-        v_alleles = sorted(list(self.v_dict))
-        j_alleles = sorted(list(self.j_dict))
+        v_alleles = (list(self.v_dict))
+        j_alleles = (list(self.j_dict))
 
         self.v_allele_count = len(v_alleles)
         self.j_allele_count = len(j_alleles)

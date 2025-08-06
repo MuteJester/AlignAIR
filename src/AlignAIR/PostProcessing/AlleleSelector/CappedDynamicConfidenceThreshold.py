@@ -33,8 +33,8 @@ class CappedDynamicConfidenceThreshold:
         Returns:
 
         """
-        v_alleles = sorted(list(self.v_dict))
-        j_alleles = sorted(list(self.j_dict))
+        v_alleles = (list(self.v_dict))
+        j_alleles = (list(self.j_dict))
 
         self.v_allele_count = len(v_alleles)
         self.j_allele_count = len(j_alleles)
