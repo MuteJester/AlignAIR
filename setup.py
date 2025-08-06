@@ -7,7 +7,7 @@ with open('requirements.txt') as f:
 
 setup(
     name='AlignAIR',
-    version='2.0.0',
+    version='2.0.1',
     author='Thomas Konstantinovsky & Ayelet Peres',
     author_email='thomaskon90@gmail.com',
     description='Unified Multi-Chain IG/TCR Sequence Alignment Tool with Dynamic GenAIRR Integration',
