@@ -16,23 +16,30 @@
  
 ---
 
-### ✨ Quick Start
+### Quick Start
 
-
+**Step 1: Pull the Docker image**
 ```bash
-# Pull the latest image
 docker pull thomask90/alignair:latest
+```
 
-# Run AlignAIR v2.0 pipeline
+**Step 2: Start container with your data volumes**
+```bash
+# Mount your input data and output directories
 docker run -it --rm \
-  -v /path/to/local/data:/data \
-  -v /path/to/local/downloads:/downloads \
-  thomask90/alignair:latest \
-  python app.py run \
-    --model-checkpoint=/app/pretrained_models/IGH_S5F_576 \
-    --genairr-dataconfig=HUMAN_IGH_OGRDB \
-    --sequences=/data/sample_HeavyChain_dataset.csv \
-    --save-path=/downloads/
+  -v /path/to/your/input/data:/data \
+  -v /path/to/your/output/downloads:/downloads \
+  thomask90/alignair:latest
+```
+
+**Step 3: Run AlignAIR inside the container**
+```bash
+# Example: Heavy Chain analysis with extended model
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGH_S5F_576_EXTENDED \
+  --genairr-dataconfig=HUMAN_IGH_EXTENDED \
+  --sequences=/data/your_sequences.csv \
+  --save-path=/downloads/
 ```
 
 <details>
@@ -59,22 +66,22 @@ docker run -it --rm \
 
 AlignAIR v2.0 introduces a revolutionary unified architecture:
 
-### 🔄 Unified Models
+### Unified Models
 - **SingleChainAlignAIR**: Optimized for single receptor type analysis
 - **MultiChainAlignAIR**: Native multi-chain support with chain type classification
 - **Universal compatibility**: Works with any GenAIRR dataconfig combination
 
-### 🧬 Multi-Chain Analysis
+### Multi-Chain Analysis
 - **Mixed receptor processing**: Analyze IGK + IGL light chains simultaneously
 - **Chain type classification**: Automatic receptor type identification
 - **Optimized batch processing**: Equal partitioning across chain types
 
-### ⚡ Dynamic GenAIRR Integration
+### Dynamic GenAIRR Integration
 - **Built-in dataconfigs**: `HUMAN_IGH_OGRDB`, `HUMAN_IGK_OGRDB`, `HUMAN_IGL_OGRDB`, `HUMAN_TCRB_IMGT`
 - **Custom config support**: Use your own GenAIRR dataconfigs
 - **Automatic detection**: Single vs. multi-chain mode based on input
 
-### 📈 Enhanced Performance
+### Enhanced Performance
 - **Streamlined architecture**: Single codebase for all receptor types
 - **Memory optimization**: Efficient processing for large datasets
 - **GPU acceleration**: Optimized tensor operations
@@ -132,46 +139,58 @@ python app.py run \
 
 ### Example Commands
 
-**Heavy Chain Analysis:**
+**Heavy Chain Analysis (Extended Model):**
 ```bash
 python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGH_S5F_576 \
-  --genairr-dataconfig=HUMAN_IGH_OGRDB \
-  --sequences=/data/input/heavy_sequences.csv \
-  --save-path=/data/output/heavy_results \
+  --model-checkpoint=/app/pretrained_models/IGH_S5F_576_EXTENDED \
+  --genairr-dataconfig=HUMAN_IGH_EXTENDED \
+  --sequences=/data/heavy_sequences.csv \
+  --save-path=/downloads/ \
   --v-allele-threshold=0.75 \
   --d-allele-threshold=0.3 \
   --j-allele-threshold=0.8
 ```
 
-**Light Chain Analysis (Single Chain):**
+**Light Chain Multi-Chain Analysis (Lambda + Kappa with Chain Type Prediction):**
 ```bash
 python app.py run \
   --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
-  --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGL_OGRDB \
-  --sequences=/data/input/light_sequences.csv \
-  --save-path=/data/output/light_results \
+  --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
+  --sequences=/data/mixed_light_sequences.csv \
+  --save-path=/downloads/ \
+  --airr-format
+```
+> **Output includes:** Chain type prediction in `chain_type` column (Lambda or Kappa)
+
+**Single Light Chain Analysis:**
+```bash
+# Lambda only (using multi-chain model)
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
+  --sequences=/data/lambda_sequences.csv \
+  --save-path=/downloads/ \
+  --airr-format \
+  --fix-orientation
+
+# Kappa only (using multi-chain model)  
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
+  --sequences=/data/kappa_sequences.csv \
+  --save-path=/downloads/ \
   --airr-format \
   --fix-orientation
 ```
-
-**Multi-Chain Light Chain Analysis (IGK + IGL):**
-```bash
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/MultiChain_Light_S5F_576 \
-  --genairr-dataconfig=HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB \
-  --sequences=/data/input/mixed_light_sequences.csv \
-  --save-path=/data/output/multichain_results \
-  --airr-format
-```
+> **Note:** The MultiChainAlignAIR model requires both dataconfigs but will predict the correct chain type for each sequence
 
 **T-Cell Receptor Beta Chain:**
 ```bash
 python app.py run \
   --model-checkpoint=/app/pretrained_models/TCRB_Uniform_576 \
   --genairr-dataconfig=HUMAN_TCRB_IMGT \
-  --sequences=/data/input/tcr_sequences.csv \
-  --save-path=/data/output/tcr_results
+  --sequences=/data/tcr_sequences.csv \
+  --save-path=/downloads/
 ```
 
 ---
@@ -189,25 +208,26 @@ AlignAIR v2.0 introduces a unified architecture that dynamically adapts to diffe
 
 ### Built-in GenAIRR DataConfigs
 
-| DataConfig | Chain Type | Species | Reference | D Gene |
-|------------|------------|---------|-----------|--------|
-| `HUMAN_IGH_OGRDB` | Heavy Chain | Human | OGRDB v1.5 | ✓ |
-| `HUMAN_IGK_OGRDB` | Kappa Light | Human | OGRDB v1.5 | ✗ |
-| `HUMAN_IGL_OGRDB` | Lambda Light | Human | OGRDB v1.5 | ✗ |
-| `HUMAN_TCRB_IMGT` | TCR Beta | Human | IMGT v3.1.25 | ✓ |
-| `HUMAN_IGH_EXTENDED` | Heavy Chain Extended | Human | OGRDB + Custom | ✓ |
+| DataConfig | Chain Type | Species | Reference | D Gene | Model Compatibility |
+|------------|------------|---------|-----------|--------|--------------------|
+| `HUMAN_IGH_OGRDB` | Heavy Chain | Human | OGRDB | ✓ | IGH_S5F_576 |
+| `HUMAN_IGH_EXTENDED` | Heavy Chain Extended | Human | OGRDB + Custom | ✓ | IGH_S5F_576_EXTENDED |
+| `HUMAN_IGK_OGRDB` | Kappa Light | Human | OGRDB | ✗ | IGL_S5F_576 (multi-chain) |
+| `HUMAN_IGL_OGRDB` | Lambda Light | Human | OGRDB | ✗ | IGL_S5F_576 (multi-chain only) |
+| `HUMAN_TCRB_IMGT` | TCR Beta | Human | IMGT  | ✓ | TCRB_Uniform_576 |
 
 ### Pre-trained Model Checkpoints
 
 The Docker container ships with optimized models for common use cases:
 
-| Model | Architecture | Supported Configs | Checkpoint Path                             |
-|-------|-------------|-------------------|---------------------------------------------|
-| **Heavy Chain** | SingleChainAlignAIR | `HUMAN_IGH_OGRDB` | `/app/pretrained_models/IGH_S5F_576`        |
-| **Lambda Light** | SingleChainAlignAIR | `HUMAN_IGL_OGRDB` | `/app/pretrained_models/IGL_S5F_576`        |
-| **Kappa Light** | SingleChainAlignAIR | `HUMAN_IGK_OGRDB` | `/app/pretrained_models/IGK_S5F_576`        |
-| **Multi-Light** | MultiChainAlignAIR | `HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB` | `/app/pretrained_models/MultiLight_S5F_576` |
-| **TCR Beta** | SingleChainAlignAIR | `HUMAN_TCRB_IMGT` | `/app/pretrained_models/TCRB_Uniform_576`   |
+| Model | Architecture | Supported Configs | Checkpoint Path | Use Case |
+|-------|-------------|-------------------|-----------------|----------|
+| **Heavy Chain Extended** | SingleChainAlignAIR | `HUMAN_IGH_EXTENDED` | `/app/pretrained_models/IGH_S5F_576_EXTENDED` | Enhanced heavy chain with extended allele coverage |
+| **Heavy Chain Standard** | SingleChainAlignAIR | `HUMAN_IGH_OGRDB` | `/app/pretrained_models/IGH_S5F_576` | Standard heavy chain analysis |
+| **Multi-Light** | MultiChainAlignAIR | `HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB` | `/app/pretrained_models/IGL_S5F_576` | Lambda + Kappa analysis with chain type prediction |
+| **TCR Beta** | SingleChainAlignAIR | `HUMAN_TCRB_IMGT` | `/app/pretrained_models/TCRB_Uniform_576` | T-cell receptor beta chain |
+
+> **Note:** The Multi-Light model (`IGL_S5F_576`) is a MultiChainAlignAIR instance that requires both Lambda and Kappa dataconfigs and always outputs chain type predictions.
 
 ### Custom DataConfigs
 
@@ -233,36 +253,92 @@ python app.py run \
 ---
 
 ## Docker in depth
-<details>
-<summary>Step‑by‑step guide</summary>
 
-1. **Pull image**  
-   ```bash
-   docker pull thomask90/alignair:latest
-   ```
+### Step-by-Step Docker Usage Guide
 
-2. **Run container**  
-   ```bash
-   docker run -it --rm \
-       -v "/path/to/local/data:/data" \
-       thomask90/alignair:latest
-   ```
+**1. Pull the latest AlignAIR image**
+```bash
+docker pull thomask90/alignair:latest
+```
 
-3. **Inside the container, run AlignAIR:**  
-   ```bash
-   python app.py run \
-     --model-checkpoint="/app/pretrained_models/IGH_S5F_576" \
-     --genairr-dataconfig=HUMAN_IGH_OGRDB \
-     --sequences="/data/test01.csv" \
-     --save-path="/data"
-   ```
-   Results are written back to your mounted `/data` folder.
+**2. Prepare your data**
+- Ensure your input sequences are in CSV format with a `sequence` column
+- Create directories for input data and output results
 
-4. **For help and all parameters:**
-   ```bash
-   python app.py run --help
-   ```
-</details>
+**3. Start the container with volume mounts**
+```bash
+# Windows example:
+docker run -it --rm \
+  -v C:/path/to/your/data:/data \
+  -v C:/path/to/your/downloads:/downloads \
+  thomask90/alignair:latest
+
+# Linux/Mac example:
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest
+```
+
+**4. Run AlignAIR with the appropriate model**
+
+#### Heavy Chain Analysis (Extended Model)
+```bash
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGH_S5F_576_EXTENDED \
+  --genairr-dataconfig=HUMAN_IGH_EXTENDED \
+  --sequences=/data/sample_HeavyChain_dataset.csv \
+  --save-path=/downloads/
+```
+
+#### Light Chain Multi-Chain Analysis (Lambda + Kappa)
+```bash
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
+  --sequences=/data/sample_LightChain_dataset.csv \
+  --save-path=/downloads/
+```
+> **Important:** This MultiChainAlignAIR model predicts both Lambda and Kappa chains. The output includes a `chain_type` column indicating the predicted chain type for each sequence. The order of dataconfigs (Lambda first, then Kappa) must match the training order.
+
+#### Single Light Chain Analysis
+```bash
+# Lambda or Kappa only (using multi-chain model with both dataconfigs)
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
+  --sequences=/data/light_chain_sequences.csv \
+  --save-path=/downloads/
+```
+> **Note:** Even for single chain type analysis, the MultiChainAlignAIR model requires both dataconfigs but will correctly predict and classify each sequence's chain type.
+
+#### T-Cell Receptor Beta Chain
+```bash
+python app.py run \
+  --model-checkpoint=/app/pretrained_models/TCRB_Uniform_576 \
+  --genairr-dataconfig=HUMAN_TCRB_IMGT \
+  --sequences=/data/tcr_sequences.csv \
+  --save-path=/downloads/
+```
+
+### Critical Notes for Custom Models
+
+- **Always use the same GenAIRR dataconfig** during prediction as was used during model training
+- **Never use modified dataconfigs** with pre-trained models
+- **For multi-chain models:** The order of dataconfigs must match the training order exactly
+- **Custom dataconfigs:** Provide the path to your pickled DataConfig object instead of built-in names
+
+### Custom DataConfig Example
+```bash
+python app.py run \
+  --model-checkpoint=/path/to/your/custom/model \
+  --genairr-dataconfig=/data/your_custom_dataconfig.pkl \
+  --sequences=/data/sequences.csv \
+  --save-path=/downloads/
+```
+
+**5. Check results**
+Your results will be saved in the mounted `/downloads` directory and can be accessed from your host system.
 
 ---
 

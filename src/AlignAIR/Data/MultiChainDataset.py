@@ -33,7 +33,7 @@ class MultiChainDataset(DatasetBase):
     """
 
     def __init__(self, data_paths:List[str], dataconfigs: Union[List[DataConfig], MultiDataConfigContainer], batch_size=64, max_sequence_length=512, use_streaming=False,
-                 nrows=None, seperator=','):
+                 nrows=None, seperator=',',evaluation_only=False):
 
 
         # Convert to MultiDataConfigContainer if needed
@@ -66,7 +66,11 @@ class MultiChainDataset(DatasetBase):
         self.seperator = seperator
         self.use_streaming = use_streaming
 
-        self.required_data_column_sets = [ColumnSet(has_d=dcf.metadata.has_d) for dcf in self.dataconfigs]
+        self.evaluation_only = evaluation_only
+        if not self.evaluation_only:
+            self.required_data_column_sets = [ColumnSet(has_d=dcf.metadata.has_d) for dcf in self.dataconfigs]
+        else:
+            self.required_data_column_sets = [['sequence'] for dcf in self.dataconfigs]
 
 
         self.batch_size = batch_size

@@ -46,6 +46,7 @@ class ModelLoadingStep(Step):
                 data_paths=data_paths,
                 dataconfigs=dataconfig,  # Pass MultiDataConfigContainer directly
                 max_sequence_length=max_sequence_size,
+                evaluation_only=True,
             )
         else:
             # Single chain mode - use existing logic

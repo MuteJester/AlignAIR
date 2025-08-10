@@ -491,7 +491,7 @@ class TestModule(unittest.TestCase):
         validation = pd.read_csv('./tcrb_predict_validation.csv')
 
         # drop type column
-        df.drop(columns=['type'], inplace=True)
+        df.drop(columns=['chain_type'], inplace=True)
 
 
         # Compare dataframes cell by cell
