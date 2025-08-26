@@ -23,9 +23,9 @@ class CleanAndArrangeStep(Step):
         else:
             has_d = dataconfig.metadata.has_d
 
-        mutation_rate = np.squeeze(np.vstack(extract_values('mutation_rate')))
-        indel_count = np.squeeze(np.vstack(extract_values('indel_count')))
-        productive = np.squeeze(np.vstack(extract_values('productive')) > 0.5)
+        mutation_rate = (np.vstack(extract_values('mutation_rate')))
+        indel_count = (np.vstack(extract_values('indel_count')))
+        productive = (np.vstack(extract_values('productive')) > 0.5)
 
         v_allele = np.vstack(extract_values('v_allele'))
         j_allele = np.vstack(extract_values('j_allele'))

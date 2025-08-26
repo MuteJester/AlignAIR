@@ -151,8 +151,9 @@ class HeuristicReferenceMatcher:
         desc = f'Matching {_gene.upper()} Germlines'
 
         for seq, start, end, allele, indels in tqdm(
-                zip(sequences, starts, ends, alleles, indel_counts),
-                total=len(starts), desc=desc):
+                                                    zip(sequences, starts, ends, alleles, indel_counts),
+                                                    total=len(starts), desc=desc
+                                                    ):
 
             ref_seq = self.reference_alleles[allele]
             ref_len = len(ref_seq)

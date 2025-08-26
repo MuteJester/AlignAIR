@@ -134,3 +134,4 @@ class ConfigLoadStep(Step):
         self.log("Data Config loaded successfully, Config Mounted : {}".format(config_arg))
 
         return predict_object
+

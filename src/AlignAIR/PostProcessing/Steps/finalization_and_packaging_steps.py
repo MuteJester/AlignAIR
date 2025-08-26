@@ -45,9 +45,9 @@ class FinalizationStep(Step):
             'j_germline_end': [i['end_in_ref'] for i in predict_object.germline_alignments['j']],
             'v_likelihoods': predict_object.likelihoods_of_selected_alleles['v'],
             'j_likelihoods': predict_object.likelihoods_of_selected_alleles['j'],
-            'mutation_rate': predict_object.processed_predictions['mutation_rate'],
-            'indels': predict_object.processed_predictions['indel_count'],
-            'productive': predict_object.processed_predictions['productive'],
+            'mutation_rate': predict_object.processed_predictions['mutation_rate'].reshape(-1),
+            'indels': predict_object.processed_predictions['indel_count'].reshape(-1),
+            'productive': predict_object.processed_predictions['productive'].reshape(-1),
         })
 
         if self.has_d:
