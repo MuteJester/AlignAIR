@@ -15,7 +15,7 @@ from tensorflow.keras.layers import (
 
 # Import custom layers and components
 from AlignAIR.Models.Layers import (
-    Conv1D_and_BatchNorm, CutoutLayer, AverageLastLabel, EntropyMetric,
+    Conv1D_and_BatchNorm, CutoutLayer, AverageLastLabel, EntropyMetric, SoftCutoutLayer,
     ConvResidualFeatureExtractionBlock, RegularizedConstrainedLogVar,
     TokenAndPositionEmbedding, MinMaxValueConstraint
 )
@@ -233,8 +233,8 @@ class MultiChainAlignAIR(Model):
 
     def _init_masking_layers(self):
         """Initializes layers for creating and applying segmentation masks."""
-        self.v_mask_layer = CutoutLayer(gene='V', max_size=self.max_seq_length)
-        self.j_mask_layer = CutoutLayer(gene='J', max_size=self.max_seq_length)
+        self.v_mask_layer = SoftCutoutLayer(gene='V', max_size=self.max_seq_length, k=3.0)
+        self.j_mask_layer = SoftCutoutLayer(gene='J', max_size=self.max_seq_length, k=3.0)
 
         self.v_mask_gate = Multiply()
         self.j_mask_gate = Multiply()
@@ -243,7 +243,7 @@ class MultiChainAlignAIR(Model):
         self.j_mask_reshape = Reshape((self.max_seq_length, 1))
 
         if self.has_d_gene:
-            self.d_mask_layer = CutoutLayer(gene='D', max_size=self.max_seq_length)
+            self.d_mask_layer = SoftCutoutLayer(gene='D', max_size=self.max_seq_length, k=3.0)
             self.d_mask_gate = Multiply()
             self.d_mask_reshape = Reshape((self.max_seq_length, 1))
 
