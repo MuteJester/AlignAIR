@@ -15,7 +15,7 @@ from tensorflow.keras.layers import (
 
 # Assuming these are custom layers from your project structure.
 # Ensure the relative paths are correct for your environment.
-from ..Layers import Conv1D_and_BatchNorm, CutoutLayer, AverageLastLabel, EntropyMetric
+from ..Layers import Conv1D_and_BatchNorm, CutoutLayer, AverageLastLabel, EntropyMetric, SoftCutoutLayer
 from ...Models.Layers import ConvResidualFeatureExtractionBlock, RegularizedConstrainedLogVar
 from ...Models.Layers import (
     TokenAndPositionEmbedding, MinMaxValueConstraint
@@ -241,8 +241,9 @@ class SingleChainAlignAIR(Model):
 
     def _init_masking_layers(self):
         """Initializes layers for creating and applying segmentation masks."""
-        self.v_mask_layer = CutoutLayer(gene='V', max_size=self.max_seq_length)
-        self.j_mask_layer = CutoutLayer(gene='J', max_size=self.max_seq_length)
+        # Use soft cutout to preserve gradients near boundaries and respect [start:end)
+        self.v_mask_layer = SoftCutoutLayer(gene='V', max_size=self.max_seq_length, k=3.0)
+        self.j_mask_layer = SoftCutoutLayer(gene='J', max_size=self.max_seq_length, k=3.0)
 
         self.v_mask_gate = Multiply()
         self.j_mask_gate = Multiply()
@@ -251,7 +252,7 @@ class SingleChainAlignAIR(Model):
         self.j_mask_reshape = Reshape((self.max_seq_length, 1))
 
         if self.has_d_gene:
-            self.d_mask_layer = CutoutLayer(gene='D', max_size=self.max_seq_length)
+            self.d_mask_layer = SoftCutoutLayer(gene='D', max_size=self.max_seq_length, k=3.0)
             self.d_mask_gate = Multiply()
             self.d_mask_reshape = Reshape((self.max_seq_length, 1))
 

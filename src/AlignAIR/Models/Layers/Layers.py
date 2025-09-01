@@ -19,6 +19,7 @@ from tensorflow.keras.constraints import Constraint
 import importlib
 import os
 from collections import defaultdict
+import math
 from tensorflow.keras import layers, regularizers, constraints, metrics
 from functools import partial
 
@@ -377,61 +378,49 @@ class CutoutLayer(tf.keras.layers.Layer):
 
 
 class SoftCutoutLayer(Layer):
-    def __init__(self, max_size, gene, **kwargs):
-        super(SoftCutoutLayer, self).__init__(**kwargs)
-        self.max_size = max_size
+    """
+    Differentiable soft mask for [start, end) segments.
+
+    Produces a length-`max_size` mask per batch sample using smooth sigmoid ramps
+    so gradients flow through boundary predictions. Semantics follow start-inclusive,
+    end-exclusive [start:end). Ensures end >= start + 1 and clamps bounds to [0, max_size].
+    Output shape: (batch, max_size).
+    """
+
+    def __init__(self, max_size: int, gene: str, k: float = 3.0, **kwargs):
+        super().__init__(**kwargs)
+        self.max_size = int(max_size)
         self.gene = gene
-        self.K = 5
+        self.k = float(k)
 
-    def round_output(self, dense_output):
-        max_value = tf.reduce_max(dense_output, axis=-1, keepdims=True)
-        max_value = tf.clip_by_value(max_value, 0, self.max_size)
-        max_value = tf.cast(max_value, dtype=tf.float32)
-        return max_value
+    def build(self, input_shape):
+        # Precompute positions [0, 1, ..., L-1] with shape (1, L) for broadcasting
+        self.indices = tf.range(0, self.max_size, dtype=tf.float32)[tf.newaxis, :]
+        super().build(input_shape)
 
-    def _call_v(self, inputs, batch_size):
-        dense_start, dense_end = inputs
-        x = self.round_output(dense_start)
-        y = self.round_output(dense_end)
-        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
-        R = soft_mask(indices, x, y, self.K)
-        R = tf.cast(R, tf.float32)
-        R = tf.reshape(R, shape=(batch_size, self.max_size))
-        return R
-
-    def _call_d(self, inputs, batch_size):
-        dense_start, dense_end = inputs
-        x = self.round_output(dense_start)
-        y = self.round_output(dense_end)
-        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
-        R = soft_mask(indices, x, y, self.K)
-        R = tf.cast(R, tf.float32)
-        R = tf.reshape(R, shape=(batch_size, self.max_size))
-        return R
-
-    def _call_j(self, inputs, batch_size):
-        dense_start, dense_end = inputs
-        x = self.round_output(dense_start)
-        y = self.round_output(dense_end)
-        indices = tf.keras.backend.arange(0, self.max_size, dtype=tf.float32)
-        R = soft_mask(indices, x, y, self.K)
-        R = tf.cast(R, tf.float32)
-        R = tf.reshape(R, shape=(batch_size, self.max_size))
-        return R
+    def _sanitize_bound(self, t: tf.Tensor) -> tf.Tensor:
+        # Ensure shape (B, 1), clamp to valid range and cast to float32
+        t = tf.cast(t, tf.float32)
+        t = tf.reshape(t, (-1, 1))
+        return tf.clip_by_value(t, 0.0, float(self.max_size))
 
     def call(self, inputs):
-        if self.gene == 'V':
-            batch_size = tf.shape(inputs[0])[0]
-            return self._call_v(inputs, batch_size)
-        elif self.gene == 'D':
-            batch_size = tf.shape(inputs[0])[0]
-            return self._call_d(inputs, batch_size)
-        elif self.gene == 'J':
-            batch_size = tf.shape(inputs[0])[0]
-            return self._call_j(inputs, batch_size)
+        start_raw, end_raw = inputs  # expected shapes: (B, 1)
+        start = self._sanitize_bound(start_raw)
+        end = self._sanitize_bound(end_raw)
+
+        # Enforce end-exclusive interval with at least 1 position: end >= start + 1
+        end = tf.maximum(end, start + 1.0)
+
+        # Smooth ramps: inside ~1, outside ~0, with transition controlled by k
+        left = tf.sigmoid((self.indices - start) / self.k)
+        right = tf.sigmoid((end - self.indices) / self.k)
+        mask = left * right  # shape (B, L)
+
+        return tf.cast(mask, tf.float32)
 
     def compute_output_shape(self, input_shape):
-        return (None, self.max_size, 1)
+        return (None, self.max_size)
 
 
 class ExtractGeneMask(tf.keras.layers.Layer):

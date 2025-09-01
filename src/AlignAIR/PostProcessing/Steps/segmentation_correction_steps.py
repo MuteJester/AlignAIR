@@ -38,22 +38,29 @@ class SegmentCorrectionStep(Step):
         else:
             self.has_d = dataconfig.metadata.has_d
 
+        paddings = np.array([self.calculate_pad_size(i) for i in sequences], dtype=np.int32)
+        seq_lengths = np.array([len(i) for i in sequences], dtype=np.int32)
 
+        def _sanitize_bounds(raw_start, raw_end):
+            # Remove padding, convert to [start:end) with floor/ceil
+            s = np.floor(np.squeeze(raw_start) - paddings).astype(np.int32)
+            e = np.ceil(np.squeeze(raw_end) - paddings).astype(np.int32)
+            # Clamp to valid range: start in [0, L-1], end in [1, L]
+            s = np.clip(s, 0, seq_lengths - 1)
+            e = np.clip(e, 1, seq_lengths)
+            # Ensure non-empty end-exclusive interval
+            e = np.maximum(e, s + 1)
+            return s, e
 
-        paddings = np.array([self.calculate_pad_size(i) for i in sequences])
+        v_start, v_end = _sanitize_bounds(v_start, v_end)
+        j_start, j_end = _sanitize_bounds(j_start, j_end)
 
-        v_start = np.round((v_start.squeeze() - paddings)).astype(int)
-        v_end = np.round((v_end.squeeze() - paddings)).astype(int)
-
-        j_start = np.round((j_start.squeeze() - paddings)).astype(int)
-        j_end = np.round((j_end.squeeze() - paddings)).astype(int)
-
-        if self.has_d:
-            d_start = np.round(np.vstack(d_start).squeeze() - paddings).astype(int)
-            d_end = np.round(np.vstack(d_end).squeeze() - paddings).astype(int)
+        if self.has_d and d_start is not None and d_end is not None:
+            d_start_arr = np.asarray(d_start)
+            d_end_arr = np.asarray(d_end)
+            d_start, d_end = _sanitize_bounds(d_start_arr, d_end_arr)
         else:
-            d_start = None
-            d_end = None
+            d_start, d_end = None, None
 
         cleaned_values = {'v_start':v_start, 'v_end':v_end,
                 'd_start':d_start, 'd_end':d_end,
