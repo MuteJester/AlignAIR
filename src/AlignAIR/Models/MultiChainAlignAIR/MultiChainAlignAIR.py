@@ -125,6 +125,30 @@ class MultiChainAlignAIR(Model):
         if self.has_d_gene:
             self.d_allele_entropy_tracker = EntropyMetric(allele_name="d_allele")
 
+        # Boundary accuracy and error metrics (exact and within 1 nt)
+        # V
+        self.v_start_mae = tf.keras.metrics.Mean(name="v_start_mae")
+        self.v_end_mae = tf.keras.metrics.Mean(name="v_end_mae")
+        self.v_start_acc = tf.keras.metrics.Mean(name="v_start_acc")  # exact match
+        self.v_end_acc = tf.keras.metrics.Mean(name="v_end_acc")
+        self.v_start_acc_1nt = tf.keras.metrics.Mean(name="v_start_acc_1nt")  # |err|<=1
+        self.v_end_acc_1nt = tf.keras.metrics.Mean(name="v_end_acc_1nt")
+        # J
+        self.j_start_mae = tf.keras.metrics.Mean(name="j_start_mae")
+        self.j_end_mae = tf.keras.metrics.Mean(name="j_end_mae")
+        self.j_start_acc = tf.keras.metrics.Mean(name="j_start_acc")
+        self.j_end_acc = tf.keras.metrics.Mean(name="j_end_acc")
+        self.j_start_acc_1nt = tf.keras.metrics.Mean(name="j_start_acc_1nt")
+        self.j_end_acc_1nt = tf.keras.metrics.Mean(name="j_end_acc_1nt")
+        # D (optional)
+        if self.has_d_gene:
+            self.d_start_mae = tf.keras.metrics.Mean(name="d_start_mae")
+            self.d_end_mae = tf.keras.metrics.Mean(name="d_end_mae")
+            self.d_start_acc = tf.keras.metrics.Mean(name="d_start_acc")
+            self.d_end_acc = tf.keras.metrics.Mean(name="d_end_acc")
+            self.d_start_acc_1nt = tf.keras.metrics.Mean(name="d_start_acc_1nt")
+            self.d_end_acc_1nt = tf.keras.metrics.Mean(name="d_end_acc_1nt")
+
     def _init_input_and_embedding_layers(self):
         """Initializes input and embedding layers."""
         self.input_layer = Input((self.max_seq_length, 1), name="seq_init")
@@ -174,17 +198,16 @@ class MultiChainAlignAIR(Model):
 
     def _init_segmentation_heads(self):
         """Initializes the output layers for segment boundaries."""
-        act = tf.keras.activations.gelu
-        constraint = unit_norm()
-
-        self.v_start_out = Dense(1, activation=act, kernel_constraint=constraint, kernel_initializer=self.initializer, name='v_start')
-        self.v_end_out = Dense(1, activation=act, kernel_constraint=constraint, kernel_initializer=self.initializer, name='v_end')
-        self.j_start_out = Dense(1, activation=act, kernel_constraint=constraint, kernel_initializer=self.initializer, name='j_start')
-        self.j_end_out = Dense(1, activation=act, kernel_constraint=constraint, kernel_initializer=self.initializer, name='j_end')
+        # Position-logit heads (Dense(L) per boundary). Softmax is applied in call().
+        units = self.max_seq_length
+        self.v_start_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='v_start_logits')
+        self.v_end_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='v_end_logits')
+        self.j_start_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='j_start_logits')
+        self.j_end_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='j_end_logits')
 
         if self.has_d_gene:
-            self.d_start_out = Dense(1, activation=act, kernel_constraint=constraint, kernel_initializer=self.initializer, name='d_start')
-            self.d_end_out = Dense(1, activation=act, kernel_constraint=constraint, kernel_initializer=self.initializer, name='d_end')
+            self.d_start_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='d_start_logits')
+            self.d_end_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='d_end_logits')
 
     def _init_analysis_heads(self):
         """Initializes heads for mutation rate, indel count, and productivity."""
@@ -268,11 +291,23 @@ class MultiChainAlignAIR(Model):
         v_segment_features = self.v_segmentation_feature_block(input_embeddings)
         j_segment_features = self.j_segmentation_feature_block(input_embeddings)
 
-        # 2. Predict Segmentation Boundaries
-        v_start = self.v_start_out(v_segment_features)
-        v_end = self.v_end_out(v_segment_features)
-        j_start = self.j_start_out(j_segment_features)
-        j_end = self.j_end_out(j_segment_features)
+        # 2. Predict per-position logits for boundaries and turn into probabilities
+        v_start_logits = self.v_start_head(v_segment_features)
+        v_end_logits = self.v_end_head(v_segment_features)
+        j_start_logits = self.j_start_head(j_segment_features)
+        j_end_logits = self.j_end_head(j_segment_features)
+
+        v_start_probs = tf.nn.softmax(v_start_logits, axis=-1)
+        v_end_probs = tf.nn.softmax(v_end_logits, axis=-1)
+        j_start_probs = tf.nn.softmax(j_start_logits, axis=-1)
+        j_end_probs = tf.nn.softmax(j_end_logits, axis=-1)
+
+        # Expectations s̄, ē for soft, differentiable gating
+        positions = tf.cast(tf.range(self.max_seq_length), tf.float32)[tf.newaxis, :]
+        v_start = tf.reduce_sum(v_start_probs * positions, axis=-1, keepdims=True)
+        v_end = tf.reduce_sum(v_end_probs * positions, axis=-1, keepdims=True)
+        j_start = tf.reduce_sum(j_start_probs * positions, axis=-1, keepdims=True)
+        j_end = tf.reduce_sum(j_end_probs * positions, axis=-1, keepdims=True)
 
         # 3. Predict Mutation Rate, Indels, and Productivity
         mutation_rate_mid = self.mutation_rate_mid(meta_features)
@@ -314,8 +349,13 @@ class MultiChainAlignAIR(Model):
         # --- D-Gene Specific Path ---
         if self.has_d_gene:
             d_segment_features = self.d_segmentation_feature_block(input_embeddings)
-            d_start = self.d_start_out(d_segment_features)
-            d_end = self.d_end_out(d_segment_features)
+            d_start_logits = self.d_start_head(d_segment_features)
+            d_end_logits = self.d_end_head(d_segment_features)
+
+            d_start_probs = tf.nn.softmax(d_start_logits, axis=-1)
+            d_end_probs = tf.nn.softmax(d_end_logits, axis=-1)
+            d_start = tf.reduce_sum(d_start_probs * positions, axis=-1, keepdims=True)
+            d_end = tf.reduce_sum(d_end_probs * positions, axis=-1, keepdims=True)
 
             d_mask = self.d_mask_layer([d_start, d_end])
             d_mask = self.d_mask_reshape(d_mask)
@@ -326,7 +366,10 @@ class MultiChainAlignAIR(Model):
             d_allele = self.d_allele_call_head(d_allele_latent)
 
         # 7. Compile final output dictionary
+        # Expose logits for CE training; keep expectations for backward-compat/metrics
         output = {
+            "v_start_logits": v_start_logits, "v_end_logits": v_end_logits,
+            "j_start_logits": j_start_logits, "j_end_logits": j_end_logits,
             "v_start": v_start, "v_end": v_end,
             "j_start": j_start, "j_end": j_end,
             "v_allele": v_allele, "j_allele": j_allele,
@@ -336,7 +379,10 @@ class MultiChainAlignAIR(Model):
             'chain_type': chain_type
         }
         if self.has_d_gene:
-            output.update({'d_start': d_start, 'd_end': d_end, 'd_allele': d_allele})
+            output.update({
+                'd_start_logits': d_start_logits, 'd_end_logits': d_end_logits,
+                'd_start': d_start, 'd_end': d_end, 'd_allele': d_allele
+            })
 
         return output
 
@@ -344,13 +390,37 @@ class MultiChainAlignAIR(Model):
         """
         Calculates the total loss as a dynamically weighted sum of task-specific losses.
         """
-        # --- Segmentation Loss ---
-        v_start_loss = tf.keras.losses.mean_absolute_error(y_true['v_start'], y_pred['v_start'])
-        v_end_loss = tf.keras.losses.mean_absolute_error(y_true['v_end'], y_pred['v_end'])
-        j_start_loss = tf.keras.losses.mean_absolute_error(y_true['j_start'], y_pred['j_start'])
-        j_end_loss = tf.keras.losses.mean_absolute_error(y_true['j_end'], y_pred['j_end'])
+        # Helpers
+        def soft_targets(gt, L, sigma=1.5):
+            gt = tf.cast(tf.round(gt), tf.float32)
+            gt = tf.clip_by_value(gt, 0.0, float(L - 1))
+            positions = tf.cast(tf.range(L), tf.float32)[tf.newaxis, :]
+            dist2 = tf.square(positions - gt)
+            logits = -0.5 * dist2 / (sigma * sigma)
+            probs = tf.nn.softmax(logits, axis=-1)
+            return probs
 
-        # Apply dynamic weighting
+        def expectation_from_logits(logits):
+            probs = tf.nn.softmax(logits, axis=-1)
+            pos = tf.cast(tf.range(self.max_seq_length), tf.float32)[tf.newaxis, :]
+            return tf.reduce_sum(probs * pos, axis=-1, keepdims=True)
+
+        # --- Segmentation Loss (soft-label CE) ---
+        L = self.max_seq_length
+
+        # V boundaries
+        v_start_t = soft_targets(y_true['v_start'], L)
+        v_end_t = soft_targets(y_true['v_end'], L)
+        v_start_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=v_start_t, logits=y_pred['v_start_logits']))
+        v_end_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=v_end_t, logits=y_pred['v_end_logits']))
+
+        # J boundaries
+        j_start_t = soft_targets(y_true['j_start'], L)
+        j_end_t = soft_targets(y_true['j_end'], L)
+        j_start_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=j_start_t, logits=y_pred['j_start_logits']))
+        j_end_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=j_end_t, logits=y_pred['j_end_logits']))
+
+        # Dynamic weighting per boundary
         weighted_v_start = v_start_loss * self.log_var_v_start(v_start_loss)
         weighted_v_end = v_end_loss * self.log_var_v_end(v_end_loss)
         weighted_j_start = j_start_loss * self.log_var_j_start(j_start_loss)
@@ -358,12 +428,59 @@ class MultiChainAlignAIR(Model):
 
         segmentation_loss = weighted_v_start + weighted_v_end + weighted_j_start + weighted_j_end
 
+        # D boundaries (optional)
         if self.has_d_gene:
-            d_start_loss = tf.keras.losses.mean_absolute_error(y_true['d_start'], y_pred['d_start'])
-            d_end_loss = tf.keras.losses.mean_absolute_error(y_true['d_end'], y_pred['d_end'])
+            d_start_t = soft_targets(y_true['d_start'], L)
+            d_end_t = soft_targets(y_true['d_end'], L)
+            d_start_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=d_start_t, logits=y_pred['d_start_logits']))
+            d_end_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=d_end_t, logits=y_pred['d_end_logits']))
             weighted_d_start = d_start_loss * self.log_var_d_start(d_start_loss)
             weighted_d_end = d_end_loss * self.log_var_d_end(d_end_loss)
             segmentation_loss += (weighted_d_start + weighted_d_end)
+
+        # --- Auxiliary Segmentation Losses ---
+        huber = tf.keras.losses.Huber(delta=1.0)
+
+        # Expectations for lengths
+        v_s_exp = expectation_from_logits(y_pred['v_start_logits'])
+        v_e_exp = expectation_from_logits(y_pred['v_end_logits'])
+        j_s_exp = expectation_from_logits(y_pred['j_start_logits'])
+        j_e_exp = expectation_from_logits(y_pred['j_end_logits'])
+
+        v_len_pred = v_e_exp - v_s_exp
+        j_len_pred = j_e_exp - j_s_exp
+        v_len_true = tf.cast(y_true['v_end'], tf.float32) - tf.cast(y_true['v_start'], tf.float32)
+        j_len_true = tf.cast(y_true['j_end'], tf.float32) - tf.cast(y_true['j_start'], tf.float32)
+
+        len_loss = huber(v_len_true, tf.squeeze(v_len_pred, axis=-1)) + huber(j_len_true, tf.squeeze(j_len_pred, axis=-1))
+
+        def interval_iou_loss(s_pred, e_pred, s_true, e_true, eps=1e-6):
+            s_pred = tf.squeeze(s_pred, -1)
+            e_pred = tf.squeeze(e_pred, -1)
+            inter = tf.nn.relu(tf.minimum(e_pred, e_true) - tf.maximum(s_pred, s_true))
+            len_pred = tf.maximum(e_pred - s_pred, 0.0)
+            len_true = tf.maximum(e_true - s_true, 0.0)
+            union = len_pred + len_true - inter + eps
+            iou = inter / union
+            return 1.0 - tf.reduce_mean(iou)
+
+        iou_loss = interval_iou_loss(v_s_exp, v_e_exp, tf.cast(y_true['v_start'], tf.float32), tf.cast(y_true['v_end'], tf.float32)) \
+                   + interval_iou_loss(j_s_exp, j_e_exp, tf.cast(y_true['j_start'], tf.float32), tf.cast(y_true['j_end'], tf.float32))
+
+        hinge_loss = tf.reduce_mean(tf.nn.relu(1.0 - tf.squeeze(v_len_pred, -1))) + \
+                     tf.reduce_mean(tf.nn.relu(1.0 - tf.squeeze(j_len_pred, -1)))
+
+        if self.has_d_gene:
+            d_s_exp = expectation_from_logits(y_pred['d_start_logits'])
+            d_e_exp = expectation_from_logits(y_pred['d_end_logits'])
+            d_len_pred = d_e_exp - d_s_exp
+            d_len_true = tf.cast(y_true['d_end'], tf.float32) - tf.cast(y_true['d_start'], tf.float32)
+            len_loss += huber(d_len_true, tf.squeeze(d_len_pred, -1))
+            iou_loss += interval_iou_loss(d_s_exp, d_e_exp, tf.cast(y_true['d_start'], tf.float32), tf.cast(y_true['d_end'], tf.float32))
+            hinge_loss += tf.reduce_mean(tf.nn.relu(1.0 - tf.squeeze(d_len_pred, -1)))
+
+        aux_loss = 0.1 * len_loss + 0.1 * iou_loss + 0.05 * hinge_loss
+        segmentation_loss += aux_loss
 
         # --- Classification Loss ---
         clf_v_loss = tf.keras.losses.binary_crossentropy(y_true['v_allele'], y_pred['v_allele'])
@@ -382,7 +499,7 @@ class MultiChainAlignAIR(Model):
 
             # Custom penalty for predicting short D-segments with high "short D" likelihood
             d_length_pred = y_pred['d_end'] - y_pred['d_start']
-            short_d_prob = y_pred['d_allele'][:, -1] # Assuming last class is "short D"
+            short_d_prob = y_pred['d_allele'][:, -1]  # Assuming last class is "short D"
             short_d_length_penalty = tf.reduce_mean(
                 tf.cast(d_length_pred < 5, tf.float32) * short_d_prob
             )
@@ -403,11 +520,10 @@ class MultiChainAlignAIR(Model):
         # --- Total Loss ---
         total_loss = (segmentation_loss + classification_loss +
                       weighted_mutation_loss + weighted_indel_loss +
-                      weighted_productive_loss + weighted_chain_type_loss
-                      )
+                      weighted_productive_loss + weighted_chain_type_loss)
 
         return (total_loss, classification_loss, weighted_indel_loss,
-                weighted_mutation_loss, segmentation_loss, weighted_productive_loss,weighted_chain_type_loss)
+                weighted_mutation_loss, segmentation_loss, weighted_productive_loss, weighted_chain_type_loss)
 
     def train_step(self, data):
         """
@@ -466,6 +582,49 @@ class MultiChainAlignAIR(Model):
         if self.has_d_gene:
             self.d_allele_entropy_tracker.update_state(y_true, y_pred)
 
+        # --- Boundary accuracy metrics ---
+        def boundary_metrics(gt_scalar, logits):
+            # gt: (B,1) float -> int indices via round
+            gt_idx = tf.cast(tf.round(tf.squeeze(gt_scalar, axis=-1)), tf.int32)
+            gt_idx = tf.clip_by_value(gt_idx, 0, self.max_seq_length - 1)
+            pred_idx = tf.argmax(logits, axis=-1, output_type=tf.int32)
+            err = tf.cast(tf.abs(pred_idx - gt_idx), tf.float32)
+            mae = tf.reduce_mean(err)
+            acc = tf.reduce_mean(tf.cast(tf.equal(pred_idx, gt_idx), tf.float32))
+            acc1 = tf.reduce_mean(tf.cast(err <= 1.0, tf.float32))
+            return mae, acc, acc1
+
+        # V
+        v_s_mae, v_s_acc, v_s_acc1 = boundary_metrics(y_true['v_start'], y_pred['v_start_logits'])
+        v_e_mae, v_e_acc, v_e_acc1 = boundary_metrics(y_true['v_end'], y_pred['v_end_logits'])
+        self.v_start_mae.update_state(v_s_mae)
+        self.v_end_mae.update_state(v_e_mae)
+        self.v_start_acc.update_state(v_s_acc)
+        self.v_end_acc.update_state(v_e_acc)
+        self.v_start_acc_1nt.update_state(v_s_acc1)
+        self.v_end_acc_1nt.update_state(v_e_acc1)
+
+        # J
+        j_s_mae, j_s_acc, j_s_acc1 = boundary_metrics(y_true['j_start'], y_pred['j_start_logits'])
+        j_e_mae, j_e_acc, j_e_acc1 = boundary_metrics(y_true['j_end'], y_pred['j_end_logits'])
+        self.j_start_mae.update_state(j_s_mae)
+        self.j_end_mae.update_state(j_e_mae)
+        self.j_start_acc.update_state(j_s_acc)
+        self.j_end_acc.update_state(j_e_acc)
+        self.j_start_acc_1nt.update_state(j_s_acc1)
+        self.j_end_acc_1nt.update_state(j_e_acc1)
+
+        # D (optional)
+        if self.has_d_gene:
+            d_s_mae, d_s_acc, d_s_acc1 = boundary_metrics(y_true['d_start'], y_pred['d_start_logits'])
+            d_e_mae, d_e_acc, d_e_acc1 = boundary_metrics(y_true['d_end'], y_pred['d_end_logits'])
+            self.d_start_mae.update_state(d_s_mae)
+            self.d_end_mae.update_state(d_e_mae)
+            self.d_start_acc.update_state(d_s_acc)
+            self.d_end_acc.update_state(d_e_acc)
+            self.d_start_acc_1nt.update_state(d_s_acc1)
+            self.d_end_acc_1nt.update_state(d_e_acc1)
+
     def get_metrics_log(self):
         """Constructs the dictionary of metrics to be logged."""
         # Start with metrics from compile()
@@ -485,6 +644,30 @@ class MultiChainAlignAIR(Model):
         })
         if self.has_d_gene:
             metrics['d_allele_entropy'] = self.d_allele_entropy_tracker.result()
+        # Boundary metrics
+        metrics.update({
+            'v_start_mae': self.v_start_mae.result(),
+            'v_end_mae': self.v_end_mae.result(),
+            'v_start_acc': self.v_start_acc.result(),
+            'v_end_acc': self.v_end_acc.result(),
+            'v_start_acc_1nt': self.v_start_acc_1nt.result(),
+            'v_end_acc_1nt': self.v_end_acc_1nt.result(),
+            'j_start_mae': self.j_start_mae.result(),
+            'j_end_mae': self.j_end_mae.result(),
+            'j_start_acc': self.j_start_acc.result(),
+            'j_end_acc': self.j_end_acc.result(),
+            'j_start_acc_1nt': self.j_start_acc_1nt.result(),
+            'j_end_acc_1nt': self.j_end_acc_1nt.result(),
+        })
+        if self.has_d_gene:
+            metrics.update({
+                'd_start_mae': self.d_start_mae.result(),
+                'd_end_mae': self.d_end_mae.result(),
+                'd_start_acc': self.d_start_acc.result(),
+                'd_end_acc': self.d_end_acc.result(),
+                'd_start_acc_1nt': self.d_start_acc_1nt.result(),
+                'd_end_acc_1nt': self.d_end_acc_1nt.result(),
+            })
         return metrics
 
     @property
@@ -508,9 +691,30 @@ class MultiChainAlignAIR(Model):
             self.average_last_label_tracker,
             self.v_allele_entropy_tracker,
             self.j_allele_entropy_tracker,
+            # Boundary trackers
+            self.v_start_mae,
+            self.v_end_mae,
+            self.v_start_acc,
+            self.v_end_acc,
+            self.v_start_acc_1nt,
+            self.v_end_acc_1nt,
+            self.j_start_mae,
+            self.j_end_mae,
+            self.j_start_acc,
+            self.j_end_acc,
+            self.j_start_acc_1nt,
+            self.j_end_acc_1nt,
         ]
         if self.has_d_gene:
             metric_list.append(self.d_allele_entropy_tracker)
+            metric_list += [
+                self.d_start_mae,
+                self.d_end_mae,
+                self.d_start_acc,
+                self.d_end_acc,
+                self.d_start_acc_1nt,
+                self.d_end_acc_1nt,
+            ]
 
         # Add the metrics from compile()
         if self.compiled_metrics is not None:
@@ -540,29 +744,36 @@ class MultiChainAlignAIR(Model):
         input_embeddings = self.input_embeddings(input_seq)
 
         # Gene-specific path
+        positions = tf.cast(tf.range(self.max_seq_length), tf.float32)[tf.newaxis, :]
         if gene_type.upper() == 'V':
             segment_features = self.v_segmentation_feature_block(input_embeddings)
-            start = self.v_start_out(segment_features)
-            end = self.v_end_out(segment_features)
-            mask = self.v_mask_layer([start, end])
+            s_logits = self.v_start_head(segment_features)
+            e_logits = self.v_end_head(segment_features)
+            s_exp = tf.reduce_sum(tf.nn.softmax(s_logits, -1) * positions, axis=-1, keepdims=True)
+            e_exp = tf.reduce_sum(tf.nn.softmax(e_logits, -1) * positions, axis=-1, keepdims=True)
+            mask = self.v_mask_layer([s_exp, e_exp])
             mask_reshape = self.v_mask_reshape(mask)
             masked_sequence = self.v_mask_gate([input_embeddings, mask_reshape])
             feature_map = self.v_feature_extraction_block(masked_sequence)
             latent_rep = self.v_allele_mid(feature_map)
         elif gene_type.upper() == 'J':
             segment_features = self.j_segmentation_feature_block(input_embeddings)
-            start = self.j_start_out(segment_features)
-            end = self.j_end_out(segment_features)
-            mask = self.j_mask_layer([start, end])
+            s_logits = self.j_start_head(segment_features)
+            e_logits = self.j_end_head(segment_features)
+            s_exp = tf.reduce_sum(tf.nn.softmax(s_logits, -1) * positions, axis=-1, keepdims=True)
+            e_exp = tf.reduce_sum(tf.nn.softmax(e_logits, -1) * positions, axis=-1, keepdims=True)
+            mask = self.j_mask_layer([s_exp, e_exp])
             mask_reshape = self.j_mask_reshape(mask)
             masked_sequence = self.j_mask_gate([input_embeddings, mask_reshape])
             feature_map = self.j_feature_extraction_block(masked_sequence)
             latent_rep = self.j_allele_mid(feature_map)
         else: # D-gene
             segment_features = self.d_segmentation_feature_block(input_embeddings)
-            start = self.d_start_out(segment_features)
-            end = self.d_end_out(segment_features)
-            mask = self.d_mask_layer([start, end])
+            s_logits = self.d_start_head(segment_features)
+            e_logits = self.d_end_head(segment_features)
+            s_exp = tf.reduce_sum(tf.nn.softmax(s_logits, -1) * positions, axis=-1, keepdims=True)
+            e_exp = tf.reduce_sum(tf.nn.softmax(e_logits, -1) * positions, axis=-1, keepdims=True)
+            mask = self.d_mask_layer([s_exp, e_exp])
             mask_reshape = self.d_mask_reshape(mask)
             masked_sequence = self.d_mask_gate([input_embeddings, mask_reshape])
             feature_map = self.d_feature_extraction_block(masked_sequence)
