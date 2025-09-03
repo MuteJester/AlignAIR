@@ -114,11 +114,18 @@ class HeuristicReferenceMatcher:
 
         # start_history = dict()
         # Adjust the search range based on potential indels
-        if indel_count > 0:
-            start_search_range = min(indel_count, L_diff)
+        # Ensure indel_count is a plain Python int (handles numpy types/0-D arrays)
+        try:
+            indel_scalar = int(np.round(float(np.asarray(indel_count).squeeze())))
+        except Exception:
+            indel_scalar = int(indel_count)  # fallback
+        indel_scalar = max(0, indel_scalar)
+
+        if indel_scalar > 0:
+            start_search_range = int(min(indel_scalar, int(L_diff)))
             search_iterator = range(-start_search_range - 1, start_search_range + 1)
         else:
-            search_iterator = range(- 1,  1)
+            search_iterator = range(-1, 1)
 
 
 

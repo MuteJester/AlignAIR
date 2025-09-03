@@ -161,7 +161,7 @@ class TestModule(unittest.TestCase):
         # 4. Run Training by passing parameters to the .train() method
         trainer.train(
             train_dataset=train_dataset,
-            epochs=1,
+            epochs=15,
             samples_per_epoch=32,  # Must be >= batch_size
             batch_size=16
         )

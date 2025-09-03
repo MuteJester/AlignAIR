@@ -148,36 +148,76 @@ class ErrorAnalysisPlot:
         """Analyze allele assignment accuracy and error patterns"""
         allele_errors = {}
         
-        if not hasattr(self.predict_object, 'selected_allele_calls'):
+        if not hasattr(self.predict_object, 'selected_allele_calls') or self.predict_object.selected_allele_calls is None:
             print("Debug: No selected_allele_calls found in predict_object")
             return allele_errors
             
-        print(f"Debug: Found selected_allele_calls with keys: {list(self.predict_object.selected_allele_calls.keys())}")
+        # Normalize keys to lowercase for robustness
+        try:
+            raw_calls = self.predict_object.selected_allele_calls
+            norm_calls = {str(k).lower(): v for k, v in getattr(raw_calls, 'items', lambda: [])()}
+        except Exception:
+            norm_calls = {}
+
+        print(f"Debug: Found selected_allele_calls with keys (normalized): {list(norm_calls.keys())}")
+
+        # Helper to resolve ground-truth column names case-insensitively
+        gt_cols_lower = {c.lower(): c for c in self.groundtruth_table.columns}
+        def resolve_gt_col(gene):
+            wanted = f"{gene}_call"
+            if wanted in gt_cols_lower:
+                return gt_cols_lower[wanted]
+            # try alternative common patterns
+            for cand in gt_cols_lower:
+                if cand.startswith(f"{gene}") and cand.endswith("call"):
+                    return gt_cols_lower[cand]
+            return None
             
         for gene in ['v', 'd', 'j']:
-            if f'{gene}_call' not in self.groundtruth_table.columns:
-                print(f"Debug: No {gene}_call column in groundtruth_table")
+            gt_col = resolve_gt_col(gene)
+            if gt_col is None:
+                print(f"Debug: No {gene}_call column in groundtruth_table (case-insensitive search)")
                 continue
                 
-            if gene not in self.predict_object.selected_allele_calls:
+            if gene not in norm_calls:
                 print(f"Debug: No {gene} in selected_allele_calls")
                 continue
                 
-            predicted = self.predict_object.selected_allele_calls[gene]
-            ground_truth = self.groundtruth_table[f'{gene}_call'].apply(
+            predicted = norm_calls[gene]
+            # Coerce predicted into a list-like of per-row lists/strings
+            if isinstance(predicted, (pd.Series, np.ndarray)):
+                predicted_iter = list(predicted)
+            else:
+                predicted_iter = list(predicted) if hasattr(predicted, '__iter__') else [predicted]
+
+            ground_truth = self.groundtruth_table[gt_col].apply(
                 lambda x: set(str(x).split(',')) if pd.notna(x) else set()
             )
+            # Align lengths if mismatch
+            if len(predicted_iter) != len(ground_truth):
+                min_len = min(len(predicted_iter), len(ground_truth))
+                print(f"Warning: Length mismatch for {gene}: predicted={len(predicted_iter)} gt={len(ground_truth)}; truncating to {min_len}")
+                predicted_iter = predicted_iter[:min_len]
+                ground_truth = ground_truth.iloc[:min_len]
             
-            print(f"Debug: Processing {gene} gene - {len(predicted)} predictions, {len(ground_truth)} ground truth")
+            print(f"Debug: Processing {gene} gene - {len(predicted_iter)} predictions, {len(ground_truth)} ground truth (gt col: {gt_col})")
             
             # Calculate different types of errors
             correct_predictions = []
             error_types = []
             confidence_scores = []
             
-            for i, (pred, true) in enumerate(zip(predicted, ground_truth)):
-                pred_set = set(pred) if isinstance(pred, list) else {str(pred)}
-                true_set = set(str(x) for x in true if pd.notna(x))
+            for i, (pred, true) in enumerate(zip(predicted_iter, ground_truth)):
+                # Normalize prediction to a set of strings
+                if isinstance(pred, list):
+                    pred_set = set(map(str, pred))
+                elif isinstance(pred, (set, tuple, np.ndarray, pd.Series)):
+                    pred_set = set(map(str, list(pred)))
+                else:
+                    pred_set = {str(pred)}
+
+                # True already a set of strings
+                true_set = set(map(str, list(true))) if isinstance(true, (set, list)) else set(str(true).split(','))
                 
                 if len(pred_set.intersection(true_set)) > 0:
                     correct_predictions.append(True)

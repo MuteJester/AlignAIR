@@ -29,15 +29,43 @@ class CleanAndArrangeStep(Step):
 
         v_allele = np.vstack(extract_values('v_allele'))
         j_allele = np.vstack(extract_values('j_allele'))
-        v_start = np.vstack(extract_values('v_start'))
-        v_end = np.vstack(extract_values('v_end'))
-        j_start = np.vstack(extract_values('j_start'))
-        j_end = np.vstack(extract_values('j_end'))
+
+        # Prefer discrete boundaries from position logits if available; fallback to expectations
+        first = predictions[0]
+        def stack_or_none(key):
+            return np.vstack(extract_values(key)) if key in first else None
+
+        # Try logits path
+        v_start_logits = stack_or_none('v_start_logits')
+        v_end_logits = stack_or_none('v_end_logits')
+        j_start_logits = stack_or_none('j_start_logits')
+        j_end_logits = stack_or_none('j_end_logits')
+
+        if v_start_logits is not None and v_end_logits is not None and \
+           j_start_logits is not None and j_end_logits is not None:
+            # Argmax over positions -> shape (N,)
+            v_start = np.argmax(v_start_logits, axis=-1)[:, None].astype(np.float32)
+            v_end = np.argmax(v_end_logits, axis=-1)[:, None].astype(np.float32)
+            j_start = np.argmax(j_start_logits, axis=-1)[:, None].astype(np.float32)
+            j_end = np.argmax(j_end_logits, axis=-1)[:, None].astype(np.float32)
+        else:
+            # Fallback: use provided scalar starts/ends (expectations)
+            v_start = np.vstack(extract_values('v_start'))
+            v_end = np.vstack(extract_values('v_end'))
+            j_start = np.vstack(extract_values('j_start'))
+            j_end = np.vstack(extract_values('j_end'))
 
         if has_d:
             d_allele = np.vstack(extract_values('d_allele'))
-            d_start = np.vstack(extract_values('d_start'))
-            d_end = np.vstack(extract_values('d_end'))
+            # D logits optional; use if present
+            d_start_logits = stack_or_none('d_start_logits')
+            d_end_logits = stack_or_none('d_end_logits')
+            if d_start_logits is not None and d_end_logits is not None:
+                d_start = np.argmax(d_start_logits, axis=-1)[:, None].astype(np.float32)
+                d_end = np.argmax(d_end_logits, axis=-1)[:, None].astype(np.float32)
+            else:
+                d_start = np.vstack(extract_values('d_start'))
+                d_end = np.vstack(extract_values('d_end'))
         else:
             d_allele = None
             d_start = None

@@ -129,22 +129,22 @@ class DatasetBase(ABC):
 
         bool_cast = lambda x: 1. if any([x=='True', x ==True]) else 0.
         y = {
-            "v_start": batch.v_sequence_start.values.reshape(-1, 1),
-            "v_end": batch.v_sequence_end.values.reshape(-1, 1),
-            "j_start": batch.j_sequence_start.values.reshape(-1, 1),
-            "j_end": batch.j_sequence_end.values.reshape(-1, 1),
+            "v_start": batch.v_sequence_start.values.astype(np.float32).reshape(-1, 1),
+            "v_end": batch.v_sequence_end.values.astype(np.float32).reshape(-1, 1),
+            "j_start": batch.j_sequence_start.values.astype(np.float32).reshape(-1, 1),
+            "j_end": batch.j_sequence_end.values.astype(np.float32).reshape(-1, 1),
             "v_allele": self.one_hot_encode_allele("V", v_alleles),
             "j_allele": self.one_hot_encode_allele("J", j_alleles),
-            'mutation_rate': batch.mutation_rate.values.reshape(-1, 1),
-            'indel_count': np.array(indel_counts).reshape(-1, 1),
-            'productive': np.array([bool_cast(i) for i in batch.productive]).reshape(-1, 1)
+            'mutation_rate': batch.mutation_rate.values.astype(np.float32).reshape(-1, 1),
+            'indel_count': np.array(indel_counts, dtype=np.float32).reshape(-1, 1),
+            'productive': np.array([bool_cast(i) for i in batch.productive], dtype=np.float32).reshape(-1, 1)
 
         }
         if self.has_d:
             d_alleles = batch.d_call.apply(lambda x: set(x.split(',')))
             y["d_allele"] = self.one_hot_encode_allele("D", d_alleles)
-            y['d_start'] = batch.d_sequence_start.values.reshape(-1, 1)
-            y['d_end'] = batch.d_sequence_end.values.reshape(-1, 1)
+            y['d_start'] = batch.d_sequence_start.values.astype(np.float32).reshape(-1, 1)
+            y['d_end'] = batch.d_sequence_end.values.astype(np.float32).reshape(-1, 1)
 
         return x, y
 
