@@ -130,7 +130,7 @@ class TestModule(unittest.TestCase):
         """Tests the training process for a single heavy chain model with the new Trainer."""
         # 1. Create Dataset
         train_dataset = SingleChainDataset(
-            data_path=self.heavy_chain_dataset_path,
+            data_path='C:/Users/tomas/Desktop/AlignAIRR/tests/IGHV_EXTENDED_Prod_Eval_4_5k_200.csv',
             dataconfig=MultiDataConfigContainer([HUMAN_IGH_OGRDB]),
             use_streaming=True,
             max_sequence_length=576
