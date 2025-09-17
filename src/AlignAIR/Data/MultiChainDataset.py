@@ -4,6 +4,7 @@ import tensorflow as tf
 from typing import List, Dict, Union
 import json
 from functools import reduce
+from ast import literal_eval  # safer parsing for indels
 
 from GenAIRR.dataconfig.enums import ChainType
 from .SingleChainDataset import SingleChainDataset
@@ -216,10 +217,18 @@ class MultiChainDataset(DatasetBase):
 
         indel_counts = []
         for indels in batch['indels']:
-            if isinstance(indels, str):
-                indels = eval(indels)
-            assert isinstance(indels, dict)
-            indel_counts.append(len(indels))
+            # Accept already-parsed dict/list/tuple; otherwise attempt literal_eval
+            if isinstance(indels, (dict, list, tuple)):
+                parsed = indels
+            else:
+                try:
+                    parsed = literal_eval(indels) if isinstance(indels, str) else {}
+                except Exception:
+                    parsed = {}
+            if not isinstance(parsed, (dict, list, tuple)):
+                parsed = {}
+            # Count items (dict keys or list/tuple length)
+            indel_counts.append(len(parsed))
 
         # Convert Comma Seperated Allele Ground Truth Labels into Lists
         v_alleles = list(map(self._seperate_alleles, batch['v_call']))
@@ -289,6 +298,7 @@ class MultiChainDataset(DatasetBase):
             output_types=output_types,
             output_shapes=output_shapes,
         )
+        dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
         return dataset
 

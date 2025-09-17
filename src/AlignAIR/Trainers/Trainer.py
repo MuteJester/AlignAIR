@@ -68,13 +68,13 @@ class Trainer:
             callbacks (list, optional): A list of Keras callbacks to use during training.
         """
         # --- Prepare Datasets ---
-        tf_train_dataset = train_dataset.get_train_dataset().prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+        # Datasets already apply prefetch internally; avoid double prefetch to reduce buffer memory.
+        tf_train_dataset = train_dataset.get_train_dataset()
 
         tf_validation_dataset = None
         validation_steps = None
         if validation_dataset:
-            tf_validation_dataset = validation_dataset.get_train_dataset().prefetch(
-                buffer_size=tf.data.experimental.AUTOTUNE)
+            tf_validation_dataset = validation_dataset.get_train_dataset()
             try:
                 validation_steps = len(validation_dataset) // batch_size
                 if validation_steps == 0:

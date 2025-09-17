@@ -1,10 +1,10 @@
 import numpy as np
-import pandas as pd
 import csv
 from GenAIRR.dataconfig import DataConfig
 import tensorflow as tf
 from tqdm.auto import tqdm
 from abc import ABC, abstractmethod
+from ast import literal_eval  # safer than eval for parsing literal structures
 
 from .columnSet import ColumnSet
 from .tokenizers import CenterPaddedSequenceTokenizer
@@ -104,49 +104,76 @@ class DatasetBase(ABC):
 
 
     def _get_single_batch(self, pointer):
-        # Read Batch from Dataset
-        batch = self.reader.get_batch(pointer)
-        batch = pd.DataFrame(batch)
+        """Assemble a single training batch without pandas.
 
-        # Encoded sequence in batch and collect the padding sizes applied to each sequences
-        encoded_sequences, paddings = self.tokenizer.encode_and_pad_center(batch['sequence'])
-        # use the padding sizes collected to adjust the start/end positions of the alleles
-        targets = [f'{gene}_sequence' for gene in self._loaded_genes]
-        for _gene in targets:
-            for _position in ['start', 'end']:
-                batch.loc[:, _gene + '_' + _position] += paddings
+        raw_batch structure (dict[str, list]): produced by BatchReader implementations.
+        Required keys include: sequence, v_call, j_call, mutation_rate, productive, indels,
+        and per-gene start/end coordinate columns (e.g. v_sequence_start).
+        """
+        batch = self.reader.get_batch(pointer)  # dict of column -> list (length == batch_size)
 
-        x = {"tokenized_sequence": encoded_sequences}
+        sequences = batch['sequence']
+        encoded_sequences, paddings = self.tokenizer.encode_and_pad_center(sequences)
+        pad_int = paddings.astype(np.int32)
 
-        indel_counts = []
-        for ax, row in batch.iterrows():
-            indels = eval(row['indels'])
-            indel_counts.append(len(indels))
+        # Adjust gene coordinates in place
+        for gene in self._loaded_genes:
+            s_key = f'{gene}_sequence_start'
+            e_key = f'{gene}_sequence_end'
+            if s_key in batch:
+                arr = np.asarray(batch[s_key], dtype=np.int32)
+                batch[s_key] = (arr + pad_int).astype(np.float32)
+            if e_key in batch:
+                arr = np.asarray(batch[e_key], dtype=np.int32)
+                batch[e_key] = (arr + pad_int).astype(np.float32)
 
-        # Convert Comma Seperated Allele Ground Truth Labels into Lists
-        v_alleles = batch.v_call.apply(lambda x: set(x.split(',')))
-        j_alleles = batch.j_call.apply(lambda x: set(x.split(',')))
+        # Indel counts (later: prefer a precomputed indel_count column)
+        indel_counts = self._parse_indel_counts(batch['indels'])
 
-        bool_cast = lambda x: 1. if any([x=='True', x ==True]) else 0.
+        # Allele sets
+        v_alleles = [set(s.split(',')) for s in batch['v_call']]
+        j_alleles = [set(s.split(',')) for s in batch['j_call']]
+
+        bool_cast = lambda x: 1.0 if (x == 'True' or x is True) else 0.0
+
+        x = {'tokenized_sequence': encoded_sequences}
+
         y = {
-            "v_start": batch.v_sequence_start.values.astype(np.float32).reshape(-1, 1),
-            "v_end": batch.v_sequence_end.values.astype(np.float32).reshape(-1, 1),
-            "j_start": batch.j_sequence_start.values.astype(np.float32).reshape(-1, 1),
-            "j_end": batch.j_sequence_end.values.astype(np.float32).reshape(-1, 1),
-            "v_allele": self.one_hot_encode_allele("V", v_alleles),
-            "j_allele": self.one_hot_encode_allele("J", j_alleles),
-            'mutation_rate': batch.mutation_rate.values.astype(np.float32).reshape(-1, 1),
-            'indel_count': np.array(indel_counts, dtype=np.float32).reshape(-1, 1),
-            'productive': np.array([bool_cast(i) for i in batch.productive], dtype=np.float32).reshape(-1, 1)
-
+            'v_start': np.asarray(batch['v_sequence_start'], np.float32).reshape(-1, 1),
+            'v_end':   np.asarray(batch['v_sequence_end'],   np.float32).reshape(-1, 1),
+            'j_start': np.asarray(batch['j_sequence_start'], np.float32).reshape(-1, 1),
+            'j_end':   np.asarray(batch['j_sequence_end'],   np.float32).reshape(-1, 1),
+            'v_allele': self.one_hot_encode_allele('V', v_alleles),
+            'j_allele': self.one_hot_encode_allele('J', j_alleles),
+            'mutation_rate': np.asarray(batch['mutation_rate'], np.float32).reshape(-1, 1),
+            'indel_count': np.asarray(indel_counts, np.float32).reshape(-1, 1),
+            'productive': np.asarray([bool_cast(v) for v in batch['productive']], np.float32).reshape(-1, 1)
         }
+
         if self.has_d:
-            d_alleles = batch.d_call.apply(lambda x: set(x.split(',')))
-            y["d_allele"] = self.one_hot_encode_allele("D", d_alleles)
-            y['d_start'] = batch.d_sequence_start.values.astype(np.float32).reshape(-1, 1)
-            y['d_end'] = batch.d_sequence_end.values.astype(np.float32).reshape(-1, 1)
+            d_alleles = [set(s.split(',')) for s in batch['d_call']]
+            y['d_allele'] = self.one_hot_encode_allele('D', d_alleles)
+            y['d_start'] = np.asarray(batch['d_sequence_start'], np.float32).reshape(-1, 1)
+            y['d_end']   = np.asarray(batch['d_sequence_end'],   np.float32).reshape(-1, 1)
 
         return x, y
+
+    # ---- Helper Methods (pandas-free) --------------------------------------------------
+    def _parse_indel_counts(self, indel_column):
+        """Parse indel structures (dict or stringified dict) into counts.
+        Fast path: dict -> len(dict). Fallback: literal_eval for strings.
+        """
+        counts = []
+        for item in indel_column:
+            if isinstance(item, dict):
+                counts.append(len(item))
+            else:
+                try:
+                    parsed = literal_eval(item)
+                    counts.append(len(parsed) if isinstance(parsed, dict) else 0)
+                except Exception:
+                    counts.append(0)
+        return counts
 
     def _get_tf_dataset_params(self):
 
@@ -160,18 +187,20 @@ class DatasetBase(ABC):
         return output_types, output_shapes
 
     def _train_generator(self):
+        """Infinite generator over batches.
+
+        For streaming readers the pointer is inconsequential (reader is stateful).
+        For in-memory (Pandas) reader we still advance a pointer for wrap-around, but logic
+        simplified for clarity.
+        """
         pointer = 0
         while True:
+            batch_x, batch_y = self._get_single_batch(pointer)
             pointer += self.batch_size
             if pointer >= self.data_length:
-                pointer = self.batch_size
-
-            batch_x, batch_y = self._get_single_batch(pointer)
-
-            if len(batch_x['tokenized_sequence']) != self.batch_size:
                 pointer = 0
-                continue
-            else:
+            # Guarantee full batch size (skip partials only in non-streaming edge cases)
+            if len(batch_x['tokenized_sequence']) == self.batch_size:
                 yield batch_x, batch_y
 
     def get_train_dataset(self):
@@ -182,6 +211,8 @@ class DatasetBase(ABC):
             output_types=output_types,
             output_shapes=output_shapes,
         )
+        # Add asynchronous prefetch to enable true producer/consumer behavior
+        dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
         return dataset
 
