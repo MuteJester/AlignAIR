@@ -12,6 +12,13 @@ from tensorflow.keras.layers import (
     Flatten,
     Activation
 )
+import os
+import logging
+from pathlib import Path
+from typing import Union, Optional
+
+from AlignAIR.Serialization.model_bundle import ModelBundleConfig, TrainingMeta, FORMAT_VERSION
+from AlignAIR.Serialization.io import save_bundle, load_bundle
 
 # Import custom layers and components
 from AlignAIR.Models.Layers import (
@@ -780,3 +787,114 @@ class MultiChainAlignAIR(Model):
             latent_rep = self.d_allele_mid(feature_map)
 
         return latent_rep
+
+    # ---------------- Serialization API (Step 5) -----------------
+    def serialization_config(self):
+        """Return a dict with structural bundle fields for multi-chain model."""
+        try:
+            chain_types_list = [getattr(ct, 'value', str(ct)) for ct in self.dataconfigs.chain_types()]
+        except Exception:
+            chain_types_list = None
+        return {
+            'model_type': 'multi_chain',
+            'format_version': FORMAT_VERSION,
+            'max_seq_length': self.max_seq_length,
+            'has_d_gene': self.has_d_gene,
+            'v_allele_count': self.v_allele_count,
+            'j_allele_count': self.j_allele_count,
+            'd_allele_count': getattr(self, 'd_allele_count', None) if self.has_d_gene else None,
+            'v_allele_latent_size': self.v_allele_latent_size,
+            'j_allele_latent_size': self.j_allele_latent_size,
+            'd_allele_latent_size': getattr(self, 'd_allele_latent_size', None) if self.has_d_gene else None,
+            'chain_types': chain_types_list,
+            'number_of_chains': len(chain_types_list) if chain_types_list else None,
+        }
+
+    def save_pretrained(self, bundle_dir: Union[str, os.PathLike], training_meta: Optional[TrainingMeta] = None,
+                        export_saved_model: bool = False,
+                        saved_model_subdir: str = 'saved_model',
+                        include_logits_in_saved_model: bool = False):
+        """Save a versioned multi-chain bundle (weights + config + dataconfig + meta)."""
+        bundle_path = Path(bundle_dir)
+        # Build model if necessary
+        if not self.built:
+            dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.float32)}
+            _ = self(dummy, training=False)
+        weights_path = bundle_path / 'weights.h5'
+        weights_path.parent.mkdir(parents=True, exist_ok=True)
+        self.save_weights(str(weights_path))
+
+        cfg = ModelBundleConfig(**self.serialization_config())
+        # attach tf version
+        try:
+            import tensorflow as _tf
+            cfg.tf_version = _tf.__version__
+        except Exception:  # pragma: no cover
+            pass
+        if training_meta is None:
+            training_meta = TrainingMeta(
+                epochs_trained=0,
+                final_epoch=0,
+                best_epoch=None,
+                best_loss=None,
+                final_loss=None,
+                metrics_summary={},
+            )
+        save_bundle(bundle_path, cfg, self.dataconfigs, weights_path, training_meta)
+        if export_saved_model:
+            self.export_saved_model(bundle_path / saved_model_subdir, include_logits=include_logits_in_saved_model)
+        logging.getLogger(__name__).info("Saved multi-chain pretrained bundle to %s", bundle_path)
+
+    @classmethod
+    def from_pretrained(cls, bundle_dir: Union[str, os.PathLike]):
+        """Load a multi-chain model from a versioned bundle produced by save_pretrained."""
+        bundle_path = Path(bundle_dir)
+        cfg, dataconfigs_obj, _meta = load_bundle(bundle_path)
+        model = cls(
+            max_seq_length=cfg.max_seq_length,
+            dataconfigs=dataconfigs_obj,
+            v_allele_latent_size=cfg.v_allele_latent_size,
+            d_allele_latent_size=cfg.d_allele_latent_size,
+            j_allele_latent_size=cfg.j_allele_latent_size,
+        )
+        dummy = {"tokenized_sequence": tf.zeros((1, cfg.max_seq_length), dtype=tf.float32)}
+        _ = model(dummy, training=False)
+        model.load_weights(str(bundle_path / 'weights.h5')).expect_partial()
+        logging.getLogger(__name__).info("Loaded multi-chain pretrained bundle from %s", bundle_path)
+        return model
+
+    # ---------------- SavedModel Export (Step 8) -----------------
+    def export_saved_model(self, export_dir: Union[str, os.PathLike], include_logits: bool = False):
+        """Export a TF SavedModel for serving multi-chain models.
+
+        Parameters
+        ----------
+        export_dir : path-like
+            Target directory for SavedModel.
+        include_logits : bool
+            Include raw boundary logits if True.
+        """
+        export_path = Path(export_dir)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.built:
+            dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.int32)}
+            _ = self(dummy, training=False)
+
+        @tf.function(input_signature=[
+            tf.TensorSpec(shape=[None, self.max_seq_length], dtype=tf.int32, name='tokenized_sequence')
+        ])
+        def serving_fn(tokenized_sequence):  # pragma: no cover
+            outputs = self({'tokenized_sequence': tokenized_sequence}, training=False)
+            allowed_keys = [
+                'v_start', 'v_end', 'j_start', 'j_end',
+                'v_allele', 'j_allele', 'mutation_rate', 'indel_count', 'productive', 'chain_type'
+            ]
+            if self.has_d_gene:
+                allowed_keys += ['d_start', 'd_end', 'd_allele']
+            if include_logits:
+                allowed_keys += [k for k in outputs.keys() if k.endswith('_logits')]
+            pruned = {k: tf.identity(outputs[k], name=k) for k in allowed_keys if k in outputs}
+            return pruned
+
+        tf.saved_model.save(self, str(export_path), signatures={'serving_default': serving_fn})
+        logging.getLogger(__name__).info("Exported multi-chain SavedModel to %s", export_path)

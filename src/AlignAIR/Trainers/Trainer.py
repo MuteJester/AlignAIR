@@ -5,6 +5,10 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import CSVLogger
 from pathlib import Path
 import logging
+import time
+from typing import Optional
+
+from AlignAIR.Serialization.model_bundle import TrainingMeta  # Step 6 integration
 
 # It's good practice to have a logger instance for the module
 logger = logging.getLogger(__name__)
@@ -54,7 +58,12 @@ class Trainer:
               samples_per_epoch: int,
               batch_size: int,
               validation_dataset=None,
-              callbacks: list = None):
+              callbacks: list = None,
+              save_pretrained: bool = False,
+              bundle_dir: Optional[str] = None,
+              training_notes: Optional[str] = None,
+              export_saved_model: bool = False,
+              include_logits_in_saved_model: bool = False):
         """
         Trains the model on the provided dataset.
 
@@ -101,6 +110,7 @@ class Trainer:
         logger.info(f"Starting training for {epochs} epochs with {steps_per_epoch} steps per epoch.")
 
         # --- Run Training ---
+        start_time = time.time()
         self.history = self.model.fit(
             tf_train_dataset,
             epochs=epochs,
@@ -110,8 +120,72 @@ class Trainer:
             callbacks=all_callbacks,
             verbose=1
         )
-
+        wall_time = int(time.time() - start_time)
         logger.info("Training finished.")
+
+        # --- Optional bundle save ---
+        if save_pretrained:
+            try:
+                hist = self.history.history if self.history else {}
+                losses = hist.get('loss', [])
+                best_loss = min(losses) if losses else None
+                best_epoch = int(losses.index(best_loss)) if losses else None
+                final_loss = losses[-1] if losses else None
+                metrics_summary = {}
+                for k, v in hist.items():
+                    if not v or k.startswith('val_'):
+                        continue
+                    metrics_summary[k] = v[-1]
+                # learning rate (handle schedules)
+                try:
+                    lr = self.model.optimizer.learning_rate
+                    if hasattr(lr, 'numpy'):
+                        lr_value = float(lr.numpy())
+                    else:
+                        lr_value = str(lr)
+                except Exception:
+                    lr_value = None
+                # mixed precision detection
+                try:
+                    mp = getattr(self.model, 'dtype_policy', None)
+                    mixed_precision = bool(mp and 'float16' in str(mp))
+                except Exception:
+                    mixed_precision = None
+                meta = TrainingMeta(
+                    epochs_trained=epochs,
+                    final_epoch=epochs - 1,
+                    best_epoch=best_epoch,
+                    best_loss=best_loss,
+                    final_loss=final_loss,
+                    metrics_summary=metrics_summary,
+                    wall_time_seconds=wall_time,
+                    batch_size=batch_size,
+                    samples_per_epoch=samples_per_epoch,
+                    optimizer_class=self.model.optimizer.__class__.__name__,
+                    learning_rate=str(lr_value),
+                    mixed_precision=mixed_precision,
+                    extra={'notes': training_notes} if training_notes else None
+                )
+                # derive bundle dir if not provided
+                if bundle_dir is None:
+                    bundle_dir = (self.session_path / f"{self.model_name}_bundle").as_posix()
+                if hasattr(self.model, 'save_pretrained'):
+                    # Pass through SavedModel export flags if model supports them
+                    try:
+                        self.model.save_pretrained(
+                            bundle_dir,
+                            training_meta=meta,
+                            export_saved_model=export_saved_model,
+                            include_logits_in_saved_model=include_logits_in_saved_model
+                        )
+                    except TypeError:
+                        # Backward compatibility: method without new args
+                        self.model.save_pretrained(bundle_dir, training_meta=meta)
+                    logger.info("Saved pretrained bundle to %s", bundle_dir)
+                else:
+                    logger.warning("Model has no save_pretrained; skipping bundle save.")
+            except Exception as e:
+                logger.error("Failed to save pretrained bundle: %s", e, exc_info=True)
         return self.history
 
     def save_training_history(self):

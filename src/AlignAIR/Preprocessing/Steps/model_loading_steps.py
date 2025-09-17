@@ -86,8 +86,21 @@ class ModelLoadingStep(Step):
             model = SingleChainAlignAIR(**model_params)
             self.log("Using SingleChainAlignAIR model")
 
-        model.build({'tokenized_sequence': (max_sequence_size, 1)})
-        model.load_weights(model_checkpoint)
+        # Bundle-aware loading: if path points to directory with config.json treat as bundle
+        import os
+        from pathlib import Path
+        checkpoint_path = Path(model_checkpoint)
+        if checkpoint_path.is_dir() and (checkpoint_path / 'config.json').exists():
+            # Use classmethod from_pretrained (already builds & loads weights)
+            self.log("Detected pretrained bundle; using from_pretrained()")
+            if is_multi_chain:
+                model = MultiChainAlignAIR.from_pretrained(checkpoint_path.as_posix())
+            else:
+                model = SingleChainAlignAIR.from_pretrained(checkpoint_path.as_posix())
+        else:
+            # Legacy weight file loading
+            model.build({'tokenized_sequence': (max_sequence_size, 1)})
+            model.load_weights(model_checkpoint)
         self.log(f"Loading: {model_checkpoint.split('/')[-1]}")
         self.log(f"Model Loaded Successfully")
 

@@ -12,6 +12,15 @@ from tensorflow.keras.layers import (
     Flatten,
     Activation
 )
+import os
+import json
+import logging
+from pathlib import Path
+from AlignAIR.Serialization.model_bundle import ModelBundleConfig, TrainingMeta, FORMAT_VERSION
+from AlignAIR.Serialization.io import save_bundle, load_bundle
+from typing import Union, Optional
+
+logger = logging.getLogger(__name__)
 
 # Assuming these are custom layers from your project structure.
 # Ensure the relative paths are correct for your environment.
@@ -730,6 +739,7 @@ class SingleChainAlignAIR(Model):
             metric_list += self.compiled_metrics.metrics
 
         return metric_list
+
     def get_latent_representation(self, inputs, gene_type: str):
         """
         Extracts the latent representation for a specific gene (V, D, or J).
@@ -788,3 +798,124 @@ class SingleChainAlignAIR(Model):
             latent_rep = self.d_allele_mid(feature_map)
 
         return latent_rep
+
+    def serialization_config(self):
+        """Return a dict conforming to ModelBundleConfig fields for this instance."""
+        return {
+            'model_type': 'single_chain',
+            'format_version': FORMAT_VERSION,
+            'max_seq_length': self.max_seq_length,
+            'has_d_gene': self.has_d_gene,
+            'v_allele_count': self.v_allele_count,
+            'j_allele_count': self.j_allele_count,
+            'd_allele_count': getattr(self, 'd_allele_count', None) if self.has_d_gene else None,
+            'v_allele_latent_size': self.v_allele_latent_size,
+            'j_allele_latent_size': self.j_allele_latent_size,
+            'd_allele_latent_size': getattr(self, 'd_allele_latent_size', None) if self.has_d_gene else None,
+            'chain_types': None,
+            'number_of_chains': None,
+        }
+
+    def save_pretrained(self, bundle_dir: str | os.PathLike, training_meta: TrainingMeta | None = None,
+                        export_saved_model: bool = False,
+                        saved_model_subdir: str = 'saved_model',
+                        include_logits_in_saved_model: bool = False):
+        """Save weights + structural config + dataconfig into a versioned bundle.
+
+        Parameters
+        ----------
+        bundle_dir : Path-like
+            Target directory to create / overwrite bundle contents.
+        training_meta : TrainingMeta, optional
+            Optional training metadata. If not provided a minimal placeholder is written.
+        """
+        bundle_path = Path(bundle_dir)
+        # Ensure model is built
+        if not self.built:
+            dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.float32)}
+            _ = self(dummy, training=False)
+        # Save weights to a temp path inside bundle
+        weights_path = bundle_path / 'weights.h5'
+        weights_path.parent.mkdir(parents=True, exist_ok=True)
+        self.save_weights(str(weights_path))
+        cfg = ModelBundleConfig(**(self.serialization_config()))
+        # Enrich config with environment info
+        try:
+            import tensorflow as _tf
+            cfg.tf_version = _tf.__version__
+        except Exception:  # pragma: no cover
+            pass
+        if training_meta is None:
+            training_meta = TrainingMeta(
+                epochs_trained=0,
+                final_epoch=0,
+                best_epoch=None,
+                best_loss=None,
+                final_loss=None,
+                metrics_summary={},
+            )
+        save_bundle(bundle_path, cfg, self.dataconfig, weights_path, training_meta)
+        # Optionally also export a TensorFlow SavedModel for deployment
+        if export_saved_model:
+            self.export_saved_model(bundle_path / saved_model_subdir, include_logits=include_logits_in_saved_model)
+        logger.info("Saved pretrained bundle to %s", bundle_path)
+
+    @classmethod
+    def from_pretrained(cls, bundle_dir: str | os.PathLike):
+        """Load a model from a versioned bundle produced by save_pretrained()."""
+        bundle_path = Path(bundle_dir)
+        cfg, dataconfig_obj, _meta = load_bundle(bundle_path)
+        model = cls(
+            max_seq_length=cfg.max_seq_length,
+            dataconfig=dataconfig_obj,
+            v_allele_latent_size=cfg.v_allele_latent_size,
+            d_allele_latent_size=cfg.d_allele_latent_size,
+            j_allele_latent_size=cfg.j_allele_latent_size,
+        )
+        dummy = {"tokenized_sequence": tf.zeros((1, cfg.max_seq_length), dtype=tf.float32)}
+        _ = model(dummy, training=False)
+        model.load_weights(str(bundle_path / 'weights.h5')).expect_partial()
+        logger.info("Loaded pretrained bundle from %s", bundle_path)
+        return model
+
+    # ---------------- SavedModel Export (Step 8) -----------------
+    def export_saved_model(self, export_dir: Union[str, os.PathLike], include_logits: bool = False):
+        """Export a TF SavedModel for serving.
+
+        Parameters
+        ----------
+        export_dir : path-like
+            Target directory for the SavedModel (will be created / overwritten).
+        include_logits : bool
+            If True, include the raw *_start_logits / *_end_logits tensors in the exported signature.
+        """
+        export_path = Path(export_dir)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Ensure model is built
+        if not self.built:
+            dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.int32)}
+            _ = self(dummy, training=False)
+
+        # Build a serving function with a fixed input signature
+        @tf.function(input_signature=[
+            tf.TensorSpec(shape=[None, self.max_seq_length], dtype=tf.int32, name='tokenized_sequence')
+        ])
+        def serving_fn(tokenized_sequence):  # pragma: no cover - graph building
+            outputs = self({'tokenized_sequence': tokenized_sequence}, training=False)
+            # Filter outputs for deployment clarity
+            allowed_keys = [
+                'v_start', 'v_end', 'j_start', 'j_end',
+                'v_allele', 'j_allele', 'mutation_rate', 'indel_count', 'productive'
+            ]
+            if self.has_d_gene:
+                allowed_keys += ['d_start', 'd_end', 'd_allele']
+            if include_logits:
+                # Add all logits keys if requested
+                allowed_keys += [k for k in outputs.keys() if k.endswith('_logits')]
+            # Return only intersection preserving order
+            pruned = {k: tf.identity(outputs[k], name=k) for k in allowed_keys if k in outputs}
+            return pruned
+
+        tf.saved_model.save(self, str(export_path), signatures={'serving_default': serving_fn})
+        logger.info("Exported SavedModel to %s", export_path)

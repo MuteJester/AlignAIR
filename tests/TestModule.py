@@ -29,6 +29,7 @@ from AlignAIR.PostProcessing.HeuristicMatching import HeuristicReferenceMatcher
 import os
 import subprocess
 import shutil
+import tempfile
 
 
 def inspect_model_weights(model_checkpoint_path):
@@ -1053,6 +1054,205 @@ class TestModule(unittest.TestCase):
         print("✅ Model loading step integration test completed!")
         print(f"   - Multi-chain detection: {is_multi_chain}")
         print(f"   - Single-chain detection: {is_single_chain}")
+
+    def test_serialization_single_chain_roundtrip(self):
+        """Ensure save_pretrained/from_pretrained round‑trip works for SingleChainAlignAIR within main TestModule suite."""
+        # Prepare a minimal single‑chain dataset context
+        dataconfig = MultiDataConfigContainer([HUMAN_IGH_OGRDB])
+        train_dataset = SingleChainDataset(
+            data_path=self.heavy_chain_dataset_path,
+            dataconfig=dataconfig,
+            use_streaming=True,
+            max_sequence_length=576
+        )
+
+        model_params = train_dataset.generate_model_params()
+        model = SingleChainAlignAIR(**model_params)
+        model.compile(optimizer=tf.keras.optimizers.Adam(1e-3))
+
+        # Build model (create weights) with a dummy forward pass
+        dummy_input = {"tokenized_sequence": np.zeros((1, 576), dtype=np.int32)}
+        _ = model(dummy_input, training=False)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Save bundle
+            model.save_pretrained(tmpdir)
+
+            # Load bundle back
+            reloaded = SingleChainAlignAIR.from_pretrained(tmpdir)
+            # Run a prediction to validate functional load
+            out_orig = model(dummy_input, training=False)
+            out_new = reloaded(dummy_input, training=False)
+
+            # Basic structural assertions
+            self.assertIn('v_allele', out_new, 'Reloaded model missing v_allele head')
+            self.assertEqual(out_orig['v_allele'].shape, out_new['v_allele'].shape,
+                             'Output shape mismatch after reload')
+
+            # Sanity: weights should be numerically close (not strictly identical if any randomness, but usually identical here)
+            self.assertTrue(
+                np.allclose(out_orig['v_allele'].numpy(), out_new['v_allele'].numpy(), atol=1e-5),
+                'Model outputs diverged after serialization round‑trip'
+            )
+
+        print('✅ SingleChain serialization round‑trip test passed')
+
+    def test_saved_model_export_single_chain(self):
+        """Export SavedModel during save_pretrained and verify signature keys."""
+        dataconfig = MultiDataConfigContainer([HUMAN_IGH_OGRDB])
+        ds = SingleChainDataset(
+            data_path=self.heavy_chain_dataset_path,
+            dataconfig=dataconfig,
+            use_streaming=True,
+            max_sequence_length=576
+        )
+        params = ds.generate_model_params()
+        model = SingleChainAlignAIR(**params)
+        model.compile(optimizer=tf.keras.optimizers.Adam(1e-3))
+        dummy = {"tokenized_sequence": np.zeros((1, 576), dtype=np.int32)}
+        _ = model(dummy, training=False)
+        import tempfile, tensorflow as tf
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir, export_saved_model=True)
+            sm_dir = os.path.join(tmpdir, 'saved_model')
+            self.assertTrue(os.path.isdir(sm_dir), 'SavedModel directory missing for single chain')
+            loaded = tf.saved_model.load(sm_dir)
+            fn = loaded.signatures['serving_default']
+            # Basic expected outputs subset
+            for key in ['v_start','v_end','j_start','j_end','v_allele','j_allele']:
+                self.assertIn(key, fn.structured_outputs, f'Missing key {key} in SavedModel outputs')
+        print('✅ SingleChain SavedModel export test passed')
+
+    def test_serialization_multi_chain_roundtrip(self):
+        """Round‑trip save/load for MultiChainAlignAIR (light chains)"""
+        multi_configs = MultiDataConfigContainer([HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB])
+        from AlignAIR.Data import MultiChainDataset
+        dataset = MultiChainDataset(
+            data_paths=[self.light_chain_dataset_path, self.light_chain_dataset_path],
+            dataconfigs=multi_configs,
+            max_sequence_length=576,
+            use_streaming=True,
+        )
+        params = dataset.generate_model_params()
+        model = MultiChainAlignAIR(**params)
+        model.compile(optimizer=tf.keras.optimizers.Adam(1e-3))
+        dummy = {"tokenized_sequence": np.zeros((1, 576), dtype=np.int32)}
+        _ = model(dummy, training=False)
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir)
+            reloaded = MultiChainAlignAIR.from_pretrained(tmpdir)
+            out_a = model(dummy, training=False)
+            out_b = reloaded(dummy, training=False)
+            for k in ['v_allele','j_allele','chain_type']:
+                self.assertIn(k, out_b, f"Missing output {k} after reload")
+                self.assertEqual(out_a[k].shape, out_b[k].shape, f"Shape mismatch for {k}")
+        print('✅ MultiChain serialization round‑trip test passed')
+
+    def test_saved_model_export_multi_chain(self):
+        """Export SavedModel for multi-chain model and verify chain_type present."""
+        multi_configs = MultiDataConfigContainer([HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB])
+        dataset = MultiChainDataset(
+            data_paths=[self.light_chain_dataset_path, self.light_chain_dataset_path],
+            dataconfigs=multi_configs,
+            max_sequence_length=576,
+            use_streaming=True,
+        )
+        params = dataset.generate_model_params()
+        model = MultiChainAlignAIR(**params)
+        model.compile(optimizer=tf.keras.optimizers.Adam(1e-3))
+        dummy = {"tokenized_sequence": np.zeros((1, 576), dtype=np.int32)}
+        _ = model(dummy, training=False)
+        import tempfile, tensorflow as tf
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir, export_saved_model=True)
+            sm_dir = os.path.join(tmpdir, 'saved_model')
+            self.assertTrue(os.path.isdir(sm_dir), 'SavedModel directory missing for multi chain')
+            loaded = tf.saved_model.load(sm_dir)
+            fn = loaded.signatures['serving_default']
+            for key in ['v_start','v_end','j_start','j_end','v_allele','j_allele','chain_type']:
+                self.assertIn(key, fn.structured_outputs, f'Missing key {key} in multi-chain SavedModel outputs')
+        print('✅ MultiChain SavedModel export test passed')
+
+    def test_cli_predict_with_model_dir_bundle(self):
+        """Integration: create tiny single-chain model bundle and invoke CLI with --model_dir."""
+        # Skip if heavy dataset missing
+        import os, tempfile, json, subprocess, sys
+        if not os.path.exists(self.heavy_chain_dataset_path):
+            self.skipTest("Heavy chain sample dataset not available")
+        dataconfig = MultiDataConfigContainer([HUMAN_IGH_OGRDB])
+        from src.AlignAIR.Data import SingleChainDataset
+        ds = SingleChainDataset(
+            data_path=self.heavy_chain_dataset_path,
+            dataconfig=dataconfig,
+            use_streaming=True,
+            max_sequence_length=576
+        )
+        params = ds.generate_model_params()
+        model = SingleChainAlignAIR(**params)
+        model.compile(optimizer=tf.keras.optimizers.Adam(1e-3))
+        dummy = {"tokenized_sequence": np.zeros((1, 576), dtype=np.int32)}
+        _ = model(dummy, training=False)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir)
+            # run CLI with --model_dir
+            script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API', 'AlignAIRRPredict.py'))
+            output_csv = os.path.join(tmpdir, 'out.csv')
+            cmd = [sys.executable, script_path,
+                   '--model_dir', tmpdir,
+                   '--genairr_dataconfig', 'HUMAN_IGH_OGRDB',
+                   '--sequences', self.heavy_chain_dataset_path,
+                   '--save_path', tmpdir + '/',
+                   '--batch_size', '4']
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                print('STDOUT:', result.stdout)
+                print('STDERR:', result.stderr)
+            self.assertEqual(result.returncode, 0, 'CLI predict with --model_dir failed')
+            # ensure output file produced
+            produced = [f for f in os.listdir(tmpdir) if f.endswith('_alignairr_results.csv')]
+            self.assertTrue(produced, 'Expected prediction CSV not found in temp bundle run')
+        print('✅ CLI --model_dir bundle prediction test passed')
+
+    def test_cli_predict_with_model_dir_bundle_multi_chain(self):
+        """Integration: create tiny multi-chain (light chains) model bundle and invoke CLI with --model_dir."""
+        import os, sys, subprocess, tempfile
+        # Ensure light chain sample dataset exists
+        if not os.path.exists(self.light_chain_dataset_path):
+            self.skipTest("Light chain sample dataset not available")
+
+        # Build a minimal multi-chain model (IGK + IGL)
+        multi_configs = MultiDataConfigContainer([HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB])
+        dataset = MultiChainDataset(
+            data_paths=[self.light_chain_dataset_path, self.light_chain_dataset_path],
+            dataconfigs=multi_configs,
+            max_sequence_length=576,
+            use_streaming=True,
+        )
+        params = dataset.generate_model_params()
+        model = MultiChainAlignAIR(**params)
+        model.compile(optimizer=tf.keras.optimizers.Adam(1e-3))
+
+        dummy = {"tokenized_sequence": np.zeros((1, 576), dtype=np.int32)}
+        _ = model(dummy, training=False)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir)
+            script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'AlignAIR', 'API', 'AlignAIRRPredict.py'))
+            cmd = [sys.executable, script_path,
+                   '--model_dir', tmpdir,
+                   '--genairr_dataconfig', 'HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB',
+                   '--sequences', self.light_chain_dataset_path,
+                   '--save_path', tmpdir + '/',
+                   '--batch_size', '4']
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                print('STDOUT:', result.stdout)
+                print('STDERR:', result.stderr)
+            self.assertEqual(result.returncode, 0, 'CLI multi-chain predict with --model_dir failed')
+            produced = [f for f in os.listdir(tmpdir) if f.endswith('_alignairr_results.csv')]
+            self.assertTrue(produced, 'Expected multi-chain prediction CSV not found in temp bundle run')
+        print('✅ CLI --model_dir multi-chain bundle prediction test passed')
 
 
 if __name__ == '__main__':

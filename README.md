@@ -48,6 +48,8 @@ python app.py run \
 - [Key features](#key-features)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Pretrained Bundles](#pretrained-bundles)
+- [SavedModel Export](#savedmodel-export)
 - [Available Models](#available-models)
 - [Docker in depth](#docker-in-depth)
 - [Examples](#examples)
@@ -136,6 +138,121 @@ python app.py run \
     --sequences=/data/input/sequences.csv \
     --save-path=/data/output
 ```
+
+---
+
+## Pretrained Bundles
+
+AlignAIR now supports a reproducible, versioned bundle format that packages:
+
+```
+model_dir/
+  config.json            # Structural model configuration (architecture & allele counts)
+  dataconfig.pkl         # GenAIRR (or MultiDataConfigContainer) object used to build the model
+  weights.h5             # Keras weights
+  training_meta.json     # Optional: epoch counts, final metrics, optimizer, lr, notes
+  VERSION                # Serialization format version (e.g. 1)
+  fingerprint.txt        # SHA256 over critical artifacts (integrity check)
+  README.md (optional)   # User notes
+  saved_model/ (optional) # TensorFlow SavedModel (if exported)
+```
+
+### Why Bundles?
+- No need to manually reconstruct model parameters.
+- Guards against dataconfig / allele count mismatches.
+- Self-describing, portable, and integrity‑verifiable.
+- Backward compatible: you can still point to legacy checkpoints (weights directories).
+
+### Creating a Bundle During Training
+Use the Python Trainer (example snippet):
+
+```python
+from src.AlignAIR.Trainers import Trainer
+trainer = Trainer(model, session_path='./runs', model_name='HeavyExample')
+trainer.train(train_dataset, epochs=3, samples_per_epoch=1024, batch_size=32,
+              save_pretrained=True,  # turns on bundle export
+              export_saved_model=True,  # also produce SavedModel
+              include_logits_in_saved_model=False,
+              training_notes='Baseline heavy chain experiment')
+```
+
+If `bundle_dir` is not provided it defaults to `./runs/HeavyExample_bundle`.
+
+### Loading a Bundle in Python
+```python
+from AlignAIR.Models.SingleChainAlignAIR.SingleChainAlignAIR import SingleChainAlignAIR
+model = SingleChainAlignAIR.from_pretrained('path/to/HeavyExample_bundle')
+preds = model({'tokenized_sequence': encoded_batch})
+```
+
+For multi-chain:
+```python
+from AlignAIR.Models.MultiChainAlignAIR.MultiChainAlignAIR import MultiChainAlignAIR
+multi_model = MultiChainAlignAIR.from_pretrained('path/to/LightChains_bundle')
+```
+
+### Using a Bundle with the CLI
+Instead of `--model_checkpoint` you can now supply:
+```bash
+python app.py run \
+  --model_dir=/path/to/HeavyExample_bundle \
+  --genairr-dataconfig=HUMAN_IGH_OGRDB \
+  --sequences=/data/input.csv \
+  --save-path=/data/out
+```
+If both `--model_dir` and `--model_checkpoint` are provided, `--model_dir` takes precedence.
+
+### Integrity Verification
+Every bundle includes a `fingerprint.txt` (SHA256). If files are altered, fingerprint validation during `from_pretrained` will raise an error.
+
+### Migration from Legacy Checkpoints
+Legacy directories **without** `config.json` are still supported (legacy flow). For reproducibility, re‑export them:
+```python
+legacy_model = SingleChainAlignAIR(max_seq_length=576, dataconfig=...)  # build as before
+legacy_model.load_weights('old_weights_dir').expect_partial()
+legacy_model.save_pretrained('new_bundle_dir')
+```
+
+---
+
+## SavedModel Export
+
+Bundles can optionally embed a TensorFlow SavedModel (subdirectory `saved_model/`) for deployment in serving stacks (TF Serving, Triton, etc.).
+
+### Export During Training
+Use the Trainer flags (see above) or call directly:
+```python
+model.save_pretrained('bundle_dir', export_saved_model=True, include_logits_in_saved_model=False)
+```
+
+### Stand‑Alone Export
+```python
+model.export_saved_model('export_dir/saved_model', include_logits=False)
+```
+
+### Loading a SavedModel
+```python
+import tensorflow as tf
+sm = tf.saved_model.load('bundle_dir/saved_model')
+serving_fn = sm.signatures['serving_default']
+outputs = serving_fn(tokenized_sequence=tf.constant(batch_ids, dtype=tf.int32))
+print(outputs.keys())  # e.g. dict_keys(['v_start','v_end','j_start','j_end','v_allele','j_allele',...])
+```
+
+### Included Outputs
+Single chain (base): `v_start`, `v_end`, `j_start`, `j_end`, `v_allele`, `j_allele`, `mutation_rate`, `indel_count`, `productive` (+ D‑gene outputs if applicable). Multi-chain adds `chain_type`.
+
+Set `include_logits_in_saved_model=True` (or `include_logits=True` for direct export) to append raw boundary logits (`*_start_logits`, `*_end_logits`).
+
+### When to Use SavedModel vs. Bundles?
+| Scenario | Use Bundle | Use SavedModel |
+|----------|------------|----------------|
+| Research reproducibility | ✅ | optional |
+| Fine‑tuning / further training | ✅ | ❌ (graph only) |
+| Production inference (serving stack) | ✅ (for metadata) + SavedModel | ✅ |
+| Integrity & config inspection | ✅ | limited |
+
+---
 
 ### Example Commands
 

@@ -39,7 +39,8 @@ def parse_arguments():
     parser.add_argument('--mode', type=str, default='cli', choices=['cli', 'yaml'],
                         help='Mode of input: cli, yaml, interactive')
     parser.add_argument('--genairr_dataconfig', type=str, default='HUMAN_IGH_OGRDB', help='A name of a builtin GenAIRR data config, or a path to a custom data config pkl file, in the case of a multi chain model this should be a comma separated list of configs, e.g. "HUMAN_IGH_OGRDB,HUMAN_TCRB_IMGT", can also be paths to custom data config pkl files')
-    parser.add_argument('--model_checkpoint', type=str, help='Path to saved AlignAIR weights',required=True)
+    parser.add_argument('--model_checkpoint', type=str, help='Path to saved AlignAIR weights or bundle (legacy).')
+    parser.add_argument('--model_dir', type=str, help='Path to a pretrained model bundle directory (contains config.json). Overrides --model_checkpoint if provided.')
     parser.add_argument('--save_path', type=str, help='Where to save the alignment',required=True)
     parser.add_argument('--sequences', type=str, help='Path to csv/tsv/fasta file with sequences in a column called "sequence"',required=True)
     parser.add_argument('--max_input_size', type=int, default=576, help='Maximum model input size, NOTE! this is with respect to the dimensions the model was trained on, do not increase for pretrained models')
@@ -109,6 +110,11 @@ def main():
     Step.set_logger(logger)
     # Parse command line arguments
     args = parse_arguments()
+    # Runtime validation & normalization for model path arguments
+    if getattr(args, 'model_dir', None):
+        args.model_checkpoint = args.model_dir  # unify downstream usage
+    if not getattr(args, 'model_checkpoint', None):
+        raise SystemExit("Error: You must provide either --model_dir or --model_checkpoint")
     # Process arguments based on mode
     config = process_args(args)
 
