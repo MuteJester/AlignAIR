@@ -126,8 +126,19 @@ class Trainer:
         # --- Optional bundle save ---
         if save_pretrained:
             try:
+                # History can contain numpy/tf dtypes; coerce everything to plain Python types
                 hist = self.history.history if self.history else {}
-                losses = hist.get('loss', [])
+                raw_losses = hist.get('loss', [])
+                def _to_float(x):
+                    try:
+                        return float(x)
+                    except Exception:
+                        try:
+                            # Some tensors have .numpy(); fall back to that
+                            return float(getattr(x, 'numpy')())
+                        except Exception:
+                            return None
+                losses = [lv for lv in (_to_float(x) for x in raw_losses) if lv is not None]
                 best_loss = min(losses) if losses else None
                 best_epoch = int(losses.index(best_loss)) if losses else None
                 final_loss = losses[-1] if losses else None
@@ -135,7 +146,9 @@ class Trainer:
                 for k, v in hist.items():
                     if not v or k.startswith('val_'):
                         continue
-                    metrics_summary[k] = v[-1]
+                    val = _to_float(v[-1])
+                    if val is not None:
+                        metrics_summary[k] = val
                 # learning rate (handle schedules)
                 try:
                     lr = self.model.optimizer.learning_rate
@@ -152,15 +165,15 @@ class Trainer:
                 except Exception:
                     mixed_precision = None
                 meta = TrainingMeta(
-                    epochs_trained=epochs,
-                    final_epoch=epochs - 1,
+                    epochs_trained=int(epochs),
+                    final_epoch=int(epochs - 1),
                     best_epoch=best_epoch,
                     best_loss=best_loss,
                     final_loss=final_loss,
                     metrics_summary=metrics_summary,
-                    wall_time_seconds=wall_time,
-                    batch_size=batch_size,
-                    samples_per_epoch=samples_per_epoch,
+                    wall_time_seconds=int(wall_time) if wall_time is not None else None,
+                    batch_size=int(batch_size),
+                    samples_per_epoch=int(samples_per_epoch),
                     optimizer_class=self.model.optimizer.__class__.__name__,
                     learning_rate=str(lr_value),
                     mixed_precision=mixed_precision,

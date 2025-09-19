@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 from GenAIRR.dataconfig import DataConfig
 from tensorflow.keras import Model, regularizers
+from tensorflow.keras.losses import BinaryCrossentropy, CategoricalCrossentropy
 from tensorflow.keras.constraints import unit_norm
 from tensorflow.keras.layers import (
     Dense,
@@ -34,9 +35,9 @@ from AlignAIR.Data import MultiDataConfigContainer
 class MultiChainAlignAIR(Model):
 
     def __init__(self, max_seq_length: int, dataconfigs:MultiDataConfigContainer,
-                 v_allele_latent_size: int = None,
-                 d_allele_latent_size: int = None,
-                 j_allele_latent_size: int = None):
+                 v_allele_latent_size: Optional[int] = None,
+                 d_allele_latent_size: Optional[int] = None,
+                 j_allele_latent_size: Optional[int] = None):
         """
         Initializes the MultiChainAlignAIR model.
 
@@ -490,8 +491,9 @@ class MultiChainAlignAIR(Model):
         segmentation_loss += aux_loss
 
         # --- Classification Loss ---
-        clf_v_loss = tf.keras.losses.binary_crossentropy(y_true['v_allele'], y_pred['v_allele'])
-        clf_j_loss = tf.keras.losses.binary_crossentropy(y_true['j_allele'], y_pred['j_allele'])
+        # Use BCE with label smoothing for allele classification (Keras 3-safe)
+        clf_v_loss = self._bce_loss_fn(y_true['v_allele'], y_pred['v_allele'])
+        clf_j_loss = self._bce_loss_fn(y_true['j_allele'], y_pred['j_allele'])
 
         # Apply dynamic weighting
         weighted_v_clf_loss = clf_v_loss * self.log_var_v_classification(clf_v_loss)
@@ -513,10 +515,11 @@ class MultiChainAlignAIR(Model):
             classification_loss += short_d_length_penalty
 
         # --- Analysis Losses (Mutation, Indel, Productivity) ---
-        mutation_rate_loss = tf.keras.losses.mean_absolute_error(y_true['mutation_rate'], y_pred['mutation_rate'])
-        indel_count_loss = tf.keras.losses.mean_absolute_error(y_true['indel_count'], y_pred['indel_count'])
-        productive_loss = tf.keras.losses.binary_crossentropy(y_true['productive'], y_pred['productive'])
-        chain_type_loss = tf.keras.losses.categorical_crossentropy(y_true['chain_type'], y_pred['chain_type'])
+        # Keras 3: avoid removed functional aliases; compute MAE explicitly and use Loss objects
+        mutation_rate_loss = tf.reduce_mean(tf.abs(tf.cast(y_true['mutation_rate'], tf.float32) - tf.cast(y_pred['mutation_rate'], tf.float32)))
+        indel_count_loss = tf.reduce_mean(tf.abs(tf.cast(y_true['indel_count'], tf.float32) - tf.cast(y_pred['indel_count'], tf.float32)))
+        productive_loss = BinaryCrossentropy()(y_true['productive'], y_pred['productive'])
+        chain_type_loss = CategoricalCrossentropy()(y_true['chain_type'], y_pred['chain_type'])
 
         # Apply dynamic weighting
         weighted_mutation_loss = mutation_rate_loss * self.log_var_mutation(mutation_rate_loss)
@@ -529,8 +532,15 @@ class MultiChainAlignAIR(Model):
                       weighted_mutation_loss + weighted_indel_loss +
                       weighted_productive_loss + weighted_chain_type_loss)
 
-        return (total_loss, classification_loss, weighted_indel_loss,
-                weighted_mutation_loss, segmentation_loss, weighted_productive_loss, weighted_chain_type_loss)
+        return (
+            total_loss,
+            classification_loss,
+            weighted_indel_loss,
+            weighted_mutation_loss,
+            segmentation_loss,
+            weighted_productive_loss,
+            weighted_chain_type_loss,
+        )
 
     def train_step(self, data):
         """
@@ -548,8 +558,7 @@ class MultiChainAlignAIR(Model):
         gradients = tape.gradient(total_loss, trainable_vars)
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
-        # Update standard and custom metrics
-        self.compiled_metrics.update_state(y, y_pred)
+    # Update custom trackers only (avoid Keras 3 compiled metrics internals)
         self.log_metrics(*losses)
         self.update_custom_trackers(y, y_pred)
 
@@ -563,8 +572,7 @@ class MultiChainAlignAIR(Model):
         y_pred = self(x, training=False)
         losses = self.hierarchical_loss(y, y_pred)
 
-        # Update metrics
-        self.compiled_metrics.update_state(y, y_pred)
+    # Update custom trackers only
         self.log_metrics(*losses)
         self.update_custom_trackers(y, y_pred)
 
@@ -634,8 +642,8 @@ class MultiChainAlignAIR(Model):
 
     def get_metrics_log(self):
         """Constructs the dictionary of metrics to be logged."""
-        # Start with metrics from compile()
-        metrics = {m.name: m.result() for m in self.compiled_metrics.metrics}
+        # Start with custom trackers; avoid relying on internal compiled metrics list in Keras 3
+        metrics = {}
         # Add our custom loss trackers
         metrics.update({
             "loss": self.loss_tracker.result(),
@@ -723,9 +731,7 @@ class MultiChainAlignAIR(Model):
                 self.d_end_acc_1nt,
             ]
 
-        # Add the metrics from compile()
-        if self.compiled_metrics is not None:
-            metric_list += self.compiled_metrics.metrics
+        # Do not append internal compiled metrics container; not stable in Keras 3
 
         return metric_list
 
@@ -822,7 +828,15 @@ class MultiChainAlignAIR(Model):
             _ = self(dummy, training=False)
         weights_path = bundle_path / 'weights.h5'
         weights_path.parent.mkdir(parents=True, exist_ok=True)
-        self.save_weights(str(weights_path))
+        tmp_weights = bundle_path / 'weights.weights.h5'
+        self.save_weights(str(tmp_weights))
+        try:
+            if weights_path.exists():
+                weights_path.unlink()
+            tmp_weights.rename(weights_path)
+        except Exception:
+            import shutil
+            shutil.copyfile(tmp_weights, weights_path)
 
         cfg = ModelBundleConfig(**self.serialization_config())
         # attach tf version
@@ -859,7 +873,10 @@ class MultiChainAlignAIR(Model):
         )
         dummy = {"tokenized_sequence": tf.zeros((1, cfg.max_seq_length), dtype=tf.float32)}
         _ = model(dummy, training=False)
-        model.load_weights(str(bundle_path / 'weights.h5')).expect_partial()
+        # Load by name and skip mismatches to ignore non-architectural layers (metrics, etc.)
+        _status = model.load_weights(str(bundle_path / 'weights.h5'), by_name=True, skip_mismatch=True)
+        if hasattr(_status, 'expect_partial'):
+            _status.expect_partial()
         logging.getLogger(__name__).info("Loaded multi-chain pretrained bundle from %s", bundle_path)
         return model
 

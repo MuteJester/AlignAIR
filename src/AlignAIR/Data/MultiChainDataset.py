@@ -117,7 +117,6 @@ class MultiChainDataset(DatasetBase):
             if 'Short-D' not in d_alleles:
                 d_alleles.append('Short-D')
             self.allele_encoder.register_gene("D", d_alleles, sort=False)
-            # number_of_d_alleles already includes 'Short-D' if not present in d_dict
             self.d_allele_count = self.dataconfig_container.number_of_d_alleles
 
     @property
@@ -178,10 +177,10 @@ class MultiChainDataset(DatasetBase):
         """
         if isinstance(allele_list, str):
             return set(allele_list.split(','))
-        elif isinstance(allele_list, (list, tuple, set)):
-            return set(allele_list)
+        elif isinstance(allele_list, str):
+            return set(allele_list.split(','))
         else:
-            raise ValueError(f"Expected str or list-like, got {type(allele_list)}")
+            raise ValueError(f"Expected str or list, got {type(allele_list)}")
 
 
     def _get_single_batch(self, pointer):
@@ -279,8 +278,7 @@ class MultiChainDataset(DatasetBase):
 
         x, y = self._get_single_batch(self.batch_size)
 
-        output_types = ({k: (tf.int32 if k == 'tokenized_sequence' else tf.float32) for k in x},
-                        {k: tf.float32 for k in y})
+        output_types = ({k: tf.float32 for k in x}, {k: tf.float32 for k in y})
 
         output_shapes = ({k: (self.batch_size,) + x[k].shape[1:] for k in x},
                          {k: (self.batch_size,) + y[k].shape[1:] for k in y})
@@ -289,13 +287,14 @@ class MultiChainDataset(DatasetBase):
 
     def _train_generator(self):
         pointer = 0
+        batch_count = 0
         while True:
-            # Fetch batch at current pointer
-            batch_x, batch_y = self._get_single_batch(pointer)
-            # Advance pointer and wrap to 0 when reaching end
             pointer += self.batch_size
             if pointer >= self.data_length:
-                pointer = 0
+                pointer = self.batch_size
+
+            batch_x, batch_y = self._get_single_batch(pointer)
+            batch_count += 1
             yield batch_x, batch_y
 
     def get_train_dataset(self):

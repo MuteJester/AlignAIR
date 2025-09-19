@@ -104,9 +104,11 @@ def validate_dataconfig_compat(config: ModelBundleConfig, dataconfig_obj: Any) -
     else:  # multi_chain
         if not hasattr(dataconfig_obj, 'chain_types'):
             raise ValueError("Expected MultiDataConfigContainer with chain_types() method for multi_chain bundle.")
-        chain_types = [ct for ct in dataconfig_obj.chain_types()]
-        if config.chain_types and sorted(chain_types) != sorted(config.chain_types):
-            raise ValueError(f"Chain types differ: config={config.chain_types} actual={chain_types}")
+        # Normalize both sides to string values to avoid issues with Enum comparisons
+        chain_types = [getattr(ct, 'value', str(ct)) for ct in dataconfig_obj.chain_types()]
+        config_chain_types = [str(ct) for ct in (config.chain_types or [])]
+        if config.chain_types and sorted(chain_types) != sorted(config_chain_types):
+            raise ValueError(f"Chain types differ: config={config_chain_types} actual={chain_types}")
         # Aggregate counts
         v = getattr(dataconfig_obj, 'number_of_v_alleles', None)
         j = getattr(dataconfig_obj, 'number_of_j_alleles', None)

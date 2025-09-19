@@ -394,8 +394,7 @@ class SoftCutoutLayer(Layer):
         self.k = float(k)
 
     def build(self, input_shape):
-        # Precompute positions [0, 1, ..., L-1] with shape (1, L) for broadcasting
-        self.indices = tf.range(0, self.max_size, dtype=tf.float32)[tf.newaxis, :]
+        # No persistent Tensor creation; compute indices on-the-fly in call() to avoid cross-graph capture issues
         super().build(input_shape)
 
     def _sanitize_bound(self, t: tf.Tensor) -> tf.Tensor:
@@ -413,8 +412,9 @@ class SoftCutoutLayer(Layer):
         end = tf.maximum(end, start + 1.0)
 
         # Smooth ramps: inside ~1, outside ~0, with transition controlled by k
-        left = tf.sigmoid((self.indices - start) / self.k)
-        right = tf.sigmoid((end - self.indices) / self.k)
+        indices = tf.range(0, self.max_size, dtype=tf.float32)[tf.newaxis, :]  # shape (1, L)
+        left = tf.sigmoid((indices - start) / self.k)
+        right = tf.sigmoid((end - indices) / self.k)
         mask = left * right  # shape (B, L)
 
         return tf.cast(mask, tf.float32)

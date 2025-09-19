@@ -67,8 +67,6 @@ class DatasetBase(ABC):
         self.allele_encoder.register_gene("J", j_alleles, sort=False)
 
         if self.has_d:
-            # Include a synthetic 'Short-D' class used by training/evaluation to capture
-            # extremely short D segments. Models must allocate an extra logit for this.
             d_alleles = sorted(list(self.d_dict)) + ['Short-D']
             self.d_allele_count = len(d_alleles)
             self.allele_encoder.register_gene("D", d_alleles, sort=False)
@@ -197,10 +195,7 @@ class DatasetBase(ABC):
 
         x, y = self._get_single_batch(self.batch_size)
 
-        # Ensure tokenized_sequence is int32 for embedding layers; others remain float32
-        x_types = {k: (tf.int32 if k == 'tokenized_sequence' else tf.float32) for k in x}
-        y_types = {k: tf.float32 for k in y}
-        output_types = (x_types, y_types)
+        output_types = ({k: tf.float32 for k in x}, {k: tf.float32 for k in y})
 
         output_shapes = ({k: (self.batch_size,) + x[k].shape[1:] for k in x},
                          {k: (self.batch_size,) + y[k].shape[1:] for k in y})
@@ -240,14 +235,8 @@ class DatasetBase(ABC):
     def generate_model_params(self):
         params =  {
             "max_seq_length": self.max_sequence_length,
-            'dataconfig': self.dataconfig
+            'dataconfig':self.dataconfig
         }
-        # Provide dataset-derived allele counts to ensure exact head sizes
-        if self.has_d:
-            try:
-                params['d_allele_count'] = int(self.d_allele_count)
-            except Exception:
-                pass
         return params
 
     def __len__(self):

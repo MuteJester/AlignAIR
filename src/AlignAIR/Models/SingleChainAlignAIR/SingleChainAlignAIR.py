@@ -533,9 +533,10 @@ class SingleChainAlignAIR(Model):
             classification_loss += short_d_length_penalty
 
         # --- Analysis Losses (Mutation, Indel, Productivity) ---
-        mutation_rate_loss = tf.reduce_mean(tf.keras.losses.mean_absolute_error(y_true['mutation_rate'], y_pred['mutation_rate']))
-        indel_count_loss = tf.reduce_mean(tf.keras.losses.mean_absolute_error(y_true['indel_count'], y_pred['indel_count']))
-        productive_loss = tf.reduce_mean(tf.keras.losses.binary_crossentropy(y_true['productive'], y_pred['productive']))
+        # Keras 3 removed many legacy functional aliases; compute losses explicitly
+        mutation_rate_loss = tf.reduce_mean(tf.abs(tf.cast(y_true['mutation_rate'], tf.float32) - tf.cast(y_pred['mutation_rate'], tf.float32)))
+        indel_count_loss = tf.reduce_mean(tf.abs(tf.cast(y_true['indel_count'], tf.float32) - tf.cast(y_pred['indel_count'], tf.float32)))
+        productive_loss = tf.keras.losses.BinaryCrossentropy()(y_true['productive'], y_pred['productive'])
 
         # Apply dynamic weighting
         weighted_mutation_loss = mutation_rate_loss * self.log_var_mutation(mutation_rate_loss)
@@ -563,8 +564,7 @@ class SingleChainAlignAIR(Model):
         gradients = tape.gradient(total_loss, trainable_vars)
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
-        # Update standard and custom metrics
-        self.compiled_metrics.update_state(y, y_pred)
+    # Update custom trackers only (avoid Keras 3 compiled_metrics internals)
         self.log_metrics(*losses)
         self.update_custom_trackers(y, y_pred)
 
@@ -578,8 +578,7 @@ class SingleChainAlignAIR(Model):
         y_pred = self(x, training=False)
         losses = self.hierarchical_loss(y, y_pred)
 
-        # Update metrics
-        self.compiled_metrics.update_state(y, y_pred)
+    # Update custom trackers only
         self.log_metrics(*losses)
         self.update_custom_trackers(y, y_pred)
 
@@ -648,8 +647,9 @@ class SingleChainAlignAIR(Model):
 
     def get_metrics_log(self):
         """Constructs the dictionary of metrics to be logged."""
-        # Start with metrics from compile()
-        metrics = {m.name: m.result() for m in self.compiled_metrics.metrics}  # Use self.compiled_metrics
+        # Start with an empty dict; compiled metrics are handled by Keras internals in TF/Keras 3
+        # and may not be directly accessible via a stable API. We log our custom trackers here.
+        metrics = {}
         # Add our custom loss trackers
         metrics.update({
             "loss": self.loss_tracker.result(),
@@ -734,9 +734,7 @@ class SingleChainAlignAIR(Model):
                 self.d_end_acc_1nt,
             ]
 
-        # Add the metrics from compile()
-        if self.compiled_metrics is not None:
-            metric_list += self.compiled_metrics.metrics
+        # Do not append internal compiled metrics container; Keras 3 no longer exposes a stable list here.
 
         return metric_list
 
@@ -834,10 +832,20 @@ class SingleChainAlignAIR(Model):
         if not self.built:
             dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.float32)}
             _ = self(dummy, training=False)
-        # Save weights to a temp path inside bundle
+        # Save weights using a Keras 3-compliant suffix, then rename to weights.h5 for our bundle
         weights_path = bundle_path / 'weights.h5'
         weights_path.parent.mkdir(parents=True, exist_ok=True)
-        self.save_weights(str(weights_path))
+        tmp_weights = bundle_path / 'weights.weights.h5'
+        self.save_weights(str(tmp_weights))
+        try:
+            # Overwrite if exists
+            if weights_path.exists():
+                weights_path.unlink()
+            tmp_weights.rename(weights_path)
+        except Exception:
+            # Fallback: copy bytes
+            import shutil
+            shutil.copyfile(tmp_weights, weights_path)
         cfg = ModelBundleConfig(**(self.serialization_config()))
         # Enrich config with environment info
         try:
@@ -874,7 +882,10 @@ class SingleChainAlignAIR(Model):
         )
         dummy = {"tokenized_sequence": tf.zeros((1, cfg.max_seq_length), dtype=tf.float32)}
         _ = model(dummy, training=False)
-        model.load_weights(str(bundle_path / 'weights.h5')).expect_partial()
+        # Use by_name with skip_mismatch to ignore non-architectural trackables (e.g., Metric layers)
+        _status = model.load_weights(str(bundle_path / 'weights.h5'), by_name=True, skip_mismatch=True)
+        if hasattr(_status, 'expect_partial'):
+            _status.expect_partial()
         logger.info("Loaded pretrained bundle from %s", bundle_path)
         return model
 
