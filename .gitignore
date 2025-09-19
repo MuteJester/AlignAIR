@@ -103,3 +103,4 @@ MANIFEST.in
 /Load Config.html
 /Load Models.html
 /tests/edf_sample.csv
+/.venv311/
