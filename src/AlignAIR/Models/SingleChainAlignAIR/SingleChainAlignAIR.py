@@ -107,6 +107,19 @@ class SingleChainAlignAIR(Model):
         self.setup_log_variances()
         self.setup_performance_metrics()
 
+    def build(self, input_shape=None):
+        """Build the model so it can be summarized/used without an initial call.
+
+        Note: Do NOT call self() here to avoid recursion; just mark as built to
+        silence the Keras warning. Variables will be created on first call.
+        """
+        self.built = True
+        try:
+            super().build(input_shape)
+        except Exception:
+            # Some Keras versions may not accept dict input_shape; ignore.
+            pass
+
     def setup_model_layers(self):
         """Initializes all layers used in the model."""
         self._init_input_and_embedding_layers()

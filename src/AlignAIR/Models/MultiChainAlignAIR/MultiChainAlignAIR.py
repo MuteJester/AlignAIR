@@ -87,6 +87,18 @@ class MultiChainAlignAIR(Model):
         self.setup_log_variances()
         self.setup_performance_metrics()
 
+    def build(self, input_shape=None):
+        """Build the model so it can be summarized/used without an initial call.
+
+        Do not call self() here to avoid recursion; just mark as built to
+        silence the warning. Variables are created on first call.
+        """
+        self.built = True
+        try:
+            super().build(input_shape)
+        except Exception:
+            pass
+
     def setup_model_layers(self):
         """Initializes all layers used in the model."""
         self._init_input_and_embedding_layers()

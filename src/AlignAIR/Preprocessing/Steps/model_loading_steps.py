@@ -98,9 +98,31 @@ class ModelLoadingStep(Step):
             else:
                 model = SingleChainAlignAIR.from_pretrained(checkpoint_path.as_posix())
         else:
-            # Legacy weight file loading
-            model.build({'tokenized_sequence': (max_sequence_size, 1)})
-            model.load_weights(model_checkpoint)
+            # Legacy weight file loading and TF checkpoint prefix compatibility (Keras 3-safe)
+            from pathlib import Path
+            ckpt_path = Path(model_checkpoint)
+            # Ensure model is built by a dummy forward pass
+            import tensorflow as tf
+            try:
+                dummy = {"tokenized_sequence": tf.zeros((1, max_sequence_size), dtype=tf.float32)}
+                _ = model(dummy, training=False)
+            except Exception:
+                pass
+
+            # Case 1: direct Keras-supported file (.weights.h5, .h5, .keras)
+            if ckpt_path.suffix in {'.weights.h5', '.h5', '.keras'}:
+                model.load_weights(str(ckpt_path))
+            # Case 2: TF checkpoint prefix (prefix with accompanying .index/.data-00000-of-00001)
+            elif (ckpt_path.parent / f"{ckpt_path.name}.index").exists():
+                # Use tf.train.Checkpoint to restore from prefix
+                tf_ckpt = tf.train.Checkpoint(model=model)
+                status = tf_ckpt.restore(str(ckpt_path))
+                # Be tolerant to partial restores due to optimizer slots etc.
+                if hasattr(status, 'expect_partial'):
+                    status.expect_partial()
+            else:
+                # Fallback attempt: try load_weights and let it raise a helpful error
+                model.load_weights(str(ckpt_path))
         self.log(f"Loading: {model_checkpoint.split('/')[-1]}")
         self.log(f"Model Loaded Successfully")
 
