@@ -1,9 +1,10 @@
 import numpy as np
 import tensorflow as tf
+import keras
 from GenAIRR.dataconfig import DataConfig
-from tensorflow.keras import Model, regularizers
-from tensorflow.keras.constraints import unit_norm
-from tensorflow.keras.layers import (
+from keras import Model, regularizers
+from keras.constraints import unit_norm
+from keras.layers import (
     Dense,
     Input,
     Dropout,
@@ -58,9 +59,9 @@ class SingleChainAlignAIR(Model):
     """
 
     def __init__(self, max_seq_length: int, dataconfig:DataConfig,
-                 v_allele_latent_size: int = None,
-                 d_allele_latent_size: int = None,
-                 j_allele_latent_size: int = None):
+                 v_allele_latent_size: Optional[int] = None,
+                 d_allele_latent_size: Optional[int] = None,
+                 j_allele_latent_size: Optional[int] = None):
         """
         Initializes the SingleChainAlignAIR model.
 
@@ -81,7 +82,7 @@ class SingleChainAlignAIR(Model):
         self.max_seq_length = int(max_seq_length)
         self.dataconfig = dataconfig
         self.has_d_gene = self.dataconfig.metadata.has_d
-        self.initializer = tf.keras.initializers.GlorotUniform()
+        self.initializer = keras.initializers.GlorotUniform()
 
         # Allele counts and latent sizes
         self.v_allele_count = self.dataconfig.number_of_v_alleles
@@ -100,7 +101,7 @@ class SingleChainAlignAIR(Model):
         self.fblock_activation = 'tanh'
 
         # Loss function for classification with label smoothing
-        self._bce_loss_fn = tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1)
+        self._bce_loss_fn = keras.losses.BinaryCrossentropy(label_smoothing=0.1)
 
         # --- Model Setup ---
         self.setup_model_layers()
@@ -148,44 +149,49 @@ class SingleChainAlignAIR(Model):
 
     def setup_performance_metrics(self):
         """Initializes metrics to track model performance during training."""
-        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.scaled_classification_loss_tracker = tf.keras.metrics.Mean(name="scaled_classification_loss")
-        self.scaled_indel_count_loss_tracker = tf.keras.metrics.Mean(name="scaled_indel_count_loss")
-        self.scaled_productivity_loss_tracker = tf.keras.metrics.Mean(name="scaled_productivity_loss")
-        self.scaled_mutation_rate_loss_tracker = tf.keras.metrics.Mean(name="scaled_mutation_rate_loss")
-        self.segmentation_loss_tracker = tf.keras.metrics.Mean(name="segmentation_loss")
+        self.loss_tracker = keras.metrics.Mean(name="loss")
+        self.scaled_classification_loss_tracker = keras.metrics.Mean(name="scaled_classification_loss")
+        self.scaled_indel_count_loss_tracker = keras.metrics.Mean(name="scaled_indel_count_loss")
+        self.scaled_productivity_loss_tracker = keras.metrics.Mean(name="scaled_productivity_loss")
+        self.scaled_mutation_rate_loss_tracker = keras.metrics.Mean(name="scaled_mutation_rate_loss")
+        self.segmentation_loss_tracker = keras.metrics.Mean(name="segmentation_loss")
 
         # Custom metrics for deeper monitoring
         self.average_last_label_tracker = AverageLastLabel(name="average_last_label")
         self.v_allele_entropy_tracker = EntropyMetric(allele_name="v_allele")
         self.j_allele_entropy_tracker = EntropyMetric(allele_name="j_allele")
 
+        # AUC metrics for allele classification heads (epoch-aggregated)
+        self.v_allele_auc = keras.metrics.AUC(name="v_allele_auc", multi_label=True)
+        self.j_allele_auc = keras.metrics.AUC(name="j_allele_auc", multi_label=True)
+
         if self.has_d_gene:
             self.d_allele_entropy_tracker = EntropyMetric(allele_name="d_allele")
+            self.d_allele_auc = keras.metrics.AUC(name="d_allele_auc", multi_label=True)
 
         # Boundary accuracy and error metrics (exact and within 1 nt)
         # V
-        self.v_start_mae = tf.keras.metrics.Mean(name="v_start_mae")
-        self.v_end_mae = tf.keras.metrics.Mean(name="v_end_mae")
-        self.v_start_acc = tf.keras.metrics.Mean(name="v_start_acc")  # exact match
-        self.v_end_acc = tf.keras.metrics.Mean(name="v_end_acc")
-        self.v_start_acc_1nt = tf.keras.metrics.Mean(name="v_start_acc_1nt")  # |err|<=1
-        self.v_end_acc_1nt = tf.keras.metrics.Mean(name="v_end_acc_1nt")
+        self.v_start_mae = keras.metrics.Mean(name="v_start_mae")
+        self.v_end_mae = keras.metrics.Mean(name="v_end_mae")
+        self.v_start_acc = keras.metrics.Mean(name="v_start_acc")  # exact match
+        self.v_end_acc = keras.metrics.Mean(name="v_end_acc")
+        self.v_start_acc_1nt = keras.metrics.Mean(name="v_start_acc_1nt")  # |err|<=1
+        self.v_end_acc_1nt = keras.metrics.Mean(name="v_end_acc_1nt")
         # J
-        self.j_start_mae = tf.keras.metrics.Mean(name="j_start_mae")
-        self.j_end_mae = tf.keras.metrics.Mean(name="j_end_mae")
-        self.j_start_acc = tf.keras.metrics.Mean(name="j_start_acc")
-        self.j_end_acc = tf.keras.metrics.Mean(name="j_end_acc")
-        self.j_start_acc_1nt = tf.keras.metrics.Mean(name="j_start_acc_1nt")
-        self.j_end_acc_1nt = tf.keras.metrics.Mean(name="j_end_acc_1nt")
+        self.j_start_mae = keras.metrics.Mean(name="j_start_mae")
+        self.j_end_mae = keras.metrics.Mean(name="j_end_mae")
+        self.j_start_acc = keras.metrics.Mean(name="j_start_acc")
+        self.j_end_acc = keras.metrics.Mean(name="j_end_acc")
+        self.j_start_acc_1nt = keras.metrics.Mean(name="j_start_acc_1nt")
+        self.j_end_acc_1nt = keras.metrics.Mean(name="j_end_acc_1nt")
         # D (optional)
         if self.has_d_gene:
-            self.d_start_mae = tf.keras.metrics.Mean(name="d_start_mae")
-            self.d_end_mae = tf.keras.metrics.Mean(name="d_end_mae")
-            self.d_start_acc = tf.keras.metrics.Mean(name="d_start_acc")
-            self.d_end_acc = tf.keras.metrics.Mean(name="d_end_acc")
-            self.d_start_acc_1nt = tf.keras.metrics.Mean(name="d_start_acc_1nt")
-            self.d_end_acc_1nt = tf.keras.metrics.Mean(name="d_end_acc_1nt")
+            self.d_start_mae = keras.metrics.Mean(name="d_start_mae")
+            self.d_end_mae = keras.metrics.Mean(name="d_end_mae")
+            self.d_start_acc = keras.metrics.Mean(name="d_start_acc")
+            self.d_end_acc = keras.metrics.Mean(name="d_end_acc")
+            self.d_start_acc_1nt = keras.metrics.Mean(name="d_start_acc_1nt")
+            self.d_end_acc_1nt = keras.metrics.Mean(name="d_end_acc_1nt")
 
     def _init_input_and_embedding_layers(self):
         """Initializes input and embedding layers."""
@@ -249,7 +255,7 @@ class SingleChainAlignAIR(Model):
 
     def _init_analysis_heads(self):
         """Initializes heads for mutation rate, indel count, and productivity."""
-        act = tf.keras.activations.gelu
+        act = keras.activations.gelu
 
         # Mutation Rate Head
         self.mutation_rate_mid = Dense(self.max_seq_length, activation=act, name="mutation_rate_mid", kernel_initializer=self.initializer)
@@ -478,7 +484,7 @@ class SingleChainAlignAIR(Model):
             segmentation_loss += (weighted_d_start + weighted_d_end)
 
         # --- Auxiliary Segmentation Losses ---
-        huber = tf.keras.losses.Huber(delta=1.0)
+        huber = keras.losses.Huber(delta=1.0)
 
         # Expectations for lengths
         v_s_exp = expectation_from_logits(y_pred['v_start_logits'])
@@ -549,7 +555,7 @@ class SingleChainAlignAIR(Model):
         # Keras 3 removed many legacy functional aliases; compute losses explicitly
         mutation_rate_loss = tf.reduce_mean(tf.abs(tf.cast(y_true['mutation_rate'], tf.float32) - tf.cast(y_pred['mutation_rate'], tf.float32)))
         indel_count_loss = tf.reduce_mean(tf.abs(tf.cast(y_true['indel_count'], tf.float32) - tf.cast(y_pred['indel_count'], tf.float32)))
-        productive_loss = tf.keras.losses.BinaryCrossentropy()(y_true['productive'], y_pred['productive'])
+        productive_loss = keras.losses.BinaryCrossentropy()(y_true['productive'], y_pred['productive'])
 
         # Apply dynamic weighting
         weighted_mutation_loss = mutation_rate_loss * self.log_var_mutation(mutation_rate_loss)
@@ -577,7 +583,7 @@ class SingleChainAlignAIR(Model):
         gradients = tape.gradient(total_loss, trainable_vars)
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
-    # Update custom trackers only (avoid Keras 3 compiled_metrics internals)
+        # Update custom trackers only (avoid Keras 3 compiled_metrics internals)
         self.log_metrics(*losses)
         self.update_custom_trackers(y, y_pred)
 
@@ -591,7 +597,7 @@ class SingleChainAlignAIR(Model):
         y_pred = self(x, training=False)
         losses = self.hierarchical_loss(y, y_pred)
 
-    # Update custom trackers only
+        # Update custom trackers only
         self.log_metrics(*losses)
         self.update_custom_trackers(y, y_pred)
 
@@ -647,6 +653,16 @@ class SingleChainAlignAIR(Model):
         self.j_start_acc_1nt.update_state(j_s_acc1)
         self.j_end_acc_1nt.update_state(j_e_acc1)
 
+        # Allele AUC metrics (treat multi-class as multi-label with sigmoid outputs)
+        try:
+            self.v_allele_auc.update_state(y_true['v_allele'], y_pred['v_allele'])
+            self.j_allele_auc.update_state(y_true['j_allele'], y_pred['j_allele'])
+            if self.has_d_gene:
+                self.d_allele_auc.update_state(y_true['d_allele'], y_pred['d_allele'])
+        except Exception:
+            # Be resilient to unexpected shapes
+            pass
+
         # D (optional)
         if self.has_d_gene:
             d_s_mae, d_s_acc, d_s_acc1 = boundary_metrics(y_true['d_start'], y_pred['d_start_logits'])
@@ -689,6 +705,8 @@ class SingleChainAlignAIR(Model):
             'j_end_acc': self.j_end_acc.result(),
             'j_start_acc_1nt': self.j_start_acc_1nt.result(),
             'j_end_acc_1nt': self.j_end_acc_1nt.result(),
+            'v_allele_auc': self.v_allele_auc.result(),
+            'j_allele_auc': self.j_allele_auc.result(),
         })
         if self.has_d_gene:
             metrics['d_allele_entropy'] = self.d_allele_entropy_tracker.result()
@@ -699,6 +717,7 @@ class SingleChainAlignAIR(Model):
                 'd_end_acc': self.d_end_acc.result(),
                 'd_start_acc_1nt': self.d_start_acc_1nt.result(),
                 'd_end_acc_1nt': self.d_end_acc_1nt.result(),
+                'd_allele_auc': self.d_allele_auc.result(),
             })
         return metrics
 
@@ -722,6 +741,8 @@ class SingleChainAlignAIR(Model):
             self.average_last_label_tracker,
             self.v_allele_entropy_tracker,
             self.j_allele_entropy_tracker,
+            self.v_allele_auc,
+            self.j_allele_auc,
             # Boundary trackers
             self.v_start_mae,
             self.v_end_mae,
@@ -745,6 +766,7 @@ class SingleChainAlignAIR(Model):
                 self.d_end_acc,
                 self.d_start_acc_1nt,
                 self.d_end_acc_1nt,
+                self.d_allele_auc,
             ]
 
         # Do not append internal compiled metrics container; Keras 3 no longer exposes a stable list here.
@@ -921,10 +943,7 @@ class SingleChainAlignAIR(Model):
             dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.int32)}
             _ = self(dummy, training=False)
 
-        # Build a serving function with a fixed input signature
-        @tf.function(input_signature=[
-            tf.TensorSpec(shape=[None, self.max_seq_length], dtype=tf.int32, name='tokenized_sequence')
-        ])
+        # Build a serving function (let TF infer signature on save)
         def serving_fn(tokenized_sequence):  # pragma: no cover - graph building
             outputs = self({'tokenized_sequence': tokenized_sequence}, training=False)
             # Filter outputs for deployment clarity
