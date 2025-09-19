@@ -38,7 +38,8 @@ class CenterPaddedSequenceTokenizer:
         Returns:
             np.ndarray: Encoded sequence.
         """
-        return np.array([self.token_dict.get(nt, self.token_dict['N']) for nt in sequence])
+        # Emit int32 token ids for compatibility with Keras Embedding and SavedModel signature
+        return np.array([self.token_dict.get(nt, self.token_dict['N']) for nt in sequence], dtype=np.int32)
 
     def encode_and_pad_center(self, sequence_or_sequences):
         """
@@ -59,7 +60,7 @@ class CenterPaddedSequenceTokenizer:
             padding_length = self.max_length - len(encoded)
             pad_left = padding_length // 2
             pad_right = padding_length - pad_left
-            padded = np.pad(encoded, (pad_left, pad_right), constant_values=0)
+            padded = np.pad(encoded, (pad_left, pad_right), constant_values=0).astype(np.int32, copy=False)
             return padded, pad_left
 
         # If it's a list/iterable of sequences
@@ -71,10 +72,10 @@ class CenterPaddedSequenceTokenizer:
             padding_length = self.max_length - len(encoded)
             pad_left = padding_length // 2
             pad_right = padding_length - pad_left
-            padded = np.pad(encoded, (pad_left, pad_right), constant_values=0)
+            padded = np.pad(encoded, (pad_left, pad_right), constant_values=0).astype(np.int32, copy=False)
             padded_batch.append(padded)
             paddings.append(pad_left)
 
-        return np.vstack(padded_batch), np.array(paddings)
+        return np.vstack(padded_batch).astype(np.int32, copy=False), np.array(paddings, dtype=np.int32)
 
 

@@ -9,7 +9,7 @@ from ast import literal_eval  # safer than eval for parsing literal structures
 from .columnSet import ColumnSet
 from .tokenizers import CenterPaddedSequenceTokenizer
 from .encoders import AlleleEncoder
-from .batch_readers import PandasBatchReader, StreamingTSVReader
+from .batch_readers import StreamingTableReader
 
 class DatasetBase(ABC):
     """
@@ -40,11 +40,14 @@ class DatasetBase(ABC):
         self.register_alleles_to_ohe()
         self.data_path = data_path
 
-        if use_streaming:
-            self.reader = StreamingTSVReader(data_path, self.required_data_columns, batch_size, sep=seperator)
-        else:
-            self.reader = PandasBatchReader(data_path, self.required_data_columns, batch_size, nrows=nrows,
-                                            sep=seperator)
+        # Use unified reader: stream=True for streaming mode, False for in-memory mode
+        self.reader = StreamingTableReader(
+            data_path,
+            self.required_data_columns,
+            batch_size,
+            sep=seperator,
+            stream=use_streaming,
+        )
 
         self.data_length = self.reader.get_data_length()
 
@@ -64,6 +67,8 @@ class DatasetBase(ABC):
         self.allele_encoder.register_gene("J", j_alleles, sort=False)
 
         if self.has_d:
+            # Include a synthetic 'Short-D' class used by training/evaluation to capture
+            # extremely short D segments. Models must allocate an extra logit for this.
             d_alleles = sorted(list(self.d_dict)) + ['Short-D']
             self.d_allele_count = len(d_alleles)
             self.allele_encoder.register_gene("D", d_alleles, sort=False)
@@ -110,7 +115,7 @@ class DatasetBase(ABC):
         Required keys include: sequence, v_call, j_call, mutation_rate, productive, indels,
         and per-gene start/end coordinate columns (e.g. v_sequence_start).
         """
-        batch = self.reader.get_batch(pointer)  # dict of column -> list (length == batch_size)
+        batch = self.reader.get_batch(pointer)
 
         sequences = batch['sequence']
         encoded_sequences, paddings = self.tokenizer.encode_and_pad_center(sequences)
@@ -134,7 +139,18 @@ class DatasetBase(ABC):
         v_alleles = [set(s.split(',')) for s in batch['v_call']]
         j_alleles = [set(s.split(',')) for s in batch['j_call']]
 
-        bool_cast = lambda x: 1.0 if (x == 'True' or x is True) else 0.0
+        # Accept already-converted floats/bools for productive; fallback to string parsing
+        def to_float_bool(v):
+            if isinstance(v, bool):
+                return 1.0 if v else 0.0
+            if isinstance(v, (int, float)):
+                return 1.0 if v != 0 else 0.0
+            s = str(v).strip().lower()
+            if s in {'true','1','yes','y','t'}:
+                return 1.0
+            if s in {'false','0','no','n','f'}:
+                return 0.0
+            return 0.0
 
         x = {'tokenized_sequence': encoded_sequences}
 
@@ -147,7 +163,7 @@ class DatasetBase(ABC):
             'j_allele': self.one_hot_encode_allele('J', j_alleles),
             'mutation_rate': np.asarray(batch['mutation_rate'], np.float32).reshape(-1, 1),
             'indel_count': np.asarray(indel_counts, np.float32).reshape(-1, 1),
-            'productive': np.asarray([bool_cast(v) for v in batch['productive']], np.float32).reshape(-1, 1)
+            'productive': np.asarray([to_float_bool(v) for v in batch['productive']], np.float32).reshape(-1, 1)
         }
 
         if self.has_d:
@@ -165,21 +181,26 @@ class DatasetBase(ABC):
         """
         counts = []
         for item in indel_column:
-            if isinstance(item, dict):
+            # Fast path: already structured
+            if isinstance(item, (dict, list, tuple)):
                 counts.append(len(item))
-            else:
-                try:
-                    parsed = literal_eval(item)
-                    counts.append(len(parsed) if isinstance(parsed, dict) else 0)
-                except Exception:
-                    counts.append(0)
+                continue
+            # Fallback: try parsing strings
+            try:
+                parsed = literal_eval(item) if isinstance(item, str) else {}
+                counts.append(len(parsed) if isinstance(parsed, (dict, list, tuple)) else 0)
+            except Exception:
+                counts.append(0)
         return counts
 
     def _get_tf_dataset_params(self):
 
         x, y = self._get_single_batch(self.batch_size)
 
-        output_types = ({k: tf.float32 for k in x}, {k: tf.float32 for k in y})
+        # Ensure tokenized_sequence is int32 for embedding layers; others remain float32
+        x_types = {k: (tf.int32 if k == 'tokenized_sequence' else tf.float32) for k in x}
+        y_types = {k: tf.float32 for k in y}
+        output_types = (x_types, y_types)
 
         output_shapes = ({k: (self.batch_size,) + x[k].shape[1:] for k in x},
                          {k: (self.batch_size,) + y[k].shape[1:] for k in y})
@@ -219,8 +240,14 @@ class DatasetBase(ABC):
     def generate_model_params(self):
         params =  {
             "max_seq_length": self.max_sequence_length,
-            'dataconfig':self.dataconfig
+            'dataconfig': self.dataconfig
         }
+        # Provide dataset-derived allele counts to ensure exact head sizes
+        if self.has_d:
+            try:
+                params['d_allele_count'] = int(self.d_allele_count)
+            except Exception:
+                pass
         return params
 
     def __len__(self):

@@ -11,7 +11,7 @@ from .SingleChainDataset import SingleChainDataset
 from GenAIRR.dataconfig import DataConfig
 from .MultiDataConfigContainer import MultiDataConfigContainer
 
-from .batch_readers import StreamingTSVReader, PandasBatchReader
+from .batch_readers import StreamingTableReader
 from .columnSet import ColumnSet
 from .datasetBase import DatasetBase
 from .encoders import AlleleEncoder, ChainTypeOneHotEncoder
@@ -82,12 +82,10 @@ class MultiChainDataset(DatasetBase):
 
         self.readers = {}
 
-        if use_streaming:
-            for path,dcf,bsizes,req_cols in zip(data_paths, self.dataconfigs,self.batch_sizes,self.required_data_column_sets):
-                self.readers[dcf.metadata.chain_type] = StreamingTSVReader(path, req_cols, bsizes, sep=seperator)
-        else:
-            for path, dcf,bsizes,req_cols in zip(data_paths, self.dataconfigs,self.batch_sizes,self.required_data_column_sets):
-                self.readers[dcf.metadata.chain_type] = PandasBatchReader(path, req_cols, bsizes, nrows=nrows, sep=seperator)
+        for path,dcf,bsizes,req_cols in zip(data_paths, self.dataconfigs,self.batch_sizes,self.required_data_column_sets):
+            self.readers[dcf.metadata.chain_type] = StreamingTableReader(
+                path, req_cols, bsizes, sep=seperator, stream=use_streaming
+            )
 
         self.data_lengths = [rd.get_data_length() for rd in self.readers.values()]
         
@@ -119,6 +117,7 @@ class MultiChainDataset(DatasetBase):
             if 'Short-D' not in d_alleles:
                 d_alleles.append('Short-D')
             self.allele_encoder.register_gene("D", d_alleles, sort=False)
+            # number_of_d_alleles already includes 'Short-D' if not present in d_dict
             self.d_allele_count = self.dataconfig_container.number_of_d_alleles
 
     @property
@@ -179,15 +178,18 @@ class MultiChainDataset(DatasetBase):
         """
         if isinstance(allele_list, str):
             return set(allele_list.split(','))
-        elif isinstance(allele_list, str):
-            return set(allele_list.split(','))
+        elif isinstance(allele_list, (list, tuple, set)):
+            return set(allele_list)
         else:
-            raise ValueError(f"Expected str or list, got {type(allele_list)}")
+            raise ValueError(f"Expected str or list-like, got {type(allele_list)}")
 
 
     def _get_single_batch(self, pointer):
-        # Read Batch from Dataset
-        batchs = [reader.get_batch(pointer) for reader in self.readers.values()] # returns dict for each batch
+        # Read data from each reader
+        batchs = []
+        for (chain_type, reader) in self.readers.items():
+            data = reader.get_batch(pointer)
+            batchs.append(data)
         # correct for missing D segments
         batchs = self._correct_for_missing_d(batchs)
         # Concatenate all batches into a single dictionary
@@ -217,24 +219,30 @@ class MultiChainDataset(DatasetBase):
 
         indel_counts = []
         for indels in batch['indels']:
-            # Accept already-parsed dict/list/tuple; otherwise attempt literal_eval
             if isinstance(indels, (dict, list, tuple)):
-                parsed = indels
+                indel_counts.append(len(indels))
             else:
                 try:
                     parsed = literal_eval(indels) if isinstance(indels, str) else {}
+                    indel_counts.append(len(parsed) if isinstance(parsed, (dict, list, tuple)) else 0)
                 except Exception:
-                    parsed = {}
-            if not isinstance(parsed, (dict, list, tuple)):
-                parsed = {}
-            # Count items (dict keys or list/tuple length)
-            indel_counts.append(len(parsed))
+                    indel_counts.append(0)
 
         # Convert Comma Seperated Allele Ground Truth Labels into Lists
         v_alleles = list(map(self._seperate_alleles, batch['v_call']))
         j_alleles = list(map(self._seperate_alleles, batch['j_call']))
 
-        bool_cast = lambda x: 1. if any([x == 'True', x == True]) else 0.
+        def to_float_bool(x):
+            if isinstance(x, bool):
+                return 1.0 if x else 0.0
+            if isinstance(x, (int, float)):
+                return 1.0 if x != 0 else 0.0
+            s = str(x).strip().lower()
+            if s in {'true','1','yes','y','t'}:
+                return 1.0
+            if s in {'false','0','no','n','f'}:
+                return 0.0
+            return 0.0
         y = {
             "v_start": batch['v_sequence_start'].reshape(-1, 1),
             "v_end": batch['v_sequence_end'].reshape(-1, 1),
@@ -244,7 +252,7 @@ class MultiChainDataset(DatasetBase):
             "j_allele": self.one_hot_encode_allele("J", j_alleles),
             'mutation_rate': batch['mutation_rate'].reshape(-1, 1),
             'indel_count': np.array(indel_counts).reshape(-1, 1),
-            'productive': np.array([bool_cast(i) for i in batch['productive']]).reshape(-1, 1),
+            'productive': np.array([to_float_bool(i) for i in batch['productive']]).reshape(-1, 1),
             'chain_type': batch['chain_type']
         }
         if self.has_d:
@@ -271,7 +279,8 @@ class MultiChainDataset(DatasetBase):
 
         x, y = self._get_single_batch(self.batch_size)
 
-        output_types = ({k: tf.float32 for k in x}, {k: tf.float32 for k in y})
+        output_types = ({k: (tf.int32 if k == 'tokenized_sequence' else tf.float32) for k in x},
+                        {k: tf.float32 for k in y})
 
         output_shapes = ({k: (self.batch_size,) + x[k].shape[1:] for k in x},
                          {k: (self.batch_size,) + y[k].shape[1:] for k in y})
@@ -280,14 +289,13 @@ class MultiChainDataset(DatasetBase):
 
     def _train_generator(self):
         pointer = 0
-        batch_count = 0
         while True:
+            # Fetch batch at current pointer
+            batch_x, batch_y = self._get_single_batch(pointer)
+            # Advance pointer and wrap to 0 when reaching end
             pointer += self.batch_size
             if pointer >= self.data_length:
-                pointer = self.batch_size
-
-            batch_x, batch_y = self._get_single_batch(pointer)
-            batch_count += 1
+                pointer = 0
             yield batch_x, batch_y
 
     def get_train_dataset(self):
