@@ -8,8 +8,23 @@ from GenAIRR.utilities import translate
 class AIRRFormatManager:
     def __init__(self, predict_object):
         self.predict_object = predict_object
-        self.chain = predict_object.script_arguments.chain_type
-        self.data_config = predict_object.data_config_library.data_configs
+        # Derive chain from dataconfig to avoid relying on legacy script_arguments
+        dc_container = getattr(predict_object, 'dataconfig', None)
+        if dc_container is None:
+            raise ValueError("PredictObject.dataconfig is not set.")
+        packaged = dc_container.packaged_config()  # keys are GenAIRR ChainType enums
+
+        # Use ChainType enums explicitly throughout
+        from GenAIRR.dataconfig.enums import ChainType as _CT
+        self._CT = _CT
+
+        # Decide gating (heavy vs light) for AIRR formatting helpers using enums
+        has_heavy_like = (self._CT.BCR_HEAVY in packaged) or (hasattr(self._CT, 'TCR_BETA') and getattr(self._CT, 'TCR_BETA') in packaged)
+        has_light = (self._CT.BCR_LIGHT_KAPPA in packaged) or (self._CT.BCR_LIGHT_LAMBDA in packaged)
+        self.chain = 'heavy' if has_heavy_like else 'light' if has_light else 'heavy'
+
+        # Keep the packaged mapping keyed by enums for direct use
+        self.data_config = packaged
         self.reference_map, self.j_anchor_dict = self._derive_allele_dictionaries()
 
         self.regions = {
@@ -23,24 +38,39 @@ class AIRRFormatManager:
     def _derive_light_alleles(self):
         def _dict(alleles, attr):
             return self._build_allele_dict(alleles, attr)
-        return {
-            'v': {**_dict(self.data_config["kappa"].v_alleles, "gapped_seq"),
-                  **_dict(self.data_config["lambda"].v_alleles, "gapped_seq")},
-            'j': {**_dict(self.data_config["kappa"].j_alleles, "ungapped_seq"),
-                  **_dict(self.data_config["lambda"].j_alleles, "ungapped_seq")}
-        }, {
-            **_dict(self.data_config["kappa"].j_alleles, "anchor"),
-            **_dict(self.data_config["lambda"].j_alleles, "anchor")
-        }
+
+        kappa_dc = self.data_config.get(self._CT.BCR_LIGHT_KAPPA)
+        lambda_dc = self.data_config.get(self._CT.BCR_LIGHT_LAMBDA)
+
+        v_map = {}
+        j_map = {}
+        j_anchor = {}
+        if kappa_dc is not None:
+            v_map.update(_dict(kappa_dc.v_alleles, "gapped_seq"))
+            j_map.update(_dict(kappa_dc.j_alleles, "ungapped_seq"))
+            j_anchor.update(_dict(kappa_dc.j_alleles, "anchor"))
+        if lambda_dc is not None:
+            v_map.update(_dict(lambda_dc.v_alleles, "gapped_seq"))
+            j_map.update(_dict(lambda_dc.j_alleles, "ungapped_seq"))
+            j_anchor.update(_dict(lambda_dc.j_alleles, "anchor"))
+
+        return {'v': v_map, 'j': j_map}, j_anchor
 
     def _derive_heavy_alleles(self):
         def _dict(alleles, attr):
             return self._build_allele_dict(alleles, attr)
+
+        heavy_dc = (
+            self.data_config.get(self._CT.BCR_HEAVY)
+            or (getattr(self._CT, 'TCR_BETA', None) and self.data_config.get(getattr(self._CT, 'TCR_BETA')))
+            or next(iter(self.data_config.values()))
+        )
+
         return {
-            'v': _dict(self.data_config["heavy"].v_alleles, "gapped_seq"),
-            'd': _dict(self.data_config["heavy"].d_alleles, "ungapped_seq"),
-            'j': _dict(self.data_config["heavy"].j_alleles, "ungapped_seq")
-        }, _dict(self.data_config["heavy"].j_alleles, "anchor")
+            'v': _dict(heavy_dc.v_alleles, "gapped_seq"),
+            'd': _dict(heavy_dc.d_alleles, "ungapped_seq"),
+            'j': _dict(heavy_dc.j_alleles, "ungapped_seq")
+        }, _dict(heavy_dc.j_alleles, "anchor")
 
     def _build_allele_dict(self, allele_set, attr):
         return {
@@ -449,11 +479,37 @@ class AIRRFormatManager:
 
         
         def to_list(x):
-            return [x] * n if not isinstance(x, (list, tuple, np.ndarray)) or (hasattr(x, 'shape') and x.shape == ()) else list(x)
-        
-        indel_counts = to_list(po.processed_predictions.get('indel_count'))
+            # Convert scalars or numpy arrays to plain Python lists of length n
+            if isinstance(x, np.ndarray):
+                return x.tolist()
+            if isinstance(x, (list, tuple)):
+                return list(x)
+            # Broadcast scalar or None
+            return [x] * n
+
+        raw_indel_counts = to_list(po.processed_predictions.get('indel_count'))
         productive = to_list(po.processed_predictions['productive'])
         mutation_rate = to_list(po.processed_predictions['mutation_rate'])
+
+        # Normalize indel counts to integers for downstream comparisons
+        indel_counts = []
+        for a in raw_indel_counts:
+            val = 0
+            try:
+                if a is None:
+                    val = 0
+                elif isinstance(a, (list, tuple, np.ndarray)):
+                    val = int(a[0]) if len(a) > 0 else 0
+                else:
+                    # Handle strings and numerics
+                    sval = str(a)
+                    if sval.lower() == 'nan' or sval == '':
+                        val = 0
+                    else:
+                        val = int(float(a))
+            except Exception:
+                val = 0
+            indel_counts.append(val)
         
 
         
@@ -476,7 +532,7 @@ class AIRRFormatManager:
             'v_likelihoods': po.likelihoods_of_selected_alleles.get('v', [None]*n),
             'j_likelihoods': po.likelihoods_of_selected_alleles.get('j', [None]*n),
             'd_likelihoods': po.likelihoods_of_selected_alleles.get('d', [None]*n) if self.chain == 'heavy' else [None]*n,
-            'skip_processing': [(p is False and (a or 0) > 1) for p, a in zip(productive, indel_counts)]
+            'skip_processing': [(p is False and a > 1) for p, a in zip(productive, indel_counts)]
         }
 
         if self.chain == 'heavy':            
@@ -492,7 +548,15 @@ class AIRRFormatManager:
             airr_dict['d_germline_start'] = [None] * n
             airr_dict['d_germline_end'] = [None] * n
             airr_dict['d_call'] = [''] * n
-            airr_dict['locus'] = ['IGK' if i == 1 else 'IGL' for i in po['type_'].astype(int).squeeze()]       
+            # For single-chain light runs, default locus to IGL; adjust if type_ present in processed data
+            if isinstance(getattr(po, 'processed_predictions', None), dict) and 'type_' in po.processed_predictions:
+                t = po.processed_predictions['type_']
+                try:
+                    airr_dict['locus'] = ['IGK' if int(i) == 1 else 'IGL' for i in np.array(t).astype(int).squeeze()]
+                except Exception:
+                    airr_dict['locus'] = ['IGL'] * n
+            else:
+                airr_dict['locus'] = ['IGL'] * n      
        
         airr_dict = self._get_alignments(airr_dict, n)
         airr_dict = self._translate_alignments(airr_dict)

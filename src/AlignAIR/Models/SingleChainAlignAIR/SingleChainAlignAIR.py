@@ -19,6 +19,7 @@ import logging
 from pathlib import Path
 from AlignAIR.Serialization.model_bundle import ModelBundleConfig, TrainingMeta, FORMAT_VERSION
 from AlignAIR.Serialization.io import save_bundle, load_bundle
+from AlignAIR.Serialization.saved_model_wrapper import SavedModelInferenceWrapper
 from typing import Union, Optional
 
 logger = logging.getLogger(__name__)
@@ -850,10 +851,9 @@ class SingleChainAlignAIR(Model):
         }
 
     def save_pretrained(self, bundle_dir: str | os.PathLike, training_meta: TrainingMeta | None = None,
-                        export_saved_model: bool = False,
                         saved_model_subdir: str = 'saved_model',
-                        include_logits_in_saved_model: bool = False):
-        """Save weights + structural config + dataconfig into a versioned bundle.
+                        include_logits_in_saved_model: bool = True):
+        """Save a SavedModel + structural config + dataconfig into a versioned bundle.
 
         Parameters
         ----------
@@ -867,20 +867,7 @@ class SingleChainAlignAIR(Model):
         if not self.built:
             dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.float32)}
             _ = self(dummy, training=False)
-        # Save weights using a Keras 3-compliant suffix, then rename to weights.h5 for our bundle
-        weights_path = bundle_path / 'weights.h5'
-        weights_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_weights = bundle_path / 'weights.weights.h5'
-        self.save_weights(str(tmp_weights))
-        try:
-            # Overwrite if exists
-            if weights_path.exists():
-                weights_path.unlink()
-            tmp_weights.rename(weights_path)
-        except Exception:
-            # Fallback: copy bytes
-            import shutil
-            shutil.copyfile(tmp_weights, weights_path)
+        bundle_path.mkdir(parents=True, exist_ok=True)
         cfg = ModelBundleConfig(**(self.serialization_config()))
         # Enrich config with environment info
         try:
@@ -897,32 +884,35 @@ class SingleChainAlignAIR(Model):
                 final_loss=None,
                 metrics_summary={},
             )
-        save_bundle(bundle_path, cfg, self.dataconfig, weights_path, training_meta)
-        # Optionally also export a TensorFlow SavedModel for deployment
-        if export_saved_model:
-            self.export_saved_model(bundle_path / saved_model_subdir, include_logits=include_logits_in_saved_model)
+        # Persist non-weight artifacts
+        save_bundle(bundle_path, cfg, self.dataconfig, training_meta)
+        # Always export a TensorFlow SavedModel for robust deployment/loading
+        self.export_saved_model(bundle_path / saved_model_subdir, include_logits=include_logits_in_saved_model)
+        # Recompute fingerprint to include SavedModel assets
+        try:
+            from AlignAIR.Serialization.validators import compute_fingerprint as _cfp
+            (bundle_path / "fingerprint.txt").write_text(_cfp(bundle_path))
+        except Exception:
+            pass
         logger.info("Saved pretrained bundle to %s", bundle_path)
 
     @classmethod
     def from_pretrained(cls, bundle_dir: str | os.PathLike):
-        """Load a model from a versioned bundle produced by save_pretrained()."""
+        """Load a model from a SavedModel-first bundle. H5 is no longer supported."""
         bundle_path = Path(bundle_dir)
         cfg, dataconfig_obj, _meta = load_bundle(bundle_path)
-        model = cls(
-            max_seq_length=cfg.max_seq_length,
-            dataconfig=dataconfig_obj,
-            v_allele_latent_size=cfg.v_allele_latent_size,
-            d_allele_latent_size=cfg.d_allele_latent_size,
-            j_allele_latent_size=cfg.j_allele_latent_size,
-        )
-        dummy = {"tokenized_sequence": tf.zeros((1, cfg.max_seq_length), dtype=tf.float32)}
-        _ = model(dummy, training=False)
-        # Use by_name with skip_mismatch to ignore non-architectural trackables (e.g., Metric layers)
-        _status = model.load_weights(str(bundle_path / 'weights.h5'), by_name=True, skip_mismatch=True)
-        if hasattr(_status, 'expect_partial'):
-            _status.expect_partial()
-        logger.info("Loaded pretrained bundle from %s", bundle_path)
-        return model
+
+        sm_dir = bundle_path / 'saved_model'
+        if sm_dir.exists():
+            wrapper = SavedModelInferenceWrapper(
+                saved_model_dir=sm_dir,
+                bundle_dir=bundle_path,
+                config=cfg.__dict__ if hasattr(cfg, '__dict__') else None,
+            )
+            wrapper.dataconfig = dataconfig_obj
+            logger.info("Loaded SavedModel from %s", sm_dir)
+            return wrapper
+        raise FileNotFoundError(f"SavedModel not found in bundle: {sm_dir}. This AlignAIRR version requires SavedModel-first bundles.")
 
     # ---------------- SavedModel Export (Step 8) -----------------
     def export_saved_model(self, export_dir: Union[str, os.PathLike], include_logits: bool = False):
@@ -943,22 +933,36 @@ class SingleChainAlignAIR(Model):
             dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.int32)}
             _ = self(dummy, training=False)
 
-        # Build a serving function (let TF infer signature on save)
-        def serving_fn(tokenized_sequence):  # pragma: no cover - graph building
-            outputs = self({'tokenized_sequence': tokenized_sequence}, training=False)
-            # Filter outputs for deployment clarity
-            allowed_keys = [
-                'v_start', 'v_end', 'j_start', 'j_end',
-                'v_allele', 'j_allele', 'mutation_rate', 'indel_count', 'productive'
-            ]
-            if self.has_d_gene:
-                allowed_keys += ['d_start', 'd_end', 'd_allele']
-            if include_logits:
-                # Add all logits keys if requested
-                allowed_keys += [k for k in outputs.keys() if k.endswith('_logits')]
-            # Return only intersection preserving order
-            pruned = {k: tf.identity(outputs[k], name=k) for k in allowed_keys if k in outputs}
-            return pruned
+        # Export a lightweight inference module with a concrete signature for robustness
+        class _InferenceModule(tf.Module):  # pragma: no cover - export graph
+            def __init__(self, model, max_len: int, include_logits_flag: bool):
+                super().__init__()
+                self.model = model
+                self.L = int(max_len)
+                self.include_logits_flag = bool(include_logits_flag)
 
-        tf.saved_model.save(self, str(export_path), signatures={'serving_default': serving_fn})
+                def _serving(tokenized_sequence):
+                    x = tf.convert_to_tensor(tokenized_sequence)
+                    if x.dtype not in (tf.int32, tf.int64):
+                        x = tf.cast(x, tf.int32)
+                    outputs = self.model({'tokenized_sequence': x}, training=False)
+                    allowed_keys = [
+                        'v_start', 'v_end', 'j_start', 'j_end',
+                        'v_allele', 'j_allele', 'mutation_rate', 'indel_count', 'productive'
+                    ]
+                    if 'd_start' in outputs:
+                        allowed_keys += ['d_start', 'd_end', 'd_allele']
+                    if self.include_logits_flag:
+                        allowed_keys += [k for k in outputs.keys() if k.endswith('_logits')]
+                    return {k: tf.identity(outputs[k], name=k) for k in allowed_keys if k in outputs}
+
+                # Create a tf.function with a concrete input signature
+                self.serving_default = tf.function(
+                    _serving,
+                    input_signature=[tf.TensorSpec(shape=[None, self.L], dtype=tf.int32, name='tokenized_sequence')]
+                )
+
+        module = _InferenceModule(self, self.max_seq_length, include_logits)
+        # Let TF create the ConcreteFunction automatically from the tf.function
+        tf.saved_model.save(module, str(export_path), signatures={'serving_default': module.serving_default})
         logger.info("Exported SavedModel to %s", export_path)

@@ -25,7 +25,7 @@
 ### Single Heavy Chain Analysis
 ```bash
 python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGH_S5F_576 \
+  --model-dir=/app/pretrained_models/IGH_S5F_576 \
   --genairr-dataconfig=HUMAN_IGH_OGRDB \
   --sequences=heavy_sequences.csv \
   --save-path=results/
@@ -34,7 +34,7 @@ python app.py run \
 ### Single Light Chain Analysis (Lambda)
 ```bash
 python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+  --model-dir=/app/pretrained_models/IGL_S5F_576 \
   --genairr-dataconfig=HUMAN_IGL_OGRDB \
   --sequences=lambda_sequences.csv \
   --save-path=results/
@@ -43,7 +43,7 @@ python app.py run \
 ### Multi-Chain Light Chain Analysis
 ```bash
 python app.py run \
-  --model-checkpoint=/app/pretrained_models/MultiLight_S5F_576 \
+  --model-dir=/app/pretrained_models/IGL_S5F_576 \
   --genairr-dataconfig=HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB \
   --sequences=mixed_light_sequences.csv \
   --save-path=results/
@@ -52,7 +52,7 @@ python app.py run \
 ### TCR Beta Chain Analysis
 ```bash
 python app.py run \
-  --model-checkpoint=/app/pretrained_models/TCRB_S5F_576 \
+  --model-dir=/app/pretrained_models/TCRB_Uniform_576 \
   --genairr-dataconfig=HUMAN_TCRB_IMGT \
   --sequences=tcr_sequences.csv \
   --save-path=results/
@@ -70,16 +70,20 @@ To start aligning sequences you can either train your own custom model finetuned
 
 ## Docker Installation and Usage
 
-You can run AlignAIR using Docker. First, build the Docker image:
+You can run AlignAIR using Docker with our prebuilt image:
 
 ```bash
-docker build -t alignair_cli .
-```
+docker pull thomask90/alignair:latest
 
-Then run the container with mounted volume:
-
-```bash
-docker run -it -v "${PWD}:/local_server" alignair_interactive_cli
+# Example (entrypoint style):
+docker run -it --rm \
+  -v "${PWD}:/data" \
+  -v "${PWD}/results:/downloads" \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGH_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGH_OGRDB \
+  --sequences=/data/heavy_sequences.csv \
+  --save-path=/downloads/
 ```
 
 ## Quick Start with Docker CLI
@@ -87,13 +91,16 @@ docker run -it -v "${PWD}:/local_server" alignair_interactive_cli
 Here's an example of running AlignAIR in Docker with specific arguments:
 
 ```bash
-docker run -it -v "${PWD}:/local_server" alignair_interactive_cli \
-    --model_checkpoint=/app/tests/AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2 \
-    --save_path=/app/tests/ \
-    --chain_type=heavy \
-    --sequences=/app/tests/sample_HeavyChain_dataset.csv \
-    --batch_size=32 \
-    --translate_to_asc
+docker run -it --rm \
+  -v "${PWD}:/data" \
+  -v "${PWD}/results:/downloads" \
+  thomask90/alignair:latest run \
+  --model-dir=/app/tests/AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2 \
+  --genairr-dataconfig=HUMAN_IGH_OGRDB \
+  --sequences=/data/sample_HeavyChain_dataset.csv \
+  --save-path=/downloads/ \
+  --batch-size=32 \
+  --translate-to-asc
 ```
 
 ## Features

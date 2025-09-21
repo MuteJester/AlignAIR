@@ -4,8 +4,8 @@ import pickle
 import pandas as pd
 import os
 from .utils.file_management import load_pickle, load_dataconfig
-from .plots.likelihoods import LikelihoodCalibrationPlot
-from .plots.performance_metrics import PerformanceMetricsPlot, SequenceAnalysisPlot, AlleleFrequencyPlot
+from .plots.enhanced_likelihoods import EnhancedLikelihoodCalibrationPlot
+from .plots.performance_metrics import PerformanceMetricsPlot
 from .plots.confidence_analysis import ConfidenceAnalysisPlot, ThresholdEffectsPlot
 from .plots.error_analysis import ErrorAnalysisPlot
 from .plots.report_generator import AlignAIRReportGenerator
@@ -44,11 +44,11 @@ def create_comprehensive_report(predict_object, ground_truth_table, genairr_data
     
     # 1. Likelihood Calibration Analysis
     report_generator.add_plot(
-        LikelihoodCalibrationPlot,
-        title="Likelihood Calibration Analysis",
+        EnhancedLikelihoodCalibrationPlot,
+        title="Enhanced Likelihood Calibration Analysis",
         description="Analyzes how well the predicted likelihoods are calibrated against actual performance. "
-                   "Points closer to the diagonal line indicate better calibration. Includes confidence intervals "
-                   "and performance vs mutation rate analysis for V, D, and J genes."
+                   "This enhanced plot offers improved visual clarity, confidence intervals, and detailed "
+                   "performance analysis against mutation rates for V, D, and J genes."
     )
     
     # 2. Performance Metrics Analysis
@@ -60,25 +60,7 @@ def create_comprehensive_report(predict_object, ground_truth_table, genairr_data
                    "Provides both summary statistics and detailed per-gene analysis."
     )
     
-    # 3. Sequence Characteristics Analysis
-    report_generator.add_plot(
-        SequenceAnalysisPlot,
-        title="Sequence Characteristics Analysis",
-        description="Analyzes the relationship between sequence characteristics (length, mutation rate) "
-                   "and prediction performance. Helps identify if certain sequence properties affect "
-                   "model accuracy and provides insights into model behavior across different sequence types."
-    )
-    
-    # 4. Allele Frequency Analysis
-    report_generator.add_plot(
-        AlleleFrequencyPlot,
-        title="Allele Frequency Distribution",
-        description="Compares the frequency distribution of alleles in ground truth vs predictions. "
-                   "Helps identify if the model has bias towards certain alleles and whether the "
-                   "prediction distribution matches the true biological distribution."
-    )
-    
-    # 5. Confidence Analysis
+    # 3. Confidence Analysis
     report_generator.add_plot(
         ConfidenceAnalysisPlot,
         title="Confidence and Uncertainty Analysis",
@@ -87,7 +69,7 @@ def create_comprehensive_report(predict_object, ground_truth_table, genairr_data
                    "between confidence and uncertainty. Higher entropy indicates more uncertain predictions."
     )
     
-    # 6. Threshold Effects Analysis
+    # 4. Threshold Effects Analysis
     report_generator.add_plot(
         ThresholdEffectsPlot,
         title="Threshold Effects on Performance",
@@ -96,7 +78,7 @@ def create_comprehensive_report(predict_object, ground_truth_table, genairr_data
                    "helping to optimize threshold selection for different use cases."
     )
     
-    # 7. Deep Learning Model Error Analysis
+    # 5. Deep Learning Model Error Analysis
     success = report_generator.add_plot(
         ErrorAnalysisPlot,
         title="Deep Learning Model Error Analysis",

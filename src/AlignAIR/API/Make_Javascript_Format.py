@@ -6,7 +6,6 @@ import pickle
 
 from prompt_toolkit.filters import is_multiline
 
-from AlignAIR.API.AlignAIRRPredict import process_args
 from AlignAIR.Data import MultiDataConfigContainer, MultiChainDataset, SingleChainDataset
 from AlignAIR.Data.PredictionDataset import PredictionDataset
 from AlignAIR.Models import MultiChainAlignAIR, SingleChainAlignAIR
@@ -16,7 +15,6 @@ from AlignAIR.Preprocessing.Steps.file_steps import FileSampleCounterStep, FileN
 from AlignAIR.Preprocessing.Steps.model_loading_steps import ModelLoadingStep
 from AlignAIR.Step.Step import Step
 from AlignAIR.Trainers import Trainer
-from AlignAIR.Utilities.CustomModelParamsYaml import CustomModelParamsYaml
 
 
 def parse_arguments():
@@ -39,8 +37,7 @@ def parse_arguments():
     parser.add_argument('--custom_genotype', type=str, default=None, help='Path to a custom genotype yaml file')
     parser.add_argument('--save_predict_object', action='store_true', help='Save the predict object (Warning this can be large)')
     parser.add_argument('--airr_format', action='store_true', help='Adds a step to format the results to AIRR format')
-    # parameters for the model yaml, if specified this will change the loading of the model to a finetuned one with differnt head sizes
-    parser.add_argument('--finetuned_model_params_yaml', type=str, default=None, help='Path to a yaml file with the parameters of a fine tuned model (new head sizes and latent sizes)')
+    # Note: finetuned_model_params_yaml is deprecated; fine-tune and save a new bundle instead.
 
     return parser.parse_args()
 
@@ -68,6 +65,8 @@ if __name__ == "__main__":
         predict_object = step.execute(predict_object)
 
     model = predict_object.model
+    if model is None:
+        raise RuntimeError("Model was not loaded. Ensure ModelLoadingStep completed successfully and arguments are valid.")
 
     prediction_Dataset = PredictionDataset(max_sequence_length=args.max_input_size)
     seq = 'CAGCCACAACTGAACTGGTCAAGTCCAGGACTGGTGAATACCTCGCAGACCGTCACACTCACCCTTGCCGTGTCCGGGGACCGTGTCTCCAGAACCACTGCTGTTTGGAAGTGGAGGGGTCAGACCCCATCGCGAGGCCTTGCGTGGCTGGGAAGGACCTACNACAGTTCCAGGTGATTTGCTAACAACGAAGTGTCTGTGAATTGTTNAATATCCATGAACCCAGACGCATCCANGGAACGGNTCTTCCTGCACCTGAGGTCTGGGGCCTTCGACGACACGGCTGTACATNCGTGAGAAAGCGGTGACCTCTACTAGGATAGTGCTGAGTACGACTGGCATTACGCTCTCNGGGACCGTGCCACCCTTNTCACTGCCTCCTCGG'

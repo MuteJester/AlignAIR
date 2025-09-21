@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Union
 
 import numpy as np
 from GenAIRR.dataconfig import DataConfig
@@ -13,10 +13,10 @@ class ConfidenceMethodThresholdApplicationStep(Step):
 
     def extract_likelihoods_and_labels_from_calls(self,
                                                   args,
-                                                  predicted_allele_likelihoods: np.ndarray,
+                                                  predicted_allele_likelihoods: Dict[str, np.ndarray],
                                                   likelihood_thresholds: Dict[str, float],
                                                   call_caps: Dict[str, int],
-                                                  dataconfig: DataConfig):
+                                                  dataconfig: Union[DataConfig, MultiDataConfigContainer]):
         predicted_alleles = {}
         processed_predicted_allele_likelihoods = {}
         threshold_objects = {}
@@ -59,10 +59,10 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         super().__init__(name)
 
     def extract_likelihoods_and_labels_from_calls(self,
-                                                  predicted_allele_likelihoods,
-                                                  likelihood_thresholds,
-                                                  call_caps,
-                                                  dataconfig:DataConfig):
+                                                  predicted_allele_likelihoods: Dict[str, np.ndarray],
+                                                  likelihood_thresholds: Dict[str, float],
+                                                  call_caps: Dict[str, int],
+                                                  dataconfig: Union[DataConfig, MultiDataConfigContainer]):
         predicted_alleles = {}
         processed_predicted_allele_likelihoods = {}
         threshold_objects = {}
@@ -101,6 +101,11 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
         self.log("Applying Max Likelihood thresholds...")
         args = predict_object.script_arguments
 
+        # Lint-safe guard: ensure processed_predictions exists
+        if not getattr(predict_object, 'processed_predictions', None):
+            self.log("No processed_predictions available; skipping thresholding step.")
+            return predict_object
+
         if isinstance(predict_object.dataconfig, DataConfig):
             self.has_d = predict_object.dataconfig.metadata.has_d
         elif isinstance(predict_object.dataconfig,MultiDataConfigContainer):
@@ -126,5 +131,31 @@ class MaxLikelihoodPercentageThresholdApplicationStep(Step):
                                                                 caps,
                                                                 predict_object.dataconfig
                                                             )
+
+        # Diagnostics: summarize selected calls and their likelihoods
+        try:
+            import numpy as _np
+            sels = predict_object.selected_allele_calls
+            likes = predict_object.likelihoods_of_selected_alleles
+            def _stat(v):
+                try:
+                    arr = _np.array(v, dtype=float)
+                    if arr.size == 0:
+                        return {'count': 0}
+                    return {
+                        'count': int(arr.size),
+                        'mean': float(_np.nanmean(arr)),
+                        'std': float(_np.nanstd(arr)),
+                        'min': float(_np.nanmin(arr)),
+                        'max': float(_np.nanmax(arr)),
+                    }
+                except Exception:
+                    return {'count': len(v) if hasattr(v, '__len__') else 0}
+            v_stats = _stat(likes.get('v', []))
+            j_stats = _stat(likes.get('j', []))
+            d_stats = _stat(likes.get('d', [])) if 'd' in likes else None
+            self.log(f"Selected allele likelihoods — V: {v_stats}; J: {j_stats}; D: {d_stats}")
+        except Exception as _sel_err:
+            self.log(f"Selection diagnostics skipped due to error: {_sel_err}")
 
         return predict_object

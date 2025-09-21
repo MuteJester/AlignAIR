@@ -18,7 +18,7 @@ class AIRRFinalizationStep(Step):
         
         if not predict_object.script_arguments.translate_to_asc:
             self.log("Translating allele names...")
-            translator = TranslateToIMGT(predict_object.data_config_library.packaged_config())
+            translator = TranslateToIMGT(predict_object.dataconfig.packaged_config())
             predict_object.selected_allele_calls['v'] = [
                 [translator.translate(allele) for allele in alleles]
                 for alleles in predict_object.selected_allele_calls['v']

@@ -4,6 +4,7 @@ import unittest
 import pandas as pd
 import numpy as np
 import subprocess
+import zipfile
 import re
 from pathlib import Path
 import tempfile
@@ -39,22 +40,37 @@ class TestModule(unittest.TestCase):
         return env
 
     def test_predict_script_single_chain(self):
-        if not self._has_questionary:
-            self.skipTest('questionary package not installed')
-        ckpt_prefix = self.checkpoints_dir / 'IGH_S5F_576_EXTENDED'
-        if not ((ckpt_prefix.parent / f"{ckpt_prefix.name}.index").exists()):
-            self.skipTest('IGH_S5F_576_EXTENDED checkpoint not available')
+        # Prefer a pretrained bundle directory; fallback to unzipping a provided bundle zip
+        bundle_dir = self.checkpoints_dir / 'AlignAIR_IGH_Extended'
+        bundle_zip = self.checkpoints_dir / 'IGH_S5F_576_EXTENDED.zip'
 
         sequences_path = str(self.data_test_dir / 'sample_igh_extended.csv')
         validation_path = str(self.data_val_dir / 'igh_model_prediction_validation.csv')
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_dir = tmpdir + os.sep
+            # Resolve model_dir: use existing bundle folder or unzip zip into temp
+            model_dir = None
+            if bundle_dir.is_dir() and (bundle_dir / 'config.json').exists():
+                model_dir = str(bundle_dir)
+            elif bundle_zip.is_file():
+                with zipfile.ZipFile(bundle_zip, 'r') as zf:
+                    zf.extractall(tmpdir)
+                # Find extracted folder containing config.json
+                candidate = None
+                for root, dirs, files in os.walk(tmpdir):
+                    if 'config.json' in files:
+                        candidate = root
+                        break
+                if candidate:
+                    model_dir = candidate
+            if model_dir is None:
+                self.skipTest('No pretrained bundle directory or bundle zip available for single-chain test')
+
             cmd = [
                 sys.executable, '-m', 'AlignAIR.API.AlignAIRRPredict',
-                '--model_checkpoint', str(ckpt_prefix),
+                '--model_dir', model_dir,
                 '--save_path', save_dir,
-                '--genairr_dataconfig', 'HUMAN_IGH_EXTENDED',
                 '--sequences', sequences_path,
                 '--batch_size', '16',
                 '--translate_to_asc',

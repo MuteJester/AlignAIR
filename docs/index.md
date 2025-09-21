@@ -44,7 +44,7 @@ pip install .
    - Multi-chain: `--genairr-dataconfig=HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB`
 3. **Running AlignAIR**: Use the unified CLI interface:
     ```bash
-    python app.py run --model-checkpoint=model_path \
+    python app.py run --model-dir=model_path \
                      --genairr-dataconfig=HUMAN_IGH_OGRDB \
                      --sequences=my_sequences.csv \
                      --save-path=results/
@@ -57,13 +57,20 @@ AlignAIR provides a Docker image to ensure a consistent runtime environment. To 
 
 1. **Pull the Docker Image**:
     ```bash
-    docker pull mutejester/alignair:latest
+    docker pull thomask90/alignair:latest
     ```
 
-2. **Run the Container**:
-    ```bash
-    docker run -v $(pwd):/data mutejester/alignair:latest --input /data/my_sequences.fasta --output /data/results/
-    ```
+2. **Run the Container (entrypoint style)**:
+        ```bash
+        docker run -it --rm \
+            -v $(pwd):/data \
+            -v $(pwd)/results:/downloads \
+            thomask90/alignair:latest run \
+            --model-dir=/app/pretrained_models/IGH_S5F_576 \
+            --genairr-dataconfig=HUMAN_IGH_OGRDB \
+            --sequences=/data/my_sequences.fasta \
+            --save-path=/downloads/
+        ```
 
 ## Documentation Resources
 

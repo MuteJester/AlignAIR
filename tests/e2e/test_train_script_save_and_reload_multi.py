@@ -54,13 +54,13 @@ class TestTrainScriptSaveAndReloadMulti(unittest.TestCase):
             bundle_dir = Path(tmpdir) / model_name
             self.assertTrue((bundle_dir / 'config.json').is_file(), 'config.json missing in bundle')
             self.assertTrue((bundle_dir / 'dataconfig.pkl').is_file(), 'dataconfig.pkl missing in bundle')
-            self.assertTrue((bundle_dir / 'weights.h5').is_file(), 'weights.h5 missing in bundle')
+            self.assertTrue((bundle_dir / 'saved_model').is_dir(), 'saved_model directory missing in bundle')
 
             from AlignAIR.Models.MultiChainAlignAIR.MultiChainAlignAIR import MultiChainAlignAIR
             model = MultiChainAlignAIR.from_pretrained(str(bundle_dir))
             L = int(getattr(model, 'max_seq_length', 576))
             dummy = {"tokenized_sequence": np.zeros((1, L), dtype=np.int32)}
-            out = model(dummy, training=False)
+            out = model.predict(dummy)
             self.assertIn('chain_type', out)
             # Expect the number of types equals the config's chain_types length
             self.assertGreater(out['chain_type'].shape[-1], 1, 'Chain type logits should have >1 class')

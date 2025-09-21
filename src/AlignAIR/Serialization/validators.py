@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 REQUIRED_FILES = [
     "config.json",
     "dataconfig.pkl",
-    "weights.h5",
     "fingerprint.txt",
     "VERSION",
 ]
@@ -23,6 +22,9 @@ REQUIRED_FILES = [
 
 def ensure_required_files(bundle_dir: Path) -> None:
     missing = [f for f in REQUIRED_FILES if not (bundle_dir / f).exists()]
+    # Additionally require SavedModel directory
+    if not (bundle_dir / 'saved_model').exists():
+        missing.append('saved_model')
     if missing:
         raise FileNotFoundError(f"Missing required bundle file(s): {missing}. "
                                 f"Ensure the bundle directory is complete and not corrupted.")
@@ -54,9 +56,18 @@ def verify_version_file(bundle_dir: Path, config: ModelBundleConfig) -> None:
 
 def compute_fingerprint(bundle_dir: Path) -> str:
     sha = hashlib.sha256()
-    for name in ["config.json", "dataconfig.pkl", "weights.h5"]:
+    # Include structural files
+    for name in ["config.json", "dataconfig.pkl"]:
         with (bundle_dir / name).open("rb") as f:
             sha.update(f.read())
+    # Include SavedModel assets deterministically (sort paths)
+    sm_dir = bundle_dir / 'saved_model'
+    if sm_dir.exists():
+        for p in sorted(sm_dir.rglob('*')):
+            if p.is_file():
+                sha.update(p.relative_to(bundle_dir).as_posix().encode('utf-8'))
+                with p.open('rb') as f:
+                    sha.update(f.read())
     return sha.hexdigest()
 
 

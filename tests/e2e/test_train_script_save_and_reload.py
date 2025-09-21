@@ -58,14 +58,14 @@ class TestTrainScriptSaveAndReload(unittest.TestCase):
             bundle_dir = Path(tmpdir) / model_name
             self.assertTrue((bundle_dir / 'config.json').is_file(), 'config.json missing in bundle')
             self.assertTrue((bundle_dir / 'dataconfig.pkl').is_file(), 'dataconfig.pkl missing in bundle')
-            self.assertTrue((bundle_dir / 'weights.h5').is_file(), 'weights.h5 missing in bundle')
+            self.assertTrue((bundle_dir / 'saved_model').is_dir(), 'saved_model directory missing in bundle')
 
             # Reload with from_pretrained and do a quick forward pass
             from AlignAIR.Models.SingleChainAlignAIR.SingleChainAlignAIR import SingleChainAlignAIR
             model = SingleChainAlignAIR.from_pretrained(str(bundle_dir))
             L = int(getattr(model, 'max_seq_length', 576))
             dummy = {"tokenized_sequence": np.zeros((1, L), dtype=np.int32)}
-            out = model(dummy, training=False)
-            # Basic sanity: expect v_allele & j_allele keys
+            # SavedModel wrapper exposes predict()
+            out = model.predict(dummy)
             self.assertIn('v_allele', out)
             self.assertIn('j_allele', out)

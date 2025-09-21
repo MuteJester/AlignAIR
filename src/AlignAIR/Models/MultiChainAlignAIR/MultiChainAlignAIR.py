@@ -851,26 +851,15 @@ class MultiChainAlignAIR(Model):
         }
 
     def save_pretrained(self, bundle_dir: Union[str, os.PathLike], training_meta: Optional[TrainingMeta] = None,
-                        export_saved_model: bool = False,
                         saved_model_subdir: str = 'saved_model',
                         include_logits_in_saved_model: bool = False):
-        """Save a versioned multi-chain bundle (weights + config + dataconfig + meta)."""
+        """Save a versioned multi-chain bundle (SavedModel + config + dataconfig + meta)."""
         bundle_path = Path(bundle_dir)
         # Build model if necessary
         if not self.built:
             dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.float32)}
             _ = self(dummy, training=False)
-        weights_path = bundle_path / 'weights.h5'
-        weights_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_weights = bundle_path / 'weights.weights.h5'
-        self.save_weights(str(tmp_weights))
-        try:
-            if weights_path.exists():
-                weights_path.unlink()
-            tmp_weights.rename(weights_path)
-        except Exception:
-            import shutil
-            shutil.copyfile(tmp_weights, weights_path)
+        bundle_path.mkdir(parents=True, exist_ok=True)
 
         cfg = ModelBundleConfig(**self.serialization_config())
         # attach tf version
@@ -888,31 +877,31 @@ class MultiChainAlignAIR(Model):
                 final_loss=None,
                 metrics_summary={},
             )
-        save_bundle(bundle_path, cfg, self.dataconfigs, weights_path, training_meta)
-        if export_saved_model:
-            self.export_saved_model(bundle_path / saved_model_subdir, include_logits=include_logits_in_saved_model)
+        # Write bundle metadata first (config, dataconfig, training_meta); fingerprint will be overwritten after export
+        save_bundle(bundle_path, cfg, self.dataconfigs, training_meta)
+        # Always export SavedModel for robust deployment
+        self.export_saved_model(bundle_path / saved_model_subdir, include_logits=include_logits_in_saved_model)
+        # Recompute and persist fingerprint to include SavedModel assets
+        try:
+            from AlignAIR.Serialization.validators import compute_fingerprint as _cfp
+            (bundle_path / "fingerprint.txt").write_text(_cfp(bundle_path))
+        except Exception:
+            pass
         logging.getLogger(__name__).info("Saved multi-chain pretrained bundle to %s", bundle_path)
 
     @classmethod
     def from_pretrained(cls, bundle_dir: Union[str, os.PathLike]):
-        """Load a multi-chain model from a versioned bundle produced by save_pretrained."""
+        """Load a multi-chain model from a SavedModel-first bundle. H5 is no longer supported."""
         bundle_path = Path(bundle_dir)
         cfg, dataconfigs_obj, _meta = load_bundle(bundle_path)
-        model = cls(
-            max_seq_length=cfg.max_seq_length,
-            dataconfigs=dataconfigs_obj,
-            v_allele_latent_size=cfg.v_allele_latent_size,
-            d_allele_latent_size=cfg.d_allele_latent_size,
-            j_allele_latent_size=cfg.j_allele_latent_size,
-        )
-        dummy = {"tokenized_sequence": tf.zeros((1, cfg.max_seq_length), dtype=tf.float32)}
-        _ = model(dummy, training=False)
-        # Load by name and skip mismatches to ignore non-architectural layers (metrics, etc.)
-        _status = model.load_weights(str(bundle_path / 'weights.h5'), by_name=True, skip_mismatch=True)
-        if hasattr(_status, 'expect_partial'):
-            _status.expect_partial()
-        logging.getLogger(__name__).info("Loaded multi-chain pretrained bundle from %s", bundle_path)
-        return model
+        sm_dir = bundle_path / 'saved_model'
+        if sm_dir.exists():
+            from AlignAIR.Serialization.saved_model_wrapper import SavedModelInferenceWrapper
+            wrapper = SavedModelInferenceWrapper(saved_model_dir=sm_dir, bundle_dir=bundle_path, config=cfg.__dict__ if hasattr(cfg, '__dict__') else None)
+            wrapper.dataconfigs = dataconfigs_obj
+            logging.getLogger(__name__).info("Loaded multi-chain SavedModel from %s", sm_dir)
+            return wrapper
+        raise FileNotFoundError(f"SavedModel not found in bundle: {sm_dir}. This AlignAIRR version requires SavedModel-first bundles.")
 
     # ---------------- SavedModel Export (Step 8) -----------------
     def export_saved_model(self, export_dir: Union[str, os.PathLike], include_logits: bool = False):
@@ -931,18 +920,33 @@ class MultiChainAlignAIR(Model):
             dummy = {"tokenized_sequence": tf.zeros((1, self.max_seq_length), dtype=tf.int32)}
             _ = self(dummy, training=False)
 
-        def serving_fn(tokenized_sequence):  # pragma: no cover
-            outputs = self({'tokenized_sequence': tokenized_sequence}, training=False)
-            allowed_keys = [
-                'v_start', 'v_end', 'j_start', 'j_end',
-                'v_allele', 'j_allele', 'mutation_rate', 'indel_count', 'productive', 'chain_type'
-            ]
-            if self.has_d_gene:
-                allowed_keys += ['d_start', 'd_end', 'd_allele']
-            if include_logits:
-                allowed_keys += [k for k in outputs.keys() if k.endswith('_logits')]
-            pruned = {k: tf.identity(outputs[k], name=k) for k in allowed_keys if k in outputs}
-            return pruned
+        class _InferenceModule(tf.Module):  # pragma: no cover - export
+            def __init__(self, model, max_len: int, include_logits_flag: bool):
+                super().__init__()
+                self.model = model
+                self.L = int(max_len)
+                self.include_logits_flag = bool(include_logits_flag)
 
-        tf.saved_model.save(self, str(export_path), signatures={'serving_default': serving_fn})
+                def _serving(tokenized_sequence):
+                    x = tf.convert_to_tensor(tokenized_sequence)
+                    if x.dtype not in (tf.int32, tf.int64):
+                        x = tf.cast(x, tf.int32)
+                    outputs = self.model({'tokenized_sequence': x}, training=False)
+                    allowed_keys = [
+                        'v_start', 'v_end', 'j_start', 'j_end',
+                        'v_allele', 'j_allele', 'mutation_rate', 'indel_count', 'productive', 'chain_type'
+                    ]
+                    if 'd_start' in outputs:
+                        allowed_keys += ['d_start', 'd_end', 'd_allele']
+                    if self.include_logits_flag:
+                        allowed_keys += [k for k in outputs.keys() if k.endswith('_logits')]
+                    return {k: tf.identity(outputs[k], name=k) for k in allowed_keys if k in outputs}
+
+                self.serving_default = tf.function(
+                    _serving,
+                    input_signature=[tf.TensorSpec([None, self.L], tf.int32, 'tokenized_sequence')]
+                )
+
+        module = _InferenceModule(self, self.max_seq_length, include_logits)
+        tf.saved_model.save(module, str(export_path), signatures={'serving_default': module.serving_default})
         logging.getLogger(__name__).info("Exported multi-chain SavedModel to %s", export_path)

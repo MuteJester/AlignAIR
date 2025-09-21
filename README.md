@@ -23,20 +23,14 @@
 docker pull thomask90/alignair:latest
 ```
 
-**Step 2: Start container with your data volumes**
+**Step 2: Run AlignAIR (one-shot) with your data volumes**
 ```bash
-# Mount your input data and output directories
+# Example: Heavy Chain analysis with extended model
 docker run -it --rm \
   -v /path/to/your/input/data:/data \
   -v /path/to/your/output/downloads:/downloads \
-  thomask90/alignair:latest
-```
-
-**Step 3: Run AlignAIR inside the container**
-```bash
-# Example: Heavy Chain analysis with extended model
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGH_S5F_576_EXTENDED \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGH_S5F_576_EXTENDED \
   --genairr-dataconfig=HUMAN_IGH_EXTENDED \
   --sequences=/data/your_sequences.csv \
   --save-path=/downloads/
@@ -133,7 +127,7 @@ It is mainly recommended for developers, contributors and advanced users.
 
 ```bash
 python app.py run \
-    --model-checkpoint=/app/pretrained_models/IGH_S5F_576 \
+  --model-dir=/app/pretrained_models/IGH_S5F_576 \
     --genairr-dataconfig=HUMAN_IGH_OGRDB \
     --sequences=/data/input/sequences.csv \
     --save-path=/data/output
@@ -192,15 +186,15 @@ multi_model = MultiChainAlignAIR.from_pretrained('path/to/LightChains_bundle')
 ```
 
 ### Using a Bundle with the CLI
-Instead of `--model_checkpoint` you can now supply:
+Instead of `--model-checkpoint` you can now supply:
 ```bash
 python app.py run \
-  --model_dir=/path/to/HeavyExample_bundle \
+  --model-dir=/path/to/HeavyExample_bundle \
   --genairr-dataconfig=HUMAN_IGH_OGRDB \
   --sequences=/data/input.csv \
   --save-path=/data/out
 ```
-If both `--model_dir` and `--model_checkpoint` are provided, `--model_dir` takes precedence.
+If both `--model-dir` and `--model-checkpoint` are provided, `--model-dir` takes precedence.
 
 ### Integrity Verification
 Every bundle includes a `fingerprint.txt` (SHA256). If files are altered, fingerprint validation during `from_pretrained` will raise an error.
@@ -258,8 +252,11 @@ Set `include_logits_in_saved_model=True` (or `include_logits=True` for direct ex
 
 **Heavy Chain Analysis (Extended Model):**
 ```bash
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGH_S5F_576_EXTENDED \
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGH_S5F_576_EXTENDED \
   --genairr-dataconfig=HUMAN_IGH_EXTENDED \
   --sequences=/data/heavy_sequences.csv \
   --save-path=/downloads/ \
@@ -270,8 +267,11 @@ python app.py run \
 
 **Light Chain Multi-Chain Analysis (Lambda + Kappa with Chain Type Prediction):**
 ```bash
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGL_S5F_576 \
   --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
   --sequences=/data/mixed_light_sequences.csv \
   --save-path=/downloads/ \
@@ -282,8 +282,11 @@ python app.py run \
 **Single Light Chain Analysis:**
 ```bash
 # Lambda only (using multi-chain model)
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGL_S5F_576 \
   --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
   --sequences=/data/lambda_sequences.csv \
   --save-path=/downloads/ \
@@ -291,8 +294,11 @@ python app.py run \
   --fix-orientation
 
 # Kappa only (using multi-chain model)  
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGL_S5F_576 \
   --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
   --sequences=/data/kappa_sequences.csv \
   --save-path=/downloads/ \
@@ -303,8 +309,11 @@ python app.py run \
 
 **T-Cell Receptor Beta Chain:**
 ```bash
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/TCRB_Uniform_576 \
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/TCRB_Uniform_576 \
   --genairr-dataconfig=HUMAN_TCRB_IMGT \
   --sequences=/data/tcr_sequences.csv \
   --save-path=/downloads/
@@ -337,7 +346,7 @@ AlignAIR v2.0 introduces a unified architecture that dynamically adapts to diffe
 
 The Docker container ships with optimized models for common use cases:
 
-| Model | Architecture | Supported Configs | Checkpoint Path | Use Case |
+| Model | Architecture | Supported Configs | Model Path | Use Case |
 |-------|-------------|-------------------|-----------------|----------|
 | **Heavy Chain Extended** | SingleChainAlignAIR | `HUMAN_IGH_EXTENDED` | `/app/pretrained_models/IGH_S5F_576_EXTENDED` | Enhanced heavy chain with extended allele coverage |
 | **Heavy Chain Standard** | SingleChainAlignAIR | `HUMAN_IGH_OGRDB` | `/app/pretrained_models/IGH_S5F_576` | Standard heavy chain analysis |
@@ -352,7 +361,7 @@ You can use custom GenAIRR dataconfigs by providing a path to a pickled DataConf
 
 ```bash
 python app.py run \
-  --model-checkpoint=path/to/custom/model \
+  --model-dir=path/to/custom/model \
   --genairr-dataconfig=/path/to/custom_dataconfig.pkl \
   --sequences=input.csv \
   --save-path=output/
@@ -361,7 +370,7 @@ python app.py run \
 For multi-chain custom configs:
 ```bash
 python app.py run \
-  --model-checkpoint=path/to/multichain/model \
+  --model-dir=path/to/multichain/model \
   --genairr-dataconfig=/path/to/config1.pkl,/path/to/config2.pkl \
   --sequences=input.csv \
   --save-path=output/
@@ -382,27 +391,38 @@ docker pull thomask90/alignair:latest
 - Ensure your input sequences are in CSV format with a `sequence` column
 - Create directories for input data and output results
 
-**3. Start the container with volume mounts**
+**3. Run AlignAIR with volume mounts (entrypoint style)**
 ```bash
 # Windows example:
 docker run -it --rm \
   -v C:/path/to/your/data:/data \
   -v C:/path/to/your/downloads:/downloads \
-  thomask90/alignair:latest
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGH_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGH_OGRDB \
+  --sequences=/data/your_sequences.csv \
+  --save-path=/downloads/
 
 # Linux/Mac example:
 docker run -it --rm \
   -v /path/to/your/data:/data \
   -v /path/to/your/downloads:/downloads \
-  thomask90/alignair:latest
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGH_S5F_576 \
+  --genairr-dataconfig=HUMAN_IGH_OGRDB \
+  --sequences=/data/your_sequences.csv \
+  --save-path=/downloads/
 ```
 
-**4. Run AlignAIR with the appropriate model**
+**4. Model-specific examples**
 
 #### Heavy Chain Analysis (Extended Model)
 ```bash
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGH_S5F_576_EXTENDED \
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGH_S5F_576_EXTENDED \
   --genairr-dataconfig=HUMAN_IGH_EXTENDED \
   --sequences=/data/sample_HeavyChain_dataset.csv \
   --save-path=/downloads/
@@ -410,8 +430,11 @@ python app.py run \
 
 #### Light Chain Multi-Chain Analysis (Lambda + Kappa)
 ```bash
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGL_S5F_576 \
   --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
   --sequences=/data/sample_LightChain_dataset.csv \
   --save-path=/downloads/
@@ -421,8 +444,11 @@ python app.py run \
 #### Single Light Chain Analysis
 ```bash
 # Lambda or Kappa only (using multi-chain model with both dataconfigs)
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/IGL_S5F_576 \
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/IGL_S5F_576 \
   --genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB \
   --sequences=/data/light_chain_sequences.csv \
   --save-path=/downloads/
@@ -431,8 +457,11 @@ python app.py run \
 
 #### T-Cell Receptor Beta Chain
 ```bash
-python app.py run \
-  --model-checkpoint=/app/pretrained_models/TCRB_Uniform_576 \
+docker run -it --rm \
+  -v /path/to/your/data:/data \
+  -v /path/to/your/downloads:/downloads \
+  thomask90/alignair:latest run \
+  --model-dir=/app/pretrained_models/TCRB_Uniform_576 \
   --genairr-dataconfig=HUMAN_TCRB_IMGT \
   --sequences=/data/tcr_sequences.csv \
   --save-path=/downloads/
@@ -448,7 +477,7 @@ python app.py run \
 ### Custom DataConfig Example
 ```bash
 python app.py run \
-  --model-checkpoint=/path/to/your/custom/model \
+  --model-dir=/path/to/your/custom/model \
   --genairr-dataconfig=/data/your_custom_dataconfig.pkl \
   --sequences=/data/sequences.csv \
   --save-path=/downloads/
@@ -464,8 +493,8 @@ Your results will be saved in the mounted `/downloads` directory and can be acce
 ### Core Parameters
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `--model-checkpoint` | Path to model weights | Required |
-| `--chain-type` | Specify heavy, light, or tcrb | Required |
+| `--model-dir` | Path to model bundle directory (preferred) or legacy checkpoint directory | Required |
+| `--genairr-dataconfig` | Built-in name(s) or path(s) to pickled DataConfig(s); comma-separated for multi-chain | Required |
 | `--sequences` | Input file path (CSV/TSV/FASTA) | Required |
 | `--save-path` | Output directory | Required |
 
@@ -490,7 +519,7 @@ Your results will be saved in the mounted `/downloads` directory and can be acce
 | `--fix-orientation` | Auto-correct orientations | `true` |
 | `--translate-to-asc` | Output ASC allele names | `false` |
 
-For complete parameter list: `python app.py run --help`
+For complete parameter list: `python app.py run --help` (Docker: `docker run thomask90/alignair:latest run --help`)
 
 ---
 

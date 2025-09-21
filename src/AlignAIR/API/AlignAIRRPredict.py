@@ -1,7 +1,8 @@
 import argparse
 import logging
 import yaml
-import questionary
+import os
+import sys
 import tensorflow as tf
 from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPercentageThresholdApplicationStep, \
     ConfidenceMethodThresholdApplicationStep
@@ -30,36 +31,38 @@ class Args:
 
 def parse_arguments():
     """
-        Parse command line arguments.
+        Parse command line arguments for CLI mode.
 
         Returns:
             argparse.Namespace: Parsed command line arguments.
     """
     parser = argparse.ArgumentParser(description='AlignAIR Model Prediction')
-    parser.add_argument('--mode', type=str, default='cli', choices=['cli', 'yaml'],
-                        help='Mode of input: cli, yaml, interactive')
-    parser.add_argument('--genairr_dataconfig', type=str, default='HUMAN_IGH_OGRDB', help='A name of a builtin GenAIRR data config, or a path to a custom data config pkl file, in the case of a multi chain model this should be a comma separated list of configs, e.g. "HUMAN_IGH_OGRDB,HUMAN_TCRB_IMGT", can also be paths to custom data config pkl files')
-    parser.add_argument('--model_checkpoint', type=str, help='Path to saved AlignAIR weights or bundle (legacy).')
-    parser.add_argument('--model_dir', type=str, help='Path to a pretrained model bundle directory (contains config.json). Overrides --model_checkpoint if provided.')
-    parser.add_argument('--save_path', type=str, help='Where to save the alignment',required=True)
-    parser.add_argument('--sequences', type=str, help='Path to csv/tsv/fasta file with sequences in a column called "sequence"',required=True)
-    parser.add_argument('--max_input_size', type=int, default=576, help='Maximum model input size, NOTE! this is with respect to the dimensions the model was trained on, do not increase for pretrained models')
-    parser.add_argument('--batch_size', type=int, default=2048, help='The Batch Size for The Model Prediction')
-    parser.add_argument('--config_file', type=str, help='Path to YAML configuration file')
-    parser.add_argument('--v_allele_threshold', type=float, default=0.1, help='Percentage for V allele assignment ')
-    parser.add_argument('--d_allele_threshold', type=float, default=0.1, help='Percentage for D allele assignment selection')
-    parser.add_argument('--j_allele_threshold', type=float, default=0.1, help='Percentage for J allele assignment selection')
-    parser.add_argument('--v_cap', type=int, default=3, help='Cap for V allele calls')
-    parser.add_argument('--d_cap', type=int, default=3, help='Cap for D allele calls')
-    parser.add_argument('--j_cap', type=int, default=3, help='Cap for J allele calls')
-    parser.add_argument('--translate_to_asc', action='store_true', help='Translate names back to ASCs names from IMGT')
-    parser.add_argument('--fix_orientation', type=bool, default=True, help='Adds a preprocessing steps that tests and fixes the DNA orientation, in case it is reversed, complement or reversed and complement')
-    parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None, help='A path to a custom orientation model created for a custom reference')
-    parser.add_argument('--custom_genotype', type=str, default=None, help='Path to a custom genotype yaml file')
-    parser.add_argument('--save_predict_object', action='store_true', help='Save the predict object (Warning this can be large)')
-    parser.add_argument('--airr_format', action='store_true', help='Adds a step to format the results to AIRR format')
-    # parameters for the model yaml, if specified this will change the loading of the model to a finetuned one with differnt head sizes
-    parser.add_argument('--finetuned_model_params_yaml', type=str, default=None, help='Path to a yaml file with the parameters of a fine tuned model (new head sizes and latent sizes)')
+    # Bundle is the single source of truth (contains weights, config, dataconfig, input size)
+    parser.add_argument('--model_dir', type=str, required=True,
+                        help='Path to a pretrained model bundle directory (contains config.json, weights, dataconfig).')
+    parser.add_argument('--save_path', type=str, required=True,
+                        help='Directory where the alignment outputs will be saved.')
+    parser.add_argument('--sequences', type=str, required=True,
+                        help='Path to csv/tsv/fasta file with sequences in a column called "sequence"')
+    parser.add_argument('--batch_size', type=int, default=2048, help='Batch size for prediction (default: 2048).')
+    parser.add_argument('--v_allele_threshold', type=float, default=0.1, help='Percentage for V allele assignment (default: 0.1).')
+    parser.add_argument('--d_allele_threshold', type=float, default=0.1, help='Percentage for D allele assignment (default: 0.1).')
+    parser.add_argument('--j_allele_threshold', type=float, default=0.1, help='Percentage for J allele assignment (default: 0.1).')
+    parser.add_argument('--v_cap', type=int, default=3, help='Cap for V allele calls (default: 3).')
+    parser.add_argument('--d_cap', type=int, default=3, help='Cap for D allele calls (default: 3).')
+    parser.add_argument('--j_cap', type=int, default=3, help='Cap for J allele calls (default: 3).')
+    parser.add_argument('--translate_to_asc', action='store_true', help='Translate names back to ASCs names from IMGT.')
+    # Safer boolean pair for fix_orientation (default True), allow disabling with --no_fix_orientation
+    parser.add_argument('--fix_orientation', dest='fix_orientation', action='store_true', default=True,
+                        help='Enable orientation check and fix (default: enabled).')
+    parser.add_argument('--no_fix_orientation', dest='fix_orientation', action='store_false',
+                        help='Disable orientation check and fix.')
+    parser.add_argument('--custom_orientation_pipeline_path', type=str, default=None,
+                        help='Path to a custom orientation model created for a custom reference.')
+    parser.add_argument('--custom_genotype', type=str, default=None, help='Path to a custom genotype YAML file.')
+    parser.add_argument('--save_predict_object', action='store_true', help='Save the predict object (warning: can be large).')
+    parser.add_argument('--airr_format', action='store_true', help='Format results to AIRR standard.')
+    # NOTE: fine-tune head sizes via training and save a new bundle. Deprecated: --finetuned_model_params_yaml
 
     return parser.parse_args()
 
@@ -88,18 +91,6 @@ def run_pipeline(predict_object, steps):
     for step in steps:
         predict_object = step.execute(predict_object)
 
-def process_args (args):
-    config = None
-
-    if args.mode == 'cli':
-        config = args
-    elif args.mode == 'yaml':
-        if not args.config_file:
-            raise ValueError("YAML mode requires --config_file argument")
-        config = load_yaml_config(args.config_file)
-
-    return config
-
 def main():
     """
         Main function to execute the AlignAIR prediction pipeline.
@@ -108,50 +99,69 @@ def main():
     logger = logging.getLogger('PipelineLogger')
     # mount logger to all step objects
     Step.set_logger(logger)
-    # Parse command line arguments
-    args = parse_arguments()
-    # Runtime validation & normalization for model path arguments
-    if getattr(args, 'model_dir', None):
-        args.model_checkpoint = args.model_dir  # unify downstream usage
-    if not getattr(args, 'model_checkpoint', None):
-        raise SystemExit("Error: You must provide either --model_dir or --model_checkpoint")
-    # Process arguments based on mode
-    config = process_args(args)
 
-    predict_object = PredictObject(config, logger=logger)
+    try:
+        # --- Automatic mode detection: YAML file as sole argument ---
+        if len(sys.argv) == 2 and (sys.argv[1].endswith('.yaml') or sys.argv[1].endswith('.yml')):
+            config_path = sys.argv[1]
+            logger.info(f"YAML configuration detected: {config_path}")
+            if not os.path.exists(config_path):
+                raise FileNotFoundError(f"Configuration file not found: {config_path}")
+            config = load_yaml_config(config_path)
+        else:
+            # CLI mode
+            args = parse_arguments()
+            config = args
 
-    steps = [
-        ConfigLoadStep("Load Config"),
-        FileNameExtractionStep('Get File Name'),
-        FileSampleCounterStep('Count Samples in File'),
-        ModelLoadingStep('Load Models'),
-        BatchProcessingStep("Process and Predict Batches"),
-        CleanAndArrangeStep("Clean Up Raw Prediction"),
-        GenotypeBasedLikelihoodAdjustmentStep("Adjust Likelihoods for Genotype"),
-        SegmentCorrectionStep("Correct Segmentations"),
-        MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments"),
-        AlleleAlignmentStep("Align Predicted Segments with Germline")
-    ]
-    
-    if config.airr_format:
-        steps.append(AIRRFinalizationStep("Finalize Results"))
-    else:
-        steps.append(TranslationStep("Translate ASC's to IMGT Alleles"))
-        steps.append(FinalizationStep("Finalize Results"))
+        # --- Basic validation and setup ---
+        model_dir = getattr(config, 'model_dir', None)
+        sequences_path = getattr(config, 'sequences', None)
+        save_path = getattr(config, 'save_path', None)
 
-    run_pipeline(predict_object, steps)
-    logger.info("Pipeline execution complete.")
+        if not model_dir or not os.path.isdir(model_dir):
+            raise FileNotFoundError(f"Model bundle directory not found or not specified: {model_dir}")
+        if not sequences_path or not os.path.exists(sequences_path):
+            raise FileNotFoundError(f"Sequences file not found or not specified: {sequences_path}")
+        if not save_path:
+            raise ValueError("--save_path must be provided")
+        os.makedirs(save_path, exist_ok=True)
 
-    if config.save_predict_object:
-        save_path = predict_object.script_arguments.save_path
-        file_name = predict_object.file_info.file_name
+        predict_object = PredictObject(config, logger=logger)
 
-        path = f"{save_path}{file_name}_alignair_results_predictObject.pkl"
-        logger.info('Detaching model from predict object before saving')
-        predict_object.model = None
-        predict_object.save(path)
+        steps = [
+            ConfigLoadStep("Load Config"),
+            FileNameExtractionStep('Get File Name'),
+            FileSampleCounterStep('Count Samples in File'),
+            ModelLoadingStep('Load Models'),
+            BatchProcessingStep("Process and Predict Batches"),
+            CleanAndArrangeStep("Clean Up Raw Prediction"),
+            GenotypeBasedLikelihoodAdjustmentStep("Adjust Likelihoods for Genotype"),
+            SegmentCorrectionStep("Correct Segmentations"),
+            MaxLikelihoodPercentageThresholdApplicationStep("Apply Max Likelihood Threshold to Distill Assignments"),
+            AlleleAlignmentStep("Align Predicted Segments with Germline")
+        ]
 
-        logger.info("Predict Object Saved At: {}".format(path))
+        if getattr(config, 'airr_format', False):
+            steps.append(AIRRFinalizationStep("Finalize Results"))
+        else:
+            steps.append(TranslationStep("Translate ASC's to IMGT Alleles"))
+            steps.append(FinalizationStep("Finalize Results"))
+
+        run_pipeline(predict_object, steps)
+        logger.info("Pipeline execution complete.")
+
+        if getattr(config, 'save_predict_object', False):
+            save_path = predict_object.script_arguments.save_path
+            file_name = predict_object.file_info.file_name
+            path = os.path.join(save_path, f"{file_name}_alignair_results_predictObject.pkl")
+            logger.info('Detaching model from predict object before saving')
+            predict_object.model = None
+            predict_object.save(path)
+            logger.info("Predict Object Saved At: {}".format(path))
+
+    except Exception as e:
+        logger.error(f"Error during prediction pipeline: {e}")
+        raise
 
 
 if __name__ == '__main__':

@@ -25,6 +25,7 @@ from AlignAIR.Preprocessing.Steps.file_steps import FileNameExtractionStep, File
 from AlignAIR.Preprocessing.Steps.model_loading_steps import ModelLoadingStep
 from AlignAIR.PostProcessing.Steps.clean_up_steps import CleanAndArrangeStep
 from AlignAIR.PostProcessing.Steps.segmentation_correction_steps import SegmentCorrectionStep
+from AlignAIR.PostProcessing.Steps.correct_likelihood_for_genotype_step import GenotypeBasedLikelihoodAdjustmentStep
 from AlignAIR.PostProcessing.Steps.allele_threshold_step import MaxLikelihoodPercentageThresholdApplicationStep
 from AlignAIR.PostProcessing.Steps.translate_to_imgt_step import TranslationStep
 from AlignAIR.PostProcessing.Steps.germline_alignment_steps import AlleleAlignmentStep
@@ -119,6 +120,7 @@ def _build_steps(airr: bool):
         ModelLoadingStep("Load Models"),
         BatchProcessingStep("Predict Batches"),
         CleanAndArrangeStep("Clean Raw Predictions"),
+        GenotypeBasedLikelihoodAdjustmentStep("Adjust Likelihoods for Genotype"),
         SegmentCorrectionStep("Correct Segments"),
         MaxLikelihoodPercentageThresholdApplicationStep("Apply Thresholds"),
         AlleleAlignmentStep("Align With Germline"),
@@ -156,13 +158,21 @@ def doctor():
 def run(
     # General
     config_file: Optional[pathlib.Path] = typer.Option(None, help="YAML with parameters (flags override)"),
+    model_dir: Optional[str] = typer.Option(None, help="Path to a pretrained bundle directory (preferred). If provided, overrides --model-checkpoint."),
     model_checkpoint: Optional[str] = typer.Option(None, help="Path to saved weights"),
     save_path: Optional[str] = typer.Option(None, help="Where to write alignment output"),
     sequences: Optional[str] = typer.Option(None, help="CSV/TSV/FASTA containing sequences ('sequence' column). For multi-chain analysis, use comma-separated paths."),
-    genairr_dataconfig: Optional[str] = typer.Option(None, help="GenAIRR DataConfig identifier(s). Single: 'HUMAN_IGH_OGRDB'. Multi-chain: 'HUMAN_IGH_OGRDB,HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB'. Available: HUMAN_IGH_OGRDB, HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB, HUMAN_TCRB_IMGT"),
+    genairr_dataconfig: Optional[str] = typer.Option(
+        None,
+        help=(
+            "GenAIRR DataConfig identifier(s). "
+            "Single: 'HUMAN_IGH_OGRDB' (or 'HUMAN_IGH_EXTENDED'). "
+            "Multi-chain: comma-separated (e.g. 'HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB'). "
+            "Available: HUMAN_IGH_OGRDB, HUMAN_IGH_EXTENDED, HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB, HUMAN_TCRB_IMGT"
+        ),
+    ),
     # Performance
     batch_size: Optional[int] = typer.Option(None),
-    max_input_size: Optional[int] = typer.Option(None),
     # Thresholds
     v_allele_threshold: Optional[float] = typer.Option(None),
     d_allele_threshold: Optional[float] = typer.Option(None),
@@ -174,15 +184,9 @@ def run(
     translate_to_asc: bool = typer.Option(False),
     airr_format: bool = typer.Option(False),
     fix_orientation: bool = typer.Option(True),
-    # Legacy support (deprecated - use genairr_dataconfig instead)
-    chain_type: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead. heavy / light"),
-    lambda_data_config: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead"),
-    kappa_data_config: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead"),
-    heavy_data_config: Optional[str] = typer.Option(None, help="[DEPRECATED] Use genairr_dataconfig instead"),
     # Misc paths
     custom_orientation_pipeline_path: Optional[str] = typer.Option(None),
     custom_genotype: Optional[str] = typer.Option(None),
-    finetuned_model_params_yaml: Optional[str] = typer.Option(None),
     save_predict_object: bool = typer.Option(False),
 ):
     """Run the AlignAIR v2.0 pipeline with unified single/multi-chain architecture."""
@@ -194,29 +198,23 @@ def run(
         cfg_dict.update(yaml.safe_load(config_file.read_text()))
 
     defaults = {
+        "model_dir": None,
         "model_checkpoint": None,
         "save_path": None,
         "sequences": None,
         "genairr_dataconfig": "HUMAN_IGH_OGRDB",  # Default single heavy chain
         "batch_size": 2048,
-        "max_input_size": 576,
-        "v_allele_threshold": 0.1,
-        "d_allele_threshold": 0.1,
-        "j_allele_threshold": 0.1,
+    "v_allele_threshold": 0.75,
+    "d_allele_threshold": 0.30,
+    "j_allele_threshold": 0.80,
         "v_cap": 3,
         "d_cap": 3,
         "j_cap": 3,
         "translate_to_asc": False,
         "airr_format": False,
         "fix_orientation": True,
-        # Legacy support - deprecated in v2.0 (will be converted to genairr_dataconfig)
-        "chain_type": None,
-        "lambda_data_config": "D",
-        "kappa_data_config": "D", 
-        "heavy_data_config": "D",
         "custom_orientation_pipeline_path": None,
         "custom_genotype": None,
-        "finetuned_model_params_yaml": None,
         "save_predict_object": False,
     }
 
@@ -229,6 +227,25 @@ def run(
     # Merge: defaults < config_file < CLI overrides
     cfg_dict = {**defaults, **cfg_dict, **overrides}
 
+    # Prefer bundle directory over legacy checkpoint
+    if not cfg_dict.get("model_dir") and not cfg_dict.get("model_checkpoint"):
+        raise typer.BadParameter("One of --model-dir (preferred) or --model-checkpoint must be provided")
+    if cfg_dict.get("model_dir"):
+        # Map to model_checkpoint for ModelLoadingStep compatibility
+        cfg_dict["model_checkpoint"] = cfg_dict["model_dir"]
+        # Confirm bundle structure if possible
+        try:
+            p = pathlib.Path(cfg_dict["model_dir"]).resolve()
+            if p.is_dir() and (p / "config.json").exists():
+                console.print(f"[green]📦 Detected pretrained bundle:[/green] {p}")
+                # When loading from a bundle, the DataConfig inside the bundle is the source of truth
+                if cfg_dict.get("genairr_dataconfig"):
+                    console.print("[yellow]⚠️  Ignoring --genairr_dataconfig: bundle provides its own DataConfig.[/yellow]")
+            else:
+                console.print(f"[yellow]⚠️  --model-dir provided but no config.json found at:[/yellow] {p} — falling back to legacy loader")
+        except Exception:
+            pass
+
     # v2.0 validation and warnings
     _validate_v2_config(cfg_dict)
 
@@ -240,28 +257,11 @@ def run(
 
 
 def _validate_v2_config(cfg_dict):
-    """Validate v2.0 configuration and show deprecation warnings."""
-    # Show deprecation warnings for legacy parameters
-    legacy_params = {
-        'chain_type': 'genairr_dataconfig',
-        'heavy_data_config': 'genairr_dataconfig', 
-        'kappa_data_config': 'genairr_dataconfig',
-        'lambda_data_config': 'genairr_dataconfig'
-    }
-    
-    for old_param, new_param in legacy_params.items():
-        if cfg_dict.get(old_param) and cfg_dict[old_param] not in [None, "D"]:
-            warnings.warn(
-                f"Parameter '{old_param}' is deprecated in AlignAIR v2.0. "
-                f"Use '{new_param}' instead for better performance and multi-chain support.",
-                DeprecationWarning,
-                stacklevel=3
-            )
-    
+    """Validate configuration: check known built-in GenAIRR dataconfig names and print helpful info."""
     # Validate genairr_dataconfig
     valid_configs = {
-        'HUMAN_IGH_OGRDB', 'HUMAN_IGK_OGRDB', 
-        'HUMAN_IGL_OGRDB', 'HUMAN_TCRB_IMGT'
+        'HUMAN_IGH_OGRDB', 'HUMAN_IGH_EXTENDED',
+        'HUMAN_IGK_OGRDB', 'HUMAN_IGL_OGRDB', 'HUMAN_TCRB_IMGT'
     }
     
     genairr_config = cfg_dict.get('genairr_dataconfig', '')

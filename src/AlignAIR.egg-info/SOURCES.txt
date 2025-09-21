@@ -1,5 +1,8 @@
 LICENSE
+MANIFEST.in
 README.md
+pyproject.toml
+requirements.txt
 setup.py
 src/AlignAIR/__init__.py
 src/AlignAIR.egg-info/PKG-INFO
@@ -11,13 +14,14 @@ src/AlignAIR.egg-info/top_level.txt
 src/AlignAIR/API/AlignAIRRPredict.py
 src/AlignAIR/API/GenerateStrictlyBalancedTrainDataset.py
 src/AlignAIR/API/GenerateTrainDataset.py
+src/AlignAIR/API/Make_Javascript_Format.py
 src/AlignAIR/API/ModifiedModel.py
 src/AlignAIR/API/ReplaceModelHeads.py
-src/AlignAIR/API/To_TF_JS.py
 src/AlignAIR/API/TrainModel.py
 src/AlignAIR/API/TrainModelFromScratch.py
 src/AlignAIR/API/__init__.py
 src/AlignAIR/Data/MultiChainDataset.py
+src/AlignAIR/Data/MultiDataConfigContainer.py
 src/AlignAIR/Data/PredictionDataset.py
 src/AlignAIR/Data/SingleChainDataset.py
 src/AlignAIR/Data/__init__.py
@@ -43,6 +47,8 @@ src/AlignAIR/Models/Layers/Layers.py
 src/AlignAIR/Models/Layers/__init__.py
 src/AlignAIR/Models/LightChain/LightChainAlignAIRR.py
 src/AlignAIR/Models/LightChain/__init__.py
+src/AlignAIR/Models/MultiChainAlignAIR/MultiChainAlignAIR.py
+src/AlignAIR/Models/MultiChainAlignAIR/__init__.py
 src/AlignAIR/Models/SingleChainAlignAIR/SingleChainAlignAIR.py
 src/AlignAIR/Models/SingleChainAlignAIR/__init__.py
 src/AlignAIR/Models/Utilities/__init__.py
@@ -76,6 +82,7 @@ src/AlignAIR/PostProcessing/OptimalAlleleThresholdSearch/find_threshold_step.py
 src/AlignAIR/PostProcessing/Steps/__init__.py
 src/AlignAIR/PostProcessing/Steps/airr_finalization_and_packaging_steps.py
 src/AlignAIR/PostProcessing/Steps/allele_threshold_step.py
+src/AlignAIR/PostProcessing/Steps/boundary_diagnostics_step.py
 src/AlignAIR/PostProcessing/Steps/clean_up_steps.py
 src/AlignAIR/PostProcessing/Steps/correct_likelihood_for_genotype_step.py
 src/AlignAIR/PostProcessing/Steps/finalization_and_packaging_steps.py
@@ -101,6 +108,7 @@ src/AlignAIR/Preprocessing/Steps/load_groundtruth_table_step.py
 src/AlignAIR/Preprocessing/Steps/model_loading_steps.py
 src/AlignAIR/PretrainedComponents/Human_IGH_HeavyChain_DNA_Orientation_Pipeline.pkl
 src/AlignAIR/PretrainedComponents/Human_IGH_LightChain_DNA_Orientation_Pipeline.pkl
+src/AlignAIR/PretrainedComponents/Human_TCRB_HeavyChain_DNA_Orientation_Pipeline.pkl
 src/AlignAIR/PretrainedComponents/__init__.py
 src/AlignAIR/Pytorch/Dataset.py
 src/AlignAIR/Pytorch/HeavyChainAlignAIR.py
@@ -109,6 +117,17 @@ src/AlignAIR/Pytorch/Layers.py
 src/AlignAIR/Pytorch/Loss.py
 src/AlignAIR/Pytorch/Trainer.py
 src/AlignAIR/Pytorch/__init__.py
+src/AlignAIR/Reports/__init__.py
+src/AlignAIR/Reports/evaluate_alignair_model.py
+src/AlignAIR/Reports/plots/__init__.py
+src/AlignAIR/Reports/plots/confidence_analysis.py
+src/AlignAIR/Reports/plots/enhanced_likelihoods.py
+src/AlignAIR/Reports/plots/error_analysis.py
+src/AlignAIR/Reports/plots/likelihoods.py
+src/AlignAIR/Reports/plots/performance_metrics.py
+src/AlignAIR/Reports/plots/report_generator.py
+src/AlignAIR/Reports/utils/__init__.py
+src/AlignAIR/Reports/utils/file_management.py
 src/AlignAIR/ResultFilter/Filters.py
 src/AlignAIR/ResultFilter/RedundantColumnLocator.py
 src/AlignAIR/ResultFilter/__init__.py
@@ -127,6 +146,7 @@ src/AlignAIR/Step/Step.py
 src/AlignAIR/Step/__init__.py
 src/AlignAIR/Trainers/Trainer.py
 src/AlignAIR/Trainers/__init__.py
+src/AlignAIR/Trainers/callbacks.py
 src/AlignAIR/Utilities/CustomModelParamsYaml.py
 src/AlignAIR/Utilities/GenotypeYamlParser.py
 src/AlignAIR/Utilities/__init__.py
@@ -135,6 +155,3 @@ src/AlignAIR/Utilities/file_processing.py
 src/AlignAIR/Utilities/gpu_utilities.py
 src/AlignAIR/Utilities/sequence_processing.py
 src/AlignAIR/Utilities/step_utilities.py
-tests/TestModule.py
-tests/Test_Suit_2.py
-tests/test_docker_cli.py

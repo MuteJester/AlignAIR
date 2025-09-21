@@ -24,7 +24,6 @@ def save_bundle(
     bundle_dir: Path,
     config: ModelBundleConfig,
     dataconfig_obj: Any,
-    weights_path: Path,
     training_meta: TrainingMeta,
     readme_text: str | None = None,
 ) -> None:
@@ -54,10 +53,8 @@ def save_bundle(
     with (bundle_dir / "dataconfig.pkl").open("wb") as f:
         pickle.dump(dataconfig_obj, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    # Copy / write weights.h5 (avoid reading large file into memory unnecessarily)
-    dest_weights = bundle_dir / "weights.h5"
-    if weights_path.resolve() != dest_weights.resolve():
-        dest_weights.write_bytes(weights_path.read_bytes())
+    # SavedModel is written by model.save_pretrained() into bundle_dir/saved_model
+    # This IO helper does not copy weights files anymore.
 
     # Training meta
     (bundle_dir / "training_meta.json").write_text(training_meta.to_json())

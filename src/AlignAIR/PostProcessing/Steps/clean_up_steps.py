@@ -88,6 +88,28 @@ class CleanAndArrangeStep(Step):
             output['d_start'] = d_start
             output['d_end'] = d_end
 
+        # Diagnostics: summarize allele likelihood distributions pre-threshold
+        try:
+            def _summarize(name: str, arr: np.ndarray):
+                # arr: (N, C)
+                if arr is None:
+                    return
+                n, c = arr.shape
+                row_max = np.max(arr, axis=1)
+                q25, q50, q75 = np.percentile(row_max, [25, 50, 75])
+                self.log(
+                    f"[Diag] {name}: shape=({n},{c}) | mean={arr.mean():.4f} std={arr.std():.4f} min={arr.min():.4f} max={arr.max():.4f} | "
+                    f"row_max mean={row_max.mean():.4f} std={row_max.std():.4f} min={row_max.min():.4f} q25={q25:.4f} med={q50:.4f} q75={q75:.4f} max={row_max.max():.4f}"
+                )
+
+            _summarize('V allele (pre-threshold)', v_allele)
+            _summarize('J allele (pre-threshold)', j_allele)
+            if has_d and d_allele is not None:
+                _summarize('D allele (pre-threshold)', d_allele)
+        except Exception as _diag_err:
+            # Keep pipeline resilient if diagnostics fail
+            self.log(f"[Diag] Pre-threshold summary skipped due to: {_diag_err}")
+
         if isinstance(dataconfig, MultiDataConfigContainer):
             if 'chain_type' in predictions[0]:
                 output['type_'] = np.vstack(extract_values('chain_type'))
@@ -99,5 +121,27 @@ class CleanAndArrangeStep(Step):
             predict_object.raw_predictions,
             predict_object.dataconfig
         )
+
+        # Diagnostics: summarize allele distributions prior to thresholding
+        try:
+            import numpy as _np
+            pp = predict_object.processed_predictions
+            def _summary(arr):
+                return {
+                    'shape': tuple(arr.shape),
+                    'mean': float(_np.nanmean(arr)),
+                    'std': float(_np.nanstd(arr)),
+                    'min': float(_np.nanmin(arr)),
+                    'max': float(_np.nanmax(arr)),
+                    'p25': float(_np.nanpercentile(arr, 25)),
+                    'p50': float(_np.nanpercentile(arr, 50)),
+                    'p75': float(_np.nanpercentile(arr, 75)),
+                }
+            v_sum = _summary(pp['v_allele']) if 'v_allele' in pp else None
+            j_sum = _summary(pp['j_allele']) if 'j_allele' in pp else None
+            d_sum = _summary(pp['d_allele']) if 'd_allele' in pp else None
+            self.log(f"Allele logits/sigmoids summary — V: {v_sum}; J: {j_sum}; D: {d_sum}")
+        except Exception as _diag_err:
+            self.log(f"Allele distribution diagnostics skipped due to error: {_diag_err}")
 
         return predict_object

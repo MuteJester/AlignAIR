@@ -161,12 +161,12 @@ class TestModule(unittest.TestCase):
 			model.save_pretrained(tmpdir)
 			reloaded = SingleChainAlignAIR.from_pretrained(tmpdir)
 			out_orig = model(dummy_input, training=False)
-			out_new = reloaded(dummy_input, training=False)
+			out_new = reloaded.predict(dummy_input)
 			self.assertIn('v_allele', out_new, 'Reloaded model missing v_allele head')
 			self.assertEqual(out_orig['v_allele'].shape, out_new['v_allele'].shape,
 							 'Output shape mismatch after reload')
 			self.assertTrue(
-				np.allclose(out_orig['v_allele'].numpy(), out_new['v_allele'].numpy(), atol=1e-5),
+				np.allclose(out_orig['v_allele'].numpy(), out_new['v_allele'], atol=1e-5),
 				'Model outputs diverged after serialization round-trip'
 			)
 
@@ -184,7 +184,7 @@ class TestModule(unittest.TestCase):
 		dummy = {"tokenized_sequence": np.zeros((1, 576), dtype=np.int32)}
 		_ = model(dummy, training=False)
 		with tempfile.TemporaryDirectory() as tmpdir:
-			model.save_pretrained(tmpdir, export_saved_model=True)
+			model.save_pretrained(tmpdir)
 			sm_dir = os.path.join(tmpdir, 'saved_model')
 			self.assertTrue(os.path.isdir(sm_dir), 'SavedModel directory missing for single chain')
 			loaded = tf.saved_model.load(sm_dir)
@@ -263,10 +263,11 @@ class TestModule(unittest.TestCase):
 		with tempfile.TemporaryDirectory() as tmpdir:
 			model.save_pretrained(tmpdir)
 			expected = [
-				'config.json', 'dataconfig.pkl', 'weights.h5', 'training_meta.json', 'VERSION', 'README.md', 'fingerprint.txt'
+				'config.json', 'dataconfig.pkl', 'training_meta.json', 'VERSION', 'README.md', 'fingerprint.txt'
 			]
 			for fname in expected:
 				self.assertTrue(os.path.exists(os.path.join(tmpdir, fname)), f"Missing bundle file: {fname}")
+			self.assertTrue(os.path.isdir(os.path.join(tmpdir, 'saved_model')), 'Missing saved_model directory')
 
 	@pytest.mark.unit
 	def test_export_saved_model_includes_logits_when_requested(self):
@@ -281,7 +282,7 @@ class TestModule(unittest.TestCase):
 		model = SingleChainAlignAIR(**params)
 		_ = model({"tokenized_sequence": np.zeros((1, 576), dtype=np.int32)}, training=False)
 		with tempfile.TemporaryDirectory() as tmpdir:
-			model.save_pretrained(tmpdir, export_saved_model=True, include_logits_in_saved_model=True)
+			model.save_pretrained(tmpdir, include_logits_in_saved_model=True)
 			sm_dir = os.path.join(tmpdir, 'saved_model')
 			loaded = tf.saved_model.load(sm_dir)
 			fn = loaded.signatures['serving_default']
@@ -322,7 +323,7 @@ class TestModule(unittest.TestCase):
 			model.save_pretrained(tmpdir)
 			reloaded = MultiChainAlignAIR.from_pretrained(tmpdir)
 			out_a = model(dummy, training=False)
-			out_b = reloaded(dummy, training=False)
+			out_b = reloaded.predict(dummy)
 			for k in ['v_allele','j_allele','chain_type']:
 				self.assertIn(k, out_b, f"Missing output {k} after reload")
 				self.assertEqual(out_a[k].shape, out_b[k].shape, f"Shape mismatch for {k}")
@@ -341,7 +342,7 @@ class TestModule(unittest.TestCase):
 		dummy = {"tokenized_sequence": np.zeros((1, 576), dtype=np.int32)}
 		_ = model(dummy, training=False)
 		with tempfile.TemporaryDirectory() as tmpdir:
-			model.save_pretrained(tmpdir, export_saved_model=True)
+			model.save_pretrained(tmpdir)
 			sm_dir = os.path.join(tmpdir, 'saved_model')
 			self.assertTrue(os.path.isdir(sm_dir), 'SavedModel directory missing for multi chain')
 			loaded = tf.saved_model.load(sm_dir)

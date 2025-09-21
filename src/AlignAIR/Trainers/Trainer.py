@@ -2,11 +2,12 @@ import pickle
 from uuid import uuid4
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from tensorflow.keras.callbacks import CSVLogger
+import keras
+from keras.callbacks import CSVLogger
 from pathlib import Path
 import logging
 import time
-from typing import Optional
+from typing import Optional, List, Any, cast
 
 from AlignAIR.Serialization.model_bundle import TrainingMeta  # Step 6 integration
 
@@ -27,7 +28,7 @@ class Trainer:
     allowing it to seamlessly train both SingleChainAlignAIR and MultiChainAlignAIR models.
     """
 
-    def __init__(self, model: tf.keras.Model, session_path: str, model_name: str = "model"):
+    def __init__(self, model: keras.Model, session_path: str, model_name: str = "model"):
         """
         Initializes the Trainer.
 
@@ -38,7 +39,7 @@ class Trainer:
                                 (logs, history, plots) will be saved.
             model_name (str): A name for the model, used for naming saved files.
         """
-        if not isinstance(model, tf.keras.Model):
+        if not isinstance(model, keras.Model):
             raise TypeError("The 'model' argument must be an instance of tf.keras.Model.")
         if not model.optimizer:
             raise ValueError("The model must be compiled before being passed to the Trainer.")
@@ -58,7 +59,7 @@ class Trainer:
               samples_per_epoch: int,
               batch_size: int,
               validation_dataset=None,
-              callbacks: list = None,
+              callbacks: Optional[list] = None,
               save_pretrained: bool = False,
               bundle_dir: Optional[str] = None,
               training_notes: Optional[str] = None,
@@ -118,7 +119,7 @@ class Trainer:
             validation_data=tf_validation_dataset,
             validation_steps=validation_steps,
             callbacks=all_callbacks,
-            verbose=1
+            verbose='auto'
         )
         wall_time = int(time.time() - start_time)
         logger.info("Training finished.")
@@ -140,7 +141,7 @@ class Trainer:
                             return None
                 losses = [lv for lv in (_to_float(x) for x in raw_losses) if lv is not None]
                 best_loss = min(losses) if losses else None
-                best_epoch = int(losses.index(best_loss)) if losses else None
+                best_epoch = int(losses.index(cast(float, best_loss))) if losses else None
                 final_loss = losses[-1] if losses else None
                 metrics_summary = {}
                 for k, v in hist.items():
@@ -177,7 +178,7 @@ class Trainer:
                     optimizer_class=self.model.optimizer.__class__.__name__,
                     learning_rate=str(lr_value),
                     mixed_precision=mixed_precision,
-                    extra={'notes': training_notes} if training_notes else None
+                    extra={'notes': training_notes} if training_notes else {}
                 )
                 # derive bundle dir if not provided
                 if bundle_dir is None:
@@ -185,10 +186,11 @@ class Trainer:
                 if hasattr(self.model, 'save_pretrained'):
                     # Pass through SavedModel export flags if model supports them
                     try:
+                        # export_saved_model is now always True in the SavedModel-first flow;
+                        # we keep the argument for backward compatibility but do not pass it through.
                         self.model.save_pretrained(
                             bundle_dir,
                             training_meta=meta,
-                            export_saved_model=export_saved_model,
                             include_logits_in_saved_model=include_logits_in_saved_model
                         )
                     except TypeError:
@@ -212,7 +214,7 @@ class Trainer:
             pickle.dump(self.history.history, f)
         logger.info(f"Training history saved to {history_path}")
 
-    def plot_training_history(self, metrics_to_plot: list = None):
+    def plot_training_history(self, metrics_to_plot: Optional[list] = None):
         """
         Plots the training history for specified metrics.
 
