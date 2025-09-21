@@ -37,8 +37,6 @@ def save_bundle(
         Structural config.
     dataconfig_obj : Any
         DataConfig or MultiDataConfigContainer instance.
-    weights_path : Path
-        Location of already-saved weights.h5 (source).
     training_meta : TrainingMeta
         Training metadata.
     readme_text : str, optional

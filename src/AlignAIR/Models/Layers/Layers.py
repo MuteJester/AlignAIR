@@ -94,24 +94,42 @@ class ClipConstraint(Constraint):
         return {'min_value': self.min_value, 'max_value': self.max_value}
 
 class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
-    def __init__(self, filters=16, kernel=3, max_pool=2, activation=None, initializer=None, **kwargs):
+    def __init__(self, filters=16, kernel=3, max_pool=2, activation=None, initializer=None, name_prefix: str | None = None, **kwargs):
+        # Note: do NOT pass name_prefix to super().__init__ since Keras Layer doesn't accept it
         super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
-        initializer_ = 'glorot_uniform' if initializer is None else initializer
-        self.conv_2d = Conv1D(filters, kernel, padding='same',
-                              kernel_regularizer=regularizers.l2(0.01), kernel_initializer=initializer_)
-        self.conv_2d_2 = Conv1D(filters, kernel, padding='same',
-                                kernel_regularizer=regularizers.l2(0.01), kernel_initializer=initializer_)
+        self.filters = filters
+        self.kernel = kernel
+        self.max_pool_size = max_pool
+        self.initializer = 'glorot_uniform' if initializer is None else initializer
+        self.activation_layer = activation  # may be None, will default in build
+        self._name_prefix = name_prefix  # used only for naming internal sublayers
 
-        self.conv_2d_3 = Conv1D(filters, kernel, padding='same',
-                                kernel_regularizer=regularizers.l2(0.01), kernel_initializer=initializer_)
-
-        self.batch_norm = BatchNormalization(momentum=0.1, epsilon=0.8, center=1.0, scale=0.02)
-
-        if activation is None:
-            self.activation = LeakyReLU()
-        else:
-            self.activation = activation
-        self.max_pool = MaxPool1D(max_pool)
+    def build(self, input_shape):
+        base = self._name_prefix or self.name
+        self.conv_2d = Conv1D(
+            self.filters, self.kernel, padding='same',
+            kernel_regularizer=regularizers.l2(0.01),
+            kernel_initializer=self.initializer,
+            name=f"{base}_conv1"
+        )
+        self.conv_2d_2 = Conv1D(
+            self.filters, self.kernel, padding='same',
+            kernel_regularizer=regularizers.l2(0.01),
+            kernel_initializer=self.initializer,
+            name=f"{base}_conv2"
+        )
+        self.conv_2d_3 = Conv1D(
+            self.filters, self.kernel, padding='same',
+            kernel_regularizer=regularizers.l2(0.01),
+            kernel_initializer=self.initializer,
+            name=f"{base}_conv3"
+        )
+        self.batch_norm = BatchNormalization(
+            momentum=0.1, epsilon=0.8, center=True, scale=True, name=f"{base}_bn"
+        )
+        self.activation = self.activation_layer if self.activation_layer is not None else LeakyReLU(name=f"{base}_act")
+        self.max_pool = MaxPool1D(self.max_pool_size, name=f"{base}_pool")
+        super().build(input_shape)
 
     def call(self, inputs):
         x = self.conv_2d(inputs)
@@ -124,9 +142,10 @@ class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
 
 
 class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
-    def __init__(self, filter_size=64, num_conv_batch_layers=5, kernel_size=5, max_pool_size=2,
-                 conv_activation=None, out_shape=576, initializer=None, **kwargs):
-        super(ConvResidualFeatureExtractionBlock, self).__init__(**kwargs)
+    def __init__(self, filter_size=64, num_conv_batch_layers=5, kernel_size: int | list[int] = 5, max_pool_size=2,
+                 conv_activation=None, out_shape=576, initializer=None, name: str | None = None, **kwargs):
+        # allow passing a descriptive name for better interpretability
+        super(ConvResidualFeatureExtractionBlock, self).__init__(name=name, **kwargs)
 
         self.filter_size = filter_size
         self.num_conv_batch_layers = num_conv_batch_layers
@@ -134,6 +153,7 @@ class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
         self.max_pool_size = max_pool_size
         self.conv_activation = conv_activation
         self.out_shape = out_shape
+        self._base_name = name or self.name
 
         self.initializer = (
             tf.keras.initializers.RandomNormal(mean=0.1, stddev=0.02)
@@ -150,14 +170,16 @@ class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
                     max_pool=self.max_pool_size,
                     initializer=self.initializer,
                     activation=self.conv_activation,
-                ) for _ in range(self.num_conv_batch_layers)
+                    name_prefix=f"{self._base_name}_block{i+1}"
+                ) for i in range(self.num_conv_batch_layers)
             ]
             self.residual_channel = Conv1D(
                 self.filter_size,
                 self.kernel_size,
                 padding='same',
                 kernel_regularizer=regularizers.l2(0.01),
-                kernel_initializer=self.initializer
+                kernel_initializer=self.initializer,
+                name=f"{self._base_name}_residual_conv"
             )
         elif isinstance(self.kernel_size, list):
             self.conv_layers = [
@@ -167,22 +189,24 @@ class ConvResidualFeatureExtractionBlock(tf.keras.layers.Layer):
                     max_pool=self.max_pool_size,
                     initializer=self.initializer,
                     activation=self.conv_activation,
-                ) for ks in self.kernel_size[:-1]
+                    name_prefix=f"{self._base_name}_block{i+1}"
+                ) for i, ks in enumerate(self.kernel_size[:-1])
             ]
             self.residual_channel = Conv1D(
                 self.filter_size,
                 self.kernel_size[-1],
                 padding='same',
                 kernel_regularizer=regularizers.l2(0.01),
-                kernel_initializer=self.initializer
+                kernel_initializer=self.initializer,
+                name=f"{self._base_name}_residual_conv"
             )
 
-        self.max_pool_layers = [MaxPool1D(2) for _ in range(self.num_conv_batch_layers)]
-        self.activation_layers = [LeakyReLU() for _ in range(self.num_conv_batch_layers)]
-        self.add_layers = [Add() for _ in range(self.num_conv_batch_layers)]
+        self.max_pool_layers = [MaxPool1D(2, name=f"{self._base_name}_pool{i+1}") for i in range(self.num_conv_batch_layers)]
+        self.activation_layers = [LeakyReLU(name=f"{self._base_name}_act{i+1}") for i in range(self.num_conv_batch_layers)]
+        self.add_layers = [Add(name=f"{self._base_name}_add{i+1}") for i in range(self.num_conv_batch_layers)]
 
-        self.dense_reshaper = Dense(self.out_shape, activation='linear')
-        self.segmentation_feature_flatten = Flatten()
+        self.dense_reshaper = Dense(self.out_shape, activation='linear', name=f"{self._base_name}_proj")
+        self.segmentation_feature_flatten = Flatten(name=f"{self._base_name}_flatten")
 
         # Call parent build to set up tracking
         super(ConvResidualFeatureExtractionBlock, self).build(input_shape)
@@ -519,48 +543,7 @@ class Conv2D_and_BatchNorm(tf.keras.layers.Layer):
         return x
 
 
-class Conv1D_and_BatchNorm(tf.keras.layers.Layer):
-    def __init__(self, filters=16, kernel=3, max_pool=2, activation=None, initializer=None, **kwargs):
-        super(Conv1D_and_BatchNorm, self).__init__(**kwargs)
-        self.filters = filters
-        self.kernel = kernel
-        self.max_pool_size = max_pool
-        self.initializer = 'glorot_uniform' if initializer is None else initializer
-        self.activation = activation if activation is not None else LeakyReLU()
-
-    def build(self, input_shape):
-        # Dynamically initialize sub-layers based on the input shape
-        self.conv_2d = Conv1D(
-            self.filters, self.kernel, padding='same',
-            kernel_regularizer=regularizers.l2(0.01),
-            kernel_initializer=self.initializer
-        )
-        self.conv_2d_2 = Conv1D(
-            self.filters, self.kernel, padding='same',
-            kernel_regularizer=regularizers.l2(0.01),
-            kernel_initializer=self.initializer
-        )
-        self.conv_2d_3 = Conv1D(
-            self.filters, self.kernel, padding='same',
-            kernel_regularizer=regularizers.l2(0.01),
-            kernel_initializer=self.initializer
-        )
-        self.batch_norm = BatchNormalization(
-            momentum=0.1, epsilon=0.8, center=True, scale=True
-        )
-        self.max_pool = MaxPool1D(self.max_pool_size)
-
-        # Call parent's build method
-        super(Conv1D_and_BatchNorm, self).build(input_shape)
-
-    def call(self, inputs):
-        x = self.conv_2d(inputs)
-        x = self.conv_2d_2(x)
-        x = self.conv_2d_3(x)
-        x = self.batch_norm(x)
-        x = self.activation(x)
-        x = self.max_pool(x)
-        return x
+# (Removed older duplicate Conv1D_and_BatchNorm definition above; unified into a single implementation that supports name_prefix)
 
 
 
@@ -641,8 +624,8 @@ class SepConv1D_and_Residual(tf.keras.layers.Layer):
 
 
 class TokenAndPositionEmbedding(tf.keras.layers.Layer):
-    def __init__(self, maxlen, vocab_size, embed_dim):
-        super(TokenAndPositionEmbedding, self).__init__()
+    def __init__(self, maxlen, vocab_size, embed_dim, name: str | None = None):
+        super(TokenAndPositionEmbedding, self).__init__(name=name)
         self.maxlen = maxlen
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
@@ -653,11 +636,13 @@ class TokenAndPositionEmbedding(tf.keras.layers.Layer):
         """
         self.token_emb = tf.keras.layers.Embedding(
             input_dim=self.vocab_size,
-            output_dim=self.embed_dim
+            output_dim=self.embed_dim,
+            name=f"{self.name}_token_emb"
         )
         self.pos_emb = tf.keras.layers.Embedding(
             input_dim=self.maxlen,
-            output_dim=self.embed_dim
+            output_dim=self.embed_dim,
+            name=f"{self.name}_pos_emb"
         )
 
         # Call parent's build method to finalize setup

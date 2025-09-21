@@ -179,7 +179,7 @@ class MultiChainAlignAIR(Model):
         """Initializes input and embedding layers."""
         self.input_layer = Input((self.max_seq_length, 1), name="seq_init")
         self.input_embeddings = TokenAndPositionEmbedding(
-            vocab_size=6, embed_dim=32, maxlen=self.max_seq_length
+            vocab_size=6, embed_dim=32, maxlen=self.max_seq_length, name="tokpos_emb"
         )
 
     def _init_feature_extractors(self):
@@ -189,37 +189,37 @@ class MultiChainAlignAIR(Model):
         # Shared block for meta features (mutation, indel, productivity)
         self.meta_feature_extractor_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 3, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="meta_fblock"
         )
 
         # Blocks for segmentation feature extraction
         self.v_segmentation_feature_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 3, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="v_seg_fblock"
         )
         self.j_segmentation_feature_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 3, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="j_seg_fblock"
         )
 
         # Blocks for classification feature extraction (on masked sequences)
         self.v_feature_extraction_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=6, kernel_size=[3, 3, 3, 2, 2, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="v_cls_fblock"
         )
         self.j_feature_extraction_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=6, kernel_size=[3, 3, 3, 2, 2, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="j_cls_fblock"
         )
 
         if self.has_d_gene:
             self.d_segmentation_feature_block = ConvResidualFeatureExtractionBlock(
                 filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 3, 2, 5],
-                max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+                max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="d_seg_fblock"
             )
             self.d_feature_extraction_block = ConvResidualFeatureExtractionBlock(
                 filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 2, 2, 5],
-                max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+                max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="d_cls_fblock"
             )
 
     def _init_segmentation_heads(self):
@@ -282,19 +282,19 @@ class MultiChainAlignAIR(Model):
 
     def _init_masking_layers(self):
         """Initializes layers for creating and applying segmentation masks."""
-        self.v_mask_layer = SoftCutoutLayer(gene='V', max_size=self.max_seq_length, k=3.0)
-        self.j_mask_layer = SoftCutoutLayer(gene='J', max_size=self.max_seq_length, k=3.0)
+        self.v_mask_layer = SoftCutoutLayer(gene='V', max_size=self.max_seq_length, k=3.0, name="v_soft_mask")
+        self.j_mask_layer = SoftCutoutLayer(gene='J', max_size=self.max_seq_length, k=3.0, name="j_soft_mask")
 
-        self.v_mask_gate = Multiply()
-        self.j_mask_gate = Multiply()
+        self.v_mask_gate = Multiply(name="v_mask_gate")
+        self.j_mask_gate = Multiply(name="j_mask_gate")
 
-        self.v_mask_reshape = Reshape((self.max_seq_length, 1))
-        self.j_mask_reshape = Reshape((self.max_seq_length, 1))
+        self.v_mask_reshape = Reshape((self.max_seq_length, 1), name="v_mask_reshape")
+        self.j_mask_reshape = Reshape((self.max_seq_length, 1), name="j_mask_reshape")
 
         if self.has_d_gene:
-            self.d_mask_layer = SoftCutoutLayer(gene='D', max_size=self.max_seq_length, k=3.0)
-            self.d_mask_gate = Multiply()
-            self.d_mask_reshape = Reshape((self.max_seq_length, 1))
+            self.d_mask_layer = SoftCutoutLayer(gene='D', max_size=self.max_seq_length, k=3.0, name="d_soft_mask")
+            self.d_mask_gate = Multiply(name="d_mask_gate")
+            self.d_mask_reshape = Reshape((self.max_seq_length, 1), name="d_mask_reshape")
 
     def call(self, inputs, training=False):
         """
@@ -852,7 +852,8 @@ class MultiChainAlignAIR(Model):
 
     def save_pretrained(self, bundle_dir: Union[str, os.PathLike], training_meta: Optional[TrainingMeta] = None,
                         saved_model_subdir: str = 'saved_model',
-                        include_logits_in_saved_model: bool = False):
+                        include_logits_in_saved_model: bool = False,
+                        include_keras_weights_checkpoint: bool = True):
         """Save a versioned multi-chain bundle (SavedModel + config + dataconfig + meta)."""
         bundle_path = Path(bundle_dir)
         # Build model if necessary
@@ -881,7 +882,16 @@ class MultiChainAlignAIR(Model):
         save_bundle(bundle_path, cfg, self.dataconfigs, training_meta)
         # Always export SavedModel for robust deployment
         self.export_saved_model(bundle_path / saved_model_subdir, include_logits=include_logits_in_saved_model)
-        # Recompute and persist fingerprint to include SavedModel assets
+        
+        # Optionally save a trainable Keras checkpoint for fine-tuning
+        if include_keras_weights_checkpoint:
+            try:
+                ckpt_path = bundle_path / "checkpoint.weights.h5"
+                self.save_weights(ckpt_path.as_posix())
+                logging.getLogger(__name__).info("Saved Keras weights checkpoint to %s", ckpt_path)
+            except Exception:
+                logging.getLogger(__name__).warning("Failed to save Keras weights checkpoint; proceeding without it.", exc_info=True)
+        # Recompute and persist fingerprint to include SavedModel assets (weights checkpoint excluded)
         try:
             from AlignAIR.Serialization.validators import compute_fingerprint as _cfp
             (bundle_path / "fingerprint.txt").write_text(_cfp(bundle_path))

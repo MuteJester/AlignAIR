@@ -143,19 +143,20 @@ AlignAIR now supports a reproducible, versioned bundle format that packages:
 model_dir/
   config.json            # Structural model configuration (architecture & allele counts)
   dataconfig.pkl         # GenAIRR (or MultiDataConfigContainer) object used to build the model
-  weights.h5             # Keras weights
   training_meta.json     # Optional: epoch counts, final metrics, optimizer, lr, notes
   VERSION                # Serialization format version (e.g. 1)
   fingerprint.txt        # SHA256 over critical artifacts (integrity check)
   README.md (optional)   # User notes
-  saved_model/ (optional) # TensorFlow SavedModel (if exported)
+  saved_model/           # TensorFlow SavedModel (always included)
+  checkpoint.weights.h5  # Optional: trainable Keras weights for fine-tuning
 ```
 
 ### Why Bundles?
 - No need to manually reconstruct model parameters.
 - Guards against dataconfig / allele count mismatches.
 - Self-describing, portable, and integrity‑verifiable.
-- Backward compatible: you can still point to legacy checkpoints (weights directories).
+ - Backward compatible: you can still point to legacy training checkpoints when needed (non‑bundle mode), but bundles are the preferred format.
+ - Advanced users can fine‑tune using the optional `checkpoint.weights.h5` included in bundles.
 
 ### Creating a Bundle During Training
 Use the Python Trainer (example snippet):
@@ -164,9 +165,8 @@ Use the Python Trainer (example snippet):
 from src.AlignAIR.Trainers import Trainer
 trainer = Trainer(model, session_path='./runs', model_name='HeavyExample')
 trainer.train(train_dataset, epochs=3, samples_per_epoch=1024, batch_size=32,
-              save_pretrained=True,  # turns on bundle export
-              export_saved_model=True,  # also produce SavedModel
-              include_logits_in_saved_model=False,
+              save_pretrained=True,  # write a bundle with SavedModel embedded
+              include_logits_in_saved_model=False,  # set True to include raw boundary logits in SavedModel
               training_notes='Baseline heavy chain experiment')
 ```
 
@@ -200,7 +200,7 @@ If both `--model-dir` and `--model-checkpoint` are provided, `--model-dir` takes
 Every bundle includes a `fingerprint.txt` (SHA256). If files are altered, fingerprint validation during `from_pretrained` will raise an error.
 
 ### Migration from Legacy Checkpoints
-Legacy directories **without** `config.json` are still supported (legacy flow). For reproducibility, re‑export them:
+Legacy directories **without** `config.json` are still supported for loading in legacy flows. For reproducibility, re‑export them into a bundle:
 ```python
 legacy_model = SingleChainAlignAIR(max_seq_length=576, dataconfig=...)  # build as before
 legacy_model.load_weights('old_weights_dir').expect_partial()
@@ -211,12 +211,12 @@ legacy_model.save_pretrained('new_bundle_dir')
 
 ## SavedModel Export
 
-Bundles can optionally embed a TensorFlow SavedModel (subdirectory `saved_model/`) for deployment in serving stacks (TF Serving, Triton, etc.).
+Bundles embed a TensorFlow SavedModel (subdirectory `saved_model/`) for deployment in serving stacks (TF Serving, Triton, etc.).
 
 ### Export During Training
-Use the Trainer flags (see above) or call directly:
+Export is automatic when creating a bundle via the Trainer. You can also call directly from a model instance:
 ```python
-model.save_pretrained('bundle_dir', export_saved_model=True, include_logits_in_saved_model=False)
+model.save_pretrained('bundle_dir', include_logits_in_saved_model=False)
 ```
 
 ### Stand‑Alone Export
@@ -241,10 +241,34 @@ Set `include_logits_in_saved_model=True` (or `include_logits=True` for direct ex
 ### When to Use SavedModel vs. Bundles?
 | Scenario | Use Bundle | Use SavedModel |
 |----------|------------|----------------|
-| Research reproducibility | ✅ | optional |
-| Fine‑tuning / further training | ✅ | ❌ (graph only) |
+| Research reproducibility | ✅ | included inside bundle |
+| Fine‑tuning / further training | ✅ (use checkpoint.weights.h5) | ❌ (graph only) |
 | Production inference (serving stack) | ✅ (for metadata) + SavedModel | ✅ |
 | Integrity & config inspection | ✅ | limited |
+
+### Fine‑tuning: how to proceed
+
+Bundles are inference‑first via SavedModel. To fine‑tune or modify heads:
+
+1) Rebuild the trainable Keras model from bundle config/dataconfig:
+```python
+from AlignAIR.Models.SingleChainAlignAIR.SingleChainAlignAIR import SingleChainAlignAIR
+from AlignAIR.Serialization.io import load_bundle
+from pathlib import Path
+
+bundle = Path('path/to/your_bundle')
+cfg, dataconfig, _ = load_bundle(bundle)
+model = SingleChainAlignAIR(max_seq_length=cfg.max_seq_length, dataconfig=dataconfig)
+```
+
+2) Load the optional trainable checkpoint if present:
+```python
+ckpt = bundle / 'checkpoint.weights.h5'
+if ckpt.exists():
+  model.load_weights(ckpt.as_posix()).expect_partial()
+```
+
+3) Modify heads if needed, compile, and continue training.
 
 ---
 

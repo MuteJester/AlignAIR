@@ -104,3 +104,4 @@ MANIFEST.in
 /Load Models.html
 /tests/edf_sample.csv
 /.venv311/
+/tmp_run/

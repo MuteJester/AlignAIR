@@ -198,7 +198,7 @@ class SingleChainAlignAIR(Model):
         """Initializes input and embedding layers."""
         self.input_layer = Input((self.max_seq_length, 1), name="seq_init")
         self.input_embeddings = TokenAndPositionEmbedding(
-            vocab_size=6, embed_dim=32, maxlen=self.max_seq_length
+            vocab_size=6, embed_dim=32, maxlen=self.max_seq_length, name="tokpos_emb"
         )
 
     def _init_feature_extractors(self):
@@ -208,76 +208,76 @@ class SingleChainAlignAIR(Model):
         # Shared block for meta features (mutation, indel, productivity)
         self.meta_feature_extractor_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 3, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="meta_fblock"
         )
 
         # Blocks for segmentation feature extraction
         self.v_segmentation_feature_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 3, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="v_seg_fblock"
         )
         self.j_segmentation_feature_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 3, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="j_seg_fblock"
         )
 
         # Blocks for classification feature extraction (on masked sequences)
         self.v_feature_extraction_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=6, kernel_size=[3, 3, 3, 2, 2, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="v_cls_fblock"
         )
         self.j_feature_extraction_block = ConvResidualFeatureExtractionBlock(
             filter_size=128, num_conv_batch_layers=6, kernel_size=[3, 3, 3, 2, 2, 2, 5],
-            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+            max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="j_cls_fblock"
         )
 
         if self.has_d_gene:
             self.d_segmentation_feature_block = ConvResidualFeatureExtractionBlock(
                 filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 3, 2, 5],
-                max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+                max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="d_seg_fblock"
             )
             self.d_feature_extraction_block = ConvResidualFeatureExtractionBlock(
                 filter_size=128, num_conv_batch_layers=4, kernel_size=[3, 3, 2, 2, 5],
-                max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer
+                max_pool_size=2, conv_activation=conv_activation, initializer=self.initializer, name="d_cls_fblock"
             )
 
     def _init_segmentation_heads(self):
         """Initializes the output layers for segment boundaries."""
         # Position-logit heads (Dense(L) each). Softmax will be applied in call().
         units = self.max_seq_length
-        self.v_start_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='v_start_logits')
-        self.v_end_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='v_end_logits')
-        self.j_start_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='j_start_logits')
-        self.j_end_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='j_end_logits')
+        self.v_start_head = Dense(units, activation=None, name='v_start_logits')
+        self.v_end_head = Dense(units, activation=None, name='v_end_logits')
+        self.j_start_head = Dense(units, activation=None, name='j_start_logits')
+        self.j_end_head = Dense(units, activation=None, name='j_end_logits')
 
         if self.has_d_gene:
-            self.d_start_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='d_start_logits')
-            self.d_end_head = Dense(units, activation=None, kernel_initializer=self.initializer, name='d_end_logits')
+            self.d_start_head = Dense(units, activation=None, name='d_start_logits')
+            self.d_end_head = Dense(units, activation=None, name='d_end_logits')
 
     def _init_analysis_heads(self):
         """Initializes heads for mutation rate, indel count, and productivity."""
         act = keras.activations.gelu
 
         # Mutation Rate Head
-        self.mutation_rate_mid = Dense(self.max_seq_length, activation=act, name="mutation_rate_mid", kernel_initializer=self.initializer)
+        self.mutation_rate_mid = Dense(self.max_seq_length, activation=act, name="mutation_rate_mid")
         self.mutation_rate_dropout = Dropout(0.05)
-        self.mutation_rate_head = Dense(1, activation='relu', name="mutation_rate", kernel_initializer=self.initializer, kernel_constraint=MinMaxValueConstraint(0, 1))
+        self.mutation_rate_head = Dense(1, activation='relu', name="mutation_rate", kernel_constraint=MinMaxValueConstraint(0, 1))
 
         # Indel Count Head
-        self.indel_count_mid = Dense(self.max_seq_length, activation=act, name="indel_count_mid", kernel_initializer=self.initializer)
+        self.indel_count_mid = Dense(self.max_seq_length, activation=act, name="indel_count_mid")
         self.indel_count_dropout = Dropout(0.05)
-        self.indel_count_head = Dense(1, activation='relu', name="indel_count", kernel_initializer=self.initializer, kernel_constraint=MinMaxValueConstraint(0, 50))
+        self.indel_count_head = Dense(1, activation='relu', name="indel_count", kernel_constraint=MinMaxValueConstraint(0, 50))
 
         # Productivity Head
         self.productivity_flatten = Flatten()
         self.productivity_dropout = Dropout(0.05)
-        self.productivity_head = Dense(1, activation='sigmoid', name="productive", kernel_initializer=self.initializer)
+        self.productivity_head = Dense(1, activation='sigmoid', name="productive")
 
     def _init_classification_heads(self):
         """Initializes the output layers for allele classification."""
         # V-allele classification
         v_latent_dim = self.v_allele_latent_size or self.v_allele_count * self.latent_size_factor
-        self.v_allele_mid = Dense(v_latent_dim, activation=self.classification_middle_layer_activation, name="v_allele_middle", kernel_initializer=self.initializer)
+        self.v_allele_mid = Dense(v_latent_dim, activation=self.classification_middle_layer_activation, name="v_allele_middle")
         self.v_allele_call_head = Dense(self.v_allele_count, activation="sigmoid", name="v_allele")
 
         # J-allele classification
@@ -294,19 +294,19 @@ class SingleChainAlignAIR(Model):
     def _init_masking_layers(self):
         """Initializes layers for creating and applying segmentation masks."""
         # Use soft cutout to preserve gradients near boundaries and respect [start:end)
-        self.v_mask_layer = SoftCutoutLayer(gene='V', max_size=self.max_seq_length, k=3.0)
-        self.j_mask_layer = SoftCutoutLayer(gene='J', max_size=self.max_seq_length, k=3.0)
+        self.v_mask_layer = SoftCutoutLayer(gene='V', max_size=self.max_seq_length, k=3.0, name="v_soft_mask")
+        self.j_mask_layer = SoftCutoutLayer(gene='J', max_size=self.max_seq_length, k=3.0, name="j_soft_mask")
 
-        self.v_mask_gate = Multiply()
-        self.j_mask_gate = Multiply()
+        self.v_mask_gate = Multiply(name="v_mask_gate")
+        self.j_mask_gate = Multiply(name="j_mask_gate")
 
-        self.v_mask_reshape = Reshape((self.max_seq_length, 1))
-        self.j_mask_reshape = Reshape((self.max_seq_length, 1))
+        self.v_mask_reshape = Reshape((self.max_seq_length, 1), name="v_mask_reshape")
+        self.j_mask_reshape = Reshape((self.max_seq_length, 1), name="j_mask_reshape")
 
         if self.has_d_gene:
-            self.d_mask_layer = SoftCutoutLayer(gene='D', max_size=self.max_seq_length, k=3.0)
-            self.d_mask_gate = Multiply()
-            self.d_mask_reshape = Reshape((self.max_seq_length, 1))
+            self.d_mask_layer = SoftCutoutLayer(gene='D', max_size=self.max_seq_length, k=3.0, name="d_soft_mask")
+            self.d_mask_gate = Multiply(name="d_mask_gate")
+            self.d_mask_reshape = Reshape((self.max_seq_length, 1), name="d_mask_reshape")
 
     def call(self, inputs, training=False):
         """
@@ -852,7 +852,8 @@ class SingleChainAlignAIR(Model):
 
     def save_pretrained(self, bundle_dir: str | os.PathLike, training_meta: TrainingMeta | None = None,
                         saved_model_subdir: str = 'saved_model',
-                        include_logits_in_saved_model: bool = True):
+                        include_logits_in_saved_model: bool = True,
+                        include_keras_weights_checkpoint: bool = True):
         """Save a SavedModel + structural config + dataconfig into a versioned bundle.
 
         Parameters
@@ -861,6 +862,11 @@ class SingleChainAlignAIR(Model):
             Target directory to create / overwrite bundle contents.
         training_meta : TrainingMeta, optional
             Optional training metadata. If not provided a minimal placeholder is written.
+        include_logits_in_saved_model : bool
+            If True, append raw boundary logits tensors to the SavedModel signature outputs.
+        include_keras_weights_checkpoint : bool
+            If True, also write a trainable Keras checkpoint file 'checkpoint.weights.h5' into the bundle
+            for advanced fine-tuning workflows.
         """
         bundle_path = Path(bundle_dir)
         # Ensure model is built
@@ -888,7 +894,17 @@ class SingleChainAlignAIR(Model):
         save_bundle(bundle_path, cfg, self.dataconfig, training_meta)
         # Always export a TensorFlow SavedModel for robust deployment/loading
         self.export_saved_model(bundle_path / saved_model_subdir, include_logits=include_logits_in_saved_model)
-        # Recompute fingerprint to include SavedModel assets
+        
+        # Optionally persist a trainable Keras checkpoint for fine-tuning
+        if include_keras_weights_checkpoint:
+            try:
+                ckpt_path = bundle_path / "checkpoint.weights.h5"
+                # Keras 3 HDF5 weights checkpoint (trainable)
+                self.save_weights(ckpt_path.as_posix())
+                logger.info("Saved Keras weights checkpoint to %s", ckpt_path)
+            except Exception:
+                logger.warning("Failed to save Keras weights checkpoint; proceeding without it.", exc_info=True)
+        # Recompute fingerprint to include SavedModel assets (weights checkpoint is intentionally excluded)
         try:
             from AlignAIR.Serialization.validators import compute_fingerprint as _cfp
             (bundle_path / "fingerprint.txt").write_text(_cfp(bundle_path))
