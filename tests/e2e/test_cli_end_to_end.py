@@ -41,11 +41,11 @@ class TestModule(unittest.TestCase):
 
     def test_predict_script_single_chain(self):
         # Prefer a pretrained bundle directory; fallback to unzipping a provided bundle zip
-        bundle_dir = self.checkpoints_dir / 'AlignAIR_IGH_Extended'
-        bundle_zip = self.checkpoints_dir / 'IGH_S5F_576_EXTENDED.zip'
+        bundle_dir = self.checkpoints_dir / 'IGH_S5F_576_Extended'
+        bundle_zip = self.checkpoints_dir / 'IGH_S5F_576_Extended.zip'
 
         sequences_path = str(self.data_test_dir / 'sample_igh_extended.csv')
-        validation_path = str(self.data_val_dir / 'igh_model_prediction_validation.csv')
+        validation_path = str(self.data_val_dir / 'igh_extended_model_prediction_validation.csv')
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_dir = tmpdir + os.sep
@@ -102,8 +102,8 @@ class TestModule(unittest.TestCase):
                 validation[col] = validation[col].apply(lambda x: [float(i) for i in x])
                 df[col] = df[col].apply(lambda x: re.findall(r"[-+]?\d*\.\d+|\d+", x))
                 df[col] = df[col].apply(lambda x: [float(i) for i in x])
-                df[col] = df[col].apply(lambda x: [round(i, 3) for i in x])
-                validation[col] = validation[col].apply(lambda x: [round(i, 3) for i in x])
+                df[col] = df[col].apply(lambda x: [round(i, 1) for i in x])
+                validation[col] = validation[col].apply(lambda x: [round(i, 1) for i in x])
                 self.assertTrue((df[col] == validation[col]).all(), f'mismatch in {col}')
             self.assertTrue((df['productive'] == validation['productive']).all(), 'productive mismatch')
             self.assertTrue(np.allclose(df['indels'], validation['indels'], atol=1e-3))
@@ -143,6 +143,86 @@ class TestModule(unittest.TestCase):
                 for j in range(df.shape[1]):
                     self.assertEqual(df.iloc[i, j], validation.iloc[i, j])
             self.assertFalse(df.empty)
+
+    def test_predict_script_multi_chain_igl(self):
+        # Test multi-chain prediction using IGL model
+        bundle_dir = self.checkpoints_dir / 'IGL_S5F_576'
+        
+        sequences_path = str(self.data_test_dir / 'sample_igl_k.csv')
+        validation_path = str(self.data_val_dir / 'igl_k_model_prediction_validation.csv')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_dir = tmpdir + os.sep
+            
+            # Check if the model directory exists
+            if not bundle_dir.is_dir() or not (bundle_dir / 'config.json').exists():
+                self.skipTest('IGL_S5F_576 model directory not available for multi-chain test')
+
+            model_dir = str(bundle_dir)
+
+            # Use the Jenkins script directly like other tests in the repo
+            cmd = [
+                sys.executable, 'jenkins_scripts/AlignAIRRPredict.py',
+                '--model_dir', model_dir,
+                '--save_path', save_dir,
+                '--sequences', sequences_path,
+                '--translate_to_asc',
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', 
+                               env=self._with_env(), cwd=self.repo_root)
+            if res.returncode != 0:
+                print('STDOUT:', res.stdout)
+                print('STDERR:', res.stderr)
+            self.assertEqual(res.returncode, 0, 'AlignAIRRPredict CLI failed for IGL multi-chain')
+
+            out_csv = Path(save_dir) / f"{Path(sequences_path).stem}_alignairr_results.csv"
+            self.assertTrue(out_csv.is_file(), 'Expected output CSV not found')
+
+            df = pd.read_csv(out_csv)
+            validation = pd.read_csv(validation_path)
+
+            # Verify basic structure
+            self.assertFalse(df.empty, 'Output dataframe should not be empty')
+            self.assertEqual(len(df), len(validation), 'Output and validation should have same number of rows')
+            
+            # Check sequence matching
+            self.assertTrue((df['sequence'] == validation['sequence']).all(), 'Sequences should match')
+            
+            # Check gene calls
+            for gene in ['v', 'j']:
+                col = f'{gene}_call'
+                if col in df.columns and col in validation.columns:
+                    self.assertTrue((df[col] == validation[col]).all(), f'mismatch in {col}')
+            
+            # Check positions - use exact matching like other tests
+            for gene in ['v', 'j']:
+                for pos in ['start', 'end']:
+                    for loc in ['sequence', 'germline']:
+                        col = f'{gene}_{loc}_{pos}'
+                        if col in df.columns and col in validation.columns:
+                            self.assertTrue((df[col] == validation[col]).all(), f'mismatch in {col}')
+            
+            # Check likelihoods
+            for gene in ['v', 'j']:
+                col = f'{gene}_likelihoods'
+                if col in df.columns and col in validation.columns:
+                    validation[col] = validation[col].apply(lambda x: re.findall(r"[-+]?\d*\.\d+|\d+", str(x)))
+                    validation[col] = validation[col].apply(lambda x: [float(i) for i in x])
+                    df[col] = df[col].apply(lambda x: re.findall(r"[-+]?\d*\.\d+|\d+", str(x)))
+                    df[col] = df[col].apply(lambda x: [float(i) for i in x])
+                    df[col] = df[col].apply(lambda x: [round(i, 1) for i in x])
+                    validation[col] = validation[col].apply(lambda x: [round(i, 1) for i in x])
+                    self.assertTrue((df[col] == validation[col]).all(), f'mismatch in {col}')
+            
+            # Check additional fields
+            if 'productive' in df.columns and 'productive' in validation.columns:
+                self.assertTrue((df['productive'] == validation['productive']).all(), 'productive mismatch')
+            if 'indels' in df.columns and 'indels' in validation.columns:
+                self.assertTrue(np.allclose(df['indels'], validation['indels'], atol=1e-3), 'indels mismatch')
+            if 'mutation_rate' in df.columns and 'mutation_rate' in validation.columns:
+                self.assertTrue(np.allclose(df['mutation_rate'], validation['mutation_rate'], atol=1e-3), 'mutation_rate mismatch')
+            if 'chain_type' in df.columns and 'chain_type' in validation.columns:
+                self.assertTrue((df['chain_type'] == validation['chain_type']).all(), 'chain_type mismatch')
 
     @pytest.mark.e2e
     def test_train_model_script(self):

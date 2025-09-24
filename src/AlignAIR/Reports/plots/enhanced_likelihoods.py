@@ -416,7 +416,7 @@ class EnhancedLikelihoodCalibrationPlot:
             x=0.5, y=-0.15,
             xref="x", yref="paper",
             showarrow=False,
-            font=dict(size=11, color="gray", style="italic")
+            font=dict(size=11, color="gray")
         )
 
         return fig

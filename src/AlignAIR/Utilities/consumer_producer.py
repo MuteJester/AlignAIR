@@ -24,7 +24,7 @@ def sequence_tokenizer_worker(file_path, queue, max_seq_length, tokenizer_dictio
 
         tokenized_sequences = [encode_and_equal_pad_sequence(seq, max_seq_length, tokenizer_dictionary) for seq in
                                sequences]
-        tokenized_batch = np.vstack(tokenized_sequences)
+        tokenized_batch = np.vstack(tokenized_sequences).astype(np.int32)
         queue.put((tokenized_batch,sequences))
 
     queue.put(None)
@@ -44,7 +44,7 @@ def sequence_tokenizer_worker_fasta(file_path, queue, max_seq_length, tokenizer_
                 sequences = fix_orientation(orientation_pipeline, sequences)
 
             tokenized_sequences = [encode_and_equal_pad_sequence(seq, max_seq_length, tokenizer_dictionary) for seq in sequences]
-            tokenized_batch = np.vstack(tokenized_sequences)
+            tokenized_batch = np.vstack(tokenized_sequences).astype(np.int32)
             queue.put((tokenized_batch,sequences))
             sequences = []
 
@@ -58,7 +58,7 @@ def sequence_tokenizer_worker_fasta(file_path, queue, max_seq_length, tokenizer_
             sequences = fix_orientation(orientation_pipeline, sequences)
 
         tokenized_sequences = [encode_and_equal_pad_sequence(seq, max_seq_length, tokenizer_dictionary) for seq in sequences]
-        tokenized_batch = np.vstack(tokenized_sequences)
+        tokenized_batch = np.vstack(tokenized_sequences).astype(np.int32)
         queue.put((tokenized_batch,sequences))
 
     queue.put(None)

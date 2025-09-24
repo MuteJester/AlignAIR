@@ -413,6 +413,8 @@ class SingleChainAlignAIR(Model):
         }
         if self.has_d_gene:
             output.update({
+
+
                 'd_start_logits': d_start_logits, 'd_end_logits': d_end_logits,
                 'd_start': d_start_exp, 'd_end': d_end_exp, 'd_allele': d_allele
             })

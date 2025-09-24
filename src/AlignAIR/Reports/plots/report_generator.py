@@ -34,11 +34,11 @@ class AlignAIRReportGenerator:
                 'class_name': plot_class.__name__
             })
             
-            print(f"✓ Added {plot_class.__name__} to report")
+            print(f"Added {plot_class.__name__} to report")
             return True
             
         except Exception as e:
-            print(f"✗ Failed to add {plot_class.__name__}: {str(e)}")
+            print(f"Failed to add {plot_class.__name__}: {str(e)}")
             return False
 
     def generate_summary_statistics(self):

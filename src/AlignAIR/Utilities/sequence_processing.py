@@ -14,7 +14,7 @@ def encode_and_equal_pad_sequence(sequence, max_seq_length, tokenizer_dictionary
         A padded sequence, and the start and end indices of the unpadded sequence.
     """
 
-    encoded_sequence = np.array([tokenizer_dictionary[i] for i in sequence])
+    encoded_sequence = np.array([tokenizer_dictionary[i] for i in sequence], dtype=np.int32)
     padding_length = max_seq_length - len(encoded_sequence)
     iseven = padding_length % 2 == 0
     pad_size = padding_length // 2
@@ -61,5 +61,5 @@ def tokenize_sequences(sequences, max_seq_length, tokenizer_dictionary, verbose=
 def tokenize_sequences_batch(sequences, max_seq_length, tokenizer_dictionary):
     tokenized_sequences = [encode_and_equal_pad_sequence(seq, max_seq_length, tokenizer_dictionary) for seq in
                            sequences]
-    return np.vstack(tokenized_sequences)
+    return np.vstack(tokenized_sequences).astype(np.int32)
 

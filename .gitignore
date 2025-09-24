@@ -105,3 +105,4 @@ MANIFEST.in
 /tests/edf_sample.csv
 /.venv311/
 /tmp_run/
+/checkpoints/
