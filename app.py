@@ -256,6 +256,78 @@ def run(
     _run_pipeline(cfg)
 
 
+@app.command("list-pretrained")
+def list_pretrained(
+    root: pathlib.Path = typer.Option(pathlib.Path("/app/pretrained_models"), help="Directory containing pretrained model bundles"),
+    show_files: bool = typer.Option(False, help="Show expected key files for each bundle"),
+    json_output: bool = typer.Option(False, help="Emit machine-readable JSON instead of a table"),
+):
+    """List available pretrained model bundles baked into the image (or a custom root).
+
+    A valid bundle minimally contains: config.json, dataconfig.pkl, VERSION, fingerprint.txt, saved_model/.
+    """
+    header()
+    if not root.exists() or not root.is_dir():
+        console.print(f"[red]No pretrained models found: directory does not exist[/red] {root}")
+        raise typer.Exit(code=1)
+
+    bundles = []
+    for p in sorted(root.iterdir()):
+        if not p.is_dir():
+            continue
+        # quick structural validation
+        required = ["config.json", "dataconfig.pkl", "VERSION", "fingerprint.txt", "saved_model"]
+        present = {name: (p / name).exists() for name in required}
+        is_valid = all(present.values()) and (p / "saved_model").is_dir()
+        meta = {
+            "name": p.name,
+            "path": str(p.resolve()),
+            "valid": is_valid,
+            "missing": [k for k, ok in present.items() if not ok],
+        }
+        # Try to parse config for quick summary
+        cfg_path = p / "config.json"
+        if cfg_path.exists():
+            try:
+                import json as _json
+                raw = _json.loads(cfg_path.read_text())
+                meta.update({
+                    "model_type": raw.get("model_type"),
+                    "max_seq_length": raw.get("max_seq_length"),
+                    "format_version": raw.get("format_version"),
+                    "chains": raw.get("chain_types"),
+                })
+            except Exception:  # pragma: no cover - best effort
+                pass
+        bundles.append(meta)
+
+    if json_output:
+        import json as _json
+        console.print(_json.dumps(bundles, indent=2))
+        return
+
+    tbl = Table(box=box.SIMPLE_HEAVY)
+    tbl.add_column("Bundle", style="bold cyan")
+    tbl.add_column("Type")
+    tbl.add_column("SeqLen")
+    tbl.add_column("Chains")
+    tbl.add_column("Status")
+    for b in bundles:
+        status = "[green]OK[/green]" if b["valid"] else f"[red]Missing: {','.join(b['missing'])}[/red]"
+        chains_display = ",".join(b.get("chains") or []) if b.get("chains") else "-"
+        tbl.add_row(b["name"], str(b.get("model_type") or "?"), str(b.get("max_seq_length") or "-"), chains_display, status)
+    console.print(tbl)
+
+    if show_files:
+        for b in bundles:
+            console.print(f"\n[bold]{b['name']}[/bold] -> {b['path']}")
+            for fname in ["config.json", "dataconfig.pkl", "VERSION", "fingerprint.txt", "saved_model/"]:
+                exists = (pathlib.Path(b['path']) / fname.rstrip('/')).exists()
+                console.print(f"  {'[green]✓[/green]' if exists else '[red]✗[/red]'} {fname}")
+
+    console.print(f"[blue]Found {len(bundles)} bundle(s) in {root}[/blue]")
+
+
 def _validate_v2_config(cfg_dict):
     """Validate configuration: check known built-in GenAIRR dataconfig names and print helpful info."""
     # Validate genairr_dataconfig
