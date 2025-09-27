@@ -14,31 +14,24 @@ import logging
 import pickle
 import random
 from pathlib import Path
-from typing import Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple, Optional
 
 # ────────────────────────── 3rd-party ──────────────────────────
 import matplotlib.pyplot as plt
 import numpy as np
-from scikitplot.metrics import plot_confusion_matrix
+from GenAIRR.dataconfig import DataConfig
+from sklearn.metrics import confusion_matrix
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from tqdm.auto import tqdm
-
-# ────────────────────────── GenAIRR / AlignAIR ──────────────────────────
-from GenAIRR.data import (
-    builtin_heavy_chain_data_config,
-    builtin_kappa_chain_data_config,
-    builtin_lambda_chain_data_config,
-    builtin_tcrb_data_config,
-)
-from GenAIRR.mutation import S5F, Uniform
+from GenAIRR.mutation import S5F
+try:  # type: ignore
+    from GenAIRR.mutation.uniform import Uniform  # type: ignore
+except Exception:  # pragma: no cover - fallback for older versions
+    from GenAIRR.mutation import Uniform  # type: ignore
 from GenAIRR.pipeline import (
     AugmentationPipeline,
-    CHAIN_TYPE_BCR_HEAVY,
-    CHAIN_TYPE_BCR_LIGHT_KAPPA,
-    CHAIN_TYPE_BCR_LIGHT_LAMBDA,
-    CHAIN_TYPE_TCR_BETA,
 )
 from GenAIRR.steps import (
     SimulateSequence,
@@ -59,19 +52,34 @@ from AlignAIR.Preprocessing.Orientation import (
     complement_sequence,
     reverse_complement_sequence,
 )
-
+from enum import Enum, auto
 # ────────────────────────── logging ──────────────────────────
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# ────────────────────────── constants ──────────────────────────
-CHAIN_SPEC = {
-    "heavy": (builtin_heavy_chain_data_config(), CHAIN_TYPE_BCR_HEAVY),
-    "tcrb": (builtin_tcrb_data_config(), CHAIN_TYPE_TCR_BETA),
-    "kappa": (builtin_kappa_chain_data_config(), CHAIN_TYPE_BCR_LIGHT_KAPPA),
-    "lambda": (builtin_lambda_chain_data_config(), CHAIN_TYPE_BCR_LIGHT_LAMBDA),
-}
+
+
+
+class SliceType:
+
+    types = ['Only V', 'Only J', 'VJ']
+
+    def __init__(self, dataconfig: DataConfig):
+        self.dataconfig = dataconfig
+
+
+        if self.dataconfig.metadata.has_d:
+            self.types += ['Only D', 'VD', 'DJ']
+
+    def __iter__(self):
+        for item in self.types:
+            yield item
+
+    def sample(self):
+        return random.choice(self.types)
+
+
 
 ORIENTATIONS = {
     "Normal": lambda s: s,
@@ -80,74 +88,86 @@ ORIENTATIONS = {
     "Reverse Complement": reverse_complement_sequence,
 }
 
-PARTIAL_SLICES_HEAVY = ["Only V", "Only D", "Only J", "VD", "VJ", "DJ"]
-PARTIAL_SLICES_LIGHT = ["Only V", "Only J", "VJ"]
+DEFAULT_TRAIN_SIZE = 300_000
+
+
 
 # ────────────────────────── helpers ──────────────────────────
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser("AlignAIR orientation detector")
     p.add_argument("--save_path", required=True, help="Folder for pipeline pickle")
     p.add_argument("--plot_save_path", required=True, help="Folder for confusion plots")
-    p.add_argument("--chain_type", required=True, choices=CHAIN_SPEC, help="heavy / …")
-    p.add_argument("--train_dataset_size", type=int, default=100_000)
-    p.add_argument("--uniform_test_dataset_size", type=int, default=100_000)
-    p.add_argument("--partial_test_dataset_size", type=int, default=100_000)
+    p.add_argument("--dataconfig", help="built in GenAIRR DataConfig or Path to pkl file", required=True)
+    p.add_argument("--train_dataset_size", type=int, default=DEFAULT_TRAIN_SIZE)
+    p.add_argument("--uniform_test_dataset_size", type=int, default=DEFAULT_TRAIN_SIZE)
+    p.add_argument("--partial_test_dataset_size", type=int, default=DEFAULT_TRAIN_SIZE)
+
+    # mutation model and min max
+    p.add_argument("--min_mutation_rate", type=float, default=0.003)
+    p.add_argument("--max_mutation_rate", type=float, default=0.25)
+    p.add_argument('--mutation_model', choices=['S5F', 'Uniform'], default='S5F', help="Mutation model to use for training data generation")
     return p.parse_args()
 
 
-def build_augmentation_pipeline(mutation_model) -> AugmentationPipeline:
+def build_augmentation_pipeline(mutation_model, has_d: bool) -> AugmentationPipeline:
     """Create an AugmentationPipeline with the standard post-processing steps."""
     steps = [
-        SimulateSequence(mutation_model=mutation_model, productive=True),
+        # Newer API supports passing the mutation model positionally
+        SimulateSequence(mutation_model, productive=True),
         FixVPositionAfterTrimmingIndexAmbiguity(),
-        FixDPositionAfterTrimmingIndexAmbiguity(),
         FixJPositionAfterTrimmingIndexAmbiguity(),
         CorrectForVEndCut(),
-        CorrectForDTrims(),
-        CorruptSequenceBeginning(
-            corruption_probability=0.7,
-            corrupt_events_proba=[0.4, 0.4, 0.2],
-            max_sequence_length=576,
-            nucleotide_add_coefficient=210,
-            nucleotide_remove_coefficient=310,
-            nucleotide_add_after_remove_coefficient=50,
-            random_sequence_add_proba=1,
-            single_base_stream_proba=0,
-            duplicate_leading_proba=0,
-            random_allele_proba=0,
-        ),
-        InsertNs(n_ratio=0.02, proba=0.5),
-        ShortDValidation(short_d_length=5),
-        InsertIndels(indel_probability=0.5, max_indels=5,insertion_proba=0.5, deletion_proba=0.5),
+        # Align to current signature used across the repo (see GenerateStrictlyBalancedTrainDataset)
+        CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
+        InsertNs(0.02, 0.5),
+        InsertIndels(0.5, 5, 0.5, 0.5),
         DistillMutationRate(),
     ]
+    if has_d:
+        # Insert D-specific fixes in appropriate places
+        steps.insert(2, FixDPositionAfterTrimmingIndexAmbiguity())  # after V fix
+        steps.insert(4, CorrectForDTrims())  # after V-end correction
+        steps.insert(6, ShortDValidation(5))  # before indels
     return AugmentationPipeline(steps)
 
 
+def _to_record(obj: Any) -> Dict[str, Any]:
+    """Normalize pipeline output to a dict for downstream use."""
+    if hasattr(obj, 'get_dict'):
+        rec = obj.get_dict()  # type: ignore[attr-defined]
+    else:
+        rec = obj
+    if isinstance(rec, list) and len(rec) == 1 and isinstance(rec[0], dict):
+        rec = rec[0]
+    if not isinstance(rec, dict):
+        raise RuntimeError("Simulation output is not a dict-like record")
+    return rec
+
+
 def make_sequences(
-    n: int, chain_type: str, mutation_model, return_partials: bool = False
-):
+        n: int,
+        dataconfig: DataConfig,
+        mutation_model,
+        return_partials: bool = False
+                ) -> Tuple[List[str], List[str], Optional[List[str]]]:
     """
     Generate `n` sequences plus orientation labels.
     If `return_partials` is True, also return the partial-label list.
     """
-    dataconfig, chain_const = CHAIN_SPEC[chain_type]
-    AugmentationStep.set_dataconfig(dataconfig, chain_type=chain_const)
+    # Updated API: chain_type is derived from dataconfig metadata; no explicit constant required
+    AugmentationStep.set_dataconfig(dataconfig)
 
-    pipe = build_augmentation_pipeline(mutation_model)
+    has_d = bool(getattr(getattr(dataconfig, 'metadata', None), 'has_d', False))
+    pipe = build_augmentation_pipeline(mutation_model, has_d)
     seqs, orient_labels, partial_labels = [], [], []
-
-    slice_choices = (
-        PARTIAL_SLICES_HEAVY
-        if chain_type in {"heavy", "tcrb"}
-        else PARTIAL_SLICES_LIGHT
-    )
+    slice_enum = SliceType(dataconfig)
 
     for _ in tqdm(range(n), desc="Simulating sequences"):
-        sample = pipe.execute()
+        sample_raw = pipe.execute()
+        sample = _to_record(sample_raw)
         # Optionally cut to partial region
         if return_partials:
-            sample["sequence"], partial = _extract_partial(sample, slice_choices)
+            sample["sequence"], partial = _extract_partial(sample, slice_enum)
             partial_labels.append(partial)
 
         # Apply random orientation
@@ -159,21 +179,41 @@ def make_sequences(
 
 
 def _extract_partial(
-    sim: Dict, choices: List[str]
+    sim: Dict[str, Any], slice_types: SliceType
 ) -> Tuple[str, str]:  # heavy-/light-aware
     """Return a subsequence plus its slice label."""
-    choice = random.choice(choices)
-    v = slice(sim["v_sequence_start"], sim["v_sequence_end"])
-    d = slice(sim["d_sequence_start"], sim["d_sequence_end"])
-    j = slice(sim["j_sequence_start"], sim["j_sequence_end"])
-    joined = {
-        "Only V": sim["sequence"][v],
-        "Only D": sim["sequence"][d],
-        "Only J": sim["sequence"][j],
-        "VD": sim["sequence"][v] + sim["sequence"][d],
-        "VJ": sim["sequence"][v] + sim["sequence"][j],
-        "DJ": sim["sequence"][d] + sim["sequence"][j],
-    }
+    choice = slice_types.sample()
+    def _mk_slice(start_key: str, end_key: str) -> Optional[slice]:
+        if start_key in sim and end_key in sim and sim[start_key] is not None and sim[end_key] is not None:
+            return slice(sim[start_key], sim[end_key])
+        return None
+
+    v = _mk_slice("v_sequence_start", "v_sequence_end")
+    d = _mk_slice("d_sequence_start", "d_sequence_end")
+    j = _mk_slice("j_sequence_start", "j_sequence_end")
+
+    seq = sim["sequence"]
+    joined: Dict[str, str] = {}
+    if v is not None:
+        joined['Only V'] = seq[v]
+    if d is not None:
+        joined["Only D"] = seq[d]
+    if j is not None:
+        joined["Only J"] = seq[j]
+    if v is not None and d is not None:
+        joined["VD"] = seq[v] + seq[d]
+    if v is not None and j is not None:
+        joined["VJ"] = seq[v] + seq[j]
+    if d is not None and j is not None:
+        joined["DJ"] = seq[d] + seq[j]
+
+    if choice not in joined:
+        # Fallback: if chosen slice unavailable (e.g., light chain picked D category), prefer VJ if possible
+        for alt in ("VJ", "Only V", "Only J"):
+            if alt in joined:
+                return joined[alt], alt
+        # As a last resort, return full sequence
+        return seq, "Full"
     return joined[choice], choice
 
 
@@ -198,10 +238,25 @@ def eval_and_plot(
     out_path: Path,
 ) -> None:
     preds = pipe.predict(X)
-    plot_confusion_matrix(y, preds, normalize=True, x_tick_rotation=90)
-    plt.title(title)
+    labels = list(ORIENTATIONS.keys())
+    cm = confusion_matrix(y, preds, labels=labels, normalize='true')
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.imshow(cm, cmap='Blues', vmin=0, vmax=1)
+    ax.set_title(title)
+    ax.set_xlabel('Predicted')
+    ax.set_ylabel('True')
+    ax.set_xticks(range(len(labels)))
+    ax.set_yticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=45, ha='right')
+    ax.set_yticklabels(labels)
+    # Annotate cells
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, f"{cm[i, j]*100:.1f}%", ha='center', va='center', color='black')
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Row-normalized')
+    fig.tight_layout()
     plt.savefig(out_path, bbox_inches="tight", dpi=150)
-    plt.close()
+    plt.close(fig)
     logging.info("Saved confusion matrix → %s", out_path)
 
 
@@ -220,25 +275,45 @@ def main() -> None:
     plot_dir.mkdir(parents=True, exist_ok=True)
 
     # ─── datasets ───
-    mutation_model = S5F(0.003, 0.25) if args.chain_type in {"heavy", "light"} else Uniform(0.003, 0.01)
+    if args.mutation_model == 'Uniform':
+        mutation_model = Uniform(args.min_mutation_rate, args.max_mutation_rate)
+    else:
+        mutation_model = S5F(args.min_mutation_rate, args.max_mutation_rate)
+
+
+    from GenAIRR.data import _CONFIG_NAMES
+    dataconfig_path = args.dataconfig
+    if dataconfig_path in _CONFIG_NAMES:
+        import importlib
+        dataconfig = getattr(importlib.import_module("GenAIRR.data"), dataconfig_path)()
+    elif Path(dataconfig_path).is_file():
+        with open(dataconfig_path, "rb") as h:
+            dataconfig = pickle.load(h)
+        if not isinstance(dataconfig, DataConfig):
+            raise ValueError("Provided dataconfig file does not contain a DataConfig object")
+
+
     train_X, train_y, _ = make_sequences(
-        args.train_dataset_size, args.chain_type,mutation_model
+        args.train_dataset_size, dataconfig, mutation_model
     )
+
+
+
     # Add Uniform half
     uni_X, uni_y, _ = make_sequences(
-        args.train_dataset_size, args.chain_type, Uniform(0.003, 0.25)
+        args.train_dataset_size, dataconfig, Uniform(0.003, 0.25)  # type: ignore[arg-type]
     )
     train_X.extend(uni_X)
     train_y.extend(uni_y)
 
     test_X, test_y, _ = make_sequences(
-        args.uniform_test_dataset_size, args.chain_type, Uniform(0.003, 0.25)
+        args.uniform_test_dataset_size, dataconfig, Uniform(0.003, 0.25)  # type: ignore[arg-type]
     )
 
     ptest_X, ptest_y, _ = make_sequences(
         args.partial_test_dataset_size,
-        args.chain_type,
-        Uniform(0.003, 0.25),
+        dataconfig,
+        Uniform(0.003, 0.25),  # type: ignore[arg-type]
         return_partials=True,
     )
 
