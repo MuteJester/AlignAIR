@@ -13,11 +13,11 @@ WORKDIR /app
 
 # Install build tools and dependencies via modern PEP 517 workflow
 # Copy minimal files first to maximize Docker layer caching
-COPY pyproject.toml setup.py README.md MANIFEST.in requirements.txt ./
+COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 RUN pip install --upgrade pip setuptools wheel \
-	&& pip install .
+	&& pip install ".[cli]"
 
 # Copy rest of the repo (scripts, configs, etc.)
 COPY . .

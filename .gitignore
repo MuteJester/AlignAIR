@@ -1,3 +1,12 @@
+# Private working directory
+.private/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+src/*.egg-info/
+
 sandbox_notebook.ipynb
 __pychache__/*
 *.pyc
