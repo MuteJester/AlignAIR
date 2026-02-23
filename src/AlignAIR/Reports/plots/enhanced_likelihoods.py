@@ -2,9 +2,6 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 from collections import defaultdict
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import plotly.express as px
 
 
 class EnhancedLikelihoodCalibrationPlot:
@@ -219,6 +216,8 @@ class EnhancedLikelihoodCalibrationPlot:
         """
         Create an enhanced interactive panel with improved visual clarity.
         """
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
         # Create enhanced subplot layout
         fig = make_subplots(
             rows=2, cols=3,

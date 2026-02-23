@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from collections import defaultdict
 
 
@@ -47,8 +45,10 @@ class ConfidenceAnalysisPlot:
 
     def get_panel(self):
         """Generate confidence analysis panel"""
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
         available_genes = list(self.confidence_data.keys())
-        
+
         if not available_genes:
             fig = go.Figure()
             fig.add_annotation(
@@ -230,8 +230,10 @@ class ThresholdEffectsPlot:
 
     def get_panel(self):
         """Generate threshold effects analysis panel"""
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
         available_genes = list(self.threshold_analysis.keys())
-        
+
         if not available_genes:
             fig = go.Figure()
             fig.add_annotation(

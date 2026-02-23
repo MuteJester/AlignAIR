@@ -1,12 +1,8 @@
 from collections import defaultdict
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 from tqdm.auto import tqdm
 from multiprocessing import Pool, cpu_count
-
-sns.set_context('poster')
 
 
 def process_gene_likelihood(args):
@@ -174,6 +170,8 @@ class LikelihoodCalibrationPlot:
 
 
     def init_figure(self, figsize=(20, 11)):
+        import matplotlib.pyplot as plt
+
         mosaic = """
                     A
                 """
@@ -202,6 +200,10 @@ class LikelihoodCalibrationPlot:
         ax.axvline(x=x, color='gray', linestyle='--', ymax=y / ax.get_ylim()[1])
 
     def plot(self):
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        sns.set_context('poster')
+
         self.init_figure()
 
         for name in self.mounted_models:

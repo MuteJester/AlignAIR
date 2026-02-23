@@ -1,6 +1,5 @@
 import pickle
 from uuid import uuid4
-import matplotlib.pyplot as plt
 import tensorflow as tf
 import keras
 from keras.callbacks import CSVLogger
@@ -221,6 +220,7 @@ class Trainer:
         Args:
             metrics_to_plot (list, optional): A list of metric names to plot. If None, plots all.
         """
+        import matplotlib.pyplot as plt
         if not self.history:
             logger.warning("No training history available to plot.")
             return

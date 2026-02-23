@@ -1,9 +1,6 @@
 from collections import defaultdict
-from matplotlib.ticker import FixedLocator
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from tqdm.auto import tqdm
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
 from AlignAIR.Step.Step import Step
@@ -42,6 +39,9 @@ class SegmentationProductivitySummaryPlotStep(Step):
 
 
     def execute(self, predict_object):
+        from matplotlib.ticker import FixedLocator
+        import matplotlib.pyplot as plt
+        import seaborn as sns
         self.log("Generating Model Segmentation RMSE and Productivity Accuracy Summary Figure")
         seg_error_data = self.get_segmentation_barplot_data(predict_object)
         productivity_cm = self.get_productive_accuracy_confusion_matrix(predict_object)

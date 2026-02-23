@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from collections import defaultdict
 from tqdm.auto import tqdm
 
@@ -61,6 +59,8 @@ class PerformanceMetricsPlot:
 
     def get_panel(self):
         """Generate the performance metrics panel"""
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
         # Create subplot grid
         fig = make_subplots(
             rows=2, cols=3,
@@ -231,6 +231,8 @@ class SequenceAnalysisPlot:
 
     def get_panel(self):
         """Generate sequence analysis panel"""
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
         fig = make_subplots(
             rows=2, cols=2,
             subplot_titles=(
@@ -400,6 +402,8 @@ class AlleleFrequencyPlot:
 
     def get_panel(self):
         """Generate allele frequency analysis panel"""
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
         # Determine number of genes available
         available_genes = list(self.frequency_data.keys())
         n_genes = len(available_genes)

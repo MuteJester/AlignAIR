@@ -18,7 +18,6 @@ import pandas as pd
 from multiprocessing import Pool, cpu_count, Manager
 import threading
 import time
-import requests
 import argparse
 from GenAIRR.utilities import AlleleNComparer
 

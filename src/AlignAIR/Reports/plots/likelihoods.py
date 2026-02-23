@@ -3,8 +3,6 @@ import pandas as pd
 from GenAIRR.dataconfig import DataConfig
 from tqdm.auto import tqdm
 from collections import defaultdict
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from AlignAIR.Data import MultiDataConfigContainer
 
@@ -183,6 +181,8 @@ class LikelihoodCalibrationPlot:
         """
         Enhanced version with improved visual clarity, better colors, and confidence intervals.
         """
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
         color_palette = {
             'v': '#1f77b4', 'd': '#ff7f0e', 'j': '#2ca02c',
             'identity': '#d62728', 'confidence_band': 'rgba(128, 128, 128, 0.2)'
@@ -303,6 +303,8 @@ class LikelihoodCalibrationPlot:
 
     def get_original_panel(self):
         """Original version of the panel for backward compatibility."""
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
         fig = make_subplots(
             rows=2, cols=3,
             subplot_titles=('Likelihood Calibration', 'V-Gene Hits', "D-Gene Hits", 'J-Gene Hits'),

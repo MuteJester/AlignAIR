@@ -1,11 +1,7 @@
 from collections import defaultdict
-from matplotlib.ticker import FixedLocator
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from tqdm.auto import tqdm
-sns.set_context('poster')
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
 from AlignAIR.Step.Step import Step
 
@@ -133,6 +129,10 @@ class ModelLikelihoodSummaryPlotStep(Step):
             thdf_agg = self.thdf.groupby('bins').mean()
             self.hit_mrate_comparison_data[gene] = thdf_agg
     def execute(self, predict_object):
+        from matplotlib.ticker import FixedLocator
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        sns.set_context('poster')
         self.log("Generating Model Likelihood Summary Figure")
 
         self.derive_likelihood_data(predict_object)

@@ -2,14 +2,11 @@ import pickle
 import random
 
 import pandas as pd
-import seaborn as sns
 import numpy as np
-from matplotlib import pyplot as plt
 
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
 from AlignAIR.Step.Step import Step
 from tqdm.auto import tqdm
-sns.set_context('poster')
 def get_agreement(predicted_labels, ground_truth):
     return [len(set(i) & set(j)) > 0 for i, j in zip(predicted_labels, ground_truth)]
 
@@ -147,6 +144,9 @@ class OptimalAlleleThresholdSearchStep(Step):
             best_ths[gene.upper()] = best_hyperparameters['confidence']
 
 
+        from matplotlib import pyplot as plt
+        import seaborn as sns
+        sns.set_context('poster')
         plt.figure(figsize=(14, 20))
         flabel = {0: 'A', 1: 'B', 2: 'C'}
         for en, (_allele, _dt) in enumerate(zip(['V', 'D', 'J'], [v_results_df, d_results_df, j_results_df])):

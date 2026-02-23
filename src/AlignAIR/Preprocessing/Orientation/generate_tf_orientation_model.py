@@ -2,7 +2,6 @@ import argparse
 import logging
 import pickle
 import numpy as np
-from matplotlib import pyplot as plt
 from scikitplot.metrics import plot_confusion_matrix
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -252,6 +251,7 @@ def create_and_fit_pipeline(train_sequences,train_labels,min_k=3,max_k=5,max_fea
     logging.info('Pipeline was Fitted Successfully!')
     return model
 def evaluate_model(orient_pipeline,test_sequences,test_labels,title,fname,save_path_figure):
+    from matplotlib import pyplot as plt
     logging.info('Evaluating Model on Test Dataset')
     predictions = orient_pipeline.predict(test_sequences)
     my_label_map = {

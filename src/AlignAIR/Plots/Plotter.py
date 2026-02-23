@@ -1,11 +1,8 @@
-from matplotlib.ticker import FuncFormatter
 from sklearn.metrics import multilabel_confusion_matrix, precision_recall_curve, hamming_loss, accuracy_score, f1_score, \
     roc_curve
 from sklearn.metrics import precision_score, recall_score, f1_score
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from tqdm.auto import tqdm
 
 def get_top_i(calls, i=1):
@@ -45,6 +42,10 @@ class ModelAnalysisPlotter:
         self.combined_hits_group = self.combined_hits.groupby('bins').mean()
 
     def calls_and_agreement_plot(self):
+        from matplotlib.ticker import FuncFormatter
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
         xx = np.arange(0, len(self.combined_hits_group))
 
         plt.xticks(xx, labels=self.combined_hits_group.index, rotation=90)
@@ -59,6 +60,10 @@ class ModelAnalysisPlotter:
         ax2.set_ylabel('Number of Calls')
 
     def top_three_alleles_plot(self):
+        from matplotlib.ticker import FuncFormatter
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
         xx = np.arange(0, len(self.combined_hits_group))
 
         ax = sns.lineplot(x=xx, y=self.combined_hits_group['ar_hits_i1'], label='Top 1', marker='o', ms=10)

@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-import matplotlib.pyplot as plt
 import uuid
 import os
 import torch.optim.lr_scheduler as lr_scheduler
@@ -160,6 +159,7 @@ class AlignAIRTrainer:
         Args:
             save_path (str, optional): Path to save the plot. If None, the plot will be displayed.
         """
+        import matplotlib.pyplot as plt
         plt.figure(figsize=(10, 6))
         plt.plot(range(1, len(self.history["loss"]) + 1), self.history["loss"], label="Loss")
         plt.xlabel("Epoch")

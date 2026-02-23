@@ -1,9 +1,6 @@
 from collections import defaultdict
-from matplotlib.ticker import FixedLocator
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from tqdm.auto import tqdm
 from AlignAIR.PostProcessing.AlleleSelector import CappedDynamicConfidenceThreshold
 from AlignAIR.Step.Step import Step
@@ -11,6 +8,9 @@ from sklearn.metrics import confusion_matrix
 
 class MutationRateSummaryPlotStep(Step):
     def execute(self, predict_object):
+        from matplotlib.ticker import FixedLocator
+        import matplotlib.pyplot as plt
+        import seaborn as sns
         self.log("Generating Model Mutation Rate Regression Figure")
         plt.figure(figsize=(20,11))
         sns.regplot(x=predict_object.groundtruth_table['mutation_rate'],

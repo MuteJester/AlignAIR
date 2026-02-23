@@ -1,11 +1,9 @@
 import os
 import random
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import seaborn as sns
 from GenAIRR.data import builtin_tcrb_data_config
 from scipy.stats import entropy
 from tensorflow.keras.callbacks import ReduceLROnPlateau
@@ -14,8 +12,6 @@ from AlignAIR.Data import HeavyChainDataset
 from AlignAIR.Models.HeavyChain import HeavyChainAlignAIRR
 from AlignAIR.Trainers import Trainer
 from AlignAIR.Utilities.step_utilities import DataConfigLibrary
-
-sns.set_context('poster')
 
 class TrainingMonitor(tf.keras.callbacks.Callback):
     def __init__(self, dataconfig_lib,datasetobject,sample_data,update_every=100, output_dir="web_output"):
@@ -40,6 +36,9 @@ class TrainingMonitor(tf.keras.callbacks.Callback):
         predicted_mutation_rate = self.model.predict(self.sample_data)
 
     def generate_allele_likelihood_distribution(self,step):
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        sns.set_context('poster')
         v_allele = self.sample_prediction['v_allele'][:5]
         d_allele = self.sample_prediction['d_allele'][:5]
         j_allele = self.sample_prediction['j_allele'][:5]
@@ -121,6 +120,7 @@ class TrainingMonitor(tf.keras.callbacks.Callback):
 
 
     def project_genes_to_latent_space(self, step):
+        import matplotlib.pyplot as plt
         genes = ['v', 'd', 'j']
         plots_saved = []
         latent_anchors = {}

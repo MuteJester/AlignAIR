@@ -17,6 +17,7 @@ import psutil
 import platform
 import tensorflow as tf
 
+from AlignAIR.Hub import AVAILABLE_MODELS, list_available_models, get_model_path, download_model, is_model_cached
 from AlignAIR.PredictObject.PredictObject import PredictObject
 from AlignAIR.Step.Step import Step
 from AlignAIR.Preprocessing.Steps.batch_processing_steps import BatchProcessingStep
@@ -231,6 +232,16 @@ def run(
     if not cfg_dict.get("model_dir") and not cfg_dict.get("model_checkpoint"):
         raise typer.BadParameter("One of --model-dir (preferred) or --model-checkpoint must be provided")
     if cfg_dict.get("model_dir"):
+        model_ref = cfg_dict["model_dir"]
+        p = pathlib.Path(model_ref).resolve()
+
+        # If not a local directory, check if it's a known HuggingFace model name
+        if not p.is_dir() and model_ref in AVAILABLE_MODELS:
+            console.print(f"[blue]Resolving model name '{model_ref}' from HuggingFace Hub...[/blue]")
+            p = get_model_path(model_ref)
+            console.print(f"[green]📦 Model resolved:[/green] {p}")
+            cfg_dict["model_dir"] = str(p)
+
         # Map to model_checkpoint for ModelLoadingStep compatibility
         cfg_dict["model_checkpoint"] = cfg_dict["model_dir"]
         # Confirm bundle structure if possible
@@ -254,6 +265,52 @@ def run(
     cfg = SimpleNamespace(**cfg_dict)
 
     _run_pipeline(cfg)
+
+
+@app.command()
+def download(
+    model_name: Optional[str] = typer.Argument(None, help="Model bundle name to download (e.g. IGH_S5F_576)"),
+    all_models: bool = typer.Option(False, "--all", help="Download all available pretrained models"),
+    list_models: bool = typer.Option(False, "--list", help="List available models without downloading"),
+    revision: Optional[str] = typer.Option(None, help="HuggingFace repo revision (tag/branch/commit)"),
+    cache_dir: Optional[pathlib.Path] = typer.Option(None, help="Custom local cache directory (default: ~/.alignair/models)"),
+    force: bool = typer.Option(False, help="Re-download even if already cached"),
+):
+    """Download pretrained AlignAIR model bundles from HuggingFace Hub."""
+    header()
+
+    if list_models:
+        tbl = Table(box=box.SIMPLE_HEAVY)
+        tbl.add_column("Model", style="bold cyan")
+        tbl.add_column("Cached", style="bold")
+        for name in list_available_models():
+            cached = is_model_cached(name, revision, cache_dir)
+            status = "[green]Yes[/green]" if cached else "[dim]No[/dim]"
+            tbl.add_row(name, status)
+        console.print(tbl)
+        return
+
+    if all_models:
+        names = list_available_models()
+    elif model_name:
+        names = [model_name]
+    else:
+        console.print("[red]Provide a model name, --all, or --list.[/red]")
+        console.print(f"[blue]Available models:[/blue] {', '.join(list_available_models())}")
+        raise typer.Exit(code=1)
+
+    for name in names:
+        try:
+            if not force and is_model_cached(name, revision, cache_dir):
+                console.print(f"[green]Already cached:[/green] {name}")
+                continue
+            console.print(f"[blue]Downloading:[/blue] {name} ...")
+            path = download_model(name, revision=revision, cache_dir=cache_dir, force=force)
+            console.print(f"[green]Ready:[/green] {name} -> {path}")
+        except Exception as exc:
+            console.print(f"[red]Failed to download {name}:[/red] {exc}")
+
+    console.print("[bold green]Done.[/bold green]")
 
 
 @app.command("list-pretrained")

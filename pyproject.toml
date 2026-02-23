@@ -47,6 +47,7 @@ dependencies = [
 cli = [
     "typer>=0.9",
     "rich>=10.0",
+    "huggingface-hub>=0.20",
 ]
 train = [
     "wandb>=0.15",

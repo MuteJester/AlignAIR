@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, Optional
 
 # ────────────────────────── 3rd-party ──────────────────────────
-import matplotlib.pyplot as plt
 import numpy as np
 from GenAIRR.dataconfig import DataConfig
 from sklearn.metrics import confusion_matrix
@@ -237,6 +236,7 @@ def eval_and_plot(
     title: str,
     out_path: Path,
 ) -> None:
+    import matplotlib.pyplot as plt
     preds = pipe.predict(X)
     labels = list(ORIENTATIONS.keys())
     cm = confusion_matrix(y, preds, labels=labels, normalize='true')

@@ -1,9 +1,6 @@
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from collections import defaultdict, Counter
-import seaborn as sns
 from scipy import stats
 
 
@@ -591,7 +588,9 @@ class ErrorAnalysisPlot:
 
     def get_panel(self):
         """Create comprehensive error analysis visualization"""
-        
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+
         # Create subplot structure
         fig = make_subplots(
             rows=3, cols=3,
@@ -665,6 +664,7 @@ class ErrorAnalysisPlot:
 
     def _add_error_type_analysis(self, fig, row, col):
         """Add error type distribution analysis"""
+        import plotly.graph_objects as go
         colors = ['#e74c3c', '#f39c12', '#2ecc71', '#3498db']
         
         print(f"Debug: Adding error type analysis...")
@@ -686,6 +686,7 @@ class ErrorAnalysisPlot:
 
     def _add_confidence_accuracy_analysis(self, fig, row, col):
         """Add confidence vs accuracy scatter plot"""
+        import plotly.graph_objects as go
         colors = ['#e74c3c', '#f39c12', '#3498db']
         
         print(f"Debug: Adding confidence vs accuracy analysis...")
@@ -765,6 +766,7 @@ class ErrorAnalysisPlot:
 
     def _add_segmentation_error_analysis(self, fig, row, col):
         """Add segmentation boundary error analysis"""
+        import plotly.graph_objects as go
         if 'segmentation_errors' not in self.error_analysis:
             return
             
@@ -788,6 +790,7 @@ class ErrorAnalysisPlot:
 
     def _add_mutation_rate_analysis(self, fig, row, col):
         """Add mutation rate prediction error analysis"""
+        import plotly.graph_objects as go
         print(f"Debug: Adding mutation rate analysis...")
         
         if 'mutation_rate_errors' not in self.error_analysis:
@@ -828,6 +831,7 @@ class ErrorAnalysisPlot:
 
     def _add_productivity_analysis(self, fig, row, col):
         """Add productivity prediction analysis"""
+        import plotly.graph_objects as go
         print(f"Debug: Adding productivity analysis...")
         
         if 'productivity_errors' not in self.error_analysis:
@@ -865,6 +869,7 @@ class ErrorAnalysisPlot:
 
     def _add_length_impact_analysis(self, fig, row, col):
         """Add sequence length impact analysis"""
+        import plotly.graph_objects as go
         print(f"Debug: Adding length impact analysis...")
         
         # If length_impact data is not available, generate it directly from allele_errors
@@ -924,6 +929,7 @@ class ErrorAnalysisPlot:
 
     def _add_gene_error_distribution(self, fig, row, col):
         """Add gene-specific error distribution"""
+        import plotly.graph_objects as go
         print(f"Debug: Adding gene error distribution...")
         
         if 'allele_errors' not in self.error_analysis:
@@ -960,6 +966,7 @@ class ErrorAnalysisPlot:
 
     def _add_confidence_by_error_type(self, fig, row, col):
         """Add confidence distribution by error type"""
+        import plotly.graph_objects as go
         print(f"Debug: Adding confidence by error type...")
         
         if 'allele_errors' not in self.error_analysis:
@@ -1003,6 +1010,7 @@ class ErrorAnalysisPlot:
 
     def _add_calibration_analysis(self, fig, row, col):
         """Add model calibration analysis"""
+        import plotly.graph_objects as go
         print(f"Debug: Adding calibration analysis...")
         
         # Try to generate calibration data from allele_errors if confidence_errors is empty
@@ -1079,7 +1087,8 @@ class ErrorAnalysisPlot:
 
     def _add_indel_regression_analysis(self, fig, row, col):
         """Add indel (insertion/deletion) regression analysis using model predictions"""
-        
+        import plotly.graph_objects as go
+
         indel_data = self._analyze_indel_patterns()
         
         # Check if we have model indel predictions
