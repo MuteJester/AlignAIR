@@ -16,6 +16,7 @@ AlignAIR[cli,server,train,viz]
 [cli]
 typer>=0.9
 rich>=10.0
+huggingface-hub>=0.20
 
 [dev]
 AlignAIR[cli,server,train,viz]

@@ -36,6 +36,7 @@ Requires-Dist: joblib>=1.2
 Provides-Extra: cli
 Requires-Dist: typer>=0.9; extra == "cli"
 Requires-Dist: rich>=10.0; extra == "cli"
+Requires-Dist: huggingface-hub>=0.20; extra == "cli"
 Provides-Extra: train
 Requires-Dist: wandb>=0.15; extra == "train"
 Requires-Dist: matplotlib>=3.7; extra == "train"

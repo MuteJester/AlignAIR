@@ -1,6 +1,5 @@
 from AlignAIR.PredictObject.PredictObject import PredictObject
 from AlignAIR.Step.Step import Step
-from AlignAIR.PostProcessing import AIRRFormatManager
 from AlignAIR.PostProcessing import TranslateToIMGT
 
 class AIRRFinalizationStep(Step):
@@ -9,12 +8,20 @@ class AIRRFinalizationStep(Step):
 
     def execute(self, predict_object: PredictObject):
         self.log("Finalizing AIRR results and saving to TSV...")
-        
+
+        from AlignAIR.Pipeline.AIRR import build_airr_dataframe
+
         save_path = predict_object.script_arguments.save_path
         file_name = predict_object.file_info.file_name
-        
-        airr_formatter = AIRRFormatManager(predict_object)
-        final_tsv = airr_formatter.build_dataframe()
+
+        final_tsv = build_airr_dataframe(
+            sequences=predict_object.sequences,
+            allele_calls=predict_object.selected_allele_calls,
+            germline_alignments=predict_object.germline_alignments,
+            likelihoods=predict_object.likelihoods_of_selected_alleles,
+            processed_predictions=predict_object.processed_predictions,
+            dataconfig=predict_object.dataconfig,
+        )
         
         if not predict_object.script_arguments.translate_to_asc:
             self.log("Translating allele names...")

@@ -31,6 +31,12 @@ src/AlignAIR/API/ReplaceModelHeads.py
 src/AlignAIR/API/TrainModel.py
 src/AlignAIR/API/TrainModelFromScratch.py
 src/AlignAIR/API/__init__.py
+src/AlignAIR/Benchmarking/__init__.py
+src/AlignAIR/Benchmarking/__main__.py
+src/AlignAIR/Benchmarking/compare.py
+src/AlignAIR/Benchmarking/report.py
+src/AlignAIR/Benchmarking/snapshot.py
+src/AlignAIR/Benchmarking/tolerances.py
 src/AlignAIR/Data/MultiChainDataset.py
 src/AlignAIR/Data/MultiDataConfigContainer.py
 src/AlignAIR/Data/PredictionDataset.py
@@ -50,6 +56,8 @@ src/AlignAIR/Data/tokenizers/center_padded_sequence_tokenizer.py
 src/AlignAIR/Finetuning/CustomClassificationHeadLoader.py
 src/AlignAIR/Finetuning/__init__.py
 src/AlignAIR/Genotyping/__init__.py
+src/AlignAIR/Hub/__init__.py
+src/AlignAIR/Hub/hub.py
 src/AlignAIR/Models/__init__.py
 src/AlignAIR/Models/HeavyChain/HeavyChainAlignAIRR.py
 src/AlignAIR/Models/HeavyChain/__init__.py
