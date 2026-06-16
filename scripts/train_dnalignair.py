@@ -41,6 +41,7 @@ def main():
 
     dc = getattr(gdata, args.config)
     rs = ReferenceSet.from_dataconfigs(dc)
+    genes = ["v", "j"] + (["d"] if rs.has_d else [])
     cfg = DNAlignAIRConfig(d_model=args.d_model, n_layers=args.layers, nhead=args.nhead)
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
