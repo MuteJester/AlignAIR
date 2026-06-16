@@ -1,9 +1,33 @@
 # AlignAIR PyTorch Migration — Phase 3 (Serialization + Inference) Design
 
 **Date:** 2026-06-16
-**Status:** Approved (structure + decisions); to be split into plans 3a then 3b
+**Status:** 3a + 3b COMPLETE. **3c (germline alignment + full AIRR output) DEFERRED to the
+model-architecture-redesign phase** — see "Deferral" below.
 **Depends on:** Phase 1 (DL core) + Phase 2 (data + training) — complete on `pytorch-migration`
 **Parent design:** `docs/superpowers/specs/2026-06-15-alignair-pytorch-migration-design.md`
+
+## Deferral (2026-06-16): drop the heuristic germline matcher; predict the reference alignment instead
+
+Decision: do **not** port `HeuristicReferenceMatcher` / the legacy germline-alignment stage.
+Its job — recovering per-segment **reference** coordinates (`start_in_ref`/`end_in_ref`, i.e. the
+5'/3' trims) by aligning each predicted segment to the germline — will instead be handled by the
+**model itself** during the architecture redesign: add heads that predict the trims / germline
+start-end directly. Those targets are already labels in the training data (CSV: `*_germline_start/end`,
+`*_trim_5/3`; GenAIRR `stream_records`: same fields), so they are trainable now.
+
+Consequences:
+- Phase 3 ships at **3a (serialization) + 3b (inference core: calls + padding-corrected in-sequence
+  coordinates)**. That is the migration-complete inference path.
+- A thin **reference-gapping + AIRR-table** layer (deterministic assembly from
+  `allele + germline_start/end`, needs the `DataConfig` references) is deferred and built alongside the
+  new germline/trim heads in the architecture-redesign phase.
+- Boundary *refinement* the matcher did (snapping a slightly-off boundary to the reference) is dropped;
+  it relies on the trained boundary heads being accurate.
+- Junction/CDR/FWR regions, `productive`, `vj_in_frame`, `stop_codon` are computable from in-sequence
+  coordinates without germline alignment if a lite-AIRR output is wanted before the redesign.
+
+The remainder of this document (the original 3b/3c plan) is retained for reference but §4's germline +
+AIRR portions are superseded by the deferral above.
 
 ## 1. Goal
 
