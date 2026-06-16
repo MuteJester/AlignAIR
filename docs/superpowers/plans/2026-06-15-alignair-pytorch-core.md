@@ -15,6 +15,8 @@
 These apply to every task below.
 
 - **Tensor layout.** External input is `(B, L)` integer tokens. Embedding produces `(B, L, E)`. PyTorch `Conv1d` is channel-first, so transpose to `(B, E, L)` before conv blocks and keep conv math in `(B, C, L)`.
+- **Conv padding.** Use `nn.Conv1d(..., padding="same")` (string, stride 1) for every conv — NOT a computed int. Int padding drifts even-kernel output length by +1, which breaks the residual add in the feature extractor. `padding="same"` matches Keras exactly. (PyTorch emits a one-time harmless warning for even kernels.)
+- **Minimum sequence length.** The feature extractors downsample by ~`2**(num_conv_layers+1)` (the 4-layer segmentation extractor ≈ ÷32, the 6-layer classification extractor ≈ ÷128). Inputs must be long enough to survive this: model-level tests use `L=256` (see `conftest.TEST_SEQ_LEN`); the real model uses `max_seq_length=576`. `L=16` collapses to length 0 — do not use it for anything that runs a full extractor.
 - **BatchNorm semantics differ.** Keras `BatchNormalization(momentum=0.1)` updates running stats as `running = 0.1*running + 0.9*batch`. PyTorch updates as `running = (1-momentum)*running + momentum*batch`. To preserve the legacy intent, use `nn.BatchNorm1d(..., eps=0.8, momentum=0.9)`. (Yes, `eps=0.8` is unusually large — it is intentional in the legacy code; replicate it.)
 - **Initializers.** Keras `glorot_uniform` → `nn.init.xavier_uniform_`; biases → zeros.
 - **Activations.** `swish` → `nn.SiLU`; `gelu` → `nn.GELU`; plus `tanh`, `relu`, `leaky_relu` (default negative slope 0.3 where the legacy uses bare `LeakyReLU()` — Keras default alpha is 0.3), `sigmoid`.
