@@ -1,8 +1,10 @@
 """AlignAIRGym: online GenAIRR curriculum generator yielding GT target bundles."""
 import logging
 
+import numpy as np
 from torch.utils.data import IterableDataset
 
+from .crop import crop_record
 from .curriculum import Curriculum
 from .targets import build_targets
 
@@ -46,9 +48,14 @@ class AlignAIRGym(IterableDataset):
         dc = self.dataconfigs[self._epoch % len(self.dataconfigs)]
         has_d = dc.metadata.has_d
         exp = build_experiment(dc, params)
+        rng = np.random.default_rng(seed)
         count = 0
         for record in exp.stream_records(n=self.n, seed=seed):
             count += 1
+            if params["crop_prob"] > 0 and rng.random() < params["crop_prob"]:
+                target_len = int(rng.integers(params["crop_len_min"],
+                                              params["crop_len_max"] + 1))
+                record = crop_record(record, target_len)
             if self.log_every and count % self.log_every == 0:
                 logger.info("Gym generated %d samples (%s)", count,
                             self.curriculum.describe(self._p))
