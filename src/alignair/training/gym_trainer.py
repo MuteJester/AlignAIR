@@ -72,29 +72,55 @@ class GymTrainer:
 
     @torch.no_grad()
     def evaluate(self, n_batches: int = 4) -> dict:
+        from ..nn.region_head import decode_boundaries
+        from ..nn.germline_aligner import decode_germline_coords
+        from .germline_tf import compute_germline_logits
         self.model.eval()
         loader = self._loader()
         ref_emb = self.model.encode_reference(self.reference_set)
-        tot_loss, region_correct, region_total = 0.0, 0, 0
-        v_hits, v_total, nb = 0, 0, 0
+        agg = {"loss": 0.0, "region_correct": 0, "region_total": 0,
+               "state_correct": 0, "state_total": 0, "v_hits": 0, "v_total": 0,
+               "v_start_dev": 0.0, "v_end_dev": 0.0, "v_gl_start_dev": 0.0, "n_seq": 0}
+        nb = 0
         for batch in loader:
             if nb >= n_batches:
                 break
             batch = self._to_device(batch)
             out = self.model(batch["tokens"], batch["mask"], ref_emb)
             total, _ = self.loss_fn(out, batch)
-            tot_loss += float(total.cpu())
+            agg["loss"] += float(total.cpu())
             valid = batch["region_labels"] != -100
-            pred = out["region_logits"].argmax(-1)
-            region_correct += int(((pred == batch["region_labels"]) & valid).sum().cpu())
-            region_total += int(valid.sum().cpu())
+            rp = out["region_logits"].argmax(-1)
+            agg["region_correct"] += int(((rp == batch["region_labels"]) & valid).sum().cpu())
+            agg["region_total"] += int(valid.sum().cpu())
+            sp = out["state_logits"].argmax(-1)
+            agg["state_correct"] += int(((sp == batch["state_labels"]) & valid).sum().cpu())
+            agg["state_total"] += int(valid.sum().cpu())
+            B = batch["tokens"].shape[0]
             v_pred = out["match"]["V"].argmax(-1)
-            v_hits += int(batch["v_allele"][torch.arange(v_pred.shape[0]), v_pred].sum().cpu())
-            v_total += v_pred.shape[0]
+            agg["v_hits"] += int(batch["v_allele"][torch.arange(B), v_pred].sum().cpu())
+            agg["v_total"] += B
+            # in-seq V boundary deviation (predicted region runs vs GT)
+            dec = decode_boundaries(out["region_logits"], batch["mask"], has_d=self.has_d)
+            vps = torch.tensor([d["v_start"] for d in dec], dtype=torch.float32)
+            vpe = torch.tensor([d["v_end"] for d in dec], dtype=torch.float32)
+            agg["v_start_dev"] += float((vps - batch["v_start"].cpu().float()).abs().sum())
+            agg["v_end_dev"] += float((vpe - batch["v_end"].cpu().float()).abs().sum())
+            # germline V start deviation (teacher-forced segment, true allele)
+            gl = compute_germline_logits(self.model, batch["tokens"], batch["mask"], batch,
+                                         ref_emb, self.has_d)
+            gs, _ge = decode_germline_coords(gl["v"][0], gl["v"][1])
+            agg["v_gl_start_dev"] += float((gs.cpu() - batch["v_germline_start"].cpu()).abs().sum())
+            agg["n_seq"] += B
             nb += 1
         self.model.train()
+        ns = max(agg["n_seq"], 1)
         return {
-            "loss": tot_loss / max(nb, 1),
-            "region_acc": region_correct / max(region_total, 1),
-            "v_call_agreement": v_hits / max(v_total, 1),
+            "loss": agg["loss"] / max(nb, 1),
+            "region_acc": agg["region_correct"] / max(agg["region_total"], 1),
+            "state_acc": agg["state_correct"] / max(agg["state_total"], 1),
+            "v_call_agreement": agg["v_hits"] / max(agg["v_total"], 1),
+            "v_start_dev": agg["v_start_dev"] / ns,
+            "v_end_dev": agg["v_end_dev"] / ns,
+            "v_gl_start_dev": agg["v_gl_start_dev"] / ns,
         }

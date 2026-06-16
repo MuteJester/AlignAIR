@@ -70,13 +70,18 @@ def main():
                "train_v_match": round(last.get("v_match", 0), 4),
                "train_v_germline": round(last.get("v_germline", 0), 4),
                "eval_loss": round(ev["loss"], 4),
-               "eval_region_acc": round(ev["region_acc"], 4),
-               "eval_v_call_agreement": round(ev["v_call_agreement"], 4)}
+               "region_acc": round(ev["region_acc"], 4),
+               "state_acc": round(ev["state_acc"], 4),
+               "v_call_agree": round(ev["v_call_agreement"], 4),
+               "v_start_dev": round(ev["v_start_dev"], 3),
+               "v_end_dev": round(ev["v_end_dev"], 3),
+               "v_gl_start_dev": round(ev["v_gl_start_dev"], 3)}
         rows.append(row)
-        print(f"[step {step:4d} | {dt:5.0f}s] train_total={row['train_total']:.3f} "
-              f"region={row['train_region']:.3f} v_match={row['train_v_match']:.3f} "
-              f"v_gl={row['train_v_germline']:.3f} || eval region_acc={row['eval_region_acc']:.3f} "
-              f"v_call_agree={row['eval_v_call_agreement']:.3f}")
+        print(f"[step {step:4d} | {dt:5.0f}s] total={row['train_total']:.2f} "
+              f"v_match={row['train_v_match']:.2f} v_gl={row['train_v_germline']:.2f} || "
+              f"region_acc={row['region_acc']:.3f} state_acc={row['state_acc']:.3f} "
+              f"v_call={row['v_call_agree']:.3f} | dev v_start={row['v_start_dev']:.2f} "
+              f"v_end={row['v_end_dev']:.2f} v_gl_start={row['v_gl_start_dev']:.2f}")
 
     with open(args.csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
