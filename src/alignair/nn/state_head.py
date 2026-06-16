@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 
-STATES = ("germline", "mutation", "noise", "insertion", "deletion")
+STATES = ("germline", "substitution", "insertion", "deletion")
 STATE_INDEX = {name: i for i, name in enumerate(STATES)}
 
 
@@ -18,7 +18,7 @@ class PerPositionStateHead(nn.Module):
 
 
 def state_counts(state_logits: torch.Tensor, mask: torch.Tensor) -> dict:
-    """Per-sample counts of noise / mutation / indel from argmax states (padding ignored)."""
+    """Per-sample counts of substitution / indel from argmax states (padding ignored)."""
     labels = state_logits.argmax(dim=-1)  # (B, L)
     valid = mask
 
@@ -26,7 +26,6 @@ def state_counts(state_logits: torch.Tensor, mask: torch.Tensor) -> dict:
         return ((labels == STATE_INDEX[name]) & valid).sum(dim=-1)
 
     return {
-        "noise_count": count("noise"),
-        "mutation_count": count("mutation"),
+        "substitution_count": count("substitution"),
         "indel_count": count("insertion") + count("deletion"),
     }
