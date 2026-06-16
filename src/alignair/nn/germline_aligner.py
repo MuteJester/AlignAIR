@@ -39,7 +39,7 @@ class GermlineAligner(nn.Module):
         B, Ls, Lg = M.shape
         device = M.device
         i = torch.arange(Ls, device=device)
-        neg = torch.finfo(M.dtype).min
+        neg = -1e4  # moderate mask: a masked target keeps CE bounded (finfo.min -> ~1e37)
         start_logits = M.new_full((B, Lg), neg)
 
         for o in range(Lg):

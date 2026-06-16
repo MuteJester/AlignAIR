@@ -14,10 +14,15 @@ def compute_germline_logits(model, tokens, mask, batch, ref_emb, has_d: bool):
     for g in genes:
         seg_tok, seg_mask = extract_segment_tokens(tokens, mask, batch["region_labels"], g.upper())
         seg_reps = model.germline_encoder.forward_positions(seg_tok, seg_mask)  # (B, S, d)
-        multihot = batch[f"{g}_allele"]                       # (B, K)
-        has_pos = multihot.sum(dim=1) > 0
-        idx = multihot.argmax(dim=1)
-        idx = torch.where(has_pos, idx, torch.zeros_like(idx))
+        # Align against the coordinate-bearing (primary) allele, so the target
+        # germline_start/end always index a valid position in this allele's reps.
+        # Falls back to multi-hot argmax if primary indices are unavailable.
+        if f"{g}_primary_idx" in batch:
+            idx = batch[f"{g}_primary_idx"]
+        else:
+            multihot = batch[f"{g}_allele"]
+            idx = torch.where(multihot.sum(dim=1) > 0, multihot.argmax(dim=1),
+                              torch.zeros(multihot.shape[0], dtype=torch.long, device=multihot.device))
         germ_reps = ref_emb[g.upper()]["pos_reps"][idx]       # (B, Lg, d)
         germ_mask = ref_emb[g.upper()]["pos_mask"][idx]       # (B, Lg)
         out[g] = model.germline_coords(seg_reps, seg_mask, germ_reps, germ_mask)

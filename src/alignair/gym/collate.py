@@ -39,6 +39,16 @@ def gym_collate(batch, reference_set, has_d: bool):
         out[f"{g}_end"] = torch.tensor([s["inseq"][g][1] for s in batch], dtype=torch.long)
         out[f"{g}_allele"] = _multihot([s["calls"][g.upper()] for s in batch],
                                        reference_set.gene(g.upper()))
+        gref = reference_set.gene(g.upper())
+
+        def _primary(s):
+            nm = s.get("primary", {}).get(g.upper())
+            if nm is None:  # fall back to any listed call (synthetic/legacy bundles)
+                names = s["calls"].get(g.upper())
+                nm = next(iter(names)) if names else None
+            return gref.index.get(nm, 0)
+
+        out[f"{g}_primary_idx"] = torch.tensor([_primary(s) for s in batch], dtype=torch.long)
 
     out["orientation_id"] = torch.tensor([s["orientation_id"] for s in batch], dtype=torch.long)
     for key in ("noise_count", "mutation_rate", "indel_count", "productive"):
