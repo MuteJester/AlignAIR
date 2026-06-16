@@ -50,8 +50,12 @@ class GymTrainer:
                     ref_emb = self.model.encode_reference(self.reference_set)
                 out = self.model(batch["tokens"], batch["mask"], ref_emb)
                 germline_logits = compute_germline_logits(
-                    self.model, out["reps"], batch["mask"], batch, ref_emb, self.has_d)
-                total, comp = self.loss_fn(out, batch, germline_logits=germline_logits)
+                    self.model, batch["tokens"], batch["mask"], batch, ref_emb, self.has_d)
+                # teacher-force the match query over TRUE regions for a clean signal
+                match_logits = self.model.match_alleles(
+                    batch["tokens"], batch["mask"], batch["region_labels"], ref_emb)
+                total, comp = self.loss_fn(out, batch, germline_logits=germline_logits,
+                                           match_logits=match_logits)
                 self.optimizer.zero_grad(set_to_none=True)
                 total.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)

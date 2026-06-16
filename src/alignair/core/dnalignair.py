@@ -40,6 +40,26 @@ def extract_segment(reps: torch.Tensor, mask: torch.Tensor,
     return seg, seg_mask
 
 
+def extract_segment_tokens(tokens: torch.Tensor, mask: torch.Tensor,
+                           region_labels: torch.Tensor, gene: str):
+    """Gather each sample's `gene`-tagged token ids into a left-aligned padded
+    (B, Smax) long tensor + (B, Smax) bool mask (for re-encoding the segment)."""
+    gid = REGION_INDEX[gene]
+    sel = (region_labels == gid) & mask
+    counts = sel.sum(dim=1)
+    smax = max(int(counts.max().item()) if counts.numel() else 0, 1)
+    B = tokens.shape[0]
+    seg = tokens.new_zeros(B, smax)
+    seg_mask = torch.zeros(B, smax, dtype=torch.bool, device=tokens.device)
+    for b in range(B):
+        idx = sel[b].nonzero(as_tuple=True)[0]
+        n = idx.numel()
+        if n:
+            seg[b, :n] = tokens[b, idx]
+            seg_mask[b, :n] = True
+    return seg, seg_mask
+
+
 class DNAlignAIR(nn.Module):
     def __init__(self, config: DNAlignAIRConfig):
         super().__init__()
@@ -54,7 +74,6 @@ class DNAlignAIR(nn.Module):
         self.germline_encoder = GermlineEncoder(embed_dim=d)
         self.matching = AlleleMatchingHead()
         self.aligner = GermlineAligner(d_model=d)
-        self.seg_proj = nn.Linear(d, d)
         self.noise_head = nn.Linear(d, 1)
         self.mutation_head = nn.Linear(d, 1)
         self.indel_head = nn.Linear(d, 1)
@@ -92,22 +111,23 @@ class DNAlignAIR(nn.Module):
             }
         return out
 
-    def _segment_rep(self, reps: torch.Tensor, mask: torch.Tensor,
-                     region_labels: torch.Tensor, gene: str) -> torch.Tensor:
-        """Masked mean of reps over the positions tagged as `gene` -> (B, d), normalized query."""
-        gid = REGION_INDEX[gene]
-        gene_mask = (region_labels == gid) & mask
-        seg = _masked_mean(reps, gene_mask)
-        return F.normalize(self.seg_proj(seg), dim=-1)
+    def match_alleles(self, tokens: torch.Tensor, mask: torch.Tensor,
+                      region_labels: torch.Tensor, ref_emb: dict) -> dict:
+        """Per-gene allele match scores: re-encode each gene's observed segment with
+        the (shared) germline encoder and score against the reference embeddings in the
+        same space. Inference passes predicted region labels; training teacher-forces
+        the true labels."""
+        match = {}
+        for gene, emb in ref_emb.items():
+            seg_tok, seg_mask = extract_segment_tokens(tokens, mask, region_labels, gene)
+            query = self.germline_encoder(seg_tok, seg_mask)        # (B, d) normalized
+            match[gene] = self.matching(query, emb["embeddings"])
+        return match
 
     def forward(self, tokens: torch.Tensor, mask: torch.Tensor, ref_emb: dict) -> dict:
         out = self.forward_dense(tokens, mask)
         region_labels = out["region_logits"].argmax(dim=-1)
-        match = {}
-        for gene, emb in ref_emb.items():
-            query = self._segment_rep(out["reps"], mask, region_labels, gene)
-            match[gene] = self.matching(query, emb["embeddings"])
-        out["match"] = match
+        out["match"] = self.match_alleles(tokens, mask, region_labels, ref_emb)
         return out
 
     def germline_coords(self, seg_reps, seg_mask, germ_reps, germ_mask):

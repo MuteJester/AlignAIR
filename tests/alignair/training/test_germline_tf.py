@@ -27,7 +27,7 @@ def test_compute_germline_logits_shapes():
     rs = _RS()
     ref_emb = model.encode_reference(rs)
     B, L = 2, 16
-    reps = torch.randn(B, L, cfg.d_model)
+    tokens = torch.randint(0, 6, (B, L))
     mask = torch.ones(B, L, dtype=torch.bool)
     region_labels = torch.zeros(B, L, dtype=torch.long)
     region_labels[:, 2:8] = REGION_INDEX["V"]
@@ -35,7 +35,7 @@ def test_compute_germline_logits_shapes():
     batch = {"region_labels": region_labels,
              "v_allele": torch.tensor([[1.0, 0, 0, 0], [0, 1.0, 0, 0]]),
              "j_allele": torch.tensor([[1.0, 0, 0], [0, 1.0, 0]])}
-    gl = compute_germline_logits(model, reps, mask, batch, ref_emb, has_d=False)
+    gl = compute_germline_logits(model, tokens, mask, batch, ref_emb, has_d=False)
     Lg_v = ref_emb["V"]["pos_reps"].shape[1]
     assert gl["v"][0].shape == (B, Lg_v) and gl["v"][1].shape == (B, Lg_v)
     assert "j" in gl

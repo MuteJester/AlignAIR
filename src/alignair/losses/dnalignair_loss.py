@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..nn.weighting import UncertaintyWeight
-from ..nn.matching import multilabel_match_loss
+from ..nn.matching import contrastive_match_loss
 
 IGNORE = -100
 
@@ -20,7 +20,8 @@ class DNAlignAIRLoss(nn.Module):
         names += ["v_germline", "j_germline"] + (["d_germline"] if has_d else [])
         self.weights = nn.ModuleDict({n: UncertaintyWeight() for n in names})
 
-    def forward(self, outputs: dict, batch: dict, germline_logits: dict | None = None):
+    def forward(self, outputs: dict, batch: dict, germline_logits: dict | None = None,
+                match_logits: dict | None = None):
         comp = {}
 
         def add(name, raw):
@@ -35,7 +36,8 @@ class DNAlignAIRLoss(nn.Module):
             batch["state_labels"].reshape(-1), ignore_index=IGNORE)
 
         genes = ["v", "j"] + (["d"] if self.has_d else [])
-        match_terms = {g: multilabel_match_loss(outputs["match"][g.upper()], batch[f"{g}_allele"])
+        match_src = match_logits if match_logits is not None else outputs["match"]
+        match_terms = {g: contrastive_match_loss(match_src[g.upper()], batch[f"{g}_allele"])
                        for g in genes}
 
         noise = F.l1_loss(outputs["noise_count"], batch["noise_count"])

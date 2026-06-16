@@ -26,6 +26,16 @@ class AlleleMatchingHead(nn.Module):
         return scores
 
 
+def contrastive_match_loss(scores: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Multi-positive InfoNCE over candidates: push every true allele's score above
+    all others via a softmax-CE, averaged over the positive set per row. Robust to
+    large candidate sets where multi-label BCE collapses to 'predict nothing'."""
+    log_probs = F.log_softmax(scores, dim=-1)            # (B, K)
+    pos_per_row = target.sum(dim=-1).clamp(min=1.0)      # (B,)
+    row_loss = -(log_probs * target).sum(dim=-1) / pos_per_row
+    return row_loss.mean()
+
+
 def multilabel_match_loss(scores: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """Multi-label BCE over candidates. ``target`` is a (B, K) multi-hot of true alleles.
 
