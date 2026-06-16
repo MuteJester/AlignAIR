@@ -1,5 +1,4 @@
 """Map-style CSV dataset producing the AlignAIR (x, y) contract."""
-import numpy as np
 from torch.utils.data import Dataset
 
 from .column_schema import ColumnSet
@@ -59,24 +58,8 @@ class AlignAIRDataset(Dataset):
         return len(self.reader)
 
     def __getitem__(self, i: int):
+        from .sample_builder import build_xy
         row = self.reader[i]
         tokens, pad_left = self.tokenizer.encode_and_pad(row["sequence"])
         rec = self.adapter.adapt(row, pad_left)
-
-        x = {"tokenized_sequence": tokens}
-        y = {
-            "v_start": np.array([rec["v_start"]], np.float32),
-            "v_end": np.array([rec["v_end"]], np.float32),
-            "j_start": np.array([rec["j_start"]], np.float32),
-            "j_end": np.array([rec["j_end"]], np.float32),
-            "v_allele": self.encoder.encode("V", [rec["v_call_set"]])[0],
-            "j_allele": self.encoder.encode("J", [rec["j_call_set"]])[0],
-            "mutation_rate": np.array([rec["mutation_rate"]], np.float32),
-            "indel_count": np.array([rec["indel_count"]], np.float32),
-            "productive": np.array([rec["productive"]], np.float32),
-        }
-        if self.has_d:
-            y["d_start"] = np.array([rec["d_start"]], np.float32)
-            y["d_end"] = np.array([rec["d_end"]], np.float32)
-            y["d_allele"] = self.encoder.encode("D", [rec["d_call_set"]])[0]
-        return x, y
+        return build_xy(tokens, rec, self.encoder, self.has_d)

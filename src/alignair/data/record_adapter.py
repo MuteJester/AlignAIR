@@ -16,6 +16,10 @@ def _to_float_bool(v) -> float:
 
 
 def _indel_count(item) -> float:
+    if isinstance(item, bool):
+        return float(int(item))
+    if isinstance(item, (int, float)):
+        return float(item)
     if isinstance(item, (dict, list, tuple)):
         return float(len(item))
     if isinstance(item, str) and item.strip():
