@@ -70,11 +70,15 @@ class BaseAlignAIR(nn.Module):
         self._materialize_lazy_params()
 
     def _materialize_lazy_params(self) -> None:
+        # Run the BASE forward explicitly: all LazyLinear params live in the base
+        # extractors. Calling self.forward would dispatch to a subclass override
+        # (e.g. MultiChain's chain_type head) before that subclass has finished
+        # __init__, raising AttributeError.
         was_training = self.training
         self.eval()
         with torch.no_grad():
             dummy = torch.zeros((1, self.max_seq_length), dtype=torch.long)
-            self.forward(dummy)
+            BaseAlignAIR.forward(self, dummy)
         self.train(was_training)
 
     def _positions(self, device) -> torch.Tensor:
