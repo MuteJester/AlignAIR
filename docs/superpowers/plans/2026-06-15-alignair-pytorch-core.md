@@ -89,7 +89,7 @@ tests/alignair/
 - Delete: `src/AlignAIR/Pytorch/` (entire directory)
 - Create: `src/alignair/__init__.py`
 - Create: `src/alignair/config/__init__.py`, `src/alignair/nn/__init__.py`, `src/alignair/core/__init__.py`, `src/alignair/losses/__init__.py`, `src/alignair/metrics/__init__.py`
-- Create: `tests/alignair/__init__.py`, `tests/alignair/conftest.py`
+- Create: `tests/alignair/conftest.py` (NOTE: test dirs must NOT contain `__init__.py` — this repo runs pytest in prepend import mode, so an `alignair` package under `tests/` would shadow `src/alignair`)
 
 - [ ] **Step 1: Confirm nothing imports the legacy skeleton**
 
@@ -116,7 +116,7 @@ once this package reaches parity.
 __all__ = []
 ```
 
-Create empty `__init__.py` in `config/`, `nn/`, `core/`, `losses/`, `metrics/` and in `tests/alignair/`.
+Create empty `__init__.py` in `config/`, `nn/`, `core/`, `losses/`, `metrics/` (source package dirs only — NOT in any `tests/` dir).
 
 - [ ] **Step 4: Create shared test fixtures**
 
@@ -356,7 +356,7 @@ git commit -m "feat(alignair): add ModelConfig dataclass"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/alignair/nn/__init__.py` (empty) and `tests/alignair/nn/test_embedding.py`:
+Create `tests/alignair/nn/test_embedding.py`:
 ```python
 import torch
 from alignair.nn.activations import make_activation
@@ -1105,7 +1105,7 @@ git commit -m "feat(alignair): add output heads (segmentation, allele, analysis,
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/alignair/core/__init__.py` (empty) and `tests/alignair/core/test_base.py`:
+Create `tests/alignair/core/test_base.py`:
 ```python
 import torch
 from alignair.core.base import BaseAlignAIR
@@ -1503,7 +1503,7 @@ git commit -m "feat(alignair): add MultiChainAlignAIR with chain-type head"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/alignair/metrics/__init__.py` (empty) and `tests/alignair/metrics/test_metrics.py`:
+Create `tests/alignair/metrics/test_metrics.py`:
 ```python
 import torch
 from alignair.metrics.accumulator import MeanAccumulator
@@ -1718,7 +1718,7 @@ git commit -m "feat(alignair): add lightweight training metrics"
 
 - [ ] **Step 1: Write the failing test for functional helpers**
 
-Create `tests/alignair/losses/__init__.py` (empty) and `tests/alignair/losses/test_functional.py`:
+Create `tests/alignair/losses/test_functional.py`:
 ```python
 import torch
 from alignair.losses.functional import soft_targets, expectation_from_logits, interval_iou_loss
@@ -2019,7 +2019,7 @@ git commit -m "feat(alignair): add hierarchical multi-task loss"
 
 - [ ] **Step 1: Write the equivalence test**
 
-Create `tests/alignair/equivalence/__init__.py` (empty) and `tests/alignair/equivalence/test_tf_equivalence.py`:
+Create `tests/alignair/equivalence/test_tf_equivalence.py`:
 ```python
 """Numeric-equivalence checks: new PyTorch math vs legacy TensorFlow math.
 
