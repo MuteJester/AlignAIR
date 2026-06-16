@@ -1,14 +1,16 @@
-"""GermlineEncoder: nucleotide sequence -> L2-normalized embedding (for matching)."""
+"""GermlineEncoder: nucleotide sequence -> per-position reps and a pooled
+L2-normalized embedding (for matching)."""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 class GermlineEncoder(nn.Module):
-    """Conv stack + masked mean-pool + projection -> unit-norm embedding.
+    """Conv stack producing per-position reps; masked mean-pool + proj -> unit-norm embedding.
 
     Input:  tokens (B, L) long, mask (B, L) bool (True = valid position).
-    Output: (B, embed_dim) L2-normalized.
+    forward_positions -> (B, L, embed_dim) masked per-position reps.
+    forward -> (B, embed_dim) L2-normalized pooled embedding.
     """
 
     def __init__(self, embed_dim: int = 128, vocab_size: int = 6,
@@ -20,14 +22,17 @@ class GermlineEncoder(nn.Module):
         self.act = nn.GELU()
         self.proj = nn.Linear(embed_dim, embed_dim)
 
-    def forward(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def forward_positions(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         x = self.token_emb(tokens)                 # (B, L, E)
-        m = mask.unsqueeze(-1).to(x.dtype)         # (B, L, 1)
-        x = x * m                                  # zero padded positions pre-conv
-        h = x.transpose(1, 2)                      # (B, E, L)
+        m = mask.unsqueeze(-1).to(x.dtype)
+        x = x * m
+        h = x.transpose(1, 2)
         for conv in self.convs:
-            h = self.act(conv(h)) * m.transpose(1, 2)  # re-mask after each conv
-        h = h.transpose(1, 2)                      # (B, L, E)
-        pooled = (h * m).sum(dim=1) / m.sum(dim=1).clamp(min=1.0)  # masked mean
-        emb = self.proj(pooled)
-        return F.normalize(emb, dim=-1)
+            h = self.act(conv(h)) * m.transpose(1, 2)
+        return h.transpose(1, 2)                    # (B, L, E), padded positions zero
+
+    def forward(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        h = self.forward_positions(tokens, mask)
+        m = mask.unsqueeze(-1).to(h.dtype)
+        pooled = (h * m).sum(dim=1) / m.sum(dim=1).clamp(min=1.0)
+        return F.normalize(self.proj(pooled), dim=-1)
