@@ -31,8 +31,7 @@ class GermlineAligner(nn.Module):
         (start_logits (B,Lg), end_logits (B,Lg))."""
         S = F.normalize(self.seg_proj(seg_reps), dim=-1)
         G = F.normalize(self.germ_proj(germ_reps), dim=-1)
-        temp = self.log_temp.clamp(-2.0, 1.5).exp()             # temp in [~0.14, ~4.5]
-        M = temp * torch.einsum("bid,bjd->bij", S, G)           # (B, Ls, Lg), cosine
+        M = torch.einsum("bid,bjd->bij", S, G)                  # (B, Ls, Lg), cosine in [-1,1]
         valid = seg_mask.unsqueeze(2) & germ_mask.unsqueeze(1)
         M = M.masked_fill(~valid, 0.0)
 
@@ -40,15 +39,21 @@ class GermlineAligner(nn.Module):
         device = M.device
         i = torch.arange(Ls, device=device)
         neg = -1e4  # moderate mask: a masked target keeps CE bounded (finfo.min -> ~1e37)
-        start_logits = M.new_full((B, Lg), neg)
+        sums = M.new_zeros((B, Lg))
 
         for o in range(Lg):
             # start offset o: segment pos i aligns to germline o+i
             j = o + i
             ok = j < Lg
             if ok.any():
-                start_logits[:, o] = M[:, i[ok], j[ok]].sum(dim=1)
-        start_logits = start_logits.masked_fill(~germ_mask, neg)
+                sums[:, o] = M[:, i[ok], j[ok]].sum(dim=1)
+        # Mean cosine along each diagonal (divide by the segment length, a constant
+        # per sample) keeps the logit scale ~[-temp, temp] regardless of segment
+        # length, so fragments and full reads are comparable and CE never spikes to
+        # ~temp*Ls. Partial-overlap offsets keep their smaller raw sum -> downweighted.
+        seg_len_d = seg_mask.sum(dim=1).clamp(min=1).unsqueeze(1)
+        temp = self.log_temp.clamp(0.0, 3.4).exp()              # temp in [1, ~30]
+        start_logits = (temp * sums / seg_len_d).masked_fill(~germ_mask, neg)
 
         # Contiguous alignment (no indels here): the last aligned germline position
         # is start + (seg_len - 1), so end_logits is the start distribution shifted
