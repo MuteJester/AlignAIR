@@ -65,3 +65,32 @@ class GymTrainer:
                 step += 1
         bar.close()
         return history
+
+    @torch.no_grad()
+    def evaluate(self, n_batches: int = 4) -> dict:
+        self.model.eval()
+        loader = self._loader()
+        ref_emb = self.model.encode_reference(self.reference_set)
+        tot_loss, region_correct, region_total = 0.0, 0, 0
+        v_hits, v_total, nb = 0, 0, 0
+        for batch in loader:
+            if nb >= n_batches:
+                break
+            batch = self._to_device(batch)
+            out = self.model(batch["tokens"], batch["mask"], ref_emb)
+            total, _ = self.loss_fn(out, batch)
+            tot_loss += float(total.cpu())
+            valid = batch["region_labels"] != -100
+            pred = out["region_logits"].argmax(-1)
+            region_correct += int(((pred == batch["region_labels"]) & valid).sum().cpu())
+            region_total += int(valid.sum().cpu())
+            v_pred = out["match"]["V"].argmax(-1)
+            v_hits += int(batch["v_allele"][torch.arange(v_pred.shape[0]), v_pred].sum().cpu())
+            v_total += v_pred.shape[0]
+            nb += 1
+        self.model.train()
+        return {
+            "loss": tot_loss / max(nb, 1),
+            "region_acc": region_correct / max(region_total, 1),
+            "v_call_agreement": v_hits / max(v_total, 1),
+        }
