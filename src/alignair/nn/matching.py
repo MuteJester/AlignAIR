@@ -20,7 +20,12 @@ class AlleleMatchingHead(nn.Module):
 
     def forward(self, query: torch.Tensor, candidates: torch.Tensor,
                 candidate_mask: torch.Tensor | None = None) -> torch.Tensor:
-        scores = (query @ candidates.t()) / self.log_temp.exp().clamp(min=1e-4)
+        # Clamp the temperature to a floor of 0.04 (and ceil 1.0): query/candidates
+        # are unit-normalised, so cosine in [-1,1] and scores in [-25,25]. Without a
+        # floor the learnable temperature collapses toward 0, blowing scores (and the
+        # InfoNCE loss on a wrong positive) up to ~200 and destabilising training.
+        temp = self.log_temp.exp().clamp(0.04, 1.0)
+        scores = (query @ candidates.t()) / temp
         if candidate_mask is not None:
             scores = scores.masked_fill(~candidate_mask.unsqueeze(0), float("-inf"))
         return scores
