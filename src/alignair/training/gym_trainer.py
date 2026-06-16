@@ -33,6 +33,7 @@ class GymTrainer:
         # only ever fired set_progress once, pinning training at p=0 (clean data).
         self.refresh_curriculum_every = refresh_curriculum_every
         self.has_d = reference_set.has_d
+        self._nonfinite_skips = 0
         params = list(self.model.parameters()) + list(self.loss_fn.parameters())
         self.optimizer = torch.optim.Adam(params, lr=lr)
 
@@ -83,6 +84,18 @@ class GymTrainer:
             total, comp = self.loss_fn(out, batch, germline_logits=germline_logits,
                                        match_logits=match_logits)
             self.optimizer.zero_grad(set_to_none=True)
+            # Skip non-finite steps so a single diverged batch cannot poison the
+            # weights with NaN/inf (regression heads can spike on very hard inputs).
+            if not torch.isfinite(total) or float(total.detach()) > 1e4:
+                self._nonfinite_skips += 1
+                worst = max(((k, float(v)) for k, v in comp.items() if k != "total"),
+                            key=lambda kv: abs(kv[1]), default=("?", 0.0))
+                logger.warning("skipping diverged loss at step %d (total=%.3g, worst=%s=%.3g); "
+                               "skips=%d", step, float(total.detach().cpu()),
+                               worst[0], worst[1], self._nonfinite_skips)
+                step += 1
+                bar.update(1)
+                continue
             total.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
             self.optimizer.step()

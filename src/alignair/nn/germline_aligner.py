@@ -11,6 +11,7 @@ matching is ambiguous.
 """
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class GermlineAligner(nn.Module):
@@ -18,14 +19,20 @@ class GermlineAligner(nn.Module):
         super().__init__()
         self.seg_proj = nn.Linear(d_model, d_model)
         self.germ_proj = nn.Linear(d_model, d_model)
+        # Learnable, clamped temperature on a *cosine* correlation. Cosine bounds
+        # each per-position term to [-1, 1] so the diagonal sum cannot run away as
+        # the projections grow (raw dot products summed over a ~300bp segment
+        # otherwise drive a positive-feedback explosion to 1e37 -> inf in the CE).
+        self.log_temp = nn.Parameter(torch.zeros(()))
 
     def forward(self, seg_reps: torch.Tensor, seg_mask: torch.Tensor,
                 germ_reps: torch.Tensor, germ_mask: torch.Tensor):
         """seg_reps (B,Ls,d) right-padded; germ_reps (B,Lg,d). Returns
         (start_logits (B,Lg), end_logits (B,Lg))."""
-        S = self.seg_proj(seg_reps)
-        G = self.germ_proj(germ_reps)
-        M = torch.einsum("bid,bjd->bij", S, G)                  # (B, Ls, Lg)
+        S = F.normalize(self.seg_proj(seg_reps), dim=-1)
+        G = F.normalize(self.germ_proj(germ_reps), dim=-1)
+        temp = self.log_temp.clamp(-2.0, 1.5).exp()             # temp in [~0.14, ~4.5]
+        M = temp * torch.einsum("bid,bjd->bij", S, G)           # (B, Ls, Lg), cosine
         valid = seg_mask.unsqueeze(2) & germ_mask.unsqueeze(1)
         M = M.masked_fill(~valid, 0.0)
 
