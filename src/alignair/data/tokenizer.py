@@ -1,5 +1,6 @@
 """Center-padded nucleotide tokenizer (port of CenterPaddedSequenceTokenizer)."""
 import numpy as np
+import torch
 
 TOKEN_DICT = {"A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0}
 
@@ -29,3 +30,22 @@ class CenterPaddedTokenizer:
         pad_right = pad_total - pad_left
         padded = np.pad(encoded, (pad_left, pad_right), constant_values=0)
         return padded, pad_left
+
+
+def pad_tokenize(sequences, token_dict: dict | None = None):
+    """Right-pad a batch of nucleotide strings to the batch max length.
+
+    Returns (tokens LongTensor (B, Lmax), mask BoolTensor (B, Lmax) with True=valid).
+    Unknown characters map to N; pad token is 0.
+    """
+    td = token_dict or TOKEN_DICT
+    n = td["N"]
+    encoded = [[td.get(c, n) for c in s.upper()] for s in sequences]
+    lmax = max((len(e) for e in encoded), default=0)
+    tokens = torch.zeros(len(encoded), lmax, dtype=torch.long)
+    mask = torch.zeros(len(encoded), lmax, dtype=torch.bool)
+    for i, e in enumerate(encoded):
+        if e:
+            tokens[i, :len(e)] = torch.tensor(e, dtype=torch.long)
+            mask[i, :len(e)] = True
+    return tokens, mask
