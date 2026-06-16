@@ -37,9 +37,13 @@ def test_evaluate_reports_metrics():
     gym = AlignAIRGym([gdata.HUMAN_IGK_OGRDB], rs, n=16, seed=3)
     trainer = GymTrainer(model, loss_fn, rs, gym, batch_size=8)
     metrics = trainer.evaluate(n_batches=2)
-    for k in ("region_acc", "v_call_agreement", "loss"):
+    # comprehensive: region/state + per-gene call + in-seq & germline start/end deviation
+    for k in ("region_acc", "state_acc", "loss",
+              "v_call", "v_start_dev", "v_end_dev", "v_gl_start_dev", "v_gl_end_dev",
+              "j_call", "j_start_dev", "j_gl_end_dev"):
         assert k in metrics
     assert 0.0 <= metrics["region_acc"] <= 1.0
+    assert metrics["v_start_dev"] >= 0.0
 
 
 def test_train_with_cached_reference_refresh():

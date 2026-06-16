@@ -64,24 +64,22 @@ def main():
         ev = trainer.evaluate(n_batches=3)
         last = {k: sum(h[k] for h in hist[-5:]) / min(5, len(hist)) for k in hist[0]}
         dt = time.time() - t0
-        row = {"step": step, "wall_s": round(dt, 1),
-               "train_total": round(last["total"], 4),
-               "train_region": round(last.get("region", 0), 4),
-               "train_v_match": round(last.get("v_match", 0), 4),
-               "train_v_germline": round(last.get("v_germline", 0), 4),
+        row = {"step": step, "wall_s": round(dt, 1), "train_total": round(last["total"], 4),
                "eval_loss": round(ev["loss"], 4),
-               "region_acc": round(ev["region_acc"], 4),
-               "state_acc": round(ev["state_acc"], 4),
-               "v_call_agree": round(ev["v_call_agreement"], 4),
-               "v_start_dev": round(ev["v_start_dev"], 3),
-               "v_end_dev": round(ev["v_end_dev"], 3),
-               "v_gl_start_dev": round(ev["v_gl_start_dev"], 3)}
+               "region_acc": round(ev["region_acc"], 4), "state_acc": round(ev["state_acc"], 4)}
+        for g in genes:
+            row[f"{g}_call"] = round(ev[f"{g}_call"], 3)
+            row[f"{g}_start_dev"] = round(ev[f"{g}_start_dev"], 2)
+            row[f"{g}_end_dev"] = round(ev[f"{g}_end_dev"], 2)
+            row[f"{g}_gl_start_dev"] = round(ev[f"{g}_gl_start_dev"], 2)
+            row[f"{g}_gl_end_dev"] = round(ev[f"{g}_gl_end_dev"], 2)
         rows.append(row)
-        print(f"[step {step:4d} | {dt:5.0f}s] total={row['train_total']:.2f} "
-              f"v_match={row['train_v_match']:.2f} v_gl={row['train_v_germline']:.2f} || "
-              f"region_acc={row['region_acc']:.3f} state_acc={row['state_acc']:.3f} "
-              f"v_call={row['v_call_agree']:.3f} | dev v_start={row['v_start_dev']:.2f} "
-              f"v_end={row['v_end_dev']:.2f} v_gl_start={row['v_gl_start_dev']:.2f}")
+        seg = " | ".join(
+            f"{g.upper()} call={row[f'{g}_call']:.2f} "
+            f"seq[{row[f'{g}_start_dev']:.1f},{row[f'{g}_end_dev']:.1f}] "
+            f"gl[{row[f'{g}_gl_start_dev']:.1f},{row[f'{g}_gl_end_dev']:.1f}]" for g in genes)
+        print(f"[step {step:4d}|{dt:4.0f}s] tot={row['train_total']:.2f} "
+              f"region={row['region_acc']:.3f} state={row['state_acc']:.3f} || {seg}")
 
     with open(args.csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
