@@ -44,6 +44,19 @@ def correct_segments(positions: dict, sequences, max_length: int, has_d: bool) -
         j_start = np.maximum(j_start, v_end)
         j_end = np.maximum(j_end, j_start + 1)
 
+    # Final bounds clamp (improvement over legacy, which left ordering free to push
+    # positions past the sequence end when an upstream boundary is at the very end —
+    # common with untrained weights). Keep start in [0, L-1] and end in [start+1, L].
+    def clamp(s, e):
+        s = np.clip(s, 0, seq_lengths - 1)
+        e = np.clip(e, s + 1, seq_lengths)
+        return s, e
+
+    v_start, v_end = clamp(v_start, v_end)
+    j_start, j_end = clamp(j_start, j_end)
+    if d_start is not None:
+        d_start, d_end = clamp(d_start, d_end)
+
     corrected = {"v_start": v_start, "v_end": v_end, "j_start": j_start, "j_end": j_end}
     if d_start is not None:
         corrected["d_start"] = d_start
