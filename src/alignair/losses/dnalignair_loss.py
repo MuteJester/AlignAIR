@@ -1,0 +1,76 @@
+"""Composite Kendall-weighted loss for the unified DNAlignAIR model."""
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from ..nn.weighting import UncertaintyWeight
+from ..nn.matching import multilabel_match_loss
+
+IGNORE = -100
+
+
+class DNAlignAIRLoss(nn.Module):
+    def __init__(self, has_d: bool = True):
+        super().__init__()
+        self.has_d = has_d
+        names = ["orientation", "region", "state", "v_match", "j_match",
+                 "noise", "mutation", "indel", "productive"]
+        if has_d:
+            names += ["d_match"]
+        names += ["v_germline", "j_germline"] + (["d_germline"] if has_d else [])
+        self.weights = nn.ModuleDict({n: UncertaintyWeight() for n in names})
+
+    def forward(self, outputs: dict, batch: dict, germline_logits: dict | None = None):
+        comp = {}
+
+        def add(name, raw):
+            return raw * self.weights[name]()
+
+        orientation = F.cross_entropy(outputs["orientation_logits"], batch["orientation_id"])
+        region = F.cross_entropy(
+            outputs["region_logits"].reshape(-1, outputs["region_logits"].shape[-1]),
+            batch["region_labels"].reshape(-1), ignore_index=IGNORE)
+        state = F.cross_entropy(
+            outputs["state_logits"].reshape(-1, outputs["state_logits"].shape[-1]),
+            batch["state_labels"].reshape(-1), ignore_index=IGNORE)
+
+        genes = ["v", "j"] + (["d"] if self.has_d else [])
+        match_terms = {g: multilabel_match_loss(outputs["match"][g.upper()], batch[f"{g}_allele"])
+                       for g in genes}
+
+        noise = F.l1_loss(outputs["noise_count"], batch["noise_count"])
+        mutation = F.mse_loss(outputs["mutation_rate"], batch["mutation_rate"])
+        indel = F.l1_loss(outputs["indel_count"], batch["indel_count"])
+        productive = F.binary_cross_entropy(outputs["productive"].clamp(1e-7, 1 - 1e-7),
+                                            batch["productive"])
+
+        total = (add("orientation", orientation) + add("region", region) + add("state", state)
+                 + add("noise", noise) + add("mutation", mutation) + add("indel", indel)
+                 + add("productive", productive))
+        comp.update({"orientation": orientation.detach(), "region": region.detach(),
+                     "state": state.detach(), "noise": noise.detach(),
+                     "mutation": mutation.detach(), "indel": indel.detach(),
+                     "productive": productive.detach()})
+        for g in genes:
+            total = total + add(f"{g}_match", match_terms[g])
+            comp[f"{g}_match"] = match_terms[g].detach()
+
+        if germline_logits is not None:
+            for g in genes:
+                if g not in germline_logits:
+                    continue
+                sl, el = germline_logits[g]
+                gs = batch[f"{g}_germline_start"].clamp(min=0, max=sl.shape[-1] - 1)
+                ge = (batch[f"{g}_germline_end"] - 1).clamp(min=0, max=el.shape[-1] - 1)
+                gl = F.cross_entropy(sl, gs) + F.cross_entropy(el, ge)
+                total = total + add(f"{g}_germline", gl)
+                comp[f"{g}_germline"] = gl.detach()
+
+        total = total + sum(w.regularization() for w in self.weights.values())
+        comp["total"] = total.detach()
+        return total, comp
+
+    @torch.no_grad()
+    def apply_constraints(self) -> None:
+        for w in self.weights.values():
+            w.apply_constraints()
