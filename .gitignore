@@ -116,3 +116,4 @@ MANIFEST.in
 /.venv/
 /tmp_run/
 /checkpoints/
+/experiments/
