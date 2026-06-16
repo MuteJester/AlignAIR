@@ -42,6 +42,11 @@ class AlignAIRLoss(nn.Module):
             names += ["chain_type"]
         self.weights = nn.ModuleDict({n: UncertaintyWeight() for n in names})
 
+    @torch.no_grad()
+    def apply_constraints(self) -> None:
+        for w in self.weights.values():
+            w.apply_constraints()
+
     def forward(self, y_true: Dict[str, torch.Tensor],
                 y_pred: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         L = self.L
