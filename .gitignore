@@ -113,5 +113,6 @@ MANIFEST.in
 /Load Models.html
 /tests/edf_sample.csv
 /.venv311/
+/.venv/
 /tmp_run/
 /checkpoints/
