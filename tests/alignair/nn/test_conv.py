@@ -1,5 +1,5 @@
 import torch
-from alignair.nn.conv import Conv1dBatchNorm
+from alignair.nn.conv import Conv1dBatchNorm, ConvResidualFeatureExtractor
 
 
 def test_conv_bn_halves_length_and_sets_channels():
@@ -16,3 +16,26 @@ def test_conv_bn_uses_eps_and_momentum():
                             activation="leaky_relu")
     assert abs(block.batch_norm.eps - 0.8) < 1e-9
     assert abs(block.batch_norm.momentum - 0.9) < 1e-9
+
+
+def test_residual_extractor_output_shape():
+    # embeddings (B, L, E) -> block transposes internally -> (B, out_features)
+    fe = ConvResidualFeatureExtractor(
+        in_channels=32, filter_size=16,
+        kernel_sizes=[3, 3, 3, 2, 5], max_pool_size=2,
+        out_features=64, activation="tanh",
+    )
+    x = torch.randn(2, 64, 32)  # (B, L, E)
+    out = fe(x)
+    assert out.shape == (2, 64)
+
+
+def test_residual_extractor_backprop():
+    fe = ConvResidualFeatureExtractor(
+        in_channels=32, filter_size=16, kernel_sizes=[3, 3, 3, 2, 5],
+        max_pool_size=2, out_features=64, activation="tanh",
+    )
+    x = torch.randn(2, 64, 32, requires_grad=True)
+    out = fe(x)
+    out.sum().backward()
+    assert x.grad is not None and torch.isfinite(x.grad).all()
