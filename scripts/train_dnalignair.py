@@ -29,7 +29,7 @@ def main():
     ap.add_argument("--d-model", type=int, default=128)
     ap.add_argument("--layers", type=int, default=4)
     ap.add_argument("--nhead", type=int, default=8)
-    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--lr", type=float, default=5e-4)
     ap.add_argument("--refresh-ref-every", type=int, default=1)
     ap.add_argument("--eval-every", type=int, default=50)
     ap.add_argument("--csv", default="experiments/run.csv")
@@ -60,9 +60,10 @@ def main():
     step = 0
     while step < args.steps:
         chunk = min(args.eval_every, args.steps - step)
-        hist = trainer.fit(total_steps=chunk)
+        hist = trainer.fit(total_steps=chunk, global_total=args.steps)
         step += chunk
-        ev = trainer.evaluate(n_batches=3)
+        ev = trainer.evaluate(n_batches=3)            # hardest: fragments + heavy SHM
+        ev_easy = trainer.evaluate(n_batches=3, p=0.0)  # easiest: clean full naive reads
         last = {k: sum(h[k] for h in hist[-5:]) / min(5, len(hist)) for k in hist[0]}
         dt = time.time() - t0
         row = {"step": step, "wall_s": round(dt, 1), "train_total": round(last["total"], 4),
@@ -79,8 +80,10 @@ def main():
             f"{g.upper()} call={row[f'{g}_call']:.2f} "
             f"seq[{row[f'{g}_start_dev']:.1f},{row[f'{g}_end_dev']:.1f}] "
             f"gl[{row[f'{g}_gl_start_dev']:.1f},{row[f'{g}_gl_end_dev']:.1f}]" for g in genes)
+        easy = " ".join(f"{g.upper()}={ev_easy[f'{g}_call']:.2f}" for g in genes)
         print(f"[step {step:4d}|{dt:4.0f}s] tot={row['train_total']:.2f} "
               f"region={row['region_acc']:.3f} state={row['state_acc']:.3f} || {seg}")
+        print(f"           easy-call(p=0): {easy}  | hard region={ev['region_acc']:.3f}")
 
     with open(args.csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))

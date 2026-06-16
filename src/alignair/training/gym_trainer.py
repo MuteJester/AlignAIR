@@ -34,6 +34,7 @@ class GymTrainer:
         self.refresh_curriculum_every = refresh_curriculum_every
         self.has_d = reference_set.has_d
         self._nonfinite_skips = 0
+        self._global_step = 0  # persists across fit() calls for a monotonic curriculum
         params = list(self.model.parameters()) + list(self.loss_fn.parameters())
         self.optimizer = torch.optim.Adam(params, lr=lr)
 
@@ -44,7 +45,11 @@ class GymTrainer:
         return DataLoader(self.gym, batch_size=self.batch_size,
                           collate_fn=lambda b: gym_collate(b, self.reference_set, self.has_d))
 
-    def fit(self, total_steps: int) -> list:
+    def fit(self, total_steps: int, global_total: int | None = None) -> list:
+        """Train for ``total_steps``. When ``global_total`` is given the curriculum
+        ramps over the GLOBAL training horizon (across successive fit() calls) via an
+        internal step counter, so chunked training yields one monotonic easy->hard
+        ramp instead of a sawtooth that resets every chunk."""
         from .germline_tf import compute_germline_logits
         self.model.train()
         loader = self._loader()
@@ -56,7 +61,11 @@ class GymTrainer:
         since_refresh = self.refresh_curriculum_every  # force a refresh on entry
         while step < total_steps:
             if since_refresh >= self.refresh_curriculum_every:
-                self.gym.set_progress(step / max(total_steps - 1, 1))
+                if global_total:
+                    p = self._global_step / max(global_total - 1, 1)
+                else:
+                    p = step / max(total_steps - 1, 1)
+                self.gym.set_progress(min(1.0, p))
                 it = iter(loader)  # picks up the new curriculum progress on rebuild
                 since_refresh = 0
             try:
@@ -65,6 +74,7 @@ class GymTrainer:
                 it = iter(loader)
                 batch = next(it)
             since_refresh += 1
+            self._global_step += 1
 
             batch = self._to_device(batch)
             if ref_emb is None or step % self.refresh_reference_every == 0:
