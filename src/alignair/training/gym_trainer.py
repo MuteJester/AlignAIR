@@ -10,6 +10,12 @@ from ..gym.collate import gym_collate
 logger = logging.getLogger(__name__)
 
 
+def _detach_ref(ref_emb: dict) -> dict:
+    """Detach all tensors in a reference-embedding dict (for cross-step caching)."""
+    return {g: {k: (v.detach() if torch.is_tensor(v) else v) for k, v in d.items()}
+            for g, d in ref_emb.items()}
+
+
 class GymTrainer:
     def __init__(self, model, loss_fn, reference_set, gym, lr=1e-3, batch_size=16,
                  device=None, grad_clip=10.0, refresh_reference_every=1):
@@ -48,6 +54,12 @@ class GymTrainer:
                 batch = self._to_device(batch)
                 if ref_emb is None or step % self.refresh_reference_every == 0:
                     ref_emb = self.model.encode_reference(self.reference_set)
+                    if self.refresh_reference_every > 1:
+                        # Cache across steps: detach so a later step's backward does not
+                        # traverse this (freed) graph. The germline encoder still learns
+                        # every step via the query-segment path; references act as a
+                        # periodically-refreshed target encoder.
+                        ref_emb = _detach_ref(ref_emb)
                 out = self.model(batch["tokens"], batch["mask"], ref_emb)
                 germline_logits = compute_germline_logits(
                     self.model, batch["tokens"], batch["mask"], batch, ref_emb, self.has_d)

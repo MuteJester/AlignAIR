@@ -40,3 +40,20 @@ def test_evaluate_reports_metrics():
     for k in ("region_acc", "v_call_agreement", "loss"):
         assert k in metrics
     assert 0.0 <= metrics["region_acc"] <= 1.0
+
+
+def test_train_with_cached_reference_refresh():
+    # refresh_reference_every > 1 must not hit a freed-graph error and must still learn
+    torch.manual_seed(0)
+    cfg = DNAlignAIRConfig(d_model=64, n_layers=2, nhead=4, dim_feedforward=128)
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGK_OGRDB)
+    model = DNAlignAIR(cfg)
+    loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
+    gym = AlignAIRGym([gdata.HUMAN_IGK_OGRDB], rs, seed=0)
+    trainer = GymTrainer(model, loss_fn, rs, gym, lr=1e-3, batch_size=8,
+                         refresh_reference_every=5)
+    history = trainer.fit(total_steps=20)
+    assert len(history) == 20
+    first = sum(h["total"] for h in history[:5]) / 5
+    last = sum(h["total"] for h in history[-5:]) / 5
+    assert last < first
