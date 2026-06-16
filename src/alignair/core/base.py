@@ -11,11 +11,12 @@ from ..nn.heads import (
     IndelCountHead, ProductivityHead,
 )
 from .output import AlignAIROutput
+from ..serialization.pretrained import PretrainedMixin
 
 _EMBED_DIM = 32
 
 
-class BaseAlignAIR(nn.Module):
+class BaseAlignAIR(PretrainedMixin, nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
         self.config = config
