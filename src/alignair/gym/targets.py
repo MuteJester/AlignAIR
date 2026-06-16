@@ -31,9 +31,9 @@ def build_targets(record: dict, reference_set, has_d: bool) -> dict:
     seq = str(record["sequence"]).upper()
     L = len(seq)
     coords = {g: (int(record[f"{g}_sequence_start"]), int(record[f"{g}_sequence_end"]))
-              for g in _GENES if f"{g}_sequence_start" in record}
+              for g in _GENES if record.get(f"{g}_sequence_start") is not None}
     germ = {g: (int(record[f"{g}_germline_start"]), int(record[f"{g}_germline_end"]))
-            for g in _GENES if f"{g}_germline_start" in record}
+            for g in _GENES if record.get(f"{g}_germline_start") is not None}
 
     vs, ve = coords["v"]
     js, je = coords["j"]
@@ -69,7 +69,7 @@ def build_targets(record: dict, reference_set, has_d: bool) -> dict:
             state[ss + k] = STATE_INDEX["substitution"]
 
     calls = {g.upper(): set(str(record[f"{g}_call"]).split(","))
-             for g in _GENES if f"{g}_call" in record}
+             for g in _GENES if record.get(f"{g}_call")}
 
     return {
         "tokens": _tok(seq),
