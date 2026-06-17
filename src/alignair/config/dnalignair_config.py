@@ -16,6 +16,8 @@ class DNAlignAIRConfig:
     n_states: int = 4      # germline/substitution/insertion/deletion
     aligner: str = "softdp"  # germline aligner: "softdp" (gap-aware DP, default) | "diagonal" (legacy cosine corr)
     region_decoder: str = "linear"  # region head: "linear" (RegionTagger) | "query" (mask-span decoder w/ boundary posteriors)
+    caller: str = "retrieval"  # allele caller: "retrieval" (cosine vs germline embeddings) | "classifier" (masked per-allele head on backbone reps)
+    allele_counts: dict | None = None  # {"V":198,"D":33,"J":7} required when caller=="classifier"
 
     def to_dict(self) -> dict:
         return asdict(self)

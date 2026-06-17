@@ -77,6 +77,12 @@ class DNAlignAIR(nn.Module):
         self.state_head = PerPositionStateHead(d_model=d)
         self.germline_encoder = GermlineEncoder(embed_dim=d)
         self.matching = AlleleMatchingHead()
+        # allele caller: retrieval (default) or a masked per-allele classifier head
+        self.caller = getattr(config, "caller", "retrieval")
+        if self.caller == "classifier":
+            counts = config.allele_counts or {}
+            self.classifier = nn.ModuleDict(
+                {g: nn.Linear(d, counts[g]) for g in counts})
         self.aligner = (SoftDPAligner(d_model=d) if getattr(config, "aligner", "diagonal") == "softdp"
                         else GermlineAligner(d_model=d))
         self.noise_head = nn.Linear(d, 1)
@@ -132,16 +138,23 @@ class DNAlignAIR(nn.Module):
         return out
 
     def match_alleles(self, tokens: torch.Tensor, mask: torch.Tensor,
-                      region_labels: torch.Tensor, ref_emb: dict) -> dict:
-        """Per-gene allele match scores: re-encode each gene's observed segment with
-        the (shared) germline encoder and score against the reference embeddings in the
-        same space. Inference passes predicted region labels; training teacher-forces
-        the true labels."""
+                      region_labels: torch.Tensor, ref_emb: dict, reps: torch.Tensor | None = None) -> dict:
+        """Per-gene allele match scores. Retrieval (default): re-encode the observed
+        segment with the shared germline encoder and score (cosine) against reference
+        embeddings. Classifier: masked-mean-pool the segment's BACKBONE reps and apply
+        a learned per-allele head (free prototypes, sees mutated examples in training).
+        Inference passes predicted region labels; training teacher-forces the true ones."""
         match = {}
         for gene, emb in ref_emb.items():
-            seg_tok, seg_mask = extract_segment_tokens(tokens, mask, region_labels, gene)
-            query = self.germline_encoder(seg_tok, seg_mask)        # (B, d) normalized
-            match[gene] = self.matching(query, emb["embeddings"])
+            if self.caller == "classifier":
+                seg, seg_mask = extract_segment(reps, mask, region_labels, gene)
+                m = seg_mask.unsqueeze(-1).to(seg.dtype)
+                pooled = (seg * m).sum(dim=1) / m.sum(dim=1).clamp(min=1.0)
+                match[gene] = self.classifier[gene](pooled)         # (B, K) logits
+            else:
+                seg_tok, seg_mask = extract_segment_tokens(tokens, mask, region_labels, gene)
+                query = self.germline_encoder(seg_tok, seg_mask)    # (B, d) normalized
+                match[gene] = self.matching(query, emb["embeddings"])
         return match
 
     def forward(self, tokens: torch.Tensor, mask: torch.Tensor, ref_emb: dict,
@@ -149,7 +162,8 @@ class DNAlignAIR(nn.Module):
         out = self.forward_dense(tokens, mask, orientation_ids)
         region_labels = out["region_logits"].argmax(dim=-1)
         # match on the canonicalized tokens, same frame as the region prediction
-        out["match"] = self.match_alleles(out["canon_tokens"], mask, region_labels, ref_emb)
+        out["match"] = self.match_alleles(out["canon_tokens"], mask, region_labels, ref_emb,
+                                          reps=out["reps"])
         return out
 
     def germline_coords(self, seg_reps, seg_mask, germ_reps, germ_mask):

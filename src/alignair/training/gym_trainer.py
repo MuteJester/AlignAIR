@@ -104,7 +104,7 @@ class GymTrainer:
                 self.model, canon, batch["mask"], batch, ref_emb, self.has_d)
             # teacher-force the match query over TRUE regions for a clean signal
             match_logits = self.model.match_alleles(
-                canon, batch["mask"], batch["region_labels"], ref_emb)
+                canon, batch["mask"], batch["region_labels"], ref_emb, reps=out["reps"])
             total, comp = self.loss_fn(out, batch, germline_logits=germline_logits,
                                        match_logits=match_logits)
             # EMA self-distillation: pull the student's fragment-view allele posteriors

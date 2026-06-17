@@ -31,6 +31,7 @@ def main():
     ap.add_argument("--layers", type=int, default=4)
     ap.add_argument("--aligner", default="softdp")
     ap.add_argument("--region-decoder", default="linear")
+    ap.add_argument("--caller", choices=["retrieval", "classifier"], default="retrieval")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
@@ -38,8 +39,11 @@ def main():
     torch.manual_seed(0)
     dc = gdata.HUMAN_IGH_OGRDB
     rs = ReferenceSet.from_dataconfigs(dc)
+    counts = {g: len(rs.gene(g).names) for g in ("V", "D", "J")} if rs.has_d \
+        else {g: len(rs.gene(g).names) for g in ("V", "J")}
     cfg = DNAlignAIRConfig(d_model=args.d_model, n_layers=args.layers,
-                           aligner=args.aligner, region_decoder=args.region_decoder)
+                           aligner=args.aligner, region_decoder=args.region_decoder,
+                           caller=args.caller, allele_counts=counts)
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d, use_boundary=(args.region_decoder == "query"))
     gym = AlignAIRGym([dc], rs, seed=0)
