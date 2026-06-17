@@ -46,49 +46,55 @@ def run_igblast(records: list) -> list:
     return [rows.get(f"seq{i}") for i in range(len(records))]
 
 
-def _f(row, key):
-    v = row.get(key, "") if row else ""
+def _f(v):
     try:
         return float(v) if v not in ("", None) else None
-    except ValueError:
+    except (ValueError, TypeError):
         return None
 
 
-def score(records: list, rows: list) -> dict:
-    """Per-gene call accuracy + in-seq/germline start-end MAE vs ground truth."""
+def igblast_to_pred(row) -> dict:
+    """Convert an IgBLAST AIRR row to a GenAIRR-convention prediction dict
+    (1-based AIRR start -> 0-based; end kept as position). Missing -> None."""
+    p = {}
+    for g in GENES:
+        call = (row or {}).get(f"{g}_call", "") or ""
+        p[f"{g}_call"] = call.split(",")[0] if call else None
+        ss, se = _f((row or {}).get(f"{g}_sequence_start")), _f((row or {}).get(f"{g}_sequence_end"))
+        gs, ge = _f((row or {}).get(f"{g}_germline_start")), _f((row or {}).get(f"{g}_germline_end"))
+        p[f"{g}_sequence_start"] = (ss - 1) if ss is not None else None
+        p[f"{g}_sequence_end"] = se
+        p[f"{g}_germline_start"] = (gs - 1) if gs is not None else None
+        p[f"{g}_germline_end"] = ge
+    return p
+
+
+def score(records: list, preds: list) -> dict:
+    """Per-gene top-1-in-set call accuracy + in-seq/germline start-end MAE vs GT.
+    ``preds`` are GenAIRR-convention dicts (use igblast_to_pred for IgBLAST rows)."""
     agg = {g: {"call": [], "ss": [], "se": [], "gs": [], "ge": []} for g in GENES}
-    for rec, row in zip(records, rows):
+    for rec, pred in zip(records, preds):
         for g in GENES:
             gt_call = rec.get(f"{g}_call")
             if not gt_call:
                 continue
             gt_set = set(str(gt_call).split(","))
-            pred_call = (row or {}).get(f"{g}_call", "") or ""
-            pred_top1 = pred_call.split(",")[0] if pred_call else ""
+            pred_top1 = (pred or {}).get(f"{g}_call")
             agg[g]["call"].append(1.0 if pred_top1 in gt_set else 0.0)
-            # coordinates (AIRR 1-based start -> 0-based)
-            ps, pe = _f(row, f"{g}_sequence_start"), _f(row, f"{g}_sequence_end")
-            gs, ge = _f(row, f"{g}_germline_start"), _f(row, f"{g}_germline_end")
-            if rec.get(f"{g}_sequence_start") is not None:
-                if ps is not None:
-                    agg[g]["ss"].append(abs((ps - 1) - rec[f"{g}_sequence_start"]))
-                if pe is not None:
-                    agg[g]["se"].append(abs(pe - rec[f"{g}_sequence_end"]))
-                if gs is not None:
-                    agg[g]["gs"].append(abs((gs - 1) - rec[f"{g}_germline_start"]))
-                if ge is not None:
-                    agg[g]["ge"].append(abs(ge - rec[f"{g}_germline_end"]))
+            if rec.get(f"{g}_sequence_start") is None:
+                continue
+            for key, gt in (("ss", f"{g}_sequence_start"), ("se", f"{g}_sequence_end"),
+                            ("gs", f"{g}_germline_start"), ("ge", f"{g}_germline_end")):
+                v = (pred or {}).get(gt)
+                if v is not None:
+                    agg[g][key].append(abs(v - rec[gt]))
     out = {}
     for g in GENES:
         a = agg[g]
-        out[g] = {
-            "call": float(np.mean(a["call"])) if a["call"] else float("nan"),
-            "found": len(a["ss"]) / max(len(a["call"]), 1),  # fraction IgBLAST located
-            "ss": float(np.mean(a["ss"])) if a["ss"] else float("nan"),
-            "se": float(np.mean(a["se"])) if a["se"] else float("nan"),
-            "gs": float(np.mean(a["gs"])) if a["gs"] else float("nan"),
-            "ge": float(np.mean(a["ge"])) if a["ge"] else float("nan"),
-        }
+        out[g] = {"call": float(np.mean(a["call"])) if a["call"] else float("nan"),
+                  "found": len(a["ss"]) / max(len(a["call"]), 1)}
+        for k in ("ss", "se", "gs", "ge"):
+            out[g][k] = float(np.mean(a[k])) if a[k] else float("nan")
     return out
 
 
@@ -110,14 +116,17 @@ def main():
     print(f"IgBLAST baseline | HUMAN_IGH_OGRDB | n={args.n} per stratum\n")
     for name, p, crop in strata:
         recs = gen_records(p, args.n, args.seed, crop)
-        rows = run_igblast(recs)
-        s = score(recs, rows)
+        preds = [igblast_to_pred(r) for r in run_igblast(recs)]
         print(f"[{name}]")
-        for g in GENES:
-            r = s[g]
-            print(f"  {g.upper()}: call={r['call']:.2f} found={r['found']:.2f} "
-                  f"seq[{r['ss']:.1f},{r['se']:.1f}] gl[{r['gs']:.1f},{r['ge']:.1f}]")
+        print_scores(score(recs, preds))
         print()
+
+
+def print_scores(s: dict, indent: str = "  ") -> None:
+    for g in GENES:
+        r = s[g]
+        print(f"{indent}{g.upper()}: call={r['call']:.2f} found={r['found']:.2f} "
+              f"seq[{r['ss']:.1f},{r['se']:.1f}] gl[{r['gs']:.1f},{r['ge']:.1f}]")
 
 
 if __name__ == "__main__":
