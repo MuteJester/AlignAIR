@@ -64,7 +64,13 @@ class DNAlignAIRLoss(nn.Module):
                 sl, el = germline_logits[g]
                 gs = batch[f"{g}_germline_start"].clamp(min=0, max=sl.shape[-1] - 1)
                 ge = (batch[f"{g}_germline_end"] - 1).clamp(min=0, max=el.shape[-1] - 1)
-                gl = F.cross_entropy(sl, gs) + F.cross_entropy(el, ge)
+                per_row = (F.cross_entropy(sl, gs, reduction="none")
+                           + F.cross_entropy(el, ge, reduction="none"))
+                mask = batch.get(f"{g}_supervise")  # inverted-D rows masked out
+                if mask is not None:
+                    gl = (per_row * mask).sum() / mask.sum().clamp(min=1.0)
+                else:
+                    gl = per_row.mean()
                 total = total + add(f"{g}_germline", gl)
                 comp[f"{g}_germline"] = gl.detach()
 

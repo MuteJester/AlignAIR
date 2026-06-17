@@ -120,6 +120,10 @@ def build_targets(record: dict, reference_set, has_d: bool) -> dict:
         "inseq": coords,
         "calls": calls,
         "primary": primary,
+        # inverted-D reads contain RC(germline) at the D locus; we cannot yet
+        # supervise D-match/D-germline against the forward reference, so flag them
+        # and mask those terms (RC reference modelling is deferred).
+        "d_inverted": bool(record.get("d_inverted", False)),
         "orientation_id": 0,  # forward-only gym for now
         "noise_count": float(record["n_quality_errors"] + record.get("n_pcr_errors", 0)),
         "mutation_rate": float(record["mutation_rate"]),

@@ -50,6 +50,13 @@ def gym_collate(batch, reference_set, has_d: bool):
 
         out[f"{g}_primary_idx"] = torch.tensor([_primary(s) for s in batch], dtype=torch.long)
 
+    if has_d:
+        # mask inverted-D rows out of D supervision (RC vs forward reference);
+        # zeroing the multi-hot makes the contrastive D-match contribute 0 for them.
+        supervise = torch.tensor([0.0 if s.get("d_inverted") else 1.0 for s in batch])
+        out["d_supervise"] = supervise
+        out["d_allele"] = out["d_allele"] * supervise.unsqueeze(1)
+
     out["orientation_id"] = torch.tensor([s["orientation_id"] for s in batch], dtype=torch.long)
     for key in ("noise_count", "mutation_rate", "indel_count", "productive"):
         out[key] = torch.tensor([[s[key]] for s in batch], dtype=torch.float32)
