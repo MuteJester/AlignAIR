@@ -29,6 +29,7 @@ def main():
     ap.add_argument("--d-model", type=int, default=128)
     ap.add_argument("--layers", type=int, default=4)
     ap.add_argument("--nhead", type=int, default=8)
+    ap.add_argument("--aligner", choices=["diagonal", "softdp"], default="diagonal")
     ap.add_argument("--lr", type=float, default=5e-4)
     ap.add_argument("--refresh-ref-every", type=int, default=1)
     ap.add_argument("--distill", action="store_true",
@@ -45,7 +46,8 @@ def main():
     dc = getattr(gdata, args.config)
     rs = ReferenceSet.from_dataconfigs(dc)
     genes = ["v", "j"] + (["d"] if rs.has_d else [])
-    cfg = DNAlignAIRConfig(d_model=args.d_model, n_layers=args.layers, nhead=args.nhead)
+    cfg = DNAlignAIRConfig(d_model=args.d_model, n_layers=args.layers, nhead=args.nhead,
+                           aligner=args.aligner)
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
     gym = AlignAIRGym([dc], rs, seed=args.seed)

@@ -12,6 +12,7 @@ from ..nn.state_head import PerPositionStateHead
 from ..nn.germline_encoder import GermlineEncoder
 from ..nn.matching import AlleleMatchingHead
 from ..nn.germline_aligner import GermlineAligner
+from ..nn.soft_dp_aligner import SoftDPAligner
 
 
 def _masked_mean(h: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -73,7 +74,8 @@ class DNAlignAIR(nn.Module):
         self.state_head = PerPositionStateHead(d_model=d)
         self.germline_encoder = GermlineEncoder(embed_dim=d)
         self.matching = AlleleMatchingHead()
-        self.aligner = GermlineAligner(d_model=d)
+        self.aligner = (SoftDPAligner(d_model=d) if getattr(config, "aligner", "diagonal") == "softdp"
+                        else GermlineAligner(d_model=d))
         self.noise_head = nn.Linear(d, 1)
         self.mutation_head = nn.Linear(d, 1)
         self.indel_head = nn.Linear(d, 1)
