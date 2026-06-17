@@ -104,5 +104,7 @@ class Trainer:
         self.optimizer.load_state_dict(state["optimizer"])
         self.scaler.load_state_dict(state["scaler"])
         if "torch_rng" in state:
-            torch.set_rng_state(state["torch_rng"])
+            # map_location moves every checkpoint tensor to self.device; the RNG state
+            # must be a CPU ByteTensor, so bring it back before restoring.
+            torch.set_rng_state(state["torch_rng"].to("cpu", torch.uint8))
         return {"epoch": state["epoch"], "config": state["config"]}
