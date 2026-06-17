@@ -37,3 +37,16 @@ def test_multilabel_loss_finite_and_backprops():
     assert torch.isfinite(loss)
     loss.backward()
     assert Q.grad is not None and torch.isfinite(Q.grad).all()
+
+
+def test_contrastive_set_loss_is_equivalence_class():
+    from alignair.nn.matching import contrastive_match_loss
+    # two indistinguishable positives; mass on EITHER one should give low loss
+    scores = torch.tensor([[5.0, -5.0, 0.0, 0.0]])
+    two_pos = torch.tensor([[1.0, 1.0, 0.0, 0.0]])
+    assert contrastive_match_loss(scores, two_pos).item() < 0.1
+    # mass on a negative -> high loss
+    wrong = torch.tensor([[0.0, 0.0, 5.0, 0.0]])
+    assert contrastive_match_loss(wrong, two_pos).item() > 2.0
+    # no-positive (masked) row contributes exactly zero
+    assert contrastive_match_loss(scores, torch.zeros_like(two_pos)).item() == 0.0

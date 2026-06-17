@@ -32,12 +32,19 @@ class AlleleMatchingHead(nn.Module):
 
 
 def contrastive_match_loss(scores: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Multi-positive InfoNCE over candidates: push every true allele's score above
-    all others via a softmax-CE, averaged over the positive set per row. Robust to
-    large candidate sets where multi-label BCE collapses to 'predict nothing'."""
-    log_probs = F.log_softmax(scores, dim=-1)            # (B, K)
-    pos_per_row = target.sum(dim=-1).clamp(min=1.0)      # (B,)
-    row_loss = -(log_probs * target).sum(dim=-1) / pos_per_row
+    """Multi-positive (set) InfoNCE: ``-log( sum_{p in pos} e^{s_p} / sum_{all} e^{s_a} )``.
+
+    This treats genuinely indistinguishable alleles as an EQUIVALENCE CLASS — the
+    model only needs to place its mass somewhere in the true set, not split it
+    equally across positives (which the old per-positive average forced, making
+    co-listed alleles compete in the softmax). Aligns with the top-1-in-set metric.
+    Rows with no positive (e.g. masked inverted-D) contribute zero."""
+    neg_inf = torch.finfo(scores.dtype).min
+    has_pos = target.sum(dim=-1) > 0                          # (B,)
+    pos_scores = scores.masked_fill(target <= 0, neg_inf)     # keep positives only
+    num = torch.logsumexp(pos_scores, dim=-1)                 # log-mass on the true set
+    den = torch.logsumexp(scores, dim=-1)                     # log-mass over all
+    row_loss = torch.where(has_pos, den - num, torch.zeros_like(den))
     return row_loss.mean()
 
 
