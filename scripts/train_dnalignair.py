@@ -29,7 +29,7 @@ def main():
     ap.add_argument("--d-model", type=int, default=128)
     ap.add_argument("--layers", type=int, default=4)
     ap.add_argument("--nhead", type=int, default=8)
-    ap.add_argument("--aligner", choices=["diagonal", "softdp"], default="diagonal")
+    ap.add_argument("--aligner", choices=["diagonal", "softdp"], default="softdp")
     ap.add_argument("--lr", type=float, default=5e-4)
     ap.add_argument("--refresh-ref-every", type=int, default=1)
     ap.add_argument("--distill", action="store_true",

@@ -14,7 +14,7 @@ class DNAlignAIRConfig:
     orientation_dim: int = 64
     n_regions: int = 8     # len(REGIONS)
     n_states: int = 4      # germline/substitution/insertion/deletion
-    aligner: str = "diagonal"  # germline aligner: "diagonal" (cosine corr) | "softdp" (gap-aware DP)
+    aligner: str = "softdp"  # germline aligner: "softdp" (gap-aware DP, default) | "diagonal" (legacy cosine corr)
 
     def to_dict(self) -> dict:
         return asdict(self)
