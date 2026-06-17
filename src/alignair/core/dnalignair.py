@@ -8,6 +8,7 @@ from ..config.dnalignair_config import DNAlignAIRConfig
 from ..nn.orientation import OrientationHead, apply_orientation
 from ..nn.backbone import SequenceBackbone
 from ..nn.region_head import RegionTagger, REGION_INDEX
+from ..nn.region_decoder import RegionMaskSpanDecoder
 from ..nn.state_head import PerPositionStateHead
 from ..nn.germline_encoder import GermlineEncoder
 from ..nn.matching import AlleleMatchingHead
@@ -70,7 +71,9 @@ class DNAlignAIR(nn.Module):
         self.backbone = SequenceBackbone(
             d_model=d, n_layers=config.n_layers, nhead=config.nhead,
             dim_feedforward=config.dim_feedforward, max_len=config.max_len)
-        self.region_tagger = RegionTagger(d_model=d)
+        self.query_regions = getattr(config, "region_decoder", "linear") == "query"
+        self.region_tagger = (RegionMaskSpanDecoder(d_model=d, nhead=config.nhead)
+                              if self.query_regions else RegionTagger(d_model=d))
         self.state_head = PerPositionStateHead(d_model=d)
         self.germline_encoder = GermlineEncoder(embed_dim=d)
         self.matching = AlleleMatchingHead()
@@ -91,12 +94,19 @@ class DNAlignAIR(nn.Module):
         t = orientation_ids if orientation_ids is not None else orientation_logits.argmax(dim=-1)
         canon = apply_orientation(tokens, mask, t)
         reps = self.backbone(canon, mask)
-        region_logits = self.region_tagger(reps)
+        if self.query_regions:
+            rdec = self.region_tagger(reps, mask)
+            region_logits = rdec["region_logits"]
+            boundary = {"start": rdec["start_logits"], "end": rdec["end_logits"]}
+        else:
+            region_logits = self.region_tagger(reps)
+            boundary = None
         state_logits = self.state_head(reps)
         pooled = _masked_mean(reps, mask)
         return {
             "orientation_logits": orientation_logits,
             "region_logits": region_logits,
+            "boundary": boundary,
             "state_logits": state_logits,
             "noise_count": F.relu(self.noise_head(pooled)),
             "mutation_rate": torch.sigmoid(self.mutation_head(pooled)),

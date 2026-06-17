@@ -15,6 +15,7 @@ class DNAlignAIRConfig:
     n_regions: int = 8     # len(REGIONS)
     n_states: int = 4      # germline/substitution/insertion/deletion
     aligner: str = "softdp"  # germline aligner: "softdp" (gap-aware DP, default) | "diagonal" (legacy cosine corr)
+    region_decoder: str = "linear"  # region head: "linear" (RegionTagger) | "query" (mask-span decoder w/ boundary posteriors)
 
     def to_dict(self) -> dict:
         return asdict(self)

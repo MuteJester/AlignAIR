@@ -198,11 +198,16 @@ class GymTrainer:
             gl_e2e = compute_germline_logits(self.model, canon, batch["mask"], batch,
                                              ref_emb, self.has_d,
                                              region_labels=pred_region, allele_idx=pred_idx)
+            boundary = out.get("boundary")
             for g in genes:
                 pred = out["match"][g.upper()].argmax(-1)
                 per[g]["call"] += int(batch[f"{g}_allele"][torch.arange(B), pred].sum().cpu())
-                ps = torch.tensor([d[f"{g}_start"] for d in dec], dtype=torch.float32)
-                pe = torch.tensor([d[f"{g}_end"] for d in dec], dtype=torch.float32)
+                if boundary is not None:  # query decoder: decode from start/end posteriors
+                    ps = boundary["start"][g.upper()].argmax(-1).float().cpu()
+                    pe = (boundary["end"][g.upper()].argmax(-1) + 1).float().cpu()
+                else:
+                    ps = torch.tensor([d[f"{g}_start"] for d in dec], dtype=torch.float32)
+                    pe = torch.tensor([d[f"{g}_end"] for d in dec], dtype=torch.float32)
                 per[g]["start_dev"] += float((ps - batch[f"{g}_start"].cpu().float()).abs().sum())
                 per[g]["end_dev"] += float((pe - batch[f"{g}_end"].cpu().float()).abs().sum())
                 gs, ge = decode_germline_coords(gl[g][0], gl[g][1])

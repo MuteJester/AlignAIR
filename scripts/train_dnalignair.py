@@ -30,6 +30,7 @@ def main():
     ap.add_argument("--layers", type=int, default=4)
     ap.add_argument("--nhead", type=int, default=8)
     ap.add_argument("--aligner", choices=["diagonal", "softdp"], default="softdp")
+    ap.add_argument("--region-decoder", choices=["linear", "query"], default="linear")
     ap.add_argument("--lr", type=float, default=5e-4)
     ap.add_argument("--refresh-ref-every", type=int, default=1)
     ap.add_argument("--distill", action="store_true",
@@ -47,9 +48,9 @@ def main():
     rs = ReferenceSet.from_dataconfigs(dc)
     genes = ["v", "j"] + (["d"] if rs.has_d else [])
     cfg = DNAlignAIRConfig(d_model=args.d_model, n_layers=args.layers, nhead=args.nhead,
-                           aligner=args.aligner)
+                           aligner=args.aligner, region_decoder=args.region_decoder)
     model = DNAlignAIR(cfg)
-    loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
+    loss_fn = DNAlignAIRLoss(has_d=rs.has_d, use_boundary=(args.region_decoder == "query"))
     gym = AlignAIRGym([dc], rs, seed=args.seed)
     trainer = GymTrainer(model, loss_fn, rs, gym, lr=args.lr, batch_size=args.batch,
                          refresh_reference_every=args.refresh_ref_every,

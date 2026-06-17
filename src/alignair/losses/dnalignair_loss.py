@@ -10,14 +10,18 @@ IGNORE = -100
 
 
 class DNAlignAIRLoss(nn.Module):
-    def __init__(self, has_d: bool = True):
+    def __init__(self, has_d: bool = True, use_boundary: bool = False):
         super().__init__()
         self.has_d = has_d
+        self.use_boundary = use_boundary
+        genes = ["v", "j"] + (["d"] if has_d else [])
         names = ["orientation", "region", "state", "v_match", "j_match",
                  "noise", "mutation", "indel", "productive"]
         if has_d:
             names += ["d_match"]
-        names += ["v_germline", "j_germline"] + (["d_germline"] if has_d else [])
+        names += [f"{g}_germline" for g in genes]
+        if use_boundary:  # in-sequence start/end posteriors from the query region decoder
+            names += [f"{g}_boundary" for g in genes]
         self.weights = nn.ModuleDict({n: UncertaintyWeight() for n in names})
 
     def forward(self, outputs: dict, batch: dict, germline_logits: dict | None = None,
@@ -73,6 +77,19 @@ class DNAlignAIRLoss(nn.Module):
                     gl = per_row.mean()
                 total = total + add(f"{g}_germline", gl)
                 comp[f"{g}_germline"] = gl.detach()
+
+        # in-sequence boundary posteriors (query region decoder): NLL of true start/end
+        boundary = outputs.get("boundary")
+        if self.use_boundary and boundary is not None:
+            for g in genes:
+                sl = boundary["start"][g.upper()]            # (B, L)
+                el = boundary["end"][g.upper()]
+                L = sl.shape[-1]
+                s_tgt = batch[f"{g}_start"].clamp(min=0, max=L - 1)
+                e_tgt = (batch[f"{g}_end"] - 1).clamp(min=0, max=L - 1)
+                bnd = F.cross_entropy(sl, s_tgt) + F.cross_entropy(el, e_tgt)
+                total = total + add(f"{g}_boundary", bnd)
+                comp[f"{g}_boundary"] = bnd.detach()
 
         # Kendall balancing penalty (0.5*log_var per task). Without this the precision
         # weights exp(-log_var) have no upward pressure and collapse to the clamp floor.
