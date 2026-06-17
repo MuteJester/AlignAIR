@@ -20,7 +20,7 @@ from alignair.core.dnalignair import DNAlignAIR  # noqa: E402
 from alignair.losses.dnalignair_loss import DNAlignAIRLoss  # noqa: E402
 from alignair.gym.gym import AlignAIRGym  # noqa: E402
 from alignair.training.gym_trainer import GymTrainer  # noqa: E402
-from alignair.inference.dnalignair_infer import predict_reads  # noqa: E402
+from alignair.inference.dnalignair_infer import predict_reads, rescore_alleles  # noqa: E402
 
 
 def main():
@@ -32,6 +32,8 @@ def main():
     ap.add_argument("--aligner", default="softdp")
     ap.add_argument("--region-decoder", default="linear")
     ap.add_argument("--caller", choices=["retrieval", "classifier"], default="retrieval")
+    ap.add_argument("--rescore", action="store_true",
+                    help="exact-nucleotide allele rescore within the predicted gene")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
@@ -65,6 +67,10 @@ def main():
         print_scores(score(recs, igb_preds), indent="   ")
         print(" DNAlignAIR:")
         print_scores(score(recs, model_preds), indent="   ")
+        if args.rescore:
+            rescored = rescore_alleles(reads, [dict(p) for p in model_preds], rs)
+            print(" DNAlignAIR + identity-rescore:")
+            print_scores(score(recs, rescored), indent="   ")
 
 
 if __name__ == "__main__":

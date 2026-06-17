@@ -14,6 +14,41 @@ from ..nn.germline_aligner import decode_germline_coords
 from ..training.germline_tf import compute_germline_logits
 
 
+def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
+    """Resolve the exact allele within the model's predicted gene by exact-nucleotide
+    identity (IgBLAST-like): the neural model gets the GENE and the coordinates right;
+    re-rank the gene's sibling alleles by how well their germline segment matches the
+    observed bases (the true allele matches at the SNP positions, siblings don't).
+    Pure post-processing on predict_reads output; mutates and returns preds."""
+    for read, p in zip(reads, preds):
+        read = str(read).upper()
+        for g in genes:
+            G = g.upper()
+            top1 = p.get(f"{g}_call")
+            if not top1:
+                continue
+            gene = top1.split("*")[0]
+            ref = reference_set.gene(G)
+            cands = [(nm, ref.sequences[ref.index[nm]])
+                     for nm in ref.names if nm.split("*")[0] == gene]
+            if len(cands) <= 1:
+                continue
+            ss, se = p[f"{g}_sequence_start"], p[f"{g}_sequence_end"]
+            gs, ge = p[f"{g}_germline_start"], p[f"{g}_germline_end"]
+            obs = read[ss:se]
+            best, best_m = top1, -1
+            for nm, germ in cands:
+                gseg = germ[gs:ge]
+                n = min(len(obs), len(gseg))
+                if n == 0:
+                    continue
+                m = sum(1 for k in range(n) if obs[k] == gseg[k])
+                if m > best_m:
+                    best_m, best = m, nm
+            p[f"{g}_call"] = best
+    return preds
+
+
 @torch.no_grad()
 def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64) -> list:
     device = device or next(model.parameters()).device
