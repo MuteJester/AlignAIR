@@ -81,9 +81,12 @@ def main():
             f"seq[{row[f'{g}_start_dev']:.1f},{row[f'{g}_end_dev']:.1f}] "
             f"gl[{row[f'{g}_gl_start_dev']:.1f},{row[f'{g}_gl_end_dev']:.1f}]" for g in genes)
         easy = " ".join(f"{g.upper()}={ev_easy[f'{g}_call']:.2f}" for g in genes)
+        tw = loss_fn.task_weights()
+        tw_str = " ".join(f"{k}={v:.2f}" for k, v in sorted(tw.items(), key=lambda kv: -kv[1]))
         print(f"[step {step:4d}|{dt:4.0f}s] tot={row['train_total']:.2f} "
               f"region={row['region_acc']:.3f} state={row['state_acc']:.3f} || {seg}")
         print(f"           easy-call(p=0): {easy}  | hard region={ev['region_acc']:.3f}")
+        print(f"           task-weights: {tw_str}")
 
     with open(args.csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))

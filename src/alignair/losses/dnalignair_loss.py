@@ -68,9 +68,16 @@ class DNAlignAIRLoss(nn.Module):
                 total = total + add(f"{g}_germline", gl)
                 comp[f"{g}_germline"] = gl.detach()
 
-        total = total + sum(w.regularization() for w in self.weights.values())
+        # Kendall balancing penalty (0.5*log_var per task). Without this the precision
+        # weights exp(-log_var) have no upward pressure and collapse to the clamp floor.
+        total = total + sum(w.penalty() for w in self.weights.values())
         comp["total"] = total.detach()
         return total, comp
+
+    @torch.no_grad()
+    def task_weights(self) -> dict:
+        """Current precision weight per task (for logging the learned balance)."""
+        return {name: w.weight() for name, w in self.weights.items()}
 
     @torch.no_grad()
     def apply_constraints(self) -> None:
