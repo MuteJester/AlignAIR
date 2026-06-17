@@ -58,6 +58,19 @@ def gym_collate(batch, reference_set, has_d: bool):
         out["d_allele"] = out["d_allele"] * supervise.unsqueeze(1)
 
     out["orientation_id"] = torch.tensor([s["orientation_id"] for s in batch], dtype=torch.long)
+
+    # teacher (full forward read) view for EMA self-distillation, padded separately
+    if "teacher_tokens" in batch[0]:
+        tl = max(len(s["teacher_tokens"]) for s in batch)
+        t_tok = torch.zeros(B, tl, dtype=torch.long)
+        t_mask = torch.zeros(B, tl, dtype=torch.bool)
+        for i, s in enumerate(batch):
+            n = len(s["teacher_tokens"])
+            t_tok[i, :n] = torch.from_numpy(s["teacher_tokens"])
+            t_mask[i, :n] = True
+        out["teacher_tokens"] = t_tok
+        out["teacher_mask"] = t_mask
+
     for key in ("noise_count", "mutation_rate", "indel_count", "productive"):
         out[key] = torch.tensor([[s[key]] for s in batch], dtype=torch.float32)
     return out

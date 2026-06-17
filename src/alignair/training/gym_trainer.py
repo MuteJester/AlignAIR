@@ -6,6 +6,8 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from ..gym.collate import gym_collate
+from ..nn.matching import distill_match_loss
+from .ema import EMATeacher
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,8 @@ def _detach_ref(ref_emb: dict) -> dict:
 class GymTrainer:
     def __init__(self, model, loss_fn, reference_set, gym, lr=1e-3, batch_size=16,
                  device=None, grad_clip=10.0, refresh_reference_every=1,
-                 refresh_curriculum_every=25):
+                 refresh_curriculum_every=25, distill=False, distill_weight=1.0,
+                 distill_decay=0.999, distill_temperature=2.0):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.loss_fn = loss_fn.to(self.device)
@@ -35,6 +38,13 @@ class GymTrainer:
         self.has_d = reference_set.has_d
         self._nonfinite_skips = 0
         self._global_step = 0  # persists across fit() calls for a monotonic curriculum
+        # EMA self-distillation: teacher sees the full forward read, student the
+        # hard cropped/oriented view of the same record.
+        self.distill = distill
+        self.distill_weight = distill_weight
+        self.distill_temperature = distill_temperature
+        self.teacher = EMATeacher(self.model, decay=distill_decay).to(self.device) if distill else None
+        self._teacher_ref = None
         params = list(self.model.parameters()) + list(self.loss_fn.parameters())
         self.optimizer = torch.optim.Adam(params, lr=lr)
 
@@ -97,6 +107,18 @@ class GymTrainer:
                 canon, batch["mask"], batch["region_labels"], ref_emb)
             total, comp = self.loss_fn(out, batch, germline_logits=germline_logits,
                                        match_logits=match_logits)
+            # EMA self-distillation: pull the student's fragment-view allele posteriors
+            # toward the teacher's full-read posteriors (soft, temperature-scaled).
+            if self.distill and "teacher_tokens" in batch:
+                if self._teacher_ref is None or step % max(self.refresh_curriculum_every, 1) == 0:
+                    self._teacher_ref = self.teacher.model.encode_reference(self.reference_set)
+                with torch.no_grad():
+                    t_out = self.teacher(batch["teacher_tokens"], batch["teacher_mask"],
+                                         self._teacher_ref)
+                distill = distill_match_loss(match_logits, t_out["match"],
+                                             self.distill_temperature)
+                total = total + self.distill_weight * distill
+                comp["distill"] = distill.detach()
             self.optimizer.zero_grad(set_to_none=True)
             # Skip non-finite steps so a single diverged batch cannot poison the
             # weights with NaN/inf (regression heads can spike on very hard inputs).
@@ -114,6 +136,8 @@ class GymTrainer:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
             self.optimizer.step()
             self.loss_fn.apply_constraints()
+            if self.distill:
+                self.teacher.update(self.model)  # EMA tracks the student
             logs = {k: float(v.cpu()) for k, v in comp.items()}
             history.append(logs)
             bar.update(1)

@@ -31,6 +31,9 @@ def main():
     ap.add_argument("--nhead", type=int, default=8)
     ap.add_argument("--lr", type=float, default=5e-4)
     ap.add_argument("--refresh-ref-every", type=int, default=1)
+    ap.add_argument("--distill", action="store_true",
+                    help="enable EMA teacher->student allele-posterior distillation")
+    ap.add_argument("--distill-weight", type=float, default=1.0)
     ap.add_argument("--eval-every", type=int, default=50)
     ap.add_argument("--csv", default="experiments/run.csv")
     ap.add_argument("--seed", type=int, default=0)
@@ -47,7 +50,8 @@ def main():
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
     gym = AlignAIRGym([dc], rs, seed=args.seed)
     trainer = GymTrainer(model, loss_fn, rs, gym, lr=args.lr, batch_size=args.batch,
-                         refresh_reference_every=args.refresh_ref_every)
+                         refresh_reference_every=args.refresh_ref_every,
+                         distill=args.distill, distill_weight=args.distill_weight)
 
     n_params = sum(p.numel() for p in model.parameters())
     print(f"config={args.config} V={len(rs.gene('V').names)} "

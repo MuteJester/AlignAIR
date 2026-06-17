@@ -48,6 +48,21 @@ def contrastive_match_loss(scores: torch.Tensor, target: torch.Tensor) -> torch.
     return row_loss.mean()
 
 
+def distill_match_loss(student_logits: dict, teacher_logits: dict, temperature: float = 2.0):
+    """Temperature-softened KL distillation of per-gene allele posteriors,
+    KL(teacher || student). The teacher (full-read view) carries equivalence-class
+    structure over indistinguishable alleles; softening (T>1) transfers that
+    structure to the fragment student without forcing hard top-1 confidence."""
+    T = temperature
+    total = student_logits[next(iter(student_logits))].new_zeros(())
+    for g, s in student_logits.items():
+        t = teacher_logits[g].detach()
+        p_t = F.softmax(t / T, dim=-1)
+        log_p_s = F.log_softmax(s / T, dim=-1)
+        total = total + (T * T) * F.kl_div(log_p_s, p_t, reduction="batchmean")
+    return total / max(len(student_logits), 1)
+
+
 def multilabel_match_loss(scores: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """Multi-label BCE over candidates. ``target`` is a (B, K) multi-hot of true alleles.
 

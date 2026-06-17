@@ -6,7 +6,7 @@ from torch.utils.data import IterableDataset
 
 from .crop import crop_record
 from .curriculum import Curriculum
-from .targets import build_targets
+from .targets import build_targets, _tok
 
 # token complement by id: pad0 A1<->T2 G3<->C4 N5
 _COMPLEMENT_NP = np.array([0, 2, 1, 4, 3, 5], dtype=np.int64)
@@ -67,6 +67,9 @@ class AlignAIRGym(IterableDataset):
         count = 0
         for record in exp.stream_records(n=self.n, seed=seed):
             count += 1
+            # teacher (EMA self-distillation) view: the full, forward read of THIS
+            # record, before the student's crop/orientation augmentation.
+            teacher_tokens = _tok(str(record["sequence"]).upper())
             if params["crop_prob"] > 0 and rng.random() < params["crop_prob"]:
                 target_len = int(rng.integers(params["crop_len_min"],
                                               params["crop_len_max"] + 1))
@@ -81,4 +84,5 @@ class AlignAIRGym(IterableDataset):
                 t = int(rng.integers(1, 4))  # 1=revcomp, 2=comp, 3=reverse
                 bundle["tokens"] = _orient_tokens(bundle["tokens"], t)
                 bundle["orientation_id"] = t
+            bundle["teacher_tokens"] = teacher_tokens
             yield bundle
