@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..config.dnalignair_config import DNAlignAIRConfig
-from ..nn.orientation import OrientationHead
+from ..nn.orientation import OrientationHead, apply_orientation
 from ..nn.backbone import SequenceBackbone
 from ..nn.region_head import RegionTagger, REGION_INDEX
 from ..nn.state_head import PerPositionStateHead
@@ -79,9 +79,16 @@ class DNAlignAIR(nn.Module):
         self.indel_head = nn.Linear(d, 1)
         self.productive_head = nn.Linear(d, 1)
 
-    def forward_dense(self, tokens: torch.Tensor, mask: torch.Tensor) -> dict:
+    def forward_dense(self, tokens: torch.Tensor, mask: torch.Tensor,
+                      orientation_ids: torch.Tensor | None = None) -> dict:
+        # Detect orientation on the observed (possibly reverse/complemented) tokens,
+        # then CANONICALIZE to forward before the backbone (transforms are involutions
+        # so re-applying recovers forward). Teacher-force the true orientation when
+        # given (training); otherwise use the predicted argmax (inference).
         orientation_logits = self.orientation_head(tokens, mask)
-        reps = self.backbone(tokens, mask)
+        t = orientation_ids if orientation_ids is not None else orientation_logits.argmax(dim=-1)
+        canon = apply_orientation(tokens, mask, t)
+        reps = self.backbone(canon, mask)
         region_logits = self.region_tagger(reps)
         state_logits = self.state_head(reps)
         pooled = _masked_mean(reps, mask)
@@ -94,6 +101,7 @@ class DNAlignAIR(nn.Module):
             "indel_count": F.relu(self.indel_head(pooled)),
             "productive": torch.sigmoid(self.productive_head(pooled)),
             "reps": reps,
+            "canon_tokens": canon,
         }
 
     def encode_reference(self, reference_set) -> dict:
@@ -124,10 +132,12 @@ class DNAlignAIR(nn.Module):
             match[gene] = self.matching(query, emb["embeddings"])
         return match
 
-    def forward(self, tokens: torch.Tensor, mask: torch.Tensor, ref_emb: dict) -> dict:
-        out = self.forward_dense(tokens, mask)
+    def forward(self, tokens: torch.Tensor, mask: torch.Tensor, ref_emb: dict,
+                orientation_ids: torch.Tensor | None = None) -> dict:
+        out = self.forward_dense(tokens, mask, orientation_ids)
         region_labels = out["region_logits"].argmax(dim=-1)
-        out["match"] = self.match_alleles(tokens, mask, region_labels, ref_emb)
+        # match on the canonicalized tokens, same frame as the region prediction
+        out["match"] = self.match_alleles(out["canon_tokens"], mask, region_labels, ref_emb)
         return out
 
     def germline_coords(self, seg_reps, seg_mask, germ_reps, germ_mask):

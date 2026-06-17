@@ -8,6 +8,21 @@ from .crop import crop_record
 from .curriculum import Curriculum
 from .targets import build_targets
 
+# token complement by id: pad0 A1<->T2 G3<->C4 N5
+_COMPLEMENT_NP = np.array([0, 2, 1, 4, 3, 5], dtype=np.int64)
+
+
+def _orient_tokens(tokens, t):
+    """Apply orientation transform t in {0:id,1:revcomp,2:comp,3:reverse} to a 1-D
+    numpy token array. All transforms are involutions (re-applying recovers forward)."""
+    if t == 1:
+        return _COMPLEMENT_NP[tokens][::-1].copy()
+    if t == 2:
+        return _COMPLEMENT_NP[tokens].copy()
+    if t == 3:
+        return tokens[::-1].copy()
+    return tokens
+
 logger = logging.getLogger(__name__)
 
 
@@ -59,4 +74,11 @@ class AlignAIRGym(IterableDataset):
             if self.log_every and count % self.log_every == 0:
                 logger.info("Gym generated %d samples (%s)", count,
                             self.curriculum.describe(self._p))
-            yield build_targets(record, self.reference_set, has_d=has_d)
+            bundle = build_targets(record, self.reference_set, has_d=has_d)
+            # present a fraction of reads in a non-forward orientation; targets stay
+            # in forward frame (the model canonicalizes), only orientation_id changes.
+            if params["orient_prob"] > 0 and rng.random() < params["orient_prob"]:
+                t = int(rng.integers(1, 4))  # 1=revcomp, 2=comp, 3=reverse
+                bundle["tokens"] = _orient_tokens(bundle["tokens"], t)
+                bundle["orientation_id"] = t
+            yield bundle

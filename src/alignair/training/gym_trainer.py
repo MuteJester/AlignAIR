@@ -85,12 +85,16 @@ class GymTrainer:
                     # every step via the query-segment path; references act as a
                     # periodically-refreshed target encoder.
                     ref_emb = _detach_ref(ref_emb)
-            out = self.model(batch["tokens"], batch["mask"], ref_emb)
+            # teacher-force the true orientation; everything downstream of the
+            # backbone is supervised in the canonical (forward) frame.
+            out = self.model(batch["tokens"], batch["mask"], ref_emb,
+                             orientation_ids=batch["orientation_id"])
+            canon = out["canon_tokens"]
             germline_logits = compute_germline_logits(
-                self.model, batch["tokens"], batch["mask"], batch, ref_emb, self.has_d)
+                self.model, canon, batch["mask"], batch, ref_emb, self.has_d)
             # teacher-force the match query over TRUE regions for a clean signal
             match_logits = self.model.match_alleles(
-                batch["tokens"], batch["mask"], batch["region_labels"], ref_emb)
+                canon, batch["mask"], batch["region_labels"], ref_emb)
             total, comp = self.loss_fn(out, batch, germline_logits=germline_logits,
                                        match_logits=match_logits)
             self.optimizer.zero_grad(set_to_none=True)
@@ -137,7 +141,7 @@ class GymTrainer:
         ref_emb = self.model.encode_reference(self.reference_set)
 
         loss_sum, nb, n_seq = 0.0, 0, 0
-        region_c = region_t = state_c = state_t = 0
+        region_c = region_t = state_c = state_t = orient_c = 0
         per = {g: {"call": 0, "start_dev": 0.0, "end_dev": 0.0,
                    "gl_start_dev": 0.0, "gl_end_dev": 0.0} for g in genes}
 
@@ -145,7 +149,11 @@ class GymTrainer:
             if nb >= n_batches:
                 break
             batch = self._to_device(batch)
-            out = self.model(batch["tokens"], batch["mask"], ref_emb)
+            # teacher-force orientation so segment metrics stay interpretable; the
+            # orientation head's own accuracy is reported separately.
+            out = self.model(batch["tokens"], batch["mask"], ref_emb,
+                             orientation_ids=batch["orientation_id"])
+            orient_c += int((out["orientation_logits"].argmax(-1) == batch["orientation_id"]).sum().cpu())
             loss_sum += float(self.loss_fn(out, batch)[0].cpu())
             valid = batch["region_labels"] != -100
             region_c += int(((out["region_logits"].argmax(-1) == batch["region_labels"]) & valid).sum().cpu())
@@ -155,7 +163,7 @@ class GymTrainer:
 
             B = batch["tokens"].shape[0]
             dec = decode_boundaries(out["region_logits"], batch["mask"], has_d=self.has_d)
-            gl = compute_germline_logits(self.model, batch["tokens"], batch["mask"], batch,
+            gl = compute_germline_logits(self.model, out["canon_tokens"], batch["mask"], batch,
                                          ref_emb, self.has_d)
             for g in genes:
                 pred = out["match"][g.upper()].argmax(-1)
@@ -175,7 +183,8 @@ class GymTrainer:
         ns = max(n_seq, 1)
         metrics = {"loss": loss_sum / max(nb, 1),
                    "region_acc": region_c / max(region_t, 1),
-                   "state_acc": state_c / max(state_t, 1)}
+                   "state_acc": state_c / max(state_t, 1),
+                   "orient_acc": orient_c / ns}
         for g in genes:
             metrics[f"{g}_call"] = per[g]["call"] / ns
             metrics[f"{g}_start_dev"] = per[g]["start_dev"] / ns

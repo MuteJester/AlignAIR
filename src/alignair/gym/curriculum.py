@@ -26,6 +26,9 @@ class Curriculum:
             "crop_prob": _lerp(0.0, 0.6, p),
             "crop_len_min": 50,
             "crop_len_max": int(round(_lerp(576, 80, p))),
+            # fraction of reads presented in a non-forward orientation (revcomp /
+            # complement / reverse); the model must detect and canonicalize them.
+            "orient_prob": _lerp(0.0, 0.5, p),
         }
 
     def stage(self, p: float) -> int:
