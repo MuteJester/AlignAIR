@@ -14,12 +14,27 @@ from ..nn.germline_aligner import decode_germline_coords
 from ..training.germline_tf import compute_germline_logits
 
 
+_ALIGNER = None
+
+
+def _aligner():
+    global _ALIGNER
+    if _ALIGNER is None:
+        from Bio.Align import PairwiseAligner
+        a = PairwiseAligner(mode="local")          # Smith-Waterman, indel-aware
+        a.match_score, a.mismatch_score = 1.0, -1.0
+        a.open_gap_score, a.extend_gap_score = -2.0, -0.5
+        _ALIGNER = a
+    return _ALIGNER
+
+
 def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
-    """Resolve the exact allele within the model's predicted gene by exact-nucleotide
-    identity (IgBLAST-like): the neural model gets the GENE and the coordinates right;
-    re-rank the gene's sibling alleles by how well their germline segment matches the
-    observed bases (the true allele matches at the SNP positions, siblings don't).
-    Pure post-processing on predict_reads output; mutates and returns preds."""
+    """Resolve the exact allele within the model's predicted gene by GAPPED local
+    alignment (mini-IgBLAST): the neural model gets the GENE and coordinates right;
+    re-rank the gene's sibling alleles by Smith-Waterman alignment score of the observed
+    segment to each candidate germline. Unlike a rigid position compare, this is
+    indel-robust (the failure mode under SHM). Pure post-processing; mutates preds."""
+    aligner = _aligner()
     for read, p in zip(reads, preds):
         read = str(read).upper()
         for g in genes:
@@ -34,17 +49,14 @@ def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
             if len(cands) <= 1:
                 continue
             ss, se = p[f"{g}_sequence_start"], p[f"{g}_sequence_end"]
-            gs, ge = p[f"{g}_germline_start"], p[f"{g}_germline_end"]
             obs = read[ss:se]
-            best, best_m = top1, -1
+            if len(obs) < 5:
+                continue
+            best, best_s = top1, float("-inf")
             for nm, germ in cands:
-                gseg = germ[gs:ge]
-                n = min(len(obs), len(gseg))
-                if n == 0:
-                    continue
-                m = sum(1 for k in range(n) if obs[k] == gseg[k])
-                if m > best_m:
-                    best_m, best = m, nm
+                s = aligner.score(obs, germ)
+                if s > best_s:
+                    best_s, best = s, nm
             p[f"{g}_call"] = best
     return preds
 
