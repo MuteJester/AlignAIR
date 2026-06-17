@@ -143,7 +143,8 @@ class GymTrainer:
         loss_sum, nb, n_seq = 0.0, 0, 0
         region_c = region_t = state_c = state_t = orient_c = 0
         per = {g: {"call": 0, "start_dev": 0.0, "end_dev": 0.0,
-                   "gl_start_dev": 0.0, "gl_end_dev": 0.0} for g in genes}
+                   "gl_start_dev": 0.0, "gl_end_dev": 0.0,
+                   "e2e_gl_start_dev": 0.0, "e2e_gl_end_dev": 0.0} for g in genes}
 
         for batch in loader:
             if nb >= n_batches:
@@ -163,8 +164,16 @@ class GymTrainer:
 
             B = batch["tokens"].shape[0]
             dec = decode_boundaries(out["region_logits"], batch["mask"], has_d=self.has_d)
-            gl = compute_germline_logits(self.model, out["canon_tokens"], batch["mask"], batch,
+            canon = out["canon_tokens"]
+            # teacher-forced germline (true region + true allele): isolates the aligner
+            gl = compute_germline_logits(self.model, canon, batch["mask"], batch,
                                          ref_emb, self.has_d)
+            # end-to-end germline (PREDICTED region + PREDICTED top-1 allele): the real pipeline
+            pred_region = out["region_logits"].argmax(-1)
+            pred_idx = {g.upper(): out["match"][g.upper()].argmax(-1) for g in genes}
+            gl_e2e = compute_germline_logits(self.model, canon, batch["mask"], batch,
+                                             ref_emb, self.has_d,
+                                             region_labels=pred_region, allele_idx=pred_idx)
             for g in genes:
                 pred = out["match"][g.upper()].argmax(-1)
                 per[g]["call"] += int(batch[f"{g}_allele"][torch.arange(B), pred].sum().cpu())
@@ -175,6 +184,9 @@ class GymTrainer:
                 gs, ge = decode_germline_coords(gl[g][0], gl[g][1])
                 per[g]["gl_start_dev"] += float((gs.cpu() - batch[f"{g}_germline_start"].cpu()).abs().sum())
                 per[g]["gl_end_dev"] += float((ge.cpu() - batch[f"{g}_germline_end"].cpu()).abs().sum())
+                es, ee = decode_germline_coords(gl_e2e[g][0], gl_e2e[g][1])
+                per[g]["e2e_gl_start_dev"] += float((es.cpu() - batch[f"{g}_germline_start"].cpu()).abs().sum())
+                per[g]["e2e_gl_end_dev"] += float((ee.cpu() - batch[f"{g}_germline_end"].cpu()).abs().sum())
             n_seq += B
             nb += 1
 
@@ -191,4 +203,6 @@ class GymTrainer:
             metrics[f"{g}_end_dev"] = per[g]["end_dev"] / ns
             metrics[f"{g}_gl_start_dev"] = per[g]["gl_start_dev"] / ns
             metrics[f"{g}_gl_end_dev"] = per[g]["gl_end_dev"] / ns
+            metrics[f"{g}_e2e_gl_start_dev"] = per[g]["e2e_gl_start_dev"] / ns
+            metrics[f"{g}_e2e_gl_end_dev"] = per[g]["e2e_gl_end_dev"] / ns
         return metrics
