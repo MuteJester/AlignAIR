@@ -14,17 +14,55 @@ def _tok(seq: str) -> np.ndarray:
     return np.array([TOKEN_DICT.get(c, n) for c in seq.upper()], dtype=np.int64)
 
 
-def _substitution_offsets(obs: str, gref: str) -> list:
-    """obs-relative indices that differ from the germline, over the best of a 5'- or
-    3'-anchored comparison (robust to small coordinate-convention/trim offsets so a
-    1-base span mismatch doesn't frame-shift the whole comparison)."""
-    n = min(len(obs), len(gref))
-    if n == 0:
+def _parse_cigar(cigar: str) -> list:
+    """'41M13D' -> [(41,'M'), (13,'D')]. Empty/None -> []."""
+    if not cigar:
         return []
-    five = [k for k in range(n) if obs[k] != gref[k]]
-    lo, lg = len(obs), len(gref)
-    three = [lo - 1 - k for k in range(n) if obs[lo - 1 - k] != gref[lg - 1 - k]]
-    return five if len(five) <= len(three) else three
+    ops, num = [], ""
+    for ch in str(cigar):
+        if ch.isdigit():
+            num += ch
+        else:
+            ops.append((int(num or 0), ch))
+            num = ""
+    return ops
+
+
+def _label_segment_states(state, seq, ss, gref, gs, cigar):
+    """Walk a segment's CIGAR to assign exact per-observed-position edit states.
+
+    M/=/X consume an observed base and a germline base -> germline (match) or
+    substitution (mismatch). I/S consume an observed base only -> insertion.
+    D/N consume a germline base only (no observed position) -> the next observed
+    base is tagged ``deletion`` (a learnable 'a gap precedes me' signal, since a
+    deletion has no observed token of its own). Returns the deletion count."""
+    obs, germ = ss, gs
+    pending_del = False
+    n_del = 0
+    for count, op in _parse_cigar(cigar):
+        if op in ("M", "=", "X"):
+            for _ in range(count):
+                if obs >= len(seq):
+                    break
+                if pending_del:
+                    state[obs] = STATE_INDEX["deletion"]
+                    pending_del = False
+                elif germ < len(gref) and seq[obs] != gref[germ]:
+                    state[obs] = STATE_INDEX["substitution"]
+                # else leaves germline (0)
+                obs += 1
+                germ += 1
+        elif op in ("I", "S"):
+            for _ in range(count):
+                if obs >= len(seq):
+                    break
+                state[obs] = STATE_INDEX["insertion"]
+                obs += 1
+        elif op in ("D", "N"):
+            germ += count
+            n_del += count
+            pending_del = True
+    return n_del
 
 
 def build_targets(record: dict, reference_set, has_d: bool) -> dict:
@@ -51,7 +89,7 @@ def build_targets(record: dict, reference_set, has_d: bool) -> dict:
     region[js:je] = REGION_INDEX["J"]
     region[je:L] = REGION_INDEX["post"]
 
-    # ---- per-position state (germline vs substitution over equal-length gene spans) ----
+    # ---- per-position edit state from each segment's CIGAR (exact, indel-aware) ----
     state = np.zeros(L, dtype=np.int64)  # germline = 0
     for g in _GENES:
         if g not in coords:
@@ -61,12 +99,10 @@ def build_targets(record: dict, reference_set, has_d: bool) -> dict:
         idx = ref.index.get(call)
         if idx is None:
             continue
-        ss, ee = coords[g]
-        gs, ge = germ[g]
-        obs = seq[ss:ee]
-        gref = ref.sequences[idx][gs:ge]
-        for k in _substitution_offsets(obs, gref):
-            state[ss + k] = STATE_INDEX["substitution"]
+        ss, _ = coords[g]
+        gs, _ = germ[g]
+        cigar = record.get(f"{g}_cigar")
+        _label_segment_states(state, seq, ss, ref.sequences[idx], gs, cigar)
 
     calls = {g.upper(): set(str(record[f"{g}_call"]).split(","))
              for g in _GENES if record.get(f"{g}_call")}
