@@ -72,15 +72,18 @@ def igblast_to_pred(row) -> dict:
 def score(records: list, preds: list) -> dict:
     """Per-gene top-1-in-set call accuracy + in-seq/germline start-end MAE vs GT.
     ``preds`` are GenAIRR-convention dicts (use igblast_to_pred for IgBLAST rows)."""
-    agg = {g: {"call": [], "ss": [], "se": [], "gs": [], "ge": []} for g in GENES}
+    agg = {g: {"call": [], "gene": [], "ss": [], "se": [], "gs": [], "ge": []} for g in GENES}
     for rec, pred in zip(records, preds):
         for g in GENES:
             gt_call = rec.get(f"{g}_call")
             if not gt_call:
                 continue
             gt_set = set(str(gt_call).split(","))
+            gt_genes = {a.split("*")[0] for a in gt_set}     # gene = allele before '*'
             pred_top1 = (pred or {}).get(f"{g}_call")
             agg[g]["call"].append(1.0 if pred_top1 in gt_set else 0.0)
+            pred_gene = pred_top1.split("*")[0] if pred_top1 else None
+            agg[g]["gene"].append(1.0 if pred_gene in gt_genes else 0.0)
             if rec.get(f"{g}_sequence_start") is None:
                 continue
             for key, gt in (("ss", f"{g}_sequence_start"), ("se", f"{g}_sequence_end"),
@@ -92,6 +95,7 @@ def score(records: list, preds: list) -> dict:
     for g in GENES:
         a = agg[g]
         out[g] = {"call": float(np.mean(a["call"])) if a["call"] else float("nan"),
+                  "gene": float(np.mean(a["gene"])) if a["gene"] else float("nan"),
                   "found": len(a["ss"]) / max(len(a["call"]), 1)}
         for k in ("ss", "se", "gs", "ge"):
             out[g][k] = float(np.mean(a[k])) if a[k] else float("nan")
@@ -125,7 +129,7 @@ def main():
 def print_scores(s: dict, indent: str = "  ") -> None:
     for g in GENES:
         r = s[g]
-        print(f"{indent}{g.upper()}: call={r['call']:.2f} found={r['found']:.2f} "
+        print(f"{indent}{g.upper()}: call={r['call']:.2f} gene={r['gene']:.2f} found={r['found']:.2f} "
               f"seq[{r['ss']:.1f},{r['se']:.1f}] gl[{r['gs']:.1f},{r['ge']:.1f}]")
 
 
