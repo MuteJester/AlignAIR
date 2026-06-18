@@ -75,3 +75,31 @@ def test_module_start_and_end_and_grad():
     assert abs(end[0].argmax().item() - (c0 + S - 1)) <= 2
     (start.sum() + end.sum()).backward()
     assert torch.isfinite(seg.grad).all()
+
+
+def test_alignment_score_ranks_true_germline_above_mismatched():
+    # the matching germline should score higher than a mismatched one (allele-reader primitive)
+    import torch
+    from alignair.nn.soft_dp_aligner import SoftDPAligner
+    torch.manual_seed(0)
+    B, S, Lg, d, c0 = 1, 12, 25, 32, 4
+    al = SoftDPAligner(d_model=d)
+    with torch.no_grad():
+        al.seg_proj.weight.copy_(torch.eye(d)); al.seg_proj.bias.zero_()
+        al.germ_proj.weight.copy_(torch.eye(d)); al.germ_proj.bias.zero_()
+    germ_true = torch.zeros(B, Lg, d)
+    for j in range(Lg):
+        germ_true[:, j, j] = 1.0
+    seg = torch.stack([germ_true[:, c0 + i] for i in range(S)], dim=1).squeeze(2) \
+        if False else torch.zeros(B, S, d)
+    for i in range(S):
+        seg[:, i] = germ_true[:, c0 + i]
+    seg_mask = torch.ones(B, S, dtype=torch.bool)
+    germ_mask = torch.ones(B, Lg, dtype=torch.bool)
+    # genuinely mismatched germline: the segment's matching content is absent
+    # (zero out the region it would align to; a mere shift just relabels positions)
+    germ_wrong = germ_true.clone()
+    germ_wrong[:, c0:c0 + S] = 0.0
+    s_true = al.alignment_score(seg, seg_mask, germ_true, germ_mask)
+    s_wrong = al.alignment_score(seg, seg_mask, germ_wrong, germ_mask)
+    assert s_true.item() > s_wrong.item()

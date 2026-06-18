@@ -110,3 +110,16 @@ class SoftDPAligner(nn.Module):
         end_rev = soft_dp_end_logits(Mr, seg_mask, germ_mask, go, ge, dg)
         start_logits = _reverse_valid_2d(end_rev, germ_len)
         return start_logits.masked_fill(~germ_mask, NEG), end_logits
+
+    def alignment_score(self, seg_reps, seg_mask, germ_reps, germ_mask):
+        """Candidate-allele log-likelihood: the soft-DP log-partition over end
+        positions = total alignment mass of the observed segment against this
+        candidate germline. Higher = better alignment = more likely the true allele.
+        This is the learned, differentiable replacement for a classical SW score
+        (the allele-reader scorer). Returns (B,)."""
+        go = -F.softplus(self._gap_open)
+        ge = -F.softplus(self._gap_extend)
+        dg = -F.softplus(self._del_gap)
+        M = self._scores(seg_reps, germ_reps)
+        end_logits = soft_dp_end_logits(M, seg_mask, germ_mask, go, ge, dg)
+        return torch.logsumexp(end_logits, dim=-1)
