@@ -69,8 +69,11 @@ def main():
         print_scores(score(recs, model_preds), indent="   ")
         if args.rescore:
             rescored = rescore_alleles(reads, [dict(p) for p in model_preds], rs)
-            print(" DNAlignAIR + identity-rescore:")
+            print(" DNAlignAIR + SW-rescore:")
             print_scores(score(recs, rescored), indent="   ")
+            learned = predict_reads(model, rs, reads, rerank="learned")
+            print(" DNAlignAIR + learned-rerank (alignment_score):")
+            print_scores(score(recs, learned), indent="   ")
 
 
 if __name__ == "__main__":

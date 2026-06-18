@@ -12,6 +12,7 @@ from ..data.tokenizer import pad_tokenize
 from ..nn.region_head import decode_boundaries
 from ..nn.germline_aligner import decode_germline_coords
 from ..training.germline_tf import compute_germline_logits
+from ..core.dnalignair import extract_segment_tokens
 
 
 _ALIGNER = None
@@ -67,7 +68,9 @@ def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
 
 @torch.no_grad()
 def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64,
-                  topk: int = 16) -> list:
+                  topk: int = 16, rerank: str = "none") -> list:
+    """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
+    differentiable aligner.alignment_score = the learned allele reader)."""
     device = device or next(model.parameters()).device
     model.eval()
     ref_emb = model.encode_reference(reference_set)
@@ -91,11 +94,29 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
         gl = compute_germline_logits(model, canon, mask, {}, ref_emb, has_d,
                                      region_labels=pred_region, allele_idx=pred_idx)
         gcoord = {g: decode_germline_coords(gl[g][0], gl[g][1]) for g in genes}
+        # learned allele reader: rerank top-k by the differentiable alignment score
+        learned_best = {}
+        if rerank == "learned":
+            for g in genes:
+                G = g.upper()
+                seg_tok, seg_mask = extract_segment_tokens(canon, mask, pred_region, G)
+                seg_pos = model.germline_encoder.forward_positions(seg_tok, seg_mask)  # (B,S,d)
+                pos_reps, pos_mask = ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"]
+                chosen = []
+                for i in range(len(chunk)):
+                    cands = topk_idx[G][i]                              # (k,)
+                    k = cands.shape[0]
+                    sc = model.aligner.alignment_score(
+                        seg_pos[i:i + 1].expand(k, -1, -1), seg_mask[i:i + 1].expand(k, -1),
+                        pos_reps[cands], pos_mask[cands])               # (k,)
+                    chosen.append(int(cands[sc.argmax()]))
+                learned_best[G] = chosen
         for i in range(len(chunk)):
             p = {}
             for g in genes:
                 G = g.upper()
-                p[f"{g}_call"] = names[G][int(pred_idx[G][i])]
+                idx = learned_best[G][i] if rerank == "learned" else int(pred_idx[G][i])
+                p[f"{g}_call"] = names[G][idx]
                 p[f"{g}_topk"] = [names[G][int(j)] for j in topk_idx[G][i]]
                 if boundary is not None:                    # query decoder: posterior argmax
                     p[f"{g}_sequence_start"] = int(boundary["start"][G][i].argmax())
