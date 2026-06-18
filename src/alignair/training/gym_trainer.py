@@ -5,9 +5,13 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
+import random
+
 from ..gym.collate import gym_collate
 from ..nn.matching import distill_match_loss
+from ..core.dnalignair import extract_segment_tokens
 from .ema import EMATeacher
+from .reader import build_sibling_index, build_candidates, reader_scores, reader_set_nce
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +26,8 @@ class GymTrainer:
     def __init__(self, model, loss_fn, reference_set, gym, lr=1e-3, batch_size=16,
                  device=None, grad_clip=10.0, refresh_reference_every=1,
                  refresh_curriculum_every=25, distill=False, distill_weight=1.0,
-                 distill_decay=0.999, distill_temperature=2.0):
+                 distill_decay=0.999, distill_temperature=2.0,
+                 reader=False, reader_weight=1.0, reader_n_sib=6, reader_n_rand=6):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.loss_fn = loss_fn.to(self.device)
@@ -45,6 +50,12 @@ class GymTrainer:
         self.distill_temperature = distill_temperature
         self.teacher = EMATeacher(self.model, decay=distill_decay).to(self.device) if distill else None
         self._teacher_ref = None
+        # allele reader: train alignment_score to discriminate true allele vs siblings
+        self.reader = reader
+        self.reader_weight = reader_weight
+        self.reader_n_sib, self.reader_n_rand = reader_n_sib, reader_n_rand
+        self._sib_index = build_sibling_index(reference_set) if reader else None
+        self._reader_rng = random.Random(0)
         params = list(self.model.parameters()) + list(self.loss_fn.parameters())
         self.optimizer = torch.optim.Adam(params, lr=lr)
 
@@ -119,6 +130,23 @@ class GymTrainer:
                                              self.distill_temperature)
                 total = total + self.distill_weight * distill
                 comp["distill"] = distill.detach()
+            # allele reader: train alignment_score to rank true allele over siblings
+            if self.reader:
+                reader_loss = 0.0
+                genes = ["v", "j"] + (["d"] if self.has_d else [])
+                for g in genes:
+                    G = g.upper()
+                    seg_tok, seg_mask = extract_segment_tokens(
+                        canon, batch["mask"], batch["region_labels"], G)
+                    seg_reps = self.model.germline_encoder.forward_positions(seg_tok, seg_mask)
+                    cand, pos = build_candidates(
+                        batch[f"{g}_primary_idx"], batch[f"{g}_allele"], self._sib_index[G],
+                        self._reader_rng, self.reader_n_sib, self.reader_n_rand)
+                    sc = reader_scores(self.model.aligner, seg_reps, seg_mask, cand,
+                                       ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"])
+                    reader_loss = reader_loss + reader_set_nce(sc, pos)
+                total = total + self.reader_weight * reader_loss
+                comp["reader"] = reader_loss.detach()
             self.optimizer.zero_grad(set_to_none=True)
             # Skip non-finite steps so a single diverged batch cannot poison the
             # weights with NaN/inf (regression heads can spike on very hard inputs).

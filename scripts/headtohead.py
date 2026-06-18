@@ -34,6 +34,8 @@ def main():
     ap.add_argument("--caller", choices=["retrieval", "classifier"], default="retrieval")
     ap.add_argument("--rescore", action="store_true",
                     help="exact-nucleotide allele rescore within the predicted gene")
+    ap.add_argument("--reader", action="store_true",
+                    help="train the allele reader (alignment_score discrimination)")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
@@ -49,7 +51,8 @@ def main():
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d, use_boundary=(args.region_decoder == "query"))
     gym = AlignAIRGym([dc], rs, seed=0)
-    trainer = GymTrainer(model, loss_fn, rs, gym, lr=5e-4, batch_size=args.batch)
+    trainer = GymTrainer(model, loss_fn, rs, gym, lr=5e-4, batch_size=args.batch,
+                         reader=args.reader)
     print(f"training {sum(p.numel() for p in model.parameters())/1e6:.2f}M params "
           f"for {args.steps} steps (aligner={args.aligner}, region={args.region_decoder})...")
     trainer.fit(total_steps=args.steps, global_total=args.steps)
