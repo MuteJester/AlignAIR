@@ -102,13 +102,15 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                 seg_tok, seg_mask = extract_segment_tokens(canon, mask, pred_region, G)
                 seg_pos = model.germline_encoder.forward_positions(seg_tok, seg_mask)  # (B,S,d)
                 pos_reps, pos_mask = ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"]
+                pos_tok = ref_emb[G]["pos_tok"]
                 chosen = []
                 for i in range(len(chunk)):
                     cands = topk_idx[G][i]                              # (k,)
                     k = cands.shape[0]
                     sc = model.aligner.alignment_score(
                         seg_pos[i:i + 1].expand(k, -1, -1), seg_mask[i:i + 1].expand(k, -1),
-                        pos_reps[cands], pos_mask[cands])               # (k,)
+                        pos_reps[cands], pos_mask[cands],
+                        seg_tok=seg_tok[i:i + 1].expand(k, -1), germ_tok=pos_tok[cands])  # (k,)
                     chosen.append(int(cands[sc.argmax()]))
                 learned_best[G] = chosen
         for i in range(len(chunk)):

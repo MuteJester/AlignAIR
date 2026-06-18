@@ -55,8 +55,10 @@ def build_candidates(primary_idx, multihot, sib_index_G, rng,
     return cand, pos_mask
 
 
-def reader_scores(aligner, seg_reps, seg_mask, cand_idx, pos_reps, pos_mask_ref) -> torch.Tensor:
-    """Align the observed segment against each candidate germline -> (B,C) scores."""
+def reader_scores(aligner, seg_reps, seg_mask, cand_idx, pos_reps, pos_mask_ref,
+                  seg_tok=None, germ_tok_ref=None) -> torch.Tensor:
+    """Align the observed segment against each candidate germline -> (B,C) scores.
+    Pass seg_tok (B,S) and germ_tok_ref (K,Lg) to enable the base-match channel."""
     B, C = cand_idx.shape
     S, d = seg_reps.shape[1], seg_reps.shape[2]
     seg = seg_reps.unsqueeze(1).expand(B, C, S, d).reshape(B * C, S, d)
@@ -64,7 +66,9 @@ def reader_scores(aligner, seg_reps, seg_mask, cand_idx, pos_reps, pos_mask_ref)
     flat = cand_idx.reshape(-1)
     germ = pos_reps[flat]                                     # (B*C, Lg, d)
     gm = pos_mask_ref[flat]                                   # (B*C, Lg)
-    return aligner.alignment_score(seg, sm, germ, gm).reshape(B, C)
+    st = seg_tok.unsqueeze(1).expand(B, C, S).reshape(B * C, S) if seg_tok is not None else None
+    gt = germ_tok_ref[flat] if germ_tok_ref is not None else None
+    return aligner.alignment_score(seg, sm, germ, gm, seg_tok=st, germ_tok=gt).reshape(B, C)
 
 
 def reader_set_nce(scores: torch.Tensor, pos_mask: torch.Tensor) -> torch.Tensor:

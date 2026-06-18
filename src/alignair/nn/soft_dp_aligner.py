@@ -89,12 +89,21 @@ class SoftDPAligner(nn.Module):
         self._gap_open = nn.Parameter(torch.tensor(3.0))       # -softplus -> ~ -3.0
         self._gap_extend = nn.Parameter(torch.tensor(2.0))     # ~ -2.1
         self._del_gap = nn.Parameter(torch.tensor(3.0))        # ~ -3.0
+        # learned base-match bonus: makes the emission SNP-sensitive (the SW mechanism)
+        # so the DP can resolve 1-2 SNP sibling alleles, not just the gene.
+        self._match_weight = nn.Parameter(torch.tensor(1.0))
 
-    def _scores(self, seg_reps, germ_reps):
+    def _scores(self, seg_reps, germ_reps, seg_tok=None, germ_tok=None):
         S = F.normalize(self.seg_proj(seg_reps), dim=-1)
         G = F.normalize(self.germ_proj(germ_reps), dim=-1)
         scale = self.log_scale.clamp(-2.0, 3.0).exp()
-        return scale * torch.einsum("bid,bjd->bij", S, G)      # (B,S,Lg) cosine*scale
+        M = scale * torch.einsum("bid,bjd->bij", S, G)         # (B,S,Lg) cosine*scale
+        if seg_tok is not None and germ_tok is not None:
+            st, gt = seg_tok.unsqueeze(2), germ_tok.unsqueeze(1)            # (B,S,1),(B,1,Lg)
+            real = (st >= 1) & (st <= 4) & (gt >= 1) & (gt <= 4)           # ACGT only
+            term = real.float() * (2.0 * (st == gt).float() - 1.0)        # +1 match / -1 mismatch
+            M = M + F.softplus(self._match_weight) * term
+        return M
 
     def forward(self, seg_reps, seg_mask, germ_reps, germ_mask):
         go = -F.softplus(self._gap_open)
@@ -111,15 +120,16 @@ class SoftDPAligner(nn.Module):
         start_logits = _reverse_valid_2d(end_rev, germ_len)
         return start_logits.masked_fill(~germ_mask, NEG), end_logits
 
-    def alignment_score(self, seg_reps, seg_mask, germ_reps, germ_mask):
+    def alignment_score(self, seg_reps, seg_mask, germ_reps, germ_mask,
+                        seg_tok=None, germ_tok=None):
         """Candidate-allele log-likelihood: the soft-DP log-partition over end
         positions = total alignment mass of the observed segment against this
         candidate germline. Higher = better alignment = more likely the true allele.
-        This is the learned, differentiable replacement for a classical SW score
-        (the allele-reader scorer). Returns (B,)."""
+        Pass seg_tok/germ_tok to enable the SNP-sensitive base-match channel (needed
+        to resolve sibling alleles). Returns (B,)."""
         go = -F.softplus(self._gap_open)
         ge = -F.softplus(self._gap_extend)
         dg = -F.softplus(self._del_gap)
-        M = self._scores(seg_reps, germ_reps)
+        M = self._scores(seg_reps, germ_reps, seg_tok, germ_tok)
         end_logits = soft_dp_end_logits(M, seg_mask, germ_mask, go, ge, dg)
         return torch.logsumexp(end_logits, dim=-1)

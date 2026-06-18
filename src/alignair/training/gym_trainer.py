@@ -143,7 +143,8 @@ class GymTrainer:
                         batch[f"{g}_primary_idx"], batch[f"{g}_allele"], self._sib_index[G],
                         self._reader_rng, self.reader_n_sib, self.reader_n_rand)
                     sc = reader_scores(self.model.aligner, seg_reps, seg_mask, cand,
-                                       ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"])
+                                       ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"],
+                                       seg_tok=seg_tok, germ_tok_ref=ref_emb[G]["pos_tok"])
                     reader_loss = reader_loss + reader_set_nce(sc, pos)
                 total = total + self.reader_weight * reader_loss
                 comp["reader"] = reader_loss.detach()

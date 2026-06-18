@@ -134,6 +134,7 @@ class DNAlignAIR(nn.Module):
                 "embeddings": self.germline_encoder(tok, msk),                 # (K, d) normalized
                 "pos_reps": self.germline_encoder.forward_positions(tok, msk),  # (K, Lg, d)
                 "pos_mask": msk,                                               # (K, Lg)
+                "pos_tok": tok,                                                # (K, Lg) for base-match
             }
         return out
 
