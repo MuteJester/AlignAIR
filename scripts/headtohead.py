@@ -29,6 +29,7 @@ def main():
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--d-model", type=int, default=128)
     ap.add_argument("--layers", type=int, default=4)
+    ap.add_argument("--backbone", choices=["conv", "shared"], default="conv")
     ap.add_argument("--aligner", default="softdp")
     ap.add_argument("--region-decoder", default="linear")
     ap.add_argument("--caller", choices=["retrieval", "classifier"], default="retrieval")
@@ -48,7 +49,8 @@ def main():
     counts = {g: len(rs.gene(g).names) for g in ("V", "D", "J")} if rs.has_d \
         else {g: len(rs.gene(g).names) for g in ("V", "J")}
     cfg = DNAlignAIRConfig(d_model=args.d_model, n_layers=args.layers,
-                           aligner=args.aligner, region_decoder=args.region_decoder,
+                           backbone=args.backbone, aligner=args.aligner,
+                           region_decoder=args.region_decoder,
                            caller=args.caller, allele_counts=counts)
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d, use_boundary=(args.region_decoder == "query"))

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from ..config.dnalignair_config import DNAlignAIRConfig
 from ..nn.orientation import OrientationHead, apply_orientation
 from ..nn.backbone import SequenceBackbone
+from ..nn.encoder import SharedNucleotideEncoder
 from ..nn.region_head import RegionTagger, REGION_INDEX
 from ..nn.region_decoder import RegionMaskSpanDecoder
 from ..nn.state_head import PerPositionStateHead
@@ -68,9 +69,14 @@ class DNAlignAIR(nn.Module):
         self.config = config
         d = config.d_model
         self.orientation_head = OrientationHead(d=config.orientation_dim)
-        self.backbone = SequenceBackbone(
-            d_model=d, n_layers=config.n_layers, nhead=config.nhead,
-            dim_feedforward=config.dim_feedforward, max_len=config.max_len)
+        self.shared_backbone = getattr(config, "backbone", "conv") == "shared"
+        if self.shared_backbone:
+            self.backbone = SharedNucleotideEncoder(
+                d_model=d, n_layers=config.n_layers, nhead=config.nhead, max_len=config.max_len)
+        else:
+            self.backbone = SequenceBackbone(
+                d_model=d, n_layers=config.n_layers, nhead=config.nhead,
+                dim_feedforward=config.dim_feedforward, max_len=config.max_len)
         self.query_regions = getattr(config, "region_decoder", "linear") == "query"
         self.region_tagger = (RegionMaskSpanDecoder(d_model=d, nhead=config.nhead)
                               if self.query_regions else RegionTagger(d_model=d))
@@ -99,7 +105,8 @@ class DNAlignAIR(nn.Module):
         orientation_logits = self.orientation_head(tokens, mask)
         t = orientation_ids if orientation_ids is not None else orientation_logits.argmax(dim=-1)
         canon = apply_orientation(tokens, mask, t)
-        reps = self.backbone(canon, mask)
+        reps = (self.backbone.forward_positions(canon, mask) if self.shared_backbone
+                else self.backbone(canon, mask))
         if self.query_regions:
             rdec = self.region_tagger(reps, mask)
             region_logits = rdec["region_logits"]
