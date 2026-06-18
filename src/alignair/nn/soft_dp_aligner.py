@@ -132,4 +132,9 @@ class SoftDPAligner(nn.Module):
         dg = -F.softplus(self._del_gap)
         M = self._scores(seg_reps, germ_reps, seg_tok, germ_tok)
         end_logits = soft_dp_end_logits(M, seg_mask, germ_mask, go, ge, dg)
-        return torch.logsumexp(end_logits, dim=-1)
+        # length-normalize: the raw log-partition grows with germline length (more end
+        # positions => more mass), which biases ranking ACROSS candidates of different
+        # lengths (our cross-gene rerank). Subtract log(#valid end positions) -> a
+        # length-invariant log-mean-exp score.
+        n_valid = germ_mask.sum(dim=-1).clamp(min=1).to(end_logits.dtype)
+        return torch.logsumexp(end_logits, dim=-1) - torch.log(n_valid)
