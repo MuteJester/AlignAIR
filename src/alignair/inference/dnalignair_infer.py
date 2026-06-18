@@ -42,10 +42,14 @@ def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
             top1 = p.get(f"{g}_call")
             if not top1:
                 continue
-            gene = top1.split("*")[0]
             ref = reference_set.gene(G)
-            cands = [(nm, ref.sequences[ref.index[nm]])
-                     for nm in ref.names if nm.split("*")[0] == gene]
+            topk = p.get(f"{g}_topk")
+            if topk:  # rerank the top-k embedding candidates ACROSS genes (fixes gene errors)
+                cand_names = topk
+            else:     # fall back to siblings of the predicted gene
+                gene = top1.split("*")[0]
+                cand_names = [nm for nm in ref.names if nm.split("*")[0] == gene]
+            cands = [(nm, ref.sequences[ref.index[nm]]) for nm in cand_names]
             if len(cands) <= 1:
                 continue
             ss, se = p[f"{g}_sequence_start"], p[f"{g}_sequence_end"]
@@ -62,7 +66,8 @@ def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
 
 
 @torch.no_grad()
-def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64) -> list:
+def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64,
+                  topk: int = 16) -> list:
     device = device or next(model.parameters()).device
     model.eval()
     ref_emb = model.encode_reference(reference_set)
@@ -81,6 +86,8 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
         dec = decode_boundaries(out["region_logits"], mask, has_d=has_d)
         pred_region = out["region_logits"].argmax(-1)
         pred_idx = {g.upper(): out["match"][g.upper()].argmax(-1) for g in genes}
+        topk_idx = {g.upper(): out["match"][g.upper()].topk(
+            min(topk, len(names[g.upper()])), dim=-1).indices for g in genes}
         gl = compute_germline_logits(model, canon, mask, {}, ref_emb, has_d,
                                      region_labels=pred_region, allele_idx=pred_idx)
         gcoord = {g: decode_germline_coords(gl[g][0], gl[g][1]) for g in genes}
@@ -89,6 +96,7 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
             for g in genes:
                 G = g.upper()
                 p[f"{g}_call"] = names[G][int(pred_idx[G][i])]
+                p[f"{g}_topk"] = [names[G][int(j)] for j in topk_idx[G][i]]
                 if boundary is not None:                    # query decoder: posterior argmax
                     p[f"{g}_sequence_start"] = int(boundary["start"][G][i].argmax())
                     p[f"{g}_sequence_end"] = int(boundary["end"][G][i].argmax()) + 1
