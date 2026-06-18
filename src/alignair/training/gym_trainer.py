@@ -27,7 +27,8 @@ class GymTrainer:
                  device=None, grad_clip=10.0, refresh_reference_every=1,
                  refresh_curriculum_every=25, distill=False, distill_weight=1.0,
                  distill_decay=0.999, distill_temperature=2.0,
-                 reader=False, reader_weight=1.0, reader_n_sib=6, reader_n_rand=6):
+                 reader=False, reader_weight=1.0, reader_n_sib=6, reader_n_rand=6,
+                 scheduled_sampling=False, ss_max_prob=0.5):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.loss_fn = loss_fn.to(self.device)
@@ -56,6 +57,10 @@ class GymTrainer:
         self.reader_n_sib, self.reader_n_rand = reader_n_sib, reader_n_rand
         self._sib_index = build_sibling_index(reference_set) if reader else None
         self._reader_rng = random.Random(0)
+        # scheduled sampling: train match/germline/reader on the model's own PREDICTED
+        # region segments (ramped probability) to close the teacher-forced -> deployed gap
+        self.scheduled_sampling = scheduled_sampling
+        self.ss_max_prob = ss_max_prob
         params = list(self.model.parameters()) + list(self.loss_fn.parameters())
         self.optimizer = torch.optim.Adam(params, lr=lr)
 
@@ -111,11 +116,21 @@ class GymTrainer:
             out = self.model(batch["tokens"], batch["mask"], ref_emb,
                              orientation_ids=batch["orientation_id"])
             canon = out["canon_tokens"]
+            # scheduled sampling: per sample, with a curriculum-ramped probability, draw
+            # the SUPERVISION segment from the model's own predicted regions instead of
+            # the true labels (targets stay true) -> learns to recover allele/coords from
+            # its own imperfect boundaries, closing the teacher-forced->deployed gap.
+            sup_regions = batch["region_labels"]
+            if self.scheduled_sampling and global_total:
+                p_ss = self.ss_max_prob * min(1.0, self._global_step / max(global_total - 1, 1))
+                use_pred = torch.rand(batch["tokens"].shape[0], device=self.device) < p_ss
+                sup_regions = torch.where(use_pred.unsqueeze(1),
+                                          out["region_logits"].argmax(-1), sup_regions)
             germline_logits = compute_germline_logits(
-                self.model, canon, batch["mask"], batch, ref_emb, self.has_d)
-            # teacher-force the match query over TRUE regions for a clean signal
+                self.model, canon, batch["mask"], batch, ref_emb, self.has_d,
+                region_labels=sup_regions)
             match_logits = self.model.match_alleles(
-                canon, batch["mask"], batch["region_labels"], ref_emb, reps=out["reps"])
+                canon, batch["mask"], sup_regions, ref_emb, reps=out["reps"])
             total, comp = self.loss_fn(out, batch, germline_logits=germline_logits,
                                        match_logits=match_logits)
             # EMA self-distillation: pull the student's fragment-view allele posteriors
@@ -137,7 +152,7 @@ class GymTrainer:
                 for g in genes:
                     G = g.upper()
                     seg_tok, seg_mask = extract_segment_tokens(
-                        canon, batch["mask"], batch["region_labels"], G)
+                        canon, batch["mask"], sup_regions, G)
                     seg_reps = self.model.germline_encoder.forward_positions(seg_tok, seg_mask)
                     cand, pos = build_candidates(
                         batch[f"{g}_primary_idx"], batch[f"{g}_allele"], self._sib_index[G],
