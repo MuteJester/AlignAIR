@@ -29,14 +29,29 @@ logger = logging.getLogger(__name__)
 def build_experiment(dataconfig, params):
     """Compile a GenAIRR experiment at the given curriculum params (forward orientation)."""
     from GenAIRR import Experiment
-    exp = Experiment.on(dataconfig).recombine().mutate(model="s5f", rate=params["mutation_rate"])
+    exp = Experiment.on(dataconfig).recombine()
+    if params.get("productive_only", False):
+        exp = exp.productive_only()
+    exp = exp.mutate(model="s5f", rate=params["mutation_rate"])
     if dataconfig.metadata.has_d:
-        exp = exp.invert_d(prob=0.05)
+        exp = exp.invert_d(prob=float(params.get("invert_d_prob", 0.05)))
+    revision_prob = float(params.get("receptor_revision_prob", 0.0))
+    if revision_prob > 0.0:
+        exp = exp.receptor_revision(
+            prob=revision_prob,
+            same_haplotype=bool(params.get("receptor_revision_same_haplotype", True)),
+        )
     exp = (exp.end_loss_5prime(length=params["end_loss_5"])
               .end_loss_3prime(length=params["end_loss_3"])
               .polymerase_indels(count=params["indel_count"])
               .sequencing_errors(rate=params["seq_error_rate"])
               .ambiguous_base_calls(count=params["ambiguous_count"]))
+    contaminate_prob = float(params.get("contaminate_prob", 0.0))
+    if contaminate_prob > 0.0:
+        exp = exp.contaminate(prob=contaminate_prob)
+    paired_end = params.get("paired_end")
+    if paired_end:
+        exp = exp.paired_end(**paired_end)
     return exp.compile()
 
 
