@@ -72,7 +72,8 @@ def igblast_to_pred(row) -> dict:
 def score(records: list, preds: list) -> dict:
     """Per-gene top-1-in-set call accuracy + in-seq/germline start-end MAE vs GT.
     ``preds`` are GenAIRR-convention dicts (use igblast_to_pred for IgBLAST rows)."""
-    agg = {g: {"call": [], "gene": [], "ss": [], "se": [], "gs": [], "ge": []} for g in GENES}
+    agg = {g: {"call": [], "gene": [], "srec": [], "sprec": [], "ssize": [],
+               "ss": [], "se": [], "gs": [], "ge": []} for g in GENES}
     for rec, pred in zip(records, preds):
         for g in GENES:
             gt_call = rec.get(f"{g}_call")
@@ -84,6 +85,13 @@ def score(records: list, preds: list) -> dict:
             agg[g]["call"].append(1.0 if pred_top1 in gt_set else 0.0)
             pred_gene = pred_top1.split("*")[0] if pred_top1 else None
             agg[g]["gene"].append(1.0 if pred_gene in gt_genes else 0.0)
+            # multi-label set metrics (if a predicted set is available)
+            pset = set((pred or {}).get(f"{g}_call_set") or ([pred_top1] if pred_top1 else []))
+            if pset:
+                inter = len(pset & gt_set)
+                agg[g]["srec"].append(inter / len(gt_set))
+                agg[g]["sprec"].append(inter / len(pset))
+                agg[g]["ssize"].append(len(pset))
             if rec.get(f"{g}_sequence_start") is None:
                 continue
             for key, gt in (("ss", f"{g}_sequence_start"), ("se", f"{g}_sequence_end"),
@@ -96,7 +104,10 @@ def score(records: list, preds: list) -> dict:
         a = agg[g]
         out[g] = {"call": float(np.mean(a["call"])) if a["call"] else float("nan"),
                   "gene": float(np.mean(a["gene"])) if a["gene"] else float("nan"),
-                  "found": len(a["ss"]) / max(len(a["call"]), 1)}
+                  "found": len(a["ss"]) / max(len(a["call"]), 1),
+                  "srec": float(np.mean(a["srec"])) if a["srec"] else float("nan"),
+                  "sprec": float(np.mean(a["sprec"])) if a["sprec"] else float("nan"),
+                  "ssize": float(np.mean(a["ssize"])) if a["ssize"] else float("nan")}
         for k in ("ss", "se", "gs", "ge"):
             out[g][k] = float(np.mean(a[k])) if a[k] else float("nan")
     return out
@@ -126,11 +137,14 @@ def main():
         print()
 
 
-def print_scores(s: dict, indent: str = "  ") -> None:
+def print_scores(s: dict, indent: str = "  ", sets: bool = False) -> None:
     for g in GENES:
         r = s[g]
-        print(f"{indent}{g.upper()}: call={r['call']:.2f} gene={r['gene']:.2f} found={r['found']:.2f} "
-              f"seq[{r['ss']:.1f},{r['se']:.1f}] gl[{r['gs']:.1f},{r['ge']:.1f}]")
+        line = (f"{indent}{g.upper()}: call={r['call']:.2f} gene={r['gene']:.2f} "
+                f"found={r['found']:.2f} seq[{r['ss']:.1f},{r['se']:.1f}] gl[{r['gs']:.1f},{r['ge']:.1f}]")
+        if sets and r.get("srec") == r.get("srec"):  # not NaN
+            line += f" set[rec={r['srec']:.2f} prec={r['sprec']:.2f} sz={r['ssize']:.1f}]"
+        print(line)
 
 
 if __name__ == "__main__":

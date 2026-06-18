@@ -68,9 +68,12 @@ def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
 
 @torch.no_grad()
 def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64,
-                  topk: int = 16, rerank: str = "none") -> list:
+                  topk: int = 16, rerank: str = "none", set_epsilon: float = 1.0) -> list:
     """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
-    differentiable aligner.alignment_score = the learned allele reader)."""
+    differentiable aligner.alignment_score = the learned allele reader). When rerank
+    is on, also emits {g}_call_set = the calibrated equivalence set (candidates within
+    set_epsilon of the top score) — the multi-label output (report the set, not argmax,
+    when the evidence cannot distinguish alleles)."""
     device = device or next(model.parameters()).device
     model.eval()
     ref_emb = model.encode_reference(reference_set)
@@ -103,7 +106,7 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                 seg_pos = model.germline_encoder.forward_positions(seg_tok, seg_mask)  # (B,S,d)
                 pos_reps, pos_mask = ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"]
                 pos_tok = ref_emb[G]["pos_tok"]
-                chosen = []
+                chosen, chosen_sets = [], []
                 for i in range(len(chunk)):
                     cands = topk_idx[G][i]                              # (k,)
                     k = cands.shape[0]
@@ -112,7 +115,10 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                         pos_reps[cands], pos_mask[cands],
                         seg_tok=seg_tok[i:i + 1].expand(k, -1), germ_tok=pos_tok[cands])  # (k,)
                     chosen.append(int(cands[sc.argmax()]))
+                    keep = sc >= (sc.max() - set_epsilon)              # equivalence set
+                    chosen_sets.append([names[G][int(cands[j])] for j in range(k) if keep[j]])
                 learned_best[G] = chosen
+                learned_best[G + "_set"] = chosen_sets
         for i in range(len(chunk)):
             p = {}
             for g in genes:
@@ -120,6 +126,8 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                 idx = learned_best[G][i] if rerank == "learned" else int(pred_idx[G][i])
                 p[f"{g}_call"] = names[G][idx]
                 p[f"{g}_topk"] = [names[G][int(j)] for j in topk_idx[G][i]]
+                if rerank == "learned":
+                    p[f"{g}_call_set"] = learned_best[G + "_set"][i]
                 if boundary is not None:                    # query decoder: posterior argmax
                     p[f"{g}_sequence_start"] = int(boundary["start"][G][i].argmax())
                     p[f"{g}_sequence_end"] = int(boundary["end"][G][i].argmax()) + 1

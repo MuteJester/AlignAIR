@@ -75,8 +75,8 @@ def main():
             print(" DNAlignAIR + SW-rescore:")
             print_scores(score(recs, rescored), indent="   ")
             learned = predict_reads(model, rs, reads, rerank="learned")
-            print(" DNAlignAIR + learned-rerank (alignment_score):")
-            print_scores(score(recs, learned), indent="   ")
+            print(" DNAlignAIR + learned-rerank (alignment_score) [+ multi-label set]:")
+            print_scores(score(recs, learned), indent="   ", sets=True)
 
 
 if __name__ == "__main__":
