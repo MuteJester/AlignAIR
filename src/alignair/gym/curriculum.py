@@ -42,3 +42,37 @@ class Curriculum:
                 f"indel≤{pr['indel_count'][1]}, seq_err≤{pr['seq_error_rate']:.3f}, "
                 f"N≤{pr['ambiguous_count'][1]}, "
                 f"crop({100*pr['crop_prob']:.0f}%≥{pr['crop_len_min']}..{pr['crop_len_max']}bp)")
+
+
+class StratifiedCurriculum:
+    """Decoupled, full-range difficulty MIXTURE (replaces the single-scalar ramp).
+
+    Every axis is sampled per-read across its full range *every batch* via GenAIRR's
+    per-read distribution form (mutate(count=[(n,p)...]), trims/indels/N as (value,prob)
+    lists), with crop/orientation drawn per-read in the gym. So a single batch spans
+    naive full reads -> hypermutated ~50bp fragments, with the axes DECOUPLED (a
+    low-SHM fragment and a high-SHM full read both occur) — the regimes the scalar-p
+    ramp could never produce. SHM uses mutation COUNT (rate is scalar-only in GenAIRR);
+    the count distribution is bimodal-ish: a naive spike + a broad hypermutated tail.
+    Difficulty does not ramp with p (full spectrum from step 0); easy mass (naive) is
+    always present so nothing is forgotten."""
+
+    def params(self, p: float = 1.0) -> dict:
+        return {
+            # per-read SHM via mutation-count categorical: naive spike + heavy tail
+            "mutation_count": [(0, 0.20), (3, 0.12), (8, 0.15), (18, 0.18),
+                               (35, 0.18), (55, 0.12), (80, 0.05)],
+            "end_loss_5": [(0, 0.6), (20, 0.15), (60, 0.15), (120, 0.10)],
+            "end_loss_3": [(0, 0.7), (15, 0.2), (40, 0.10)],
+            "indel_count": [(0, 0.8), (2, 0.1), (5, 0.07), (9, 0.03)],
+            "seq_error_rate": 0.005,
+            "ambiguous_count": [(0, 0.8), (3, 0.15), (10, 0.05)],
+            "crop_prob": 0.5, "crop_len_min": 50, "crop_len_max": 576, "crop_log_uniform": True,
+            "orient_prob": 0.3,
+        }
+
+    def stage(self, p: float) -> int:
+        return 0
+
+    def describe(self, p: float) -> str:
+        return "stratified full-range mixture (decoupled axes; SHM count-distribution naive->hypermutated)"

@@ -32,7 +32,10 @@ def build_experiment(dataconfig, params):
     exp = Experiment.on(dataconfig).recombine()
     if params.get("productive_only", False):
         exp = exp.productive_only()
-    exp = exp.mutate(model="s5f", rate=params["mutation_rate"])
+    if params.get("mutation_count") is not None:   # per-read SHM distribution (stratified)
+        exp = exp.mutate(model="s5f", count=params["mutation_count"])
+    else:
+        exp = exp.mutate(model="s5f", rate=params["mutation_rate"])
     if dataconfig.metadata.has_d:
         exp = exp.invert_d(prob=float(params.get("invert_d_prob", 0.05)))
     revision_prob = float(params.get("receptor_revision_prob", 0.0))
@@ -86,8 +89,11 @@ class AlignAIRGym(IterableDataset):
             # record, before the student's crop/orientation augmentation.
             teacher_tokens = _tok(str(record["sequence"]).upper())
             if params["crop_prob"] > 0 and rng.random() < params["crop_prob"]:
-                target_len = int(rng.integers(params["crop_len_min"],
-                                              params["crop_len_max"] + 1))
+                lo, hi = params["crop_len_min"], params["crop_len_max"]
+                if params.get("crop_log_uniform"):   # densely sample SHORT fragments
+                    target_len = int(round(np.exp(rng.uniform(np.log(lo), np.log(hi)))))
+                else:
+                    target_len = int(rng.integers(lo, hi + 1))
                 record = crop_record(record, target_len)
             if self.log_every and count % self.log_every == 0:
                 logger.info("Gym generated %d samples (%s)", count,

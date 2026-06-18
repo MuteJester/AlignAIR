@@ -19,6 +19,7 @@ from alignair.config.dnalignair_config import DNAlignAIRConfig  # noqa: E402
 from alignair.core.dnalignair import DNAlignAIR  # noqa: E402
 from alignair.losses.dnalignair_loss import DNAlignAIRLoss  # noqa: E402
 from alignair.gym.gym import AlignAIRGym  # noqa: E402
+from alignair.gym.curriculum import Curriculum, StratifiedCurriculum  # noqa: E402
 from alignair.training.gym_trainer import GymTrainer  # noqa: E402
 from alignair.inference.dnalignair_infer import predict_reads, rescore_alleles  # noqa: E402
 
@@ -39,6 +40,8 @@ def main():
                     help="train the allele reader (alignment_score discrimination)")
     ap.add_argument("--scheduled-sampling", action="store_true",
                     help="train match/germline/reader on predicted-region segments (ramped)")
+    ap.add_argument("--curriculum", choices=["ramp", "stratified"], default="ramp",
+                    help="ramp = monotonic scalar-p; stratified = decoupled full-range mixture")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
@@ -54,7 +57,8 @@ def main():
                            caller=args.caller, allele_counts=counts)
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d, use_boundary=(args.region_decoder == "query"))
-    gym = AlignAIRGym([dc], rs, seed=0)
+    curric = StratifiedCurriculum() if args.curriculum == "stratified" else Curriculum()
+    gym = AlignAIRGym([dc], rs, seed=0, curriculum=curric)
     trainer = GymTrainer(model, loss_fn, rs, gym, lr=5e-4, batch_size=args.batch,
                          reader=args.reader, scheduled_sampling=args.scheduled_sampling)
     print(f"training {sum(p.numel() for p in model.parameters())/1e6:.2f}M params "
