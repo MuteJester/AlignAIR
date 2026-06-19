@@ -57,22 +57,50 @@ class StratifiedCurriculum:
     Difficulty does not ramp with p (full spectrum from step 0); easy mass (naive) is
     always present so nothing is forgotten."""
 
+    # per axis: bins + (easy-weighted, hard-weighted) probabilities. The batch mixture
+    # is blend = (1-τ)*easy + τ*hard, renormalized -> easy-first early, full hard tail
+    # late, with the naive/easy mass ALWAYS present (no forgetting) and every batch
+    # spanning a DECOUPLED range at all τ. τ ramps with training progress p (a step-
+    # approximation of the competence gate).
+    _MIX = {
+        "mutation_count": ([0, 3, 8, 18, 35, 55, 80],
+                           [0.55, 0.25, 0.12, 0.05, 0.02, 0.01, 0.00],
+                           [0.20, 0.12, 0.15, 0.18, 0.18, 0.12, 0.05]),
+        "end_loss_5":     ([0, 10, 30, 70, 120],
+                           [0.85, 0.10, 0.04, 0.01, 0.00],
+                           [0.55, 0.15, 0.15, 0.10, 0.05]),
+        "end_loss_3":     ([0, 10, 25, 45],
+                           [0.88, 0.09, 0.02, 0.01],
+                           [0.65, 0.20, 0.10, 0.05]),
+        "indel_count":    ([0, 2, 5, 9],
+                           [0.95, 0.04, 0.01, 0.00],
+                           [0.78, 0.12, 0.07, 0.03]),
+        "ambiguous_count": ([0, 3, 10],
+                            [0.95, 0.04, 0.01],
+                            [0.80, 0.15, 0.05]),
+    }
+
+    @staticmethod
+    def _blend(bins, easy, hard, tau, eps=1e-3):
+        # floor each weight > 0 (GenAIRR's EmpiricalLengthDist rejects zero weights)
+        w = [max((1 - tau) * e + tau * h, eps) for e, h in zip(easy, hard)]
+        s = sum(w)
+        return [(b, wi / s) for b, wi in zip(bins, w)]
+
     def params(self, p: float = 1.0) -> dict:
-        return {
-            # per-read SHM via mutation-count categorical: naive spike + heavy tail
-            "mutation_count": [(0, 0.20), (3, 0.12), (8, 0.15), (18, 0.18),
-                               (35, 0.18), (55, 0.12), (80, 0.05)],
-            "end_loss_5": [(0, 0.6), (20, 0.15), (60, 0.15), (120, 0.10)],
-            "end_loss_3": [(0, 0.7), (15, 0.2), (40, 0.10)],
-            "indel_count": [(0, 0.8), (2, 0.1), (5, 0.07), (9, 0.03)],
-            "seq_error_rate": 0.005,
-            "ambiguous_count": [(0, 0.8), (3, 0.15), (10, 0.05)],
-            "crop_prob": 0.5, "crop_len_min": 50, "crop_len_max": 576, "crop_log_uniform": True,
-            "orient_prob": 0.3,
-        }
+        tau = max(0.0, min(1.0, p))
+        out = {k: self._blend(*v, tau) for k, v in self._MIX.items()}
+        out.update({
+            "seq_error_rate": _lerp(0.001, 0.01, tau),
+            "crop_prob": _lerp(0.1, 0.5, tau),
+            "crop_len_min": 50, "crop_len_max": 576, "crop_log_uniform": True,
+            "orient_prob": _lerp(0.1, 0.35, tau),
+        })
+        return out
 
     def stage(self, p: float) -> int:
-        return 0
+        return min(4, int(max(0.0, min(1.0, p)) * 5))
 
     def describe(self, p: float) -> str:
-        return "stratified full-range mixture (decoupled axes; SHM count-distribution naive->hypermutated)"
+        return (f"stratified mixture (tau={max(0.0,min(1.0,p)):.2f}; decoupled axes, "
+                f"easy-first->full-range SHM, naive mass always present)")
