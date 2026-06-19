@@ -42,6 +42,7 @@ def main():
                     help="train match/germline/reader on predicted-region segments (ramped)")
     ap.add_argument("--curriculum", choices=["ramp", "stratified"], default="ramp",
                     help="ramp = monotonic scalar-p; stratified = decoupled full-range mixture")
+    ap.add_argument("--save", default=None, help="save trained model state_dict + config to this path")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
@@ -64,12 +65,19 @@ def main():
     print(f"training {sum(p.numel() for p in model.parameters())/1e6:.2f}M params "
           f"for {args.steps} steps (aligner={args.aligner}, region={args.region_decoder})...")
     trainer.fit(total_steps=args.steps, global_total=args.steps)
+    if args.save:
+        torch.save({"model": model.state_dict(), "config": cfg.to_dict()}, args.save)
+        print(f"saved model -> {args.save}")
 
-    strata = [("clean", 0.0, None), ("moderate", 0.5, None),
-              ("hard", 1.0, None), ("fragment~80bp", 1.0, 80)]
+    strata = [("clean", 0.0, None, None), ("moderate", 0.5, None, None),
+              ("hard", 1.0, None, None), ("fragment~80bp", 1.0, 80, None),
+              # extreme strata (beyond the ramp's cap — where the stratified curriculum trains)
+              ("heavy-shm~0.25", 1.0, None, {"mutation_rate": 0.25}),
+              ("extreme-trim5", 0.5, None, {"end_loss_5": (60, 120)}),
+              ("heavy-shm-frag", 1.0, 80, {"mutation_rate": 0.22})]
     print(f"\n=== DNAlignAIR vs IgBLAST | n={args.n}/stratum ===")
-    for name, p, crop in strata:
-        recs = gen_records(p, args.n, args.seed, crop)
+    for name, p, crop, ov in strata:
+        recs = gen_records(p, args.n, args.seed, crop, overrides=ov)
         reads = [r["sequence"] for r in recs]
         model_preds = predict_reads(model, rs, reads)
         igb_preds = [igblast_to_pred(r) for r in run_igblast(recs)]

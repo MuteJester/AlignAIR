@@ -113,8 +113,12 @@ def score(records: list, preds: list) -> dict:
     return out
 
 
-def gen_records(p: float, n: int, seed: int, crop_to: int | None) -> list:
-    exp = build_experiment(gdata.HUMAN_IGH_OGRDB, Curriculum().params(p))
+def gen_records(p: float, n: int, seed: int, crop_to: int | None,
+                overrides: dict | None = None) -> list:
+    params = Curriculum().params(p)
+    if overrides:
+        params.update(overrides)            # extreme strata (heavy SHM / trim beyond the ramp cap)
+    exp = build_experiment(gdata.HUMAN_IGH_OGRDB, params)
     recs = list(exp.stream_records(n=n, seed=seed))
     if crop_to is not None:
         recs = [crop_record(r, crop_to) for r in recs]
