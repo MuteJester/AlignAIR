@@ -351,6 +351,7 @@ def _score_gene(
     *,
     case: BenchmarkCase,
     alt_truth: GeneTruth | None = None,
+    include_expensive_record_fields: bool = True,
 ) -> dict[str, float]:
     if not truth.calls:
         return {}
@@ -436,7 +437,8 @@ def _score_gene(
 
     out.update(_score_topk(pred, truth, gene))
     out.update(_score_genotype_mask(pred, gene, pred_set))
-    out.update(_score_gene_record_fields(pred, case, gene))
+    if include_expensive_record_fields:
+        out.update(_score_gene_record_fields(pred, case, gene))
     return out
 
 
@@ -648,6 +650,7 @@ def score_one_case(
     prediction: dict[str, Any] | None,
     *,
     frame: str = "canonical",
+    include_expensive_record_fields: bool = True,
 ) -> dict[str, Any]:
     """Score one prediction against one benchmark case."""
 
@@ -674,6 +677,7 @@ def score_one_case(
             gene,
             case=case,
             alt_truth=case.truth(alt_frame).get(gene),
+            include_expensive_record_fields=include_expensive_record_fields,
         )
     return {"global": global_metrics, "genes": gene_metrics}
 
@@ -684,6 +688,7 @@ def _score_cases(
     *,
     frame: str = "canonical",
     include_strata: bool = True,
+    include_expensive_record_fields: bool = True,
 ) -> dict[str, Any]:
     """Score predictions against benchmark cases.
 
@@ -704,7 +709,12 @@ def _score_cases(
     for case, pred in zip(cases, predictions):
         by_stratum_cases[case.stratum].append(case)
         by_stratum_preds[case.stratum].append(pred or {})
-        one = score_one_case(case, pred, frame=frame)
+        one = score_one_case(
+            case,
+            pred,
+            frame=frame,
+            include_expensive_record_fields=include_expensive_record_fields,
+        )
         for k, v in one["global"].items():
             global_metrics[k].append(v)
         for gene, vals in one["genes"].items():
@@ -727,6 +737,7 @@ def _score_cases(
                 by_stratum_preds[name],
                 frame=frame,
                 include_strata=False,
+                include_expensive_record_fields=include_expensive_record_fields,
             )
             for name in sorted(by_stratum_cases)
         }
@@ -740,10 +751,18 @@ def score_cases(
     predictions: Iterable[dict[str, Any]],
     *,
     frame: str = "canonical",
+    include_strata: bool = True,
+    include_expensive_record_fields: bool = True,
 ) -> dict[str, Any]:
     """Score predictions against benchmark cases."""
 
-    return _score_cases(cases, predictions, frame=frame, include_strata=True)
+    return _score_cases(
+        cases,
+        predictions,
+        frame=frame,
+        include_strata=include_strata,
+        include_expensive_record_fields=include_expensive_record_fields,
+    )
 
 
 def compact_summary(scores: dict[str, Any]) -> dict[str, Any]:

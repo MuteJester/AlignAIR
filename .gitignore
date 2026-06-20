@@ -117,3 +117,7 @@ MANIFEST.in
 /tmp_run/
 /checkpoints/
 /experiments/
+
+# Python caches
+__pycache__/
+*.pyc

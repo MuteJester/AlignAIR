@@ -2,7 +2,8 @@ import random
 import torch
 
 from alignair.nn.soft_dp_aligner import SoftDPAligner
-from alignair.training.reader import (build_candidates, reader_scores, reader_set_nce)
+from alignair.training.reader import (build_candidates, reader_scores, reader_set_nce,
+                                      perturb_germline_tokens, reader_novel_positive)
 
 
 class _Gene:
@@ -60,3 +61,44 @@ def test_reader_nce_trains_alignment_score_to_discriminate():
     assert last < first
     scores = reader_scores(al, seg, seg_mask, cand_idx, pos_reps, pos_mask_ref)
     assert scores.argmax(-1).float().mean().item() == 0.0       # true candidate ranked top
+
+
+def test_perturb_germline_tokens_changes_exactly_k_bases():
+    gen = torch.Generator().manual_seed(0)
+    tok = torch.tensor([[1, 2, 3, 4, 1, 2, 3, 4, 0, 0]])         # last two are pad (0)
+    mask = torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 0, 0]], dtype=torch.bool)
+    out = perturb_germline_tokens(tok, mask, k=3, gen=gen)
+    diff = (out != tok)
+    assert int(diff.sum()) == 3                                  # exactly k substitutions
+    assert not diff[0, 8:].any()                                 # padding untouched (stays 0)
+    assert ((out[mask] >= 1) & (out[mask] <= 4)).all()           # valid bases stay valid bases
+
+
+def test_reader_novel_positive_ranks_perturbed_true_over_random_sibling():
+    # the SNP-perturbed TRUE germline (novel stand-in) should still out-align a random
+    # unrelated sibling — proving the raw-token channel carries unseen germlines.
+    torch.manual_seed(0)
+    B, S, Lg, d = 3, 12, 14, 16
+    al = SoftDPAligner(d_model=d, match_floor=1.0)
+    with torch.no_grad():
+        al.seg_proj.weight.copy_(torch.eye(d)); al.seg_proj.bias.zero_()
+        al.germ_proj.weight.copy_(torch.eye(d)); al.germ_proj.bias.zero_()
+
+    class _Enc:  # identity position encoder (reps tie, so only tokens discriminate)
+        def forward_positions(self, tok, mask):
+            return torch.randn(tok.shape[0], tok.shape[1], d)
+
+    pos_tok = torch.randint(1, 5, (B, Lg))
+    pos_mask = torch.ones(B, Lg, dtype=torch.bool)
+    seg_tok = pos_tok[:, :S].clone()                              # read = first S germline bases
+    seg_reps = torch.randn(B, S, d)
+    seg_mask = torch.ones(B, S, dtype=torch.bool)
+    prim = torch.arange(B)
+    gen = torch.Generator().manual_seed(1)
+    s_novel = reader_novel_positive(al, _Enc(), seg_reps, seg_mask, seg_tok, prim,
+                                    pos_tok, pos_mask, k=1, gen=gen)
+    # an unrelated germline (shuffled rows) as the negative
+    wrong = pos_tok[torch.tensor([1, 2, 0])]
+    s_wrong = al.alignment_score(seg_reps, seg_mask, torch.randn(B, Lg, d), pos_mask,
+                                 seg_tok=seg_tok, germ_tok=wrong)
+    assert (s_novel > s_wrong).float().mean() >= 2 / 3           # perturbed-true wins in general

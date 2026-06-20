@@ -40,6 +40,10 @@ def main():
                     help="train the allele reader (alignment_score discrimination)")
     ap.add_argument("--scheduled-sampling", action="store_true",
                     help="train match/germline/reader on predicted-region segments (ramped)")
+    ap.add_argument("--reader-novel-prob", type=float, default=0.0,
+                    help="fraction of reader examples whose positive germline is SNP-perturbed "
+                         "(simulated-novel: trains the dynamic-reference / novel-allele property)")
+    ap.add_argument("--reader-novel-snps", type=int, default=2)
     ap.add_argument("--curriculum", choices=["ramp", "stratified"], default="ramp",
                     help="ramp = monotonic scalar-p; stratified = decoupled full-range mixture")
     ap.add_argument("--save", default=None, help="save trained model state_dict + config to this path")
@@ -61,7 +65,9 @@ def main():
     curric = StratifiedCurriculum() if args.curriculum == "stratified" else Curriculum()
     gym = AlignAIRGym([dc], rs, seed=0, curriculum=curric)
     trainer = GymTrainer(model, loss_fn, rs, gym, lr=5e-4, batch_size=args.batch,
-                         reader=args.reader, scheduled_sampling=args.scheduled_sampling)
+                         reader=args.reader, scheduled_sampling=args.scheduled_sampling,
+                         reader_novel_prob=args.reader_novel_prob,
+                         reader_novel_snps=args.reader_novel_snps)
     print(f"training {sum(p.numel() for p in model.parameters())/1e6:.2f}M params "
           f"for {args.steps} steps (aligner={args.aligner}, region={args.region_decoder})...")
     trainer.fit(total_steps=args.steps, global_total=args.steps)

@@ -18,6 +18,14 @@ from ...reference.reference_set import ReferenceSet
 from ..core.schema import BenchmarkCase, BenchmarkSpec, GENES, ORIENTATION_NAMES
 from .generate import _case_from_record, dataconfig_by_name
 
+ALLELE_CONTEXT_PREFIX = "allele_context:"
+
+
+def allele_context_label(gene: str, allele: str, context_label: str) -> str:
+    """Return the synthetic coverage label for an allele/context intersection."""
+
+    return f"{ALLELE_CONTEXT_PREFIX}{gene}:{allele}|{context_label}"
+
 
 def _bin(value: float, edges: tuple[float, ...], labels: tuple[str, ...]) -> str:
     for edge, label in zip(edges, labels):
@@ -106,6 +114,91 @@ def case_coverage_labels(case: BenchmarkCase) -> tuple[str, ...]:
     return tuple(labels)
 
 
+def allele_stratification_contexts(spec: BenchmarkSpec) -> tuple[str, ...]:
+    """Return high-value context labels for per-allele matrix coverage.
+
+    This intentionally uses axis-marginal contexts instead of the full Cartesian
+    product of all contexts. It asks whether each allele appears under each
+    important benchmark scenario axis, without requiring every allele under
+    every possible combination of axes.
+    """
+
+    labels: list[str] = []
+    labels.extend(f"stratum:{stratum.name}" for stratum in spec.strata)
+    orientation_ids = sorted({oid for stratum in spec.strata for oid in (stratum.orientation_ids or (0,))})
+    labels.extend(f"orientation:{ORIENTATION_NAMES.get(oid, oid)}" for oid in orientation_ids)
+    labels.extend(
+        [
+            "tag:full",
+            "tag:fragment",
+            "tag:orientation",
+            "tag:hard",
+            "tag:extreme",
+            "tag:shm",
+            "tag:indel",
+            "tag:noise",
+            "tag:trim",
+            "tag:contaminant",
+            "tag:d_inversion",
+            "tag:read_layout",
+            "tag:receptor_revision",
+            "ambiguity:all_single",
+            "ambiguity:any_multi",
+            "segment_presence:all_segments_visible",
+            "segment_presence:short_v_tail",
+            "segment_presence:short_d",
+            "segment_presence:short_j_head",
+            "length:<=60",
+            "length:61-90",
+            "length:91-130",
+            "length:131-250",
+            "length:>250",
+            "mutation:<=1%",
+            "mutation:1-5%",
+            "mutation:5-12%",
+            "mutation:12-18%",
+            "mutation:>18%",
+            "indel:0",
+            "indel:1-2",
+            "indel:3-5",
+            "indel:>5",
+            "noise:0",
+            "noise:1-2",
+            "noise:3-8",
+            "noise:>8",
+            "junction_frame:in_frame",
+            "junction_frame:out_of_frame",
+            "junction_frame:stop_codon",
+        ]
+    )
+    return tuple(dict.fromkeys(labels))
+
+
+def _allele_context_targets(min_counts: dict[str, int]) -> set[str]:
+    contexts = set()
+    for label in min_counts:
+        if label.startswith(ALLELE_CONTEXT_PREFIX) and "|" in label:
+            contexts.add(label.split("|", 1)[1])
+    return contexts
+
+
+def _labels_for_plan(case: BenchmarkCase, target_contexts: set[str] | None = None) -> tuple[str, ...]:
+    labels = list(case_coverage_labels(case))
+    if not target_contexts:
+        return tuple(labels)
+
+    present_contexts = set(labels) & target_contexts
+    if not present_contexts:
+        return tuple(labels)
+    for gene, truth in case.genes.items():
+        for call in truth.calls:
+            labels.extend(
+                allele_context_label(gene, call, context_label)
+                for context_label in present_contexts
+            )
+    return tuple(labels)
+
+
 @dataclass(frozen=True)
 class CoveragePlan:
     """Coverage targets for online benchmark generation.
@@ -145,6 +238,7 @@ class CoverageTracker:
         self.accepted_cases = 0
         self.counts: Counter[str] = Counter()
         self.accepted_by_stratum: Counter[str] = Counter()
+        self._target_contexts = _allele_context_targets(plan.min_counts)
 
     @property
     def min_cases(self) -> int:
@@ -169,7 +263,7 @@ class CoverageTracker:
         self.generated_cases += 1
 
     def missing_labels_for(self, case: BenchmarkCase) -> tuple[str, ...]:
-        labels = case_coverage_labels(case)
+        labels = _labels_for_plan(case, self._target_contexts)
         return tuple(
             label
             for label in labels
@@ -184,7 +278,7 @@ class CoverageTracker:
     def accept(self, case: BenchmarkCase) -> None:
         self.accepted_cases += 1
         self.accepted_by_stratum[case.stratum] += 1
-        self.counts.update(case_coverage_labels(case))
+        self.counts.update(_labels_for_plan(case, self._target_contexts))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -261,6 +355,8 @@ def coverage_plan_from_spec(
     min_per_orientation: int = 0,
     min_per_context: int = 0,
     min_per_stratum: int = 0,
+    min_per_allele_context: int = 0,
+    allele_contexts: tuple[str, ...] | None = None,
     required_labels: dict[str, int] | None = None,
     max_candidates: int | None = None,
     name: str = "coverage",
@@ -284,6 +380,15 @@ def coverage_plan_from_spec(
                 continue
             for name_ in ref.names:
                 min_counts[f"allele:{gene}:{name_}"] = min_per_allele
+    if reference_set is not None and min_per_allele_context > 0:
+        contexts = tuple(allele_contexts or allele_stratification_contexts(spec))
+        for gene in GENES:
+            ref = reference_set.genes.get(gene.upper())
+            if ref is None:
+                continue
+            for name_ in ref.names:
+                for context_label in contexts:
+                    min_counts[allele_context_label(gene, name_, context_label)] = min_per_allele_context
     if required_labels:
         for label, count in required_labels.items():
             min_counts[label] = max(int(count), min_counts.get(label, 0))

@@ -56,9 +56,10 @@ def build_candidates(primary_idx, multihot, sib_index_G, rng,
 
 
 def reader_scores(aligner, seg_reps, seg_mask, cand_idx, pos_reps, pos_mask_ref,
-                  seg_tok=None, germ_tok_ref=None) -> torch.Tensor:
+                  seg_tok=None, germ_tok_ref=None, seg_reliability=None) -> torch.Tensor:
     """Align the observed segment against each candidate germline -> (B,C) scores.
-    Pass seg_tok (B,S) and germ_tok_ref (K,Lg) to enable the base-match channel."""
+    Pass seg_tok (B,S) and germ_tok_ref (K,Lg) to enable the base-match channel; pass
+    seg_reliability (B,S) to down-weight that channel at likely-SHM positions."""
     B, C = cand_idx.shape
     S, d = seg_reps.shape[1], seg_reps.shape[2]
     seg = seg_reps.unsqueeze(1).expand(B, C, S, d).reshape(B * C, S, d)
@@ -68,7 +69,10 @@ def reader_scores(aligner, seg_reps, seg_mask, cand_idx, pos_reps, pos_mask_ref,
     gm = pos_mask_ref[flat]                                   # (B*C, Lg)
     st = seg_tok.unsqueeze(1).expand(B, C, S).reshape(B * C, S) if seg_tok is not None else None
     gt = germ_tok_ref[flat] if germ_tok_ref is not None else None
-    return aligner.alignment_score(seg, sm, germ, gm, seg_tok=st, germ_tok=gt).reshape(B, C)
+    rel = (seg_reliability.unsqueeze(1).expand(B, C, S).reshape(B * C, S)
+           if seg_reliability is not None else None)
+    return aligner.alignment_score(seg, sm, germ, gm, seg_tok=st, germ_tok=gt,
+                                   seg_reliability=rel).reshape(B, C)
 
 
 def reader_set_nce(scores: torch.Tensor, pos_mask: torch.Tensor) -> torch.Tensor:
@@ -76,3 +80,37 @@ def reader_set_nce(scores: torch.Tensor, pos_mask: torch.Tensor) -> torch.Tensor
     allele set above the (sibling + random) negatives."""
     pos_scores = scores.masked_fill(pos_mask <= 0, NEG)
     return (torch.logsumexp(scores, dim=-1) - torch.logsumexp(pos_scores, dim=-1)).mean()
+
+
+def perturb_germline_tokens(tok: torch.Tensor, mask: torch.Tensor, k: int,
+                            gen: torch.Generator) -> torch.Tensor:
+    """Substitute k random valid (ACGT = token ids 1..4) positions per row with a
+    DIFFERENT base — a synthetic NOVEL allele a few SNPs from the real germline. Used to
+    train the reader to align observed reads to germlines it has NOT embedded into weights
+    (the dynamic-reference property): the floored raw-token channel must carry the match."""
+    out = tok.clone()
+    B, Lg = tok.shape
+    valid = mask & (tok >= 1) & (tok <= 4)                       # (B,Lg) substitutable
+    for b in range(B):
+        idx = valid[b].nonzero(as_tuple=True)[0]
+        if idx.numel() == 0:
+            continue
+        sel = idx[torch.randperm(idx.numel(), generator=gen, device=tok.device)[:k]]
+        # shift each selected base by 1..3 (mod 4) within {1,2,3,4} -> guaranteed change
+        shift = torch.randint(1, 4, (sel.numel(),), generator=gen, device=tok.device)
+        out[b, sel] = ((tok[b, sel] - 1 + shift) % 4) + 1
+    return out
+
+
+def reader_novel_positive(aligner, germline_encoder, seg_reps, seg_mask, seg_tok,
+                          prim_idx, pos_tok_ref, pos_mask_ref, k, gen,
+                          seg_reliability=None) -> torch.Tensor:
+    """Align each example's observed segment against a SNP-perturbed copy of its OWN true
+    germline (re-encoded fresh, so its embedding was never optimised) -> (B,) score. This
+    is the novel-allele positive that replaces column 0 of the candidate scores."""
+    g_tok = perturb_germline_tokens(pos_tok_ref[prim_idx], pos_mask_ref[prim_idx], k, gen)
+    g_mask = pos_mask_ref[prim_idx]
+    g_reps = germline_encoder.forward_positions(g_tok, g_mask)   # (B, Lg, d) re-encoded
+    return aligner.alignment_score(seg_reps, seg_mask, g_reps, g_mask,
+                                   seg_tok=seg_tok, germ_tok=g_tok,
+                                   seg_reliability=seg_reliability)

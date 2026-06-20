@@ -17,6 +17,17 @@ class PerPositionStateHead(nn.Module):
         return self.fc(h)
 
 
+def state_reliability(state_logits: torch.Tensor, r_min: float = 0.25) -> torch.Tensor:
+    """Per-position base-channel reliability r = r_min + (1-r_min)*(1 - P(substitution)).
+
+    Used to condition the soft-DP raw-token emission: where the state head thinks a
+    position is an SHM substitution, r -> r_min so the +1/-1 base match/mismatch is
+    down-weighted (SHM shouldn't penalise the true allele). r_min keeps a diagnostic-SNP
+    floor so true allele-distinguishing differences are never fully erased."""
+    pi_sub = state_logits.softmax(dim=-1)[..., STATE_INDEX["substitution"]]
+    return r_min + (1.0 - r_min) * (1.0 - pi_sub)
+
+
 def state_counts(state_logits: torch.Tensor, mask: torch.Tensor) -> dict:
     """Per-sample counts of substitution / indel from argmax states (padding ignored)."""
     labels = state_logits.argmax(dim=-1)  # (B, L)

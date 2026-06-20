@@ -146,32 +146,43 @@ class DNAlignAIR(nn.Module):
         return out
 
     def match_alleles(self, tokens: torch.Tensor, mask: torch.Tensor,
-                      region_labels: torch.Tensor, ref_emb: dict, reps: torch.Tensor | None = None) -> dict:
+                      region_labels: torch.Tensor, ref_emb: dict, reps: torch.Tensor | None = None,
+                      candidate_masks: dict | None = None) -> dict:
         """Per-gene allele match scores. Retrieval (default): re-encode the observed
         segment with the shared germline encoder and score (cosine) against reference
         embeddings. Classifier: masked-mean-pool the segment's BACKBONE reps and apply
         a learned per-allele head (free prototypes, sees mutated examples in training).
-        Inference passes predicted region labels; training teacher-forces the true ones."""
+        Inference passes predicted region labels; training teacher-forces the true ones.
+
+        `candidate_masks` is the dynamic GENOTYPE restriction: {gene: (K,) bool} keeping
+        only alleles in the caller's genotype. Disallowed alleles are scored -inf so they
+        can never be selected — this is how a subset/novel genotype conditions each call."""
         match = {}
         for gene, emb in ref_emb.items():
+            cmask = candidate_masks.get(gene) if candidate_masks else None
             if self.caller == "classifier":
                 seg, seg_mask = extract_segment(reps, mask, region_labels, gene)
                 m = seg_mask.unsqueeze(-1).to(seg.dtype)
                 pooled = (seg * m).sum(dim=1) / m.sum(dim=1).clamp(min=1.0)
-                match[gene] = self.classifier[gene](pooled)         # (B, K) logits
+                logits = self.classifier[gene](pooled)              # (B, K) logits
+                if cmask is not None:
+                    logits = logits.masked_fill(~cmask.to(logits.device).unsqueeze(0), float("-inf"))
+                match[gene] = logits
             else:
                 seg_tok, seg_mask = extract_segment_tokens(tokens, mask, region_labels, gene)
                 query = self.germline_encoder(seg_tok, seg_mask)    # (B, d) normalized
-                match[gene] = self.matching(query, emb["embeddings"])
+                cm = cmask.to(query.device) if cmask is not None else None
+                match[gene] = self.matching(query, emb["embeddings"], candidate_mask=cm)
         return match
 
     def forward(self, tokens: torch.Tensor, mask: torch.Tensor, ref_emb: dict,
-                orientation_ids: torch.Tensor | None = None) -> dict:
+                orientation_ids: torch.Tensor | None = None,
+                candidate_masks: dict | None = None) -> dict:
         out = self.forward_dense(tokens, mask, orientation_ids)
         region_labels = out["region_logits"].argmax(dim=-1)
         # match on the canonicalized tokens, same frame as the region prediction
         out["match"] = self.match_alleles(out["canon_tokens"], mask, region_labels, ref_emb,
-                                          reps=out["reps"])
+                                          reps=out["reps"], candidate_masks=candidate_masks)
         return out
 
     def germline_coords(self, seg_reps, seg_mask, germ_reps, germ_mask):

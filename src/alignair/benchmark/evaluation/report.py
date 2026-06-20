@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any
 
 from ..core import GENES, criteria_catalog
@@ -13,6 +13,10 @@ _LOWER_IS_BETTER_PARTS = (
     "missing",
     "overcall",
     "undercall",
+    "off_by_one",
+    "overlap_rate",
+    "negative_span_rate",
+    "false_shm",
     "outside",
     "false_positive",
     "edit_distance",
@@ -20,6 +24,8 @@ _LOWER_IS_BETTER_PARTS = (
     "candidate_count",
     "rerank_count",
 )
+
+_GRADE_RANK = {"pass": 0, "warn": 1, "fail": 2, "not_scored": 3, "planned": 4}
 
 
 def _finite(value: Any) -> float | None:
@@ -42,6 +48,117 @@ def _quality(metric: str, value: float) -> float:
     if metric.endswith("_rate") or metric in {"cigar_edit_distance"}:
         return 1.0 - value
     return 1.0 / (1.0 + max(value, 0.0))
+
+
+def _thresholds_for_metric(metric: str) -> dict[str, Any]:
+    """Return original-unit pass/warn thresholds for a metric."""
+
+    metric_l = metric.lower()
+    higher = _higher_is_better(metric_l)
+    if higher:
+        if metric_l == "optional_field_presence":
+            return {"higher_is_better": True, "pass": 0.75, "warn": 0.25}
+        if metric_l in {"required_field_presence", "parseable_airr_rate", "coordinate_parse_rate"}:
+            return {"higher_is_better": True, "pass": 1.0, "warn": 0.95}
+        if metric_l.endswith("_within10"):
+            return {"higher_is_better": True, "pass": 0.99, "warn": 0.95}
+        return {"higher_is_better": True, "pass": 0.99, "warn": 0.95}
+
+    if metric_l == "cigar_edit_distance":
+        return {"higher_is_better": False, "pass": 0.0, "warn": 2.0}
+    if metric_l.endswith("_rate") or "rate" in metric_l:
+        return {"higher_is_better": False, "pass": 0.01, "warn": 0.05}
+    if metric_l.endswith("_mae"):
+        if "mutation_rate" in metric_l or "identity" in metric_l:
+            return {"higher_is_better": False, "pass": 0.01, "warn": 0.03}
+        return {"higher_is_better": False, "pass": 0.5, "warn": 2.0}
+    if "memory" in metric_l:
+        return {"higher_is_better": False, "pass": 4096.0, "warn": 16384.0}
+    return {"higher_is_better": False, "pass": 0.0, "warn": 1.0}
+
+
+def _grade_metric(metric: str, value: float) -> dict[str, Any]:
+    thresholds = _thresholds_for_metric(metric)
+    higher = bool(thresholds["higher_is_better"])
+    if higher:
+        grade = "pass" if value >= thresholds["pass"] else "warn" if value >= thresholds["warn"] else "fail"
+    else:
+        grade = "pass" if value <= thresholds["pass"] else "warn" if value <= thresholds["warn"] else "fail"
+    return {
+        "grade": grade,
+        "higher_is_better": higher,
+        "pass_threshold": thresholds["pass"],
+        "warn_threshold": thresholds["warn"],
+        "quality_score": _quality(metric, value),
+    }
+
+
+def _worst_grade(grades: list[str]) -> str:
+    if not grades:
+        return "not_scored"
+    return max(grades, key=lambda grade: _GRADE_RANK.get(grade, -1))
+
+
+def _metric_assessments(observed: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for metric, values in observed.items():
+        global_value = _finite(values.get("global"))
+        if global_value is not None:
+            rows.append(
+                {
+                    "metric": metric,
+                    "scope": "global",
+                    "gene": None,
+                    "value": global_value,
+                    **_grade_metric(metric, global_value),
+                }
+            )
+        for gene, value in values.get("genes", {}).items():
+            f = _finite(value)
+            if f is None:
+                continue
+            rows.append(
+                {
+                    "metric": metric,
+                    "scope": "gene",
+                    "gene": gene,
+                    "value": f,
+                    **_grade_metric(metric, f),
+                }
+            )
+    return rows
+
+
+def _criterion_grade(
+    *,
+    status: str | None,
+    coverage_fraction: float,
+    missing_metric_keys: tuple[str, ...],
+    metric_assessments: list[dict[str, Any]],
+) -> tuple[str, list[str]]:
+    if not metric_assessments:
+        if status == "planned":
+            return "planned", ["criterion is planned and has no implemented metrics yet"]
+        return "not_scored", ["no metric values were observed for this criterion"]
+
+    grades = [row["grade"] for row in metric_assessments]
+    grade = _worst_grade(grades)
+    reasons: list[str] = []
+    counts = Counter(grades)
+    if counts.get("fail"):
+        reasons.append(f"{counts['fail']} metric value(s) below fail threshold")
+    if counts.get("warn"):
+        reasons.append(f"{counts['warn']} metric value(s) in warning range")
+    if missing_metric_keys and status == "available":
+        if coverage_fraction < 0.5:
+            grade = "fail"
+            reasons.append("less than half of expected metric keys are present")
+        elif grade == "pass":
+            grade = "warn"
+            reasons.append("some expected metric keys are missing")
+    if not reasons:
+        reasons.append("all observed metric values passed configured thresholds")
+    return grade, reasons
 
 
 def _extract_score_root(scores_or_report: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -98,6 +215,14 @@ def _criterion_entry(criterion: dict[str, Any], overall: dict[str, Any]) -> dict
 
     metric_keys = tuple(criterion.get("metric_keys", ()))
     missing = tuple(key for key in metric_keys if key not in observed)
+    coverage_fraction = len(observed) / len(metric_keys) if metric_keys else 0.0
+    assessments = _metric_assessments(observed)
+    grade, reasons = _criterion_grade(
+        status=criterion.get("status"),
+        coverage_fraction=coverage_fraction,
+        missing_metric_keys=missing,
+        metric_assessments=assessments,
+    )
     return {
         "name": criterion["name"],
         "category": criterion["category"],
@@ -110,8 +235,11 @@ def _criterion_entry(criterion: dict[str, Any], overall: dict[str, Any]) -> dict
         "missing_metric_keys": missing,
         "n_observed_metric_keys": len(observed),
         "n_metric_keys": len(metric_keys),
-        "coverage_fraction": len(observed) / len(metric_keys) if metric_keys else 0.0,
+        "coverage_fraction": coverage_fraction,
         "quality_score": sum(quality_values) / len(quality_values) if quality_values else None,
+        "grade": grade,
+        "grade_reasons": reasons,
+        "metric_assessments": assessments,
     }
 
 
@@ -165,10 +293,18 @@ def build_assay_report(
         grouped[entry["category"]].append(entry)
     for category, category_entries in sorted(grouped.items()):
         scores = [e["quality_score"] for e in category_entries if e["quality_score"] is not None]
+        category_grades = [
+            e["grade"]
+            for e in category_entries
+            if e["grade"] not in {"not_scored", "planned"}
+        ]
+        grade_counts = Counter(e["grade"] for e in category_entries)
         by_category[category] = {
             "n_criteria": len(category_entries),
             "n_with_results": sum(1 for e in category_entries if e["n_observed_metric_keys"] > 0),
             "mean_quality_score": sum(scores) / len(scores) if scores else None,
+            "grade": _worst_grade(category_grades),
+            "grade_counts": dict(sorted(grade_counts.items())),
             "criteria": category_entries,
         }
 
@@ -178,6 +314,10 @@ def build_assay_report(
             metric_to_criterion.setdefault(key, criterion)
     with_results = [e for e in entries if e["n_observed_metric_keys"] > 0]
     scores = [e["quality_score"] for e in with_results if e["quality_score"] is not None]
+    scored_entries = [e for e in entries if e["grade"] not in {"not_scored", "planned"}]
+    grade_counts = Counter(e["grade"] for e in entries)
+    failed = [e for e in scored_entries if e["grade"] == "fail"]
+    warned = [e for e in scored_entries if e["grade"] == "warn"]
     return {
         "summary": {
             "n_cases": overall.get("n_cases"),
@@ -186,8 +326,23 @@ def build_assay_report(
             "n_criteria_with_results": len(with_results),
             "n_criteria_without_results": len(entries) - len(with_results),
             "mean_quality_score": sum(scores) / len(scores) if scores else None,
+            "grade": _worst_grade([e["grade"] for e in scored_entries]),
+            "grade_counts": dict(sorted(grade_counts.items())),
+            "n_failed_criteria": len(failed),
+            "n_warned_criteria": len(warned),
         },
         "by_category": by_category,
         "criteria": entries,
+        "critical_failures": [
+            {
+                "name": e["name"],
+                "category": e["category"],
+                "importance": e.get("importance"),
+                "quality_score": e.get("quality_score"),
+                "grade_reasons": e.get("grade_reasons", ()),
+            }
+            for e in failed
+            if e.get("importance") == "core"
+        ],
         "weak_contexts": _weak_contexts(by_context, metric_to_criterion, top_n=top_n_contexts),
     }

@@ -18,6 +18,30 @@ from ..core.dnalignair import extract_segment_tokens
 _ALIGNER = None
 
 
+def resolve_hierarchy(call_set, top1, max_allele: int = 3):
+    """Graceful degradation over the calibrated equivalence set: report the MOST SPECIFIC
+    level the evidence supports — allele if the set is small, else the shared gene, else
+    the shared family, else abstain. Returns (resolved_call, level). Levels:
+    'allele' > 'gene' > 'family' > 'none' (abstain). Short fragments carry little V, so the
+    set spans many alleles; this turns a near-random allele guess into a correct coarser call."""
+    s = [c for c in (call_set or []) if c]
+    if not s:
+        return (top1, "allele") if top1 else (None, "none")
+    if len(s) <= max_allele and len(set(s)) <= max_allele:
+        genes = {c.split("*")[0] for c in s}
+        if len(s) == 1:
+            return s[0], "allele"
+        if len(genes) == 1:                       # small set, one gene -> gene-level
+            return genes.pop(), "gene"
+    genes = {c.split("*")[0] for c in s}
+    if len(genes) == 1:
+        return genes.pop(), "gene"
+    families = {c.split("-")[0] for c in s}
+    if len(families) == 1:
+        return families.pop(), "family"
+    return None, "none"                            # spans families -> abstain
+
+
 def _aligner():
     global _ALIGNER
     if _ALIGNER is None:
@@ -68,12 +92,26 @@ def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
 
 @torch.no_grad()
 def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64,
-                  topk: int = 16, rerank: str = "none", set_epsilon: float = 1.0) -> list:
+                  topk: int = 16, rerank: str = "none", set_epsilon: float = 1.0,
+                  genotype: dict | None = None, calibration: dict | None = None,
+                  emit_scores: bool = False) -> list:
     """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
     differentiable aligner.alignment_score = the learned allele reader). When rerank
     is on, also emits {g}_call_set = the calibrated equivalence set (candidates within
     set_epsilon of the top score) — the multi-label output (report the set, not argmax,
-    when the evidence cannot distinguish alleles)."""
+    when the evidence cannot distinguish alleles).
+
+    The equivalence set is a temperature-scaled log-likelihood-ratio band: keep candidate c
+    iff (s_top - s_c)/T <= epsilon. `calibration` = {GENE: {temperature, epsilon}} (from
+    benchmark.evaluation.allele_calibration) overrides T=1 / epsilon=set_epsilon per gene;
+    the per-read score offset from the state-conditioned emission cancels in s_top - s_c, so
+    the band is invariant to it. emit_scores adds {g}_scores=[(name, raw_score)] for calibration.
+
+    genotype: optional DYNAMIC reference restriction {gene_type: [allowed allele names]}
+    with gene_type in {'v','d','j'}. Alleles outside the genotype are scored -inf and can
+    never be called — so a donor's allele subset conditions every prediction. (For NOVEL
+    alleles, build the reference_set itself from the genotype via ReferenceSet.from_yaml;
+    then pass genotype=None or the same names.) Genes absent from `genotype` stay full."""
     device = device or next(model.parameters()).device
     model.eval()
     ref_emb = model.encode_reference(reference_set)
@@ -81,44 +119,80 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
     genes = ["v", "j"] + (["d"] if has_d else [])
     names = {g.upper(): reference_set.gene(g.upper()).names for g in genes}
 
+    # dynamic genotype mask (static across reads in this call): -inf any allele not allowed,
+    # and cap top-k to the allowed count so the learned reranker never sees a disallowed one.
+    candidate_masks = None
+    n_allowed = {g.upper(): len(names[g.upper()]) for g in genes}
+    if genotype is not None:
+        gt = {k.upper(): set(v) for k, v in genotype.items()}
+        candidate_masks = {}
+        for g in genes:
+            G = g.upper()
+            if G not in gt:
+                continue
+            m = reference_set.genotype_mask(G, gt[G])
+            if int(m.sum()) == 0:
+                raise ValueError(f"genotype for gene {G} excludes every allele in the reference")
+            candidate_masks[G] = m.to(device)
+            n_allowed[G] = int(m.sum())
+
     preds = []
     for s in range(0, len(reads), batch_size):
         chunk = reads[s:s + batch_size]
         tokens, mask = pad_tokenize(chunk)
         tokens, mask = tokens.to(device), mask.to(device)
-        out = model(tokens, mask, ref_emb)                  # end-to-end (predicted orientation)
+        out = model(tokens, mask, ref_emb, candidate_masks=candidate_masks)  # end-to-end
         canon = out["canon_tokens"]
         boundary = out.get("boundary")
         dec = decode_boundaries(out["region_logits"], mask, has_d=has_d)
         pred_region = out["region_logits"].argmax(-1)
         pred_idx = {g.upper(): out["match"][g.upper()].argmax(-1) for g in genes}
         topk_idx = {g.upper(): out["match"][g.upper()].topk(
-            min(topk, len(names[g.upper()])), dim=-1).indices for g in genes}
+            min(topk, n_allowed[g.upper()]), dim=-1).indices for g in genes}
         gl = compute_germline_logits(model, canon, mask, {}, ref_emb, has_d,
                                      region_labels=pred_region, allele_idx=pred_idx)
         gcoord = {g: decode_germline_coords(gl[g][0], gl[g][1]) for g in genes}
         # learned allele reader: rerank top-k by the differentiable alignment score
         learned_best = {}
         if rerank == "learned":
+            from ..nn.state_head import state_reliability
+            from ..core.dnalignair import extract_segment
+            cal = calibration or {}
             for g in genes:
                 G = g.upper()
+                T = float(cal.get(G, {}).get("temperature", 1.0))
+                eps = float(cal.get(G, {}).get("epsilon", set_epsilon))
                 seg_tok, seg_mask = extract_segment_tokens(canon, mask, pred_region, G)
                 seg_pos = model.germline_encoder.forward_positions(seg_tok, seg_mask)  # (B,S,d)
+                seg_state, _ = extract_segment(out["state_logits"], mask, pred_region, G)
+                seg_rel = state_reliability(seg_state)                  # (B,S) SHM down-weight
                 pos_reps, pos_mask = ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"]
                 pos_tok = ref_emb[G]["pos_tok"]
-                chosen, chosen_sets = [], []
+                chosen, chosen_sets, chosen_conf, chosen_scores = [], [], [], []
                 for i in range(len(chunk)):
                     cands = topk_idx[G][i]                              # (k,)
                     k = cands.shape[0]
                     sc = model.aligner.alignment_score(
                         seg_pos[i:i + 1].expand(k, -1, -1), seg_mask[i:i + 1].expand(k, -1),
                         pos_reps[cands], pos_mask[cands],
-                        seg_tok=seg_tok[i:i + 1].expand(k, -1), germ_tok=pos_tok[cands])  # (k,)
+                        seg_tok=seg_tok[i:i + 1].expand(k, -1), germ_tok=pos_tok[cands],
+                        seg_reliability=seg_rel[i:i + 1].expand(k, -1))  # (k,)
                     chosen.append(int(cands[sc.argmax()]))
-                    keep = sc >= (sc.max() - set_epsilon)              # equivalence set
+                    # temperature-scaled log-likelihood-ratio band (codex): keep iff the top
+                    # is at most exp(eps) times likelier; calibrated per gene, T=1 default.
+                    delta = (sc.max() - sc) / T
+                    keep = delta <= eps
+                    probs = torch.softmax(sc / T, dim=0)               # posterior over candidates
                     chosen_sets.append([names[G][int(cands[j])] for j in range(k) if keep[j]])
+                    chosen_conf.append(float(probs[keep].sum()))        # posterior mass in the set
+                    if emit_scores:
+                        chosen_scores.append([(names[G][int(cands[j])], float(sc[j]))
+                                              for j in range(k)])
                 learned_best[G] = chosen
                 learned_best[G + "_set"] = chosen_sets
+                learned_best[G + "_conf"] = chosen_conf
+                if emit_scores:
+                    learned_best[G + "_scores"] = chosen_scores
         for i in range(len(chunk)):
             p = {}
             for g in genes:
@@ -127,7 +201,16 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                 p[f"{g}_call"] = names[G][idx]
                 p[f"{g}_topk"] = [names[G][int(j)] for j in topk_idx[G][i]]
                 if rerank == "learned":
-                    p[f"{g}_call_set"] = learned_best[G + "_set"][i]
+                    cset = learned_best[G + "_set"][i]
+                    p[f"{g}_call_set"] = cset
+                    p[f"{g}_calls"] = cset                             # benchmark-adapter alias
+                    p[f"{g}_set_confidence"] = learned_best[G + "_conf"][i]
+                    # graceful hierarchical degradation + abstention from the calibrated set
+                    resolved, level = resolve_hierarchy(cset, p[f"{g}_call"])
+                    p[f"{g}_resolved_call"] = resolved
+                    p[f"{g}_call_level"] = level
+                    if emit_scores:
+                        p[f"{g}_scores"] = learned_best[G + "_scores"][i]
                 if boundary is not None:                    # query decoder: posterior argmax
                     p[f"{g}_sequence_start"] = int(boundary["start"][G][i].argmax())
                     p[f"{g}_sequence_end"] = int(boundary["end"][G][i].argmax()) + 1
@@ -136,5 +219,10 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                     p[f"{g}_sequence_end"] = dec[i][f"{g}_end"]
                 p[f"{g}_germline_start"] = int(gcoord[g][0][i])
                 p[f"{g}_germline_end"] = int(gcoord[g][1][i])
+            # sequence-level annotations (predicted orientation + scalar heads)
+            p["orientation_id"] = int(out["orientation_logits"][i].argmax())
+            p["productive"] = bool(out["productive"][i].item() > 0.5)
+            p["mutation_rate"] = float(out["mutation_rate"][i].item())
+            p["indel_count"] = float(out["indel_count"][i].item())
             preds.append(p)
     return preds

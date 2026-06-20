@@ -40,3 +40,36 @@ def test_genotype_mask():
     assert mask.dtype == torch.bool and mask.shape == (len(names),)
     assert mask.sum().item() == 3
     assert mask[0] and mask[5] and mask[10]
+
+
+def test_from_genotype_heavy_and_novel():
+    # a genotype with a known-subset plus a NOVEL allele the model never trained on
+    genes = {
+        "V": {"IGHV1-2*02": "ACGTACGTACGT", "NOVEL-V*01": "TTTTGGGGCCCC"},
+        "D": {"IGHD3-10*01": "GGGGTTTTAAAA"},
+        "J": {"IGHJ6*02": "CCCCAAAATTTT"},
+    }
+    rs = ReferenceSet.from_genotype(genes)
+    assert rs.has_d is True
+    assert rs.gene("V").names == ["IGHV1-2*02", "NOVEL-V*01"]
+    assert rs.gene("V").index["NOVEL-V*01"] == 1
+    assert rs.gene("V").sequences[1] == "TTTTGGGGCCCC"
+    # genotype_mask works over the novel-inclusive reference
+    m = rs.genotype_mask("V", {"NOVEL-V*01"})
+    assert m.tolist() == [False, True]
+
+
+def test_from_genotype_light_no_d():
+    rs = ReferenceSet.from_genotype({"v": {"IGKV1*01": "ACGT"}, "j": {"IGKJ1*01": "TTTT"}})
+    assert rs.has_d is False
+    assert set(rs.genes) == {"V", "J"}
+
+
+def test_yaml_roundtrip(tmp_path):
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    p = tmp_path / "genotype.yaml"
+    rs.to_yaml(str(p))
+    rs2 = ReferenceSet.from_yaml(str(p))
+    for g in ("V", "D", "J"):
+        assert rs2.gene(g).names == rs.gene(g).names
+        assert rs2.gene(g).sequences == rs.gene(g).sequences

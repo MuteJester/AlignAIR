@@ -103,3 +103,55 @@ def test_alignment_score_ranks_true_germline_above_mismatched():
     s_true = al.alignment_score(seg, seg_mask, germ_true, germ_mask)
     s_wrong = al.alignment_score(seg, seg_mask, germ_wrong, germ_mask)
     assert s_true.item() > s_wrong.item()
+
+
+def test_state_reliability_downweights_shm_mismatch():
+    # Heavy-SHM robustness: a mismatch at a position flagged 'substitution' (low reliability)
+    # should cost FAR less alignment score than the same mismatch at a 'germline' position.
+    torch.manual_seed(0)
+    B, S, Lg, d = 1, 10, 10, 16
+    al = SoftDPAligner(d_model=d, match_floor=1.0)
+    reps = torch.randn(B, Lg, d)
+    seg_mask = torch.ones(B, S, dtype=torch.bool)
+    germ_mask = torch.ones(B, Lg, dtype=torch.bool)
+    seg_tok = torch.tensor([[1, 2, 3, 4, 1, 2, 3, 4, 1, 2]])
+    germ = seg_tok.clone(); germ[0, 5] = (germ[0, 5] % 4) + 1          # one mismatch at pos 5
+    rel_high = torch.ones(B, S)                                        # all 'germline' (reliable)
+    rel_low = torch.ones(B, S); rel_low[0, 5] = 0.0                    # pos 5 'substitution'
+    s_penalized = al.alignment_score(reps, seg_mask, reps, germ_mask,
+                                     seg_tok=seg_tok, germ_tok=germ, seg_reliability=rel_high)
+    s_forgiven = al.alignment_score(reps, seg_mask, reps, germ_mask,
+                                    seg_tok=seg_tok, germ_tok=germ, seg_reliability=rel_low)
+    assert s_forgiven.item() > s_penalized.item()                     # SHM mismatch forgiven
+
+
+def test_state_reliability_helper_low_at_substitution():
+    from alignair.nn.state_head import state_reliability, STATE_INDEX
+    logits = torch.zeros(1, 3, 4)
+    logits[0, 0, STATE_INDEX["germline"]] = 10.0                       # confident germline
+    logits[0, 1, STATE_INDEX["substitution"]] = 10.0                  # confident substitution
+    r = state_reliability(logits, r_min=0.25)
+    assert r[0, 0] > 0.9                                              # reliable
+    assert abs(r[0, 1].item() - 0.25) < 0.05                          # floored at r_min
+
+
+def test_match_floor_keeps_raw_token_channel_load_bearing():
+    # Novel-allele guarantee: even if training drives the LEARNED base-match weight to
+    # zero, the FLOORED raw-token channel must still rank an exact-base germline above a
+    # SNP-differing sibling — using only ACGT tokens (reps identical, so cosine is a tie).
+    torch.manual_seed(0)
+    B, S, Lg, d = 1, 12, 12, 16
+    al = SoftDPAligner(d_model=d, match_floor=1.0)
+    with torch.no_grad():
+        al._match_weight.fill_(-50.0)        # softplus(-50) ~ 0 -> learned bonus gone
+    reps = torch.randn(B, Lg, d)             # identical reps for seg & both germlines (cosine tie)
+    seg_mask = torch.ones(B, S, dtype=torch.bool)
+    germ_mask = torch.ones(B, Lg, dtype=torch.bool)
+    seg_tok = torch.tensor([[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]])   # ACGT pattern (1..4)
+    germ_true = seg_tok.clone()
+    germ_snp = seg_tok.clone(); germ_snp[0, 6] = 1 if germ_snp[0, 6] != 1 else 2  # one SNP
+    s_true = al.alignment_score(reps, seg_mask, reps, germ_mask,
+                                seg_tok=seg_tok, germ_tok=germ_true)
+    s_snp = al.alignment_score(reps, seg_mask, reps, germ_mask,
+                               seg_tok=seg_tok, germ_tok=germ_snp)
+    assert s_true.item() > s_snp.item()      # floored raw-token channel resolves the SNP

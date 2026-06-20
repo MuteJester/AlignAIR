@@ -21,6 +21,9 @@ from ..generation import (
     stream_benchmark,
     stream_coverage_benchmark,
 )
+from .contract import PredictionValidationAccumulator, prediction_contract
+from .audit import audit_criteria_report
+from .diagnostics import AlleleCallingDiagnosticsAccumulator, BoundaryDiagnosticsAccumulator
 from .metrics import score_one_case
 from .report import build_assay_report
 
@@ -143,6 +146,8 @@ class OnlineBenchmarkReport:
         self.reference_set = reference_set
         self.overall = _Accumulator()
         self.groups: dict[str, _Accumulator] = defaultdict(_Accumulator)
+        self.allele_diagnostics = AlleleCallingDiagnosticsAccumulator(frame=frame)
+        self.boundary_diagnostics = BoundaryDiagnosticsAccumulator(frame=frame)
         self.coverage = {
             "n_cases": 0,
             "by_stratum": Counter(),
@@ -174,6 +179,8 @@ class OnlineBenchmarkReport:
         scored = score_one_case(case, pred, frame=self.frame)
         contexts = case_contexts(case)
         self.overall.update(scored)
+        self.allele_diagnostics.update(case, pred)
+        self.boundary_diagnostics.update(case, pred)
         for ctx in contexts:
             self.groups[ctx].update(scored)
         self._update_coverage(case, contexts)
@@ -218,6 +225,7 @@ class OnlineBenchmarkReport:
             "benchmark": asdict(self.spec),
             "frame": self.frame,
             "criteria": criteria_catalog(),
+            "prediction_contract": prediction_contract(),
             "scenario_axes": scenario_axes_catalog(),
             "coverage": self.coverage_dict(),
             "results": {
@@ -227,6 +235,10 @@ class OnlineBenchmarkReport:
                     for name, acc in sorted(self.groups.items())
                     if acc.n_cases > 0
                 },
+            },
+            "diagnostics": {
+                "allele_calling": self.allele_diagnostics.to_dict(),
+                "boundaries": self.boundary_diagnostics.to_dict(),
             },
         }
 
@@ -251,6 +263,7 @@ def run_online_benchmark(
     batch_size: int = 64,
     frame: str = "canonical",
     coverage_plan: CoveragePlan | None = None,
+    contract_level: str | None = None,
 ) -> dict[str, Any]:
     """Generate cases online, call ``predictor`` in batches, and return an assay report."""
 
@@ -261,6 +274,11 @@ def run_online_benchmark(
 
         reference_set = ReferenceSet.from_dataconfigs(dataconfig)
     report = OnlineBenchmarkReport(spec, frame=frame, reference_set=reference_set)
+    validation = (
+        PredictionValidationAccumulator(level=contract_level, has_d=reference_set.has_d)
+        if contract_level
+        else None
+    )
     coverage_tracker = None
     if coverage_plan is not None:
         coverage_tracker = CoverageTracker(coverage_plan)
@@ -277,10 +295,15 @@ def run_online_benchmark(
         preds = predictor([c.sequence for c in cases])
         if len(preds) != len(cases):
             raise ValueError(f"predictor returned {len(preds)} predictions for {len(cases)} cases")
+        if validation is not None:
+            validation.update(preds)
         for case, pred in zip(cases, preds):
             report.update(case, pred)
     out = report.to_dict()
     if coverage_tracker is not None:
         out["generation_coverage"] = coverage_tracker.to_dict()
+    if validation is not None:
+        out["prediction_validation"] = validation.to_dict()
+    out["criteria_audit"] = audit_criteria_report(out)
     out["assay"] = build_assay_report(out)
     return out

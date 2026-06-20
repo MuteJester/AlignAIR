@@ -9,9 +9,11 @@ import random
 
 from ..gym.collate import gym_collate
 from ..nn.matching import distill_match_loss
-from ..core.dnalignair import extract_segment_tokens
+from ..nn.state_head import state_reliability
+from ..core.dnalignair import extract_segment_tokens, extract_segment
 from .ema import EMATeacher
-from .reader import build_sibling_index, build_candidates, reader_scores, reader_set_nce
+from .reader import (build_sibling_index, build_candidates, reader_scores, reader_set_nce,
+                     reader_novel_positive)
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class GymTrainer:
                  refresh_curriculum_every=25, distill=False, distill_weight=1.0,
                  distill_decay=0.999, distill_temperature=2.0,
                  reader=False, reader_weight=1.0, reader_n_sib=6, reader_n_rand=6,
+                 reader_novel_prob=0.0, reader_novel_snps=1,
                  scheduled_sampling=False, ss_max_prob=0.5):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
@@ -55,8 +58,14 @@ class GymTrainer:
         self.reader = reader
         self.reader_weight = reader_weight
         self.reader_n_sib, self.reader_n_rand = reader_n_sib, reader_n_rand
+        # simulated-novel reader augmentation: with this probability per example, the true
+        # germline (positive) is SNP-perturbed + re-encoded so the reader must align to a
+        # germline NEVER baked into its weights -> trains the dynamic-reference property.
+        self.reader_novel_prob = reader_novel_prob
+        self.reader_novel_snps = reader_novel_snps
         self._sib_index = build_sibling_index(reference_set) if reader else None
         self._reader_rng = random.Random(0)
+        self._novel_gen = torch.Generator(device=self.device).manual_seed(0)
         # scheduled sampling: train match/germline/reader on the model's own PREDICTED
         # region segments (ramped probability) to close the teacher-forced -> deployed gap
         self.scheduled_sampling = scheduled_sampling
@@ -154,12 +163,34 @@ class GymTrainer:
                     seg_tok, seg_mask = extract_segment_tokens(
                         canon, batch["mask"], sup_regions, G)
                     seg_reps = self.model.germline_encoder.forward_positions(seg_tok, seg_mask)
+                    # per-position SHM reliability for the segment (state head, same gather)
+                    seg_state, _ = extract_segment(out["state_logits"], batch["mask"], sup_regions, G)
+                    seg_rel = state_reliability(seg_state)
                     cand, pos = build_candidates(
                         batch[f"{g}_primary_idx"], batch[f"{g}_allele"], self._sib_index[G],
                         self._reader_rng, self.reader_n_sib, self.reader_n_rand)
                     sc = reader_scores(self.model.aligner, seg_reps, seg_mask, cand,
                                        ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"],
-                                       seg_tok=seg_tok, germ_tok_ref=ref_emb[G]["pos_tok"])
+                                       seg_tok=seg_tok, germ_tok_ref=ref_emb[G]["pos_tok"],
+                                       seg_reliability=seg_rel)
+                    # simulated-novel: for a random subset of examples, swap the positive
+                    # (column 0) score for one against a SNP-perturbed, freshly-encoded copy
+                    # of the true germline -> the reader learns to align to UNSEEN germlines.
+                    # GUARD (codex): only keep the swap where the perturbed positive still
+                    # out-scores every negative; else the k SNPs may have made a sibling the
+                    # better match and we'd teach the WRONG ranking — revert to the clean positive.
+                    if self.reader_novel_prob > 0:
+                        sel = torch.rand(sc.shape[0], device=self.device) < self.reader_novel_prob
+                        if sel.any():
+                            novel_sc = reader_novel_positive(
+                                self.model.aligner, self.model.germline_encoder,
+                                seg_reps, seg_mask, seg_tok, cand[:, 0],
+                                ref_emb[G]["pos_tok"], ref_emb[G]["pos_mask"],
+                                self.reader_novel_snps, self._novel_gen, seg_reliability=seg_rel)
+                            neg_max = sc[:, 1:].max(dim=1).values            # best negative
+                            keep = sel & (novel_sc > neg_max)               # stays the closest
+                            sc = sc.clone()
+                            sc[:, 0] = torch.where(keep, novel_sc, sc[:, 0])
                     reader_loss = reader_loss + reader_set_nce(sc, pos)
                 total = total + self.reader_weight * reader_loss
                 comp["reader"] = reader_loss.detach()

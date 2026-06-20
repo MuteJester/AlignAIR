@@ -6,9 +6,72 @@ formats and perfect-prediction helpers used by tests and smoke checks.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..core.schema import BenchmarkCase, GENES
+
+
+_CALL_SPLIT_RE = re.compile(r"[,;]")
+_TRUE_STRINGS = {
+    "1",
+    "t",
+    "true",
+    "yes",
+    "y",
+    "productive",
+    "in_frame",
+    "in-frame",
+    "inverted",
+}
+_FALSE_STRINGS = {
+    "0",
+    "f",
+    "false",
+    "no",
+    "n",
+    "nonproductive",
+    "out_of_frame",
+    "out-of-frame",
+    "forward",
+}
+
+
+def _missing(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and value.strip() == "")
+
+
+def _split_calls(value: Any) -> list[str]:
+    if _missing(value):
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(v).strip() for v in value if str(v).strip()]
+    return [part.strip() for part in _CALL_SPLIT_RE.split(str(value)) if part.strip()]
+
+
+def _coerce_bool(value: Any) -> bool | None:
+    if _missing(value):
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in _TRUE_STRINGS:
+        return True
+    if text in _FALSE_STRINGS:
+        return False
+    return None
+
+
+def _coerce_number(value: Any, *, delta: int = 0) -> int | float | None:
+    if _missing(value):
+        return None
+    try:
+        out = float(value) + delta
+    except (TypeError, ValueError):
+        return None
+    return int(out) if out.is_integer() else out
 
 
 def igblast_airr_to_prediction(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -20,19 +83,17 @@ def igblast_airr_to_prediction(row: dict[str, Any] | None) -> dict[str, Any]:
     pred: dict[str, Any] = {}
     row = row or {}
     for g in GENES:
-        call = row.get(f"{g}_call", "") or ""
-        pred[f"{g}_call"] = call.split(",")[0] if call else None
+        calls = _split_calls(row.get(f"{g}_call"))
+        pred[f"{g}_call"] = calls[0] if calls else None
+        if calls:
+            pred[f"{g}_calls"] = calls
         for src, dst, delta in (
             (f"{g}_sequence_start", f"{g}_sequence_start", -1),
             (f"{g}_sequence_end", f"{g}_sequence_end", 0),
             (f"{g}_germline_start", f"{g}_germline_start", -1),
             (f"{g}_germline_end", f"{g}_germline_end", 0),
         ):
-            try:
-                value = row.get(src)
-                pred[dst] = (float(value) + delta) if value not in ("", None) else None
-            except (TypeError, ValueError):
-                pred[dst] = None
+            pred[dst] = _coerce_number(row.get(src), delta=delta)
         for key in (
             f"{g}_cigar",
             f"{g}_identity",
@@ -62,6 +123,30 @@ def igblast_airr_to_prediction(row: dict[str, Any] | None) -> dict[str, Any]:
     ):
         if key in row:
             pred[key] = row.get(key)
+    for key in (
+        "productive",
+        "vj_in_frame",
+        "stop_codon",
+        "d_inverted",
+        "is_contaminant",
+        "receptor_revision_applied",
+    ):
+        if key in row:
+            coerced = _coerce_bool(row.get(key))
+            pred[key] = coerced if coerced is not None else row.get(key)
+    for src, dst, delta in (
+        ("junction_start", "junction_start", -1),
+        ("cdr3_start", "junction_start", -1),
+        ("junction_end", "junction_end", 0),
+        ("cdr3_end", "junction_end", 0),
+    ):
+        if src in row and (dst not in pred or pred.get(dst) is None):
+            pred[dst] = _coerce_number(row.get(src), delta=delta)
+    if "rev_comp" in row:
+        rev_comp = _coerce_bool(row.get("rev_comp"))
+        if rev_comp is not None:
+            pred["rev_comp"] = rev_comp
+            pred["orientation_id"] = 1 if rev_comp else 0
     return pred
 
 
@@ -93,7 +178,7 @@ def case_to_prediction(case: BenchmarkCase, frame: str = "canonical", set_calls:
     pred["region_labels"] = case.labels("region", frame)
     pred["state_labels"] = case.labels("state", frame)
     pred.update(case.scalars)
-    pred["sequence_id"] = case.record.get("sequence_id", case.case_id)
+    pred["sequence_id"] = case.case_id
     pred["sequence"] = case.canonical_sequence if frame == "canonical" else case.sequence
     pred["rev_comp"] = case.orientation_id == 1
     for key in (
