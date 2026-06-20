@@ -44,6 +44,9 @@ def main():
                     help="fraction of reader examples whose positive germline is SNP-perturbed "
                          "(simulated-novel: trains the dynamic-reference / novel-allele property)")
     ap.add_argument("--reader-novel-snps", type=int, default=2)
+    ap.add_argument("--no-state-conditioning", dest="state_conditioning", action="store_false",
+                    help="disable the state-conditioned soft-DP emission (A/B)")
+    ap.set_defaults(state_conditioning=True)
     ap.add_argument("--curriculum", choices=["ramp", "stratified"], default="ramp",
                     help="ramp = monotonic scalar-p; stratified = decoupled full-range mixture")
     ap.add_argument("--save", default=None, help="save trained model state_dict + config to this path")
@@ -67,7 +70,8 @@ def main():
     trainer = GymTrainer(model, loss_fn, rs, gym, lr=5e-4, batch_size=args.batch,
                          reader=args.reader, scheduled_sampling=args.scheduled_sampling,
                          reader_novel_prob=args.reader_novel_prob,
-                         reader_novel_snps=args.reader_novel_snps)
+                         reader_novel_snps=args.reader_novel_snps,
+                         state_conditioning=args.state_conditioning)
     print(f"training {sum(p.numel() for p in model.parameters())/1e6:.2f}M params "
           f"for {args.steps} steps (aligner={args.aligner}, region={args.region_decoder})...")
     trainer.fit(total_steps=args.steps, global_total=args.steps)

@@ -784,6 +784,24 @@ def test_set_metrics_reward_set_outputs():
         assert scores["genes"]["v"]["call_set_precision"] == 0.5
 
 
+def test_graceful_degradation_metrics():
+    case = _manual_case("g", ("IGHV1-2*01",))                  # truth gene IGHV1-2, family IGHV1
+
+    def gv(resolved, level, call="IGHV1-2*01"):
+        pred = {"v_call": call, "v_calls": [call], "v_resolved_call": resolved,
+                "v_call_level": level, "j_call": "IGHJ4*01", "j_calls": ["IGHJ4*01"]}
+        return score_cases([case], [pred])["genes"]["v"]
+
+    g = gv("IGHV1-2", "gene")                                  # correct coarser call
+    assert g["graceful_useful"] == 1.0 and g["graceful_hard_error"] == 0.0 and g["graceful_non_error"] == 1.0
+    g = gv("IGHV1", "family")                                  # correct family
+    assert g["graceful_useful"] == 1.0 and g["graceful_hard_error"] == 0.0
+    g = gv(None, "none")                                       # honest abstention is not an error
+    assert g["graceful_abstain"] == 1.0 and g["graceful_hard_error"] == 0.0 and g["graceful_non_error"] == 1.0
+    g = gv("IGHV3-23", "gene", call="IGHV3-23*01")             # confidently wrong -> hard error
+    assert g["graceful_hard_error"] == 1.0 and g["graceful_non_error"] == 0.0 and g["graceful_useful"] == 0.0
+
+
 def test_allele_calling_diagnostics_separate_allele_gene_and_family_errors():
     cases = [
         _manual_case("exact", ("IGHV1-1*01",)),

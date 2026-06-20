@@ -59,6 +59,8 @@ def main():
                 row[f"{g}_call"] = p[f"{g}_call"]
                 row[f"{g}_calls"] = p.get(f"{g}_call_set") or [p[f"{g}_call"]]
                 row[f"{g}_ranked_calls"] = p.get(f"{g}_topk", [])
+                row[f"{g}_resolved_call"] = p.get(f"{g}_resolved_call")
+                row[f"{g}_call_level"] = p.get(f"{g}_call_level")
                 for k in ("sequence_start", "sequence_end", "germline_start", "germline_end"):
                     row[f"{g}_{k}"] = p[f"{g}_{k}"]
             f.write(json.dumps(row) + "\n")

@@ -439,6 +439,26 @@ CRITERIA: tuple[BenchmarkCriterion, ...] = (
     ),
     BenchmarkCriterion(
         category="allele_calling",
+        name="graceful_degradation",
+        metric_keys=("graceful_hard_error", "graceful_non_error"),
+        description=(
+            "When the allele is not determinable (e.g. short fragments with little V), the "
+            "aligner reports a correct coarser call (gene/family) or honestly abstains rather "
+            "than forcing a confidently wrong allele."
+        ),
+        contexts=("fragment_50", "fragment_80", "fragment_120", "high_shm", "ambiguity_bins"),
+        status="partial",
+        required_outputs=("hierarchical resolved call + level per gene",),
+        ground_truth_fields=("v_call", "d_call", "j_call"),
+        failure_modes=("confident wrong allele on information-limited reads",
+                       "abstaining when a coarser call was available"),
+        interpretation=(
+            "The SOTA differentiator on fragments: hard-error (confidently wrong) should be "
+            "low while useful-correct (allele/gene/family) stays high; abstention is not an error."
+        ),
+    ),
+    BenchmarkCriterion(
+        category="allele_calling",
         name="genotype_mask_compliance",
         metric_keys=("outside_genotype_call_rate", "genotype_restricted_call_acc", "genotype_speedup"),
         description="Respect and benefit from a user-supplied genotype/candidate allele mask.",

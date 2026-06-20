@@ -94,7 +94,7 @@ def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
 def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64,
                   topk: int = 16, rerank: str = "none", set_epsilon: float = 1.0,
                   genotype: dict | None = None, calibration: dict | None = None,
-                  emit_scores: bool = False) -> list:
+                  emit_scores: bool = False, state_conditioning: bool = True) -> list:
     """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
     differentiable aligner.alignment_score = the learned allele reader). When rerank
     is on, also emits {g}_call_set = the calibrated equivalence set (candidates within
@@ -164,8 +164,11 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                 eps = float(cal.get(G, {}).get("epsilon", set_epsilon))
                 seg_tok, seg_mask = extract_segment_tokens(canon, mask, pred_region, G)
                 seg_pos = model.germline_encoder.forward_positions(seg_tok, seg_mask)  # (B,S,d)
-                seg_state, _ = extract_segment(out["state_logits"], mask, pred_region, G)
-                seg_rel = state_reliability(seg_state)                  # (B,S) SHM down-weight
+                if state_conditioning:
+                    seg_state, _ = extract_segment(out["state_logits"], mask, pred_region, G)
+                    seg_rel = state_reliability(seg_state)              # (B,S) SHM down-weight
+                else:
+                    seg_rel = None
                 pos_reps, pos_mask = ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"]
                 pos_tok = ref_emb[G]["pos_tok"]
                 chosen, chosen_sets, chosen_conf, chosen_scores = [], [], [], []
@@ -176,7 +179,8 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                         seg_pos[i:i + 1].expand(k, -1, -1), seg_mask[i:i + 1].expand(k, -1),
                         pos_reps[cands], pos_mask[cands],
                         seg_tok=seg_tok[i:i + 1].expand(k, -1), germ_tok=pos_tok[cands],
-                        seg_reliability=seg_rel[i:i + 1].expand(k, -1))  # (k,)
+                        seg_reliability=(seg_rel[i:i + 1].expand(k, -1)
+                                         if seg_rel is not None else None))  # (k,)
                     chosen.append(int(cands[sc.argmax()]))
                     # temperature-scaled log-likelihood-ratio band (codex): keep iff the top
                     # is at most exp(eps) times likelier; calibrated per gene, T=1 default.

@@ -30,7 +30,7 @@ class GymTrainer:
                  refresh_curriculum_every=25, distill=False, distill_weight=1.0,
                  distill_decay=0.999, distill_temperature=2.0,
                  reader=False, reader_weight=1.0, reader_n_sib=6, reader_n_rand=6,
-                 reader_novel_prob=0.0, reader_novel_snps=1,
+                 reader_novel_prob=0.0, reader_novel_snps=1, state_conditioning=True,
                  scheduled_sampling=False, ss_max_prob=0.5):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
@@ -63,6 +63,7 @@ class GymTrainer:
         # germline NEVER baked into its weights -> trains the dynamic-reference property.
         self.reader_novel_prob = reader_novel_prob
         self.reader_novel_snps = reader_novel_snps
+        self.state_conditioning = state_conditioning   # down-weight likely-SHM positions in the reader
         self._sib_index = build_sibling_index(reference_set) if reader else None
         self._reader_rng = random.Random(0)
         self._novel_gen = torch.Generator(device=self.device).manual_seed(0)
@@ -164,8 +165,11 @@ class GymTrainer:
                         canon, batch["mask"], sup_regions, G)
                     seg_reps = self.model.germline_encoder.forward_positions(seg_tok, seg_mask)
                     # per-position SHM reliability for the segment (state head, same gather)
-                    seg_state, _ = extract_segment(out["state_logits"], batch["mask"], sup_regions, G)
-                    seg_rel = state_reliability(seg_state)
+                    if self.state_conditioning:
+                        seg_state, _ = extract_segment(out["state_logits"], batch["mask"], sup_regions, G)
+                        seg_rel = state_reliability(seg_state)
+                    else:
+                        seg_rel = None
                     cand, pos = build_candidates(
                         batch[f"{g}_primary_idx"], batch[f"{g}_allele"], self._sib_index[G],
                         self._reader_rng, self.reader_n_sib, self.reader_n_rand)

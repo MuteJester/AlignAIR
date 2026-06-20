@@ -379,6 +379,27 @@ def _score_gene(
         "overcall_rate": 1.0 if len(pred_set) > len(true_set) else 0.0,
         "undercall_rate": 1.0 if len(pred_set) < len(true_set) else 0.0,
     }
+    # graceful hierarchical degradation (optional {gene}_resolved_call/{gene}_call_level):
+    # credit a correct coarser call or an honest abstention instead of a forced wrong allele.
+    level = pred.get(f"{gene}_call_level")
+    if level is not None:
+        resolved = pred.get(f"{gene}_resolved_call")
+        true_families = {c.split("-")[0] for c in true_set}
+        if level == "none" or resolved is None:
+            out["graceful_abstain"] = 1.0
+            out["graceful_useful"] = 0.0
+            out["graceful_hard_error"] = 0.0          # abstaining is not an error
+        else:
+            correct = ((level == "allele" and resolved in true_set)
+                       or (level == "gene" and resolved in true_genes)
+                       or (level == "family" and resolved in true_families))
+            out["graceful_abstain"] = 0.0
+            out["graceful_useful"] = 1.0 if correct else 0.0
+            out["graceful_hard_error"] = 0.0 if correct else 1.0
+        # non-error = useful OR honest abstention (the real quality target: never confidently
+        # wrong). Graded higher-is-better; raw `useful` alone wrongly penalizes correct
+        # abstention on information-limited reads, so it stays informational only.
+        out["graceful_non_error"] = 1.0 - out["graceful_hard_error"]
     coord_truth = {
         "ss": truth.sequence_start,
         "se": truth.sequence_end,
