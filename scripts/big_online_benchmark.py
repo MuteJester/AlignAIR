@@ -27,12 +27,16 @@ from alignair.benchmark.evaluation.online import run_online_benchmark  # noqa: E
 from alignair.benchmark.evaluation.model_adapters import dnalignair_predictor  # noqa: E402
 
 
-def build_spec(recipe, total, seed):
-    """Build the spec so the total case count is ~`total` across all strata."""
-    builder = default_igh_assay_spec if recipe == "assay" else default_igh_spec
-    n_strata = len(builder(n_per_stratum=1, seed=seed).strata)
-    n_per = max(1, math.ceil(total / n_strata))
-    return builder(n_per_stratum=n_per, seed=seed)
+def build_spec(recipe, total, n_per_focus, seed):
+    """Size the BROAD strata from `total`, and the FOCUSED hard strata (contaminant,
+    D-inversion, ultra-short, ...) independently from `n_per_focus` so the weakpoint
+    slices get many samples regardless of the broad total."""
+    if recipe == "broad":
+        n_strata = len(default_igh_spec(n_per_stratum=1, seed=seed).strata)
+        return default_igh_spec(n_per_stratum=max(1, math.ceil(total / n_strata)), seed=seed)
+    n_broad = len(default_igh_spec(n_per_stratum=1, seed=seed).strata)
+    n_per = max(1, math.ceil(total / n_broad))
+    return default_igh_assay_spec(n_per_stratum=n_per, n_per_focus=n_per_focus, seed=seed)
 
 
 def print_summary(report):
@@ -70,6 +74,8 @@ def main():
     ap.add_argument("--calibration", default=".private/models/allele_set_calibration.json")
     ap.add_argument("--recipe", choices=("broad", "assay"), default="assay")
     ap.add_argument("--total", type=int, default=1_000_000)
+    ap.add_argument("--n-per-focus", type=int, default=5000,
+                    help="samples per FOCUSED hard stratum (contaminant, D-inversion, ...)")
     ap.add_argument("--rerank", choices=("learned", "none"), default="learned")
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--seed", type=int, default=7)
@@ -83,10 +89,12 @@ def main():
     model = DNAlignAIR(cfg).to(device); model.load_state_dict(ck["model"]); model.eval()
     cal = json.load(open(args.calibration)) if os.path.exists(args.calibration) else None
 
-    spec = build_spec(args.recipe, args.total, args.seed)
+    spec = build_spec(args.recipe, args.total, args.n_per_focus, args.seed)
     total = sum(s.n for s in spec.strata)
+    nmin = min(s.n for s in spec.strata)
     print(f"streaming {total:,} cases | {len(spec.strata)} strata | recipe={args.recipe} | "
-          f"rerank={args.rerank} | model={os.path.basename(args.model)} | device={device}", flush=True)
+          f"min {nmin:,}/stratum | rerank={args.rerank} | model={os.path.basename(args.model)} | "
+          f"device={device}", flush=True)
 
     base = dnalignair_predictor(model, rs, device=device, batch_size=args.batch,
                                 rerank=args.rerank, calibration=cal)
