@@ -124,3 +124,24 @@ def test_cli_predict_end_to_end(tmp_path):
     rows = list(csv.DictReader(open(out), delimiter="\t"))
     assert len(rows) == 1 and rows[0]["sequence_id"] == "read1"   # junk dropped
     assert rows[0]["v_call"] and rows[0]["locus"] == "IGH"
+
+
+def test_cli_bundle_and_predict_equivalence(tmp_path):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("GenAIRR")
+    from alignair.config.dnalignair_config import DNAlignAIRConfig
+    from alignair.core.dnalignair import DNAlignAIR
+    from alignair import cli
+    torch.manual_seed(0)
+    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64, aligner="softdp")
+    ck = tmp_path / "m.pt"
+    torch.save({"model": DNAlignAIR(cfg).state_dict(), "config": cfg.to_dict()}, ck)
+    fa = tmp_path / "r.fasta"; fa.write_text(">a\n" + "ACGT" * 50 + "\n>b\n" + "TTGCAACGTACG" * 6 + "\n")
+
+    # package into a bundle, then predict from BOTH raw ckpt and the bundle
+    bdir = tmp_path / "bundle"
+    cli.main(["bundle", "--model", str(ck), "-o", str(bdir), "--dataconfig", "HUMAN_IGH_OGRDB"])
+    out_raw, out_bundle = tmp_path / "raw.tsv", tmp_path / "bundle.tsv"
+    cli.main(["predict", str(fa), "-o", str(out_raw), "--model", str(ck), "--device", "cpu"])
+    cli.main(["predict", str(fa), "-o", str(out_bundle), "--model", str(bdir), "--device", "cpu"])
+    assert open(out_raw).read() == open(out_bundle).read()        # identical predictions
