@@ -93,6 +93,7 @@ def test_write_airr_columns_coords_and_sets(tmp_path):
         "d_sequence_start": 300, "d_sequence_end": 312, "d_germline_start": 2, "d_germline_end": 14,
         "j_sequence_start": 320, "j_sequence_end": 360, "j_germline_start": 1, "j_germline_end": 41,
         "v_call_set": ["IGHV1-2*02", "IGHV1-2*04"], "v_call_level": "gene", "v_set_confidence": 0.91,
+        "is_contaminant": True,
     }]
     out = tmp_path / "r.tsv"
     write_airr(str(out), ["read1"], ["ACGT" * 90], preds, locus="IGH")
@@ -101,6 +102,7 @@ def test_write_airr_columns_coords_and_sets(tmp_path):
     r = rows[0]
     assert r["sequence_id"] == "read1" and r["locus"] == "IGH" and r["v_call"] == "IGHV1-2*02"
     assert r["rev_comp"] == "F"                         # orientation_id 0 -> forward
+    assert r["is_contaminant"] == "T"                   # out-of-scope flag
     assert r["v_sequence_start"] == "1"                 # 0-based -> 1-based AIRR
     assert r["v_sequence_end"] == "295"
     assert r["v_call_set"] == "IGHV1-2*02,IGHV1-2*04" and r["v_call_level"] == "gene"

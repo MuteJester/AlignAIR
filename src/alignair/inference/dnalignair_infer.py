@@ -110,7 +110,7 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                   topk: int = 16, rerank: str = "none", set_epsilon: float = 1.0,
                   genotype: dict | None = None, calibration: dict | None = None,
                   emit_scores: bool = False, state_conditioning: bool = True,
-                  rerank_chunk: int = 2048) -> list:
+                  rerank_chunk: int = 2048, contaminant_tau: float | None = None) -> list:
     """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
     differentiable aligner.alignment_score = the learned allele reader). When rerank
     is on, also emits {g}_call_set = the calibrated equivalence set (candidates within
@@ -151,6 +151,12 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                 raise ValueError(f"genotype for gene {G} excludes every allele in the reference")
             candidate_masks[G] = m.to(device)
             n_allowed[G] = int(m.sum())
+
+    # out-of-scope / contaminant gate (flag-only): a read whose best length-normalized V
+    # alignment quality falls below tau is flagged is_contaminant=True (calls are RETAINED,
+    # never deleted). tau is a calibrated threshold (calibration['contaminant']['tau']).
+    contam_tau = (contaminant_tau if contaminant_tau is not None
+                  else (calibration or {}).get("contaminant", {}).get("tau"))
 
     preds = []
     for s in range(0, len(reads), batch_size):
@@ -215,6 +221,9 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                 learned_best[G + "_set"] = [
                     [names[G][ti_l[i][j]] for j in range(kk) if keep_l[i][j]] for i in range(B)]
                 learned_best[G + "_conf"] = conf.cpu().tolist()
+                if G == "V":  # out-of-scope gate: best LENGTH-NORMALIZED V alignment quality
+                    seg_len = seg_mask.sum(dim=1).clamp(min=1).to(sc_all.dtype)  # (B,) predicted V len
+                    learned_best["_gate"] = (sc_all.max(dim=1).values / seg_len).cpu().tolist()
                 if emit_scores:
                     sc_l = sc_all.cpu().tolist()
                     learned_best[G + "_scores"] = [
@@ -250,5 +259,11 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
             p["productive"] = bool(out["productive"][i].item() > 0.5)
             p["mutation_rate"] = float(out["mutation_rate"][i].item())
             p["indel_count"] = float(out["indel_count"][i].item())
+            # out-of-scope flag (advisory; calls above are RETAINED regardless)
+            if rerank == "learned" and "_gate" in learned_best:
+                gs = learned_best["_gate"][i]
+                p["contaminant_score"] = float(gs)
+                if contam_tau is not None:
+                    p["is_contaminant"] = bool(gs < contam_tau)
             preds.append(p)
     return preds

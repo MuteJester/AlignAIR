@@ -113,11 +113,23 @@ def fit_calibration(per_gene_rows: Dict[str, Sequence[Row]], objective: str = "f
     return out
 
 
+def fit_contaminant_tau(real_gate_scores: Sequence[float], fpr_target: float = 0.02) -> float | None:
+    """Out-of-scope gate threshold: tau = the `fpr_target` quantile of REAL reads' gate
+    scores, so the worst `fpr_target` fraction of real reads fall below it (flagged). A read
+    scoring below tau is flagged is_contaminant (flag-only). Returns None if no scores."""
+    s = sorted(x for x in real_gate_scores if x is not None)
+    if not s:
+        return None
+    idx = min(len(s) - 1, max(0, int(len(s) * fpr_target)))
+    return float(s[idx])
+
+
 def collect_calibration_rows(model, reference_set, records, *, predict_fn=None,
                              topk: int = 32, genes=("v", "d", "j"), **predict_kwargs
-                             ) -> Dict[str, List[Row]]:
+                             ) -> Tuple[Dict[str, List[Row]], List[float]]:
     """Run the model over labeled `records` and build per-gene calibration rows from the
-    emitted candidate scores + each record's comma-separated true call set."""
+    emitted candidate scores + each record's true call set. Also returns the per-read
+    out-of-scope gate scores (for fitting the contaminant tau on these real reads)."""
     if predict_fn is None:
         from ...inference.dnalignair_infer import predict_reads as predict_fn
     reads = [r["sequence"] for r in records]
@@ -126,7 +138,10 @@ def collect_calibration_rows(model, reference_set, records, *, predict_fn=None,
     preds = predict_fn(model, reference_set, reads, topk=topk, rerank="learned",
                        emit_scores=True, **predict_kwargs)
     rows: Dict[str, List[Row]] = {g.upper(): [] for g in use_genes}
+    gate_scores: List[float] = []
     for rec, p in zip(records, preds):
+        if p.get("contaminant_score") is not None:
+            gate_scores.append(p["contaminant_score"])
         for g in use_genes:
             scored = p.get(f"{g}_scores")
             if not scored:
@@ -136,4 +151,4 @@ def collect_calibration_rows(model, reference_set, records, *, predict_fn=None,
             truth = {c.strip() for c in str(rec.get(f"{g}_call", "")).split(",") if c.strip()}
             pos = [j for j, nm in enumerate(names) if nm in truth]
             rows[g.upper()].append((scores, pos))
-    return rows
+    return rows, gate_scores

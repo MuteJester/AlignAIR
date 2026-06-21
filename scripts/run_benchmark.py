@@ -75,6 +75,8 @@ def main():
                    "productive": p["productive"],
                    "mutation_rate": p["mutation_rate"],
                    "indel_count": p["indel_count"]}
+            if "is_contaminant" in p:
+                row["is_contaminant"] = p["is_contaminant"]
             for g in ("v", "d", "j"):
                 row[f"{g}_call"] = p[f"{g}_call"]
                 row[f"{g}_calls"] = p.get(f"{g}_call_set") or [p[f"{g}_call"]]

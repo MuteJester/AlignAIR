@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .audit import audit_criteria_report
-from .contract import prediction_contract, validate_predictions
+from .contract import prediction_contract, validate_predictions, validate_predictions_for_cases
 from .context import case_contexts
 from .diagnostics import build_allele_calling_diagnostics, build_boundary_diagnostics
 from .matching import align_predictions_to_cases
@@ -85,7 +85,8 @@ def build_benchmark_report(
         match_report = match_result.report
     elif len(cases) != len(predictions):
         raise ValueError(f"case/prediction length mismatch: {len(cases)} != {len(predictions)}")
-    has_d = bool(has_d) if has_d is not None else any(case.genes.get("d") and case.genes["d"].calls for case in cases)
+    case_aware_contract = has_d is None
+    resolved_has_d = bool(has_d) if has_d is not None else any(case.genes.get("d") and case.genes["d"].calls for case in cases)
     scores = score_cases(cases, predictions, frame=frame)
     overall, by_context = _overall_and_contexts(scores, cases, predictions, frame=frame)
     report = {
@@ -124,11 +125,18 @@ def build_benchmark_report(
     if match_report is not None:
         report["prediction_matching"] = match_report
     if contract_level is not None:
-        report["prediction_validation"] = validate_predictions(
-            predictions,
-            level=contract_level,
-            has_d=has_d,
-        )
+        if case_aware_contract:
+            report["prediction_validation"] = validate_predictions_for_cases(
+                cases,
+                predictions,
+                level=contract_level,
+            )
+        else:
+            report["prediction_validation"] = validate_predictions(
+                predictions,
+                level=contract_level,
+                has_d=resolved_has_d,
+            )
     if n_bootstrap:
         report["uncertainty"] = bootstrap_metric_intervals(
             cases,

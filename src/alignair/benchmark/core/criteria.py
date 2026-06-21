@@ -432,6 +432,7 @@ CRITERIA: tuple[BenchmarkCriterion, ...] = (
         metric_keys=("top1_recall", "top3_recall", "top5_recall", "top10_recall", "topk_truth_set_recall"),
         description="Whether the truth set is present in the aligner's candidate list before final reranking.",
         contexts=DEFAULT_CONTEXTS,
+        status="partial",
         required_outputs=("ranked allele scores or top-k candidates",),
         ground_truth_fields=("v_call", "d_call", "j_call"),
         failure_modes=("reranker blamed for candidates never retrieved", "gene error hidden by top-1 metric"),

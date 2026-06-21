@@ -1,7 +1,16 @@
 import math
 
 from alignair.benchmark.evaluation.allele_calibration import (
-    multipos_nll, fit_temperature, sweep_epsilon, fit_calibration, _set_stats)
+    multipos_nll, fit_temperature, sweep_epsilon, fit_calibration, _set_stats,
+    fit_contaminant_tau)
+
+
+def test_fit_contaminant_tau_is_target_quantile():
+    scores = list(range(100))                                  # 0..99
+    assert fit_contaminant_tau(scores, fpr_target=0.05) == 5.0   # 5th percentile
+    assert fit_contaminant_tau(scores, fpr_target=0.0) == 0.0
+    assert fit_contaminant_tau([]) is None
+    assert fit_contaminant_tau([3.0, None, 1.0], fpr_target=0.0) == 1.0  # ignores None
 
 
 def test_lr_band_set_membership():

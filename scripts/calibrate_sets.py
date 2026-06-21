@@ -20,7 +20,7 @@ from alignair.reference.reference_set import ReferenceSet  # noqa: E402
 from alignair.config.dnalignair_config import DNAlignAIRConfig  # noqa: E402
 from alignair.core.dnalignair import DNAlignAIR  # noqa: E402
 from alignair.benchmark.evaluation.allele_calibration import (  # noqa: E402
-    collect_calibration_rows, fit_calibration)
+    collect_calibration_rows, fit_calibration, fit_contaminant_tau)
 
 
 def main():
@@ -32,6 +32,8 @@ def main():
     ap.add_argument("--objective", choices=("f1", "recall"), default="f1")
     ap.add_argument("--target-recall", type=float, default=0.95)
     ap.add_argument("--min-recall", type=float, default=0.80)
+    ap.add_argument("--contaminant-fpr", type=float, default=0.02,
+                    help="target real-read false-flag rate for the out-of-scope gate tau")
     ap.add_argument("--seed", type=int, default=999)
     args = ap.parse_args()
 
@@ -53,15 +55,22 @@ def main():
         records += gen_records(p, args.n, args.seed + j, crop, overrides=ov)
     print(f"calibrating on {len(records)} labeled records ({args.model}), objective={args.objective} ...")
 
-    rows = collect_calibration_rows(model, rs, records, topk=args.topk, device=device)
+    rows, gate_scores = collect_calibration_rows(model, rs, records, topk=args.topk, device=device)
     cal = fit_calibration(rows, objective=args.objective,
                           target_recall=args.target_recall, min_recall=args.min_recall)
+    # out-of-scope gate threshold, fit on these (real) reads' gate scores
+    tau = fit_contaminant_tau(gate_scores, fpr_target=args.contaminant_fpr)
+    if tau is not None:
+        cal["contaminant"] = {"tau": tau, "fpr_target": args.contaminant_fpr, "n": len(gate_scores)}
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(cal, f, indent=2)
     print(f"\nsaved -> {args.out}")
     for G, c in cal.items():
+        if G == "contaminant":
+            print(f"  contaminant gate: tau={c['tau']:.3f}  (fpr_target={c['fpr_target']}, n={c['n']})")
+            continue
         print(f"  {G}: T={c['temperature']:.2f}  eps={c['epsilon']:.2f}  "
               f"set_size={c['mean_set_size']:.2f}  recall={c['set_recall']:.3f}  "
               f"f1={c.get('set_f1', float('nan')):.3f}  "

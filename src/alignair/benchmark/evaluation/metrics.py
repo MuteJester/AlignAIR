@@ -255,21 +255,36 @@ def _ranked_calls(pred: dict[str, Any], gene: str) -> tuple[str, ...]:
         f"{gene}_ranked_calls",
         f"{gene}_candidate_calls",
         f"{gene}_candidates",
+        f"{gene}_topk",
         f"{gene}_topk_calls",
     )
     if calls is None:
         scores = _pred_value(pred, f"{gene}_scores", f"{gene}_allele_scores")
         if isinstance(scores, dict):
-            calls = [k for k, _ in sorted(scores.items(), key=lambda kv: kv[1], reverse=True)]
+            pairs = []
+            for name, score in scores.items():
+                numeric = _as_float(score)
+                if numeric is not None:
+                    pairs.append((str(name), numeric))
+            if pairs:
+                calls = [k for k, _ in sorted(pairs, key=lambda kv: kv[1], reverse=True)]
         elif isinstance(scores, (list, tuple)):
             pairs = []
             for item in scores:
-                if isinstance(item, (list, tuple)) and len(item) >= 2:
-                    pairs.append((str(item[0]), float(item[1])))
+                if isinstance(item, dict):
+                    name = _pred_value(item, "call", "allele", "name", "id")
+                    score = _as_float(_pred_value(item, "score", "logit", "log_score", "prob"))
+                elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                    name = item[0]
+                    score = _as_float(item[1])
+                else:
+                    continue
+                if name is not None and score is not None:
+                    pairs.append((str(name), score))
             if pairs:
                 calls = [k for k, _ in sorted(pairs, key=lambda kv: kv[1], reverse=True)]
     if calls is None:
-        calls = normalize_call_set(pred, gene)
+        return ()
     if isinstance(calls, str):
         calls = calls.split(",")
     return tuple(str(c).strip() for c in calls if str(c).strip())

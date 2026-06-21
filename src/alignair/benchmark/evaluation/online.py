@@ -198,7 +198,7 @@ def run_online_benchmark(
         reference_set = ReferenceSet.from_dataconfigs(dataconfig)
     report = OnlineBenchmarkReport(spec, frame=frame, reference_set=reference_set)
     validation = (
-        PredictionValidationAccumulator(level=contract_level, has_d=reference_set.has_d)
+        PredictionValidationAccumulator(level=contract_level, has_d=None)
         if contract_level
         else None
     )
@@ -219,7 +219,7 @@ def run_online_benchmark(
         if len(preds) != len(cases):
             raise ValueError(f"predictor returned {len(preds)} predictions for {len(cases)} cases")
         if validation is not None:
-            validation.update(preds)
+            validation.update_for_cases(cases, preds)
         for case, pred in zip(cases, preds):
             report.update(case, pred)
     out = report.to_dict()

@@ -5,8 +5,8 @@ GenAIRR-backed benchmark utilities for evaluating AIRR/IG alignment tools.
 This is a submodule of the `alignair` package. It is not a standalone package.
 It generates simulated IG rearrangement cases with GenAIRR truth, runs or scores
 aligner predictions, and returns JSON reports that expose aggregate accuracy,
-scenario-specific failures, allele-level errors, coverage, readiness, audit, and
-optional uncertainty intervals.
+scenario-specific failures, allele-level errors, coverage, readiness, audit,
+single-model uncertainty intervals, and paired model-vs-model comparisons.
 
 ## What It Is For
 
@@ -21,10 +21,11 @@ Use this benchmark when you want to answer questions such as:
   hard biological cases fail?
 - Is a generated benchmark broad enough to trust for serious model evaluation?
 
-The benchmark can diagnose one model deeply today. It does not yet emit a
-formal paired model-vs-model superiority verdict. To claim that model A is
-better than model B, compare them on the same cases and inspect readiness,
-audit, assay grades, allele diagnostics, context slices, and uncertainty.
+The benchmark can diagnose one model deeply and compare two models on the same
+frozen case set with paired deltas, win/loss/tie tables, bootstrap intervals,
+and metric-level verdicts. Treat the verdicts as benchmark evidence, not as a
+universal leaderboard claim: readiness, audit, assay grades, allele diagnostics,
+context slices, and uncertainty still determine how strong the claim is.
 
 ## End-To-End CLI Workflow
 
@@ -207,6 +208,33 @@ By default, offline evaluation aligns predictions to cases by `sequence_id`.
 Use `--match-by order` only when predictions are guaranteed to be in the exact
 same order as the case JSONL.
 
+### 6. Compare Two Prediction Sets
+
+Compare two model outputs on exactly the same cases:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli compare \
+  --cases experiments/human_igh_assay.jsonl \
+  --a-predictions experiments/baseline_predictions.jsonl \
+  --b-predictions experiments/new_model_predictions.jsonl \
+  --model-a-name baseline \
+  --model-b-name new_model \
+  --metric genes.v.call_top1_in_set \
+  --metric genes.v.ss_mae \
+  --bootstrap 500 \
+  --confidence 0.95 \
+  --no-bootstrap-strata \
+  --out experiments/baseline_vs_new_model.json
+```
+
+The comparison report is paired at the case level. For each metric it includes
+model A and B paired means, `raw_delta_model_b_minus_model_a`, a
+direction-adjusted `model_b_advantage`, win/loss/tie counts, optional bootstrap
+intervals, and a verdict. Positive `model_b_advantage` always favors model B;
+for lower-is-better metrics such as `*_mae`, it is the sign-flipped raw delta.
+Use `--practical-delta` to require a minimum aggregate effect size before a
+metric is called better or worse.
+
 ## Prediction Contract
 
 Inspect the full normalized prediction contract:
@@ -276,7 +304,7 @@ For AIRR/IgBLAST tables, fields such as `v_call`, `d_call`, `j_call`,
 | `diagnostics.allele_calling` | Per-allele, per-gene, per-family, and confusion-pair tables. |
 | `diagnostics.boundaries` | V/D/J query and germline coordinate failure decomposition. |
 | `prediction_matching` | Present when predictions are matched by id; shows missing, extra, and duplicate ids. |
-| `prediction_validation` | Present when `--contract-level` is set; shows missing/malformed prediction fields. |
+| `prediction_validation` | Present when `--contract-level` is set; shows missing/malformed prediction fields using per-case D/no-D requirements. |
 | `uncertainty` | Present when `--bootstrap` is set; bootstrap intervals for selected metrics. |
 | `criteria_audit` | Checks whether observed metrics cover the criteria catalog and GenAIRR truth fields. |
 | `assay` | Pass/warn/fail grading by criterion and category. |
@@ -330,6 +358,13 @@ High-value metrics include:
 | `productive_acc` | Productive/nonproductive status accuracy. |
 | `orientation_acc` | Presented-read orientation accuracy. |
 | `required_field_presence` | AIRR-required output field completeness. |
+
+Top-k candidate metrics (`top1_recall`, `top3_recall`, `top5_recall`,
+`top10_recall`, and `topk_truth_set_recall`) are emitted only when predictions
+contain explicit ranked candidate outputs or scores, such as `v_ranked_calls`,
+`v_topk`, `v_scores`, or the equivalent `d_*`/`j_*` fields. Final call fields
+like `v_call` and `v_calls` are not reused as candidate rankings, so these
+metrics measure retrieval coverage rather than ordinary final-call accuracy.
 
 ### `diagnostics.allele_calling`
 
@@ -424,12 +459,15 @@ wrong trimming, and fragment-specific boundary collapse.
 | `assay.summary.grade` | Overall `pass`, `warn`, `fail`, `planned`, or `not_scored`. |
 | `assay.by_category` | Category-level grades, for example allele calling or segmentation. |
 | `assay.criteria` | Criterion-level observed metrics, missing metrics, grade reasons, and thresholds. |
+| `assay.completeness_gate` | Audit-backed check that scoreable available core criteria were actually measured. |
 | `assay.critical_failures` | Failed core criteria that should block trust in aggregate accuracy. |
 | `assay.weak_contexts` | Worst context/metric slices. |
 
 Treat a `pass` as "passed the currently implemented criteria for this
-benchmark." It is not a universal proof that the aligner is better than another
-tool.
+benchmark, with no scoreable available core criteria left unmeasured." Criteria
+that are planned, partial, or lack available truth are still reported separately;
+they should guide the next benchmark expansion rather than be hidden by the
+aggregate grade.
 
 ### `criteria_audit`
 
@@ -448,7 +486,8 @@ the assay grade alone.
 
 When `--bootstrap` is set, uncertainty uses paired case-level bootstrap
 resampling over the same GenAIRR case/prediction pairs. These are single-model
-confidence intervals, not a full paired model-vs-model significance test.
+confidence intervals. Use the `compare` command for paired model-vs-model
+deltas, win/loss/tie tables, bootstrap intervals, and metric-level verdicts.
 Use `--no-bootstrap-strata` for large benchmark cohorts when overall confidence
 intervals are enough and stratum-level point estimates are sufficient.
 
@@ -633,6 +672,7 @@ print(result.report["satisfied"], result.report["unmet"])
 | `export` | Export FASTA, AIRR input TSV, and manifest for external tools. |
 | `normalize-predictions` | Convert AIRR/IgBLAST TSV/CSV to normalized prediction JSONL. |
 | `evaluate` | Score predictions against benchmark cases and write a full report. |
+| `compare` | Compare two prediction files with paired deltas, win/loss/tie counts, bootstrap intervals, and verdicts. |
 | `assay` | Build an assay view from saved score/report JSON. |
 | `audit` | Audit observed metrics against the criteria catalog and optional case truth. |
 | `criteria` | Print criteria and scenario-axis catalogs. |
@@ -642,13 +682,11 @@ print(result.report["satisfied"], result.report["unmet"])
 
 The benchmark is strong enough to identify model weaknesses and compare models
 on the same generated case set. It is not yet a complete superiority adjudicator
-because the package does not yet provide:
+because the package does not yet provide pre-registered primary endpoint
+policies, explicit non-inferiority/no-regression gates, multiple-comparison
+correction, or validation against independent real-read cohorts.
 
-- paired model-vs-model deltas and win/loss/tie tables;
-- paired bootstrap or permutation intervals for model differences;
-- explicit non-inferiority margins and no-regression gates;
-- a final verdict object such as `A_better`, `B_better`, or `inconclusive`.
-
-Until those are implemented, use the report as an assay-style evidence package:
+For serious claims, use the report as an assay-style evidence package:
 readiness first, then prediction validation, criteria audit, assay grades,
-allele diagnostics, context slices, and uncertainty.
+allele diagnostics, context slices, single-model uncertainty, and paired
+comparison verdicts.

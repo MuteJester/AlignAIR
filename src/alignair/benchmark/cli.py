@@ -32,7 +32,13 @@ from .io import (
     save_jsonl,
 )
 from .core import criteria_catalog, scenario_axes_catalog
-from .evaluation import audit_criteria_report, build_assay_report, build_benchmark_report, prediction_contract
+from .evaluation import (
+    audit_criteria_report,
+    build_assay_report,
+    build_benchmark_report,
+    build_model_comparison_report,
+    prediction_contract,
+)
 from ..reference.reference_set import ReferenceSet
 
 PREDICTION_FORMATS = ("jsonl", "airr", "airr-tsv", "airr-csv")
@@ -171,6 +177,47 @@ def _evaluate(args) -> None:
         confidence=args.confidence,
         bootstrap_seed=args.bootstrap_seed,
         bootstrap_strata=args.bootstrap_strata,
+    )
+    text = json.dumps(report, indent=2, sort_keys=True)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as handle:
+            handle.write(text + "\n")
+    else:
+        print(text)
+
+
+def _compare(args) -> None:
+    cases = load_jsonl(args.cases)
+    prediction_format_a = args.a_prediction_format or args.prediction_format
+    prediction_format_b = args.b_prediction_format or args.prediction_format
+    delimiter_a = args.a_delimiter if args.a_delimiter is not None else args.delimiter
+    delimiter_b = args.b_delimiter if args.b_delimiter is not None else args.delimiter
+    predictions_a = _load_predictions(
+        args.a_predictions,
+        prediction_format_a,
+        delimiter=_resolved_delimiter(delimiter_a),
+    )
+    predictions_b = _load_predictions(
+        args.b_predictions,
+        prediction_format_b,
+        delimiter=_resolved_delimiter(delimiter_b),
+    )
+    report = build_model_comparison_report(
+        cases,
+        predictions_a,
+        predictions_b,
+        model_a_name=args.model_a_name,
+        model_b_name=args.model_b_name,
+        frame=args.frame,
+        metric_paths=args.metric,
+        match_by=None if args.match_by == "order" else args.match_by,
+        duplicate_policy=args.duplicate_policy,
+        n_bootstrap=args.bootstrap,
+        confidence=args.confidence,
+        seed=args.bootstrap_seed,
+        include_strata=args.bootstrap_strata,
+        practical_delta=args.practical_delta,
+        case_tie_tolerance=args.case_tie_tolerance,
     )
     text = json.dumps(report, indent=2, sort_keys=True)
     if args.out:
@@ -403,6 +450,81 @@ def main(argv=None) -> None:
         help="how to handle duplicate prediction ids when --match-by is not 'order'",
     )
     evaluate.set_defaults(func=_evaluate)
+
+    compare = sub.add_parser("compare", help="compare two prediction files on paired benchmark cases")
+    compare.add_argument("--cases", required=True, help="benchmark case JSONL")
+    compare.add_argument("--a-predictions", required=True, help="model A prediction file")
+    compare.add_argument("--b-predictions", required=True, help="model B prediction file")
+    compare.add_argument("--model-a-name", default="model_a", help="label for model A")
+    compare.add_argument("--model-b-name", default="model_b", help="label for model B")
+    compare.add_argument(
+        "--prediction-format",
+        choices=PREDICTION_FORMATS,
+        default="jsonl",
+        help="prediction file format used for both models unless overridden",
+    )
+    compare.add_argument(
+        "--a-prediction-format",
+        choices=PREDICTION_FORMATS,
+        default=None,
+        help="optional model A prediction format override",
+    )
+    compare.add_argument(
+        "--b-prediction-format",
+        choices=PREDICTION_FORMATS,
+        default=None,
+        help="optional model B prediction format override",
+    )
+    compare.add_argument("--delimiter", default=None, help="delimiter override used for both AIRR tables")
+    compare.add_argument("--a-delimiter", default=None, help="optional model A delimiter override")
+    compare.add_argument("--b-delimiter", default=None, help="optional model B delimiter override")
+    compare.add_argument("--out", default=None, help="optional output comparison JSON path")
+    compare.add_argument("--frame", choices=("canonical", "presented"), default="canonical")
+    compare.add_argument(
+        "--metric",
+        action="append",
+        default=None,
+        help="metric path to compare; repeatable; defaults to the standard comparison metrics",
+    )
+    compare.add_argument(
+        "--bootstrap",
+        type=int,
+        default=0,
+        help="number of paired case-bootstrap replicates for model-difference intervals; 0 disables",
+    )
+    compare.add_argument("--confidence", type=float, default=0.95, help="bootstrap confidence level")
+    compare.add_argument("--bootstrap-seed", type=int, default=123, help="bootstrap RNG seed")
+    compare.add_argument(
+        "--no-bootstrap-strata",
+        dest="bootstrap_strata",
+        action="store_false",
+        help="skip per-stratum comparison sections while keeping the overall paired comparison",
+    )
+    compare.set_defaults(bootstrap_strata=True)
+    compare.add_argument(
+        "--practical-delta",
+        type=float,
+        default=0.0,
+        help="minimum direction-adjusted aggregate delta needed for a better/worse verdict",
+    )
+    compare.add_argument(
+        "--case-tie-tolerance",
+        type=float,
+        default=0.0,
+        help="per-case direction-adjusted delta treated as a win instead of a tie",
+    )
+    compare.add_argument(
+        "--match-by",
+        default="sequence_id",
+        help="prediction field used to align both model outputs to cases; use 'order' for list-order scoring",
+    )
+    compare.add_argument(
+        "--duplicate-policy",
+        choices=("first", "last", "error"),
+        default="first",
+        help="how to handle duplicate prediction ids when --match-by is not 'order'",
+    )
+    compare.set_defaults(func=_compare)
 
     args = parser.parse_args(argv)
     args.func(args)

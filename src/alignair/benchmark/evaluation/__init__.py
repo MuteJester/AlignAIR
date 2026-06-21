@@ -2,11 +2,13 @@
 
 from .adapters import case_to_prediction, igblast_airr_to_prediction, normalize_call_set
 from .audit import audit_criteria_report
+from .comparison import DEFAULT_COMPARISON_METRICS, build_model_comparison_report
 from .contract import (
     PredictionValidationAccumulator,
     prediction_contract,
     validate_prediction,
     validate_predictions,
+    validate_predictions_for_cases,
 )
 from .context import case_contexts
 from .diagnostics import (
@@ -25,6 +27,7 @@ from .uncertainty import DEFAULT_BOOTSTRAP_METRICS, bootstrap_metric_intervals
 
 __all__ = [
     "DEFAULT_BOOTSTRAP_METRICS",
+    "DEFAULT_COMPARISON_METRICS",
     "OnlineBenchmarkReport",
     "AlleleCallingDiagnosticsAccumulator",
     "BoundaryDiagnosticsAccumulator",
@@ -36,6 +39,7 @@ __all__ = [
     "build_allele_calling_diagnostics",
     "build_boundary_diagnostics",
     "build_assay_report",
+    "build_model_comparison_report",
     "bootstrap_metric_intervals",
     "case_contexts",
     "case_to_prediction",
@@ -51,4 +55,5 @@ __all__ = [
     "score_one_case",
     "validate_prediction",
     "validate_predictions",
+    "validate_predictions_for_cases",
 ]

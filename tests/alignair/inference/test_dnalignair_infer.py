@@ -135,6 +135,27 @@ def test_predict_reads_emits_hierarchical_fields():
             assert p[f"{g}_call_level"] in ("allele", "gene", "family", "none")
 
 
+def test_contaminant_gate_flag_only_and_off_by_default():
+    torch.manual_seed(0)
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
+                                        aligner="softdp"))
+    reads = ["ACGT" * 40, "TTGCAACGTACG" * 6]
+    # off by default: a contaminant_score is emitted, but no is_contaminant flag without tau
+    p0 = predict_reads(model, rs, reads, rerank="learned")
+    assert "is_contaminant" not in p0[0] and p0[0]["contaminant_score"] is not None
+    # very high tau -> everything below it -> all flagged; calls RETAINED (flag-only)
+    phi = predict_reads(model, rs, reads, rerank="learned", contaminant_tau=1e9)
+    assert all(p["is_contaminant"] for p in phi) and all(p["v_call"] for p in phi)
+    # very low tau -> nothing flagged
+    plo = predict_reads(model, rs, reads, rerank="learned", contaminant_tau=-1e9)
+    assert not any(p["is_contaminant"] for p in plo)
+    # tau is read from the calibration dict's 'contaminant' entry
+    pcal = predict_reads(model, rs, reads, rerank="learned",
+                         calibration={"contaminant": {"tau": 1e9}})
+    assert all(p["is_contaminant"] for p in pcal)
+
+
 def test_genotype_empty_gene_raises():
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
     model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))

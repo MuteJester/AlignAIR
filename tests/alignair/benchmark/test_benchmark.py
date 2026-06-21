@@ -29,6 +29,7 @@ from alignair.benchmark import (
     build_boundary_diagnostics,
     case_coverage_labels,
     case_to_prediction,
+    build_model_comparison_report,
     compact_summary,
     coverage_plan_from_spec,
     coverage_summary,
@@ -54,6 +55,7 @@ from alignair.benchmark import (
     stream_benchmark,
     validate_prediction,
     validate_predictions,
+    validate_predictions_for_cases,
 )
 from alignair.benchmark.cli import main as benchmark_cli
 from alignair.reference.reference_set import ReferenceSet
@@ -726,6 +728,113 @@ def test_cli_evaluate_matches_airr_rows_by_sequence_id(tmp_path):
     assert report["results"]["overall"]["genes"]["v"]["call_top1_in_set"] == 1.0
 
 
+def test_model_comparison_reports_paired_deltas_and_verdicts():
+    cases = [
+        _manual_case("cmp1", ("IGHV1-1*01",)),
+        _manual_case("cmp2", ("IGHV1-2*01",)),
+    ]
+    preds_a = []
+    preds_b = []
+    for case in cases:
+        pred_a = case_to_prediction(case)
+        pred_a["v_call"] = "IGHV9-9*01"
+        pred_a["v_calls"] = ["IGHV9-9*01"]
+        pred_b = case_to_prediction(case)
+        pred_b["v_sequence_start"] = case.genes["v"].sequence_start + 10
+        preds_a.append(pred_a)
+        preds_b.append(pred_b)
+
+    report = build_model_comparison_report(
+        cases,
+        preds_a,
+        preds_b,
+        model_a_name="old",
+        model_b_name="new",
+        metric_paths=("genes.v.call_top1_in_set", "genes.v.ss_mae"),
+        n_bootstrap=10,
+        confidence=0.9,
+        seed=5,
+        include_strata=False,
+    )
+
+    call = report["overall"]["genes.v.call_top1_in_set"]
+    assert call["model_a"] == 0.0
+    assert call["model_b"] == 1.0
+    assert call["raw_delta_model_b_minus_model_a"] == 1.0
+    assert call["model_b_advantage"] == 1.0
+    assert call["verdict"] == "model_b_better"
+    assert call["preferred_model"] == "new"
+    assert call["win_loss_tie"]["model_b_wins"] == 2
+    assert call["model_b_advantage_ci_low"] == 1.0
+
+    mae = report["overall"]["genes.v.ss_mae"]
+    assert mae["direction"] == "lower_is_better"
+    assert mae["model_a"] == 0.0
+    assert mae["model_b"] == 10.0
+    assert mae["raw_delta_model_b_minus_model_a"] == 10.0
+    assert mae["model_b_advantage"] == -10.0
+    assert mae["verdict"] == "model_a_better"
+    assert mae["preferred_model"] == "old"
+    assert report["summary"]["verdict"] == "mixed"
+
+
+def test_cli_compare_matches_prediction_ids_and_writes_report(tmp_path):
+    cases = [
+        _manual_case("cli_cmp1", ("IGHV1-1*01",)),
+        _manual_case("cli_cmp2", ("IGHV1-2*01",)),
+    ]
+    preds_a = []
+    preds_b = []
+    for case in cases:
+        pred_a = case_to_prediction(case)
+        pred_a["v_call"] = "IGHV9-9*01"
+        pred_a["v_calls"] = ["IGHV9-9*01"]
+        preds_a.append(pred_a)
+        preds_b.append(case_to_prediction(case))
+
+    cases_path = tmp_path / "cases.jsonl"
+    a_path = tmp_path / "a.jsonl"
+    b_path = tmp_path / "b.jsonl"
+    report_path = tmp_path / "comparison.json"
+    save_jsonl(cases, cases_path)
+    save_dicts_jsonl(list(reversed(preds_a)), a_path)
+    save_dicts_jsonl(preds_b, b_path)
+
+    benchmark_cli(
+        [
+            "compare",
+            "--cases",
+            str(cases_path),
+            "--a-predictions",
+            str(a_path),
+            "--b-predictions",
+            str(b_path),
+            "--model-a-name",
+            "old",
+            "--model-b-name",
+            "new",
+            "--metric",
+            "genes.v.call_top1_in_set",
+            "--bootstrap",
+            "5",
+            "--confidence",
+            "0.9",
+            "--no-bootstrap-strata",
+            "--out",
+            str(report_path),
+        ]
+    )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    row = report["overall"]["genes.v.call_top1_in_set"]
+    assert report["prediction_matching"]["model_a"]["n_matched_cases"] == 2
+    assert report["prediction_matching"]["model_b"]["n_matched_cases"] == 2
+    assert report["summary"]["verdict"] == "model_b_better"
+    assert row["preferred_model"] == "new"
+    assert row["bootstrap_probability_model_b_better"] == 1.0
+    assert report["by_stratum"] == {}
+
+
 def test_perfect_predictions_score_high():
     cases = generate_benchmark(_small_spec())
     preds = [case_to_prediction(c) for c in cases]
@@ -752,7 +861,7 @@ def test_perfect_predictions_score_high():
     assert scores["genes"]["v"]["cigar_edit_distance"] == 0.0
     assert scores["genes"]["v"]["trim_5_mae"] == 0.0
     assert scores["genes"]["v"]["identity_mae"] == 0.0
-    assert scores["genes"]["v"]["top10_recall"] == 1.0
+    assert "top10_recall" not in scores["genes"]["v"]
     assert set(scores["by_stratum"]) == {"clean", "oriented"}
 
 
@@ -782,6 +891,50 @@ def test_set_metrics_reward_set_outputs():
         scores = score_cases([case], [pred])
         assert scores["genes"]["v"]["call_set_recall"] == 1.0
         assert scores["genes"]["v"]["call_set_precision"] == 0.5
+
+
+def test_topk_candidate_metrics_require_explicit_ranked_outputs():
+    case = _manual_case("topk", ("IGHV1-2*01",))
+    base_pred = {
+        "v_call": "IGHV1-2*01",
+        "v_calls": ["IGHV1-2*01"],
+        "j_call": "IGHJ4*01",
+        "j_calls": ["IGHJ4*01"],
+    }
+
+    no_candidate_scores = score_cases([case], [base_pred])
+    assert "top1_recall" not in no_candidate_scores["genes"]["v"]
+    assert "top10_recall" not in no_candidate_scores["genes"]["v"]
+
+    ranked_pred = {
+        **base_pred,
+        "v_ranked_calls": ["IGHV9-9*01", "IGHV1-2*01", "IGHV3-7*01"],
+    }
+    ranked_scores = score_cases([case], [ranked_pred])["genes"]["v"]
+    assert ranked_scores["top1_recall"] == 0.0
+    assert ranked_scores["top3_recall"] == 1.0
+    assert ranked_scores["top10_recall"] == 1.0
+    assert ranked_scores["topk_truth_set_recall"] == 1.0
+    assert ranked_scores["same_gene_sibling_top1"] == 0.0
+    assert ranked_scores["sibling_set_recall"] == 1.0
+
+    score_pred = {
+        **base_pred,
+        "v_scores": {
+            "IGHV9-9*01": 0.9,
+            "IGHV1-2*01": 0.8,
+        },
+    }
+    score_scores = score_cases([case], [score_pred])["genes"]["v"]
+    assert score_scores["top1_recall"] == 0.0
+    assert score_scores["top3_recall"] == 1.0
+
+    topk_alias_pred = {
+        **base_pred,
+        "v_topk": ["IGHV1-2*01"],
+    }
+    alias_scores = score_cases([case], [topk_alias_pred])["genes"]["v"]
+    assert alias_scores["top1_recall"] == 1.0
 
 
 def test_graceful_degradation_metrics():
@@ -1035,6 +1188,43 @@ def test_prediction_contract_batch_and_accumulator():
     assert summary["missing_field_counts"]["j_call"] == 1
 
 
+def test_prediction_contract_can_validate_d_requirement_per_case():
+    no_d_case = _manual_case("no_d", ("IGHV1-1*01",))
+    no_d_case.scalars["productive"] = 1.0
+    pred = case_to_prediction(no_d_case)
+
+    case_aware = validate_predictions_for_cases([no_d_case], [pred], level="core")
+    dataset_level = validate_predictions([pred], level="core", has_d=True)
+
+    assert case_aware["case_aware"] is True
+    assert case_aware["has_d"] == "per_case"
+    assert case_aware["has_d_counts"] == {"has_d": 0, "no_d": 1}
+    assert case_aware["valid_fraction"] == 1.0
+    assert "d_call" not in case_aware["missing_field_counts"]
+    assert dataset_level["valid_fraction"] == 0.0
+    assert dataset_level["missing_field_counts"]["d_call"] == 1
+
+
+def test_benchmark_report_uses_case_aware_contract_validation_for_mixed_chains():
+    has_d_case = _manual_case("has_d", ("IGHV1-1*01",))
+    has_d_case.genes["d"] = GeneTruth(("IGHD1-1*01",), "IGHD1-1*01", 80, 90, 0, 10)
+    has_d_case.presented_genes["d"] = has_d_case.genes["d"]
+    has_d_case.scalars["productive"] = 1.0
+    no_d_case = _manual_case("no_d", ("IGHV1-2*01",))
+    no_d_case.scalars["productive"] = 1.0
+    cases = [has_d_case, no_d_case]
+    preds = [case_to_prediction(case) for case in cases]
+
+    report = build_benchmark_report(cases, preds, contract_level="core")
+
+    validation = report["prediction_validation"]
+    assert validation["case_aware"] is True
+    assert validation["has_d"] == "per_case"
+    assert validation["has_d_counts"] == {"has_d": 1, "no_d": 1}
+    assert validation["valid_fraction"] == 1.0
+    assert "d_call" not in validation["missing_field_counts"]
+
+
 def test_assay_report_groups_criteria_and_missing_metrics():
     cases = generate_benchmark(_small_spec())
     preds = [case_to_prediction(c) for c in cases]
@@ -1146,6 +1336,12 @@ def test_build_benchmark_report_from_saved_predictions():
     assert report["uncertainty"]["by_stratum"] == {}
     assert report["assay"]["summary"]["n_criteria_with_results"] > 0
     assert report["assay"]["summary"]["grade"] == "pass"
+    assert report["assay"]["summary"]["completeness_gate_grade"] == "pass"
+    assert report["assay"]["summary"]["n_blocking_unscored_core_criteria"] == 0
+    assert any(
+        row["name"] == "constant_region_call"
+        for row in report["assay"]["completeness_gate"]["truth_unavailable_core_criteria"]
+    )
     assert report["results"]["overall"]["genes"]["v"]["call_top1_in_set"] == 1.0
     assert "stratum:clean" in report["results"]["by_context"]
     assert any(k.startswith("orientation:") for k in report["results"]["by_context"])
@@ -1167,6 +1363,57 @@ def test_run_benchmark_report_from_predictor():
     report = run_benchmark_report(cases, predictor, contract_level="core")
     assert report["prediction_validation"]["n_valid"] == len(cases)
     assert report["assay"]["by_category"]["allele_calling"]["n_with_results"] > 0
+
+
+def test_assay_completeness_gate_fails_unscored_available_core_criteria():
+    criteria = [
+        {
+            "category": "unit",
+            "name": "required_core_missing",
+            "metric_keys": ("missing_metric",),
+            "description": "Synthetic required criterion for assay completeness.",
+            "contexts": ("unit",),
+            "importance": "core",
+            "status": "available",
+            "ground_truth_fields": ("sequence",),
+        }
+    ]
+    payload = {
+        "frame": "canonical",
+        "criteria": criteria,
+        "results": {
+            "overall": {"n_cases": 1, "frame": "canonical", "global": {}, "genes": {}},
+            "by_context": {},
+        },
+        "criteria_audit": {
+            "summary": {"has_case_truth_audit": True},
+            "criteria": [
+                {
+                    "name": "required_core_missing",
+                    "category": "unit",
+                    "status": "available",
+                    "importance": "core",
+                    "metric_keys": ("missing_metric",),
+                    "observed_metric_keys": (),
+                    "missing_metric_keys": ("missing_metric",),
+                    "metric_coverage_fraction": 0.0,
+                    "ground_truth_fields": ("sequence",),
+                    "unavailable_truth_fields": (),
+                }
+            ],
+        },
+    }
+
+    report = build_assay_report(payload)
+
+    assert report["summary"]["grade"] == "fail"
+    assert report["summary"]["completeness_gate_grade"] == "fail"
+    assert report["summary"]["n_failed_criteria"] == 1
+    assert report["summary"]["n_blocking_unscored_core_criteria"] == 1
+    assert report["completeness_gate"]["blocking_unscored_core_criteria"][0]["name"] == "required_core_missing"
+    by_name = {entry["name"]: entry for entry in report["criteria"]}
+    assert by_name["required_core_missing"]["grade"] == "fail"
+    assert by_name["required_core_missing"]["completeness_gate_failed"] is True
 
 
 def test_criteria_catalog_names_core_assay_dimensions():

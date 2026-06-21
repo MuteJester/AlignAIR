@@ -11,6 +11,7 @@ from .core import (
 )
 from .evaluation import (
     DEFAULT_BOOTSTRAP_METRICS,
+    DEFAULT_COMPARISON_METRICS,
     AlleleCallingDiagnosticsAccumulator,
     BoundaryDiagnosticsAccumulator,
     OnlineBenchmarkReport,
@@ -22,6 +23,7 @@ from .evaluation import (
     build_boundary_diagnostics,
     build_benchmark_report,
     build_assay_report,
+    build_model_comparison_report,
     bootstrap_metric_intervals,
     case_contexts,
     case_to_prediction,
@@ -35,6 +37,7 @@ from .evaluation import (
     score_cases,
     validate_prediction,
     validate_predictions,
+    validate_predictions_for_cases,
 )
 from .generation import (
     ALLELE_CONTEXT_PREFIX,
@@ -78,6 +81,7 @@ from .io import (
 __all__ = [
     "airr_input_rows",
     "DEFAULT_BOOTSTRAP_METRICS",
+    "DEFAULT_COMPARISON_METRICS",
     "AlleleCallingDiagnosticsAccumulator",
     "ALLELE_CONTEXT_PREFIX",
     "BoundaryDiagnosticsAccumulator",
@@ -101,6 +105,7 @@ __all__ = [
     "build_boundary_diagnostics",
     "build_benchmark_report",
     "build_assay_report",
+    "build_model_comparison_report",
     "bootstrap_metric_intervals",
     "ScenarioAxis",
     "StratumSpec",
@@ -142,4 +147,5 @@ __all__ = [
     "stream_coverage_benchmark",
     "validate_prediction",
     "validate_predictions",
+    "validate_predictions_for_cases",
 ]
