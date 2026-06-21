@@ -43,10 +43,52 @@ def test_read_txt_one_per_line(tmp_path):
     assert seqs == ["ACGTACGT", "TTTTGGGG"] and info["format"] == "txt"
 
 
+def test_canonicalize_sequence_recovers_forward():
+    from alignair.inference.dnalignair_infer import canonicalize_sequence
+    fwd = "ACGTACGTTTGCAAACGT"
+    comp = str.maketrans("ACGTN", "TGCAN")
+    rc = fwd.translate(comp)[::-1]
+    assert canonicalize_sequence(fwd, 0) == fwd
+    assert canonicalize_sequence(rc, 1) == fwd                      # RC input -> forward
+    assert canonicalize_sequence(canonicalize_sequence(fwd, 1), 1) == fwd   # involution
+    assert canonicalize_sequence(fwd, 2) == fwd.translate(comp)
+    assert canonicalize_sequence(fwd, 3) == fwd[::-1]
+
+
+def test_canonicalize_matches_model_token_transform():
+    torch = pytest.importorskip("torch")
+    from alignair.data.tokenizer import pad_tokenize
+    from alignair.nn.orientation import apply_orientation
+    from alignair.inference.dnalignair_infer import canonicalize_sequence
+    seq = "ACGTACGTNNACGTTGCA"
+    tok, msk = pad_tokenize([seq])
+    inv = {1: "A", 2: "T", 3: "G", 4: "C", 5: "N"}
+    for oid in (0, 1, 2, 3):
+        canon = apply_orientation(tok, msk, torch.full((1,), oid))
+        model_str = "".join(inv[int(t)] for t, m in zip(canon[0], msk[0]) if int(m) == 1)
+        assert canonicalize_sequence(seq, oid) == model_str        # string == token transform
+
+
+def test_airr_coords_match_emitted_sequence_for_rev_comp(tmp_path):
+    # regression for the canonical-frame bug: coordinates must match the emitted (canonical)
+    # `sequence` regardless of input orientation.
+    from alignair.inference.dnalignair_infer import canonicalize_sequence
+    fwd = "AAAACCCCGGGGTTTT" + "ACGT" * 10
+    rc = fwd.translate(str.maketrans("ACGTN", "TGCAN"))[::-1]
+    pred = {"v_call": "X*01", "v_sequence_start": 4, "v_sequence_end": 12, "orientation_id": 1}
+    canon = canonicalize_sequence(rc, 1)
+    out = tmp_path / "rc.tsv"
+    write_airr(str(out), ["rc"], [canon], [pred])
+    row = next(csv.DictReader(open(out), delimiter="\t"))
+    assert row["rev_comp"] == "T" and row["sequence"] == fwd
+    s, e = int(row["v_sequence_start"]) - 1, int(row["v_sequence_end"])
+    assert row["sequence"][s:e] == fwd[4:12]                       # coords point to the right region
+
+
 def test_write_airr_columns_coords_and_sets(tmp_path):
     preds = [{
         "v_call": "IGHV1-2*02", "d_call": "IGHD3-10*01", "j_call": "IGHJ6*02",
-        "productive": True,
+        "productive": True, "orientation_id": 0,
         "v_sequence_start": 0, "v_sequence_end": 295, "v_germline_start": 0, "v_germline_end": 295,
         "d_sequence_start": 300, "d_sequence_end": 312, "d_germline_start": 2, "d_germline_end": 14,
         "j_sequence_start": 320, "j_sequence_end": 360, "j_germline_start": 1, "j_germline_end": 41,
@@ -58,6 +100,7 @@ def test_write_airr_columns_coords_and_sets(tmp_path):
     assert list(rows[0].keys()) == COLUMNS
     r = rows[0]
     assert r["sequence_id"] == "read1" and r["locus"] == "IGH" and r["v_call"] == "IGHV1-2*02"
+    assert r["rev_comp"] == "F"                         # orientation_id 0 -> forward
     assert r["v_sequence_start"] == "1"                 # 0-based -> 1-based AIRR
     assert r["v_sequence_end"] == "295"
     assert r["v_call_set"] == "IGHV1-2*02,IGHV1-2*04" and r["v_call_level"] == "gene"

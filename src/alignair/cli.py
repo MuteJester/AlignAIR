@@ -19,7 +19,7 @@ def cmd_predict(args) -> None:
     from .reference.reference_set import ReferenceSet
     from .config.dnalignair_config import DNAlignAIRConfig
     from .core.dnalignair import DNAlignAIR
-    from .inference.dnalignair_infer import predict_reads
+    from .inference.dnalignair_infer import predict_reads, canonicalize_sequence
     from .io.sequence_reader import read_sequences
     from .io.airr import write_airr
 
@@ -51,7 +51,10 @@ def cmd_predict(args) -> None:
 
     preds = predict_reads(model, rs, seqs, device=device, batch_size=args.batch,
                           rerank="learned", calibration=calibration)
-    write_airr(args.output, ids, seqs, preds, locus=args.locus)
+    # coordinates are in the canonical (forward) frame -> emit the canonical sequence so
+    # they always match it, even for reverse-complemented input reads (with rev_comp flag).
+    canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]
+    write_airr(args.output, ids, canon, preds, locus=args.locus)
     print(f"wrote {len(preds)} rearrangements -> {args.output}")
 
 

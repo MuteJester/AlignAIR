@@ -8,7 +8,9 @@ from typing import List
 
 GENES = ("v", "d", "j")
 # AIRR-standard core columns we populate, then our extensions.
-_CORE = ["sequence_id", "sequence", "locus", "v_call", "d_call", "j_call", "productive"]
+# `sequence` is the CANONICAL (forward-oriented) sequence the coordinates refer to; `rev_comp`
+# flags that the input read was reoriented to produce it (so coords always match `sequence`).
+_CORE = ["sequence_id", "sequence", "rev_comp", "locus", "v_call", "d_call", "j_call", "productive"]
 _COORDS = [f"{g}_{k}" for g in GENES
            for k in ("sequence_start", "sequence_end", "germline_start", "germline_end")]
 _EXT = [f"{g}_{k}" for g in GENES for k in ("call_set", "call_level", "set_confidence")]
@@ -22,11 +24,14 @@ def _airr_start(v):
 
 def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict],
                locus: str = "IGH") -> None:
+    """`sequences` must be the CANONICAL (forward-oriented) sequences that predict_reads'
+    coordinates are in — use canonicalize_sequence(input, pred['orientation_id'])."""
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=COLUMNS, delimiter="\t", extrasaction="ignore")
         w.writeheader()
         for sid, seq, p in zip(ids, sequences, preds):
             row = {"sequence_id": sid, "sequence": seq, "locus": locus,
+                   "rev_comp": "T" if p.get("orientation_id", 0) != 0 else "F",
                    "productive": p.get("productive")}
             for g in GENES:
                 row[f"{g}_call"] = p.get(f"{g}_call")

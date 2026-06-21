@@ -16,6 +16,21 @@ from ..core.dnalignair import extract_segment_tokens
 
 
 _ALIGNER = None
+_COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
+
+
+def canonicalize_sequence(seq: str, orientation_id: int) -> str:
+    """Apply the model's predicted orientation transform to recover the FORWARD/canonical
+    sequence (the frame predict_reads coordinates are in). Mirrors nn.orientation transform
+    ids: 0=identity, 1=reverse-complement, 2=complement, 3=reverse (all involutions)."""
+    s = seq.upper()
+    if orientation_id == 1:        # REVERSE_COMPLEMENT (complement then reverse)
+        return s.translate(_COMPLEMENT)[::-1]
+    if orientation_id == 2:        # COMPLEMENT
+        return s.translate(_COMPLEMENT)
+    if orientation_id == 3:        # REVERSE
+        return s[::-1]
+    return s                       # IDENTITY
 
 
 def resolve_hierarchy(call_set, top1, max_allele: int = 3):
