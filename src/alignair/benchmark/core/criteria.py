@@ -670,8 +670,10 @@ CRITERIA: tuple[BenchmarkCriterion, ...] = (
     BenchmarkCriterion(
         category="robustness",
         name="contaminant_and_out_of_scope_handling",
-        metric_keys=("contaminant_no_call_rate", "false_positive_alignment_rate", "out_of_locus_call_rate"),
-        description="Avoid confident V(D)J calls on contaminant or out-of-scope inputs.",
+        metric_keys=("contaminant_handled_rate", "contaminant_flag_acc",
+                     "false_positive_alignment_rate", "out_of_locus_call_rate"),
+        description="Identify contaminant/out-of-scope inputs — by flagging (is_contaminant) "
+                    "or no-calling — instead of forcing a confident V(D)J annotation.",
         contexts=("contaminant", "locus_chain", "noisy_ambiguous"),
         status="partial",
         required_outputs=("calls or no-call/low-confidence indication",),

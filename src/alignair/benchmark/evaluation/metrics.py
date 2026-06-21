@@ -659,11 +659,15 @@ def _score_metadata(pred: dict[str, Any], case: BenchmarkCase) -> dict[str, floa
         out["layout_specific_call_acc"] = 1.0 if str(pred_layout) == str(truth_layout) else 0.0
 
     truth_contaminant = _as_bool(record.get("is_contaminant"))
+    pred_contaminant = _as_bool(_pred_value(pred, "is_contaminant", "contaminant"))
     if truth_contaminant:
         any_call = any(normalize_call_set(pred, gene) for gene in GENES)
+        flagged = bool(pred_contaminant)
         out["contaminant_no_call_rate"] = 0.0 if any_call else 1.0
-        out["false_positive_alignment_rate"] = 1.0 if any_call else 0.0
-    pred_contaminant = _as_bool(_pred_value(pred, "is_contaminant", "contaminant"))
+        # "handled" = the contaminant was identified, by EITHER flagging it OR no-calling it
+        out["contaminant_handled_rate"] = 1.0 if (flagged or not any_call) else 0.0
+        # a false-positive alignment is a confident call that was NOT flagged as contaminant
+        out["false_positive_alignment_rate"] = 1.0 if (any_call and not flagged) else 0.0
     if pred_contaminant is not None and truth_contaminant is not None:
         out["contaminant_flag_acc"] = 1.0 if pred_contaminant == truth_contaminant else 0.0
 

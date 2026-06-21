@@ -937,6 +937,29 @@ def test_topk_candidate_metrics_require_explicit_ranked_outputs():
     assert alias_scores["top1_recall"] == 1.0
 
 
+def test_contaminant_handling_credits_flag_only():
+    # a true contaminant; the model FLAGS it (is_contaminant=True) but keeps calls (flag-only).
+    genes = {
+        "v": GeneTruth(calls=("IGHV1-2*01",), primary="IGHV1-2*01",
+                       sequence_start=0, sequence_end=80, germline_start=0, germline_end=80),
+        "d": GeneTruth(),
+        "j": GeneTruth(calls=("IGHJ4*01",), primary="IGHJ4*01",
+                       sequence_start=80, sequence_end=100, germline_start=0, germline_end=20),
+    }
+    case = BenchmarkCase(case_id="c", stratum="contaminant", sequence="A" * 100,
+                         canonical_sequence="A" * 100, orientation_id=0, genes=genes,
+                         presented_genes=genes, record={"is_contaminant": True})
+    base = {"v_call": "IGHV1-2*01", "v_calls": ["IGHV1-2*01"],
+            "j_call": "IGHJ4*01", "j_calls": ["IGHJ4*01"]}
+    g = score_cases([case], [{**base, "is_contaminant": True}])["global"]
+    assert g["contaminant_handled_rate"] == 1.0           # flag-only counts as handled
+    assert g["contaminant_flag_acc"] == 1.0
+    assert g["false_positive_alignment_rate"] == 0.0      # flagged -> not a false positive
+    # a confident call that is NOT flagged = false positive, not handled
+    g2 = score_cases([case], [{**base, "is_contaminant": False}])["global"]
+    assert g2["contaminant_handled_rate"] == 0.0 and g2["false_positive_alignment_rate"] == 1.0
+
+
 def test_graceful_degradation_metrics():
     case = _manual_case("g", ("IGHV1-2*01",))                  # truth gene IGHV1-2, family IGHV1
 
