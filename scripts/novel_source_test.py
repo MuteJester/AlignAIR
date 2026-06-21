@@ -47,7 +47,7 @@ def build_novel_for(seq, snps, rng):
 @torch.no_grad()
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=".private/models/scaled_novel.pt")
+    ap.add_argument("--model", default=".private/models/scaled_long.pt")
     ap.add_argument("--n", type=int, default=600)
     ap.add_argument("--n-victims", type=int, default=20)
     ap.add_argument("--snps", type=int, default=3)

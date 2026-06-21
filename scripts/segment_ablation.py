@@ -33,7 +33,7 @@ def call_acc(match_G, allele_multihot):
 @torch.no_grad()
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=".private/models/scaled_ramp.pt")
+    ap.add_argument("--model", default=".private/models/scaled_long.pt")
     ap.add_argument("--batches", type=int, default=8)
     ap.add_argument("--batch", type=int, default=64)
     args = ap.parse_args()

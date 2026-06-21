@@ -20,7 +20,7 @@ from alignair.inference.dnalignair_infer import predict_reads  # noqa: E402
 @torch.no_grad()
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=".private/models/scaled_novel.pt")
+    ap.add_argument("--model", default=".private/models/scaled_long.pt")
     ap.add_argument("--cases", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--calibration", default=".private/models/allele_set_calibration.json")

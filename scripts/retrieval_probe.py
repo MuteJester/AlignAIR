@@ -87,7 +87,7 @@ def recall_top1(score, multihot, k=32):
 @torch.no_grad()
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=".private/models/scaled_novel.pt")
+    ap.add_argument("--model", default=".private/models/scaled_long.pt")
     ap.add_argument("--batches", type=int, default=8)
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--topk", type=int, default=32)

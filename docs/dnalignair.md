@@ -50,19 +50,28 @@ as a teacher / fallback.
 | trainer | `training/gym_trainer.py` |
 | inference (deployed path) | `inference/dnalignair_infer.py` (`predict_reads`, `rescore_alleles`) |
 
-## Results vs IgBLAST (GenAIRR, identical records, ~1.45M params)
+## Results vs IgBLAST (GenAIRR, identical records — `scaled_long`, d=320/10L, ~19M params)
+DNAlignAIR call = best of learned-rerank / SW-rescore; IgBLAST = same records.
 | stratum | V call | D call | J call | notes |
 |---|---|---|---|---|
 | clean | tie (1.00) | tie (0.94) | tie (1.00) | |
-| moderate | ~tie (0.97–1.00) | tie | tie | |
-| hard (heavy SHM) | 0.96–0.99 | **win** (0.69 vs 0.62) | tie | |
-| fragment ~80bp | tie (irreducible) | **win** (0.61 vs 0.34) | **win** (0.81 vs 0.47) | IgBLAST often fails to align |
+| moderate | tie (1.00) | **win** (0.89 vs 0.84) | tie (0.99) | |
+| hard | tie (0.99) | **win** (0.76 vs 0.62) | **win** (0.96 vs 0.93) | |
+| heavy-SHM 0.25 | lose (0.90 vs 0.96) | **win** (0.57 vs 0.38) | **win** (0.94 vs 0.80) | only V loss left |
+| extreme 5′ trim | tie (0.99) | **win** (0.87 vs 0.81) | tie (0.99) | |
+| fragment ~80bp | tie (0.12 vs 0.09) | **win** (0.75 vs 0.34) | **win** (0.87 vs 0.47) | IgBLAST fails to align |
+| heavy-SHM frag | tie | **win** (0.61 vs 0.20) | **win** (0.82 vs 0.34) | |
 
-- Germline coordinates competitive-to-better (hard V germline-start dev 0.0 vs 12.8).
-- Multi-label **set** output is calibrated: tight (size ≈1) when determinable, widens
-  (size ≈6) on fragments — reporting uncertainty instead of guessing.
-- The genuine SOTA story is **fragments + calibrated uncertainty + multi-label sets +
-  one end-to-end model**, not full-read V (there we *match* IgBLAST).
+Benchmark (1650 broad cases): per-gene top1 V 0.74 / D 0.80 / J 0.92; per-stratum full-read
+V — clean 0.99, moderate 0.99, hard 0.97, high-SHM 0.94, high-indel 0.97, trimmed 0.92.
+Global: orientation 0.979, productive 0.987, mutation-rate MAE 0.033.
+- Germline coordinates competitive-to-better (hard/heavy-SHM V germline-start dev 0.0 vs 12.8).
+- Multi-label **set** is F1-calibrated and tight (V≈3.3, D≈1.6, J≈1.2) with `graceful_degradation`
+  (hard-error V 0.06 / D 0.09 / J 0.04): correct gene/family call or honest abstain on
+  information-limited reads instead of a confident wrong allele.
+- SOTA story: **dominates D/J everywhere + fragments + calibrated uncertainty/degradation +
+  dynamic genotype + one end-to-end model**. Only loss: extreme heavy-SHM full-read V
+  (discrimination-bound); fragment-V allele is information-limited (7–23bp of V).
 
 ## Usage
 Train:

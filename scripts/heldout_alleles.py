@@ -89,7 +89,7 @@ def load_or_train(model_path, full_rs, device, train_steps):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=".private/models/scaled_ramp.pt")
+    ap.add_argument("--model", default=".private/models/scaled_long.pt")
     ap.add_argument("--n", type=int, default=400)
     ap.add_argument("--n-victims", type=int, default=20)
     ap.add_argument("--snps", type=int, default=3)

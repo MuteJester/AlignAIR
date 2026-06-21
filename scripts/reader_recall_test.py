@@ -28,7 +28,7 @@ from alignair.inference.dnalignair_infer import predict_reads  # noqa: E402
 @torch.no_grad()
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=".private/models/scaled_novel.pt")
+    ap.add_argument("--model", default=".private/models/scaled_long.pt")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=123)
     ap.add_argument("--topks", default="16,32,64,128,200")

@@ -25,7 +25,7 @@ from alignair.benchmark.evaluation.allele_calibration import (  # noqa: E402
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=".private/models/scaled_novel.pt")
+    ap.add_argument("--model", default=".private/models/scaled_long.pt")
     ap.add_argument("--out", default=".private/models/allele_set_calibration.json")
     ap.add_argument("--n", type=int, default=250, help="records per stratum")
     ap.add_argument("--topk", type=int, default=32)

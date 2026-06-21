@@ -71,7 +71,7 @@ def diagnose(model, rs, recs, victims, rename, device, topks=(16, 32, 64)):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=".private/models/scaled_novel.pt")
+    ap.add_argument("--model", default=".private/models/scaled_long.pt")
     ap.add_argument("--n", type=int, default=400)
     ap.add_argument("--n-victims", type=int, default=20)
     ap.add_argument("--p", type=float, default=0.5)
