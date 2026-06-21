@@ -32,28 +32,42 @@ def gym_collate(batch, reference_set, has_d: bool):
 
     genes = ["v", "j"] + (["d"] if has_d else [])
     out = {"tokens": tokens, "mask": mask, "region_labels": region, "state_labels": state}
+    # A sample may legitimately lack a gene (a light-chain read in a mixed-chain batch has no
+    # D). Such samples get sentinel coords / empty calls and are excluded from that gene's
+    # supervision (below) rather than crashing the collate.
     for g in genes:
-        out[f"{g}_germline_start"] = torch.tensor([s["germline"][g][0] for s in batch], dtype=torch.long)
-        out[f"{g}_germline_end"] = torch.tensor([s["germline"][g][1] for s in batch], dtype=torch.long)
-        out[f"{g}_start"] = torch.tensor([s["inseq"][g][0] for s in batch], dtype=torch.long)
-        out[f"{g}_end"] = torch.tensor([s["inseq"][g][1] for s in batch], dtype=torch.long)
-        out[f"{g}_allele"] = _multihot([s["calls"][g.upper()] for s in batch],
-                                       reference_set.gene(g.upper()))
-        gref = reference_set.gene(g.upper())
+        G = g.upper()
+        gref = reference_set.gene(G)
+        pres = [g in s["germline"] for s in batch]
+        out[f"{g}_germline_start"] = torch.tensor(
+            [s["germline"][g][0] if p else 0 for s, p in zip(batch, pres)], dtype=torch.long)
+        out[f"{g}_germline_end"] = torch.tensor(
+            [s["germline"][g][1] if p else 0 for s, p in zip(batch, pres)], dtype=torch.long)
+        out[f"{g}_start"] = torch.tensor(
+            [s["inseq"][g][0] if p else 0 for s, p in zip(batch, pres)], dtype=torch.long)
+        out[f"{g}_end"] = torch.tensor(
+            [s["inseq"][g][1] if p else 0 for s, p in zip(batch, pres)], dtype=torch.long)
+        out[f"{g}_allele"] = _multihot(
+            [s["calls"].get(G, []) if p else [] for s, p in zip(batch, pres)], gref)
 
-        def _primary(s):
-            nm = s.get("primary", {}).get(g.upper())
+        def _primary(s, p):
+            if not p:
+                return 0
+            nm = s.get("primary", {}).get(G)
             if nm is None:  # fall back to any listed call (synthetic/legacy bundles)
-                names = s["calls"].get(g.upper())
+                names = s["calls"].get(G)
                 nm = next(iter(names)) if names else None
             return gref.index.get(nm, 0)
 
-        out[f"{g}_primary_idx"] = torch.tensor([_primary(s) for s in batch], dtype=torch.long)
+        out[f"{g}_primary_idx"] = torch.tensor(
+            [_primary(s, p) for s, p in zip(batch, pres)], dtype=torch.long)
 
     if has_d:
-        # mask inverted-D rows out of D supervision (RC vs forward reference);
-        # zeroing the multi-hot makes the contrastive D-match contribute 0 for them.
-        supervise = torch.tensor([0.0 if s.get("d_inverted") else 1.0 for s in batch])
+        # exclude from D supervision: inverted-D rows (RC vs forward reference) AND samples
+        # that have no D at all (e.g. light chains). Zeroing the multi-hot makes the
+        # contrastive D-match contribute 0 for them.
+        supervise = torch.tensor(
+            [0.0 if (s.get("d_inverted") or "d" not in s["germline"]) else 1.0 for s in batch])
         out["d_supervise"] = supervise
         out["d_allele"] = out["d_allele"] * supervise.unsqueeze(1)
 
