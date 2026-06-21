@@ -25,8 +25,18 @@ these scripts are research drivers and the model→benchmark adapter.
   equiv-class/set), with SNP-perturbed `~novel` stand-ins.
 - `novel_source_test.py` — **definitive** novel test: edits reads so they genuinely derive
   from a novel germline (it is then the true closest), then measures recall.
+- `embargo_retrain.py` — **gold-standard** Property-1 test: retrain with ~18 V alleles
+  embargoed from BOTH the GenAIRR sim and the reference, then call them as novel against the
+  full reference; reports held-out vs control (trained) allele recall.
 - `hierarchical_eval.py` — value of hierarchical degradation + abstention on fragments
   (hard-error vs honest-abstain vs correct coarser call).
+- `run_benchmark.py --genotype subset` exercises `genotype_mask_compliance`
+  (outside_genotype_call_rate + genotype_restricted_call_acc) as a standing benchmark metric.
+
+## Real-data validation (no simulation)
+- `realdata_validation.py` — OAS real IGH reads: full-read concordance vs IgBLAST + the
+  crop-back fragment test (IgBLAST full-read call = silver truth, test fragment recovery).
+  Data lives gitignored under `.private/realdata/`.
 
 ## Diagnostics (one-off investigation drivers; kept for provenance)
 - `segment_ablation.py` — oracle vs predicted segment → is segmentation the bottleneck?
