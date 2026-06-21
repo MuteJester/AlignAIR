@@ -80,7 +80,8 @@ Repository = "https://github.com/MuteJester/AlignAIR"
 Documentation = "https://github.com/MuteJester/AlignAIR#readme"
 
 # ── Console scripts ─────────────────────────────────────────────────────────
-# (Legacy AlignAIR.API CLI removed; a new alignair CLI is a later phase.)
+[project.scripts]
+alignair = "alignair.cli:main"
 
 # ── Setuptools configuration ────────────────────────────────────────────────
 [tool.setuptools.packages.find]
