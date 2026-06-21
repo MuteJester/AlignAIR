@@ -26,6 +26,10 @@ def main():
     ap.add_argument("--calibration", default=".private/models/allele_set_calibration.json")
     ap.add_argument("--batch", type=int, default=128)
     ap.add_argument("--frame", choices=("presented", "canonical"), default="canonical")
+    ap.add_argument("--genotype", choices=("none", "subset"), default="none",
+                    help="subset = restrict to a fixed random allele subset (tests Property-1 "
+                         "genotype_mask_compliance: outside_genotype_call_rate must be 0)")
+    ap.add_argument("--genotype-frac", type=float, default=0.5)
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -44,10 +48,26 @@ def main():
     # feed the PRESENTED read so the model's orientation head is exercised for real;
     # predict_reads canonicalizes internally and returns canonical-frame coords.
     seqs = [c["sequence"] if frame == "presented" else c["canonical_sequence"] for c in cases]
-    print(f"scoring {len(seqs)} cases ({frame} input) with {args.model} ...")
+
+    # Property-1 genotype scenario: restrict to a fixed random allele subset. The compliance
+    # guarantee (no call outside the genotype) holds for ALL cases; accuracy is reported on
+    # the subset-covered ones. Emitted per-prediction so the benchmark scores it.
+    genotype = allowed = None
+    if args.genotype == "subset":
+        import random as _random
+        rng = _random.Random(0)
+        genotype, allowed = {}, {}
+        for g in ("v", "d", "j"):
+            names = rs.gene(g.upper()).names
+            k = max(1, int(len(names) * args.genotype_frac))
+            sub = sorted(rng.sample(names, k))
+            genotype[g] = sub
+            allowed[g.upper()] = sub
+        print(f"genotype subset sizes: " + ", ".join(f"{g}={len(v)}" for g, v in allowed.items()))
+    print(f"scoring {len(seqs)} cases ({frame} input, genotype={args.genotype}) with {args.model} ...")
 
     preds = predict_reads(model, rs, seqs, device=device, batch_size=args.batch,
-                          topk=32, rerank="learned", calibration=calibration)
+                          topk=32, rerank="learned", calibration=calibration, genotype=genotype)
     with open(args.out, "w") as f:
         for cid, p in zip(ids, preds):
             row = {"sequence_id": cid,
@@ -61,6 +81,8 @@ def main():
                 row[f"{g}_ranked_calls"] = p.get(f"{g}_topk", [])
                 row[f"{g}_resolved_call"] = p.get(f"{g}_resolved_call")
                 row[f"{g}_call_level"] = p.get(f"{g}_call_level")
+                if allowed is not None:
+                    row[f"{g}_genotype"] = allowed[g.upper()]      # for genotype_mask_compliance
                 for k in ("sequence_start", "sequence_end", "germline_start", "germline_end"):
                     row[f"{g}_{k}"] = p[f"{g}_{k}"]
             f.write(json.dumps(row) + "\n")

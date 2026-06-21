@@ -293,7 +293,8 @@ def _score_topk(pred: dict[str, Any], truth: GeneTruth, gene: str) -> dict[str, 
     return out
 
 
-def _score_genotype_mask(pred: dict[str, Any], gene: str, pred_set: set[str]) -> dict[str, float]:
+def _score_genotype_mask(pred: dict[str, Any], gene: str, pred_set: set[str],
+                         true_set: set[str], top1: str | None) -> dict[str, float]:
     allowed = _pred_value(
         pred,
         f"{gene}_genotype",
@@ -310,10 +311,16 @@ def _score_genotype_mask(pred: dict[str, Any], gene: str, pred_set: set[str]) ->
         allowed_set = {x.strip() for x in allowed.split(",") if x.strip()}
     else:
         allowed_set = {str(x).strip() for x in allowed if str(x).strip()}
-    if not allowed_set or not pred_set:
+    if not allowed_set:
         return {}
-    outside = sum(1 for call in pred_set if call not in allowed_set)
-    return {"outside_genotype_call_rate": outside / len(pred_set)}
+    out: dict[str, float] = {}
+    if pred_set:
+        out["outside_genotype_call_rate"] = sum(1 for c in pred_set if c not in allowed_set) / len(pred_set)
+    # restricted-accuracy is only a fair test when the genotype actually CONTAINS a true
+    # allele (a realistic donor genotype does); otherwise the right answer isn't available.
+    if true_set & allowed_set:
+        out["genotype_restricted_call_acc"] = 1.0 if top1 in true_set else 0.0
+    return out
 
 
 def _score_gene_record_fields(pred: dict[str, Any], case: BenchmarkCase, gene: str) -> dict[str, float]:
@@ -457,7 +464,7 @@ def _score_gene(
         out["negative_span_rate"] = 1.0 if pe < ps else 0.0
 
     out.update(_score_topk(pred, truth, gene))
-    out.update(_score_genotype_mask(pred, gene, pred_set))
+    out.update(_score_genotype_mask(pred, gene, pred_set, true_set, top1))
     if include_expensive_record_fields:
         out.update(_score_gene_record_fields(pred, case, gene))
     return out
