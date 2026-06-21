@@ -1148,6 +1148,13 @@ def test_build_benchmark_report_from_saved_predictions():
     assert report["assay"]["summary"]["grade"] == "pass"
     assert report["results"]["overall"]["genes"]["v"]["call_top1_in_set"] == 1.0
     assert "stratum:clean" in report["results"]["by_context"]
+    assert any(k.startswith("orientation:") for k in report["results"]["by_context"])
+    assert any(k.startswith("length:") for k in report["results"]["by_context"])
+    assert any(k.startswith("mutation:") for k in report["results"]["by_context"])
+    assert any(k.startswith("indel:") for k in report["results"]["by_context"])
+    assert any(k.startswith("noise:") for k in report["results"]["by_context"])
+    assert any(k.startswith("segment_presence:") for k in report["results"]["by_context"])
+    assert any(k.startswith("ambiguity:") for k in report["results"]["by_context"])
 
 
 def test_run_benchmark_report_from_predictor():

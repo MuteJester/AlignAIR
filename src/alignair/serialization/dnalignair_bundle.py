@@ -9,12 +9,12 @@ A bundle is a directory that packages everything needed to deploy one model:
     VERSION
     fingerprint.txt   SHA-256 over the other files (tamper detection)
 
-This is distinct from serialization/bundle.py, which targets the legacy ModelConfig /
-SingleChain·MultiChain lineage. The module stays free of GenAIRR — it stores dataconfig
-NAMES; the caller (CLI) reconstructs the ReferenceSet from them.
+The module stays free of GenAIRR — it stores dataconfig NAMES; the caller (CLI)
+reconstructs the ReferenceSet from them.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Iterable, Optional
@@ -22,10 +22,20 @@ from typing import Iterable, Optional
 import torch
 
 from ..config.dnalignair_config import DNAlignAIRConfig
-from .bundle import compute_fingerprint
 
 DNALIGNAIR_BUNDLE_VERSION = 1
 _REQUIRED = ("model.pt", "config.json", "reference.json", "VERSION", "fingerprint.txt")
+
+
+def compute_fingerprint(bundle_dir) -> str:
+    """SHA-256 over every bundle file except fingerprint.txt, in name order."""
+    h = hashlib.sha256()
+    for p in sorted(Path(bundle_dir).iterdir()):
+        if not p.is_file() or p.name == "fingerprint.txt":
+            continue
+        h.update(p.name.encode())
+        h.update(p.read_bytes())
+    return h.hexdigest()
 
 
 def save_dnalignair_bundle(bundle_dir, *, model, dataconfigs: Iterable[str], locus: str = "IGH",

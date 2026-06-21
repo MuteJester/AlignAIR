@@ -1,11 +1,13 @@
 """Generic benchmark runner utilities."""
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
 from .audit import audit_criteria_report
 from .contract import prediction_contract, validate_predictions
+from .context import case_contexts
 from .diagnostics import build_allele_calling_diagnostics, build_boundary_diagnostics
 from .matching import align_predictions_to_cases
 from .metrics import score_cases
@@ -19,10 +21,37 @@ from ..generation import coverage_summary
 Predictor = Callable[[list[str]], list[dict[str, Any]]]
 
 
-def _overall_and_contexts(scores: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _score_contexts(
+    cases: list[BenchmarkCase],
+    predictions: list[dict[str, Any] | None],
+    *,
+    frame: str,
+) -> dict[str, Any]:
+    grouped: dict[str, list[int]] = defaultdict(list)
+    for idx, case in enumerate(cases):
+        for context in set(case_contexts(case)):
+            grouped[context].append(idx)
+    return {
+        context: score_cases(
+            [cases[i] for i in indices],
+            [predictions[i] for i in indices],
+            frame=frame,
+            include_strata=False,
+        )
+        for context, indices in sorted(grouped.items())
+    }
+
+
+def _overall_and_contexts(
+    scores: dict[str, Any],
+    cases: list[BenchmarkCase],
+    predictions: list[dict[str, Any] | None],
+    *,
+    frame: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     overall = dict(scores)
-    by_stratum = overall.pop("by_stratum", {})
-    by_context = {f"stratum:{name}": value for name, value in by_stratum.items()}
+    overall.pop("by_stratum", {})
+    by_context = _score_contexts(cases, predictions, frame=frame)
     return overall, by_context
 
 
@@ -58,7 +87,7 @@ def build_benchmark_report(
         raise ValueError(f"case/prediction length mismatch: {len(cases)} != {len(predictions)}")
     has_d = bool(has_d) if has_d is not None else any(case.genes.get("d") and case.genes["d"].calls for case in cases)
     scores = score_cases(cases, predictions, frame=frame)
-    overall, by_context = _overall_and_contexts(scores)
+    overall, by_context = _overall_and_contexts(scores, cases, predictions, frame=frame)
     report = {
         "benchmark": {
             "n_cases": len(cases),

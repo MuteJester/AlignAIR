@@ -8,6 +8,7 @@ from .contract import (
     validate_prediction,
     validate_predictions,
 )
+from .context import case_contexts
 from .diagnostics import (
     AlleleCallingDiagnosticsAccumulator,
     BoundaryDiagnosticsAccumulator,
@@ -17,7 +18,7 @@ from .diagnostics import (
 from .matching import PredictionMatchResult, align_predictions_to_cases
 from .metrics import compact_summary, score_cases, score_one_case
 from .model_adapters import dnalignair_predictor
-from .online import OnlineBenchmarkReport, case_contexts, run_online_benchmark
+from .online import OnlineBenchmarkReport, run_online_benchmark
 from .report import build_assay_report
 from .runner import build_benchmark_report, run_benchmark, run_benchmark_report
 from .uncertainty import DEFAULT_BOOTSTRAP_METRICS, bootstrap_metric_intervals

@@ -1,4 +1,3 @@
-from .predictor import Predictor
-from .predict import predict_calls, PredictionResult
+from .dnalignair_infer import predict_reads, canonicalize_sequence, resolve_hierarchy
 
-__all__ = ["Predictor", "predict_calls", "PredictionResult"]
+__all__ = ["predict_reads", "canonicalize_sequence", "resolve_hierarchy"]
