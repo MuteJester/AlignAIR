@@ -109,7 +109,8 @@ def rescore_alleles(reads, preds, reference_set, genes=("v", "d")) -> list:
 def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64,
                   topk: int = 16, rerank: str = "none", set_epsilon: float = 1.0,
                   genotype: dict | None = None, calibration: dict | None = None,
-                  emit_scores: bool = False, state_conditioning: bool = True) -> list:
+                  emit_scores: bool = False, state_conditioning: bool = True,
+                  rerank_chunk: int = 2048) -> list:
     """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
     differentiable aligner.alignment_score = the learned allele reader). When rerank
     is on, also emits {g}_call_set = the calibrated equivalence set (candidates within
@@ -186,32 +187,38 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                     seg_rel = None
                 pos_reps, pos_mask = ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"]
                 pos_tok = ref_emb[G]["pos_tok"]
-                chosen, chosen_sets, chosen_conf, chosen_scores = [], [], [], []
-                for i in range(len(chunk)):
-                    cands = topk_idx[G][i]                              # (k,)
-                    k = cands.shape[0]
-                    sc = model.aligner.alignment_score(
-                        seg_pos[i:i + 1].expand(k, -1, -1), seg_mask[i:i + 1].expand(k, -1),
-                        pos_reps[cands], pos_mask[cands],
-                        seg_tok=seg_tok[i:i + 1].expand(k, -1), germ_tok=pos_tok[cands],
-                        seg_reliability=(seg_rel[i:i + 1].expand(k, -1)
-                                         if seg_rel is not None else None))  # (k,)
-                    chosen.append(int(cands[sc.argmax()]))
-                    # temperature-scaled log-likelihood-ratio band (codex): keep iff the top
-                    # is at most exp(eps) times likelier; calibrated per gene, T=1 default.
-                    delta = (sc.max() - sc) / T
-                    keep = delta <= eps
-                    probs = torch.softmax(sc / T, dim=0)               # posterior over candidates
-                    chosen_sets.append([names[G][int(cands[j])] for j in range(k) if keep[j]])
-                    chosen_conf.append(float(probs[keep].sum()))        # posterior mass in the set
-                    if emit_scores:
-                        chosen_scores.append([(names[G][int(cands[j])], float(sc[j]))
-                                              for j in range(k)])
-                learned_best[G] = chosen
-                learned_best[G + "_set"] = chosen_sets
-                learned_best[G + "_conf"] = chosen_conf
+                # VECTORIZED rerank: score every (read, candidate) pair in batched soft-DP
+                # calls instead of a per-read Python loop. Each alignment is independent, so
+                # this is the same per-item math, just GPU-parallel (chunked to bound memory).
+                B = len(chunk)
+                ti = topk_idx[G]                                       # (B, k)
+                kk = ti.shape[1]
+                read_ix = torch.arange(B, device=device).repeat_interleave(kk)   # (B*k,)
+                cand_ix = ti.reshape(-1)                               # (B*k,)
+                parts = []
+                for a in range(0, B * kk, rerank_chunk):
+                    sl = slice(a, a + rerank_chunk)
+                    ri, ci = read_ix[sl], cand_ix[sl]
+                    parts.append(model.aligner.alignment_score(
+                        seg_pos[ri], seg_mask[ri], pos_reps[ci], pos_mask[ci],
+                        seg_tok=seg_tok[ri], germ_tok=pos_tok[ci],
+                        seg_reliability=(seg_rel[ri] if seg_rel is not None else None)))
+                sc_all = torch.cat(parts).reshape(B, kk)              # (B, k) candidate scores
+                # temperature-scaled log-likelihood-ratio band (codex): keep iff the top is at
+                # most exp(eps) times likelier; calibrated per gene, T=1 default.
+                delta = (sc_all.max(dim=1, keepdim=True).values - sc_all) / T   # (B,k)
+                keep = delta <= eps                                   # (B,k)
+                conf = (torch.softmax(sc_all / T, dim=1) * keep).sum(dim=1)     # (B,) mass in set
+                ti_l, keep_l = ti.cpu().tolist(), keep.cpu().tolist()
+                top_l = sc_all.argmax(dim=1).cpu().tolist()
+                learned_best[G] = [ti_l[i][top_l[i]] for i in range(B)]
+                learned_best[G + "_set"] = [
+                    [names[G][ti_l[i][j]] for j in range(kk) if keep_l[i][j]] for i in range(B)]
+                learned_best[G + "_conf"] = conf.cpu().tolist()
                 if emit_scores:
-                    learned_best[G + "_scores"] = chosen_scores
+                    sc_l = sc_all.cpu().tolist()
+                    learned_best[G + "_scores"] = [
+                        [(names[G][ti_l[i][j]], sc_l[i][j]) for j in range(kk)] for i in range(B)]
         for i in range(len(chunk)):
             p = {}
             for g in genes:
