@@ -17,6 +17,17 @@ from ..core.dnalignair import extract_segment_tokens
 
 _ALIGNER = None
 _COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
+_PARASAIL_MAT = None
+
+
+def _parasail():
+    """Lazy parasail handle + nucleotide scoring matrix (match+2/mismatch-1). parasail is an
+    optional dependency; only required when v_reader='parasail'."""
+    global _PARASAIL_MAT
+    if _PARASAIL_MAT is None:
+        import parasail
+        _PARASAIL_MAT = (parasail, parasail.matrix_create("ACGTN", 2, -1))
+    return _PARASAIL_MAT
 
 
 def canonicalize_sequence(seq: str, orientation_id: int) -> str:
@@ -158,7 +169,8 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                   genotype: dict | None = None, calibration: dict | None = None,
                   emit_scores: bool = False, state_conditioning: bool = True,
                   rerank_chunk: int = 2048, contaminant_tau: float | None = None,
-                  locus: str = "IGH") -> list:
+                  locus: str = "IGH", v_reader: str = "learned",
+                  raw_set_band: float = 2.0) -> list:
     """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
     differentiable aligner.alignment_score = the learned allele reader). When rerank
     is on, also emits {g}_call_set = the calibrated equivalence set (candidates within
@@ -230,6 +242,8 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
             cal = calibration or {}
             for g in genes:
                 G = g.upper()
+                if v_reader == "parasail" and G == "V":
+                    continue   # V handled by the classical parasail reader below (faster + sharper)
                 T = float(cal.get(G, {}).get("temperature", 1.0))
                 eps = float(cal.get(G, {}).get("epsilon", set_epsilon))
                 seg_tok, seg_mask = extract_segment_tokens(canon, mask, pred_region, G)
@@ -276,6 +290,56 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                     sc_l = sc_all.cpu().tolist()
                     learned_best[G + "_scores"] = [
                         [(names[G][ti_l[i][j]], sc_l[i][j]) for j in range(kk)] for i in range(B)]
+        # classical parasail V reader: raw-nucleotide Smith-Waterman over the model's own top-k V
+        # candidates, at the predicted V segment. Faster than the soft-DP and sharper on heavy-SHM
+        # siblings (the learned reader washes out the 1-3 diagnostic positions). Populates the same
+        # learned_best["V"*] slots so the assembly loop is unchanged. Operates on raw germline
+        # nucleotides -> novel alleles need no learned embedding (dynamic-genotype safe).
+        if rerank == "learned" and v_reader == "parasail":
+            par, mat = _parasail()
+            vseqs = reference_set.gene("V").sequences
+            B = len(chunk)
+            ti_l = topk_idx["V"].cpu().tolist()
+            ori = out["orientation_logits"].argmax(dim=-1).cpu().tolist()
+            if boundary is not None:
+                vstart = boundary["start"]["V"].argmax(dim=1).cpu().tolist()
+                vend = (boundary["end"]["V"].argmax(dim=1) + 1).cpu().tolist()
+            best, vset, vconf, gate, vsc = [], [], [], [], []
+            for i in range(B):
+                canon_seq = canonicalize_sequence(chunk[i], ori[i])
+                if boundary is not None:
+                    vs, ve = vstart[i], vend[i]
+                else:
+                    vs, ve = dec[i]["v_start"], dec[i]["v_end"]
+                seg = canon_seq[vs:ve].upper() if (vs is not None and ve and ve > vs) else ""
+                cand = ti_l[i]
+                if len(seg) >= 5:
+                    scores = [float(par.sw_striped_16(seg, vseqs[idx], 3, 1, mat).score)
+                              if vseqs[idx] else float("-inf") for idx in cand]
+                else:                                  # no usable V segment -> keep retrieval order
+                    scores = [-float(j) for j in range(len(cand))]
+                bj = max(range(len(cand)), key=lambda j: scores[j])
+                best.append(cand[bj])
+                top = scores[bj]
+                # set ORDERED by score desc so v_calls[0] == the chosen call (the benchmark and
+                # downstream take pred_calls[0] as the point estimate)
+                keep = sorted([j for j in range(len(cand))
+                               if scores[j] > -1e30 and top - scores[j] <= raw_set_band],
+                              key=lambda j: -scores[j])
+                vset.append([names["V"][cand[j]] for j in keep])
+                import math as _m
+                ex = [_m.exp(scores[j] - top) if scores[j] > -1e30 else 0.0 for j in range(len(cand))]
+                Z = sum(ex) or 1.0
+                vconf.append(sum(ex[j] for j in keep) / Z)
+                gate.append(top / max(len(seg), 1) if top > -1e30 else 0.0)
+                if emit_scores:
+                    vsc.append([(names["V"][cand[j]], scores[j]) for j in range(len(cand))])
+            learned_best["V"] = best
+            learned_best["V_set"] = vset
+            learned_best["V_conf"] = vconf
+            learned_best["_gate"] = gate
+            if emit_scores:
+                learned_best["V_scores"] = vsc
         for i in range(len(chunk)):
             p = {}
             for g in genes:

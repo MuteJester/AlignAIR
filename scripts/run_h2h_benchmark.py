@@ -72,6 +72,7 @@ def main():
     ap.add_argument("--model", default=".private/models/scaled_long.pt")
     ap.add_argument("--calibration", default=".private/models/allele_set_calibration.json")
     ap.add_argument("--rerank", default="learned", choices=["learned", "none"])
+    ap.add_argument("--v-reader", default="learned", choices=["learned", "parasail"])
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--topk", type=int, default=16)
     ap.add_argument("--threads", type=int, default=8)
@@ -113,14 +114,16 @@ def main():
         # warmup (CUDA init excluded from the timed run)
         with torch.no_grad():
             predict_reads(m, rs, seqs[:min(64, len(seqs))], device=device,
-                          topk=args.topk, rerank=args.rerank, calibration=cal)
+                          topk=args.topk, rerank=args.rerank, calibration=cal,
+                          v_reader=args.v_reader)
         if device == "cuda":
             torch.cuda.synchronize()
         print("running DNAlignAIR ...")
         t0 = time.perf_counter()
         with torch.no_grad():
             preds = predict_reads(m, rs, seqs, device=device, batch_size=args.batch_size,
-                                  topk=args.topk, rerank=args.rerank, calibration=cal)
+                                  topk=args.topk, rerank=args.rerank, calibration=cal,
+                                  v_reader=args.v_reader)
         if device == "cuda":
             torch.cuda.synchronize()
         dt = time.perf_counter() - t0

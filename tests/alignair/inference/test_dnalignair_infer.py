@@ -90,6 +90,26 @@ def test_learned_rerank_emits_calibration_fields():
                        for nm, sc in p[f"{g}_scores"])               # (name, raw_score) pairs
 
 
+def test_parasail_v_reader_keeps_call_in_ordered_set():
+    # the classical parasail V reader: V call resolved by raw SW; v_calls[0] == v_call (ordered set);
+    # D/J still come from the learned soft-DP path.
+    pytest.importorskip("parasail")
+    torch.manual_seed(0)
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
+                                        aligner="softdp"))
+    reads = ["ACGTACGTACGT" * 12, "TTGCAACGTACG" * 10]
+    preds = predict_reads(model, rs, reads, batch_size=2, rerank="learned",
+                          v_reader="parasail", emit_scores=True)
+    vnames = set(rs.gene("V").names)
+    for p in preds:
+        assert p["v_call"] in vnames
+        assert p["v_call"] in p["v_call_set"]
+        assert p["v_call_set"][0] == p["v_call"]                 # set ordered: best first
+        assert 0.0 <= p["v_set_confidence"] <= 1.0 + 1e-6
+        assert p["j_call"] in set(rs.gene("J").names)            # D/J unaffected
+
+
 def test_calibration_widens_set_via_temperature():
     # a high temperature flattens the posterior -> the LR-band keeps more candidates
     torch.manual_seed(0)
