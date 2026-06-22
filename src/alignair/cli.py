@@ -203,6 +203,55 @@ def cmd_model(args) -> None:
         print(f"  notes       : {(b['meta'] or {}).get('notes')}")
 
 
+def _load_reference_file(path):
+    from .reference.reference_set import ReferenceSet
+    if not os.path.exists(path):
+        raise SystemExit(f"error: file not found: {path}")
+    ext = os.path.splitext(path)[1].lower()
+    return (ReferenceSet.from_fasta(path) if ext in (".fasta", ".fa", ".fna", ".faa")
+            else ReferenceSet.from_yaml(path))
+
+
+def cmd_reference(args) -> None:
+    """Validate or convert a germline reference (YAML genotype <-> FASTA)."""
+    if args.reference_command == "validate":
+        rs = _load_reference_file(args.file)
+        ok = True
+        print(f"reference: {args.file}")
+        for G in ("V", "D", "J"):
+            if G not in rs.genes:
+                continue
+            ref = rs.gene(G)
+            n = len(ref.names)
+            dups = n - len(set(ref.names))
+            empties = sum(1 for s in ref.sequences if not s)
+            nonacgt = sum(1 for s in ref.sequences if set(s.upper()) - set("ACGTN"))
+            anc = len(ref.anchors or {})
+            flags = []
+            if dups: flags.append(f"{dups} DUPLICATE names"); ok = False
+            if empties: flags.append(f"{empties} EMPTY sequences"); ok = False
+            if nonacgt: flags.append(f"{nonacgt} with non-ACGTN chars")
+            anc_note = f"{anc}/{n} anchors" + ("" if anc == n or G == "D" else "  (missing anchors need --allow-curatable to train)")
+            print(f"  {G}: {n} alleles | {anc_note}" + (("  ⚠ " + "; ".join(flags)) if flags else ""))
+        print("status: OK" if ok else "status: PROBLEMS FOUND")
+        raise SystemExit(0 if ok else 1)
+    elif args.reference_command == "convert":
+        rs = _load_reference_file(args.file)
+        out_ext = os.path.splitext(args.out)[1].lower()
+        if out_ext in (".fasta", ".fa", ".fna", ".faa"):
+            with open(args.out, "w") as fh:
+                for G in ("V", "D", "J"):
+                    if G not in rs.genes:
+                        continue
+                    ref = rs.gene(G)
+                    for nm, seq in zip(ref.names, ref.sequences):
+                        fh.write(f">{nm}\n{seq}\n")
+        else:
+            rs.to_yaml(args.out)
+        n = sum(len(rs.gene(g)) for g in rs.genes)
+        print(f"converted {args.file} -> {args.out} ({n} alleles)")
+
+
 def cmd_doctor(args) -> None:
     """Environment / install check: Python, PyTorch + CUDA, GenAIRR, optional parasail, and
     (optionally) whether a --model path resolves. Exit non-zero if a CORE dependency is missing."""
@@ -426,6 +475,15 @@ def build_parser() -> argparse.ArgumentParser:
     dr = sub.add_parser("doctor", help="check the environment (Python, torch+CUDA, GenAIRR, parasail)")
     dr.add_argument("--model", default=None, help="optionally verify a model bundle/checkpoint resolves")
     dr.set_defaults(func=cmd_doctor)
+
+    rf = sub.add_parser("reference", help="validate or convert a germline reference (YAML <-> FASTA)")
+    rsub = rf.add_subparsers(required=True, dest="reference_command")
+    rv = rsub.add_parser("validate", help="check a reference file (counts, anchors, duplicates)")
+    rv.add_argument("file", help="genotype YAML or germline FASTA")
+    rc = rsub.add_parser("convert", help="convert between genotype YAML and FASTA")
+    rc.add_argument("file", help="input reference (YAML or FASTA)")
+    rc.add_argument("-o", "--out", required=True, help="output path (.yaml or .fasta sets the format)")
+    rf.set_defaults(func=cmd_reference)
 
     md = sub.add_parser("model", help="list / download / inspect pretrained models")
     msub = md.add_subparsers(required=True, dest="model_command")

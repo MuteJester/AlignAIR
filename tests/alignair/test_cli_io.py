@@ -22,6 +22,26 @@ def _pred(**over):
     return p
 
 
+def test_reference_validate_and_convert(tmp_path):
+    y = tmp_path / "ref.yaml"
+    y.write_text("v:\n  IGHV1-2*01: ACGTACGT\nd:\n  IGHD1-1*01: GGGG\nj:\n  IGHJ1*01: TTTT\n")
+    with pytest.raises(SystemExit) as e:
+        cli.main(["reference", "validate", str(y)])
+    assert e.value.code == 0                              # clean reference -> OK
+    fa = tmp_path / "ref.fasta"
+    cli.main(["reference", "convert", str(y), "-o", str(fa)])
+    txt = fa.read_text()
+    assert ">IGHV1-2*01" in txt and "ACGTACGT" in txt
+
+
+def test_reference_validate_flags_empty_sequence(tmp_path):
+    y = tmp_path / "bad.yaml"
+    y.write_text("v:\n  IGHV1-2*01: ''\nj:\n  IGHJ1*01: TTTT\n")   # empty V sequence
+    with pytest.raises(SystemExit) as e:
+        cli.main(["reference", "validate", str(y)])
+    assert e.value.code != 0
+
+
 def test_read_sequences_custom_columns(tmp_path):
     p = tmp_path / "in.csv"
     p.write_text("name,dna\na,ACGTACGT\nb,TTTTGGGG\n")
