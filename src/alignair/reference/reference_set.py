@@ -12,6 +12,7 @@ class GeneReference:
     names: List[str]          # ordered allele names
     sequences: List[str]      # germline nucleotide seqs (uppercased), aligned with names
     index: Dict[str, int]     # name -> row index
+    anchors: Dict[str, int] | None = None  # name -> conserved-anchor germline pos (Cys/Trp-Phe)
 
     def __len__(self) -> int:
         return len(self.names)
@@ -36,6 +37,7 @@ class ReferenceSet:
             names: List[str] = []
             sequences: List[str] = []
             index: Dict[str, int] = {}
+            anchors: Dict[str, int] = {}
             for dc in dataconfigs:
                 if g == "d" and not dc.metadata.has_d:
                     continue
@@ -45,7 +47,13 @@ class ReferenceSet:
                     index[allele.name] = len(names)
                     names.append(allele.name)
                     sequences.append(allele.ungapped_seq.upper())
-            genes[g.upper()] = GeneReference(names, sequences, index)
+                    # conserved junction anchor (Cys-104 for V, Trp/Phe-118 for J); ungapped
+                    # germline position. Used to derive the AIRR junction; absent on D.
+                    anc = getattr(allele, "anchor", None)
+                    if anc is not None:
+                        anchors[allele.name] = int(anc)
+            genes[g.upper()] = GeneReference(names, sequences, index,
+                                             anchors=anchors or None)
         return cls(genes, has_d)
 
     @classmethod

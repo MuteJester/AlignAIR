@@ -33,6 +33,53 @@ def canonicalize_sequence(seq: str, orientation_id: int) -> str:
     return s                       # IDENTITY
 
 
+_CODONS = {
+    "TTT": "F", "TTC": "F", "TTA": "L", "TTG": "L", "CTT": "L", "CTC": "L",
+    "CTA": "L", "CTG": "L", "ATT": "I", "ATC": "I", "ATA": "I", "ATG": "M",
+    "GTT": "V", "GTC": "V", "GTA": "V", "GTG": "V", "TCT": "S", "TCC": "S",
+    "TCA": "S", "TCG": "S", "CCT": "P", "CCC": "P", "CCA": "P", "CCG": "P",
+    "ACT": "T", "ACC": "T", "ACA": "T", "ACG": "T", "GCT": "A", "GCC": "A",
+    "GCA": "A", "GCG": "A", "TAT": "Y", "TAC": "Y", "TAA": "*", "TAG": "*",
+    "CAT": "H", "CAC": "H", "CAA": "Q", "CAG": "Q", "AAT": "N", "AAC": "N",
+    "AAA": "K", "AAG": "K", "GAT": "D", "GAC": "D", "GAA": "E", "GAG": "E",
+    "TGT": "C", "TGC": "C", "TGA": "*", "TGG": "W", "CGT": "R", "CGC": "R",
+    "CGA": "R", "CGG": "R", "AGT": "S", "AGC": "S", "AGA": "R", "AGG": "R",
+    "GGT": "G", "GGC": "G", "GGA": "G", "GGG": "G",
+}
+
+
+def _translate(nt: str) -> str:
+    """Translate an in-frame nucleotide string (codon table; non-ACGT codon -> 'X')."""
+    nt = nt.upper()
+    return "".join(_CODONS.get(nt[i:i + 3], "X") for i in range(0, len(nt) - len(nt) % 3, 3))
+
+
+def junction_fields(p: dict, canon_seq: str, reference_set) -> dict:
+    """Derive AIRR junction (CDR3 incl. the conserved Cys-104 and Trp/Phe-118 codons) from the
+    predicted V/J calls + coordinates, in the canonical (forward) frame `canon_seq` is in.
+
+    junction_start is anchored to the V 3' END (Cys ~10nt from v_germline_end -> tiny lever arm,
+    indel-robust); junction_end to the J anchor near j_germline_start. Returns {} when the junction
+    cannot be recovered (V/J missing, anchors unknown, or the junction falls outside the read) —
+    callers should leave junction empty there (honest absence, e.g. short fragments)."""
+    vref, jref = reference_set.gene("V"), reference_set.gene("J")
+    v_anc = (vref.anchors or {}).get(p.get("v_call"))
+    j_anc = (jref.anchors or {}).get(p.get("j_call"))
+    if v_anc is None or j_anc is None:
+        return {}
+    try:
+        js = int(p["v_sequence_end"]) - (int(p["v_germline_end"]) - v_anc)
+        je = int(p["j_sequence_start"]) + (j_anc - int(p["j_germline_start"])) + 3
+    except (KeyError, TypeError):
+        return {}
+    if not (0 <= js < je <= len(canon_seq)):
+        return {}
+    junction = canon_seq[js:je].upper()
+    aa = _translate(junction) if len(junction) % 3 == 0 else ""
+    return {"junction": junction, "junction_aa": aa, "junction_length": len(junction),
+            "junction_start": js, "junction_end": je}
+
+
 def resolve_hierarchy(call_set, top1, max_allele: int = 3):
     """Graceful degradation over the calibrated equivalence set: report the MOST SPECIFIC
     level the evidence supports — allele if the set is small, else the shared gene, else
@@ -110,7 +157,8 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                   topk: int = 16, rerank: str = "none", set_epsilon: float = 1.0,
                   genotype: dict | None = None, calibration: dict | None = None,
                   emit_scores: bool = False, state_conditioning: bool = True,
-                  rerank_chunk: int = 2048, contaminant_tau: float | None = None) -> list:
+                  rerank_chunk: int = 2048, contaminant_tau: float | None = None,
+                  locus: str = "IGH") -> list:
     """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
     differentiable aligner.alignment_score = the learned allele reader). When rerank
     is on, also emits {g}_call_set = the calibrated equivalence set (candidates within
@@ -259,6 +307,12 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
             p["productive"] = bool(out["productive"][i].item() > 0.5)
             p["mutation_rate"] = float(out["mutation_rate"][i].item())
             p["indel_count"] = float(out["indel_count"][i].item())
+            # AIRR output completeness: the canonical (forward) sequence the coords refer to,
+            # the locus, and the derived junction/CDR3 (empty when unrecoverable, e.g. fragments)
+            canon_seq = canonicalize_sequence(chunk[i], p["orientation_id"])
+            p["sequence"] = canon_seq
+            p["locus"] = locus
+            p.update(junction_fields(p, canon_seq, reference_set))
             # out-of-scope flag (advisory; calls above are RETAINED regardless)
             if rerank == "learned" and "_gate" in learned_best:
                 gs = learned_best["_gate"][i]

@@ -11,7 +11,7 @@ GENES = ("v", "d", "j")
 # `sequence` is the CANONICAL (forward-oriented) sequence the coordinates refer to; `rev_comp`
 # flags that the input read was reoriented to produce it (so coords always match `sequence`).
 _CORE = ["sequence_id", "sequence", "rev_comp", "locus", "v_call", "d_call", "j_call",
-         "productive", "is_contaminant"]
+         "productive", "junction", "junction_aa", "junction_length", "is_contaminant"]
 _COORDS = [f"{g}_{k}" for g in GENES
            for k in ("sequence_start", "sequence_end", "germline_start", "germline_end")]
 _EXT = [f"{g}_{k}" for g in GENES for k in ("call_set", "call_level", "set_confidence")]
@@ -35,6 +35,8 @@ def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict
             row = {"sequence_id": sid, "sequence": seq, "locus": locus,
                    "rev_comp": "T" if p.get("orientation_id", 0) != 0 else "F",
                    "productive": p.get("productive"),
+                   "junction": p.get("junction"), "junction_aa": p.get("junction_aa"),
+                   "junction_length": p.get("junction_length"),
                    "is_contaminant": ("T" if isc else "F") if isc is not None else None}
             for g in GENES:
                 row[f"{g}_call"] = p.get(f"{g}_call")
