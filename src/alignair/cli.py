@@ -13,6 +13,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
+
+
+def _version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("AlignAIR")
+    except Exception:
+        return "unknown (not pip-installed)"
 
 
 def _load_model(model_path, device):
@@ -42,38 +51,83 @@ def cmd_predict(args) -> None:
     from .io.sequence_reader import read_sequences
     from .io.airr import write_airr
 
+    def log(msg):
+        if not args.quiet:
+            print(msg, flush=True)
+
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    if not os.path.exists(args.model):
+        raise SystemExit(f"error: model not found: {args.model}")
     model, b_dataconfigs, b_locus, b_calibration = _load_model(args.model, device)
     locus = args.locus or b_locus or "IGH"
+    log(f"device: {device}  |  model: {args.model}")
 
     if args.genotype:
+        if not os.path.exists(args.genotype):
+            raise SystemExit(f"error: genotype file not found: {args.genotype}")
         ext = os.path.splitext(args.genotype)[1].lower()
         loader = ReferenceSet.from_fasta if ext in (".fasta", ".fa", ".fna", ".faa") else ReferenceSet.from_yaml
         rs = loader(args.genotype)
-        print(f"reference: genotype {args.genotype} "
-              f"(V={len(rs.gene('V').names)}"
-              f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
+        log(f"reference: genotype {args.genotype} "
+            f"(V={len(rs.gene('V').names)}"
+            f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
     else:
         names = b_dataconfigs or [args.dataconfig]
-        rs = ReferenceSet.from_dataconfigs(*[getattr(gdata, n) for n in names])
-        print(f"reference: {', '.join(names)} (V={len(rs.gene('V').names)})")
+        try:
+            rs = ReferenceSet.from_dataconfigs(*[getattr(gdata, n) for n in names])
+        except AttributeError as e:
+            raise SystemExit(f"error: unknown GenAIRR DataConfig in {names}: {e}")
+        log(f"reference: {', '.join(names)} (V={len(rs.gene('V').names)})")
 
     calibration = b_calibration
     if args.calibration and os.path.exists(args.calibration):
         calibration = json.load(open(args.calibration))           # explicit flag overrides bundle
 
     ids, seqs, info = read_sequences(args.input)
-    print(f"read {info['n_read']} sequences ({info['n_dropped']} dropped) as {info['format']}")
+    log(f"read {info['n_read']} sequences ({info['n_dropped']} dropped) as {info['format']}")
     if not seqs:
-        raise SystemExit("no valid sequences to align")
+        raise SystemExit("error: no valid sequences to align")
 
     preds = predict_reads(model, rs, seqs, device=device, batch_size=args.batch,
-                          rerank="learned", calibration=calibration)
+                          rerank="learned", v_reader=args.v_reader, calibration=calibration)
     # coordinates are in the canonical (forward) frame -> emit the canonical sequence so
     # they always match it, even for reverse-complemented input reads (with rev_comp flag).
     canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]
     write_airr(args.output, ids, canon, preds, locus=locus)
-    print(f"wrote {len(preds)} rearrangements -> {args.output}")
+    log(f"wrote {len(preds)} rearrangements -> {args.output}")
+
+
+def cmd_doctor(args) -> None:
+    """Environment / install check: Python, PyTorch + CUDA, GenAIRR, optional parasail, and
+    (optionally) whether a --model path resolves. Exit non-zero if a CORE dependency is missing."""
+    ok = True
+    print(f"AlignAIR {_version()}")
+    print(f"  python      : {sys.version.split()[0]} ({sys.executable})")
+    try:
+        import torch
+        cuda = torch.cuda.is_available()
+        dev = torch.cuda.get_device_name(0) if cuda else "cpu only"
+        print(f"  torch       : {torch.__version__}  | CUDA available: {cuda} ({dev})")
+    except Exception as e:
+        ok = False; print(f"  torch       : MISSING ({e})")
+    try:
+        import GenAIRR
+        print(f"  GenAIRR     : {getattr(GenAIRR, '__version__', '?')}")
+    except Exception as e:
+        ok = False; print(f"  GenAIRR     : MISSING ({e})")
+    try:
+        import parasail  # noqa: F401
+        print("  parasail    : present (fast V reader available via --v-reader parasail)")
+    except Exception:
+        print("  parasail    : absent (optional; install AlignAIR[reader] for the fast V reader)")
+    if args.model:
+        from .serialization.dnalignair_bundle import is_bundle
+        if not os.path.exists(args.model):
+            ok = False; print(f"  model       : NOT FOUND ({args.model})")
+        else:
+            print(f"  model       : {'bundle' if is_bundle(args.model) else 'raw checkpoint'} at {args.model}")
+    print("status: OK" if ok else "status: PROBLEMS FOUND")
+    raise SystemExit(0 if ok else 1)
 
 
 def cmd_bundle(args) -> None:
@@ -97,7 +151,8 @@ def cmd_bundle(args) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="alignair",
-                                 description="DNAlignAIR — neural IG/TCR sequence aligner")
+                                 description="AlignAIR — neural IG/TCR sequence aligner")
+    ap.add_argument("--version", action="version", version=f"AlignAIR {_version()}")
     sub = ap.add_subparsers(required=True, dest="command")
     pr = sub.add_parser("predict", help="align reads and write an AIRR rearrangement TSV")
     pr.add_argument("input", help="FASTA/FASTQ/CSV/TSV/TXT (optionally .gz) of reads")
@@ -114,7 +169,14 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--locus", default=None, help="locus label (default: bundle's, else IGH)")
     pr.add_argument("--batch", type=int, default=64)
     pr.add_argument("--device", default=None, help="cuda|cpu (auto if unset)")
+    pr.add_argument("--v-reader", default="learned", choices=["learned", "parasail"],
+                    help="V allele reader: learned (default) or parasail (faster+sharper; needs AlignAIR[reader])")
+    pr.add_argument("--quiet", action="store_true", help="suppress progress output")
     pr.set_defaults(func=cmd_predict)
+
+    dr = sub.add_parser("doctor", help="check the environment (Python, torch+CUDA, GenAIRR, parasail)")
+    dr.add_argument("--model", default=None, help="optionally verify a model bundle/checkpoint resolves")
+    dr.set_defaults(func=cmd_doctor)
 
     bd = sub.add_parser("bundle", help="package a raw checkpoint into a versioned bundle")
     bd.add_argument("--model", required=True, help="raw .pt checkpoint {model, config}")

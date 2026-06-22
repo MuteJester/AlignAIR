@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use AlignAIR, please cite it using the metadata below."
+title: "AlignAIR: a neural aligner for IG/TCR repertoires with a dynamic (runtime) reference"
+type: software
+authors:
+  - family-names: Konstantinovsky
+    given-names: Thomas
+    email: thomaskon90@gmail.com
+  - family-names: Peres
+    given-names: Ayelet
+license: GPL-3.0-or-later
+repository-code: "https://github.com/MuteJester/AlignAIR"
+url: "https://alignair.ai"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.15687939
+    description: "Zenodo archive"
+keywords:
+  - AIRR
+  - immunoglobulin
+  - T-cell receptor
+  - VDJ
+  - sequence alignment
+  - deep learning

@@ -4,6 +4,20 @@ import pytest
 
 from alignair.io.sequence_reader import read_sequences, validate
 from alignair.io.airr import write_airr, COLUMNS
+from alignair import cli
+
+
+def test_doctor_runs_and_reports_ok():
+    # doctor exits 0 when core deps (torch, GenAIRR) are importable in the test env
+    with pytest.raises(SystemExit) as e:
+        cli.main(["doctor"])
+    assert e.value.code == 0
+
+
+def test_predict_missing_model_errors_cleanly():
+    with pytest.raises(SystemExit) as e:
+        cli.main(["predict", "x.fasta", "-o", "out.tsv", "--model", "/no/such/model.pt"])
+    assert e.value.code != 0
 
 
 def test_validate_iupac_and_drop():

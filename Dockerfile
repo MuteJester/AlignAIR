@@ -1,42 +1,37 @@
+# AlignAIR — neural IG/TCR sequence aligner. CPU image (the default; small + portable).
+# For GPU inference/training, install AlignAIR in a CUDA base image instead (see docs).
 FROM python:3.11-slim
 
-# Metadata (align with package version)
-LABEL version="2.0.2"
-LABEL description="AlignAIR v2.0 - Unified Multi-Chain IG/TCR Sequence Alignment Tool"
-LABEL maintainer="Thomas Konstantinovsky & Ayelet Peres"
+LABEL org.opencontainers.image.title="AlignAIR" \
+      org.opencontainers.image.description="Neural IG/TCR sequence aligner (AIRR rearrangement output)" \
+      org.opencontainers.image.source="https://github.com/MuteJester/AlignAIR" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-	PYTHONUNBUFFERED=1 \
-	PIP_NO_CACHE_DIR=1
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Install build tools and dependencies via modern PEP 517 workflow
-# Copy minimal files first to maximize Docker layer caching
+# Copy install inputs first for layer caching.
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
-RUN pip install --upgrade pip setuptools wheel \
-	&& pip install ".[cli]"
+# Install a CPU-only PyTorch first so the project install does not pull the large CUDA wheel,
+# then install AlignAIR with the CLI extra (parasail reader is optional: add ".[cli,reader]").
+RUN pip install --upgrade pip \
+    && pip install torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install ".[cli]"
 
-# Copy rest of the repo (scripts, configs, etc.)
-COPY . .
+# Bundled example data (see examples/README.md).
+COPY examples/ ./examples/
 
-# Place pretrained checkpoints in a predictable path
-COPY checkpoints /app/pretrained_models
-
-EXPOSE 8000
-
-# Create non-root user for safer defaults
+# Non-root by default.
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Align version env with package
-ENV ALIGNAIR_VERSION=2.0.2
+# Healthcheck = environment self-check (exits non-zero if a core dependency is missing).
+HEALTHCHECK --interval=30s --timeout=20s --retries=3 CMD alignair doctor || exit 1
 
-# Healthcheck (lightweight)
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD python -c "import tensorflow as tf; print('ok')" || exit 1
-
-# Entry point to run Typer app directly (e.g., `docker run ... run --model-dir ...`)
-ENTRYPOINT ["python", "app.py"]
-CMD ["doctor"]
+ENTRYPOINT ["alignair"]
+CMD ["--help"]

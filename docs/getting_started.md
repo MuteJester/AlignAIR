@@ -1,122 +1,75 @@
-# Getting Started with AlignAIR v2.0
+# Getting started
 
-**AlignAIR v2.0** introduces a revolutionary unified architecture for immunoglobulin (Ig) and T-cell receptor (TCR) sequence alignment. The new system features dynamic GenAIRR integration, universal model architectures, and native multi-chain support, making it faster and more flexible than ever.
+A 5‑minute walk‑through of AlignAIR: install, check your environment, and align reads — including
+against your own donor/novel genotype.
 
-## What's New in v2.0
-
-### Unified Architecture
-- **SingleChainAlignAIR**: Optimized for single receptor type analysis
-- **MultiChainAlignAIR**: Native multi-chain support with automatic chain type classification
-- **Universal Datasets**: SingleChainDataset and MultiChainDataset classes that work with any GenAIRR dataconfig
-
-### Dynamic GenAIRR Integration
-- Built-in dataconfigs: `HUMAN_IGH_OGRDB`, `HUMAN_IGK_OGRDB`, `HUMAN_IGL_OGRDB`, `HUMAN_TCRB_IMGT`
-- Custom dataconfig support via pickle files
-- Automatic chain type detection and model selection
-
-### Enhanced Multi-Chain Capabilities
-- Mixed light chain analysis (IGK + IGL)
-- Simultaneous processing of different receptor types
-- Chain type classification as model output
-- Optimized batch processing for multi-chain scenarios
-
-## Basic Usage Examples
-
-### Single Heavy Chain Analysis
-```bash
-python app.py run \
-  --model-dir=/app/pretrained_models/IGH_S5F_576 \
-  --genairr-dataconfig=HUMAN_IGH_OGRDB \
-  --sequences=heavy_sequences.csv \
-  --save-path=results/
-```
-
-### Single Light Chain Analysis (Lambda)
-```bash
-python app.py run \
-  --model-dir=/app/pretrained_models/IGL_S5F_576 \
-  --genairr-dataconfig=HUMAN_IGL_OGRDB \
-  --sequences=lambda_sequences.csv \
-  --save-path=results/
-```
-
-### Multi-Chain Light Chain Analysis
-```bash
-python app.py run \
-  --model-dir=/app/pretrained_models/IGL_S5F_576 \
-  --genairr-dataconfig=HUMAN_IGK_OGRDB,HUMAN_IGL_OGRDB \
-  --sequences=mixed_light_sequences.csv \
-  --save-path=results/
-```
-
-### TCR Beta Chain Analysis
-```bash
-python app.py run \
-  --model-dir=/app/pretrained_models/TCRB_Uniform_576 \
-  --genairr-dataconfig=HUMAN_TCRB_IMGT \
-  --sequences=tcr_sequences.csv \
-  --save-path=results/
-```
-
-## Tutorials and Examples
-
-To start aligning sequences you can either train your own custom model finetuned to your specific reference/species or use our pretrained models. Below are examples for different use cases and useful tutorials:
-
-- **[Training and Using AlignAIR v2.0 in Jupyter IDE](tutorials/AlignAIR_On_Jupyter_Notebooks.ipynb)**: Comprehensive guide to the new unified architecture with examples of both single-chain and multi-chain workflows.
-
-### Community and Support
-
-- **[AlignAIR Issues](https://github.com/MuteJester/AlignAIR/issues)**: Report bugs or request features.
-
-## Docker Installation and Usage
-
-You can run AlignAIR using Docker with our prebuilt image:
+## 1. Install
 
 ```bash
-docker pull thomask90/alignair:latest
-
-# Example (entrypoint style):
-docker run -it --rm \
-  -v "${PWD}:/data" \
-  -v "${PWD}/results:/downloads" \
-  thomask90/alignair:latest run \
-  --model-dir=/app/pretrained_models/IGH_S5F_576 \
-  --genairr-dataconfig=HUMAN_IGH_OGRDB \
-  --sequences=/data/heavy_sequences.csv \
-  --save-path=/downloads/
+pip install "AlignAIR[cli]"            # core + CLI
+pip install "AlignAIR[cli,reader]"     # optional: parasail (faster, sharper V calling)
 ```
 
-## Quick Start with Docker CLI
-
-Here's an example of running AlignAIR in Docker with specific arguments:
+Check the environment (Python, PyTorch + CUDA, GenAIRR, optional parasail):
 
 ```bash
-docker run -it --rm \
-  -v "${PWD}:/data" \
-  -v "${PWD}/results:/downloads" \
-  thomask90/alignair:latest run \
-  --model-dir=/app/tests/AlignAIRR_S5F_OGRDB_V8_S5F_576_Balanced_V2 \
-  --genairr-dataconfig=HUMAN_IGH_OGRDB \
-  --sequences=/data/sample_HeavyChain_dataset.csv \
-  --save-path=/downloads/ \
-  --batch-size=32 \
-  --translate-to-asc
+alignair doctor
 ```
 
-## Features
+GPU is auto‑detected; pass `--device cpu` or `--device cuda` to `alignair predict` to force one.
 
-- Fast and accurate immunoglobulin sequence alignment
-- Pre-trained models for common species and chain types
-- Support for custom model training
-- Extensive preprocessing pipeline
-- AIRR-compliant output format
-- Handles both short and long read sequences
-- Automatic sequence orientation correction
+## 2. Get a model
 
-## Requirements
+`alignair predict` needs a model — either a **bundle** directory or a raw `.pt` checkpoint. Options:
 
-- Docker
-- 8GB RAM minimum
-- 6GB disk space
+- Use a pretrained bundle (published on the project's model hub; a `alignair model download`
+  command is on the [roadmap](architecture/adoption_roadmap.md)).
+- **Train your own** for a custom reference or species — see the training workflow in
+  [dnalignair.md](dnalignair.md).
+- Package a raw checkpoint into a versioned bundle: `alignair bundle --model ckpt.pt -o my_bundle/`.
 
-For detailed system requirements, please check the documentation in the repository.
+## 3. Align reads
+
+Input may be FASTA, FASTQ, CSV/TSV, or TXT (optionally `.gz`):
+
+```bash
+alignair predict examples/reads.fasta -o out.tsv --model <bundle_or_checkpoint>
+```
+
+The output is an AIRR rearrangement TSV with `v_call`/`d_call`/`j_call`, per‑gene sequence and
+germline coordinates, `junction`/`junction_aa`, `productive`, `rev_comp`, and calibrated
+uncertainty columns (`*_call_set`, `*_call_level`, `*_set_confidence`).
+
+## 4. Use your own reference (dynamic genotype)
+
+The reference is an **input**. Supply a genotype as YAML or FASTA — it can contain **fewer alleles**
+than the trained reference and/or **novel alleles** the model has never seen:
+
+```bash
+# YAML: top-level v/d/j, each {allele_name: dna_sequence}
+alignair predict examples/reads.fasta -o out.tsv \
+  --model <bundle_or_checkpoint> --genotype examples/donor_genotype.yaml
+
+# FASTA: >allele_name headers (gene type inferred from the AIRR/IMGT name)
+alignair predict examples/reads.fasta -o out.tsv \
+  --model <bundle_or_checkpoint> --genotype donor.fasta
+```
+
+No retraining is required — the model conditions on exactly the alleles you provide, and every call
+is guaranteed to be within that genotype.
+
+## 5. Common options
+
+| Flag | Meaning |
+| --- | --- |
+| `--genotype FILE` | YAML/FASTA reference for this run (subset and/or novel alleles) |
+| `--calibration FILE` | allele‑set calibration JSON (overrides a bundled one) |
+| `--v-reader parasail` | use the fast classical V reader (needs `AlignAIR[reader]`) |
+| `--batch N` | batch size (default 64) |
+| `--device cuda|cpu` | force a device (auto if unset) |
+| `--quiet` | suppress progress output |
+
+## Next steps
+
+- [DNAlignAIR design & benchmarks](dnalignair.md) — architecture and head‑to‑head results.
+- [Adoption roadmap](architecture/adoption_roadmap.md) — model zoo, `alignair train`, packaging.
