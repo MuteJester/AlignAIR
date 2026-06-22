@@ -46,6 +46,7 @@ cli = [
     "typer>=0.9",
     "rich>=10.0",
     "huggingface-hub>=0.20",
+    "airr>=1.4",
 ]
 # fast classical aligner for the parasail V reader (predict_reads v_reader="parasail")
 reader = [

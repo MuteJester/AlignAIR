@@ -3,8 +3,49 @@ import csv
 import pytest
 
 from alignair.io.sequence_reader import read_sequences, validate
-from alignair.io.airr import write_airr, COLUMNS
+from alignair.io.airr import write_airr, COLUMNS, _cigar
 from alignair import cli
+
+
+def _pred(**over):
+    p = {"orientation_id": 0, "productive": True, "junction": "TGTGCGAAA", "junction_aa": "CAK",
+         "junction_length": 9}
+    for g in ("v", "d", "j"):
+        p[f"{g}_call"] = f"IGH{g.upper()}1-1*01"
+        p[f"{g}_call_set"] = [f"IGH{g.upper()}1-1*01"]
+        p[f"{g}_call_level"] = "allele"
+        p[f"{g}_set_confidence"] = 0.9
+    p.update({"v_sequence_start": 0, "v_sequence_end": 290, "v_germline_start": 0, "v_germline_end": 290,
+              "d_sequence_start": 295, "d_sequence_end": 305, "d_germline_start": 2, "d_germline_end": 12,
+              "j_sequence_start": 310, "j_sequence_end": 360, "j_germline_start": 5, "j_germline_end": 55})
+    p.update(over)
+    return p
+
+
+def test_cigar_ungapped():
+    assert _cigar(377, 0, 290, 0) == "290M87S"        # V at read start, no germline skip
+    assert _cigar(377, 310, 360, 5) == "310S5N50M17S"  # J: leading clip + germline skip + match + tail
+    assert _cigar(377, None, None, None) == ""         # absent segment
+
+
+def test_write_airr_is_airr_c_valid(tmp_path):
+    airrlib = pytest.importorskip("airr")
+    seq = "ACGT" * 90                                  # len 360
+    out = tmp_path / "rearr.tsv"
+    write_airr(str(out), ["r1", "r2"], [seq, seq], [_pred(), _pred()], locus="IGH")
+    assert airrlib.validate_rearrangement(str(out)) is True
+    rows = list(airrlib.read_rearrangement(str(out)))   # Change-O/Immcantation-compatible reader
+    assert len(rows) == 2 and rows[0]["v_call"] == "IGHV1-1*01"
+
+
+def test_predict_missing_input_clean_error(tmp_path):
+    # a known-bad model path errors before reading sequences (covered elsewhere); here just
+    # confirm validate-airr rejects a non-AIRR file cleanly
+    bad = tmp_path / "notairr.tsv"
+    bad.write_text("a\tb\n1\t2\n")
+    with pytest.raises(SystemExit) as e:
+        cli.main(["validate-airr", str(bad)])
+    assert e.value.code != 0
 
 
 def test_doctor_runs_and_reports_ok():

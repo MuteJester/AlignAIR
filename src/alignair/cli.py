@@ -73,6 +73,7 @@ def cmd_predict(args) -> None:
             f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
     elif b_reference is not None:                     # bundle embeds its own (custom) reference
         rs = b_reference
+        ref_desc = f"bundled ({len(rs.gene('V').names)} V alleles)"
         log(f"reference: bundled (V={len(rs.gene('V').names)}"
             f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
     else:
@@ -81,7 +82,10 @@ def cmd_predict(args) -> None:
             rs = ReferenceSet.from_dataconfigs(*[getattr(gdata, n) for n in names])
         except AttributeError as e:
             raise SystemExit(f"error: unknown GenAIRR DataConfig in {names}: {e}")
+        ref_desc = ", ".join(names)
         log(f"reference: {', '.join(names)} (V={len(rs.gene('V').names)})")
+    if args.genotype:
+        ref_desc = f"genotype:{os.path.basename(args.genotype)}"
 
     calibration = b_calibration
     if args.calibration and os.path.exists(args.calibration):
@@ -101,12 +105,63 @@ def cmd_predict(args) -> None:
     try:
         os.makedirs(out_dir, exist_ok=True)
         write_airr(args.output, ids, canon, preds, locus=locus)
+        if not args.no_provenance:
+            _write_provenance(args.output + ".run.json", args=args, model_path=model_path,
+                              device=device, info=info, ref_desc=ref_desc)
     except (PermissionError, OSError) as e:
         raise SystemExit(
             f"error: cannot write output to {args.output}: {e}\n"
             f"hint: if running in Docker, mount a writable output directory and add "
             f"`--user $(id -u):$(id -g)` so files are written as you.")
-    log(f"wrote {len(preds)} rearrangements -> {args.output}")
+    log(f"wrote {len(preds)} rearrangements -> {args.output}"
+        + ("" if args.no_provenance else f"  (+ {os.path.basename(args.output)}.run.json)"))
+
+
+def _pkg_version(name):
+    try:
+        from importlib.metadata import version
+        return version(name)
+    except Exception:
+        return None
+
+
+def _write_provenance(path, *, args, model_path, device, info, ref_desc):
+    """Write a run.json sidecar next to the output: what produced this file (AIRR Software WG
+    expects run parameters to travel with the output)."""
+    import datetime
+    fingerprint = None
+    fp = os.path.join(model_path, "fingerprint.txt") if os.path.isdir(model_path) else None
+    if fp and os.path.exists(fp):
+        fingerprint = open(fp).read().strip()
+    prov = {
+        "tool": "AlignAIR", "alignair_version": _version(),
+        "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "command": "alignair " + " ".join(sys.argv[1:]),
+        "model": model_path, "model_fingerprint": fingerprint, "reference": ref_desc,
+        "device": device, "v_reader": args.v_reader, "batch": args.batch,
+        "n_input": info.get("n_read"), "n_dropped": info.get("n_dropped"),
+        "input_format": info.get("format"), "output": args.output,
+        "versions": {k: _pkg_version(k) for k in ("torch", "GenAIRR", "airr", "parasail")},
+    }
+    with open(path, "w") as f:
+        json.dump(prov, f, indent=2)
+
+
+def cmd_validate_airr(args) -> None:
+    """Validate a rearrangement TSV against the official AIRR-C schema (needs the `airr` package)."""
+    try:
+        import airr
+    except ImportError:
+        raise SystemExit("error: AIRR validation needs the `airr` package "
+                         "— install with `pip install \"AlignAIR[cli]\"` or `pip install airr`")
+    if not os.path.exists(args.file):
+        raise SystemExit(f"error: file not found: {args.file}")
+    try:
+        ok = bool(airr.validate_rearrangement(args.file))
+    except Exception as e:
+        raise SystemExit(f"AIRR validation error: {e}")
+    print(f"{args.file}: {'VALID AIRR-C rearrangement' if ok else 'NOT valid AIRR-C'}")
+    raise SystemExit(0 if ok else 1)
 
 
 def cmd_model(args) -> None:
@@ -348,7 +403,13 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--v-reader", default="learned", choices=["learned", "parasail"],
                     help="V allele reader: learned (default) or parasail (faster+sharper; needs AlignAIR[reader])")
     pr.add_argument("--quiet", action="store_true", help="suppress progress output")
+    pr.add_argument("--no-provenance", action="store_true",
+                    help="do not write the <output>.run.json provenance sidecar")
     pr.set_defaults(func=cmd_predict)
+
+    va = sub.add_parser("validate-airr", help="validate a rearrangement TSV against the AIRR-C schema")
+    va.add_argument("file", help="AIRR rearrangement TSV to validate")
+    va.set_defaults(func=cmd_validate_airr)
 
     dr = sub.add_parser("doctor", help="check the environment (Python, torch+CUDA, GenAIRR, parasail)")
     dr.add_argument("--model", default=None, help="optionally verify a model bundle/checkpoint resolves")
