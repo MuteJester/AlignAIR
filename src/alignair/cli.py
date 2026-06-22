@@ -55,10 +55,10 @@ def cmd_predict(args) -> None:
         if not args.quiet:
             print(msg, flush=True)
 
+    from .hub import resolve_model
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    if not os.path.exists(args.model):
-        raise SystemExit(f"error: model not found: {args.model}")
-    model, b_dataconfigs, b_locus, b_calibration, b_reference = _load_model(args.model, device)
+    model_path = resolve_model(args.model)             # local path, catalog id, or HF repo id
+    model, b_dataconfigs, b_locus, b_calibration, b_reference = _load_model(model_path, device)
     locus = args.locus or b_locus or "IGH"
     log(f"device: {device}  |  model: {args.model}")
 
@@ -107,6 +107,37 @@ def cmd_predict(args) -> None:
             f"hint: if running in Docker, mount a writable output directory and add "
             f"`--user $(id -u):$(id -g)` so files are written as you.")
     log(f"wrote {len(preds)} rearrangements -> {args.output}")
+
+
+def cmd_model(args) -> None:
+    """Manage pretrained models: list the catalog, download a bundle, or inspect one."""
+    from .hub import MODEL_CATALOG, resolve_model
+    from .serialization.dnalignair_bundle import is_bundle, load_dnalignair_bundle
+    if args.model_command == "list":
+        if not MODEL_CATALOG:
+            print("(no models in the catalog yet)")
+            return
+        print(f"{'id':22s} {'species':8s} {'locus':6s} description")
+        for mid, e in MODEL_CATALOG.items():
+            print(f"{mid:22s} {e.get('species',''):8s} {e.get('locus',''):6s} {e.get('description','')}")
+        print("\ndownload: alignair model download <id>   |   use directly: alignair predict ... --model <id>")
+    elif args.model_command == "download":
+        path = resolve_model(args.id, dest=args.dest)
+        print(f"downloaded -> {path}")
+    elif args.model_command == "inspect":
+        path = resolve_model(args.id)
+        if not is_bundle(path):
+            raise SystemExit(f"error: {path} is not an AlignAIR bundle (raw checkpoints carry no metadata)")
+        b = load_dnalignair_bundle(path, build=False)
+        cfg = b["config"].to_dict()
+        ref = (f"{len(b['reference_set'].gene('V'))} V (embedded)" if b.get("reference_set")
+               else f"dataconfigs={b['dataconfigs']}")
+        print(f"bundle: {path}")
+        print(f"  locus       : {b['locus']}")
+        print(f"  reference   : {ref}")
+        print(f"  d_model={cfg.get('d_model')} n_layers={cfg.get('n_layers')} nhead={cfg.get('nhead')}")
+        print(f"  calibration : {'yes' if b['calibration'] else 'no'}")
+        print(f"  notes       : {(b['meta'] or {}).get('notes')}")
 
 
 def cmd_doctor(args) -> None:
@@ -302,7 +333,8 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("input", help="FASTA/FASTQ/CSV/TSV/TXT (optionally .gz) of reads")
     pr.add_argument("-o", "--output", required=True, help="output AIRR rearrangement TSV")
     pr.add_argument("--model", required=True,
-                    help="a DNAlignAIR bundle directory OR a raw .pt checkpoint {model, config}")
+                    help="a bundle dir / raw .pt checkpoint, a catalog id (alignair model list), "
+                         "or an org/name Hugging Face repo id (auto-downloaded)")
     pr.add_argument("--genotype", default=None,
                     help="genotype file (YAML or FASTA) used as the reference "
                          "(allele subset and/or novel alleles)")
@@ -321,6 +353,16 @@ def build_parser() -> argparse.ArgumentParser:
     dr = sub.add_parser("doctor", help="check the environment (Python, torch+CUDA, GenAIRR, parasail)")
     dr.add_argument("--model", default=None, help="optionally verify a model bundle/checkpoint resolves")
     dr.set_defaults(func=cmd_doctor)
+
+    md = sub.add_parser("model", help="list / download / inspect pretrained models")
+    msub = md.add_subparsers(required=True, dest="model_command")
+    msub.add_parser("list", help="list the pretrained model catalog")
+    mdl = msub.add_parser("download", help="download a model bundle (catalog id or HF repo id)")
+    mdl.add_argument("id", help="catalog id (alignair model list) or org/name Hugging Face repo id")
+    mdl.add_argument("--dest", default=None, help="download into this directory (default: HF cache)")
+    mi = msub.add_parser("inspect", help="show a model bundle's reference, config, and metadata")
+    mi.add_argument("id", help="a bundle path, catalog id, or org/name Hugging Face repo id")
+    md.set_defaults(func=cmd_model)
 
     tr = sub.add_parser("train", help="train an AlignAIR model for your own reference / species")
     tr.add_argument("--reference", default=None,

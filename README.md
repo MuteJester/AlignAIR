@@ -40,16 +40,21 @@ docker run --rm thomask90/alignair:latest doctor
 
 ## Quick start
 
-You need a model bundle (a pretrained one, or one you train — see below). Then:
+`--model` accepts a **catalog id** (auto-downloaded from the Hugging Face Hub), a local bundle
+directory / `.pt` checkpoint, or an `org/name` Hub repo id:
 
 ```bash
-# align reads -> AIRR rearrangement TSV
-alignair predict examples/reads.fasta -o out.tsv --model <bundle_or_checkpoint>
+alignair model list                                  # see available pretrained models
+
+# align reads -> AIRR rearrangement TSV (id auto-downloads the bundle)
+alignair predict examples/reads.fasta -o out.tsv --model human-igh-ogrdb
 
 # align against a donor genotype (fewer alleles and/or NOVEL alleles) — YAML or FASTA
 alignair predict examples/reads.fasta -o out.tsv \
-  --model <bundle_or_checkpoint> --genotype examples/donor_genotype.yaml
+  --model human-igh-ogrdb --genotype examples/donor_genotype.yaml
 ```
+
+(Or use a model you trained yourself — see below — by passing its `runs/.../bundle/` path.)
 
 `--genotype` simply *becomes* the reference for the run — no retraining, no extra flags. See
 [`examples/`](examples/) for runnable data.
@@ -91,6 +96,7 @@ plus `model_card.md` and `validation_report.json`. Presets: `smoke` (quick check
 | --- | --- |
 | `alignair predict` | align reads → AIRR rearrangement TSV |
 | `alignair train` | train a model for your own reference / species (built-in dataconfig or custom FASTA) |
+| `alignair model` | list / download / inspect pretrained models |
 | `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR, parasail) |
 | `alignair bundle` | package a raw checkpoint into a versioned, fingerprinted bundle |
 
