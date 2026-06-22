@@ -73,3 +73,34 @@ def test_yaml_roundtrip(tmp_path):
     for g in ("V", "D", "J"):
         assert rs2.gene(g).names == rs.gene(g).names
         assert rs2.gene(g).sequences == rs.gene(g).sequences
+
+
+def test_from_fasta_infers_gene_and_loads(tmp_path):
+    p = tmp_path / "genotype.fasta"
+    p.write_text(">IGHV1-2*02 some desc\nACGTACGT\n>NOVEL_IGHV9*01\nTTTTGGGG\n"
+                 ">IGHD3-10*01\nGGGGTTTT\n>IGHJ6*02\nCCCCAAAA\n")
+    rs = ReferenceSet.from_fasta(str(p))
+    assert rs.gene("V").names == ["IGHV1-2*02", "NOVEL_IGHV9*01"]   # V inferred, incl. novel
+    assert rs.gene("D").names == ["IGHD3-10*01"]
+    assert rs.gene("J").names == ["IGHJ6*02"]
+    assert rs.gene("V").sequences[0] == "ACGTACGT"
+
+
+def test_subset_preserves_anchors():
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    keepV = rs.gene("V").names[:5]
+    sub = rs.subset({"V": keepV, "D": rs.gene("D").names[:3], "J": rs.gene("J").names[:2]})
+    assert sub.gene("V").names == keepV
+    assert len(sub.gene("D")) == 3 and len(sub.gene("J")) == 2
+    # anchors carried over for the kept alleles (junction stays computable)
+    assert sub.gene("V").anchors is not None
+    assert all(sub.gene("V").anchors[n] == rs.gene("V").anchors[n] for n in keepV)
+
+
+def test_from_genotype_with_anchors():
+    rs = ReferenceSet.from_genotype(
+        {"v": {"IGHV1-2*02": "ACGT"}, "j": {"IGHJ6*02": "TTTT"}},
+        anchors={"V": {"IGHV1-2*02": 288}},
+    )
+    assert rs.gene("V").anchors == {"IGHV1-2*02": 288}
+    assert rs.gene("J").anchors is None

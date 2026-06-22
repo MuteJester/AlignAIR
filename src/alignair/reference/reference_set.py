@@ -57,14 +57,18 @@ class ReferenceSet:
         return cls(genes, has_d)
 
     @classmethod
-    def from_genotype(cls, genes: Dict[str, Dict[str, str]]) -> "ReferenceSet":
+    def from_genotype(cls, genes: Dict[str, Dict[str, str]],
+                      anchors: Dict[str, Dict[str, int]] | None = None) -> "ReferenceSet":
         """Build a reference from a genotype mapping {gene_type: {allele_name: dna_seq}}.
 
         gene_type is V/J (+ D for heavy chains; omit D for light). Allele names need
         NOT be from the training reference — NOVEL alleles are just rows the encoder
         will embed at predict time, so the model conditions on whatever it is handed.
+        ``anchors`` optionally supplies {gene: {allele_name: pos}} so KNOWN alleles keep
+        their junction anchor (novel alleles simply omit it -> no junction emitted).
         """
         upper = {k.upper(): v for k, v in genes.items()}
+        anc_in = {k.upper(): v for k, v in (anchors or {}).items()}
         has_d = bool(upper.get("D"))
         wanted = ["V", "J"] + (["D"] if has_d else [])
         out: Dict[str, GeneReference] = {}
@@ -72,14 +76,31 @@ class ReferenceSet:
             names: List[str] = []
             sequences: List[str] = []
             index: Dict[str, int] = {}
+            ganc = {}
             for name, seq in upper.get(g, {}).items():
                 if name in index:
                     continue
                 index[name] = len(names)
                 names.append(name)
                 sequences.append(str(seq).upper().replace("-", "").replace(".", ""))
-            out[g] = GeneReference(names, sequences, index)
+                if name in anc_in.get(g, {}):
+                    ganc[name] = int(anc_in[g][name])
+            out[g] = GeneReference(names, sequences, index, anchors=ganc or None)
         return cls(out, has_d)
+
+    def subset(self, allowed: Dict[str, Iterable[str]]) -> "ReferenceSet":
+        """Return a new ReferenceSet keeping only the named alleles per gene (a donor's
+        reduced genotype), PRESERVING anchors/junction. ``allowed`` = {gene: [names]}."""
+        want = {g.upper(): list(v) for g, v in allowed.items()}
+        out: Dict[str, GeneReference] = {}
+        for G, ref in self.genes.items():
+            keep = [n for n in want.get(G, ref.names) if n in ref.index]
+            seqs = [ref.sequences[ref.index[n]] for n in keep]
+            anc = ({n: ref.anchors[n] for n in keep if n in ref.anchors}
+                   if ref.anchors else None)
+            out[G] = GeneReference(keep, seqs, {n: i for i, n in enumerate(keep)},
+                                   anchors=anc or None)
+        return ReferenceSet(out, self.has_d)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ReferenceSet":
@@ -88,6 +109,45 @@ class ReferenceSet:
         with open(path) as f:
             data = yaml.safe_load(f)
         return cls.from_genotype(data)
+
+    @staticmethod
+    def _infer_segment(name: str) -> str | None:
+        """Infer V/D/J from an AIRR/IMGT allele name (IGHV1-2*01 -> V, TRBJ2-1 -> J)."""
+        import re
+        m = re.search(r"(?:IG[HKL]|TR[ABGD])([VDJ])", name.upper())
+        if m:
+            return m.group(1)
+        return next((c for c in name.upper() if c in "VDJ"), None)
+
+    @classmethod
+    def from_fasta(cls, path: str) -> "ReferenceSet":
+        """Load a genotype FASTA (``>allele_name`` headers + DNA). Gene type (V/D/J) is
+        inferred from each allele name; alleles whose segment can't be inferred are skipped.
+        Subset OR novel alleles both work — every record is a row the encoder embeds at
+        predict time, so the model conditions on exactly what the file provides."""
+        genes: Dict[str, Dict[str, str]] = {"V": {}, "D": {}, "J": {}}
+        name = None
+        chunks: List[str] = []
+
+        def _flush():
+            if name is not None:
+                seg = cls._infer_segment(name)
+                if seg is not None:
+                    genes[seg][name] = "".join(chunks)
+
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith(">"):
+                    _flush()
+                    name = line[1:].split()[0]
+                    chunks = []
+                else:
+                    chunks.append(line)
+        _flush()
+        return cls.from_genotype({g: m for g, m in genes.items() if m})
 
     def to_yaml(self, path: str) -> None:
         import yaml
