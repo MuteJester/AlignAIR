@@ -58,9 +58,25 @@ alignair predict examples/reads.fasta -o out.tsv \
 
 Because the reference is an input, AlignAIR works on any reference you hand it:
 
-- **A donor's genotype** (a subset of known alleles) — `--genotype donor.yaml` or `donor.fasta`.
-- **Novel alleles** — list them in the genotype file with their sequence; they're embedded and aligned at predict time.
-- **A new species / locus** — train your own AlignAIR model on your reference (training workflow in [docs/dnalignair.md](docs/dnalignair.md); a first‑class `alignair train` command is on the roadmap — see [docs/architecture/adoption_roadmap.md](docs/architecture/adoption_roadmap.md)).
+- **A donor's genotype** (a subset of known alleles) — `--genotype donor.yaml` or `donor.fasta` at predict time.
+- **Novel alleles** — list them in the genotype file with their sequence; they're embedded and aligned at predict time, no retraining.
+- **A new species / locus** — **train your own model**:
+
+```bash
+# train for any of GenAIRR's ~90 built-in references (human, mouse, rat, rabbit, dog, …)
+alignair train --reference MOUSE_IGH_IMGT -o runs/mouse_igh --preset desktop
+
+# or train from your OWN germline FASTAs (custom/novel reference or species)
+alignair train --v-fasta v.fasta --d-fasta d.fasta --j-fasta j.fasta \
+  --chain-type BCR_HEAVY -o runs/my_ref --preset desktop
+
+# fine-tune from an existing model instead of training from scratch
+alignair train --reference HUMAN_IGK_OGRDB --base-model human_igh_bundle/ -o runs/igk
+```
+
+This writes a self-contained `runs/.../bundle/` (custom references are **embedded** in the bundle),
+plus `model_card.md` and `validation_report.json`. Presets: `smoke` (quick check), `desktop`,
+`standard` (paper‑grade). Then just `alignair predict … --model runs/.../bundle`.
 
 ## Output
 
@@ -74,6 +90,7 @@ Because the reference is an input, AlignAIR works on any reference you hand it:
 | Command | Purpose |
 | --- | --- |
 | `alignair predict` | align reads → AIRR rearrangement TSV |
+| `alignair train` | train a model for your own reference / species (built-in dataconfig or custom FASTA) |
 | `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR, parasail) |
 | `alignair bundle` | package a raw checkpoint into a versioned, fingerprinted bundle |
 

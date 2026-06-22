@@ -26,10 +26,15 @@ def _orient_tokens(tokens, t):
 logger = logging.getLogger(__name__)
 
 
-def build_experiment(dataconfig, params):
-    """Compile a GenAIRR experiment at the given curriculum params (forward orientation)."""
+def build_experiment(dataconfig, params, allow_curatable: bool = False):
+    """Compile a GenAIRR experiment at the given curriculum params (forward orientation).
+    allow_curatable: permit simulation from references with curatable issues (e.g. alleles with
+    no detected anchor) — needed for some custom FASTA references built via the cartridge builder."""
     from GenAIRR import Experiment
-    exp = Experiment.on(dataconfig).recombine()
+    exp = Experiment.on(dataconfig)
+    if allow_curatable:
+        exp = exp.allow_curatable_refdata()
+    exp = exp.recombine()
     if params.get("productive_only", False):
         exp = exp.productive_only()
     if params.get("mutation_count") is not None:   # per-read SHM distribution (stratified)
@@ -60,13 +65,14 @@ def build_experiment(dataconfig, params):
 
 class AlignAIRGym(IterableDataset):
     def __init__(self, dataconfigs, reference_set, n=None, seed=0,
-                 curriculum=None, log_every=0):
+                 curriculum=None, log_every=0, allow_curatable=False):
         self.dataconfigs = list(dataconfigs)
         self.reference_set = reference_set
         self.n = n
         self.seed = seed
         self.curriculum = curriculum or Curriculum()
         self.log_every = log_every
+        self.allow_curatable = allow_curatable
         self._p = 0.0
         self._epoch = 0
 
@@ -80,7 +86,7 @@ class AlignAIRGym(IterableDataset):
         self._epoch += 1
         dc = self.dataconfigs[self._epoch % len(self.dataconfigs)]
         has_d = dc.metadata.has_d
-        exp = build_experiment(dc, params)
+        exp = build_experiment(dc, params, allow_curatable=self.allow_curatable)
         rng = np.random.default_rng(seed)
         count = 0
         for record in exp.stream_records(n=self.n, seed=seed):

@@ -26,21 +26,21 @@ def _version() -> str:
 
 def _load_model(model_path, device):
     """Load a DNAlignAIR from either a versioned bundle directory or a raw {model, config}
-    .pt checkpoint. Returns (model, dataconfigs, locus, calibration_or_None)."""
+    .pt checkpoint. Returns (model, dataconfigs, locus, calibration, reference_set)."""
     import torch
     from .config.dnalignair_config import DNAlignAIRConfig
     from .core.dnalignair import DNAlignAIR
     from .serialization.dnalignair_bundle import is_bundle, load_dnalignair_bundle
     if is_bundle(model_path):
         b = load_dnalignair_bundle(model_path, build=True, device=device)
-        return b["model"], b["dataconfigs"], b["locus"], b["calibration"]
+        return b["model"], b["dataconfigs"], b["locus"], b["calibration"], b.get("reference_set")
     ckpt = torch.load(model_path, map_location=device)
     cfg = ckpt["config"]
     cfg = DNAlignAIRConfig(**cfg) if isinstance(cfg, dict) else cfg
     model = DNAlignAIR(cfg).to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
-    return model, None, None, None
+    return model, None, None, None, None
 
 
 def cmd_predict(args) -> None:
@@ -58,7 +58,7 @@ def cmd_predict(args) -> None:
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     if not os.path.exists(args.model):
         raise SystemExit(f"error: model not found: {args.model}")
-    model, b_dataconfigs, b_locus, b_calibration = _load_model(args.model, device)
+    model, b_dataconfigs, b_locus, b_calibration, b_reference = _load_model(args.model, device)
     locus = args.locus or b_locus or "IGH"
     log(f"device: {device}  |  model: {args.model}")
 
@@ -70,6 +70,10 @@ def cmd_predict(args) -> None:
         rs = loader(args.genotype)
         log(f"reference: genotype {args.genotype} "
             f"(V={len(rs.gene('V').names)}"
+            f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
+    elif b_reference is not None:                     # bundle embeds its own (custom) reference
+        rs = b_reference
+        log(f"reference: bundled (V={len(rs.gene('V').names)}"
             f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
     else:
         names = b_dataconfigs or [args.dataconfig]
@@ -157,6 +161,138 @@ def cmd_bundle(args) -> None:
     print(f"wrote DNAlignAIR bundle -> {path}")
 
 
+_TRAIN_PRESETS = {
+    # name:    (d_model, n_layers, nhead, steps, batch)   — override steps with --steps
+    "smoke":   (64, 2, 4, 300, 32),     # ~minutes: "does my reference train at all"
+    "desktop": (128, 4, 8, 3000, 32),   # a modest, usable model
+    "standard": (256, 8, 8, 8000, 32),  # paper-grade (hours on a GPU)
+}
+
+
+def _resolve_train_reference(args):
+    """Return (dataconfig, reference_set, bundle_ref) where bundle_ref is either
+    {'dataconfigs': [name]} (built-in) or {'reference_set': rs} (custom, embedded)."""
+    import GenAIRR.data as gdata
+    from .reference.reference_set import ReferenceSet
+    if args.v_fasta or args.j_fasta or args.d_fasta:        # custom reference from FASTA
+        if not (args.v_fasta and args.j_fasta):
+            raise SystemExit("error: --v-fasta and --j-fasta are required to build a custom reference")
+        if not args.chain_type:
+            raise SystemExit("error: --chain-type is required with FASTA inputs "
+                             "(e.g. BCR_HEAVY, BCR_LIGHT_KAPPA, TCR_BETA)")
+        from GenAIRR.cartridge_builder import ReferenceCartridgeBuilder
+        for f in (args.v_fasta, args.j_fasta, args.d_fasta):
+            if f and not os.path.exists(f):
+                raise SystemExit(f"error: FASTA not found: {f}")
+        dc = ReferenceCartridgeBuilder.from_fasta(
+            v_fasta=args.v_fasta, j_fasta=args.j_fasta, d_fasta=args.d_fasta,
+            chain_type=args.chain_type).build()
+        rs = ReferenceSet.from_dataconfigs(dc)
+        return dc, rs, {"reference_set": rs}
+    if not args.reference:
+        raise SystemExit("error: provide --reference <DATACONFIG_NAME> or --v-fasta/--j-fasta")
+    if not hasattr(gdata, args.reference):
+        raise SystemExit(f"error: unknown GenAIRR DataConfig '{args.reference}'. "
+                         f"List names with: python -c \"import GenAIRR.data as g; print([n for n in dir(g) if n.isupper()])\"")
+    dc = getattr(gdata, args.reference)
+    rs = ReferenceSet.from_dataconfigs(dc)
+    return dc, rs, {"dataconfigs": [args.reference]}
+
+
+def cmd_train(args) -> None:
+    import json as _json
+    import time
+    import torch
+    from .config.dnalignair_config import DNAlignAIRConfig
+    from .core.dnalignair import DNAlignAIR
+    from .losses.dnalignair_loss import DNAlignAIRLoss
+    from .gym.gym import AlignAIRGym
+    from .training.gym_trainer import GymTrainer
+    from .serialization.dnalignair_bundle import save_dnalignair_bundle
+
+    torch.manual_seed(args.seed)
+    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    d_model, n_layers, nhead, preset_steps, preset_batch = _TRAIN_PRESETS[args.preset]
+    steps = args.steps or preset_steps
+    batch = args.batch or preset_batch
+    out = args.out
+    os.makedirs(out, exist_ok=True)
+
+    print(f"[train] resolving reference ...")
+    dc, rs, bundle_ref = _resolve_train_reference(args)
+    genes = ["v", "j"] + (["d"] if rs.has_d else [])
+    locus = args.locus or "IGH"
+    print(f"[train] reference: V={len(rs.gene('V').names)} "
+          f"{'D=' + str(len(rs.gene('D').names)) + ' ' if rs.has_d else ''}J={len(rs.gene('J').names)}"
+          f"  | device={device} preset={args.preset} steps={steps} batch={batch}")
+
+    # model: fine-tune from a base bundle (transfers weights; reference may differ) or fresh
+    if args.base_model:
+        model, _, _, _, _ = _load_model(args.base_model, device)
+        print(f"[train] fine-tuning from base model: {args.base_model}")
+    else:
+        cfg = DNAlignAIRConfig(d_model=d_model, n_layers=n_layers, nhead=nhead)
+        model = DNAlignAIR(cfg).to(device)
+    loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
+    gym = AlignAIRGym([dc], rs, seed=args.seed, allow_curatable=args.allow_curatable)
+    trainer = GymTrainer(model, loss_fn, rs, gym, lr=args.lr, batch_size=batch)
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"[train] model: {n_params/1e6:.2f}M params")
+
+    ckpt_path = os.path.join(out, "checkpoint.pt")
+    t0 = time.time()
+    step = 0
+    while step < steps:
+        chunk = min(args.eval_every, steps - step)
+        trainer.fit(total_steps=chunk, global_total=steps)
+        step += chunk
+        ev = trainer.evaluate(n_batches=3)
+        call = " ".join(f"{g.upper()}={ev[f'{g}_call']:.2f}" for g in genes)
+        print(f"[train] step {step:5d}/{steps}  {time.time()-t0:5.0f}s  "
+              f"loss={ev['loss']:.3f} region={ev['region_acc']:.3f}  call: {call}", flush=True)
+        torch.save({"model": model.state_dict(), "config": model.config.to_dict(),
+                    "step": step}, ckpt_path)            # checkpoint (resume reloads weights)
+
+    # final evaluation -> validation report
+    ev = trainer.evaluate(n_batches=8)
+    ev_clean = trainer.evaluate(n_batches=8, p=0.0)
+    report = {"reference": bundle_ref.get("dataconfigs", ["custom-fasta"]),
+              "locus": locus, "steps": steps, "preset": args.preset, "seed": args.seed,
+              "n_params": n_params, "wall_seconds": round(time.time() - t0, 1),
+              "v_count": len(rs.gene("V").names), "j_count": len(rs.gene("J").names),
+              "d_count": len(rs.gene("D").names) if rs.has_d else 0,
+              "eval_hard": {g: round(ev[f"{g}_call"], 4) for g in genes},
+              "eval_clean": {g: round(ev_clean[f"{g}_call"], 4) for g in genes},
+              "region_acc": round(ev["region_acc"], 4), "orientation_acc": round(ev["orient_acc"], 4)}
+    _json.dump(report, open(os.path.join(out, "validation_report.json"), "w"), indent=2)
+
+    # save a loadable, self-contained bundle
+    bundle_dir = os.path.join(out, "bundle")
+    save_dnalignair_bundle(bundle_dir, model=model, locus=locus,
+                           dataconfigs=bundle_ref.get("dataconfigs"),
+                           reference_set=bundle_ref.get("reference_set"),
+                           notes=f"alignair train preset={args.preset} steps={steps} seed={args.seed}")
+
+    # human-readable model card
+    ref_desc = (", ".join(bundle_ref["dataconfigs"]) if "dataconfigs" in bundle_ref
+                else f"custom FASTA ({locus}, V={report['v_count']}/J={report['j_count']}/D={report['d_count']})")
+    card = (f"# AlignAIR model\n\n"
+            f"- **Reference**: {ref_desc}\n- **Locus**: {locus}\n- **Preset**: {args.preset}  "
+            f"(steps={steps}, params={n_params/1e6:.2f}M, seed={args.seed})\n"
+            f"- **Trained**: {report['wall_seconds']}s on {device}\n\n"
+            f"## Validation (GenAIRR-simulated)\n\n"
+            f"| gene | call acc (hard) | call acc (clean) |\n|---|---|---|\n"
+            + "".join(f"| {g.upper()} | {report['eval_hard'][g]:.3f} | {report['eval_clean'][g]:.3f} |\n"
+                      for g in genes)
+            + f"\nregion_acc={report['region_acc']:.3f}  orientation_acc={report['orientation_acc']:.3f}\n\n"
+            f"## Use\n\n```bash\nalignair predict reads.fasta -o out.tsv --model {bundle_dir}\n```\n")
+    open(os.path.join(out, "model_card.md"), "w").write(card)
+
+    print(f"\n[train] done -> bundle: {bundle_dir}")
+    print(f"[train] validation_report.json + model_card.md written to {out}/")
+    print(f"[train] try it: alignair predict reads.fasta -o out.tsv --model {bundle_dir}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="alignair",
                                  description="AlignAIR — neural IG/TCR sequence aligner")
@@ -185,6 +321,31 @@ def build_parser() -> argparse.ArgumentParser:
     dr = sub.add_parser("doctor", help="check the environment (Python, torch+CUDA, GenAIRR, parasail)")
     dr.add_argument("--model", default=None, help="optionally verify a model bundle/checkpoint resolves")
     dr.set_defaults(func=cmd_doctor)
+
+    tr = sub.add_parser("train", help="train an AlignAIR model for your own reference / species")
+    tr.add_argument("--reference", default=None,
+                    help="a built-in GenAIRR DataConfig name (e.g. HUMAN_IGH_OGRDB, MOUSE_IGH_IMGT)")
+    tr.add_argument("--v-fasta", default=None, help="custom reference: V germline FASTA")
+    tr.add_argument("--j-fasta", default=None, help="custom reference: J germline FASTA")
+    tr.add_argument("--d-fasta", default=None, help="custom reference: D germline FASTA (heavy/beta/delta)")
+    tr.add_argument("--chain-type", default=None,
+                    help="custom reference: GenAIRR chain type (e.g. BCR_HEAVY, BCR_LIGHT_KAPPA, TCR_BETA)")
+    tr.add_argument("-o", "--out", required=True, help="output run directory (bundle + reports)")
+    tr.add_argument("--preset", choices=list(_TRAIN_PRESETS), default="desktop",
+                    help="size/length preset (smoke|desktop|standard); override length with --steps")
+    tr.add_argument("--steps", type=int, default=None, help="training steps (overrides preset)")
+    tr.add_argument("--batch", type=int, default=None, help="batch size (overrides preset)")
+    tr.add_argument("--base-model", default=None,
+                    help="fine-tune from this bundle/checkpoint instead of training from scratch")
+    tr.add_argument("--locus", default="IGH")
+    tr.add_argument("--allow-curatable", action="store_true",
+                    help="permit simulation from references with curatable issues (e.g. custom "
+                         "FASTA alleles with no detected anchor); required for some custom references")
+    tr.add_argument("--lr", type=float, default=5e-4)
+    tr.add_argument("--eval-every", type=int, default=200)
+    tr.add_argument("--device", default=None, help="cuda|cpu (auto if unset)")
+    tr.add_argument("--seed", type=int, default=0)
+    tr.set_defaults(func=cmd_train)
 
     bd = sub.add_parser("bundle", help="package a raw checkpoint into a versioned bundle")
     bd.add_argument("--model", required=True, help="raw .pt checkpoint {model, config}")

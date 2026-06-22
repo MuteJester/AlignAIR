@@ -24,8 +24,16 @@ GPU is auto‑detected; pass `--device cpu` or `--device cuda` to `alignair pred
 
 - Use a pretrained bundle (published on the project's model hub; a `alignair model download`
   command is on the [roadmap](architecture/adoption_roadmap.md)).
-- **Train your own** for a custom reference or species — see the training workflow in
-  [dnalignair.md](dnalignair.md).
+- **Train your own** for any reference or species:
+  ```bash
+  # any of GenAIRR's ~90 built-in references
+  alignair train --reference HUMAN_IGH_OGRDB -o runs/my_igh --preset desktop
+  # or your own germline FASTAs (custom/novel reference)
+  alignair train --v-fasta v.fa --d-fasta d.fa --j-fasta j.fa --chain-type BCR_HEAVY \
+    -o runs/custom --preset desktop --allow-curatable
+  ```
+  This writes `runs/.../bundle/` (self-contained — custom references are embedded), plus a
+  `model_card.md` and `validation_report.json`. Use it with `--model runs/.../bundle`.
 - Package a raw checkpoint into a versioned bundle: `alignair bundle --model ckpt.pt -o my_bundle/`.
 
 ## 3. Align reads

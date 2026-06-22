@@ -41,6 +41,29 @@ def test_bundle_fingerprint_detects_tamper(tmp_path):
         load_dnalignair_bundle(str(d))
 
 
+def test_bundle_embeds_custom_reference(tmp_path):
+    # a custom reference (no GenAIRR dataconfig name) is EMBEDDED and reconstructed on load
+    from alignair.reference.reference_set import ReferenceSet
+    rs = ReferenceSet.from_genotype(
+        {"v": {"NOVELV*01": "ACGTACGTACGT"}, "d": {"NOVELD*01": "GGGGTTTT"},
+         "j": {"NOVELJ*01": "CCCCAAAA"}},
+        anchors={"V": {"NOVELV*01": 9}})
+    d = tmp_path / "custom_bundle"
+    save_dnalignair_bundle(d, model=_model(), reference_set=rs, locus="IGH")
+    b = load_dnalignair_bundle(str(d), build=False)
+    assert b["dataconfigs"] is None                      # name-based path not used
+    rrs = b["reference_set"]
+    assert rrs is not None
+    assert rrs.gene("V").names == ["NOVELV*01"]
+    assert rrs.gene("V").sequences == ["ACGTACGTACGT"]
+    assert rrs.gene("V").anchors == {"NOVELV*01": 9}     # anchors survive the round-trip
+
+
+def test_bundle_requires_a_reference(tmp_path):
+    with pytest.raises(ValueError, match="dataconfigs or reference_set"):
+        save_dnalignair_bundle(tmp_path / "b", model=_model())
+
+
 def test_bundle_missing_file_raises(tmp_path):
     d = tmp_path / "bundle"
     save_dnalignair_bundle(d, model=_model(), dataconfigs=["HUMAN_IGH_OGRDB"])

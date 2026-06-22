@@ -3,14 +3,18 @@
 A bundle is a directory that packages everything needed to deploy one model:
     model.pt          state_dict
     config.json       DNAlignAIRConfig
-    reference.json    {"dataconfigs": [...names...], "locus": "IGH"}  (default reference)
+    reference.json    the default reference, either:
+                        {"dataconfigs": [...names...], "locus": "IGH"}        (built-in GenAIRR), or
+                        {"genotype": {v/d/j: {name: seq}}, "anchors": {...},
+                         "locus": "IGH"}                                       (EMBEDDED — custom/own reference)
     calibration.json  per-gene equivalence-set calibration (optional)
     meta.json         {format_version, notes}
     VERSION
     fingerprint.txt   SHA-256 over the other files (tamper detection)
 
-The module stays free of GenAIRR — it stores dataconfig NAMES; the caller (CLI)
-reconstructs the ReferenceSet from them.
+The module stays free of GenAIRR. For a built-in reference it stores dataconfig NAMES
+(the caller rebuilds via GenAIRR). For a custom reference (e.g. trained from FASTA) it
+EMBEDS the allele sequences + anchors so the bundle is fully self-contained.
 """
 from __future__ import annotations
 
@@ -38,16 +42,33 @@ def compute_fingerprint(bundle_dir) -> str:
     return h.hexdigest()
 
 
-def save_dnalignair_bundle(bundle_dir, *, model, dataconfigs: Iterable[str], locus: str = "IGH",
+def _embed_reference(reference_set) -> dict:
+    """Serialize a ReferenceSet to a JSON-able {genotype, anchors} (names + sequences + anchors)."""
+    genotype = {g.lower(): dict(zip(ref.names, ref.sequences))
+                for g, ref in reference_set.genes.items()}
+    anchors = {g: dict(ref.anchors) for g, ref in reference_set.genes.items() if ref.anchors}
+    return {"genotype": genotype, "anchors": anchors or None}
+
+
+def save_dnalignair_bundle(bundle_dir, *, model, dataconfigs: Optional[Iterable[str]] = None,
+                           locus: str = "IGH", reference_set=None,
                            calibration: Optional[dict] = None, notes: Optional[str] = None) -> str:
     """Write a bundle for `model` (a DNAlignAIR with .config and .state_dict()).
-    `dataconfigs` are GenAIRR DataConfig NAMES used to build the default reference."""
+
+    Provide EITHER `dataconfigs` (GenAIRR DataConfig NAMES, for a built-in reference) OR
+    `reference_set` (a ReferenceSet whose alleles are EMBEDDED — use this for custom/own
+    references with no registered dataconfig name, e.g. models trained from FASTA)."""
+    if reference_set is None and not dataconfigs:
+        raise ValueError("save_dnalignair_bundle needs either dataconfigs or reference_set")
     d = Path(bundle_dir)
     d.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), d / "model.pt")
     (d / "config.json").write_text(json.dumps(model.config.to_dict(), indent=2, sort_keys=True))
-    (d / "reference.json").write_text(
-        json.dumps({"dataconfigs": list(dataconfigs), "locus": locus}, indent=2, sort_keys=True))
+    if reference_set is not None:
+        ref_payload = {**_embed_reference(reference_set), "locus": locus}
+    else:
+        ref_payload = {"dataconfigs": list(dataconfigs), "locus": locus}
+    (d / "reference.json").write_text(json.dumps(ref_payload, indent=2, sort_keys=True))
     if calibration is not None:
         (d / "calibration.json").write_text(json.dumps(calibration, indent=2, sort_keys=True))
     (d / "meta.json").write_text(
@@ -72,7 +93,13 @@ def load_dnalignair_bundle(bundle_dir, *, build: bool = True, device: str = "cpu
     calibration = (json.loads((d / "calibration.json").read_text())
                    if (d / "calibration.json").exists() else None)
     meta = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
-    out = {"config": config, "dataconfigs": ref["dataconfigs"], "locus": ref.get("locus", "IGH"),
+    # embedded (custom) reference -> rebuild a ReferenceSet directly; else keep dataconfig names.
+    reference_set = None
+    if "genotype" in ref:
+        from ..reference.reference_set import ReferenceSet
+        reference_set = ReferenceSet.from_genotype(ref["genotype"], anchors=ref.get("anchors"))
+    out = {"config": config, "dataconfigs": ref.get("dataconfigs"),
+           "reference_set": reference_set, "locus": ref.get("locus", "IGH"),
            "calibration": calibration, "meta": meta}
     if build:
         from ..core.dnalignair import DNAlignAIR
