@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
+from time import perf_counter
 from typing import Any, Iterator
 
 from ...gym.crop import crop_record
@@ -12,6 +15,14 @@ from ...reference.reference_set import ReferenceSet
 from ..core.schema import BenchmarkCase, BenchmarkSpec, GENES, GeneTruth, StratumSpec
 
 _COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+
+
+@dataclass
+class BenchmarkGenerationResult:
+    """Materialized fixed-size benchmark plus generation runtime report."""
+
+    cases: list[BenchmarkCase]
+    report: dict[str, Any]
 
 
 def _orient_sequence(seq: str, orientation_id: int) -> str:
@@ -126,30 +137,177 @@ def dataconfig_by_name(name: str):
     return getattr(gdata, name)
 
 
+def _resolved_workers(workers: int | None) -> int:
+    try:
+        resolved = int(workers or 1)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("workers must be a positive integer") from exc
+    if resolved < 1:
+        raise ValueError("workers must be a positive integer")
+    return resolved
+
+
+def generation_run_report(
+    *,
+    mode: str,
+    n_cases: int,
+    wall_time_seconds: float,
+    workers: int = 1,
+    generated_candidates: int | None = None,
+    accepted_cases: int | None = None,
+) -> dict[str, Any]:
+    """Return normalized runtime stats for a benchmark generation run."""
+
+    generated = int(generated_candidates if generated_candidates is not None else n_cases)
+    accepted = int(accepted_cases if accepted_cases is not None else n_cases)
+    wall_time = float(wall_time_seconds)
+    return {
+        "mode": mode,
+        "workers": int(workers),
+        "parallel": int(workers) > 1,
+        "wall_time_seconds": wall_time,
+        "n_cases": int(n_cases),
+        "generated_candidates": generated,
+        "accepted_cases": accepted,
+        "acceptance_rate": (accepted / generated) if generated else None,
+        "cases_per_second": (n_cases / wall_time) if wall_time > 0 else None,
+        "candidates_per_second": (generated / wall_time) if wall_time > 0 else None,
+    }
+
+
+def _stratum_cases(
+    spec: BenchmarkSpec,
+    dataconfig,
+    reference_set: ReferenceSet,
+    s_idx: int,
+    stratum: StratumSpec,
+) -> list[BenchmarkCase]:
+    curriculum = Curriculum()
+    params = dict(curriculum.params(stratum.progress))
+    params.update(stratum.param_overrides)
+    exp = build_experiment(dataconfig, params)
+    seed = spec.seed + stratum.seed_offset + 1009 * s_idx
+    cases: list[BenchmarkCase] = []
+    for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
+        if stratum.crop_to is not None:
+            record = crop_record(record, stratum.crop_to)
+        orientations = stratum.orientation_ids or (0,)
+        orientation_id = orientations[i % len(orientations)]
+        case_id = f"{spec.name}:{stratum.name}:{i:06d}"
+        cases.append(_case_from_record(record, reference_set, stratum, case_id, orientation_id))
+    return cases
+
+
+def _stratum_worker(task: tuple[BenchmarkSpec, int, StratumSpec, ReferenceSet | None]) -> tuple[int, list[BenchmarkCase]]:
+    spec, s_idx, stratum, reference_set = task
+    dataconfig = dataconfig_by_name(spec.dataconfig_name)
+    resolved_reference_set = reference_set or ReferenceSet.from_dataconfigs(dataconfig)
+    return s_idx, _stratum_cases(spec, dataconfig, resolved_reference_set, s_idx, stratum)
+
+
+def candidate_round_cases(
+    spec: BenchmarkSpec,
+    dataconfig,
+    reference_set: ReferenceSet,
+    s_idx: int,
+    stratum: StratumSpec,
+    round_idx: int,
+) -> list[BenchmarkCase]:
+    """Generate one deterministic stratum/round candidate chunk for coverage planning."""
+
+    curriculum = Curriculum()
+    params = dict(curriculum.params(stratum.progress))
+    params.update(stratum.param_overrides)
+    exp = build_experiment(dataconfig, params)
+    seed = spec.seed + stratum.seed_offset + 1009 * s_idx + 1_000_003 * round_idx
+    cases: list[BenchmarkCase] = []
+    for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
+        if stratum.crop_to is not None:
+            record = crop_record(record, stratum.crop_to)
+        orientations = stratum.orientation_ids or (0,)
+        stratum_index = round_idx * stratum.n + i
+        orientation_id = orientations[stratum_index % len(orientations)]
+        if round_idx == 0:
+            case_id = f"{spec.name}:{stratum.name}:{i:06d}"
+        else:
+            case_id = f"{spec.name}:{stratum.name}:extra{round_idx:03d}:{i:06d}"
+        cases.append(_case_from_record(record, reference_set, stratum, case_id, orientation_id))
+    return cases
+
+
+def candidate_round_worker(
+    task: tuple[BenchmarkSpec, int, StratumSpec, int, ReferenceSet | None],
+) -> tuple[int, list[BenchmarkCase]]:
+    """Worker entry point for deterministic coverage-planned candidate chunks."""
+
+    spec, s_idx, stratum, round_idx, reference_set = task
+    dataconfig = dataconfig_by_name(spec.dataconfig_name)
+    resolved_reference_set = reference_set or ReferenceSet.from_dataconfigs(dataconfig)
+    return s_idx, candidate_round_cases(
+        spec,
+        dataconfig,
+        resolved_reference_set,
+        s_idx,
+        stratum,
+        round_idx,
+    )
+
+
 def generate_benchmark(
     spec: BenchmarkSpec,
     dataconfig=None,
     reference_set: ReferenceSet | None = None,
+    *,
+    workers: int = 1,
 ) -> list[BenchmarkCase]:
     """Generate all cases described by ``spec``."""
 
     dataconfig = dataconfig or dataconfig_by_name(spec.dataconfig_name)
     reference_set = reference_set or ReferenceSet.from_dataconfigs(dataconfig)
-    cases: list[BenchmarkCase] = []
-    curriculum = Curriculum()
-    for s_idx, stratum in enumerate(spec.strata):
-        params = dict(curriculum.params(stratum.progress))
-        params.update(stratum.param_overrides)
-        exp = build_experiment(dataconfig, params)
-        seed = spec.seed + stratum.seed_offset + 1009 * s_idx
-        for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
-            if stratum.crop_to is not None:
-                record = crop_record(record, stratum.crop_to)
-            orientations = stratum.orientation_ids or (0,)
-            orientation_id = orientations[i % len(orientations)]
-            case_id = f"{spec.name}:{stratum.name}:{i:06d}"
-            cases.append(_case_from_record(record, reference_set, stratum, case_id, orientation_id))
+    resolved_workers = _resolved_workers(workers)
+    active = tuple((s_idx, stratum) for s_idx, stratum in enumerate(spec.strata) if stratum.n > 0)
+    if resolved_workers == 1 or len(active) <= 1:
+        cases: list[BenchmarkCase] = []
+        for s_idx, stratum in active:
+            cases.extend(_stratum_cases(spec, dataconfig, reference_set, s_idx, stratum))
+        return cases
+
+    tasks = [(spec, s_idx, stratum, reference_set) for s_idx, stratum in active]
+    max_workers = min(resolved_workers, len(tasks))
+    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+        results = list(pool.map(_stratum_worker, tasks))
+    cases = []
+    for _, chunk in sorted(results, key=lambda item: item[0]):
+        cases.extend(chunk)
     return cases
+
+
+def generate_benchmark_with_report(
+    spec: BenchmarkSpec,
+    dataconfig=None,
+    reference_set: ReferenceSet | None = None,
+    *,
+    workers: int = 1,
+) -> BenchmarkGenerationResult:
+    """Generate fixed-size benchmark cases and return generation runtime stats."""
+
+    start = perf_counter()
+    cases = generate_benchmark(
+        spec,
+        dataconfig=dataconfig,
+        reference_set=reference_set,
+        workers=workers,
+    )
+    wall_time = perf_counter() - start
+    report = generation_run_report(
+        mode="fixed_size",
+        n_cases=len(cases),
+        wall_time_seconds=wall_time,
+        workers=_resolved_workers(workers),
+        generated_candidates=len(cases),
+        accepted_cases=len(cases),
+    )
+    return BenchmarkGenerationResult(cases=cases, report=report)
 
 
 def stream_benchmark(

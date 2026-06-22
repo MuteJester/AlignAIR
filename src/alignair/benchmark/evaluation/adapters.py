@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .performance import PERFORMANCE_PREDICTION_FIELD_KEYS
 from ..core.schema import BenchmarkCase, GENES
 
 
@@ -121,6 +122,9 @@ def igblast_airr_to_prediction(row: dict[str, Any] | None) -> dict[str, Any]:
         "c_call",
         "read_layout",
     ):
+        if key in row:
+            pred[key] = row.get(key)
+    for key in PERFORMANCE_PREDICTION_FIELD_KEYS:
         if key in row:
             pred[key] = row.get(key)
     for key in (

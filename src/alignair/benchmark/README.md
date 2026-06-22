@@ -6,7 +6,8 @@ This is a submodule of the `alignair` package. It is not a standalone package.
 It generates simulated IG rearrangement cases with GenAIRR truth, runs or scores
 aligner predictions, and returns JSON reports that expose aggregate accuracy,
 scenario-specific failures, allele-level errors, coverage, readiness, audit,
-single-model uncertainty intervals, and paired model-vs-model comparisons.
+runtime/memory statistics, single-model uncertainty intervals, and paired
+model-vs-model comparisons.
 
 ## What It Is For
 
@@ -19,6 +20,8 @@ Use this benchmark when you want to answer questions such as:
   CIGAR/trim, and metadata annotations?
 - Which alleles, genes, gene families, strata, lengths, mutation burdens, or
   hard biological cases fail?
+- How much wall time, per-sequence latency, throughput, memory, candidate
+  enumeration, and reranking cost does the aligner use?
 - Is a generated benchmark broad enough to trust for serious model evaluation?
 
 The benchmark can diagnose one model deeply and compare two models on the same
@@ -47,7 +50,8 @@ PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli build \
   --out experiments/human_igh_assay.jsonl \
   --recipe assay \
   --n-per-stratum 200 \
-  --n-per-focus 200
+  --n-per-focus 200 \
+  --workers 4
 ```
 
 For focused hard cases only:
@@ -61,6 +65,14 @@ PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli build \
 
 The case JSONL contains the input sequence plus full GenAIRR-derived truth. Keep
 it as the frozen benchmark artifact for repeated model comparisons.
+
+`--workers` enables deterministic multiprocessing during generation. For
+fixed-size builds, strata are generated in worker processes and collected in
+stratum order so case IDs and output order remain stable. For coverage-planned
+builds, workers generate deterministic candidate chunks, but the main process
+still owns coverage acceptance. The command prints `generation_profile` with
+wall time, worker count, generated candidates, accepted cases, acceptance rate,
+and cases per second.
 
 ### 2. Check Benchmark Coverage And Readiness
 
@@ -208,7 +220,48 @@ By default, offline evaluation aligns predictions to cases by `sequence_id`.
 Use `--match-by order` only when predictions are guaranteed to be in the exact
 same order as the case JSONL.
 
-### 6. Compare Two Prediction Sets
+### 6. Add Runtime And Memory Statistics
+
+Runtime and memory are part of the benchmark report. For Python predictors run
+through `run_benchmark_report` or `run_online_benchmark`, wall time, throughput,
+per-sequence latency, process RSS high-water memory, RSS delta, and Python
+allocation peak are measured automatically.
+
+For external tools scored with `evaluate`, either add performance fields to each
+prediction row or pass a report-level sidecar JSON:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli evaluate \
+  --cases experiments/human_igh_assay.jsonl \
+  --predictions experiments/igblast_airr.tsv \
+  --prediction-format airr-tsv \
+  --contract-level core \
+  --performance-json experiments/igblast_performance.json \
+  --out experiments/igblast_report.json
+```
+
+Example sidecar:
+
+```json
+{
+  "wall_time_seconds": 38.4,
+  "n_sequences": 10000,
+  "peak_memory_mb": 1536.0,
+  "candidate_count": 250,
+  "rerank_count": 25
+}
+```
+
+Accepted per-prediction fields include `runtime_seconds`, `runtime_ms`,
+`seconds_per_read`, `milliseconds_per_read`, `reads_per_second`,
+`peak_memory_mb`, `peak_memory_bytes`, `peak_memory_delta_mb`,
+`python_tracemalloc_peak_mb`, `candidate_count`, and `rerank_count`.
+
+The report writes normalized values under `performance` and mirrors assay-level
+metrics such as `seconds_per_read`, `reads_per_second`, and `peak_memory_mb`
+into `results.overall.global`.
+
+### 7. Compare Two Prediction Sets
 
 Compare two model outputs on exactly the same cases:
 
@@ -219,10 +272,14 @@ PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli compare \
   --b-predictions experiments/new_model_predictions.jsonl \
   --model-a-name baseline \
   --model-b-name new_model \
+  --policy allele_calling_core \
   --metric genes.v.call_top1_in_set \
   --metric genes.v.ss_mae \
+  --minimum-primary-advantage 0.001 \
+  --maximum-guardrail-regression 1.0 \
   --bootstrap 500 \
   --confidence 0.95 \
+  --multiple-comparison-correction bonferroni \
   --no-bootstrap-strata \
   --out experiments/baseline_vs_new_model.json
 ```
@@ -234,6 +291,35 @@ intervals, and a verdict. Positive `model_b_advantage` always favors model B;
 for lower-is-better metrics such as `*_mae`, it is the sign-flipped raw delta.
 Use `--practical-delta` to require a minimum aggregate effect size before a
 metric is called better or worse.
+
+Use a named `--policy` for reproducible endpoint and guardrail choices:
+
+| Policy | Use |
+| --- | --- |
+| `allele_calling_core` | Mixed-chain V/J allele-call endpoint with set-call, boundary, junction, and output guardrails. |
+| `igh_allele_calling_core` | IGH V/D/J allele-call endpoint with D-aware guardrails. |
+| `boundary_core` | V/J query-boundary endpoint with allele-call and output guardrails. |
+| `airr_core` | General AIRR-style endpoint over V/J calls, junction recovery, productivity, and output completeness. |
+
+Print the built-in policy catalog:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli comparison-policies
+```
+
+For custom decisions, pass `--primary-metric` and `--guardrail-metric` directly.
+The report then includes a `decision` section. Primary metrics must clear
+`--minimum-primary-advantage`; guardrails must stay within
+`--maximum-guardrail-regression`. With bootstrap enabled, gates use confidence
+intervals instead of only point estimates. Typical decision verdicts are
+`model_b_superior`, `blocked_by_guardrail_regression`, `no_primary_improvement`,
+`no_regression_pass`, `inconclusive`, and `not_scored`.
+
+When a decision checks multiple primary and guardrail metrics, use
+`--multiple-comparison-correction bonferroni` or `sidak` to control the
+familywise decision interval. The ordinary metric rows still report the requested
+`--confidence`; the `decision.multiple_comparison` section records the stricter
+per-metric confidence used by the gate.
 
 ## Prediction Contract
 
@@ -301,6 +387,7 @@ For AIRR/IgBLAST tables, fields such as `v_call`, `d_call`, `j_call`,
 | `coverage` | Case, stratum, allele, ambiguity, length, and stressor coverage. |
 | `results.overall` | Aggregate scalar metrics across all cases. |
 | `results.by_context` | Metrics sliced by strata and contexts. |
+| `performance` | Normalized wall time, per-sequence latency, throughput, and memory statistics when measured or supplied. |
 | `diagnostics.allele_calling` | Per-allele, per-gene, per-family, and confusion-pair tables. |
 | `diagnostics.boundaries` | V/D/J query and germline coordinate failure decomposition. |
 | `prediction_matching` | Present when predictions are matched by id; shows missing, extra, and duplicate ids. |
@@ -316,6 +403,7 @@ Minimal report shape:
   "benchmark": {"n_cases": 1000, "strata": ["clean_full", "hard_full"]},
   "frame": "canonical",
   "coverage": {"n_cases": 1000, "by_stratum": {"clean_full": 200}},
+  "performance": {"seconds_per_read": 0.004, "reads_per_second": 250.0, "peak_memory_mb": 1024.0},
   "results": {
     "overall": {
       "global": {"productive_acc": 0.99, "orientation_acc": 1.0},
@@ -512,11 +600,13 @@ PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli build \
   --min-per-orientation 25 \
   --min-per-context 25 \
   --min-per-allele 1 \
-  --max-candidates 50000
+  --max-candidates 50000 \
+  --workers 4
 ```
 
 The command prints `generation_coverage` with accepted cases, generated
-candidates, target counts, and unmet quotas.
+candidates, target counts, and unmet quotas, plus `generation_profile` with
+runtime and throughput.
 
 For serious allele-level model comparison, use the allele-complete profile. This
 starts from the full DataConfig reference set and requires every V/D/J reference
@@ -593,13 +683,19 @@ from alignair.benchmark import (
     compact_summary,
     default_igh_assay_spec,
     export_benchmark_inputs,
-    generate_benchmark,
+    generate_benchmark_with_report,
     load_airr_predictions,
+    run_benchmark_report,
     save_jsonl,
     score_cases,
 )
 
-cases = generate_benchmark(default_igh_assay_spec(n_per_stratum=200, n_per_focus=200))
+generated = generate_benchmark_with_report(
+    default_igh_assay_spec(n_per_stratum=200, n_per_focus=200),
+    workers=4,
+)
+cases = generated.cases
+print(generated.report)
 save_jsonl(cases, "experiments/human_igh_assay.jsonl")
 export_benchmark_inputs(cases, "experiments/human_igh_export", prefix="human_igh_assay")
 
@@ -620,6 +716,9 @@ igblast_report = build_benchmark_report(
     match_by="sequence_id",
 )
 print(igblast_report["prediction_matching"])
+
+profiled_report = run_benchmark_report(cases, my_aligner, contract_level="core")
+print(profiled_report["performance"])
 ```
 
 ### Online Workflow
@@ -637,10 +736,12 @@ report = run_online_benchmark(
     contract_level="core",
 )
 print(report["assay"]["summary"])
+print(report["performance"])
 ```
 
 The predictor receives a list of input sequences and must return one prediction
-dictionary per sequence.
+dictionary per sequence. Online and profiled predictor workflows measure runtime
+and memory by default; pass `profile_runtime=False` to disable that overhead.
 
 ### Coverage-Planned Python Workflow
 
@@ -666,13 +767,14 @@ print(result.report["satisfied"], result.report["unmet"])
 
 | Command | Purpose |
 | --- | --- |
-| `build` | Generate benchmark case JSONL, optionally with coverage planning and export. |
+| `build` | Generate benchmark case JSONL, optionally with multiprocessing, coverage planning, and export. |
 | `summary` | Print coverage summary for a case JSONL. |
 | `readiness` | Assess whether generated cases meet a readiness profile. |
 | `export` | Export FASTA, AIRR input TSV, and manifest for external tools. |
 | `normalize-predictions` | Convert AIRR/IgBLAST TSV/CSV to normalized prediction JSONL. |
 | `evaluate` | Score predictions against benchmark cases and write a full report. |
-| `compare` | Compare two prediction files with paired deltas, win/loss/tie counts, bootstrap intervals, and verdicts. |
+| `compare` | Compare two prediction files with paired deltas, win/loss/tie counts, bootstrap intervals, and optional endpoint/guardrail decisions. |
+| `comparison-policies` | Print built-in named endpoint/guardrail policies for `compare --policy`. |
 | `assay` | Build an assay view from saved score/report JSON. |
 | `audit` | Audit observed metrics against the criteria catalog and optional case truth. |
 | `criteria` | Print criteria and scenario-axis catalogs. |
@@ -682,11 +784,10 @@ print(result.report["satisfied"], result.report["unmet"])
 
 The benchmark is strong enough to identify model weaknesses and compare models
 on the same generated case set. It is not yet a complete superiority adjudicator
-because the package does not yet provide pre-registered primary endpoint
-policies, explicit non-inferiority/no-regression gates, multiple-comparison
-correction, or validation against independent real-read cohorts.
+because the package does not yet provide validation against independent
+real-read cohorts.
 
 For serious claims, use the report as an assay-style evidence package:
 readiness first, then prediction validation, criteria audit, assay grades,
 allele diagnostics, context slices, single-model uncertainty, and paired
-comparison verdicts.
+comparison decisions.

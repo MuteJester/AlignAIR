@@ -21,6 +21,12 @@ _LOWER_IS_BETTER_PARTS = (
     "false_positive",
     "edit_distance",
     "memory",
+    "tracemalloc",
+    "rss",
+    "seconds_per_read",
+    "milliseconds_per_read",
+    "latency",
+    "runtime",
     "candidate_count",
     "rerank_count",
 )
@@ -60,19 +66,27 @@ def _thresholds_for_metric(metric: str) -> dict[str, Any]:
             return {"higher_is_better": True, "pass": 0.75, "warn": 0.25}
         if metric_l in {"required_field_presence", "parseable_airr_rate", "coordinate_parse_rate"}:
             return {"higher_is_better": True, "pass": 1.0, "warn": 0.95}
+        if metric_l == "reads_per_second":
+            return {"higher_is_better": True, "pass": 1.0, "warn": 0.1}
         if metric_l.endswith("_within10"):
             return {"higher_is_better": True, "pass": 0.99, "warn": 0.95}
         return {"higher_is_better": True, "pass": 0.99, "warn": 0.95}
 
     if metric_l == "cigar_edit_distance":
         return {"higher_is_better": False, "pass": 0.0, "warn": 2.0}
+    if metric_l in {"seconds_per_read", "latency_seconds", "runtime_seconds"}:
+        return {"higher_is_better": False, "pass": 1.0, "warn": 10.0}
+    if metric_l in {"milliseconds_per_read", "latency_ms", "runtime_ms"}:
+        return {"higher_is_better": False, "pass": 1000.0, "warn": 10000.0}
+    if metric_l in {"candidate_count", "rerank_count"}:
+        return {"higher_is_better": False, "pass": 100.0, "warn": 1000.0}
     if metric_l.endswith("_rate") or "rate" in metric_l:
         return {"higher_is_better": False, "pass": 0.01, "warn": 0.05}
     if metric_l.endswith("_mae"):
         if "mutation_rate" in metric_l or "identity" in metric_l:
             return {"higher_is_better": False, "pass": 0.01, "warn": 0.03}
         return {"higher_is_better": False, "pass": 0.5, "warn": 2.0}
-    if "memory" in metric_l:
+    if "memory" in metric_l or "tracemalloc" in metric_l or "rss" in metric_l:
         return {"higher_is_better": False, "pass": 4096.0, "warn": 16384.0}
     return {"higher_is_better": False, "pass": 0.0, "warn": 1.0}
 

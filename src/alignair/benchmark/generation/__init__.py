@@ -1,6 +1,14 @@
 """Benchmark generation recipes and GenAIRR builders."""
 
-from .generate import coverage_summary, dataconfig_by_name, generate_benchmark, stream_benchmark
+from .generate import (
+    BenchmarkGenerationResult,
+    coverage_summary,
+    dataconfig_by_name,
+    generate_benchmark,
+    generate_benchmark_with_report,
+    generation_run_report,
+    stream_benchmark,
+)
 from .planner import (
     ALLELE_CONTEXT_PREFIX,
     CoverageGenerationResult,
@@ -19,6 +27,7 @@ from .strata import default_igh_assay_spec, default_igh_spec, focused_igh_spec, 
 
 __all__ = [
     "CoverageGenerationResult",
+    "BenchmarkGenerationResult",
     "CoveragePlan",
     "CoverageTracker",
     "ALLELE_CONTEXT_PREFIX",
@@ -36,7 +45,9 @@ __all__ = [
     "focused_igh_spec",
     "focused_igh_strata",
     "generate_benchmark",
+    "generate_benchmark_with_report",
     "generate_coverage_benchmark",
+    "generation_run_report",
     "readiness_thresholds",
     "stream_benchmark",
     "stream_coverage_benchmark",

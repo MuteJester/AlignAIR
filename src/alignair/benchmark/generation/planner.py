@@ -8,7 +8,9 @@ reference allele.
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
+from time import perf_counter
 from typing import Any, Iterator
 
 from ...gym.crop import crop_record
@@ -16,7 +18,13 @@ from ...gym.curriculum import Curriculum
 from ...gym.gym import build_experiment
 from ...reference.reference_set import ReferenceSet
 from ..core.schema import BenchmarkCase, BenchmarkSpec, GENES, ORIENTATION_NAMES
-from .generate import _case_from_record, dataconfig_by_name
+from .generate import (
+    _case_from_record,
+    _resolved_workers,
+    candidate_round_worker,
+    dataconfig_by_name,
+    generation_run_report,
+)
 
 ALLELE_CONTEXT_PREFIX = "allele_context:"
 
@@ -450,12 +458,46 @@ def _candidate_cases(
         round_idx += 1
 
 
+def _candidate_cases_parallel(
+    spec: BenchmarkSpec,
+    reference_set: ReferenceSet,
+    *,
+    max_candidates: int,
+    workers: int,
+) -> Iterator[BenchmarkCase]:
+    """Yield candidate cases from parallel stratum/round chunks in deterministic order."""
+
+    generated = 0
+    round_idx = 0
+    active_strata = tuple(
+        (s_idx, stratum) for s_idx, stratum in enumerate(spec.strata) if stratum.n > 0
+    )
+    if not active_strata:
+        return
+    max_workers = min(workers, len(active_strata))
+    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+        while generated < max_candidates:
+            tasks = [
+                (spec, s_idx, stratum, round_idx, reference_set)
+                for s_idx, stratum in active_strata
+            ]
+            results = list(pool.map(candidate_round_worker, tasks))
+            for _, cases in sorted(results, key=lambda item: item[0]):
+                for case in cases:
+                    if generated >= max_candidates:
+                        return
+                    generated += 1
+                    yield case
+            round_idx += 1
+
+
 def stream_coverage_benchmark(
     spec: BenchmarkSpec,
     dataconfig=None,
     reference_set: ReferenceSet | None = None,
     plan: CoveragePlan | None = None,
     tracker: CoverageTracker | None = None,
+    workers: int = 1,
 ) -> Iterator[BenchmarkCase]:
     """Yield accepted cases until the coverage plan is satisfied or exhausted."""
 
@@ -464,8 +506,24 @@ def stream_coverage_benchmark(
     plan = plan or coverage_plan_from_spec(spec, reference_set)
     tracker = tracker or CoverageTracker(plan)
     max_candidates = int(plan.max_candidates or _default_max_candidates(spec, plan))
+    resolved_workers = _resolved_workers(workers)
 
-    for case in _candidate_cases(spec, dataconfig, reference_set, max_candidates=max_candidates):
+    if resolved_workers > 1:
+        candidate_iter = _candidate_cases_parallel(
+            spec,
+            reference_set,
+            max_candidates=max_candidates,
+            workers=resolved_workers,
+        )
+    else:
+        candidate_iter = _candidate_cases(
+            spec,
+            dataconfig,
+            reference_set,
+            max_candidates=max_candidates,
+        )
+
+    for case in candidate_iter:
         tracker.record_candidate()
         if tracker.should_accept(case):
             tracker.accept(case)
@@ -479,6 +537,8 @@ def generate_coverage_benchmark(
     dataconfig=None,
     reference_set: ReferenceSet | None = None,
     plan: CoveragePlan | None = None,
+    *,
+    workers: int = 1,
 ) -> CoverageGenerationResult:
     """Materialize a coverage-driven benchmark and return its generation report."""
 
@@ -486,6 +546,8 @@ def generate_coverage_benchmark(
     reference_set = reference_set or ReferenceSet.from_dataconfigs(dataconfig)
     plan = plan or coverage_plan_from_spec(spec, reference_set)
     tracker = CoverageTracker(plan)
+    resolved_workers = _resolved_workers(workers)
+    start = perf_counter()
     cases = list(
         stream_coverage_benchmark(
             spec,
@@ -493,6 +555,17 @@ def generate_coverage_benchmark(
             reference_set=reference_set,
             plan=plan,
             tracker=tracker,
+            workers=resolved_workers,
         )
     )
-    return CoverageGenerationResult(cases=cases, report=tracker.to_dict())
+    wall_time = perf_counter() - start
+    report = tracker.to_dict()
+    report["generation_profile"] = generation_run_report(
+        mode="coverage_planned",
+        n_cases=len(cases),
+        wall_time_seconds=wall_time,
+        workers=resolved_workers,
+        generated_candidates=report["generated_cases"],
+        accepted_cases=report["accepted_cases"],
+    )
+    return CoverageGenerationResult(cases=cases, report=report)

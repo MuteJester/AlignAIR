@@ -19,6 +19,7 @@ from .context import case_contexts
 from .audit import audit_criteria_report
 from .diagnostics import AlleleCallingDiagnosticsAccumulator, BoundaryDiagnosticsAccumulator
 from .metrics import score_one_case
+from .performance import PerformanceAccumulator, performance_metrics_from_summary, profile_predictor_call
 from .report import build_assay_report
 
 Predictor = Callable[[list[str]], list[dict[str, Any]]]
@@ -187,6 +188,8 @@ def run_online_benchmark(
     frame: str = "canonical",
     coverage_plan: CoveragePlan | None = None,
     contract_level: str | None = None,
+    profile_runtime: bool = True,
+    profile_memory: bool = True,
 ) -> dict[str, Any]:
     """Generate cases online, call ``predictor`` in batches, and return an assay report."""
 
@@ -202,6 +205,7 @@ def run_online_benchmark(
         if contract_level
         else None
     )
+    performance_accumulator = PerformanceAccumulator() if profile_runtime else None
     coverage_tracker = None
     if coverage_plan is not None:
         coverage_tracker = CoverageTracker(coverage_plan)
@@ -215,7 +219,16 @@ def run_online_benchmark(
     else:
         case_iter = stream_benchmark(spec, dataconfig=dataconfig, reference_set=reference_set)
     for cases in _batched(case_iter, batch_size):
-        preds = predictor([c.sequence for c in cases])
+        if profile_runtime:
+            preds, performance = profile_predictor_call(
+                predictor,
+                [c.sequence for c in cases],
+                profile_memory=profile_memory,
+            )
+            if performance_accumulator is not None:
+                performance_accumulator.update(performance)
+        else:
+            preds = predictor([c.sequence for c in cases])
         if len(preds) != len(cases):
             raise ValueError(f"predictor returned {len(preds)} predictions for {len(cases)} cases")
         if validation is not None:
@@ -223,6 +236,12 @@ def run_online_benchmark(
         for case, pred in zip(cases, preds):
             report.update(case, pred)
     out = report.to_dict()
+    performance_summary = performance_accumulator.to_dict() if performance_accumulator is not None else None
+    if performance_summary is not None:
+        out["performance"] = performance_summary
+        out["results"]["overall"].setdefault("global", {}).update(
+            performance_metrics_from_summary(performance_summary)
+        )
     if coverage_tracker is not None:
         out["generation_coverage"] = coverage_tracker.to_dict()
     if validation is not None:

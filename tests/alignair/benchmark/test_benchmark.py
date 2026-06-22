@@ -31,6 +31,7 @@ from alignair.benchmark import (
     case_to_prediction,
     build_model_comparison_report,
     compact_summary,
+    comparison_policy_catalog,
     coverage_plan_from_spec,
     coverage_summary,
     criteria_catalog,
@@ -38,6 +39,7 @@ from alignair.benchmark import (
     export_benchmark_inputs,
     focused_igh_spec,
     generate_benchmark,
+    generate_benchmark_with_report,
     generate_coverage_benchmark,
     load_airr_predictions,
     load_dicts_jsonl,
@@ -196,6 +198,33 @@ def test_generate_benchmark_cases_and_coverage():
     cov = coverage_summary(cases)
     assert cov["n_cases"] == 7
     assert cov["by_stratum"]["clean"] == 3
+
+
+def test_parallel_generation_preserves_case_order_and_sequences():
+    spec = BenchmarkSpec(
+        name="parallel",
+        dataconfig_name="HUMAN_IGH_OGRDB",
+        seed=23,
+        strata=(
+            StratumSpec(name="clean", n=1, progress=0.0),
+            StratumSpec(name="hard", n=1, progress=0.4),
+        ),
+    )
+
+    serial = generate_benchmark(spec, workers=1)
+    parallel = generate_benchmark(spec, workers=2)
+    assert [case.case_id for case in parallel] == [case.case_id for case in serial]
+    assert [case.sequence for case in parallel] == [case.sequence for case in serial]
+    assert [case.orientation_id for case in parallel] == [case.orientation_id for case in serial]
+
+    result = generate_benchmark_with_report(spec, workers=2)
+    assert [case.case_id for case in result.cases] == [case.case_id for case in serial]
+    assert result.report["mode"] == "fixed_size"
+    assert result.report["workers"] == 2
+    assert result.report["parallel"] is True
+    assert result.report["n_cases"] == len(serial)
+    assert result.report["generated_candidates"] == len(serial)
+    assert result.report["cases_per_second"] is not None
 
 
 def test_case_coverage_labels_include_core_assay_axes():
@@ -392,6 +421,30 @@ def test_coverage_planned_generation_accepts_until_quota_met():
     assert result.report["observed_target_counts"]["orientation:reverse_complement"] == 1
     assert any(case.orientation_id == 1 for case in result.cases)
     assert len(result.cases) > 1
+
+
+def test_parallel_coverage_planned_generation_preserves_acceptance_order():
+    spec = BenchmarkSpec(
+        name="planned_parallel",
+        dataconfig_name="HUMAN_IGH_OGRDB",
+        seed=13,
+        strata=(StratumSpec(name="orient", n=1, progress=0.2, orientation_ids=(0, 1, 2, 3)),),
+    )
+    plan = CoveragePlan(
+        name="need_rev_comp",
+        min_cases=1,
+        min_counts={"orientation:reverse_complement": 1},
+        max_candidates=6,
+    )
+
+    serial = generate_coverage_benchmark(spec, plan=plan, workers=1)
+    parallel = generate_coverage_benchmark(spec, plan=plan, workers=2)
+    assert [case.case_id for case in parallel.cases] == [case.case_id for case in serial.cases]
+    assert parallel.report["satisfied"]
+    assert parallel.report["generated_cases"] == serial.report["generated_cases"]
+    assert parallel.report["generation_profile"]["mode"] == "coverage_planned"
+    assert parallel.report["generation_profile"]["workers"] == 2
+    assert parallel.report["generation_profile"]["generated_candidates"] == serial.report["generated_cases"]
 
 
 def test_coverage_tracker_counts_targeted_allele_context_labels():
@@ -606,9 +659,23 @@ def test_cli_normalizes_and_evaluates_airr_tables(tmp_path):
     cases_path = tmp_path / "cases.jsonl"
     airr_path = tmp_path / "airr.tsv"
     preds_path = tmp_path / "predictions.jsonl"
+    performance_path = tmp_path / "performance.json"
     report_path = tmp_path / "report.json"
     save_jsonl([case], cases_path)
-    _write_tsv(airr_path, [_airr_row_for_case(case)])
+    airr_row = _airr_row_for_case(case)
+    airr_row["runtime_ms"] = "10"
+    airr_row["peak_memory_mb"] = "128"
+    _write_tsv(airr_path, [airr_row])
+    performance_path.write_text(
+        json.dumps(
+            {
+                "wall_time_seconds": 2.0,
+                "peak_memory_mb": 256.0,
+                "candidate_count": 12,
+            }
+        ),
+        encoding="utf-8",
+    )
 
     benchmark_cli(
         [
@@ -623,6 +690,8 @@ def test_cli_normalizes_and_evaluates_airr_tables(tmp_path):
     )
     preds = load_dicts_jsonl(preds_path)
     assert preds[0]["j_call"] == case.genes["j"].calls[0]
+    assert preds[0]["runtime_ms"] == "10"
+    assert preds[0]["peak_memory_mb"] == "128"
 
     benchmark_cli(
         [
@@ -635,6 +704,8 @@ def test_cli_normalizes_and_evaluates_airr_tables(tmp_path):
             "airr-tsv",
             "--contract-level",
             "core",
+            "--performance-json",
+            str(performance_path),
             "--out",
             str(report_path),
         ]
@@ -642,6 +713,9 @@ def test_cli_normalizes_and_evaluates_airr_tables(tmp_path):
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["prediction_validation"]["valid_fraction"] == 1.0
     assert report["results"]["overall"]["genes"]["j"]["call_top1_in_set"] == 1.0
+    assert report["performance"]["seconds_per_read"] == 2.0
+    assert report["performance"]["peak_memory_mb"] == 256.0
+    assert report["results"]["overall"]["global"]["candidate_count"] == 12.0
 
 
 def test_prediction_matching_recovers_reordered_outputs():
@@ -750,7 +824,9 @@ def test_model_comparison_reports_paired_deltas_and_verdicts():
         preds_b,
         model_a_name="old",
         model_b_name="new",
-        metric_paths=("genes.v.call_top1_in_set", "genes.v.ss_mae"),
+        metric_paths=("genes.v.call_top1_in_set",),
+        primary_metrics=("genes.v.call_top1_in_set",),
+        guardrail_metrics=("genes.v.ss_mae",),
         n_bootstrap=10,
         confidence=0.9,
         seed=5,
@@ -777,18 +853,81 @@ def test_model_comparison_reports_paired_deltas_and_verdicts():
     assert mae["preferred_model"] == "old"
     assert report["summary"]["verdict"] == "mixed"
 
+    decision = report["decision"]
+    assert decision["verdict"] == "blocked_by_guardrail_regression"
+    assert decision["primary_endpoints"][0]["status"] == "pass"
+    assert decision["guardrails"][0]["status"] == "fail"
+    assert decision["guardrails"][0]["metric"] == "genes.v.ss_mae"
 
-def test_cli_compare_matches_prediction_ids_and_writes_report(tmp_path):
+
+def test_named_comparison_policy_populates_endpoint_gates():
     cases = [
-        _manual_case("cli_cmp1", ("IGHV1-1*01",)),
-        _manual_case("cli_cmp2", ("IGHV1-2*01",)),
+        _manual_case("policy_cmp1", ("IGHV1-1*01",)),
+        _manual_case("policy_cmp2", ("IGHV1-2*01",)),
     ]
+    for case in cases:
+        case.record["junction"] = "AACCGG"
+        case.scalars["productive"] = 1.0
     preds_a = []
     preds_b = []
     for case in cases:
         pred_a = case_to_prediction(case)
         pred_a["v_call"] = "IGHV9-9*01"
         pred_a["v_calls"] = ["IGHV9-9*01"]
+        pred_a["j_call"] = "IGHJ9*99"
+        pred_a["j_calls"] = ["IGHJ9*99"]
+        preds_a.append(pred_a)
+        preds_b.append(case_to_prediction(case))
+
+    catalog = {row["name"]: row for row in comparison_policy_catalog()}
+    report = build_model_comparison_report(
+        cases,
+        preds_a,
+        preds_b,
+        model_a_name="old",
+        model_b_name="new",
+        comparison_policy="allele_calling_core",
+        multiple_comparison_correction="sidak",
+        n_bootstrap=10,
+        confidence=0.9,
+        seed=7,
+        include_strata=False,
+    )
+
+    assert "allele_calling_core" in catalog
+    assert report["comparison"]["comparison_policy"] == "allele_calling_core"
+    assert report["decision"]["policy"] == "allele_calling_core"
+    assert report["decision"]["primary_metrics"] == catalog["allele_calling_core"]["primary_metrics"]
+    correction = report["decision"]["multiple_comparison"]
+    family_size = len(set(report["decision"]["primary_metrics"] + report["decision"]["guardrail_metrics"]))
+    assert correction["method"] == "sidak"
+    assert correction["applied"] is True
+    assert correction["family_size"] == family_size
+    assert correction["family_confidence"] == 0.9
+    assert correction["per_metric_confidence"] == pytest.approx(0.9 ** (1 / family_size))
+    assert report["decision"]["primary_endpoints"][0]["basis"] == "multiple_comparison_adjusted_bootstrap_ci"
+    assert report["decision"]["verdict"] == "model_b_superior"
+    assert report["decision"]["status_counts"]["pass"] == (
+        len(report["decision"]["primary_endpoints"]) + len(report["decision"]["guardrails"])
+    )
+
+
+def test_cli_compare_matches_prediction_ids_and_writes_report(tmp_path):
+    cases = [
+        _manual_case("cli_cmp1", ("IGHV1-1*01",)),
+        _manual_case("cli_cmp2", ("IGHV1-2*01",)),
+    ]
+    for case in cases:
+        case.record["junction"] = "AACCGG"
+        case.scalars["productive"] = 1.0
+    preds_a = []
+    preds_b = []
+    for case in cases:
+        pred_a = case_to_prediction(case)
+        pred_a["v_call"] = "IGHV9-9*01"
+        pred_a["v_calls"] = ["IGHV9-9*01"]
+        pred_a["j_call"] = "IGHJ9*99"
+        pred_a["j_calls"] = ["IGHJ9*99"]
         preds_a.append(pred_a)
         preds_b.append(case_to_prediction(case))
 
@@ -815,6 +954,10 @@ def test_cli_compare_matches_prediction_ids_and_writes_report(tmp_path):
             "new",
             "--metric",
             "genes.v.call_top1_in_set",
+            "--policy",
+            "allele_calling_core",
+            "--multiple-comparison-correction",
+            "bonferroni",
             "--bootstrap",
             "5",
             "--confidence",
@@ -830,9 +973,44 @@ def test_cli_compare_matches_prediction_ids_and_writes_report(tmp_path):
     assert report["prediction_matching"]["model_a"]["n_matched_cases"] == 2
     assert report["prediction_matching"]["model_b"]["n_matched_cases"] == 2
     assert report["summary"]["verdict"] == "model_b_better"
+    assert report["comparison"]["comparison_policy"] == "allele_calling_core"
+    assert report["decision"]["multiple_comparison"]["method"] == "bonferroni"
+    assert report["decision"]["multiple_comparison"]["applied"] is True
+    assert report["decision"]["verdict"] == "model_b_superior"
+    assert all(row["status"] == "pass" for row in report["decision"]["primary_endpoints"])
     assert row["preferred_model"] == "new"
     assert row["bootstrap_probability_model_b_better"] == 1.0
     assert report["by_stratum"] == {}
+
+
+def test_cli_lists_comparison_policy_templates(capsys):
+    benchmark_cli(["comparison-policies"])
+    payload = json.loads(capsys.readouterr().out)
+    names = {row["name"] for row in payload["comparison_policies"]}
+    assert {"allele_calling_core", "igh_allele_calling_core", "boundary_core", "airr_core"} <= names
+
+
+def test_cli_build_reports_generation_profile_with_workers(tmp_path, capsys):
+    out = tmp_path / "empty.jsonl"
+    benchmark_cli(
+        [
+            "build",
+            "--out",
+            str(out),
+            "--recipe",
+            "broad",
+            "--n-per-stratum",
+            "0",
+            "--workers",
+            "2",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out.rsplit("\nwrote", 1)[0])
+    assert out.exists()
+    assert payload["coverage"]["n_cases"] == 0
+    assert payload["generation_profile"]["mode"] == "fixed_size"
+    assert payload["generation_profile"]["workers"] == 2
+    assert payload["generation_profile"]["parallel"] is True
 
 
 def test_perfect_predictions_score_high():
@@ -863,6 +1041,36 @@ def test_perfect_predictions_score_high():
     assert scores["genes"]["v"]["identity_mae"] == 0.0
     assert "top10_recall" not in scores["genes"]["v"]
     assert set(scores["by_stratum"]) == {"clean", "oriented"}
+
+
+def test_prediction_performance_fields_are_scored_and_reported():
+    case = _manual_case("perf", ("IGHV1-2*01",))
+    pred = case_to_prediction(case)
+    pred.update(
+        {
+            "runtime_ms": 20.0,
+            "peak_memory_mb": 123.0,
+            "peak_memory_delta_mb": 7.5,
+            "candidate_count": 42,
+            "rerank_count": 5,
+        }
+    )
+
+    scores = score_cases([case], [pred])
+    global_scores = scores["global"]
+    assert global_scores["milliseconds_per_read"] == 20.0
+    assert global_scores["seconds_per_read"] == pytest.approx(0.02)
+    assert global_scores["reads_per_second"] == pytest.approx(50.0)
+    assert global_scores["peak_memory_mb"] == 123.0
+    assert global_scores["peak_memory_delta_mb"] == 7.5
+    assert global_scores["candidate_count"] == 42.0
+    assert global_scores["rerank_count"] == 5.0
+
+    report = build_benchmark_report([case], [pred])
+    assert report["performance"]["source"] == "prediction_fields"
+    assert report["performance"]["wall_time_seconds"] == pytest.approx(0.02)
+    assert report["performance"]["peak_memory_mb"] == 123.0
+    assert report["assay"]["by_category"]["efficiency"]["n_with_results"] == 1
 
 
 def test_bootstrap_uncertainty_uses_existing_genairr_truth():
@@ -1385,6 +1593,10 @@ def test_run_benchmark_report_from_predictor():
 
     report = run_benchmark_report(cases, predictor, contract_level="core")
     assert report["prediction_validation"]["n_valid"] == len(cases)
+    assert report["performance"]["n_sequences"] == len(cases)
+    assert report["performance"]["wall_time_seconds"] >= 0.0
+    assert report["performance"]["reads_per_second"] > 0.0
+    assert report["results"]["overall"]["global"]["milliseconds_per_read"] >= 0.0
     assert report["assay"]["by_category"]["allele_calling"]["n_with_results"] > 0
 
 
@@ -1527,6 +1739,10 @@ def test_online_benchmark_report_with_perfect_predictor():
     assert report["prediction_contract"]
     assert report["prediction_validation"]["valid_fraction"] == 1.0
     assert report["scenario_axes"]
+    assert report["performance"]["n_sequences"] == spec.n_cases
+    assert report["performance"]["n_batches"] == 4
+    assert report["performance"]["reads_per_second"] > 0.0
+    assert report["results"]["overall"]["global"]["seconds_per_read"] >= 0.0
     assert report["assay"]["summary"]["n_criteria_with_results"] > 0
     assert report["diagnostics"]["allele_calling"]["genes"]["v"]["summary"]["n_truth_cases"] == spec.n_cases
     assert report["diagnostics"]["boundaries"]["genes"]["v"]["summary"]["n_truth_segments"] == spec.n_cases

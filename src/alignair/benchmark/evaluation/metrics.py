@@ -8,6 +8,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 from .adapters import normalize_call_set
+from .performance import prediction_performance_metrics
 from ..core.schema import BenchmarkCase, GENES, GeneTruth
 from ...nn.region_head import REGIONS
 from ...nn.state_head import STATE_INDEX, STATES
@@ -712,6 +713,7 @@ def score_one_case(
     global_metrics.update(_score_segment_order(pred, case, frame))
     global_metrics.update(_score_junction(pred, case, frame))
     global_metrics.update(_score_metadata(pred, case))
+    global_metrics.update(prediction_performance_metrics(pred))
     for name in ("region", "state"):
         global_metrics.update(_score_labels(pred, case, name, frame))
     for scalar in ("noise_count", "mutation_rate", "indel_count", "productive"):

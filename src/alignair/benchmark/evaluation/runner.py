@@ -11,6 +11,12 @@ from .context import case_contexts
 from .diagnostics import build_allele_calling_diagnostics, build_boundary_diagnostics
 from .matching import align_predictions_to_cases
 from .metrics import score_cases
+from .performance import (
+    normalize_performance_summary,
+    performance_metrics_from_summary,
+    profile_predictor_call,
+    summarize_prediction_performance,
+)
 from .report import build_assay_report
 from .uncertainty import bootstrap_metric_intervals
 from ..core import criteria_catalog, scenario_axes_catalog
@@ -70,6 +76,7 @@ def build_benchmark_report(
     bootstrap_strata: bool = True,
     diagnostic_top_n: int = 20,
     diagnostic_examples: int = 5,
+    performance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Score saved predictions and return the full benchmark report shape."""
 
@@ -89,6 +96,16 @@ def build_benchmark_report(
     resolved_has_d = bool(has_d) if has_d is not None else any(case.genes.get("d") and case.genes["d"].calls for case in cases)
     scores = score_cases(cases, predictions, frame=frame)
     overall, by_context = _overall_and_contexts(scores, cases, predictions, frame=frame)
+    if performance is not None:
+        performance_summary = normalize_performance_summary(
+            performance,
+            n_sequences=len(cases),
+            source=performance.get("source"),
+        )
+    else:
+        performance_summary = summarize_prediction_performance(predictions, n_sequences=len(cases))
+    if performance_summary is not None:
+        overall.setdefault("global", {}).update(performance_metrics_from_summary(performance_summary))
     report = {
         "benchmark": {
             "n_cases": len(cases),
@@ -122,6 +139,8 @@ def build_benchmark_report(
             ),
         },
     }
+    if performance_summary is not None:
+        report["performance"] = performance_summary
     if match_report is not None:
         report["prediction_matching"] = match_report
     if contract_level is not None:
@@ -157,10 +176,19 @@ def run_benchmark(
     predictor: Predictor,
     *,
     frame: str = "canonical",
+    profile_runtime: bool = False,
+    profile_memory: bool = True,
 ) -> dict[str, Any]:
     """Run ``predictor`` on benchmark sequences and score the predictions."""
 
-    predictions = predictor([c.sequence for c in cases])
+    if profile_runtime:
+        predictions, _ = profile_predictor_call(
+            predictor,
+            [c.sequence for c in cases],
+            profile_memory=profile_memory,
+        )
+    else:
+        predictions = predictor([c.sequence for c in cases])
     return score_cases(cases, predictions, frame=frame)
 
 
@@ -179,10 +207,20 @@ def run_benchmark_report(
     bootstrap_strata: bool = True,
     diagnostic_top_n: int = 20,
     diagnostic_examples: int = 5,
+    profile_runtime: bool = True,
+    profile_memory: bool = True,
 ) -> dict[str, Any]:
     """Run ``predictor`` and return the full benchmark report shape."""
 
-    predictions = predictor([c.sequence for c in cases])
+    performance = None
+    if profile_runtime:
+        predictions, performance = profile_predictor_call(
+            predictor,
+            [c.sequence for c in cases],
+            profile_memory=profile_memory,
+        )
+    else:
+        predictions = predictor([c.sequence for c in cases])
     return build_benchmark_report(
         cases,
         predictions,
@@ -197,4 +235,5 @@ def run_benchmark_report(
         bootstrap_strata=bootstrap_strata,
         diagnostic_top_n=diagnostic_top_n,
         diagnostic_examples=diagnostic_examples,
+        performance=performance,
     )

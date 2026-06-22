@@ -19,7 +19,7 @@ from .generation import (
     default_igh_assay_spec,
     default_igh_spec,
     focused_igh_spec,
-    generate_benchmark,
+    generate_benchmark_with_report,
     generate_coverage_benchmark,
     readiness_thresholds,
 )
@@ -37,12 +37,16 @@ from .evaluation import (
     build_assay_report,
     build_benchmark_report,
     build_model_comparison_report,
+    comparison_policy_catalog,
+    MULTIPLE_COMPARISON_CORRECTIONS,
+    normalize_performance_summary,
     prediction_contract,
 )
 from ..reference.reference_set import ReferenceSet
 
 PREDICTION_FORMATS = ("jsonl", "airr", "airr-tsv", "airr-csv")
 READINESS_PROFILE_CHOICES = ("smoke", "development", "assay", "allele_complete", "allele_stratified")
+COMPARISON_POLICY_CHOICES = tuple(row["name"] for row in comparison_policy_catalog())
 
 
 def _resolved_delimiter(value: str | None) -> str | None:
@@ -61,6 +65,20 @@ def _load_predictions(path: str, prediction_format: str, delimiter: str | None =
     if prediction_format == "airr":
         return load_airr_predictions(path, delimiter=delimiter)
     raise ValueError(f"unsupported prediction format: {prediction_format}")
+
+
+def _load_performance_json(path: str | None, *, n_sequences: int) -> dict | None:
+    if not path:
+        return None
+    with open(path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, dict):
+        raise ValueError("--performance-json must contain a JSON object")
+    return normalize_performance_summary(
+        payload,
+        n_sequences=n_sequences,
+        source=payload.get("source"),
+    )
 
 
 def _build(args) -> None:
@@ -83,7 +101,8 @@ def _build(args) -> None:
         )
     dataconfig = None
     reference_set = None
-    generation_report = None
+    generation_coverage_report = None
+    generation_profile = None
     if args.coverage_planned or args.export_dir:
         dataconfig = dataconfig_by_name(spec.dataconfig_name)
         reference_set = ReferenceSet.from_dataconfigs(dataconfig)
@@ -111,18 +130,38 @@ def _build(args) -> None:
             max_candidates=args.max_candidates,
             name="cli_coverage",
         )
-        result = generate_coverage_benchmark(spec, dataconfig, reference_set, plan)
+        result = generate_coverage_benchmark(
+            spec,
+            dataconfig,
+            reference_set,
+            plan,
+            workers=args.workers,
+        )
         cases = result.cases
-        generation_report = result.report
+        generation_coverage_report = result.report
+        generation_profile = result.report.get("generation_profile")
     elif args.export_dir:
-        cases = generate_benchmark(spec, dataconfig, reference_set)
+        result = generate_benchmark_with_report(
+            spec,
+            reference_set=reference_set,
+            workers=args.workers,
+        )
+        cases = result.cases
+        generation_profile = result.report
     else:
-        cases = generate_benchmark(spec)
+        result = generate_benchmark_with_report(spec, workers=args.workers)
+        cases = result.cases
+        generation_profile = result.report
     save_jsonl(cases, args.out)
     payload = {"coverage": coverage_summary(cases)}
-    if generation_report is not None:
-        payload["generation_coverage"] = generation_report
+    if generation_profile is not None:
+        payload["generation_profile"] = generation_profile
+    if generation_coverage_report is not None:
+        payload["generation_coverage"] = generation_coverage_report
     if args.export_dir:
+        manifest_generation_report = {"profile": generation_profile}
+        if generation_coverage_report is not None:
+            manifest_generation_report["coverage"] = generation_coverage_report
         payload["exports"] = export_benchmark_inputs(
             cases,
             args.export_dir,
@@ -132,7 +171,7 @@ def _build(args) -> None:
             spec=spec,
             dataconfig_name=spec.dataconfig_name,
             reference_set=reference_set,
-            generation_report=generation_report,
+            generation_report=manifest_generation_report,
             readiness_profile=args.readiness_profile,
         )
     print(json.dumps(payload, indent=2, sort_keys=True))
@@ -151,6 +190,10 @@ def _criteria(args) -> None:
 
 def _contract(args) -> None:
     print(json.dumps({"prediction_contract": prediction_contract()}, indent=2, sort_keys=True))
+
+
+def _comparison_policies(args) -> None:
+    print(json.dumps({"comparison_policies": comparison_policy_catalog()}, indent=2, sort_keys=True))
 
 
 def _assay(args) -> None:
@@ -177,6 +220,7 @@ def _evaluate(args) -> None:
         confidence=args.confidence,
         bootstrap_seed=args.bootstrap_seed,
         bootstrap_strata=args.bootstrap_strata,
+        performance=_load_performance_json(args.performance_json, n_sequences=len(cases)),
     )
     text = json.dumps(report, indent=2, sort_keys=True)
     if args.out:
@@ -218,6 +262,12 @@ def _compare(args) -> None:
         include_strata=args.bootstrap_strata,
         practical_delta=args.practical_delta,
         case_tie_tolerance=args.case_tie_tolerance,
+        comparison_policy=args.policy,
+        multiple_comparison_correction=args.multiple_comparison_correction,
+        primary_metrics=args.primary_metric,
+        guardrail_metrics=args.guardrail_metric,
+        minimum_primary_advantage=args.minimum_primary_advantage,
+        maximum_guardrail_regression=args.maximum_guardrail_regression,
     )
     text = json.dumps(report, indent=2, sort_keys=True)
     if args.out:
@@ -311,6 +361,12 @@ def main(argv=None) -> None:
     build.add_argument("--n-per-stratum", type=int, default=200)
     build.add_argument("--n-per-focus", type=int, default=200)
     build.add_argument("--seed", type=int, default=123)
+    build.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="number of worker processes for benchmark case generation; 1 keeps serial generation",
+    )
     build.add_argument("--coverage-planned", action="store_true")
     build.add_argument("--min-cases", type=int, default=None)
     build.add_argument("--min-per-allele", type=int, default=0)
@@ -351,6 +407,9 @@ def main(argv=None) -> None:
 
     contract = sub.add_parser("contract", help="print the normalized prediction contract")
     contract.set_defaults(func=_contract)
+
+    comparison_policies = sub.add_parser("comparison-policies", help="print built-in comparison policy templates")
+    comparison_policies.set_defaults(func=_comparison_policies)
 
     assay = sub.add_parser("assay", help="build an assay-style report from score/report JSON")
     assay.add_argument("path")
@@ -421,6 +480,11 @@ def main(argv=None) -> None:
     )
     evaluate.add_argument("--delimiter", default=None, help="delimiter override for AIRR tables, e.g. '\\t'")
     evaluate.add_argument("--out", default=None, help="optional output report JSON path")
+    evaluate.add_argument(
+        "--performance-json",
+        default=None,
+        help="optional JSON sidecar with runtime/memory stats for externally generated predictions",
+    )
     evaluate.add_argument("--frame", choices=("canonical", "presented"), default="canonical")
     evaluate.add_argument("--contract-level", choices=("minimal", "core", "assay"), default=None)
     evaluate.add_argument(
@@ -481,6 +545,12 @@ def main(argv=None) -> None:
     compare.add_argument("--out", default=None, help="optional output comparison JSON path")
     compare.add_argument("--frame", choices=("canonical", "presented"), default="canonical")
     compare.add_argument(
+        "--policy",
+        choices=COMPARISON_POLICY_CHOICES,
+        default=None,
+        help="built-in endpoint/guardrail policy template",
+    )
+    compare.add_argument(
         "--metric",
         action="append",
         default=None,
@@ -494,6 +564,12 @@ def main(argv=None) -> None:
     )
     compare.add_argument("--confidence", type=float, default=0.95, help="bootstrap confidence level")
     compare.add_argument("--bootstrap-seed", type=int, default=123, help="bootstrap RNG seed")
+    compare.add_argument(
+        "--multiple-comparison-correction",
+        choices=MULTIPLE_COMPARISON_CORRECTIONS,
+        default="none",
+        help="familywise correction used by endpoint/guardrail decision gates",
+    )
     compare.add_argument(
         "--no-bootstrap-strata",
         dest="bootstrap_strata",
@@ -512,6 +588,30 @@ def main(argv=None) -> None:
         type=float,
         default=0.0,
         help="per-case direction-adjusted delta treated as a win instead of a tie",
+    )
+    compare.add_argument(
+        "--primary-metric",
+        action="append",
+        default=None,
+        help="primary endpoint metric path for the policy decision; repeatable",
+    )
+    compare.add_argument(
+        "--guardrail-metric",
+        action="append",
+        default=None,
+        help="no-regression guardrail metric path for the policy decision; repeatable",
+    )
+    compare.add_argument(
+        "--minimum-primary-advantage",
+        type=float,
+        default=None,
+        help="minimum direction-adjusted primary endpoint advantage required to pass the gate",
+    )
+    compare.add_argument(
+        "--maximum-guardrail-regression",
+        type=float,
+        default=None,
+        help="maximum allowed direction-adjusted regression on each guardrail metric",
     )
     compare.add_argument(
         "--match-by",
