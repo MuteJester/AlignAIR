@@ -1,0 +1,53 @@
+{% set name = "AlignAIR" %}
+{% set version = "2.0.2" %}   {# bump to match the released PyPI version #}
+
+# Starting Bioconda recipe. Submit to bioconda-recipes to unlock conda installs + BioContainers.
+# Build from the published PyPI sdist; replace `sha256` with the released sdist hash.
+package:
+  name: alignair
+  version: {{ version }}
+
+source:
+  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
+  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  entry_points:
+    - alignair = alignair.cli:main
+
+requirements:
+  host:
+    - python >=3.9,<3.13
+    - pip
+    - setuptools
+  run:
+    - python >=3.9,<3.13
+    - pytorch >=2.2
+    - genairr >=2.2.0
+    - numpy >=1.24
+    - pandas >=1.5
+    - scipy >=1.11
+    - pyyaml >=6.0
+    - biopython >=1.80
+    - psutil >=5.8
+    # CLI extra
+    - typer >=0.9
+    - rich >=10.0
+    - huggingface_hub >=0.20
+    - airr >=1.4
+
+test:
+  imports:
+    - alignair
+  commands:
+    - alignair --version
+    - alignair doctor
+
+about:
+  home: https://github.com/MuteJester/AlignAIR
+  license: GPL-3.0-or-later
+  license_file: LICENSE
+  summary: Neural IG/TCR sequence aligner with a dynamic (runtime) reference.

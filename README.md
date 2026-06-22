@@ -24,10 +24,13 @@
 ## Install
 
 ```bash
-pip install "AlignAIR[cli]"            # core + CLI
-pip install "AlignAIR[cli,reader]"     # + parasail (faster, sharper V calling)
+pip install "AlignAIR[cli]"            # core + CLI (recommended)
 alignair doctor                        # verify Python / PyTorch+CUDA / GenAIRR
 ```
+
+Install extras: `[cli]` (CLI + model download + AIRR validation), `[reader]` (parasail — faster,
+sharper V calling), `[train]` (training extras), `[all]`. PyTorch is auto‑detected for GPU; for a
+CPU‑only install, `pip install torch --index-url https://download.pytorch.org/whl/cpu` first.
 
 Or Docker:
 
@@ -124,6 +127,9 @@ git clone https://github.com/MuteJester/AlignAIR && cd AlignAIR
 pip install -e ".[dev]"
 pytest
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), and the
+[adoption roadmap](docs/architecture/adoption_roadmap.md).
 
 ## Citation
 
