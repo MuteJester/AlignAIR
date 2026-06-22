@@ -93,7 +93,15 @@ def cmd_predict(args) -> None:
     # coordinates are in the canonical (forward) frame -> emit the canonical sequence so
     # they always match it, even for reverse-complemented input reads (with rev_comp flag).
     canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]
-    write_airr(args.output, ids, canon, preds, locus=locus)
+    out_dir = os.path.dirname(os.path.abspath(args.output))
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        write_airr(args.output, ids, canon, preds, locus=locus)
+    except (PermissionError, OSError) as e:
+        raise SystemExit(
+            f"error: cannot write output to {args.output}: {e}\n"
+            f"hint: if running in Docker, mount a writable output directory and add "
+            f"`--user $(id -u):$(id -g)` so files are written as you.")
     log(f"wrote {len(preds)} rearrangements -> {args.output}")
 
 

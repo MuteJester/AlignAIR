@@ -13,15 +13,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Copy install inputs first for layer caching.
+# Install a CPU-only PyTorch first (its own layer, so source edits don't re-download it),
+# so the project install does not pull the large CUDA wheel.
+RUN pip install --upgrade pip \
+    && pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# Then copy install inputs and install AlignAIR with the CLI extra
+# (the parasail reader is optional: use ".[cli,reader]").
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
-
-# Install a CPU-only PyTorch first so the project install does not pull the large CUDA wheel,
-# then install AlignAIR with the CLI extra (parasail reader is optional: add ".[cli,reader]").
-RUN pip install --upgrade pip \
-    && pip install torch --index-url https://download.pytorch.org/whl/cpu \
-    && pip install ".[cli]"
+RUN pip install ".[cli]"
 
 # Bundled example data (see examples/README.md).
 COPY examples/ ./examples/
