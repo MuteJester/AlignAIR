@@ -2,9 +2,11 @@
 
     alignair predict reads.fastq -o rearrangement.tsv --model model.pt
     alignair predict reads.fastq -o out.tsv --model model.pt --genotype donor.yaml
+    alignair predict reads.fastq -o out.tsv --model model.pt --genotype donor.fasta
 
-A `--genotype` YAML simply becomes the reference for the run, so it transparently supports
-both an allele SUBSET and NOVEL alleles (the dynamic-genotype property) with no extra flags.
+A `--genotype` file (YAML or FASTA) simply becomes the reference for the run, so it
+transparently supports both an allele SUBSET and NOVEL alleles (the dynamic-genotype
+property) with no extra flags.
 """
 from __future__ import annotations
 
@@ -45,7 +47,9 @@ def cmd_predict(args) -> None:
     locus = args.locus or b_locus or "IGH"
 
     if args.genotype:
-        rs = ReferenceSet.from_yaml(args.genotype)
+        ext = os.path.splitext(args.genotype)[1].lower()
+        loader = ReferenceSet.from_fasta if ext in (".fasta", ".fa", ".fna", ".faa") else ReferenceSet.from_yaml
+        rs = loader(args.genotype)
         print(f"reference: genotype {args.genotype} "
               f"(V={len(rs.gene('V').names)}"
               f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
@@ -101,7 +105,8 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--model", required=True,
                     help="a DNAlignAIR bundle directory OR a raw .pt checkpoint {model, config}")
     pr.add_argument("--genotype", default=None,
-                    help="genotype YAML used as the reference (allele subset and/or novel alleles)")
+                    help="genotype file (YAML or FASTA) used as the reference "
+                         "(allele subset and/or novel alleles)")
     pr.add_argument("--calibration", default=None,
                     help="allele-set calibration JSON (overrides a bundled calibration)")
     pr.add_argument("--dataconfig", default="HUMAN_IGH_OGRDB",
