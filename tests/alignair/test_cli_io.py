@@ -22,6 +22,29 @@ def _pred(**over):
     return p
 
 
+def test_read_sequences_custom_columns(tmp_path):
+    p = tmp_path / "in.csv"
+    p.write_text("name,dna\na,ACGTACGT\nb,TTTTGGGG\n")
+    ids, seqs, info = read_sequences(str(p), seq_column="dna", id_column="name")
+    assert ids == ["a", "b"] and seqs == ["ACGTACGT", "TTTTGGGG"]
+    with pytest.raises(ValueError, match="sequence column 'missing'"):
+        read_sequences(str(p), seq_column="missing")
+
+
+def test_read_sequences_stdin(monkeypatch):
+    import alignair.io.sequence_reader as sr
+    monkeypatch.setattr(sr, "_STDIN_CACHE", None)
+    monkeypatch.setattr(sr, "_slurp_stdin", lambda: ">r1\nACGTACGT\n>r2\nTTTTGGGG\n")
+    ids, seqs, info = sr.read_sequences("-")
+    assert ids == ["r1", "r2"] and info["format"] == "fasta"
+
+
+def test_write_airr_to_stdout(capsys):
+    write_airr("-", ["r1"], ["ACGT" * 90], [_pred()], locus="IGH")
+    out = capsys.readouterr().out
+    assert out.startswith("sequence_id\t") and "IGHV1-1*01" in out
+
+
 def test_cigar_ungapped():
     assert _cigar(377, 0, 290, 0) == "290M87S"        # V at read start, no germline skip
     assert _cigar(377, 310, 360, 5) == "310S5N50M17S"  # J: leading clip + germline skip + match + tail

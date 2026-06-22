@@ -49,8 +49,11 @@ def _cigar(seq_len, ss, se, gs):
 def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict],
                locus: str = "IGH") -> None:
     """`sequences` must be the CANONICAL (forward-oriented) sequences that predict_reads'
-    coordinates are in — use canonicalize_sequence(input, pred['orientation_id'])."""
-    with open(path, "w", newline="") as f:
+    coordinates are in — use canonicalize_sequence(input, pred['orientation_id']).
+    `path` may be '-' to write the TSV to stdout."""
+    import sys
+    f = sys.stdout if path == "-" else open(path, "w", newline="")
+    try:
         w = csv.DictWriter(f, fieldnames=COLUMNS, delimiter="\t", extrasaction="ignore")
         w.writeheader()
         for sid, seq, p in zip(ids, sequences, preds):
@@ -82,3 +85,6 @@ def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict
                 conf = p.get(f"{g}_set_confidence")
                 row[f"{g}_set_confidence"] = f"{conf:.4f}" if conf is not None else None
             w.writerow(row)
+    finally:
+        if path != "-":
+            f.close()

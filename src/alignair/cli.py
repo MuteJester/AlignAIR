@@ -53,8 +53,9 @@ def cmd_predict(args) -> None:
 
     def log(msg):
         if not args.quiet:
-            print(msg, flush=True)
+            print(msg, file=sys.stderr, flush=True)      # progress -> stderr (keeps stdout clean)
 
+    torch.manual_seed(args.seed)
     from .hub import resolve_model
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     model_path = resolve_model(args.model)             # local path, catalog id, or HF repo id
@@ -91,7 +92,11 @@ def cmd_predict(args) -> None:
     if args.calibration and os.path.exists(args.calibration):
         calibration = json.load(open(args.calibration))           # explicit flag overrides bundle
 
-    ids, seqs, info = read_sequences(args.input)
+    try:
+        ids, seqs, info = read_sequences(args.input, seq_column=args.sequence_column,
+                                         id_column=args.id_column)
+    except (ValueError, FileNotFoundError) as e:
+        raise SystemExit(f"error: {e}")
     log(f"read {info['n_read']} sequences ({info['n_dropped']} dropped) as {info['format']}")
     if not seqs:
         raise SystemExit("error: no valid sequences to align")
@@ -101,11 +106,13 @@ def cmd_predict(args) -> None:
     # coordinates are in the canonical (forward) frame -> emit the canonical sequence so
     # they always match it, even for reverse-complemented input reads (with rev_comp flag).
     canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]
-    out_dir = os.path.dirname(os.path.abspath(args.output))
+    to_stdout = args.output == "-"
+    write_provenance = not (args.no_provenance or to_stdout)
     try:
-        os.makedirs(out_dir, exist_ok=True)
+        if not to_stdout:
+            os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
         write_airr(args.output, ids, canon, preds, locus=locus)
-        if not args.no_provenance:
+        if write_provenance:
             _write_provenance(args.output + ".run.json", args=args, model_path=model_path,
                               device=device, info=info, ref_desc=ref_desc)
     except (PermissionError, OSError) as e:
@@ -113,8 +120,9 @@ def cmd_predict(args) -> None:
             f"error: cannot write output to {args.output}: {e}\n"
             f"hint: if running in Docker, mount a writable output directory and add "
             f"`--user $(id -u):$(id -g)` so files are written as you.")
-    log(f"wrote {len(preds)} rearrangements -> {args.output}"
-        + ("" if args.no_provenance else f"  (+ {os.path.basename(args.output)}.run.json)"))
+    if not to_stdout:
+        log(f"wrote {len(preds)} rearrangements -> {args.output}"
+            + (f"  (+ {os.path.basename(args.output)}.run.json)" if write_provenance else ""))
 
 
 def _pkg_version(name):
@@ -138,7 +146,7 @@ def _write_provenance(path, *, args, model_path, device, info, ref_desc):
         "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "command": "alignair " + " ".join(sys.argv[1:]),
         "model": model_path, "model_fingerprint": fingerprint, "reference": ref_desc,
-        "device": device, "v_reader": args.v_reader, "batch": args.batch,
+        "device": device, "v_reader": args.v_reader, "batch": args.batch, "seed": args.seed,
         "n_input": info.get("n_read"), "n_dropped": info.get("n_dropped"),
         "input_format": info.get("format"), "output": args.output,
         "versions": {k: _pkg_version(k) for k in ("torch", "GenAIRR", "airr", "parasail")},
@@ -385,8 +393,12 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--version", action="version", version=f"AlignAIR {_version()}")
     sub = ap.add_subparsers(required=True, dest="command")
     pr = sub.add_parser("predict", help="align reads and write an AIRR rearrangement TSV")
-    pr.add_argument("input", help="FASTA/FASTQ/CSV/TSV/TXT (optionally .gz) of reads")
-    pr.add_argument("-o", "--output", required=True, help="output AIRR rearrangement TSV")
+    pr.add_argument("input", help="FASTA/FASTQ/CSV/TSV/TXT (optionally .gz) of reads, or '-' for stdin")
+    pr.add_argument("-o", "--output", required=True,
+                    help="output AIRR rearrangement TSV, or '-' for stdout")
+    pr.add_argument("--sequence-column", default=None, help="CSV/TSV: column holding the read sequence")
+    pr.add_argument("--id-column", default=None, help="CSV/TSV: column holding the sequence id")
+    pr.add_argument("--seed", type=int, default=0, help="random seed (recorded in run.json)")
     pr.add_argument("--model", required=True,
                     help="a bundle dir / raw .pt checkpoint, a catalog id (alignair model list), "
                          "or an org/name Hugging Face repo id (auto-downloaded)")

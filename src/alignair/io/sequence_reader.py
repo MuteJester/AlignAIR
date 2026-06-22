@@ -17,7 +17,20 @@ _IUPAC = set("RYSWKMBDHVN")          # ambiguity codes -> N
 _SEQ_COLS = ("sequence", "seq", "nucleotide", "read")
 
 
+_STDIN_CACHE = None
+
+
+def _slurp_stdin() -> str:
+    global _STDIN_CACHE
+    if _STDIN_CACHE is None:
+        import sys
+        _STDIN_CACHE = sys.stdin.read()
+    return _STDIN_CACHE
+
+
 def _open(path: str):
+    if path == "-":                       # read from stdin (cached so it can be re-opened)
+        return io.StringIO(_slurp_stdin())
     if path.endswith(".gz"):
         return io.TextIOWrapper(gzip.open(path, "rb"))
     return open(path, "r")
@@ -61,8 +74,11 @@ def _sniff(path: str, head: str) -> str:
     return "txt"
 
 
-def read_sequences(path: str) -> Tuple[List[str], List[str], dict]:
-    """Return (ids, sequences, info). info has n_read/n_dropped for reporting."""
+def read_sequences(path: str, seq_column: str | None = None,
+                   id_column: str | None = None) -> Tuple[List[str], List[str], dict]:
+    """Return (ids, sequences, info). info has n_read/n_dropped/format for reporting.
+    `path` may be '-' for stdin. For CSV/TSV input, `seq_column`/`id_column` override the
+    auto-detected columns."""
     with _open(path) as f:
         head = f.readline()
     fmt = _sniff(path, head)
@@ -91,10 +107,22 @@ def read_sequences(path: str) -> Tuple[List[str], List[str], dict]:
         delim = "\t" if path.lower().rstrip(".gz").endswith(".tsv") or "\t" in head else ","
         with _open(path) as f:
             reader = csv.DictReader(f, delimiter=delim)
-            col = next((c for c in reader.fieldnames or [] if c.lower() in _SEQ_COLS), None)
+            fields = reader.fieldnames or []
+            if seq_column is not None:
+                if seq_column not in fields:
+                    raise ValueError(f"sequence column '{seq_column}' not in {path} (have {fields})")
+                col = seq_column
+            else:
+                col = next((c for c in fields if c.lower() in _SEQ_COLS), None)
             if col is None:
-                raise ValueError(f"no sequence column in {path}; expected one of {_SEQ_COLS}")
-            idcol = next((c for c in reader.fieldnames if c.lower() in ("sequence_id", "id", "name")), None)
+                raise ValueError(f"no sequence column in {path}; expected one of {_SEQ_COLS} "
+                                 f"or pass --sequence-column")
+            if id_column is not None:
+                if id_column not in fields:
+                    raise ValueError(f"id column '{id_column}' not in {path} (have {fields})")
+                idcol = id_column
+            else:
+                idcol = next((c for c in fields if c.lower() in ("sequence_id", "id", "name")), None)
             for i, row in enumerate(reader):
                 ids.append(row.get(idcol) if idcol else f"seq{i}"); raw.append(row.get(col, ""))
     else:  # txt: one sequence per line
