@@ -27,19 +27,29 @@ def _airr_start(v):
     return (int(v) + 1) if v is not None else None
 
 
-def _cigar(seq_len, ss, se, gs):
-    """An ungapped AIRR CIGAR for one segment from 0-based coords: leading query soft-clip,
-    skipped germline prefix (N), the matched span (M), trailing query soft-clip. Correct for the
-    substitution-only case (no indels); returns '' if the segment is absent."""
+def _cigar(seq_len, ss, se, gs, ge):
+    """An AIRR CIGAR for one segment from 0-based coords: leading query soft-clip (S), skipped
+    germline prefix (N), the matched span (M), a single net indel op when the read and germline
+    spans differ (I if the query is longer, D if the germline is longer), then trailing query
+    soft-clip. This is a coordinate-derived approximation (the net indel is placed at the segment
+    end, not its true position) but is length-consistent with both the query and germline spans;
+    returns '' if the segment is absent."""
     if ss is None or se is None or se <= ss:
         return ""
     ss, se = int(ss), int(se)
+    read_span = se - ss
+    germ_span = (int(ge) - int(gs)) if (gs is not None and ge is not None) else read_span
+    m = min(read_span, germ_span)
     ops = []
     if ss > 0:
         ops.append(f"{ss}S")
     if gs:
         ops.append(f"{int(gs)}N")
-    ops.append(f"{se - ss}M")
+    ops.append(f"{m}M")
+    if read_span > m:
+        ops.append(f"{read_span - m}I")
+    elif germ_span > m:
+        ops.append(f"{germ_span - m}D")
     tail = seq_len - se
     if tail > 0:
         ops.append(f"{tail}S")
@@ -69,9 +79,9 @@ def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict
                    "junction": p.get("junction"), "junction_aa": p.get("junction_aa"),
                    "junction_length": p.get("junction_length"),
                    "sequence_alignment": seq_aln, "germline_alignment": "",
-                   "v_cigar": _cigar(seq_len, p.get("v_sequence_start"), p.get("v_sequence_end"), p.get("v_germline_start")),
-                   "d_cigar": _cigar(seq_len, p.get("d_sequence_start"), p.get("d_sequence_end"), p.get("d_germline_start")),
-                   "j_cigar": _cigar(seq_len, p.get("j_sequence_start"), p.get("j_sequence_end"), p.get("j_germline_start")),
+                   "v_cigar": _cigar(seq_len, p.get("v_sequence_start"), p.get("v_sequence_end"), p.get("v_germline_start"), p.get("v_germline_end")),
+                   "d_cigar": _cigar(seq_len, p.get("d_sequence_start"), p.get("d_sequence_end"), p.get("d_germline_start"), p.get("d_germline_end")),
+                   "j_cigar": _cigar(seq_len, p.get("j_sequence_start"), p.get("j_sequence_end"), p.get("j_germline_start"), p.get("j_germline_end")),
                    "is_contaminant": ("T" if isc else "F") if isc is not None else None}
             for g in GENES:
                 row[f"{g}_call"] = p.get(f"{g}_call")

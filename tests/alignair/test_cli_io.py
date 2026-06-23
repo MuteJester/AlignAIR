@@ -65,10 +65,14 @@ def test_write_airr_to_stdout(capsys):
     assert out.startswith("sequence_id\t") and "IGHV1-1*01" in out
 
 
-def test_cigar_ungapped():
-    assert _cigar(377, 0, 290, 0) == "290M87S"        # V at read start, no germline skip
-    assert _cigar(377, 310, 360, 5) == "310S5N50M17S"  # J: leading clip + germline skip + match + tail
-    assert _cigar(377, None, None, None) == ""         # absent segment
+def test_cigar():
+    assert _cigar(377, 0, 290, 0, 290) == "290M87S"        # V at read start, no germline skip
+    assert _cigar(377, 310, 360, 5, 55) == "310S5N50M17S"  # J: clip + germline skip + match + tail
+    assert _cigar(377, None, None, None, None) == ""        # absent segment
+    # germline span (296) longer than read span (287) -> a 9-base deletion op
+    assert _cigar(377, 0, 287, 0, 296) == "287M9D90S"
+    # read span longer than germline span -> insertion op
+    assert _cigar(100, 0, 50, 0, 45) == "45M5I50S"
 
 
 def test_write_airr_is_airr_c_valid(tmp_path):
