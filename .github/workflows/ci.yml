@@ -43,6 +43,26 @@ jobs:
       - name: Build docs (strict — fails on stale/unlisted pages)
         run: mkdocs build --strict
 
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+      - name: Install the built wheel into a clean venv (CPU torch)
+        run: |
+          python -m venv /tmp/wheelenv
+          /tmp/wheelenv/bin/pip install --upgrade pip
+          /tmp/wheelenv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+          /tmp/wheelenv/bin/pip install "$(ls dist/*.whl)[cli]"
+      - name: Release smoke (doctor -> demo -> validate-airr -> compare)
+        run: ALIGNAIR=/tmp/wheelenv/bin/alignair sh scripts/release_smoke.sh "$RUNNER_TEMP/wheel_smoke"
+
   docker:
     runs-on: ubuntu-latest
     steps:
@@ -53,3 +73,13 @@ jobs:
         run: |
           docker run --rm alignair:ci --version
           docker run --rm alignair:ci doctor
+      - name: Release smoke inside the container (same script as the wheel)
+        run: |
+          mkdir -p "$RUNNER_TEMP/docker_smoke"
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --entrypoint sh \
+            -e HOME=/out \
+            -v "$PWD/scripts:/scripts:ro" \
+            -v "$RUNNER_TEMP/docker_smoke:/out" \
+            alignair:ci /scripts/release_smoke.sh /out
