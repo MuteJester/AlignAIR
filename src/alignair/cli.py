@@ -188,6 +188,31 @@ def _write_provenance(path, *, args, model_path, device, info, ref_desc):
         json.dump(prov, f, indent=2)
 
 
+def cmd_compare(args) -> None:
+    """Compare two AIRR rearrangement TSVs (e.g. AlignAIR vs IgBLAST/MiXCR) on the SAME reads —
+    agreement, disagreements, and AlignAIR's equivalence-set rescue. No ground truth needed."""
+    from .compare import read_airr, compare_airr, format_report_md
+    for f in (args.a, args.b):
+        if not os.path.exists(f):
+            raise SystemExit(f"error: file not found: {f}")
+    a, b = read_airr(args.a), read_airr(args.b)
+    if not (set(a) & set(b)):
+        raise SystemExit("error: no shared sequence_id between the two files — are both AIRR TSVs "
+                         "from the same reads?")
+    report = compare_airr(a, b, a_name=args.a_name, b_name=args.b_name)
+    md = format_report_md(report)
+    if args.out:
+        with open(args.out, "w") as fh:
+            fh.write(md + "\n")
+        if args.json:
+            json.dump(report, open(args.json, "w"), indent=2)
+        print(f"wrote agreement report -> {args.out}" + (f" (+ {args.json})" if args.json else ""))
+    else:
+        print(md)
+        if args.json:
+            json.dump(report, open(args.json, "w"), indent=2)
+
+
 def cmd_validate_airr(args) -> None:
     """Validate a rearrangement TSV against the official AIRR-C schema (needs the `airr` package)."""
     try:
@@ -650,6 +675,15 @@ def build_parser() -> argparse.ArgumentParser:
     va = sub.add_parser("validate-airr", help="validate a rearrangement TSV against the AIRR-C schema")
     va.add_argument("file", help="AIRR rearrangement TSV to validate")
     va.set_defaults(func=cmd_validate_airr)
+
+    cp = sub.add_parser("compare", help="agreement report between two AIRR TSVs (e.g. AlignAIR vs IgBLAST)")
+    cp.add_argument("--a", required=True, help="AIRR TSV for tool A (AlignAIR, for set-rescue)")
+    cp.add_argument("--b", required=True, help="AIRR TSV for tool B (e.g. IgBLAST/MiXCR exportAirr)")
+    cp.add_argument("--a-name", default="AlignAIR")
+    cp.add_argument("--b-name", default="other")
+    cp.add_argument("--out", default=None, help="write the Markdown report here (default: stdout)")
+    cp.add_argument("--json", default=None, help="also write the report as JSON here")
+    cp.set_defaults(func=cmd_compare)
 
     dr = sub.add_parser("doctor", help="check the environment (Python, torch+CUDA, GenAIRR, parasail)")
     dr.add_argument("--model", default=None, help="optionally verify a model bundle/checkpoint resolves")

@@ -118,6 +118,7 @@ alignair validate-airr out.tsv      # -> "VALID AIRR-C rearrangement"
 | `alignair train` | train a model for your own reference / species (built-in dataconfig or custom FASTA) |
 | `alignair model` | list / download / inspect pretrained models |
 | `alignair reference` | validate / convert a germline reference (YAML ↔ FASTA) |
+| `alignair compare` | agreement report between two AIRR TSVs (e.g. AlignAIR vs IgBLAST) on your data |
 | `alignair validate-airr` | validate a rearrangement TSV against the AIRR-C schema |
 | `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR, parasail) |
 | `alignair bundle` | package a raw checkpoint into a versioned, fingerprinted bundle |

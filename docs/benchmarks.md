@@ -62,3 +62,17 @@ python -m alignair.benchmark.cli compare --cases cases.jsonl \
 
 See [`src/alignair/benchmark/README.md`](../src/alignair/benchmark/README.md) for the full
 methodology (readiness profiles, per-allele/stratum diagnostics, performance metrics).
+
+## Prove it on your own data (no ground truth needed)
+
+Run both tools on the same reads and compare their AIRR output directly:
+
+```bash
+alignair predict my_reads.fastq -o alignair.tsv --model <bundle>
+# ... produce igblast.tsv (e.g. IgBLAST AIRR outfmt 19) or mixcr.tsv (mixcr exportAirr) ...
+alignair compare --a alignair.tsv --b igblast.tsv --a-name AlignAIR --b-name IgBLAST --out report.md
+```
+
+The report shows per-gene allele/gene agreement, junction and productivity concordance, coverage,
+and **set-rescue** — how often the other tool's call falls inside AlignAIR's calibrated equivalence
+set (shared ambiguity, not a real conflict) — plus example disagreements to inspect.
