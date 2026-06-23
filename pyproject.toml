@@ -76,6 +76,9 @@ dev = [
     "mkdocs-jupyter>=0.24",
     "build>=1.0",
     "twine>=5.0",
+    "nbclient>=0.7",       # execute the example notebooks in the test suite (tests/.../test_notebooks.py)
+    "ipykernel>=6.0",
+    "nbformat>=5.0",
 ]
 all = [
     "AlignAIR[cli,train,viz,server]",
