@@ -167,7 +167,8 @@ def _run_prediction(loaded, rs, *, ref_desc, locus, calibration, args, input_pat
         info = {"n_read": total + n_dropped, "n_dropped": n_dropped,
                 "format": _detect_format(input_path)}
         _write_provenance(output_path + ".run.json", args=args, model_path=model_path,
-                          device=device, info=info, ref_desc=ref_desc, output=output_path)
+                          device=device, info=info, ref_desc=ref_desc, output=output_path,
+                          reference_set=rs, calibration=calibration)
     if not to_stdout:
         log(f"wrote {total} rearrangements ({n_dropped} dropped) -> {output_path}"
             + (f"  (+ {os.path.basename(output_path)}.run.json)" if write_provenance else ""))
@@ -301,23 +302,39 @@ def _pkg_version(name):
         return None
 
 
-def _write_provenance(path, *, args, model_path, device, info, ref_desc, output=None):
-    """Write a run.json sidecar next to the output: what produced this file (AIRR Software WG
-    expects run parameters to travel with the output)."""
+def _write_provenance(path, *, args, model_path, device, info, ref_desc, output=None,
+                      reference_set=None, calibration=None):
+    """Write a run.json sidecar next to the output: enough to reproduce/audit this file (the AIRR
+    Software WG expects run parameters to travel with the output). Includes the AlignAIR source
+    commit, package versions, CUDA detail, and reference/calibration content hashes."""
     import datetime
+    from .provenance import (alignair_version, package_versions, git_commit_sha, cuda_detail,
+                             hash_json, reference_hash)
     fingerprint = None
     fp = os.path.join(model_path, "fingerprint.txt") if os.path.isdir(model_path) else None
     if fp and os.path.exists(fp):
         fingerprint = open(fp).read().strip()
+    model_build = None                                   # carry the bundle's training provenance
+    mp = os.path.join(model_path, "meta.json") if os.path.isdir(model_path) else None
+    if mp and os.path.exists(mp):
+        try:
+            m = json.loads(open(mp).read())
+            model_build = {k: m.get(k) for k in ("alignair_version", "git_commit", "created_utc")}
+        except Exception:
+            model_build = None
     prov = {
-        "tool": "AlignAIR", "alignair_version": _version(),
+        "tool": "AlignAIR", "alignair_version": alignair_version(),
+        "git_commit": git_commit_sha(),
         "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "command": "alignair " + " ".join(sys.argv[1:]),
-        "model": model_path, "model_fingerprint": fingerprint, "reference": ref_desc,
-        "device": device, "v_reader": args.v_reader, "batch": args.batch, "seed": args.seed,
+        "model": model_path, "model_fingerprint": fingerprint, "model_build": model_build,
+        "reference": ref_desc, "reference_hash": reference_hash(reference_set),
+        "calibration_hash": hash_json(calibration),
+        "device": device, "cuda": cuda_detail(),
+        "v_reader": args.v_reader, "batch": args.batch, "seed": args.seed,
         "n_input": info.get("n_read"), "n_dropped": info.get("n_dropped"),
         "input_format": info.get("format"), "output": output or getattr(args, "output", None),
-        "versions": {k: _pkg_version(k) for k in ("torch", "GenAIRR", "airr", "parasail")},
+        "versions": package_versions(),
     }
     with open(path, "w") as f:
         json.dump(prov, f, indent=2)
@@ -399,6 +416,7 @@ def cmd_model(args) -> None:
             raise SystemExit(f"error: {path} is not an AlignAIR bundle (raw checkpoints carry no metadata)")
         b = load_dnalignair_bundle(path, build=False)
         cfg = b["config"].to_dict()
+        meta = b["meta"] or {}
         embedded = bool(b.get("reference_set"))
         info = {"bundle": path, "locus": b["locus"],
                 "reference": {"embedded": embedded,
@@ -406,18 +424,28 @@ def cmd_model(args) -> None:
                               "dataconfigs": None if embedded else b["dataconfigs"]},
                 "config": {k: cfg.get(k) for k in ("d_model", "n_layers", "nhead")},
                 "calibration": bool(b["calibration"]),
-                "notes": (b["meta"] or {}).get("notes")}
+                "notes": meta.get("notes"),
+                "provenance": {k: meta.get(k) for k in (
+                    "alignair_version", "git_commit", "created_utc", "versions",
+                    "reference_hash", "config_hash", "calibration_hash", "training")}}
         if getattr(args, "json", False):
             print(json.dumps(info, indent=2))
             return
         ref = (f"{info['reference']['v_alleles']} V (embedded)" if embedded
                else f"dataconfigs={b['dataconfigs']}")
+        prov = info["provenance"]
         print(f"bundle: {path}")
         print(f"  locus       : {b['locus']}")
         print(f"  reference   : {ref}")
         print(f"  d_model={cfg.get('d_model')} n_layers={cfg.get('n_layers')} nhead={cfg.get('nhead')}")
         print(f"  calibration : {'yes' if b['calibration'] else 'no'}")
-        print(f"  notes       : {(b['meta'] or {}).get('notes')}")
+        print(f"  built with  : AlignAIR {prov.get('alignair_version')}"
+              f"{' @ ' + prov['git_commit'] if prov.get('git_commit') else ''}"
+              f"{' on ' + prov['created_utc'] if prov.get('created_utc') else ''}")
+        print(f"  reference_hash : {prov.get('reference_hash')}")
+        if prov.get("training"):
+            print(f"  training    : {prov['training']}")
+        print(f"  notes       : {meta.get('notes')}")
 
 
 def _load_reference_file(path):
@@ -791,7 +819,13 @@ def cmd_train(args) -> None:
     save_dnalignair_bundle(bundle_dir, model=model, locus=locus,
                            dataconfigs=bundle_ref.get("dataconfigs"),
                            reference_set=bundle_ref.get("reference_set"), calibration=calibration,
-                           notes=f"alignair train preset={args.preset} steps={steps} seed={args.seed}")
+                           notes=f"alignair train preset={args.preset} steps={steps} seed={args.seed}",
+                           training_meta={"preset": args.preset, "steps": steps, "seed": args.seed,
+                                          "lr": args.lr, "batch": getattr(args, "batch", None),
+                                          "base_model": args.base_model, "device": device,
+                                          "n_params": n_params, "wall_seconds": round(wall, 1),
+                                          "reference": ref_label,
+                                          "eval_hard": report["eval_hard"]})
     card = (f"# AlignAIR model\n\n"
             f"- **Reference**: {ref_label}\n- **Locus**: {locus}\n"
             f"- **Preset**: {args.preset} (steps={steps}, params={n_params/1e6:.2f}M, seed={args.seed})\n"

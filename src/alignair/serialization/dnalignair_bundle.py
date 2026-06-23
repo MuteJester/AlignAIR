@@ -52,18 +52,25 @@ def _embed_reference(reference_set) -> dict:
 
 def save_dnalignair_bundle(bundle_dir, *, model, dataconfigs: Optional[Iterable[str]] = None,
                            locus: str = "IGH", reference_set=None,
-                           calibration: Optional[dict] = None, notes: Optional[str] = None) -> str:
+                           calibration: Optional[dict] = None, notes: Optional[str] = None,
+                           training_meta: Optional[dict] = None) -> str:
     """Write a bundle for `model` (a DNAlignAIR with .config and .state_dict()).
 
     Provide EITHER `dataconfigs` (GenAIRR DataConfig NAMES, for a built-in reference) OR
     `reference_set` (a ReferenceSet whose alleles are EMBEDDED — use this for custom/own
-    references with no registered dataconfig name, e.g. models trained from FASTA)."""
+    references with no registered dataconfig name, e.g. models trained from FASTA).
+
+    `training_meta` (seed, preset, steps, lr, ...) is recorded under meta.json["training"] for
+    reproducibility, alongside automatic provenance (versions, source commit, content hashes)."""
+    import datetime
+    from ..provenance import alignair_version, package_versions, git_commit_sha, hash_json
     if reference_set is None and not dataconfigs:
         raise ValueError("save_dnalignair_bundle needs either dataconfigs or reference_set")
     d = Path(bundle_dir)
     d.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), d / "model.pt")
-    (d / "config.json").write_text(json.dumps(model.config.to_dict(), indent=2, sort_keys=True))
+    config_dict = model.config.to_dict()
+    (d / "config.json").write_text(json.dumps(config_dict, indent=2, sort_keys=True))
     if reference_set is not None:
         ref_payload = {**_embed_reference(reference_set), "locus": locus}
     else:
@@ -71,8 +78,19 @@ def save_dnalignair_bundle(bundle_dir, *, model, dataconfigs: Optional[Iterable[
     (d / "reference.json").write_text(json.dumps(ref_payload, indent=2, sort_keys=True))
     if calibration is not None:
         (d / "calibration.json").write_text(json.dumps(calibration, indent=2, sort_keys=True))
-    (d / "meta.json").write_text(
-        json.dumps({"format_version": DNALIGNAIR_BUNDLE_VERSION, "notes": notes}, indent=2, sort_keys=True))
+    meta = {
+        "format_version": DNALIGNAIR_BUNDLE_VERSION,
+        "notes": notes,
+        "created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "alignair_version": alignair_version(),
+        "git_commit": git_commit_sha(),
+        "versions": package_versions(),
+        "reference_hash": hash_json(ref_payload),
+        "config_hash": hash_json(config_dict),
+        "calibration_hash": hash_json(calibration),
+        "training": dict(training_meta or {}),
+    }
+    (d / "meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
     (d / "VERSION").write_text(str(DNALIGNAIR_BUNDLE_VERSION))
     (d / "fingerprint.txt").write_text(compute_fingerprint(d))   # written last; excluded from itself
     return str(d)
