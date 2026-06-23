@@ -22,7 +22,7 @@ Run `alignair doctor` first — it reports Python, PyTorch + CUDA, GenAIRR, and 
 ## Docker
 
 - **`Permission denied` writing output.** The image runs as a non-root user; mount a writable
-  output dir and add `--user $(id -u):$(id -g)`. See [`examples/README.md`](../examples/README.md).
+  output dir and add `--user $(id -u):$(id -g)`. See [`examples/README.md`](https://github.com/MuteJester/AlignAIR/blob/main/examples/README.md).
 - **No model in the image.** Models aren't baked in — mount one with `-v` or use a catalog id.
 
 ## Training

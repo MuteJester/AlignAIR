@@ -60,7 +60,7 @@ python -m alignair.benchmark.cli compare --cases cases.jsonl \
   --policy igh_allele_calling_core --bootstrap 500 --multiple-comparison-correction bonferroni
 ```
 
-See [`src/alignair/benchmark/README.md`](../src/alignair/benchmark/README.md) for the full
+See [`src/alignair/benchmark/README.md`](https://github.com/MuteJester/AlignAIR/blob/main/src/alignair/benchmark/README.md) for the full
 methodology (readiness profiles, per-allele/stratum diagnostics, performance metrics).
 
 ## Prove it on your own data (no ground truth needed)
