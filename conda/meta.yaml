@@ -1,15 +1,28 @@
 {% set name = "AlignAIR" %}
-{% set version = "2.0.2" %}   {# bump to match the released PyPI version #}
+{% set version = "2.0.2" %}   {# keep in sync with pyproject.toml [project].version #}
+{% set local_build = environ.get("ALIGNAIR_LOCAL_BUILD", "") %}
 
-# Starting Bioconda recipe. Submit to bioconda-recipes to unlock conda installs + BioContainers.
-# Build from the published PyPI sdist; replace `sha256` with the released sdist hash.
+# Bioconda recipe for AlignAIR. Submit to bioconda-recipes to unlock `conda install`
+# + BioContainers (the path to many Galaxy / nf-core deployments).
+#
+# PREREQUISITE: GenAIRR must be available on a conda channel (bioconda) before this
+# recipe can build/solve there — it is currently PyPI-only. Until then:
+#   * CI builds this recipe from the LOCAL source tree (ALIGNAIR_LOCAL_BUILD=1) to
+#     validate the recipe and run the test commands, and
+#   * the release process injects the real sdist hash via ALIGNAIR_SDIST_SHA256.
+
 package:
   name: alignair
   version: {{ version }}
 
 source:
+{% if local_build %}
+  path: ..
+{% else %}
   url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
-  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+  # filled at release time: `ALIGNAIR_SDIST_SHA256=$(sha256sum dist/*.tar.gz | cut -d' ' -f1)`
+  sha256: {{ environ.get("ALIGNAIR_SDIST_SHA256", "0000000000000000000000000000000000000000000000000000000000000000") }}
+{% endif %}
 
 build:
   noarch: python
@@ -26,19 +39,18 @@ requirements:
   run:
     - python >=3.9,<3.13
     - pytorch >=2.2
-    - genairr >=2.2.0
+    - genairr >=2.2.0          # NOTE: not yet on bioconda — submit/locate before this recipe lands
     - numpy >=1.24
     - pandas >=1.5
     - scipy >=1.11
     - pyyaml >=6.0
     - biopython >=1.80
     - psutil >=5.8
-    # CLI extra
-    - typer >=0.9
-    - rich >=10.0
+    # CLI extra (matches pyproject [cli]: huggingface_hub, airr, parasail, argcomplete)
     - huggingface_hub >=0.20
     - airr >=1.4
     - parasail-python >=1.3
+    - argcomplete >=3.0
 
 test:
   imports:
@@ -46,9 +58,17 @@ test:
   commands:
     - alignair --version
     - alignair doctor
+    - alignair reference list
+    - alignair demo --steps 1 --device cpu -o demo_smoke   # tiny offline end-to-end
 
 about:
   home: https://github.com/MuteJester/AlignAIR
   license: GPL-3.0-or-later
   license_file: LICENSE
   summary: Neural IG/TCR sequence aligner with a dynamic (runtime) reference.
+  doc_url: https://github.com/MuteJester/AlignAIR
+  dev_url: https://github.com/MuteJester/AlignAIR
+
+extra:
+  recipe-maintainers:
+    - MuteJester

@@ -63,6 +63,34 @@ jobs:
       - name: Release smoke (doctor -> demo -> validate-airr -> compare)
         run: ALIGNAIR=/tmp/wheelenv/bin/alignair sh scripts/release_smoke.sh "$RUNNER_TEMP/wheel_smoke"
 
+  conda:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}        # login shell so `conda activate` works
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          python-version: "3.11"
+          channels: conda-forge,bioconda
+          channel-priority: strict
+      - name: Validate the recipe renders (local-source mode)
+        env:
+          ALIGNAIR_LOCAL_BUILD: "1"
+        run: |
+          conda install -y conda-build
+          conda render conda/
+      - name: Conda-env runtime smoke (conda pytorch + pip install + tiny demo)
+        run: |
+          conda install -y "pytorch>=2.2" "numpy>=1.24" "pandas>=1.5" -c conda-forge
+          pip install ".[cli]"          # GenAIRR + AlignAIR are PyPI-only for now
+          alignair doctor
+          alignair reference list
+          alignair demo --steps 1 --device cpu -o "$RUNNER_TEMP/conda_demo"
+          alignair validate-airr "$RUNNER_TEMP/conda_demo/demo.tsv"
+
   docker:
     runs-on: ubuntu-latest
     steps:
