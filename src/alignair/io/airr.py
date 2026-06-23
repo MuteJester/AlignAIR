@@ -98,17 +98,25 @@ class AirrWriter:
     `write(ids, sequences, preds)` per chunk, then `close()` (or use as a context manager).
     `path` may be '-' for stdout."""
 
-    def __init__(self, path: str, locus: str = "IGH"):
+    def __init__(self, path: str, locus: str = "IGH", extra_columns=None):
         import sys
         self.locus = locus
+        self.extra_columns = list(extra_columns or [])
         self._to_stdout = path == "-"
         self._f = sys.stdout if self._to_stdout else open(path, "w", newline="")
-        self._w = csv.DictWriter(self._f, fieldnames=COLUMNS, delimiter="\t", extrasaction="ignore")
+        fields = COLUMNS + [c for c in self.extra_columns if c not in COLUMNS]
+        self._w = csv.DictWriter(self._f, fieldnames=fields, delimiter="\t", extrasaction="ignore")
         self._w.writeheader()
 
-    def write(self, ids: List[str], sequences: List[str], preds: List[dict]) -> None:
-        for sid, seq, p in zip(ids, sequences, preds):
-            self._w.writerow(_build_row(sid, seq, p, self.locus))
+    def write(self, ids: List[str], sequences: List[str], preds: List[dict],
+              metas: List[dict] | None = None) -> None:
+        """`metas`, if given, is a per-row dict of extra column values (e.g. preserved barcode/UMI/
+        sample metadata) merged into each output row."""
+        for i, (sid, seq, p) in enumerate(zip(ids, sequences, preds)):
+            row = _build_row(sid, seq, p, self.locus)
+            if metas and metas[i]:
+                row.update(metas[i])
+            self._w.writerow(row)
 
     def close(self) -> None:
         if not self._to_stdout:

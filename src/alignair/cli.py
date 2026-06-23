@@ -101,18 +101,27 @@ def cmd_predict(args) -> None:
         calibration = json.load(open(args.calibration))           # explicit flag overrides bundle
 
     # STREAMING: read -> predict -> write in bounded-memory chunks (repertoire-scale safe).
-    from .io.sequence_reader import iter_sequences
+    from .io.sequence_reader import iter_sequences, load_metadata
     from .io.airr import AirrWriter
     to_stdout = args.output == "-"
     write_provenance = not (args.no_provenance or to_stdout)
     chunk = max(args.batch, args.chunk_size)
+    # optional per-read metadata join (10x annotations / AIRR metadata) -> preserved in output
+    meta_map, extra_cols = {}, []
+    if args.metadata:
+        kc = [c.strip() for c in args.keep_columns.split(",")] if args.keep_columns else None
+        try:
+            meta_map, extra_cols = load_metadata(args.metadata, args.metadata_id, kc)
+        except (ValueError, FileNotFoundError) as e:
+            raise SystemExit(f"error: {e}")
+        log(f"metadata: {len(meta_map)} rows from {args.metadata}; preserving columns {extra_cols}")
     bar = None if (args.quiet or to_stdout) else __import__("tqdm").tqdm(
         desc="aligning", unit="read", file=sys.stderr)
-    total = n_prod = n_contam = n_dropped = 0
+    total = n_prod = n_contam = n_dropped = n_meta_hit = 0
     try:
         if not to_stdout:
             os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-        writer = AirrWriter(args.output, locus)
+        writer = AirrWriter(args.output, locus, extra_columns=extra_cols)
     except (PermissionError, OSError) as e:
         raise SystemExit(
             f"error: cannot write output to {args.output}: {e}\n"
@@ -131,7 +140,11 @@ def cmd_predict(args) -> None:
                                       calibration=calibration, full_alignment=not args.no_full_alignment)
                 # emit the CANONICAL (forward) sequence so coords match even for reoriented reads
                 canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]
-                writer.write(ids, canon, preds)
+                metas = None
+                if meta_map:
+                    metas = [meta_map.get(sid, {}) for sid in ids]
+                    n_meta_hit += sum(1 for m in metas if m)
+                writer.write(ids, canon, preds, metas=metas)
                 total += len(preds)
                 n_prod += sum(1 for p in preds if p.get("productive"))
                 n_contam += sum(1 for p in preds if p.get("is_contaminant"))
@@ -155,7 +168,8 @@ def cmd_predict(args) -> None:
         log(f"wrote {total} rearrangements ({n_dropped} dropped) -> {args.output}"
             + (f"  (+ {os.path.basename(args.output)}.run.json)" if write_provenance else ""))
         log(f"summary: {total} aligned | {n_prod} productive ({n_prod/max(total,1)*100:.0f}%)"
-            f"{f' | {n_contam} flagged out-of-scope' if n_contam else ''} | locus {locus}")
+            f"{f' | {n_contam} flagged out-of-scope' if n_contam else ''}"
+            f"{f' | metadata matched {n_meta_hit}/{total}' if meta_map else ''} | locus {locus}")
 
 
 def _pkg_version(name):
@@ -646,6 +660,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="output AIRR rearrangement TSV, or '-' for stdout")
     pr.add_argument("--sequence-column", default=None, help="CSV/TSV: column holding the read sequence")
     pr.add_argument("--id-column", default=None, help="CSV/TSV: column holding the sequence id")
+    pr.add_argument("--metadata", default=None,
+                    help="per-read metadata CSV/TSV to preserve into output (e.g. 10x "
+                         "filtered_contig_annotations.csv, or an AIRR TSV); joined by read id")
+    pr.add_argument("--metadata-id", default=None,
+                    help="id column in --metadata (default: auto sequence_id/contig_id/cell_id)")
+    pr.add_argument("--keep-columns", default=None,
+                    help="comma-separated metadata columns to carry (default: known 10x/AIRR set)")
     pr.add_argument("--seed", type=int, default=0, help="random seed (recorded in run.json)")
     pr.add_argument("--model", required=True,
                     help="a bundle dir / raw .pt checkpoint, a catalog id (alignair model list), "

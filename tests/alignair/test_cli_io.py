@@ -55,6 +55,31 @@ def test_iter_sequences_chunks_and_counts(tmp_path):
     assert all_ids[0] == "r0" and len(all_ids) == 10
 
 
+def test_load_metadata_10x_style(tmp_path):
+    from alignair.io.sequence_reader import load_metadata
+    p = tmp_path / "annot.csv"
+    p.write_text("contig_id,barcode,umis,chain\nc1,BC1-1,7,IGH\nc2,BC2-1,3,IGH\n")
+    meta, keep = load_metadata(str(p))           # auto id = contig_id; default keep set
+    assert set(keep) == {"barcode", "umis", "chain"}
+    assert meta["c1"] == {"barcode": "BC1-1", "umis": "7", "chain": "IGH"}
+    # explicit keep-columns + bad column errors
+    meta2, keep2 = load_metadata(str(p), keep_columns=["barcode"])
+    assert keep2 == ["barcode"]
+    with pytest.raises(ValueError, match="keep-columns"):
+        load_metadata(str(p), keep_columns=["nope"])
+
+
+def test_airr_writer_extra_columns_preserved(tmp_path):
+    from alignair.io.airr import AirrWriter
+    out = tmp_path / "sc.tsv"
+    w = AirrWriter(str(out), "IGH", extra_columns=["barcode", "umis"])
+    w.write(["r1"], ["ACGT" * 90], [_pred()], metas=[{"barcode": "BC1", "umis": "9"}])
+    w.close()
+    rows = list(csv.DictReader(out.open(), delimiter="\t"))
+    assert rows[0]["barcode"] == "BC1" and rows[0]["umis"] == "9"
+    assert rows[0]["v_call"] == "IGHV1-1*01"      # standard columns intact
+
+
 def test_airr_writer_incremental_matches_oneshot(tmp_path):
     from alignair.io.airr import AirrWriter
     seq = "ACGT" * 90

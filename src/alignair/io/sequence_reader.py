@@ -74,6 +74,37 @@ def _sniff(path: str, head: str) -> str:
     return "txt"
 
 
+# metadata columns worth carrying into output by default (10x / AIRR / Immcantation single-cell)
+_META_DEFAULTS = ["cell_id", "barcode", "sample_id", "umi_count", "umis", "reads",
+                  "duplicate_count", "consensus_count", "raw_clonotype_id", "raw_consensus_id",
+                  "chain", "c_call", "is_cell", "high_confidence"]
+
+
+def load_metadata(path: str, id_column: str | None = None, keep_columns=None):
+    """Load a per-read metadata table (CSV/TSV, e.g. 10x filtered_contig_annotations.csv or an AIRR
+    TSV) -> ({read_id: {col: value}}, kept_columns). The id column is matched to the read ids in the
+    input; `keep_columns` (or a default 10x/AIRR set present in the file) are carried into output."""
+    with open(path, newline="") as f:
+        delim = "\t" if "\t" in f.readline() else ","
+        f.seek(0)
+        reader = csv.DictReader(f, delimiter=delim)
+        fields = reader.fieldnames or []
+        idcol = id_column or next(
+            (c for c in fields if c.lower() in ("sequence_id", "contig_id", "cell_id", "id", "name")), None)
+        if idcol is None or idcol not in fields:
+            raise ValueError(f"metadata id column {id_column or '(auto)'} not found in {path} "
+                             f"(columns: {fields})")
+        if keep_columns:
+            keep = [c for c in keep_columns if c in fields]
+            missing = [c for c in keep_columns if c not in fields]
+            if missing:
+                raise ValueError(f"--keep-columns not in {path}: {missing} (have {fields})")
+        else:
+            keep = [c for c in _META_DEFAULTS if c in fields]
+        meta = {r[idcol]: {k: r.get(k, "") for k in keep} for r in reader if r.get(idcol)}
+    return meta, keep
+
+
 def _detect_format(path: str) -> str:
     with _open(path) as f:
         head = f.readline()

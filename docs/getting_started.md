@@ -75,11 +75,32 @@ alignair predict examples/reads.fasta -o out.tsv \
 No retraining is required — the model conditions on exactly the alleles you provide, and every call
 is guaranteed to be within that genotype.
 
+## 4b. Single-cell / 10x and preserving metadata
+
+AlignAIR fits existing workflows by carrying per-read metadata into its output. Point `--metadata`
+at a side table (joined by read id) — e.g. 10x `filtered_contig_annotations.csv`, or an AIRR TSV
+that already has `cell_id`/`duplicate_count`:
+
+```bash
+# 10x: align the contigs, preserve barcode / UMI / chain / etc. for downstream single-cell tools
+alignair predict filtered_contig.fasta -o out.tsv --model <bundle> \
+  --metadata filtered_contig_annotations.csv
+
+# carry specific columns (default: a known 10x/AIRR metadata set present in the file)
+alignair predict reads.tsv -o out.tsv --model <bundle> \
+  --metadata reads.tsv --keep-columns cell_id,duplicate_count,sample_id
+```
+
+The kept columns are appended to the AIRR TSV (still schema-valid), so Change-O / Scirpy /
+Immcantation single-cell workflows get `cell_id`, barcodes, and counts without custom glue.
+
 ## 5. Common options
 
 | Flag | Meaning |
 | --- | --- |
 | `--genotype FILE` | YAML/FASTA reference for this run (subset and/or novel alleles) |
+| `--metadata FILE` | per-read metadata (CSV/TSV, e.g. 10x annotations) preserved into output |
+| `--chunk-size N` | reads per streaming chunk (repertoire-scale, bounded memory) |
 | `--calibration FILE` | allele‑set calibration JSON (overrides a bundled one) |
 | `--v-reader parasail` | use the fast classical V reader (needs `AlignAIR[reader]`) |
 | `--batch N` | batch size (default 64) |
