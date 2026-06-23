@@ -9,6 +9,24 @@ Tiny, self-contained data for a first run.
 | `10x/` | a 10x Genomics (Cell Ranger) BCR workflow: contig FASTA + `filtered_contig_annotations.csv`, with per-cell metadata carried into the AIRR output — see [`10x/README.md`](10x/README.md) |
 | `airr/` | a bulk AIRR/TSV input with a separate sample-metadata table joined onto the output — see [`airr/README.md`](airr/README.md) |
 | `batch/` | a multi-sample manifest for `alignair batch` (cohorts): one model load, one AIRR TSV per sample + a run summary — see [`batch/README.md`](batch/README.md) |
+| `novel_allele/` | a donor genotype with an allele **subset + a novel allele** — the dynamic-genotype feature — see [`novel_allele/README.md`](novel_allele/README.md) |
+| `custom_reference/` | germline V/D/J FASTAs to **train on your own reference / species** (`alignair train --v-fasta ...`) — see [`custom_reference/README.md`](custom_reference/README.md) |
+| `compare/` | two tiny AIRR TSVs for `alignair compare` (AlignAIR vs IgBLAST, with set-rescue) — see [`compare/README.md`](compare/README.md) |
+
+## Gallery by scenario
+
+| Scenario | Where |
+| --- | --- |
+| First run, offline | `alignair demo` |
+| Single-sample IGH predict | [`reads.fasta`](reads.fasta) |
+| Donor genotype (subset) | [`donor_genotype.yaml`](donor_genotype.yaml) |
+| Novel allele | [`novel_allele/`](novel_allele/) |
+| Light chain (IGK/IGL) / TCR | train or predict with the matching reference, e.g. `--reference HUMAN_IGK_OGRDB` / `HUMAN_TRB_IMGT` (`alignair reference list`) — same commands, different reference |
+| Custom reference / species | [`custom_reference/`](custom_reference/) |
+| Single-cell 10x BCR/TCR | [`10x/`](10x/) |
+| Bulk + sample metadata | [`airr/`](airr/) |
+| Cohort (many samples) | [`batch/`](batch/) |
+| Tool comparison | [`compare/`](compare/) |
 
 ## Run
 
