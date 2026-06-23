@@ -112,7 +112,8 @@ def cmd_predict(args) -> None:
         raise SystemExit("error: no valid sequences to align")
 
     preds = predict_reads(model, rs, seqs, device=device, batch_size=args.batch,
-                          rerank="learned", v_reader=args.v_reader, calibration=calibration)
+                          rerank="learned", v_reader=args.v_reader, calibration=calibration,
+                          progress=not args.quiet)
     # coordinates are in the canonical (forward) frame -> emit the canonical sequence so
     # they always match it, even for reverse-complemented input reads (with rev_comp flag).
     canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]

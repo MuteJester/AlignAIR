@@ -170,7 +170,7 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                   emit_scores: bool = False, state_conditioning: bool = True,
                   rerank_chunk: int = 2048, contaminant_tau: float | None = None,
                   locus: str = "IGH", v_reader: str = "learned",
-                  raw_set_band: float = 2.0) -> list:
+                  raw_set_band: float = 2.0, progress: bool = False) -> list:
     """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
     differentiable aligner.alignment_score = the learned allele reader). When rerank
     is on, also emits {g}_call_set = the calibrated equivalence set (candidates within
@@ -219,7 +219,12 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                   else (calibration or {}).get("contaminant", {}).get("tau"))
 
     preds = []
-    for s in range(0, len(reads), batch_size):
+    _starts = range(0, len(reads), batch_size)
+    if progress:
+        import sys
+        from tqdm import tqdm
+        _starts = tqdm(_starts, total=len(_starts), desc="aligning", unit="batch", file=sys.stderr)
+    for s in _starts:
         chunk = reads[s:s + batch_size]
         tokens, mask = pad_tokenize(chunk)
         tokens, mask = tokens.to(device), mask.to(device)
