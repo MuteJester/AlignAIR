@@ -404,6 +404,13 @@ def cmd_train(args) -> None:
     os.makedirs(out, exist_ok=True)
     locus = args.locus or "IGH"
 
+    ckpt_path = os.path.join(out, "checkpoint.pt")
+    resume_ckpt = None
+    if args.resume:
+        if not os.path.exists(ckpt_path):
+            raise SystemExit(f"error: --resume but no checkpoint found at {ckpt_path}")
+        resume_ckpt = torch.load(ckpt_path, map_location=device)
+
     dc, rs, bundle_ref = _resolve_train_reference(args)
     genes = ["v", "j"] + (["d"] if rs.has_d else [])
     nv = len(rs.gene("V").names); nj = len(rs.gene("J").names)
@@ -411,40 +418,53 @@ def cmd_train(args) -> None:
     ref_label = (", ".join(bundle_ref["dataconfigs"]) if "dataconfigs" in bundle_ref
                  else f"custom FASTA ({locus})")
 
-    if args.base_model:
+    if resume_ckpt is not None:               # rebuild from the checkpoint's own config
+        model = DNAlignAIR(DNAlignAIRConfig(**resume_ckpt["config"])).to(device)
+        model.load_state_dict(resume_ckpt["model"])
+    elif args.base_model:
         model, _, _, _, _ = _load_model(args.base_model, device)
     else:
         model = DNAlignAIR(DNAlignAIRConfig(d_model=d_model, n_layers=n_layers, nhead=nhead)).to(device)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
     gym = AlignAIRGym([dc], rs, seed=args.seed, allow_curatable=args.allow_curatable)
     trainer = GymTrainer(model, loss_fn, rs, gym, lr=args.lr, batch_size=batch)
+    start_step = 0
+    if resume_ckpt is not None:                # restore optimizer + loss weights + curriculum position
+        if resume_ckpt.get("loss_fn"):
+            loss_fn.load_state_dict(resume_ckpt["loss_fn"])
+        if resume_ckpt.get("optimizer"):
+            trainer.optimizer.load_state_dict(resume_ckpt["optimizer"])
+        start_step = int(resume_ckpt.get("step", 0))
+        trainer._global_step = int(resume_ckpt.get("global_step", start_step))
     n_params = sum(p.numel() for p in model.parameters())
 
     print(f"AlignAIR train")
     print(f"  reference : {ref_label}  (V={nv} D={nd} J={nj}, locus {locus})")
     print(f"  model     : {n_params/1e6:.2f}M params (d_model={model.config.d_model}, "
           f"layers={model.config.n_layers})"
-          + (f"  fine-tuned from {args.base_model}" if args.base_model else ""))
+          + (f"  resumed from step {start_step}" if resume_ckpt is not None
+             else (f"  fine-tuned from {args.base_model}" if args.base_model else "")))
     print(f"  run       : preset={args.preset} steps={steps} batch={batch} seed={args.seed} device={device}")
     print(f"  output    : {out}/\n")
-    print("training:")
+    print("training:" if start_step < steps else "training: (already at target steps, finalizing)")
 
-    ckpt_path = os.path.join(out, "checkpoint.pt")
     t0 = time.time()
-    step = 0
+    step = start_step
     while step < steps:
         chunk = min(args.eval_every, steps - step)
         trainer.fit(total_steps=chunk, global_total=steps, progress=False)
         step += chunk
         ev = trainer.evaluate(n_batches=3)
         elapsed = time.time() - t0
-        eta = elapsed / step * (steps - step)
+        done = step - start_step                       # steps completed THIS run (for ETA)
+        eta = elapsed / done * (steps - step) if done else 0
         call = " ".join(f"{g.upper()}={ev[f'{g}_call']:.2f}" for g in genes)
         print(f"  {step:>6}/{steps} ({step/steps*100:3.0f}%)  {_fmt_dur(elapsed):>7}  "
               f"eta {_fmt_dur(eta):>6}  loss={ev['loss']:6.3f}  region={ev['region_acc']:.3f}  {call}",
               flush=True)
-        torch.save({"model": model.state_dict(), "config": model.config.to_dict(), "step": step},
-                   ckpt_path)
+        torch.save({"model": model.state_dict(), "config": model.config.to_dict(), "step": step,
+                    "global_step": trainer._global_step, "optimizer": trainer.optimizer.state_dict(),
+                    "loss_fn": loss_fn.state_dict()}, ckpt_path)   # full state for --resume
 
     # ---- equivalence-set calibration (folded in so trained models ship good sets) ----
     calibration = None
@@ -586,6 +606,9 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--batch", type=int, default=None, help="batch size (overrides preset)")
     tr.add_argument("--base-model", default=None,
                     help="fine-tune from this bundle/checkpoint instead of training from scratch")
+    tr.add_argument("--resume", action="store_true",
+                    help="resume from <out>/checkpoint.pt (restores weights, optimizer, and "
+                         "curriculum position); continue to --steps")
     tr.add_argument("--locus", default="IGH")
     tr.add_argument("--allow-curatable", action="store_true",
                     help="permit simulation from references with curatable issues (e.g. custom "

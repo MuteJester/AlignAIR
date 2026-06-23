@@ -84,7 +84,9 @@ alignair train --reference HUMAN_IGK_OGRDB --base-model human_igh_bundle/ -o run
 
 This writes a self-contained `runs/.../bundle/` (custom references are **embedded** in the bundle),
 plus `model_card.md` and `validation_report.json`. Presets: `smoke` (quick check), `desktop`,
-`standard` (paper‑grade). Then just `alignair predict … --model runs/.../bundle`.
+`standard` (paper‑grade). Training fits the equivalence‑set calibration automatically and
+checkpoints each interval — resume an interrupted run with `--resume` (re‑run the same command and
+add the flag). Then just `alignair predict … --model runs/.../bundle`.
 
 ## Output
 
