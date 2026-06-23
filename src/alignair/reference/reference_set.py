@@ -156,6 +156,17 @@ class ReferenceSet:
         with open(path, "w") as f:
             yaml.safe_dump(data, f, sort_keys=False)
 
+    def infer_locus(self) -> str | None:
+        """Infer the locus (IGH/IGK/IGL/TRA/TRB/TRD/TRG) from the V allele names, or None."""
+        import re
+        from collections import Counter
+        loci = Counter()
+        for n in self.gene("V").names:
+            m = re.match(r"(IG[HKL]|TR[ABGD])", n.upper())
+            if m:
+                loci[m.group(1)] += 1
+        return loci.most_common(1)[0][0] if loci else None
+
     def genotype_mask(self, gene: str, allowed_names: Iterable[str]) -> torch.Tensor:
         ref = self.gene(gene)
         allowed = set(allowed_names)

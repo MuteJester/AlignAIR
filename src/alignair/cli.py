@@ -87,6 +87,16 @@ def cmd_predict(args) -> None:
         log(f"reference: {', '.join(names)} (V={len(rs.gene('V').names)})")
     if args.genotype:
         ref_desc = f"genotype:{os.path.basename(args.genotype)}"
+    # locus/chain sanity: a model declares its trained locus (in its bundle); warn if the
+    # reference looks like a different locus (a heavy model + light reference produces
+    # plausible-but-meaningless calls without this check).
+    inferred_locus = rs.infer_locus()
+    if inferred_locus and b_locus and inferred_locus != b_locus:
+        log(f"WARNING: this model is for locus {b_locus}, but the reference looks like "
+            f"{inferred_locus} — V/D/J calls may be meaningless; use a model and reference "
+            f"for the same locus.")
+    if args.locus is None and inferred_locus:
+        locus = inferred_locus                  # reflect the reference's locus in the output
 
     calibration = b_calibration
     if args.calibration and os.path.exists(args.calibration):

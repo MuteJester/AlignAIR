@@ -97,6 +97,17 @@ def test_subset_preserves_anchors():
     assert all(sub.gene("V").anchors[n] == rs.gene("V").anchors[n] for n in keepV)
 
 
+def test_infer_locus():
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    assert rs.infer_locus() == "IGH"
+    igk = ReferenceSet.from_genotype({"v": {"IGKV1-5*01": "ACGT"}, "j": {"IGKJ1*01": "TTTT"}})
+    assert igk.infer_locus() == "IGK"
+    trb = ReferenceSet.from_genotype({"v": {"TRBV2*01": "ACGT"}, "j": {"TRBJ1-1*01": "TTTT"}})
+    assert trb.infer_locus() == "TRB"
+    custom = ReferenceSet.from_genotype({"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}})
+    assert custom.infer_locus() is None
+
+
 def test_from_genotype_with_anchors():
     rs = ReferenceSet.from_genotype(
         {"v": {"IGHV1-2*02": "ACGT"}, "j": {"IGHJ6*02": "TTTT"}},
