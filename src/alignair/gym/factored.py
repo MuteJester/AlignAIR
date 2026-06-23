@@ -39,3 +39,32 @@ class FactoredCurriculum:
         hot = min(self.pace, key=self.pace.get)
         return (f"factored curriculum (per-axis pace; min={worst:.2f} on '{hot}'; "
                 f"terminal={self.is_terminal()})")
+
+    def advance(self, axis_competence: dict, threshold: float = 0.7,
+                step: float = 0.1) -> list:
+        moved = []
+        for axis in self.axes:
+            c = axis_competence.get(axis)
+            if c is not None and c >= threshold and self.pace[axis] < 1.0:
+                self.pace[axis] = min(1.0, self.pace[axis] + step)
+                moved.append(axis)
+        return moved
+
+
+# cell that most stresses each axis; fallback "clean" = overall competence (until
+# axis-isolated eval cells exist). Axes not listed use the fallback.
+_AXIS_CELL = {"mutation_count": "heavy_shm_fulllen", "crop": "fragment"}
+
+
+def axis_competence_from_field(field: dict, fallback_cell: str = "clean") -> dict:
+    def _S(cell):
+        if cell in field:
+            return float(field[cell].get("S", 0.0))
+        if fallback_cell in field:
+            return float(field[fallback_cell].get("S", 0.0))
+        return 0.0
+    fb = _S(fallback_cell)
+    out = {}
+    for axis in (*_MIX_AXES, *_SCALAR_AXES):
+        out[axis] = _S(_AXIS_CELL[axis]) if axis in _AXIS_CELL else fb
+    return out
