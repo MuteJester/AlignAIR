@@ -81,17 +81,19 @@ class GymTrainer:
         return DataLoader(self.gym, batch_size=self.batch_size,
                           collate_fn=lambda b: gym_collate(b, self.reference_set, self.has_d))
 
-    def fit(self, total_steps: int, global_total: int | None = None) -> list:
+    def fit(self, total_steps: int, global_total: int | None = None,
+            progress: bool = True) -> list:
         """Train for ``total_steps``. When ``global_total`` is given the curriculum
         ramps over the GLOBAL training horizon (across successive fit() calls) via an
         internal step counter, so chunked training yields one monotonic easy->hard
-        ramp instead of a sawtooth that resets every chunk."""
+        ramp instead of a sawtooth that resets every chunk. ``progress=False`` silences
+        the tqdm bar (the caller reports its own progress)."""
         from .germline_tf import compute_germline_logits
         self.model.train()
         loader = self._loader()
         history = []
         ref_emb = None
-        bar = tqdm(total=total_steps, desc="gym-train")
+        bar = tqdm(total=total_steps, desc="gym-train", disable=not progress)
         step = 0
         it = None
         since_refresh = self.refresh_curriculum_every  # force a refresh on entry

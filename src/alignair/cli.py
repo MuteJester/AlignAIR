@@ -131,8 +131,12 @@ def cmd_predict(args) -> None:
             f"hint: if running in Docker, mount a writable output directory and add "
             f"`--user $(id -u):$(id -g)` so files are written as you.")
     if not to_stdout:
+        n_prod = sum(1 for p in preds if p.get("productive"))
+        n_contam = sum(1 for p in preds if p.get("is_contaminant"))
         log(f"wrote {len(preds)} rearrangements -> {args.output}"
             + (f"  (+ {os.path.basename(args.output)}.run.json)" if write_provenance else ""))
+        log(f"summary: {len(preds)} aligned | {n_prod} productive ({n_prod/max(len(preds),1)*100:.0f}%)"
+            f"{f' | {n_contam} flagged out-of-scope' if n_contam else ''} | locus {locus}")
 
 
 def _pkg_version(name):
@@ -352,6 +356,33 @@ def _resolve_train_reference(args):
     return dc, rs, {"dataconfigs": [args.reference]}
 
 
+def _fmt_dur(seconds: float) -> str:
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h}h{m:02d}m" if h else (f"{m}m{sec:02d}s" if m else f"{sec}s")
+
+
+def _calibration_records(dc, n_per: int, seed: int, allow_curatable: bool):
+    """A representative GenAIRR-simulated mix (clean→hard full reads, heavy-SHM tail, fragments)
+    for fitting the equivalence-set calibration — mirrors a realistic deployment distribution."""
+    from .gym.gym import build_experiment
+    from .gym.curriculum import Curriculum
+    from .gym.crop import crop_record
+    cur = Curriculum()
+    strata = [(0.0, None, None), (0.5, None, None), (1.0, None, None),
+              (1.0, None, {"mutation_rate": 0.25}), (1.0, 120, None), (1.0, 80, None)]
+    recs = []
+    for j, (p, crop, ov) in enumerate(strata):
+        params = cur.params(p)
+        if ov:
+            params.update(ov)
+        exp = build_experiment(dc, params, allow_curatable=allow_curatable)
+        rr = list(exp.stream_records(n=n_per, seed=seed + j))
+        recs += [crop_record(r, crop) for r in rr] if crop else rr
+    return recs
+
+
 def cmd_train(args) -> None:
     import json as _json
     import time
@@ -370,69 +401,98 @@ def cmd_train(args) -> None:
     batch = args.batch or preset_batch
     out = args.out
     os.makedirs(out, exist_ok=True)
+    locus = args.locus or "IGH"
 
-    print(f"[train] resolving reference ...")
     dc, rs, bundle_ref = _resolve_train_reference(args)
     genes = ["v", "j"] + (["d"] if rs.has_d else [])
-    locus = args.locus or "IGH"
-    print(f"[train] reference: V={len(rs.gene('V').names)} "
-          f"{'D=' + str(len(rs.gene('D').names)) + ' ' if rs.has_d else ''}J={len(rs.gene('J').names)}"
-          f"  | device={device} preset={args.preset} steps={steps} batch={batch}")
+    nv = len(rs.gene("V").names); nj = len(rs.gene("J").names)
+    nd = len(rs.gene("D").names) if rs.has_d else 0
+    ref_label = (", ".join(bundle_ref["dataconfigs"]) if "dataconfigs" in bundle_ref
+                 else f"custom FASTA ({locus})")
 
-    # model: fine-tune from a base bundle (transfers weights; reference may differ) or fresh
     if args.base_model:
         model, _, _, _, _ = _load_model(args.base_model, device)
-        print(f"[train] fine-tuning from base model: {args.base_model}")
     else:
-        cfg = DNAlignAIRConfig(d_model=d_model, n_layers=n_layers, nhead=nhead)
-        model = DNAlignAIR(cfg).to(device)
+        model = DNAlignAIR(DNAlignAIRConfig(d_model=d_model, n_layers=n_layers, nhead=nhead)).to(device)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
     gym = AlignAIRGym([dc], rs, seed=args.seed, allow_curatable=args.allow_curatable)
     trainer = GymTrainer(model, loss_fn, rs, gym, lr=args.lr, batch_size=batch)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"[train] model: {n_params/1e6:.2f}M params")
+
+    print(f"AlignAIR train")
+    print(f"  reference : {ref_label}  (V={nv} D={nd} J={nj}, locus {locus})")
+    print(f"  model     : {n_params/1e6:.2f}M params (d_model={model.config.d_model}, "
+          f"layers={model.config.n_layers})"
+          + (f"  fine-tuned from {args.base_model}" if args.base_model else ""))
+    print(f"  run       : preset={args.preset} steps={steps} batch={batch} seed={args.seed} device={device}")
+    print(f"  output    : {out}/\n")
+    print("training:")
 
     ckpt_path = os.path.join(out, "checkpoint.pt")
     t0 = time.time()
     step = 0
     while step < steps:
         chunk = min(args.eval_every, steps - step)
-        trainer.fit(total_steps=chunk, global_total=steps)
+        trainer.fit(total_steps=chunk, global_total=steps, progress=False)
         step += chunk
         ev = trainer.evaluate(n_batches=3)
+        elapsed = time.time() - t0
+        eta = elapsed / step * (steps - step)
         call = " ".join(f"{g.upper()}={ev[f'{g}_call']:.2f}" for g in genes)
-        print(f"[train] step {step:5d}/{steps}  {time.time()-t0:5.0f}s  "
-              f"loss={ev['loss']:.3f} region={ev['region_acc']:.3f}  call: {call}", flush=True)
-        torch.save({"model": model.state_dict(), "config": model.config.to_dict(),
-                    "step": step}, ckpt_path)            # checkpoint (resume reloads weights)
+        print(f"  {step:>6}/{steps} ({step/steps*100:3.0f}%)  {_fmt_dur(elapsed):>7}  "
+              f"eta {_fmt_dur(eta):>6}  loss={ev['loss']:6.3f}  region={ev['region_acc']:.3f}  {call}",
+              flush=True)
+        torch.save({"model": model.state_dict(), "config": model.config.to_dict(), "step": step},
+                   ckpt_path)
 
-    # final evaluation -> validation report
+    # ---- equivalence-set calibration (folded in so trained models ship good sets) ----
+    calibration = None
+    if not args.no_calibrate:
+        print("\ncalibration (equivalence sets, F1-objective on a representative mix):")
+        from .benchmark.evaluation.allele_calibration import (
+            collect_calibration_rows, fit_calibration, fit_contaminant_tau)
+        cal_recs = _calibration_records(dc, args.calib_n, args.seed + 1000, args.allow_curatable)
+        rows, gate = collect_calibration_rows(model, rs, cal_recs, topk=32, device=device,
+                                              genes=tuple(genes))
+        calibration = fit_calibration(rows, objective="f1")
+        tau = fit_contaminant_tau(gate)
+        if tau is not None:
+            calibration["contaminant"] = {"tau": tau, "fpr_target": 0.02, "n": len(gate)}
+        for G, c in calibration.items():
+            if G == "contaminant":
+                print(f"  contaminant gate : tau={c['tau']:.3f}")
+            else:
+                print(f"  {G}: set_size={c['mean_set_size']:.2f}  recall={c['set_recall']:.3f}  "
+                      f"f1={c.get('set_f1', float('nan')):.3f}  (T={c['temperature']:.2f} eps={c['epsilon']:.2f})")
+
+    # ---- final validation ----
     ev = trainer.evaluate(n_batches=8)
     ev_clean = trainer.evaluate(n_batches=8, p=0.0)
-    report = {"reference": bundle_ref.get("dataconfigs", ["custom-fasta"]),
-              "locus": locus, "steps": steps, "preset": args.preset, "seed": args.seed,
-              "n_params": n_params, "wall_seconds": round(time.time() - t0, 1),
-              "v_count": len(rs.gene("V").names), "j_count": len(rs.gene("J").names),
-              "d_count": len(rs.gene("D").names) if rs.has_d else 0,
+    wall = time.time() - t0
+    report = {"reference": bundle_ref.get("dataconfigs", ["custom-fasta"]), "locus": locus,
+              "steps": steps, "preset": args.preset, "seed": args.seed, "n_params": n_params,
+              "wall_seconds": round(wall, 1), "v_count": nv, "j_count": nj, "d_count": nd,
               "eval_hard": {g: round(ev[f"{g}_call"], 4) for g in genes},
               "eval_clean": {g: round(ev_clean[f"{g}_call"], 4) for g in genes},
-              "region_acc": round(ev["region_acc"], 4), "orientation_acc": round(ev["orient_acc"], 4)}
+              "region_acc": round(ev["region_acc"], 4), "orientation_acc": round(ev["orient_acc"], 4),
+              "calibration": calibration}
     _json.dump(report, open(os.path.join(out, "validation_report.json"), "w"), indent=2)
+    print("\nvalidation (final, GenAIRR-simulated):")
+    print("  call accuracy   " + "  ".join(f"{g.upper()}: {report['eval_hard'][g]:.3f} (hard) "
+                                           f"{report['eval_clean'][g]:.3f} (clean)" for g in genes))
+    print(f"  region_acc={report['region_acc']:.3f}  orientation_acc={report['orientation_acc']:.3f}")
 
-    # save a loadable, self-contained bundle
+    # ---- bundle + model card ----
     bundle_dir = os.path.join(out, "bundle")
     save_dnalignair_bundle(bundle_dir, model=model, locus=locus,
                            dataconfigs=bundle_ref.get("dataconfigs"),
-                           reference_set=bundle_ref.get("reference_set"),
+                           reference_set=bundle_ref.get("reference_set"), calibration=calibration,
                            notes=f"alignair train preset={args.preset} steps={steps} seed={args.seed}")
-
-    # human-readable model card
-    ref_desc = (", ".join(bundle_ref["dataconfigs"]) if "dataconfigs" in bundle_ref
-                else f"custom FASTA ({locus}, V={report['v_count']}/J={report['j_count']}/D={report['d_count']})")
     card = (f"# AlignAIR model\n\n"
-            f"- **Reference**: {ref_desc}\n- **Locus**: {locus}\n- **Preset**: {args.preset}  "
-            f"(steps={steps}, params={n_params/1e6:.2f}M, seed={args.seed})\n"
-            f"- **Trained**: {report['wall_seconds']}s on {device}\n\n"
+            f"- **Reference**: {ref_label}\n- **Locus**: {locus}\n"
+            f"- **Preset**: {args.preset} (steps={steps}, params={n_params/1e6:.2f}M, seed={args.seed})\n"
+            f"- **Calibration**: {'fitted (F1)' if calibration else 'none'}\n"
+            f"- **Trained**: {_fmt_dur(wall)} on {device}\n\n"
             f"## Validation (GenAIRR-simulated)\n\n"
             f"| gene | call acc (hard) | call acc (clean) |\n|---|---|---|\n"
             + "".join(f"| {g.upper()} | {report['eval_hard'][g]:.3f} | {report['eval_clean'][g]:.3f} |\n"
@@ -441,9 +501,11 @@ def cmd_train(args) -> None:
             f"## Use\n\n```bash\nalignair predict reads.fasta -o out.tsv --model {bundle_dir}\n```\n")
     open(os.path.join(out, "model_card.md"), "w").write(card)
 
-    print(f"\n[train] done -> bundle: {bundle_dir}")
-    print(f"[train] validation_report.json + model_card.md written to {out}/")
-    print(f"[train] try it: alignair predict reads.fasta -o out.tsv --model {bundle_dir}")
+    print(f"\ndone in {_fmt_dur(wall)}.")
+    print(f"  bundle            -> {bundle_dir}")
+    print(f"  model card        -> {os.path.join(out, 'model_card.md')}")
+    print(f"  validation report -> {os.path.join(out, 'validation_report.json')}")
+    print(f"  try it: alignair predict reads.fasta -o out.tsv --model {bundle_dir}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -524,6 +586,10 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--allow-curatable", action="store_true",
                     help="permit simulation from references with curatable issues (e.g. custom "
                          "FASTA alleles with no detected anchor); required for some custom references")
+    tr.add_argument("--no-calibrate", action="store_true",
+                    help="skip fitting the equivalence-set calibration after training")
+    tr.add_argument("--calib-n", type=int, default=200,
+                    help="records per stratum for calibration (default 200)")
     tr.add_argument("--lr", type=float, default=5e-4)
     tr.add_argument("--eval-every", type=int, default=200)
     tr.add_argument("--device", default=None, help="cuda|cpu (auto if unset)")
