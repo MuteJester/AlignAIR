@@ -11,6 +11,22 @@ nav:
       - Adoption Roadmap: architecture/adoption_roadmap.md
       - Coordinate Redesign: architecture/dnalignair_coordinate_redesign.md
 
+# Quarantine non-public pages from the built site (kept in the repo, not published):
+#   - superpowers/  internal design specs & implementation plans
+#   - alignair_steps_brakdown.md  stale TF/Keras (v2 legacy) pipeline walkthrough
+#   - tutorials/  legacy TensorFlow notebook (to be replaced by fresh v3 notebooks)
+exclude_docs: |
+  superpowers/
+  alignair_steps_brakdown.md
+  tutorials/
+
+# Fail `mkdocs build --strict` if a new page is ever added outside the nav without
+# being excluded above — keeps the published doc set deliberate.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+
 theme:
   name: readthedocs
   locale: en

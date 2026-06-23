@@ -66,6 +66,10 @@ server = [
     "flask>=3.0",
     "requests>=2.28",
 ]
+docs = [
+    "mkdocs>=1.5",
+    "mkdocs-jupyter>=0.24",
+]
 dev = [
     "AlignAIR[cli,train,viz,server]",
     "pytest>=7.0",
