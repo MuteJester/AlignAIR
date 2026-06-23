@@ -26,30 +26,48 @@ def _version() -> str:
 
 def cmd_predict(args) -> None:
     import torch
-    import GenAIRR.data as gdata
-    from .reference.reference_set import ReferenceSet
-    from .api import load_model, predict as api_predict
+    from .api import load_model
+    from .hub import resolve_model
 
     def log(msg):
         if not args.quiet:
             print(msg, file=sys.stderr, flush=True)      # progress -> stderr (keeps stdout clean)
 
     torch.manual_seed(args.seed)
-    from .hub import resolve_model
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     model_path = resolve_model(args.model)             # local path / catalog id / HF repo id
     loaded = load_model(model_path, device)
     log(f"device: {device}  |  model: {args.model}")
+    try:
+        rs, ref_desc, locus = _resolve_run_reference(
+            loaded, genotype=args.genotype, dataconfig=args.dataconfig,
+            force_locus_mismatch=args.force_locus_mismatch, locus_arg=args.locus, log=log)
+        calibration = _resolve_calibration(loaded, args.calibration)
+        summary = _run_prediction(
+            loaded, rs, ref_desc=ref_desc, locus=locus, calibration=calibration, args=args,
+            input_path=args.input, output_path=args.output,
+            metadata_path=args.metadata, metadata_id=args.metadata_id,
+            model_path=model_path, device=device, log=log)
+    except (ValueError, FileNotFoundError) as e:
+        raise SystemExit(f"error: {e}")
+    if summary["n_aligned"] == 0:
+        raise SystemExit("error: no valid sequences to align")
 
-    # resolve this run's reference: --genotype overrides; else the bundle's default/embedded
-    if args.genotype:
-        if not os.path.exists(args.genotype):
-            raise SystemExit(f"error: genotype file not found: {args.genotype}")
-        ext = os.path.splitext(args.genotype)[1].lower()
+
+def _resolve_run_reference(loaded, *, genotype, dataconfig, force_locus_mismatch, locus_arg, log):
+    """Resolve a run's germline reference (--genotype > bundle default > a GenAIRR DataConfig) and
+    its locus, enforcing model/reference locus compatibility (#3). Raises ValueError on a problem so
+    callers can decide (predict -> abort; batch -> record the sample as failed and continue)."""
+    import GenAIRR.data as gdata
+    from .reference.reference_set import ReferenceSet
+    if genotype:
+        if not os.path.exists(genotype):
+            raise ValueError(f"genotype file not found: {genotype}")
+        ext = os.path.splitext(genotype)[1].lower()
         loader = ReferenceSet.from_fasta if ext in (".fasta", ".fa", ".fna", ".faa") else ReferenceSet.from_yaml
-        rs = loader(args.genotype)
-        ref_desc = f"genotype:{os.path.basename(args.genotype)}"
-        log(f"reference: genotype {args.genotype} (V={len(rs.gene('V').names)}"
+        rs = loader(genotype)
+        ref_desc = f"genotype:{os.path.basename(genotype)}"
+        log(f"reference: genotype {genotype} (V={len(rs.gene('V').names)}"
             f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
     elif loaded.reference_set is not None:
         rs = loaded.reference_set
@@ -57,100 +75,221 @@ def cmd_predict(args) -> None:
         log(f"reference: {ref_desc} (V={len(rs.gene('V').names)}"
             f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
     else:
-        names = [args.dataconfig]
+        names = [dataconfig]
         try:
             rs = ReferenceSet.from_dataconfigs(*[getattr(gdata, n) for n in names])
         except AttributeError as e:
-            raise SystemExit(f"error: unknown GenAIRR DataConfig in {names}: {e}")
+            raise ValueError(f"unknown GenAIRR DataConfig in {names}: {e}")
         ref_desc = ", ".join(names)
         log(f"reference: {', '.join(names)} (V={len(rs.gene('V').names)})")
 
-    # locus/chain compatibility (#3): a heavy model + light reference yields plausible-but-meaningless
-    # calls -> ERROR by default; --force-locus-mismatch to override.
     inferred_locus = rs.infer_locus()
     if inferred_locus and loaded.locus and inferred_locus != loaded.locus:
         msg = (f"model is for locus {loaded.locus} but the reference looks like {inferred_locus} — "
                f"calls would be biologically meaningless. Use a matching model/reference, or pass "
                f"--force-locus-mismatch to override.")
-        if args.force_locus_mismatch:
+        if force_locus_mismatch:
             log(f"WARNING: {msg}")
         else:
-            raise SystemExit(f"error: {msg}")
-    locus = args.locus or inferred_locus or loaded.locus or "IGH"
+            raise ValueError(msg)
+    locus = locus_arg or inferred_locus or loaded.locus or "IGH"
+    return rs, ref_desc, locus
 
-    calibration = loaded.calibration
-    if args.calibration and os.path.exists(args.calibration):
-        calibration = json.load(open(args.calibration))           # explicit flag overrides bundle
 
-    # STREAMING: read -> predict -> write in bounded-memory chunks (repertoire-scale safe).
+def _resolve_calibration(loaded, calibration_path):
+    cal = loaded.calibration
+    if calibration_path and os.path.exists(calibration_path):
+        cal = json.load(open(calibration_path))                   # explicit flag overrides bundle
+    return cal
+
+
+def _run_prediction(loaded, rs, *, ref_desc, locus, calibration, args, input_path, output_path,
+                    metadata_path, metadata_id, model_path, device, log, desc="aligning"):
+    """Stream one input -> one AIRR TSV (bounded memory) and return a summary dict. Raises ValueError
+    on a write/read problem (no exit here, so callers control the failure policy)."""
+    from .api import predict as api_predict
     from .io.sequence_reader import iter_sequences, load_metadata
     from .io.airr import AirrWriter
-    to_stdout = args.output == "-"
+    to_stdout = output_path == "-"
     write_provenance = not (args.no_provenance or to_stdout)
     chunk = max(args.batch, args.chunk_size)
     # optional per-read metadata join (10x annotations / AIRR metadata) -> preserved in output
     meta_map, extra_cols = {}, []
-    if args.metadata:
+    if metadata_path:
         kc = [c.strip() for c in args.keep_columns.split(",")] if args.keep_columns else None
-        try:
-            meta_map, extra_cols = load_metadata(args.metadata, args.metadata_id, kc)
-        except (ValueError, FileNotFoundError) as e:
-            raise SystemExit(f"error: {e}")
-        log(f"metadata: {len(meta_map)} rows from {args.metadata}; preserving columns {extra_cols}")
+        meta_map, extra_cols = load_metadata(metadata_path, metadata_id, kc)  # raises on bad columns/file
+        log(f"metadata: {len(meta_map)} rows from {metadata_path}; preserving columns {extra_cols}")
     bar = None if (args.quiet or to_stdout) else __import__("tqdm").tqdm(
-        desc="aligning", unit="read", file=sys.stderr)
+        desc=desc, unit="read", file=sys.stderr)
     total = n_prod = n_contam = n_dropped = n_meta_hit = 0
     try:
         if not to_stdout:
-            os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-        writer = AirrWriter(args.output, locus, extra_columns=extra_cols)
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        writer = AirrWriter(output_path, locus, extra_columns=extra_cols)
     except (PermissionError, OSError) as e:
-        raise SystemExit(
-            f"error: cannot write output to {args.output}: {e}\n"
+        raise ValueError(
+            f"cannot write output to {output_path}: {e}\n"
             f"hint: if running in Docker, mount a writable output directory and add "
             f"`--user $(id -u):$(id -g)` so files are written as you.")
     try:
-        try:
-            chunks = iter_sequences(args.input, chunk_size=chunk,
-                                    seq_column=args.sequence_column, id_column=args.id_column)
-            for ids, seqs, drp in chunks:
-                n_dropped += drp
-                if not seqs:
-                    continue
-                batch = api_predict(loaded, seqs, reference=rs, batch_size=args.batch,
-                                    v_reader=args.v_reader, calibration=calibration,
-                                    full_alignment=not args.no_full_alignment, locus=locus)
-                canon, preds = batch.sequences, batch.predictions    # canonical (forward) seqs
-                metas = None
-                if meta_map:
-                    metas = [meta_map.get(sid, {}) for sid in ids]
-                    n_meta_hit += sum(1 for m in metas if m)
-                writer.write(ids, canon, preds, metas=metas)
-                total += len(preds)
-                n_prod += sum(1 for p in preds if p.get("productive"))
-                n_contam += sum(1 for p in preds if p.get("is_contaminant"))
-                if bar is not None:
-                    bar.update(len(preds))
-        except (ValueError, FileNotFoundError) as e:
-            raise SystemExit(f"error: {e}")
+        chunks = iter_sequences(input_path, chunk_size=chunk,
+                                seq_column=args.sequence_column, id_column=args.id_column)
+        for ids, seqs, drp in chunks:
+            n_dropped += drp
+            if not seqs:
+                continue
+            batch = api_predict(loaded, seqs, reference=rs, batch_size=args.batch,
+                                v_reader=args.v_reader, calibration=calibration,
+                                full_alignment=not args.no_full_alignment, locus=locus)
+            canon, preds = batch.sequences, batch.predictions    # canonical (forward) seqs
+            metas = None
+            if meta_map:
+                metas = [meta_map.get(sid, {}) for sid in ids]
+                n_meta_hit += sum(1 for m in metas if m)
+            writer.write(ids, canon, preds, metas=metas)
+            total += len(preds)
+            n_prod += sum(1 for p in preds if p.get("productive"))
+            n_contam += sum(1 for p in preds if p.get("is_contaminant"))
+            if bar is not None:
+                bar.update(len(preds))
     finally:
         writer.close()
         if bar is not None:
             bar.close()
+    summary = {"output": output_path, "n_aligned": total, "n_productive": n_prod,
+               "n_contaminant": n_contam, "n_dropped": n_dropped, "n_meta_hit": n_meta_hit,
+               "locus": locus, "metadata": bool(meta_map)}
     if total == 0:
-        raise SystemExit("error: no valid sequences to align")
+        return summary                       # caller decides whether 0 reads is an error
     if write_provenance:
         from .io.sequence_reader import _detect_format
         info = {"n_read": total + n_dropped, "n_dropped": n_dropped,
-                "format": _detect_format(args.input)}
-        _write_provenance(args.output + ".run.json", args=args, model_path=model_path,
-                          device=device, info=info, ref_desc=ref_desc)
+                "format": _detect_format(input_path)}
+        _write_provenance(output_path + ".run.json", args=args, model_path=model_path,
+                          device=device, info=info, ref_desc=ref_desc, output=output_path)
     if not to_stdout:
-        log(f"wrote {total} rearrangements ({n_dropped} dropped) -> {args.output}"
-            + (f"  (+ {os.path.basename(args.output)}.run.json)" if write_provenance else ""))
+        log(f"wrote {total} rearrangements ({n_dropped} dropped) -> {output_path}"
+            + (f"  (+ {os.path.basename(output_path)}.run.json)" if write_provenance else ""))
         log(f"summary: {total} aligned | {n_prod} productive ({n_prod/max(total,1)*100:.0f}%)"
             f"{f' | {n_contam} flagged out-of-scope' if n_contam else ''}"
             f"{f' | metadata matched {n_meta_hit}/{total}' if meta_map else ''} | locus {locus}")
+    return summary
+
+
+def cmd_batch(args) -> None:
+    """Align many samples with ONE model load. A manifest (CSV/TSV) of `sample_id,input` (optional
+    `genotype,metadata` per row) drives one AIRR TSV per sample under -o, plus a manifest_summary
+    .tsv/.json with per-sample stats — easier to wrap (Nextflow/Snakemake) and audit than a shell loop."""
+    import time
+    import torch
+    from .api import load_model
+    from .hub import resolve_model
+
+    def log(msg):
+        if not args.quiet:
+            print(msg, file=sys.stderr, flush=True)
+
+    rows = _read_manifest(args.manifest)
+    if not rows:
+        raise SystemExit(f"error: manifest {args.manifest} has no usable rows "
+                         f"(need columns: sample_id, input)")
+    torch.manual_seed(args.seed)
+    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    model_path = resolve_model(args.model)
+    loaded = load_model(model_path, device)              # loaded ONCE, reused for every sample
+    log(f"device: {device}  |  model: {args.model}  |  {len(rows)} samples")
+    os.makedirs(args.output, exist_ok=True)
+
+    ref_cache, summaries = {}, []
+    for i, row in enumerate(rows, 1):
+        sid = row["sample_id"]
+        out_tsv = os.path.join(args.output, f"{sid}.tsv")
+        genotype = row.get("genotype") or args.genotype
+        t0 = time.monotonic()
+        log(f"[{i}/{len(rows)}] {sid}: {row['input']} -> {out_tsv}")
+        try:
+            key = genotype or "<model-default>"
+            if key not in ref_cache:                     # a shared genotype is resolved once
+                ref_cache[key] = _resolve_run_reference(
+                    loaded, genotype=genotype, dataconfig=args.dataconfig,
+                    force_locus_mismatch=args.force_locus_mismatch, locus_arg=args.locus, log=log)
+            rs, ref_desc, locus = ref_cache[key]
+            calibration = _resolve_calibration(loaded, args.calibration)
+            s = _run_prediction(
+                loaded, rs, ref_desc=ref_desc, locus=locus, calibration=calibration, args=args,
+                input_path=row["input"], output_path=out_tsv,
+                metadata_path=row.get("metadata") or None, metadata_id=args.metadata_id,
+                model_path=model_path, device=device, log=log, desc=sid)
+            s.update(sample_id=sid, input=row["input"], seconds=round(time.monotonic() - t0, 2),
+                     status="ok" if s["n_aligned"] else "empty", error="")
+        except (ValueError, FileNotFoundError) as e:
+            log(f"  ! {sid} failed: {str(e).splitlines()[0]}")
+            s = {"sample_id": sid, "input": row["input"], "output": out_tsv, "status": "error",
+                 "error": str(e).splitlines()[0], "n_aligned": 0, "n_productive": 0,
+                 "n_contaminant": 0, "n_dropped": 0, "locus": "",
+                 "seconds": round(time.monotonic() - t0, 2)}
+        summaries.append(s)
+
+    _write_manifest_summary(args.output, summaries)
+    ok = sum(1 for s in summaries if s["status"] == "ok")
+    empty = sum(1 for s in summaries if s["status"] == "empty")
+    failed = [s["sample_id"] for s in summaries if s["status"] == "error"]
+    log(f"done: {ok} ok"
+        + (f", {empty} empty" if empty else "")
+        + (f", {len(failed)} failed" if failed else "")
+        + f" / {len(summaries)} samples -> {args.output}/  (manifest_summary.tsv)")
+    if failed:
+        log(f"failed samples: {', '.join(failed)}")
+    if ok == 0:                                          # total failure -> non-zero exit for wrappers
+        raise SystemExit("error: no samples aligned successfully")
+
+
+def _read_manifest(path):
+    """Parse a sample manifest (CSV/TSV). Required columns: sample_id, input. Optional: genotype,
+    metadata. Relative paths are tried as-is, then relative to the manifest's directory."""
+    if not os.path.exists(path):
+        raise SystemExit(f"error: manifest not found: {path}")
+    import csv
+    base = os.path.dirname(os.path.abspath(path))
+
+    def resolve(p):
+        if not p or os.path.isabs(p) or os.path.exists(p):
+            return p
+        cand = os.path.join(base, p)
+        return cand if os.path.exists(cand) else p
+
+    with open(path, newline="") as f:
+        delim = "\t" if "\t" in f.readline() else ","
+        f.seek(0)
+        reader = csv.DictReader(f, delimiter=delim)
+        cols = {(c or "").strip() for c in (reader.fieldnames or [])}
+        missing = {"sample_id", "input"} - cols
+        if missing:
+            raise SystemExit(f"error: manifest {path} must have columns sample_id,input "
+                             f"(missing {sorted(missing)}); optional: genotype, metadata")
+        rows = []
+        for r in reader:
+            r = {(k or "").strip(): (v.strip() if isinstance(v, str) else v) for k, v in r.items()}
+            if not r.get("sample_id") or not r.get("input"):
+                continue
+            for col in ("input", "genotype", "metadata"):
+                if r.get(col):
+                    r[col] = resolve(r[col])
+            rows.append(r)
+    return rows
+
+
+def _write_manifest_summary(out_dir, summaries):
+    import csv
+    cols = ["sample_id", "status", "n_aligned", "n_productive", "n_contaminant", "n_dropped",
+            "locus", "seconds", "output", "input", "error"]
+    with open(os.path.join(out_dir, "manifest_summary.tsv"), "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols, delimiter="\t", extrasaction="ignore")
+        w.writeheader()
+        for s in summaries:
+            w.writerow(s)
+    with open(os.path.join(out_dir, "manifest_summary.json"), "w") as f:
+        json.dump(summaries, f, indent=2)
 
 
 def _pkg_version(name):
@@ -161,7 +300,7 @@ def _pkg_version(name):
         return None
 
 
-def _write_provenance(path, *, args, model_path, device, info, ref_desc):
+def _write_provenance(path, *, args, model_path, device, info, ref_desc, output=None):
     """Write a run.json sidecar next to the output: what produced this file (AIRR Software WG
     expects run parameters to travel with the output)."""
     import datetime
@@ -176,7 +315,7 @@ def _write_provenance(path, *, args, model_path, device, info, ref_desc):
         "model": model_path, "model_fingerprint": fingerprint, "reference": ref_desc,
         "device": device, "v_reader": args.v_reader, "batch": args.batch, "seed": args.seed,
         "n_input": info.get("n_read"), "n_dropped": info.get("n_dropped"),
-        "input_format": info.get("format"), "output": args.output,
+        "input_format": info.get("format"), "output": output or getattr(args, "output", None),
         "versions": {k: _pkg_version(k) for k in ("torch", "GenAIRR", "airr", "parasail")},
     }
     with open(path, "w") as f:
@@ -728,6 +867,41 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--force-locus-mismatch", action="store_true",
                     help="proceed even if the model's locus does not match the reference (default: error)")
     pr.set_defaults(func=cmd_predict)
+
+    ba = sub.add_parser("batch", help="align many samples from a manifest with one model load")
+    ba.add_argument("--manifest", required=True,
+                    help="CSV/TSV with columns sample_id,input (optional per-row: genotype, metadata); "
+                         "relative paths resolve against the manifest's directory")
+    ba.add_argument("-o", "--output", required=True,
+                    help="output directory: one <sample_id>.tsv per sample + manifest_summary.tsv/json")
+    ba.add_argument("--model", required=True,
+                    help="bundle dir / .pt checkpoint / catalog id / HF repo id (loaded once for all samples)")
+    ba.add_argument("--genotype", default=None,
+                    help="default genotype (YAML/FASTA) for rows that don't set their own")
+    ba.add_argument("--metadata-id", default=None, help="id column in each row's --metadata file")
+    ba.add_argument("--keep-columns", default=None,
+                    help="comma-separated metadata columns to carry (default: known 10x/AIRR set)")
+    ba.add_argument("--sequence-column", default=None, help="CSV/TSV input: column holding the sequence")
+    ba.add_argument("--id-column", default=None, help="CSV/TSV input: column holding the sequence id")
+    ba.add_argument("--calibration", default=None, help="allele-set calibration JSON (overrides bundle)")
+    ba.add_argument("--dataconfig", default="HUMAN_IGH_OGRDB",
+                    help="GenAIRR DataConfig for the reference (raw checkpoint, no genotype)")
+    ba.add_argument("--locus", default=None, help="locus label (default: bundle's, else IGH)")
+    ba.add_argument("--batch", type=int, default=64)
+    ba.add_argument("--chunk-size", type=int, default=20000,
+                    help="reads held in memory per streaming chunk (default 20000)")
+    ba.add_argument("--device", default=None, help="cuda|cpu (auto if unset)")
+    ba.add_argument("--v-reader", default="learned", choices=["learned", "parasail"],
+                    help="V allele reader: learned (default) or parasail")
+    ba.add_argument("--seed", type=int, default=0, help="random seed (recorded in each run.json)")
+    ba.add_argument("--quiet", action="store_true", help="suppress progress output")
+    ba.add_argument("--no-provenance", action="store_true",
+                    help="do not write per-sample <output>.run.json provenance sidecars")
+    ba.add_argument("--no-full-alignment", action="store_true",
+                    help="skip the parasail gapped alignment (faster coordinate-derived cigars)")
+    ba.add_argument("--force-locus-mismatch", action="store_true",
+                    help="proceed even if the model's locus does not match the reference")
+    ba.set_defaults(func=cmd_batch)
 
     va = sub.add_parser("validate-airr", help="validate a rearrangement TSV against the AIRR-C schema")
     va.add_argument("file", help="AIRR rearrangement TSV to validate")
