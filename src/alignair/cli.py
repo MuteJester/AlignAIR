@@ -48,8 +48,6 @@ def cmd_predict(args) -> None:
     import GenAIRR.data as gdata
     from .reference.reference_set import ReferenceSet
     from .inference.dnalignair_infer import predict_reads, canonicalize_sequence
-    from .io.sequence_reader import read_sequences
-    from .io.airr import write_airr
 
     def log(msg):
         if not args.quiet:
@@ -102,41 +100,61 @@ def cmd_predict(args) -> None:
     if args.calibration and os.path.exists(args.calibration):
         calibration = json.load(open(args.calibration))           # explicit flag overrides bundle
 
-    try:
-        ids, seqs, info = read_sequences(args.input, seq_column=args.sequence_column,
-                                         id_column=args.id_column)
-    except (ValueError, FileNotFoundError) as e:
-        raise SystemExit(f"error: {e}")
-    log(f"read {info['n_read']} sequences ({info['n_dropped']} dropped) as {info['format']}")
-    if not seqs:
-        raise SystemExit("error: no valid sequences to align")
-
-    preds = predict_reads(model, rs, seqs, device=device, batch_size=args.batch,
-                          rerank="learned", v_reader=args.v_reader, calibration=calibration,
-                          progress=not args.quiet, full_alignment=not args.no_full_alignment)
-    # coordinates are in the canonical (forward) frame -> emit the canonical sequence so
-    # they always match it, even for reverse-complemented input reads (with rev_comp flag).
-    canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]
+    # STREAMING: read -> predict -> write in bounded-memory chunks (repertoire-scale safe).
+    from .io.sequence_reader import iter_sequences
+    from .io.airr import AirrWriter
     to_stdout = args.output == "-"
     write_provenance = not (args.no_provenance or to_stdout)
+    chunk = max(args.batch, args.chunk_size)
+    bar = None if (args.quiet or to_stdout) else __import__("tqdm").tqdm(
+        desc="aligning", unit="read", file=sys.stderr)
+    total = n_prod = n_contam = n_dropped = 0
     try:
         if not to_stdout:
             os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-        write_airr(args.output, ids, canon, preds, locus=locus)
-        if write_provenance:
-            _write_provenance(args.output + ".run.json", args=args, model_path=model_path,
-                              device=device, info=info, ref_desc=ref_desc)
+        writer = AirrWriter(args.output, locus)
     except (PermissionError, OSError) as e:
         raise SystemExit(
             f"error: cannot write output to {args.output}: {e}\n"
             f"hint: if running in Docker, mount a writable output directory and add "
             f"`--user $(id -u):$(id -g)` so files are written as you.")
+    try:
+        try:
+            chunks = iter_sequences(args.input, chunk_size=chunk,
+                                    seq_column=args.sequence_column, id_column=args.id_column)
+            for ids, seqs, drp in chunks:
+                n_dropped += drp
+                if not seqs:
+                    continue
+                preds = predict_reads(model, rs, seqs, device=device, batch_size=args.batch,
+                                      rerank="learned", v_reader=args.v_reader,
+                                      calibration=calibration, full_alignment=not args.no_full_alignment)
+                # emit the CANONICAL (forward) sequence so coords match even for reoriented reads
+                canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]
+                writer.write(ids, canon, preds)
+                total += len(preds)
+                n_prod += sum(1 for p in preds if p.get("productive"))
+                n_contam += sum(1 for p in preds if p.get("is_contaminant"))
+                if bar is not None:
+                    bar.update(len(preds))
+        except (ValueError, FileNotFoundError) as e:
+            raise SystemExit(f"error: {e}")
+    finally:
+        writer.close()
+        if bar is not None:
+            bar.close()
+    if total == 0:
+        raise SystemExit("error: no valid sequences to align")
+    if write_provenance:
+        from .io.sequence_reader import _detect_format
+        info = {"n_read": total + n_dropped, "n_dropped": n_dropped,
+                "format": _detect_format(args.input)}
+        _write_provenance(args.output + ".run.json", args=args, model_path=model_path,
+                          device=device, info=info, ref_desc=ref_desc)
     if not to_stdout:
-        n_prod = sum(1 for p in preds if p.get("productive"))
-        n_contam = sum(1 for p in preds if p.get("is_contaminant"))
-        log(f"wrote {len(preds)} rearrangements -> {args.output}"
+        log(f"wrote {total} rearrangements ({n_dropped} dropped) -> {args.output}"
             + (f"  (+ {os.path.basename(args.output)}.run.json)" if write_provenance else ""))
-        log(f"summary: {len(preds)} aligned | {n_prod} productive ({n_prod/max(len(preds),1)*100:.0f}%)"
+        log(f"summary: {total} aligned | {n_prod} productive ({n_prod/max(total,1)*100:.0f}%)"
             f"{f' | {n_contam} flagged out-of-scope' if n_contam else ''} | locus {locus}")
 
 
@@ -616,6 +634,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="GenAIRR DataConfig name for the reference (raw checkpoint, no --genotype)")
     pr.add_argument("--locus", default=None, help="locus label (default: bundle's, else IGH)")
     pr.add_argument("--batch", type=int, default=64)
+    pr.add_argument("--chunk-size", type=int, default=20000,
+                    help="reads held in memory per streaming chunk (repertoire-scale; default 20000)")
     pr.add_argument("--device", default=None, help="cuda|cpu (auto if unset)")
     pr.add_argument("--v-reader", default="learned", choices=["learned", "parasail"],
                     help="V allele reader: learned (default) or parasail (faster+sharper; needs AlignAIR[reader])")

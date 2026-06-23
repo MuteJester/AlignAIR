@@ -74,16 +74,14 @@ def _sniff(path: str, head: str) -> str:
     return "txt"
 
 
-def read_sequences(path: str, seq_column: str | None = None,
-                   id_column: str | None = None) -> Tuple[List[str], List[str], dict]:
-    """Return (ids, sequences, info). info has n_read/n_dropped/format for reporting.
-    `path` may be '-' for stdin. For CSV/TSV input, `seq_column`/`id_column` override the
-    auto-detected columns."""
+def _detect_format(path: str) -> str:
     with _open(path) as f:
         head = f.readline()
-    fmt = _sniff(path, head)
-    ids: List[str] = []
-    raw: List[str] = []
+    return _sniff(path, head)
+
+
+def _iter_records(path: str, fmt: str, head: str, seq_column, id_column):
+    """Yield (id_or_None, raw_sequence) LAZILY for one file/stdin — never loads the whole file."""
     if fmt == "fasta":
         name, buf = None, []
         with _open(path) as f:
@@ -91,18 +89,23 @@ def read_sequences(path: str, seq_column: str | None = None,
                 line = line.rstrip("\n")
                 if line.startswith(">"):
                     if name is not None:
-                        ids.append(name); raw.append("".join(buf))
-                    name, buf = line[1:].split()[0] or f"seq{len(ids)}", []
+                        yield name, "".join(buf)
+                    tok = line[1:].split()
+                    name, buf = (tok[0] if tok else None), []
                 else:
                     buf.append(line)
             if name is not None:
-                ids.append(name); raw.append("".join(buf))
+                yield name, "".join(buf)
     elif fmt == "fastq":
         with _open(path) as f:
-            lines = [ln.rstrip("\n") for ln in f]
-        for i in range(0, len(lines) - 3, 4):
-            if lines[i].startswith("@"):
-                ids.append(lines[i][1:].split()[0]); raw.append(lines[i + 1])
+            while True:
+                h = f.readline()
+                if not h:
+                    break
+                s = f.readline(); f.readline(); f.readline()      # seq, '+', qual
+                if h.startswith("@"):
+                    tok = h.rstrip("\n")[1:].split()
+                    yield (tok[0] if tok else None), s.rstrip("\n")
     elif fmt == "table":
         delim = "\t" if path.lower().rstrip(".gz").endswith(".tsv") or "\t" in head else ","
         with _open(path) as f:
@@ -123,19 +126,49 @@ def read_sequences(path: str, seq_column: str | None = None,
                 idcol = id_column
             else:
                 idcol = next((c for c in fields if c.lower() in ("sequence_id", "id", "name")), None)
-            for i, row in enumerate(reader):
-                ids.append(row.get(idcol) if idcol else f"seq{i}"); raw.append(row.get(col, ""))
+            for row in reader:
+                yield (row.get(idcol) if idcol else None), row.get(col, "")
     else:  # txt: one sequence per line
         with _open(path) as f:
-            for i, line in enumerate(f):
+            for line in f:
                 if line.strip():
-                    ids.append(f"seq{i}"); raw.append(line)
+                    yield None, line
 
-    seqs, kept_ids, dropped = [], [], 0
-    for sid, s in zip(ids, raw):
-        v = validate(s)
+
+def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = None,
+                   id_column: str | None = None):
+    """Stream (ids, sequences, n_dropped) in chunks of up to ``chunk_size`` validated reads, with
+    bounded memory (never materializes the whole file). Sequences are validated as in
+    ``read_sequences``; ids default to ``seq{global_index}`` when the source has none."""
+    with _open(path) as f:
+        head = f.readline()
+    fmt = _sniff(path, head)
+    ids: List[str] = []
+    seqs: List[str] = []
+    dropped = 0
+    for i, (rid, raw) in enumerate(_iter_records(path, fmt, head, seq_column, id_column)):
+        v = validate(raw)
         if v is None:
             dropped += 1
         else:
-            kept_ids.append(sid); seqs.append(v)
-    return kept_ids, seqs, {"n_read": len(raw), "n_dropped": dropped, "format": fmt}
+            ids.append(rid if rid is not None else f"seq{i}")
+            seqs.append(v)
+        if len(seqs) >= chunk_size:
+            yield ids, seqs, dropped
+            ids, seqs, dropped = [], [], 0
+    if ids or dropped:
+        yield ids, seqs, dropped
+
+
+def read_sequences(path: str, seq_column: str | None = None,
+                   id_column: str | None = None) -> Tuple[List[str], List[str], dict]:
+    """Eager read of all sequences (back-compat). For large files prefer ``iter_sequences``.
+    Returns (ids, sequences, info) with info.n_read/n_dropped/format."""
+    ids: List[str] = []
+    seqs: List[str] = []
+    dropped = 0
+    for cids, cseqs, drp in iter_sequences(path, chunk_size=10 ** 9,
+                                           seq_column=seq_column, id_column=id_column):
+        ids += cids; seqs += cseqs; dropped += drp
+    return ids, seqs, {"n_read": len(ids) + dropped, "n_dropped": dropped,
+                       "format": _detect_format(path)}

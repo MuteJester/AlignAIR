@@ -42,6 +42,33 @@ def test_reference_validate_flags_empty_sequence(tmp_path):
     assert e.value.code != 0
 
 
+def test_iter_sequences_chunks_and_counts(tmp_path):
+    from alignair.io.sequence_reader import iter_sequences
+    p = tmp_path / "reads.fasta"
+    p.write_text("".join(f">r{i}\nACGTACGT\n" for i in range(10)) + ">bad\nXXXXXXXX\n")
+    chunks = list(iter_sequences(str(p), chunk_size=3))
+    sizes = [len(ids) for ids, _, _ in chunks]
+    assert sum(sizes) == 10 and max(sizes) <= 3              # 10 valid reads, chunked by 3
+    assert sum(d for _, _, d in chunks) == 1                 # the all-X read is dropped
+    # ids and seqs stay aligned and valid
+    all_ids = [i for ids, _, _ in chunks for i in ids]
+    assert all_ids[0] == "r0" and len(all_ids) == 10
+
+
+def test_airr_writer_incremental_matches_oneshot(tmp_path):
+    from alignair.io.airr import AirrWriter
+    seq = "ACGT" * 90
+    preds = [_pred(), _pred(), _pred()]
+    one = tmp_path / "one.tsv"
+    write_airr(str(one), ["a", "b", "c"], [seq] * 3, preds, locus="IGH")
+    inc = tmp_path / "inc.tsv"
+    w = AirrWriter(str(inc), "IGH")
+    w.write(["a"], [seq], preds[:1])            # two separate chunks
+    w.write(["b", "c"], [seq, seq], preds[1:])
+    w.close()
+    assert one.read_text() == inc.read_text()   # streaming == one-shot, byte-identical
+
+
 def test_read_sequences_custom_columns(tmp_path):
     p = tmp_path / "in.csv"
     p.write_text("name,dna\na,ACGTACGT\nb,TTTTGGGG\n")

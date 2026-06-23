@@ -56,52 +56,77 @@ def _cigar(seq_len, ss, se, gs, ge):
     return "".join(ops)
 
 
+def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
+    """Build one AIRR rearrangement row. `seq` must be the CANONICAL (forward) sequence the
+    coordinates are in. Prefers real-alignment fields (predict_reads full_alignment) when present,
+    else the coordinate approximation."""
+    isc = p.get("is_contaminant")
+    seq_len = len(seq)
+    starts = [p.get(f"{g}_sequence_start") for g in GENES if p.get(f"{g}_sequence_start") is not None]
+    ends = [p.get(f"{g}_sequence_end") for g in GENES if p.get(f"{g}_sequence_end")]
+    seq_aln = p.get("sequence_alignment")
+    if seq_aln is None:
+        seq_aln = seq[min(starts):max(ends)] if starts and ends else ""
+    row = {"sequence_id": sid, "sequence": seq, "locus": locus,
+           "rev_comp": "T" if p.get("orientation_id", 0) != 0 else "F",
+           "productive": p.get("productive"),
+           "junction": p.get("junction"), "junction_aa": p.get("junction_aa"),
+           "junction_length": p.get("junction_length"),
+           "sequence_alignment": seq_aln, "germline_alignment": p.get("germline_alignment", ""),
+           "v_identity": p.get("v_identity"), "d_identity": p.get("d_identity"),
+           "j_identity": p.get("j_identity"),
+           "is_contaminant": ("T" if isc else "F") if isc is not None else None}
+    for g in GENES:
+        row[f"{g}_cigar"] = p.get(f"{g}_cigar") or _cigar(
+            seq_len, p.get(f"{g}_sequence_start"), p.get(f"{g}_sequence_end"),
+            p.get(f"{g}_germline_start"), p.get(f"{g}_germline_end"))
+        row[f"{g}_call"] = p.get(f"{g}_call")
+        row[f"{g}_sequence_start"] = _airr_start(p.get(f"{g}_sequence_start"))
+        row[f"{g}_sequence_end"] = p.get(f"{g}_sequence_end")
+        row[f"{g}_germline_start"] = _airr_start(p.get(f"{g}_germline_start"))
+        row[f"{g}_germline_end"] = p.get(f"{g}_germline_end")
+        cset = p.get(f"{g}_call_set") or ([p.get(f"{g}_call")] if p.get(f"{g}_call") else [])
+        row[f"{g}_call_set"] = ",".join(c for c in cset if c)
+        row[f"{g}_call_level"] = p.get(f"{g}_call_level")
+        conf = p.get(f"{g}_set_confidence")
+        row[f"{g}_set_confidence"] = f"{conf:.4f}" if conf is not None else None
+    return row
+
+
+class AirrWriter:
+    """Incremental AIRR rearrangement TSV writer for bounded-memory streaming. Open once, call
+    `write(ids, sequences, preds)` per chunk, then `close()` (or use as a context manager).
+    `path` may be '-' for stdout."""
+
+    def __init__(self, path: str, locus: str = "IGH"):
+        import sys
+        self.locus = locus
+        self._to_stdout = path == "-"
+        self._f = sys.stdout if self._to_stdout else open(path, "w", newline="")
+        self._w = csv.DictWriter(self._f, fieldnames=COLUMNS, delimiter="\t", extrasaction="ignore")
+        self._w.writeheader()
+
+    def write(self, ids: List[str], sequences: List[str], preds: List[dict]) -> None:
+        for sid, seq, p in zip(ids, sequences, preds):
+            self._w.writerow(_build_row(sid, seq, p, self.locus))
+
+    def close(self) -> None:
+        if not self._to_stdout:
+            self._f.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
 def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict],
                locus: str = "IGH") -> None:
-    """`sequences` must be the CANONICAL (forward-oriented) sequences that predict_reads'
-    coordinates are in — use canonicalize_sequence(input, pred['orientation_id']).
-    `path` may be '-' to write the TSV to stdout."""
-    import sys
-    f = sys.stdout if path == "-" else open(path, "w", newline="")
+    """Eager one-shot write (back-compat). For large inputs use AirrWriter incrementally.
+    `sequences` must be the CANONICAL (forward) sequences predict_reads' coordinates are in."""
+    w = AirrWriter(path, locus)
     try:
-        w = csv.DictWriter(f, fieldnames=COLUMNS, delimiter="\t", extrasaction="ignore")
-        w.writeheader()
-        for sid, seq, p in zip(ids, sequences, preds):
-            isc = p.get("is_contaminant")
-            seq_len = len(seq)
-            # aligned span of the query (V start .. J end); AIRR sequence_alignment
-            # alignment-representation fields: prefer the real (parasail) alignment when present
-            # (predict_reads full_alignment), else fall back to the coordinate approximation.
-            starts = [p.get(f"{g}_sequence_start") for g in GENES if p.get(f"{g}_sequence_start") is not None]
-            ends = [p.get(f"{g}_sequence_end") for g in GENES if p.get(f"{g}_sequence_end")]
-            seq_aln = p.get("sequence_alignment")
-            if seq_aln is None:
-                seq_aln = seq[min(starts):max(ends)] if starts and ends else ""
-            row = {"sequence_id": sid, "sequence": seq, "locus": locus,
-                   "rev_comp": "T" if p.get("orientation_id", 0) != 0 else "F",
-                   "productive": p.get("productive"),
-                   "junction": p.get("junction"), "junction_aa": p.get("junction_aa"),
-                   "junction_length": p.get("junction_length"),
-                   "sequence_alignment": seq_aln, "germline_alignment": p.get("germline_alignment", ""),
-                   "v_identity": p.get("v_identity"), "d_identity": p.get("d_identity"),
-                   "j_identity": p.get("j_identity"),
-                   "is_contaminant": ("T" if isc else "F") if isc is not None else None}
-            for g in GENES:
-                row[f"{g}_cigar"] = p.get(f"{g}_cigar") or _cigar(
-                    seq_len, p.get(f"{g}_sequence_start"), p.get(f"{g}_sequence_end"),
-                    p.get(f"{g}_germline_start"), p.get(f"{g}_germline_end"))
-            for g in GENES:
-                row[f"{g}_call"] = p.get(f"{g}_call")
-                row[f"{g}_sequence_start"] = _airr_start(p.get(f"{g}_sequence_start"))
-                row[f"{g}_sequence_end"] = p.get(f"{g}_sequence_end")
-                row[f"{g}_germline_start"] = _airr_start(p.get(f"{g}_germline_start"))
-                row[f"{g}_germline_end"] = p.get(f"{g}_germline_end")
-                cset = p.get(f"{g}_call_set") or ([p.get(f"{g}_call")] if p.get(f"{g}_call") else [])
-                row[f"{g}_call_set"] = ",".join(c for c in cset if c)
-                row[f"{g}_call_level"] = p.get(f"{g}_call_level")
-                conf = p.get(f"{g}_set_confidence")
-                row[f"{g}_set_confidence"] = f"{conf:.4f}" if conf is not None else None
-            w.writerow(row)
+        w.write(ids, sequences, preds)
     finally:
-        if path != "-":
-            f.close()
+        w.close()
