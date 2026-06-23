@@ -82,7 +82,7 @@ class GymTrainer:
                           collate_fn=lambda b: gym_collate(b, self.reference_set, self.has_d))
 
     def fit(self, total_steps: int, global_total: int | None = None,
-            progress: bool = True) -> list:
+            progress: bool = True, controller=None) -> list:
         """Train for ``total_steps``. When ``global_total`` is given the curriculum
         ramps over the GLOBAL training horizon (across successive fit() calls) via an
         internal step counter, so chunked training yields one monotonic easy->hard
@@ -99,11 +99,12 @@ class GymTrainer:
         since_refresh = self.refresh_curriculum_every  # force a refresh on entry
         while step < total_steps:
             if since_refresh >= self.refresh_curriculum_every:
-                if global_total:
-                    p = self._global_step / max(global_total - 1, 1)
+                if controller is not None:
+                    self.gym.set_progress(controller.progress())
+                elif global_total:
+                    self.gym.set_progress(min(1.0, self._global_step / max(global_total - 1, 1)))
                 else:
-                    p = step / max(total_steps - 1, 1)
-                self.gym.set_progress(min(1.0, p))
+                    self.gym.set_progress(min(1.0, step / max(total_steps - 1, 1)))
                 it = iter(loader)  # picks up the new curriculum progress on rebuild
                 since_refresh = 0
             try:
@@ -225,6 +226,10 @@ class GymTrainer:
             bar.set_postfix(loss=f"{logs['total']:.3f}", region=f"{logs['region']:.3f}",
                             stage=self.gym.curriculum.stage(self.gym._p) + 1)
             step += 1
+            if controller is not None and step % controller.config.exam_every == 0:
+                controller.exam(step=self._global_step)
+                if controller.done:
+                    break
         bar.close()
         return history
 
