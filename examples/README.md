@@ -6,6 +6,8 @@ Tiny, self-contained data for a first run.
 | --- | --- |
 | `reads.fasta` | 8 simulated human IGH reads (FASTA header notes the true V allele) |
 | `donor_genotype.yaml` | a small "donor" genotype (a subset of the human IGH reference) — used to demonstrate the dynamic-genotype feature |
+| `10x/` | a 10x Genomics (Cell Ranger) BCR workflow: contig FASTA + `filtered_contig_annotations.csv`, with per-cell metadata carried into the AIRR output — see [`10x/README.md`](10x/README.md) |
+| `airr/` | a bulk AIRR/TSV input with a separate sample-metadata table joined onto the output — see [`airr/README.md`](airr/README.md) |
 
 ## Run
 
