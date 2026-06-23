@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """`alignair` command-line interface.
 
     alignair predict reads.fastq -o rearrangement.tsv --model model.pt
@@ -369,6 +370,9 @@ def cmd_model(args) -> None:
     from .hub import MODEL_CATALOG, resolve_model
     from .serialization.dnalignair_bundle import is_bundle, load_dnalignair_bundle
     if args.model_command == "list":
+        if getattr(args, "json", False):
+            print(json.dumps(MODEL_CATALOG, indent=2))
+            return
         if not MODEL_CATALOG:
             print("(no models in the catalog yet)")
             return
@@ -395,7 +399,18 @@ def cmd_model(args) -> None:
             raise SystemExit(f"error: {path} is not an AlignAIR bundle (raw checkpoints carry no metadata)")
         b = load_dnalignair_bundle(path, build=False)
         cfg = b["config"].to_dict()
-        ref = (f"{len(b['reference_set'].gene('V'))} V (embedded)" if b.get("reference_set")
+        embedded = bool(b.get("reference_set"))
+        info = {"bundle": path, "locus": b["locus"],
+                "reference": {"embedded": embedded,
+                              "v_alleles": len(b["reference_set"].gene("V")) if embedded else None,
+                              "dataconfigs": None if embedded else b["dataconfigs"]},
+                "config": {k: cfg.get(k) for k in ("d_model", "n_layers", "nhead")},
+                "calibration": bool(b["calibration"]),
+                "notes": (b["meta"] or {}).get("notes")}
+        if getattr(args, "json", False):
+            print(json.dumps(info, indent=2))
+            return
+        ref = (f"{info['reference']['v_alleles']} V (embedded)" if embedded
                else f"dataconfigs={b['dataconfigs']}")
         print(f"bundle: {path}")
         print(f"  locus       : {b['locus']}")
@@ -466,36 +481,70 @@ def cmd_reference(args) -> None:
 
 
 def cmd_doctor(args) -> None:
-    """Environment / install check: Python, PyTorch + CUDA, GenAIRR, optional parasail, and
-    (optionally) whether a --model path resolves. Exit non-zero if a CORE dependency is missing."""
-    ok = True
-    print(f"AlignAIR {_version()}")
-    print(f"  python      : {sys.version.split()[0]} ({sys.executable})")
+    """Environment / install check: Python, PyTorch + CUDA, GenAIRR, optional parasail/airr, and
+    (optionally) whether a --model path resolves. Exit non-zero if a CORE dependency is missing.
+    `--json` emits a machine-readable report; `--verbose` adds platform/build detail."""
+    rep = {"alignair_version": _version(), "ok": True,
+           "python": {"version": sys.version.split()[0], "executable": sys.executable},
+           "core": {}, "optional": {}}
     try:
         import torch
-        cuda = torch.cuda.is_available()
-        dev = torch.cuda.get_device_name(0) if cuda else "cpu only"
-        print(f"  torch       : {torch.__version__}  | CUDA available: {cuda} ({dev})")
+        cuda = bool(torch.cuda.is_available())
+        rep["core"]["torch"] = {"present": True, "version": torch.__version__, "cuda": cuda,
+                                "device": torch.cuda.get_device_name(0) if cuda else "cpu only"}
     except Exception as e:
-        ok = False; print(f"  torch       : MISSING ({e})")
+        rep["ok"] = False
+        rep["core"]["torch"] = {"present": False, "error": str(e)}
     try:
         import GenAIRR
-        print(f"  GenAIRR     : {getattr(GenAIRR, '__version__', '?')}")
+        rep["core"]["GenAIRR"] = {"present": True, "version": getattr(GenAIRR, "__version__", "?")}
     except Exception as e:
-        ok = False; print(f"  GenAIRR     : MISSING ({e})")
-    try:
-        import parasail  # noqa: F401
-        print("  parasail    : present (fast V reader available via --v-reader parasail)")
-    except Exception:
-        print("  parasail    : absent (optional; install AlignAIR[reader] for the fast V reader)")
+        rep["ok"] = False
+        rep["core"]["GenAIRR"] = {"present": False, "error": str(e)}
+    for name, dist in (("parasail", "parasail"), ("airr", "airr"),
+                       ("huggingface_hub", "huggingface-hub"), ("argcomplete", "argcomplete")):
+        try:
+            __import__(name)
+            rep["optional"][name] = {"present": True, "version": _pkg_version(dist)}
+        except Exception:
+            rep["optional"][name] = {"present": False, "version": None}
     if args.model:
         from .serialization.dnalignair_bundle import is_bundle
         if not os.path.exists(args.model):
-            ok = False; print(f"  model       : NOT FOUND ({args.model})")
+            rep["ok"] = False
+            rep["model"] = {"path": args.model, "status": "not found"}
         else:
-            print(f"  model       : {'bundle' if is_bundle(args.model) else 'raw checkpoint'} at {args.model}")
-    print("status: OK" if ok else "status: PROBLEMS FOUND")
-    raise SystemExit(0 if ok else 1)
+            rep["model"] = {"path": args.model,
+                            "status": "bundle" if is_bundle(args.model) else "raw checkpoint"}
+    if args.verbose:
+        import platform
+        rep["platform"] = {"system": platform.system(), "release": platform.release(),
+                           "machine": platform.machine(), "platform": platform.platform()}
+
+    if args.json:
+        print(json.dumps(rep, indent=2))
+    else:
+        print(f"AlignAIR {rep['alignair_version']}")
+        print(f"  python      : {rep['python']['version']} ({rep['python']['executable']})")
+        t = rep["core"]["torch"]
+        print(f"  torch       : {t['version']}  | CUDA available: {t['cuda']} ({t['device']})"
+              if t["present"] else f"  torch       : MISSING ({t['error']})")
+        g = rep["core"]["GenAIRR"]
+        print(f"  GenAIRR     : {g['version']}" if g["present"] else f"  GenAIRR     : MISSING ({g['error']})")
+        pp = rep["optional"]["parasail"]
+        print("  parasail    : present (fast V reader available via --v-reader parasail)"
+              if pp["present"] else
+              "  parasail    : absent (optional; install AlignAIR[reader] for the fast V reader)")
+        ac = rep["optional"]["argcomplete"]
+        print("  argcomplete : present (run `alignair completion` to enable tab completion)"
+              if ac["present"] else "  argcomplete : absent (optional; AlignAIR[cli] for tab completion)")
+        if "model" in rep:
+            m = rep["model"]
+            print(f"  model       : {m['status'].upper() if m['status']=='not found' else m['status']} ({m['path']})")
+        if args.verbose:
+            print(f"  platform    : {rep['platform']['platform']}")
+        print("status: OK" if rep["ok"] else "status: PROBLEMS FOUND")
+    raise SystemExit(0 if rep["ok"] else 1)
 
 
 def cmd_bundle(args) -> None:
@@ -918,6 +967,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     dr = sub.add_parser("doctor", help="check the environment (Python, torch+CUDA, GenAIRR, parasail)")
     dr.add_argument("--model", default=None, help="optionally verify a model bundle/checkpoint resolves")
+    dr.add_argument("--json", action="store_true", help="emit a machine-readable JSON report")
+    dr.add_argument("-v", "--verbose", action="store_true", help="include platform/build detail")
     dr.set_defaults(func=cmd_doctor)
 
     dm = sub.add_parser("demo", help="offline end-to-end trial (tiny train -> predict -> validate -> genotype)")
@@ -940,12 +991,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     md = sub.add_parser("model", help="list / download / inspect pretrained models")
     msub = md.add_subparsers(required=True, dest="model_command")
-    msub.add_parser("list", help="list the pretrained model catalog")
+    ml = msub.add_parser("list", help="list the pretrained model catalog")
+    ml.add_argument("--json", action="store_true", help="emit the catalog as JSON")
     mdl = msub.add_parser("download", help="download a model bundle (catalog id or HF repo id)")
     mdl.add_argument("id", help="catalog id (alignair model list) or org/name Hugging Face repo id")
     mdl.add_argument("--dest", default=None, help="download into this directory (default: HF cache)")
     mi = msub.add_parser("inspect", help="show a model bundle's reference, config, and metadata")
     mi.add_argument("id", help="a bundle path, catalog id, or org/name Hugging Face repo id")
+    mi.add_argument("--json", action="store_true", help="emit bundle metadata as JSON")
     md.set_defaults(func=cmd_model)
 
     tr = sub.add_parser("train", help="train an AlignAIR model for your own reference / species")
@@ -992,11 +1045,40 @@ def build_parser() -> argparse.ArgumentParser:
     bd.add_argument("--locus", default=None)
     bd.add_argument("--notes", default=None)
     bd.set_defaults(func=cmd_bundle)
+
+    co = sub.add_parser("completion", help="print shell tab-completion setup instructions")
+    co.add_argument("shell", nargs="?", default="bash", choices=["bash", "zsh", "fish"],
+                    help="target shell (default: bash)")
+    co.set_defaults(func=cmd_completion)
     return ap
 
 
+def cmd_completion(args) -> None:
+    """Print the one line to enable tab completion for the chosen shell (needs argcomplete,
+    included in AlignAIR[cli])."""
+    try:
+        import argcomplete  # noqa: F401
+    except ImportError:
+        raise SystemExit("error: shell completion needs `argcomplete` — install with "
+                         "`pip install \"AlignAIR[cli]\"` or `pip install argcomplete`")
+    if args.shell == "bash":
+        print('eval "$(register-python-argcomplete alignair)"   # add to ~/.bashrc')
+    elif args.shell == "zsh":
+        print("autoload -U bashcompinit && bashcompinit            # add to ~/.zshrc")
+        print('eval "$(register-python-argcomplete alignair)"     # add to ~/.zshrc')
+    else:  # fish
+        print("register-python-argcomplete --shell fish alignair > "
+              "~/.config/fish/completions/alignair.fish")
+
+
 def main(argv=None) -> None:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    try:                                  # optional: tab completion when argcomplete is installed
+        import argcomplete
+        argcomplete.autocomplete(parser)
+    except ImportError:
+        pass
+    args = parser.parse_args(argv)
     args.func(args)
 
 

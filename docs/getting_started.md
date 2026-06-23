@@ -121,6 +121,29 @@ alignair compare --a donor.tsv --b full.tsv --a-name donor --b-name full --out g
 
 The report shows how conditioning on the donor reference changes calls and shrinks uncertainty sets.
 
+## 4e. Many samples at once (cohorts)
+
+Process a whole study with the model loaded once, instead of a shell loop:
+
+```bash
+# manifest columns: sample_id, input (+ optional genotype, metadata per row)
+alignair batch --manifest samples.tsv -o results/ --model my_model/bundle
+# -> results/<sample_id>.tsv per sample + results/manifest_summary.tsv (per-sample stats)
+```
+
+A failing sample is recorded as `status=error` in the summary and the run continues;
+the command exits non-zero only if no sample aligned. See
+[examples/batch/](https://github.com/MuteJester/AlignAIR/tree/main/examples/batch).
+
+## 4f. Scripting & tooling
+
+```bash
+alignair doctor --json            # machine-readable environment report (CI-friendly)
+alignair model list --json        # the catalog as JSON
+alignair model inspect <bundle> --json
+alignair completion bash          # print the line to enable tab completion (needs AlignAIR[cli])
+```
+
 ## 5. Common options
 
 | Flag | Meaning |
@@ -133,6 +156,7 @@ The report shows how conditioning on the donor reference changes calls and shrin
 | `--batch N` | batch size (default 64) |
 | `--device cuda|cpu` | force a device (auto if unset) |
 | `--quiet` | suppress progress output |
+| `--json` | machine-readable output (on `doctor`, `model list/inspect`, `compare`) |
 
 ## Next steps
 
