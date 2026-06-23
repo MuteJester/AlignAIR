@@ -1,0 +1,51 @@
+<tool id="alignair_predict" name="AlignAIR predict" version="2.0.2" profile="23.0">
+    <description>align IG/TCR reads into an AIRR rearrangement table</description>
+    <!-- DRAFT Galaxy wrapper (not yet submitted to the Tool Shed; see ../README.md). -->
+    <requirements>
+        <!-- Once published: a bioconda package or the container. Container shown for now. -->
+        <container type="docker">thomask90/alignair:latest</container>
+    </requirements>
+    <!-- detect_errors="exit_code" surfaces AlignAIR's non-zero exits as Galaxy job failures. -->
+    <command detect_errors="exit_code"><![CDATA[
+        alignair predict '$reads'
+            -o '$airr'
+            --model '$model'
+            #if $genotype
+                --genotype '$genotype'
+            #end if
+            #if $metadata
+                --metadata '$metadata'
+            #end if
+            --device cpu --quiet --no-provenance
+    ]]></command>
+    <inputs>
+        <param name="reads" type="data" format="fasta,fastqsanger,tabular"
+               label="Reads (FASTA / FASTQ / CSV / TSV)"/>
+        <param name="model" type="text" value=""
+               label="Model" help="A bundle directory, a catalog id, or an org/name Hugging Face repo id."/>
+        <param name="genotype" type="data" format="yaml,fasta" optional="true"
+               label="Donor genotype (optional)" help="YAML or FASTA: allele subset and/or novel alleles."/>
+        <param name="metadata" type="data" format="csv,tabular" optional="true"
+               label="Per-read metadata (optional)" help="e.g. 10x filtered_contig_annotations.csv; joined by read id."/>
+    </inputs>
+    <outputs>
+        <data name="airr" format="tabular" label="${tool.name} on ${on_string}: AIRR rearrangement"/>
+    </outputs>
+    <tests>
+        <!-- Requires a published model/container to run in Galaxy CI; placeholder for now. -->
+    </tests>
+    <help><![CDATA[
+**AlignAIR predict**
+
+Aligns immunoglobulin / T-cell-receptor reads and writes an AIRR-C rearrangement table
+(V/D/J calls, coordinates, junction, and calibrated equivalence-set columns).
+
+The *Model* may be a bundle directory, a catalog id, or a Hugging Face repo id. A *Donor
+genotype* (YAML or FASTA) is used as the reference for the run and may contain an allele
+subset and/or novel alleles. Optional *metadata* (e.g. a 10x annotations CSV) is preserved
+into the output, joined by read id.
+    ]]></help>
+    <citations>
+        <citation type="doi">10.1101/2024.06.13.598922</citation>
+    </citations>
+</tool>

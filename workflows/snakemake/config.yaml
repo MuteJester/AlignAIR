@@ -1,0 +1,7 @@
+# AlignAIR Snakemake wrapper DRAFT config. Edit `model` (and optionally container/device),
+# then: snakemake -n  (dry run) -> snakemake -j4 --use-singularity
+samplesheet: "../samplesheet.csv"      # columns: sample_id, input [, genotype]
+model: "PLEASE_SET_A_MODEL"            # bundle dir / .pt checkpoint / catalog id / HF repo id
+outdir: "results"
+device: "cpu"
+container: "docker://thomask90/alignair:latest"
