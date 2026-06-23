@@ -321,3 +321,36 @@ class GymTrainer:
             metrics[f"{g}_e2e_gl_start_dev"] = per[g]["e2e_gl_start_dev"] / ns
             metrics[f"{g}_e2e_gl_end_dev"] = per[g]["e2e_gl_end_dev"] / ns
         return metrics
+
+    @torch.no_grad()
+    def evaluate_records(self, n_batches: int = 4, p: float = 1.0) -> list:
+        """Per-read tagged records for axis attribution: each dict carries the
+        read's GenAIRR truth difficulty tags + `correct` (V top-1 in true set)."""
+        self.model.eval()
+        prev_p = self.gym._p
+        self.gym.set_progress(p)
+        loader = self._loader()
+        ref_emb = self.model.encode_reference(self.reference_set)
+        records, nb = [], 0
+        for batch in loader:
+            if nb >= n_batches:
+                break
+            batch = self._to_device(batch)
+            out = self.model(batch["tokens"], batch["mask"], ref_emb,
+                             orientation_ids=batch["orientation_id"])
+            pred = out["match"]["V"].argmax(-1)
+            B = batch["tokens"].shape[0]
+            correct = batch["v_allele"][torch.arange(B), pred].cpu()
+            length = batch["mask"].sum(dim=1).cpu()
+            for i in range(B):
+                records.append({
+                    "mutation_rate": float(batch["mutation_rate"][i].cpu()),
+                    "indel_count": float(batch["indel_count"][i].cpu()),
+                    "noise_count": float(batch["noise_count"][i].cpu()),
+                    "length": int(length[i]),
+                    "correct": float(correct[i] > 0),
+                })
+            nb += 1
+        self.model.train()
+        self.gym.set_progress(prev_p)
+        return records
