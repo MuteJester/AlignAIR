@@ -16,7 +16,7 @@
 
 ## Why AlignAIR
 
-- **More accurate than IgBLAST across the board.** On a 4,400‑case / 22‑stratum benchmark (bootstrap CIs, Bonferroni‑corrected) AlignAIR wins **23 of 24 metrics** — biggest on short fragments, reverse‑complement / arbitrary orientation, and D/J calling, where classical seed‑and‑extend degrades.
+- **More accurate than IgBLAST across the board.** On a 4,400‑case / 22‑stratum benchmark (bootstrap CIs, Bonferroni‑corrected) AlignAIR wins **23 of 24 metrics** — biggest on short fragments, reverse‑complement / arbitrary orientation, and D/J calling, where classical seed‑and‑extend degrades. See [benchmarks](docs/benchmarks.md).
 - **Dynamic genotype.** The allele reference is an **input, not baked into the weights.** Supply a genotype as YAML or FASTA — a subset of the trained reference and/or **novel alleles never seen in training** — and the model conditions on exactly what you provide. (Validated: novel alleles are called as accurately as trained ones.)
 - **Calibrated uncertainty.** When a read can't distinguish alleles (e.g. short fragments), AlignAIR reports a calibrated **equivalence set** and degrades gracefully to gene/family level instead of guessing.
 - **AIRR output.** Standard AIRR rearrangement TSV (V/D/J calls, coordinates, junction, productivity) plus uncertainty columns.
@@ -118,7 +118,8 @@ Run `alignair <command> --help` for options.
 ## Documentation
 
 - [Getting started](docs/getting_started.md)
-- [DNAlignAIR design & benchmarks](docs/dnalignair.md)
+- [Benchmarks — AlignAIR vs IgBLAST](docs/benchmarks.md)
+- [DNAlignAIR design & internals](docs/dnalignair.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Adoption roadmap](docs/architecture/adoption_roadmap.md)
 
