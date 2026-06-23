@@ -354,3 +354,13 @@ class GymTrainer:
         self.model.train()
         self.gym.set_progress(prev_p)
         return records
+
+    def advance_curriculum(self, field: dict, threshold: float = 0.7,
+                           step: float = 0.1) -> list:
+        """Advance a FactoredCurriculum from a Phase-1 lattice competence field.
+        No-op (returns []) for non-factored curricula."""
+        from ..gym.factored import FactoredCurriculum, axis_competence_from_field
+        cur = self.gym.curriculum
+        if not isinstance(cur, FactoredCurriculum):
+            return []
+        return cur.advance(axis_competence_from_field(field), threshold=threshold, step=step)
