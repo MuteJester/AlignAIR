@@ -24,30 +24,11 @@ def _version() -> str:
         return "unknown (not pip-installed)"
 
 
-def _load_model(model_path, device):
-    """Load a DNAlignAIR from either a versioned bundle directory or a raw {model, config}
-    .pt checkpoint. Returns (model, dataconfigs, locus, calibration, reference_set)."""
-    import torch
-    from .config.dnalignair_config import DNAlignAIRConfig
-    from .core.dnalignair import DNAlignAIR
-    from .serialization.dnalignair_bundle import is_bundle, load_dnalignair_bundle
-    if is_bundle(model_path):
-        b = load_dnalignair_bundle(model_path, build=True, device=device)
-        return b["model"], b["dataconfigs"], b["locus"], b["calibration"], b.get("reference_set")
-    ckpt = torch.load(model_path, map_location=device)
-    cfg = ckpt["config"]
-    cfg = DNAlignAIRConfig(**cfg) if isinstance(cfg, dict) else cfg
-    model = DNAlignAIR(cfg).to(device)
-    model.load_state_dict(ckpt["model"])
-    model.eval()
-    return model, None, None, None, None
-
-
 def cmd_predict(args) -> None:
     import torch
     import GenAIRR.data as gdata
     from .reference.reference_set import ReferenceSet
-    from .inference.dnalignair_infer import predict_reads, canonicalize_sequence
+    from .api import load_model, predict as api_predict
 
     def log(msg):
         if not args.quiet:
@@ -56,47 +37,48 @@ def cmd_predict(args) -> None:
     torch.manual_seed(args.seed)
     from .hub import resolve_model
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    model_path = resolve_model(args.model)             # local path, catalog id, or HF repo id
-    model, b_dataconfigs, b_locus, b_calibration, b_reference = _load_model(model_path, device)
-    locus = args.locus or b_locus or "IGH"
+    model_path = resolve_model(args.model)             # local path / catalog id / HF repo id
+    loaded = load_model(model_path, device)
     log(f"device: {device}  |  model: {args.model}")
 
+    # resolve this run's reference: --genotype overrides; else the bundle's default/embedded
     if args.genotype:
         if not os.path.exists(args.genotype):
             raise SystemExit(f"error: genotype file not found: {args.genotype}")
         ext = os.path.splitext(args.genotype)[1].lower()
         loader = ReferenceSet.from_fasta if ext in (".fasta", ".fa", ".fna", ".faa") else ReferenceSet.from_yaml
         rs = loader(args.genotype)
-        log(f"reference: genotype {args.genotype} "
-            f"(V={len(rs.gene('V').names)}"
+        ref_desc = f"genotype:{os.path.basename(args.genotype)}"
+        log(f"reference: genotype {args.genotype} (V={len(rs.gene('V').names)}"
             f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
-    elif b_reference is not None:                     # bundle embeds its own (custom) reference
-        rs = b_reference
-        ref_desc = f"bundled ({len(rs.gene('V').names)} V alleles)"
-        log(f"reference: bundled (V={len(rs.gene('V').names)}"
+    elif loaded.reference_set is not None:
+        rs = loaded.reference_set
+        ref_desc = ", ".join(loaded.dataconfigs) if loaded.dataconfigs else f"bundled ({len(rs.gene('V').names)} V)"
+        log(f"reference: {ref_desc} (V={len(rs.gene('V').names)}"
             f"{', D=' + str(len(rs.gene('D').names)) if rs.has_d else ''}, J={len(rs.gene('J').names)})")
     else:
-        names = b_dataconfigs or [args.dataconfig]
+        names = [args.dataconfig]
         try:
             rs = ReferenceSet.from_dataconfigs(*[getattr(gdata, n) for n in names])
         except AttributeError as e:
             raise SystemExit(f"error: unknown GenAIRR DataConfig in {names}: {e}")
         ref_desc = ", ".join(names)
         log(f"reference: {', '.join(names)} (V={len(rs.gene('V').names)})")
-    if args.genotype:
-        ref_desc = f"genotype:{os.path.basename(args.genotype)}"
-    # locus/chain sanity: a model declares its trained locus (in its bundle); warn if the
-    # reference looks like a different locus (a heavy model + light reference produces
-    # plausible-but-meaningless calls without this check).
-    inferred_locus = rs.infer_locus()
-    if inferred_locus and b_locus and inferred_locus != b_locus:
-        log(f"WARNING: this model is for locus {b_locus}, but the reference looks like "
-            f"{inferred_locus} — V/D/J calls may be meaningless; use a model and reference "
-            f"for the same locus.")
-    if args.locus is None and inferred_locus:
-        locus = inferred_locus                  # reflect the reference's locus in the output
 
-    calibration = b_calibration
+    # locus/chain compatibility (#3): a heavy model + light reference yields plausible-but-meaningless
+    # calls -> ERROR by default; --force-locus-mismatch to override.
+    inferred_locus = rs.infer_locus()
+    if inferred_locus and loaded.locus and inferred_locus != loaded.locus:
+        msg = (f"model is for locus {loaded.locus} but the reference looks like {inferred_locus} — "
+               f"calls would be biologically meaningless. Use a matching model/reference, or pass "
+               f"--force-locus-mismatch to override.")
+        if args.force_locus_mismatch:
+            log(f"WARNING: {msg}")
+        else:
+            raise SystemExit(f"error: {msg}")
+    locus = args.locus or inferred_locus or loaded.locus or "IGH"
+
+    calibration = loaded.calibration
     if args.calibration and os.path.exists(args.calibration):
         calibration = json.load(open(args.calibration))           # explicit flag overrides bundle
 
@@ -135,11 +117,10 @@ def cmd_predict(args) -> None:
                 n_dropped += drp
                 if not seqs:
                     continue
-                preds = predict_reads(model, rs, seqs, device=device, batch_size=args.batch,
-                                      rerank="learned", v_reader=args.v_reader,
-                                      calibration=calibration, full_alignment=not args.no_full_alignment)
-                # emit the CANONICAL (forward) sequence so coords match even for reoriented reads
-                canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]
+                batch = api_predict(loaded, seqs, reference=rs, batch_size=args.batch,
+                                    v_reader=args.v_reader, calibration=calibration,
+                                    full_alignment=not args.no_full_alignment, locus=locus)
+                canon, preds = batch.sequences, batch.predictions    # canonical (forward) seqs
                 metas = None
                 if meta_map:
                     metas = [meta_map.get(sid, {}) for sid in ids]
@@ -252,14 +233,20 @@ def cmd_model(args) -> None:
         if not MODEL_CATALOG:
             print("(no models in the catalog yet)")
             return
-        print(f"{'id':22s} {'status':12s} {'species':8s} {'locus':6s} description")
-        for mid, e in MODEL_CATALOG.items():
-            status = "available" if e.get("available", True) else "not published"
-            print(f"{mid:22s} {status:12s} {e.get('species',''):8s} {e.get('locus',''):6s} {e.get('description','')}")
-        if any(not e.get("available", True) for e in MODEL_CATALOG.values()):
-            print("\nnot-published models aren't downloadable yet — train your own (`alignair train`) "
-                  "or try `alignair demo`.")
-        print("\ndownload: alignair model download <id>   |   use directly: alignair predict ... --model <id>")
+        avail = {k: e for k, e in MODEL_CATALOG.items() if e.get("available", True)}
+        planned = {k: e for k, e in MODEL_CATALOG.items() if not e.get("available", True)}
+        if avail:
+            print("AVAILABLE:")
+            print(f"  {'id':22s} {'species':8s} {'locus':6s} description")
+            for mid, e in avail.items():
+                print(f"  {mid:22s} {e.get('species',''):8s} {e.get('locus',''):6s} {e.get('description','')}")
+            print("  download: alignair model download <id>   |   use: alignair predict ... --model <id>")
+        else:
+            print("AVAILABLE: (none published yet)")
+        if planned:
+            print("\nPLANNED (not downloadable — train your own with `alignair train`, or `alignair demo`):")
+            for mid, e in planned.items():
+                print(f"  {mid:22s} {e.get('species',''):8s} {e.get('locus',''):6s} {e.get('description','')}")
     elif args.model_command == "download":
         path = resolve_model(args.id, dest=args.dest)
         print(f"downloaded -> {path}")
@@ -494,7 +481,8 @@ def cmd_train(args) -> None:
         model = DNAlignAIR(DNAlignAIRConfig(**resume_ckpt["config"])).to(device)
         model.load_state_dict(resume_ckpt["model"])
     elif args.base_model:
-        model, _, _, _, _ = _load_model(args.base_model, device)
+        from .api import load_model
+        model = load_model(args.base_model, device).model
     else:
         model = DNAlignAIR(DNAlignAIRConfig(d_model=d_model, n_layers=n_layers, nhead=nhead)).to(device)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
@@ -737,6 +725,8 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--no-full-alignment", action="store_true",
                     help="skip the parasail gapped alignment (exact cigars / germline_alignment / "
                          "identity); use the faster coordinate-derived approximation")
+    pr.add_argument("--force-locus-mismatch", action="store_true",
+                    help="proceed even if the model's locus does not match the reference (default: error)")
     pr.set_defaults(func=cmd_predict)
 
     va = sub.add_parser("validate-airr", help="validate a rearrangement TSV against the AIRR-C schema")
