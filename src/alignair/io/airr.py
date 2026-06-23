@@ -13,7 +13,8 @@ GENES = ("v", "d", "j")
 # sequence_alignment + the per-gene cigars are AIRR-REQUIRED fields; germline_alignment is
 # required-but-emitted-empty (we do not reconstruct the full gapped germline incl. N regions).
 _CORE = ["sequence_id", "sequence", "rev_comp", "locus", "v_call", "d_call", "j_call",
-         "productive", "junction", "junction_aa", "junction_length",
+         "productive", "vj_in_frame", "stop_codon",
+         "junction", "junction_aa", "junction_length", "np1", "np1_length", "np2", "np2_length",
          "sequence_alignment", "germline_alignment", "v_cigar", "d_cigar", "j_cigar",
          "v_identity", "d_identity", "j_identity", "is_contaminant"]
 _COORDS = [f"{g}_{k}" for g in GENES
@@ -70,8 +71,11 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
     row = {"sequence_id": sid, "sequence": seq, "locus": locus,
            "rev_comp": "T" if p.get("orientation_id", 0) != 0 else "F",
            "productive": p.get("productive"),
+           "vj_in_frame": p.get("vj_in_frame"), "stop_codon": p.get("stop_codon"),
            "junction": p.get("junction"), "junction_aa": p.get("junction_aa"),
            "junction_length": p.get("junction_length"),
+           "np1": p.get("np1"), "np1_length": p.get("np1_length"),
+           "np2": p.get("np2"), "np2_length": p.get("np2_length"),
            "sequence_alignment": seq_aln, "germline_alignment": p.get("germline_alignment", ""),
            "v_identity": p.get("v_identity"), "d_identity": p.get("d_identity"),
            "j_identity": p.get("j_identity"),

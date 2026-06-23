@@ -91,6 +91,50 @@ def junction_fields(p: dict, canon_seq: str, reference_set) -> dict:
             "junction_start": js, "junction_end": je}
 
 
+def derived_rearrangement_fields(p: dict, canon_seq: str) -> dict:
+    """AIRR QC + N/P-region fields derived from the predicted coordinates and junction, in the
+    canonical (forward) frame `canon_seq` is in. Every field is honest-absence: omitted when its
+    inputs are missing (e.g. short fragments), never guessed.
+
+    - np1/np2 (+ lengths): the non-templated nucleotides V->D and D->J (V->J when there is no D).
+    - vj_in_frame: the junction length is a multiple of 3 (V and J segments recombine in-frame).
+    - stop_codon: a stop appears in the coding frame anchored at the conserved Cys-104 codon
+      (junction_start), translating the aligned V..J span. Requires the junction + alignment."""
+    out: dict = {}
+    L = len(canon_seq)
+
+    def span(a, b):
+        if a is None or b is None:
+            return None
+        a, b = int(a), int(b)
+        return canon_seq[a:b].upper() if 0 <= a <= b <= L else None
+
+    ve, js = p.get("v_sequence_end"), p.get("j_sequence_start")
+    ds, de = p.get("d_sequence_start"), p.get("d_sequence_end")
+    has_d = ds is not None and de is not None and int(de) > int(ds)
+    np1 = span(ve, ds) if has_d else span(ve, js)
+    np2 = span(de, js) if has_d else ""
+    if np1 is not None:
+        out["np1"], out["np1_length"] = np1, len(np1)
+    if np2 is not None:
+        out["np2"], out["np2_length"] = np2, len(np2)
+
+    jl = p.get("junction_length")
+    if jl is not None:
+        out["vj_in_frame"] = (int(jl) % 3 == 0)
+
+    jstart, seq_aln = p.get("junction_start"), p.get("sequence_alignment")
+    starts = [p.get(f"{g}_sequence_start") for g in ("v", "d", "j")
+              if p.get(f"{g}_sequence_start") is not None]
+    if jstart is not None and seq_aln and starts:
+        aln_start = min(int(s) for s in starts)               # canon coord of sequence_alignment[0]
+        frame = (int(jstart) - aln_start) % 3                  # Cys-104 is a codon boundary
+        aa = _translate(seq_aln[frame:])
+        if aa:
+            out["stop_codon"] = "*" in aa[:-1]                 # ignore a terminal-stop artifact
+    return out
+
+
 def resolve_hierarchy(call_set, top1, max_allele: int = 3):
     """Graceful degradation over the calibrated equivalence set: report the MOST SPECIFIC
     level the evidence supports — allele if the set is small, else the shared gene, else
@@ -386,6 +430,7 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                 from ..io.alignment import realign  # (refines germline coords; needs parasail)
                 p.update(realign(canon_seq, p, reference_set))
             p.update(junction_fields(p, canon_seq, reference_set))
+            p.update(derived_rearrangement_fields(p, canon_seq))   # np1/np2, vj_in_frame, stop_codon
             # out-of-scope flag (advisory; calls above are RETAINED regardless)
             if rerank == "learned" and "_gate" in learned_best:
                 gs = learned_best["_gate"][i]

@@ -3,6 +3,7 @@ nav:
   - Home: index.md
   - Getting Started: getting_started.md
   - Python API: python_api.md
+  - AIRR Fields: airr_fields.md
   - Benchmarks: benchmarks.md
   - Troubleshooting: troubleshooting.md
   - DNAlignAIR Design: dnalignair.md
