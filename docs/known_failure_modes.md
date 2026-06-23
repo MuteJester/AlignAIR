@@ -29,7 +29,8 @@ V(D)J only and does not model IMGT region numbering or the constant region). See
 - **Raw throughput on bulk data** — AlignAIR is currently ~2–3× slower than IgBLAST
   (the gapped-alignment/decode stage dominates). For very large bulk repertoires where the
   default reference suffices, IgBLAST may finish sooner. Try `--no-full-alignment` and
-  `--v-reader parasail` to claw back time (see the [benchmarks](benchmarks.md)).
+  `--v-reader parasail` to claw back time (see [Performance](performance.md) for measured
+  throughput and [Benchmarks](benchmarks.md) for accuracy).
 - **A long-established, citation-stable standard** — if a pipeline or reviewer expects
   IgBLAST/IMGifeT output specifically, use it.
 - **End-to-end clonotype/repertoire assembly** — MiXCR and the Immcantation suite cover

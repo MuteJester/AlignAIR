@@ -6,6 +6,7 @@ nav:
   - AIRR Fields: airr_fields.md
   - Known Failure Modes: known_failure_modes.md
   - Benchmarks: benchmarks.md
+  - Performance: performance.md
   - Troubleshooting: troubleshooting.md
   - DNAlignAIR Design: dnalignair.md
   - Architecture:
