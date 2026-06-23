@@ -75,10 +75,17 @@ class LatticeEvaluator:
             region_match = ((out["region_logits"].argmax(-1) == batch["region_labels"]) & valid)
             reg_num = region_match.sum(dim=1).cpu()
             reg_den = valid.sum(dim=1).clamp(min=1).cpu()
+            # D is deliberately unsupervised on inverted-D / D-absent rows (gym_collate
+            # zeroes its multi-hot); scoring D there would penalize the model on reads it
+            # was never asked to call. Skip the D sub-metrics for those rows.
+            d_sup = batch.get("d_supervise")
             for i in range(B):
-                rec = {"region_acc": float(reg_num[i]) / float(reg_den[i]),
-                       "junction_exact": 0, "coord_errs": []}
+                # junction_exact intentionally NOT emitted yet (no junction string from
+                # the model) -> excluded from competence, not scored 0 (see CompetenceMetric).
+                rec = {"region_acc": float(reg_num[i]) / float(reg_den[i]), "coord_errs": []}
                 for g in genes:
+                    if g == "d" and d_sup is not None and float(d_sup[i]) == 0.0:
+                        continue
                     G = g.upper()
                     pi = int(pred_idx[G][i])
                     rec[f"{g}_call_correct"] = int(batch[f"{g}_allele"][i, pi] > 0)

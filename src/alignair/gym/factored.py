@@ -1,8 +1,15 @@
 """FactoredCurriculum: a per-axis competence-paced generalization of
 StratifiedCurriculum. Each difficulty axis advances on its OWN clock (pace), so the
 axes decouple — no shortcut learning, and the full-length-heavy-SHM corner becomes
-reachable. Reuses StratifiedCurriculum's GenAIRR-faithful bin profiles; terminal
-(all paces=1) equals the deployment distribution incl. the hard tail."""
+reachable. Reuses StratifiedCurriculum's GenAIRR-faithful bin profiles.
+
+KNOWN DIVERGENCE (tracked): the terminal (all paces=1) equals StratifiedCurriculum(1.0)
+— seq_error 0.01, orient 0.35, SHM as a count mixture — which is NOT identical to the
+instrument's TaskSpace.deployment() endpoint (seq_error 0.02, orient 0.5, mutation_rate
+0.30). The two are different encodings of "deployment"; the instrument grades a strict
+SUPERSET of the training endpoint, so passing the gate is CONSERVATIVE. Reconciling the
+two encodings (count-mixture vs rate) is deferred to a follow-up; until then, treat the
+instrument as the harder bar."""
 from .curriculum import StratifiedCurriculum, _lerp
 
 _MIX_AXES = ("mutation_count", "end_loss_5", "end_loss_3", "indel_count", "ambiguous_count")

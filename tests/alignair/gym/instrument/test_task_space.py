@@ -10,13 +10,14 @@ def test_deployment_box_covers_hard_tail():
     assert "crop_len" in by and "orient_prob" in by
 
 
-def test_sample_in_range_and_seeded():
+def test_unfixed_axes_take_baseline_and_are_deterministic():
     ts = TaskSpace.deployment()
-    a = ts.sample(random.Random(0))
-    b = ts.sample(random.Random(0))
-    assert a == b                               # deterministic per seed
+    a = ts.sample()
+    b = ts.sample()
+    assert a == b                               # deterministic point
+    # every unfixed axis sits at its easy baseline (lo) — cells isolate named difficulty
     for ax in ts.axes:
-        assert ax.lo <= a[ax.name] <= ax.hi
+        assert a[ax.name] == ax.lo
 
 
 def test_to_genairr_params_has_required_keys():

@@ -34,14 +34,19 @@ class TaskSpace:
     def deployment(cls):
         return cls(_DEPLOY_AXES)
 
-    def sample(self, rng, frac: dict | None = None) -> dict:
+    def sample(self, rng=None, frac: dict | None = None) -> dict:
+        """A difficulty point. Axes named in `frac` take that fraction of their range;
+        every UNFIXED axis takes its easy BASELINE (lo) so a cell isolates only the
+        difficulty it names (uncontrolled axes would confound the measurement and vary
+        with seed). `rng` is accepted for API stability but unused (the point is
+        deterministic); per-read variation comes from GenAIRR, not from this point."""
         out = {}
         for ax in self.axes:
             if frac is not None and ax.name in frac:
                 f = max(0.0, min(1.0, frac[ax.name]))
                 out[ax.name] = ax.lo + (ax.hi - ax.lo) * f
             else:
-                out[ax.name] = rng.uniform(ax.lo, ax.hi)
+                out[ax.name] = ax.lo
         return out
 
     def to_genairr_params(self, theta: dict) -> dict:
@@ -59,6 +64,6 @@ class TaskSpace:
             "ambiguous_count": _ct(theta["ambiguous_count"]),
             "crop_prob": 0.6 if cropped else 0.0,
             "crop_len_min": crop_min,
-            "crop_len_max": 576 if not cropped else max(crop_min + 1, crop_min),
+            "crop_len_max": 576 if not cropped else crop_min + 1,
             "orient_prob": float(theta["orient_prob"]),
         }

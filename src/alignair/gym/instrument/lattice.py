@@ -40,8 +40,9 @@ class FrozenLattice:
         return cls(TaskSpace.deployment(), _STANDARD, seed)
 
     def cell_params(self, cell: LatticeCell) -> dict:
-        import random
-        theta = self.task_space.sample(random.Random(self.seed), frac=cell.frac)
+        # a deterministic difficulty POINT: only the cell's named axes are stressed,
+        # every other axis sits at its easy baseline (so noise axes don't confound it).
+        theta = self.task_space.sample(frac=cell.frac)
         return self.task_space.to_genairr_params(theta)
 
     def fingerprint(self) -> str:
