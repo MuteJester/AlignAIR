@@ -18,13 +18,22 @@ alignair doctor
 
 GPU is auto‑detected; pass `--device cpu` or `--device cuda` to `alignair predict` to force one.
 
+## 1b. See it work in one command (offline)
+
+```bash
+alignair demo
+```
+
+Trains a tiny demo model (not production quality), aligns simulated reads, validates the AIRR
+output, and runs the dynamic-genotype path — proving the full pipeline with no model download.
+
 ## 2. Get a model
 
 `alignair predict` needs a model — either a **bundle** directory or a raw `.pt` checkpoint. Options:
 
-- Use a pretrained bundle (published on the project's model hub; a `alignair model download`
-  command is on the [roadmap](architecture/adoption_roadmap.md)).
-- **Train your own** for any reference or species:
+- **Pretrained bundles** are not published yet. `alignair model list` shows the catalog and its
+  status; `alignair model download <id>` / `--model <id>` will work once a model is published.
+- **Train your own** for any reference or species (the path to use today):
   ```bash
   # any of GenAIRR's ~90 built-in references
   alignair train --reference HUMAN_IGH_OGRDB -o runs/my_igh --preset desktop

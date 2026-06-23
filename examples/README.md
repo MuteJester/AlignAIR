@@ -9,19 +9,25 @@ Tiny, self-contained data for a first run.
 
 ## Run
 
-You need a model bundle. Get one from the model zoo (`alignair model download human-igh-ogrdb-v1`,
-coming soon), train your own (`alignair train`, see the docs), or point `--model` at a checkpoint.
+The fastest way to see everything work (no model needed — it trains a tiny one offline):
 
 ```bash
-# environment check
-alignair doctor
+alignair doctor      # environment check
+alignair demo        # tiny train -> predict -> validate AIRR -> dynamic genotype
+```
+
+To run on these example reads with your own model (pretrained bundles aren't published yet — train
+one with `alignair train`):
+
+```bash
+alignair train --reference HUMAN_IGH_OGRDB -o my_model --preset desktop
 
 # align against the model's default (full) reference
-alignair predict examples/reads.fasta -o out.tsv --model <bundle_or_checkpoint>
+alignair predict examples/reads.fasta -o out.tsv --model my_model/bundle
 
 # align against a donor genotype (fewer alleles and/or novel alleles) — the dynamic-genotype feature
 alignair predict examples/reads.fasta -o out_donor.tsv \
-  --model <bundle_or_checkpoint> --genotype examples/donor_genotype.yaml
+  --model my_model/bundle --genotype examples/donor_genotype.yaml
 ```
 
 The output is an AIRR rearrangement TSV (V/D/J calls + coordinates + junction + calibrated

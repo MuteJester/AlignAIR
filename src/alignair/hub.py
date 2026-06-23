@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import os
 
-# Catalog of published bundles. `repo` is a Hugging Face Hub repo id that hosts the bundle files.
-# This is the starting catalog; publishing a bundle to its repo makes `alignair model download
-# <id>` / `alignair predict --model <id>` work for everyone.
+# Catalog of bundles. `repo` is a Hugging Face Hub repo id that hosts the bundle files; `available`
+# marks whether it is actually published yet. Publishing a bundle to its repo and flipping
+# `available` makes `alignair model download <id>` / `alignair predict --model <id>` work.
 MODEL_CATALOG = {
     "human-igh-ogrdb": {
         "repo": "AlignAIR/human-igh-ogrdb",
-        "revision": None,
+        "revision": None, "available": False,        # not published yet
         "species": "human", "locus": "IGH",
         "description": "Human IGH (OGRDB reference) — general-purpose heavy-chain aligner.",
     },
@@ -45,6 +45,11 @@ def resolve_model(spec: str, dest=None) -> str:
         return spec
     if spec in MODEL_CATALOG:
         e = MODEL_CATALOG[spec]
+        if not e.get("available", True):
+            raise SystemExit(
+                f"error: model '{spec}' is not published yet. Train your own with "
+                f"`alignair train --reference HUMAN_IGH_OGRDB -o my_model` (then use "
+                f"`--model my_model/bundle`), or run `alignair demo` for a quick offline trial.")
         return _download(e["repo"], e.get("revision"), dest)
     if "/" in spec:                              # looks like a Hugging Face repo id
         return _download(spec, None, dest)

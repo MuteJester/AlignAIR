@@ -195,9 +195,13 @@ def cmd_model(args) -> None:
         if not MODEL_CATALOG:
             print("(no models in the catalog yet)")
             return
-        print(f"{'id':22s} {'species':8s} {'locus':6s} description")
+        print(f"{'id':22s} {'status':12s} {'species':8s} {'locus':6s} description")
         for mid, e in MODEL_CATALOG.items():
-            print(f"{mid:22s} {e.get('species',''):8s} {e.get('locus',''):6s} {e.get('description','')}")
+            status = "available" if e.get("available", True) else "not published"
+            print(f"{mid:22s} {status:12s} {e.get('species',''):8s} {e.get('locus',''):6s} {e.get('description','')}")
+        if any(not e.get("available", True) for e in MODEL_CATALOG.values()):
+            print("\nnot-published models aren't downloadable yet — train your own (`alignair train`) "
+                  "or try `alignair demo`.")
         print("\ndownload: alignair model download <id>   |   use directly: alignair predict ... --model <id>")
     elif args.model_command == "download":
         path = resolve_model(args.id, dest=args.dest)
@@ -529,6 +533,65 @@ def cmd_train(args) -> None:
     print(f"  try it: alignair predict reads.fasta -o out.tsv --model {bundle_dir}")
 
 
+def cmd_demo(args) -> None:
+    """One offline command that proves AlignAIR works end-to-end with NO published model and NO
+    network: trains a tiny demo model, predicts on simulated reads, validates the AIRR output, and
+    runs the dynamic-genotype path. The model is intentionally tiny (not production quality)."""
+    import GenAIRR.data as gdata
+    from .reference.reference_set import ReferenceSet
+    from .gym.gym import build_experiment
+    from .gym.curriculum import Curriculum
+
+    out = args.out
+    os.makedirs(out, exist_ok=True)
+    parser = build_parser()
+    print("AlignAIR demo — proving the full pipeline offline (no published model, no network).")
+    print(f"  output: {out}/\n")
+
+    # 1) tiny model
+    print("[1/4] training a TINY demo model (not production quality) ...")
+    cmd_train(parser.parse_args(
+        ["train", "--reference", "HUMAN_IGH_OGRDB", "--out", out, "--preset", "smoke",
+         "--steps", str(args.steps), "--eval-every", str(args.steps), "--no-calibrate"]
+        + (["--device", args.device] if args.device else [])))
+    bundle = os.path.join(out, "bundle")
+
+    # 2) simulate a few example reads + a donor genotype (offline, from GenAIRR)
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    exp = build_experiment(gdata.HUMAN_IGH_OGRDB, Curriculum().params(0.3))
+    recs = list(exp.stream_records(n=10, seed=1))
+    reads_path = os.path.join(out, "demo_reads.fasta")
+    with open(reads_path, "w") as f:
+        for i, r in enumerate(recs):
+            f.write(f">read{i+1}\n{r['sequence']}\n")
+    donor = os.path.join(out, "donor_genotype.yaml")
+    truth_v = sorted({str(r.get("v_call", "")).split(",")[0] for r in recs if r.get("v_call")})
+    rs.subset({"v": truth_v + rs.gene("V").names[:8], "d": rs.gene("D").names[:10],
+               "j": rs.gene("J").names}).to_yaml(donor)
+
+    # 3) predict + validate
+    print("\n[2/4] aligning example reads ...")
+    out_tsv = os.path.join(out, "demo.tsv")
+    dev = (["--device", args.device] if args.device else [])
+    cmd_predict(parser.parse_args(["predict", reads_path, "-o", out_tsv, "--model", bundle] + dev))
+    print("\n[3/4] validating AIRR output ...")
+    try:
+        cmd_validate_airr(parser.parse_args(["validate-airr", out_tsv]))
+    except SystemExit:
+        pass
+
+    # 4) dynamic genotype
+    print("\n[4/4] dynamic genotype — aligning against a donor reference (subset + the truth alleles) ...")
+    cmd_predict(parser.parse_args(
+        ["predict", reads_path, "-o", os.path.join(out, "demo_donor.tsv"),
+         "--model", bundle, "--genotype", donor] + dev))
+
+    print("\nAlignAIR works end-to-end. NOTE: this was a TINY demo model — calls are NOT accurate.")
+    print("Next: train a real model (`alignair train --reference HUMAN_IGH_OGRDB -o my_model "
+          "--preset desktop`) or use a published bundle when available.")
+    print(f"Artifacts in {out}/: bundle/, demo.tsv, demo_donor.tsv, demo_reads.fasta, donor_genotype.yaml")
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="alignair",
                                  description="AlignAIR — neural IG/TCR sequence aligner")
@@ -571,6 +634,12 @@ def build_parser() -> argparse.ArgumentParser:
     dr = sub.add_parser("doctor", help="check the environment (Python, torch+CUDA, GenAIRR, parasail)")
     dr.add_argument("--model", default=None, help="optionally verify a model bundle/checkpoint resolves")
     dr.set_defaults(func=cmd_doctor)
+
+    dm = sub.add_parser("demo", help="offline end-to-end trial (tiny train -> predict -> validate -> genotype)")
+    dm.add_argument("-o", "--out", default="alignair_demo", help="demo output directory")
+    dm.add_argument("--steps", type=int, default=60, help="tiny-model training steps (default 60)")
+    dm.add_argument("--device", default=None, help="cuda|cpu (auto if unset)")
+    dm.set_defaults(func=cmd_demo)
 
     rf = sub.add_parser("reference", help="validate or convert a germline reference (YAML <-> FASTA)")
     rsub = rf.add_subparsers(required=True, dest="reference_command")

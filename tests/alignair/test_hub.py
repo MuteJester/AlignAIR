@@ -26,9 +26,17 @@ def _mock_hf(monkeypatch, calls):
     monkeypatch.setitem(sys.modules, "huggingface_hub", mod)
 
 
-def test_resolve_catalog_id_downloads_from_repo(monkeypatch):
+def test_unavailable_catalog_id_errors():
+    # catalog entries not yet published give a clear "train your own / demo" message, not a 404
+    assert hub.MODEL_CATALOG["human-igh-ogrdb"]["available"] is False
+    with pytest.raises(SystemExit, match="not published yet"):
+        hub.resolve_model("human-igh-ogrdb")
+
+
+def test_available_catalog_id_downloads(monkeypatch):
     calls = []
     _mock_hf(monkeypatch, calls)
+    monkeypatch.setitem(hub.MODEL_CATALOG["human-igh-ogrdb"], "available", True)
     path = hub.resolve_model("human-igh-ogrdb")
     assert calls and calls[0][0] == hub.MODEL_CATALOG["human-igh-ogrdb"]["repo"]
     assert path == f"/cache/{hub.MODEL_CATALOG['human-igh-ogrdb']['repo']}"

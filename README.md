@@ -43,21 +43,26 @@ docker run --rm thomask90/alignair:latest doctor
 
 ## Quick start
 
-`--model` accepts a **catalog id** (auto-downloaded from the Hugging Face Hub), a local bundle
-directory / `.pt` checkpoint, or an `org/name` Hub repo id:
+See it work end-to-end in one command — offline, no model download needed (it trains a tiny demo
+model, aligns simulated reads, validates the AIRR output, and runs the dynamic-genotype path):
 
 ```bash
-alignair model list                                  # see available pretrained models
-
-# align reads -> AIRR rearrangement TSV (id auto-downloads the bundle)
-alignair predict examples/reads.fasta -o out.tsv --model human-igh-ogrdb
-
-# align against a donor genotype (fewer alleles and/or NOVEL alleles) — YAML or FASTA
-alignair predict examples/reads.fasta -o out.tsv \
-  --model human-igh-ogrdb --genotype examples/donor_genotype.yaml
+alignair demo
 ```
 
-(Or use a model you trained yourself — see below — by passing its `runs/.../bundle/` path.)
+> Pretrained models are not published yet. Today you train your own (below); `alignair model list`
+> shows the catalog and its status. `--model` accepts a local bundle / `.pt`, and (once published)
+> a catalog id or `org/name` Hugging Face repo id.
+
+Train a model for your reference, then align with it:
+
+```bash
+alignair train --reference HUMAN_IGH_OGRDB -o my_model --preset desktop   # ~minutes on a GPU
+alignair predict reads.fasta -o out.tsv --model my_model/bundle
+
+# align against a donor genotype (fewer alleles and/or NOVEL alleles) — YAML or FASTA
+alignair predict reads.fasta -o out.tsv --model my_model/bundle --genotype donor.yaml
+```
 
 `--genotype` simply *becomes* the reference for the run — no retraining, no extra flags. See
 [`examples/`](examples/) for runnable data.
@@ -108,6 +113,7 @@ alignair validate-airr out.tsv      # -> "VALID AIRR-C rearrangement"
 
 | Command | Purpose |
 | --- | --- |
+| `alignair demo` | offline end-to-end trial (tiny train → predict → validate → genotype) |
 | `alignair predict` | align reads → AIRR rearrangement TSV |
 | `alignair train` | train a model for your own reference / species (built-in dataconfig or custom FASTA) |
 | `alignair model` | list / download / inspect pretrained models |
