@@ -15,7 +15,7 @@ GENES = ("v", "d", "j")
 _CORE = ["sequence_id", "sequence", "rev_comp", "locus", "v_call", "d_call", "j_call",
          "productive", "junction", "junction_aa", "junction_length",
          "sequence_alignment", "germline_alignment", "v_cigar", "d_cigar", "j_cigar",
-         "is_contaminant"]
+         "v_identity", "d_identity", "j_identity", "is_contaminant"]
 _COORDS = [f"{g}_{k}" for g in GENES
            for k in ("sequence_start", "sequence_end", "germline_start", "germline_end")]
 _EXT = [f"{g}_{k}" for g in GENES for k in ("call_set", "call_level", "set_confidence")]
@@ -70,19 +70,26 @@ def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict
             isc = p.get("is_contaminant")
             seq_len = len(seq)
             # aligned span of the query (V start .. J end); AIRR sequence_alignment
+            # alignment-representation fields: prefer the real (parasail) alignment when present
+            # (predict_reads full_alignment), else fall back to the coordinate approximation.
             starts = [p.get(f"{g}_sequence_start") for g in GENES if p.get(f"{g}_sequence_start") is not None]
             ends = [p.get(f"{g}_sequence_end") for g in GENES if p.get(f"{g}_sequence_end")]
-            seq_aln = seq[min(starts):max(ends)] if starts and ends else ""
+            seq_aln = p.get("sequence_alignment")
+            if seq_aln is None:
+                seq_aln = seq[min(starts):max(ends)] if starts and ends else ""
             row = {"sequence_id": sid, "sequence": seq, "locus": locus,
                    "rev_comp": "T" if p.get("orientation_id", 0) != 0 else "F",
                    "productive": p.get("productive"),
                    "junction": p.get("junction"), "junction_aa": p.get("junction_aa"),
                    "junction_length": p.get("junction_length"),
-                   "sequence_alignment": seq_aln, "germline_alignment": "",
-                   "v_cigar": _cigar(seq_len, p.get("v_sequence_start"), p.get("v_sequence_end"), p.get("v_germline_start"), p.get("v_germline_end")),
-                   "d_cigar": _cigar(seq_len, p.get("d_sequence_start"), p.get("d_sequence_end"), p.get("d_germline_start"), p.get("d_germline_end")),
-                   "j_cigar": _cigar(seq_len, p.get("j_sequence_start"), p.get("j_sequence_end"), p.get("j_germline_start"), p.get("j_germline_end")),
+                   "sequence_alignment": seq_aln, "germline_alignment": p.get("germline_alignment", ""),
+                   "v_identity": p.get("v_identity"), "d_identity": p.get("d_identity"),
+                   "j_identity": p.get("j_identity"),
                    "is_contaminant": ("T" if isc else "F") if isc is not None else None}
+            for g in GENES:
+                row[f"{g}_cigar"] = p.get(f"{g}_cigar") or _cigar(
+                    seq_len, p.get(f"{g}_sequence_start"), p.get(f"{g}_sequence_end"),
+                    p.get(f"{g}_germline_start"), p.get(f"{g}_germline_end"))
             for g in GENES:
                 row[f"{g}_call"] = p.get(f"{g}_call")
                 row[f"{g}_sequence_start"] = _airr_start(p.get(f"{g}_sequence_start"))

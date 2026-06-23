@@ -36,5 +36,8 @@ Run `alignair doctor` first — it reports Python, PyTorch + CUDA, GenAIRR, and 
 ## AIRR output
 
 - **Validate any TSV:** `alignair validate-airr out.tsv`. The output is AIRR-C schema-valid and
-  reads back via the `airr` library / Change-O. `germline_alignment` is emitted empty (AlignAIR
-  does not reconstruct the full gapped germline).
+  reads back via the `airr` library / Change-O.
+- **`sequence_alignment` / `germline_alignment` / `*_cigar` / `*_identity`** are produced by a real
+  gapped alignment (parasail) when it is installed (it's in `[cli]`). Without parasail, AlignAIR
+  falls back to coordinate-derived ungapped cigars and an empty `germline_alignment`; pass
+  `--no-full-alignment` to force the fast approximation.

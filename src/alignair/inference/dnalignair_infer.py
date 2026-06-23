@@ -170,7 +170,8 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
                   emit_scores: bool = False, state_conditioning: bool = True,
                   rerank_chunk: int = 2048, contaminant_tau: float | None = None,
                   locus: str = "IGH", v_reader: str = "learned",
-                  raw_set_band: float = 2.0, progress: bool = False) -> list:
+                  raw_set_band: float = 2.0, progress: bool = False,
+                  full_alignment: bool = False) -> list:
     """rerank: 'none' (stage-1 top-1), or 'learned' (rerank top-k by the in-model
     differentiable aligner.alignment_score = the learned allele reader). When rerank
     is on, also emits {g}_call_set = the calibrated equivalence set (candidates within
@@ -381,6 +382,9 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
             canon_seq = canonicalize_sequence(chunk[i], p["orientation_id"])
             p["sequence"] = canon_seq
             p["locus"] = locus
+            if full_alignment:                      # exact cigars + gapped alignment + identity
+                from ..io.alignment import realign  # (refines germline coords; needs parasail)
+                p.update(realign(canon_seq, p, reference_set))
             p.update(junction_fields(p, canon_seq, reference_set))
             # out-of-scope flag (advisory; calls above are RETAINED regardless)
             if rerank == "learned" and "_gate" in learned_best:

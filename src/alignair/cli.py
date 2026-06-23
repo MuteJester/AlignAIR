@@ -113,7 +113,7 @@ def cmd_predict(args) -> None:
 
     preds = predict_reads(model, rs, seqs, device=device, batch_size=args.batch,
                           rerank="learned", v_reader=args.v_reader, calibration=calibration,
-                          progress=not args.quiet)
+                          progress=not args.quiet, full_alignment=not args.no_full_alignment)
     # coordinates are in the canonical (forward) frame -> emit the canonical sequence so
     # they always match it, even for reverse-complemented input reads (with rev_comp flag).
     canon = [canonicalize_sequence(s, p["orientation_id"]) for s, p in zip(seqs, preds)]
@@ -539,6 +539,9 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--quiet", action="store_true", help="suppress progress output")
     pr.add_argument("--no-provenance", action="store_true",
                     help="do not write the <output>.run.json provenance sidecar")
+    pr.add_argument("--no-full-alignment", action="store_true",
+                    help="skip the parasail gapped alignment (exact cigars / germline_alignment / "
+                         "identity); use the faster coordinate-derived approximation")
     pr.set_defaults(func=cmd_predict)
 
     va = sub.add_parser("validate-airr", help="validate a rearrangement TSV against the AIRR-C schema")

@@ -90,9 +90,10 @@ plus `model_card.md` and `validation_report.json`. Presets: `smoke` (quick check
 
 `alignair predict` writes a **schema‑valid AIRR rearrangement TSV** (validates against the official
 `airr` library; reads back with Change‑O / Immcantation): `sequence_id`, `sequence`, `rev_comp`,
-`productive`, `v_call`/`d_call`/`j_call`, `junction`/`junction_aa`, `sequence_alignment`, per‑gene
-`*_cigar` and sequence/germline coordinates, plus calibrated‑uncertainty extension columns
-(`*_call_set`, `*_call_level`, `*_set_confidence`).
+`productive`, `v_call`/`d_call`/`j_call`, `junction`/`junction_aa`, gapped `sequence_alignment` /
+`germline_alignment`, per‑gene `*_cigar`, `*_identity`, and sequence/germline coordinates, plus
+calibrated‑uncertainty extension columns (`*_call_set`, `*_call_level`, `*_set_confidence`). The
+alignment fields come from a real gapped alignment (parasail).
 
 Every run also writes a **`<output>.run.json` provenance sidecar** (model + fingerprint, reference,
 command, device, seed, and package versions). Validate any TSV explicitly:

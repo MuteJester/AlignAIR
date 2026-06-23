@@ -65,6 +65,39 @@ def test_write_airr_to_stdout(capsys):
     assert out.startswith("sequence_id\t") and "IGHV1-1*01" in out
 
 
+def test_realign_gapped_alignment():
+    pytest.importorskip("parasail")
+    from alignair.io.alignment import realign
+    from alignair.reference.reference_set import ReferenceSet
+    vg = "ACGTACGTACGTACGTACGT"          # 20bp V germline
+    jg = "TTTTGGGGTTTTGGGG"              # 16bp J germline
+    rs = ReferenceSet.from_genotype({"v": {"V1*01": vg}, "j": {"J1*01": jg}})
+    seq = vg + "CCCCC" + jg              # V + 5bp non-templated N + J (exact)
+    p = {"v_call": "V1*01", "v_sequence_start": 0, "v_sequence_end": 20,
+         "j_call": "J1*01", "j_sequence_start": 25, "j_sequence_end": 41}
+    out = realign(seq, p, rs)
+    assert len(out["sequence_alignment"]) == len(out["germline_alignment"])   # aligned pair
+    assert out["v_identity"] == 1.0 and out["j_identity"] == 1.0              # exact match
+    assert out["germline_alignment"].count("N") == 5                          # the N region
+    assert out["v_germline_start"] == 0 and out["v_germline_end"] == 20
+    assert "M" in out["v_cigar"]
+
+
+def test_realign_recovers_offset_and_indel():
+    pytest.importorskip("parasail")
+    from alignair.io.alignment import realign
+    from alignair.reference.reference_set import ReferenceSet
+    vg = "AAAACCCCGGGGTTTTACGT"
+    rs = ReferenceSet.from_genotype({"v": {"V1*01": vg}, "j": {"J1*01": "TTTTGGGG"}})
+    # read V segment == germline[4:] (a 4bp 5' germline offset)
+    seq = vg[4:] + "TTTTGGGG"
+    p = {"v_call": "V1*01", "v_sequence_start": 0, "v_sequence_end": len(vg) - 4,
+         "j_call": "J1*01", "j_sequence_start": len(vg) - 4, "j_sequence_end": len(vg) - 4 + 8}
+    out = realign(seq, p, rs)
+    assert out["v_germline_start"] == 4          # alignment recovers the 5' offset
+    assert out["v_cigar"].startswith("4N")       # encoded as a germline skip
+
+
 def test_cigar():
     assert _cigar(377, 0, 290, 0, 290) == "290M87S"        # V at read start, no germline skip
     assert _cigar(377, 310, 360, 5, 55) == "310S5N50M17S"  # J: clip + germline skip + match + tail
