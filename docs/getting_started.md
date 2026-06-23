@@ -141,7 +141,16 @@ the command exits non-zero only if no sample aligned. See
 alignair doctor --json            # machine-readable environment report (CI-friendly)
 alignair model list --json        # the catalog as JSON
 alignair model inspect <bundle> --json
+alignair reference list           # built-in GenAIRR references + valid custom chain types
 alignair completion bash          # print the line to enable tab completion (needs AlignAIR[cli])
+```
+
+Before spending GPU hours, dry-run a training plan — it reports the model size, a timed
+wall-clock and peak-memory estimate, the expected validation accuracy for the preset, and
+any anchor/GPU warnings:
+
+```bash
+alignair train --reference HUMAN_IGH_OGRDB -o my_model --preset standard --plan
 ```
 
 ## 5. Common options

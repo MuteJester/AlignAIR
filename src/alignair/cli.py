@@ -459,6 +459,17 @@ def _load_reference_file(path):
 
 def cmd_reference(args) -> None:
     """Validate or convert a germline reference (YAML genotype <-> FASTA)."""
+    if args.reference_command == "list":
+        names = _genairr_dataconfigs()
+        if getattr(args, "json", False):
+            print(json.dumps({"dataconfigs": names, "chain_types": _genairr_chain_types()}, indent=2))
+            return
+        print(f"{len(names)} built-in GenAIRR references (use as `--reference NAME`):\n")
+        print(_format_dataconfig_list())
+        print("\nvalid `--chain-type` for custom FASTA references "
+              "(--v-fasta/--j-fasta[/--d-fasta]):")
+        print("  " + ", ".join(_genairr_chain_types()))
+        return
     if args.reference_command == "validate":
         rs = _load_reference_file(args.file)
         ok = True
@@ -601,6 +612,39 @@ _TRAIN_PRESETS = {
     "standard": (256, 8, 8, 8000, 32),  # paper-grade (hours on a GPU)
 }
 
+# Rough call-accuracy you can expect AFTER training each preset (human IGH; varies by reference,
+# read length, and SHM). Approximate guidance so `--plan` sets expectations before GPU hours.
+_PRESET_EXPECTATIONS = {
+    "smoke":    "sanity only — calls are NOT accurate (tiny model meant to prove the pipeline runs)",
+    "desktop":  "approx  V 0.80-0.88  J 0.90-0.95  D 0.45-0.60  (hard eval; clean is higher)",
+    "standard": "approx  V 0.90-0.95  J 0.95-0.98  D 0.55-0.65  (hard eval; paper-grade)",
+}
+
+
+def _genairr_dataconfigs():
+    """Sorted names of the built-in GenAIRR DataConfigs (usable as --reference)."""
+    import GenAIRR.data as gdata
+    return sorted(n for n in dir(gdata) if n.isupper() and not n.startswith("_"))
+
+
+def _genairr_chain_types():
+    """Valid --chain-type values for custom-FASTA references."""
+    try:
+        from GenAIRR.dataconfig.enums import ChainType
+        return [c.name for c in ChainType]
+    except Exception:
+        return ["BCR_HEAVY", "BCR_LIGHT_KAPPA", "BCR_LIGHT_LAMBDA",
+                "TCR_ALPHA", "TCR_BETA", "TCR_GAMMA", "TCR_DELTA"]
+
+
+def _format_dataconfig_list():
+    """The built-in references grouped by species, locus suffixes only (compact)."""
+    by_species = {}
+    for n in _genairr_dataconfigs():
+        sp, _, rest = n.partition("_")
+        by_species.setdefault(sp, []).append(rest or n)
+    return "\n".join(f"  {sp:9s} {' '.join(by_species[sp])}" for sp in sorted(by_species))
+
 
 def _resolve_train_reference(args):
     """Return (dataconfig, reference_set, bundle_ref) where bundle_ref is either
@@ -610,9 +654,13 @@ def _resolve_train_reference(args):
     if args.v_fasta or args.j_fasta or args.d_fasta:        # custom reference from FASTA
         if not (args.v_fasta and args.j_fasta):
             raise SystemExit("error: --v-fasta and --j-fasta are required to build a custom reference")
+        valid_ct = _genairr_chain_types()
         if not args.chain_type:
-            raise SystemExit("error: --chain-type is required with FASTA inputs "
-                             "(e.g. BCR_HEAVY, BCR_LIGHT_KAPPA, TCR_BETA)")
+            raise SystemExit("error: --chain-type is required with FASTA inputs. valid: "
+                             + ", ".join(valid_ct))
+        if args.chain_type not in valid_ct:
+            raise SystemExit(f"error: unknown --chain-type '{args.chain_type}'. valid: "
+                             + ", ".join(valid_ct))
         from GenAIRR.cartridge_builder import ReferenceCartridgeBuilder
         for f in (args.v_fasta, args.j_fasta, args.d_fasta):
             if f and not os.path.exists(f):
@@ -623,10 +671,17 @@ def _resolve_train_reference(args):
         rs = ReferenceSet.from_dataconfigs(dc)
         return dc, rs, {"reference_set": rs}
     if not args.reference:
-        raise SystemExit("error: provide --reference <DATACONFIG_NAME> or --v-fasta/--j-fasta")
+        raise SystemExit("error: provide --reference <DATACONFIG_NAME> (see `alignair reference list`) "
+                         "or build a custom one with --v-fasta/--j-fasta and --chain-type")
     if not hasattr(gdata, args.reference):
-        raise SystemExit(f"error: unknown GenAIRR DataConfig '{args.reference}'. "
-                         f"List names with: python -c \"import GenAIRR.data as g; print([n for n in dir(g) if n.isupper()])\"")
+        import difflib
+        names = _genairr_dataconfigs()
+        near = difflib.get_close_matches(args.reference.upper(), names, n=5)
+        hint = f" did you mean: {', '.join(near)}?" if near else ""
+        raise SystemExit(f"error: unknown GenAIRR DataConfig '{args.reference}'.{hint}\n"
+                         f"  {len(names)} built-in references available — list them with "
+                         f"`alignair reference list`,\n"
+                         f"  or build a custom one with --v-fasta/--j-fasta and --chain-type.")
     dc = getattr(gdata, args.reference)
     rs = ReferenceSet.from_dataconfigs(dc)
     return dc, rs, {"dataconfigs": [args.reference]}
@@ -716,32 +771,59 @@ def cmd_train(args) -> None:
 
     if args.plan:                                  # preflight / dry-run: surface risks + ETA, no training
         vanc = len(rs.gene("V").anchors or {}); janc = len(rs.gene("J").anchors or {})
+        anchors_ok = vanc >= nv and janc >= nj
         warnings = []
-        if vanc < nv or janc < nj:
-            warnings.append(f"missing junction anchors (V {vanc}/{nv}, J {janc}/{nj}) -> training "
-                            f"needs --allow-curatable and junctions may be omitted")
+        if not anchors_ok:
+            warnings.append(
+                f"{nv - vanc} V and {nj - janc} J alleles lack a junction anchor. Anchors mark the "
+                f"conserved Cys-104 (V) / Trp-Phe-118 (J) codons used to derive the junction/CDR3; "
+                f"without them those reads train fine but get no junction, and simulation needs "
+                f"--allow-curatable. Fix by adding anchors to the reference, or pass --allow-curatable.")
         if device == "cpu":
             warnings.append("no GPU detected -> training will be slow; a GPU is strongly recommended")
-        # quick timed estimate: warm up 1 step, time a few
-        per_step = None
+        if args.preset == "smoke" and not args.steps:
+            warnings.append("preset 'smoke' is a pipeline sanity check only — use 'desktop' or "
+                            "'standard' for a usable model")
+        # quick timed estimate + peak-memory probe: warm up 1 step, then time/measure a few
+        per_step = mem_note = None
         try:
-            trainer.fit(total_steps=1, global_total=steps, progress=False)
+            trainer.fit(total_steps=1, global_total=steps, progress=False)   # warm up (alloc caches)
+            if device == "cuda":
+                torch.cuda.reset_peak_memory_stats(); torch.cuda.synchronize()
+            import psutil
+            rss0 = psutil.Process().memory_info().rss
             t = time.time(); trainer.fit(total_steps=3, global_total=steps, progress=False)
             per_step = (time.time() - t) / 3
+            if device == "cuda":
+                torch.cuda.synchronize()
+                peak = torch.cuda.max_memory_allocated() / 1e9
+                total = torch.cuda.get_device_properties(0).total_memory / 1e9
+                mem_note = f"~{peak:.2f} GB peak / {total:.1f} GB on {torch.cuda.get_device_name(0)}"
+                if peak > 0.9 * total:
+                    warnings.append("estimated GPU memory is close to the device limit -> lower --batch "
+                                    "or pick a smaller --preset if you hit OOM")
+            else:
+                mem_note = f"~{psutil.Process().memory_info().rss / 1e9:.2f} GB RAM (RSS after warmup)"
         except Exception as e:
-            warnings.append(f"could not time a training step: {e}")
+            warnings.append(f"could not time/measure a training step: {e}")
+
+        ref_kind = ("built-in DataConfig" if "dataconfigs" in bundle_ref
+                    else f"custom FASTA (chain_type={args.chain_type})")
         print("AlignAIR train -- plan (dry run, no training performed)")
-        print(f"  reference : {ref_label}  (V={nv} D={nd} J={nj}, locus {locus})")
+        print(f"  reference : {ref_label}  [{ref_kind}]  (V={nv} D={nd} J={nj}, locus {locus})")
         print(f"  anchors   : V {vanc}/{nv}, J {janc}/{nj}"
-              + ("  (junctions OK)" if vanc >= nv and janc >= nj else "  (incomplete)"))
+              + ("  (junctions OK)" if anchors_ok else "  (incomplete — see WARNING)"))
         print(f"  model     : {n_params/1e6:.2f}M params (d_model={model.config.d_model}, "
               f"layers={model.config.n_layers}, preset={args.preset})")
         if per_step is not None:
             eta = per_step * steps
-            print(f"  estimate  : {steps} steps x {per_step:.2f}s/step ~= {_fmt_dur(eta)} on {device}"
+            print(f"  time est. : {steps} steps x {per_step:.2f}s/step ~= {_fmt_dur(eta)} on {device}"
                   f"  (+ calibration unless --no-calibrate)")
         else:
-            print(f"  estimate  : {steps} steps on {device} (timing unavailable)")
+            print(f"  time est. : {steps} steps on {device} (timing unavailable)")
+        if mem_note:
+            print(f"  memory est: {mem_note}  (batch={batch})")
+        print(f"  expected  : {_PRESET_EXPECTATIONS.get(args.preset, 'n/a')}")
         print(f"  outputs   : {out}/bundle, {out}/model_card.md, {out}/validation_report.json, "
               f"{out}/checkpoint.pt")
         for w in warnings:
@@ -1011,8 +1093,10 @@ def build_parser() -> argparse.ArgumentParser:
     dm.add_argument("--device", default=None, help="cuda|cpu (auto if unset)")
     dm.set_defaults(func=cmd_demo)
 
-    rf = sub.add_parser("reference", help="validate or convert a germline reference (YAML <-> FASTA)")
+    rf = sub.add_parser("reference", help="list / validate / convert germline references")
     rsub = rf.add_subparsers(required=True, dest="reference_command")
+    rls = rsub.add_parser("list", help="list built-in GenAIRR references and valid chain types")
+    rls.add_argument("--json", action="store_true", help="emit names as JSON")
     rv = rsub.add_parser("validate", help="check a reference file (counts, anchors, duplicates)")
     rv.add_argument("file", help="genotype YAML or germline FASTA")
     rc = rsub.add_parser("convert", help="convert between genotype YAML and FASTA")
