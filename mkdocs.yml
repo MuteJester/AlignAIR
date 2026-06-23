@@ -4,6 +4,7 @@ nav:
   - Getting Started: getting_started.md
   - Python API: python_api.md
   - AIRR Fields: airr_fields.md
+  - Known Failure Modes: known_failure_modes.md
   - Benchmarks: benchmarks.md
   - Troubleshooting: troubleshooting.md
   - DNAlignAIR Design: dnalignair.md
