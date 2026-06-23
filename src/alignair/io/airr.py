@@ -18,7 +18,7 @@ _CORE = ["sequence_id", "sequence", "rev_comp", "locus", "v_call", "d_call", "j_
          "v_identity", "d_identity", "j_identity", "is_contaminant"]
 _COORDS = [f"{g}_{k}" for g in GENES
            for k in ("sequence_start", "sequence_end", "germline_start", "germline_end")]
-_EXT = [f"{g}_{k}" for g in GENES for k in ("call_set", "call_level", "set_confidence")]
+_EXT = [f"{g}_{k}" for g in GENES for k in ("call_set", "resolved_call", "call_level", "set_confidence")]
 COLUMNS = _CORE + _EXT + _COORDS
 
 
@@ -87,7 +87,8 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
         row[f"{g}_germline_end"] = p.get(f"{g}_germline_end")
         cset = p.get(f"{g}_call_set") or ([p.get(f"{g}_call")] if p.get(f"{g}_call") else [])
         row[f"{g}_call_set"] = ",".join(c for c in cset if c)
-        row[f"{g}_call_level"] = p.get(f"{g}_call_level")
+        row[f"{g}_resolved_call"] = p.get(f"{g}_resolved_call")    # most-specific safe call
+        row[f"{g}_call_level"] = p.get(f"{g}_call_level")          # allele|gene|family|none
         conf = p.get(f"{g}_set_confidence")
         row[f"{g}_set_confidence"] = f"{conf:.4f}" if conf is not None else None
     return row

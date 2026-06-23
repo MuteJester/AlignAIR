@@ -94,6 +94,33 @@ alignair predict reads.tsv -o out.tsv --model <bundle> \
 The kept columns are appended to the AIRR TSV (still schema-valid), so Change-O / Scirpy /
 Immcantation single-cell workflows get `cell_id`, barcodes, and counts without custom glue.
 
+## 4c. Acting on calibrated uncertainty
+
+For each gene AlignAIR reports more than a single call, so you can decide how much to trust it:
+
+| column | meaning | how to act |
+| --- | --- | --- |
+| `*_call` | top-1 allele | use it when `*_call_level` is `allele` |
+| `*_call_set` | calibrated equivalence set (alleles the read can't distinguish) | report the set when it's small |
+| `*_resolved_call` | the most-specific *safe* call | use directly — it already degrades when uncertain |
+| `*_call_level` | `allele` / `gene` / `family` / `none` | `allele`→accept; `gene`/`family`→use that level; `none`→abstain / inspect |
+| `*_set_confidence` | probability mass inside the set | threshold for stricter calling |
+
+Rule of thumb: take `*_resolved_call` (it collapses to gene/family or abstains when the evidence
+can't support an allele) instead of forcing a possibly-wrong allele like classical tools do.
+
+## 4d. Try a donor genotype (before/after)
+
+```bash
+alignair reference template HUMAN_IGH_OGRDB -o donor.yaml   # start from the full reference
+#   ... edit donor.yaml down to the donor's alleles and/or add novel alleles ...
+alignair predict reads.fasta -o full.tsv  --model <bundle>
+alignair predict reads.fasta -o donor.tsv --model <bundle> --genotype donor.yaml
+alignair compare --a donor.tsv --b full.tsv --a-name donor --b-name full --out genotype_effect.md
+```
+
+The report shows how conditioning on the donor reference changes calls and shrinks uncertainty sets.
+
 ## 5. Common options
 
 | Flag | Meaning |

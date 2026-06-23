@@ -22,6 +22,19 @@ def _pred(**over):
     return p
 
 
+def test_reference_template_writes_genotype(tmp_path):
+    pytest.importorskip("GenAIRR")
+    out = tmp_path / "tmpl.yaml"
+    cli.main(["reference", "template", "HUMAN_IGH_OGRDB", "-o", str(out)])
+    from alignair.reference.reference_set import ReferenceSet
+    rs = ReferenceSet.from_yaml(str(out))                 # round-trips as a usable genotype
+    assert len(rs.gene("V")) > 100 and rs.infer_locus() == "IGH"
+
+
+def test_resolved_call_column_present():
+    assert "v_resolved_call" in COLUMNS and "v_call_level" in COLUMNS
+
+
 def test_reference_validate_and_convert(tmp_path):
     y = tmp_path / "ref.yaml"
     y.write_text("v:\n  IGHV1-2*01: ACGTACGT\nd:\n  IGHD1-1*01: GGGG\nj:\n  IGHJ1*01: TTTT\n")

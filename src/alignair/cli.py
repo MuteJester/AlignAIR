@@ -311,6 +311,17 @@ def cmd_reference(args) -> None:
             print(f"  {G}: {n} alleles | {anc_note}" + (("  ⚠ " + "; ".join(flags)) if flags else ""))
         print("status: OK" if ok else "status: PROBLEMS FOUND")
         raise SystemExit(0 if ok else 1)
+    elif args.reference_command == "template":
+        import GenAIRR.data as gdata
+        from .reference.reference_set import ReferenceSet
+        if not hasattr(gdata, args.reference):
+            raise SystemExit(f"error: unknown GenAIRR DataConfig '{args.reference}'")
+        rs = ReferenceSet.from_dataconfigs(getattr(gdata, args.reference))
+        rs.to_yaml(args.out)
+        n = sum(len(rs.gene(g)) for g in rs.genes)
+        print(f"wrote genotype template ({n} alleles from {args.reference}) -> {args.out}")
+        print("edit it down to a donor's alleles and/or add NOVEL alleles, then:")
+        print(f"  alignair predict reads.fasta -o out.tsv --model <bundle> --genotype {args.out}")
     elif args.reference_command == "convert":
         rs = _load_reference_file(args.file)
         out_ext = os.path.splitext(args.out)[1].lower()
@@ -498,6 +509,41 @@ def cmd_train(args) -> None:
         start_step = int(resume_ckpt.get("step", 0))
         trainer._global_step = int(resume_ckpt.get("global_step", start_step))
     n_params = sum(p.numel() for p in model.parameters())
+
+    if args.plan:                                  # preflight / dry-run: surface risks + ETA, no training
+        vanc = len(rs.gene("V").anchors or {}); janc = len(rs.gene("J").anchors or {})
+        warnings = []
+        if vanc < nv or janc < nj:
+            warnings.append(f"missing junction anchors (V {vanc}/{nv}, J {janc}/{nj}) -> training "
+                            f"needs --allow-curatable and junctions may be omitted")
+        if device == "cpu":
+            warnings.append("no GPU detected -> training will be slow; a GPU is strongly recommended")
+        # quick timed estimate: warm up 1 step, time a few
+        per_step = None
+        try:
+            trainer.fit(total_steps=1, global_total=steps, progress=False)
+            t = time.time(); trainer.fit(total_steps=3, global_total=steps, progress=False)
+            per_step = (time.time() - t) / 3
+        except Exception as e:
+            warnings.append(f"could not time a training step: {e}")
+        print("AlignAIR train -- plan (dry run, no training performed)")
+        print(f"  reference : {ref_label}  (V={nv} D={nd} J={nj}, locus {locus})")
+        print(f"  anchors   : V {vanc}/{nv}, J {janc}/{nj}"
+              + ("  (junctions OK)" if vanc >= nv and janc >= nj else "  (incomplete)"))
+        print(f"  model     : {n_params/1e6:.2f}M params (d_model={model.config.d_model}, "
+              f"layers={model.config.n_layers}, preset={args.preset})")
+        if per_step is not None:
+            eta = per_step * steps
+            print(f"  estimate  : {steps} steps x {per_step:.2f}s/step ~= {_fmt_dur(eta)} on {device}"
+                  f"  (+ calibration unless --no-calibrate)")
+        else:
+            print(f"  estimate  : {steps} steps on {device} (timing unavailable)")
+        print(f"  outputs   : {out}/bundle, {out}/model_card.md, {out}/validation_report.json, "
+              f"{out}/checkpoint.pt")
+        for w in warnings:
+            print(f"  WARNING   : {w}")
+        print("\nrun the same command without --plan to train.")
+        return
 
     print(f"AlignAIR train")
     print(f"  reference : {ref_label}  (V={nv} D={nd} J={nj}, locus {locus})")
@@ -723,6 +769,9 @@ def build_parser() -> argparse.ArgumentParser:
     rc = rsub.add_parser("convert", help="convert between genotype YAML and FASTA")
     rc.add_argument("file", help="input reference (YAML or FASTA)")
     rc.add_argument("-o", "--out", required=True, help="output path (.yaml or .fasta sets the format)")
+    rt = rsub.add_parser("template", help="dump a built-in reference to YAML as a genotype starting point")
+    rt.add_argument("reference", help="GenAIRR DataConfig name (e.g. HUMAN_IGH_OGRDB)")
+    rt.add_argument("-o", "--out", required=True, help="output genotype YAML to edit")
     rf.set_defaults(func=cmd_reference)
 
     md = sub.add_parser("model", help="list / download / inspect pretrained models")
@@ -753,6 +802,9 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--resume", action="store_true",
                     help="resume from <out>/checkpoint.pt (restores weights, optimizer, and "
                          "curriculum position); continue to --steps")
+    tr.add_argument("--plan", action="store_true",
+                    help="dry run: show reference checks, anchor coverage, model size, a timed "
+                         "wall-time estimate, outputs, and warnings -- without training")
     tr.add_argument("--locus", default="IGH")
     tr.add_argument("--allow-curatable", action="store_true",
                     help="permit simulation from references with curatable issues (e.g. custom "
