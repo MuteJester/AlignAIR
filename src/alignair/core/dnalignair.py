@@ -15,6 +15,7 @@ from ..nn.germline_encoder import GermlineEncoder
 from ..nn.matching import AlleleMatchingHead
 from ..nn.germline_aligner import GermlineAligner
 from ..nn.soft_dp_aligner import SoftDPAligner
+from ..nn.pointer_aligner import BandedPointerAligner
 
 
 def _masked_mean(h: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -89,8 +90,15 @@ class DNAlignAIR(nn.Module):
             counts = config.allele_counts or {}
             self.classifier = nn.ModuleDict(
                 {g: nn.Linear(d, counts[g]) for g in counts})
-        self.aligner = (SoftDPAligner(d_model=d) if getattr(config, "aligner", "diagonal") == "softdp"
-                        else GermlineAligner(d_model=d))
+        _aligner = getattr(config, "aligner", "diagonal")
+        if _aligner == "softdp":
+            self.aligner = SoftDPAligner(d_model=d)
+        elif _aligner == "pointer":
+            self.aligner = BandedPointerAligner(
+                d_model=d, max_len=config.max_len,
+                band_half_width=getattr(config, "band_half_width", 0))
+        else:
+            self.aligner = GermlineAligner(d_model=d)
         self.noise_head = nn.Linear(d, 1)
         self.mutation_head = nn.Linear(d, 1)
         self.indel_head = nn.Linear(d, 1)
@@ -185,6 +193,14 @@ class DNAlignAIR(nn.Module):
                                           reps=out["reps"], candidate_masks=candidate_masks)
         return out
 
-    def germline_coords(self, seg_reps, seg_mask, germ_reps, germ_mask):
-        """Align a gene's segment reps to a chosen allele's per-position germline reps."""
-        return self.aligner(seg_reps, seg_mask, germ_reps, germ_mask)
+    def germline_coords(self, seg_reps, seg_mask, germ_reps, germ_mask,
+                        seg_tok=None, germ_tok=None, seg_reliability=None):
+        """Align a gene's segment reps to a chosen allele's per-position germline reps.
+        seg_tok/germ_tok/seg_reliability enable the pointer aligner's base-match + SHM
+        reliability gating; aligners that don't accept them fall back transparently."""
+        try:
+            return self.aligner(seg_reps, seg_mask, germ_reps, germ_mask,
+                                seg_tok=seg_tok, germ_tok=germ_tok,
+                                seg_reliability=seg_reliability)
+        except TypeError:
+            return self.aligner(seg_reps, seg_mask, germ_reps, germ_mask)

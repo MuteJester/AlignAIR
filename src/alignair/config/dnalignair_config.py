@@ -15,7 +15,8 @@ class DNAlignAIRConfig:
     n_regions: int = 8     # len(REGIONS)
     n_states: int = 4      # germline/substitution/insertion/deletion
     backbone: str = "conv"  # "conv" (conv-stem + Transformer) | "shared" (RoPE/SDPA/SwiGLU SharedNucleotideEncoder)
-    aligner: str = "softdp"  # germline aligner: "softdp" (gap-aware DP, default) | "diagonal" (legacy cosine corr)
+    aligner: str = "softdp"  # germline aligner: "softdp" (gap-aware DP, default) | "diagonal" (legacy cosine corr) | "pointer" (fast parallel BandedPointerAligner)
+    band_half_width: int = 0  # pointer aligner indel band half-width (0 = single diagonal)
     region_decoder: str = "linear"  # region head: "linear" (RegionTagger) | "query" (mask-span decoder w/ boundary posteriors)
     caller: str = "retrieval"  # allele caller: "retrieval" (cosine vs germline embeddings) | "classifier" (masked per-allele head on backbone reps)
     allele_counts: dict | None = None  # {"V":198,"D":33,"J":7} required when caller=="classifier"
