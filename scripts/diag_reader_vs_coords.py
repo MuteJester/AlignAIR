@@ -61,23 +61,30 @@ def main():
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--coord-tol", type=float, default=1.0)
+    ap.add_argument("--arms", default="softdp,pointer",
+                    help="comma list of aligners to run (e.g. 'pointer' to reuse a prior softdp)")
     a = ap.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     fields = {}
-    for aligner in ("softdp", "pointer"):
+    for aligner in a.arms.split(","):
         fields[aligner] = train_and_decompose(
             aligner, a.steps, a.n_per_cell, a.d_model, a.locus, a.batch_size, a.seed,
             a.coord_tol, device)
-    print(f"\n=== reader(allele) vs coords vs region, soft-DP -> pointer (tol={a.coord_tol}) ===")
-    print(f"{'cell':18s} {'component':9s} {'soft-DP':>8s} {'pointer':>8s} {'Δ':>8s}")
+    arms = list(fields)
+    print(f"\n=== reader(allele) vs coords vs region (tol={a.coord_tol}); arms={arms} ===")
+    hdr = f"{'cell':18s} {'component':9s}" + "".join(f"{ar:>9s}" for ar in arms)
+    if len(arms) == 2:
+        hdr += f"{'Δ':>9s}"
+    print(hdr)
     for cell in _CELLS:
         for comp in ("allele", "coords", "region"):
-            s = fields["softdp"].get(cell, {}).get(comp, {})
-            p = fields["pointer"].get(cell, {}).get(comp, {})
-            if not s or not p:
+            vals = [fields[ar].get(cell, {}).get(comp, {}) for ar in arms]
+            if any(not v for v in vals):
                 continue
-            d = p["S"] - s["S"]
-            print(f"{cell:18s} {comp:9s} {s['S']:8.3f} {p['S']:8.3f} {d:+8.3f}")
+            row = f"{cell:18s} {comp:9s}" + "".join(f"{v['S']:9.3f}" for v in vals)
+            if len(arms) == 2:
+                row += f"{vals[1]['S'] - vals[0]['S']:+9.3f}"
+            print(row)
         print()
 
 

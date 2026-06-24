@@ -66,7 +66,12 @@ class BandedPointerAligner(nn.Module):
         self.seg_proj = nn.Linear(d_model, d_model)
         self.germ_proj = nn.Linear(d_model, d_model)
         self.log_scale = nn.Parameter(torch.tensor(1.6))       # scale ~5
-        self.log_temp = nn.Parameter(torch.zeros(()))          # learned softmax temperature
+        # Coordinate-posterior temperature. Init HIGH (temp~5) so the diagonal posterior is
+        # PEAKED, not a broad bump: a flat bump near a germline edge biases the soft-argmax
+        # expected-position inward (the clean-read coord regression diagnosed vs the soft-DP,
+        # whose log-partition posterior is near-delta). A sharp posterior makes soft-argmax
+        # ~= argmax (precise, edge-bias-free) while the CDF/soft-argmax losses keep it there.
+        self.log_temp = nn.Parameter(torch.tensor(1.6))        # temp ~5 (was 1)
         self._match_weight = nn.Parameter(torch.tensor(1.0))
         self.match_floor = float(match_floor)
         self.diag_bias = nn.Parameter(torch.zeros(max_len))    # per-position weight, init uniform
@@ -93,7 +98,7 @@ class BandedPointerAligner(nn.Module):
                 seg_tok=None, germ_tok=None, seg_reliability=None):
         M = self._M(seg_reps, germ_reps, germ_mask, seg_tok, germ_tok, seg_reliability)
         w = self._weights(seg_mask, seg_reliability)
-        temp = self.log_temp.clamp(0.0, 3.4).exp()
+        temp = self.log_temp.clamp(0.0, 4.5).exp()      # up to ~90 so the posterior can sharpen
         if self.band_half_width > 0:
             start, end = banded_start_end(M, w, self.band_gamma, self.band_half_width)
             start, end = temp * start, temp * end

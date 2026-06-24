@@ -162,3 +162,21 @@ def test_banded_aligner_registers_band_gamma():
     al = BandedPointerAligner(d_model=16, band_half_width=3)
     params = dict(al.named_parameters())
     assert "band_gamma" in params and params["band_gamma"].numel() == 7
+
+
+def test_soft_argmax_localizes_edge_diagonal_precisely():
+    # The clean-read coord regression was soft-argmax bias on a BROAD posterior truncated by
+    # the germline edge (true start near column 0). A sharp posterior (high temp init) makes
+    # the soft-argmax expected-position land ON the edge peak, not pulled inward.
+    from alignair.nn.pointer_aligner import BandedPointerAligner
+    from alignair.nn.germline_aligner import decode_germline_coords
+    al = BandedPointerAligner(d_model=16)
+    al.germ_proj.load_state_dict(al.seg_proj.state_dict())   # cosine peaks on the true diagonal
+    B, S, Lg, d, off = 1, 8, 24, 16, 0                       # true start at the EDGE (col 0)
+    g = torch.randn(B, Lg, d)
+    seg = g[:, off:off + S, :].clone()
+    sm = torch.ones(B, S, dtype=torch.bool); gm = torch.ones(B, Lg, dtype=torch.bool)
+    sl, el = al(seg, sm, g, gm)
+    gs, ge = decode_germline_coords(sl, el, soft=True)
+    assert gs.item() <= 1, f"soft-argmax start biased inward off the edge: {gs.item()}"
+    assert abs(ge.item() - (off + S)) <= 1                   # end (exclusive) ~ off+S
