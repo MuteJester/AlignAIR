@@ -17,11 +17,11 @@ So the DP is S sequential row-steps, each a handful of (B, Lg) ops — GPU-frien
 nn.Module wraps projection + learned gap costs and returns (start_logits, end_logits)
 matching the GermlineAligner interface.
 """
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from .base_match import base_match_channel
 
 NEG = -1e4
 
@@ -105,24 +105,12 @@ class SoftDPAligner(nn.Module):
         G = F.normalize(self.germ_proj(germ_reps), dim=-1)
         scale = self.log_scale.clamp(-2.0, 3.0).exp()
         M = scale * torch.einsum("bid,bjd->bij", S, G)         # (B,S,Lg) cosine*scale
-        if seg_tok is not None and germ_tok is not None:
-            st, gt = seg_tok.unsqueeze(2), germ_tok.unsqueeze(1)            # (B,S,1),(B,1,Lg)
-            real = (st >= 1) & (st <= 4) & (gt >= 1) & (gt <= 4)           # ACGT only
-            u = real.float() * (2.0 * (st == gt).float() - 1.0)           # +1 match / -1 mismatch
-            lam = self.match_floor + F.softplus(self._match_weight)        # scalar coefficient
-            if seg_reliability is not None:
-                # STATE-CONDITIONED emission (codex): a_i = lam * r_i scales the match bonus
-                # AND the mismatch penalty TOGETHER, so an SHM-substitution position (low r_i)
-                # contributes a near-neutral base term instead of penalising the true allele.
-                # Treating only the penalty (not the bonus) would bias toward over-matching.
-                a = (lam * seg_reliability.clamp(0.0, 1.0)).unsqueeze(2)   # (B,S,1)
-                # four-base log-likelihood-ratio vs a uniform background; keeps
-                # alignment_score comparable across reads of differing reliability. The
-                # term is per-read-row so it is rank-NEUTRAL across candidate alleles.
-                norm = torch.log(a.exp() + 3.0 * (-a).exp()) - math.log(4.0)  # (B,S,1)
-                M = M + a * u - norm * real.float()
-            else:
-                M = M + lam * u
+        # SNP-sensitive base-match channel (shared with the pointer aligner): the
+        # STATE-CONDITIONED emission scales the match bonus AND mismatch penalty together
+        # by per-position reliability, so an SHM-substitution position contributes a
+        # near-neutral base term instead of penalising the true allele.
+        M = base_match_channel(M, seg_tok, germ_tok, seg_reliability,
+                               self._match_weight, self.match_floor)
         return M
 
     def forward(self, seg_reps, seg_mask, germ_reps, germ_mask):
