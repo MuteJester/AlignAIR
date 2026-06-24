@@ -186,6 +186,11 @@ learned distance penalty on `|Δ|` (a parallel gap prior). This is `(2G+1)` stri
 + one LSE — still ~20-40× cheaper than the S-step DP, fully parallel. **Banded is an ablation
 step (#6), gated on the simpler single-diagonal head working first.**
 
+> The banded **end** head reintroduces the B1 hazard per Δ: it MUST use the §4.2
+> flip-leading-flip with `wf = flip(w)` applied for each Δ, with the same `/w.sum` per-row
+> length-norm and `seg_mask` masking as the single diagonal. The mandatory non-uniform-`w`
+> correctness test must cover at least one `Δ≠0` band case.
+
 ### 4.5 Reader / `alignment_score` (do NOT use length-normalized LSE for sibling resolution)
 
 Both experts reject a length-normalized log-mean reader (`soft_dp_aligner.py:160-161`) as the
