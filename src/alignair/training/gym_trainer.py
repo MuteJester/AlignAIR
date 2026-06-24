@@ -381,17 +381,24 @@ class GymTrainer:
 
     def advance_curriculum(self, field: dict, threshold: float = 0.7,
                            step: float = 0.1) -> list:
-        """Advance a FactoredCurriculum from a Phase-1 lattice competence field.
-        No-op (returns []) for non-factored curricula."""
+        """From a Phase-1 lattice competence field: advance the FactoredCurriculum's
+        per-axis pace AND update the ALP/regret targeting (if a TargetedCurriculum wraps
+        it). No-op (returns []) for non-factored curricula."""
         from ..gym.factored import FactoredCurriculum, axis_competence_from_field
+        from ..gym.targeting import TargetedCurriculum
         cur = self.gym.curriculum
-        if not isinstance(cur, FactoredCurriculum):
+        target = cur if isinstance(cur, TargetedCurriculum) else None
+        factored = cur.factored if target is not None else cur
+        if not isinstance(factored, FactoredCurriculum):
             return []
-        moved = cur.advance(axis_competence_from_field(field), threshold=threshold, step=step)
-        if moved:
-            self.gym.refresh_params()   # push the new floor to live producers
-            if self.sigma_freeze_steps > 0:
-                self.freeze_uncertainty()   # hold log_vars across the transient
+        moved = factored.advance(axis_competence_from_field(field),
+                                 threshold=threshold, step=step)
+        if target is not None:
+            target.update_targets(field)   # ALP/regret retargets the hard regimes
+        if moved or target is not None:
+            self.gym.refresh_params()      # push new floor / mixture to live producers
+            if moved and self.sigma_freeze_steps > 0:
+                self.freeze_uncertainty()  # hold log_vars across the transient
         return moved
 
     def freeze_uncertainty(self, steps: int | None = None) -> None:
