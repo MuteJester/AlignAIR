@@ -2,10 +2,21 @@ from alignair.gym.instrument.task_space import TaskSpace
 from alignair.gym.instrument.lattice import LatticeCell, FrozenLattice
 
 
-def test_standard_lattice_has_hard_cells():
+def test_standard_lattice_has_hard_and_axis_isolated_cells():
     lat = FrozenLattice.standard(seed=0)
     names = {c.name for c in lat.cells}
     assert {"clean", "heavy_shm", "heavy_shm_fulllen", "junction_boundary"} <= names
+    # axis-isolated cells for clean per-axis pacing signals
+    assert {"trim", "indel", "ambiguous", "seq_error", "orient"} <= names
+
+
+def test_axis_isolated_cell_stresses_only_its_axis():
+    lat = FrozenLattice.standard(seed=0)
+    indel = lat.cell_params(next(c for c in lat.cells if c.name == "indel"))
+    assert indel["indel_count"][1] >= 3            # indels stressed
+    assert indel["mutation_rate"] <= 0.01          # everything else at baseline
+    assert indel["seq_error_rate"] == 0.0
+    assert indel["crop_prob"] == 0.0               # full length
 
 
 def test_fingerprint_is_stable_and_sensitive():

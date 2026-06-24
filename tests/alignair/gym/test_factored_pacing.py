@@ -15,9 +15,12 @@ def test_pace_caps_at_one():
     assert fc.pace["crop"] == 1.0
 
 
-def test_axis_competence_mapping_uses_hard_cells():
-    field = {"clean": {"S": 0.8}, "heavy_shm_fulllen": {"S": 0.4}, "fragment": {"S": 0.5}}
+def test_axis_competence_mapping_uses_isolated_cells():
+    field = {"clean": {"S": 0.8}, "heavy_shm_fulllen": {"S": 0.4}, "fragment": {"S": 0.5},
+             "indel": {"S": 0.6}, "trim": {"S": 0.55}}
     ac = axis_competence_from_field(field)
     assert ac["mutation_count"] == 0.4      # SHM axis <- heavy_shm_fulllen
     assert ac["crop"] == 0.5                # crop axis <- fragment
-    assert ac["indel_count"] == 0.8         # fallback <- clean
+    assert ac["indel_count"] == 0.6         # <- isolated indel cell
+    assert ac["end_loss_5"] == 0.55         # <- isolated trim cell
+    assert ac["ambiguous_count"] == 0.8     # cell absent -> clean fallback

@@ -58,9 +58,14 @@ class FactoredCurriculum:
         return moved
 
 
-# cell that most stresses each axis; fallback "clean" = overall competence (until
-# axis-isolated eval cells exist). Axes not listed use the fallback.
-_AXIS_CELL = {"mutation_count": "heavy_shm_fulllen", "crop": "fragment"}
+# the axis-isolated FrozenLattice cell that stresses each axis (one clean per-axis
+# competence signal per axis). Missing cells fall back to "clean" (overall competence).
+_AXIS_CELL = {
+    "mutation_count": "heavy_shm_fulllen",   # SHM, full-length (the contested corner)
+    "end_loss_5": "trim", "end_loss_3": "trim",
+    "indel_count": "indel", "ambiguous_count": "ambiguous",
+    "seq_error_rate": "seq_error", "crop": "fragment", "orient": "orient",
+}
 
 
 def axis_competence_from_field(field: dict, fallback_cell: str = "clean") -> dict:
