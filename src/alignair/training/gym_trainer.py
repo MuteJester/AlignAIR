@@ -31,12 +31,17 @@ class GymTrainer:
                  distill_decay=0.999, distill_temperature=2.0,
                  reader=False, reader_weight=1.0, reader_n_sib=6, reader_n_rand=6,
                  reader_novel_prob=0.0, reader_novel_snps=1, state_conditioning=True,
-                 scheduled_sampling=False, ss_max_prob=0.5):
+                 scheduled_sampling=False, ss_max_prob=0.5, num_workers=0):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.loss_fn = loss_fn.to(self.device)
         self.reference_set = reference_set
         self.gym = gym
+        # parallel GenAIRR producers: N persistent worker processes generate at the
+        # current floor (shared state) so the GPU isn't starved by single-process sim.
+        self.num_workers = num_workers
+        if num_workers > 0:
+            self.gym.enable_sharing()
         self.batch_size = batch_size
         self.grad_clip = grad_clip
         self.refresh_reference_every = refresh_reference_every
@@ -78,8 +83,13 @@ class GymTrainer:
         return {k: (v.to(self.device) if torch.is_tensor(v) else v) for k, v in batch.items()}
 
     def _loader(self):
+        kw = {}
+        if self.num_workers > 0:
+            kw = {"num_workers": self.num_workers, "persistent_workers": True,
+                  "prefetch_factor": 2}
         return DataLoader(self.gym, batch_size=self.batch_size,
-                          collate_fn=lambda b: gym_collate(b, self.reference_set, self.has_d))
+                          collate_fn=lambda b: gym_collate(b, self.reference_set, self.has_d),
+                          **kw)
 
     def fit(self, total_steps: int, global_total: int | None = None,
             progress: bool = True, controller=None) -> list:
@@ -95,7 +105,7 @@ class GymTrainer:
         ref_emb = None
         bar = tqdm(total=total_steps, desc="gym-train", disable=not progress)
         step = 0
-        it = None
+        it = iter(loader)
         since_refresh = self.refresh_curriculum_every  # force a refresh on entry
         while step < total_steps:
             if since_refresh >= self.refresh_curriculum_every:
@@ -105,7 +115,11 @@ class GymTrainer:
                     self.gym.set_progress(min(1.0, self._global_step / max(global_total - 1, 1)))
                 else:
                     self.gym.set_progress(min(1.0, step / max(total_steps - 1, 1)))
-                it = iter(loader)  # picks up the new curriculum progress on rebuild
+                # single-process gym must rebuild the iterator to pick up new params;
+                # the shared-state producer pool (num_workers>0) reads the new floor
+                # from shared memory, so we keep the SAME persistent iterator.
+                if self.num_workers == 0:
+                    it = iter(loader)
                 since_refresh = 0
             try:
                 batch = next(it)
@@ -363,4 +377,7 @@ class GymTrainer:
         cur = self.gym.curriculum
         if not isinstance(cur, FactoredCurriculum):
             return []
-        return cur.advance(axis_competence_from_field(field), threshold=threshold, step=step)
+        moved = cur.advance(axis_competence_from_field(field), threshold=threshold, step=step)
+        if moved:
+            self.gym.refresh_params()   # push the new floor to live producers
+        return moved

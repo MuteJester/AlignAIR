@@ -2,7 +2,7 @@
 import logging
 
 import numpy as np
-from torch.utils.data import IterableDataset
+from torch.utils.data import IterableDataset, get_worker_info
 
 from .crop import crop_record
 from .curriculum import Curriculum
@@ -65,7 +65,7 @@ def build_experiment(dataconfig, params, allow_curatable: bool = False):
 
 class AlignAIRGym(IterableDataset):
     def __init__(self, dataconfigs, reference_set, n=None, seed=0,
-                 curriculum=None, log_every=0, allow_curatable=False):
+                 curriculum=None, log_every=0, allow_curatable=False, shared=False):
         self.dataconfigs = list(dataconfigs)
         self.reference_set = reference_set
         self.n = n
@@ -75,12 +75,69 @@ class AlignAIRGym(IterableDataset):
         self.allow_curatable = allow_curatable
         self._p = 0.0
         self._epoch = 0
+        # shared-state producer pool: when enabled, N DataLoader worker processes all
+        # generate at the CURRENT floor read from shared memory; advancing the floor
+        # updates the shared params and live producers pick it up — no respawn.
+        self._version = None
+        self._shared_params = None
+        if shared:
+            self.enable_sharing()
+
+    def enable_sharing(self) -> None:
+        """Create the shared difficulty state (version flag + params dict) consumed by
+        multiprocessing producers. Idempotent; only call when using num_workers>0 (it
+        spawns a Manager server, so the single-process path must NOT trigger it)."""
+        if self._shared_params is not None:
+            return
+        import multiprocessing as mp
+        self._version = mp.Value("i", 0, lock=False)        # cheap shared floor flag
+        self._shared_params = mp.Manager().dict()
+        self._shared_params["params"] = self.curriculum.params(self._p)
+
+    def _push_params(self) -> None:
+        if self._shared_params is None:
+            return
+        self._shared_params["params"] = self.curriculum.params(self._p)
+        self._version.value += 1                            # signal producers to recompile
 
     def set_progress(self, p: float) -> None:
         self._p = max(0.0, min(1.0, p))
+        self._push_params()
         logger.info("Gym %s", self.curriculum.describe(self._p))
 
+    def refresh_params(self) -> None:
+        """Push current curriculum params to live producers (e.g. after a
+        FactoredCurriculum.advance() that changed pace without changing progress)."""
+        self._push_params()
+
+    def _make_bundle(self, record, params, has_d, rng):
+        # teacher (EMA self-distillation) view: the full, forward read of THIS record,
+        # before the student's crop/orientation augmentation.
+        teacher_tokens = _tok(str(record["sequence"]).upper())
+        if params["crop_prob"] > 0 and rng.random() < params["crop_prob"]:
+            lo, hi = params["crop_len_min"], params["crop_len_max"]
+            if params.get("crop_log_uniform"):   # densely sample SHORT fragments
+                target_len = int(round(np.exp(rng.uniform(np.log(lo), np.log(hi)))))
+            else:
+                target_len = int(rng.integers(lo, hi + 1))
+            record = crop_record(record, target_len)
+        bundle = build_targets(record, self.reference_set, has_d=has_d)
+        # present a fraction of reads in a non-forward orientation; targets stay in
+        # forward frame (the model canonicalizes), only orientation_id changes.
+        if params["orient_prob"] > 0 and rng.random() < params["orient_prob"]:
+            t = int(rng.integers(1, 4))  # 1=revcomp, 2=comp, 3=reverse
+            bundle["tokens"] = _orient_tokens(bundle["tokens"], t)
+            bundle["orientation_id"] = t
+        bundle["teacher_tokens"] = teacher_tokens
+        return bundle
+
     def __iter__(self):
+        if self._shared_params is None:
+            yield from self._iter_simple()
+        else:
+            yield from self._iter_shared()
+
+    def _iter_simple(self):
         params = self.curriculum.params(self._p)
         seed = self.seed + self._epoch
         self._epoch += 1
@@ -91,25 +148,30 @@ class AlignAIRGym(IterableDataset):
         count = 0
         for record in exp.stream_records(n=self.n, seed=seed):
             count += 1
-            # teacher (EMA self-distillation) view: the full, forward read of THIS
-            # record, before the student's crop/orientation augmentation.
-            teacher_tokens = _tok(str(record["sequence"]).upper())
-            if params["crop_prob"] > 0 and rng.random() < params["crop_prob"]:
-                lo, hi = params["crop_len_min"], params["crop_len_max"]
-                if params.get("crop_log_uniform"):   # densely sample SHORT fragments
-                    target_len = int(round(np.exp(rng.uniform(np.log(lo), np.log(hi)))))
-                else:
-                    target_len = int(rng.integers(lo, hi + 1))
-                record = crop_record(record, target_len)
             if self.log_every and count % self.log_every == 0:
                 logger.info("Gym generated %d samples (%s)", count,
                             self.curriculum.describe(self._p))
-            bundle = build_targets(record, self.reference_set, has_d=has_d)
-            # present a fraction of reads in a non-forward orientation; targets stay
-            # in forward frame (the model canonicalizes), only orientation_id changes.
-            if params["orient_prob"] > 0 and rng.random() < params["orient_prob"]:
-                t = int(rng.integers(1, 4))  # 1=revcomp, 2=comp, 3=reverse
-                bundle["tokens"] = _orient_tokens(bundle["tokens"], t)
-                bundle["orientation_id"] = t
-            bundle["teacher_tokens"] = teacher_tokens
-            yield bundle
+            yield self._make_bundle(record, params, has_d, rng)
+
+    def _iter_shared(self):
+        # one persistent producer per DataLoader worker; all read the shared floor.
+        info = get_worker_info()
+        wid = info.id if info else 0
+        nw = info.num_workers if info else 1
+        local_version, params, exp, has_d = -1, None, None, False
+        epoch = 0
+        while True:
+            v = self._version.value
+            if v != local_version or exp is None:           # floor changed -> recompile
+                local_version = v
+                params = dict(self._shared_params["params"])
+                dc = self.dataconfigs[epoch % len(self.dataconfigs)]
+                has_d = dc.metadata.has_d
+                exp = build_experiment(dc, params, allow_curatable=self.allow_curatable)
+            seed = self.seed + wid * 1_000_003 + epoch * 1009 + nw   # distinct per worker/epoch
+            epoch += 1
+            rng = np.random.default_rng(seed)
+            for record in exp.stream_records(n=(self.n or 256), seed=seed):
+                yield self._make_bundle(record, params, has_d, rng)
+                if self._version.value != local_version:    # floor advanced mid-stream
+                    break
