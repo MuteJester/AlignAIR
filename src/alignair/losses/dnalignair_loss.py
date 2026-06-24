@@ -9,12 +9,53 @@ from ..nn.matching import contrastive_match_loss
 IGNORE = -100
 
 
+def germline_coord_loss(start_logits, end_logits, gt_start, gt_end,
+                        tau: float = 1.0, indel_free=None):
+    """Per-row germline coordinate loss (spec §5): 0.3*CE + 1.0*L_exp(soft-argmax L1)
+    + 0.5*L_cdf(ordinal soft-step) + 0.3*L_cons(start/end span consistency). L_exp/L_cons
+    normalized by Lg so they sit near the CE/CDF scale (one Kendall head, fixed inner
+    weights). gt_end is END-EXCLUSIVE; the end target column is gt_end-1."""
+    B, Lg = start_logits.shape
+    pos = torch.arange(Lg, device=start_logits.device, dtype=torch.float32)
+    gs = gt_start.clamp(min=0, max=Lg - 1)
+    ge = (gt_end - 1).clamp(min=0, max=Lg - 1)            # inclusive end column
+
+    ce = F.cross_entropy(start_logits, gs, reduction="none") + \
+        F.cross_entropy(end_logits, ge, reduction="none")
+
+    ps = torch.softmax(start_logits.float(), dim=-1)
+    pe = torch.softmax(end_logits.float(), dim=-1)
+    cs = (ps * pos).sum(-1)                               # E[start]
+    cee = (pe * pos).sum(-1)                              # E[end] (inclusive)
+    l_exp = (F.smooth_l1_loss(cs, gs.float(), reduction="none")
+             + F.smooth_l1_loss(cee, ge.float(), reduction="none")) / Lg
+
+    def _cdf(p, y):
+        cdf = torch.cumsum(p, dim=-1)
+        tgt = torch.sigmoid((pos[None] - y[:, None].float()) / tau)
+        return ((cdf - tgt) ** 2).sum(-1)
+    l_cdf = _cdf(ps, gs) + _cdf(pe, ge)
+
+    span_pred = cee - cs + 1.0
+    span_gt = (gt_end - gt_start).float()
+    l_cons = F.smooth_l1_loss(span_pred, span_gt, reduction="none") / Lg
+    if indel_free is not None:
+        l_cons = l_cons * indel_free.float()
+
+    return 0.3 * ce + 1.0 * l_exp + 0.5 * l_cdf + 0.3 * l_cons
+
+
 class DNAlignAIRLoss(nn.Module):
     def __init__(self, has_d: bool = True, use_boundary: bool = False,
-                 protected_max_log_var: float = 1.5, protected=None):
+                 protected_max_log_var: float = 1.5, protected=None,
+                 coord_loss: str = "soft"):
         super().__init__()
         self.has_d = has_d
         self.use_boundary = use_boundary
+        # germline coord loss: "soft" (soft-argmax L1 + CDF + consistency, spec §5) or
+        # "ce" (legacy hard cross-entropy, for the latency-isolation ablation arm).
+        self.coord_loss = coord_loss
+        self.coord_tau = 1.0          # CDF soft-step width; the trainer may anneal it
         genes = ["v", "j"] + (["d"] if has_d else [])
         names = ["orientation", "region", "state", "v_match", "j_match",
                  "noise", "mutation", "indel", "productive"]
@@ -86,10 +127,18 @@ class DNAlignAIRLoss(nn.Module):
                 if g not in germline_logits:
                     continue
                 sl, el = germline_logits[g]
-                gs = batch[f"{g}_germline_start"].clamp(min=0, max=sl.shape[-1] - 1)
-                ge = (batch[f"{g}_germline_end"] - 1).clamp(min=0, max=el.shape[-1] - 1)
-                per_row = (F.cross_entropy(sl, gs, reduction="none")
-                           + F.cross_entropy(el, ge, reduction="none"))
+                if self.coord_loss == "ce":
+                    gs = batch[f"{g}_germline_start"].clamp(min=0, max=sl.shape[-1] - 1)
+                    ge = (batch[f"{g}_germline_end"] - 1).clamp(min=0, max=el.shape[-1] - 1)
+                    per_row = (F.cross_entropy(sl, gs, reduction="none")
+                               + F.cross_entropy(el, ge, reduction="none"))
+                else:
+                    indel_free = None
+                    if "indel_count" in batch:
+                        indel_free = (batch["indel_count"].reshape(-1) < 0.5)
+                    per_row = germline_coord_loss(
+                        sl, el, batch[f"{g}_germline_start"], batch[f"{g}_germline_end"],
+                        tau=float(self.coord_tau), indel_free=indel_free)
                 mask = batch.get(f"{g}_supervise")  # inverted-D rows masked out
                 if mask is not None:
                     gl = (per_row * mask).sum() / mask.sum().clamp(min=1.0)
