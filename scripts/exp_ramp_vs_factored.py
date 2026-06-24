@@ -35,7 +35,8 @@ def _curriculum(arm):
 
 def run_arm(arm: str, steps: int, n_per_cell: int, batch_size: int = 16, seed: int = 0,
             device=None, locus: str = "igk", d_model: int = 64, advance_every: int = 300,
-            advance_eval_n: int = 120, threshold: float = 0.7, step: float = 0.1) -> dict:
+            advance_eval_n: int = 120, threshold: float = 0.7, step: float = 0.1,
+            workers: int = 0) -> dict:
     torch.manual_seed(seed)
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     dc = _LOCUS[locus]
@@ -44,8 +45,9 @@ def run_arm(arm: str, steps: int, n_per_cell: int, batch_size: int = 16, seed: i
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
     cur = _curriculum(arm)
-    gym = AlignAIRGym([dc], rs, n=batch_size * 4, seed=seed, curriculum=cur)
-    trainer = GymTrainer(model, loss_fn, rs, gym, lr=1e-3, batch_size=batch_size, device=device)
+    gym = AlignAIRGym([dc], rs, n=batch_size * 8, seed=seed, curriculum=cur)
+    trainer = GymTrainer(model, loss_fn, rs, gym, lr=1e-3, batch_size=batch_size,
+                         device=device, num_workers=workers)
     lat = FrozenLattice.standard(seed=seed)
     ev = LatticeEvaluator(model, rs, lat, CompetenceMetric(), [dc], device=device)
     done = 0
@@ -67,12 +69,13 @@ def main():
     ap.add_argument("--advance-every", type=int, default=300)
     ap.add_argument("--n-per-cell", type=int, default=500)
     ap.add_argument("--batch-size", type=int, default=16)
+    ap.add_argument("--workers", type=int, default=0)
     args = ap.parse_args()
     results = {}
     for arm in ("ramp", "mixture", "factored"):
         results[arm] = run_arm(arm, args.steps, args.n_per_cell, batch_size=args.batch_size,
                                locus=args.locus, d_model=args.d_model,
-                               advance_every=args.advance_every)
+                               advance_every=args.advance_every, workers=args.workers)
         print(f"\n=== {arm} ===")
         for name, v in results[arm].items():
             print(f"  {name:22s} S={v['S']:.3f}  [{v['lo']:.3f},{v['hi']:.3f}]")
