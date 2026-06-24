@@ -26,6 +26,22 @@ def _orient_tokens(tokens, t):
 logger = logging.getLogger(__name__)
 
 
+def _pick_params(components, rng):
+    """Weighted choice of one difficulty component's params (drawn once per epoch, so the
+    long-run distribution is the mixture). `components` is [(weight, params), ...]."""
+    weights = [max(0.0, float(c[0])) for c in components]
+    tot = sum(weights)
+    if tot <= 0:
+        return components[0][1]
+    r = float(rng.random()) * tot
+    upto = 0.0
+    for c, wn in zip(components, weights):
+        upto += wn
+        if r <= upto:
+            return c[1]
+    return components[-1][1]
+
+
 def build_experiment(dataconfig, params, allow_curatable: bool = False):
     """Compile a GenAIRR experiment at the given curriculum params (forward orientation).
     allow_curatable: permit simulation from references with curatable issues (e.g. alleles with
@@ -92,12 +108,24 @@ class AlignAIRGym(IterableDataset):
         import multiprocessing as mp
         self._version = mp.Value("i", 0, lock=False)        # cheap shared floor flag
         self._shared_params = mp.Manager().dict()
-        self._shared_params["params"] = self.curriculum.params(self._p)
+        self._shared_params["components"] = self._curriculum_components()
+
+    def _curriculum_components(self):
+        """The current difficulty mixture as [(weight, params), ...]. Most curricula are
+        a single component; a TargetedCurriculum returns ramp + targeted + floor."""
+        if hasattr(self.curriculum, "components"):
+            return self.curriculum.components()
+        return [(1.0, self.curriculum.params(self._p))]
+
+    def _components(self):
+        if self._shared_params is not None:
+            return self._shared_params["components"]
+        return self._curriculum_components()
 
     def _push_params(self) -> None:
         if self._shared_params is None:
             return
-        self._shared_params["params"] = self.curriculum.params(self._p)
+        self._shared_params["components"] = self._curriculum_components()
         self._version.value += 1                            # signal producers to recompile
 
     def set_progress(self, p: float) -> None:
@@ -138,13 +166,13 @@ class AlignAIRGym(IterableDataset):
             yield from self._iter_shared()
 
     def _iter_simple(self):
-        params = self.curriculum.params(self._p)
         seed = self.seed + self._epoch
         self._epoch += 1
+        rng = np.random.default_rng(seed)
+        params = _pick_params(self._components(), rng)   # one mixture component per epoch
         dc = self.dataconfigs[self._epoch % len(self.dataconfigs)]
         has_d = dc.metadata.has_d
         exp = build_experiment(dc, params, allow_curatable=self.allow_curatable)
-        rng = np.random.default_rng(seed)
         count = 0
         for record in exp.stream_records(n=self.n, seed=seed):
             count += 1
@@ -158,20 +186,21 @@ class AlignAIRGym(IterableDataset):
         info = get_worker_info()
         wid = info.id if info else 0
         nw = info.num_workers if info else 1
-        local_version, params, exp, has_d = -1, None, None, False
+        local_version, components = -1, None
         epoch = 0
         while True:
             v = self._version.value
-            if v != local_version or exp is None:           # floor changed -> recompile
+            if v != local_version or components is None:     # floor changed -> re-read mixture
                 local_version = v
-                params = dict(self._shared_params["params"])
-                dc = self.dataconfigs[epoch % len(self.dataconfigs)]
-                has_d = dc.metadata.has_d
-                exp = build_experiment(dc, params, allow_curatable=self.allow_curatable)
+                components = list(self._shared_params["components"])
+            dc = self.dataconfigs[epoch % len(self.dataconfigs)]
+            has_d = dc.metadata.has_d
             seed = self.seed + wid * 1_000_003 + epoch * 1009 + nw   # distinct per worker/epoch
             epoch += 1
             rng = np.random.default_rng(seed)
+            params = _pick_params(components, rng)            # one mixture component per epoch
+            exp = build_experiment(dc, params, allow_curatable=self.allow_curatable)
             for record in exp.stream_records(n=(self.n or 256), seed=seed):
                 yield self._make_bundle(record, params, has_d, rng)
-                if self._version.value != local_version:    # floor advanced mid-stream
+                if self._version.value != local_version:      # floor advanced mid-stream
                     break

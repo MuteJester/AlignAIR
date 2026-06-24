@@ -33,7 +33,10 @@ def test_enable_sharing_pushes_params_and_bumps_version():
     fc.pace["mutation_count"] = 1.0
     gym.refresh_params()
     assert gym._version.value == v0 + 2
-    assert gym._shared_params["params"]["mutation_count"] == fc.params()["mutation_count"]
+    # shared state holds the difficulty MIXTURE [(weight, params), ...]; FactoredCurriculum
+    # is a single component, so its params land in components[0]
+    comps = gym._shared_params["components"]
+    assert comps[0][1]["mutation_count"] == fc.params()["mutation_count"]
 
 
 def test_enable_sharing_is_idempotent():
