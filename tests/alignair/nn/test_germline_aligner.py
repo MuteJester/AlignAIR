@@ -24,3 +24,21 @@ def test_decode_germline_coords_argmax():
     el[0, 6] = 10.0
     gs, ge = decode_germline_coords(sl, el)
     assert gs.tolist() == [2] and ge.tolist() == [7]  # end-exclusive = argmax+1
+
+
+def test_soft_argmax_decode_centers_between_two_peaks():
+    # two equal peaks at columns 4 and 6 -> soft-argmax ~5; argmax picks 4
+    logits = torch.full((1, 11), -1e4)
+    logits[0, 4] = 2.0
+    logits[0, 6] = 2.0
+    gs_hard, _ = decode_germline_coords(logits, logits, soft=False)
+    gs_soft, _ = decode_germline_coords(logits, logits, soft=True)
+    assert gs_hard.item() == 4
+    assert gs_soft.item() == 5
+
+
+def test_soft_decode_ignores_neg_masked_columns():
+    logits = torch.full((1, 8), -1e4)
+    logits[0, 2] = 5.0                      # only valid peak
+    gs, ge = decode_germline_coords(logits, logits, soft=True)
+    assert gs.item() == 2 and ge.item() == 3
