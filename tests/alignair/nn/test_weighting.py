@@ -28,3 +28,25 @@ def test_precision_is_differentiable():
     weighted = loss * w()
     weighted.backward()
     assert w.log_var.grad is not None
+
+
+def test_frozen_log_var_does_not_update():
+    w = UncertaintyWeight(initial_value=1.0)
+    x = torch.zeros(1, requires_grad=True)       # stands in for model params (grad path)
+    opt = torch.optim.SGD(list(w.parameters()) + [x], lr=1.0)
+    w.set_frozen(True)
+    before = float(w.log_var)
+    # the head's weighted loss + Kendall penalty; only x carries gradient when frozen
+    loss = (5.0 + x.sum()) * w() + w.penalty()
+    opt.zero_grad(); loss.backward(); opt.step()
+    assert float(w.log_var) == before            # frozen -> log_var unchanged
+    assert w.log_var.grad is None or float(w.log_var.grad) == 0.0
+
+
+def test_unfrozen_log_var_updates():
+    w = UncertaintyWeight(initial_value=1.0)
+    opt = torch.optim.SGD(w.parameters(), lr=1.0)
+    before = float(w.log_var)
+    loss = 5.0 * w() + w.penalty()
+    opt.zero_grad(); loss.backward(); opt.step()
+    assert float(w.log_var) != before            # learns normally

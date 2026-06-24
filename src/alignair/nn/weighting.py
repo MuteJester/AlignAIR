@@ -23,13 +23,23 @@ class UncertaintyWeight(nn.Module):
         self.max_log_var = max_log_var
         self.regularizer_weight = regularizer_weight
         self.log_var = nn.Parameter(torch.tensor(math.log(initial_value), dtype=torch.float32))
+        # when frozen, log_var is held constant (detached) so Kendall cannot react to a
+        # post-difficulty-change loss spike by down-weighting the newly-hard head.
+        self._frozen = False
+
+    def set_frozen(self, frozen: bool) -> None:
+        self._frozen = bool(frozen)
+
+    def _s(self) -> torch.Tensor:
+        s = torch.clamp(self.log_var, self.min_log_var, self.max_log_var)
+        return s.detach() if self._frozen else s
 
     def forward(self) -> torch.Tensor:
-        return torch.exp(-torch.clamp(self.log_var, self.min_log_var, self.max_log_var))
+        return torch.exp(-self._s())
 
     def penalty(self) -> torch.Tensor:
         """Kendall regularizer 0.5*s; balances the exp(-s) precision in the total."""
-        return 0.5 * torch.clamp(self.log_var, self.min_log_var, self.max_log_var)
+        return 0.5 * self._s()
 
     def regularization(self) -> torch.Tensor:
         """Deprecated (legacy hierarchical loss only): soft floor penalty. The new
