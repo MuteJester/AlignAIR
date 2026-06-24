@@ -10,7 +10,8 @@ IGNORE = -100
 
 
 class DNAlignAIRLoss(nn.Module):
-    def __init__(self, has_d: bool = True, use_boundary: bool = False):
+    def __init__(self, has_d: bool = True, use_boundary: bool = False,
+                 protected_max_log_var: float = 1.5, protected=None):
         super().__init__()
         self.has_d = has_d
         self.use_boundary = use_boundary
@@ -22,7 +23,26 @@ class DNAlignAIRLoss(nn.Module):
         names += [f"{g}_germline" for g in genes]
         if use_boundary:  # in-sequence start/end posteriors from the query region decoder
             names += [f"{g}_boundary" for g in genes]
-        self.weights = nn.ModuleDict({n: UncertaintyWeight() for n in names})
+        # PROTECTED heads (V-call, germline coords, junction boundaries) get a TIGHTER
+        # max_log_var so their Kendall precision weight exp(-log_var) cannot collapse to
+        # the global floor when the curriculum makes them hard — the mechanism that
+        # otherwise lets the balancer abandon exactly the heads we want to push.
+        default_protected = {"v_match"} | {f"{g}_germline" for g in genes}
+        if use_boundary:
+            default_protected |= {f"{g}_boundary" for g in genes}
+        self._protected = set(default_protected if protected is None else protected)
+        self.weights = nn.ModuleDict({
+            n: UncertaintyWeight(
+                max_log_var=(protected_max_log_var if n in self._protected else 3.0))
+            for n in names})
+
+    @property
+    def protected_heads(self):
+        return set(self._protected)
+
+    def set_log_vars_frozen(self, frozen: bool) -> None:
+        for w in self.weights.values():
+            w.set_frozen(frozen)
 
     def forward(self, outputs: dict, batch: dict, germline_logits: dict | None = None,
                 match_logits: dict | None = None):
