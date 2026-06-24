@@ -111,3 +111,54 @@ def test_novel_allele_floor_keeps_base_match_alive():
     germ_tok = torch.tensor([[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]])
     sl, el = al(seg, sm, germ, gm, seg_tok=seg_tok, germ_tok=germ_tok)
     assert sl.argmax(-1).item() == 0                    # base match localizes start at 0
+
+
+def test_banded_clean_diagonal_localizes_within_band():
+    # A band with gamma=0 (init) tolerates offset shifts within +-G, so the clean-diagonal
+    # start/end localize WITHIN the band of the true coords (gamma LEARNS to sharpen this in
+    # training; at init the band is intentionally permissive). Tie projections so cosine peaks.
+    from alignair.nn.pointer_aligner import BandedPointerAligner
+    G = 3
+    al = BandedPointerAligner(d_model=16, band_half_width=G)
+    al.germ_proj.load_state_dict(al.seg_proj.state_dict())
+    B, S, Lg, d, off = 1, 6, 20, 16, 8
+    g = torch.randn(B, Lg, d)
+    seg = g[:, off:off + S, :].clone()
+    sm = torch.ones(B, S, dtype=torch.bool); gm = torch.ones(B, Lg, dtype=torch.bool)
+    sl, el = al(seg, sm, g, gm)
+    assert abs(sl.argmax(-1).item() - off) <= G
+    assert abs(el.argmax(-1).item() - (off + S - 1)) <= G
+
+
+def test_banded_with_sharp_gamma_recovers_exact_localization():
+    # When gamma strongly favors Delta=0, the band collapses to the single diagonal and
+    # localizes EXACTLY -- confirming the band reduces to precise coords once trained.
+    from alignair.nn.pointer_aligner import BandedPointerAligner
+    G = 3
+    al = BandedPointerAligner(d_model=16, band_half_width=G)
+    al.germ_proj.load_state_dict(al.seg_proj.state_dict())
+    with torch.no_grad():
+        al.band_gamma.fill_(-50.0); al.band_gamma[G] = 0.0   # only Delta=0 survives
+    B, S, Lg, d, off = 1, 6, 20, 16, 8
+    g = torch.randn(B, Lg, d)
+    seg = g[:, off:off + S, :].clone()
+    sm = torch.ones(B, S, dtype=torch.bool); gm = torch.ones(B, Lg, dtype=torch.bool)
+    sl, el = al(seg, sm, g, gm)
+    assert sl.argmax(-1).item() == off
+    assert el.argmax(-1).item() == off + S - 1
+
+
+def test_banded_start_end_reduces_to_single_diag_at_G0():
+    from alignair.nn.pointer_aligner import banded_start_end
+    torch.manual_seed(5)
+    M = torch.randn(2, 5, 9); w = torch.rand(2, 5, 1)
+    gamma = torch.zeros(1)
+    s, e = banded_start_end(M, w, gamma, 0)
+    assert torch.allclose(s, weighted_leading_diag(M, w), atol=1e-5)
+    assert torch.allclose(e, weighted_reverse_diag(M, w), atol=1e-5)
+
+
+def test_banded_aligner_registers_band_gamma():
+    al = BandedPointerAligner(d_model=16, band_half_width=3)
+    params = dict(al.named_parameters())
+    assert "band_gamma" in params and params["band_gamma"].numel() == 7

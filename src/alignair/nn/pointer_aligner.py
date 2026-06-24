@@ -35,6 +35,25 @@ def weighted_reverse_diag(M: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
     return num / w.sum(dim=1).clamp(min=1e-6)
 
 
+def banded_start_end(M, w, gamma, G):
+    """Combine leading/reverse diagonals over germline offsets Δ∈[-G,G] by
+    logsumexp(diag_Δ + γ_Δ), so the coordinate tolerates an indel net-length shift.
+    The Δ-shifted score matrix shifts germline columns with torch.roll, then NEG-masks
+    the wrapped region. END uses the flip-w reverse diagonal per Δ (spec §4.4 B1)."""
+    starts, ends = [], []
+    for k, delta in enumerate(range(-G, G + 1)):
+        Md = torch.roll(M, shifts=-delta, dims=2).clone()     # column shift by Δ
+        if delta > 0:
+            Md[:, :, -delta:] = NEG
+        elif delta < 0:
+            Md[:, :, :(-delta)] = NEG
+        starts.append(weighted_leading_diag(Md, w) + gamma[k])
+        ends.append(weighted_reverse_diag(Md, w) + gamma[k])
+    start = torch.logsumexp(torch.stack(starts, 0), dim=0)
+    end = torch.logsumexp(torch.stack(ends, 0), dim=0)
+    return start, end
+
+
 class BandedPointerAligner(nn.Module):
     """Drop-in for SoftDPAligner: returns (start_logits, end_logits) over germline
     positions and a fast diagonal alignment_score. Single-diagonal core (band_half_width
@@ -52,6 +71,7 @@ class BandedPointerAligner(nn.Module):
         self.match_floor = float(match_floor)
         self.diag_bias = nn.Parameter(torch.zeros(max_len))    # per-position weight, init uniform
         self.band_half_width = int(band_half_width)
+        self.band_gamma = nn.Parameter(torch.zeros(2 * int(band_half_width) + 1))
 
     def _M(self, seg_reps, germ_reps, germ_mask, seg_tok, germ_tok, seg_reliability):
         S = F.normalize(self.seg_proj(seg_reps).float(), dim=-1)
@@ -74,8 +94,12 @@ class BandedPointerAligner(nn.Module):
         M = self._M(seg_reps, germ_reps, germ_mask, seg_tok, germ_tok, seg_reliability)
         w = self._weights(seg_mask, seg_reliability)
         temp = self.log_temp.clamp(0.0, 3.4).exp()
-        start = temp * weighted_leading_diag(M, w)
-        end = temp * weighted_reverse_diag(M, w)
+        if self.band_half_width > 0:
+            start, end = banded_start_end(M, w, self.band_gamma, self.band_half_width)
+            start, end = temp * start, temp * end
+        else:
+            start = temp * weighted_leading_diag(M, w)
+            end = temp * weighted_reverse_diag(M, w)
         start = start.masked_fill(~germ_mask, NEG)
         end = end.masked_fill(~germ_mask, NEG)
         return start, end
