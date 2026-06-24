@@ -32,7 +32,7 @@ class GymTrainer:
                  reader=False, reader_weight=1.0, reader_n_sib=6, reader_n_rand=6,
                  reader_novel_prob=0.0, reader_novel_snps=1, state_conditioning=True,
                  scheduled_sampling=False, ss_max_prob=0.5, num_workers=0,
-                 sigma_freeze_steps=0):
+                 sigma_freeze_steps=0, promote_on_lcb=False):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.loss_fn = loss_fn.to(self.device)
@@ -41,6 +41,8 @@ class GymTrainer:
         # the newly-hard head (0 = disabled).
         self.sigma_freeze_steps = sigma_freeze_steps
         self._freeze_remaining = 0
+        # advance per-axis pace on the bootstrap-CI lower bound, not the point estimate
+        self.promote_on_lcb = promote_on_lcb
         self.reference_set = reference_set
         self.gym = gym
         # parallel GenAIRR producers: N persistent worker processes generate at the
@@ -391,8 +393,9 @@ class GymTrainer:
         factored = cur.factored if target is not None else cur
         if not isinstance(factored, FactoredCurriculum):
             return []
-        moved = factored.advance(axis_competence_from_field(field),
-                                 threshold=threshold, step=step)
+        moved = factored.advance(
+            axis_competence_from_field(field, use_lcb=self.promote_on_lcb),
+            threshold=threshold, step=step)
         if target is not None:
             target.update_targets(field)   # ALP/regret retargets the hard regimes
         if moved or target is not None:

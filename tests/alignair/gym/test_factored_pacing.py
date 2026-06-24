@@ -24,3 +24,11 @@ def test_axis_competence_mapping_uses_isolated_cells():
     assert ac["indel_count"] == 0.6         # <- isolated indel cell
     assert ac["end_loss_5"] == 0.55         # <- isolated trim cell
     assert ac["ambiguous_count"] == 0.8     # cell absent -> clean fallback
+
+
+def test_axis_competence_uses_lcb_when_requested():
+    field = {"clean": {"S": 0.9, "lo": 0.85}, "heavy_shm_fulllen": {"S": 0.8, "lo": 0.72}}
+    ac_s = axis_competence_from_field(field)                       # point S
+    ac_l = axis_competence_from_field(field, use_lcb=True)         # conservative LCB
+    assert ac_s["mutation_count"] == 0.8 and ac_l["mutation_count"] == 0.72
+    assert ac_l["indel_count"] == 0.85                            # clean fallback uses its lo

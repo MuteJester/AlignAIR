@@ -68,12 +68,17 @@ _AXIS_CELL = {
 }
 
 
-def axis_competence_from_field(field: dict, fallback_cell: str = "clean") -> dict:
+def axis_competence_from_field(field: dict, fallback_cell: str = "clean",
+                               use_lcb: bool = False) -> dict:
+    # use_lcb: advance a pace only when the CONSERVATIVE competence (bootstrap-CI lower
+    # bound `lo`) clears the bar, so a single lucky exam can't promote (Phase-5 rigor).
+    key = "lo" if use_lcb else "S"
+
     def _S(cell):
         if cell in field:
-            return float(field[cell].get("S", 0.0))
+            return float(field[cell].get(key, field[cell].get("S", 0.0)))
         if fallback_cell in field:
-            return float(field[fallback_cell].get("S", 0.0))
+            return float(field[fallback_cell].get(key, field[fallback_cell].get("S", 0.0)))
         return 0.0
     fb = _S(fallback_cell)
     out = {}
