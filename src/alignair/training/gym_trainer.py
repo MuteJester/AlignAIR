@@ -31,10 +31,16 @@ class GymTrainer:
                  distill_decay=0.999, distill_temperature=2.0,
                  reader=False, reader_weight=1.0, reader_n_sib=6, reader_n_rand=6,
                  reader_novel_prob=0.0, reader_novel_snps=1, state_conditioning=True,
-                 scheduled_sampling=False, ss_max_prob=0.5, num_workers=0):
+                 scheduled_sampling=False, ss_max_prob=0.5, num_workers=0,
+                 sigma_freeze_steps=0):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.loss_fn = loss_fn.to(self.device)
+        # after a difficulty advance, hold the Kendall log_vars constant for this many
+        # steps so the balancer does not react to the post-shift loss spike by abandoning
+        # the newly-hard head (0 = disabled).
+        self.sigma_freeze_steps = sigma_freeze_steps
+        self._freeze_remaining = 0
         self.reference_set = reference_set
         self.gym = gym
         # parallel GenAIRR producers: N persistent worker processes generate at the
@@ -240,6 +246,10 @@ class GymTrainer:
             bar.set_postfix(loss=f"{logs['total']:.3f}", region=f"{logs['region']:.3f}",
                             stage=self.gym.curriculum.stage(self.gym._p) + 1)
             step += 1
+            if self._freeze_remaining > 0:
+                self._freeze_remaining -= 1
+                if self._freeze_remaining == 0:
+                    self.loss_fn.set_log_vars_frozen(False)   # thaw after the transient
             if controller is not None and step % controller.config.exam_every == 0:
                 controller.exam(step=self._global_step)
                 if controller.done:
@@ -380,4 +390,12 @@ class GymTrainer:
         moved = cur.advance(axis_competence_from_field(field), threshold=threshold, step=step)
         if moved:
             self.gym.refresh_params()   # push the new floor to live producers
+            if self.sigma_freeze_steps > 0:
+                self.freeze_uncertainty()   # hold log_vars across the transient
         return moved
+
+    def freeze_uncertainty(self, steps: int | None = None) -> None:
+        """Freeze the Kendall log_vars for `steps` (default sigma_freeze_steps) training
+        steps, then they thaw automatically in fit()."""
+        self._freeze_remaining = self.sigma_freeze_steps if steps is None else steps
+        self.loss_fn.set_log_vars_frozen(self._freeze_remaining > 0)
