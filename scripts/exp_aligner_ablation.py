@@ -15,6 +15,7 @@ Run:
       --arm pointer_softargmax --locus igh --d-model 64 --steps 3000 --n-per-cell 200
 """
 import argparse
+import time
 
 import torch
 import GenAIRR.data as gdata
@@ -43,7 +44,7 @@ _ARMS = {
 
 def run_arm(arm: str, steps: int, n_per_cell: int, batch_size: int = 16, seed: int = 0,
             device=None, locus: str = "igh", d_model: int = 64, workers: int = 0,
-            coord_tol: float = 2.0) -> dict:
+            coord_tol: float = 2.0, heartbeat_every: int = 250) -> dict:
     aligner, coord_loss, band = _ARMS[arm]
     torch.manual_seed(seed)
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -56,7 +57,19 @@ def run_arm(arm: str, steps: int, n_per_cell: int, batch_size: int = 16, seed: i
     gym = AlignAIRGym([dc], rs, n=batch_size * 8, seed=seed, curriculum=StratifiedCurriculum())
     trainer = GymTrainer(model, loss_fn, rs, gym, lr=1e-3, batch_size=batch_size,
                          device=device, num_workers=workers)
-    trainer.fit(total_steps=steps, global_total=steps, progress=False)
+    # chunked fit with a heartbeat: trainer state (optimizer, _global_step) persists across
+    # fit() calls (workers=0 draws fresh synthetic batches each call), so this is equivalent
+    # to one fit() but emits a watchable step/rate/ETA line every `heartbeat_every` steps.
+    done, t0 = 0, time.perf_counter()
+    while done < steps:
+        chunk = min(heartbeat_every, steps - done)
+        trainer.fit(total_steps=chunk, global_total=steps, progress=False)
+        done += chunk
+        el = time.perf_counter() - t0
+        rate = el / max(done, 1)
+        eta = rate * (steps - done)
+        print(f"[{arm}] step {done}/{steps}  elapsed {el:6.0f}s  {rate:5.2f}s/step  "
+              f"ETA {eta:6.0f}s", flush=True)
     lat = FrozenLattice.standard(seed=seed)
     ev = LatticeEvaluator(model, rs, lat, CompetenceMetric(coord_tol=coord_tol), [dc], device=device)
     return ev.eval_all(n_per_cell=n_per_cell)
@@ -73,10 +86,11 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--coord-tol", type=float, default=2.0)
+    ap.add_argument("--heartbeat-every", type=int, default=250)
     args = ap.parse_args()
     field = run_arm(args.arm, args.steps, args.n_per_cell, batch_size=args.batch_size,
                     seed=args.seed, locus=args.locus, d_model=args.d_model, workers=args.workers,
-                    coord_tol=args.coord_tol)
+                    coord_tol=args.coord_tol, heartbeat_every=args.heartbeat_every)
     print(f"\n=== {args.arm} (locus={args.locus}, steps={args.steps}) ===")
     for name, v in field.items():
         print(f"  {name:22s} S={v['S']:.3f}  [{v['lo']:.3f},{v['hi']:.3f}]")
