@@ -46,3 +46,35 @@ class CompetenceMetric:
         scores = [self.score(r) for r in recs]
         mean, lo, hi = bootstrap_ci(scores, seed=seed)
         return {"S": mean, "lo": lo, "hi": hi, "n": len(scores)}
+
+    # diagnostic: decompose competence into the aligner-driven (coords), reader-driven
+    # (allele calls), and region components so a regression can be localized to the
+    # responsible head instead of seen only in the aggregate.
+    _ALLELE = ("v_call", "d_call", "j_call")
+
+    def _allele_subscore(self, rec: dict):
+        num, wsum = 0.0, 0.0
+        for name in self._ALLELE:
+            key = _KEY[name]
+            if key in rec:
+                num += self.weights[name] * float(rec[key])
+                wsum += self.weights[name]
+        return (num / wsum) if wsum > 0 else None
+
+    def components(self, recs: Sequence[dict], seed: int = 0) -> dict:
+        """Per-component mean + bootstrap CI: 'allele' (reader/matching), 'coords'
+        (aligner), 'region'. Absent sub-metrics are skipped per record (n reflects how
+        many records contributed)."""
+        cols = {
+            "allele": [s for s in (self._allele_subscore(r) for r in recs) if s is not None],
+            "coords": [self._coord_subscore(r["coord_errs"]) for r in recs if "coord_errs" in r],
+            "region": [float(r["region_acc"]) for r in recs if "region_acc" in r],
+        }
+        out = {}
+        for name, vals in cols.items():
+            if vals:
+                mean, lo, hi = bootstrap_ci(vals, seed=seed)
+                out[name] = {"S": mean, "lo": lo, "hi": hi, "n": len(vals)}
+            else:
+                out[name] = {"S": 0.0, "lo": 0.0, "hi": 0.0, "n": 0}
+        return out

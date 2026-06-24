@@ -101,3 +101,12 @@ class LatticeEvaluator:
 
     def eval_all(self, n_per_cell: int | None = None) -> dict:
         return {c.name: self.eval_cell(c, n_per_cell) for c in self.lattice.cells}
+
+    def eval_cell_components(self, cell, n: int | None = None) -> dict:
+        """Diagnostic: per-cell competence decomposed into allele (reader), coords
+        (aligner), region components, each with a bootstrap CI."""
+        records = self._cell_records(cell, n if n is not None else cell.n)
+        return self.metric.components(records, seed=self.lattice.seed)
+
+    def eval_all_components(self, n_per_cell: int | None = None) -> dict:
+        return {c.name: self.eval_cell_components(c, n_per_cell) for c in self.lattice.cells}
