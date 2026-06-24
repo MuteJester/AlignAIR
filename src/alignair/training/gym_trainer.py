@@ -1,5 +1,6 @@
 """GymTrainer: verbose curriculum training loop for the unified DNAlignAIR model."""
 import logging
+import math
 
 import torch
 from torch.utils.data import DataLoader
@@ -136,6 +137,14 @@ class GymTrainer:
                 batch = next(it)
             since_refresh += 1
             self._global_step += 1
+
+            # Anneal the coord-loss CDF soft-step width tau wide->sharp over the global
+            # horizon (cosine 3.0 -> 0.75), mirroring the segmentation sigma schedule, so
+            # the germline boundary is sharpened late once the model is roughly localized.
+            if getattr(self.loss_fn, "coord_tau", None) is not None:
+                horizon = (global_total or total_steps)
+                _p = min(1.0, self._global_step / max(horizon - 1, 1))
+                self.loss_fn.coord_tau = 0.75 + (3.0 - 0.75) * 0.5 * (1.0 + math.cos(math.pi * _p))
 
             batch = self._to_device(batch)
             if ref_emb is None or step % self.refresh_reference_every == 0:
