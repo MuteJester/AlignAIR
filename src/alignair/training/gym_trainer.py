@@ -322,10 +322,10 @@ class GymTrainer:
                     pe = torch.tensor([d[f"{g}_end"] for d in dec], dtype=torch.float32)
                 per[g]["start_dev"] += float((ps - batch[f"{g}_start"].cpu().float()).abs().sum())
                 per[g]["end_dev"] += float((pe - batch[f"{g}_end"].cpu().float()).abs().sum())
-                gs, ge = decode_germline_coords(gl[g][0], gl[g][1])
+                gs, ge = decode_germline_coords(gl[g][0], gl[g][1], soft=True)
                 per[g]["gl_start_dev"] += float((gs.cpu() - batch[f"{g}_germline_start"].cpu()).abs().sum())
                 per[g]["gl_end_dev"] += float((ge.cpu() - batch[f"{g}_germline_end"].cpu()).abs().sum())
-                es, ee = decode_germline_coords(gl_e2e[g][0], gl_e2e[g][1])
+                es, ee = decode_germline_coords(gl_e2e[g][0], gl_e2e[g][1], soft=True)
                 per[g]["e2e_gl_start_dev"] += float((es.cpu() - batch[f"{g}_germline_start"].cpu()).abs().sum())
                 per[g]["e2e_gl_end_dev"] += float((ee.cpu() - batch[f"{g}_germline_end"].cpu()).abs().sum())
             n_seq += B

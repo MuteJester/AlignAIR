@@ -283,7 +283,7 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
             min(topk, n_allowed[g.upper()]), dim=-1).indices for g in genes}
         gl = compute_germline_logits(model, canon, mask, {}, ref_emb, has_d,
                                      region_labels=pred_region, allele_idx=pred_idx)
-        gcoord = {g: decode_germline_coords(gl[g][0], gl[g][1]) for g in genes}
+        gcoord = {g: decode_germline_coords(gl[g][0], gl[g][1], soft=True) for g in genes}
         # learned allele reader: rerank top-k by the differentiable alignment score
         learned_best = {}
         if rerank == "learned":

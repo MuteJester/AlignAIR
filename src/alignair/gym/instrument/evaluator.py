@@ -69,7 +69,7 @@ class LatticeEvaluator:
                                          self.has_d, region_labels=pred_region, allele_idx=pred_idx)
             coords = {}
             for g in genes:
-                gs, ge = decode_germline_coords(gl[g][0], gl[g][1])
+                gs, ge = decode_germline_coords(gl[g][0], gl[g][1], soft=True)
                 coords[g] = (gs.cpu(), ge.cpu())
             valid = batch["region_labels"] != IGNORE
             region_match = ((out["region_logits"].argmax(-1) == batch["region_labels"]) & valid)
