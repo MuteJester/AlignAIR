@@ -116,6 +116,16 @@ justified confidence that it converged.
   with difficulty; both step back briefly on a difficulty change; a small **SGDR warm-restart**
   on the LR at promotion events absorbs the Adam second-moment transient.
 
+> **Phase 3 status (2026-06-24): σ² floor + freeze SHIPPED.** `UncertaintyWeight.set_frozen`,
+> `DNAlignAIRLoss(protected_max_log_var=1.5, protected=…)` (protects V-call/germline-coords/
+> junction-boundary heads with a higher weight floor), and `GymTrainer(sigma_freeze_steps=…)`
+> which freezes the log_vars across each curriculum advance. **Deferred to Phase 3b:** trunk
+> gradient balancing (GradNorm/PCGrad) and schedule-staggering/SGDR. Rationale: the σ² floor +
+> freeze address the PRIMARY abandonment mechanism the experts named and are unit-testable now;
+> GradNorm/PCGrad and the LR/SS/EMA staggering only show their benefit in a real training run
+> (soft-DP-bound today), so they are best added once the gym can measure whether the σ² fix
+> suffices and once sub-project B makes training fast enough to A/B them.
+
 ### D. Promotion, ceiling, anti-forgetting (Phase 5)
 
 - **`PromotionController` (hardened)** — promotion requires, for all binding cells/metrics:
