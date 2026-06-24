@@ -33,7 +33,8 @@ from alignair.gym.instrument.evaluator import LatticeEvaluator
 _LOCUS = {"igk": gdata.HUMAN_IGK_OGRDB, "igh": gdata.HUMAN_IGH_OGRDB}
 
 _ARMS = {
-    "softdp_softargmax": ("softdp", "soft", 0),
+    "softdp_ce": ("softdp", "ce", 0),                # baseline (ablation #1 control)
+    "softdp_softargmax": ("softdp", "soft", 0),      # ablation #1 -- new loss, same aligner
     "pointer_ce": ("pointer", "ce", 0),
     "pointer_softargmax": ("pointer", "soft", 0),
     "pointer_band": ("pointer", "soft", 6),
@@ -41,7 +42,8 @@ _ARMS = {
 
 
 def run_arm(arm: str, steps: int, n_per_cell: int, batch_size: int = 16, seed: int = 0,
-            device=None, locus: str = "igh", d_model: int = 64, workers: int = 0) -> dict:
+            device=None, locus: str = "igh", d_model: int = 64, workers: int = 0,
+            coord_tol: float = 2.0) -> dict:
     aligner, coord_loss, band = _ARMS[arm]
     torch.manual_seed(seed)
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -56,7 +58,7 @@ def run_arm(arm: str, steps: int, n_per_cell: int, batch_size: int = 16, seed: i
                          device=device, num_workers=workers)
     trainer.fit(total_steps=steps, global_total=steps, progress=False)
     lat = FrozenLattice.standard(seed=seed)
-    ev = LatticeEvaluator(model, rs, lat, CompetenceMetric(), [dc], device=device)
+    ev = LatticeEvaluator(model, rs, lat, CompetenceMetric(coord_tol=coord_tol), [dc], device=device)
     return ev.eval_all(n_per_cell=n_per_cell)
 
 
@@ -70,9 +72,11 @@ def main():
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=0)
+    ap.add_argument("--coord-tol", type=float, default=2.0)
     args = ap.parse_args()
     field = run_arm(args.arm, args.steps, args.n_per_cell, batch_size=args.batch_size,
-                    seed=args.seed, locus=args.locus, d_model=args.d_model, workers=args.workers)
+                    seed=args.seed, locus=args.locus, d_model=args.d_model, workers=args.workers,
+                    coord_tol=args.coord_tol)
     print(f"\n=== {args.arm} (locus={args.locus}, steps={args.steps}) ===")
     for name, v in field.items():
         print(f"  {name:22s} S={v['S']:.3f}  [{v['lo']:.3f},{v['hi']:.3f}]")
