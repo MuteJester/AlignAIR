@@ -140,6 +140,16 @@ justified confidence that it converged.
 - **Anti-forgetting** — whole-lattice eval every checkpoint; a competence *drop* on any won cell
   raises that cell's regret weight in the sampler (closes the loop with B.3).
 
+> **Phase 5 status (2026-06-24): statistical rigor SHIPPED.** `src/alignair/gym/control/rigor.py`
+> — `mann_kendall_trend`, `HardenedCeiling` (Mann–Kendall + irreducible-floor → distinguishes a true
+> capacity *ceiling* from a sampler *stall* below the floor), `RegressionGuard` (best-LCB drop alarm;
+> its flagged cells feed the Phase-4 regret tracker, and a drop already raises regret via
+> `target − S`). LCB-aware promotion via `axis_competence_from_field(use_lcb=True)` +
+> `GymTrainer(promote_on_lcb=True)` — advance a pace only when the bootstrap-CI **lower bound**
+> clears the bar. **Deferred to Phase 5b** (needs a training run to validate, with the Phase-3b
+> trunk-balancing work): the remaining training-side promotion gates (per-task loss-slope-settled,
+> σ²-settled, trunk-gradient-conflict, LR-probe restart), BH-FDR across cells, and SGDR warm-restart.
+
 ### E. View + diagnostics (incremental across phases)
 
 - **`GymHUD` (extended)** — rooms = frozen-lattice cells; climbing = competence rising across the
