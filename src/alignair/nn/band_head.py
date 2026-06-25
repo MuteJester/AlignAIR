@@ -68,22 +68,22 @@ def _nms_top2_margin(offset_logits: torch.Tensor) -> torch.Tensor:
 
 
 def peak_evidence(offset_logits, seg_tok, germ_tok, seg_mask) -> torch.Tensor:
-    """ABSOLUTE base-match evidence at the predicted (argmax) offset (B,): the mean +1/-1
-    base-match over the OVERLAPPING read positions of that diagonal. A real alignment scores
-    high (~0.5-1.0 over a long overlap); a spurious low-overlap peak scores near 0. This is the
-    feature that separates signal-present (commit) from signal-absent (fail open) reads."""
-    bm = base_match_matrix(seg_tok, germ_tok)                       # (B,S,Lg)
+    """OVERLAP FRACTION at the predicted (argmax) offset (B,): how much of the read segment
+    actually lands on the germline along that diagonal, as a fraction of the segment length.
+    A real alignment fits (~1.0); a SPURIOUS low-overlap peak near the germline end covers only
+    a few positions (~0.03). This is the physical separator of signal-present (commit) vs
+    signal-absent (fail open) reads — overlap-NORMALIZED mean does NOT separate them (a spurious
+    8/8-match peak also has mean ~1.0), so we use the overlap COUNT relative to the segment."""
+    bm = base_match_matrix(seg_tok, germ_tok)                       # (B,S,Lg) +1/-1/0 (0 = pad/out)
     B, S, Lg = bm.shape
     Mp = torch.nn.functional.pad(bm, (0, S)); bs, ss, es = Mp.stride()
     diag = Mp.as_strided((B, S, Lg), (bs, ss + es, es))            # diag[b,i,o]=bm[b,i,o+i]
-    valid = seg_mask.float().unsqueeze(-1)                          # (B,S,1)
     o = offset_logits.argmax(dim=-1)                                # (B,)
     ar = torch.arange(B, device=bm.device)
     col = diag[ar, :, o]                                            # (B,S) base-match along pred diag
-    vm = valid[ar, :, 0]
-    overlap = (vm * (col != 0).float())                            # positions that actually overlap germline
-    num = (col * vm).sum(dim=1)
-    return num / overlap.sum(dim=1).clamp(min=1.0)                  # (B,) mean base-match over overlap
+    vm = seg_mask.float()
+    overlap = (vm * (col != 0).float()).sum(dim=1)                 # read positions landing on germline
+    return overlap / vm.sum(dim=1).clamp(min=1.0)                  # (B,) overlap fraction in [0,1]
 
 
 def _conf_features(offset_logits, evidence) -> torch.Tensor:

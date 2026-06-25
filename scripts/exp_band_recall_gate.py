@@ -20,7 +20,7 @@ from alignair.gym import AlignAIRGym, gym_collate
 from alignair.gym.curriculum import StratifiedCurriculum
 from alignair.gym.instrument.lattice import FrozenLattice
 from alignair.gym.instrument.stats import bootstrap_ci
-from alignair.nn.band_head import BandHead, band_offset_loss, band_calibration_loss
+from alignair.nn.band_head import BandHead, band_offset_loss, peak_evidence
 from alignair.gym.instrument import band_metrics as BM
 from torch.utils.data import DataLoader
 
@@ -65,9 +65,7 @@ def main():
     ap.add_argument("--widths", default="8,16")
     ap.add_argument("--topm", type=int, default=2)
     ap.add_argument("--fail-open-thresh", type=float, default=0.1)
-    ap.add_argument("--conf-thresh", type=float, default=0.5)
-    ap.add_argument("--cal-w", type=int, default=16)        # band width the calibration targets
-    ap.add_argument("--cal-weight", type=float, default=1.0)
+    ap.add_argument("--ev-thresh", type=float, default=0.5)   # overlap-fraction fail-open threshold
     a = ap.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     widths = [int(x) for x in a.widths.split(",")]
@@ -98,9 +96,7 @@ def main():
         with torch.no_grad():
             inp = _segment_inputs(model, batch, ref_emb, device)
         logits = head(*inp[:6])
-        conf = head.confidence_logit(logits, inp[4], inp[5], inp[1])   # seg_tok, germ_tok, seg_mask
-        loss = (band_offset_loss(logits, inp[6])
-                + a.cal_weight * band_calibration_loss(conf, logits, inp[6], a.cal_w, a.topm))
+        loss = band_offset_loss(logits, inp[6])        # fail-open is a physical evidence threshold, not learned
         opt.zero_grad(); loss.backward(); opt.step()
         step += 1
         if step % 250 == 0:
@@ -109,9 +105,9 @@ def main():
     # evaluate per frozen-lattice cell
     head.eval()
     print(f"\nGate 1 band recall (frozen model, true region/allele) | top-m={a.topm} "
-          f"fail-open<{a.fail_open_thresh}")
+          f"ev-thresh={a.ev_thresh}")
     for w in widths:
-        print(f"\n--- w={w} (committed = sigmoid(conf) >= {a.conf_thresh}) ---")
+        print(f"\n--- w={w} (commit = overlap-frac >= {a.ev_thresh}) ---")
         print(f"{'cell':18s} {'union-recall':>14s} {'committed-rec':>16s} {'fail-open':>10s} {'budget':>10s}")
         for cname in CELLS:
             loader = _cell_loader(dc, rs, lat.cell_params(cells[cname]), a.n, a.batch_size, seed=0)
@@ -121,12 +117,15 @@ def main():
                     batch = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
                     inp = _segment_inputs(model, batch, ref_emb, device)
                     logits = head(*inp[:6]); true = inp[6]; slen = inp[7]
-                    conf = head.confidence_logit(logits, inp[4], inp[5], inp[1])
+                    # fail-open on the physical overlap-fraction evidence (spurious low-overlap
+                    # peaks of signal-absent reads route to full DP). pseudo-conf reuses the
+                    # committed-recall metric: sigmoid((ev - thresh)*10) >= 0.5  <=>  ev >= thresh.
+                    ev = peak_evidence(logits, inp[4], inp[5], inp[1])
+                    conf = (ev - a.ev_thresh) * 10.0
                     tm.append(BM.topm_union_recall(logits, true, w, a.topm))
-                    cr.append(BM.committed_recall(logits, conf, true, w, a.topm, a.conf_thresh))
-                    fo.append(BM.conf_fail_open_rate(conf, a.conf_thresh))
-                    # conf-based DP cell budget: committed -> (2w+1)*slen, fail-open -> Lg*slen
-                    Lg = logits.shape[-1]; commit = torch.sigmoid(conf) >= a.conf_thresh
+                    cr.append(BM.committed_recall(logits, conf, true, w, a.topm, 0.5))
+                    fo.append(BM.conf_fail_open_rate(conf, 0.5))
+                    Lg = logits.shape[-1]; commit = torch.sigmoid(conf) >= 0.5
                     cols = torch.where(commit, torch.full_like(slen, 2 * w + 1), torch.full_like(slen, Lg))
                     cb.append(float((cols.float() * slen.float()).mean()))
             def lo(xs):

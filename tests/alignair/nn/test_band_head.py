@@ -61,21 +61,21 @@ def test_confidence_logit_shape_and_finite():
     assert c.shape == (3,) and torch.isfinite(c).all()
 
 
-def test_peak_evidence_low_for_spurious_high_for_real():
-    # a real full-overlap match scores ~1.0; a spurious peak at the germline END (low overlap)
-    # scores near 0 -> the feature that lets signal-absent reads fail open.
+def test_peak_evidence_overlap_fraction_separates_spurious():
+    # overlap FRACTION: a real full-fit alignment ~1.0; a spurious peak near the germline END
+    # covers only a few positions -> low fraction. This is what lets signal-absent reads fail open.
     from alignair.nn.band_head import peak_evidence
     B, S, Lg = 1, 20, 60
     seg_tok = torch.randint(1, 5, (B, S))
     germ_tok = torch.randint(1, 5, (B, Lg))
-    germ_tok[0, 5:5 + S] = seg_tok[0]                     # exact match at offset 5
+    germ_tok[0, 5:5 + S] = seg_tok[0]                     # match window at offset 5 (fits fully)
     sm = torch.ones(B, S, dtype=torch.bool)
-    real = torch.full((B, Lg), -1e4); real[0, 5] = 10.0  # logits point at the REAL offset
-    spurious = torch.full((B, Lg), -1e4); spurious[0, Lg - 2] = 10.0   # point at low-overlap end
+    real = torch.full((B, Lg), -1e4); real[0, 5] = 10.0  # logits point at the REAL offset (fits)
+    spurious = torch.full((B, Lg), -1e4); spurious[0, Lg - 3] = 10.0   # only 3 positions overlap
     ev_real = peak_evidence(real, seg_tok, germ_tok, sm)
     ev_spur = peak_evidence(spurious, seg_tok, germ_tok, sm)
-    assert ev_real.item() > 0.9                           # full-overlap exact match
-    assert ev_spur.item() < ev_real.item()                # spurious end peak is weaker
+    assert ev_real.item() == 1.0                          # all 20 read positions land on germline
+    assert ev_spur.item() <= 3.0 / S + 1e-6               # only ~3 positions overlap -> tiny fraction
 
 
 def test_calibration_loss_rewards_correct_coverage():
