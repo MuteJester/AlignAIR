@@ -20,15 +20,37 @@ def base_match_matrix(seg_tok: torch.Tensor, germ_tok: torch.Tensor) -> torch.Te
     return real.float() * (2.0 * (st == gt).float() - 1.0)
 
 
+def kmer_seed_counts(seg_tok: torch.Tensor, germ_tok: torch.Tensor,
+                     seg_mask: torch.Tensor, k: int = 5) -> torch.Tensor:
+    """Per-offset count of length-k EXACT-match windows along the o-diagonal (B,Lg). A
+    contiguity signal: robust where scattered base-match is ambiguous (heavy-SHM / 3'-end
+    label noise), because a k-mer seed anchors the true diagonal between mutations."""
+    bm = base_match_matrix(seg_tok, germ_tok)                       # (B,S,Lg) +1/-1/0
+    B, S, Lg = bm.shape
+    Mp = torch.nn.functional.pad(bm, (0, S))
+    bs, ss, es = Mp.stride()
+    diag = Mp.as_strided((B, S, Lg), (bs, ss + es, es))             # diag[b,i,o] = bm[b,i,o+i]
+    match = (diag >= 0.5).float() * seg_mask.float().unsqueeze(-1)  # (B,S,Lg) masked exact-match
+    if S < k:
+        return match.sum(dim=1) * 0.0
+    m = match.permute(0, 2, 1).reshape(B * Lg, 1, S)               # conv over the read axis
+    kernel = torch.ones(1, 1, k, device=bm.device, dtype=m.dtype)
+    run = torch.nn.functional.conv1d(m, kernel)                    # (B*Lg,1,S-k+1) window sums
+    return (run >= k - 0.5).float().sum(dim=-1).reshape(B, Lg)     # count of full-k windows
+
+
 class BandHead(nn.Module):
-    def __init__(self, d_model: int):
+    def __init__(self, d_model: int, kmer_k: int = 5):
         super().__init__()
         self.proj_s = nn.Linear(d_model, d_model)
         self.proj_g = nn.Linear(d_model, d_model)
         self.log_scale = nn.Parameter(torch.tensor(1.6))           # cosine scale ~5
-        # base-match weight DOMINATES at init (representation-independent); cosine is a
-        # small additive correction so the head survives the encoder refactor.
+        self.kmer_k = int(kmer_k)
+        # base-match + k-mer (representation-INDEPENDENT) DOMINATE at init; cosine is a
+        # small additive correction so the head survives the encoder refactor. The k-mer
+        # contiguity feature anchors the diagonal where scattered base-match is ambiguous.
         self.w_bm = nn.Parameter(torch.tensor(1.0))
+        self.w_kmer = nn.Parameter(torch.tensor(0.5))
         self.w_cos = nn.Parameter(torch.tensor(0.1))
         self.log_temp = nn.Parameter(torch.tensor(1.6))            # sharpen the offset posterior
         # confidence head over posterior shape features -> P(band covers truth); enables the
@@ -42,8 +64,12 @@ class BandHead(nn.Module):
         Gn = F.normalize(self.proj_g(germ_reps).float(), dim=-1)
         cos_M = self.log_scale.clamp(-2.0, 3.0).exp() * torch.einsum("bid,bjd->bij", Sn, Gn)
         cos = weighted_leading_diag(cos_M, w)                       # (B,Lg)
+        km = kmer_seed_counts(seg_tok, germ_tok, seg_mask, self.kmer_k)
+        seg_len = seg_mask.float().sum(dim=1, keepdim=True).clamp(min=1.0)
+        km = km / seg_len                                           # length-normalize the count
         temp = self.log_temp.clamp(0.0, 4.5).exp()
-        logit = temp * (F.softplus(self.w_bm) * bm + self.w_cos * cos)
+        logit = temp * (F.softplus(self.w_bm) * bm + F.softplus(self.w_kmer) * km
+                        + self.w_cos * cos)
         return logit.masked_fill(~germ_mask, NEG)
 
 

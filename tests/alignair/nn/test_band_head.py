@@ -51,6 +51,31 @@ def test_band_offset_loss_minimized_at_truth():
     assert band_offset_loss(good, true) < band_offset_loss(bad, true)
 
 
+def test_kmer_seed_counts_localizes_contiguous_match():
+    from alignair.nn.band_head import kmer_seed_counts
+    B, S, Lg, off = 1, 12, 40, 9
+    seg_tok = torch.randint(1, 5, (B, S))
+    germ_tok = torch.randint(1, 5, (B, Lg))
+    germ_tok[0, off:off + S] = seg_tok[0]                 # exact contiguous match at offset 9
+    sm = torch.ones(B, S, dtype=torch.bool)
+    counts = kmer_seed_counts(seg_tok, germ_tok, sm, k=5)
+    assert counts.shape == (B, Lg)
+    assert counts.argmax(-1).item() == off               # most k-mer seeds on the true diagonal
+    assert counts[0, off] >= S - 5                        # ~all length-5 windows are full matches
+
+
+def test_bandhead_kmer_feature_in_forward():
+    from alignair.nn.band_head import BandHead
+    al = BandHead(d_model=16, kmer_k=5)
+    assert "w_kmer" in dict(al.named_parameters())
+    B, S, Lg = 2, 8, 20
+    seg = torch.randn(B, S, 16); germ = torch.randn(B, Lg, 16)
+    sm = torch.ones(B, S, dtype=torch.bool); gm = torch.ones(B, Lg, dtype=torch.bool)
+    st = torch.randint(1, 5, (B, S)); gt = torch.randint(1, 5, (B, Lg))
+    logits = al(seg, sm, germ, gm, st, gt)
+    assert logits.shape == (B, Lg) and torch.isfinite(logits).all()
+
+
 def test_confidence_logit_shape_and_finite():
     from alignair.nn.band_head import BandHead
     al = BandHead(d_model=16)
