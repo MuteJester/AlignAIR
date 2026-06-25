@@ -31,9 +31,11 @@ class BandHead(nn.Module):
         self.w_bm = nn.Parameter(torch.tensor(1.0))
         self.w_cos = nn.Parameter(torch.tensor(0.1))
         self.log_temp = nn.Parameter(torch.tensor(1.6))            # sharpen the offset posterior
-        # confidence head over posterior shape features -> P(band covers truth); enables the
-        # fail-open safety net (spec rule 3) so confidently-WRONG reads route to full DP.
-        self.conf = nn.Sequential(nn.Linear(3, 16), nn.GELU(), nn.Linear(16, 1))
+        # confidence head over posterior-shape features + ABSOLUTE base-match peak evidence
+        # (4th feature) -> P(band covers truth). The absolute evidence is what catches the
+        # SIGNAL-ABSENT reads (spurious low-overlap peaks have a tiny absolute base-match sum
+        # even when their normalized mean is the argmax) so they FAIL OPEN to full DP.
+        self.conf = nn.Sequential(nn.Linear(4, 16), nn.GELU(), nn.Linear(16, 1))
 
     def forward(self, seg_reps, seg_mask, germ_reps, germ_mask, seg_tok, germ_tok):
         w = seg_mask.float().unsqueeze(-1)                          # (B,S,1) mask pad rows
@@ -65,17 +67,39 @@ def _nms_top2_margin(offset_logits: torch.Tensor) -> torch.Tensor:
     return offset_logits.max(dim=-1).values - second
 
 
-def _conf_features(offset_logits: torch.Tensor) -> torch.Tensor:
-    """(B,3) posterior-shape features: max logit, NMS top-2 margin, entropy."""
+def peak_evidence(offset_logits, seg_tok, germ_tok, seg_mask) -> torch.Tensor:
+    """ABSOLUTE base-match evidence at the predicted (argmax) offset (B,): the mean +1/-1
+    base-match over the OVERLAPPING read positions of that diagonal. A real alignment scores
+    high (~0.5-1.0 over a long overlap); a spurious low-overlap peak scores near 0. This is the
+    feature that separates signal-present (commit) from signal-absent (fail open) reads."""
+    bm = base_match_matrix(seg_tok, germ_tok)                       # (B,S,Lg)
+    B, S, Lg = bm.shape
+    Mp = torch.nn.functional.pad(bm, (0, S)); bs, ss, es = Mp.stride()
+    diag = Mp.as_strided((B, S, Lg), (bs, ss + es, es))            # diag[b,i,o]=bm[b,i,o+i]
+    valid = seg_mask.float().unsqueeze(-1)                          # (B,S,1)
+    o = offset_logits.argmax(dim=-1)                                # (B,)
+    ar = torch.arange(B, device=bm.device)
+    col = diag[ar, :, o]                                            # (B,S) base-match along pred diag
+    vm = valid[ar, :, 0]
+    overlap = (vm * (col != 0).float())                            # positions that actually overlap germline
+    num = (col * vm).sum(dim=1)
+    return num / overlap.sum(dim=1).clamp(min=1.0)                  # (B,) mean base-match over overlap
+
+
+def _conf_features(offset_logits, evidence) -> torch.Tensor:
+    """(B,4): max logit, NMS top-2 margin, entropy, ABSOLUTE base-match evidence at the peak."""
     p = torch.softmax(offset_logits.float(), dim=-1)
     ent = -(p.clamp_min(1e-9) * p.clamp_min(1e-9).log()).sum(dim=-1)
-    return torch.stack([offset_logits.max(dim=-1).values, _nms_top2_margin(offset_logits), ent], dim=-1)
+    return torch.stack([offset_logits.max(dim=-1).values, _nms_top2_margin(offset_logits),
+                        ent, evidence], dim=-1)
 
 
-# attach confidence_logit as a method (uses self.conf over the posterior-shape features)
-def _confidence_logit(self, offset_logits: torch.Tensor) -> torch.Tensor:
-    """P(band covers truth) logit per read (B,). sigmoid(.) >= threshold -> commit, else fail open."""
-    return self.conf(_conf_features(offset_logits)).squeeze(-1)
+# attach confidence_logit as a method (posterior-shape features + absolute peak evidence)
+def _confidence_logit(self, offset_logits, seg_tok, germ_tok, seg_mask) -> torch.Tensor:
+    """P(band covers truth) logit per read (B,). sigmoid(.) >= threshold -> commit, else fail open.
+    Uses the absolute base-match evidence so signal-absent (spurious-peak) reads fail open."""
+    ev = peak_evidence(offset_logits, seg_tok, germ_tok, seg_mask)
+    return self.conf(_conf_features(offset_logits, ev)).squeeze(-1)
 
 
 BandHead.confidence_logit = _confidence_logit

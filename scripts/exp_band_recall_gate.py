@@ -98,7 +98,7 @@ def main():
         with torch.no_grad():
             inp = _segment_inputs(model, batch, ref_emb, device)
         logits = head(*inp[:6])
-        conf = head.confidence_logit(logits)
+        conf = head.confidence_logit(logits, inp[4], inp[5], inp[1])   # seg_tok, germ_tok, seg_mask
         loss = (band_offset_loss(logits, inp[6])
                 + a.cal_weight * band_calibration_loss(conf, logits, inp[6], a.cal_w, a.topm))
         opt.zero_grad(); loss.backward(); opt.step()
@@ -121,7 +121,7 @@ def main():
                     batch = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
                     inp = _segment_inputs(model, batch, ref_emb, device)
                     logits = head(*inp[:6]); true = inp[6]; slen = inp[7]
-                    conf = head.confidence_logit(logits)
+                    conf = head.confidence_logit(logits, inp[4], inp[5], inp[1])
                     tm.append(BM.topm_union_recall(logits, true, w, a.topm))
                     cr.append(BM.committed_recall(logits, conf, true, w, a.topm, a.conf_thresh))
                     fo.append(BM.conf_fail_open_rate(conf, a.conf_thresh))
