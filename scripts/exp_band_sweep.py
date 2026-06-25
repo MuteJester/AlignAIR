@@ -21,9 +21,19 @@ from alignair.reference.reference_set import ReferenceSet
 from alignair.gym import AlignAIRGym, gym_collate
 from alignair.gym.instrument.lattice import FrozenLattice
 from alignair.nn.soft_dp_aligner import soft_dp_end_logits, _reverse_valid_2d, NEG
+from alignair.nn.pointer_aligner import weighted_leading_diag
 from torch.utils.data import DataLoader
 
 CELLS = ("clean", "junction_boundary", "heavy_shm_fulllen", "indel")
+
+
+def coarse_start(aligner, seg_reps, seg_mask, germ_reps, germ_mask):
+    """Cheap PARALLEL coarse band center: argmax start offset of the diagonal-correlation
+    of the score matrix (what a band predictor / MaxSim-argmax would compute). (B,)."""
+    M = aligner._scores(seg_reps, germ_reps)
+    w = seg_mask.float().unsqueeze(-1)
+    diag = weighted_leading_diag(M, w).masked_fill(~germ_mask, NEG)   # (B,Lg) score per start
+    return diag.argmax(-1)
 
 
 def banded_coords(aligner, seg_reps, seg_mask, germ_reps, germ_mask, true_start, w):
@@ -55,6 +65,8 @@ def main():
     ap.add_argument("--tol", type=float, default=1.0)
     ap.add_argument("--widths", default="8,16,32,64")
     ap.add_argument("--batch-size", type=int, default=32)
+    ap.add_argument("--center", default="oracle", choices=["oracle", "predicted"],
+                    help="band center: oracle (true start) or predicted (coarse diagonal argmax)")
     a = ap.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     widths = [int(x) for x in a.widths.split(",")] + [None]       # None = full DP
@@ -66,8 +78,10 @@ def main():
     lat = FrozenLattice.standard(seed=0)
     cells = {c.name: c for c in lat.cells}
 
-    print(f"coord-acc within +-{a.tol}nt | full-DP vs banded-DP (oracle band) | V start+end")
+    print(f"coord-acc within +-{a.tol}nt | full-DP vs banded-DP ({a.center} band) | V start+end")
     hdr = f"{'cell':18s}" + "".join(f"{('w='+str(w) if w else 'FULL'):>8s}" for w in widths)
+    if a.center == "predicted":
+        hdr += f"{'|coarse-err':>12s}"
     print(hdr)
     for cname in CELLS:
         cell = cells[cname]
@@ -77,7 +91,7 @@ def main():
         loader = DataLoader(gym, batch_size=a.batch_size,
                             collate_fn=lambda b: gym_collate(b, rs, rs.has_d))
         ref_emb = model.encode_reference(rs)
-        hits = {w: 0 for w in widths}; tot = 0
+        hits = {w: 0 for w in widths}; tot = 0; coarse_err = 0.0
         with torch.no_grad():
             for batch in loader:
                 batch = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
@@ -90,13 +104,20 @@ def main():
                 idx = batch["v_primary_idx"]
                 germ_reps = ref_emb["V"]["pos_reps"][idx]; germ_mask = ref_emb["V"]["pos_mask"][idx]
                 gs_t = batch["v_germline_start"]; ge_t = batch["v_germline_end"]
+                if a.center == "predicted":
+                    center = coarse_start(model.aligner, seg_reps, seg_mask, germ_reps, germ_mask)
+                    coarse_err += float((center - gs_t).abs().sum())
+                else:
+                    center = gs_t
                 for w in widths:
                     gs, ge = banded_coords(model.aligner, seg_reps, seg_mask, germ_reps,
-                                           germ_mask, gs_t, w)
+                                           germ_mask, center, w)
                     ok = ((gs - gs_t).abs() <= a.tol) & ((ge - ge_t).abs() <= a.tol)
                     hits[w] += int(ok.sum())
                 tot += seg_mask.shape[0]
         row = f"{cname:18s}" + "".join(f"{hits[w]/max(tot,1):8.3f}" for w in widths)
+        if a.center == "predicted":
+            row += f"{coarse_err/max(tot,1):12.2f}"
         print(row)
 
 
