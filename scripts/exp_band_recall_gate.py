@@ -20,7 +20,7 @@ from alignair.gym import AlignAIRGym, gym_collate
 from alignair.gym.curriculum import StratifiedCurriculum
 from alignair.gym.instrument.lattice import FrozenLattice
 from alignair.gym.instrument.stats import bootstrap_ci
-from alignair.nn.band_head import BandHead, band_offset_loss
+from alignair.nn.band_head import BandHead, band_offset_loss, band_calibration_loss
 from alignair.gym.instrument import band_metrics as BM
 from torch.utils.data import DataLoader
 
@@ -65,6 +65,9 @@ def main():
     ap.add_argument("--widths", default="8,16")
     ap.add_argument("--topm", type=int, default=2)
     ap.add_argument("--fail-open-thresh", type=float, default=0.1)
+    ap.add_argument("--conf-thresh", type=float, default=0.5)
+    ap.add_argument("--cal-w", type=int, default=16)        # band width the calibration targets
+    ap.add_argument("--cal-weight", type=float, default=1.0)
     a = ap.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     widths = [int(x) for x in a.widths.split(",")]
@@ -95,7 +98,9 @@ def main():
         with torch.no_grad():
             inp = _segment_inputs(model, batch, ref_emb, device)
         logits = head(*inp[:6])
-        loss = band_offset_loss(logits, inp[6])
+        conf = head.confidence_logit(logits)
+        loss = (band_offset_loss(logits, inp[6])
+                + a.cal_weight * band_calibration_loss(conf, logits, inp[6], a.cal_w, a.topm))
         opt.zero_grad(); loss.backward(); opt.step()
         step += 1
         if step % 250 == 0:
@@ -106,25 +111,29 @@ def main():
     print(f"\nGate 1 band recall (frozen model, true region/allele) | top-m={a.topm} "
           f"fail-open<{a.fail_open_thresh}")
     for w in widths:
-        print(f"\n--- w={w} ---")
-        print(f"{'cell':18s} {'top1':>14s} {'topm-union':>14s} {'fail-open':>10s} {'cellbudget':>12s}")
+        print(f"\n--- w={w} (committed = sigmoid(conf) >= {a.conf_thresh}) ---")
+        print(f"{'cell':18s} {'union-recall':>14s} {'committed-rec':>16s} {'fail-open':>10s} {'budget':>10s}")
         for cname in CELLS:
             loader = _cell_loader(dc, rs, lat.cell_params(cells[cname]), a.n, a.batch_size, seed=0)
-            t1, tm, fo, cb = [], [], [], []
+            tm, cr, fo, cb = [], [], [], []
             with torch.no_grad():
                 for batch in loader:
                     batch = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
                     inp = _segment_inputs(model, batch, ref_emb, device)
                     logits = head(*inp[:6]); true = inp[6]; slen = inp[7]
-                    t1.append(BM.top1_recall(logits, true, w))
+                    conf = head.confidence_logit(logits)
                     tm.append(BM.topm_union_recall(logits, true, w, a.topm))
-                    fo.append(BM.fail_open_rate(logits, a.fail_open_thresh))
-                    cb.append(BM.cell_budget(logits, w, a.fail_open_thresh, slen))
+                    cr.append(BM.committed_recall(logits, conf, true, w, a.topm, a.conf_thresh))
+                    fo.append(BM.conf_fail_open_rate(conf, a.conf_thresh))
+                    # conf-based DP cell budget: committed -> (2w+1)*slen, fail-open -> Lg*slen
+                    Lg = logits.shape[-1]; commit = torch.sigmoid(conf) >= a.conf_thresh
+                    cols = torch.where(commit, torch.full_like(slen, 2 * w + 1), torch.full_like(slen, Lg))
+                    cb.append(float((cols.float() * slen.float()).mean()))
             def lo(xs):
                 m, l, h = bootstrap_ci(xs); return m, l
-            (m1, l1), (mm, lm), (mf, lf), (mc, lc) = lo(t1), lo(tm), lo(fo), lo(cb)
-            print(f"{cname:18s} {m1:.3f}[lo {l1:.3f}] {mm:.3f}[lo {lm:.3f}] "
-                  f"{mf:8.3f} {mc:12.0f}")
+            (mm, lm), (mc, lc), (mf, lf), (mb, lb) = lo(tm), lo(cr), lo(fo), lo(cb)
+            print(f"{cname:18s} {mm:.3f}[lo {lm:.3f}] {mc:.3f}[lo {lc:.3f}] "
+                  f"{mf:8.3f} {mb:10.0f}")
 
 
 if __name__ == "__main__":

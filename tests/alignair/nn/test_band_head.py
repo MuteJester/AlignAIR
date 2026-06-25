@@ -49,3 +49,27 @@ def test_band_offset_loss_minimized_at_truth():
     good = -(pos[None] - true[:, None].float()) ** 2          # peaked on truth
     bad = -(pos[None] - (true[:, None].float() + 8)) ** 2
     assert band_offset_loss(good, true) < band_offset_loss(bad, true)
+
+
+def test_confidence_logit_shape_and_finite():
+    from alignair.nn.band_head import BandHead
+    al = BandHead(d_model=16)
+    logits = torch.randn(3, 40)
+    c = al.confidence_logit(logits)
+    assert c.shape == (3,) and torch.isfinite(c).all()
+
+
+def test_calibration_loss_rewards_correct_coverage():
+    # a confidence that is HIGH on covered + LOW on uncovered should beat the inverse
+    from alignair.nn.band_head import band_calibration_loss
+    Lg = 40
+    pos = torch.arange(Lg).float()
+    true = torch.tensor([5, 30])
+    covered = -(pos[None] - true[:, None].float()) ** 2            # peak on truth (covered)
+    uncovered = -(pos[None] - (true[:, None].float() + 12)) ** 2   # peak 12 off (NOT covered at w=2)
+    logits = torch.stack([covered[0], uncovered[1]])              # row0 covered, row1 not
+    good_conf = torch.tensor([5.0, -5.0])                          # high on covered, low on not
+    bad_conf = torch.tensor([-5.0, 5.0])                          # inverted
+    lg = band_calibration_loss(good_conf, logits, true, w=2, m=2)
+    lb = band_calibration_loss(bad_conf, logits, true, w=2, m=2)
+    assert lg < lb

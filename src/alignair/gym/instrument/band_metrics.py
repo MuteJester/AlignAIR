@@ -34,6 +34,22 @@ def fail_open_rate(offset_logits, threshold):
     return float((maxp < threshold).float().mean())
 
 
+def conf_fail_open_rate(conf_logit, conf_thresh):
+    """Fail-open rate from the LEARNED confidence: fraction with sigmoid(conf) < threshold."""
+    return float((torch.sigmoid(conf_logit) < conf_thresh).float().mean())
+
+
+def committed_recall(offset_logits, conf_logit, true_start, w, m, conf_thresh):
+    """Top-m union recall AMONG committed (non-fail-open) reads. A fail-open read goes to full
+    DP (always correct) so it is excluded here, not counted as a miss (deployment-faithful, spec §5)."""
+    committed = torch.sigmoid(conf_logit) >= conf_thresh
+    if committed.sum() == 0:
+        return 1.0
+    centers = _topm_centers(offset_logits[committed], w, m)
+    hit = ((centers - true_start[committed].unsqueeze(1)).abs() <= w).any(dim=1)
+    return float(hit.float().mean())
+
+
 def cell_budget(offset_logits, w, threshold, seg_len):
     Lg = offset_logits.shape[-1]
     maxp = torch.softmax(offset_logits.float(), dim=-1).max(dim=-1).values

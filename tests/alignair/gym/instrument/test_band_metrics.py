@@ -29,6 +29,22 @@ def test_fail_open_rate_thresholds_low_confidence():
     assert fail_open_rate(peaked, threshold=0.1) == 0.0
 
 
+def test_committed_recall_excludes_failopen():
+    from alignair.gym.instrument.band_metrics import committed_recall, conf_fail_open_rate
+    # 3 reads: row0 covered+confident, row1 NOT covered but LOW confidence (fails open),
+    # row2 covered+confident. committed-recall should ignore row1 -> 1.0; fail-open = 1/3.
+    Lg = 40
+    pos = torch.arange(Lg).float()
+    true = torch.tensor([5, 5, 30])
+    cov0 = -(pos - 5.0) ** 2
+    bad1 = -(pos - 20.0) ** 2                     # peak 15 off truth=5 -> not covered at w=2
+    cov2 = -(pos - 30.0) ** 2
+    logits = torch.stack([cov0, bad1, cov2])
+    conf = torch.tensor([3.0, -3.0, 3.0])         # row1 below threshold -> fails open
+    assert committed_recall(logits, conf, true, w=2, m=2, conf_thresh=0.5) == 1.0
+    assert abs(conf_fail_open_rate(conf, conf_thresh=0.5) - 1/3) < 1e-6
+
+
 def test_cell_budget_counts_band_vs_fullopen():
     logits = _two_peaks()                        # confident -> banded
     seg_len = torch.tensor([100])
