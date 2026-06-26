@@ -168,6 +168,24 @@ next investment:
   frozen lattice vs the soft-DP oracle. Promote only when **frozen-lattice competence ≥ soft-DP
   (bootstrap-CI lower bound) AND coordinate parity AND faster at B=64**.
 
+### 5.1 Neural-contribution ablation (Gate-3 defense; mandatory)
+The exact DP is a **structured-decoder layer** (the role of CRF / CTC / HMM-forward / Viterbi /
+structured-attention layers inside deep networks), NOT a classical search engine. The deep parts are
+load-bearing: neural orientation + segmentation-first gating, the shared learned read/reference
+encoder, learned pooled retrieval, the structural neural band predictor, the LEARNED emission (token
+reps + learned projections + scale + learned gap params), state-conditioned SHM reliability, and the
+differentiable log-partition reader reranked end-to-end (calibrated posteriors, not one hard local
+alignment). To DEFEND this against "it's just a repackaged IgBLAST," Gate 3 MUST include a
+neural-contribution ablation measuring the headline metrics (heavy-SHM-V allele accuracy + frozen-
+lattice coord competence) under each toggle:
+1. raw-only band head vs full band head; 2. raw-only DP / parasail vs learned DP emissions;
+3. learned reps on/off; 4. SHM reliability on/off; 5. DP log-partition reader vs pooled / MaxSim
+reader; 6. trained shared encoder vs frozen / random encoder.
+**Pass condition:** the full neural system beats the raw-only / parasail-only configurations by a
+material, CI-disjoint margin on heavy-SHM-V (the dry run already shows the learned DP reader moves
+heavy-SHM-V 0.53→0.91 on the current encoder). If raw-only parasail MATCHES the full system, the model
+has collapsed to classical alignment and the claim is invalid.
+
 ## 6. Build order (kernel is the reward for passing Gate 1, not the default next step)
 
 1. **Gate 1 band-head experiment** (frozen soft-DP, true region/allele; top-m union recall + fail-open
