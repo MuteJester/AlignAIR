@@ -14,7 +14,7 @@ from ..nn.heads.state import state_reliability
 from ..core.dnalignair import extract_segment_tokens, extract_segment
 from .ema import EMATeacher
 from .reader import (build_sibling_index, build_candidates, reader_scores, reader_set_nce,
-                     reader_novel_positive)
+                     reader_novel_positive, reader_scores_banded)
 
 logger = logging.getLogger(__name__)
 
@@ -209,11 +209,11 @@ class GymTrainer:
             if self.reader:
                 reader_loss = 0.0
                 genes = ["v", "j"] + (["d"] if self.has_d else [])
+                seed_extend = getattr(self.model, "seed_extend", False)
                 for g in genes:
                     G = g.upper()
                     seg_tok, seg_mask = extract_segment_tokens(
                         canon, batch["mask"], sup_regions, G)
-                    seg_reps = self.model.germline_encoder.forward_positions(seg_tok, seg_mask)
                     # per-position SHM reliability for the segment (state head, same gather)
                     if self.state_conditioning:
                         seg_state, _ = extract_segment(out["state_logits"], batch["mask"], sup_regions, G)
@@ -223,28 +223,36 @@ class GymTrainer:
                     cand, pos = build_candidates(
                         batch[f"{g}_primary_idx"], batch[f"{g}_allele"], self._sib_index[G],
                         self._reader_rng, self.reader_n_sib, self.reader_n_rand)
-                    sc = reader_scores(self.model.aligner, seg_reps, seg_mask, cand,
-                                       ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"],
-                                       seg_tok=seg_tok, germ_tok_ref=ref_emb[G]["pos_tok"],
-                                       seg_reliability=seg_rel)
-                    # simulated-novel: for a random subset of examples, swap the positive
-                    # (column 0) score for one against a SNP-perturbed, freshly-encoded copy
-                    # of the true germline -> the reader learns to align to UNSEEN germlines.
-                    # GUARD (codex): only keep the swap where the perturbed positive still
-                    # out-scores every negative; else the k SNPs may have made a sibling the
-                    # better match and we'd teach the WRONG ranking — revert to the clean positive.
-                    if self.reader_novel_prob > 0:
-                        sel = torch.rand(sc.shape[0], device=self.device) < self.reader_novel_prob
-                        if sel.any():
-                            novel_sc = reader_novel_positive(
-                                self.model.aligner, self.model.germline_encoder,
-                                seg_reps, seg_mask, seg_tok, cand[:, 0],
-                                ref_emb[G]["pos_tok"], ref_emb[G]["pos_mask"],
-                                self.reader_novel_snps, self._novel_gen, seg_reliability=seg_rel)
-                            neg_max = sc[:, 1:].max(dim=1).values            # best negative
-                            keep = sel & (novel_sc > neg_max)               # stays the closest
-                            sc = sc.clone()
-                            sc[:, 0] = torch.where(keep, novel_sc, sc[:, 0])
+                    if seed_extend:
+                        # banded DP reader: seg reps OFF the backbone (so the reader loss trains
+                        # the ENCODER + DP emissions), band head places the band (detached center),
+                        # banded log-partition discriminates the true allele over siblings.
+                        seg_reps, _ = extract_segment(out["reps"], batch["mask"], sup_regions, G)
+                        w = getattr(self.model.config, "band_width", 16)
+                        sc = reader_scores_banded(
+                            self.model, seg_reps, seg_mask, cand, ref_emb[G]["pos_reps"],
+                            ref_emb[G]["pos_mask"], ref_emb[G]["pos_tok"], seg_tok, seg_rel, w)
+                    else:
+                        seg_reps = self.model.germline_encoder.forward_positions(seg_tok, seg_mask)
+                        sc = reader_scores(self.model.aligner, seg_reps, seg_mask, cand,
+                                           ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"],
+                                           seg_tok=seg_tok, germ_tok_ref=ref_emb[G]["pos_tok"],
+                                           seg_reliability=seg_rel)
+                        # simulated-novel (legacy only): swap the positive for a SNP-perturbed,
+                        # re-encoded germline so the reader aligns to UNSEEN alleles. GUARD: keep
+                        # the swap only where the perturbed positive still out-scores every negative.
+                        if self.reader_novel_prob > 0:
+                            sel = torch.rand(sc.shape[0], device=self.device) < self.reader_novel_prob
+                            if sel.any():
+                                novel_sc = reader_novel_positive(
+                                    self.model.aligner, self.model.germline_encoder,
+                                    seg_reps, seg_mask, seg_tok, cand[:, 0],
+                                    ref_emb[G]["pos_tok"], ref_emb[G]["pos_mask"],
+                                    self.reader_novel_snps, self._novel_gen, seg_reliability=seg_rel)
+                                neg_max = sc[:, 1:].max(dim=1).values            # best negative
+                                keep = sel & (novel_sc > neg_max)               # stays the closest
+                                sc = sc.clone()
+                                sc[:, 0] = torch.where(keep, novel_sc, sc[:, 0])
                     reader_loss = reader_loss + reader_set_nce(sc, pos)
                 total = total + self.reader_weight * reader_loss
                 comp["reader"] = reader_loss.detach()

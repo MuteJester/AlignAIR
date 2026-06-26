@@ -75,6 +75,29 @@ def reader_scores(aligner, seg_reps, seg_mask, cand_idx, pos_reps, pos_mask_ref,
                                    seg_reliability=rel).reshape(B, C)
 
 
+def reader_scores_banded(model, seg_reps, seg_mask, cand_idx, pos_reps, pos_mask_ref,
+                         pos_tok_ref, seg_tok, seg_reliability=None, w: int = 16) -> torch.Tensor:
+    """seed_extend reader scores (B,C): for each candidate the band head places a band
+    (DETACHED argmax center) and the EXACT banded SeedExtendAligner.alignment_score
+    (log-partition, rule 1) discriminates. The band center is detached so the reader loss
+    trains the DP reader/emissions/encoder while the band head keeps its own offset-CE
+    supervision. Base-match + SHM reliability are preserved in the score path."""
+    B, C = cand_idx.shape
+    S, d = seg_reps.shape[1], seg_reps.shape[2]
+    seg = seg_reps.unsqueeze(1).expand(B, C, S, d).reshape(B * C, S, d)
+    sm = seg_mask.unsqueeze(1).expand(B, C, S).reshape(B * C, S)
+    flat = cand_idx.reshape(-1)
+    germ = pos_reps[flat]; gm = pos_mask_ref[flat]; gt = pos_tok_ref[flat]
+    st = seg_tok.unsqueeze(1).expand(B, C, S).reshape(B * C, S)
+    rel = (seg_reliability.unsqueeze(1).expand(B, C, S).reshape(B * C, S)
+           if seg_reliability is not None else None)
+    with torch.no_grad():
+        center = model.band_head(seg, sm, germ, gm, st, gt).argmax(dim=-1)
+    sc = model.aligner.alignment_score(seg, sm, germ, gm, center, w,
+                                       seg_tok=st, germ_tok=gt, seg_reliability=rel)
+    return sc.reshape(B, C)
+
+
 def reader_set_nce(scores: torch.Tensor, pos_mask: torch.Tensor) -> torch.Tensor:
     """Multi-positive set-NCE: -log( sum_pos e^s / sum_all e^s ). Ranks the true
     allele set above the (sibling + random) negatives."""
