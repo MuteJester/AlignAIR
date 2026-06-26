@@ -126,7 +126,7 @@ def test_state_reliability_downweights_shm_mismatch():
 
 
 def test_state_reliability_helper_low_at_substitution():
-    from alignair.nn.state_head import state_reliability, STATE_INDEX
+    from alignair.nn.heads.state import state_reliability, STATE_INDEX
     logits = torch.zeros(1, 3, 4)
     logits[0, 0, STATE_INDEX["germline"]] = 10.0                       # confident germline
     logits[0, 1, STATE_INDEX["substitution"]] = 10.0                  # confident substitution

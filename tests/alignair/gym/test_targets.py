@@ -5,8 +5,8 @@ import GenAIRR.data as gdata
 from GenAIRR import Experiment
 from alignair.reference.reference_set import ReferenceSet
 from alignair.gym.targets import build_targets
-from alignair.nn.region_head import REGION_INDEX
-from alignair.nn.state_head import STATE_INDEX
+from alignair.nn.heads.region import REGION_INDEX
+from alignair.nn.heads.state import STATE_INDEX
 
 
 def _record(seed=5):

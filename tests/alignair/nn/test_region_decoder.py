@@ -1,6 +1,6 @@
 import torch
-from alignair.nn.region_decoder import RegionMaskSpanDecoder, GENES
-from alignair.nn.region_head import REGIONS
+from alignair.nn.heads.region_decoder import RegionMaskSpanDecoder, GENES
+from alignair.nn.heads.region import REGIONS
 
 
 def test_shapes_and_masking():
@@ -28,7 +28,7 @@ def test_can_learn_a_fixed_segmentation():
     reps = torch.randn(B, L, d, requires_grad=False)
     mask = torch.ones(B, L, dtype=torch.bool)
     # target: positions 0-3 pre, 4-11 V, rest J (indices into REGIONS)
-    from alignair.nn.region_head import REGION_INDEX
+    from alignair.nn.heads.region import REGION_INDEX
     region_tgt = torch.full((B, L), REGION_INDEX["J"], dtype=torch.long)
     region_tgt[:, :4] = REGION_INDEX["pre"]
     region_tgt[:, 4:12] = REGION_INDEX["V"]

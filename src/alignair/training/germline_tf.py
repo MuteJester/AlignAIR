@@ -42,7 +42,7 @@ def compute_germline_logits(model, tokens, mask, batch, ref_emb, has_d: bool,
         germ_tok = ref_emb[G]["pos_tok"][idx]         # (B, Lg) for base-match
         seg_rel = None
         if state_logits is not None:
-            from ..nn.state_head import state_reliability
+            from ..nn.heads.state import state_reliability
             seg_state, _ = extract_segment(state_logits, mask, rl, G)
             seg_rel = state_reliability(seg_state)
         out[g] = model.germline_coords(seg_reps, seg_mask, germ_reps, germ_mask,

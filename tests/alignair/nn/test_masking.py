@@ -1,5 +1,5 @@
 import torch
-from alignair.nn.masking import SoftCutout
+from alignair.nn.primitives.masking import SoftCutout
 
 
 def test_softcutout_shape():

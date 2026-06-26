@@ -5,14 +5,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..config.dnalignair_config import DNAlignAIRConfig
-from ..nn.orientation import OrientationHead, apply_orientation
-from ..nn.backbone import SequenceBackbone
-from ..nn.encoder import SharedNucleotideEncoder
-from ..nn.region_head import RegionTagger, REGION_INDEX
-from ..nn.region_decoder import RegionMaskSpanDecoder
-from ..nn.state_head import PerPositionStateHead
-from ..nn.germline_encoder import GermlineEncoder
-from ..nn.matching import AlleleMatchingHead
+from ..nn.heads.orientation import OrientationHead, apply_orientation
+from ..nn.encoder.backbone import SequenceBackbone
+from ..nn.encoder.shared import SharedNucleotideEncoder
+from ..nn.heads.region import RegionTagger, REGION_INDEX
+from ..nn.heads.region_decoder import RegionMaskSpanDecoder
+from ..nn.heads.state import PerPositionStateHead
+from ..nn.encoder.germline import GermlineEncoder
+from ..nn.heads.matching import AlleleMatchingHead
 from ..nn.aligner.germline_aligner import GermlineAligner
 from ..nn.aligner.soft_dp import SoftDPAligner
 from ..nn.aligner.pointer import BandedPointerAligner

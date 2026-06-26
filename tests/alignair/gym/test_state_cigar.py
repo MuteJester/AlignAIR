@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from alignair.gym.targets import _parse_cigar, _label_segment_states
-from alignair.nn.state_head import STATE_INDEX
+from alignair.nn.heads.state import STATE_INDEX
 
 
 def test_parse_cigar():

@@ -19,7 +19,7 @@ from alignair.reference.reference_set import ReferenceSet  # noqa: E402
 from alignair.config.dnalignair_config import DNAlignAIRConfig  # noqa: E402
 from alignair.core.dnalignair import DNAlignAIR  # noqa: E402
 from alignair.data.tokenizer import pad_tokenize  # noqa: E402
-from alignair.nn.region_head import REGION_INDEX  # noqa: E402
+from alignair.nn.heads.region import REGION_INDEX  # noqa: E402
 
 FULL = {"clean_full", "moderate_full", "hard_full", "high_shm", "paired_end",
         "productive_only_clean", "high_indel"}

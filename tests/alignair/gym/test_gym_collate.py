@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from alignair.gym.collate import gym_collate
-from alignair.nn.region_head import REGION_INDEX
+from alignair.nn.heads.region import REGION_INDEX
 
 
 class _Gene:

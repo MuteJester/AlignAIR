@@ -1,6 +1,6 @@
 import math
 import torch
-from alignair.nn.matching import AlleleMatchingHead, multilabel_match_loss
+from alignair.nn.heads.matching import AlleleMatchingHead, multilabel_match_loss
 
 
 def test_scores_shape_and_self_match_is_high():
@@ -40,7 +40,7 @@ def test_multilabel_loss_finite_and_backprops():
 
 
 def test_contrastive_set_loss_is_equivalence_class():
-    from alignair.nn.matching import contrastive_match_loss
+    from alignair.nn.heads.matching import contrastive_match_loss
     # two indistinguishable positives; mass on EITHER one should give low loss
     scores = torch.tensor([[5.0, -5.0, 0.0, 0.0]])
     two_pos = torch.tensor([[1.0, 1.0, 0.0, 0.0]])

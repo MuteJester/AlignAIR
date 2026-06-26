@@ -1,6 +1,6 @@
 import torch
 from alignair.data.tokenizer import pad_tokenize
-from alignair.nn.germline_encoder import GermlineEncoder
+from alignair.nn.encoder.germline import GermlineEncoder
 
 
 def test_forward_positions_shape_and_padding_zeroed():

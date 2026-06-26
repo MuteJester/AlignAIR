@@ -1,5 +1,5 @@
 import torch
-from alignair.nn.heads import (
+from alignair.nn.heads.segmentation import (
     SegmentationHead, AlleleClassificationHead, MutationRateHead,
     IndelCountHead, ProductivityHead, ChainTypeHead,
 )

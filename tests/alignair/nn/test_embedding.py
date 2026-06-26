@@ -1,6 +1,6 @@
 import torch
-from alignair.nn.activations import make_activation
-from alignair.nn.embedding import TokenPositionEmbedding
+from alignair.nn.primitives.activations import make_activation
+from alignair.nn.primitives.embedding import TokenPositionEmbedding
 
 
 def test_make_activation_known():

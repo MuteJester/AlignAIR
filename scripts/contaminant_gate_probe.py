@@ -25,7 +25,7 @@ from alignair.reference.reference_set import ReferenceSet  # noqa: E402
 from alignair.config.dnalignair_config import DNAlignAIRConfig  # noqa: E402
 from alignair.core.dnalignair import DNAlignAIR, extract_segment, extract_segment_tokens  # noqa: E402
 from alignair.data.tokenizer import pad_tokenize  # noqa: E402
-from alignair.nn.state_head import state_reliability  # noqa: E402
+from alignair.nn.heads.state import state_reliability  # noqa: E402
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)

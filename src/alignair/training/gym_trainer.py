@@ -9,8 +9,8 @@ from tqdm.auto import tqdm
 import random
 
 from ..gym.collate import gym_collate
-from ..nn.matching import distill_match_loss
-from ..nn.state_head import state_reliability
+from ..nn.heads.matching import distill_match_loss
+from ..nn.heads.state import state_reliability
 from ..core.dnalignair import extract_segment_tokens, extract_segment
 from .ema import EMATeacher
 from .reader import (build_sibling_index, build_candidates, reader_scores, reader_set_nce,
@@ -275,7 +275,7 @@ class GymTrainer:
         fragments). Calls + in-sequence boundaries are end-to-end (predicted regions
         / predicted top-1 allele); germline coordinates are teacher-forced (true
         region + true allele) so they measure the aligner head in isolation."""
-        from ..nn.region_head import decode_boundaries
+        from ..nn.heads.region import decode_boundaries
         from ..nn.aligner.germline_aligner import decode_germline_coords
         from .germline_tf import compute_germline_logits
         self.model.eval()

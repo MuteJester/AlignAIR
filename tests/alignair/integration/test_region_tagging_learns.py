@@ -1,8 +1,8 @@
 import numpy as np
 import torch
 from alignair.data.tokenizer import pad_tokenize
-from alignair.nn.backbone import SequenceBackbone
-from alignair.nn.region_head import RegionTagger, decode_boundaries, REGION_INDEX
+from alignair.nn.encoder.backbone import SequenceBackbone
+from alignair.nn.heads.region import RegionTagger, decode_boundaries, REGION_INDEX
 
 # dominant base per region (others sampled uniformly with low prob) -> learnable composition
 DOM = {"pre": "T", "V": "A", "N1": "N", "D": "G", "N2": "N", "J": "C", "post": "T"}

@@ -1,7 +1,7 @@
 import torch
 from alignair.data.tokenizer import pad_tokenize, TOKEN_DICT
-from alignair.nn.germline_encoder import GermlineEncoder
-from alignair.nn.matching import AlleleMatchingHead, multilabel_match_loss
+from alignair.nn.encoder.germline import GermlineEncoder
+from alignair.nn.heads.matching import AlleleMatchingHead, multilabel_match_loss
 
 BASES = "ACGT"
 

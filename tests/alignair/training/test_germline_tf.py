@@ -2,7 +2,7 @@ import torch
 from alignair.config.dnalignair_config import DNAlignAIRConfig
 from alignair.core.dnalignair import DNAlignAIR
 from alignair.training.germline_tf import compute_germline_logits
-from alignair.nn.region_head import REGION_INDEX
+from alignair.nn.heads.region import REGION_INDEX
 
 
 class _Gene:

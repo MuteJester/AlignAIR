@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from alignair.data.tokenizer import pad_tokenize
-from alignair.nn.germline_encoder import GermlineEncoder
+from alignair.nn.encoder.germline import GermlineEncoder
 from alignair.nn.aligner.germline_aligner import GermlineAligner, decode_germline_coords
 
 BASES = "ACGT"

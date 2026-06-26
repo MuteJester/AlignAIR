@@ -258,7 +258,7 @@ def test_canonicalize_sequence_recovers_forward():
 def test_canonicalize_matches_model_token_transform():
     torch = pytest.importorskip("torch")
     from alignair.data.tokenizer import pad_tokenize
-    from alignair.nn.orientation import apply_orientation
+    from alignair.nn.heads.orientation import apply_orientation
     from alignair.inference.dnalignair_infer import canonicalize_sequence
     seq = "ACGTACGTNNACGTTGCA"
     tok, msk = pad_tokenize([seq])

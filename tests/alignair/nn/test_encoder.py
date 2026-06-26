@@ -1,5 +1,5 @@
 import torch
-from alignair.nn.encoder import SharedNucleotideEncoder
+from alignair.nn.encoder.shared import SharedNucleotideEncoder
 
 
 def _enc():

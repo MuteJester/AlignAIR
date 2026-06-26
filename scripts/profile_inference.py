@@ -35,10 +35,10 @@ from alignair.config.dnalignair_config import DNAlignAIRConfig  # noqa: E402
 from alignair.core.dnalignair import DNAlignAIR, extract_segment, extract_segment_tokens  # noqa: E402
 from alignair.inference.dnalignair_infer import predict_reads  # noqa: E402
 from alignair.data.tokenizer import pad_tokenize  # noqa: E402
-from alignair.nn.region_head import decode_boundaries  # noqa: E402
+from alignair.nn.heads.region import decode_boundaries  # noqa: E402
 from alignair.nn.aligner.germline_aligner import decode_germline_coords  # noqa: E402
 from alignair.training.germline_tf import compute_germline_logits  # noqa: E402
-from alignair.nn.state_head import state_reliability  # noqa: E402
+from alignair.nn.heads.state import state_reliability  # noqa: E402
 
 
 class Stage:

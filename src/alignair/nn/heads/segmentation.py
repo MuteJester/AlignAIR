@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 
-from .activations import make_activation
+from ..primitives.activations import make_activation
 
 
 class SegmentationHead(nn.Module):

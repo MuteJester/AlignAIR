@@ -14,7 +14,7 @@ queries (no Hungarian matching). Per-position region logits stay an 8-way score
 import torch
 import torch.nn as nn
 
-from .region_head import REGIONS, REGION_INDEX  # ("pad","pre","V","N1","D","N2","J","post")
+from .region import REGIONS, REGION_INDEX  # ("pad","pre","V","N1","D","N2","J","post")
 
 GENES = ("V", "D", "J")
 

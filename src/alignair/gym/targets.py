@@ -3,8 +3,8 @@ plus the ReferenceSet germline sequences (forward-orientation frame)."""
 import numpy as np
 
 from ..data.tokenizer import TOKEN_DICT
-from ..nn.region_head import REGION_INDEX
-from ..nn.state_head import STATE_INDEX
+from ..nn.heads.region import REGION_INDEX
+from ..nn.heads.state import STATE_INDEX
 
 _GENES = ("v", "d", "j")
 

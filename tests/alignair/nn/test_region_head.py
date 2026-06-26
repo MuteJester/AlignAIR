@@ -1,5 +1,5 @@
 import torch
-from alignair.nn.region_head import RegionTagger, decode_boundaries, REGIONS, REGION_INDEX
+from alignair.nn.heads.region import RegionTagger, decode_boundaries, REGIONS, REGION_INDEX
 
 
 def test_region_tagger_shape():

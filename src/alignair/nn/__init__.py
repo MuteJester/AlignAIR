@@ -1,15 +1,24 @@
-from .germline_encoder import GermlineEncoder
-from .matching import AlleleMatchingHead, multilabel_match_loss
-from .orientation import apply_orientation, OrientationHead, NUM_ORIENTATIONS
-from .backbone import SequenceBackbone
-from .region_head import RegionTagger, decode_boundaries, REGIONS, REGION_INDEX
-from .aligner.germline_aligner import GermlineAligner, decode_germline_coords
-from .state_head import PerPositionStateHead, state_counts, STATES, STATE_INDEX
+"""Neural building blocks for DNAlignAIR, grouped by component:
+  primitives/ — generic layers (activations, conv, embedding, masking)
+  encoder/    — sequence encoders (backbone, shared nucleotide encoder, germline encoder)
+  heads/      — task heads (region, state, orientation, allele matching, segmentation)
+  aligner/    — germline alignment (base-match, diagonal ops, soft-DP, pointer, band head, banded DP)
+  weighting   — Kendall uncertainty loss weighting
+"""
+from .encoder import SequenceBackbone, SharedNucleotideEncoder, GermlineEncoder
+from .heads import (
+    RegionTagger, decode_boundaries, REGIONS, REGION_INDEX,
+    PerPositionStateHead, state_counts, state_reliability, STATES, STATE_INDEX,
+    OrientationHead, apply_orientation, NUM_ORIENTATIONS,
+    AlleleMatchingHead, multilabel_match_loss,
+)
+from .aligner import GermlineAligner, decode_germline_coords
 
 __all__ = [
-    "GermlineEncoder", "AlleleMatchingHead", "multilabel_match_loss",
-    "apply_orientation", "OrientationHead", "NUM_ORIENTATIONS",
-    "SequenceBackbone", "RegionTagger", "decode_boundaries", "REGIONS", "REGION_INDEX",
+    "SequenceBackbone", "SharedNucleotideEncoder", "GermlineEncoder",
+    "RegionTagger", "decode_boundaries", "REGIONS", "REGION_INDEX",
+    "PerPositionStateHead", "state_counts", "state_reliability", "STATES", "STATE_INDEX",
+    "OrientationHead", "apply_orientation", "NUM_ORIENTATIONS",
+    "AlleleMatchingHead", "multilabel_match_loss",
     "GermlineAligner", "decode_germline_coords",
-    "PerPositionStateHead", "state_counts", "STATES", "STATE_INDEX",
 ]

@@ -1,5 +1,5 @@
 import torch
-from alignair.nn.conv import Conv1dBatchNorm, ConvResidualFeatureExtractor
+from alignair.nn.primitives.conv import Conv1dBatchNorm, ConvResidualFeatureExtractor
 
 
 def test_conv_bn_halves_length_and_sets_channels():

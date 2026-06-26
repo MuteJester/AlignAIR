@@ -9,7 +9,7 @@ top-1 allele), no teacher forcing.
 import torch
 
 from ..data.tokenizer import pad_tokenize
-from ..nn.region_head import decode_boundaries
+from ..nn.heads.region import decode_boundaries
 from ..nn.aligner.germline_aligner import decode_germline_coords
 from ..training.germline_tf import compute_germline_logits
 from ..core.dnalignair import extract_segment_tokens
@@ -32,7 +32,7 @@ def _parasail():
 
 def canonicalize_sequence(seq: str, orientation_id: int) -> str:
     """Apply the model's predicted orientation transform to recover the FORWARD/canonical
-    sequence (the frame predict_reads coordinates are in). Mirrors nn.orientation transform
+    sequence (the frame predict_reads coordinates are in). Mirrors nn.heads.orientation transform
     ids: 0=identity, 1=reverse-complement, 2=complement, 3=reverse (all involutions)."""
     s = seq.upper()
     if orientation_id == 1:        # REVERSE_COMPLEMENT (complement then reverse)
@@ -287,7 +287,7 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
         # learned allele reader: rerank top-k by the differentiable alignment score
         learned_best = {}
         if rerank == "learned":
-            from ..nn.state_head import state_reliability
+            from ..nn.heads.state import state_reliability
             from ..core.dnalignair import extract_segment
             cal = calibration or {}
             for g in genes:

@@ -10,8 +10,8 @@ from typing import Any, Iterable
 from .adapters import normalize_call_set
 from .performance import prediction_performance_metrics
 from ..core.schema import BenchmarkCase, GENES, GeneTruth
-from ...nn.region_head import REGIONS
-from ...nn.state_head import STATE_INDEX, STATES
+from ...nn.heads.region import REGIONS
+from ...nn.heads.state import STATE_INDEX, STATES
 
 _CIGAR_RE = re.compile(r"([0-9]+)([A-Za-z=])")
 

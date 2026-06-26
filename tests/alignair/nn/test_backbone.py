@@ -1,6 +1,6 @@
 import torch
 from alignair.data.tokenizer import pad_tokenize
-from alignair.nn.backbone import SequenceBackbone
+from alignair.nn.encoder.backbone import SequenceBackbone
 
 
 def test_backbone_output_shape_and_padding_zeroed():

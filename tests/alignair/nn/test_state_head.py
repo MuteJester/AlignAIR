@@ -1,5 +1,5 @@
 import torch
-from alignair.nn.state_head import PerPositionStateHead, state_counts, STATES, STATE_INDEX
+from alignair.nn.heads.state import PerPositionStateHead, state_counts, STATES, STATE_INDEX
 
 
 def test_state_head_shape_and_backprop():

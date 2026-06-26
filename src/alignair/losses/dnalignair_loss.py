@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..nn.weighting import UncertaintyWeight
-from ..nn.matching import contrastive_match_loss
+from ..nn.heads.matching import contrastive_match_loss
 
 IGNORE = -100
 

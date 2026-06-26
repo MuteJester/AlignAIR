@@ -2,8 +2,8 @@ import torch
 from alignair.config.dnalignair_config import DNAlignAIRConfig
 from alignair.core.dnalignair import DNAlignAIR
 from alignair.data.tokenizer import pad_tokenize
-from alignair.nn.region_head import REGIONS
-from alignair.nn.state_head import STATES
+from alignair.nn.heads.region import REGIONS
+from alignair.nn.heads.state import STATES
 
 
 def test_dense_and_scalar_outputs():

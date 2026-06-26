@@ -1,7 +1,7 @@
 import torch
 from alignair.config.dnalignair_config import DNAlignAIRConfig
 from alignair.core.dnalignair import DNAlignAIR, extract_segment
-from alignair.nn.region_head import REGION_INDEX
+from alignair.nn.heads.region import REGION_INDEX
 
 
 def test_extract_segment_left_aligns_gene_positions():

@@ -1,6 +1,6 @@
 import torch
 from alignair.data.tokenizer import pad_tokenize
-from alignair.nn.germline_encoder import GermlineEncoder
+from alignair.nn.encoder.germline import GermlineEncoder
 
 
 def test_encoder_output_is_normalized_embedding():
