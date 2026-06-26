@@ -16,6 +16,8 @@ from ..nn.heads.matching import AlleleMatchingHead
 from ..nn.aligner.germline_aligner import GermlineAligner
 from ..nn.aligner.soft_dp import SoftDPAligner
 from ..nn.aligner.pointer import BandedPointerAligner
+from ..nn.aligner.banded_dp import SeedExtendAligner
+from ..nn.aligner.band_head import BandHead
 
 
 def _masked_mean(h: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -82,21 +84,31 @@ class DNAlignAIR(nn.Module):
         self.region_tagger = (RegionMaskSpanDecoder(d_model=d, nhead=config.nhead)
                               if self.query_regions else RegionTagger(d_model=d))
         self.state_head = PerPositionStateHead(d_model=d)
-        self.germline_encoder = GermlineEncoder(embed_dim=d)
+        _aligner = getattr(config, "aligner", "diagonal")
+        self.seed_extend = _aligner == "seed_extend"
+        if self.seed_extend and not self.shared_backbone:
+            raise ValueError("aligner='seed_extend' requires backbone='shared' (one encoder for read+reference)")
+        # seed_extend uses the ONE shared encoder for read AND reference (token_type embedding),
+        # so there is NO separate GermlineEncoder (kills the double-encode) and NO allele
+        # classifier (dynamic-genotype: allele identity is never memorised in weights).
+        if not self.seed_extend:
+            self.germline_encoder = GermlineEncoder(embed_dim=d)
         self.matching = AlleleMatchingHead()
         # allele caller: retrieval (default) or a masked per-allele classifier head
-        self.caller = getattr(config, "caller", "retrieval")
+        self.caller = "retrieval" if self.seed_extend else getattr(config, "caller", "retrieval")
         if self.caller == "classifier":
             counts = config.allele_counts or {}
             self.classifier = nn.ModuleDict(
                 {g: nn.Linear(d, counts[g]) for g in counts})
-        _aligner = getattr(config, "aligner", "diagonal")
         if _aligner == "softdp":
             self.aligner = SoftDPAligner(d_model=d)
         elif _aligner == "pointer":
             self.aligner = BandedPointerAligner(
                 d_model=d, max_len=config.max_len,
                 band_half_width=getattr(config, "band_half_width", 0))
+        elif _aligner == "seed_extend":
+            self.aligner = SeedExtendAligner(d_model=d)
+            self.band_head = BandHead(d_model=d)   # the structural "seed": predicts the band center
         else:
             self.aligner = GermlineAligner(d_model=d)
         self.noise_head = nn.Linear(d, 1)
@@ -137,6 +149,19 @@ class DNAlignAIR(nn.Module):
             "canon_tokens": canon,
         }
 
+    def _germ_encode_pooled(self, tok, msk):
+        """Pooled normalized germline embedding. seed_extend uses the SHARED encoder
+        (token_type=GERMLINE); legacy uses the separate GermlineEncoder."""
+        if self.seed_extend:
+            return self.backbone(tok, msk, token_type=SharedNucleotideEncoder.GERMLINE)
+        return self.germline_encoder(tok, msk)
+
+    def _germ_encode_positions(self, tok, msk):
+        """Per-position germline reps. seed_extend uses the SHARED encoder; legacy the GermlineEncoder."""
+        if self.seed_extend:
+            return self.backbone.forward_positions(tok, msk, token_type=SharedNucleotideEncoder.GERMLINE)
+        return self.germline_encoder.forward_positions(tok, msk)
+
     def encode_reference(self, reference_set) -> dict:
         """Encode each gene's germline sequences -> pooled embeddings + per-position reps (cached)."""
         from ..data.tokenizer import pad_tokenize
@@ -146,8 +171,8 @@ class DNAlignAIR(nn.Module):
             tok, msk = pad_tokenize(ref.sequences)
             tok, msk = tok.to(device), msk.to(device)
             out[gene] = {
-                "embeddings": self.germline_encoder(tok, msk),                 # (K, d) normalized
-                "pos_reps": self.germline_encoder.forward_positions(tok, msk),  # (K, Lg, d)
+                "embeddings": self._germ_encode_pooled(tok, msk),               # (K, d) normalized
+                "pos_reps": self._germ_encode_positions(tok, msk),              # (K, Lg, d)
                 "pos_mask": msk,                                               # (K, Lg)
                 "pos_tok": tok,                                                # (K, Lg) for base-match
             }
@@ -176,6 +201,15 @@ class DNAlignAIR(nn.Module):
                 if cmask is not None:
                     logits = logits.masked_fill(~cmask.to(logits.device).unsqueeze(0), float("-inf"))
                 match[gene] = logits
+            elif self.seed_extend:
+                # NO re-encode: read the segment query OFF the backbone reps and project it
+                # through the SAME pooling head as the germline embeddings (siamese cosine).
+                seg, seg_mask = extract_segment(reps, mask, region_labels, gene)
+                m = seg_mask.unsqueeze(-1).to(seg.dtype)
+                pooled = (seg * m).sum(dim=1) / m.sum(dim=1).clamp(min=1.0)
+                query = F.normalize(self.backbone.proj(pooled), dim=-1)   # (B, d) normalized
+                cm = cmask.to(query.device) if cmask is not None else None
+                match[gene] = self.matching(query, emb["embeddings"], candidate_mask=cm)
             else:
                 seg_tok, seg_mask = extract_segment_tokens(tokens, mask, region_labels, gene)
                 query = self.germline_encoder(seg_tok, seg_mask)    # (B, d) normalized
@@ -193,11 +227,22 @@ class DNAlignAIR(nn.Module):
                                           reps=out["reps"], candidate_masks=candidate_masks)
         return out
 
+    def band_logits(self, seg_reps, seg_mask, germ_reps, germ_mask, seg_tok, germ_tok):
+        """seed_extend only: the structural band head's start-offset posterior (B,Lg), used both
+        to place the DP band AND to train the band head (band_offset_loss against true start)."""
+        return self.band_head(seg_reps, seg_mask, germ_reps, germ_mask, seg_tok, germ_tok)
+
     def germline_coords(self, seg_reps, seg_mask, germ_reps, germ_mask,
                         seg_tok=None, germ_tok=None, seg_reliability=None):
         """Align a gene's segment reps to a chosen allele's per-position germline reps.
-        seg_tok/germ_tok/seg_reliability enable the pointer aligner's base-match + SHM
-        reliability gating; aligners that don't accept them fall back transparently."""
+        seed_extend: the band head places a +-w band the exact banded DP then decodes within.
+        Other aligners: seg_tok/germ_tok/seg_reliability enable base-match + SHM reliability;
+        aligners that don't accept them fall back transparently."""
+        if self.seed_extend:
+            center = self.band_logits(seg_reps, seg_mask, germ_reps, germ_mask, seg_tok, germ_tok).argmax(dim=-1)
+            w = getattr(self.config, "band_width", 16)
+            return self.aligner(seg_reps, seg_mask, germ_reps, germ_mask, center, w,
+                                seg_tok=seg_tok, germ_tok=germ_tok, seg_reliability=seg_reliability)
         try:
             return self.aligner(seg_reps, seg_mask, germ_reps, germ_mask,
                                 seg_tok=seg_tok, germ_tok=germ_tok,
