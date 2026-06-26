@@ -1,6 +1,6 @@
 import math
 import torch
-from alignair.nn.base_match import base_match_channel
+from alignair.nn.aligner.base_match import base_match_channel
 
 
 def test_passthrough_without_tokens():
@@ -37,3 +37,14 @@ def test_reliability_gates_term_toward_zero():
     out0 = base_match_channel(M, seg_tok, germ_tok, rel0, torch.tensor(1.0), 1.0)
     # with a=0: a*u = 0 and norm = log(1+3)-log(4) = 0 -> M unchanged
     assert torch.allclose(out0, M, atol=1e-6)
+
+
+def test_base_match_matrix_signs():
+    from alignair.nn.aligner.base_match import base_match_matrix
+    seg = torch.tensor([[1, 2, 0]])        # A, C, pad
+    germ = torch.tensor([[1, 1, 2]])       # A, A, C
+    M = base_match_matrix(seg, germ)
+    assert M.shape == (1, 3, 3)
+    assert M[0, 0, 0] == 1.0 and M[0, 0, 1] == 1.0 and M[0, 0, 2] == -1.0
+    assert M[0, 1, 0] == -1.0
+    assert (M[0, 2] == 0.0).all()           # pad token (0) -> 0 everywhere

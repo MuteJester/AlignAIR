@@ -1,7 +1,7 @@
 import time
 import torch
-from alignair.nn.pointer_aligner import BandedPointerAligner
-from alignair.nn.soft_dp_aligner import SoftDPAligner
+from alignair.nn.aligner.pointer import BandedPointerAligner
+from alignair.nn.aligner.soft_dp import SoftDPAligner
 
 
 def test_pointer_forward_is_much_faster_than_softdp_on_cpu():

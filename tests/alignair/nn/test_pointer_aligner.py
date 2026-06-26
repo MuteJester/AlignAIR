@@ -1,5 +1,5 @@
 import torch
-from alignair.nn.pointer_aligner import weighted_leading_diag, weighted_reverse_diag
+from alignair.nn.aligner.diagonal_ops import weighted_leading_diag, weighted_reverse_diag
 
 
 def _ref_leading(M, w):
@@ -54,7 +54,7 @@ def test_diag_helpers_are_autograd_safe():
     assert M.grad is not None and torch.isfinite(M.grad).all()
 
 
-from alignair.nn.pointer_aligner import BandedPointerAligner, NEG
+from alignair.nn.aligner.pointer import BandedPointerAligner, NEG
 
 
 def _toy(B=2, S=8, Lg=20, d=16):
@@ -117,7 +117,7 @@ def test_banded_clean_diagonal_localizes_within_band():
     # A band with gamma=0 (init) tolerates offset shifts within +-G, so the clean-diagonal
     # start/end localize WITHIN the band of the true coords (gamma LEARNS to sharpen this in
     # training; at init the band is intentionally permissive). Tie projections so cosine peaks.
-    from alignair.nn.pointer_aligner import BandedPointerAligner
+    from alignair.nn.aligner.pointer import BandedPointerAligner
     G = 3
     al = BandedPointerAligner(d_model=16, band_half_width=G)
     al.germ_proj.load_state_dict(al.seg_proj.state_dict())
@@ -133,7 +133,7 @@ def test_banded_clean_diagonal_localizes_within_band():
 def test_banded_with_sharp_gamma_recovers_exact_localization():
     # When gamma strongly favors Delta=0, the band collapses to the single diagonal and
     # localizes EXACTLY -- confirming the band reduces to precise coords once trained.
-    from alignair.nn.pointer_aligner import BandedPointerAligner
+    from alignair.nn.aligner.pointer import BandedPointerAligner
     G = 3
     al = BandedPointerAligner(d_model=16, band_half_width=G)
     al.germ_proj.load_state_dict(al.seg_proj.state_dict())
@@ -149,7 +149,7 @@ def test_banded_with_sharp_gamma_recovers_exact_localization():
 
 
 def test_banded_start_end_reduces_to_single_diag_at_G0():
-    from alignair.nn.pointer_aligner import banded_start_end
+    from alignair.nn.aligner.diagonal_ops import banded_start_end
     torch.manual_seed(5)
     M = torch.randn(2, 5, 9); w = torch.rand(2, 5, 1)
     gamma = torch.zeros(1)
@@ -168,8 +168,8 @@ def test_soft_argmax_localizes_edge_diagonal_precisely():
     # The clean-read coord regression was soft-argmax bias on a BROAD posterior truncated by
     # the germline edge (true start near column 0). A sharp posterior (high temp init) makes
     # the soft-argmax expected-position land ON the edge peak, not pulled inward.
-    from alignair.nn.pointer_aligner import BandedPointerAligner
-    from alignair.nn.germline_aligner import decode_germline_coords
+    from alignair.nn.aligner.pointer import BandedPointerAligner
+    from alignair.nn.aligner.germline_aligner import decode_germline_coords
     al = BandedPointerAligner(d_model=16)
     al.germ_proj.load_state_dict(al.seg_proj.state_dict())   # cosine peaks on the true diagonal
     B, S, Lg, d, off = 1, 8, 24, 16, 0                       # true start at the EDGE (col 0)

@@ -1,5 +1,5 @@
 import torch
-from alignair.nn.germline_aligner import GermlineAligner, decode_germline_coords
+from alignair.nn.aligner.germline_aligner import GermlineAligner, decode_germline_coords
 
 
 def test_aligner_output_shapes_and_germline_masking():

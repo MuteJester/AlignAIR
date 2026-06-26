@@ -16,8 +16,8 @@ from alignair.core.dnalignair import DNAlignAIR, extract_segment_tokens
 from alignair.reference.reference_set import ReferenceSet
 from alignair.gym import AlignAIRGym, gym_collate
 from alignair.gym.instrument.lattice import FrozenLattice
-from alignair.nn.band_head import base_match_matrix
-from alignair.nn.pointer_aligner import weighted_leading_diag
+from alignair.nn.aligner.base_match import base_match_matrix
+from alignair.nn.aligner.diagonal_ops import weighted_leading_diag
 from torch.utils.data import DataLoader
 
 

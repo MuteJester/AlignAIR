@@ -10,7 +10,7 @@ import torch
 
 from ..data.tokenizer import pad_tokenize
 from ..nn.region_head import decode_boundaries
-from ..nn.germline_aligner import decode_germline_coords
+from ..nn.aligner.germline_aligner import decode_germline_coords
 from ..training.germline_tf import compute_germline_logits
 from ..core.dnalignair import extract_segment_tokens
 

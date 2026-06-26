@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from .. import AlignAIRGym, gym_collate
-from ...nn.germline_aligner import decode_germline_coords
+from ...nn.aligner.germline_aligner import decode_germline_coords
 from ...training.germline_tf import compute_germline_logits
 
 IGNORE = -100

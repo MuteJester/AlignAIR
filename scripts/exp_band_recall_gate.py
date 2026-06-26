@@ -20,7 +20,7 @@ from alignair.gym import AlignAIRGym, gym_collate
 from alignair.gym.curriculum import StratifiedCurriculum
 from alignair.gym.instrument.lattice import FrozenLattice
 from alignair.gym.instrument.stats import bootstrap_ci
-from alignair.nn.band_head import BandHead, band_offset_loss, peak_evidence
+from alignair.nn.aligner.band_head import BandHead, band_offset_loss, peak_evidence
 from alignair.gym.instrument import band_metrics as BM
 from torch.utils.data import DataLoader
 

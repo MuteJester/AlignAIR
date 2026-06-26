@@ -3,7 +3,7 @@ from .matching import AlleleMatchingHead, multilabel_match_loss
 from .orientation import apply_orientation, OrientationHead, NUM_ORIENTATIONS
 from .backbone import SequenceBackbone
 from .region_head import RegionTagger, decode_boundaries, REGIONS, REGION_INDEX
-from .germline_aligner import GermlineAligner, decode_germline_coords
+from .aligner.germline_aligner import GermlineAligner, decode_germline_coords
 from .state_head import PerPositionStateHead, state_counts, STATES, STATE_INDEX
 
 __all__ = [

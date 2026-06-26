@@ -276,7 +276,7 @@ class GymTrainer:
         / predicted top-1 allele); germline coordinates are teacher-forced (true
         region + true allele) so they measure the aligner head in isolation."""
         from ..nn.region_head import decode_boundaries
-        from ..nn.germline_aligner import decode_germline_coords
+        from ..nn.aligner.germline_aligner import decode_germline_coords
         from .germline_tf import compute_germline_logits
         self.model.eval()
         genes = ["v", "j"] + (["d"] if self.has_d else [])

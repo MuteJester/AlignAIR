@@ -1,17 +1,5 @@
 import torch
-from alignair.nn.band_head import base_match_matrix, BandHead, band_offset_loss
-
-
-def test_base_match_matrix_signs():
-    seg = torch.tensor([[1, 2, 0]])        # A, C, pad
-    germ = torch.tensor([[1, 1, 2]])       # A, A, C
-    M = base_match_matrix(seg, germ)
-    assert M.shape == (1, 3, 3)
-    assert M[0, 0, 0] == 1.0                # A vs A match
-    assert M[0, 0, 1] == 1.0                # A vs A match
-    assert M[0, 0, 2] == -1.0               # A vs C mismatch
-    assert M[0, 1, 0] == -1.0               # C vs A mismatch
-    assert (M[0, 2] == 0.0).all()           # pad token (0) -> 0 everywhere
+from alignair.nn.aligner.band_head import BandHead, band_offset_loss, peak_evidence
 
 
 def test_bandhead_localizes_clean_offset():
@@ -51,20 +39,9 @@ def test_band_offset_loss_minimized_at_truth():
     assert band_offset_loss(good, true) < band_offset_loss(bad, true)
 
 
-def test_confidence_logit_shape_and_finite():
-    from alignair.nn.band_head import BandHead
-    al = BandHead(d_model=16)
-    logits = torch.randn(3, 40)
-    seg_tok = torch.randint(1, 5, (3, 10)); germ_tok = torch.randint(1, 5, (3, 40))
-    seg_mask = torch.ones(3, 10, dtype=torch.bool)
-    c = al.confidence_logit(logits, seg_tok, germ_tok, seg_mask)
-    assert c.shape == (3,) and torch.isfinite(c).all()
-
-
 def test_peak_evidence_overlap_fraction_separates_spurious():
     # overlap FRACTION: a real full-fit alignment ~1.0; a spurious peak near the germline END
     # covers only a few positions -> low fraction. This is what lets signal-absent reads fail open.
-    from alignair.nn.band_head import peak_evidence
     B, S, Lg = 1, 20, 60
     seg_tok = torch.randint(1, 5, (B, S))
     germ_tok = torch.randint(1, 5, (B, Lg))
@@ -76,19 +53,3 @@ def test_peak_evidence_overlap_fraction_separates_spurious():
     ev_spur = peak_evidence(spurious, seg_tok, germ_tok, sm)
     assert ev_real.item() == 1.0                          # all 20 read positions land on germline
     assert ev_spur.item() <= 3.0 / S + 1e-6               # only ~3 positions overlap -> tiny fraction
-
-
-def test_calibration_loss_rewards_correct_coverage():
-    # a confidence that is HIGH on covered + LOW on uncovered should beat the inverse
-    from alignair.nn.band_head import band_calibration_loss
-    Lg = 40
-    pos = torch.arange(Lg).float()
-    true = torch.tensor([5, 30])
-    covered = -(pos[None] - true[:, None].float()) ** 2            # peak on truth (covered)
-    uncovered = -(pos[None] - (true[:, None].float() + 12)) ** 2   # peak 12 off (NOT covered at w=2)
-    logits = torch.stack([covered[0], uncovered[1]])              # row0 covered, row1 not
-    good_conf = torch.tensor([5.0, -5.0])                          # high on covered, low on not
-    bad_conf = torch.tensor([-5.0, 5.0])                          # inverted
-    lg = band_calibration_loss(good_conf, logits, true, w=2, m=2)
-    lb = band_calibration_loss(bad_conf, logits, true, w=2, m=2)
-    assert lg < lb

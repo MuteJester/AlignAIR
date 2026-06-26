@@ -6,7 +6,7 @@ from alignair.core.dnalignair import DNAlignAIR
 def test_pointer_aligner_selected_and_coords_run():
     cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, aligner="pointer")
     model = DNAlignAIR(cfg)
-    from alignair.nn.pointer_aligner import BandedPointerAligner
+    from alignair.nn.aligner.pointer import BandedPointerAligner
     assert isinstance(model.aligner, BandedPointerAligner)
     B, S, Lg, d = 2, 6, 12, 32
     seg = torch.randn(B, S, d); germ = torch.randn(B, Lg, d)

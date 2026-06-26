@@ -20,8 +20,8 @@ from alignair.core.dnalignair import DNAlignAIR, extract_segment_tokens
 from alignair.reference.reference_set import ReferenceSet
 from alignair.gym import AlignAIRGym, gym_collate
 from alignair.gym.instrument.lattice import FrozenLattice
-from alignair.nn.soft_dp_aligner import soft_dp_end_logits, _reverse_valid_2d, NEG
-from alignair.nn.pointer_aligner import weighted_leading_diag
+from alignair.nn.aligner.soft_dp import soft_dp_end_logits, _reverse_valid_2d, NEG
+from alignair.nn.aligner.diagonal_ops import weighted_leading_diag
 from torch.utils.data import DataLoader
 
 CELLS = ("clean", "junction_boundary", "heavy_shm_fulllen", "indel")

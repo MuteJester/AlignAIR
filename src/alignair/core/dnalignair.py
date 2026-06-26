@@ -13,9 +13,9 @@ from ..nn.region_decoder import RegionMaskSpanDecoder
 from ..nn.state_head import PerPositionStateHead
 from ..nn.germline_encoder import GermlineEncoder
 from ..nn.matching import AlleleMatchingHead
-from ..nn.germline_aligner import GermlineAligner
-from ..nn.soft_dp_aligner import SoftDPAligner
-from ..nn.pointer_aligner import BandedPointerAligner
+from ..nn.aligner.germline_aligner import GermlineAligner
+from ..nn.aligner.soft_dp import SoftDPAligner
+from ..nn.aligner.pointer import BandedPointerAligner
 
 
 def _masked_mean(h: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

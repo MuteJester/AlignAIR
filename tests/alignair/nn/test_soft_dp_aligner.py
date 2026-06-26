@@ -1,6 +1,6 @@
 import torch
 
-from alignair.nn.soft_dp_aligner import soft_dp_end_logits, SoftDPAligner, NEG
+from alignair.nn.aligner.soft_dp import soft_dp_end_logits, SoftDPAligner, NEG
 
 
 def _gaps(go=-2.0, ge=-1.0, dg=-1.0):
@@ -80,7 +80,7 @@ def test_module_start_and_end_and_grad():
 def test_alignment_score_ranks_true_germline_above_mismatched():
     # the matching germline should score higher than a mismatched one (allele-reader primitive)
     import torch
-    from alignair.nn.soft_dp_aligner import SoftDPAligner
+    from alignair.nn.aligner.soft_dp import SoftDPAligner
     torch.manual_seed(0)
     B, S, Lg, d, c0 = 1, 12, 25, 32, 4
     al = SoftDPAligner(d_model=d)

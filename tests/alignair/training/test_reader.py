@@ -1,7 +1,7 @@
 import random
 import torch
 
-from alignair.nn.soft_dp_aligner import SoftDPAligner
+from alignair.nn.aligner.soft_dp import SoftDPAligner
 from alignair.training.reader import (build_candidates, reader_scores, reader_set_nce,
                                       perturb_germline_tokens, reader_novel_positive)
 
