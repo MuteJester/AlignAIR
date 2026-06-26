@@ -7,6 +7,7 @@ from .soft_dp import soft_dp_end_logits, SoftDPAligner, NEG
 from .germline_aligner import GermlineAligner, decode_germline_coords
 from .pointer import BandedPointerAligner
 from .band_head import BandHead, band_offset_loss, peak_evidence
+from .banded_dp import band_mask_scores, SeedExtendAligner
 
 __all__ = [
     "base_match_channel", "base_match_matrix",
@@ -15,4 +16,5 @@ __all__ = [
     "GermlineAligner", "decode_germline_coords",
     "BandedPointerAligner",
     "BandHead", "band_offset_loss", "peak_evidence",
+    "band_mask_scores", "SeedExtendAligner",
 ]
