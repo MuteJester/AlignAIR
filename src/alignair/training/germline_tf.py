@@ -13,7 +13,7 @@ from ..core.dnalignair import extract_segment_tokens, extract_segment
 
 def compute_germline_logits(model, tokens, mask, batch, ref_emb, has_d: bool,
                             region_labels=None, allele_idx: dict | None = None,
-                            state_logits=None, reps=None):
+                            state_logits=None, reps=None, return_band=False):
     """Per-gene germline (start, end) logits.
 
     Teacher-forced (default): segment is extracted with the TRUE region labels and
@@ -24,6 +24,7 @@ def compute_germline_logits(model, tokens, mask, batch, ref_emb, has_d: bool,
     genes = ["v", "j"] + (["d"] if has_d else [])
     rl = region_labels if region_labels is not None else batch["region_labels"]
     out = {}
+    band = {}
     for g in genes:
         G = g.upper()
         seg_tok, seg_mask = extract_segment_tokens(tokens, mask, rl, G)
@@ -56,7 +57,19 @@ def compute_germline_logits(model, tokens, mask, batch, ref_emb, has_d: bool,
             from ..nn.heads.state import state_reliability
             seg_state, _ = extract_segment(state_logits, mask, rl, G)
             seg_rel = state_reliability(seg_state)
-        out[g] = model.germline_coords(seg_reps, seg_mask, germ_reps, germ_mask,
-                                       seg_tok=seg_tok, germ_tok=germ_tok,
-                                       seg_reliability=seg_rel)
+        if getattr(model, "seed_extend", False):
+            # compute the band logits ONCE: they place the DP band (argmax center) AND are
+            # supervised by band_offset_loss (the band head's only gradient — center is argmax).
+            bl = model.band_logits(seg_reps, seg_mask, germ_reps, germ_mask, seg_tok, germ_tok)
+            band[g] = bl
+            center = bl.argmax(dim=-1)
+            w = getattr(model.config, "band_width", 16)
+            out[g] = model.aligner(seg_reps, seg_mask, germ_reps, germ_mask, center, w,
+                                   seg_tok=seg_tok, germ_tok=germ_tok, seg_reliability=seg_rel)
+        else:
+            out[g] = model.germline_coords(seg_reps, seg_mask, germ_reps, germ_mask,
+                                           seg_tok=seg_tok, germ_tok=germ_tok,
+                                           seg_reliability=seg_rel)
+    if return_band:
+        return out, band
     return out

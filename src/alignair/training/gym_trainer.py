@@ -33,8 +33,9 @@ class GymTrainer:
                  reader=False, reader_weight=1.0, reader_n_sib=6, reader_n_rand=6,
                  reader_novel_prob=0.0, reader_novel_snps=1, state_conditioning=True,
                  scheduled_sampling=False, ss_max_prob=0.5, num_workers=0,
-                 sigma_freeze_steps=0, promote_on_lcb=False):
+                 sigma_freeze_steps=0, promote_on_lcb=False, band_weight=1.0):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.band_weight = band_weight   # seed_extend: weight on the band head's offset-CE loss
         self.model = model.to(self.device)
         self.loss_fn = loss_fn.to(self.device)
         # after a difficulty advance, hold the Kendall log_vars constant for this many
@@ -170,13 +171,28 @@ class GymTrainer:
                 use_pred = torch.rand(batch["tokens"].shape[0], device=self.device) < p_ss
                 sup_regions = torch.where(use_pred.unsqueeze(1),
                                           out["region_logits"].argmax(-1), sup_regions)
-            germline_logits = compute_germline_logits(
-                self.model, canon, batch["mask"], batch, ref_emb, self.has_d,
-                region_labels=sup_regions, state_logits=out["state_logits"], reps=out["reps"])
+            band_logits = None
+            if getattr(self.model, "seed_extend", False):
+                germline_logits, band_logits = compute_germline_logits(
+                    self.model, canon, batch["mask"], batch, ref_emb, self.has_d,
+                    region_labels=sup_regions, state_logits=out["state_logits"],
+                    reps=out["reps"], return_band=True)
+            else:
+                germline_logits = compute_germline_logits(
+                    self.model, canon, batch["mask"], batch, ref_emb, self.has_d,
+                    region_labels=sup_regions, state_logits=out["state_logits"], reps=out["reps"])
             match_logits = self.model.match_alleles(
                 canon, batch["mask"], sup_regions, ref_emb, reps=out["reps"])
             total, comp = self.loss_fn(out, batch, germline_logits=germline_logits,
                                        match_logits=match_logits)
+            if band_logits is not None:
+                # the band head's only gradient: offset-CE against the true germline start
+                # (the DP band center is an argmax, so coord loss can't train the seed).
+                from ..nn.aligner.band_head import band_offset_loss
+                band_loss = sum(band_offset_loss(band_logits[g], batch[f"{g}_germline_start"])
+                                for g in band_logits)
+                total = total + self.band_weight * band_loss
+                comp["band"] = band_loss.detach()
             # EMA self-distillation: pull the student's fragment-view allele posteriors
             # toward the teacher's full-read posteriors (soft, temperature-scaled).
             if self.distill and "teacher_tokens" in batch:
