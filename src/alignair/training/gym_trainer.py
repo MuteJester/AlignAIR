@@ -172,7 +172,7 @@ class GymTrainer:
                                           out["region_logits"].argmax(-1), sup_regions)
             germline_logits = compute_germline_logits(
                 self.model, canon, batch["mask"], batch, ref_emb, self.has_d,
-                region_labels=sup_regions, state_logits=out["state_logits"])
+                region_labels=sup_regions, state_logits=out["state_logits"], reps=out["reps"])
             match_logits = self.model.match_alleles(
                 canon, batch["mask"], sup_regions, ref_emb, reps=out["reps"])
             total, comp = self.loss_fn(out, batch, germline_logits=germline_logits,

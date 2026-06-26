@@ -13,7 +13,7 @@ from ..core.dnalignair import extract_segment_tokens, extract_segment
 
 def compute_germline_logits(model, tokens, mask, batch, ref_emb, has_d: bool,
                             region_labels=None, allele_idx: dict | None = None,
-                            state_logits=None):
+                            state_logits=None, reps=None):
     """Per-gene germline (start, end) logits.
 
     Teacher-forced (default): segment is extracted with the TRUE region labels and
@@ -27,7 +27,18 @@ def compute_germline_logits(model, tokens, mask, batch, ref_emb, has_d: bool,
     for g in genes:
         G = g.upper()
         seg_tok, seg_mask = extract_segment_tokens(tokens, mask, rl, G)
-        seg_reps = model.germline_encoder.forward_positions(seg_tok, seg_mask)  # (B, S, d)
+        if getattr(model, "seed_extend", False):
+            # ONE shared encoder: read the segment reps OFF the backbone reps (no re-encode) when
+            # available, else re-encode the segment through the SHARED encoder (READ). Never the
+            # separate GermlineEncoder (it does not exist on the seed_extend path).
+            if reps is not None:
+                seg_reps, _ = extract_segment(reps, mask, rl, G)              # (B, S, d), no re-encode
+            else:
+                from ..nn.encoder.shared import SharedNucleotideEncoder
+                seg_reps = model.backbone.forward_positions(seg_tok, seg_mask,
+                                                            token_type=SharedNucleotideEncoder.READ)
+        else:
+            seg_reps = model.germline_encoder.forward_positions(seg_tok, seg_mask)  # (B, S, d)
         if allele_idx is not None and G in allele_idx:
             idx = allele_idx[G]
         elif f"{g}_primary_idx" in batch:
