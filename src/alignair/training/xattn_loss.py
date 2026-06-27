@@ -15,7 +15,8 @@ def _coord_ce(logits, target, Lg):
     return F.cross_entropy(logits, tgt)
 
 
-def xattn_losses(model, batch, ref_emb, sib_index, rng, n_sib: int = 6, n_rand: int = 6):
+def xattn_losses(model, batch, ref_emb, sib_index, rng, n_sib: int = 6, n_rand: int = 6,
+                 cand_chunk: int = 0):
     """Multi-task supervised loss for XAttnAligner on a GenAIRR gym batch: orientation CE +
     region CE + allele set-NCE + germline-span CE. Teacher-forced (true orientation + true region
     labels). Returns (total, {orientation, region, allele, gstart, gend})."""
@@ -48,7 +49,8 @@ def xattn_losses(model, batch, ref_emb, sib_index, rng, n_sib: int = 6, n_rand: 
         L_retr = L_retr + F.cross_entropy(retr_scores, batch[f"{g}_primary_idx"].long())
         cand_idx, pos_mask = build_candidates(batch[f"{g}_primary_idx"], batch[f"{g}_allele"],
                                               sib_index[G], rng, n_sib=n_sib, n_rand=n_rand)
-        out = xattn_match(model.matcher, seg, seg_mask, emb["pos_reps"], emb["pos_mask"], cand_idx)
+        out = xattn_match(model.matcher, seg, seg_mask, emb["pos_reps"], emb["pos_mask"], cand_idx,
+                          cand_chunk=cand_chunk)
         Lg = emb["pos_reps"].shape[1]
         L_allele = L_allele + reader_set_nce(out["allele_logits"], pos_mask)
         # germline_start is the 0-based inclusive first matched germline position; germline_end is

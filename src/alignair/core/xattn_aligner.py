@@ -64,7 +64,8 @@ class XAttnAligner(nn.Module):
         return torch.tensor(rows, dtype=torch.long, device=cand_idx.device)
 
     def forward(self, tokens, mask, ref_emb, orientation_ids=None,
-                candidate_masks=None, topk: int = 8, seed_m: int = 0, reference_set=None) -> dict:
+                candidate_masks=None, topk: int = 8, seed_m: int = 0, reference_set=None,
+                cand_chunk: int = 0) -> dict:
         orientation_logits = self.orientation_head(tokens, mask)
         t = orientation_ids if orientation_ids is not None else orientation_logits.argmax(dim=-1)
         canon = apply_orientation(tokens, mask, t)
@@ -88,7 +89,7 @@ class XAttnAligner(nn.Module):
             if self._seed is not None:
                 cand_idx = self._union_seed(cand_idx, canon, mask, region_labels, g, cm, seed_m)
             match[g] = xattn_match(self.matcher, seg, seg_mask,
-                                   emb["pos_reps"], emb["pos_mask"], cand_idx)
+                                   emb["pos_reps"], emb["pos_mask"], cand_idx, cand_chunk=cand_chunk)
         return {"orientation_logits": orientation_logits,
                 "region_logits": rdec["region_logits"],
                 "boundary": {"start": rdec["start_logits"], "end": rdec["end_logits"]},

@@ -40,7 +40,7 @@ class CrossAttnMatcher(nn.Module):
         simmax = att.amax(dim=-1).mean(1)                              # (N,S) best germline match/pos
         return w, simmax
 
-    def forward(self, seg_reps, seg_mask, cand_reps, cand_mask):
+    def _forward_chunk(self, seg_reps, seg_mask, cand_reps, cand_mask):
         B, S, d = seg_reps.shape
         C, Lg = cand_reps.shape[1], cand_reps.shape[2]
         seg = seg_reps.unsqueeze(1).expand(B, C, S, d).reshape(B * C, S, d)
@@ -60,8 +60,23 @@ class CrossAttnMatcher(nn.Module):
         gend = logw[bc, last].reshape(B, C, Lg)
         return match, gstart, gend
 
+    def forward(self, seg_reps, seg_mask, cand_reps, cand_mask, cand_chunk: int = 0):
+        """cand_chunk>0 processes the C candidates in chunks of that size so the (B*C,S,Lg) attention
+        never materialises at once — bounds peak memory at no numerical cost (candidates are
+        independent). cand_chunk<=0 (or >=C) is the single-shot path."""
+        C = cand_reps.shape[1]
+        step = cand_chunk if 0 < cand_chunk < C else C
+        if step >= C:
+            return self._forward_chunk(seg_reps, seg_mask, cand_reps, cand_mask)
+        ms, gss, ges = [], [], []
+        for c0 in range(0, C, step):
+            m, gs, ge = self._forward_chunk(seg_reps, seg_mask,
+                                            cand_reps[:, c0:c0 + step], cand_mask[:, c0:c0 + step])
+            ms.append(m); gss.append(gs); ges.append(ge)
+        return torch.cat(ms, 1), torch.cat(gss, 1), torch.cat(ges, 1)
 
-def xattn_match(matcher, seg_reps, seg_mask, pos_reps, pos_mask, cand_idx):
+
+def xattn_match(matcher, seg_reps, seg_mask, pos_reps, pos_mask, cand_idx, cand_chunk: int = 0):
     """Gather a per-read candidate pool's germline reps, run the CrossAttnMatcher, and decode
     allele logits + germline coords + the chosen global allele index.
 
@@ -71,7 +86,7 @@ def xattn_match(matcher, seg_reps, seg_mask, pos_reps, pos_mask, cand_idx):
     B, C = cand_idx.shape
     cand_reps = pos_reps[cand_idx]                                # (B,C,Lg,d)
     cand_mask = pos_mask[cand_idx]                                # (B,C,Lg)
-    match, gstart, gend = matcher(seg_reps, seg_mask, cand_reps, cand_mask)
+    match, gstart, gend = matcher(seg_reps, seg_mask, cand_reps, cand_mask, cand_chunk=cand_chunk)
     bi = torch.arange(B, device=cand_idx.device)
     best = match.argmax(dim=1)                                    # (B,)
     return {

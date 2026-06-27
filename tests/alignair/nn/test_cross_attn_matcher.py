@@ -84,3 +84,16 @@ def test_match_and_pointers_are_differentiable():
     match, gs, ge = m(seg, sm, cand, cm)
     (match.sum() + ge.exp().sum()).backward()
     assert seg.grad is not None and torch.isfinite(seg.grad).all()
+
+
+def test_candidate_chunking_is_numerically_identical():
+    # chunking over candidates must give bit-identical results to the single-shot path (memory fix)
+    torch.manual_seed(3)
+    m = CrossAttnMatcher(d_model=16, nhead=4).eval()
+    B, C, S, Lg, d = 2, 9, 6, 8, 16
+    seg = torch.randn(B, S, d); cand = torch.randn(B, C, Lg, d)
+    sm = torch.ones(B, S, dtype=torch.bool); cm = torch.ones(B, C, Lg, dtype=torch.bool)
+    full = m(seg, sm, cand, cm)
+    chunked = m(seg, sm, cand, cm, cand_chunk=4)
+    for a, b in zip(full, chunked):
+        assert torch.allclose(a, b, atol=1e-6)
