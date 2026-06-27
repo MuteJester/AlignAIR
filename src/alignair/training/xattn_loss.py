@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from ..nn.heads.orientation import apply_orientation
 from ..nn.heads.cross_attn_matcher import xattn_match
 from ..core.dnalignair import extract_segment
+from ..core.xattn_aligner import _masked_mean
 from .reader import build_candidates, reader_set_nce
 
 
@@ -33,12 +34,18 @@ def xattn_losses(model, batch, ref_emb, sib_index, rng, n_sib: int = 6, n_rand: 
 
     genes = ["v", "j"] + (["d"] if "d_allele" in batch else [])
     L_allele = reps.new_zeros(())
+    L_retr = reps.new_zeros(())
     L_gs = reps.new_zeros(())
     L_ge = reps.new_zeros(())
     for g in genes:
         G = g.upper()
         emb = ref_emb[G]
         seg, seg_mask = extract_segment(reps, mask, batch["region_labels"].long(), G)
+        # retrieval InfoNCE: the pooled segment query must rank the true allele high over ALL alleles,
+        # so the inference top-k pool actually contains it (the matcher can only pick from the pool).
+        query = F.normalize(model.backbone.proj(_masked_mean(seg, seg_mask)), dim=-1)
+        retr_scores = model.matching(query, emb["embeddings"])                       # (B,K)
+        L_retr = L_retr + F.cross_entropy(retr_scores, batch[f"{g}_primary_idx"].long())
         cand_idx, pos_mask = build_candidates(batch[f"{g}_primary_idx"], batch[f"{g}_allele"],
                                               sib_index[G], rng, n_sib=n_sib, n_rand=n_rand)
         out = xattn_match(model.matcher, seg, seg_mask, emb["pos_reps"], emb["pos_mask"], cand_idx)
@@ -49,6 +56,7 @@ def xattn_losses(model, batch, ref_emb, sib_index, rng, n_sib: int = 6, n_rand: 
         L_gs = L_gs + _coord_ce(out["gstart_logits"][:, 0], batch[f"{g}_germline_start"], Lg)
         L_ge = L_ge + _coord_ce(out["gend_logits"][:, 0], batch[f"{g}_germline_end"] - 1, Lg)
 
-    total = L_ori + L_reg + L_allele + 0.5 * (L_gs + L_ge)
+    total = L_ori + L_reg + L_retr + L_allele + 0.5 * (L_gs + L_ge)
     return total, {"orientation": L_ori.detach(), "region": L_reg.detach(),
-                   "allele": L_allele.detach(), "gstart": L_gs.detach(), "gend": L_ge.detach()}
+                   "retrieval": L_retr.detach(), "allele": L_allele.detach(),
+                   "gstart": L_gs.detach(), "gend": L_ge.detach()}
