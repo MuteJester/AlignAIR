@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 from dataclasses import dataclass
 
 from ..align import align_batch
@@ -12,6 +13,7 @@ class SegmentCall:
     germ_end: int
     cigar: str
     gate: float            # best_score / segment_length (out-of-scope advisory)
+    confidence: float      # softmax-posterior mass inside the equivalence set (0..1)
     pool_idx: list         # candidate indices scored (union pool)
     scores: list           # alignment score per pool_idx (None -> -inf)
 
@@ -46,7 +48,11 @@ def call_segment(seg: str, gene: str, topk_idx, reference_set, seed_prefilter, a
     top = scores[best_j]
     keep = sorted([j for j in range(len(pool)) if top - scores[j] <= set_band],
                   key=lambda j: -scores[j])
+    # posterior mass inside the kept set (softmax over finite pool scores, anchored at the top)
+    z = sum(math.exp(s - top) for s in scores if s > float("-inf")) or 1.0
+    confidence = sum(math.exp(scores[j] - top) for j in keep) / z
     win = results[best_j]
     return SegmentCall(best_idx=pool[best_j], set_idx=[pool[j] for j in keep],
                        germ_start=win.t_start, germ_end=win.t_end, cigar=win.cigar,
-                       gate=top / max(len(seg), 1), pool_idx=pool, scores=scores)
+                       gate=top / max(len(seg), 1), confidence=confidence,
+                       pool_idx=pool, scores=scores)

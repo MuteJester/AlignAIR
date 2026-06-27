@@ -10,24 +10,10 @@ import torch
 
 from ..data.tokenizer import pad_tokenize
 from ..nn.heads.region import decode_boundaries
-from ..nn.aligner.germline_aligner import decode_germline_coords
-from ..training.germline_tf import compute_germline_logits
-from ..core.dnalignair import extract_segment_tokens
 
 
 _ALIGNER = None
 _COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
-_PARASAIL_MAT = None
-
-
-def _parasail():
-    """Lazy parasail handle + nucleotide scoring matrix (match+2/mismatch-1). parasail is an
-    optional dependency; only required when v_reader='parasail'."""
-    global _PARASAIL_MAT
-    if _PARASAIL_MAT is None:
-        import parasail
-        _PARASAIL_MAT = (parasail, parasail.matrix_create("ACGTN", 2, -1))
-    return _PARASAIL_MAT
 
 
 def canonicalize_sequence(seq: str, orientation_id: int) -> str:
@@ -257,6 +243,15 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
             candidate_masks[G] = m.to(device)
             n_allowed[G] = int(m.sum())
 
+    # classical WFA calling stage (replaces the differentiable soft-DP reader + coord decode):
+    # union pool = retrieval top-k U non-learned k-mer seed admission, aligned by WFA/parasail.
+    from ..align import SeedPrefilter, get_aligner
+    from .wfa_caller import call_segment
+    seed_prefilter = SeedPrefilter(reference_set, k=11)
+    aligner = get_aligner()
+    allowed_sets = ({G: set(int(i) for i in candidate_masks[G].nonzero().flatten().tolist())
+                     for G in candidate_masks} if candidate_masks is not None else None)
+
     # out-of-scope / contaminant gate (flag-only): a read whose best length-normalized V
     # alignment quality falls below tau is flagged is_contaminant=True (calls are RETAINED,
     # never deleted). tau is a calibrated threshold (calibration['contaminant']['tau']).
@@ -281,161 +276,76 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
         pred_idx = {g.upper(): out["match"][g.upper()].argmax(-1) for g in genes}
         topk_idx = {g.upper(): out["match"][g.upper()].topk(
             min(topk, n_allowed[g.upper()]), dim=-1).indices for g in genes}
-        gl = compute_germline_logits(model, canon, mask, {}, ref_emb, has_d,
-                                     region_labels=pred_region, allele_idx=pred_idx)
-        gcoord = {g: decode_germline_coords(gl[g][0], gl[g][1], soft=True) for g in genes}
-        # learned allele reader: rerank top-k by the differentiable alignment score
-        learned_best = {}
-        if rerank == "learned":
-            from ..nn.heads.state import state_reliability
-            from ..core.dnalignair import extract_segment
-            cal = calibration or {}
+        ori = out["orientation_logits"].argmax(dim=-1).cpu().tolist()
+        gene_U = [g.upper() for g in genes]
+        topk_l = {G: topk_idx[G].cpu().tolist() for G in gene_U}
+        # per (read, gene): union pool (retrieval top-k U k-mer seed) -> WFA -> allele pick +
+        # ordered equivalence set + germline coords/CIGAR from the traceback (classical, exact).
+        calls = [{} for _ in range(len(chunk))]
+        for i in range(len(chunk)):
+            canon_seq = canonicalize_sequence(chunk[i], ori[i])
             for g in genes:
                 G = g.upper()
-                if v_reader == "parasail" and G == "V":
-                    continue   # V handled by the classical parasail reader below (faster + sharper)
-                T = float(cal.get(G, {}).get("temperature", 1.0))
-                eps = float(cal.get(G, {}).get("epsilon", set_epsilon))
-                seg_tok, seg_mask = extract_segment_tokens(canon, mask, pred_region, G)
-                seg_pos = model.germline_encoder.forward_positions(seg_tok, seg_mask)  # (B,S,d)
-                if state_conditioning:
-                    seg_state, _ = extract_segment(out["state_logits"], mask, pred_region, G)
-                    seg_rel = state_reliability(seg_state)              # (B,S) SHM down-weight
-                else:
-                    seg_rel = None
-                pos_reps, pos_mask = ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"]
-                pos_tok = ref_emb[G]["pos_tok"]
-                # VECTORIZED rerank: score every (read, candidate) pair in batched soft-DP
-                # calls instead of a per-read Python loop. Each alignment is independent, so
-                # this is the same per-item math, just GPU-parallel (chunked to bound memory).
-                B = len(chunk)
-                ti = topk_idx[G]                                       # (B, k)
-                kk = ti.shape[1]
-                read_ix = torch.arange(B, device=device).repeat_interleave(kk)   # (B*k,)
-                cand_ix = ti.reshape(-1)                               # (B*k,)
-                parts = []
-                for a in range(0, B * kk, rerank_chunk):
-                    sl = slice(a, a + rerank_chunk)
-                    ri, ci = read_ix[sl], cand_ix[sl]
-                    parts.append(model.aligner.alignment_score(
-                        seg_pos[ri], seg_mask[ri], pos_reps[ci], pos_mask[ci],
-                        seg_tok=seg_tok[ri], germ_tok=pos_tok[ci],
-                        seg_reliability=(seg_rel[ri] if seg_rel is not None else None)))
-                sc_all = torch.cat(parts).reshape(B, kk)              # (B, k) candidate scores
-                # temperature-scaled log-likelihood-ratio band (codex): keep iff the top is at
-                # most exp(eps) times likelier; calibrated per gene, T=1 default.
-                delta = (sc_all.max(dim=1, keepdim=True).values - sc_all) / T   # (B,k)
-                keep = delta <= eps                                   # (B,k)
-                conf = (torch.softmax(sc_all / T, dim=1) * keep).sum(dim=1)     # (B,) mass in set
-                ti_l, keep_l = ti.cpu().tolist(), keep.cpu().tolist()
-                top_l = sc_all.argmax(dim=1).cpu().tolist()
-                learned_best[G] = [ti_l[i][top_l[i]] for i in range(B)]
-                learned_best[G + "_set"] = [
-                    [names[G][ti_l[i][j]] for j in range(kk) if keep_l[i][j]] for i in range(B)]
-                learned_best[G + "_conf"] = conf.cpu().tolist()
-                if G == "V":  # out-of-scope gate: best LENGTH-NORMALIZED V alignment quality
-                    seg_len = seg_mask.sum(dim=1).clamp(min=1).to(sc_all.dtype)  # (B,) predicted V len
-                    learned_best["_gate"] = (sc_all.max(dim=1).values / seg_len).cpu().tolist()
-                if emit_scores:
-                    sc_l = sc_all.cpu().tolist()
-                    learned_best[G + "_scores"] = [
-                        [(names[G][ti_l[i][j]], sc_l[i][j]) for j in range(kk)] for i in range(B)]
-        # classical parasail V reader: raw-nucleotide Smith-Waterman over the model's own top-k V
-        # candidates, at the predicted V segment. Faster than the soft-DP and sharper on heavy-SHM
-        # siblings (the learned reader washes out the 1-3 diagnostic positions). Populates the same
-        # learned_best["V"*] slots so the assembly loop is unchanged. Operates on raw germline
-        # nucleotides -> novel alleles need no learned embedding (dynamic-genotype safe).
-        if rerank == "learned" and v_reader == "parasail":
-            par, mat = _parasail()
-            vseqs = reference_set.gene("V").sequences
-            B = len(chunk)
-            ti_l = topk_idx["V"].cpu().tolist()
-            ori = out["orientation_logits"].argmax(dim=-1).cpu().tolist()
-            if boundary is not None:
-                vstart = boundary["start"]["V"].argmax(dim=1).cpu().tolist()
-                vend = (boundary["end"]["V"].argmax(dim=1) + 1).cpu().tolist()
-            best, vset, vconf, gate, vsc = [], [], [], [], []
-            for i in range(B):
-                canon_seq = canonicalize_sequence(chunk[i], ori[i])
                 if boundary is not None:
-                    vs, ve = vstart[i], vend[i]
+                    vs = int(out["boundary"]["start"][G][i].argmax())
+                    ve = int(out["boundary"]["end"][G][i].argmax()) + 1
                 else:
-                    vs, ve = dec[i]["v_start"], dec[i]["v_end"]
-                seg = canon_seq[vs:ve].upper() if (vs is not None and ve and ve > vs) else ""
-                cand = ti_l[i]
-                if len(seg) >= 5:
-                    scores = [float(par.sw_striped_16(seg, vseqs[idx], 3, 1, mat).score)
-                              if vseqs[idx] else float("-inf") for idx in cand]
-                else:                                  # no usable V segment -> keep retrieval order
-                    scores = [-float(j) for j in range(len(cand))]
-                bj = max(range(len(cand)), key=lambda j: scores[j])
-                best.append(cand[bj])
-                top = scores[bj]
-                # set ORDERED by score desc so v_calls[0] == the chosen call (the benchmark and
-                # downstream take pred_calls[0] as the point estimate)
-                keep = sorted([j for j in range(len(cand))
-                               if scores[j] > -1e30 and top - scores[j] <= raw_set_band],
-                              key=lambda j: -scores[j])
-                vset.append([names["V"][cand[j]] for j in keep])
-                import math as _m
-                ex = [_m.exp(scores[j] - top) if scores[j] > -1e30 else 0.0 for j in range(len(cand))]
-                Z = sum(ex) or 1.0
-                vconf.append(sum(ex[j] for j in keep) / Z)
-                gate.append(top / max(len(seg), 1) if top > -1e30 else 0.0)
-                if emit_scores:
-                    vsc.append([(names["V"][cand[j]], scores[j]) for j in range(len(cand))])
-            learned_best["V"] = best
-            learned_best["V_set"] = vset
-            learned_best["V_conf"] = vconf
-            learned_best["_gate"] = gate
-            if emit_scores:
-                learned_best["V_scores"] = vsc
+                    vs, ve = dec[i][f"{g}_start"], dec[i][f"{g}_end"]
+                seg = canon_seq[vs:ve] if (vs is not None and ve and ve > vs) else ""
+                allowed = allowed_sets.get(G) if allowed_sets else None
+                calls[i][G] = call_segment(seg, G, topk_l[G][i], reference_set,
+                                           seed_prefilter, aligner, allowed=allowed)
         for i in range(len(chunk)):
             p = {}
             for g in genes:
                 G = g.upper()
-                idx = learned_best[G][i] if rerank == "learned" else int(pred_idx[G][i])
+                sc = calls[i][G]
+                if sc is not None:
+                    idx = sc.best_idx
+                    cset = [names[G][j] for j in sc.set_idx]
+                    p[f"{g}_germline_start"] = int(sc.germ_start)
+                    p[f"{g}_germline_end"] = int(sc.germ_end)
+                    p[f"{g}_cigar"] = sc.cigar
+                    if emit_scores:
+                        p[f"{g}_scores"] = [(names[G][j], sc.scores[k])
+                                            for k, j in enumerate(sc.pool_idx)]
+                else:                                   # short/empty segment -> retrieval top-1
+                    idx = int(pred_idx[G][i])
+                    cset = [names[G][idx]]
+                    p[f"{g}_germline_start"] = 0
+                    p[f"{g}_germline_end"] = 0
+                    if emit_scores:
+                        p[f"{g}_scores"] = []
                 p[f"{g}_call"] = names[G][idx]
                 p[f"{g}_topk"] = [names[G][int(j)] for j in topk_idx[G][i]]
-                if rerank == "learned":
-                    cset = learned_best[G + "_set"][i]
-                    p[f"{g}_call_set"] = cset
-                    p[f"{g}_calls"] = cset                             # benchmark-adapter alias
-                    p[f"{g}_set_confidence"] = learned_best[G + "_conf"][i]
-                    # graceful hierarchical degradation + abstention from the calibrated set
-                    resolved, level = resolve_hierarchy(cset, p[f"{g}_call"])
-                    p[f"{g}_resolved_call"] = resolved
-                    p[f"{g}_call_level"] = level
-                    if emit_scores:
-                        p[f"{g}_scores"] = learned_best[G + "_scores"][i]
-                if boundary is not None:                    # query decoder: posterior argmax
-                    p[f"{g}_sequence_start"] = int(boundary["start"][G][i].argmax())
-                    p[f"{g}_sequence_end"] = int(boundary["end"][G][i].argmax()) + 1
+                p[f"{g}_call_set"] = cset
+                p[f"{g}_calls"] = cset
+                p[f"{g}_set_confidence"] = float(sc.confidence) if sc is not None else 1.0
+                resolved, level = resolve_hierarchy(cset, p[f"{g}_call"])
+                p[f"{g}_resolved_call"] = resolved
+                p[f"{g}_call_level"] = level
+                if boundary is not None:
+                    p[f"{g}_sequence_start"] = int(out["boundary"]["start"][G][i].argmax())
+                    p[f"{g}_sequence_end"] = int(out["boundary"]["end"][G][i].argmax()) + 1
                 else:
                     p[f"{g}_sequence_start"] = dec[i][f"{g}_start"]
                     p[f"{g}_sequence_end"] = dec[i][f"{g}_end"]
-                p[f"{g}_germline_start"] = int(gcoord[g][0][i])
-                p[f"{g}_germline_end"] = int(gcoord[g][1][i])
-            # sequence-level annotations (predicted orientation + scalar heads)
             p["orientation_id"] = int(out["orientation_logits"][i].argmax())
             p["productive"] = bool(out["productive"][i].item() > 0.5)
             p["mutation_rate"] = float(out["mutation_rate"][i].item())
             p["indel_count"] = float(out["indel_count"][i].item())
-            # AIRR output completeness: the canonical (forward) sequence the coords refer to,
-            # the locus, and the derived junction/CDR3 (empty when unrecoverable, e.g. fragments)
             canon_seq = canonicalize_sequence(chunk[i], p["orientation_id"])
             p["sequence"] = canon_seq
             p["locus"] = locus
             if full_alignment:                      # exact cigars + gapped alignment + identity
-                from ..io.alignment import realign  # (refines germline coords; needs parasail)
+                from ..io.alignment import realign
                 p.update(realign(canon_seq, p, reference_set))
             p.update(junction_fields(p, canon_seq, reference_set))
             p.update(derived_rearrangement_fields(p, canon_seq))   # np1/np2, vj_in_frame, stop_codon
-            # out-of-scope flag (advisory; calls above are RETAINED regardless)
-            if rerank == "learned" and "_gate" in learned_best:
-                gs = learned_best["_gate"][i]
-                p["contaminant_score"] = float(gs)
+            vcall = calls[i].get("V")
+            if vcall is not None:                   # out-of-scope flag (advisory; calls RETAINED)
+                p["contaminant_score"] = float(vcall.gate)
                 if contam_tau is not None:
-                    p["is_contaminant"] = bool(gs < contam_tau)
+                    p["is_contaminant"] = bool(vcall.gate < contam_tau)
             preds.append(p)
     return preds

@@ -23,6 +23,25 @@ def test_predict_reads_returns_valid_predictions():
             assert 0 <= p[f"{g}_germline_start"] and p[f"{g}_germline_end"] >= 0
 
 
+def test_seed_extend_learned_reader_runs():
+    # seed_extend has no germline_encoder: the learned reader must read segment reps off the
+    # backbone and place a band head center for the exact banded DP (previously crashed here).
+    torch.manual_seed(0)
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
+                                        backbone="shared", aligner="seed_extend"))
+    assert getattr(model, "germline_encoder", None) is None
+    reads = ["ACGT" * 40, "TTGCAACGTACG" * 8, "ACGTACGTNNACGT" * 6]
+    # v_reader="learned" forces the DP reader on V too (not the parasail fallback)
+    preds = predict_reads(model, rs, reads, batch_size=2, rerank="learned", v_reader="learned")
+    assert len(preds) == len(reads)
+    vnames = set(rs.gene("V").names)
+    for p in preds:
+        assert p["v_call"] in vnames
+        assert isinstance(p["v_call_set"], list) and p["v_call_set"]   # equivalence set emitted
+        assert set(p["v_call_set"]) <= vnames
+
+
 def _genotype(rs, n_v=4, n_d=3, n_j=2):
     return {
         "v": rs.gene("V").names[:n_v],
