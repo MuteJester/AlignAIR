@@ -44,8 +44,10 @@ def xattn_losses(model, batch, ref_emb, sib_index, rng, n_sib: int = 6, n_rand: 
         out = xattn_match(model.matcher, seg, seg_mask, emb["pos_reps"], emb["pos_mask"], cand_idx)
         Lg = emb["pos_reps"].shape[1]
         L_allele = L_allele + reader_set_nce(out["allele_logits"], pos_mask)
+        # germline_start is the 0-based inclusive first matched germline position; germline_end is
+        # GenAIRR's exclusive (one-past) end, so the last-token pointer target is germline_end - 1.
         L_gs = L_gs + _coord_ce(out["gstart_logits"][:, 0], batch[f"{g}_germline_start"], Lg)
-        L_ge = L_ge + _coord_ce(out["gend_logits"][:, 0], batch[f"{g}_germline_end"], Lg)
+        L_ge = L_ge + _coord_ce(out["gend_logits"][:, 0], batch[f"{g}_germline_end"] - 1, Lg)
 
     total = L_ori + L_reg + L_allele + 0.5 * (L_gs + L_ge)
     return total, {"orientation": L_ori.detach(), "region": L_reg.detach(),

@@ -40,3 +40,28 @@ def test_loss_is_differentiable():
     total.backward()
     grads = [p.grad for p in model.parameters() if p.grad is not None]
     assert grads and all(torch.isfinite(g).all() for g in grads)
+
+
+def test_model_trains_a_few_steps_and_loss_decreases():
+    torch.manual_seed(0)
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGK_OGRDB)
+    model = XAttnAligner(DNAlignAIRConfig(d_model=32, n_layers=2, nhead=4, dim_feedforward=64)).train()
+    sib = build_sibling_index(rs)
+    gym = AlignAIRGym([gdata.HUMAN_IGK_OGRDB], rs, n=8, seed=0)
+    loader = DataLoader(gym, batch_size=8, collate_fn=lambda b: gym_collate(b, rs, rs.has_d))
+    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+    it = iter(loader)
+    rng = random.Random(0)
+    losses = []
+    for step in range(24):
+        try:
+            batch = next(it)
+        except StopIteration:
+            it = iter(loader); batch = next(it)
+        ref_emb = model.encode_reference(rs)          # re-encode (weights changed)
+        total, _ = xattn_losses(model, batch, ref_emb, sib, rng)
+        opt.zero_grad(); total.backward(); opt.step()
+        losses.append(float(total))
+    first = sum(losses[:6]) / 6
+    last = sum(losses[-6:]) / 6
+    assert last < first, f"loss did not decrease: {first:.3f} -> {last:.3f}"
