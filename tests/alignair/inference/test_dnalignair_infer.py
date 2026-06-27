@@ -200,3 +200,24 @@ def test_genotype_empty_gene_raises():
     model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))
     with pytest.raises(ValueError):
         predict_reads(model, rs, ["ACGT" * 40], genotype={"v": ["does-not-exist*01"]})
+
+
+def test_swap_reference_allele_callable_via_seed_path_when_retrieval_misses():
+    # The swap-robustness guarantee on the FULL IGH reference: when neural retrieval omits the
+    # true allele from its top-k (the failure mode for divergent/novel germlines), the non-learned
+    # k-mer seed prefilter must still admit it so WFA picks it and aligns full-length. This is the
+    # mechanism that makes "swap the genotype/germline on a trained model" robust; it is asserted at
+    # the caller level because an UNTRAINED model's segmentation can't yield a usable segment e2e.
+    from alignair.align import SeedPrefilter, get_aligner
+    from alignair.inference.wfa_caller import call_segment
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    sp, al = SeedPrefilter(rs, k=11), get_aligner()
+    vg = rs.gene("V")
+    true_idx = 7
+    seg = vg.sequences[true_idx]                                 # a read that IS the true germline
+    wrong_topk = [i for i in range(20) if i != true_idx][:16]    # retrieval MISSES the true allele
+    call = call_segment(seg, "V", wrong_topk, rs, sp, al)
+    assert true_idx not in wrong_topk
+    assert true_idx in call.pool_idx                             # admitted by the seed prefilter
+    assert call.best_idx == true_idx                             # WFA picks it from the union pool
+    assert call.germ_start == 0 and call.germ_end == len(seg)    # aligned full-length
