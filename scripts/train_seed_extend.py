@@ -59,6 +59,8 @@ def main():
     ap.add_argument("--k", type=int, default=16)
     ap.add_argument("--save", default="")
     ap.add_argument("--ckpt-every", type=int, default=2000)
+    ap.add_argument("--reader", action="store_true", help="train the DP log-partition allele reader (set-NCE)")
+    ap.add_argument("--reader-weight", type=float, default=1.0)
     a = ap.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dc = {"igh": gdata.HUMAN_IGH_OGRDB, "igk": gdata.HUMAN_IGK_OGRDB}[a.locus]
@@ -69,7 +71,8 @@ def main():
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
     gym = AlignAIRGym([dc], rs, n=a.batch_size * 8, seed=0, curriculum=StratifiedCurriculum())
-    trainer = GymTrainer(model, loss_fn, rs, gym, lr=1e-3, batch_size=a.batch_size, device=device)
+    trainer = GymTrainer(model, loss_fn, rs, gym, lr=1e-3, batch_size=a.batch_size, device=device,
+                         reader=a.reader, reader_weight=a.reader_weight)
 
     def _save(path):
         if path:
