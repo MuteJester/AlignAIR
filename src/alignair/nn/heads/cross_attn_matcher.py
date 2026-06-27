@@ -82,4 +82,5 @@ def xattn_match(matcher, seg_reps, seg_mask, pos_reps, pos_mask, cand_idx):
         "germ_end": gend[bi, best].argmax(dim=-1),
         "gstart_logits": gstart,
         "gend_logits": gend,
+        "pool_idx": cand_idx,
     }

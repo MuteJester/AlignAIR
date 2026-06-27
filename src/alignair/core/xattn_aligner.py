@@ -31,6 +31,7 @@ class XAttnAligner(nn.Module):
         self.region_tagger = RegionMaskSpanDecoder(d_model=d, nhead=config.nhead)
         self.matching = AlleleMatchingHead()
         self.matcher = CrossAttnMatcher(d_model=d, nhead=config.nhead)
+        self._seed = None                                          # lazily-built SeedPrefilter
 
     def encode_reference(self, reference_set) -> dict:
         device = next(self.parameters()).device
@@ -43,14 +44,36 @@ class XAttnAligner(nn.Module):
             out[gene] = {"embeddings": pooled, "pos_reps": pos, "pos_mask": msk, "pos_tok": tok}
         return out
 
+    def _union_seed(self, cand_idx, canon, mask, region_labels, gene, cm, seed_m):
+        """Union non-learned k-mer seed candidates into the retrieval pool so a divergent/novel
+        allele the encoder misranks can still reach the matcher. Pads each row to k+seed_m."""
+        from ..core.dnalignair import extract_segment_tokens
+        from ..data.tokenizer import TOKEN_DICT
+        inv = {v: kk for kk, v in TOKEN_DICT.items()}
+        seg_tok, seg_tm = extract_segment_tokens(canon, mask, region_labels, gene)
+        allowed = set(int(i) for i in cm.nonzero().flatten().tolist()) if cm is not None else None
+        width = cand_idx.shape[1] + seed_m
+        rows = []
+        for b in range(cand_idx.shape[0]):
+            s = "".join(inv.get(int(x), "N") for x, ok in zip(seg_tok[b].tolist(), seg_tm[b].tolist()) if ok)
+            seeds = self._seed.candidates(s, gene, seed_m, allowed=allowed)
+            merged = list(dict.fromkeys(cand_idx[b].tolist() + seeds))[:width]
+            while len(merged) < width:
+                merged.append(merged[-1] if merged else 0)
+            rows.append(merged)
+        return torch.tensor(rows, dtype=torch.long, device=cand_idx.device)
+
     def forward(self, tokens, mask, ref_emb, orientation_ids=None,
-                candidate_masks=None, topk: int = 8) -> dict:
+                candidate_masks=None, topk: int = 8, seed_m: int = 0, reference_set=None) -> dict:
         orientation_logits = self.orientation_head(tokens, mask)
         t = orientation_ids if orientation_ids is not None else orientation_logits.argmax(dim=-1)
         canon = apply_orientation(tokens, mask, t)
         reps = self.backbone.forward_positions(canon, mask)
         rdec = self.region_tagger(reps, mask)
         region_labels = rdec["region_logits"].argmax(dim=-1)
+        if reference_set is not None and seed_m > 0 and self._seed is None:
+            from ..align.seed_prefilter import SeedPrefilter
+            self._seed = SeedPrefilter(reference_set, k=11)
         genes = ["V", "J"] + (["D"] if "D" in ref_emb else [])
         match = {}
         for g in genes:
@@ -62,6 +85,8 @@ class XAttnAligner(nn.Module):
             scores = self.matching(query, emb["embeddings"], candidate_mask=cm)             # (B,K)
             k = min(topk, scores.shape[-1])
             cand_idx = scores.topk(k, dim=-1).indices                                       # (B,k)
+            if self._seed is not None:
+                cand_idx = self._union_seed(cand_idx, canon, mask, region_labels, g, cm, seed_m)
             match[g] = xattn_match(self.matcher, seg, seg_mask,
                                    emb["pos_reps"], emb["pos_mask"], cand_idx)
         return {"orientation_logits": orientation_logits,
