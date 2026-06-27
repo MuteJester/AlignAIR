@@ -63,3 +63,24 @@ def test_pointer_logits_respect_germline_mask():
     _, gs, ge = m(seg, sm, cand, cm)
     assert (gs[..., -2:] <= -1e8).all()                   # masked germline positions -> -inf
     assert (ge[..., -2:] <= -1e8).all()
+
+
+def test_each_candidate_scored_independently():
+    # scoring candidate j must not depend on the other candidates in the batch dim C
+    torch.manual_seed(1)
+    m = CrossAttnMatcher(d_model=16, nhead=4).eval()
+    B, C, S, Lg, d = 1, 3, 5, 7, 16
+    seg = torch.randn(B, S, d); cand = torch.randn(B, C, Lg, d)
+    sm = torch.ones(B, S, dtype=torch.bool); cm = torch.ones(B, C, Lg, dtype=torch.bool)
+    full, _, _ = m(seg, sm, cand, cm)
+    solo, _, _ = m(seg, sm, cand[:, 1:2], cm[:, 1:2])     # score candidate 1 alone
+    assert torch.allclose(full[:, 1], solo[:, 0], atol=1e-5)
+
+
+def test_match_and_pointers_are_differentiable():
+    m = CrossAttnMatcher(d_model=16, nhead=4)
+    seg, sm, cand, cm = _toy()
+    seg.requires_grad_(True)
+    match, gs, ge = m(seg, sm, cand, cm)
+    (match.sum() + ge.exp().sum()).backward()
+    assert seg.grad is not None and torch.isfinite(seg.grad).all()
