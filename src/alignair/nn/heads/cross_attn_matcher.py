@@ -19,6 +19,15 @@ class CrossAttnMatcher(nn.Module):
         self.k = nn.Linear(d_model, d_model)
         self.scale = nn.Parameter(torch.ones(()))           # learnable match temperature
 
+    @staticmethod
+    def _first_last(mask):
+        # mask (N,S) bool -> (first_idx, last_idx) (N,) of valid positions
+        N, S = mask.shape
+        ar = torch.arange(S, device=mask.device)
+        first = torch.where(mask, ar, torch.full_like(ar, S)).min(dim=1).values.clamp(max=S - 1)
+        last = torch.where(mask, ar, torch.full_like(ar, -1)).max(dim=1).values.clamp(min=0)
+        return first, last
+
     def _attend(self, seg, sm, germ, gm):
         # seg (N,S,d), germ (N,Lg,d) -> wmean (N,S,Lg) softmax attn, simmax (N,S) MaxSim per seg pos
         N, S, d = seg.shape
@@ -41,6 +50,12 @@ class CrossAttnMatcher(nn.Module):
         wmean, simmax = self._attend(seg, sm, germ, gm)                 # (BC,S,Lg), (BC,S)
         simmax = simmax.masked_fill(~sm, 0.0)
         match = (self.scale * simmax.sum(-1) / sm.sum(-1).clamp(min=1)).reshape(B, C)
-        gstart = torch.zeros(B, C, Lg, device=seg_reps.device)         # filled in Task 2
-        gend = torch.zeros(B, C, Lg, device=seg_reps.device)
+        # germline coords: the first/last valid seg token's attention distribution over germline
+        # (its 5' end maps to germline_start, its 3' end to germline_end). argmax over Lg = coord.
+        logw = torch.log(wmean.clamp_min(1e-9))                         # (BC,S,Lg) log-attention
+        logw = logw.masked_fill(~gm.unsqueeze(1), -1e9)                # respect germline mask
+        first, last = self._first_last(sm)                             # (BC,), (BC,)
+        bc = torch.arange(B * C, device=seg_reps.device)
+        gstart = logw[bc, first].reshape(B, C, Lg)
+        gend = logw[bc, last].reshape(B, C, Lg)
         return match, gstart, gend
