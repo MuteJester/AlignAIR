@@ -52,6 +52,11 @@ cli = [
 reader = [
     "parasail>=1.3",
 ]
+# WFA2 wavefront aligner: fast exact germline alignment for the speed-stack inference path
+# (the align/ package prefers it, falling back to parasail when absent).
+wfa = [
+    "pywfa>=0.5",
+]
 train = [
     "wandb>=0.15",
     "matplotlib>=3.7",
