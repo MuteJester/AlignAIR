@@ -31,7 +31,11 @@ def _pool(topk_idx, seed_idx, allowed):
 
 
 def call_segment(seg: str, gene: str, topk_idx, reference_set, seed_prefilter, aligner,
-                 m_seed: int = 8, set_band: float = 2.0, allowed=None) -> SegmentCall | None:
+                 m_seed: int = 8, set_band: float = 2.0, allowed=None,
+                 workers: int = 1) -> SegmentCall | None:
+    # workers=1 (serial) by default: the per-segment pool is tiny (~tens of microsecond-scale
+    # alignments), so a thread pool per call costs more than it saves. Batch-level threading
+    # across the whole read batch is the Phase 2 speed lever (one align_batch for all pairs).
     seg = seg.upper()
     if len(seg) < 5:
         return None
@@ -40,7 +44,7 @@ def call_segment(seg: str, gene: str, topk_idx, reference_set, seed_prefilter, a
     if not pool:
         return None
     germs = reference_set.gene(gene.upper()).sequences
-    results = align_batch([(seg, germs[i]) for i in pool], aligner)
+    results = align_batch([(seg, germs[i]) for i in pool], aligner, workers=workers)
     scores = [(r.score if r is not None else float("-inf")) for r in results]
     best_j = max(range(len(pool)), key=lambda j: scores[j])
     if scores[best_j] == float("-inf"):
