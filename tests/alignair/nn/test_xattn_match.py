@@ -55,3 +55,25 @@ def test_differentiable_through_seg_reps():
     out = xattn_match(matcher, seg, sm, pr, pm, ci)
     out["allele_logits"].sum().backward()
     assert seg.grad is not None and torch.isfinite(seg.grad).all()
+
+
+def test_real_encoder_end_to_end_shapes():
+    # encode a few germlines (GERMLINE type) + a read (READ type) with the real encoder, then run
+    # xattn_match on a constructed candidate pool. Locks that the real reps flow through cleanly.
+    from alignair.nn.encoder.shared import SharedNucleotideEncoder
+    from alignair.data.tokenizer import pad_tokenize
+    torch.manual_seed(0)
+    d = 32
+    enc = SharedNucleotideEncoder(d_model=d, n_layers=1, nhead=4).eval()
+    germlines = ["ACGTACGTACGTACGT", "ACGTACGTACGTACGA", "TTTTGGGGCCCCAAAA"]
+    gtok, gmsk = pad_tokenize(germlines)
+    with torch.no_grad():
+        pos_reps = enc.forward_positions(gtok, gmsk, SharedNucleotideEncoder.GERMLINE)  # (3,Lg,d)
+        rtok, rmsk = pad_tokenize([germlines[0]])                                        # read == allele 0
+        seg = enc.forward_positions(rtok, rmsk, SharedNucleotideEncoder.READ)           # (1,S,d)
+    matcher = CrossAttnMatcher(d_model=d, nhead=4)
+    cand_idx = torch.tensor([[1, 0, 2]])                                                 # pool incl. true (0)
+    out = xattn_match(matcher, seg, rmsk, pos_reps, gmsk, cand_idx)
+    assert out["allele_logits"].shape == (1, 3)
+    assert int(out["best_global_idx"][0]) in (0, 1, 2)
+    assert 0 <= int(out["germ_start"][0]) < pos_reps.shape[1]
