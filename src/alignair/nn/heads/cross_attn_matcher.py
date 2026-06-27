@@ -59,3 +59,27 @@ class CrossAttnMatcher(nn.Module):
         gstart = logw[bc, first].reshape(B, C, Lg)
         gend = logw[bc, last].reshape(B, C, Lg)
         return match, gstart, gend
+
+
+def xattn_match(matcher, seg_reps, seg_mask, pos_reps, pos_mask, cand_idx):
+    """Gather a per-read candidate pool's germline reps, run the CrossAttnMatcher, and decode
+    allele logits + germline coords + the chosen global allele index.
+
+    seg_reps (B,S,d), seg_mask (B,S); pos_reps (K,Lg,d), pos_mask (K,Lg); cand_idx (B,C) long.
+    Returns dict(allele_logits, best_idx, best_global_idx, germ_start, germ_end,
+                 gstart_logits, gend_logits)."""
+    B, C = cand_idx.shape
+    cand_reps = pos_reps[cand_idx]                                # (B,C,Lg,d)
+    cand_mask = pos_mask[cand_idx]                                # (B,C,Lg)
+    match, gstart, gend = matcher(seg_reps, seg_mask, cand_reps, cand_mask)
+    bi = torch.arange(B, device=cand_idx.device)
+    best = match.argmax(dim=1)                                    # (B,)
+    return {
+        "allele_logits": match,
+        "best_idx": best,
+        "best_global_idx": cand_idx[bi, best],
+        "germ_start": gstart[bi, best].argmax(dim=-1),
+        "germ_end": gend[bi, best].argmax(dim=-1),
+        "gstart_logits": gstart,
+        "gend_logits": gend,
+    }
