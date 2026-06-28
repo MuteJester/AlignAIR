@@ -10,9 +10,13 @@ from .reader import build_candidates, reader_set_nce
 
 
 def _coord_ce(logits, target, Lg):
-    # logits (B,Lg) over germline positions; target (B,) true coordinate, clamped into range
+    # logits (B,Lg) over germline positions; target (B,) true coordinate, clamped into range.
+    # Per-example CE is capped: a target that lands on a masked (-1e9) germline position — e.g. a
+    # short allele whose real length < the clamped target — would otherwise explode to ~1e9 and
+    # destabilise training (observed as a loss spike). Capping bounds that pathological case.
     tgt = target.reshape(-1).long().clamp(0, Lg - 1)
-    return F.cross_entropy(logits, tgt)
+    ce = F.cross_entropy(logits, tgt, reduction="none")
+    return ce.clamp(max=30.0).mean()
 
 
 def xattn_losses(model, batch, ref_emb, sib_index, rng, n_sib: int = 6, n_rand: int = 6,
