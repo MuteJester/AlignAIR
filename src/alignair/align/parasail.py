@@ -39,6 +39,10 @@ def _ops(gapped_q: str, gapped_r: str) -> str:
 class ParasailAligner:
     """Query-global / germline-ends-free gap-affine alignment (parasail sg_dx)."""
 
+    def align_many(self, query: str, targets) -> list:
+        """One query vs many targets (parasail's per-call is a single light C call)."""
+        return [self.align(query, t) for t in targets]
+
     def align(self, query: str, target: str) -> AlignResult | None:
         if len(query) < 1 or len(target) < 1:
             return None

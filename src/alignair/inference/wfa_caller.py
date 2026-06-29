@@ -60,3 +60,44 @@ def call_segment(seg: str, gene: str, topk_idx, reference_set, seed_prefilter, a
                        germ_start=win.t_start, germ_end=win.t_end, cigar=win.cigar,
                        gate=top / max(len(seg), 1), confidence=confidence,
                        pool_idx=pool, scores=scores)
+
+
+def call_segments_batched(items, reference_set, seed_prefilter, aligner,
+                          m_seed: int = 8, set_band: float = 2.0, workers: int = 8):
+    """Batched call_segment: align ALL (segment, candidate-germline) pairs across a read batch in ONE
+    threaded align_batch — vs a serial align_batch per (read,gene). With a GIL-releasing aligner
+    (parasail) this parallelizes the alignment (the rescore bottleneck) across cores.
+
+    items: list of (segment_str, gene, neural_pool_list, allowed_set_or_None).
+    Returns a list of SegmentCall | None, aligned with items."""
+    pools, spans, pairs = [], [], []
+    for seg, gene, topk, allowed in items:
+        if len(seg) < 5:
+            pools.append(None); spans.append((0, 0)); continue
+        seed_idx = seed_prefilter.candidates(seg, gene, m_seed, allowed=allowed)
+        pool = _pool(topk, seed_idx, allowed)
+        germs = reference_set.gene(gene.upper()).sequences
+        start = len(pairs)
+        pairs.extend((seg, germs[i]) for i in pool)
+        pools.append(pool); spans.append((start, len(pairs)))
+    results = align_batch(pairs, aligner, workers=workers)
+    out = []
+    for (seg, gene, topk, allowed), pool, (a, b) in zip(items, pools, spans):
+        if pool is None or a == b:
+            out.append(None); continue
+        res = results[a:b]
+        scores = [(r.score if r is not None else float("-inf")) for r in res]
+        best_j = max(range(len(pool)), key=lambda j: scores[j])
+        if scores[best_j] == float("-inf"):
+            out.append(None); continue
+        top = scores[best_j]
+        keep = sorted([j for j in range(len(pool)) if top - scores[j] <= set_band],
+                      key=lambda j: -scores[j])
+        z = sum(math.exp(s - top) for s in scores if s > float("-inf")) or 1.0
+        conf = sum(math.exp(scores[j] - top) for j in keep) / z
+        win = res[best_j]
+        out.append(SegmentCall(best_idx=pool[best_j], set_idx=[pool[j] for j in keep],
+                               germ_start=win.t_start, germ_end=win.t_end, cigar=win.cigar,
+                               gate=top / max(len(seg), 1), confidence=conf,
+                               pool_idx=pool, scores=scores))
+    return out

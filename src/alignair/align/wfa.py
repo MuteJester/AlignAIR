@@ -32,19 +32,38 @@ class WFAAligner:
         self._match, self._mismatch = match, mismatch
         self._gap_open, self._gap_ext = gap_open, gap_ext
 
+    def _make(self, query: str, free: int):
+        # pywfa requires text_*_free <= |target|; `free` = min target length in the pool is <= every
+        # target and >= any realistic germline trim, so ONE aligner is reusable across all targets
+        # with identical results (the query is the cached pattern).
+        from pywfa import WavefrontAligner
+        return WavefrontAligner(
+            query, span="ends-free", pattern_begin_free=0, pattern_end_free=0,
+            text_begin_free=free, text_end_free=free,
+            match=self._match, mismatch=self._mismatch,
+            gap_opening=self._gap_open, gap_extension=self._gap_ext)
+
+    def align_many(self, query: str, targets) -> list:
+        """Align one query against many germline targets, REUSING the WavefrontAligner (the query
+        is the cached pattern) — eliminates the per-pair construction that dominated rescore time."""
+        if len(query) < 1:
+            return [None] * len(targets)
+        valid = [len(t) for t in targets if len(t) >= 1]
+        if not valid:
+            return [None] * len(targets)
+        aligner = self._make(query, min(valid))
+        return [self._extract(aligner(t), query) if len(t) >= 1 else None for t in targets]
+
     def align(self, query: str, target: str) -> AlignResult | None:
         if len(query) < 1 or len(target) < 1:
             return None
-        from pywfa import WavefrontAligner
-        aligner = WavefrontAligner(
-            query, span="ends-free", pattern_begin_free=0, pattern_end_free=0,
-            text_begin_free=len(target), text_end_free=len(target),
-            match=self._match, mismatch=self._mismatch,
-            gap_opening=self._gap_open, gap_extension=self._gap_ext)
-        res = aligner(target)
+        return self._extract(self._make(query, len(target))(target), query)
+
+    def _extract(self, res, query: str) -> AlignResult | None:
         ct = res.cigartuples
         if not ct:
             return None
+        target = res.text                                        # the aligned germline string
         t_start, t_end = int(res.text_start), int(res.text_end)
         qi, ti = 0, 0
         gq, gt = [], []
