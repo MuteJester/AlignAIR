@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Iterator
 
-from ...gym.crop import crop_record
+from ...gym.crop import crop_record, crop_one_sided, anchor_c0
 from ...gym.curriculum import Curriculum
 from ...gym.gym import build_experiment
 from ...gym.targets import build_targets
@@ -15,6 +15,15 @@ from ...reference.reference_set import ReferenceSet
 from ..core.schema import BenchmarkCase, BenchmarkSpec, GENES, GeneTruth, StratumSpec
 
 _COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+
+
+def _apply_crop(record, stratum):
+    """One-sided germline/J anchor (adaptive) takes precedence over the symmetric crop_to."""
+    if getattr(stratum, "anchor", None) is not None:
+        return crop_one_sided(record, anchor_c0(record, stratum.anchor))
+    if stratum.crop_to is not None:
+        return crop_record(record, stratum.crop_to)
+    return record
 
 
 @dataclass
@@ -189,8 +198,7 @@ def _stratum_cases(
     seed = spec.seed + stratum.seed_offset + 1009 * s_idx
     cases: list[BenchmarkCase] = []
     for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
-        if stratum.crop_to is not None:
-            record = crop_record(record, stratum.crop_to)
+        record = _apply_crop(record, stratum)
         orientations = stratum.orientation_ids or (0,)
         orientation_id = orientations[i % len(orientations)]
         case_id = f"{spec.name}:{stratum.name}:{i:06d}"
@@ -222,8 +230,7 @@ def candidate_round_cases(
     seed = spec.seed + stratum.seed_offset + 1009 * s_idx + 1_000_003 * round_idx
     cases: list[BenchmarkCase] = []
     for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
-        if stratum.crop_to is not None:
-            record = crop_record(record, stratum.crop_to)
+        record = _apply_crop(record, stratum)
         orientations = stratum.orientation_ids or (0,)
         stratum_index = round_idx * stratum.n + i
         orientation_id = orientations[stratum_index % len(orientations)]
@@ -326,8 +333,7 @@ def stream_benchmark(
         exp = build_experiment(dataconfig, params)
         seed = spec.seed + stratum.seed_offset + 1009 * s_idx
         for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
-            if stratum.crop_to is not None:
-                record = crop_record(record, stratum.crop_to)
+            record = _apply_crop(record, stratum)
             orientations = stratum.orientation_ids or (0,)
             orientation_id = orientations[i % len(orientations)]
             case_id = f"{spec.name}:{stratum.name}:{i:06d}"

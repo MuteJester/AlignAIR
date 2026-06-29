@@ -120,6 +120,31 @@ def focused_igh_strata(n_per_scenario: int = 200) -> tuple[StratumSpec, ...]:
     )
 
 
+def adaptive_igh_strata(n_per_scenario: int = 200) -> tuple[StratumSpec, ...]:
+    """Adaptive/immunoSEQ-style short reads: multiplex V-framework-primer (FR1/FR2/FR3) -> J-primer
+    amplicons, modeled as one-sided germline-anchored crops (5' V truncated at the primer site).
+    NOTE: raw allele accuracy here is a FLOOR until the coverage-conditioned observable-truth metric
+    lands (short windows make many alleles observationally identical)."""
+    base = dict(progress=0.8, param_overrides={"crop_prob": 0.0})
+    return (
+        StratumSpec(name="adaptive_fr1", n=n_per_scenario, anchor=("v_germline", 10),
+                    description="FR1 multiplex-primer amplicon (most 5' V retained).",
+                    tags=("adaptive", "fr1", "short"), **base),
+        StratumSpec(name="adaptive_fr2", n=n_per_scenario, anchor=("v_germline", 80),
+                    description="FR2 multiplex-primer amplicon.", tags=("adaptive", "fr2", "short"), **base),
+        StratumSpec(name="adaptive_fr3", n=n_per_scenario, anchor=("v_germline", 200),
+                    description="FR3 multiplex-primer amplicon (CDR3-proximal, little 5' V).",
+                    tags=("adaptive", "fr3", "short"), **base),
+        StratumSpec(name="adaptive_janchor", n=n_per_scenario, anchor=("j", 110),
+                    description="J-anchored ~110bp amplicon (3'/J-primer protocols).",
+                    tags=("adaptive", "j_anchored", "short"), **base),
+        StratumSpec(name="adaptive_fr3_revcomp", n=n_per_scenario, anchor=("v_germline", 200),
+                    orientation_ids=(1,),
+                    description="Reverse-complement FR3 amplicon (orientation x short product cell).",
+                    tags=("adaptive", "fr3", "short", "orientation"), **base),
+    )
+
+
 def default_igh_spec(n_per_stratum: int = 200, seed: int = 123) -> BenchmarkSpec:
     """Default human IGH benchmark recipe over ``GenAIRR.data.HUMAN_IGH_OGRDB``."""
 

@@ -110,6 +110,7 @@ class StratumSpec:
     n: int
     progress: float
     crop_to: int | None = None
+    anchor: tuple | None = None      # one-sided crop: ("v_germline", g_start) or ("j", keep_len)
     orientation_ids: tuple[int, ...] = (0,)
     seed_offset: int = 0
     param_overrides: dict[str, Any] = field(default_factory=dict)
