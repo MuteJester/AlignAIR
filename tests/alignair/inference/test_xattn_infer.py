@@ -23,3 +23,16 @@ def test_predict_reads_xattn_emits_valid_airr_records():
             assert isinstance(p[f"{g}_sequence_start"], int)
             assert p[f"{g}_germline_end"] >= 0
         assert "sequence" in p and isinstance(p.get("productive", False), bool)
+
+
+def test_rescore_query_coords_are_non_negative_spans():
+    # the rewrite must derive query coords from region_logits (decode_boundaries), not the untrained
+    # boundary head, so sequence_end >= sequence_start (no negative spans) for any gene reported.
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    torch.manual_seed(0)
+    model = XAttnAligner(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=4, dim_feedforward=64))
+    reads = ["ACGTACGT" * 30, "TTGCAACGTACG" * 20]
+    preds = predict_reads_xattn(model, rs, reads, batch_size=2, rescore=True)
+    for p in preds:
+        for g in ("v", "d", "j"):
+            assert p[f"{g}_sequence_end"] >= p[f"{g}_sequence_start"] >= 0
