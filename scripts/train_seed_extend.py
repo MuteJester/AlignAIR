@@ -40,8 +40,11 @@ def retrieval_recall(model, rs, dc, lat, cells, ref_emb, k, n, bs, device):
                 batch = {kk: (v.to(device) if torch.is_tensor(v) else v) for kk, v in batch.items()}
                 o = model(batch["tokens"], batch["mask"], ref_emb, orientation_ids=batch["orientation_id"])
                 topk = o["match"]["V"].topk(min(k, o["match"]["V"].shape[-1]), dim=-1).indices
-                prim = batch["v_primary_idx"]
-                hit += int((topk == prim.unsqueeze(1)).any(dim=1).sum()); tot += prim.shape[0]
+                # set-aware: a hit is the top-k containing ANY allele in the equally-correct
+                # GT set (GenAIRR comma-list), not just the first-listed primary — primary-only
+                # under-counts recall wherever the read is genuinely ambiguous (heavy SHM).
+                mh = batch["v_allele"]                              # (B, n_alleles) multi-hot set
+                hit += int((mh.gather(1, topk) > 0).any(dim=1).sum()); tot += mh.shape[0]
         out_recall[cname] = hit / max(tot, 1)
     return out_recall
 
