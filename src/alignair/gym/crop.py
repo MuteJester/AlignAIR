@@ -57,3 +57,45 @@ def crop_record(record: dict, target_len: int) -> dict:
         new[f"{g}_germline_start"] = gs + left
         new[f"{g}_germline_end"] = ge - right
     return new
+
+
+def anchor_c0(record: dict, anchor) -> int:
+    """Read-coordinate crop start c0 for a one-sided (3'-keep) crop.
+    ("v_germline", g_start): start where V reaches germline position g_start (an FR primer site).
+    ("j", keep_len): keep the 3'-most keep_len bp (a J-anchored amplicon)."""
+    seq = str(record["sequence"]); L = len(seq)
+    kind, val = anchor
+    if kind == "j":
+        return max(0, L - int(val))
+    if kind == "v_germline":
+        vs = int(record["v_sequence_start"]); vgs = int(record["v_germline_start"])
+        return min(L, max(0, vs + max(0, int(val) - vgs)))
+    raise ValueError(f"unknown anchor {anchor!r}")
+
+
+def crop_one_sided(record: dict, c0: int) -> dict:
+    """Keep the window [c0, len] (cut the 5' end, retain CDR3 + J). Recompute all gene coords;
+    a gene whose read span lies entirely before c0 is dropped (set to None) — NO has-D / V-tail
+    invariant (an adaptive read legitimately loses its 5' V)."""
+    seq = str(record["sequence"]); L = len(seq)
+    c0 = max(0, min(int(c0), L))
+    if c0 == 0:
+        return record
+    new = dict(record)
+    new["sequence"] = seq[c0:L]
+    for g in _GENES:
+        if record.get(f"{g}_sequence_start") is None:
+            continue
+        ss, ee = int(record[f"{g}_sequence_start"]), int(record[f"{g}_sequence_end"])
+        if ee <= c0:                                          # gene entirely 5' of the window -> absent
+            for k in (f"{g}_sequence_start", f"{g}_sequence_end",
+                      f"{g}_germline_start", f"{g}_germline_end", f"{g}_call"):
+                new[k] = None
+            continue
+        gs, ge = int(record[f"{g}_germline_start"]), int(record[f"{g}_germline_end"])
+        left = max(0, c0 - ss)                                # gene bases lost off the 5' end
+        new[f"{g}_sequence_start"] = max(0, ss - c0)
+        new[f"{g}_sequence_end"] = ee - c0
+        new[f"{g}_germline_start"] = gs + left
+        new[f"{g}_germline_end"] = ge
+    return new
