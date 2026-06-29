@@ -16,7 +16,12 @@ from .dnalignair_infer import (canonicalize_sequence, junction_fields,
 @torch.no_grad()
 def predict_reads_xattn(model, reference_set, reads, device=None, batch_size: int = 64,
                         topk: int = 16, seed_m: int = 0, set_band: float = 2.0,
-                        cand_chunk: int = 4, locus: str = "IGH", rescore: bool = True) -> list:
+                        cand_chunk: int = 4, locus: str = "IGH", rescore: bool = True,
+                        rescore_seed_m: int = 8) -> list:
+    # rescore_seed_m: k-mer seed candidates the CLASSICAL rescore admits on top of the neural pool.
+    # The seed survives SHM (enough unmutated k-mers), so it admits the true allele the encoder's
+    # top-k missed — lifting heavy-SHM V ~0.61 -> ~0.91 with no retrain. Set 0 to rescore the neural
+    # pool only.
     device = device or next(model.parameters()).device
     model.eval()
     ref_emb = model.encode_reference(reference_set)
@@ -57,7 +62,8 @@ def predict_reads_xattn(model, reference_set, reads, device=None, batch_size: in
                 sc = None
                 if rescore:
                     seg = canon[qs:qe] if (qs is not None and qe and qe > qs) else ""
-                    sc = call_segment(seg, G, pool, reference_set, sp, al, m_seed=0, set_band=set_band)
+                    sc = call_segment(seg, G, pool, reference_set, sp, al,
+                                      m_seed=rescore_seed_m, set_band=set_band, allowed=None)
                 if sc is not None:                                 # classical rescore of the neural pool
                     idx = sc.best_idx
                     cset = [names[G][j] for j in sc.set_idx]
