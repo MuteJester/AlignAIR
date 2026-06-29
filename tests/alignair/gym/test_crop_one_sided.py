@@ -37,3 +37,18 @@ def test_fully_cut_gene_becomes_absent():
     c0 = int(r["j_sequence_start"])
     cr = crop_one_sided(r, c0)
     assert cr.get("v_sequence_start") is None
+
+
+def test_build_targets_tolerates_absent_v():
+    """A deep J-anchored crop can drop V entirely; the benchmark truth builder must not crash."""
+    from alignair.gym.crop import crop_one_sided
+    from alignair.gym.targets import build_targets
+    from alignair.reference.reference_set import ReferenceSet
+    import GenAIRR.data as gdata
+    r = _clean_record(3)
+    cr = crop_one_sided(r, int(r["j_sequence_start"]))      # cut everything 5' of J -> V (and D) gone
+    assert cr.get("v_sequence_start") is None
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    t = build_targets(cr, rs, has_d=rs.has_d)               # must not raise
+    assert len(t["region_labels"]) == len(cr["sequence"])
+    assert "J" in t["calls"]                                # J retained and labeled

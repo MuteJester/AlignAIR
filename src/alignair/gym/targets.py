@@ -73,19 +73,21 @@ def build_targets(record: dict, reference_set, has_d: bool) -> dict:
     germ = {g: (int(record[f"{g}_germline_start"]), int(record[f"{g}_germline_end"]))
             for g in _GENES if record.get(f"{g}_germline_start") is not None}
 
-    vs, ve = coords["v"]
-    js, je = coords["j"]
-
-    # ---- region labels ----
+    # ---- region labels (presence-aware: one-sided/adaptive crops can drop V and/or D) ----
     region = np.full(L, REGION_INDEX["pre"], dtype=np.int64)
-    region[vs:ve] = REGION_INDEX["V"]
+    has_v = "v" in coords
+    if has_v:
+        vs, ve = coords["v"]
+        region[vs:ve] = REGION_INDEX["V"]
+    js, je = coords.get("j", (L, L))
+    left = ve if has_v else 0                       # start of the inter-segment (np/D) region
     if has_d and "d" in coords:
         ds, de = coords["d"]
-        region[ve:ds] = REGION_INDEX["N1"]
+        region[left:ds] = REGION_INDEX["N1"]
         region[ds:de] = REGION_INDEX["D"]
         region[de:js] = REGION_INDEX["N2"]
     else:
-        region[ve:js] = REGION_INDEX["N1"]
+        region[left:js] = REGION_INDEX["N1"]
     region[js:je] = REGION_INDEX["J"]
     region[je:L] = REGION_INDEX["post"]
 

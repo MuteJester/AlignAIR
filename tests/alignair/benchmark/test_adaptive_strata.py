@@ -21,8 +21,11 @@ def test_adaptive_strata_generate_short_reads_with_dropped_5prime_v():
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
     cases = generate_benchmark(spec, reference_set=rs)
     assert cases
+    checked = 0
     for c in cases:
         assert len(c.sequence) < 200
-        v = c.genes.get("V")
+        v = c.genes.get("v")                     # BenchmarkCase.genes is lowercase-keyed
         if v is not None and v.germline_start is not None:
-            assert v.germline_start >= 150
+            assert v.germline_start >= 150       # FR3-anchored: 5' V truncated near the primer site
+            checked += 1
+    assert checked > 0                           # the assertion above actually ran
