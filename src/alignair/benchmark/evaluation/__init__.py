@@ -8,6 +8,7 @@ from .comparison import (
     MULTIPLE_COMPARISON_CORRECTIONS,
     build_model_comparison_report,
     comparison_policy_catalog,
+    validate_comparison_policy_catalog,
 )
 from .contract import (
     PredictionValidationAccumulator,
@@ -24,7 +25,14 @@ from .diagnostics import (
     build_boundary_diagnostics,
 )
 from .matching import PredictionMatchResult, align_predictions_to_cases
-from .metrics import compact_summary, score_cases, score_one_case
+from .scoring import (
+    audit_scoring_runtime,
+    compact_summary,
+    score_cases,
+    score_one_case,
+    scoring_manifest_catalog,
+    validate_scoring_manifest,
+)
 from .model_adapters import dnalignair_predictor
 from .online import OnlineBenchmarkReport, run_online_benchmark
 from .performance import (
@@ -40,6 +48,7 @@ from .performance import (
     summarize_prediction_performance,
 )
 from .report import build_assay_report
+from .report_validation import validate_benchmark_report_contract
 from .runner import build_benchmark_report, run_benchmark, run_benchmark_report
 from .uncertainty import DEFAULT_BOOTSTRAP_METRICS, bootstrap_metric_intervals
 
@@ -59,6 +68,7 @@ __all__ = [
     "align_predictions_to_cases",
     "annotate_predictions_with_performance",
     "audit_criteria_report",
+    "audit_scoring_runtime",
     "build_benchmark_report",
     "build_allele_calling_diagnostics",
     "build_boundary_diagnostics",
@@ -69,6 +79,7 @@ __all__ = [
     "case_to_prediction",
     "compact_summary",
     "comparison_policy_catalog",
+    "validate_comparison_policy_catalog",
     "current_rss_mb",
     "dnalignair_predictor",
     "igblast_airr_to_prediction",
@@ -83,8 +94,11 @@ __all__ = [
     "run_benchmark_report",
     "score_cases",
     "score_one_case",
+    "scoring_manifest_catalog",
     "summarize_prediction_performance",
+    "validate_scoring_manifest",
     "validate_prediction",
+    "validate_benchmark_report_contract",
     "validate_predictions",
     "validate_predictions_for_cases",
 ]

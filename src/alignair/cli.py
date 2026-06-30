@@ -863,7 +863,7 @@ def cmd_train(args) -> None:
     calibration = None
     if not args.no_calibrate:
         print("\ncalibration (equivalence sets, F1-objective on a representative mix):")
-        from .benchmark.evaluation.allele_calibration import (
+        from .inference.calibration import (
             collect_calibration_rows, fit_calibration, fit_contaminant_tau)
         cal_recs = _calibration_records(dc, args.calib_n, args.seed + 1000, args.allow_curatable)
         rows, gate = collect_calibration_rows(model, rs, cal_recs, topk=32, device=device,

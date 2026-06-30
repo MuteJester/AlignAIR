@@ -220,7 +220,34 @@ By default, offline evaluation aligns predictions to cases by `sequence_id`.
 Use `--match-by order` only when predictions are guaranteed to be in the exact
 same order as the case JSONL.
 
-### 6. Add Runtime And Memory Statistics
+### 6. Validate Report Contracts
+
+Before using a saved report as CI evidence or as input to downstream tooling,
+validate its artifact metadata, metric registry, criteria mappings, and observed
+metric keys:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli validate-report \
+  --report experiments/my_aligner_report.json \
+  --require-current-version \
+  --require-metric-registry
+```
+
+The command prints validation JSON and exits nonzero for hard contract failures.
+Add `--fail-on-warning` when CI should also reject legacy reports or observed
+metrics that are outside the embedded registry.
+
+For other standalone benchmark JSON artifacts, such as readiness or model
+comparison reports, validate the registered artifact contract:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli validate-artifact \
+  --path experiments/baseline_vs_new_model.json \
+  --kind model_comparison_report \
+  --require-current-version
+```
+
+### 7. Add Runtime And Memory Statistics
 
 Runtime and memory are part of the benchmark report. For Python predictors run
 through `run_benchmark_report` or `run_online_benchmark`, wall time, throughput,
@@ -261,7 +288,7 @@ The report writes normalized values under `performance` and mirrors assay-level
 metrics such as `seconds_per_read`, `reads_per_second`, and `peak_memory_mb`
 into `results.overall.global`.
 
-### 7. Compare Two Prediction Sets
+### 8. Compare Two Prediction Sets
 
 Compare two model outputs on exactly the same cases:
 
@@ -379,9 +406,12 @@ For AIRR/IgBLAST tables, fields such as `v_call`, `d_call`, `j_call`,
 
 | Section | What it answers |
 | --- | --- |
+| `artifact` | Versioned benchmark report schema metadata. |
 | `benchmark` | Which case file was scored and how many cases it contains. |
 | `frame` | Whether scoring used canonical or presented-frame truth. |
 | `criteria` | The full benchmark criteria catalog. |
+| `catalog_validation` | Structural validation of embedded criteria and scenario-axis catalogs. |
+| `metric_registry` | Metric directions, pass/warn thresholds, and criterion/category mappings used by the report. |
 | `prediction_contract` | Accepted normalized prediction fields. |
 | `scenario_axes` | Stress axes used to interpret contexts. |
 | `coverage` | Case, stratum, allele, ambiguity, length, and stressor coverage. |
@@ -564,6 +594,7 @@ to measure. It highlights:
 
 - criteria with missing metric keys;
 - observed metrics not mapped to any criterion;
+- catalog metrics missing from the registry and observed metrics outside the registry;
 - planned criteria that unexpectedly have observed metrics;
 - GenAIRR truth fields that are unavailable in the cases.
 
@@ -773,12 +804,19 @@ print(result.report["satisfied"], result.report["unmet"])
 | `export` | Export FASTA, AIRR input TSV, and manifest for external tools. |
 | `normalize-predictions` | Convert AIRR/IgBLAST TSV/CSV to normalized prediction JSONL. |
 | `evaluate` | Score predictions against benchmark cases and write a full report. |
+| `validate-report` | Validate report artifact metadata, metric registry, scoring manifest, criteria mappings, and observed metric keys. |
+| `validate-artifact` | Validate any registered benchmark artifact JSON by kind. |
 | `compare` | Compare two prediction files with paired deltas, win/loss/tie counts, bootstrap intervals, and optional endpoint/guardrail decisions. |
 | `comparison-policies` | Print built-in named endpoint/guardrail policies for `compare --policy`. |
+| `validate-comparison-policies` | Validate built-in comparison policy metrics against the metric registry. |
 | `assay` | Build an assay view from saved score/report JSON. |
 | `audit` | Audit observed metrics against the criteria catalog and optional case truth. |
 | `criteria` | Print criteria and scenario-axis catalogs. |
+| `validate-catalogs` | Validate criteria and scenario-axis catalog structure against registry-backed contracts. |
+| `metrics` | Print the metric registry with directions, thresholds, and criterion mappings. |
+| `scoring-manifest` | Print scorer-owned metric emission metadata by component. |
 | `contract` | Print the normalized prediction contract. |
+| `artifact-contracts` | Print registered artifact contracts and schema metadata. |
 
 ## Current Interpretation Limits
 

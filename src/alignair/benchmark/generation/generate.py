@@ -7,23 +7,23 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Iterator
 
-from ...gym.crop import crop_record, crop_one_sided, anchor_c0
-from ...gym.curriculum import Curriculum
-from ...gym.gym import build_experiment
 from ...gym.targets import build_targets
 from ...reference.reference_set import ReferenceSet
 from ..core.schema import BenchmarkCase, BenchmarkSpec, GENES, GeneTruth, StratumSpec
+from .genairr import (
+    apply_benchmark_crop,
+    build_stratum_experiment,
+    dataconfig_by_name,
+    stream_stratum_records,
+)
 
 _COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
 def _apply_crop(record, stratum):
-    """One-sided germline/J anchor (adaptive) takes precedence over the symmetric crop_to."""
-    if getattr(stratum, "anchor", None) is not None:
-        return crop_one_sided(record, anchor_c0(record, stratum.anchor))
-    if stratum.crop_to is not None:
-        return crop_record(record, stratum.crop_to)
-    return record
+    """Backward-compatible alias for the shared benchmark crop policy."""
+
+    return apply_benchmark_crop(record, stratum)
 
 
 @dataclass
@@ -94,6 +94,7 @@ def _record_tags(record: dict[str, Any], stratum: StratumSpec, orientation_id: i
         "productive": bool(record.get("productive", False)),
         "d_inverted": bool(record.get("d_inverted", False)),
         "crop_to": stratum.crop_to,
+        "anchor": stratum.anchor,
     }
 
 
@@ -136,14 +137,6 @@ def _case_from_record(
         tags=_record_tags(record, stratum, orientation_id),
         record=dict(record),
     )
-
-
-def dataconfig_by_name(name: str):
-    """Resolve a GenAIRR data config by name from ``GenAIRR.data``."""
-
-    import GenAIRR.data as gdata
-
-    return getattr(gdata, name)
 
 
 def _resolved_workers(workers: int | None) -> int:
@@ -191,13 +184,10 @@ def _stratum_cases(
     s_idx: int,
     stratum: StratumSpec,
 ) -> list[BenchmarkCase]:
-    curriculum = Curriculum()
-    params = dict(curriculum.params(stratum.progress))
-    params.update(stratum.param_overrides)
-    exp = build_experiment(dataconfig, params)
+    resolved = build_stratum_experiment(dataconfig, stratum)
     seed = spec.seed + stratum.seed_offset + 1009 * s_idx
     cases: list[BenchmarkCase] = []
-    for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
+    for i, record in enumerate(stream_stratum_records(resolved, n=stratum.n, seed=seed)):
         record = _apply_crop(record, stratum)
         orientations = stratum.orientation_ids or (0,)
         orientation_id = orientations[i % len(orientations)]
@@ -223,13 +213,10 @@ def candidate_round_cases(
 ) -> list[BenchmarkCase]:
     """Generate one deterministic stratum/round candidate chunk for coverage planning."""
 
-    curriculum = Curriculum()
-    params = dict(curriculum.params(stratum.progress))
-    params.update(stratum.param_overrides)
-    exp = build_experiment(dataconfig, params)
+    resolved = build_stratum_experiment(dataconfig, stratum)
     seed = spec.seed + stratum.seed_offset + 1009 * s_idx + 1_000_003 * round_idx
     cases: list[BenchmarkCase] = []
-    for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
+    for i, record in enumerate(stream_stratum_records(resolved, n=stratum.n, seed=seed)):
         record = _apply_crop(record, stratum)
         orientations = stratum.orientation_ids or (0,)
         stratum_index = round_idx * stratum.n + i
@@ -326,13 +313,10 @@ def stream_benchmark(
 
     dataconfig = dataconfig or dataconfig_by_name(spec.dataconfig_name)
     reference_set = reference_set or ReferenceSet.from_dataconfigs(dataconfig)
-    curriculum = Curriculum()
     for s_idx, stratum in enumerate(spec.strata):
-        params = dict(curriculum.params(stratum.progress))
-        params.update(stratum.param_overrides)
-        exp = build_experiment(dataconfig, params)
+        resolved = build_stratum_experiment(dataconfig, stratum)
         seed = spec.seed + stratum.seed_offset + 1009 * s_idx
-        for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
+        for i, record in enumerate(stream_stratum_records(resolved, n=stratum.n, seed=seed)):
             record = _apply_crop(record, stratum)
             orientations = stratum.orientation_ids or (0,)
             orientation_id = orientations[i % len(orientations)]

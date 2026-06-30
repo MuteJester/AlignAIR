@@ -6,12 +6,19 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
 from ...reference.reference_set import ReferenceSet
+from ..core.artifacts import BENCHMARK_READINESS_REPORT, artifact_metadata
 from ..core.schema import BenchmarkCase, GENES, ORIENTATION_NAMES
 from .generate import coverage_summary
 from .planner import allele_stratification_contexts, case_coverage_labels, core_context_min_counts
-from .strata import default_igh_assay_spec
+from .scenarios import measurement_required_contexts
+from .recipes import default_igh_assay_spec
 
 _GRADE_RANK = {"pass": 0, "warn": 1, "fail": 2}
+
+
+def _required_contexts() -> tuple[str, ...]:
+    labels = set(core_context_min_counts(1)) | set(measurement_required_contexts())
+    return tuple(sorted(labels))
 
 
 @dataclass(frozen=True)
@@ -55,7 +62,7 @@ def readiness_thresholds(profile: str = "assay") -> ReadinessThresholds:
             min_per_orientation=5,
             required_orientation_ids=(0, 1),
             min_per_required_context=5,
-            required_contexts=tuple(sorted(core_context_min_counts(1))),
+            required_contexts=_required_contexts(),
             min_observed_alleles_per_gene=10,
             min_reference_allele_fraction=0.05,
             description="Small but useful benchmark for model iteration.",
@@ -68,7 +75,7 @@ def readiness_thresholds(profile: str = "assay") -> ReadinessThresholds:
             min_per_orientation=25,
             required_orientation_ids=(0, 1, 2, 3),
             min_per_required_context=25,
-            required_contexts=tuple(sorted(core_context_min_counts(1))),
+            required_contexts=_required_contexts(),
             min_observed_alleles_per_gene=25,
             min_reference_allele_fraction=0.25,
             description="Professional preflight profile before comparing alignment models.",
@@ -81,7 +88,7 @@ def readiness_thresholds(profile: str = "assay") -> ReadinessThresholds:
             min_per_orientation=200,
             required_orientation_ids=(0, 1, 2, 3),
             min_per_required_context=200,
-            required_contexts=tuple(sorted(core_context_min_counts(1))),
+            required_contexts=_required_contexts(),
             min_observed_alleles_per_gene=25,
             min_reference_allele_fraction=1.0,
             min_per_reference_allele=100,
@@ -98,7 +105,7 @@ def readiness_thresholds(profile: str = "assay") -> ReadinessThresholds:
             min_per_orientation=200,
             required_orientation_ids=(0, 1, 2, 3),
             min_per_required_context=200,
-            required_contexts=tuple(sorted(core_context_min_counts(1))),
+            required_contexts=_required_contexts(),
             min_observed_alleles_per_gene=25,
             min_reference_allele_fraction=1.0,
             min_per_reference_allele=100,
@@ -457,6 +464,7 @@ def assess_benchmark_readiness(
     grade = _worst_grade(check["grade"] for check in checks)
     grade_counts = Counter(check["grade"] for check in checks)
     return {
+        "artifact": artifact_metadata(BENCHMARK_READINESS_REPORT),
         "grade": grade,
         "profile": thresholds.profile,
         "thresholds": thresholds.to_dict(),

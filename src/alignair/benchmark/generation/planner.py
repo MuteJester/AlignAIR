@@ -13,9 +13,6 @@ from dataclasses import asdict, dataclass, field
 from time import perf_counter
 from typing import Any, Iterator
 
-from ...gym.crop import crop_record
-from ...gym.curriculum import Curriculum
-from ...gym.gym import build_experiment
 from ...reference.reference_set import ReferenceSet
 from ..core.schema import BenchmarkCase, BenchmarkSpec, GENES, ORIENTATION_NAMES
 from .generate import (
@@ -25,6 +22,7 @@ from .generate import (
     dataconfig_by_name,
     generation_run_report,
 )
+from .genairr import apply_benchmark_crop, build_stratum_experiment, stream_stratum_records
 
 ALLELE_CONTEXT_PREFIX = "allele_context:"
 
@@ -49,6 +47,8 @@ def case_coverage_labels(case: BenchmarkCase) -> tuple[str, ...]:
     tags = case.tags or {}
     labels: list[str] = [f"stratum:{case.stratum}"]
     labels.extend(f"tag:{tag}" for tag in tags.get("stratum_tags", ()))
+    if record.get("benchmark_measurement"):
+        labels.append(f"measurement:{record['benchmark_measurement']}")
     if record.get("locus"):
         labels.append(f"locus:{record['locus']}")
     labels.append("chain:has_d" if case.genes.get("d") and case.genes["d"].calls else "chain:no_d")
@@ -146,6 +146,12 @@ def allele_stratification_contexts(spec: BenchmarkSpec) -> tuple[str, ...]:
             "tag:indel",
             "tag:noise",
             "tag:trim",
+            "tag:adaptive",
+            "tag:fr1",
+            "tag:fr2",
+            "tag:fr3",
+            "tag:j_anchored",
+            "tag:short",
             "tag:contaminant",
             "tag:d_inversion",
             "tag:read_layout",
@@ -427,7 +433,6 @@ def _candidate_cases(
     *,
     max_candidates: int,
 ) -> Iterator[BenchmarkCase]:
-    curriculum = Curriculum()
     generated = 0
     round_idx = 0
     active_strata = tuple(
@@ -437,15 +442,12 @@ def _candidate_cases(
         return
     while generated < max_candidates:
         for s_idx, stratum in active_strata:
-            params = dict(curriculum.params(stratum.progress))
-            params.update(stratum.param_overrides)
-            exp = build_experiment(dataconfig, params)
+            resolved = build_stratum_experiment(dataconfig, stratum)
             seed = spec.seed + stratum.seed_offset + 1009 * s_idx + 1_000_003 * round_idx
-            for i, record in enumerate(exp.stream_records(n=stratum.n, seed=seed)):
+            for i, record in enumerate(stream_stratum_records(resolved, n=stratum.n, seed=seed)):
                 if generated >= max_candidates:
                     return
-                if stratum.crop_to is not None:
-                    record = crop_record(record, stratum.crop_to)
+                record = apply_benchmark_crop(record, stratum)
                 orientations = stratum.orientation_ids or (0,)
                 stratum_index = round_idx * stratum.n + i
                 orientation_id = orientations[stratum_index % len(orientations)]

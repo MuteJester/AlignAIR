@@ -19,7 +19,7 @@ import GenAIRR.data as gdata  # noqa: E402
 from alignair.reference.reference_set import ReferenceSet  # noqa: E402
 from alignair.config.dnalignair_config import DNAlignAIRConfig  # noqa: E402
 from alignair.core.dnalignair import DNAlignAIR  # noqa: E402
-from alignair.benchmark.evaluation.allele_calibration import (  # noqa: E402
+from alignair.inference.calibration import (  # noqa: E402
     collect_calibration_rows, fit_calibration, fit_contaminant_tau)
 
 

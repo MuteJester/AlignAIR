@@ -12,8 +12,18 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..core.artifacts import BENCHMARK_MANIFEST, CURRENT_SCHEMA_VERSION, artifact_metadata
 from ..core.schema import BenchmarkCase, BenchmarkSpec, GENES, ORIENTATION_NAMES
-from ..generation import assess_benchmark_readiness, coverage_summary
+from ..generation import (
+    assess_benchmark_readiness,
+    case_measurement_scenarios,
+    coverage_summary,
+    genairr_feature_catalog,
+    measurement_coverage_summary,
+    measurement_scenario_catalog,
+    validate_genairr_feature_catalog,
+    validate_measurement_scenario_catalog,
+)
 from ...reference.reference_set import ReferenceSet
 
 
@@ -99,6 +109,11 @@ def airr_input_rows(
             )
             if case.record.get("locus"):
                 row["locus"] = case.record["locus"]
+            measurements = case_measurement_scenarios(case)
+            if measurements:
+                row["benchmark_measurements"] = ";".join(measurements)
+            if case.record.get("benchmark_measurement"):
+                row["benchmark_measurement"] = case.record["benchmark_measurement"]
         rows.append(row)
     return rows
 
@@ -175,7 +190,8 @@ def build_benchmark_manifest(
     spec_dict = asdict(spec) if spec is not None else None
     resolved_dataconfig = dataconfig_name or (spec.dataconfig_name if spec is not None else None)
     manifest = {
-        "manifest_version": "0.1",
+        "artifact": artifact_metadata(BENCHMARK_MANIFEST),
+        "manifest_version": CURRENT_SCHEMA_VERSION,
         "created_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "software": {
             "alignair_version": _version("AlignAIR"),
@@ -194,9 +210,14 @@ def build_benchmark_manifest(
             "dataconfig_name": resolved_dataconfig,
             "spec": spec_dict,
             "generation_report": generation_report,
+            "genairr_features": genairr_feature_catalog(),
+            "genairr_feature_validation": validate_genairr_feature_catalog(),
+            "measurement_scenarios": measurement_scenario_catalog(),
+            "measurement_scenario_validation": validate_measurement_scenario_catalog(spec),
         },
         "reference": reference_set_summary(reference_set),
         "coverage": coverage_summary(case_list),
+        "measurement_coverage": measurement_coverage_summary(case_list),
         "observed_truth": {
             "allele_counts": _truth_allele_counts(case_list),
         },

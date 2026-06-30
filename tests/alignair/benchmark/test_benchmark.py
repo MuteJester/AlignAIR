@@ -56,6 +56,7 @@ from alignair.benchmark import (
     score_cases,
     stream_benchmark,
     validate_prediction,
+    validate_comparison_policy_catalog,
     validate_predictions,
     validate_predictions_for_cases,
 )
@@ -562,6 +563,7 @@ def test_external_input_exports_and_manifest(tmp_path):
     assert rows[0]["sequence_id"] == cases[0].case_id
     assert rows[0]["sequence"] == cases[0].sequence
     assert rows[0]["benchmark_stratum"] == cases[0].stratum
+    assert rows[0]["benchmark_measurements"]
 
     manifest = build_benchmark_manifest(
         cases,
@@ -573,8 +575,11 @@ def test_external_input_exports_and_manifest(tmp_path):
     assert manifest["benchmark"]["n_cases"] == len(cases)
     assert manifest["generation"]["spec"]["seed"] == spec.seed
     assert manifest["generation"]["dataconfig_name"] == "HUMAN_IGH_OGRDB"
+    assert manifest["generation"]["genairr_feature_validation"]["valid"]
+    assert manifest["generation"]["measurement_scenarios"]
     assert manifest["reference"]["genes"]["v"]["n_alleles"] > 0
     assert len(manifest["reference"]["sha256"]) == 64
+    assert manifest["measurement_coverage"]["n_cases"] == len(cases)
     assert manifest["benchmark"]["sequence_id_policy"] == "sequence_id equals benchmark case_id"
     assert manifest["readiness"]["profile"] == "assay"
     assert manifest["readiness"]["truth_source"] == "GenAIRR benchmark cases"
@@ -597,6 +602,8 @@ def test_export_benchmark_inputs_writes_expected_files(tmp_path):
     assert all((tmp_path / name).exists() for name in ("tiny.fasta", "tiny_airr_input.tsv", "tiny_manifest.json"))
     manifest = json.loads((tmp_path / "tiny_manifest.json").read_text(encoding="utf-8"))
     assert manifest["files"]["fasta"].endswith("tiny.fasta")
+    assert manifest["measurement_coverage"]["n_cases"] == len(cases)
+    assert manifest["generation"]["measurement_scenario_validation"]["n_scenarios"] > 0
     assert manifest["coverage"]["n_cases"] == len(cases)
     assert manifest["readiness"]["profile"] == "assay"
 
@@ -834,6 +841,12 @@ def test_model_comparison_reports_paired_deltas_and_verdicts():
     )
 
     call = report["overall"]["genes.v.call_top1_in_set"]
+    assert call["metric_key"] == "call_top1_in_set"
+    assert call["direction"] == "higher_is_better"
+    assert call["direction_source"] == "metric_registry"
+    assert call["metric_spec"]["registered"] is True
+    assert call["metric_spec"]["key"] == "call_top1_in_set"
+    assert call["metric_spec"]["higher_is_better"] is True
     assert call["model_a"] == 0.0
     assert call["model_b"] == 1.0
     assert call["raw_delta_model_b_minus_model_a"] == 1.0
@@ -845,6 +858,9 @@ def test_model_comparison_reports_paired_deltas_and_verdicts():
 
     mae = report["overall"]["genes.v.ss_mae"]
     assert mae["direction"] == "lower_is_better"
+    assert mae["direction_source"] == "metric_registry"
+    assert mae["metric_spec"]["key"] == "ss_mae"
+    assert mae["metric_spec"]["higher_is_better"] is False
     assert mae["model_a"] == 0.0
     assert mae["model_b"] == 10.0
     assert mae["raw_delta_model_b_minus_model_a"] == 10.0
@@ -858,6 +874,41 @@ def test_model_comparison_reports_paired_deltas_and_verdicts():
     assert decision["primary_endpoints"][0]["status"] == "pass"
     assert decision["guardrails"][0]["status"] == "fail"
     assert decision["guardrails"][0]["metric"] == "genes.v.ss_mae"
+
+
+def test_model_comparison_metric_direction_override_is_explicit():
+    cases = [
+        _manual_case("cmp_override1", ("IGHV1-1*01",)),
+        _manual_case("cmp_override2", ("IGHV1-2*01",)),
+    ]
+    preds_a = []
+    preds_b = []
+    for case in cases:
+        pred_a = case_to_prediction(case)
+        pred_a["v_call"] = "IGHV9-9*01"
+        pred_a["v_calls"] = ["IGHV9-9*01"]
+        preds_a.append(pred_a)
+        preds_b.append(case_to_prediction(case))
+
+    report = build_model_comparison_report(
+        cases,
+        preds_a,
+        preds_b,
+        model_a_name="old",
+        model_b_name="new",
+        metric_paths=("genes.v.call_top1_in_set",),
+        metric_directions={"genes.v.call_top1_in_set": "lower"},
+        include_strata=False,
+    )
+
+    row = report["overall"]["genes.v.call_top1_in_set"]
+    assert row["direction"] == "lower_is_better"
+    assert row["direction_source"] == "override"
+    assert row["metric_spec"]["higher_is_better"] is True
+    assert row["raw_delta_model_b_minus_model_a"] == 1.0
+    assert row["model_b_advantage"] == -1.0
+    assert row["verdict"] == "model_a_better"
+    assert row["preferred_model"] == "old"
 
 
 def test_named_comparison_policy_populates_endpoint_gates():
@@ -910,6 +961,30 @@ def test_named_comparison_policy_populates_endpoint_gates():
     assert report["decision"]["status_counts"]["pass"] == (
         len(report["decision"]["primary_endpoints"]) + len(report["decision"]["guardrails"])
     )
+
+
+def test_comparison_policy_catalog_validates_against_metric_registry():
+    validation = validate_comparison_policy_catalog()
+
+    assert validation["valid"] is True
+    assert validation["summary"]["n_policies"] == len(comparison_policy_catalog())
+    assert validation["summary"]["n_invalid_policy_metrics"] == 0
+    assert any(
+        row["metric"] == "genes.v.call_top1_in_set" and row["registered"]
+        for row in validation["policy_metrics"]
+    )
+
+    broken = validate_comparison_policy_catalog(
+        {
+            "bad_policy": {
+                "primary_metrics": ("genes.v.not_a_metric", "bad.path.shape"),
+                "guardrail_metrics": (),
+            }
+        }
+    )
+    assert broken["valid"] is False
+    assert broken["summary"]["problem_counts"]["metric_key_not_in_registry"] == 2
+    assert broken["summary"]["problem_counts"]["malformed_metric_path"] == 1
 
 
 def test_cli_compare_matches_prediction_ids_and_writes_report(tmp_path):
@@ -990,6 +1065,16 @@ def test_cli_lists_comparison_policy_templates(capsys):
     assert {"allele_calling_core", "igh_allele_calling_core", "boundary_core", "airr_core"} <= names
 
 
+def test_cli_validates_comparison_policy_templates(tmp_path):
+    out = tmp_path / "policy_validation.json"
+
+    benchmark_cli(["validate-comparison-policies", "--out", str(out)])
+
+    validation = json.loads(out.read_text(encoding="utf-8"))
+    assert validation["valid"] is True
+    assert validation["summary"]["n_invalid_policy_metrics"] == 0
+
+
 def test_cli_build_reports_generation_profile_with_workers(tmp_path, capsys):
     out = tmp_path / "empty.jsonl"
     benchmark_cli(
@@ -1011,6 +1096,39 @@ def test_cli_build_reports_generation_profile_with_workers(tmp_path, capsys):
     assert payload["generation_profile"]["mode"] == "fixed_size"
     assert payload["generation_profile"]["workers"] == 2
     assert payload["generation_profile"]["parallel"] is True
+
+
+def test_cli_lists_measurement_scenarios(capsys):
+    benchmark_cli(["measurement-scenarios"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["validation"]["valid"]
+    assert any(row["name"] == "allele_coverage_and_candidates" for row in payload["measurement_scenarios"])
+
+
+def test_cli_builds_restricted_allele_panel_recipe(tmp_path, capsys):
+    out = tmp_path / "allele_panels.jsonl"
+    benchmark_cli(
+        [
+            "build",
+            "--recipe",
+            "allele-panel",
+            "--n-panels",
+            "1",
+            "--alleles-per-panel",
+            "2",
+            "--n-per-panel",
+            "1",
+            "--out",
+            str(out),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out.rsplit("\nwrote", 1)[0])
+    cases = load_jsonl(out)
+    assert payload["coverage"]["n_cases"] == 1
+    assert payload["measurement_coverage"]["explicit_by_measurement"]["allele_coverage_and_candidates"] == 1
+    assert cases[0].record["benchmark_measurement"] == "allele_coverage_and_candidates"
 
 
 def test_perfect_predictions_score_high():
@@ -1559,6 +1677,8 @@ def test_build_benchmark_report_from_saved_predictions():
         bootstrap_strata=False,
     )
     assert report["coverage"]["n_cases"] == len(cases)
+    assert report["catalog_validation"]["valid"] is True
+    assert report["catalog_validation"]["summary"]["n_unmapped_contexts"] == 0
     assert report["prediction_validation"]["valid_fraction"] == 1.0
     assert report["criteria_audit"]["summary"]["has_case_truth_audit"]
     assert report["criteria_audit"]["truth_field_availability"]["v_call"]["n_present"] == len(cases)
@@ -1708,8 +1828,10 @@ def test_scenario_axes_catalog_names_stress_dimensions():
         "read_layout",
         "segment_presence",
         "junction_biology",
+        "input_validity",
     }.issubset(axes)
     assert "fragment_50" in axes["difficulty_stratum"]["values"]
+    assert "contaminant" in axes["input_validity"]["values"]
 
 
 def test_stream_benchmark_yields_without_materializing():

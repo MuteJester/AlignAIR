@@ -210,7 +210,7 @@ def predict_reads(model, reference_set, reads, device=None, batch_size: int = 64
 
     The equivalence set is a temperature-scaled log-likelihood-ratio band: keep candidate c
     iff (s_top - s_c)/T <= epsilon. `calibration` = {GENE: {temperature, epsilon}} (from
-    benchmark.evaluation.allele_calibration) overrides T=1 / epsilon=set_epsilon per gene;
+    inference.calibration) overrides T=1 / epsilon=set_epsilon per gene;
     the per-read score offset from the state-conditioned emission cancels in s_top - s_c, so
     the band is invariant to it. emit_scores adds {g}_scores=[(name, raw_score)] for calibration.
 

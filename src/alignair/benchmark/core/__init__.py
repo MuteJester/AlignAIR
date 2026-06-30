@@ -1,5 +1,26 @@
 """Core benchmark schema objects."""
 
+from .artifacts import (
+    ARTIFACT_CONTRACTS,
+    BENCHMARK_CASE_JSONL,
+    BENCHMARK_MANIFEST,
+    BENCHMARK_READINESS_REPORT,
+    BENCHMARK_REPORT,
+    BENCHMARK_SUITE_MANIFEST,
+    CURRENT_SCHEMA_VERSION,
+    MODEL_COMPARISON_REPORT,
+    PREDICTION_JSONL,
+    ArtifactContract,
+    artifact_contract,
+    artifact_contract_catalog,
+    artifact_metadata,
+    validate_artifact,
+)
+from .catalog_validation import (
+    ALLOWED_CRITERION_IMPORTANCE,
+    ALLOWED_CRITERION_STATUSES,
+    validate_catalogs,
+)
 from .criteria import (
     CRITERIA,
     SCENARIO_AXES,
@@ -8,19 +29,56 @@ from .criteria import (
     criteria_catalog,
     scenario_axes_catalog,
 )
+from .metric_registry import (
+    METRIC_REGISTRY,
+    MetricSpec,
+    grade_metric_value,
+    metric_higher_is_better,
+    metric_quality,
+    metric_registry,
+    metric_spec,
+    metric_spec_catalog,
+    metric_thresholds,
+)
 from .schema import BenchmarkCase, BenchmarkSpec, GENES, GeneTruth, ORIENTATION_NAMES, StratumSpec
 
 __all__ = [
+    "ARTIFACT_CONTRACTS",
+    "ALLOWED_CRITERION_IMPORTANCE",
+    "ALLOWED_CRITERION_STATUSES",
+    "BENCHMARK_CASE_JSONL",
+    "BENCHMARK_MANIFEST",
+    "BENCHMARK_READINESS_REPORT",
+    "BENCHMARK_REPORT",
+    "BENCHMARK_SUITE_MANIFEST",
     "BenchmarkCase",
     "BenchmarkCriterion",
     "BenchmarkSpec",
     "CRITERIA",
+    "CURRENT_SCHEMA_VERSION",
     "GENES",
     "GeneTruth",
+    "METRIC_REGISTRY",
+    "MODEL_COMPARISON_REPORT",
+    "MetricSpec",
     "ORIENTATION_NAMES",
+    "PREDICTION_JSONL",
     "SCENARIO_AXES",
     "ScenarioAxis",
     "StratumSpec",
+    "ArtifactContract",
+    "artifact_contract",
+    "artifact_contract_catalog",
+    "artifact_metadata",
     "criteria_catalog",
+    "grade_metric_value",
+    "metric_higher_is_better",
+    "metric_quality",
+    "metric_registry",
+    "metric_spec",
+    "metric_spec_catalog",
+    "metric_thresholds",
     "scenario_axes_catalog",
+    "validate_artifact",
+    "validate_catalogs",
 ]
