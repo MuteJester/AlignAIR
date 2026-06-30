@@ -4,6 +4,74 @@ from dataclasses import dataclass
 
 from ..align import align_batch
 
+_RC = str.maketrans("ACGTN", "TGCAN")
+_DNA_MAT = None
+
+
+@dataclass(frozen=True)
+class DCall:
+    idx: int               # best D germline index (global)
+    inverted: bool         # True if the read's D matched the reverse-complement germline
+    t_start: int           # D start, window-relative
+    t_end: int             # D end, window-relative
+    germ_start: int        # forward-germline coords of the matched core
+    germ_end: int
+    score: float
+    set_idx: list          # near-best D germlines (sibling equivalence set), best first
+
+
+def call_d_in_window(window: str, d_names, d_seqs, *, min_score: float = 16.0,
+                     set_band: float = 2.0, inv_margin: float = 6.0) -> "DCall | None":
+    """Call D by LOCAL-aligning every D germline — forward AND reverse-complement — inside the whole
+    junction window [V_end:J_start]. Returns the best D with window-relative coords, or None when no
+    germline clears ``min_score`` (a genuine no-D call). ``inverted`` is set only when the best RC
+    germline beats the best forward germline by more than ``inv_margin`` — a deliberately conservative
+    test, because the caller uses ``inverted`` to override the (clean-accurate) forward rescore, so a
+    false positive costs a clean miss. Smith-Waterman (parasail sw): the observed D is a trimmed
+    substring of the germline embedded in random N-region bases — both ends free on both sequences."""
+    global _DNA_MAT
+    import parasail
+    if _DNA_MAT is None:
+        _DNA_MAT = parasail.matrix_create("ACGTN", 2, -1)
+    window = window.upper()
+    if len(window) < 4:
+        return None
+    scored = []                                            # (score, idx, inverted, t_start, t_end, gs, ge)
+    for idx, seq in enumerate(d_seqs):
+        L = len(seq)
+        for inverted, q in ((False, seq), (True, seq.translate(_RC)[::-1])):
+            if len(q) < 4:
+                continue
+            r = parasail.sw_trace_striped_16(q, window, 3, 1, _DNA_MAT)
+            ref_used = sum(1 for c in r.traceback.ref if c != "-")
+            q_used = sum(1 for c in r.traceback.query if c != "-")
+            t_end = int(r.end_ref) + 1
+            t_start = t_end - ref_used
+            qe = int(r.end_query) + 1
+            qs = qe - q_used
+            gs, ge = (L - qe, L - qs) if inverted else (qs, qe)   # map RC coords to forward germline
+            scored.append((float(r.score), idx, inverted, t_start, t_end, gs, ge))
+    if not scored:
+        return None
+    best_fwd = max((s for s in scored if not s[2]), key=lambda x: x[0], default=None)
+    best_rc = max((s for s in scored if s[2]), key=lambda x: x[0], default=None)
+    # inverted only when RC clearly beats forward (conservative — see docstring)
+    if best_rc is not None and (best_fwd is None or best_rc[0] > best_fwd[0] + inv_margin):
+        best, inverted = best_rc, True
+    else:
+        best, inverted = best_fwd, False
+    if best is None or best[0] < min_score:
+        return None
+    set_idx, seen = [], set()                              # sibling set within band, same orientation
+    for sc, idx, inv, *_ in sorted(scored, key=lambda x: -x[0]):
+        if inv != inverted or best[0] - sc > set_band:
+            continue
+        if idx not in seen:
+            seen.add(idx)
+            set_idx.append(idx)
+    return DCall(idx=best[1], inverted=inverted, t_start=best[3], t_end=best[4],
+                 germ_start=best[5], germ_end=best[6], score=best[0], set_idx=set_idx)
+
 
 @dataclass(frozen=True)
 class SegmentCall:
