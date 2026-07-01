@@ -6,7 +6,7 @@ from __future__ import annotations
 _DNA = list("ACGTN")
 _DIGITS = list("0123456789")
 _FLAGS = list("+-")
-_NAMECHARS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ*")   # allele-name chars (e.g. IGHVF1-G1*01); DNA dedups
+_NAMECHARS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ*_.")  # allele-name chars (e.g. IGHVF3-G9*04_A319G); DNA dedups
 _SPECIALS = ["<PAD>", "<GENO>", "<READ>", "<ANNOT>", "<S>", "<EOS>", "<ORI>", "<PROD>",
              "<V>", "<D>", "<J>",
              "<VS>", "<VE>", "<VGS>", "<VGE>",
