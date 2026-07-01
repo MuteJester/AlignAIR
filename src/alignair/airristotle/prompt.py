@@ -2,42 +2,62 @@
 by the annotation, where CALLS and COORDINATES are copy-pointer targets INTO the prompt (exact,
 single-source). MVP: small genotype = the true V/D/J alleles + a few distractors (no novel-allele /
 dynamic sampling yet). Target arrays are aligned so label[t] describes token t; the training loss
-applies the causal next-token shift (hidden[t] predicts label[t+1])."""
+applies the causal next-token shift (hidden[t] predicts label[t+1]).
+
+`build_prompt_core` (prompt + metadata) is shared by training (`build_example`) and inference/decode."""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Block:
+    marker_pos: int          # prompt index of this allele's <V>/<D>/<J> marker
+    seq_start: int           # prompt index where this allele's germline sequence starts
+    seq_len: int
+    gene: str                # "v"/"d"/"j"
+    name: str
+
+
+@dataclass
+class PromptMeta:
+    read_block_start: int
+    read_len: int
+    blocks: list                        # all allele blocks (for decode resolution)
+    call_marker_pos: dict               # gene -> prompt index of the TRUE allele's marker (training)
+    germ_block_start: dict              # gene -> prompt index where the TRUE allele's seq starts
+    prompt_len: int
 
 
 @dataclass
 class Example:
-    input_ids: list          # prompt tokens then annotation tokens (ids)
-    gen_target: list         # vocab id (used when is_copy==0 and loss_mask==1)
-    copy_target: list        # index into input_ids (< prompt_len) (used when is_copy==1)
-    is_copy: list            # 1 if this step's label is a copy-pointer, else 0
-    loss_mask: list          # 1 if this step contributes to the loss (annotation region), else 0
+    input_ids: list
+    gen_target: list
+    copy_target: list
+    is_copy: list
+    loss_mask: list
     prompt_len: int
 
 
 def _allele_block(tokens, tok, marker, name, seq):
-    """Append '<marker> <name-as-chars> <S> <seq-as-chars>' to tokens (ids); return (marker_pos, seq_start)."""
     marker_pos = len(tokens)
     tokens.append(tok.id(marker))
     tokens.extend(tok.encode(list(name)))
     tokens.append(tok.id(tok.S))
     seq_start = len(tokens)
     tokens.extend(tok.encode(list(seq.upper())))
-    return marker_pos, seq_start
+    return marker_pos, seq_start, len(seq)
 
 
-def build_example(record, reference_set, tokenizer, n_distractors: int = 8, rng=None):
+def build_prompt_core(record, reference_set, tokenizer, n_distractors: int = 8, rng=None):
+    """Build the PROMPT (genotype allele blocks + read) and its metadata. Genotype = the record's true
+    V/D/J alleles + `n_distractors` random distractors per gene (shuffled)."""
     import random as _random
     rng = rng or _random.Random(0)
     tok = tokenizer
     seq = str(record["sequence"]).upper()
     genes = {"v": ("V", tok.V), "d": ("D", tok.D), "j": ("J", tok.J)}
-
-    # ---- PROMPT: genotype allele blocks + read ----
     tokens = [tok.id(tok.GENO)]
-    call_marker_pos, germ_block_start = {}, {}
+    blocks, call_marker_pos, germ_block_start = [], {}, {}
     for g, (G, marker) in genes.items():
         true_call = str(record.get(f"{g}_call") or "").split(",")[0]
         gene = reference_set.gene(G)
@@ -47,10 +67,11 @@ def build_example(record, reference_set, tokenizer, n_distractors: int = 8, rng=
         pool = [n for n in gene.names if n != true_call]
         rng.shuffle(pool)
         names += pool[:n_distractors]
-        rng.shuffle(names)                         # true allele not always first
+        rng.shuffle(names)
         for nm in names:
             s = gene.sequences[gene.names.index(nm)]
-            mpos, sstart = _allele_block(tokens, tok, marker, nm, s)
+            mpos, sstart, slen = _allele_block(tokens, tok, marker, nm, s)
+            blocks.append(Block(mpos, sstart, slen, g, nm))
             if nm == true_call:
                 call_marker_pos[g] = mpos
                 germ_block_start[g] = sstart
@@ -58,29 +79,40 @@ def build_example(record, reference_set, tokenizer, n_distractors: int = 8, rng=
     read_block_start = len(tokens)
     tokens.extend(tok.encode(list(seq)))
     prompt_len = len(tokens)
+    meta = PromptMeta(read_block_start=read_block_start, read_len=len(seq), blocks=blocks,
+                      call_marker_pos=call_marker_pos, germ_block_start=germ_block_start,
+                      prompt_len=prompt_len)
+    return tokens, meta
 
-    # ---- ANNOTATION (targets aligned to the token emitted at each step) ----
+
+def build_example(record, reference_set, tokenizer, n_distractors: int = 8, rng=None):
+    tok = tokenizer
+    tokens, meta = build_prompt_core(record, reference_set, tokenizer, n_distractors, rng)
+    prompt_len = meta.prompt_len
+    read_block_start = meta.read_block_start
+    genes = {"v": ("V", tok.V), "d": ("D", tok.D), "j": ("J", tok.J)}
+
     gen_t, copy_t, is_copy, loss = [], [], [], []
 
-    def emit_gen(marker_or_char):                  # generate a vocab token
+    def emit_gen(marker_or_char):
         tid = tok.id(marker_or_char)
         tokens.append(tid); gen_t.append(tid); copy_t.append(0); is_copy.append(0); loss.append(1)
 
-    def emit_copy(prompt_pos, placeholder):        # copy step: label = prompt_pos; input token = placeholder
+    def emit_copy(prompt_pos, placeholder):
         tokens.append(tok.id(placeholder)); gen_t.append(0); copy_t.append(int(prompt_pos))
         is_copy.append(1); loss.append(1)
 
     emit_gen(tok.ANNOT)
-    emit_gen(tok.ORI); emit_gen("+")               # MVP: forward reads only
+    emit_gen(tok.ORI); emit_gen("+")
     for g, (G, marker) in genes.items():
-        if g not in call_marker_pos:
+        if g not in meta.call_marker_pos:
             continue
         emit_gen(marker)
-        emit_copy(call_marker_pos[g], marker)      # CALL = copy the true allele's <marker> position
+        emit_copy(meta.call_marker_pos[g], marker)
         fields = [(f"{G}S", read_block_start + int(record[f"{g}_sequence_start"])),
                   (f"{G}E", read_block_start + int(record[f"{g}_sequence_end"])),
-                  (f"{G}GS", germ_block_start[g] + int(record[f"{g}_germline_start"])),
-                  (f"{G}GE", germ_block_start[g] + int(record[f"{g}_germline_end"]))]
+                  (f"{G}GS", meta.germ_block_start[g] + int(record[f"{g}_germline_start"])),
+                  (f"{G}GE", meta.germ_block_start[g] + int(record[f"{g}_germline_end"]))]
         for fmark, ppos in fields:
             if 0 <= ppos < prompt_len:
                 emit_gen(getattr(tok, fmark)); emit_copy(ppos, getattr(tok, fmark))
