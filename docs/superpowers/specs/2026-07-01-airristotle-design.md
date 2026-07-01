@@ -30,23 +30,27 @@ autoregressive decoding trades single-pass speed for flexibility.
 
 ## Architecture
 
-Encoder–decoder transformer, modern converged stack (RMSNorm pre-norm, RoPE, SwiGLU MLP, grouped-query
-attention, bias-free, QK-norm), bf16.
+Decoder-only transformer — **architecturally a small Llama/Qwen** — modern converged stack (RMSNorm
+pre-norm, RoPE, SwiGLU MLP, grouped-query attention, bias-free, QK-norm), bf16. Same technology as
+frontier LLMs (ChatGPT/Claude/Qwen/Llama are all decoder-only); the only task specialization is a copy
+head for exact coordinates.
 
-- **Encoder (bidirectional)** reads the prompt: the genotype allele blocks + the query read. Full
-  bidirectional attention so calls/coords can use whole-context evidence.
-- **Decoder (autoregressive)** emits the compact record, cross-attending to the encoder. Two output
-  channels per step:
-  - **Vocabulary tokens** for structural/semantic fields (field markers, orientation, productivity).
-  - **Pointer tokens** — a pointer head = attention distribution over encoder positions; argmax = the
-    selected input position. Used for (a) **calls** (point to the winning allele block in the prompt →
-    dynamic-genotype-native, novel alleles handled) and (b) **coordinates** (point to read/germline
-    positions in the prompt → exact, single-source).
-- **Size (starting point):** ~40M params — 12 enc + 12 dec layers, d_model 512, 8 query / 2 KV heads,
-  SwiGLU d_ff ~1536. Small (narrow domain); scale up only if the data justifies it.
-- **Context:** a donor genotype (~50–120 alleles × ~300nt ≈ 15–35k encoder tokens) + one read. This
-  long-context encoder is the main architectural risk (see Risks). Char-level DNA keeps vocab tiny but
-  sequences long; GQA + FlashAttention manage the KV cost.
+- **Single sequence.** The prompt (genotype allele blocks + query read) and the generated record live
+  in ONE causal context window; the model attends over the whole prompt while decoding the record.
+- **Two output channels per decode step:**
+  - **Vocabulary tokens** for structural/semantic fields (field markers, orientation, productivity) —
+    plain next-token generation.
+  - **Copy/pointer** for calls + coordinates — a copy head is an attention distribution over the
+    PROMPT positions already in context; argmax = the selected position. (a) **Calls** copy the winning
+    allele block (dynamic-genotype-native; novel alleles handled). (b) **Coordinates** copy read/germline
+    positions (exact, single-source). Copy-over-context is a standard LLM technique, not a departure
+    from the decoder-only paradigm.
+- **Size (starting point):** ~150M params (≈12 layers, d_model 768, 12 query / 4 KV heads, SwiGLU
+  d_ff ≈2048; tune dims to land at ~150M). **Scale toward ~1B only if learning bottlenecks.**
+- **Context:** a donor genotype (~50–120 alleles × ~300nt ≈ 15–35k tokens) + one read, in one causal
+  context. The long context is the main feasibility risk (see Risks) — its **activations, not the
+  params**, are the memory wall when training from scratch on a 24GB GPU. Char-level DNA keeps vocab
+  tiny; GQA + FlashAttention manage the KV cost.
 
 ## I/O format
 
@@ -61,7 +65,7 @@ attention, bias-free, QK-norm), bf16.
 <READ> GATCACC...GGA
 ```
 
-**Output (decoder target) — compact record; ⟦p⟧ = pointer into the prompt:**
+**Output (generated after the prompt, in the same sequence) — compact record; ⟦p⟧ = copy-pointer into the prompt context:**
 ```
 <ORI> fwd
 <V> ⟦p:allele-block⟧ <VS> ⟦p:read-pos⟧ <VE> ⟦p:read-pos⟧ <VGS> ⟦p:germ-pos⟧ <VGE> ⟦p:germ-pos⟧
@@ -142,10 +146,9 @@ Does NOT modify or share weights with the current models. Separate checkpoints u
 
 Each sub-project gets its own plan. This spec covers the whole model; the first plan implements the MVP.
 
-## Decisions encoded here (confirm on review)
-- Encoder–decoder (not decoder-only) — for bidirectional prompt reading + natural cross-attention
-  pointers.
-- Pointer-hybrid coordinates (not pure-generative) — for exact coords.
-- Char-level DNA tokenization (tiny vocab, long sequences) — vs k-mer BPE (shorter sequences, larger
-  vocab); revisit if context length bites.
-- ~40M param starting size.
+## Decisions encoded here
+- **Decoder-only** (like ChatGPT/Claude/Qwen/Llama) — same technology as frontier LLMs. A copy head over
+  the in-context prompt handles exact coordinates without leaving the decoder-only paradigm.
+- **Copy-mechanism coordinates** (not pure-generative) — for exact coords / single-source consistency.
+- **Char-level DNA tokenization** (tiny vocab, long sequences) — vs k-mer BPE; revisit if context bites.
+- **~150M param starting size**, scale to ~1B only if learning bottlenecks.
