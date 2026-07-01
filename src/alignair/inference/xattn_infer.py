@@ -116,7 +116,7 @@ def predict_reads_xattn(model, reference_set, reads, device=None, batch_size: in
                     idx = sc.best_idx
                     cset = [names[G][j] for j in sc.set_idx]
                     p[f"{g}_germline_start"] = int(sc.germ_start)
-                    p[f"{g}_germline_end"] = int(sc.germ_end) + 1
+                    p[f"{g}_germline_end"] = int(sc.germ_end)       # t_end is already exclusive (== truth)
                     p[f"{g}_cigar"] = sc.cigar
                 else:                                              # neural fallback (short seg / rescore off / no D)
                     idx = int(best_l[G][i])
@@ -132,7 +132,7 @@ def predict_reads_xattn(model, reference_set, reads, device=None, batch_size: in
                     if not cset:
                         cset = [names[G][idx]]
                     p[f"{g}_germline_start"] = int(gs_l[G][i])
-                    p[f"{g}_germline_end"] = int(ge_l[G][i]) + 1
+                    p[f"{g}_germline_end"] = int(ge_l[G][i]) + 1   # neural gend pointer is inclusive -> +1
                 p[f"{g}_call"] = names[G][idx]
                 p[f"{g}_call_set"] = cset
                 p[f"{g}_calls"] = cset
