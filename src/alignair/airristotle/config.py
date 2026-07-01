@@ -12,3 +12,4 @@ class AIRRConfig:
     d_ff: int = 2816
     max_seq: int = 8192
     rope_base: float = 10000.0
+    init_std: float = 0.02        # Llama initializer_range

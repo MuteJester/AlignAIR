@@ -11,7 +11,10 @@ class RMSNorm(nn.Module):
         super().__init__(); self.w = nn.Parameter(torch.ones(d)); self.eps = eps
 
     def forward(self, x):
-        return self.w * (x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps))
+        dt = x.dtype                                          # Llama computes the norm in fp32 (bf16 stability)
+        h = x.float()
+        h = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + self.eps)
+        return self.w * h.to(dt)
 
 
 def _rope(L, hd, base, device):
@@ -89,6 +92,21 @@ class AIRRistotle(nn.Module):
         # copy head: score each decode position against the prompt positions (attention to copy)
         self.copy_q = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
         self.copy_k = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
+        # Llama-style init: normal(0, init_std) on all weights; then scale the residual output
+        # projections (attn.o, ffn.w3) by 1/sqrt(2*n_layers) for depth stability (GPT-2/NeoX recipe).
+        self.apply(self._init_weights)
+        import math
+        for n, p in self.named_parameters():
+            if n.endswith("attn.o.weight") or n.endswith("ffn.w3.weight"):
+                p.data.mul_(1.0 / math.sqrt(2 * cfg.n_layers))
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight, mean=0.0, std=self.cfg.init_std)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.Embedding):
+            nn.init.normal_(m.weight, mean=0.0, std=self.cfg.init_std)
 
     def forward(self, input_ids):
         B, L = input_ids.shape
