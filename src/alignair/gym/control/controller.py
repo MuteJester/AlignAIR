@@ -57,10 +57,24 @@ class GymController:
     def exam(self, step: int) -> GymState:
         metrics = self._metrics(self.level)
         promote, blocking = self.gate.evaluate(metrics, self.level)
-        headline = "" if promote else ", ".join(blocking)
+        
+        # Check if we should demote (only if level > 0 and not promoting)
+        demote = False
+        failing = []
+        if not promote and self.level > 0:
+            demote, failing = self.gate.should_demote(metrics, self.level, self.config.demote_margin)
+            
+        if promote:
+            headline = ""
+        elif demote:
+            headline = f"Demoted due to: {', '.join(failing)}"
+        else:
+            headline = ", ".join(blocking)
+            
         state = self._snapshot(metrics, step, headline)
         if self.hud is not None:
             self.emit(self.hud.render(state))
+            
         if promote:
             self.plateau.reset()
             if self.level >= self.ladder.top:
@@ -72,6 +86,10 @@ class GymController:
                 if self.level > self.best_level:
                     self.best_level = self.level
                 self._event("cleared", self._snapshot(metrics, step))
+        elif demote:
+            self.plateau.reset()  # Reset plateau count to allow fresh climb
+            self.level -= 1
+            self._event("demoted", self._snapshot(metrics, step, headline))
         else:
             if self.plateau.update(composite_score(state.gates)):
                 self.done = True

@@ -316,7 +316,7 @@ def test_cli_predict_end_to_end(tmp_path):
     from alignair.core.dnalignair import DNAlignAIR
     from alignair import cli
     torch.manual_seed(0)
-    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64, aligner="softdp")
+    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64)
     model = DNAlignAIR(cfg)
     ck = tmp_path / "m.pt"; torch.save({"model": model.state_dict(), "config": cfg.to_dict()}, ck)
     fa = tmp_path / "reads.fasta"
@@ -335,7 +335,7 @@ def test_cli_bundle_and_predict_equivalence(tmp_path):
     from alignair.core.dnalignair import DNAlignAIR
     from alignair import cli
     torch.manual_seed(0)
-    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64, aligner="softdp")
+    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64)
     ck = tmp_path / "m.pt"
     torch.save({"model": DNAlignAIR(cfg).state_dict(), "config": cfg.to_dict()}, ck)
     fa = tmp_path / "r.fasta"; fa.write_text(">a\n" + "ACGT" * 50 + "\n>b\n" + "TTGCAACGTACG" * 6 + "\n")

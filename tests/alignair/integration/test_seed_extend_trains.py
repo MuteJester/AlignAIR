@@ -14,8 +14,7 @@ def test_seed_extend_model_trains_a_few_steps():
     # narrow pre-retrain sanity: the refactored seed_extend stack (shared encoder, band head,
     # banded DP, band-offset loss) trains end-to-end and the loss decreases.
     torch.manual_seed(0)
-    cfg = DNAlignAIRConfig(d_model=64, n_layers=2, nhead=4, dim_feedforward=128,
-                           backbone="shared", aligner="seed_extend")
+    cfg = DNAlignAIRConfig(d_model=64, n_layers=2, nhead=4, dim_feedforward=128)
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGK_OGRDB)   # V/J only -> smaller/faster
     model = DNAlignAIR(cfg)
     assert getattr(model, "germline_encoder", None) is None     # no double-encode
@@ -33,8 +32,7 @@ def test_seed_extend_model_trains_a_few_steps():
 def test_seed_extend_reader_training_runs():
     # the seed_extend reader path (banded alignment_score set-NCE) trains end-to-end
     torch.manual_seed(0)
-    cfg = DNAlignAIRConfig(d_model=64, n_layers=2, nhead=4, dim_feedforward=128,
-                           backbone="shared", aligner="seed_extend")
+    cfg = DNAlignAIRConfig(d_model=64, n_layers=2, nhead=4, dim_feedforward=128)
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGK_OGRDB)
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)

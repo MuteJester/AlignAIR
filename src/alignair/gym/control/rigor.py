@@ -56,8 +56,10 @@ class RegressionGuard:
         regressed = []
         for cell, v in field.items():
             lcb = float(v["lo"] if isinstance(v, dict) else v)
+            # Use mean score S if available, else fall back to lo or v
+            val_for_best = float(v.get("S", v.get("lo", v)) if isinstance(v, dict) else v)
             best = self._best.get(cell)
             if best is not None and lcb < best - self.margin:
                 regressed.append(cell)
-            self._best[cell] = lcb if best is None else max(best, lcb)
+            self._best[cell] = val_for_best if best is None else max(best, val_for_best)
         return regressed

@@ -26,5 +26,9 @@ def test_germline_coords_shapes():
     seg_mask = torch.ones(B, Ls, dtype=torch.bool)
     germ = torch.randn(B, Lg, cfg.d_model)
     germ_mask = torch.ones(B, Lg, dtype=torch.bool)
-    start_logits, end_logits = model.germline_coords(seg, seg_mask, germ, germ_mask)
+    # seed_extend needs raw tokens for the band head's base-match channel
+    seg_tok = torch.randint(0, 5, (B, Ls))
+    germ_tok = torch.randint(0, 5, (B, Lg))
+    start_logits, end_logits = model.germline_coords(seg, seg_mask, germ, germ_mask,
+                                                     seg_tok=seg_tok, germ_tok=germ_tok)
     assert start_logits.shape == (B, Lg) and end_logits.shape == (B, Lg)

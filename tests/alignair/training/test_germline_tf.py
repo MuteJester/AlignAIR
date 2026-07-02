@@ -43,7 +43,7 @@ def test_compute_germline_logits_shapes():
 
 def test_compute_germline_logits_seed_extend_reads_off_backbone():
     # seed_extend has NO germline_encoder; segment reps must come from the backbone reps (no re-encode)
-    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, backbone="shared", aligner="seed_extend")
+    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2)
     model = DNAlignAIR(cfg)
     assert getattr(model, "germline_encoder", None) is None
     rs = _RS()
@@ -64,7 +64,7 @@ def test_compute_germline_logits_seed_extend_reads_off_backbone():
 
 def test_compute_germline_logits_seed_extend_without_reps_falls_back_to_backbone():
     # no reps passed -> re-encode the segment through the SHARED backbone (READ), still no GermlineEncoder
-    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, backbone="shared", aligner="seed_extend")
+    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2)
     model = DNAlignAIR(cfg); rs = _RS(); ref_emb = model.encode_reference(rs)
     B, L = 2, 16
     tokens = torch.randint(0, 6, (B, L)); mask = torch.ones(B, L, dtype=torch.bool)

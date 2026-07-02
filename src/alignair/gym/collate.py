@@ -52,12 +52,13 @@ def gym_collate(batch, reference_set, has_d: bool):
 
         def _primary(s, p):
             if not p:
-                return 0
+                return IGNORE
             nm = s.get("primary", {}).get(G)
             if nm is None:  # fall back to any listed call (synthetic/legacy bundles)
                 names = s["calls"].get(G)
                 nm = next(iter(names)) if names else None
-            return gref.index.get(nm, 0)
+            idx = gref.index.get(nm)
+            return idx if idx is not None else IGNORE
 
         out[f"{g}_primary_idx"] = torch.tensor(
             [_primary(s, p) for s, p in zip(batch, pres)], dtype=torch.long)

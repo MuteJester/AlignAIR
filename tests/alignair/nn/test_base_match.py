@@ -10,7 +10,7 @@ def test_passthrough_without_tokens():
 
 
 def test_matches_softdp_scores_exactly():
-    # identical to SoftDPAligner._scores base-match math (no reliability)
+    # identical to the aligner _scores base-match math (no reliability)
     torch.manual_seed(0)
     B, S, Lg = 2, 5, 7
     M = torch.randn(B, S, Lg)

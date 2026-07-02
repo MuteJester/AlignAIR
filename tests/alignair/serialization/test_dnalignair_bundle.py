@@ -12,7 +12,7 @@ from alignair.serialization.dnalignair_bundle import (
 
 def _model():
     torch.manual_seed(0)
-    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64, aligner="softdp")
+    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64)
     return DNAlignAIR(cfg)
 
 

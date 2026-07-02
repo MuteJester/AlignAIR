@@ -1,9 +1,9 @@
 from alignair.config.dnalignair_config import DNAlignAIRConfig
 
 
-def test_config_has_seed_extend_and_ablation_toggles():
-    c = DNAlignAIRConfig(aligner="seed_extend", backbone="shared")
-    assert c.aligner == "seed_extend"
+def test_config_has_ablation_toggles():
+    c = DNAlignAIRConfig()
+    assert c.band_width == 16
     for f, default in [("band_features", "full"), ("dp_emissions", "learned"),
                        ("use_learned_reps", True), ("use_reliability", True),
                        ("reader", "dp"), ("encoder_mode", "trained")]:
@@ -11,8 +11,7 @@ def test_config_has_seed_extend_and_ablation_toggles():
 
 
 def test_ablation_toggles_roundtrip_through_dict():
-    c = DNAlignAIRConfig(aligner="seed_extend", reader="maxsim", encoder_mode="frozen",
-                         use_learned_reps=False)
+    c = DNAlignAIRConfig(reader="maxsim", encoder_mode="frozen", use_learned_reps=False)
     c2 = DNAlignAIRConfig.from_dict(c.to_dict())
     assert c2.reader == "maxsim" and c2.encoder_mode == "frozen" and c2.use_learned_reps is False
 
@@ -32,36 +31,28 @@ class _RS:
     def gene(self, g): return _Gene()
 
 
-def _seed_extend_model(d=32):
-    cfg = DNAlignAIRConfig(d_model=d, n_layers=1, nhead=2, backbone="shared", aligner="seed_extend")
+def _model(d=32):
+    cfg = DNAlignAIRConfig(d_model=d, n_layers=1, nhead=2)
     return DNAlignAIR(cfg)
 
 
-def test_seed_extend_has_no_germline_encoder_or_classifier():
-    m = _seed_extend_model()
+def test_model_has_no_germline_encoder_or_classifier():
+    # ONE shared encoder: no separate germline encoder, no allele classifier (dynamic genotype)
+    m = _model()
     assert getattr(m, "germline_encoder", None) is None
     assert not hasattr(m, "classifier")
 
 
 def test_encode_reference_uses_shared_encoder():
-    m = _seed_extend_model(d=32)
+    m = _model(d=32)
     ref = m.encode_reference(_RS())
     assert ref["V"]["pos_reps"].shape[0] == 2          # two alleles encoded
     assert ref["V"]["pos_reps"].shape[-1] == 32        # d_model
     assert ref["V"]["embeddings"].shape == (2, 32)
 
 
-def test_seed_extend_classifier_request_is_ignored():
-    # caller="classifier" must NOT create a classifier on the dynamic-genotype seed_extend path
-    cfg = DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, backbone="shared",
-                           aligner="seed_extend", caller="classifier")
-    m = DNAlignAIR(cfg)
-    assert not hasattr(m, "classifier")
-    assert m.caller == "retrieval"
-
-
-def test_seed_extend_germline_coords_runs():
-    m = _seed_extend_model(d=32)
+def test_germline_coords_runs():
+    m = _model(d=32)
     B, S, Lg = 2, 6, 12
     seg = torch.randn(B, S, 32); germ = torch.randn(B, Lg, 32)
     sm = torch.ones(B, S, dtype=torch.bool); gm = torch.ones(B, Lg, dtype=torch.bool)

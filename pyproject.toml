@@ -107,6 +107,9 @@ where = ["src"]
 # ── Pytest configuration ────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# importlib mode: tests have no __init__.py, so same-basename files in different dirs
+# (e.g. test_batch.py) would otherwise collide under the default prepend mode.
+addopts = "--import-mode=importlib"
 markers = [
     "unit: Unit tests",
     "integration: Integration tests",

@@ -1,11 +1,9 @@
-"""Differentiable soft-DP germline aligner (learned, gap-aware).
+"""Differentiable soft-DP germline recurrence (semi-global, affine-gap).
 
-Replaces the diagonal-cosine correlation in germline_aligner.py, whose contiguous
-``end = start + len`` assumption cannot represent indel'd alignments. Here a learned
-pairwise score matrix is reduced by a semi-global soft dynamic program (sum-product /
-"differentiable Smith-Waterman", temperature 1) that marginalises over alignment
-paths INCLUDING germline deletions and read insertions, and returns germline
-start/end posteriors.
+Shared building block for the seed-and-extend aligner (banded_dp.SeedExtendAligner).
+A pairwise score matrix is reduced by a semi-global soft dynamic program (sum-product /
+"differentiable Smith-Waterman", temperature 1) that marginalises over alignment paths
+INCLUDING germline deletions and read insertions, returning germline end posteriors.
 
 Vectorisation: the affine-gap recurrences normally couple within a row (deletions)
 and within a column (insertions). We avoid an O(S*Lg) inner scan by
@@ -13,15 +11,10 @@ and within a column (insertions). We avoid an O(S*Lg) inner scan by
     form, the log-sum over all numbers of skipped germline columns (linear gap);
   - insertions: a per-row carry state updated in O(1) per row.
 So the DP is S sequential row-steps, each a handful of (B, Lg) ops — GPU-friendly.
-``soft_dp_end_logits`` operates on a given score matrix (easy to unit-test); the
-nn.Module wraps projection + learned gap costs and returns (start_logits, end_logits)
-matching the GermlineAligner interface.
+``soft_dp_end_logits`` operates on a given score matrix (easy to unit-test);
+``_reverse_valid_2d`` flips a valid prefix so the START posterior is the reversed-frame END.
 """
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-from .base_match import base_match_channel
 
 NEG = -1e4
 
@@ -74,76 +67,3 @@ def soft_dp_end_logits(M: torch.Tensor, seg_mask: torch.Tensor, germ_mask: torch
     end_idx = (seg_len - 1).clamp(min=0)
     end_logits = Hm_rows[torch.arange(B, device=M.device), end_idx]
     return end_logits.masked_fill(~germ_mask, NEG)
-
-
-class SoftDPAligner(nn.Module):
-    """Learned, gap-aware germline aligner. Drop-in for GermlineAligner: returns
-    (start_logits, end_logits) over germline positions."""
-
-    def __init__(self, d_model: int, match_floor: float = 1.0):
-        super().__init__()
-        self.seg_proj = nn.Linear(d_model, d_model)
-        self.germ_proj = nn.Linear(d_model, d_model)
-        # sharp match scale + strong gap priors so even the UNTRAINED aligner localizes
-        # (sum-product soft-DP counts paths; a weak per-step signal lets the marginal
-        # drift, so we start peaked and let training relax it if useful).
-        self.log_scale = nn.Parameter(torch.tensor(1.6))       # scale ~5
-        self._gap_open = nn.Parameter(torch.tensor(3.0))       # -softplus -> ~ -3.0
-        self._gap_extend = nn.Parameter(torch.tensor(2.0))     # ~ -2.1
-        self._del_gap = nn.Parameter(torch.tensor(3.0))        # ~ -3.0
-        # learned base-match bonus: makes the emission SNP-sensitive (the SW mechanism)
-        # so the DP can resolve 1-2 SNP sibling alleles, not just the gene.
-        self._match_weight = nn.Parameter(torch.tensor(1.0))
-        # NOVEL-ALLELE GUARANTEE: the raw-token (ACGT) match channel is FLOORED so training
-        # can never drive it to zero. For a germline never seen in training the learned
-        # embedding is unreliable, but the raw +1/-1 base match is always correct — flooring
-        # keeps it load-bearing in the DP, so a novel/dynamic genotype aligns on real bases.
-        self.match_floor = float(match_floor)
-
-    def _scores(self, seg_reps, germ_reps, seg_tok=None, germ_tok=None, seg_reliability=None):
-        S = F.normalize(self.seg_proj(seg_reps), dim=-1)
-        G = F.normalize(self.germ_proj(germ_reps), dim=-1)
-        scale = self.log_scale.clamp(-2.0, 3.0).exp()
-        M = scale * torch.einsum("bid,bjd->bij", S, G)         # (B,S,Lg) cosine*scale
-        # SNP-sensitive base-match channel (shared with the pointer aligner): the
-        # STATE-CONDITIONED emission scales the match bonus AND mismatch penalty together
-        # by per-position reliability, so an SHM-substitution position contributes a
-        # near-neutral base term instead of penalising the true allele.
-        M = base_match_channel(M, seg_tok, germ_tok, seg_reliability,
-                               self._match_weight, self.match_floor)
-        return M
-
-    def forward(self, seg_reps, seg_mask, germ_reps, germ_mask):
-        go = -F.softplus(self._gap_open)
-        ge = -F.softplus(self._gap_extend)
-        dg = -F.softplus(self._del_gap)
-        M = self._scores(seg_reps, germ_reps)
-        end_logits = soft_dp_end_logits(M, seg_mask, germ_mask, go, ge, dg)
-        # start = reversed-frame end: reverse read rows and germline cols, re-run, flip back
-        seg_len = seg_mask.sum(dim=1)
-        germ_len = germ_mask.sum(dim=1)
-        Mr = _reverse_valid_2d(M.transpose(1, 2), germ_len).transpose(1, 2)  # reverse germ cols
-        Mr = _reverse_valid_2d(Mr, seg_len)                                  # reverse read rows
-        end_rev = soft_dp_end_logits(Mr, seg_mask, germ_mask, go, ge, dg)
-        start_logits = _reverse_valid_2d(end_rev, germ_len)
-        return start_logits.masked_fill(~germ_mask, NEG), end_logits
-
-    def alignment_score(self, seg_reps, seg_mask, germ_reps, germ_mask,
-                        seg_tok=None, germ_tok=None, seg_reliability=None):
-        """Candidate-allele log-likelihood: the soft-DP log-partition over end
-        positions = total alignment mass of the observed segment against this
-        candidate germline. Higher = better alignment = more likely the true allele.
-        Pass seg_tok/germ_tok to enable the SNP-sensitive base-match channel (needed
-        to resolve sibling alleles). Pass seg_reliability (B,S) in [0,1] to down-weight
-        the base channel at likely-SHM positions (heavy-SHM robustness). Returns (B,)."""
-        go = -F.softplus(self._gap_open)
-        ge = -F.softplus(self._gap_extend)
-        dg = -F.softplus(self._del_gap)
-        M = self._scores(seg_reps, germ_reps, seg_tok, germ_tok, seg_reliability)
-        end_logits = soft_dp_end_logits(M, seg_mask, germ_mask, go, ge, dg)
-        # length-normalize: the raw log-partition grows with germline length (more end
-        # positions => more mass), which biases ranking ACROSS candidates of different
-        # lengths (our cross-gene rerank). Subtract log(#valid end positions) -> a
-        # length-invariant log-mean-exp score.
-        n_valid = germ_mask.sum(dim=-1).clamp(min=1).to(end_logits.dtype)
-        return torch.logsumexp(end_logits, dim=-1) - torch.log(n_valid)

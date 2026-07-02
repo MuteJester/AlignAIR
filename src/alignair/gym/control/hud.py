@@ -55,6 +55,7 @@ class GymHUD:
             "best": f"⚑ NEW BEST FLOOR: {state.best_level + 1}",
             "ceiling": f"☠ CEILING REACHED at floor {state.level + 1} — can't climb further",
             "complete": "✦ GYM COMPLETE — all floors cleared ✦",
+            "demoted": f"⚠ REGRESSION DETECTED — DEMOTED! back to floor {state.level + 1} ⚠",
         }.get(kind, kind)
-        codes = {"cleared": "1;32", "best": "1;33", "ceiling": "1;31", "complete": "1;35"}
+        codes = {"cleared": "1;32", "best": "1;33", "ceiling": "1;31", "complete": "1;35", "demoted": "1;31"}
         return _c(msg, codes.get(kind, "1"), self.color)

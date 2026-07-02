@@ -23,7 +23,6 @@ def test_full_width_band_is_noop():
 
 
 from alignair.nn.aligner.banded_dp import SeedExtendAligner
-from alignair.nn.aligner.soft_dp import SoftDPAligner
 
 
 def _toy(B=2, S=10, Lg=24, d=16):
@@ -32,32 +31,12 @@ def _toy(B=2, S=10, Lg=24, d=16):
             torch.randn(B, Lg, d), torch.ones(B, Lg, dtype=torch.bool))
 
 
-def _copy_params(al, sd):
-    al.seg_proj.load_state_dict(sd.seg_proj.state_dict())
-    al.germ_proj.load_state_dict(sd.germ_proj.state_dict())
-    with torch.no_grad():
-        for p in ("log_scale", "_gap_open", "_gap_extend", "_del_gap", "_match_weight"):
-            getattr(al, p).copy_(getattr(sd, p))
-
-
 def test_forward_shapes():
     al = SeedExtendAligner(d_model=16)
     seg, sm, germ, gm = _toy()
     center = torch.zeros(2, dtype=torch.long)
     sl, el = al(seg, sm, germ, gm, center, w=8)
     assert sl.shape == (2, 24) and el.shape == (2, 24)
-
-
-def test_full_band_matches_softdp_within_tol():
-    sd = SoftDPAligner(d_model=16)
-    al = SeedExtendAligner(d_model=16)
-    _copy_params(al, sd)
-    seg, sm, germ, gm = _toy()
-    center = torch.zeros(2, dtype=torch.long)
-    sl_a, el_a = al(seg, sm, germ, gm, center, w=germ.shape[1])    # full band, tokens=None -> pure cosine
-    sl_s, el_s = sd(seg, sm, germ, gm)
-    assert torch.allclose(el_a, el_s, atol=1e-3, rtol=1e-3)
-    assert torch.allclose(sl_a, sl_s, atol=1e-3, rtol=1e-3)
 
 
 def test_base_match_changes_output():
@@ -70,13 +49,10 @@ def test_base_match_changes_output():
     assert not torch.allclose(el_plain, el_bm)                     # base-match is a live input
 
 
-def test_alignment_score_full_band_matches_softdp():
-    sd = SoftDPAligner(d_model=16)
+def test_alignment_score_shape():
     al = SeedExtendAligner(d_model=16)
-    _copy_params(al, sd)
     seg, sm, germ, gm = _toy()
     center = torch.zeros(2, dtype=torch.long)
     st = torch.randint(1, 5, (2, 10)); gt = torch.randint(1, 5, (2, 24))
     a = al.alignment_score(seg, sm, germ, gm, center, w=24, seg_tok=st, germ_tok=gt)
-    s = sd.alignment_score(seg, sm, germ, gm, seg_tok=st, germ_tok=gt)
-    assert a.shape == (2,) and torch.allclose(a, s, atol=1e-3, rtol=1e-3)
+    assert a.shape == (2,) and torch.isfinite(a).all()

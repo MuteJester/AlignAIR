@@ -28,8 +28,7 @@ def test_seed_extend_learned_reader_runs():
     # backbone and place a band head center for the exact banded DP (previously crashed here).
     torch.manual_seed(0)
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
-                                        backbone="shared", aligner="seed_extend"))
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))
     assert getattr(model, "germline_encoder", None) is None
     reads = ["ACGT" * 40, "TTGCAACGTACG" * 8, "ACGTACGTNNACGT" * 6]
     # v_reader="learned" forces the DP reader on V too (not the parasail fallback)
@@ -56,8 +55,7 @@ def test_genotype_restricts_every_call():
     # disallowed candidate — top-k is capped to the allowed count).
     torch.manual_seed(0)
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
-                                        aligner="softdp"))
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))
     reads = ["ACGT" * 40, "TTGCAACGTACG" * 8, "ACGTACGTNNACGT" * 6, "GATTACA" * 12]
     gt = _genotype(rs, n_v=4, n_d=3, n_j=2)  # n_j=2 < default top-k → exercises the cap
     allowed = {g.upper(): set(v) for g, v in gt.items()}
@@ -85,8 +83,7 @@ def test_genotype_with_novel_alleles_is_callable():
         "J": {"IGHJ6*02": igh.gene("J").sequences[0]},
     }
     rs = ReferenceSet.from_genotype(genes)
-    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
-                                        aligner="softdp"))
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))
     preds = predict_reads(model, rs, ["ACGT" * 40, v0], batch_size=2, rerank="learned")
     for p in preds:
         assert p["v_call"] in {"IGHV1-2*02", "NOVEL-V*01"}  # novel is a legal output
@@ -96,8 +93,7 @@ def test_learned_rerank_emits_calibration_fields():
     # the multi-label set path emits benchmark-friendly keys + per-candidate scores
     torch.manual_seed(0)
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
-                                        aligner="softdp"))
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))
     reads = ["ACGT" * 40, "TTGCAACGTACG" * 8]
     preds = predict_reads(model, rs, reads, batch_size=2, rerank="learned", emit_scores=True)
     for p in preds:
@@ -115,8 +111,7 @@ def test_parasail_v_reader_keeps_call_in_ordered_set():
     pytest.importorskip("parasail")
     torch.manual_seed(0)
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
-                                        aligner="softdp"))
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))
     reads = ["ACGTACGTACGT" * 12, "TTGCAACGTACG" * 10]
     preds = predict_reads(model, rs, reads, batch_size=2, rerank="learned",
                           v_reader="parasail", emit_scores=True)
@@ -133,8 +128,7 @@ def test_calibration_widens_set_via_temperature():
     # a high temperature flattens the posterior -> the LR-band keeps more candidates
     torch.manual_seed(0)
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
-                                        aligner="softdp"))
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))
     reads = ["ACGTACGTACGT" * 10, "TTGCAACGTACG" * 8]
     base = predict_reads(model, rs, reads, batch_size=2, rerank="learned", set_epsilon=0.5)
     hot = {"V": {"temperature": 5.0, "epsilon": 0.5}}
@@ -166,8 +160,7 @@ def test_resolve_hierarchy_levels():
 def test_predict_reads_emits_hierarchical_fields():
     torch.manual_seed(0)
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
-                                        aligner="softdp"))
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))
     preds = predict_reads(model, rs, ["ACGT" * 30, "TTGCAACGTACG" * 6], rerank="learned")
     for p in preds:
         for g in ("v", "d", "j"):
@@ -177,8 +170,7 @@ def test_predict_reads_emits_hierarchical_fields():
 def test_contaminant_gate_flag_only_and_off_by_default():
     torch.manual_seed(0)
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64,
-                                        aligner="softdp"))
+    model = DNAlignAIR(DNAlignAIRConfig(d_model=32, n_layers=1, nhead=2, dim_feedforward=64))
     reads = ["ACGT" * 40, "TTGCAACGTACG" * 6]
     # off by default: a contaminant_score is emitted, but no is_contaminant flag without tau
     p0 = predict_reads(model, rs, reads, rerank="learned")

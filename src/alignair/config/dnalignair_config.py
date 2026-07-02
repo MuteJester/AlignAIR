@@ -1,4 +1,10 @@
-"""Configuration for the unified DNAlignAIR model."""
+"""Configuration for the unified DNAlignAIR model.
+
+Single architecture path: shared nucleotide encoder backbone, RegionTagger region head,
+retrieval allele caller, and the seed-and-extend banded-DP germline aligner (band head +
+BandHead center + SeedExtendAligner). There are no backbone/aligner/caller choice fields —
+those alternatives were removed. Only the neural-contribution ablation toggles remain.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
@@ -14,12 +20,7 @@ class DNAlignAIRConfig:
     orientation_dim: int = 64
     n_regions: int = 8     # len(REGIONS)
     n_states: int = 4      # germline/substitution/insertion/deletion
-    backbone: str = "conv"  # "conv" (conv-stem + Transformer) | "shared" (RoPE/SDPA/SwiGLU SharedNucleotideEncoder)
-    aligner: str = "softdp"  # germline aligner: "softdp" (gap-aware DP) | "diagonal" (legacy cosine corr) | "pointer" (fast parallel) | "seed_extend" (shared encoder + banded exact DP)
-    band_half_width: int = 0  # pointer aligner indel band half-width (0 = single diagonal)
-    region_decoder: str = "linear"  # region head: "linear" (RegionTagger) | "query" (mask-span decoder w/ boundary posteriors)
-    caller: str = "retrieval"  # allele caller: "retrieval" (cosine vs germline embeddings) | "classifier" (masked per-allele head; NOT dynamic-genotype-compliant, excluded from seed_extend)
-    allele_counts: dict | None = None  # {"V":198,"D":33,"J":7} required when caller=="classifier"
+    band_width: int = 16   # seed_extend banded-DP half-width (the +-w window the band head places)
     # --- neural-contribution ablation toggles (spec §5.1; full-neural defaults, flipped for the
     #     Gate-3 defense that this is a learned aligner + exact structured decoder, not classical) ---
     band_features: str = "full"      # band head inputs: "full" (base-match + learned cosine [+kmer/boundary]) | "raw" (raw base-match only)

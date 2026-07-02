@@ -25,3 +25,22 @@ class PromotionGate:
         sts = self.statuses(metrics, level)
         blocking = [s.name for s in sts if not s.is_open]
         return (len(blocking) == 0, blocking)
+
+    def should_demote(self, metrics: dict, level: int, margin: float) -> tuple[bool, list]:
+        """Check if any metric has dropped below the demotion threshold.
+        Returns (should_demote: bool, failing_gates: list[str])."""
+        failing = []
+        for spec in self.gates:
+            thr = spec.thresholds[max(0, min(len(spec.thresholds) - 1, level))]
+            if spec.metric in metrics:
+                val = float(metrics[spec.metric])
+            else:
+                # Ignore missing metrics for demotion
+                continue
+            if spec.direction == "higher":
+                if val < thr - margin:
+                    failing.append(spec.metric)
+            else:  # "lower"
+                if val > thr + margin:
+                    failing.append(spec.metric)
+        return len(failing) > 0, failing

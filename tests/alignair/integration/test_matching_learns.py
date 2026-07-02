@@ -1,6 +1,6 @@
 import torch
 from alignair.data.tokenizer import pad_tokenize, TOKEN_DICT
-from alignair.nn.encoder.germline import GermlineEncoder
+from alignair.nn.encoder.shared import SharedNucleotideEncoder
 from alignair.nn.heads.matching import AlleleMatchingHead, multilabel_match_loss
 
 BASES = "ACGT"
@@ -26,7 +26,7 @@ def test_matching_head_learns_to_identify_alleles():
     K = 12
     refs = [_rand_seq(rng, 80) for _ in range(K)]  # distinct "germline alleles"
 
-    enc = GermlineEncoder(embed_dim=64)
+    enc = SharedNucleotideEncoder(d_model=64, n_layers=1, nhead=4, max_len=256)
     head = AlleleMatchingHead(init_temp=0.1)
     opt = torch.optim.Adam(list(enc.parameters()) + list(head.parameters()), lr=1e-3)
 

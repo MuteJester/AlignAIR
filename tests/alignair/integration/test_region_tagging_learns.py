@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from alignair.data.tokenizer import pad_tokenize
-from alignair.nn.encoder.backbone import SequenceBackbone
+from alignair.nn.encoder.shared import SharedNucleotideEncoder
 from alignair.nn.heads.region import RegionTagger, decode_boundaries, REGION_INDEX
 
 # dominant base per region (others sampled uniformly with low prob) -> learnable composition
@@ -36,14 +36,14 @@ def _batch(rng, B):
 def test_region_tagging_recovers_exact_boundaries():
     rng = np.random.default_rng(0)
     torch.manual_seed(0)
-    bb = SequenceBackbone(d_model=64, n_layers=2, nhead=4, dim_feedforward=128)
+    bb = SharedNucleotideEncoder(d_model=64, n_layers=2, nhead=4, max_len=256)
     tagger = RegionTagger(d_model=64)
     opt = torch.optim.Adam(list(bb.parameters()) + list(tagger.parameters()), lr=2e-3)
     ce = torch.nn.CrossEntropyLoss()
 
     for _ in range(120):
         tokens, mask, labels = _batch(rng, 16)
-        logits = tagger(bb(tokens, mask))
+        logits = tagger(bb.forward_positions(tokens, mask))
         loss = ce(logits[mask], labels[mask])
         opt.zero_grad()
         loss.backward()
@@ -54,7 +54,7 @@ def test_region_tagging_recovers_exact_boundaries():
     tagger.eval()
     with torch.no_grad():
         tokens, mask, labels = _batch(rng, 32)
-        logits = tagger(bb(tokens, mask))
+        logits = tagger(bb.forward_positions(tokens, mask))
     pred = decode_boundaries(logits, mask, has_d=True)
     devs = []
     for b in range(32):

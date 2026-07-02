@@ -24,9 +24,9 @@ def band_mask_scores(M: torch.Tensor, band_center: torch.Tensor, w: int) -> torc
 
 
 class SeedExtendAligner(nn.Module):
-    """Banded exact soft-DP. Same params/score-matrix shape as SoftDPAligner; the only
-    difference is the band mask (and base-match/reliability are first-class inputs). The band
-    center is an INPUT (oracle in tests; the structural band head at deployment)."""
+    """Banded exact soft-DP over the shared soft_dp_end_logits recurrence. Base-match and SHM
+    reliability are first-class inputs; the only difference from the full DP is the band mask.
+    The band center is an INPUT (oracle in tests; the structural band head at deployment)."""
 
     def __init__(self, d_model: int, match_floor: float = 1.0):
         super().__init__()

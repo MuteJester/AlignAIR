@@ -44,3 +44,4 @@ class GymConfig:
     patience: int = 8              # exams w/o composite improvement -> ceiling
     slope_eps: float = 1e-3        # min composite gain that counts as progress
     color: bool = True             # HUD ANSI color (auto-off on non-TTY by caller)
+    demote_margin: float = 0.08    # absolute drop below promotion gate threshold that triggers a demotion

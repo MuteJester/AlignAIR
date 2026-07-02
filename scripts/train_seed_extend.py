@@ -1,9 +1,9 @@
 """Full seed_extend retrain (Gate-1 of the encoder-refactor evaluation): train a production-ish
 seed_extend model from scratch on the gym, checkpoint it, and report lattice coord competence +
-retrieval recall@k. Also usable with --aligner softdp for a matched A/B arm.
+retrieval recall@k.
 
 Run:
-  PYTHONPATH=src ./.venv/bin/python scripts/train_seed_extend.py --aligner seed_extend \
+  PYTHONPATH=src ./.venv/bin/python scripts/train_seed_extend.py \
       --d-model 96 --steps 8000 --save .private/models/seed_extend_d96.pt
 """
 import argparse
@@ -51,7 +51,6 @@ def retrieval_recall(model, rs, dc, lat, cells, ref_emb, k, n, bs, device):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--aligner", default="seed_extend", choices=["seed_extend", "softdp"])
     ap.add_argument("--d-model", type=int, default=96)
     ap.add_argument("--n-layers", type=int, default=6)
     ap.add_argument("--steps", type=int, default=8000)
@@ -69,7 +68,7 @@ def main():
     dc = {"igh": gdata.HUMAN_IGH_OGRDB, "igk": gdata.HUMAN_IGK_OGRDB}[a.locus]
     torch.manual_seed(0)
     cfg = DNAlignAIRConfig(d_model=a.d_model, n_layers=a.n_layers, nhead=8,
-                           dim_feedforward=2 * a.d_model, backbone="shared", aligner=a.aligner)
+                           dim_feedforward=2 * a.d_model)
     rs = ReferenceSet.from_dataconfigs(dc)
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)
@@ -88,7 +87,7 @@ def main():
         trainer.fit(total_steps=chunk, global_total=a.steps, progress=False)
         done += chunk
         el = time.perf_counter() - t0
-        print(f"[train] {a.aligner} {done}/{a.steps}  {el:.0f}s  {el/done:.2f}s/step", flush=True)
+        print(f"[train] seed_extend {done}/{a.steps}  {el:.0f}s  {el/done:.2f}s/step", flush=True)
         _save(a.save)
 
     lat = FrozenLattice.standard(seed=0); cells = {c.name: c for c in lat.cells}
@@ -96,7 +95,7 @@ def main():
     rec = retrieval_recall(model, rs, dc, lat, cells, ref_emb, a.k, a.eval_n, a.batch_size, device)
     ev = LatticeEvaluator(model, rs, lat, CompetenceMetric(coord_tol=a.coord_tol), [dc], device=device)
     field = ev.eval_all(n_per_cell=a.eval_n)
-    print(f"\n=== {a.aligner} d{a.d_model} {a.steps} steps | competence (tol={a.coord_tol}) + retr@{a.k} ===")
+    print(f"\n=== seed_extend d{a.d_model} {a.steps} steps | competence (tol={a.coord_tol}) + retr@{a.k} ===")
     print(f"{'cell':18s} {'competence':>20s} {'retr@k':>8s}")
     for cname in CELLS:
         v = field.get(cname, {})

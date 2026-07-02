@@ -37,8 +37,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dc = gdata.HUMAN_IGH_OGRDB
     torch.manual_seed(0)
-    cfg = DNAlignAIRConfig(d_model=a.d_model, n_layers=2, nhead=4, dim_feedforward=2 * a.d_model,
-                           backbone="shared", aligner="seed_extend")
+    cfg = DNAlignAIRConfig(d_model=a.d_model, n_layers=2, nhead=4, dim_feedforward=2 * a.d_model)
     rs = ReferenceSet.from_dataconfigs(dc)
     model = DNAlignAIR(cfg)
     loss_fn = DNAlignAIRLoss(has_d=rs.has_d)

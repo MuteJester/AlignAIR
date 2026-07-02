@@ -13,8 +13,8 @@ from ..nn.heads.matching import distill_match_loss
 from ..nn.heads.state import state_reliability
 from ..core.dnalignair import extract_segment_tokens, extract_segment
 from .ema import EMATeacher
-from .reader import (build_sibling_index, build_candidates, reader_scores, reader_set_nce,
-                     reader_novel_positive, reader_scores_banded)
+from .reader import (build_sibling_index, build_candidates, reader_set_nce,
+                     reader_scores_banded)
 
 logger = logging.getLogger(__name__)
 
@@ -171,28 +171,21 @@ class GymTrainer:
                 use_pred = torch.rand(batch["tokens"].shape[0], device=self.device) < p_ss
                 sup_regions = torch.where(use_pred.unsqueeze(1),
                                           out["region_logits"].argmax(-1), sup_regions)
-            band_logits = None
-            if getattr(self.model, "seed_extend", False):
-                germline_logits, band_logits = compute_germline_logits(
-                    self.model, canon, batch["mask"], batch, ref_emb, self.has_d,
-                    region_labels=sup_regions, state_logits=out["state_logits"],
-                    reps=out["reps"], return_band=True)
-            else:
-                germline_logits = compute_germline_logits(
-                    self.model, canon, batch["mask"], batch, ref_emb, self.has_d,
-                    region_labels=sup_regions, state_logits=out["state_logits"], reps=out["reps"])
+            germline_logits, band_logits = compute_germline_logits(
+                self.model, canon, batch["mask"], batch, ref_emb, self.has_d,
+                region_labels=sup_regions, state_logits=out["state_logits"],
+                reps=out["reps"], return_band=True)
             match_logits = self.model.match_alleles(
                 canon, batch["mask"], sup_regions, ref_emb, reps=out["reps"])
             total, comp = self.loss_fn(out, batch, germline_logits=germline_logits,
                                        match_logits=match_logits)
-            if band_logits is not None:
-                # the band head's only gradient: offset-CE against the true germline start
-                # (the DP band center is an argmax, so coord loss can't train the seed).
-                from ..nn.aligner.band_head import band_offset_loss
-                band_loss = sum(band_offset_loss(band_logits[g], batch[f"{g}_germline_start"])
-                                for g in band_logits)
-                total = total + self.band_weight * band_loss
-                comp["band"] = band_loss.detach()
+            # the band head's only gradient: offset-CE against the true germline start
+            # (the DP band center is an argmax, so coord loss can't train the seed).
+            from ..nn.aligner.band_head import band_offset_loss
+            band_loss = sum(band_offset_loss(band_logits[g], batch[f"{g}_germline_start"])
+                            for g in band_logits)
+            total = total + self.band_weight * band_loss
+            comp["band"] = band_loss.detach()
             # EMA self-distillation: pull the student's fragment-view allele posteriors
             # toward the teacher's full-read posteriors (soft, temperature-scaled).
             if self.distill and "teacher_tokens" in batch:
@@ -209,7 +202,6 @@ class GymTrainer:
             if self.reader:
                 reader_loss = 0.0
                 genes = ["v", "j"] + (["d"] if self.has_d else [])
-                seed_extend = getattr(self.model, "seed_extend", False)
                 for g in genes:
                     G = g.upper()
                     seg_tok, seg_mask = extract_segment_tokens(
@@ -223,36 +215,14 @@ class GymTrainer:
                     cand, pos = build_candidates(
                         batch[f"{g}_primary_idx"], batch[f"{g}_allele"], self._sib_index[G],
                         self._reader_rng, self.reader_n_sib, self.reader_n_rand)
-                    if seed_extend:
-                        # banded DP reader: seg reps OFF the backbone (so the reader loss trains
-                        # the ENCODER + DP emissions), band head places the band (detached center),
-                        # banded log-partition discriminates the true allele over siblings.
-                        seg_reps, _ = extract_segment(out["reps"], batch["mask"], sup_regions, G)
-                        w = getattr(self.model.config, "band_width", 16)
-                        sc = reader_scores_banded(
-                            self.model, seg_reps, seg_mask, cand, ref_emb[G]["pos_reps"],
-                            ref_emb[G]["pos_mask"], ref_emb[G]["pos_tok"], seg_tok, seg_rel, w)
-                    else:
-                        seg_reps = self.model.germline_encoder.forward_positions(seg_tok, seg_mask)
-                        sc = reader_scores(self.model.aligner, seg_reps, seg_mask, cand,
-                                           ref_emb[G]["pos_reps"], ref_emb[G]["pos_mask"],
-                                           seg_tok=seg_tok, germ_tok_ref=ref_emb[G]["pos_tok"],
-                                           seg_reliability=seg_rel)
-                        # simulated-novel (legacy only): swap the positive for a SNP-perturbed,
-                        # re-encoded germline so the reader aligns to UNSEEN alleles. GUARD: keep
-                        # the swap only where the perturbed positive still out-scores every negative.
-                        if self.reader_novel_prob > 0:
-                            sel = torch.rand(sc.shape[0], device=self.device) < self.reader_novel_prob
-                            if sel.any():
-                                novel_sc = reader_novel_positive(
-                                    self.model.aligner, self.model.germline_encoder,
-                                    seg_reps, seg_mask, seg_tok, cand[:, 0],
-                                    ref_emb[G]["pos_tok"], ref_emb[G]["pos_mask"],
-                                    self.reader_novel_snps, self._novel_gen, seg_reliability=seg_rel)
-                                neg_max = sc[:, 1:].max(dim=1).values            # best negative
-                                keep = sel & (novel_sc > neg_max)               # stays the closest
-                                sc = sc.clone()
-                                sc[:, 0] = torch.where(keep, novel_sc, sc[:, 0])
+                    # banded DP reader: seg reps OFF the backbone (so the reader loss trains
+                    # the ENCODER + DP emissions), band head places the band (detached center),
+                    # banded log-partition discriminates the true allele over siblings.
+                    seg_reps, _ = extract_segment(out["reps"], batch["mask"], sup_regions, G)
+                    w = getattr(self.model.config, "band_width", 16)
+                    sc = reader_scores_banded(
+                        self.model, seg_reps, seg_mask, cand, ref_emb[G]["pos_reps"],
+                        ref_emb[G]["pos_mask"], ref_emb[G]["pos_tok"], seg_tok, seg_rel, w)
                     reader_loss = reader_loss + reader_set_nce(sc, pos)
                 total = total + self.reader_weight * reader_loss
                 comp["reader"] = reader_loss.detach()

@@ -47,7 +47,7 @@ def main():
     model = DNAlignAIR(DNAlignAIRConfig(**ck["config"]))
     model.load_state_dict(ck["model"]); model.to(device).eval()
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    print(f"model: {a.model} | seed_extend={getattr(model, 'seed_extend', None)} caller={model.caller} device={device}")
+    print(f"model: {a.model} | device={device}")
 
     pred = dnalignair_predictor(model, rs, device=device, batch_size=a.batch_size,
                                 rerank=a.rerank, v_reader=a.v_reader)
