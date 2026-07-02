@@ -79,6 +79,7 @@ def test_detector_gradients_flow_everywhere():
     out = det(read, read_mask, cands)
     loss = sum(out[g]["span"].sum() + out[g]["objectness"].sum()
                + out[g]["trim"].sum() + out[g]["allele_scores"].clamp(-10, 10).sum()
+               + out[g]["retrieval_scores"].sum()
                for g in GENES)
     loss.backward()
     # every trainable param gets a gradient EXCEPT the encoder's pooling projection, which the

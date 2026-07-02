@@ -99,8 +99,9 @@ def main():
                 print(f"[{done}/{a.steps}] loss={logs['total']:.3f}  allele[{terms}]  "
                       f"{el/done:.2f}s/step", flush=True)
             if done % a.contract_every == 0 and eval_batch is not None:
-                # full reference (top_k=None): exact name/order invariance + true accuracy ceiling.
-                rep = contract_eval(model, rs, eval_batch, top_k=None, n_snps=3, seed=done)
+                # eval at the deployment top_k (retrieve -> rerank), matching how the model is used;
+                # the scoring-level name/order invariance is covered by unit tests.
+                rep = contract_eval(model, rs, eval_batch, top_k=a.top_k, n_snps=3, seed=done)
                 model.train()
                 for cond, acc in rep.items():
                     print(f"    contract/{cond}: " +

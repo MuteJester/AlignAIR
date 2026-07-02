@@ -32,9 +32,10 @@ def interval_giou(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 
 class DetectorLoss(nn.Module):
     def __init__(self, w_span: float = 5.0, w_giou: float = 2.0, w_obj: float = 1.0,
-                 w_allele: float = 1.0, w_trim: float = 1.0):
+                 w_allele: float = 1.0, w_trim: float = 1.0, w_retr: float = 1.0):
         super().__init__()
-        self.w = dict(span=w_span, giou=w_giou, obj=w_obj, allele=w_allele, trim=w_trim)
+        self.w = dict(span=w_span, giou=w_giou, obj=w_obj, allele=w_allele, trim=w_trim,
+                      retr=w_retr)
 
     def forward(self, out: dict, targets: dict) -> tuple[torch.Tensor, dict]:
         """out[gene]     = {'span','objectness','allele_scores','trim'} (model output).
@@ -46,6 +47,9 @@ class DetectorLoss(nn.Module):
             present = t["present"].bool()
             obj = F.binary_cross_entropy_with_logits(o["objectness"], present.float())
             allele = contrastive_match_loss(o["allele_scores"], t["allele"])   # zeros absent rows
+            # retriever: rank the true allele high among the FULL reference (trains recall@k)
+            retr = (contrastive_match_loss(o["retrieval_scores"], t["allele"])
+                    if "retrieval_scores" in o else total.new_zeros(()))
             if present.any():
                 ps, ts = o["span"][present], t["span"][present]
                 span = F.l1_loss(ps, ts)
@@ -54,10 +58,11 @@ class DetectorLoss(nn.Module):
             else:
                 span = giou = trim = total.new_zeros(())
             gene_loss = (self.w["span"] * span + self.w["giou"] * giou + self.w["obj"] * obj
-                         + self.w["allele"] * allele + self.w["trim"] * trim)
+                         + self.w["allele"] * allele + self.w["trim"] * trim
+                         + self.w["retr"] * retr)
             total = total + gene_loss
             logs.update({f"{g}/span": float(span.detach()), f"{g}/giou": float(giou.detach()),
                          f"{g}/obj": float(obj.detach()), f"{g}/allele": float(allele.detach()),
-                         f"{g}/trim": float(trim.detach())})
+                         f"{g}/trim": float(trim.detach()), f"{g}/retr": float(retr.detach())})
         logs["total"] = float(total.detach())
         return total, logs

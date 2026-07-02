@@ -22,6 +22,8 @@ set IS the reference the caller passes, so novel / renamed alleles work with no 
 Contract: candidates are a bounded set per gene (post-retrieval top-k, or the full small set for
 D/J), shared across the batch (one genotype). Candidate token reps are L2-normalized before MaxSim.
 """
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -50,6 +52,9 @@ class OpenVocabVDJDetector(nn.Module):
             g: nn.Sequential(nn.Linear(d_model, d_model), nn.SiLU(), nn.Linear(d_model, 2))
             for g in GENES})                                   # (5' trim, 3' trim), normalized
         self.match = nn.ModuleDict({g: TokenMatch() for g in GENES})
+        # retriever temperature (CLIP logit_scale): trains the pooled read<->candidate similarity
+        # that drives the top-k prefilter, so the true allele is actually surfaced at inference.
+        self.retr_log_scale = nn.Parameter(torch.tensor(math.log(1.0 / 0.07)))
 
     def _encode_candidates(self, tokens, mask):
         tok = self.encoder.forward_positions(tokens, mask, SharedNucleotideEncoder.GERMLINE)
@@ -73,12 +78,15 @@ class OpenVocabVDJDetector(nn.Module):
         read_pooled = F.normalize((read_tok * rm).sum(1) / rm.sum(1).clamp(min=1.0), dim=-1)
 
         # per gene: (shortlist candidate tokens/mask, pooled shortlist for fusion, index map or None)
-        shortlist, vocab_parts = {}, []
+        shortlist, vocab_parts, retr_full = {}, [], {}
         for g in GENES:
             ctok, cpool = self._encode_candidates(candidates[g]["tokens"], candidates[g]["mask"])
             Kg = ctok.shape[0]
+            cpool_n = F.normalize(cpool, dim=-1)
+            # full-reference retrieval logits (pooled cosine × temp) — trains the prefilter.
+            retr_full[g] = (read_pooled @ cpool_n.t()) * self.retr_log_scale.exp().clamp(max=100.0)
             if top_k is not None and Kg > top_k:
-                idx = retrieve_topk(read_pooled, F.normalize(cpool, dim=-1), top_k,
+                idx = retrieve_topk(read_pooled, cpool_n, top_k,
                                     candidates[g].get("force_include"))              # (B, k)
                 gtok, gmsk = gather_candidates(ctok, candidates[g]["mask"], idx)     # (B,k,Sc,d),(B,k,Sc)
                 gpool = cpool[idx]                                                   # (B, k, d)
@@ -103,10 +111,13 @@ class OpenVocabVDJDetector(nn.Module):
             if idx is not None:                                                      # scatter to full ref
                 full = scores.new_full((B, Kg), float("-inf"))
                 scores = full.scatter(1, idx, scores)
+            retr = retr_full[g]
             cmask = candidates[g].get("candidate_mask")
             if cmask is not None:
-                scores = scores.masked_fill(~cmask[None].to(scores.device), float("-inf"))
+                m = ~cmask[None].to(scores.device)
+                scores = scores.masked_fill(m, float("-inf"))
+                retr = retr.masked_fill(m, float("-inf"))
             out[g] = {"span": sh["span"], "objectness": sh["objectness"],
-                      "allele_scores": scores,
+                      "allele_scores": scores, "retrieval_scores": retr,
                       "trim": torch.sigmoid(self.trim_heads[g](queries[g]))}
         return out
