@@ -1,19 +1,33 @@
+"""v2 char-level tokenizer: bases + structure tokens, exact round-trip."""
 from alignair.airristotle.tokenizer import AIRRTokenizer
 
 
-def test_dna_and_specials_roundtrip():
+def test_vocab_is_bases_plus_structure_and_pad_is_zero():
     tok = AIRRTokenizer()
-    seq = [tok.GENO, tok.V, "A", "C", "G", "T", "N", tok.S, tok.READ, "G", "A", tok.EOS]
-    ids = tok.encode(seq)
-    assert all(isinstance(i, int) for i in ids)
-    assert tok.decode(ids) == seq
-
-
-def test_vocab_has_dna_specials_digits():
-    tok = AIRRTokenizer()
-    for c in "ACGTN0123456789+-":
-        assert c in tok.vocab
-    for s in (tok.PAD, tok.GENO, tok.READ, tok.ANNOT, tok.V, tok.D, tok.J, tok.S,
-              tok.ORI, tok.PROD, tok.EOS, tok.VS, tok.JNE):
-        assert s in tok.vocab
     assert tok.id(tok.PAD) == 0
+    assert tok.vocab_size == 15                        # 10 specials + 5 bases
+    for b in "ACGTN":
+        assert b in tok.vocab
+    for s in ("<REF>", "<V>", "<D>", "<J>", "<SEP>", "<QUERY>", "<ALIGN>", "<END>", "<NONE>"):
+        assert s in tok.vocab
+
+
+def test_specials_exposed_as_attributes():
+    tok = AIRRTokenizer()
+    assert tok.V == "<V>" and tok.SEP == "<SEP>" and tok.QUERY == "<QUERY>" and tok.END == "<END>"
+
+
+def test_encode_seq_and_decode_seq_roundtrip():
+    tok = AIRRTokenizer()
+    dna = "ACGTTGCAN"
+    ids = tok.encode_seq(dna)
+    assert tok.decode_seq(ids) == dna
+    # unknown char -> N
+    assert tok.decode_seq(tok.encode_seq("ACXT")) == "ACNT"
+
+
+def test_mixed_encode_of_structure_and_bases():
+    tok = AIRRTokenizer()
+    seq = [tok.V] + list("ACG") + [tok.SEP] + list("TT")
+    ids = tok.encode(seq)
+    assert tok.decode(ids) == seq

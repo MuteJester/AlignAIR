@@ -89,9 +89,6 @@ class AIRRistotle(nn.Module):
         self.norm = RMSNorm(cfg.d_model)
         self.lm_head = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
         self.hd = cfg.d_model // cfg.n_heads
-        # copy head: score each decode position against the prompt positions (attention to copy)
-        self.copy_q = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
-        self.copy_k = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
         # Llama-style init: normal(0, init_std) on all weights; then scale the residual output
         # projections (attn.o, ffn.w3) by 1/sqrt(2*n_layers) for depth stability (GPT-2/NeoX recipe).
         self.apply(self._init_weights)
@@ -116,32 +113,22 @@ class AIRRistotle(nn.Module):
         for b in self.blocks:
             x = b(x, cos, sin)
         x = self.norm(x)
-        return x, self.lm_head(x)
-
-    def copy_logits(self, hidden, prompt_len):
-        q = self.copy_q(hidden)                              # (B,L,d)
-        k = self.copy_k(hidden[:, :prompt_len])              # (B,P,d)
-        scale = q.shape[-1] ** -0.5
-        return torch.einsum("bld,bpd->blp", q, k) * scale    # (B,L,P)
+        return self.lm_head(x)
 
     def n_params(self):
         return sum(p.numel() for p in self.parameters())
 
 
-def airristotle_loss(lm_logits, copy_logits, batch):
-    # Causal next-token shift: hidden[t] (logits[:, t]) predicts the label at position t+1.
-    lm = lm_logits[:, :-1]
-    cp = copy_logits[:, :-1]
-    P = cp.shape[-1]
-    gen_t = batch["gen_target"][:, 1:]
-    copy_t = batch["copy_target"][:, 1:].clamp(max=P - 1)
-    mask = batch["loss_mask"][:, 1:].bool()
-    is_copy = batch["is_copy"][:, 1:].bool() & mask
-    is_gen = (~batch["is_copy"][:, 1:].bool()) & mask
-    total = lm_logits.new_zeros(())
-    n = mask.sum().clamp(min=1)
-    if is_gen.any():
-        total = total + F.cross_entropy(lm[is_gen].float(), gen_t[is_gen], reduction="sum")
-    if is_copy.any():
-        total = total + F.cross_entropy(cp[is_copy].float(), copy_t[is_copy], reduction="sum")
-    return total / n
+def airristotle_loss(logits, batch):
+    """Pure next-token cross-entropy, masked to the output span (SFT-style: no loss on the prompt).
+
+    logits (B, L, V); batch["input_ids"] (B, L); batch["loss_mask"] (B, L) with 1 on output tokens.
+    Position t's logits predict token t+1, so we score logits[:, :-1] against input_ids[:, 1:] where
+    loss_mask[:, 1:] is set."""
+    ids = batch["input_ids"]
+    m = batch["loss_mask"][:, 1:].bool()
+    if not m.any():
+        return logits.new_zeros(())
+    pred = logits[:, :-1][m]
+    tgt = ids[:, 1:][m]
+    return F.cross_entropy(pred.float(), tgt)

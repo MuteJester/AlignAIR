@@ -1,46 +1,41 @@
-import random, pytest
-genairr = pytest.importorskip("GenAIRR")
-import GenAIRR.data as gdata
+"""Prompt/target builder: structure, loss-mask alignment, and copyability of the target."""
 from alignair.airristotle.tokenizer import AIRRTokenizer
-from alignair.airristotle.prompt import build_example
-from alignair.reference.reference_set import ReferenceSet
-from alignair.gym.gym import build_experiment
+from alignair.airristotle.prompt import build_example, build_prompt
 
 
-def _clean_record():
-    exp = build_experiment(gdata.HUMAN_IGH_OGRDB, dict(
-        mutation_rate=0.0, productive_only=False, end_loss_5=(0, 0), end_loss_3=(0, 0),
-        indel_count=(0, 0), seq_error_rate=0.0, ambiguous_count=(0, 0)))
-    return list(exp.stream_records(n=1, seed=1))[0]
+def _fixtures():
+    tok = AIRRTokenizer()
+    ref = {"V": ["ACGTACGT", "ACGTTTTT"], "D": ["GGGGTTTT"], "J": ["TTTTACGT"]}
+    true = {"V": ["ACGTTTTT"], "D": ["GGGGTTTT"], "J": ["TTTTACGT"]}
+    return tok, ref, true
 
 
-def test_copy_target_for_v_start_points_at_true_read_position():
-    tok = AIRRTokenizer(); rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    rec = _clean_record()
-    ex = build_example(rec, rs, tok, n_distractors=4, rng=random.Random(0))
-    ids = ex.input_ids
-    read_tok = tok.id(tok.READ)
-    read_block_start = ids.index(read_tok) + 1
-    true_vs = int(rec["v_sequence_start"])
-    target_prompt_pos = read_block_start + true_vs
-    steps = [t for t in range(len(ids)) if ex.loss_mask[t]]
-    assert any(ex.is_copy[t] and ex.copy_target[t] == target_prompt_pos for t in steps)
+def test_example_structure_and_loss_mask():
+    tok, ref, true = _fixtures()
+    ids, mask, plen = build_example("ACGTTTTTGGGGTTTTTTTTACGT", ref, true, tok)
+    assert len(ids) == len(mask)
+    assert sum(mask[:plen]) == 0 and all(mask[plen:])          # loss only on target
+    toks = tok.decode(ids)
+    assert toks[0] == "<REF>" and toks[plen - 1] == "<ALIGN>"  # prompt boundary
+    assert toks[plen] == "<V>" and toks[-1] == "<END>"          # target span
+    assert "<QUERY>" in toks and "<SEP>" in toks
 
 
-def test_copy_target_for_v_call_points_at_true_allele_block():
-    tok = AIRRTokenizer(); rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    rec = _clean_record()
-    ex = build_example(rec, rs, tok, n_distractors=4, rng=random.Random(0))
-    v_marker = tok.id(tok.V)
-    copy_calls = [ex.copy_target[t] for t in range(len(ex.input_ids))
-                  if ex.loss_mask[t] and ex.is_copy[t] and ex.input_ids[ex.copy_target[t]] == v_marker]
-    assert copy_calls
+def test_target_sequences_are_copyable_from_the_prompt():
+    """Every true allele must appear verbatim in the prompt (constrained decode requires it)."""
+    tok, ref, true = _fixtures()
+    ids, _, plen = build_example("ACGT", ref, true, tok)
+    prompt_dna = tok.decode_seq(ids[:plen])
+    for g in ("V", "D", "J"):
+        for s in true[g]:
+            assert s in prompt_dna, f"{g} target {s} not copyable from prompt"
 
 
-def test_prompt_len_and_masks_consistent():
-    tok = AIRRTokenizer(); rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    ex = build_example(_clean_record(), rs, tok, n_distractors=4, rng=random.Random(0))
-    n = len(ex.input_ids)
-    assert len(ex.gen_target) == len(ex.copy_target) == len(ex.is_copy) == len(ex.loss_mask) == n
-    assert all(ex.copy_target[t] < ex.prompt_len for t in range(n) if ex.loss_mask[t] and ex.is_copy[t])
-    assert sum(ex.loss_mask) > 0
+def test_absent_gene_emits_none_and_light_chain_omits_d():
+    tok, ref, _ = _fixtures()
+    # D present in ref but absent in truth -> <NONE> in target
+    ids, _, plen = build_example("ACGT", ref, {"V": ["ACGTACGT"], "D": [], "J": ["TTTTACGT"]}, tok)
+    assert "<NONE>" in tok.decode(ids[plen:])
+    # light chain: no D anywhere
+    lc_prompt = build_prompt("ACGT", {"V": ["ACGT"], "J": ["TTTT"]}, tok, has_d=False)
+    assert "<D>" not in tok.decode(lc_prompt)

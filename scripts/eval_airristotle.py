@@ -1,63 +1,66 @@
-"""In-distribution MVP eval for a trained AIRRistotle: decode N held-out records (genotype = true
-alleles + distractors, as in training) and score call accuracy + coordinate MAE vs truth."""
-import argparse, random, statistics, torch
+"""Evaluate a trained AIRRistotle v2: generate gym reads, align each via constrained decode, and
+score per-gene set-aware calling accuracy. `--heldout-frac` splits accuracy into train vs held-out
+alleles (the novel-allele generalization test); the coarse filter still sees the full reference so
+held-out alleles remain retrievable, they were just never a training target.
+"""
+import argparse
+import torch
 import GenAIRR.data as gdata
+
 from alignair.reference.reference_set import ReferenceSet
+from alignair.gym.gym import build_experiment
+from alignair.gym.curriculum import Curriculum
 from alignair.airristotle.tokenizer import AIRRTokenizer
 from alignair.airristotle.config import AIRRConfig
 from alignair.airristotle.model import AIRRistotle
-from alignair.airristotle.infer import decode_record
-from alignair.gym.gym import build_experiment
-from alignair.gym.curriculum import Curriculum
+from alignair.airristotle.data import make_retrievers
+from alignair.airristotle.infer import align, called_names
+
+GENES = ["V", "D", "J"]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=".private/models/airristotle_mvp_v1.pt")
-    ap.add_argument("--n", type=int, default=300)
-    ap.add_argument("--n-distractors", type=int, default=6)
+    ap.add_argument("--ckpt", required=True)
+    ap.add_argument("--n", type=int, default=200)
+    ap.add_argument("--v-shortlist", type=int, default=16)
+    ap.add_argument("--heldout-frac", type=float, default=0.0)
     ap.add_argument("--progress", type=float, default=0.3)
-    ap.add_argument("--seed", type=int, default=999)
     a = ap.parse_args()
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    tok = AIRRTokenizer(); rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    ck = torch.load(a.model, map_location="cpu", weights_only=False)
-    m = AIRRistotle(AIRRConfig(**ck["config"])); m.load_state_dict(ck["model"]); m.to(dev).eval()
-    params = dict(Curriculum().params(a.progress))
-    recs = list(build_experiment(gdata.HUMAN_IGH_OGRDB, params).stream_records(n=a.n, seed=a.seed))
-    rng = random.Random(0)
-    hit = {g: [0, 0] for g in "vdj"}
-    mae = {k: [] for k in ("v_S", "v_E", "v_GS", "v_GE", "d_S", "d_E", "j_S", "j_E", "jn_S", "jn_E")}
-    prod_ok = ori_ok = n = 0
-    for rec in recs:
-        out = decode_record(m, tok, rec, rs, n_distractors=a.n_distractors, rng=rng, device=dev)
-        n += 1
-        for g in "vdj":
-            tc = str(rec.get(f"{g}_call") or "").split(",")[0]
-            if tc:
-                hit[g][1] += 1
-                hit[g][0] += (out.get(f"{g}_call") == tc)
-        def add(key, pred, truth):
-            if pred is not None and truth is not None:
-                mae[key].append(abs(int(pred) - int(truth)))
-        add("v_S", out.get("v_sequence_start"), rec.get("v_sequence_start"))
-        add("v_E", out.get("v_sequence_end"), rec.get("v_sequence_end"))
-        add("v_GS", out.get("v_germline_start"), rec.get("v_germline_start"))
-        add("v_GE", out.get("v_germline_end"), rec.get("v_germline_end"))
-        add("d_S", out.get("d_sequence_start"), rec.get("d_sequence_start"))
-        add("d_E", out.get("d_sequence_end"), rec.get("d_sequence_end"))
-        add("j_S", out.get("j_sequence_start"), rec.get("j_sequence_start"))
-        add("j_E", out.get("j_sequence_end"), rec.get("j_sequence_end"))
-        add("jn_S", out.get("junction_start"), rec.get("junction_start"))
-        add("jn_E", out.get("junction_end"), rec.get("junction_end"))
-        prod_ok += (bool(out.get("productive")) == bool(rec.get("productive")))
-        ori_ok += (int(out.get("orientation_id", 0)) == 0)
-    print(f"AIRRistotle eval  n={n}  (progress={a.progress}, distractors={a.n_distractors})")
-    for g in "vdj":
-        h, t = hit[g]
-        print(f"  {g.upper()} call acc = {h/t:.3f}  (n={t})")
-    print("  coord MAE (nt):  " + "  ".join(f"{k}={statistics.mean(v):.1f}" for k, v in mae.items() if v))
-    print(f"  productive acc = {prod_ok/n:.3f}   orientation acc = {ori_ok/n:.3f}")
+    tok = AIRRTokenizer()
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    r = make_retrievers(rs)
+
+    ck = torch.load(a.ckpt, map_location=dev)
+    cfg = AIRRConfig(**{**ck["config"], "vocab_size": tok.vocab_size})
+    m = AIRRistotle(cfg).to(dev).eval()
+    m.load_state_dict(ck["model"])
+
+    step = max(int(round(1 / a.heldout_frac)), 2) if a.heldout_frac > 0 else 0
+    held = {G: set(range(0, len(rs.gene(G).names), step)) if step else set() for G in GENES}
+
+    hit = {(G, s): 0 for G in GENES for s in ("train", "held")}
+    tot = {(G, s): 0 for G in GENES for s in ("train", "held")}
+    exp = build_experiment(gdata.HUMAN_IGH_OGRDB, dict(Curriculum().params(a.progress)))
+    for rec in exp.stream_records(n=a.n, seed=1):
+        called = called_names(align(m, str(rec["sequence"]), rs, tok, r, a.v_shortlist), rs)
+        for G in GENES:
+            names = [n for n in str(rec.get(f"{G.lower()}_call", "")).split(",") if n]
+            if not names:
+                continue
+            prim = rs.gene(G).index.get(names[0])
+            split = "held" if (prim is not None and prim in held[G]) else "train"
+            tot[(G, split)] += 1
+            if any(n in called[G] for n in names):          # set-aware: any true allele called
+                hit[(G, split)] += 1
+
+    print(f"AIRRistotle v2 eval  n={a.n}  v_shortlist={a.v_shortlist}  heldout_frac={a.heldout_frac}")
+    for G in GENES:
+        row = "  ".join(f"{s}={hit[(G, s)]}/{tot[(G, s)]}"
+                        f"({hit[(G, s)]/tot[(G, s)]:.3f})" if tot[(G, s)] else f"{s}=-"
+                        for s in ("train", "held"))
+        print(f"  {G}: {row}")
 
 
 if __name__ == "__main__":
