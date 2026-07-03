@@ -84,6 +84,7 @@ class AIRRistotle(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+        self.grad_checkpoint = False        # set True to trade compute for activation memory (long seqs)
         self.emb = nn.Embedding(cfg.vocab_size, cfg.d_model)
         self.blocks = nn.ModuleList(Block(cfg) for _ in range(cfg.n_layers))
         self.norm = RMSNorm(cfg.d_model)
@@ -111,7 +112,10 @@ class AIRRistotle(nn.Module):
         cos, sin = _rope(L, self.hd, self.cfg.rope_base, input_ids.device)
         cos, sin = cos[None, None].to(x.dtype), sin[None, None].to(x.dtype)
         for b in self.blocks:
-            x = b(x, cos, sin)
+            if self.grad_checkpoint and self.training:
+                x = torch.utils.checkpoint.checkpoint(b, x, cos, sin, use_reentrant=False)
+            else:
+                x = b(x, cos, sin)
         x = self.norm(x)
         return self.lm_head(x)
 

@@ -62,6 +62,7 @@ def main():
     configs = select_configs(species=species, exclude=held)
     corpus = ReferenceCorpus(configs, tok, v_shortlist=cfg.v_shortlist)
     m = AIRRistotle(cfg).to(dev).train()
+    m.grad_checkpoint = True                              # activation checkpointing (long prompts)
     print(f"AIRRistotle {m.n_params():,} params on {dev} | {len(configs)} references "
           f"(held out {len(held)}) | warmup {warmup} cosine->{a.min_lr_ratio:g}*lr", flush=True)
     opt = make_optimizer(m, a.lr, a.weight_decay)
