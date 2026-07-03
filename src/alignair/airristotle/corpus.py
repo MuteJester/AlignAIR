@@ -54,6 +54,8 @@ class ReferenceCorpus:
         self.tok = tokenizer
         self.v_shortlist = v_shortlist
         self.k = k
+        self.n_configs = len(dataconfigs)
+        self.sampled: set = set()            # distinct references actually drawn (diversity telemetry)
         self._rs: dict = {}
         self._retr: dict = {}
 
@@ -83,6 +85,7 @@ class ReferenceCorpus:
                 warnings.warn(f"AIRRistotle corpus: dropping config {name}: {e}")
                 self.names.remove(name); exp.pop(name, None)
                 continue
+            self.sampled.add(name)
             for rec in recs:
                 yield build_v2_example(rec, rs, self.tok, retr, self.v_shortlist, rs.has_d)
                 produced += 1
