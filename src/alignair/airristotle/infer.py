@@ -28,10 +28,14 @@ def align(model, query: str, reference_set, tok, retrievers=None, v_shortlist: i
 
 
 def called_names(called: dict, reference_set) -> dict:
-    """Map called sequences back to reference allele names (exact match)."""
+    """Map each called sequence back to ALL reference allele names sharing it. Immunogenetics DBs
+    assign several names to one identical sequence (common for D genes), so one emitted sequence
+    legitimately recovers the full ambiguous name set."""
     out = {}
     for G, seqs in called.items():
         gref = reference_set.gene(G)
-        seq2name = {s: n for n, s in zip(gref.names, gref.sequences)}
-        out[G] = [seq2name.get(s) for s in seqs]
+        seq2names: dict = {}
+        for n, s in zip(gref.names, gref.sequences):
+            seq2names.setdefault(s, []).append(n)
+        out[G] = [n for s in seqs for n in seq2names.get(s, [])]
     return out
