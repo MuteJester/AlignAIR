@@ -1,9 +1,10 @@
-"""Gym-backed example stream for AIRRistotle v2.
+"""Per-example building blocks for AIRRistotle v2 (reference-agnostic).
 
-Each GenAIRR record -> a (prompt, target) example: the query read, the coarse-filtered V shortlist
-(+ all D/J) as the prompt reference, and the true allele sequence(s) as the copy target. Genuinely
-ambiguous reads (GenAIRR comma-lists several equally-valid alleles) list all of them in the target,
-in prompt order. The true alleles are always force-included in the shortlist so they are copyable.
+Turns one GenAIRR record + its ReferenceSet into a (prompt, target) example: the query read, the
+coarse-filtered V shortlist (+ all D/J) as the prompt reference, and the true allele sequence(s) as
+the copy target. Ambiguous reads (GenAIRR comma-lists several equally-valid alleles) list all of
+them in the target, in prompt order; the true alleles are force-included in the shortlist so they
+are copyable. Multi-reference orchestration (sampling across configs) lives in `corpus.py`.
 """
 from __future__ import annotations
 
@@ -58,19 +59,6 @@ def build_v2_example(rec, reference_set, tokenizer, retrievers, v_shortlist: int
 
     ids, mask, plen = build_example(query, ref, true, tokenizer, has_d)
     return {"input_ids": ids, "loss_mask": mask, "prompt_len": plen}
-
-
-def stream_examples(reference_set, tokenizer, params, n, seed, v_shortlist=16, max_len=None):
-    from ..gym.gym import build_experiment
-    import GenAIRR.data as gdata
-    has_d = reference_set.has_d
-    retrievers = make_retrievers(reference_set)
-    exp = build_experiment(gdata.HUMAN_IGH_OGRDB, params)
-    for rec in exp.stream_records(n=n, seed=seed):
-        ex = build_v2_example(rec, reference_set, tokenizer, retrievers, v_shortlist, has_d)
-        if max_len is not None and len(ex["input_ids"]) > max_len:
-            continue                                        # skip the rare over-long prompt
-        yield ex
 
 
 def collate(examples, pad_id):

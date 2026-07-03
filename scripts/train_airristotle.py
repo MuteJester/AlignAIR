@@ -7,12 +7,11 @@ Standard modern-LLM training procedure (Llama/Qwen/GPT recipe):
   - grad-clip 1.0, bf16 autocast.
 """
 import argparse, math, os, torch
-import GenAIRR.data as gdata
-from alignair.reference.reference_set import ReferenceSet
 from alignair.airristotle.tokenizer import AIRRTokenizer
 from alignair.airristotle.config import AIRRConfig
 from alignair.airristotle.model import AIRRistotle, airristotle_loss
-from alignair.airristotle.data import collate, stream_examples
+from alignair.airristotle.data import collate
+from alignair.airristotle.corpus import ReferenceCorpus, all_dataconfigs, select_configs
 from alignair.gym.curriculum import Curriculum
 
 
@@ -44,26 +43,42 @@ def main():
     ap.add_argument("--weight-decay", type=float, default=0.1)
     ap.add_argument("--v-shortlist", type=int, default=16)
     ap.add_argument("--progress", type=float, default=0.3)
+    ap.add_argument("--species", default="all", help="'all' or comma-list, e.g. HUMAN,MOUSE")
+    ap.add_argument("--held-out-species", default="", help="comma-list of species excluded from training")
     ap.add_argument("--ckpt-every", type=int, default=0)
     ap.add_argument("--out", default=".private/models/airristotle_mvp.pt")
     a = ap.parse_args()
     warmup = a.warmup_steps if a.warmup_steps >= 0 else min(2000, max(1, a.steps // 20))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    tok = AIRRTokenizer(); rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    tok = AIRRTokenizer()
     params = dict(Curriculum().params(a.progress))
     cfg = AIRRConfig(vocab_size=tok.vocab_size, v_shortlist=a.v_shortlist)
+
+    held = {n for n in all_dataconfigs()
+            if n.split("_")[0] in {s.upper() for s in a.held_out_species.split(",") if s}}
+    species = None if a.species == "all" else a.species.split(",")
+    configs = select_configs(species=species, exclude=held)
+    corpus = ReferenceCorpus(configs, tok, v_shortlist=cfg.v_shortlist)
     m = AIRRistotle(cfg).to(dev).train()
-    print(f"AIRRistotle {m.n_params():,} params on {dev} | warmup {warmup} cosine->{a.min_lr_ratio:g}*lr", flush=True)
+    print(f"AIRRistotle {m.n_params():,} params on {dev} | {len(configs)} references "
+          f"(held out {len(held)}) | warmup {warmup} cosine->{a.min_lr_ratio:g}*lr", flush=True)
     opt = make_optimizer(m, a.lr, a.weight_decay)
-    gen = stream_examples(rs, tok, params, n=a.steps * a.batch_size, seed=0,
-                          v_shortlist=cfg.v_shortlist, max_len=cfg.max_seq)
+    gen = corpus.stream(params, n=a.steps * a.batch_size * 2, seed=0)   # ×2 headroom for length skips
 
     def _save(path):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         torch.save({"model": m.state_dict(), "config": vars(cfg)}, path)
 
+    def next_batch():
+        exs = []
+        while len(exs) < a.batch_size:
+            ex = next(gen)
+            if len(ex["input_ids"]) <= cfg.max_seq:          # drop the rare over-long prompt
+                exs.append(ex)
+        return exs
+
     for step in range(a.steps):
-        exs = [next(gen) for _ in range(a.batch_size)]
+        exs = next_batch()
         batch = {k: v.to(dev) for k, v in collate(exs, tok.id(tok.PAD)).items()}
         lr = lr_at(step, a.lr, warmup, a.steps, a.min_lr_ratio)
         for pg in opt.param_groups:
