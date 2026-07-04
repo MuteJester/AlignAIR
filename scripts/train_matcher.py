@@ -19,6 +19,7 @@ from alignair.matcher.model import AIRRMatch
 from alignair.matcher.data import stream_batches
 from alignair.matcher.telemetry import batch_metrics
 from alignair.matcher.evaluate import evaluate
+from alignair.matcher.checkpoint import save_checkpoint, load_checkpoint
 from alignair.gym.curriculum import Curriculum
 
 
@@ -56,19 +57,22 @@ def _fmt_acc(d):
 
 def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
           device="cuda", progress=0.3, seed=0, log_every=50, eval_every=2000,
-          eval_n=200, save_every=5000, log_path=None, init_path=None):
+          eval_n=200, save_every=2000, log_path=None, init_path=None, resume_path=None):
     train_cfgs = [(n, _resolve(n)) for n in train_names]
     heldout_cfgs = [(n, _resolve(n)) for n in heldout_names]
     id_name, id_cfg = train_cfgs[0]
 
     model = AIRRMatch(cfg).to(device)
-    if init_path:
-        ck = torch.load(init_path, map_location=device)
-        model.load_state_dict(ck["model"])
-        print(f"warm-started from {init_path} (step {ck.get('step', '?')})", flush=True)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
+    start_step = 0
+    if resume_path:                                    # seamless: weights + optimizer + step
+        start_step = load_checkpoint(resume_path, model, opt, device=device)
+        print(f"RESUMED from {resume_path} at step {start_step} (optimizer state restored)", flush=True)
+    elif init_path:                                    # warm-start weights only
+        load_checkpoint(init_path, model, opt=None, device=device)
+        print(f"warm-started (weights only) from {init_path}", flush=True)
     params = dict(Curriculum().params(progress))
-    stream = _round_robin(train_cfgs, cfg, params, batch_size, seed)
+    stream = _round_robin(train_cfgs, cfg, params, batch_size, seed + start_step)
 
     logf = open(log_path, "a") if log_path else None
 
@@ -82,7 +86,7 @@ def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
     model.train()
     t0 = time.time()
     seen = 0
-    for step, batch in zip(range(1, steps + 1), stream):
+    for step, batch in zip(range(start_step + 1, steps + 1), stream):
         batch = _to_device(batch, device)
         gs = model._gene_scores(batch)
         loss = model._reduce_loss(gs)
@@ -121,9 +125,9 @@ def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
                       flush=True)
 
         if save_every and step % save_every == 0:
-            torch.save({"config": vars(cfg), "model": model.state_dict(), "step": step}, out_path)
+            save_checkpoint(out_path, cfg, model, opt, step)
 
-    torch.save({"config": vars(cfg), "model": model.state_dict(), "step": steps}, out_path)
+    save_checkpoint(out_path, cfg, model, opt, steps)
     if logf:
         logf.close()
     return model
@@ -142,12 +146,13 @@ if __name__ == "__main__":
     ap.add_argument("--log-every", type=int, default=50)
     ap.add_argument("--eval-every", type=int, default=2000)
     ap.add_argument("--eval-n", type=int, default=200)
-    ap.add_argument("--save-every", type=int, default=5000)
-    ap.add_argument("--init", default=None, help="warm-start weights from this checkpoint")
+    ap.add_argument("--save-every", type=int, default=2000)
+    ap.add_argument("--init", default=None, help="warm-start weights only from this checkpoint")
+    ap.add_argument("--resume", default=None, help="seamless resume (weights+optimizer+step)")
     ap.add_argument("--out", default=".private/models/airrmatch_v1.pt")
     ap.add_argument("--log", default=".private/logs/airrmatch_v1.jsonl")
     a = ap.parse_args()
     train(a.train, a.heldout, MatcherConfig(), a.steps, a.lr, a.batch_size, a.out,
           device=a.device, progress=a.progress, log_every=a.log_every,
           eval_every=a.eval_every, eval_n=a.eval_n, save_every=a.save_every,
-          log_path=a.log, init_path=a.init)
+          log_path=a.log, init_path=a.init, resume_path=a.resume)
