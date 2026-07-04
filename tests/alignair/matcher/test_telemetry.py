@@ -20,6 +20,13 @@ def test_skips_reads_without_a_true_target():
     assert "D" not in m                           # no valid reads -> gene omitted
 
 
+def test_margin_is_none_when_no_competing_sibling():
+    gs = {"D": [(torch.tensor([2.0]), torch.tensor([True]))]}  # single candidate, trivially correct
+    m = batch_metrics(gs, tau=0.5, margin=0.0)
+    assert m["D"]["acc"] == 1.0
+    assert m["D"]["margin"] is None                            # no sibling -> undefined, not +inf
+
+
 def test_set_aware_true_group_counts_as_correct():
     gs = {"J": [
         (torch.tensor([3.0, 2.9, 0.0]), torch.tensor([True, True, False])),   # argmax=0 is a true group

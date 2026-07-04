@@ -24,11 +24,10 @@ def batch_metrics(gene_scores, tau: float, margin: float):
             losses.append(float(selection_ce(scores, tgt, tau, margin)))
             pred = int(scores.argmax())
             correct += int(bool(tgt[pred]))
-            true_max = float(scores[tgt].max())
             wrong = scores[~tgt]
-            wrong_max = float(wrong.max()) if wrong.numel() else float("-inf")
-            margins.append(true_max - wrong_max)
+            if wrong.numel():                        # margin undefined with no competing sibling
+                margins.append(float(scores[tgt].max()) - float(wrong.max()))
         if n:
             out[g] = {"loss": sum(losses) / n, "acc": correct / n,
-                      "margin": sum(margins) / len(margins), "n": n}
+                      "margin": (sum(margins) / len(margins)) if margins else None, "n": n}
     return out
