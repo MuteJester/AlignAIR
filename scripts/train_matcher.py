@@ -56,12 +56,16 @@ def _fmt_acc(d):
 
 def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
           device="cuda", progress=0.3, seed=0, log_every=50, eval_every=2000,
-          eval_n=200, save_every=5000, log_path=None):
+          eval_n=200, save_every=5000, log_path=None, init_path=None):
     train_cfgs = [(n, _resolve(n)) for n in train_names]
     heldout_cfgs = [(n, _resolve(n)) for n in heldout_names]
     id_name, id_cfg = train_cfgs[0]
 
     model = AIRRMatch(cfg).to(device)
+    if init_path:
+        ck = torch.load(init_path, map_location=device)
+        model.load_state_dict(ck["model"])
+        print(f"warm-started from {init_path} (step {ck.get('step', '?')})", flush=True)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     params = dict(Curriculum().params(progress))
     stream = _round_robin(train_cfgs, cfg, params, batch_size, seed)
@@ -139,9 +143,11 @@ if __name__ == "__main__":
     ap.add_argument("--eval-every", type=int, default=2000)
     ap.add_argument("--eval-n", type=int, default=200)
     ap.add_argument("--save-every", type=int, default=5000)
+    ap.add_argument("--init", default=None, help="warm-start weights from this checkpoint")
     ap.add_argument("--out", default=".private/models/airrmatch_v1.pt")
     ap.add_argument("--log", default=".private/logs/airrmatch_v1.jsonl")
     a = ap.parse_args()
     train(a.train, a.heldout, MatcherConfig(), a.steps, a.lr, a.batch_size, a.out,
           device=a.device, progress=a.progress, log_every=a.log_every,
-          eval_every=a.eval_every, eval_n=a.eval_n, save_every=a.save_every, log_path=a.log)
+          eval_every=a.eval_every, eval_n=a.eval_n, save_every=a.save_every,
+          log_path=a.log, init_path=a.init)
