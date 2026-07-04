@@ -17,9 +17,9 @@ class RMSNorm(nn.Module):
         return self.w * h.to(dt)
 
 
-def _rope(L, hd, base, device):
+def _rope(L, hd, base, device, offset=0):
     inv = 1.0 / (base ** (torch.arange(0, hd, 2, device=device).float() / hd))
-    t = torch.arange(L, device=device).float()
+    t = torch.arange(offset, offset + L, device=device).float()      # offset for KV-cached decoding
     f = torch.outer(t, inv)
     emb = torch.cat([f, f], -1)
     return emb.cos(), emb.sin()
@@ -45,17 +45,21 @@ class Attention(nn.Module):
         self.v = nn.Linear(cfg.d_model, cfg.n_kv_heads * self.hd, bias=False)
         self.o = nn.Linear(cfg.n_heads * self.hd, cfg.d_model, bias=False)
 
-    def forward(self, x, cos, sin):
+    def forward(self, x, cos, sin, past_kv=None):
         B, L, _ = x.shape
         q = self.q(x).view(B, L, self.nh, self.hd).transpose(1, 2)
         k = self.k(x).view(B, L, self.nkv, self.hd).transpose(1, 2)
         v = self.v(x).view(B, L, self.nkv, self.hd).transpose(1, 2)
         q = _apply_rope(q, cos, sin); k = _apply_rope(k, cos, sin)
+        if past_kv is not None:                                      # prepend cached keys/values
+            k = torch.cat([past_kv[0], k], dim=2); v = torch.cat([past_kv[1], v], dim=2)
+        new_kv = (k, v)
         rep = self.nh // self.nkv
-        k = k.repeat_interleave(rep, dim=1); v = v.repeat_interleave(rep, dim=1)
-        out = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        kk = k.repeat_interleave(rep, dim=1); vv = v.repeat_interleave(rep, dim=1)
+        # causal only on prefill (multi-token, no cache); a single cached step attends all past -> no mask
+        out = F.scaled_dot_product_attention(q, kk, vv, is_causal=(past_kv is None and L > 1))
         out = out.transpose(1, 2).reshape(B, L, self.nh * self.hd)
-        return self.o(out)
+        return self.o(out), new_kv
 
 
 class SwiGLU(nn.Module):
@@ -74,10 +78,11 @@ class Block(nn.Module):
         self.n1 = RMSNorm(cfg.d_model); self.attn = Attention(cfg)
         self.n2 = RMSNorm(cfg.d_model); self.ffn = SwiGLU(cfg.d_model, cfg.d_ff)
 
-    def forward(self, x, cos, sin):
-        x = x + self.attn(self.n1(x), cos, sin)
+    def forward(self, x, cos, sin, past_kv=None):
+        a, new_kv = self.attn(self.n1(x), cos, sin, past_kv)
+        x = x + a
         x = x + self.ffn(self.n2(x))
-        return x
+        return x, new_kv
 
 
 class AIRRistotle(nn.Module):
@@ -106,18 +111,25 @@ class AIRRistotle(nn.Module):
         elif isinstance(m, nn.Embedding):
             nn.init.normal_(m.weight, mean=0.0, std=self.cfg.init_std)
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, past=None, return_past=False):
+        """past: per-layer (k, v) cache from previous tokens (None = full forward). With `past`,
+        input_ids are only the new token(s), positioned after the cache (KV-cached incremental decode)."""
         B, L = input_ids.shape
         x = self.emb(input_ids)
-        cos, sin = _rope(L, self.hd, self.cfg.rope_base, input_ids.device)
+        offset = 0 if past is None else past[0][0].shape[2]          # cached sequence length
+        cos, sin = _rope(L, self.hd, self.cfg.rope_base, input_ids.device, offset=offset)
         cos, sin = cos[None, None].to(x.dtype), sin[None, None].to(x.dtype)
-        for b in self.blocks:
+        new_past = [] if return_past else None
+        for i, b in enumerate(self.blocks):
             if self.grad_checkpoint and self.training:
-                x = torch.utils.checkpoint.checkpoint(b, x, cos, sin, use_reentrant=False)
+                x = torch.utils.checkpoint.checkpoint(b, x, cos, sin, None, use_reentrant=False)[0]
             else:
-                x = b(x, cos, sin)
+                x, kv = b(x, cos, sin, None if past is None else past[i])
+                if return_past:
+                    new_past.append(kv)
         x = self.norm(x)
-        return self.lm_head(x)
+        logits = self.lm_head(x)
+        return (logits, new_past) if return_past else logits
 
     def n_params(self):
         return sum(p.numel() for p in self.parameters())

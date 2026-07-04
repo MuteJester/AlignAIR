@@ -9,8 +9,9 @@ where each `seq` must be a full germline allele of that gene (a path in a per-ge
 prompt's reference sequences). At every step only grammar-valid tokens are allowed; the model chooses
 among them. So the model only ever *decides* where alleles diverge — everything else is forced.
 
-Note: recomputes the model on the growing sequence each step (simple, correct). A KV cache is the
-obvious speedup and does not change behavior.
+Uses a KV cache: the prompt is prefilled once, then each generated token is a single incremental
+forward (positioned after the cache), so decoding is O(output) forwards over one token rather than
+O(output) forwards over the whole growing sequence.
 """
 from __future__ import annotations
 
@@ -56,15 +57,26 @@ def constrained_decode(model, prompt_ids: list[int], ref: dict, tok, has_d: bool
     tries = _gene_tries(ref, tok, genes)
     end_of = lambda gi: (marker[genes[gi + 1]] if gi + 1 < len(genes) else END)  # noqa: E731
 
-    seq = list(prompt_ids)
+    import contextlib
+    use_amp = str(getattr(device, "type", device)).startswith("cuda")
+
+    def fwd(ids, past):
+        ctx = torch.autocast("cuda", dtype=torch.bfloat16) if use_amp else contextlib.nullcontext()
+        with ctx:
+            return model(ids, past=past, return_past=True)
+
     out: list[int] = []
+    logits, past = fwd(torch.tensor(prompt_ids, device=device)[None], None)   # prefill (KV cache)
+    last = logits[0, -1]
 
     def step(allowed: list[int]) -> int:
-        logits = model(torch.tensor(seq, device=device)[None])[0, -1]
-        mask = torch.full_like(logits, float("-inf"))
+        nonlocal past, last
+        mask = torch.full_like(last, float("-inf"))
         mask[torch.tensor(sorted(set(allowed)), device=device)] = 0.0
-        chosen = int((logits + mask).argmax())
-        seq.append(chosen); out.append(chosen)
+        chosen = int((last + mask).argmax())
+        out.append(chosen)
+        logits, past = fwd(torch.tensor([[chosen]], device=device), past)     # one cached step
+        last = logits[0, -1]
         return chosen
 
     step([marker[genes[0]]])                                   # forced first gene marker
