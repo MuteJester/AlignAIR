@@ -138,9 +138,10 @@ if __name__ == "__main__":
     ap.add_argument("--log-every", type=int, default=50)
     ap.add_argument("--eval-every", type=int, default=2000)
     ap.add_argument("--eval-n", type=int, default=200)
+    ap.add_argument("--save-every", type=int, default=5000)
     ap.add_argument("--out", default=".private/models/airrmatch_v1.pt")
     ap.add_argument("--log", default=".private/logs/airrmatch_v1.jsonl")
     a = ap.parse_args()
     train(a.train, a.heldout, MatcherConfig(), a.steps, a.lr, a.batch_size, a.out,
           device=a.device, progress=a.progress, log_every=a.log_every,
-          eval_every=a.eval_every, eval_n=a.eval_n, log_path=a.log)
+          eval_every=a.eval_every, eval_n=a.eval_n, save_every=a.save_every, log_path=a.log)
