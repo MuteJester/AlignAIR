@@ -25,6 +25,20 @@ def test_predict_returns_names_and_sequences_for_each_gene():
     assert isinstance(out["V"]["names"], list) and out["V"]["names"]
 
 
+def test_predict_seeded_all_fine_modes_return_valid_calls():
+    from alignair.align import get_aligner
+    ref = _toy_ref()
+    m = AIRRMatch(MatcherConfig(d_model=32, d_match=16, n_layers=4, dilations=(1, 2))).eval()
+    cached = m.encode_reference(ref, seed_k=5)      # short toy sequences -> small k
+    read = ref.gene("V").sequences[0] + ref.gene("D").sequences[0] + ref.gene("J").sequences[0]
+    aligner = get_aligner()
+    for fine in ("neural", "align", "hybrid"):
+        out = m.predict_seeded(cached, read, topk=2, fine=fine, aligner=aligner)
+        assert set(out) == {"V", "D", "J"}, fine
+        assert out["V"]["seq"] in ref.gene("V").sequences
+        assert out["V"]["names"]
+
+
 def test_training_loss_is_scalar_and_differentiable():
     from alignair.matcher.data import build_sequence_groups, encode_batch, target_mask
     ref = _toy_ref()

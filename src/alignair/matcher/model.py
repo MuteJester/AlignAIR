@@ -6,6 +6,7 @@ from .encoder import MatcherEncoder
 from .scoring import masked_maxsim, pick_strand
 from .loss import selection_ce
 from .data import build_sequence_groups, encode_batch, GENES
+from .seed import KmerIndex
 from . import tokenizer as tk
 from . import infer
 
@@ -49,8 +50,8 @@ class AIRRMatch(nn.Module):
 
     # ---- inference ----
     @torch.no_grad()
-    def encode_reference(self, ref):
-        """Encode a reference set once (cache per-gene candidate embeddings + groups)."""
+    def encode_reference(self, ref, seed_k=9):
+        """Encode a reference set once (cache candidate embeddings + groups + k-mer seed index)."""
         dev = self.device
         present = [g for g in GENES if g in ref.genes]
         groups = {g: build_sequence_groups(ref.gene(g)) for g in present}
@@ -59,7 +60,53 @@ class AIRRMatch(nn.Module):
             cids, cmask = encode_batch(groups[g].unique_seqs, self.cfg.max_len)
             cemb, csal = self.encoder(cids.to(dev), cmask.to(dev))
             cand[g] = (cemb, csal, cmask.to(dev))
-        return {"present": present, "groups": groups, "cand": cand}
+        seed = {g: KmerIndex(groups[g].unique_seqs, k=seed_k) for g in present}
+        return {"present": present, "groups": groups, "cand": cand, "seed": seed}
+
+    @torch.no_grad()
+    def predict_seeded(self, cached, seq: str, topk: int = 16, fine: str = "hybrid", aligner=None):
+        """Fast path: k-mer seed shortlists V to top-k, then fine-score only those.
+
+        fine="neural": MaxSim on the shortlist (encoder needed) — best for D/J.
+        fine="align":  classical local alignment on the shortlist (needs `aligner`) — best for V.
+        fine="hybrid": align for V, neural for D/J — the accuracy-optimal combination.
+        Strand is picked by V k-mer hits; D/J score all candidates (cheap, and short D loses k-mers).
+        """
+        seed, groups, present, cand = (cached["seed"], cached["groups"],
+                                       cached["present"], cached["cand"])
+        rc = tk.revcomp(seq)
+        read = seq if seed["V"].best_hits(seq) >= seed["V"].best_hits(rc) else rc
+        shortlists = {g: (seed[g].shortlist(read, topk)[0] if g == "V" else list(range(groups[g].n)))
+                      for g in present}
+
+        def gene_fine(g):
+            if fine == "align" or (fine == "hybrid" and g == "V"):
+                return "align"
+            return "neural"
+
+        r_emb = r_mask = None
+        if any(gene_fine(g) == "neural" for g in present):     # encode the read only if any gene needs it
+            dev = self.device
+            r_ids, rm = encode_batch([read], self.cfg.max_len)
+            r_emb, _ = self.encoder(r_ids.to(dev), rm.to(dev))
+            r_mask = rm.to(dev)
+
+        out = {}
+        for g in present:
+            idxs = shortlists[g]
+            if gene_fine(g) == "align":
+                targets = [groups[g].unique_seqs[i] for i in idxs]
+                res = aligner.align_many(read, targets)
+                gid = idxs[max(range(len(idxs)),
+                               key=lambda j: res[j].score if res[j] is not None else float("-inf"))]
+            else:
+                ix = torch.tensor(idxs, device=self.device)
+                cemb, csal, cmask = cand[g]
+                scores = masked_maxsim(r_emb[0], r_mask[0], cemb[ix], csal[ix], cmask[ix])
+                gid = idxs[int(scores.argmax())]
+            out[g] = {"names": infer.called_names(gid, groups[g]),
+                      "seq": groups[g].unique_seqs[gid]}
+        return out
 
     @torch.no_grad()
     def predict_cached(self, cached, seq: str):
