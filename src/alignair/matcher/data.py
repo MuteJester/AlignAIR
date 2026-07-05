@@ -5,6 +5,7 @@ from typing import Dict, Iterator, List
 import torch
 
 from .config import MatcherConfig
+from .seed import KmerIndex
 from . import tokenizer as tk
 
 GENES = ("V", "D", "J")
@@ -78,6 +79,9 @@ def stream_batches(dataconfig, cfg: MatcherConfig, params: dict, batch_size: int
     present = [g for g in GENES if g in ref.genes]
     groups = {g: build_sequence_groups(ref.gene(g)) for g in present}
     cand = {g: encode_batch(groups[g].unique_seqs, cfg.max_len) for g in present}
+    # banded scorer needs per-(read,candidate) seed offsets; skip the cost for maxsim.
+    seed_idx = ({g: KmerIndex(groups[g].unique_seqs, k=9) for g in present}
+                if cfg.scorer == "banded" else None)
 
     p = dict(params)
     p["invert_d_prob"] = 0.0                       # disable inverted-D in v1
@@ -100,6 +104,12 @@ def stream_batches(dataconfig, cfg: MatcherConfig, params: dict, batch_size: int
             tgt = torch.stack([target_mask(b["truth"][g], groups[g]) for b in buf])  # [B, n_g]
             genes[g] = {"cand_ids": cand[g][0], "cand_mask": cand[g][1], "target": tgt,
                         "groups": groups[g]}
+            if seed_idx is not None:                # [B, C] anchor offsets (read_start - cand_start)
+                allc = list(range(groups[g].n))
+                genes[g]["offsets_fwd"] = torch.tensor(
+                    [seed_idx[g].anchor_offsets(b["seq"], allc) for b in buf], dtype=torch.long)
+                genes[g]["offsets_rc"] = torch.tensor(
+                    [seed_idx[g].anchor_offsets(tk.revcomp(b["seq"]), allc) for b in buf], dtype=torch.long)
         yield {"read_ids": read_ids, "read_mask": read_mask,
                "read_rc_ids": read_rc_ids, "read_rc_mask": read_rc_mask, "genes": genes}
         buf = []

@@ -1,5 +1,5 @@
 import torch
-from alignair.matcher.loss import selection_ce
+from alignair.matcher.loss import selection_ce, selection_ce_batch
 
 
 def test_lower_loss_when_true_scores_higher():
@@ -36,3 +36,14 @@ def test_gradient_flows():
     loss = selection_ce(scores, torch.tensor([True, False, False]), tau=0.5, margin=0.1)
     loss.backward()
     assert scores.grad is not None and scores.grad.abs().sum() > 0
+
+
+def test_batch_loss_matches_row_loss_and_ignores_empty_targets():
+    scores = torch.tensor([[1.0, 0.5, 0.0], [0.2, 0.3, 0.4], [0.0, 0.0, 0.0]])
+    tgt = torch.tensor([[True, False, False], [False, True, False], [False, False, False]])
+    got = selection_ce_batch(scores, tgt, tau=0.5, margin=0.1, reduce=False)
+    want = torch.stack([
+        selection_ce(scores[0], tgt[0], tau=0.5, margin=0.1),
+        selection_ce(scores[1], tgt[1], tau=0.5, margin=0.1),
+    ])
+    assert torch.allclose(got, want)

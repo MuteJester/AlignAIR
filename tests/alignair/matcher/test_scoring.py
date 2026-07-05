@@ -1,5 +1,6 @@
 import torch
-from alignair.matcher.scoring import masked_maxsim, pick_strand
+import torch.nn.functional as F
+from alignair.matcher.scoring import BandedAlignmentScorer, masked_maxsim, pick_strand
 
 
 def test_identical_candidate_scores_highest():
@@ -41,3 +42,53 @@ def test_salience_weights_the_sum():
 def test_pick_strand_prefers_better_v_match():
     assert pick_strand(torch.tensor([0.9, 0.1]), torch.tensor([0.2, 0.3])) == 0
     assert pick_strand(torch.tensor([0.2, 0.3]), torch.tensor([0.9, 0.1])) == 1
+
+
+def _ids(seq: str):
+    vocab = {"A": 1, "C": 2, "G": 3, "T": 4}
+    return torch.tensor([vocab[c] for c in seq], dtype=torch.long)
+
+
+def _onehot(ids: torch.Tensor):
+    return F.one_hot(ids - 1, num_classes=4).float()
+
+
+def test_banded_scorer_keeps_single_snp_colinear():
+    # Wrong allele has G at the SNP position. MaxSim can hide that by matching the
+    # wrong G to the read's terminal G; the banded scorer is forced to compare the
+    # SNP colinearly at offset 0.
+    read_ids = _ids("AAAACAAAAG").unsqueeze(0)
+    true_ids = _ids("AAAACAAAAG")
+    wrong_ids = _ids("AAAAGAAAAG")
+    read_emb = _onehot(read_ids[0]).unsqueeze(0)
+    cand_emb = torch.stack([_onehot(true_ids), _onehot(wrong_ids)])
+    read_mask = torch.ones_like(read_ids, dtype=torch.bool)
+    cand_mask = torch.ones(2, true_ids.numel(), dtype=torch.bool)
+    sal = torch.ones(2, true_ids.numel())
+
+    maxsim = masked_maxsim(read_emb[0], read_mask[0], cand_emb, sal, cand_mask)
+    assert torch.allclose(maxsim[0], maxsim[1])
+
+    scorer = BandedAlignmentScorer(radius=0, aggregation="diag", coverage_weight=0.0)
+    scores = scorer(read_emb, read_mask, cand_emb, sal, cand_mask,
+                    offsets=torch.zeros(1, 2, dtype=torch.long),
+                    read_ids=read_ids, cand_ids=torch.stack([true_ids, wrong_ids]))
+    assert scores[0, 0] > scores[0, 1] + 0.1
+
+
+def test_banded_scorer_is_differentiable():
+    read_ids = _ids("AAAACAAAAG").unsqueeze(0)
+    cand_ids = torch.stack([_ids("AAAACAAAAG"), _ids("AAAAGAAAAG")])
+    read_emb = _onehot(read_ids[0]).unsqueeze(0).requires_grad_()
+    cand_emb = torch.stack([_onehot(cand_ids[0]), _onehot(cand_ids[1])]).requires_grad_()
+    read_mask = torch.ones_like(read_ids, dtype=torch.bool)
+    cand_mask = torch.ones(2, cand_ids.shape[1], dtype=torch.bool)
+    sal = torch.ones(2, cand_ids.shape[1], requires_grad=True)
+    scorer = BandedAlignmentScorer(radius=1, aggregation="softpath")
+    loss = -scorer(read_emb, read_mask, cand_emb, sal, cand_mask,
+                   offsets=torch.zeros(1, 2, dtype=torch.long),
+                   read_ids=read_ids, cand_ids=cand_ids).sum()
+    loss.backward()
+    assert read_emb.grad is not None and read_emb.grad.abs().sum() > 0
+    assert cand_emb.grad is not None and cand_emb.grad.abs().sum() > 0
+    assert sal.grad is not None and sal.grad.abs().sum() > 0

@@ -13,3 +13,8 @@ class MatcherConfig:
     tau: float = 0.05
     margin: float = 0.2
     max_len: int = 576
+    scorer: str = "maxsim"       # "maxsim" or "banded"
+    band_radius: int = 8         # read positions on each side of the seeded diagonal
+    band_aggregation: str = "diag"  # "diag" for speed, "softpath" for compact gap-aware DP
+    band_temperature: float = 0.2
+    band_coverage_weight: float = 0.05

@@ -23,3 +23,10 @@ def test_best_hits_signals_orientation():
     fwd = idx.best_hits("AAAACCCCGGGGTTTT")
     rc = idx.best_hits("TTTTAAAACCCCGGGG")     # scrambled -> fewer shared k-mers
     assert fwd > rc
+
+
+def test_anchor_offsets_reports_read_minus_candidate_start():
+    seqs = ["AAAACCCCGGGGTTTT", "GGGGAAAACCCC"]
+    idx = KmerIndex(seqs, k=4)
+    read = "NNNNAAAACCCCGGGGTTTT"
+    assert idx.anchor_offsets(read, [0, 1])[0] == 4

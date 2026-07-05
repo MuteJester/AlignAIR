@@ -18,6 +18,7 @@ from alignair.matcher.config import MatcherConfig
 from alignair.matcher.model import AIRRMatch
 from alignair.matcher.data import stream_batches
 from alignair.matcher.telemetry import batch_metrics
+from alignair.matcher.loss import selection_ce_batch
 from alignair.matcher.evaluate import evaluate
 from alignair.matcher.checkpoint import save_checkpoint, load_checkpoint
 from alignair.gym.curriculum import Curriculum
@@ -63,7 +64,8 @@ def _heldout_score(ho):
 
 def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
           device="cuda", progress=0.3, seed=0, log_every=50, eval_every=2000,
-          eval_n=200, save_every=2000, log_path=None, init_path=None, resume_path=None):
+          eval_n=200, save_every=2000, log_path=None, init_path=None, resume_path=None,
+          n_cand=32):
     train_cfgs = [(n, _resolve(n)) for n in train_names]
     heldout_cfgs = [(n, _resolve(n)) for n in heldout_names]
     id_name, id_cfg = train_cfgs[0]
@@ -97,8 +99,14 @@ def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
     seen = 0
     for step, batch in zip(range(start_step + 1, steps + 1), stream):
         batch = _to_device(batch, device)
-        gs = model._gene_scores(batch)
-        loss = model._reduce_loss(gs)
+        if model.banded_scorer is not None:              # contrastive sampled path (memory + speed)
+            gss = model._gene_scores_sampled(batch, n_cand)
+            loss = torch.stack([selection_ce_batch(s, t, cfg.tau, cfg.margin)
+                                for s, t in gss.values()]).mean()
+            gs = {g: [(s[b], t[b]) for b in range(s.shape[0])] for g, (s, t) in gss.items()}
+        else:
+            gs = model._gene_scores(batch)
+            loss = model._reduce_loss(gs)
         opt.zero_grad()
         loss.backward()
         gn = _grad_norm(model)
@@ -165,10 +173,15 @@ if __name__ == "__main__":
     ap.add_argument("--save-every", type=int, default=2000)
     ap.add_argument("--init", default=None, help="warm-start weights only from this checkpoint")
     ap.add_argument("--resume", default=None, help="seamless resume (weights+optimizer+step)")
+    ap.add_argument("--scorer", default="maxsim", choices=["maxsim", "banded"])
+    ap.add_argument("--band-agg", default="diag", choices=["diag", "softpath"])
+    ap.add_argument("--band-radius", type=int, default=8)
+    ap.add_argument("--n-cand", type=int, default=32, help="sampled candidates/read for banded contrastive")
     ap.add_argument("--out", default=".private/models/airrmatch_v1.pt")
     ap.add_argument("--log", default=".private/logs/airrmatch_v1.jsonl")
     a = ap.parse_args()
-    train(a.train, a.heldout, MatcherConfig(), a.steps, a.lr, a.batch_size, a.out,
+    cfg = MatcherConfig(scorer=a.scorer, band_aggregation=a.band_agg, band_radius=a.band_radius)
+    train(a.train, a.heldout, cfg, a.steps, a.lr, a.batch_size, a.out,
           device=a.device, progress=a.progress, log_every=a.log_every,
           eval_every=a.eval_every, eval_n=a.eval_n, save_every=a.save_every,
-          log_path=a.log, init_path=a.init, resume_path=a.resume)
+          log_path=a.log, init_path=a.init, resume_path=a.resume, n_cand=a.n_cand)

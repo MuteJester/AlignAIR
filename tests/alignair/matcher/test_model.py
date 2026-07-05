@@ -39,6 +39,20 @@ def test_predict_seeded_all_fine_modes_return_valid_calls():
         assert out["V"]["names"]
 
 
+def test_predict_seeded_banded_neural_returns_valid_calls():
+    ref = _toy_ref()
+    cfg = MatcherConfig(d_model=32, d_match=16, n_layers=4, dilations=(1, 2),
+                        scorer="banded", band_radius=2, band_aggregation="diag")
+    m = AIRRMatch(cfg).eval()
+    cached = m.encode_reference(ref, seed_k=5)
+    read = ref.gene("V").sequences[0] + ref.gene("D").sequences[0] + ref.gene("J").sequences[0]
+    out = m.predict_seeded(cached, read, topk=2, fine="neural")
+    assert set(out) == {"V", "D", "J"}
+    assert out["V"]["seq"] in ref.gene("V").sequences
+    assert out["D"]["seq"] in ref.gene("D").sequences
+    assert out["J"]["seq"] in ref.gene("J").sequences
+
+
 def test_training_loss_is_scalar_and_differentiable():
     from alignair.matcher.data import build_sequence_groups, encode_batch, target_mask
     ref = _toy_ref()
