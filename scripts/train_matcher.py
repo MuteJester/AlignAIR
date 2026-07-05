@@ -55,6 +55,12 @@ def _fmt_acc(d):
     return " ".join(f"{g}={d[g]:.2f}" for g in d)
 
 
+def _heldout_score(ho):
+    """Mean over every held-out config's per-gene accuracy — the keep-best selection metric."""
+    vals = [v for acc in ho.values() for v in acc.values()]
+    return sum(vals) / len(vals) if vals else 0.0
+
+
 def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
           device="cuda", progress=0.3, seed=0, log_every=50, eval_every=2000,
           eval_n=200, save_every=2000, log_path=None, init_path=None, resume_path=None):
@@ -73,6 +79,9 @@ def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
         print(f"warm-started (weights only) from {init_path}", flush=True)
     params = dict(Curriculum().params(progress))
     stream = _round_robin(train_cfgs, cfg, params, batch_size, seed + start_step)
+
+    best_path = out_path[:-3] + ".best.pt" if out_path.endswith(".pt") else out_path + ".best"
+    best_score = float("-inf")
 
     logf = open(log_path, "a") if log_path else None
 
@@ -122,6 +131,13 @@ def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
             for name, acc in ho.items():
                 gap = {g: id_acc.get(g, 0.0) - acc.get(g, 0.0) for g in acc}
                 print(f"             HELD-OUT {name}: {_fmt_acc(acc)}  |  gap {_fmt_acc(gap)}",
+                      flush=True)
+            hscore = _heldout_score(ho)                 # keep-best: track peak held-out generalization
+            if hscore > best_score:
+                best_score = hscore
+                save_checkpoint(best_path, cfg, model, opt, step)
+                emit({"t": "best", "step": step, "held_out_mean": hscore})
+                print(f"  * NEW BEST held-out mean {hscore:.3f} @ step {step} -> {best_path}",
                       flush=True)
 
         if save_every and step % save_every == 0:
