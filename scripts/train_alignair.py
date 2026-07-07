@@ -27,6 +27,8 @@ def main():
     ap.add_argument("--save-every", type=int, default=5000)
     ap.add_argument("--resume", default=None)
     ap.add_argument("--log-every", type=int, default=100)
+    ap.add_argument("--deep-every", type=int, default=1000, help="deep diagnostics cadence (eval+activations)")
+    ap.add_argument("--monitor-log", default=None, help="diagnostics JSONL (default: <out>.diag.jsonl)")
     a = ap.parse_args()
 
     dc = getattr(gd, a.dataconfig)
@@ -39,10 +41,12 @@ def main():
     logvars = make_logvars(cfg)
     print(f"train {a.dataconfig}: V={cfg.v_allele_count} D={cfg.d_allele_count} J={cfg.j_allele_count} "
           f"has_d={has_d} params={sum(p.numel() for p in model.parameters())/1e6:.2f}M", flush=True)
+    monitor_log = a.monitor_log or (a.out[:-3] if a.out.endswith(".pt") else a.out) + ".diag.jsonl"
     train(model, ref, dc, cfg, logvars, steps=a.steps, batch_size=a.batch_size, lr=a.lr,
           progresses=tuple(a.progress), heavy_shm=a.heavy_shm, device=a.device,
-          save_path=a.out, save_every=a.save_every, resume_path=a.resume, log_every=a.log_every)
-    print(f"saved -> {a.out}")
+          save_path=a.out, save_every=a.save_every, resume_path=a.resume, log_every=a.log_every,
+          monitor_log=monitor_log, deep_every=a.deep_every)
+    print(f"saved -> {a.out}  (diagnostics: {monitor_log})")
 
 
 if __name__ == "__main__":

@@ -94,7 +94,8 @@ def _mixed_stream(dataconfig, progresses, heavy_shm, seed):
 
 def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, seed=0, device="cpu",
-          log_every=50, save_path=None, save_every=2000, resume_path=None):
+          log_every=50, save_path=None, save_every=2000, resume_path=None,
+          monitor_log=None, deep_every=500):
     from ..gym import Curriculum
     model.to(device)
     logvars.to(device)                         # Kendall log-vars must share the model's device
@@ -109,6 +110,17 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
         start = int(ck.get("step", 0))
         print(f"RESUMED from {resume_path} at step {start}", flush=True)
 
+    # fixed held-out batch for deep diagnostics (per-task eval + activation health)
+    monitor = eval_batch = None
+    if monitor_log:
+        from .diagnostics import TrainingMonitor
+        monitor = TrainingMonitor(lr, monitor_log, deep_every)
+        ev = list(itertools.islice(
+            _stream_records(dataconfig, dict(Curriculum().params(max(progresses))), seed + 99991),
+            batch_size))
+        bi, tg = build_batch(ev, reference_set, cfg, device)
+        eval_batch = {"input": bi, "targets": tg}
+
     stream = (_mixed_stream(dataconfig, progresses, heavy_shm, seed + start)
               if len(progresses) > 1 or heavy_shm > 0
               else _stream_records(dataconfig, dict(Curriculum().params(progresses[0])), seed + start))
@@ -119,10 +131,16 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
         batch_in, targets = build_batch(records, reference_set, cfg, device)
         total, parts = train_step(model, batch_in, targets, cfg, logvars, opt)
         if step % log_every == 0:
-            print(f"[{step}/{steps}] loss {total:.3f} "
-                  + " ".join(f"{k}={v:.2f}" for k, v in parts.items()), flush=True)
+            line = (f"[{step}/{steps}] loss {total:.3f} "
+                    + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
+            if monitor is not None:                # reads this step's grads (pre next zero_grad)
+                rec = monitor.observe(model, logvars, total, parts, step, eval_batch, cfg)
+                line += "  " + monitor.summary_line(rec)
+            print(line, flush=True)
         if save_path and step % save_every == 0:
             save_checkpoint(save_path, cfg, model, logvars, step, opt)
     if save_path:
         save_checkpoint(save_path, cfg, model, logvars, steps, opt)
+    if monitor is not None:
+        monitor.close()
     return model
