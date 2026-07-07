@@ -13,6 +13,7 @@ class GeneReference:
     sequences: List[str]      # germline nucleotide seqs (uppercased), aligned with names
     index: Dict[str, int]     # name -> row index
     anchors: Dict[str, int] | None = None  # name -> conserved-anchor germline pos (Cys/Trp-Phe)
+    gapped: Dict[str, str] | None = None   # name -> IMGT-gapped germline (AIRR sequence_alignment)
 
     def __len__(self) -> int:
         return len(self.names)
@@ -38,6 +39,7 @@ class ReferenceSet:
             sequences: List[str] = []
             index: Dict[str, int] = {}
             anchors: Dict[str, int] = {}
+            gapped: Dict[str, str] = {}
             for dc in dataconfigs:
                 if g == "d" and not dc.metadata.has_d:
                     continue
@@ -52,8 +54,11 @@ class ReferenceSet:
                     anc = getattr(allele, "anchor", None)
                     if anc is not None:
                         anchors[allele.name] = int(anc)
+                    gap = getattr(allele, "gapped_seq", None)
+                    if gap:
+                        gapped[allele.name] = gap.upper()
             genes[g.upper()] = GeneReference(names, sequences, index,
-                                             anchors=anchors or None)
+                                             anchors=anchors or None, gapped=gapped or None)
         return cls(genes, has_d)
 
     @classmethod

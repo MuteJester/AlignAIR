@@ -31,14 +31,18 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     names = {g: list(reference.gene(g.upper()).names) for g in genes}
     calls = select_alleles(preds.allele, names, cfg.threshold_pct, cfg.cap)
     alignments = align_germline(sequences, segs, calls, reference, aligner)
-    return _to_records(sequences, calls, alignments, genes, preds.orientation)
+    return _to_records(sequences, calls, alignments, genes, preds)
 
 
-def _to_records(sequences, calls, alignments, genes, orientation=None) -> list:
+def _to_records(sequences, calls, alignments, genes, preds) -> list:
+    orientation = preds.orientation
     records = []
     for i, seq in enumerate(sequences):
         oid = int(orientation[i]) if orientation is not None else 0
-        rec = {"sequence": seq, "orientation_id": oid}
+        rec = {"sequence": seq, "orientation_id": oid,
+               "mutation_rate": float(preds.mutation_rate[i]),
+               "indel_count": float(preds.indel_count[i]),
+               "productive": bool(preds.productive[i])}
         for g in genes:
             call, aln = calls[g][i], alignments[g][i]
             rec[f"{g}_call"] = call.names[0] if call.names else ""
