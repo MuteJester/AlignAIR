@@ -14,14 +14,19 @@ from alignair.training.alignair_trainer import train
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataconfig", default="HUMAN_IGH_OGRDB")
-    ap.add_argument("--steps", type=int, default=5000)
-    ap.add_argument("--batch-size", type=int, default=32)
+    ap.add_argument("--steps", type=int, default=500000)
+    ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--lr", type=float, default=3e-4)
-    ap.add_argument("--progress", type=float, default=0.5)
+    ap.add_argument("--progress", type=float, nargs="+", default=[0.3, 0.6, 0.9],
+                    help="difficulty mix: one gym stream per level (round-robin)")
+    ap.add_argument("--heavy-shm", type=float, default=0.25,
+                    help="add a heavy-SHM stream at this mutation rate (0 to disable)")
     ap.add_argument("--max-len", type=int, default=576)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=".private/models/alignair_single.pt")
-    ap.add_argument("--save-every", type=int, default=2000)
+    ap.add_argument("--save-every", type=int, default=5000)
+    ap.add_argument("--resume", default=None)
+    ap.add_argument("--log-every", type=int, default=100)
     a = ap.parse_args()
 
     dc = getattr(gd, a.dataconfig)
@@ -34,8 +39,9 @@ def main():
     logvars = make_logvars(cfg)
     print(f"train {a.dataconfig}: V={cfg.v_allele_count} D={cfg.d_allele_count} J={cfg.j_allele_count} "
           f"has_d={has_d} params={sum(p.numel() for p in model.parameters())/1e6:.2f}M", flush=True)
-    train(model, ref, dc, cfg, logvars, steps=a.steps, batch_size=a.batch_size,
-          lr=a.lr, progress=a.progress, device=a.device, save_path=a.out, save_every=a.save_every)
+    train(model, ref, dc, cfg, logvars, steps=a.steps, batch_size=a.batch_size, lr=a.lr,
+          progresses=tuple(a.progress), heavy_shm=a.heavy_shm, device=a.device,
+          save_path=a.out, save_every=a.save_every, resume_path=a.resume, log_every=a.log_every)
     print(f"saved -> {a.out}")
 
 

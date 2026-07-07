@@ -8,6 +8,7 @@ log-var clamps) after ``optimizer.step()``.
 from __future__ import annotations
 
 import itertools
+import os
 
 import torch
 import torch.nn.functional as F
@@ -64,9 +65,12 @@ def train_step(model, batch_in, targets, cfg, logvars, opt):
     return float(total.detach()), {k: float(v.detach()) for k, v in parts.items()}
 
 
-def save_checkpoint(path, cfg, model, logvars, step):
-    torch.save({"config": cfg.__dict__, "model": model.state_dict(),
-                "logvars": logvars.state_dict(), "step": step}, path)
+def save_checkpoint(path, cfg, model, logvars, step, opt=None):
+    ck = {"config": cfg.__dict__, "model": model.state_dict(),
+          "logvars": logvars.state_dict(), "step": step}
+    if opt is not None:
+        ck["optimizer"] = opt.state_dict()
+    torch.save(ck, path)
 
 
 def _stream_records(dataconfig, params, seed):
@@ -76,15 +80,39 @@ def _stream_records(dataconfig, params, seed):
     yield from exp.stream_records(n=None, seed=seed)
 
 
+def _mixed_stream(dataconfig, progresses, heavy_shm, seed):
+    """Round-robin over difficulty levels so a long run trains on clean + hard + heavy-SHM +
+    cropped/fragment reads (the strata the 20k run was weak on, incl. orientation-on-fragments)."""
+    from ..gym import Curriculum
+    specs = [dict(Curriculum().params(pr)) for pr in progresses]
+    if heavy_shm > 0:
+        hs = dict(Curriculum().params(1.0)); hs["mutation_rate"] = heavy_shm
+        specs.append(hs)
+    streams = [_stream_records(dataconfig, s, seed + i) for i, s in enumerate(specs)]
+    yield from itertools.chain.from_iterable(zip(*streams))
+
+
 def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_size=32,
-          lr=3e-4, progress=0.5, seed=0, device="cpu", log_every=50,
-          save_path=None, save_every=2000):
+          lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, seed=0, device="cpu",
+          log_every=50, save_path=None, save_every=2000, resume_path=None):
     from ..gym import Curriculum
     model.to(device)
     logvars.to(device)                         # Kendall log-vars must share the model's device
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=lr)
-    stream = _stream_records(dataconfig, dict(Curriculum().params(progress)), seed)
-    for step in range(1, steps + 1):
+
+    start = 0
+    if resume_path and os.path.exists(resume_path):
+        ck = torch.load(resume_path, map_location=device)
+        model.load_state_dict(ck["model"]); logvars.load_state_dict(ck["logvars"])
+        if "optimizer" in ck:
+            opt.load_state_dict(ck["optimizer"])
+        start = int(ck.get("step", 0))
+        print(f"RESUMED from {resume_path} at step {start}", flush=True)
+
+    stream = (_mixed_stream(dataconfig, progresses, heavy_shm, seed + start)
+              if len(progresses) > 1 or heavy_shm > 0
+              else _stream_records(dataconfig, dict(Curriculum().params(progresses[0])), seed + start))
+    for step in range(start + 1, steps + 1):
         records = list(itertools.islice(stream, batch_size))
         if len(records) < batch_size:
             break
@@ -94,7 +122,7 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
             print(f"[{step}/{steps}] loss {total:.3f} "
                   + " ".join(f"{k}={v:.2f}" for k, v in parts.items()), flush=True)
         if save_path and step % save_every == 0:
-            save_checkpoint(save_path, cfg, model, logvars, step)
+            save_checkpoint(save_path, cfg, model, logvars, step, opt)
     if save_path:
-        save_checkpoint(save_path, cfg, model, logvars, steps)
+        save_checkpoint(save_path, cfg, model, logvars, steps, opt)
     return model
