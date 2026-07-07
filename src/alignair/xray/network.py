@@ -102,6 +102,36 @@ def activation_stats(model, model_input, module_names=None, eps: float = 1e-6, s
     return stats
 
 
+def capture_activations(model, model_input, module_names=None, max_samples: int = 512) -> dict:
+    """Return {module_name: flattened activation matrix [N, D]} for geometry analysis. Read-only
+    (eval + no_grad, hooks always removed). Rows are subsampled to ``max_samples`` to bound cost."""
+    if module_names is None:
+        module_names = default_hook_targets(model)
+    named = dict(model.named_modules())
+    caps, handles = {}, []
+
+    def make_hook(nm):
+        def hook(_m, _inp, out):
+            t = out.detach() if isinstance(out, torch.Tensor) else out[0].detach()
+            x = t.reshape(-1, t.shape[-1]).float()           # (samples, features)
+            caps[nm] = x[:max_samples].cpu()
+        return hook
+
+    for nm in module_names:
+        if nm in named:
+            handles.append(named[nm].register_forward_hook(make_hook(nm)))
+    was_training = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            model(model_input)
+    finally:
+        model.train(was_training)
+        for h in handles:
+            h.remove()
+    return caps
+
+
 def default_hook_targets(model) -> list:
     """Heuristic representative slice for AlignAIR-style conv models: embedding, orientation head,
     one post-nonlinearity block per tower (bounded -> real saturation), tower projections + heads."""

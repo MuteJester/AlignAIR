@@ -179,12 +179,17 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
             _stream_records(dataconfig, dict(Curriculum().params(max(progresses))), seed + 99991),
             batch_size))
         probe_input, probe_targets = build_batch(ev, reference_set, cfg, device)
+        from ..models.losses import hierarchical_loss
 
         def task_eval(m, inp, _tg=probe_targets, _cfg=cfg):
             return eval_metrics(m(inp), _tg, _cfg)
 
+        def task_losses(m, inp, _tg=probe_targets, _cfg=cfg, _lv=logvars):
+            return hierarchical_loss(m(inp), _tg, _cfg, _lv)[1]      # per-task loss tensors
+
         xray = ModelXRay(model, lr=lr, log_path=monitor_log, deep_every=deep_every,
-                         uncertainty=logvars, task_eval=task_eval)
+                         uncertainty=logvars, task_eval=task_eval, task_losses=task_losses,
+                         shared_module="embedding")
 
     stream = (_mixed_stream(dataconfig, progresses, heavy_shm, seed + start)
               if len(progresses) > 1 or heavy_shm > 0

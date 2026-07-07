@@ -66,6 +66,36 @@ def test_model_xray_observe_records_health():
     assert isinstance(rec["flags"], list)
 
 
+def test_model_xray_deep_pass_geometry_interference_and_report():
+    from alignair.models.losses import hierarchical_loss, make_logvars
+    model, cfg = _model()
+    logvars = make_logvars(cfg)
+    B = 4
+    x = {"tokenized_sequence": torch.randint(1, 6, (B, 256)),
+         "orientation": torch.zeros(B, dtype=torch.long)}
+    tg = {"mutation_rate": torch.rand(B, 1), "indel_count": torch.zeros(B, 1),
+          "productive": torch.ones(B, 1), "orientation": torch.zeros(B, dtype=torch.long)}
+    for g, cnt in (("v", 8), ("j", 4), ("d", 4)):
+        tg[f"{g}_start"] = torch.full((B, 1), 10.0); tg[f"{g}_end"] = torch.full((B, 1), 100.0)
+        y = torch.zeros(B, cnt); y[:, 0] = 1.0; tg[f"{g}_allele"] = y
+
+    def task_losses(m, inp):
+        return hierarchical_loss(m(inp), tg, cfg, logvars)[1]
+
+    xr = ModelXRay(model, lr=3e-4, deep_every=1, uncertainty=logvars,
+                   task_losses=task_losses, shared_module="embedding")
+    model(x)["v_allele"].sum().backward()
+    rec = xr.observe(1, 1.0, probe_input=x)
+    assert "geometry" in rec and "embedding" in rec["geometry"]         # per-layer feature geometry
+    assert "interference" in rec and "min_cosine" in rec["interference"]  # cross-task gradient conflict
+    assert "velocity" not in rec                                        # first deep pass -> no prev snapshot
+    rec2 = xr.observe(2, 1.0, probe_input=x)
+    assert "velocity" in rec2                                           # second deep pass -> velocity
+
+    rep = xr.deep_report(probe_input=x)
+    assert "weightwatcher_alpha" in rep and "cka" in rep
+
+
 def test_model_xray_is_pure_xray_no_interference():
     """ModelXRay must sit ABOVE the model: zero mutation of weights/grads/mode/BN-stats/hooks."""
     model, _ = _model()
