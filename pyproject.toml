@@ -116,4 +116,5 @@ markers = [
     "e2e: End-to-end tests",
     "regression: Regression tests",
     "performance: Performance tests",
+    "slow: Slow tests (real model/reference; excluded from fast runs via -m 'not slow')",
 ]
