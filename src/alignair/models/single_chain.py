@@ -12,7 +12,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..config.alignair_config import AlignAIRConfig
-from .layers import ConvResidualFeatureExtractionBlock, SoftCutoutLayer, TokenAndPositionEmbedding
+from ..nn.heads.orientation import apply_orientation
+from .layers import (ConvResidualFeatureExtractionBlock, EmbeddingOrientationHead, SoftCutoutLayer,
+                     TokenAndPositionEmbedding)
 
 _SEG_KERNELS = [3, 3, 3, 2, 5]        # N=4 towers (meta + segmentation)
 _V_J_CLS_KERNELS = [3, 3, 3, 2, 2, 2, 5]  # N=6 (V/J classification)
@@ -27,6 +29,7 @@ class SingleChainAlignAIR(nn.Module):
         L, C, F_ = cfg.max_seq_length, cfg.embed_dim, cfg.filters
 
         self.embedding = TokenAndPositionEmbedding(cfg.vocab_size, C, L)
+        self.orientation_head = EmbeddingOrientationHead(C)
 
         def block(N, kernels):
             return ConvResidualFeatureExtractionBlock(C, N=N, kernels=kernels, max_len=L,
@@ -63,9 +66,20 @@ class SingleChainAlignAIR(nn.Module):
 
     def forward(self, batch: dict) -> dict:
         tokens = batch["tokenized_sequence"]
-        emb = self.embedding(tokens)                            # (B, L, C)
-        meta = self.meta_tower(emb)                             # (B, 576)
+        mask = tokens != 0                                      # non-pad
         out: dict = {}
+
+        # orientation: predict from the shared initial embeddings, correct the input via an
+        # involution transform, then re-embed the canonicalized read for the rest of the model.
+        emb0 = self.embedding(tokens)
+        orient_logits = self.orientation_head(emb0, mask)
+        out["orientation_logits"] = orient_logits
+        out["orientation"] = orient_logits.argmax(-1)
+        correct = (batch["orientation"] if "orientation" in batch  # teacher-forced during training
+                   else orient_logits.argmax(-1).detach())         # self-corrected at inference
+        emb = self.embedding(apply_orientation(tokens, mask, correct))
+
+        meta = self.meta_tower(emb)                             # (B, 576)
 
         # segmentation + soft-argmax expectations
         exp = {}

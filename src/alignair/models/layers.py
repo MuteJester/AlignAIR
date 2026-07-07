@@ -98,6 +98,25 @@ class ConvResidualFeatureExtractionBlock(nn.Module):
         return self.proj(torch.flatten(res, 1))
 
 
+class EmbeddingOrientationHead(nn.Module):
+    """4-class orientation logits from the model's shared initial embeddings.
+
+    Order-sensitive (a masked depthwise-ish conv) so forward vs reverse is distinguishable — a plain
+    mean-pool could not tell a read from its reverse. Feeds the in-model correct-and-re-embed step.
+    """
+
+    def __init__(self, embed_dim: int, num_orientations: int = 4):
+        super().__init__()
+        self.conv = nn.Conv1d(embed_dim, embed_dim, 7, padding="same")
+        self.fc = nn.Linear(embed_dim, num_orientations)
+
+    def forward(self, emb: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:  # (B,L,C), (B,L)
+        m = mask.unsqueeze(-1).to(emb.dtype)
+        h = F.gelu(self.conv((emb * m).transpose(1, 2))).transpose(1, 2) * m
+        pooled = h.sum(1) / m.sum(1).clamp(min=1.0)
+        return self.fc(pooled)
+
+
 class SoftCutoutLayer(nn.Module):
     """Differentiable soft interval mask (TF Layers.py:404). ``start``/``end`` are ``(B,1)``
     soft-argmax expectations; returns ``(B, max_size)`` = ``sigmoid((i-start)/k)·sigmoid((end-i)/k)``,

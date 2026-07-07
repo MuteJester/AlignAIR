@@ -6,6 +6,7 @@ keyed by ``'v'``/``'d'``/``'j'`` (D absent for light chains).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
@@ -28,6 +29,7 @@ class Predictions:
     mutation_rate: np.ndarray         # [N]
     indel_count: np.ndarray           # [N]
     productive: np.ndarray            # [N] bool
+    orientation: Optional[np.ndarray] = None   # [N] predicted orientation id (model self-corrects)
 
 
 @dataclass

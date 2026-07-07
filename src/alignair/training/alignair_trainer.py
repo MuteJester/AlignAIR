@@ -14,16 +14,29 @@ import torch.nn.functional as F
 
 from ..config.alignair_config import AlignAIRConfig
 from ..gym import build_experiment, build_targets, gym_collate
+from ..nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 
 
-def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu"):
-    """(records, reference) -> (model_input, targets), tokens padded/truncated to max_seq_length."""
+def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu",
+                augment_orientation: bool = True):
+    """(records, reference) -> (model_input, targets), tokens padded/truncated to max_seq_length.
+
+    The gym stream is forward-only, so ``augment_orientation`` applies a random orientation (one of
+    4) to each read's tokens and supplies the label — the model learns to detect and self-correct it,
+    while the segmentation/allele targets stay in the forward frame (correction re-canonicalizes).
+    """
     bundles = [build_targets(r, reference_set, cfg.has_d) for r in records]
     b = gym_collate(bundles, reference_set, cfg.has_d)
     L = cfg.max_seq_length
     tok = b["tokens"]
     tok = F.pad(tok, (0, L - tok.shape[1])) if tok.shape[1] < L else tok[:, :L]
-    batch_in = {"tokenized_sequence": tok.to(device)}
+
+    if augment_orientation:
+        orient = torch.randint(0, NUM_ORIENTATIONS, (tok.shape[0],))
+        tok = apply_orientation(tok, tok != 0, orient)
+    else:
+        orient = torch.zeros(tok.shape[0], dtype=torch.long)
+    batch_in = {"tokenized_sequence": tok.to(device), "orientation": orient.to(device)}
 
     genes = ["v", "j"] + (["d"] if cfg.has_d else [])
     targets: dict = {}
@@ -33,6 +46,7 @@ def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu"
         targets[f"{g}_allele"] = b[f"{g}_allele"].to(device)
     for k in ("mutation_rate", "indel_count", "productive"):
         targets[k] = b[k].to(device)
+    targets["orientation"] = orient.to(device)
     return batch_in, targets
 
 
@@ -50,6 +64,11 @@ def train_step(model, batch_in, targets, cfg, logvars, opt):
     return float(total.detach()), {k: float(v.detach()) for k, v in parts.items()}
 
 
+def save_checkpoint(path, cfg, model, logvars, step):
+    torch.save({"config": cfg.__dict__, "model": model.state_dict(),
+                "logvars": logvars.state_dict(), "step": step}, path)
+
+
 def _stream_records(dataconfig, params, seed):
     p = dict(params)
     p.setdefault("invert_d_prob", 0.0)
@@ -58,11 +77,13 @@ def _stream_records(dataconfig, params, seed):
 
 
 def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_size=32,
-          lr=3e-4, progress=0.5, seed=0, device="cpu", log_every=50):
+          lr=3e-4, progress=0.5, seed=0, device="cpu", log_every=50,
+          save_path=None, save_every=2000):
     from ..gym import Curriculum
+    model.to(device)
+    logvars.to(device)                         # Kendall log-vars must share the model's device
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=lr)
     stream = _stream_records(dataconfig, dict(Curriculum().params(progress)), seed)
-    model.to(device)
     for step in range(1, steps + 1):
         records = list(itertools.islice(stream, batch_size))
         if len(records) < batch_size:
@@ -72,4 +93,8 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
         if step % log_every == 0:
             print(f"[{step}/{steps}] loss {total:.3f} "
                   + " ".join(f"{k}={v:.2f}" for k, v in parts.items()), flush=True)
+        if save_path and step % save_every == 0:
+            save_checkpoint(save_path, cfg, model, logvars, step)
+    if save_path:
+        save_checkpoint(save_path, cfg, model, logvars, steps)
     return model

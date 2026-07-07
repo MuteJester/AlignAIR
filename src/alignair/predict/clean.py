@@ -24,9 +24,13 @@ def clean(raw_batches: list, genes) -> Predictions:
         allele[g] = np.vstack([np.asarray(b[f"{g}_allele"]) for b in raw_batches])
         start[g] = _flat(raw_batches, f"{g}_start")
         end[g] = _flat(raw_batches, f"{g}_end")
+    productive = _flat(raw_batches, "productive") > 0.5
+    orientation = (_flat(raw_batches, "orientation").astype(int)
+                   if all("orientation" in b for b in raw_batches)
+                   else np.zeros(len(productive), dtype=int))
     return Predictions(
         allele=allele, start=start, end=end,
         mutation_rate=_flat(raw_batches, "mutation_rate"),
         indel_count=_flat(raw_batches, "indel_count"),
-        productive=_flat(raw_batches, "productive") > 0.5,
+        productive=productive, orientation=orientation,
     )

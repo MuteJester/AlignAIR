@@ -21,6 +21,7 @@ def main():
     ap.add_argument("--max-len", type=int, default=576)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=".private/models/alignair_single.pt")
+    ap.add_argument("--save-every", type=int, default=2000)
     a = ap.parse_args()
 
     dc = getattr(gd, a.dataconfig)
@@ -34,9 +35,7 @@ def main():
     print(f"train {a.dataconfig}: V={cfg.v_allele_count} D={cfg.d_allele_count} J={cfg.j_allele_count} "
           f"has_d={has_d} params={sum(p.numel() for p in model.parameters())/1e6:.2f}M", flush=True)
     train(model, ref, dc, cfg, logvars, steps=a.steps, batch_size=a.batch_size,
-          lr=a.lr, progress=a.progress, device=a.device)
-    torch.save({"config": cfg.__dict__, "model": model.state_dict(),
-                "logvars": logvars.state_dict()}, a.out)
+          lr=a.lr, progress=a.progress, device=a.device, save_path=a.out, save_every=a.save_every)
     print(f"saved -> {a.out}")
 
 

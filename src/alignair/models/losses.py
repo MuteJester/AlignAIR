@@ -26,7 +26,7 @@ def make_logvars(cfg: AlignAIRConfig) -> nn.ModuleDict:
     keys = []
     for g in genes_of(cfg):
         keys += [f"{g}_start", f"{g}_end", f"{g}_classification"]
-    keys += ["mutation", "indel", "productive"]
+    keys += ["mutation", "indel", "productive", "orientation"]
     return nn.ModuleDict({k: UncertaintyWeight() for k in keys})
 
 
@@ -95,4 +95,10 @@ def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn
 
     total = parts["segmentation"] + parts["classification"] + parts["mutation"] \
         + parts["indel"] + parts["productive"]
+
+    # ---- orientation (supervised only when the batch carries an orientation label) ----
+    if "orientation" in targets and "orientation_logits" in out:
+        o_loss = F.cross_entropy(out["orientation_logits"], targets["orientation"])
+        parts["orientation"] = _kendall(logvars["orientation"], o_loss)
+        total = total + parts["orientation"]
     return total, parts
