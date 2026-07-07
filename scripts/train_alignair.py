@@ -27,9 +27,12 @@ def main():
     ap.add_argument("--save-every", type=int, default=5000)
     ap.add_argument("--resume", default=None)
     ap.add_argument("--log-every", type=int, default=100)
-    ap.add_argument("--deep-every", type=int, default=1000, help="deep diagnostics cadence (eval+activations)")
+    ap.add_argument("--xray-points", type=int, default=None,
+                    help="TOTAL number of deep X-ray snapshots over the whole run (overrides --deep-every)")
+    ap.add_argument("--deep-every", type=int, default=1000, help="deep X-ray cadence in steps")
     ap.add_argument("--monitor-log", default=None, help="diagnostics JSONL (default: <out>.diag.jsonl)")
     a = ap.parse_args()
+    deep_every = max(1, a.steps // a.xray_points) if a.xray_points else a.deep_every
 
     dc = getattr(gd, a.dataconfig)
     ref = ReferenceSet.from_dataconfigs(dc)
@@ -45,8 +48,9 @@ def main():
     train(model, ref, dc, cfg, logvars, steps=a.steps, batch_size=a.batch_size, lr=a.lr,
           progresses=tuple(a.progress), heavy_shm=a.heavy_shm, device=a.device,
           save_path=a.out, save_every=a.save_every, resume_path=a.resume, log_every=a.log_every,
-          monitor_log=monitor_log, deep_every=a.deep_every)
-    print(f"saved -> {a.out}  (diagnostics: {monitor_log})")
+          monitor_log=monitor_log, deep_every=deep_every)
+    print(f"saved -> {a.out}  (diagnostics: {monitor_log}, deep every {deep_every} "
+          f"= {a.steps // deep_every} points)")
 
 
 if __name__ == "__main__":
