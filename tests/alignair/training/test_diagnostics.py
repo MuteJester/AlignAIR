@@ -64,3 +64,30 @@ def test_activation_stats_on_model():
     assert "embedding" in stats
     for s in stats.values():
         assert 0.0 <= s["dead_frac"] <= 1.0 and 0.0 <= s["sat_frac"] <= 1.0
+
+
+def test_monitor_is_pure_xray_no_interference():
+    """The analytics must sit ABOVE the model: read-only, zero effect on training state."""
+    cfg = AlignAIRConfig(max_seq_length=256, v_allele_count=8, j_allele_count=4,
+                         d_allele_count=4, has_d=True)
+    from alignair.models.single_chain import SingleChainAlignAIR
+    model = SingleChainAlignAIR(cfg)
+    model.train()
+    x = {"tokenized_sequence": torch.randint(1, 6, (2, 256))}
+    model(x)                                            # train-mode forward -> populates BN running stats
+    model(x)["v_allele"].sum().backward()               # populate grads
+
+    bn = model.meta_tower.conv_layers[0].bn
+    rm_before = bn.running_mean.clone()
+    sd_before = {k: v.clone() for k, v in model.state_dict().items()}
+    grad_before = model.embedding.token.weight.grad.clone()
+    training_before = model.training
+
+    dg.activation_stats(model, x)                       # the only stage that forwards the model
+
+    assert model.training == training_before            # mode restored
+    assert torch.equal(bn.running_mean, rm_before)      # eval-mode forward did NOT update BN stats
+    assert torch.equal(model.embedding.token.weight.grad, grad_before)   # grads untouched
+    for k, v in model.state_dict().items():
+        assert torch.equal(v, sd_before[k]), k          # every weight/buffer unchanged
+    assert all(len(m._forward_hooks) == 0 for m in model.modules())      # no lingering hooks

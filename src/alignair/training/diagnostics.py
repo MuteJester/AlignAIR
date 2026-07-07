@@ -101,12 +101,14 @@ def activation_stats(model, batch: dict, module_names=None, eps: float = 1e-6,
         if nm in named:
             handles.append(named[nm].register_forward_hook(make_hook(nm)))
     was_training = model.training
-    model.eval()
-    with torch.no_grad():
-        model(batch)
-    model.train(was_training)
-    for h in handles:
-        h.remove()
+    model.eval()                               # eval-mode + no_grad => zero side effects on the model
+    try:
+        with torch.no_grad():
+            model(batch)
+    finally:                                   # ALWAYS restore mode + remove hooks (pure X-ray)
+        model.train(was_training)
+        for h in handles:
+            h.remove()
     return stats
 
 

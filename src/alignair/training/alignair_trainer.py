@@ -7,8 +7,11 @@ log-var clamps) after ``optimizer.step()``.
 """
 from __future__ import annotations
 
+import glob
 import itertools
 import os
+import re
+import shutil
 
 import torch
 import torch.nn.functional as F
@@ -66,11 +69,47 @@ def train_step(model, batch_in, targets, cfg, logvars, opt):
 
 
 def save_checkpoint(path, cfg, model, logvars, step, opt=None):
+    """Full, self-sufficient checkpoint: config + model + Kendall log-vars + optimizer + step —
+    everything needed to CONTINUE training from this exact state."""
     ck = {"config": cfg.__dict__, "model": model.state_dict(),
           "logvars": logvars.state_dict(), "step": step}
     if opt is not None:
         ck["optimizer"] = opt.state_dict()
     torch.save(ck, path)
+
+
+def _step_of(path: str) -> int:
+    m = re.search(r"\.step(\d+)\.pt$", path)
+    return int(m.group(1)) if m else -1
+
+
+def _stem(base_path: str) -> str:
+    return base_path[:-3] if base_path.endswith(".pt") else base_path
+
+
+def save_rotating(base_path, cfg, model, logvars, step, opt, keep=3):
+    """Write a full resumable checkpoint into a rotating cycle of `keep` step-named files (so the
+    3 latest states are always retained), and refresh `base_path` as a copy of the newest (for
+    convenient --resume / benchmarking). A killed save can't corrupt older slots."""
+    stem = _stem(base_path)
+    path = f"{stem}.step{step}.pt"
+    save_checkpoint(path, cfg, model, logvars, step, opt)
+    shutil.copyfile(path, base_path)                      # base == newest
+    for old in sorted(glob.glob(f"{stem}.step*.pt"), key=_step_of)[:-keep]:
+        if old != path:
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+    return path
+
+
+def latest_checkpoint(base_path):
+    """Highest-step rotating checkpoint (falls back to base_path), or None if nothing exists."""
+    files = glob.glob(f"{_stem(base_path)}.step*.pt")
+    if files:
+        return max(files, key=_step_of)
+    return base_path if os.path.exists(base_path) else None
 
 
 def _stream_records(dataconfig, params, seed):
@@ -102,13 +141,14 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=lr)
 
     start = 0
-    if resume_path and os.path.exists(resume_path):
-        ck = torch.load(resume_path, map_location=device)
+    resume_from = latest_checkpoint(resume_path) if resume_path else None
+    if resume_from:
+        ck = torch.load(resume_from, map_location=device)
         model.load_state_dict(ck["model"]); logvars.load_state_dict(ck["logvars"])
         if "optimizer" in ck:
             opt.load_state_dict(ck["optimizer"])
         start = int(ck.get("step", 0))
-        print(f"RESUMED from {resume_path} at step {start}", flush=True)
+        print(f"RESUMED from {resume_from} at step {start}", flush=True)
 
     # fixed held-out batch for deep diagnostics (per-task eval + activation health)
     monitor = eval_batch = None
@@ -138,9 +178,9 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
                 line += "  " + monitor.summary_line(rec)
             print(line, flush=True)
         if save_path and step % save_every == 0:
-            save_checkpoint(save_path, cfg, model, logvars, step, opt)
+            save_rotating(save_path, cfg, model, logvars, step, opt)
     if save_path:
-        save_checkpoint(save_path, cfg, model, logvars, steps, opt)
+        save_rotating(save_path, cfg, model, logvars, steps, opt)
     if monitor is not None:
         monitor.close()
     return model
