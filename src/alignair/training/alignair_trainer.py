@@ -131,6 +131,27 @@ def _mixed_stream(dataconfig, progresses, heavy_shm, seed):
     yield from itertools.chain.from_iterable(zip(*streams))
 
 
+def eval_metrics(out: dict, targets: dict, cfg) -> dict:
+    """Per-task quality on a batch (AlignAIR heads) — the ModelXRay ``task_eval`` for this model
+    family: allele top-1-in-set, segmentation MAE, orientation accuracy, mutation/indel MAE,
+    productivity accuracy."""
+    m = {}
+    for g in ["v", "j"] + (["d"] if cfg.has_d else []):
+        top1 = out[f"{g}_allele"].argmax(-1)
+        in_set = targets[f"{g}_allele"].gather(1, top1.unsqueeze(1)).squeeze(1)
+        m[f"{g}_allele_top1"] = float((in_set > 0.5).float().mean())
+        m[f"{g}_seg_mae"] = sum(
+            float((out[f"{g}_{b}"].squeeze(-1) - targets[f"{g}_{b}"].squeeze(-1)).abs().mean())
+            for b in ("start", "end")) / 2
+    if "orientation_logits" in out and "orientation" in targets:
+        m["orientation_acc"] = float((out["orientation_logits"].argmax(-1)
+                                      == targets["orientation"]).float().mean())
+    m["mutation_mae"] = float((out["mutation_rate"] - targets["mutation_rate"]).abs().mean())
+    m["indel_mae"] = float((out["indel_count"] - targets["indel_count"]).abs().mean())
+    m["productive_acc"] = float(((out["productive"] > 0.5) == (targets["productive"] > 0.5)).float().mean())
+    return m
+
+
 def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, seed=0, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
@@ -150,16 +171,20 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
         start = int(ck.get("step", 0))
         print(f"RESUMED from {resume_from} at step {start}", flush=True)
 
-    # fixed held-out batch for deep diagnostics (per-task eval + activation health)
-    monitor = eval_batch = None
+    # ModelXRay: a read-only training X-ray over a fixed held-out probe batch
+    xray = probe_input = None
     if monitor_log:
-        from .diagnostics import TrainingMonitor
-        monitor = TrainingMonitor(lr, monitor_log, deep_every)
+        from ..xray import ModelXRay
         ev = list(itertools.islice(
             _stream_records(dataconfig, dict(Curriculum().params(max(progresses))), seed + 99991),
             batch_size))
-        bi, tg = build_batch(ev, reference_set, cfg, device)
-        eval_batch = {"input": bi, "targets": tg}
+        probe_input, probe_targets = build_batch(ev, reference_set, cfg, device)
+
+        def task_eval(m, inp, _tg=probe_targets, _cfg=cfg):
+            return eval_metrics(m(inp), _tg, _cfg)
+
+        xray = ModelXRay(model, lr=lr, log_path=monitor_log, deep_every=deep_every,
+                         uncertainty=logvars, task_eval=task_eval)
 
     stream = (_mixed_stream(dataconfig, progresses, heavy_shm, seed + start)
               if len(progresses) > 1 or heavy_shm > 0
@@ -173,14 +198,14 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
         if step % log_every == 0:
             line = (f"[{step}/{steps}] loss {total:.3f} "
                     + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
-            if monitor is not None:                # reads this step's grads (pre next zero_grad)
-                rec = monitor.observe(model, logvars, total, parts, step, eval_batch, cfg)
-                line += "  " + monitor.summary_line(rec)
+            if xray is not None:                   # reads this step's grads (pre next zero_grad)
+                rec = xray.observe(step, total, parts, probe_input=probe_input)
+                line += "  " + xray.summary_line(rec)
             print(line, flush=True)
         if save_path and step % save_every == 0:
             save_rotating(save_path, cfg, model, logvars, step, opt)
     if save_path:
         save_rotating(save_path, cfg, model, logvars, steps, opt)
-    if monitor is not None:
-        monitor.close()
+    if xray is not None:
+        xray.close()
     return model
