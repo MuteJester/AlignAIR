@@ -138,7 +138,7 @@ def default_hook_targets(model) -> list:
     targets = [n for n in ("embedding", "orientation_head") if hasattr(model, n)]
     for nm, _ in model.named_modules():
         if nm.endswith("conv_layers.0") or nm.endswith(".proj") or nm.endswith("_head") \
-                or nm.startswith("cls_head") or nm.startswith("seg_heads"):
+                or nm.endswith(".head"):     # branch boundary/allele heads + meta_heads.*.head
             targets.append(nm)
     return targets
 

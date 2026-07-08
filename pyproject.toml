@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+requires = ["setuptools>=77.0", "Cython>=3.0"]
 build-backend = "setuptools.build_meta"
 
 # ── Project metadata (PEP 621) ──────────────────────────────────────────────
@@ -9,7 +9,8 @@ version = "2.0.2"
 description = "Unified Multi-Chain IG/TCR Sequence Alignment Tool with Dynamic GenAIRR Integration"
 readme = "README.md"
 license = "GPL-3.0-or-later"
-requires-python = ">=3.9,<3.13"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
 authors = [
     { name = "Thomas Konstantinovsky", email = "thomaskon90@gmail.com" },
     { name = "Ayelet Peres" },
@@ -20,7 +21,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -81,9 +81,7 @@ dev = [
     "mkdocs-jupyter>=0.24",
     "build>=1.0",
     "twine>=5.0",
-    "nbclient>=0.7",       # execute the example notebooks in the test suite (tests/.../test_notebooks.py)
-    "ipykernel>=6.0",
-    "nbformat>=5.0",
+    "cibuildwheel>=2.21",  # build binary wheels (with the compiled germline-CIGAR kernel) locally
 ]
 all = [
     "AlignAIR[cli,train,viz,server]",
@@ -97,12 +95,29 @@ Repository = "https://github.com/MuteJester/AlignAIR"
 Documentation = "https://github.com/MuteJester/AlignAIR#readme"
 
 # ── Console scripts ─────────────────────────────────────────────────────────
-[project.scripts]
-alignair = "alignair.cli:main"
+# The `alignair` CLI (DNAlignAIR product) was decommissioned; it will be re-added
+# pointing at the new AlignAIR model + predict pipeline during the polish phase.
 
 # ── Setuptools configuration ────────────────────────────────────────────────
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# ship the Cython source so an sdist can (re)build the optional germline-CIGAR kernel
+[tool.setuptools.package-data]
+"alignair.predict" = ["*.pyx"]
+
+# ── Wheel building (cibuildwheel) ───────────────────────────────────────────
+# Builds binary wheels (with the compiled germline-CIGAR kernel) for Linux/macOS/Windows in CI.
+# The extension is best-effort: a source install without a compiler still works via the pure-Python
+# fallback, so wheels are a speed optimization, not a hard requirement.
+[tool.cibuildwheel]
+build = "cp310-* cp311-* cp312-*"
+skip = "*-musllinux_* *_i686"
+build-frontend = "build"
+# each runner builds its native arch (macos-13 -> x86_64, macos-14 -> arm64, etc.) so the compiled
+# kernel can be imported + tested in-place. Verify it actually loaded in every built wheel (the smoke
+# test loads the .so directly, so it needs no heavy runtime deps like torch).
+test-command = "python {project}/tests/wheel_smoke.py"
 
 # ── Pytest configuration ────────────────────────────────────────────────────
 [tool.pytest.ini_options]

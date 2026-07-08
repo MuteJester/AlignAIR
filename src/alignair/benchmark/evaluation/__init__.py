@@ -33,7 +33,6 @@ from .scoring import (
     scoring_manifest_catalog,
     validate_scoring_manifest,
 )
-from .model_adapters import dnalignair_predictor
 from .online import OnlineBenchmarkReport, run_online_benchmark
 from .performance import (
     PERFORMANCE_GLOBAL_KEYS,
@@ -81,7 +80,6 @@ __all__ = [
     "comparison_policy_catalog",
     "validate_comparison_policy_catalog",
     "current_rss_mb",
-    "dnalignair_predictor",
     "igblast_airr_to_prediction",
     "normalize_call_set",
     "normalize_performance_summary",

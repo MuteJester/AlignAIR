@@ -121,3 +121,8 @@ MANIFEST.in
 # Python caches
 __pycache__/
 *.pyc
+
+# Cython build artifacts
+build/
+src/alignair/predict/_derive_cy.c
+*.so

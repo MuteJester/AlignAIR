@@ -8,7 +8,7 @@ import torch
 def test_predict_end_to_end_contract():
     import GenAIRR.data as gd
     from alignair.config.alignair_config import AlignAIRConfig
-    from alignair.models.single_chain import SingleChainAlignAIR
+    from alignair.models import AlignAIR
     from alignair.predict import PredictConfig, predict
     from alignair.reference.reference_set import ReferenceSet
 
@@ -17,7 +17,7 @@ def test_predict_end_to_end_contract():
                           v_allele_count=len(ref.gene("V")), j_allele_count=len(ref.gene("J")),
                           d_allele_count=len(ref.gene("D")))
     torch.manual_seed(0)
-    model = SingleChainAlignAIR(mcfg)
+    model = AlignAIR(mcfg)
     seqs = [ref.gene("V").sequences[0], ref.gene("V").sequences[5]]      # two "reads"
 
     recs = predict(model, seqs, ref, PredictConfig(max_seq_length=576, has_d=True))

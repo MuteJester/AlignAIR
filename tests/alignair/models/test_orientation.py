@@ -3,7 +3,7 @@ import torch
 
 from alignair.config.alignair_config import AlignAIRConfig
 from alignair.models.layers import EmbeddingOrientationHead
-from alignair.models.single_chain import SingleChainAlignAIR
+from alignair.models import AlignAIR
 from alignair.nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 
 
@@ -20,7 +20,7 @@ def test_model_emits_orientation_and_self_corrects_to_forward():
     cfg = AlignAIRConfig(max_seq_length=L, v_allele_count=10, d_allele_count=4,
                          j_allele_count=4, has_d=True)
     torch.manual_seed(0)
-    model = SingleChainAlignAIR(cfg).eval()
+    model = AlignAIR(cfg).eval()
 
     fwd = torch.randint(1, 6, (2, L))                 # valid bases 1..5 (no pad, full length)
     mask = fwd != 0

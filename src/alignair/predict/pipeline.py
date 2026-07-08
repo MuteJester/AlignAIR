@@ -29,12 +29,13 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     seq_lens = np.array([len(s) for s in sequences])
     segs = correct_segments(preds.start, preds.end, seq_lens, cfg.max_seq_length, cfg.pad_mode)
     names = {g: list(reference.gene(g.upper()).names) for g in genes}
-    calls = select_alleles(preds.allele, names, cfg.threshold_pct, cfg.cap)
-    alignments = align_germline(sequences, segs, calls, reference, aligner)
-    return _to_records(sequences, calls, alignments, genes, preds)
+    calls = select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector)
+    alignments = align_germline(sequences, segs, calls, reference, aligner,
+                                reader=cfg.germline_reader, indel_counts=preds.indel_count)
+    return _to_records(sequences, calls, alignments, genes, preds, cfg.chain_types)
 
 
-def _to_records(sequences, calls, alignments, genes, preds) -> list:
+def _to_records(sequences, calls, alignments, genes, preds, chain_types=None) -> list:
     orientation = preds.orientation
     records = []
     for i, seq in enumerate(sequences):
@@ -43,6 +44,11 @@ def _to_records(sequences, calls, alignments, genes, preds) -> list:
                "mutation_rate": float(preds.mutation_rate[i]),
                "indel_count": float(preds.indel_count[i]),
                "productive": bool(preds.productive[i])}
+        if preds.chain_type is not None:                       # multi-chain: predicted locus
+            ct = int(preds.chain_type[i])
+            rec["chain_type_id"] = ct
+            if chain_types is not None and 0 <= ct < len(chain_types):
+                rec["locus"] = chain_types[ct]
         for g in genes:
             call, aln = calls[g][i], alignments[g][i]
             rec[f"{g}_call"] = call.names[0] if call.names else ""

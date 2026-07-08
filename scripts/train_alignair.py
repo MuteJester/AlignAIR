@@ -5,15 +5,16 @@ import torch
 
 import GenAIRR.data as gd
 from alignair.config.alignair_config import AlignAIRConfig
+from alignair.models import AlignAIR
 from alignair.models.losses import make_logvars
-from alignair.models.single_chain import SingleChainAlignAIR
 from alignair.reference.reference_set import ReferenceSet
 from alignair.training.alignair_trainer import train
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dataconfig", default="HUMAN_IGH_OGRDB")
+    ap.add_argument("--dataconfig", nargs="+", default=["HUMAN_IGH_OGRDB"],
+                    help="one or more GenAIRR dataconfigs; several => multi-chain (adds chain_type head)")
     ap.add_argument("--steps", type=int, default=500000)
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--lr", type=float, default=3e-4)
@@ -34,18 +35,19 @@ def main():
     a = ap.parse_args()
     deep_every = max(1, a.steps // a.xray_points) if a.xray_points else a.deep_every
 
-    dc = getattr(gd, a.dataconfig)
-    ref = ReferenceSet.from_dataconfigs(dc)
-    has_d = "D" in ref.genes
-    cfg = AlignAIRConfig(max_seq_length=a.max_len, has_d=has_d,
-                         v_allele_count=len(ref.gene("V")), j_allele_count=len(ref.gene("J")),
-                         d_allele_count=len(ref.gene("D")) if has_d else 0)
-    model = SingleChainAlignAIR(cfg)
+    dcs = [getattr(gd, name) for name in a.dataconfig]
+    ref = ReferenceSet.from_dataconfigs(*dcs)
+    cfg = AlignAIRConfig.from_dataconfigs(*dcs, max_seq_length=a.max_len)  # counts/has_d/chains auto-derived
+    model = AlignAIR(cfg)
     logvars = make_logvars(cfg)
-    print(f"train {a.dataconfig}: V={cfg.v_allele_count} D={cfg.d_allele_count} J={cfg.j_allele_count} "
-          f"has_d={has_d} params={sum(p.numel() for p in model.parameters())/1e6:.2f}M", flush=True)
+    print(f"train {'+'.join(a.dataconfig)}: V={cfg.v_allele_count} D={cfg.d_allele_count} J={cfg.j_allele_count} "
+          f"has_d={cfg.has_d} chains={cfg.num_chain_types} "
+          f"params={sum(p.numel() for p in model.parameters())/1e6:.2f}M", flush=True)
+    if cfg.num_chain_types > 1:
+        print("NOTE: multi-chain model built (chain_type head active), but the gym stream trains one "
+              "dataconfig at a time; multi-chain data mixing + chain_type targets are a follow-on.", flush=True)
     monitor_log = a.monitor_log or (a.out[:-3] if a.out.endswith(".pt") else a.out) + ".diag.jsonl"
-    train(model, ref, dc, cfg, logvars, steps=a.steps, batch_size=a.batch_size, lr=a.lr,
+    train(model, ref, dcs[0], cfg, logvars, steps=a.steps, batch_size=a.batch_size, lr=a.lr,
           progresses=tuple(a.progress), heavy_shm=a.heavy_shm, device=a.device,
           save_path=a.out, save_every=a.save_every, resume_path=a.resume, log_every=a.log_every,
           monitor_log=monitor_log, deep_every=deep_every)

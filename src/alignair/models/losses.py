@@ -18,7 +18,7 @@ from ..nn.weighting import UncertaintyWeight
 
 
 def genes_of(cfg: AlignAIRConfig) -> list[str]:
-    return ["v", "j"] + (["d"] if cfg.has_d else [])
+    return [s.name for s in cfg.gene_specs]
 
 
 def make_logvars(cfg: AlignAIRConfig) -> nn.ModuleDict:
@@ -27,6 +27,8 @@ def make_logvars(cfg: AlignAIRConfig) -> nn.ModuleDict:
     for g in genes_of(cfg):
         keys += [f"{g}_start", f"{g}_end", f"{g}_classification"]
     keys += ["mutation", "indel", "productive", "orientation"]
+    if getattr(cfg, "num_chain_types", 1) > 1:                  # multi-chain: chain_type (locus) head
+        keys.append("chain_type")
     return nn.ModuleDict({k: UncertaintyWeight() for k in keys})
 
 
@@ -41,8 +43,18 @@ def _kendall(uw: UncertaintyWeight, loss: torch.Tensor) -> torch.Tensor:
     return loss * uw() + uw.penalty()
 
 
-def _soft_ce(logits: torch.Tensor, soft_target: torch.Tensor) -> torch.Tensor:
-    return -(soft_target * F.log_softmax(logits, dim=-1)).sum(-1).mean()
+def _soft_ce(logits: torch.Tensor, soft_target: torch.Tensor,
+             mask: torch.Tensor | None = None) -> torch.Tensor:
+    """Soft-label cross-entropy over positions. ``mask`` (B, L bool) restricts the softmax to the
+    valid read positions so the model never competes on padding; the pad terms are dropped from the
+    sum (guarding against ``0 * -inf`` NaN)."""
+    if mask is not None:
+        logits = logits.masked_fill(~mask, float("-inf"))
+    logp = F.log_softmax(logits, dim=-1)
+    term = soft_target * logp
+    if mask is not None:
+        term = torch.where(mask, term, term.new_zeros(()))
+    return -term.sum(-1).mean()
 
 
 def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn.ModuleDict):
@@ -51,11 +63,12 @@ def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn
     parts: dict = {}
 
     # ---- segmentation: soft-Gaussian CE per boundary (Kendall-weighted) + aux regularizers ----
+    pos_mask = out.get("position_mask")                         # restrict CE to the read (not the pad)
     seg = out["v_start"].new_zeros(())
     for g in genes:
         for b in ("start", "end"):
             key = f"{g}_{b}"
-            ce = _soft_ce(out[f"{key}_logits"], soft_gaussian_target(targets[key], L))
+            ce = _soft_ce(out[f"{key}_logits"], soft_gaussian_target(targets[key], L), pos_mask)
             seg = seg + _kendall(logvars[key], ce)
     aux_len = out["v_start"].new_zeros(())
     aux_iou = out["v_start"].new_zeros(())
@@ -79,10 +92,11 @@ def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn
         y_smooth = y * (1.0 - 0.1) + 0.05                       # Keras label_smoothing=0.1
         bce = F.binary_cross_entropy(out[f"{g}_allele"].clamp(1e-7, 1 - 1e-7), y_smooth)
         clf = clf + _kendall(logvars[f"{g}_classification"], bce)
-    if cfg.has_d:                                               # short-D degenerate-span penalty
-        d_len = (out["d_end"] - out["d_start"]).reshape(-1)
-        short_d_prob = out["d_allele"][:, -1]
-        clf = clf + ((d_len < 5).float() * short_d_prob).mean()
+    for spec in cfg.gene_specs:                                 # short-D degenerate-span penalty
+        if spec.short_d_penalty:
+            d_len = (out[f"{spec.name}_end"] - out[f"{spec.name}_start"]).reshape(-1)
+            short_d_prob = out[f"{spec.name}_allele"][:, -1]
+            clf = clf + ((d_len < 5).float() * short_d_prob).mean()
     parts["classification"] = clf
 
     # ---- analysis: mutation/indel MAE, productivity BCE (no smoothing) ----
@@ -101,4 +115,10 @@ def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn
         o_loss = F.cross_entropy(out["orientation_logits"], targets["orientation"])
         parts["orientation"] = _kendall(logvars["orientation"], o_loss)
         total = total + parts["orientation"]
+
+    # ---- chain_type / locus (multi-chain only; supervised when the batch carries the label) ----
+    if "chain_type" in targets and "chain_type_logits" in out and "chain_type" in logvars:
+        ct_loss = F.cross_entropy(out["chain_type_logits"], targets["chain_type"])
+        parts["chain_type"] = _kendall(logvars["chain_type"], ct_loss)
+        total = total + parts["chain_type"]
     return total, parts

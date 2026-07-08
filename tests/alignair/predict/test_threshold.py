@@ -1,28 +1,51 @@
-"""Tests for allele selection (MaxLikelihoodPercentageThreshold, the production selector)."""
+"""Tests for allele-set selection. The default is the derived, calibration-free ``absolute`` rule
+(p >= 0.5, the BCE-calibrated decision boundary); ``largest_gap`` is a parameter-free alternative;
+``max_likelihood_percentage`` is the legacy relative-to-max rule kept for comparison."""
 import numpy as np
 
-from alignair.predict.threshold import max_likelihood_percentage, select_alleles
+from alignair.predict.threshold import (absolute_threshold, largest_gap,
+                                         max_likelihood_percentage, select_alleles)
 from alignair.predict.state import GeneCall
 
 
-def test_relative_to_max_filter_sort_and_cap():
-    # p_i >= pct*max(p): max=0.9, pct=0.1 -> bar=0.09. keep {0.9,0.5,0.3,0.1}, drop 0.05; cap 3.
-    p = np.array([0.9, 0.05, 0.5, 0.1, 0.3])
+def test_absolute_keeps_calibrated_members_only():
+    # BCE-calibrated: keep p >= 0.5. members {0.9, 0.6}; 0.4/0.1 dropped.
+    p = np.array([0.9, 0.4, 0.6, 0.1])
+    idx, lk = absolute_threshold(p, thr=0.5, cap=3)
+    assert list(idx) == [0, 2] and np.allclose(lk, [0.9, 0.6])
+
+
+def test_absolute_never_empty_falls_back_to_top1():
+    p = np.array([0.3, 0.1, 0.2])                      # nothing >= 0.5 -> keep the argmax
+    idx, lk = absolute_threshold(p, thr=0.5, cap=3)
+    assert list(idx) == [0] and np.allclose(lk, [0.3])
+
+
+def test_largest_gap_cuts_at_biggest_drop():
+    p = np.array([0.9, 0.85, 0.1, 0.05])              # biggest drop 0.85->0.1 -> keep top-2
+    idx, _ = largest_gap(p, cap=3)
+    assert set(idx.tolist()) == {0, 1}
+    p2 = np.array([0.9, 0.1, 0.08])                    # biggest drop 0.9->0.1 -> keep top-1
+    assert list(largest_gap(p2, cap=3)[0]) == [0]
+
+
+def test_legacy_percentage_still_available():
+    p = np.array([0.9, 0.05, 0.5, 0.1, 0.3])           # bar=0.09; keep {0.9,0.5,0.3}, cap 3
     idx, lk = max_likelihood_percentage(p, pct=0.1, cap=3)
-    assert list(idx) == [0, 2, 4]                     # sorted desc by prob, capped at 3
-    assert np.allclose(lk, [0.9, 0.5, 0.3])
+    assert list(idx) == [0, 2, 4] and np.allclose(lk, [0.9, 0.5, 0.3])
 
 
-def test_below_bar_dropped():
-    p = np.array([0.8, 0.05, 0.02])                   # bar = 0.08 -> only index 0
-    idx, lk = max_likelihood_percentage(p, pct=0.1, cap=3)
-    assert list(idx) == [0]
-
-
-def test_select_alleles_maps_indices_to_names():
+def test_select_alleles_default_is_absolute():
     names = {"v": ["V1", "V2", "V3"], "j": ["J1", "J2"]}
-    preds = {"v": np.array([[0.9, 0.5, 0.05]]), "j": np.array([[0.2, 0.8]])}
-    calls = select_alleles(preds, names, pct=0.1, cap=3)
+    preds = {"v": np.array([[0.9, 0.6, 0.2]]), "j": np.array([[0.2, 0.8]])}
+    calls = select_alleles(preds, names)               # default selector="absolute", threshold=0.5
     assert isinstance(calls["v"][0], GeneCall)
-    assert calls["v"][0].names == ("V1", "V2")        # V3 (0.05 < 0.09 bar) dropped
-    assert calls["j"][0].names == ("J2", "J1")        # sorted desc
+    assert calls["v"][0].names == ("V1", "V2")         # V3 (0.2 < 0.5) dropped, no calibration
+    assert calls["j"][0].names == ("J2",)              # only J2 >= 0.5
+
+
+def test_select_alleles_supports_largest_gap():
+    names = {"v": ["V1", "V2", "V3"]}
+    preds = {"v": np.array([[0.9, 0.85, 0.1]])}
+    calls = select_alleles(preds, names, selector="largest_gap")
+    assert set(calls["v"][0].names) == {"V1", "V2"}

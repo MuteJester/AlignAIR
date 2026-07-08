@@ -28,9 +28,11 @@ def clean(raw_batches: list, genes) -> Predictions:
     orientation = (_flat(raw_batches, "orientation").astype(int)
                    if all("orientation" in b for b in raw_batches)
                    else np.zeros(len(productive), dtype=int))
+    chain_type = (np.vstack([np.asarray(b["chain_type_logits"]) for b in raw_batches]).argmax(-1)
+                  if all("chain_type_logits" in b for b in raw_batches) else None)
     return Predictions(
         allele=allele, start=start, end=end,
         mutation_rate=_flat(raw_batches, "mutation_rate"),
         indel_count=_flat(raw_batches, "indel_count"),
-        productive=productive, orientation=orientation,
+        productive=productive, orientation=orientation, chain_type=chain_type,
     )

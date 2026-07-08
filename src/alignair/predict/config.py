@@ -9,8 +9,11 @@ from typing import Optional
 class PredictConfig:
     max_seq_length: int = 576
     has_d: bool = True
-    threshold_pct: float = 0.1        # MaxLikelihoodPercentageThreshold: keep p_i >= pct*max(p)
+    selector: str = "absolute"        # derived, calibration-free set rule (p >= threshold)
+    threshold: float = 0.5            # BCE-calibrated decision boundary (absolute); or pct for legacy
     cap: int = 3                      # max alleles per gene
+    germline_reader: str = "heuristic"  # germline aligner: "heuristic" (anchored + Cython DP) or "wfa"
     batch_size: int = 64
     pad_mode: str = "right"           # our trainer right-pads (TF used "center")
     genotype: Optional[dict] = None   # {gene: set(allele names)} enables genotype likelihood correction
+    chain_types: Optional[tuple] = None  # ordered locus names; maps multi-chain chain_type index -> locus

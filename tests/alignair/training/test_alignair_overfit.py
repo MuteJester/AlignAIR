@@ -6,7 +6,7 @@ import torch
 
 from alignair.config.alignair_config import AlignAIRConfig
 from alignair.models.losses import make_logvars
-from alignair.models.single_chain import SingleChainAlignAIR
+from alignair.models import AlignAIR
 from alignair.training.alignair_trainer import build_batch, train_step
 
 
@@ -33,7 +33,7 @@ def test_overfit_tiny_batch_learns():
     batch_in, targets = _fixed_batch(cfg, ref)
 
     torch.manual_seed(0)
-    model = SingleChainAlignAIR(cfg)
+    model = AlignAIR(cfg)
     logvars = make_logvars(cfg)
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=1e-3)
 

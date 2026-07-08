@@ -30,6 +30,7 @@ class Predictions:
     indel_count: np.ndarray           # [N]
     productive: np.ndarray            # [N] bool
     orientation: Optional[np.ndarray] = None   # [N] predicted orientation id (model self-corrects)
+    chain_type: Optional[np.ndarray] = None    # [N] predicted chain-type index (multi-chain only)
 
 
 @dataclass

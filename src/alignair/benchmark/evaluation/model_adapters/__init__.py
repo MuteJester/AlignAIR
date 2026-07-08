@@ -1,3 +1,1 @@
-"""Model adapter exports."""
-
-from .dnalignair import dnalignair_predictor
+"""Benchmark model adapters (DNAlignAIR adapter removed; AlignAIR adapter TBD)."""

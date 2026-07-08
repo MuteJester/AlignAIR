@@ -8,17 +8,36 @@ import argparse
 import csv
 import json
 import os
+import re
 import time
 
 import torch
 
 import GenAIRR.data as gd
 from alignair.config.alignair_config import AlignAIRConfig
-from alignair.models.single_chain import SingleChainAlignAIR
+from alignair.models import AlignAIR
 from alignair.predict import PredictConfig, predict
 from alignair.reference.reference_set import ReferenceSet
 
 GENES = ("v", "d", "j")
+
+
+def remap_legacy_state_dict(old: dict) -> dict:
+    """Pre-refactor SingleChain/MultiChain state_dict keys -> unified AlignAIR keys (no-op if new)."""
+    new = {}
+    for k, v in old.items():
+        nk = k
+        if (m := re.match(r"seg_towers\.([vdj])\.(.*)", k)):             nk = f"branches.{m[1]}.seg_tower.{m[2]}"
+        elif (m := re.match(r"seg_heads\.([vdj])_(start|end)\.(.*)", k)): nk = f"branches.{m[1]}.{m[2]}_head.{m[3]}"
+        elif (m := re.match(r"cls_towers\.([vdj])\.(.*)", k)):           nk = f"branches.{m[1]}.cls_tower.{m[2]}"
+        elif (m := re.match(r"cls_mid\.([vdj])\.(.*)", k)):             nk = f"branches.{m[1]}.cls_mid.{m[2]}"
+        elif (m := re.match(r"cls_head\.([vdj])\.(.*)", k)):            nk = f"branches.{m[1]}.cls_head.{m[2]}"
+        elif (m := re.match(r"mutation_rate_(mid|head)\.(.*)", k)):     nk = f"meta_heads.mutation_rate.{m[1]}.{m[2]}"
+        elif (m := re.match(r"indel_count_(mid|head)\.(.*)", k)):       nk = f"meta_heads.indel_count.{m[1]}.{m[2]}"
+        elif (m := re.match(r"productive_head\.(.*)", k)):              nk = f"meta_heads.productive.head.{m[1]}"
+        elif (m := re.match(r"chain_type_(mid|head)\.(.*)", k)):        nk = f"meta_heads.chain_type_logits.{m[1]}.{m[2]}"
+        new[nk] = v
+    return new
 
 
 def to_contract(sid, rec):
@@ -36,7 +55,7 @@ def to_contract(sid, rec):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bench", default=".private/bench")
-    ap.add_argument("--model", default=".private/models/alignair_single_igh.pt")
+    ap.add_argument("--model", default=".private/models/alignair_igh.step435000.pt")
     ap.add_argument("--out", default=".private/bench/run/alignair_predictions.jsonl")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--batch-size", type=int, default=128)
@@ -48,10 +67,10 @@ def main():
             ids.append(row["sequence_id"]); seqs.append(row["sequence"])
     print(f"cases: {len(ids)}  model: {os.path.basename(a.model)}")
 
-    ck = torch.load(a.model, map_location=a.device)
+    ck = torch.load(a.model, map_location=a.device, weights_only=False)
     cfg = AlignAIRConfig(**ck["config"])
-    model = SingleChainAlignAIR(cfg).to(a.device).eval()
-    model.load_state_dict(ck["model"])
+    model = AlignAIR(cfg).to(a.device).eval()
+    model.load_state_dict(remap_legacy_state_dict(ck["model"]), strict=True)
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     pcfg = PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=a.batch_size)
 

@@ -47,10 +47,10 @@ def test_red_flags_detects_pathologies():
 
 
 def _model():
-    from alignair.models.single_chain import SingleChainAlignAIR
+    from alignair.models import AlignAIR
     cfg = AlignAIRConfig(max_seq_length=256, v_allele_count=8, j_allele_count=4,
                          d_allele_count=4, has_d=True)
-    return SingleChainAlignAIR(cfg), cfg
+    return AlignAIR(cfg), cfg
 
 
 def test_model_xray_observe_records_health():

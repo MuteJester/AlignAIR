@@ -3,7 +3,7 @@ import torch
 
 from alignair.config.alignair_config import AlignAIRConfig
 from alignair.models.losses import hierarchical_loss, make_logvars, soft_gaussian_target
-from alignair.models.single_chain import SingleChainAlignAIR
+from alignair.models import AlignAIR
 
 
 def test_soft_gaussian_target_normalized():
@@ -28,7 +28,7 @@ def _targets(B, cfg):
 def test_hierarchical_loss_assembles_and_backprops():
     cfg = AlignAIRConfig(max_seq_length=256, v_allele_count=10, d_allele_count=4,
                          j_allele_count=4, has_d=True)
-    m = SingleChainAlignAIR(cfg)
+    m = AlignAIR(cfg)
     logvars = make_logvars(cfg)
     B = 2
     out = m({"tokenized_sequence": torch.randint(0, 6, (B, 256))})
