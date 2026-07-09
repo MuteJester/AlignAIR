@@ -33,6 +33,7 @@ dependencies = [
     "pandas>=1.5",
     "numpy>=1.24",
     "GenAIRR>=2.2.0",
+    "safetensors>=0.4",       # portable weights section of the .alignair model format
     "tqdm>=4.60",
     "scipy>=1.11",
     "PyYAML>=6.0",
@@ -42,6 +43,7 @@ dependencies = [
 
 # ── Optional extras ──────────────────────────────────────────────────────────
 [project.optional-dependencies]
+zstd = ["zstandard>=0.22"]    # optional stronger compression for .alignair sections (codec="zstd")
 cli = [
     "huggingface-hub>=0.20",
     "airr>=1.4",
