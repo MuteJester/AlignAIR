@@ -40,13 +40,21 @@ def test_cropped_genairr_record_builds_valid_targets():
     assert n_cropped > 30  # most 60bp crops actually shrink a ~300bp read
 
 
-def test_gym_yields_fragments_at_high_p():
+def test_training_mix_yields_genairr_short_reads():
+    """The training stream shortens reads via GenAIRR end-loss (no post-hoc crop): every batch spans
+    full-length rehearsal + a meaningful fraction of short amplicon/fragment reads, all with
+    engine-correct coordinates."""
+    import itertools
+    from alignair.training.alignair_trainer import _mixed_stream
     dc = gdata.HUMAN_IGH_OGRDB
-    rs = ReferenceSet.from_dataconfigs(dc)
-    gym = AlignAIRGym([dc], rs, n=60, seed=0)
-    gym.set_progress(1.0)
-    lengths = [len(b["tokens"]) for b in gym]
-    lengths = np.array(lengths)
-    # at p=1 a mix: some full reads (~300bp) and a meaningful fraction of short fragments
-    assert (lengths < 120).mean() > 0.2, lengths
-    assert (lengths > 200).mean() > 0.1, "full reads should still be present"
+    recs = list(itertools.islice(_mixed_stream(dc, (0.3, 0.6, 0.9), 0.25, 0), 1200))
+    lengths = np.array([len(str(r["sequence"])) for r in recs])
+    assert (lengths < 160).mean() > 0.15, lengths          # meaningful short-read exposure
+    assert (lengths > 300).mean() > 0.3, "full-length rehearsal must remain"
+    # GenAIRR keeps every coordinate valid, even on the shortest reads
+    for r in recs:
+        L = len(str(r["sequence"]))
+        for g in ("v", "d", "j"):
+            ss = r.get(f"{g}_sequence_start")
+            if ss is not None:
+                assert 0 <= int(ss) <= int(r[f"{g}_sequence_end"]) <= L

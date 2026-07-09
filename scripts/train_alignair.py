@@ -22,6 +22,8 @@ def main():
                     help="difficulty mix: one gym stream per level (round-robin)")
     ap.add_argument("--heavy-shm", type=float, default=0.25,
                     help="add a heavy-SHM stream at this mutation rate (0 to disable)")
+    ap.add_argument("--short-boost", type=int, default=1,
+                    help="repeat the amplicon (short-read) streams N times to concentrate on short/cropped reads")
     ap.add_argument("--max-len", type=int, default=576)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=".private/models/alignair_single.pt")
@@ -48,7 +50,7 @@ def main():
               "dataconfig at a time; multi-chain data mixing + chain_type targets are a follow-on.", flush=True)
     monitor_log = a.monitor_log or (a.out[:-3] if a.out.endswith(".pt") else a.out) + ".diag.jsonl"
     train(model, ref, dcs[0], cfg, logvars, steps=a.steps, batch_size=a.batch_size, lr=a.lr,
-          progresses=tuple(a.progress), heavy_shm=a.heavy_shm, device=a.device,
+          progresses=tuple(a.progress), heavy_shm=a.heavy_shm, short_boost=a.short_boost, device=a.device,
           save_path=a.out, save_every=a.save_every, resume_path=a.resume, log_every=a.log_every,
           monitor_log=monitor_log, deep_every=deep_every)
     print(f"saved -> {a.out}  (diagnostics: {monitor_log}, deep every {deep_every} "

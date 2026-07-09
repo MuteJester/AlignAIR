@@ -15,17 +15,16 @@ class Curriculum:
         p = max(0.0, min(1.0, p))
         return {
             "mutation_rate": _lerp(0.005, 0.15, p),
-            "end_loss_5": (0, int(round(_lerp(0, 25, p)))),
-            "end_loss_3": (0, int(round(_lerp(0, 25, p)))),
+            # Minor observation-stage end loss (primer/read-end nibble) — the CORRUPTION axis, kept
+            # small so the bulk of the molecule survives. Read LENGTH / short-read amplicons are a
+            # separate, orthogonal axis modelled by GenAIRR end-loss profiles in the training mix
+            # (V-anchored / J-anchored / fragment); see alignair_trainer._amplicon_specs.
+            "end_loss_5": (0, int(round(_lerp(0, 40, p)))),
+            "end_loss_3": (0, int(round(_lerp(0, 40, p)))),
             "indel_count": (0, int(round(_lerp(0, 5, p)))),
             "seq_error_rate": _lerp(0.0, 0.02, p),
             "ambiguous_count": (0, int(round(_lerp(0, 5, p)))),
-            # fragment cropping: at high p a growing fraction of reads are cropped to
-            # a junction-centered window as short as ~50bp (CDR3+flanks). The full
-            # read is always retained for the rest, so every batch spans the spectrum.
-            "crop_prob": _lerp(0.0, 0.6, p),
-            "crop_len_min": 50,
-            "crop_len_max": int(round(_lerp(576, 80, p))),
+            "crop_prob": 0.0,   # post-hoc gym crop retired; read length is GenAIRR end-loss (above)
             # fraction of reads presented in a non-forward orientation (revcomp /
             # complement / reverse); the model must detect and canonicalize them.
             "orient_prob": _lerp(0.0, 0.5, p),
@@ -38,7 +37,6 @@ class Curriculum:
     def describe(self, p: float) -> str:
         pr = self.params(p)
         return (f"curriculum stage {self.stage(p) + 1}/{self.stages} (p={p:.2f}): "
-                f"mut≤{pr['mutation_rate']:.3f}, trim≤{pr['end_loss_5'][1]}, "
+                f"mut≤{pr['mutation_rate']:.3f}, end_loss≤{pr['end_loss_5'][1]}/{pr['end_loss_3'][1]}, "
                 f"indel≤{pr['indel_count'][1]}, seq_err≤{pr['seq_error_rate']:.3f}, "
-                f"N≤{pr['ambiguous_count'][1]}, "
-                f"crop({100*pr['crop_prob']:.0f}%≥{pr['crop_len_min']}..{pr['crop_len_max']}bp)")
+                f"N≤{pr['ambiguous_count'][1]}, orient({100*pr['orient_prob']:.0f}%)")

@@ -119,14 +119,45 @@ def _stream_records(dataconfig, params, seed):
     yield from exp.stream_records(n=None, seed=seed)
 
 
-def _mixed_stream(dataconfig, progresses, heavy_shm, seed):
-    """Round-robin over difficulty levels so a long run trains on clean + hard + heavy-SHM +
-    cropped/fragment reads (the strata the 20k run was weak on, incl. orientation-on-fragments)."""
+def _amplicon_specs(progresses, heavy_shm, short_boost=1):
+    """Training data mix as two orthogonal axes: corruption background (curriculum ``progress``) x
+    amplicon mode (GenAIRR ``end_loss`` profile). All short-read shaping is native GenAIRR end-loss —
+    no post-hoc cropping — so every V/D/J coordinate is engine-correct.
+
+    - ``progresses`` streams: full-length reads at increasing corruption (rehearsal + noise).
+    - amplicon streams: short reads by *one-sided* end-loss (never trimmed to empty) — V/FR-anchored
+      keeps the 5' (trims 3'), J-anchored keeps the 3'/J (trims 5'); plus a bounded both-ends fragment.
+    - heavy-SHM stream: full-length high-mutation (the heavy-SHM-V corner).
+
+    ``short_boost`` repeats the amplicon block N times to up-weight short reads (as independent
+    seeded streams) — e.g. a fine-tune that concentrates on short/cropped reads while retaining the
+    full-length rehearsal streams. ``short_boost=1`` is the default balanced mix.
+    """
     from ..gym import Curriculum
-    specs = [dict(Curriculum().params(pr)) for pr in progresses]
+    cur = Curriculum()
+    specs = [dict(cur.params(pr)) for pr in progresses]        # full-length, corruption ramp
+    bg = dict(cur.params(0.6))                                 # moderate corruption background
+
+    def amp(e5, e3):
+        s = dict(bg); s["end_loss_5"] = e5; s["end_loss_3"] = e3
+        return s
+
+    amplicons = [
+        amp((0, 15), (150, 350)),                             # V / FR-anchored amplicon (keep 5')
+        amp((150, 350), (0, 15)),                             # J-anchored amplicon (keep 3'/J)
+        amp((70, 175), (70, 175)),                            # short fragment (both ends, bounded)
+    ]
+    specs += amplicons * max(1, int(short_boost))
     if heavy_shm > 0:
-        hs = dict(Curriculum().params(1.0)); hs["mutation_rate"] = heavy_shm
+        hs = dict(cur.params(0.3)); hs["mutation_rate"] = heavy_shm   # heavy-SHM, full length
         specs.append(hs)
+    return specs
+
+
+def _mixed_stream(dataconfig, progresses, heavy_shm, seed, short_boost=1):
+    """Round-robin the amplicon-mode mix (:func:`_amplicon_specs`) so every batch spans full-length
+    clean/hard + heavy-SHM + V-anchored/J-anchored/fragment short reads, all GenAIRR-native."""
+    specs = _amplicon_specs(progresses, heavy_shm, short_boost)
     streams = [_stream_records(dataconfig, s, seed + i) for i, s in enumerate(specs)]
     yield from itertools.chain.from_iterable(zip(*streams))
 
@@ -153,7 +184,7 @@ def eval_metrics(out: dict, targets: dict, cfg) -> dict:
 
 
 def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_size=32,
-          lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, seed=0, device="cpu",
+          lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
           monitor_log=None, deep_every=500):
     from ..gym import Curriculum
@@ -168,8 +199,10 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
         model.load_state_dict(ck["model"]); logvars.load_state_dict(ck["logvars"])
         if "optimizer" in ck:
             opt.load_state_dict(ck["optimizer"])
+            for grp in opt.param_groups:        # honor the CLI lr on resume (e.g. lower lr for a fine-tune)
+                grp["lr"] = lr
         start = int(ck.get("step", 0))
-        print(f"RESUMED from {resume_from} at step {start}", flush=True)
+        print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
 
     # ModelXRay: a read-only training X-ray over a fixed held-out probe batch
     xray = probe_input = None
@@ -191,8 +224,8 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
                          uncertainty=logvars, task_eval=task_eval, task_losses=task_losses,
                          shared_module="embedding")
 
-    stream = (_mixed_stream(dataconfig, progresses, heavy_shm, seed + start)
-              if len(progresses) > 1 or heavy_shm > 0
+    stream = (_mixed_stream(dataconfig, progresses, heavy_shm, seed + start, short_boost)
+              if len(progresses) > 1 or heavy_shm > 0 or short_boost > 1
               else _stream_records(dataconfig, dict(Curriculum().params(progresses[0])), seed + start))
     for step in range(start + 1, steps + 1):
         records = list(itertools.islice(stream, batch_size))
