@@ -126,3 +126,11 @@ __pycache__/
 build/
 src/alignair/predict/_derive_cy.c
 *.so
+
+# Agent / AI dev tooling — private to development, never pushed or distributed
+docs/superpowers/
+.claude/
+CLAUDE.md
+AGENTS.md
+.cursor/
+.aider*
