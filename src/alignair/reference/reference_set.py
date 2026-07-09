@@ -61,6 +61,33 @@ class ReferenceSet:
                                              anchors=anchors or None, gapped=gapped or None)
         return cls(genes, has_d)
 
+    def to_serializable(self) -> dict:
+        """Plain-JSON-safe dict carrying everything inference needs — ordered ``names`` (== model-head
+        index), ungapped ``sequences``, IMGT-``gapped`` V, and junction ``anchors`` — with NO pickle.
+        This is the safe reference the distributed ``.alignair`` embeds and inference rebuilds from."""
+        genes: Dict[str, dict] = {}
+        for G in ("V", "D", "J"):
+            if G not in self.genes:
+                continue
+            ref = self.genes[G]
+            genes[G] = {"names": list(ref.names), "sequences": list(ref.sequences),
+                        "gapped": dict(ref.gapped) if ref.gapped else {},
+                        "anchors": dict(ref.anchors) if ref.anchors else {}}
+        return {"schema": "alignair.reference.v1", "has_d": self.has_d, "genes": genes}
+
+    @classmethod
+    def from_serializable(cls, data: dict) -> "ReferenceSet":
+        """Rebuild from :meth:`to_serializable` (the safe, no-pickle inference load path)."""
+        out: Dict[str, GeneReference] = {}
+        for G, gd in data["genes"].items():
+            names = list(gd["names"])
+            sequences = [str(s).upper() for s in gd["sequences"]]
+            anchors = {k: int(v) for k, v in (gd.get("anchors") or {}).items()} or None
+            gapped = {k: str(v).upper() for k, v in (gd.get("gapped") or {}).items()} or None
+            out[G.upper()] = GeneReference(names, sequences, {n: i for i, n in enumerate(names)},
+                                           anchors=anchors, gapped=gapped)
+        return cls(out, bool(data.get("has_d")))
+
     @classmethod
     def from_genotype(cls, genes: Dict[str, Dict[str, str]],
                       anchors: Dict[str, Dict[str, int]] | None = None) -> "ReferenceSet":
