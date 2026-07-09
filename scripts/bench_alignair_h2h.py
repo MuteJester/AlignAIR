@@ -1,7 +1,7 @@
 """Faithful PyTorch AlignAIR vs IgBLAST on the frozen benchmark case set.
 
 Runs predict() on the exported reads, writes the normalized prediction contract + a throughput
-sidecar, then prints the `alignair.benchmark.cli compare` command (IgBLAST predictions are already
+sidecar, then prints the `alignair_benchmark.cli compare` command (IgBLAST predictions are already
 on disk at <bench>/run/igblast_airr.tsv).
 """
 import argparse
@@ -87,7 +87,7 @@ def main():
                "reads_per_second": len(ids) / dt, "source": "alignair"},
               open(a.out.replace(".jsonl", "_performance.json"), "w"), indent=2)
     print(f"alignair: {dt:.1f}s ({len(ids)/dt:.1f} reads/s) -> {a.out}")
-    print(f"\ncompare:\n  PYTHONPATH=src .venv/bin/python -m alignair.benchmark.cli compare \\\n"
+    print(f"\ncompare:\n  PYTHONPATH=src .venv/bin/python -m alignair_benchmark.cli compare \\\n"
           f"    --cases {a.bench}/cases.jsonl \\\n"
           f"    --a-predictions {a.bench}/run/igblast_airr.tsv --a-prediction-format airr-tsv \\\n"
           f"    --b-predictions {a.out} --b-prediction-format jsonl \\\n"

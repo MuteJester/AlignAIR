@@ -12,7 +12,7 @@ log(){ echo "[$(date '+%H:%M:%S')] $*"; }
 
 if [ ! -f "$DIR/cases.jsonl" ]; then
   log "BUILD 1M (27 strata x 37000) ..."
-  $PY -m alignair.benchmark.cli build --recipe assay --n-per-stratum 37000 --n-per-focus 37000 \
+  $PY -m alignair_benchmark.cli build --recipe assay --n-per-stratum 37000 --n-per-focus 37000 \
       --seed 7 --workers 12 --out "$DIR/cases.jsonl" \
       --export-dir "$DIR" --export-prefix m1 --export-frame presented
 fi
@@ -23,7 +23,7 @@ $PY scripts/run_h2h_xattn.py --export-dir "$DIR" --prefix m1 --out "$DIR" \
     --model .private/models/xattn_igh.pt --batch-size 64 --threads 12
 
 log "COMPARE (bootstrap 500, bonferroni) ..."
-$PY -m alignair.benchmark.cli compare --cases "$DIR/cases.jsonl" \
+$PY -m alignair_benchmark.cli compare --cases "$DIR/cases.jsonl" \
     --a-predictions "$DIR/igblast_airr.tsv" --a-prediction-format airr-tsv \
     --b-predictions "$DIR/xattn_predictions.jsonl" --b-prediction-format jsonl \
     --model-a-name igblast --model-b-name xattn \

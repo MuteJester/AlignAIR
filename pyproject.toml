@@ -101,6 +101,10 @@ alignair = "alignair.cli.main:main"
 # ── Setuptools configuration ────────────────────────────────────────────────
 [tool.setuptools.packages.find]
 where = ["src"]
+# `alignair_benchmark` is a dev/research harness (GenAIRR benchmark generation + evaluation),
+# not part of the runtime product — keep it out of the installed wheel. It stays importable from a
+# source checkout (PYTHONPATH=src) for development and CI.
+exclude = ["alignair_benchmark*"]
 
 # ship the Cython source so an sdist can (re)build the optional germline-CIGAR kernel
 [tool.setuptools.package-data]

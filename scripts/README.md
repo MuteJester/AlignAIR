@@ -1,7 +1,7 @@
 # DNAlignAIR scripts
 
 Run everything with `PYTHONPATH=src .venv/bin/python scripts/<name> ...`.
-The `benchmark` module (`python -m alignair.benchmark.cli`) is the canonical evaluator;
+The `benchmark` module (`python -m alignair_benchmark.cli`) is the canonical evaluator;
 these scripts are research drivers and the model→benchmark adapter.
 
 ## Training
@@ -12,7 +12,7 @@ these scripts are research drivers and the model→benchmark adapter.
 
 ## Canonical benchmark (model → grade)
 - `run_benchmark.py` — run a checkpoint over a benchmark case JSONL and emit prediction
-  JSONL for `alignair.benchmark.cli evaluate` (feeds presented reads, full schema,
+  JSONL for `alignair_benchmark.cli evaluate` (feeds presented reads, full schema,
   optional `--calibration`). Pipeline: `cli build` → `run_benchmark.py` → `cli evaluate`
   → `cli assay`.
 - `calibrate_sets.py` — fit the per-gene equivalence-set calibration (temperature + ε,
