@@ -72,8 +72,19 @@ def _provenance():
     return {"git_commit": commit, "host": platform.node(), "user": user}
 
 
+_RESERVED_CARD_KEYS = {"format_version", "model_format_version", "model_class", "model_id",
+                       "model_version", "sections", "_formats", "reference", "model", "training",
+                       "inference", "provenance", "created", "created_by_alignair"}
+
+
 def save_model(path, model, *, dataconfigs, training, inference=None, logvars=None,
-               optimizer=None, rng=None, description="") -> None:
+               optimizer=None, rng=None, description="", include_trusted_pickle=True,
+               model_id=None, model_version=None, card=None) -> None:
+    """Write an .alignair model file. ``include_trusted_pickle=True`` (default) keeps the pickled
+    ``dataconfig``/``train_state`` sections (a resumable training checkpoint). Set it to ``False`` for
+    a **publish/inference artifact**: weights + config + safe ``reference_json`` + ``reference`` FASTA
+    + model card, and ZERO pickle sections. ``card`` supplies descriptive AIRR fields (species/locus/
+    intended_use/…) merged into the header."""
     cfg = model.cfg
     resolved = _resolve_dataconfigs(dataconfigs)
     reference = ReferenceSet.from_dataconfigs(*[dc for _, dc in resolved])
@@ -89,13 +100,15 @@ def save_model(path, model, *, dataconfigs, training, inference=None, logvars=No
     if logvars is not None:
         add("logvars", serialize.state_dict_to_bytes(logvars.state_dict()), "safetensors")
     add("reference", serialize.reference_fasta(reference).encode("utf-8"), "fasta")
-    for i, (_, dc) in enumerate(resolved):
-        add(f"dataconfig/{i}", serialize.dataconfig_to_bytes(dc), "python-pickle")
-    if optimizer is not None or rng is not None:
-        state = {"optimizer": optimizer.state_dict() if optimizer is not None else None,
-                 "rng": rng or {}, "step": int(training.get("steps", 0)),
-                 "train_args": training.get("train_args", {})}
-        add("train_state", serialize.train_state_to_bytes(state), "python-pickle")
+    add("reference_json", serialize.reference_to_json(reference), "json")   # safe inference load source
+    if include_trusted_pickle:                                             # only in trusted checkpoints
+        for i, (_, dc) in enumerate(resolved):
+            add(f"dataconfig/{i}", serialize.dataconfig_to_bytes(dc), "python-pickle")
+        if optimizer is not None or rng is not None:
+            state = {"optimizer": optimizer.state_dict() if optimizer is not None else None,
+                     "rng": rng or {}, "step": int(training.get("steps", 0)),
+                     "train_args": training.get("train_args", {})}
+            add("train_state", serialize.train_state_to_bytes(state), "python-pickle")
 
     bs = int(training.get("batch_size", 0) or 0)
     steps = int(training.get("steps", 0) or 0)
@@ -108,8 +121,11 @@ def save_model(path, model, *, dataconfigs, training, inference=None, logvars=No
         inf.update(inference)
 
     header = {
-        "format_version": container.MAJOR_VERSION, "model_class": "AlignAIR", "config_schema_version": 1,
+        "format_version": container.MAJOR_VERSION, "model_format_version": container.MAJOR_VERSION,
+        "model_class": "AlignAIR", "config_schema_version": 1,
+        "model_id": model_id, "model_version": model_version,
         "created": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "created_by_alignair": _versions()["alignair_version"],
         "description": description, "license": "GPL-3.0-or-later", "citation": "AlignAIR",
         **_versions(),
         "model": {"embed_dim": cfg.embed_dim, "max_seq_length": cfg.max_seq_length,
@@ -119,15 +135,21 @@ def save_model(path, model, *, dataconfigs, training, inference=None, logvars=No
                                     "j": cfg.j_allele_count}},
         "inference": inf,
         "training": training,
-        "reference": {"dataconfigs": [
-            {"index": i, "section": f"dataconfig/{i}", "name": name,
-             "chain_type": _enum_str(getattr(dc.metadata, "chain_type", None)),
-             "species": _enum_str(getattr(dc.metadata, "species", None)),
-             "schema_sha256": getattr(dc, "schema_sha256", None)}
-            for i, (name, dc) in enumerate(resolved)]},
+        "reference": {
+            "reference_fasta_sha256": serialize.reference_fasta_sha256(reference),
+            "allele_order_sha256": serialize.allele_order_sha256(reference),
+            "dataconfigs": [
+                {"index": i, "section": (f"dataconfig/{i}" if include_trusted_pickle else None),
+                 "name": name, "chain_type": _enum_str(getattr(dc.metadata, "chain_type", None)),
+                 "species": _enum_str(getattr(dc.metadata, "species", None)),
+                 "schema_sha256": getattr(dc, "schema_sha256", None)}
+                for i, (name, dc) in enumerate(resolved)]},
         "provenance": _provenance(),
         "_formats": formats,
     }
+    for k, v in (card or {}).items():                     # descriptive AIRR fields (species/locus/…)
+        if k not in _RESERVED_CARD_KEYS:
+            header[k] = v
     container.write_container(path, header, sections)
 
 
@@ -145,20 +167,42 @@ class LoadedModel:
     metadata: dict
 
 
-def _rebuild(path, device):
+def _verify_reference_integrity(reference, md) -> None:
+    """Reject a reference whose allele ORDER (or content) does not match the model card — a wrong-order
+    reference silently misaligns every allele call to the model head."""
+    ref_md = md.get("reference", {})
+    order = ref_md.get("allele_order_sha256")
+    if order and serialize.allele_order_sha256(reference) != order:
+        raise ValueError("allele_order_sha256 mismatch: the embedded reference order does not match "
+                         "the model card; allele calls would be misaligned to the model head.")
+    fasta = ref_md.get("reference_fasta_sha256")
+    if fasta and serialize.reference_fasta_sha256(reference) != fasta:
+        raise ValueError("reference_fasta_sha256 mismatch: the embedded reference differs from the card.")
+
+
+def _rebuild(path, device, *, trust_pickle=False):
     md = container.read_header(path)
     cfg = serialize.config_from_bytes(container.read_section(path, "config"))
     model = AlignAIR(cfg).to(device).eval()
     model.load_state_dict(serialize.state_dict_from_bytes(container.read_section(path, "weights")), strict=True)
-    n = len(md["reference"]["dataconfigs"])
-    dcs = [serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{i}")) for i in range(n)]
-    reference = ReferenceSet.from_dataconfigs(*dcs)
+    if "reference_json" in md["sections"]:                       # safe, no-pickle path (default)
+        reference = serialize.reference_from_json(container.read_section(path, "reference_json"))
+        _verify_reference_integrity(reference, md)
+    elif trust_pickle and any(k.startswith("dataconfig/") for k in md["sections"]):
+        n = len(md["reference"]["dataconfigs"])                  # legacy trusted path (explicit consent)
+        dcs = [serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{i}")) for i in range(n)]
+        reference = ReferenceSet.from_dataconfigs(*dcs)
+    else:
+        raise ValueError(
+            "this .alignair has no safe `reference_json` section (it predates the safe format). "
+            "Upgrade it: `alignair convert <old>.alignair <new>.alignair --trust-pickle`, or pass "
+            "trust_pickle=True for a local file you trust (it will unpickle the embedded dataconfig).")
     md.pop("_sections_base", None)
     return md, cfg, model, reference
 
 
-def load_model(path, *, device="cpu") -> LoadedModel:
-    md, cfg, model, reference = _rebuild(path, device)
+def load_model(path, *, device="cpu", trust_pickle=False) -> LoadedModel:
+    md, cfg, model, reference = _rebuild(path, device, trust_pickle=trust_pickle)
     return LoadedModel(model=model, reference=reference, config=cfg, metadata=md)
 
 
@@ -176,7 +220,7 @@ class TrainingState:
 
 
 def load_training_state(path, *, device="cpu") -> TrainingState:
-    md, cfg, model, reference = _rebuild(path, device)
+    md, cfg, model, reference = _rebuild(path, device, trust_pickle=True)   # resume is a trusted flow
     if "train_state" not in md["sections"]:
         raise ValueError("no train_state section; this model file cannot resume training")
     st = serialize.train_state_from_bytes(container.read_section(path, "train_state"))
