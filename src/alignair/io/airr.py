@@ -30,6 +30,43 @@ _MISC = ["mutation_rate", "is_contaminant"]
 COLUMNS = (_IDENT + _CALLS + _QUALITY + _ALN + _JUNCTION + _CIGAR + _COORDS
            + _REGIONS + _PERGENE_ALN + _EXT + _MISC)
 
+# Named column presets users can pick from (or pass their own list / comma-string). `full` is the
+# default; `airr` is the MiAIRR-minimal required rearrangement set; `core`/`minimal` are compact.
+COLUMN_PRESETS = {
+    "full": list(COLUMNS),
+    "core": (_IDENT + _CALLS + ["productive", "junction", "junction_aa", "junction_length"]
+             + _COORDS + _CIGAR),
+    "minimal": ["sequence_id", "sequence", "locus", "v_call", "d_call", "j_call", "productive"],
+    "airr": ["sequence_id", "sequence", "rev_comp", "productive", "v_call", "d_call", "j_call",
+             "sequence_alignment", "germline_alignment", "junction", "junction_aa",
+             "v_cigar", "d_cigar", "j_cigar"],
+}
+
+
+def resolve_columns(columns) -> list:
+    """Resolve a column selection to an ordered list of field names. ``columns`` may be:
+    ``None`` (the full schema), a preset name (``full``/``core``/``minimal``/``airr``), a
+    comma-separated string, or an explicit list of field names. Unknown names are allowed (emitted
+    empty), so custom AIRR extension columns still pass through."""
+    if columns is None:
+        return list(COLUMNS)
+    if isinstance(columns, str):
+        if columns in COLUMN_PRESETS:
+            return list(COLUMN_PRESETS[columns])
+        return [c.strip() for c in columns.split(",") if c.strip()]
+    return list(columns)
+
+
+# fields that come straight from the light predict() record (no build_airr assembly needed)
+_LIGHT_FIELDS = frozenset(_IDENT + _CALLS + ["productive", "mutation_rate"] + _CIGAR + _COORDS + _EXT)
+
+
+def needs_assembly(columns) -> bool:
+    """True if the selection includes any field only ``build_airr`` produces (junction / regions /
+    alignments / identity); False when every selected field is a light-record field (calls / coords /
+    cigar), so the caller can skip the AIRR assembly for speed."""
+    return any(c not in _LIGHT_FIELDS for c in resolve_columns(columns))
+
 
 def _airr_start(v):
     """0-based (GenAIRR/our convention) -> 1-based (AIRR)."""
@@ -101,13 +138,16 @@ class AirrWriter:
     `write(ids, sequences, preds)` per chunk, then `close()` (or use as a context manager).
     `path` may be '-' for stdout."""
 
-    def __init__(self, path: str, locus: str = "IGH", extra_columns=None):
+    def __init__(self, path: str, locus: str = "IGH", columns=None, extra_columns=None):
+        """``columns``: which fields to emit (a preset name, comma-string, or list; default = the full
+        schema). ``extra_columns``: extra per-row metadata columns (barcode/UMI/sample) appended after."""
         import sys
         self.locus = locus
         self.extra_columns = list(extra_columns or [])
         self._to_stdout = path == "-"
         self._f = sys.stdout if self._to_stdout else open(path, "w", newline="")
-        fields = COLUMNS + [c for c in self.extra_columns if c not in COLUMNS]
+        base = resolve_columns(columns)
+        fields = base + [c for c in self.extra_columns if c not in base]
         self._w = csv.DictWriter(self._f, fieldnames=fields, delimiter="\t", extrasaction="ignore")
         self._w.writeheader()
 
@@ -133,10 +173,11 @@ class AirrWriter:
 
 
 def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict],
-               locus: str = "IGH") -> None:
+               locus: str = "IGH", columns=None) -> None:
     """Eager one-shot write (back-compat). For large inputs use AirrWriter incrementally.
-    `sequences` must be the CANONICAL (forward) sequences predict_reads' coordinates are in."""
-    w = AirrWriter(path, locus)
+    `sequences` must be the CANONICAL (forward) sequences predict_reads' coordinates are in.
+    `columns` selects which fields to emit (preset name / comma-string / list; default = full)."""
+    w = AirrWriter(path, locus, columns=columns)
     try:
         w.write(ids, sequences, preds)
     finally:
