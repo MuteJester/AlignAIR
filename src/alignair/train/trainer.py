@@ -68,34 +68,51 @@ def train_step(model, batch_in, targets, cfg, logvars, opt):
     return float(total.detach()), {k: float(v.detach()) for k, v in parts.items()}
 
 
-def save_checkpoint(path, cfg, model, logvars, step, opt=None):
-    """Full, self-sufficient checkpoint: config + model + Kendall log-vars + optimizer + step —
-    everything needed to CONTINUE training from this exact state."""
-    ck = {"config": cfg.__dict__, "model": model.state_dict(),
-          "logvars": logvars.state_dict(), "step": step}
-    if opt is not None:
-        ck["optimizer"] = opt.state_dict()
-    torch.save(ck, path)
+def save_checkpoint(path, cfg, model, logvars, step, opt=None, *, dataconfigs=None, train_args=None):
+    """Write a self-contained .alignair model file (weights + config + logvars + optimizer + RNG
+    states + embedded dataconfig + training summary) — everything needed to CONTINUE training."""
+    import random
+
+    import numpy as np
+
+    from .. import model_file as mf
+    rng = {"python": random.getstate(), "numpy": np.random.get_state(), "torch": torch.get_rng_state()}
+    if torch.cuda.is_available():
+        rng["cuda"] = torch.cuda.get_rng_state_all()
+    ta = dict(train_args or {})
+    training = {"steps": step, "batch_size": ta.get("batch_size", 0), "lr": ta.get("lr"),
+                "progresses": ta.get("progresses"), "heavy_shm": ta.get("heavy_shm"),
+                "short_boost": ta.get("short_boost"), "seed": ta.get("seed"), "train_args": ta}
+    mf.save_model(path, model, dataconfigs=dataconfigs or [], training=training,
+                  logvars=logvars, optimizer=opt, rng=rng)
 
 
-def _step_of(path: str) -> int:
-    m = re.search(r"\.step(\d+)\.pt$", path)
-    return int(m.group(1)) if m else -1
+def _ext(path: str) -> str:
+    for e in (".alignair", ".pt"):
+        if path.endswith(e):
+            return e
+    return ".alignair"
 
 
 def _stem(base_path: str) -> str:
-    return base_path[:-3] if base_path.endswith(".pt") else base_path
+    e = _ext(base_path)
+    return base_path[:-len(e)] if base_path.endswith(e) else base_path
 
 
-def save_rotating(base_path, cfg, model, logvars, step, opt, keep=3):
-    """Write a full resumable checkpoint into a rotating cycle of `keep` step-named files (so the
+def _step_of(path: str) -> int:
+    m = re.search(r"\.step(\d+)\.(?:alignair|pt)$", path)
+    return int(m.group(1)) if m else -1
+
+
+def save_rotating(base_path, cfg, model, logvars, step, opt, keep=3, *, dataconfigs=None, train_args=None):
+    """Write a full resumable .alignair into a rotating cycle of `keep` step-named files (so the
     3 latest states are always retained), and refresh `base_path` as a copy of the newest (for
     convenient --resume / benchmarking). A killed save can't corrupt older slots."""
-    stem = _stem(base_path)
-    path = f"{stem}.step{step}.pt"
-    save_checkpoint(path, cfg, model, logvars, step, opt)
+    stem, ext = _stem(base_path), _ext(base_path)
+    path = f"{stem}.step{step}{ext}"
+    save_checkpoint(path, cfg, model, logvars, step, opt, dataconfigs=dataconfigs, train_args=train_args)
     shutil.copyfile(path, base_path)                      # base == newest
-    for old in sorted(glob.glob(f"{stem}.step*.pt"), key=_step_of)[:-keep]:
+    for old in sorted(glob.glob(f"{stem}.step*{ext}"), key=_step_of)[:-keep]:
         if old != path:
             try:
                 os.remove(old)
@@ -106,7 +123,8 @@ def save_rotating(base_path, cfg, model, logvars, step, opt, keep=3):
 
 def latest_checkpoint(base_path):
     """Highest-step rotating checkpoint (falls back to base_path), or None if nothing exists."""
-    files = glob.glob(f"{_stem(base_path)}.step*.pt")
+    stem = _stem(base_path)
+    files = glob.glob(f"{stem}.step*.alignair") + glob.glob(f"{stem}.step*.pt")
     if files:
         return max(files, key=_step_of)
     return base_path if os.path.exists(base_path) else None
@@ -195,14 +213,30 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
     start = 0
     resume_from = latest_checkpoint(resume_path) if resume_path else None
     if resume_from:
-        ck = torch.load(resume_from, map_location=device)
-        model.load_state_dict(ck["model"]); logvars.load_state_dict(ck["logvars"])
-        if "optimizer" in ck:
-            opt.load_state_dict(ck["optimizer"])
-            for grp in opt.param_groups:        # honor the CLI lr on resume (e.g. lower lr for a fine-tune)
-                grp["lr"] = lr
-        start = int(ck.get("step", 0))
+        from .. import model_file as mf
+        if mf.container.is_alignair_file(resume_from):
+            ts = mf.load_training_state(resume_from, device=device)
+            model.load_state_dict(ts.model.state_dict())
+            if ts.logvars_state:
+                logvars.load_state_dict(ts.logvars_state)
+            if ts.optimizer_state:
+                opt.load_state_dict(ts.optimizer_state)
+                for grp in opt.param_groups:    # honor the CLI lr on resume (e.g. lower lr for a fine-tune)
+                    grp["lr"] = lr
+            start = ts.step
+        else:
+            ck = torch.load(resume_from, map_location=device)       # legacy .pt
+            model.load_state_dict(ck["model"]); logvars.load_state_dict(ck["logvars"])
+            if "optimizer" in ck:
+                opt.load_state_dict(ck["optimizer"])
+                for grp in opt.param_groups:
+                    grp["lr"] = lr
+            start = int(ck.get("step", 0))
         print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
+
+    _train_args = {"lr": lr, "batch_size": batch_size, "progresses": list(progresses),
+                   "heavy_shm": heavy_shm, "short_boost": short_boost, "seed": seed, "steps": steps}
+    _dcs = [dataconfig]
 
     # ModelXRay: a read-only training X-ray over a fixed held-out probe batch
     xray = probe_input = None
@@ -241,9 +275,9 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
                 line += "  " + xray.summary_line(rec)
             print(line, flush=True)
         if save_path and step % save_every == 0:
-            save_rotating(save_path, cfg, model, logvars, step, opt)
+            save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args)
     if save_path:
-        save_rotating(save_path, cfg, model, logvars, steps, opt)
+        save_rotating(save_path, cfg, model, logvars, steps, opt, dataconfigs=_dcs, train_args=_train_args)
     if xray is not None:
         xray.close()
     return model

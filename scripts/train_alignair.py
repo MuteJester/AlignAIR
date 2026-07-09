@@ -26,7 +26,7 @@ def main():
                     help="repeat the amplicon (short-read) streams N times to concentrate on short/cropped reads")
     ap.add_argument("--max-len", type=int, default=576)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--out", default=".private/models/alignair_single.pt")
+    ap.add_argument("--out", default=".private/models/alignair_single.alignair")
     ap.add_argument("--save-every", type=int, default=5000)
     ap.add_argument("--resume", default=None)
     ap.add_argument("--log-every", type=int, default=100)
