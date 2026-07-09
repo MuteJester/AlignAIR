@@ -95,8 +95,8 @@ Repository = "https://github.com/MuteJester/AlignAIR"
 Documentation = "https://github.com/MuteJester/AlignAIR#readme"
 
 # ── Console scripts ─────────────────────────────────────────────────────────
-# The `alignair` CLI (DNAlignAIR product) was decommissioned; it will be re-added
-# pointing at the new AlignAIR model + predict pipeline during the polish phase.
+[project.scripts]
+alignair = "alignair.cli.main:main"
 
 # ── Setuptools configuration ────────────────────────────────────────────────
 [tool.setuptools.packages.find]

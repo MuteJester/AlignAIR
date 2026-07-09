@@ -1,18 +1,26 @@
 """AlignAIR — a neural aligner for IG/TCR repertoires with a runtime (dynamic) reference.
 
-Stable I/O surface (use these from notebooks / pipelines):
+Run predictions in three lines:
 
-    from alignair import read_sequences, write_airr, ReferenceSet, compare_airr
+    from alignair import load_model, predict_sequences
+    model, reference = load_model("model.pt", dataconfigs=["HUMAN_IGH_OGRDB"])
+    records = predict_sequences(model, reference, ["CAGGTGCAGCTG..."])
 
-Model loading / prediction (``load_model``/``predict``) is being rewired onto the new ``AlignAIR``
-model (``alignair.models.AlignAIR``) and its ``alignair.predict`` pipeline; the previous DNAlignAIR
-product surface (api/cli/bundle) has been removed. Until the AlignAIR bundle + CLI are wired, the
-stable public surface here is I/O + reference + compare.
+Train a custom model:
+
+    from alignair import train_model
+    train_model(["HUMAN_IGH_OGRDB"], out_path="my_model.pt", steps=100_000)
+
+I/O + reference helpers: ``read_sequences``, ``write_airr``, ``ReferenceSet``, ``compare_airr``.
 """
 from .reference.reference_set import ReferenceSet
 from .io.sequence_reader import read_sequences, iter_sequences
 from .io.airr import write_airr, AirrWriter
 from .compare import compare_airr
+from .api import load_model, predict_sequences, train_model
+from .models import AlignAIR
+from .config.alignair_config import AlignAIRConfig
+from .predict import PredictConfig
 
 try:
     from importlib.metadata import version as _pkg_version
@@ -21,6 +29,8 @@ except Exception:                       # not pip-installed (e.g. run from a sou
     __version__ = "0+unknown"
 
 __all__ = [
+    "load_model", "predict_sequences", "train_model",
+    "AlignAIR", "AlignAIRConfig", "PredictConfig",
     "ReferenceSet", "read_sequences", "iter_sequences",
     "write_airr", "AirrWriter", "compare_airr", "__version__",
 ]
