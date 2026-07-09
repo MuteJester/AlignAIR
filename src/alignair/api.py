@@ -64,10 +64,16 @@ def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSe
                device: str = "cpu") -> tuple[AlignAIR, ReferenceSet]:
     """Load a trained AlignAIR checkpoint into an eval-ready ``(model, reference)`` pair.
 
-    Provide the germline ``reference`` directly, or ``dataconfigs`` (GenAIRR dataconfig names or
-    objects) to build it — it must match the reference the model was trained on.
+    A ``.alignair`` model file carries its own reference (rebuilt from the embedded dataconfig), so
+    ``dataconfigs``/``reference`` are unnecessary. For a legacy ``.pt`` checkpoint, provide the
+    germline ``reference`` directly or ``dataconfigs`` (GenAIRR names/objects) to build it — it must
+    match the reference the model was trained on.
     """
-    ck = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    from .model_file import container, load_model as _load_alignair
+    if container.is_alignair_file(checkpoint_path):
+        lm = _load_alignair(checkpoint_path, device=device)   # reference travels inside the file
+        return lm.model, (reference or lm.reference)
+    ck = torch.load(checkpoint_path, map_location=device, weights_only=False)   # legacy .pt
     cfg = AlignAIRConfig(**ck["config"])
     model = AlignAIR(cfg).to(device).eval()
     model.load_state_dict(_remap_state_dict(ck["model"]), strict=True)
