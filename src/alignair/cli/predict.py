@@ -8,9 +8,10 @@ from ..io.sequence_reader import read_sequences
 
 def register(sub) -> None:
     p = sub.add_parser("predict", help="align reads with a trained model -> AIRR TSV")
-    p.add_argument("--model", required=True, help="path to a trained AlignAIR checkpoint (.pt)")
-    p.add_argument("--dataconfig", nargs="+", required=True,
-                   help="GenAIRR dataconfig(s) for the germline reference (must match the model)")
+    p.add_argument("--model", required=True, help="trained AlignAIR model (.alignair or legacy .pt)")
+    p.add_argument("--dataconfig", nargs="+", default=None,
+                   help="GenAIRR dataconfig(s) for the germline reference; optional for a .alignair "
+                        "model (it carries its own), required for a legacy .pt")
     p.add_argument("--input", required=True, help="reads to align (FASTA / FASTQ / TSV; .gz ok; '-' = stdin)")
     p.add_argument("--out", required=True, help="output AIRR TSV path")
     p.add_argument("--locus", default="IGH", help="locus label for the AIRR output")
@@ -30,6 +31,13 @@ def run(args) -> int:
     if not seqs:
         print(f"no valid reads in {args.input}")
         return 1
+    from ..model_file import container
+    is_alignair = container.is_alignair_file(args.model)
+    if not is_alignair and not args.dataconfig:
+        print("--dataconfig is required for legacy .pt models")
+        return 1
+    if is_alignair and args.dataconfig:
+        print("note: --dataconfig ignored; the .alignair model carries its own reference")
     model, reference = load_model(args.model, dataconfigs=args.dataconfig, device=device)
     records = predict_sequences(model, reference, seqs, device=device, batch_size=args.batch_size,
                                 airr=needs_assembly(args.columns))   # skip AIRR assembly if not emitted
