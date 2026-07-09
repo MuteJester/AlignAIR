@@ -21,18 +21,43 @@ def _genes(cfg: PredictConfig):
     return ("v", "d", "j") if cfg.has_d else ("v", "j")
 
 
+_COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+
+
+def _canonicalize(seq: str, orientation_id: int) -> str:
+    """Re-orient a read into the model's forward frame using the predicted orientation (the transforms
+    are involutions, so re-applying recovers forward): 0=identity, 1=revcomp, 2=complement, 3=reverse.
+    The model predicts coordinates in the forward frame, so the germline reader, coords, and AIRR
+    assembly must all operate on this canonical sequence."""
+    if orientation_id == 1:
+        return seq.translate(_COMPLEMENT)[::-1]
+    if orientation_id == 2:
+        return seq.translate(_COMPLEMENT)
+    if orientation_id == 3:
+        return seq[::-1]
+    return seq
+
+
 def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu", aligner=None):
     genes = _genes(cfg)
     preds = clean(run_model(model, sequences, cfg, device), genes)
     if cfg.genotype:
         preds = adjust_for_genotype(preds, cfg.genotype, reference)
-    seq_lens = np.array([len(s) for s in sequences])
+    # canonicalize each read to the model's forward frame so coords / germline / AIRR all agree
+    orient = preds.orientation
+    seqs = [_canonicalize(s, int(orient[i]) if orient is not None else 0)
+            for i, s in enumerate(sequences)]
+    seq_lens = np.array([len(s) for s in seqs])
     segs = correct_segments(preds.start, preds.end, seq_lens, cfg.max_seq_length, cfg.pad_mode)
     names = {g: list(reference.gene(g.upper()).names) for g in genes}
     calls = select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector)
-    alignments = align_germline(sequences, segs, calls, reference, aligner,
+    alignments = align_germline(seqs, segs, calls, reference, aligner,
                                 reader=cfg.germline_reader, indel_counts=preds.indel_count)
-    return _to_records(sequences, calls, alignments, genes, preds, cfg.chain_types)
+    records = _to_records(seqs, calls, alignments, genes, preds, cfg.chain_types)
+    if cfg.airr:
+        from .airr import build_airr
+        records = build_airr(records, reference, chain=("heavy" if cfg.has_d else "light"))
+    return records
 
 
 def _to_records(sequences, calls, alignments, genes, preds, chain_types=None) -> list:

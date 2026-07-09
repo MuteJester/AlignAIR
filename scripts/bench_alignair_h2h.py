@@ -43,6 +43,10 @@ def remap_legacy_state_dict(old: dict) -> dict:
 def to_contract(sid, rec):
     out = {"sequence_id": sid, "sequence": rec["sequence"], "locus": "IGH",
            "orientation_id": rec.get("orientation_id", 0)}
+    for k in ("junction", "junction_aa", "junction_length", "np1", "np1_length", "np2", "np2_length",
+              "productive", "vj_in_frame", "stop_codon", "sequence_alignment"):
+        if k in rec:
+            out[k] = rec[k]
     for g in GENES:
         out[f"{g}_call"] = rec.get(f"{g}_call", "")
         out[f"{g}_calls"] = rec.get(f"{g}_calls", [])

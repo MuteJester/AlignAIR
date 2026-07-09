@@ -26,10 +26,10 @@ def _germline_maps(reference):
 
 def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain) -> dict:
     seq = rec["sequence"]
-    out = {"sequence_id": rec.get("sequence_id"), "sequence": seq, "locus": rec.get("locus", "IGH"),
-           "v_call": rec.get("v_call", ""), "d_call": rec.get("d_call", ""),
-           "j_call": rec.get("j_call", ""), "productive": bool(rec.get("productive", True)),
-           "mutation_rate": rec.get("mutation_rate"), "ar_indels": rec.get("indel_count")}
+    out = dict(rec)                    # preserve the light record (calls/coords/cigar/orientation/likelihoods)
+    out.setdefault("locus", "IGH")
+    out["productive"] = bool(rec.get("productive", True))
+    out["ar_indels"] = rec.get("indel_count")
     # skip alignment math for clearly-garbage reads (non-productive with multiple indels)
     if (not out["productive"]) and (rec.get("indel_count") or 0) > 1:
         return out
@@ -72,10 +72,6 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain) -> dict:
                                              positions.get("v_alignment_start"))
     out["v_identity"] = quality.v_identity(seg.get("v_sequence_alignment"),
                                            seg.get("v_germline_alignment"))
-    for g in ("v", "d", "j"):
-        for f in ("sequence_start", "sequence_end", "germline_start", "germline_end"):
-            if f"{g}_{f}" in rec:
-                out[f"{g}_{f}"] = rec[f"{g}_{f}"]
     return out
 
 
@@ -86,5 +82,5 @@ def build_airr(records: list, reference, chain: str = "heavy") -> list:
         try:
             out.append(_build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain))
         except Exception:
-            out.append({"sequence_id": rec.get("sequence_id"), "sequence": rec.get("sequence")})
+            out.append(dict(rec))          # AIRR assembly failed -> keep the light record (calls/coords)
     return out
