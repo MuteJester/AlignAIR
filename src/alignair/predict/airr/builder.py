@@ -10,7 +10,7 @@ from . import quality
 from .alignment import (build_germline_alignment, build_sequence_alignment,
                         compute_alignment_positions, compute_np_regions,
                         extract_segment_alignments, translate_alignment)
-from .regions import compute_junction, extract_regions
+from .regions import cigar_has_indel, compute_junction, compute_junction_cigar, extract_regions
 
 
 def _germline_maps(reference):
@@ -24,13 +24,39 @@ def _germline_maps(reference):
     return v_gapped, j_ung, d_ung, (j.anchors or {})
 
 
+def _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors) -> bool:
+    """Fix A: attach the indel-robust, read-coordinate junction (Cys / J-anchor mapped through the
+    CIGAR) when the read carries a V/J/D indel and the anchors can be placed. Needs only coords +
+    CIGAR (no gapped `sequence_alignment`), so it runs before the guards below — even reads whose
+    heavy alignment math is skipped still get a correct junction. Returns True when applied."""
+    if not (cigar_has_indel(rec.get("v_cigar")) or cigar_has_indel(rec.get("j_cigar"))
+            or cigar_has_indel(rec.get("d_cigar"))):
+        return False
+    v_call = rec.get("v_call", "")
+    v_ref_gapped = v_gapped.get(v_call.split(",")[0], "") if v_call else ""
+    j_anchor = (j_anchors or {}).get(rec.get("j_call", "").split(",")[0], 0)
+    cj = compute_junction_cigar(seq, v_ref_gapped, rec.get("v_germline_start"),
+                                rec.get("v_sequence_start"), rec.get("v_sequence_end"),
+                                rec.get("v_cigar", ""), j_anchor, rec.get("j_germline_start"),
+                                rec.get("j_sequence_start"), rec.get("j_sequence_end"),
+                                rec.get("j_cigar", ""))
+    if cj is None:
+        return False
+    out.update(cj)
+    jl = cj.get("junction_length")
+    out["vj_in_frame"] = (jl % 3 == 0) if jl else None      # in-frame <=> junction length divisible by 3
+    return True
+
+
 def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain) -> dict:
     seq = rec["sequence"]
     out = dict(rec)                    # preserve the light record (calls/coords/cigar/orientation/likelihoods)
     out.setdefault("locus", "IGH")
     out["productive"] = bool(rec.get("productive", True))
     out["ar_indels"] = rec.get("indel_count")
-    # skip alignment math for clearly-garbage reads (non-productive with multiple indels)
+    cigar_junction = _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors)
+    # skip the heavy alignment math for clearly-garbage reads (non-productive with multiple indels);
+    # the indel-robust junction above is already attached for them.
     if (not out["productive"]) and (rec.get("indel_count") or 0) > 1:
         return out
     v_call = rec.get("v_call", "")
@@ -56,8 +82,15 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain) -> dict:
     seg = (extract_segment_alignments(seq_alignment, germ_alignment, seq_aa, germ_aa, positions, chain)
            if seq_alignment and germ_alignment else {})
     regions = extract_regions(seq_alignment, seq_aa)
-    junction = compute_junction(seq_alignment, seq_aa, rec.get("j_call", ""), j_anchors,
-                                jss, vss, jgs, positions.get("j_alignment_end"))
+    # the indel-robust junction (if any) is already on `out`; otherwise derive it from the IMGT column
+    if cigar_junction:
+        junction = {}
+        vj_in_frame = out.get("vj_in_frame")
+    else:
+        junction = compute_junction(seq_alignment, seq_aa, rec.get("j_call", ""), j_anchors,
+                                    jss, vss, jgs, positions.get("j_alignment_end"))
+        vj_in_frame = quality.vj_in_frame(junction.get("cdr3_start"), junction.get("cdr3_end"),
+                                          positions.get("v_alignment_start"))
 
     out.update({"sequence_alignment": seq_alignment, "germline_alignment": germ_alignment,
                 "sequence_alignment_aa": seq_aa, "germline_alignment_aa": germ_aa,
@@ -68,8 +101,7 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain) -> dict:
     out.update(regions)
     out.update(junction)
     out["stop_codon"] = quality.stop_codon(seq_aa)
-    out["vj_in_frame"] = quality.vj_in_frame(junction.get("cdr3_start"), junction.get("cdr3_end"),
-                                             positions.get("v_alignment_start"))
+    out["vj_in_frame"] = vj_in_frame
     out["v_identity"] = quality.v_identity(seg.get("v_sequence_alignment"),
                                            seg.get("v_germline_alignment"))
     return out
