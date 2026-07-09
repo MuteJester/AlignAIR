@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from ..align.backend import AlignResult
 
 _ACCEL = 0.05          # per-step velocity increment that amplifies same-state (match/mismatch) runs
@@ -133,18 +135,27 @@ class GermlineMatch:
 
 class HeuristicGermlineMatcher:
     def __init__(self, germlines: dict[str, str], *, anchor_k: int = 15,
-                 search_span: int | None = 50, end_offset_penalty: float = 0.1):
+                 search_span: int | None = 50, end_offset_penalty: float = 0.1,
+                 fallback_rate: float = 0.3):
         """``germlines``: {allele_name -> uppercase ungapped germline}. ``anchor_k``: end-anchor k-mer
         length. ``search_span``: max offset scanned inward from the germline 3' end (default 50 — deep
         enough to find a 3'-truncated end, e.g. a read ending inside J, while bounding cost on long V;
         ``None`` = adaptive/unbounded). ``end_offset_penalty``: per-offset bias toward the germline 3'
         end — keeps 5'-truncated reads (V) anchored at their intact 3' end while still letting genuinely
         3'-truncated reads (J) move deep when the deeper match is clearly better. The TF version was
-        ``search_span=30, end_offset_penalty=0``, which was blind to J 3'-truncation."""
+        ``search_span=30, end_offset_penalty=0``, which was blind to J 3'-truncation.
+
+        ``fallback_rate``: the end-anchor assumes the segment's 3' end sits near the germline 3' end,
+        which breaks on 3'-truncated *amplicons* (e.g. an FR1 read cut before V's 3' end) — it then
+        mislocates the germline coordinates by ~the truncation length. So after anchoring we *verify*
+        the placement's substitution rate and, if it exceeds ``fallback_rate`` (a clear mis-anchor, vs
+        SHM's <~0.2), relocate with a whole-germline offset scan that is agnostic to which end is
+        truncated. Set to 0 to disable the fallback (pure end-anchor)."""
         self._germlines = germlines
         self._anchor_k = anchor_k
         self._search_span = search_span
         self._end_offset_penalty = end_offset_penalty
+        self._fallback_rate = fallback_rate
 
     @classmethod
     def from_reference(cls, reference_set, **kwargs) -> "HeuristicGermlineMatcher":
@@ -230,6 +241,30 @@ class HeuristicGermlineMatcher:
                     break
         return best_start, best_end
 
+    def _scan_locate(self, segment: str, germline: str) -> tuple[int, int]:
+        """Whole-germline offset scan: place the segment at the germline offset with the fewest
+        substitutions — agnostic to which end (5' or 3') is truncated, unlike the end-anchor. Pure
+        numpy, vectorized sliding window; germlines are short (<=~320bp) so this stays cheap and it
+        only runs on the reads the anchor mis-placed."""
+        m, n = len(segment), len(germline)
+        if m == 0 or n == 0 or m >= n:
+            return 0, min(m, n)
+        seg = np.frombuffer(segment.encode("ascii"), dtype=np.uint8)
+        ger = np.frombuffer(germline.encode("ascii"), dtype=np.uint8)
+        windows = np.lib.stride_tricks.sliding_window_view(ger, m)     # (n-m+1, m)
+        offset = int((windows != seg).sum(axis=1).argmin())
+        return offset, offset + m
+
+    @staticmethod
+    def _placement_mismatch_rate(segment: str, germline: str, ref_start: int, ref_end: int) -> float:
+        """Substitution rate of the segment against the germline window the anchor chose — a sanity
+        check on the placement (a correct one mismatches only at SHM rate, a mis-anchor ~randomly)."""
+        window = germline[ref_start:ref_end]
+        m = min(len(segment), len(window))
+        if m == 0:
+            return 1.0
+        return sum(a != b for a, b in zip(segment, window)) / m
+
     # ------------------------------------------------------------------ public API
     def match_one(self, sequence: str, seq_start: int, seq_end: int, allele: str,
                   indel_count) -> GermlineMatch:
@@ -247,6 +282,16 @@ class HeuristicGermlineMatcher:
 
         orig_len = seq_end - seq_start
         ref_start, ref_end = self._locate_in_germline(segment, germline, indel_count)
+
+        # verify the anchor's placement; a 3'-truncated amplicon breaks the end-anchor's START
+        # derivation (start = end - seg_len over-/under-shoots when the read overhangs the germline),
+        # so if the chosen window mismatches far above SHM rate, relocate the START with the
+        # truncation-agnostic whole-germline scan while KEEPING the anchor's end (which stays accurate).
+        if self._fallback_rate and (
+                self._placement_mismatch_rate(segment, germline, ref_start, ref_end) > self._fallback_rate):
+            scan_start, _ = self._scan_locate(segment, germline)
+            if scan_start < ref_end:
+                ref_start = scan_start
 
         # a pure overhang (extra read bases that can't be biological indels) means the germline was
         # trimmed only because the read stuck out -> fold that trim back into the read coordinates and
