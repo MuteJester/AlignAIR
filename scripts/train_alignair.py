@@ -4,9 +4,9 @@ import argparse
 import torch
 
 import GenAIRR.data as gd
-from alignair.config.alignair_config import AlignAIRConfig
-from alignair.models import AlignAIR
-from alignair.models.losses import make_logvars
+from alignair.core.config import AlignAIRConfig
+from alignair.core import AlignAIR
+from alignair.core.losses import make_logvars
 from alignair.reference.reference_set import ReferenceSet
 from alignair.training.alignair_trainer import train
 

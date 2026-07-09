@@ -21,10 +21,10 @@ import re
 import torch
 
 import GenAIRR.data as gd
-from alignair.config.alignair_config import AlignAIRConfig
+from alignair.core.config import AlignAIRConfig
 from alignair.gym import Curriculum
-from alignair.models import AlignAIR
-from alignair.models.losses import hierarchical_loss, make_logvars
+from alignair.core import AlignAIR
+from alignair.core.losses import hierarchical_loss, make_logvars
 from alignair.reference.reference_set import ReferenceSet
 from alignair.training.alignair_trainer import _stream_records, build_batch, eval_metrics
 from alignair.xray import ModelXRay

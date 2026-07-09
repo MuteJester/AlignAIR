@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..config.alignair_config import _SEG_KERNELS, AlignAIRConfig
+from .config import _SEG_KERNELS, AlignAIRConfig
 from ..nn.heads.orientation import apply_orientation
 from .gene_branch import GeneBranch, MetaHead, build_tower
 from .layers import EmbeddingOrientationHead, TokenAndPositionEmbedding

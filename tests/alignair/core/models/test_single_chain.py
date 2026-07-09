@@ -1,8 +1,8 @@
 """Forward-pass tests for the faithful AlignAIR model."""
 import torch
 
-from alignair.config.alignair_config import AlignAIRConfig
-from alignair.models import AlignAIR
+from alignair.core.config import AlignAIRConfig
+from alignair.core import AlignAIR
 
 _COMMON = ["v_start", "v_end", "j_start", "j_end", "v_allele", "j_allele",
            "mutation_rate", "indel_count", "productive"]

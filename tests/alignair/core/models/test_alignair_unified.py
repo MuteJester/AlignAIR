@@ -4,9 +4,9 @@ import torch
 
 import GenAIRR.data as gd
 
-from alignair.config.alignair_config import AlignAIRConfig, GeneSpec
-from alignair.models.alignair import AlignAIR
-from alignair.models.gene_branch import GeneBranch, MetaHead
+from alignair.core.config import AlignAIRConfig, GeneSpec
+from alignair.core.model import AlignAIR
+from alignair.core.gene_branch import GeneBranch, MetaHead
 
 
 def test_gene_specs_are_canonical_and_data_driven():

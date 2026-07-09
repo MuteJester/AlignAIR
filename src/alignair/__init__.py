@@ -18,8 +18,8 @@ from .io.sequence_reader import read_sequences, iter_sequences
 from .io.airr import write_airr, AirrWriter
 from .compare import compare_airr
 from .api import load_model, predict_sequences, train_model
-from .models import AlignAIR
-from .config.alignair_config import AlignAIRConfig
+from .core import AlignAIR
+from .core.config import AlignAIRConfig
 from .predict import PredictConfig
 
 try:

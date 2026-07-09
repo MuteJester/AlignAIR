@@ -16,8 +16,8 @@ from typing import Sequence
 
 import torch
 
-from .config.alignair_config import AlignAIRConfig
-from .models import AlignAIR
+from .core.config import AlignAIRConfig
+from .core import AlignAIR
 from .predict import PredictConfig, predict as _predict
 from .reference.reference_set import ReferenceSet
 
@@ -93,7 +93,7 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
     :func:`alignair.training.alignair_trainer.train` (e.g. ``lr=``, ``batch_size=``, ``progresses=``,
     ``short_boost=``, ``resume_path=``)."""
     import GenAIRR.data as gd
-    from .models.losses import make_logvars
+    from .core.losses import make_logvars
     from .training.alignair_trainer import train as _train
 
     dcs = [getattr(gd, d) if isinstance(d, str) else d for d in dataconfigs]

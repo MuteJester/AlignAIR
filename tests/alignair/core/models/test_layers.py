@@ -1,7 +1,7 @@
 """Unit tests for the faithful PyTorch AlignAIR layers (port of TF Models/Layers/Layers.py)."""
 import torch
 
-from alignair.models.layers import (Conv1DBatchNorm, ConvResidualFeatureExtractionBlock,
+from alignair.core.layers import (Conv1DBatchNorm, ConvResidualFeatureExtractionBlock,
                                      SoftCutoutLayer, TokenAndPositionEmbedding, same_pad1d)
 from alignair.nn.weighting import UncertaintyWeight
 

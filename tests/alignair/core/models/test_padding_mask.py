@@ -2,9 +2,9 @@
 soft-argmax can't be pulled into the right-padding (the short-read coordinate bug)."""
 import torch
 
-from alignair.config.alignair_config import AlignAIRConfig
-from alignair.models import AlignAIR
-from alignair.models.losses import hierarchical_loss, make_logvars
+from alignair.core.config import AlignAIRConfig
+from alignair.core import AlignAIR
+from alignair.core.losses import hierarchical_loss, make_logvars
 
 
 def _cfg():

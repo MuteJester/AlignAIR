@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..config.alignair_config import AlignAIRConfig, GeneSpec
+from .config import AlignAIRConfig, GeneSpec
 from .layers import ConvResidualFeatureExtractionBlock, SoftCutoutLayer
 
 

@@ -1,7 +1,7 @@
 """Tests for the reusable ModelXRay network-health analytics."""
 import torch
 
-from alignair.config.alignair_config import AlignAIRConfig
+from alignair.core.config import AlignAIRConfig
 from alignair.training.alignair_trainer import eval_metrics
 from alignair.xray import ModelXRay, network
 
@@ -47,14 +47,14 @@ def test_red_flags_detects_pathologies():
 
 
 def _model():
-    from alignair.models import AlignAIR
+    from alignair.core import AlignAIR
     cfg = AlignAIRConfig(max_seq_length=256, v_allele_count=8, j_allele_count=4,
                          d_allele_count=4, has_d=True)
     return AlignAIR(cfg), cfg
 
 
 def test_model_xray_observe_records_health():
-    from alignair.models.losses import make_logvars
+    from alignair.core.losses import make_logvars
     model, cfg = _model()
     logvars = make_logvars(cfg)
     xr = ModelXRay(model, lr=3e-4, deep_every=1, uncertainty=logvars)
@@ -67,7 +67,7 @@ def test_model_xray_observe_records_health():
 
 
 def test_model_xray_deep_pass_geometry_interference_and_report():
-    from alignair.models.losses import hierarchical_loss, make_logvars
+    from alignair.core.losses import hierarchical_loss, make_logvars
     model, cfg = _model()
     logvars = make_logvars(cfg)
     B = 4

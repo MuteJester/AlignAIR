@@ -1,9 +1,9 @@
 """Orientation: head from shared embeddings + in-model correct-and-re-embed."""
 import torch
 
-from alignair.config.alignair_config import AlignAIRConfig
-from alignair.models.layers import EmbeddingOrientationHead
-from alignair.models import AlignAIR
+from alignair.core.config import AlignAIRConfig
+from alignair.core.layers import EmbeddingOrientationHead
+from alignair.core import AlignAIR
 from alignair.nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 
 

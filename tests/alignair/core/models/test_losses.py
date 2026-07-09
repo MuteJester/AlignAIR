@@ -1,9 +1,9 @@
 """Tests for the faithful hierarchical multi-task loss (proper-Kendall weighting)."""
 import torch
 
-from alignair.config.alignair_config import AlignAIRConfig
-from alignair.models.losses import hierarchical_loss, make_logvars, soft_gaussian_target
-from alignair.models import AlignAIR
+from alignair.core.config import AlignAIRConfig
+from alignair.core.losses import hierarchical_loss, make_logvars, soft_gaussian_target
+from alignair.core import AlignAIR
 
 
 def test_soft_gaussian_target_normalized():

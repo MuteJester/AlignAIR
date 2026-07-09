@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..config.alignair_config import AlignAIRConfig
+from .config import AlignAIRConfig
 from ..nn.weighting import UncertaintyWeight
 
 

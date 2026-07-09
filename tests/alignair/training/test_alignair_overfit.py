@@ -4,9 +4,9 @@ import itertools
 import pytest
 import torch
 
-from alignair.config.alignair_config import AlignAIRConfig
-from alignair.models.losses import make_logvars
-from alignair.models import AlignAIR
+from alignair.core.config import AlignAIRConfig
+from alignair.core.losses import make_logvars
+from alignair.core import AlignAIR
 from alignair.training.alignair_trainer import build_batch, train_step
 
 

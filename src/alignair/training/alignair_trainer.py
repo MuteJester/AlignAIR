@@ -16,7 +16,7 @@ import shutil
 import torch
 import torch.nn.functional as F
 
-from ..config.alignair_config import AlignAIRConfig
+from ..core.config import AlignAIRConfig
 from ..gym import build_experiment, build_targets, gym_collate
 from ..nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 
@@ -55,7 +55,7 @@ def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu"
 
 
 def train_step(model, batch_in, targets, cfg, logvars, opt):
-    from ..models.losses import hierarchical_loss
+    from ..core.losses import hierarchical_loss
     model.train()
     out = model(batch_in)
     total, parts = hierarchical_loss(out, targets, cfg, logvars)
@@ -212,7 +212,7 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
             _stream_records(dataconfig, dict(Curriculum().params(max(progresses))), seed + 99991),
             batch_size))
         probe_input, probe_targets = build_batch(ev, reference_set, cfg, device)
-        from ..models.losses import hierarchical_loss
+        from ..core.losses import hierarchical_loss
 
         def task_eval(m, inp, _tg=probe_targets, _cfg=cfg):
             return eval_metrics(m(inp), _tg, _cfg)

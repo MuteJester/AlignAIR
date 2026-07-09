@@ -1,9 +1,9 @@
 """Tests for the faithful MultiChain port: SingleChain + a chain_type head/loss term."""
 import torch
 
-from alignair.config.alignair_config import AlignAIRConfig
-from alignair.models import AlignAIR
-from alignair.models.losses import hierarchical_loss, make_logvars
+from alignair.core.config import AlignAIRConfig
+from alignair.core import AlignAIR
+from alignair.core.losses import hierarchical_loss, make_logvars
 
 
 def _cfg(has_d=True, num_chain_types=3):
