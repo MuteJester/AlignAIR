@@ -1,4 +1,11 @@
-"""The .alignair self-contained model format — save/load, selective reads, and the model card."""
+"""The .alignair self-contained model format — save/load, selective reads, and the model card.
+
+Sections are either *portable* (``config``/json, ``weights``/safetensors, ``reference``/fasta — safe,
+language-agnostic) or *trusted Python-only* (``dataconfig``/``train_state`` — pickle, which executes
+code on load; only open model files you trust). A file written with an optimizer is a resumable
+training checkpoint (large: AdamW moments ~= 2x the model); saving without ``optimizer`` yields a
+compact inference-only model.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
