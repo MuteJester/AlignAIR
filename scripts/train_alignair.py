@@ -25,6 +25,8 @@ def main():
     ap.add_argument("--short-boost", type=int, default=1,
                     help="repeat the amplicon (short-read) streams N times to concentrate on short/cropped reads")
     ap.add_argument("--max-len", type=int, default=576)
+    ap.add_argument("--state-head", action="store_true",
+                    help="add the per-position edit-state head (germline/substitution/insertion/deletion)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=".private/models/alignair_single.alignair")
     ap.add_argument("--save-every", type=int, default=5000)
@@ -39,7 +41,8 @@ def main():
 
     dcs = [getattr(gd, name) for name in a.dataconfig]
     ref = ReferenceSet.from_dataconfigs(*dcs)
-    cfg = AlignAIRConfig.from_dataconfigs(*dcs, max_seq_length=a.max_len)  # counts/has_d/chains auto-derived
+    cfg = AlignAIRConfig.from_dataconfigs(*dcs, max_seq_length=a.max_len,  # counts/has_d/chains auto-derived
+                                          state_head=a.state_head)
     model = AlignAIR(cfg)
     logvars = make_logvars(cfg)
     print(f"train {'+'.join(a.dataconfig)}: V={cfg.v_allele_count} D={cfg.d_allele_count} J={cfg.j_allele_count} "

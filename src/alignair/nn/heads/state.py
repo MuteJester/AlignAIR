@@ -5,6 +5,10 @@ import torch.nn as nn
 STATES = ("germline", "substitution", "insertion", "deletion")
 STATE_INDEX = {name: i for i, name in enumerate(STATES)}
 
+# Per-position labels are dominated by "germline"; up-weight the rare, useful edit classes (the
+# indels especially) so the weighted CE does not collapse to predicting germline everywhere.
+STATE_CLASS_WEIGHTS = (1.0, 3.0, 8.0, 8.0)
+
 
 class PerPositionStateHead(nn.Module):
     """(B, L, d) -> (B, L, len(STATES)) per-position state logits."""
@@ -15,6 +19,30 @@ class PerPositionStateHead(nn.Module):
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
         return self.fc(h)
+
+
+class PerPositionStateBranch(nn.Module):
+    """Per-position edit-state predictor: ``emb (B, L, C)`` -> state logits ``(B, L, len(STATES))``.
+
+    A stack of dilated, same-padded 1-D convs gives each position a wide receptive field — enough to
+    flag a local germline deviation (substitution) or the alignment shift an indel produces — then a
+    linear state head. It runs on the *canonicalized* embedding, so its output is in the forward frame
+    and aligns position-for-position with the forward-frame ``state_labels`` target. Dilations
+    ``(1,2,4,8,16)`` with kernel 3 give a receptive field of 63 positions."""
+
+    def __init__(self, in_dim: int, hidden: int = 128, dilations=(1, 2, 4, 8, 16)):
+        super().__init__()
+        layers = []
+        d = in_dim
+        for dil in dilations:
+            layers += [nn.Conv1d(d, hidden, kernel_size=3, padding=dil, dilation=dil), nn.GELU()]
+            d = hidden
+        self.convs = nn.Sequential(*layers)
+        self.head = PerPositionStateHead(hidden)
+
+    def forward(self, emb: torch.Tensor) -> torch.Tensor:            # (B, L, C) -> (B, L, S)
+        h = self.convs(emb.transpose(1, 2)).transpose(1, 2)
+        return self.head(h)
 
 
 def state_reliability(state_logits: torch.Tensor, r_min: float = 0.25) -> torch.Tensor:

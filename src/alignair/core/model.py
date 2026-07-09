@@ -16,6 +16,7 @@ import torch.nn.functional as F
 
 from .config import _SEG_KERNELS, AlignAIRConfig
 from ..nn.heads.orientation import apply_orientation
+from ..nn.heads.state import PerPositionStateBranch
 from .gene_branch import GeneBranch, MetaHead, build_tower
 from .layers import EmbeddingOrientationHead, TokenAndPositionEmbedding
 
@@ -31,6 +32,9 @@ class AlignAIR(nn.Module):
         self.meta_tower = build_tower(cfg, _SEG_KERNELS)
         self.branches = nn.ModuleDict({s.name: GeneBranch(s, cfg) for s in cfg.gene_specs})
         self.meta_heads = nn.ModuleDict(self._build_meta_heads(cfg))
+        # optional per-position edit-state head (germline/sub/insertion/deletion); off by default so
+        # legacy checkpoints (no such weights) still load strict.
+        self.state_branch = PerPositionStateBranch(C) if getattr(cfg, "state_head", False) else None
 
     @staticmethod
     def _build_meta_heads(cfg: AlignAIRConfig) -> dict:
@@ -61,6 +65,11 @@ class AlignAIR(nn.Module):
 
         meta = self.meta_tower(emb)
         out["position_mask"] = mask                            # valid read positions (for pad-masked seg loss)
+
+        # per-position edit states, from the canonicalized embedding -> forward-frame, aligns with the
+        # forward-frame `state_labels` target (indel positions the postprocessing can consume directly)
+        if self.state_branch is not None:
+            out["state_logits"] = self.state_branch(emb)
 
         # per-gene segmentation (soft-argmax boundary expectations; masked to the read, not the pad)
         exp: dict = {}

@@ -14,7 +14,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .config import AlignAIRConfig
+from ..nn.heads.state import STATE_CLASS_WEIGHTS
 from ..nn.weighting import UncertaintyWeight
+
+_STATE_IGNORE = -100    # per-position label pad (matches gym_collate's ignore_index)
 
 
 def genes_of(cfg: AlignAIRConfig) -> list[str]:
@@ -29,6 +32,8 @@ def make_logvars(cfg: AlignAIRConfig) -> nn.ModuleDict:
     keys += ["mutation", "indel", "productive", "orientation"]
     if getattr(cfg, "num_chain_types", 1) > 1:                  # multi-chain: chain_type (locus) head
         keys.append("chain_type")
+    if getattr(cfg, "state_head", False):                      # per-position edit-state head
+        keys.append("state")
     return nn.ModuleDict({k: UncertaintyWeight() for k in keys})
 
 
@@ -109,6 +114,15 @@ def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn
 
     total = parts["segmentation"] + parts["classification"] + parts["mutation"] \
         + parts["indel"] + parts["productive"]
+
+    # ---- per-position edit state: masked, class-weighted CE (germline/sub/insertion/deletion) ----
+    if "state_logits" in out and "state_labels" in targets and "state" in logvars:
+        sl = out["state_logits"]                                    # (B, L, S)
+        w = sl.new_tensor(STATE_CLASS_WEIGHTS)
+        st_ce = F.cross_entropy(sl.reshape(-1, sl.shape[-1]), targets["state_labels"].reshape(-1),
+                                weight=w, ignore_index=_STATE_IGNORE)
+        parts["state"] = _kendall(logvars["state"], st_ce)
+        total = total + parts["state"]
 
     # ---- orientation (supervised only when the batch carries an orientation label) ----
     if "orientation" in targets and "orientation_logits" in out:

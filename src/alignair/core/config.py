@@ -51,6 +51,7 @@ class AlignAIRConfig:
     v_allele_latent_size: Optional[int] = None
     d_allele_latent_size: Optional[int] = None
     j_allele_latent_size: Optional[int] = None
+    state_head: bool = False       # add the per-position edit-state head (germline/sub/ins/del)
 
     @property
     def gene_specs(self) -> tuple:

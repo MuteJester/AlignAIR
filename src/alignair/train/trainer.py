@@ -51,6 +51,10 @@ def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu"
     for k in ("mutation_rate", "indel_count", "productive"):
         targets[k] = b[k].to(device)
     targets["orientation"] = orient.to(device)
+    # per-position edit-state labels (forward frame; the model canonicalizes internally) padded to L
+    st = b["state_labels"]
+    st = F.pad(st, (0, L - st.shape[1]), value=-100) if st.shape[1] < L else st[:, :L]
+    targets["state_labels"] = st.to(device)
     return batch_in, targets
 
 
@@ -198,6 +202,13 @@ def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     m["mutation_mae"] = float((out["mutation_rate"] - targets["mutation_rate"]).abs().mean())
     m["indel_mae"] = float((out["indel_count"] - targets["indel_count"]).abs().mean())
     m["productive_acc"] = float(((out["productive"] > 0.5) == (targets["productive"] > 0.5)).float().mean())
+    if "state_logits" in out and "state_labels" in targets:
+        pred, lab = out["state_logits"].argmax(-1), targets["state_labels"]
+        valid = lab != -100
+        m["state_acc"] = float((pred[valid] == lab[valid]).float().mean()) if valid.any() else float("nan")
+        for name, idx in (("sub", 1), ("ins", 2), ("del", 3)):    # recall on the rare edit classes
+            gt = valid & (lab == idx)
+            m[f"state_{name}_recall"] = float((pred[gt] == idx).float().mean()) if gt.any() else float("nan")
     return m
 
 
