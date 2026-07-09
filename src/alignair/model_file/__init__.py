@@ -153,3 +153,41 @@ def _rebuild(path, device):
 def load_model(path, *, device="cpu") -> LoadedModel:
     md, cfg, model, reference = _rebuild(path, device)
     return LoadedModel(model=model, reference=reference, config=cfg, metadata=md)
+
+
+@dataclass
+class TrainingState:
+    model: AlignAIR
+    reference: ReferenceSet
+    config: AlignAIRConfig
+    logvars_state: dict | None
+    optimizer_state: dict | None
+    step: int
+    rng: dict
+    train_args: dict
+    metadata: dict
+
+
+def load_training_state(path, *, device="cpu") -> TrainingState:
+    md, cfg, model, reference = _rebuild(path, device)
+    if "train_state" not in md["sections"]:
+        raise ValueError("no train_state section; this model file cannot resume training")
+    st = serialize.train_state_from_bytes(container.read_section(path, "train_state"))
+    logvars_state = (serialize.state_dict_from_bytes(container.read_section(path, "logvars"))
+                     if "logvars" in md["sections"] else None)
+    return TrainingState(model=model, reference=reference, config=cfg, logvars_state=logvars_state,
+                         optimizer_state=st.get("optimizer"), step=int(st.get("step", 0)),
+                         rng=st.get("rng", {}), train_args=st.get("train_args", {}), metadata=md)
+
+
+def read_dataconfig(path, index=None):
+    md = container.read_header(path)
+    n = len(md["reference"]["dataconfigs"])
+    if index is not None:
+        return serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{index}"))
+    dcs = [serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{i}")) for i in range(n)]
+    return dcs[0] if n == 1 else dcs
+
+
+def read_reference(path) -> str:
+    return container.read_section(path, "reference").decode("utf-8")

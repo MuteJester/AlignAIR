@@ -51,3 +51,35 @@ def test_inference_load_still_works_with_optimizer_present(tmp_path):
     assert "train_state" in mf.read_metadata(str(p))["sections"]
     lm = mf.load_model(str(p))
     assert lm.model is not None
+
+
+def test_load_training_state_restores_optimizer_and_step(tmp_path):
+    model, cfg = _fresh_model()
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    opt.step()  # create optimizer state
+    rng = {"torch": torch.get_rng_state()}
+    p = tmp_path / "m.alignair"
+    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"],
+                  training={"steps": 5, "batch_size": 2, "train_args": {"lr": 1e-3}},
+                  optimizer=opt, rng=rng)
+    ts = mf.load_training_state(str(p))
+    assert ts.step == 5 and ts.optimizer_state is not None and ts.train_args["lr"] == 1e-3
+
+
+def test_load_training_state_errors_without_train_state(tmp_path):
+    model, cfg = _fresh_model()
+    p = tmp_path / "m.alignair"
+    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
+    import pytest
+    with pytest.raises(ValueError, match="resume"):
+        mf.load_training_state(str(p))
+
+
+def test_read_dataconfig_and_reference(tmp_path):
+    model, cfg = _fresh_model()
+    p = tmp_path / "m.alignair"
+    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
+    dc = mf.read_dataconfig(str(p), index=0)
+    assert dc.metadata.has_d is True
+    fasta = mf.read_reference(str(p))
+    assert fasta.startswith(">") and "IGHV" in fasta
