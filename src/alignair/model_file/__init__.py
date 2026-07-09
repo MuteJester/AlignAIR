@@ -128,3 +128,28 @@ def read_metadata(path) -> dict:
     md = container.read_header(path)
     md.pop("_sections_base", None)
     return md
+
+
+@dataclass
+class LoadedModel:
+    model: AlignAIR
+    reference: ReferenceSet
+    config: AlignAIRConfig
+    metadata: dict
+
+
+def _rebuild(path, device):
+    md = container.read_header(path)
+    cfg = serialize.config_from_bytes(container.read_section(path, "config"))
+    model = AlignAIR(cfg).to(device).eval()
+    model.load_state_dict(serialize.state_dict_from_bytes(container.read_section(path, "weights")), strict=True)
+    n = len(md["reference"]["dataconfigs"])
+    dcs = [serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{i}")) for i in range(n)]
+    reference = ReferenceSet.from_dataconfigs(*dcs)
+    md.pop("_sections_base", None)
+    return md, cfg, model, reference
+
+
+def load_model(path, *, device="cpu") -> LoadedModel:
+    md, cfg, model, reference = _rebuild(path, device)
+    return LoadedModel(model=model, reference=reference, config=cfg, metadata=md)

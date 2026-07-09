@@ -24,3 +24,30 @@ def test_save_and_read_metadata(tmp_path):
     assert "config" in md["sections"] and md["sections"]["config"]["format"] == "json"
     assert md["sections"]["weights"]["format"] == "safetensors"
     assert md["sections"]["dataconfig/0"]["format"] == "python-pickle"
+
+
+def test_load_model_rebuilds_and_matches(tmp_path):
+    model, cfg = _fresh_model()
+    model.eval()
+    p = tmp_path / "m.alignair"
+    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
+    lm = mf.load_model(str(p))
+    assert lm.config.__dict__ == cfg.__dict__            # full config, no external hints
+    ref0 = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    assert lm.reference.gene("V").names == ref0.gene("V").names
+    x = {"tokenized_sequence": torch.zeros(1, cfg.max_seq_length, dtype=torch.long)}
+    with torch.no_grad():
+        a = model(x)["v_start"]
+        b = lm.model.eval()(x)["v_start"]
+    assert torch.allclose(a, b)
+
+
+def test_inference_load_still_works_with_optimizer_present(tmp_path):
+    model, cfg = _fresh_model()
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    p = tmp_path / "m.alignair"
+    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"],
+                  training={"steps": 1, "batch_size": 1}, optimizer=opt)
+    assert "train_state" in mf.read_metadata(str(p))["sections"]
+    lm = mf.load_model(str(p))
+    assert lm.model is not None
