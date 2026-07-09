@@ -8,7 +8,7 @@ from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair.core.losses import make_logvars
 from alignair.reference.reference_set import ReferenceSet
-from alignair.training.alignair_trainer import train
+from alignair.train.trainer import train
 
 
 def main():

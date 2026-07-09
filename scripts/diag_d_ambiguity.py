@@ -5,8 +5,8 @@ import argparse
 import numpy as np
 
 import GenAIRR.data as gdata
-from alignair.gym.curriculum import Curriculum
-from alignair.gym.gym import build_experiment
+from alignair.train.gym.curriculum import Curriculum
+from alignair.train.gym.gym import build_experiment
 
 
 def main():

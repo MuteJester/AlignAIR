@@ -5,8 +5,8 @@ from torch.utils.data import DataLoader
 genairr = pytest.importorskip("GenAIRR")
 import GenAIRR.data as gdata
 from alignair.reference.reference_set import ReferenceSet
-from alignair.gym.gym import AlignAIRGym
-from alignair.gym.collate import gym_collate
+from alignair.train.gym.gym import AlignAIRGym
+from alignair.train.gym.collate import gym_collate
 
 
 def test_gym_streams_batches_with_full_targets(caplog):

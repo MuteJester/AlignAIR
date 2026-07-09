@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Iterator
 
-from alignair.gym.targets import build_targets
+from alignair.train.gym.targets import build_targets
 from alignair.reference.reference_set import ReferenceSet
 from ..core.schema import BenchmarkCase, BenchmarkSpec, GENES, GeneTruth, StratumSpec
 from .genairr import (

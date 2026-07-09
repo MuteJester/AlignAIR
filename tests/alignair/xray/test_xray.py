@@ -2,7 +2,7 @@
 import torch
 
 from alignair.core.config import AlignAIRConfig
-from alignair.training.alignair_trainer import eval_metrics
+from alignair.train.trainer import eval_metrics
 from alignair.xray import ModelXRay, network
 
 

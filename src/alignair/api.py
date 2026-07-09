@@ -90,11 +90,11 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
                 **train_overrides) -> str:
     """Train a new AlignAIR model on one or more GenAIRR dataconfigs (1 => single-chain, N =>
     multi-chain) and save a resumable checkpoint to ``out_path``. ``train_overrides`` forwards to
-    :func:`alignair.training.alignair_trainer.train` (e.g. ``lr=``, ``batch_size=``, ``progresses=``,
+    :func:`alignair.train.trainer.train` (e.g. ``lr=``, ``batch_size=``, ``progresses=``,
     ``short_boost=``, ``resume_path=``)."""
     import GenAIRR.data as gd
     from .core.losses import make_logvars
-    from .training.alignair_trainer import train as _train
+    from .train.trainer import train as _train
 
     dcs = [getattr(gd, d) if isinstance(d, str) else d for d in dataconfigs]
     reference = ReferenceSet.from_dataconfigs(*dcs)

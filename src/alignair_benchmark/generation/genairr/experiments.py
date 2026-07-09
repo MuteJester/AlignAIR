@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterator
 
-from alignair.gym.curriculum import Curriculum
-from alignair.gym.gym import build_experiment
+from alignair.train.gym.curriculum import Curriculum
+from alignair.train.gym.gym import build_experiment
 from ...core.schema import StratumSpec
 
 

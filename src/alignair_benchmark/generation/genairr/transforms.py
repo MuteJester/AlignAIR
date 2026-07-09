@@ -1,7 +1,7 @@
 """Benchmark transforms applied to GenAIRR records after simulation."""
 from __future__ import annotations
 
-from alignair.gym.crop import anchor_c0, crop_one_sided, crop_record
+from alignair.train.gym.crop import anchor_c0, crop_one_sided, crop_record
 from ...core.schema import StratumSpec
 
 

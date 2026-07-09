@@ -15,9 +15,9 @@ import tempfile
 import numpy as np
 
 import GenAIRR.data as gdata
-from alignair.gym.gym import build_experiment
-from alignair.gym.curriculum import Curriculum
-from alignair.gym.crop import crop_record
+from alignair.train.gym.gym import build_experiment
+from alignair.train.gym.curriculum import Curriculum
+from alignair.train.gym.crop import crop_record
 
 TOOLS = os.path.join(os.path.dirname(__file__), "..", ".private", "tools")
 IGB = os.path.join(TOOLS, "ncbi-igblast-1.22.0")

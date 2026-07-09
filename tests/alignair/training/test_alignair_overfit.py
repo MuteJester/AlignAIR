@@ -7,12 +7,12 @@ import torch
 from alignair.core.config import AlignAIRConfig
 from alignair.core.losses import make_logvars
 from alignair.core import AlignAIR
-from alignair.training.alignair_trainer import build_batch, train_step
+from alignair.train.trainer import build_batch, train_step
 
 
 def _fixed_batch(cfg, ref, n=4):
     import GenAIRR.data as gd
-    from alignair.gym import Curriculum, build_experiment
+    from alignair.train.gym import Curriculum, build_experiment
     p = dict(Curriculum().params(0.3))
     p["invert_d_prob"] = 0.0
     exp = build_experiment(gd.HUMAN_IGH_OGRDB, p, allow_curatable=True)
