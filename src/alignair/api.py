@@ -61,19 +61,25 @@ def _build_reference(dataconfigs, reference):
 
 
 def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSet | None = None,
-               device: str = "cpu") -> tuple[AlignAIR, ReferenceSet]:
+               device: str = "cpu", trust_pickle: bool = False) -> tuple[AlignAIR, ReferenceSet]:
     """Load a trained AlignAIR checkpoint into an eval-ready ``(model, reference)`` pair.
 
-    A ``.alignair`` model file carries its own reference (rebuilt from the embedded dataconfig), so
-    ``dataconfigs``/``reference`` are unnecessary. For a legacy ``.pt`` checkpoint, provide the
-    germline ``reference`` directly or ``dataconfigs`` (GenAIRR names/objects) to build it — it must
-    match the reference the model was trained on.
+    A safe ``.alignair`` model file carries its own reference (rebuilt from the no-pickle
+    ``reference_json``), so ``dataconfigs``/``reference`` are unnecessary and no ``trust_pickle`` is
+    needed. A legacy ``.pt`` checkpoint loads via ``torch.load`` (arbitrary-code pickle) and so is
+    refused unless ``trust_pickle=True`` — pass it only for a local file you trust, or convert the
+    checkpoint first (``alignair convert x.pt x.alignair --dataconfig … --trust-pickle``).
     """
     from .model_file import container, load_model as _load_alignair
     if container.is_alignair_file(checkpoint_path):
-        lm = _load_alignair(checkpoint_path, device=device)   # reference travels inside the file
+        lm = _load_alignair(checkpoint_path, device=device, trust_pickle=trust_pickle)
         return lm.model, (reference or lm.reference)
-    ck = torch.load(checkpoint_path, map_location=device, weights_only=False)   # legacy .pt
+    if not trust_pickle:
+        raise ValueError(
+            f"{checkpoint_path} is a legacy .pt checkpoint; loading it runs torch.load "
+            "(arbitrary-code pickle). Pass trust_pickle=True only for a local file you trust, or "
+            "convert it once: `alignair convert x.pt x.alignair --dataconfig … --trust-pickle`.")
+    ck = torch.load(checkpoint_path, map_location=device, weights_only=False)   # legacy .pt (trusted)
     cfg = AlignAIRConfig(**ck["config"])
     model = AlignAIR(cfg).to(device).eval()
     model.load_state_dict(_remap_state_dict(ck["model"]), strict=True)
