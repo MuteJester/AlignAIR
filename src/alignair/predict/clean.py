@@ -30,9 +30,12 @@ def clean(raw_batches: list, genes) -> Predictions:
                    else np.zeros(len(productive), dtype=int))
     chain_type = (np.vstack([np.asarray(b["chain_type_logits"]) for b in raw_batches]).argmax(-1)
                   if all("chain_type_logits" in b for b in raw_batches) else None)
+    state_logits = (np.concatenate([np.asarray(b["state_logits"]) for b in raw_batches], axis=0)
+                    if raw_batches and all("state_logits" in b for b in raw_batches) else None)
     return Predictions(
         allele=allele, start=start, end=end,
         mutation_rate=_flat(raw_batches, "mutation_rate"),
         indel_count=_flat(raw_batches, "indel_count"),
         productive=productive, orientation=orientation, chain_type=chain_type,
+        state_logits=state_logits,
     )

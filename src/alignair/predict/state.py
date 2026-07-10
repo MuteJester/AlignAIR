@@ -31,6 +31,7 @@ class Predictions:
     productive: np.ndarray            # [N] bool
     orientation: Optional[np.ndarray] = None   # [N] predicted orientation id (model self-corrects)
     chain_type: Optional[np.ndarray] = None    # [N] predicted chain-type index (multi-chain only)
+    state_logits: Optional[np.ndarray] = None  # [N, L, 4] per-position edit-state logits (state head only)
 
 
 @dataclass
