@@ -1,0 +1,11 @@
+{
+  "_source": "AIRR schema (docs.airr-community.org/en/latest/datarep/germline.html), Genotype/GenotypeSet",
+  "GenotypeSet": {"required": ["receptor_genotype_set_id", "genotype_class_list"]},
+  "Genotype": {"required": ["receptor_genotype_id", "locus", "documented_alleles",
+                            "undocumented_alleles", "deleted_genes", "inference_process"]},
+  "DocumentedAllele": {"required": ["label"], "optional": ["germline_set_ref", "phasing"]},
+  "UndocumentedAllele": {"required": ["allele_name", "sequence"], "optional": ["phasing"]},
+  "DeletedGene": {"required": ["label"]},
+  "enums": {"locus": ["IGH", "IGI", "IGK", "IGL", "TRA", "TRB", "TRD", "TRG"],
+            "inference_process": ["genomic_sequencing", "repertoire_sequencing", null]}
+}
