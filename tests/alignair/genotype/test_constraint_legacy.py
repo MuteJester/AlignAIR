@@ -1,7 +1,7 @@
 """Tests for genotype-based likelihood correction."""
 import numpy as np
 
-from alignair.predict.genotype import adjust_for_genotype
+from alignair.genotype.constraint import adjust_for_genotype
 from alignair.predict.state import Predictions
 
 

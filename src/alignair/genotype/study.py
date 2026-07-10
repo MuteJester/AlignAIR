@@ -7,7 +7,7 @@ subset of the trained reference — the "donor genotype" that produced them, so 
 from __future__ import annotations
 
 from ..api import predict_sequences
-from .benchmark import _call_correct, _mean, generate_labeled, default_strata
+from ..evaluate.benchmark import _call_correct, _mean, generate_labeled, default_strata
 
 
 def _observed_genotype(truth: list[dict]) -> dict:

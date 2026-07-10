@@ -7,7 +7,7 @@ def test_genotype_study_returns_constrained_and_unconstrained():
     import GenAIRR.data as gd
     from alignair.core import AlignAIR
     from alignair.core.config import AlignAIRConfig
-    from alignair.evaluate.genotype_study import genotype_study
+    from alignair.genotype.study import genotype_study
     from alignair.reference.reference_set import ReferenceSet
     cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
     model, ref = AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
@@ -23,7 +23,7 @@ def test_tight_genotype_constrains_to_requested_size():
     import GenAIRR.data as gd
     from alignair.core import AlignAIR
     from alignair.core.config import AlignAIRConfig
-    from alignair.evaluate.genotype_study import genotype_study
+    from alignair.genotype.study import genotype_study
     from alignair.reference.reference_set import ReferenceSet
     cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
     model, ref = AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .state import Predictions
+from ..predict.state import Predictions
 
 METHODS = ("mask", "softmax", "renormalize", "redistribute")
 

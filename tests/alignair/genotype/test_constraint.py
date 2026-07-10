@@ -1,7 +1,7 @@
 """Genotype-constrained inference: mask (accuracy) + renormalize (confidence)."""
 import numpy as np
 
-from alignair.predict.genotype import adjust_for_genotype, load_genotype
+from alignair.genotype.constraint import adjust_for_genotype, load_genotype
 from alignair.predict.state import Predictions
 
 

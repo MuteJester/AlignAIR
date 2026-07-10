@@ -103,7 +103,7 @@ def run(args) -> int:
 
     overrides = {}
     if args.genotype:
-        from ..predict.genotype import load_genotype
+        from ..genotype.constraint import load_genotype
         genotype, unknown = load_genotype(args.genotype, reference=reference, drop_unknown=True)
         if any(unknown.values()):
             print(f"note: dropped genotype alleles not in the model reference: "

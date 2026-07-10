@@ -11,7 +11,6 @@ import numpy as np
 from .clean import clean
 from .config import PredictConfig
 from .forward import run_model
-from .genotype import adjust_for_genotype
 from .germline import align_germline
 from .segment import correct_segments
 from .threshold import select_alleles
@@ -42,6 +41,7 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     genes = _genes(cfg)
     preds = clean(run_model(model, sequences, cfg, device), genes)
     if cfg.genotype:
+        from ..genotype.constraint import adjust_for_genotype   # lazy: genotype/ is a higher-level pkg
         preds = adjust_for_genotype(preds, cfg.genotype, reference, method=cfg.genotype_method)
     # canonicalize each read to the model's forward frame so coords / germline / AIRR all agree
     orient = preds.orientation
