@@ -44,6 +44,9 @@ dependencies = [
 # ── Optional extras ──────────────────────────────────────────────────────────
 [project.optional-dependencies]
 zstd = ["zstandard>=0.22"]    # optional stronger compression for .alignair sections (codec="zstd")
+# Only needed for PRIVATE hf:// repos or resumable large downloads. file://, https://, and PUBLIC
+# hf:// registries + the verified cache all work with the stdlib alone (no extra install).
+hub = ["huggingface-hub>=0.20"]
 cli = [
     "huggingface-hub>=0.20",
     "airr>=1.4",
