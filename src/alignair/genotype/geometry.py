@@ -40,16 +40,17 @@ class LeakageModel:
         self.alpha, self.cos0, self.cap = alpha, cos0, cap
 
     @classmethod
-    def fit(cls, W: np.ndarray, *, biases=None, norms=None, homozygous_leakage: dict | None = None):
+    def fit(cls, W: np.ndarray, *, biases=None, norms=None, homozygous_leakage: dict | None = None,
+            alpha: float = 1.0, cos0: float = 0.5, cap: float = 0.5):
         """Build from prototypes. ``biases`` (head bias) + prototype ``norms`` set attractiveness;
-        ``homozygous_leakage`` = {source: {sibling: observed_fraction}} from homozygous repertoires
-        calibrates ``alpha``/``cos0`` (else cosine-only defaults)."""
+        ``alpha``/``cos0``/``cap`` are the (calibratable) leakage knobs; ``homozygous_leakage`` =
+        {source: {sibling: observed_fraction}} from homozygous repertoires refits ``alpha``/``cos0``."""
         C = prototype_cosine(W)
         n = W.shape[0]
         bias = np.zeros(n) if biases is None else np.asarray(biases, dtype=np.float64)
         nrm = np.linalg.norm(W, axis=1) if norms is None else np.asarray(norms, dtype=np.float64)
         attract = _sigmoid(bias) * (nrm / (nrm.mean() + 1e-9))
-        m = cls(C, attract)
+        m = cls(C, attract, alpha=alpha, cos0=cos0, cap=cap)
         if homozygous_leakage:
             m._calibrate(homozygous_leakage)
         return m
