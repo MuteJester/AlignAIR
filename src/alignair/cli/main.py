@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 
 from . import analyze as _analyze_cmd
+from . import benchmark as _benchmark_cmd
 from . import convert as _convert_cmd
 from . import export_reference as _export_ref_cmd
 from . import info as _info_cmd
@@ -23,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     _convert_cmd.register(sub)
     _models_cmd.register(sub)
     _analyze_cmd.register(sub)
+    _benchmark_cmd.register(sub)
     return parser
 
 
