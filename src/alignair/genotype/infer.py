@@ -75,7 +75,7 @@ def _diagnostic_evidence(profile, idx, group_idxs, cosine, seqs):
 
 def infer_genotype(model, reference, reads, *, locus: str = "IGH", germline_set_ref=None,
                    min_support: float = 0.003, present_thr: float = 0.002, deletion_floor: float = 0.001,
-                   device: str = "cpu", batch_size: int = 64) -> GenotypeResult:
+                   max_novel_snps: int = 15, device: str = "cpu", batch_size: int = 64) -> GenotypeResult:
     aligned = align_repertoire(model, reference, reads, device=device, batch_size=batch_size)
     read_w = read_weights(aligned)
     genes = ("v", "d", "j") if model.cfg.has_d else ("v", "j")
@@ -107,7 +107,9 @@ def infer_genotype(model, reference, reads, *, locus: str = "IGH", germline_set_
                 profile = (polymorphism_profile(reads_i, seqs[i], _weights_for(aligned.records, gtype, name, read_w))
                            if reads_i else {})
                 res = resolve(profile, name, reference, gtype) if profile else {"call": "confirm"}
-                if res["call"] == "novel":
+                # a real novel allele differs by a FEW SNPs; many "polymorphic" positions means the
+                # reads don't match this germline (mis-assignment / misalignment), not a variant -> skip.
+                if res["call"] == "novel" and 0 < len(res.get("positions", [])) <= max_novel_snps:
                     novels.append({**res, "near": name,
                                    "promotable": "uncovered" not in res.get("source_mask", [])})
                 evidence[name] = _diagnostic_evidence(profile, i, idxs, cosine, seqs)
@@ -118,7 +120,7 @@ def infer_genotype(model, reference, reads, *, locus: str = "IGH", germline_set_
             if not gene_residual:
                 continue
             gc = call_gene(gene, gene_residual, evidence, min_support=min_support,
-                           deletion_floor=deletion_floor, novel=novels)
+                           deletion_floor=deletion_floor, gene_usage=gene_total / total, novel=novels)
             for a in gc.alleles:
                 a.update(enrich.get(a["name"], {}))
             gene_calls.append(gc)

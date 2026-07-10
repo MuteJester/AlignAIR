@@ -22,9 +22,11 @@ class GeneCall:
 
 
 def call_gene(gene: str, residual: dict, evidence: dict, *, min_support: float = 0.05,
-              deletion_floor: float = 0.005, novel=None) -> GeneCall:
-    """``residual``={allele: leakage-removed support}; ``evidence``={allele: covered-diagnostic-SNP?}."""
-    total = sum(residual.values())
+              deletion_floor: float = 0.005, gene_usage: float | None = None, novel=None) -> GeneCall:
+    """``residual``={allele: leakage-removed support}; ``evidence``={allele: covered-diagnostic-SNP?}.
+    Deletion is judged on the gene's raw USAGE fraction (``gene_usage``) — leakage-removed residuals
+    can be near-zero for a genuinely-present gene, so they must not drive the deletion call."""
+    total = gene_usage if gene_usage is not None else sum(residual.values())
     reasons: list[str] = []
     kept: list[dict] = []
     for a, r in sorted(residual.items(), key=lambda kv: -kv[1]):
