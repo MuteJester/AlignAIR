@@ -113,6 +113,59 @@ def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool 
     return download_verified(src, entry["file"], dest, sha, offline=offline)
 
 
+def installed_models() -> dict[str, list[str]]:
+    """{model_id: [installed versions]} scanned from the cache dir."""
+    root = cache_root() / "models"
+    out: dict[str, list[str]] = {}
+    if not root.exists():
+        return out
+    for d in sorted(root.iterdir()):
+        if d.is_dir():
+            vers = sorted((p.name[: -len(".alignair")] for p in d.glob("*.alignair")), key=_version_key)
+            if vers:
+                out[d.name] = vers
+    return out
+
+
+def _version_key(v: str):
+    try:
+        return (0, tuple(int(x) for x in v.split(".")))
+    except ValueError:
+        return (1, v)
+
+
+def prune(keep: int = 1) -> list[Path]:
+    """Remove all but the newest ``keep`` cached versions per model. Returns the removed paths."""
+    removed: list[Path] = []
+    for mid, vers in installed_models().items():
+        drop = vers if keep <= 0 else vers[:-keep]
+        for ver in drop:
+            p = cache_path(mid, ver)
+            try:
+                p.unlink()
+                removed.append(p)
+            except OSError:
+                pass
+    return removed
+
+
+def verify_installed(srcs: list[str], *, offline: bool = False, model_id: str | None = None):
+    """Re-hash each installed artifact against the registry. Yields (id, version, ok|None-if-unknown)."""
+    out = []
+    for mid, vers in installed_models().items():
+        if model_id and mid != model_id:
+            continue
+        for ver in vers:
+            found = sources.find_model(mid, ver, srcs, offline=offline)
+            if not found:
+                out.append((mid, ver, None))
+                continue
+            sha = found[2].get("artifact_sha256")
+            ok = sha is None or _sha256_file(cache_path(mid, ver)) == sha
+            out.append((mid, ver, ok))
+    return out
+
+
 def _resolve_sources() -> list[str]:
     return sources.resolve_sources()
 

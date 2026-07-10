@@ -6,6 +6,7 @@ import argparse
 from . import convert as _convert_cmd
 from . import export_reference as _export_ref_cmd
 from . import info as _info_cmd
+from . import models as _models_cmd
 from . import predict as _predict_cmd
 from . import train as _train_cmd
 
@@ -19,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     _info_cmd.register(sub)
     _export_ref_cmd.register(sub)
     _convert_cmd.register(sub)
+    _models_cmd.register(sub)
     return parser
 
 
