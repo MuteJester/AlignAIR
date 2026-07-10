@@ -31,6 +31,11 @@ def register(sub) -> None:
                         "field list (default: full). Light selections skip the AIRR assembly for speed.")
     p.add_argument("--device", default=None, help="cpu / cuda (default: auto)")
     p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--genotype", default=None,
+                   help="genotype JSON/YAML {gene: [alleles]} (a subset of the trained reference) to "
+                        "constrain the allele calls to")
+    p.add_argument("--genotype-method", choices=["mask", "softmax", "renormalize", "redistribute"],
+                   default="mask", help="how to apply the genotype constraint (default: mask)")
     p.add_argument("--registry", action="append", help="registry url for a shipped model id (repeatable)")
     p.add_argument("--offline", action="store_true", help="never touch the network")
     p.add_argument("--quiet", action="store_true", help="suppress the update-available notice")
@@ -96,8 +101,16 @@ def run(args) -> int:
         print(str(e))
         return 1
 
+    overrides = {}
+    if args.genotype:
+        from ..predict.genotype import load_genotype
+        genotype, unknown = load_genotype(args.genotype, reference=reference, drop_unknown=True)
+        if any(unknown.values()):
+            print(f"note: dropped genotype alleles not in the model reference: "
+                  f"{ {g: sorted(v) for g, v in unknown.items() if v} }")
+        overrides = {"genotype": genotype, "genotype_method": args.genotype_method}
     records = predict_sequences(model, reference, seqs, device=device, batch_size=args.batch_size,
-                                airr=needs_assembly(args.columns))
+                                airr=needs_assembly(args.columns), **overrides)
     write_airr(args.out, ids, seqs, records, locus=args.locus, columns=args.columns)
     if not args.no_run_metadata:
         _write_run_metadata(args.out, model_path, args, len(records), device)

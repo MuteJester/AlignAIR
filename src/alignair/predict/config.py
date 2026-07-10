@@ -16,5 +16,6 @@ class PredictConfig:
     batch_size: int = 64
     airr: bool = True                 # assemble full AIRR fields (junction/CDR/FWR/np/identity); off = light records
     pad_mode: str = "right"           # our trainer right-pads (TF used "center")
-    genotype: Optional[dict] = None   # {gene: set(allele names)} enables genotype likelihood correction
+    genotype: Optional[dict] = None   # {gene: set(allele names)} enables genotype constraint (subset)
+    genotype_method: str = "mask"  # mask | renormalize (Bayes posterior) | redistribute (legacy)
     chain_types: Optional[tuple] = None  # ordered locus names; maps multi-chain chain_type index -> locus

@@ -42,7 +42,7 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     genes = _genes(cfg)
     preds = clean(run_model(model, sequences, cfg, device), genes)
     if cfg.genotype:
-        preds = adjust_for_genotype(preds, cfg.genotype, reference)
+        preds = adjust_for_genotype(preds, cfg.genotype, reference, method=cfg.genotype_method)
     # canonicalize each read to the model's forward frame so coords / germline / AIRR all agree
     orient = preds.orientation
     seqs = [_canonicalize(s, int(orient[i]) if orient is not None else 0)
