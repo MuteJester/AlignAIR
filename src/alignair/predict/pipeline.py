@@ -39,6 +39,10 @@ def _canonicalize(seq: str, orientation_id: int) -> str:
 
 def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu", aligner=None):
     genes = _genes(cfg)
+    # normalize case once, up front: GenAIRR (and some FASTA sources) mark bases with case; the model
+    # tokenizer upper-cases internally, but the germline reader + AIRR assembly consume the raw string,
+    # and case-mixed input mis-anchors the junction. DNA alignment is case-insensitive.
+    sequences = [str(s).upper() for s in sequences]
     preds = clean(run_model(model, sequences, cfg, device), genes)
     if cfg.genotype:
         from ..genotype.constraint import adjust_for_genotype   # lazy: genotype/ is a higher-level pkg

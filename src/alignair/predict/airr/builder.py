@@ -24,13 +24,15 @@ def _germline_maps(reference):
     return v_gapped, j_ung, d_ung, (j.anchors or {})
 
 
-def _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors) -> bool:
+def _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors, force=False) -> bool:
     """Fix A: attach the indel-robust, read-coordinate junction (Cys / J-anchor mapped through the
-    CIGAR) when the read carries a V/J/D indel and the anchors can be placed. Needs only coords +
-    CIGAR (no gapped `sequence_alignment`), so it runs before the guards below — even reads whose
+    CIGAR) when the read carries a V/J/D indel and the anchors can be placed — OR always when
+    ``force`` is set (TCR loci: their IMGT gapping breaks the gapped column-309 junction math, and the
+    read-coordinate path is exact for TCR; see the locus gate in :func:`build_airr`). Needs only coords
+    + CIGAR (no gapped `sequence_alignment`), so it runs before the guards below — even reads whose
     heavy alignment math is skipped still get a correct junction. Returns True when applied."""
-    if not (cigar_has_indel(rec.get("v_cigar")) or cigar_has_indel(rec.get("j_cigar"))
-            or cigar_has_indel(rec.get("d_cigar"))):
+    if not force and not (cigar_has_indel(rec.get("v_cigar")) or cigar_has_indel(rec.get("j_cigar"))
+                          or cigar_has_indel(rec.get("d_cigar"))):
         return False
     v_call = rec.get("v_call", "")
     v_ref_gapped = v_gapped.get(v_call.split(",")[0], "") if v_call else ""
@@ -48,13 +50,13 @@ def _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors) -> bool:
     return True
 
 
-def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain) -> dict:
+def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> dict:
     seq = rec["sequence"]
     out = dict(rec)                    # preserve the light record (calls/coords/cigar/orientation/likelihoods)
     out.setdefault("locus", "IGH")
     out["productive"] = bool(rec.get("productive", True))
     out["ar_indels"] = rec.get("indel_count")
-    cigar_junction = _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors)
+    cigar_junction = _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors, force=is_tcr)
     # skip the heavy alignment math for clearly-garbage reads (non-productive with multiple indels);
     # the indel-robust junction above is already attached for them.
     if (not out["productive"]) and (rec.get("indel_count") or 0) > 1:
@@ -109,10 +111,12 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain) -> dict:
 
 def build_airr(records: list, reference, chain: str = "heavy") -> list:
     v_gapped, j_ung, d_ung, j_anchors = _germline_maps(reference)
-    out = []
+    v_names = reference.gene("V").names                          # locus gate: TCR (TRxV...) IMGT gapping
+    is_tcr = bool(v_names) and str(v_names[0]).upper().startswith("TR")  # breaks the gapped column-309
+    out = []                                                     # junction -> use the read-coordinate path
     for rec in records:
         try:
-            out.append(_build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain))
+            out.append(_build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr))
         except Exception:
             out.append(dict(rec))          # AIRR assembly failed -> keep the light record (calls/coords)
     return out
