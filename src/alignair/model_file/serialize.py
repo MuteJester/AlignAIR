@@ -2,10 +2,12 @@
 reference(fasta + reference_json). Trusted Python-only: dataconfig(pickle)/train_state(torch.save)."""
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import io
 import json
 import pickle
+import warnings
 
 import torch
 from safetensors.torch import load as st_load, save as st_save
@@ -20,7 +22,12 @@ def config_to_bytes(cfg: AlignAIRConfig) -> bytes:
 
 
 def config_from_bytes(b: bytes) -> AlignAIRConfig:
-    return AlignAIRConfig(**json.loads(b.decode("utf-8")))
+    raw = json.loads(b.decode("utf-8"))
+    known = {f.name for f in dataclasses.fields(AlignAIRConfig)}
+    extra = sorted(set(raw) - known)               # tolerate config schema drift (e.g. retired fields)
+    if extra:
+        warnings.warn(f"ignoring unknown AlignAIRConfig field(s) in checkpoint: {extra}")
+    return AlignAIRConfig(**{k: v for k, v in raw.items() if k in known})
 
 
 def state_dict_to_bytes(sd: dict) -> bytes:
