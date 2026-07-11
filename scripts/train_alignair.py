@@ -20,6 +20,9 @@ def main():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--progress", type=float, nargs="+", default=[0.3, 0.6, 0.9],
                     help="difficulty mix: one gym stream per level (round-robin)")
+    ap.add_argument("--mutation-cap", type=float, default=None,
+                    help="pin S5F mutation_rate <= this across the curriculum (TCR loci have no SHM; "
+                         "use e.g. 0.005 with --heavy-shm 0). Default None keeps the IGH SHM ramp.")
     ap.add_argument("--heavy-shm", type=float, default=0.25,
                     help="add a heavy-SHM stream at this mutation rate (0 to disable)")
     ap.add_argument("--short-boost", type=int, default=1,
@@ -55,7 +58,7 @@ def main():
     train(model, ref, dcs[0], cfg, logvars, steps=a.steps, batch_size=a.batch_size, lr=a.lr,
           progresses=tuple(a.progress), heavy_shm=a.heavy_shm, short_boost=a.short_boost, device=a.device,
           save_path=a.out, save_every=a.save_every, resume_path=a.resume, log_every=a.log_every,
-          monitor_log=monitor_log, deep_every=deep_every)
+          monitor_log=monitor_log, deep_every=deep_every, mutation_cap=a.mutation_cap)
     print(f"saved -> {a.out}  (diagnostics: {monitor_log}, deep every {deep_every} "
           f"= {a.steps // deep_every} points)")
 

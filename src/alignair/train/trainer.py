@@ -141,7 +141,7 @@ def _stream_records(dataconfig, params, seed):
     yield from exp.stream_records(n=None, seed=seed)
 
 
-def _amplicon_specs(progresses, heavy_shm, short_boost=1):
+def _amplicon_specs(progresses, heavy_shm, short_boost=1, mutation_cap=None):
     """Training data mix as two orthogonal axes: corruption background (curriculum ``progress``) x
     amplicon mode (GenAIRR ``end_loss`` profile). All short-read shaping is native GenAIRR end-loss —
     no post-hoc cropping — so every V/D/J coordinate is engine-correct.
@@ -173,13 +173,16 @@ def _amplicon_specs(progresses, heavy_shm, short_boost=1):
     if heavy_shm > 0:
         hs = dict(cur.params(0.3)); hs["mutation_rate"] = heavy_shm   # heavy-SHM, full length
         specs.append(hs)
+    if mutation_cap is not None:                    # loci without SHM (e.g. TCR): pin S5F mutation low
+        for s in specs:
+            s["mutation_rate"] = min(s["mutation_rate"], mutation_cap)
     return specs
 
 
-def _mixed_stream(dataconfig, progresses, heavy_shm, seed, short_boost=1):
+def _mixed_stream(dataconfig, progresses, heavy_shm, seed, short_boost=1, mutation_cap=None):
     """Round-robin the amplicon-mode mix (:func:`_amplicon_specs`) so every batch spans full-length
     clean/hard + heavy-SHM + V-anchored/J-anchored/fragment short reads, all GenAIRR-native."""
-    specs = _amplicon_specs(progresses, heavy_shm, short_boost)
+    specs = _amplicon_specs(progresses, heavy_shm, short_boost, mutation_cap)
     streams = [_stream_records(dataconfig, s, seed + i) for i, s in enumerate(specs)]
     yield from itertools.chain.from_iterable(zip(*streams))
 
@@ -215,8 +218,14 @@ def eval_metrics(out: dict, targets: dict, cfg) -> dict:
 def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
-          monitor_log=None, deep_every=500):
+          monitor_log=None, deep_every=500, mutation_cap=None):
     from .gym import Curriculum
+
+    def _capped(pr):                               # curriculum params with SHM pinned low (TCR loci)
+        s = dict(Curriculum().params(pr))
+        if mutation_cap is not None:
+            s["mutation_rate"] = min(s["mutation_rate"], mutation_cap)
+        return s
     model.to(device)
     logvars.to(device)                         # Kendall log-vars must share the model's device
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=lr)
@@ -246,7 +255,8 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
         print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
 
     _train_args = {"lr": lr, "batch_size": batch_size, "progresses": list(progresses),
-                   "heavy_shm": heavy_shm, "short_boost": short_boost, "seed": seed, "steps": steps}
+                   "heavy_shm": heavy_shm, "short_boost": short_boost, "seed": seed, "steps": steps,
+                   "mutation_cap": mutation_cap}
     _dcs = [dataconfig]
 
     # ModelXRay: a read-only training X-ray over a fixed held-out probe batch
@@ -254,7 +264,7 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
     if monitor_log:
         from ..xray import ModelXRay
         ev = list(itertools.islice(
-            _stream_records(dataconfig, dict(Curriculum().params(max(progresses))), seed + 99991),
+            _stream_records(dataconfig, _capped(max(progresses)), seed + 99991),
             batch_size))
         probe_input, probe_targets = build_batch(ev, reference_set, cfg, device)
         from ..core.losses import hierarchical_loss
@@ -269,9 +279,9 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
                          uncertainty=logvars, task_eval=task_eval, task_losses=task_losses,
                          shared_module="embedding")
 
-    stream = (_mixed_stream(dataconfig, progresses, heavy_shm, seed + start, short_boost)
+    stream = (_mixed_stream(dataconfig, progresses, heavy_shm, seed + start, short_boost, mutation_cap)
               if len(progresses) > 1 or heavy_shm > 0 or short_boost > 1
-              else _stream_records(dataconfig, dict(Curriculum().params(progresses[0])), seed + start))
+              else _stream_records(dataconfig, _capped(progresses[0]), seed + start))
     for step in range(start + 1, steps + 1):
         records = list(itertools.islice(stream, batch_size))
         if len(records) < batch_size:

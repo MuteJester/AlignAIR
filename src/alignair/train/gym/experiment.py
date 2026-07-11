@@ -53,8 +53,8 @@ def build_experiment(dataconfig, params, allow_curatable: bool = False):
         mutation_kwargs["v_subregion_rates"] = params["v_subregion_rates"]
     if params.get("mutation_count") is not None:   # per-read SHM distribution (stratified)
         exp = exp.mutate(count=params["mutation_count"], **mutation_kwargs)
-    else:
-        exp = exp.mutate(rate=params["mutation_rate"], **mutation_kwargs)
+    elif params.get("mutation_rate"):              # 0/None => skip SHM (TCR loci: GenAIRR forbids
+        exp = exp.mutate(rate=params["mutation_rate"], **mutation_kwargs)   # mutate(); use seq-errors/indels
     if dataconfig.metadata.has_d:
         exp = exp.invert_d(prob=float(params.get("invert_d_prob", 0.05)))
     revision_prob = float(params.get("receptor_revision_prob", 0.0))
