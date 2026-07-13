@@ -114,11 +114,11 @@ DONE (safe under either eventual direction, correct for the model that exists to
   `reference_set.from_genotype`/`from_fasta` — they now state the fixed-head order contract.
 - Tests: `test_api_reference_validation.py`, `test_constraint.py`.
 
-STILL OPEN (needs the user — Workstream 0 contract freeze):
-- Decide fixed-reference classification vs runtime-reference scoring for the launch; write the short
-  versioned model contract; version architecture separately from the container format; add the
-  novel-allele black-box acceptance test for whichever direction is chosen. Until then the code
-  behaves as (and is now honestly documented as) a **fixed-reference classifier**.
+CONTRACT FROZEN (2026-07-13): **fixed-reference classifier (v1)** — `docs/architecture/model_contract.md`
+(architecture contract versioned separately from the container format). Black-box acceptance test
+`tests/alignair/test_fixed_reference_contract.py` proves a novel allele fails with
+`NovelAlleleUnsupportedError` and a donor subset of the trained catalog is accepted. *Remaining (P1):*
+stamp an `architecture_version` into model metadata + refuse to load a mismatched contract.
 
 ### P0-2 — Make CLI, package, workflows, container, and CI one product — ✅ MOSTLY DONE (2026-07-13)
 
