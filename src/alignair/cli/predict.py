@@ -11,7 +11,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from ..api import load_model, predict_sequences
+from ..aligner import Aligner
 from ..io.airr import write_airr
 from ..io.sequence_reader import read_sequences
 
@@ -104,12 +104,13 @@ def run(args) -> int:
     if not is_alignair and not args.dataconfig:
         print("--dataconfig is required for legacy .pt models")
         return 1
-    try:
-        model, reference = load_model(model_path, dataconfigs=args.dataconfig, device=device,
-                                      trust_pickle=args.trust_pickle)
+    try:                        # the CLI is a thin client of the stable Aligner API (P0-9)
+        aligner = Aligner.from_pretrained(model_path, device=device, dataconfigs=args.dataconfig,
+                                          trust_pickle=args.trust_pickle)
     except ValueError as e:
         print(str(e))
         return 1
+    reference = aligner.reference
 
     # locus: don't silently default to IGH when the model declares its locus (P0-6). Validate an
     # explicit --locus against the model's loci; otherwise use the model's single locus if it has one.
@@ -128,8 +129,8 @@ def run(args) -> int:
             print(f"invalid genotype: {e}")
             return 1
         overrides = {"genotype": genotype, "genotype_method": args.genotype_method}
-    records = predict_sequences(model, reference, seqs, device=device, batch_size=args.batch_size,
-                                airr=needs_assembly(args.columns), **overrides)
+    records = aligner.predict(seqs, batch_size=args.batch_size,
+                              airr=needs_assembly(args.columns), **overrides).to_dicts()
 
     # AIRR-assembly failure accounting: rows are always tagged; fail the job if the rate is too high
     # (unless --permissive), so a run cannot silently lose junction/region/alignment fields (P0-7).

@@ -205,7 +205,20 @@ preserved input order. AIRR output written **atomically** (temp + rename; discar
 default for bounded memory on 1M-read inputs (streaming reader/writer already exist); rejected/cropped
 counts in run metadata (partial — assembly counts done, crop counts TODO).
 
-### P0-9 — Establish a stable, registry-aware Python API
+### P0-9 — Establish a stable, registry-aware Python API — 🟡 MOSTLY DONE (2026-07-13)
+
+New `aligner.py` is the stable object API (exported from `alignair`): **`Aligner.from_pretrained`** unifies
+local path / catalog id / `id@revision` loading (via the registry resolver) + **`device="auto"`** (CUDA→
+MPS→CPU with fallback via `resolve_device`); **`aligner.predict(...)`** returns a typed
+**`PredictionResult`** (iterable/`len`/`to_dicts`/`write_airr`, no duplicate sequence arg) and
+**`predict_iter`** streams in bounded memory. Typed **`TrainingConfig.from_genairr(..., preset=…)`** +
+**`train(config, output_dir)`** → **`TrainingRun.best_aligner()`** replaces unrestricted `**overrides`.
+The **predict CLI is now a thin client of `Aligner`**; a CLI/API parity test asserts identical output on
+the same fixture. Public surface is snapshot-tested; the functional façade stays for back-compat. Tests:
+`test_aligner.py`, `test_cli_api_parity.py`.
+
+*Remaining:* direct HF `org/repo` loading (P0-11) behind `from_pretrained`; static type-checking gate
+(mypy) over the public surface; move the `train` CLI onto `TrainingConfig` too; `save_pretrained`.
 
 The current public API returns `(model, reference)` tuples and lists of loose dictionaries. Its
 `load_model` accepts local paths only, while the CLI separately resolves registry IDs. Training is a

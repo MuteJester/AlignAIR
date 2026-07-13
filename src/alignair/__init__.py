@@ -1,23 +1,28 @@
-"""AlignAIR — a neural aligner for IG/TCR repertoires with a runtime (dynamic) reference.
+"""AlignAIR — a neural aligner for IG/TCR repertoires.
 
-Run predictions in three lines:
+The stable object API (recommended):
 
-    from alignair import load_model, predict_sequences
-    model, reference = load_model("model.pt", dataconfigs=["HUMAN_IGH_OGRDB"])
-    records = predict_sequences(model, reference, ["CAGGTGCAGCTG..."])
+    from alignair import Aligner
+    aligner = Aligner.from_pretrained("alignair-igh-v1", device="auto")  # path / catalog id / id@rev
+    result = aligner.predict(["CAGGTGCAGCTG..."])
+    result.write_airr("predictions.tsv")
 
 Train a custom model:
 
-    from alignair import train_model
-    train_model(["HUMAN_IGH_OGRDB"], out_path="my_model.pt", steps=100_000)
+    from alignair import TrainingConfig, train
+    run = train(TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="desktop"), output_dir="runs/igh")
+    aligner = run.best_aligner()
 
-I/O + reference helpers: ``read_sequences``, ``write_airr``, ``ReferenceSet``, ``compare_airr``.
+The lower-level functional façade (``load_model`` / ``predict_sequences`` / ``train_model``) remains for
+back-compat. I/O + reference helpers: ``read_sequences``, ``write_airr``, ``ReferenceSet``,
+``compare_airr``.
 """
 from .reference.reference_set import ReferenceSet
 from .io.sequence_reader import read_sequences, iter_sequences
 from .io.airr import write_airr, AirrWriter
 from .compare import compare_airr
 from .api import load_model, predict_sequences, train_model
+from .aligner import Aligner, PredictionResult, TrainingConfig, TrainingRun, train, resolve_device
 from .core import AlignAIR
 from .core.config import AlignAIRConfig
 from .predict import PredictConfig
@@ -29,6 +34,9 @@ except Exception:                       # not pip-installed (e.g. run from a sou
     __version__ = "0+unknown"
 
 __all__ = [
+    # stable object API
+    "Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "train", "resolve_device",
+    # functional façade (back-compat)
     "load_model", "predict_sequences", "train_model",
     "AlignAIR", "AlignAIRConfig", "PredictConfig",
     "ReferenceSet", "read_sequences", "iter_sequences",
