@@ -60,18 +60,27 @@ def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu"
     return batch_in, targets
 
 
-def train_step(model, batch_in, targets, cfg, logvars, opt):
+def train_step(model, batch_in, targets, cfg, logvars, opt, *, step: int = 0, grad_clip=None):
+    """One optimizer step. Aborts (``NonFiniteLossError``) if the loss is NaN/Inf *before* corrupting
+    the weights; measures the gradient norm and clips to ``grad_clip`` when given. Returns
+    ``(total, parts, grad_norm)``."""
     from ..core.losses import hierarchical_loss
+    from .guards import check_finite_loss
     model.train()
     out = model(batch_in)
     total, parts = hierarchical_loss(out, targets, cfg, logvars)
+    parts_f = {k: float(v.detach()) for k, v in parts.items()}
+    check_finite_loss(step, float(total.detach()), parts_f)     # fail fast, before backward corrupts grads
     opt.zero_grad()
     total.backward()
+    # always measure the grad norm (clip to it only when grad_clip is set; inf clip = measure-only)
+    grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(),
+                                                     grad_clip if grad_clip is not None else float("inf")))
     opt.step()
     model.clamp_params()                       # analysis-head kernel constraints
     for uw in logvars.values():
         uw.apply_constraints()                 # Kendall log-var clamp
-    return float(total.detach()), {k: float(v.detach()) for k, v in parts.items()}
+    return float(total.detach()), parts_f, grad_norm
 
 
 def save_checkpoint(path, cfg, model, logvars, step, opt=None, *, dataconfigs=None, train_args=None):
@@ -202,6 +211,53 @@ def _multi_locus_stream(dataconfigs, progresses, heavy_shm, seed, short_boost=1,
     yield from itertools.chain.from_iterable(zip(*streams))
 
 
+def _restore_rng(rng: dict) -> None:
+    """Restore Python/NumPy/Torch(/CUDA) RNG state saved in a checkpoint so resumed augmentation,
+    dropout and shuffling continue from the same generators (P0-10). The GenAIRR data *stream* is
+    re-seeded by ``seed + start`` — resume is statistically reproducible, not bitwise (a mid-stream
+    generator position is not restored); this restores everything else."""
+    if not rng:
+        return
+    import random
+
+    import numpy as np
+    try:
+        if rng.get("python") is not None:
+            random.setstate(rng["python"])
+        if rng.get("numpy") is not None:
+            np.random.set_state(rng["numpy"])
+        if rng.get("torch") is not None:
+            torch.set_rng_state(_as_byte_tensor(rng["torch"]))
+        if rng.get("cuda") is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all([_as_byte_tensor(s) for s in rng["cuda"]])
+    except (RuntimeError, ValueError, TypeError) as e:
+        print(f"WARNING: could not fully restore RNG state ({e}); continuing with re-seeded RNG", flush=True)
+
+
+def _as_byte_tensor(state):
+    return state if isinstance(state, torch.Tensor) else torch.tensor(state, dtype=torch.uint8)
+
+
+@torch.no_grad()
+def validate(model, val_batches, cfg) -> tuple[dict, float]:
+    """Mean per-task metrics over a fixed held-out set of ``(input, targets)`` batches, plus a scalar
+    validation score (mean V/D/J allele top-1-in-set — higher is better) used for best-checkpoint
+    selection. The batches are frozen (fixed seed, immutable) so the score is comparable across steps."""
+    was_training = model.training
+    model.eval()
+    agg: dict = {}
+    for inp, tgt in val_batches:
+        for k, v in eval_metrics(model(inp), tgt, cfg).items():
+            agg.setdefault(k, []).append(v)
+    if was_training:
+        model.train()
+    import math as _m
+    mean = {k: (sum(vs) / len(vs)) for k, vs in agg.items() if vs}
+    top1s = [mean[f"{g}_allele_top1"] for g in ("v", "d", "j") if f"{g}_allele_top1" in mean]
+    score = sum(top1s) / len(top1s) if top1s and not any(_m.isnan(x) for x in top1s) else float("nan")
+    return mean, score
+
+
 def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     """Per-task quality on a batch (AlignAIR heads) — the ModelXRay ``task_eval`` for this model
     family: allele top-1-in-set, segmentation MAE, orientation accuracy, mutation/indel MAE,
@@ -236,9 +292,16 @@ def eval_metrics(out: dict, targets: dict, cfg) -> dict:
 def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
-          monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False):
+          monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
+          grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False):
     from .gym import Curriculum
+    from .guards import validate_training_request
     dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
+    # preflight: fail fast on a bad request rather than after a long run (P0-10)
+    validate_training_request(steps=steps, batch_size=batch_size, lr=lr,
+                              max_seq_length=cfg.max_seq_length, reference=reference_set,
+                              progresses=progresses, heavy_shm=heavy_shm, short_boost=short_boost,
+                              grad_clip=grad_clip)
 
     def _build_stream(sd):                         # single-locus mix, or interleaved multi-locus mix
         if len(dataconfigs) > 1:
@@ -270,14 +333,20 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
                 opt.load_state_dict(ts.optimizer_state)
                 for grp in opt.param_groups:    # honor the CLI lr on resume (e.g. lower lr for a fine-tune)
                     grp["lr"] = lr
+            _restore_rng(ts.rng)                # continue the same RNG streams (P0-10)
             start = ts.step
-        else:
-            ck = torch.load(resume_from, map_location=device)       # legacy .pt
+        else:                                   # legacy .pt: arbitrary-code pickle -> require explicit trust
+            if not resume_trust_pickle:
+                raise ValueError(
+                    f"resuming a legacy .pt checkpoint ({resume_from}) runs torch.load (arbitrary-code "
+                    f"pickle); pass resume_trust_pickle=True only for a checkpoint you trust.")
+            ck = torch.load(resume_from, map_location=device, weights_only=False)   # legacy .pt (trusted)
             model.load_state_dict(ck["model"]); logvars.load_state_dict(ck["logvars"])
             if "optimizer" in ck:
                 opt.load_state_dict(ck["optimizer"])
                 for grp in opt.param_groups:
                     grp["lr"] = lr
+            _restore_rng(ck.get("rng") or {})
             start = int(ck.get("step", 0))
         print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
     elif init_from:                                # warm-start: copy the shape-compatible backbone
@@ -309,20 +378,41 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
                          uncertainty=logvars, task_eval=task_eval, task_losses=task_losses,
                          shared_module="embedding")
 
+    # fixed-seed, immutable validation batches for best-checkpoint selection (P0-10)
+    val_set = []
+    if val_every and val_every > 0:
+        vstream = _build_stream(seed + 424242)         # a held-out seed, disjoint from training
+        for _ in range(max(1, int(val_batches))):
+            vr = list(itertools.islice(vstream, batch_size))
+            if len(vr) < batch_size:
+                break
+            val_set.append(build_batch(vr, reference_set, cfg, device, augment_orientation=False))
+    best_score = float("-inf")
+
     stream = _build_stream(seed + start)
     for step in range(start + 1, steps + 1):
         records = list(itertools.islice(stream, batch_size))
         if len(records) < batch_size:
             break
         batch_in, targets = build_batch(records, reference_set, cfg, device)
-        total, parts = train_step(model, batch_in, targets, cfg, logvars, opt)
+        total, parts, grad_norm = train_step(model, batch_in, targets, cfg, logvars, opt,
+                                             step=step, grad_clip=grad_clip)
         if step % log_every == 0:
-            line = (f"[{step}/{steps}] loss {total:.3f} "
+            line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
                     + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
             if xray is not None:                   # reads this step's grads (pre next zero_grad)
                 rec = xray.observe(step, total, parts, probe_input=probe_input)
                 line += "  " + xray.summary_line(rec)
             print(line, flush=True)
+        if val_set and step % val_every == 0:      # validation + best-checkpoint selection
+            vmetrics, vscore = validate(model, val_set, cfg)
+            print(f"[{step}/{steps}] VAL score {vscore:.4f}  "
+                  + " ".join(f"{k}={v:.3f}" for k, v in vmetrics.items()), flush=True)
+            if save_path and vscore == vscore and vscore > best_score:   # not NaN and improved
+                best_score = vscore
+                stem, ext = _stem(save_path), _ext(save_path)
+                save_checkpoint(f"{stem}.best{ext}", cfg, model, logvars, step, opt,
+                                dataconfigs=_dcs, train_args={**_train_args, "val_score": vscore})
         if save_path and step % save_every == 0:
             save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args)
     if save_path:

@@ -136,11 +136,17 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
     ``short_boost=``, ``resume_path=``)."""
     import GenAIRR.data as gd
     from .core.losses import make_logvars
+    from .train.guards import validate_training_request
     from .train.trainer import train as _train
 
     dcs = [getattr(gd, d) if isinstance(d, str) else d for d in dataconfigs]
     reference = ReferenceSet.from_dataconfigs(*dcs)
     cfg = AlignAIRConfig.from_dataconfigs(*dcs)
+    # validate the request BEFORE allocating the (potentially large) model (P0-10)
+    validate_training_request(steps=steps, batch_size=train_overrides.get("batch_size", 32),
+                              lr=train_overrides.get("lr", 3e-4), max_seq_length=cfg.max_seq_length,
+                              reference=reference, progresses=train_overrides.get("progresses", (0.3,)),
+                              grad_clip=train_overrides.get("grad_clip"))
     model = AlignAIR(cfg)
     logvars = make_logvars(cfg)
     _train(model, reference, dcs, cfg, logvars, steps=steps, device=device,

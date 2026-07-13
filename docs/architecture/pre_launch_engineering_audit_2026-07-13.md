@@ -257,37 +257,21 @@ Required API properties:
 - Static type checking covers the public surface.
 - Public signatures are snapshot-tested and documented as stable for the release series.
 
-### P0-10 — Make training resumable, reproducible, validated, and difficult to misuse
+### P0-10 — Make training resumable, reproducible, validated, and difficult to misuse — 🟡 MOSTLY DONE (2026-07-13)
 
-**Observed gaps**
+New `train/guards.py`: `validate_training_request` runs a **preflight** check (steps/batch/lr/max_len/
+progresses/heavy_shm/short_boost/grad_clip + non-empty V/J reference) in `api.train_model` **before the
+model is allocated** and at the top of `train()`; `check_finite_loss` **aborts on NaN/Inf** (`train_step`,
+before backward corrupts grads) with a per-task diagnostic. `train_step` measures the **gradient norm**
+(logged) and clips to `--grad-clip` when set. Resume now **restores Python/NumPy/Torch/CUDA RNG**
+(`_restore_rng`); documented as *statistically* (not bitwise) reproducible since the GenAIRR stream is
+re-seeded by `seed+start`. A fixed-seed **validation loop** (`validate`) runs every `--val-every` steps
+and writes a **best checkpoint** (`<out>.best.alignair`) by mean V/D/J top-1. Legacy `.pt` resume now
+requires `--resume-trust-pickle` (arbitrary-code pickle gate). CLI help fixed to `.alignair`. Tests:
+`test_guards.py` + `test_trainer_robustness.py` (incl. slow end-to-end val/best/resume).
 
-- Checkpoints save Python/NumPy/Torch/CUDA RNG state, but resume does not restore it.
-- Resume builds a new simulation stream from `seed + start`, which is not equivalent to restoring
-  the exact generator/stream state.
-- Legacy resume uses pickle without a distinct trust control in the training surface.
-- There is no non-finite loss/gradient check, gradient clipping policy, OOM recovery, validation
-  loop, best-checkpoint selection, or required scientific acceptance gate in the basic trainer.
-- CLI/API defaults can start a very long CPU job without a preflight plan.
-- Output extension/help says `.pt` while the trainer writes `.alignair` container bytes.
-
-**Required action**
-
-- Separate `TrainingCheckpoint` from safe `InferenceArtifact`; make trust boundaries explicit.
-- Restore all RNG and data-stream/curriculum state, or state clearly that resume is statistically
-  reproducible rather than bitwise reproducible.
-- Add a validation datastream with fixed seeds and immutable cases.
-- Save `last`, `best`, and periodic recovery checkpoints atomically.
-- Abort on NaN/Inf with a diagnostic bundle; track gradient norms and task weights.
-- Validate hyperparameters/config/reference before allocating the full model.
-- Provide presets with explicit resource estimates and require confirmation only in interactive CLI,
-  not library code.
-
-**Acceptance criteria**
-
-- Interrupted-and-resumed training matches the declared reproducibility level.
-- A tiny overfit test, a convergence smoke, and a fixed scientific validation suite gate releases.
-- Every published model includes calibration, validation, training config, seed, data/reference
-  provenance, hardware/software versions, and known limitations.
+*Remaining:* OOM auto-recovery; a frozen scientific acceptance suite as a release gate; resource-estimate
+presets; per-model published model-card completeness (calibration/validation/provenance) — ties P0-16.
 
 ### P0-11 — Ship a real Hugging Face model experience
 

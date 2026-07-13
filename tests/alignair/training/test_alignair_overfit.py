@@ -37,8 +37,8 @@ def test_overfit_tiny_batch_learns():
     logvars = make_logvars(cfg)
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=1e-3)
 
-    init, _ = train_step(model, batch_in, targets, cfg, logvars, opt)
+    init, _, _ = train_step(model, batch_in, targets, cfg, logvars, opt)
     last = init
     for _ in range(120):
-        last, parts = train_step(model, batch_in, targets, cfg, logvars, opt)
+        last, parts, _ = train_step(model, batch_in, targets, cfg, logvars, opt)
     assert last < 0.7 * init, f"no learning: init={init:.3f} last={last:.3f}"

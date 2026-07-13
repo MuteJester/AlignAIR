@@ -87,5 +87,5 @@ def test_train_step_end_to_end_includes_state_loss():
     batch_in, targets = build_batch(recs, ref, cfg)
     assert targets["state_labels"].shape == (4, cfg.max_seq_length)
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=1e-3)
-    _, parts = train_step(model, batch_in, targets, cfg, logvars, opt)
+    _, parts, _ = train_step(model, batch_in, targets, cfg, logvars, opt)
     assert "state" in parts and parts["state"] == parts["state"]     # present and finite
