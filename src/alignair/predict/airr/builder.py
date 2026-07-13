@@ -70,7 +70,11 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     seq = rec["sequence"]
     out = dict(rec)                    # preserve the light record (calls/coords/cigar/orientation/likelihoods)
     out.setdefault("locus", "IGH")
-    out["productive"] = bool(rec.get("productive", True))
+    # keep the model's neural call as `productive_prediction`; the AIRR `productive` field is a DERIVED
+    # fact (in-frame + no stop codon) set below once the alignment math runs. Until then it falls back
+    # to the prediction (records that skip assembly cannot derive it). (P0-14)
+    out["productive_prediction"] = bool(rec.get("productive", True))
+    out["productive"] = out["productive_prediction"]
     out["ar_indels"] = rec.get("indel_count")
     cigar_junction = _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors, force=is_tcr)
     # skip the heavy alignment math for clearly-garbage reads (non-productive with multiple indels);
@@ -120,8 +124,14 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     out.update(junction)
     out["stop_codon"] = quality.stop_codon(seq_aa)
     out["vj_in_frame"] = vj_in_frame
-    out["v_identity"] = quality.v_identity(seg.get("v_sequence_alignment"),
-                                           seg.get("v_germline_alignment"))
+    for g in ("v", "d", "j"):                          # per-segment identity (was V-only; P0-14)
+        ident = quality.segment_identity(seg.get(f"{g}_sequence_alignment"),
+                                         seg.get(f"{g}_germline_alignment"))
+        if ident is not None:
+            out[f"{g}_identity"] = ident
+    derived = quality.airr_productive(vj_in_frame, out["stop_codon"])   # AIRR productive = derived fact
+    if derived is not None:
+        out["productive"] = derived
     return out
 
 

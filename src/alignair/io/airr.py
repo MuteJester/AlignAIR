@@ -13,7 +13,8 @@ GENES = ("v", "d", "j")
 # coordinates refer to; `rev_comp` flags that the input read was reoriented to produce it.
 _IDENT = ["sequence_id", "sequence", "rev_comp", "locus"]
 _CALLS = ["v_call", "d_call", "j_call"]
-_QUALITY = ["productive", "vj_in_frame", "stop_codon", "v_identity", "d_identity", "j_identity"]
+_QUALITY = ["productive", "productive_prediction", "vj_in_frame", "stop_codon",
+            "v_identity", "d_identity", "j_identity"]
 _ALN = ["sequence_alignment", "germline_alignment", "sequence_alignment_aa", "germline_alignment_aa"]
 _JUNCTION = ["junction", "junction_aa", "junction_length", "junction_aa_length",
              "np1", "np1_length", "np2", "np2_length"]
@@ -66,8 +67,8 @@ def resolve_columns(columns) -> list:
 
 
 # fields that come straight from the light predict() record (no build_airr assembly needed)
-_LIGHT_FIELDS = frozenset(_IDENT + _CALLS + ["productive", "mutation_rate", "orientation",
-                          "input_sequence", "segmentation_low_quality", "length_cropped",
+_LIGHT_FIELDS = frozenset(_IDENT + _CALLS + ["productive", "productive_prediction", "mutation_rate",
+                          "orientation", "input_sequence", "segmentation_low_quality", "length_cropped",
                           "airr_assembly_status", "airr_assembly_error"] + _CIGAR + _COORDS + _EXT)
 
 

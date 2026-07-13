@@ -36,6 +36,13 @@ def _int(v):
         return None
 
 
+def _bool(v):
+    """AIRR logical field -> True/False/None (blank/unknown)."""
+    if v is None or v == "":
+        return None
+    return str(v).strip().lower() in ("t", "true", "1", "yes")
+
+
 def validate_airr_file(path: str) -> dict:
     """Validate an AIRR TSV. Returns ``{n_rows, missing_columns, errors}`` where ``errors`` is a list
     of ``(sequence_id, message)`` — empty means the file passed."""
@@ -67,4 +74,13 @@ def validate_airr_file(path: str) -> dict:
                 if s is not None and e is not None:
                     if not (1 <= s <= e <= L):
                         errors.append((sid, f"{g} coordinates out of bounds: start={s} end={e} len={L}"))
+            # productivity cross-field invariant: a productive rearrangement must be in-frame and have
+            # no stop codon (when those derived fields are present). (P0-14)
+            prod, inframe, stop = (_bool(row.get("productive")), _bool(row.get("vj_in_frame")),
+                                   _bool(row.get("stop_codon")))
+            if prod is True:
+                if inframe is False:
+                    errors.append((sid, "productive=T but vj_in_frame=F"))
+                if stop is True:
+                    errors.append((sid, "productive=T but stop_codon=T"))
     return {"n_rows": n, "missing_columns": [], "errors": errors}

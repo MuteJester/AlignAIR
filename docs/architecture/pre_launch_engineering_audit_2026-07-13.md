@@ -376,29 +376,23 @@ no-op.
 - Wheel, sdist, conda (if claimed), and container produce the same version and golden result.
 - Release automation cannot upload if scientific, API, AIRR, or artifact-integrity gates fail.
 
-### P0-14 — Make AIRR output semantically correct, not only parseable
+### P0-14 — Make AIRR output semantically correct, not only parseable — 🟡 MOSTLY DONE (2026-07-13)
 
-The official AIRR Python library can parse a sample emitted row, but parseability is not sufficient.
-Current concerns include silent assembly failure, orientation mismatch, global locus/has-D behavior,
-model-predicted `productive` not reconciled with derived frame/stop-codon status, and many advertised
-fields that are present as columns but are not populated (`d_identity`, `j_identity`, resolution and
-set-confidence fields in normal prediction, and others).
+- **`productive` is now a DERIVED fact** (in-frame AND no stop codon via `quality.airr_productive`); the
+  model's neural call is kept separately as `productive_prediction`. Verified on the real IGH model: the
+  two differ on 6/30 reads.
+- **Advertised fields populated:** `d_identity`/`j_identity` are now computed (generic
+  `quality.segment_identity`), not empty placeholders (was V-only).
+- **Machine-readable field map** (`io/airr_field_map.py`) documents every emitted column's source
+  (neural/derived/germline/read/extension) + null policy; a completeness test guarantees no undocumented
+  column ships.
+- **Cross-field invariant:** `validate-airr` now rejects `productive=T` with `vj_in_frame=F` or
+  `stop_codon=T`, on top of the coordinate/CIGAR-consumption checks (P0-2). Silent assembly failure,
+  orientation mismatch, and global locus/has-D are already fixed (P0-7/P0-3/P0-6).
+- Tests: `test_semantics.py`, `test_field_map.py`.
 
-**Required action**
-
-- Define every output field's source, coordinate convention, null policy, confidence semantics, and
-  biological derivation in a machine-readable schema map.
-- Distinguish neural predictions from derived facts, for example `productive_prediction` versus
-  AIRR `productive` derived from frame/stop/junction rules.
-- Compute or remove advertised fields. Empty placeholder columns should not be marketed as support.
-- Validate standard fields with `airr` and validate extension fields with an AlignAIR JSON schema.
-- Add cross-field invariants for sequence/alignment/CIGAR/coordinate/junction/productivity/locus.
-
-**Acceptance criteria**
-
-- Golden outputs pass AIRR validation and invariant validation.
-- Independent round-trip tests through AIRR Python and downstream readers preserve required values.
-- Field completeness and assembly-failure budgets are explicit per supported assay/locus.
+*Remaining:* run the official `airr` Python validator on golden fixtures in CI; a formal JSON schema for
+the extension fields; per-assay field-completeness/assembly-failure budgets (ties into P0-15/P0-16).
 
 ### P0-15 — Build an interoperability contract for the AIRR ecosystem
 
