@@ -39,6 +39,23 @@ def test_publish_sets_latest_to_max_semver(tmp_path):
     assert json.loads((regdir / "registry.json").read_text())["models"]["human-igh"]["latest"] == "2.1.0"
 
 
+def test_publish_is_transactional_on_validation_failure(tmp_path):
+    """A publish that fails validation leaves NEITHER an updated catalog NOR a copied artifact (P0-11)."""
+    regdir = tmp_path / "registry"
+    good = tmp_path / "good.alignair"
+    _save(good, include_trusted_pickle=False, model_id="human-igh", model_version="2.1.0")
+    assert publish_local(str(good), "human-igh", "2.1.0", str(regdir)) == []
+    before = (regdir / "registry.json").read_text()
+
+    bad = tmp_path / "bad.alignair"                    # a resumable checkpoint (has pickle) -> invalid
+    _save(bad, include_trusted_pickle=True, model_id="human-igh", model_version="9.9.9")
+    problems = publish_local(str(bad), "human-igh", "9.9.9", str(regdir))
+    assert any("pickle" in p for p in problems)         # rejected
+    assert (regdir / "registry.json").read_text() == before   # catalog unchanged
+    assert not (regdir / "human-igh" / "9.9.9.alignair").exists()   # invalid artifact not copied
+    assert not (regdir / "human-igh" / "9.9.9.alignair.staging").exists()   # stage cleaned up
+
+
 def test_validator_rejects_pickle_artifact(tmp_path):
     art = tmp_path / "ckpt.alignair"
     _save(art, include_trusted_pickle=True, model_id="human-igh", model_version="1.0.0")   # has pickle

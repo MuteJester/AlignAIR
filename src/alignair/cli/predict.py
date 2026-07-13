@@ -39,6 +39,10 @@ def register(sub) -> None:
     p.add_argument("--genotype-method", choices=["mask", "softmax", "renormalize", "redistribute"],
                    default="mask", help="how to apply the genotype constraint (default: mask)")
     p.add_argument("--registry", action="append", help="registry url for a shipped model id (repeatable)")
+    p.add_argument("--revision", default=None,
+                   help="pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version")
+    p.add_argument("--hf-token", default=None,
+                   help="Hugging Face token for a private/gated repo (falls back to $HF_TOKEN)")
     p.add_argument("--offline", action="store_true", help="never touch the network")
     p.add_argument("--quiet", action="store_true", help="suppress the update-available notice")
     p.add_argument("--trust-pickle", action="store_true",
@@ -96,7 +100,8 @@ def run(args) -> int:
 
     srcs = _sources.resolve_sources(args.registry)
     try:
-        model_path = str(resolve_model(args.model, sources=srcs, offline=args.offline))
+        model_path = str(resolve_model(args.model, sources=srcs, offline=args.offline,
+                                       token=args.hf_token, revision=args.revision))
     except Exception as e:
         print(f"could not resolve model '{args.model}': {e}")
         return 1
@@ -155,6 +160,8 @@ def run(args) -> int:
         msg += f"; {len(failed)} AIRR-assembly failures tagged ({dict(fail_reasons)})"
     print(msg)
 
-    pinned = os.path.exists(args.model) or "@" in args.model        # a path or a pinned id: no update noise
+    # a path, a pinned id/revision, or a direct HF repo: no catalog-update noise
+    pinned = (os.path.exists(args.model) or "@" in args.model or bool(args.revision)
+              or args.model.startswith("hf://"))
     maybe_notify_updates(sources_list=srcs, offline=args.offline, quiet=args.quiet, pinned=pinned)
     return 0

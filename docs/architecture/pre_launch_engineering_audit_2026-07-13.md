@@ -286,11 +286,22 @@ requires `--resume-trust-pickle` (arbitrary-code pickle gate). CLI help fixed to
 *Remaining:* OOM auto-recovery; a frozen scientific acceptance suite as a release gate; resource-estimate
 presets; per-model published model-card completeness (calibration/validation/provenance) — ties P0-16.
 
-### P0-11 — Ship a real Hugging Face model experience
+### P0-11 — Ship a real Hugging Face model experience — 🟡 MOSTLY DONE (2026-07-13)
 
-The custom registry can resolve public `hf://` files by URL, but direct `org/repo` model loading is
-not implemented, the Python API is not registry-aware, private/gated repository authentication is
-not implemented despite the dependency comments, and remote publication remains a manual follow-on.
+New `registry/hf.py` adds the **one-repo-per-model** path via `huggingface_hub`:
+`Aligner.from_pretrained("hf://org/repo")` / `"org/repo"` pulls the `.alignair` with `hf_hub_download`
+— revision (branch/tag/commit) pinning, tokens (arg or `$HF_TOKEN`) for private/gated repos, offline
+(`local_files_only`), the standard HF cache, retries/resumable transfers, a user-agent. Both loaders
+funnel through `resolve_model` (catalog aliases stay a convenience). The resolved HF **commit SHA** is
+captured on the aligner (`source_commit`) for provenance. `Aligner.save_pretrained` (copy artifact) and
+maintainer-only `push_to_hub` added; the CLI gained `--revision`/`--hf-token`. **Publishing is now
+transactional** — `publish_local` stages + validates before committing, so a failed validation leaves
+neither an updated catalog nor a copied artifact (was: wrote before validating). Tests: `test_hf.py`
+(spec parse/route/offline/commit/save, no network) + transactional-publish test.
+
+*Remaining (maintainer/CI-verified):* real private-token + pinned-revision + interrupted-download live
+tests; min/max AlignAIR/format/architecture version enforcement on download; publishing the full
+card/manifest/validation+benchmark-report bundle.
 
 **Required action**
 

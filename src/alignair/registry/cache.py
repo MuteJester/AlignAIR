@@ -135,11 +135,21 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
     return dest
 
 
-def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool = False) -> Path:
-    """A filesystem path -> that path; a ``id`` / ``id@version`` -> the verified cached artifact
-    (downloading if absent). A pinned + already-cached version returns immediately (no network)."""
+def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool = False,
+                  token: str | None = None, revision: str | None = None) -> Path:
+    """Resolve a model spec to a local artifact path:
+
+    * a filesystem path -> that path;
+    * a Hugging Face repo (``hf://org/repo`` or ``org/repo``) -> the ``.alignair`` pulled straight from
+      that repo via ``huggingface_hub`` (revision/token/offline honored — the one-repo-per-model path);
+    * a catalog ``id`` / ``id@version`` -> the verified cached artifact from a registry source.
+
+    A pinned + already-cached version returns immediately (no network)."""
     if os.path.exists(spec):
         return Path(spec)
+    from . import hf
+    if hf.is_hf_repo_spec(spec):                          # direct one-repo-per-model HF loading (P0-11)
+        return hf.download_from_hub(spec, revision=revision, token=token, offline=offline)
     model_id, _, version = spec.partition("@")
     version = version or None
     srcs = sources if sources is not None else _resolve_sources()

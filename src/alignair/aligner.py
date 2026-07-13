@@ -81,29 +81,65 @@ class Aligner:
     :meth:`from_pretrained` (a local path, a shipped catalog id, or ``id@revision``) — the single
     inference entry point the CLI is a client of."""
 
-    def __init__(self, model, reference, *, device: str = "cpu", model_path: Optional[str] = None):
+    def __init__(self, model, reference, *, device: str = "cpu", model_path: Optional[str] = None,
+                 source_commit: Optional[str] = None):
         self.model = model
         self.reference = reference
         self.device = device
         self.model_path = model_path
+        self.source_commit = source_commit     # resolved HF commit SHA (provenance), else None
 
     # ------------------------------------------------------------------ constructors
     @classmethod
     def from_pretrained(cls, model: str, *, revision: str | None = None, device: str = "auto",
                         reference=None, dataconfigs=None, registry=None, offline: bool = False,
-                        trust_pickle: bool = False) -> "Aligner":
-        """Load a model by local path, shipped catalog id, or ``id@revision`` (``revision`` is an alias
-        for the ``@`` suffix). Registry ids are resolved + hash-verified into the local cache. ``device``
-        accepts ``"auto"`` (CUDA→MPS→CPU) or an explicit backend."""
+                        trust_pickle: bool = False, token: str | None = None) -> "Aligner":
+        """Load a model by local path, a Hugging Face repo (``hf://org/repo`` or ``org/repo`` — pulled
+        via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``). ``revision`` pins a
+        HF branch/tag/commit (or catalog version); ``token`` authenticates a private/gated HF repo (or
+        ``HF_TOKEN``). ``offline`` uses only local caches. ``device`` accepts ``"auto"`` (CUDA→MPS→CPU)."""
         from .api import load_model
-        from .registry import resolve_model, sources as _sources
-        spec = f"{model}@{revision}" if revision and "@" not in str(model) else str(model)
+        from .registry import hf, resolve_model, sources as _sources
         srcs = _sources.resolve_sources(list(registry) if registry else None)
-        path = str(resolve_model(spec, sources=srcs, offline=offline))
+        if hf.is_hf_repo_spec(str(model)):
+            path = str(resolve_model(str(model), sources=srcs, offline=offline, token=token,
+                                     revision=revision))
+        else:                                  # catalog id: revision is the @version suffix
+            spec = f"{model}@{revision}" if revision and "@" not in str(model) else str(model)
+            path = str(resolve_model(spec, sources=srcs, offline=offline))
         dev = resolve_device(device)
         m, ref = load_model(path, dataconfigs=dataconfigs, reference=reference, device=dev,
                             trust_pickle=trust_pickle)
-        return cls(m, ref, device=dev, model_path=path)
+        return cls(m, ref, device=dev, model_path=path, source_commit=hf.resolved_commit(path))
+
+    def save_pretrained(self, directory: str, *, filename: str = "model.alignair") -> str:
+        """Copy the loaded model artifact into ``directory`` (for local distribution or a later
+        ``push_to_hub``). Requires an aligner loaded from a file. Returns the written path."""
+        import os
+        import shutil
+        if not self.model_path:
+            raise ValueError("save_pretrained needs an aligner loaded from a file (model_path is unset)")
+        os.makedirs(directory, exist_ok=True)
+        dest = os.path.join(directory, filename)
+        shutil.copyfile(self.model_path, dest)
+        return dest
+
+    def push_to_hub(self, repo_id: str, *, token: str | None = None, private: bool = True,
+                    filename: str = "model.alignair", create: bool = True, revision: str | None = None):
+        """Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo. Requires
+        ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). Returns the upload result."""
+        import os
+        if not self.model_path:
+            raise ValueError("push_to_hub needs an aligner loaded from a file (model_path is unset)")
+        try:
+            from huggingface_hub import HfApi
+        except ImportError as e:                    # pragma: no cover - optional dep
+            raise ImportError("push_to_hub needs 'huggingface_hub' (`pip install alignair[hub]`)") from e
+        api = HfApi(token=token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+        if create:
+            api.create_repo(repo_id, private=private, exist_ok=True, repo_type="model")
+        return api.upload_file(path_or_fileobj=self.model_path, path_in_repo=filename,
+                               repo_id=repo_id, repo_type="model", revision=revision)
 
     @classmethod
     def from_model(cls, model, reference, *, device: str = "auto") -> "Aligner":
