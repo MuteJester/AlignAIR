@@ -84,6 +84,16 @@ def _airr_start(v):
     return (int(v) + 1) if v is not None else None
 
 
+def _airr_bool(v):
+    """Normalize a logical value to the AIRR ``T``/``F`` convention (None/blank stays empty/unknown)."""
+    if v is None or v == "":
+        return None
+    if isinstance(v, str):
+        s = v.strip().upper()
+        return "T" if s in ("T", "TRUE", "1", "YES") else ("F" if s in ("F", "FALSE", "0", "NO") else v)
+    return "T" if v else "F"
+
+
 def _cigar(seq_len, ss, se, gs, ge):
     """An AIRR CIGAR for one segment from 0-based coords: leading query soft-clip (S), skipped
     germline prefix (N), the matched span (M), a single net indel op when the read and germline
@@ -136,9 +146,12 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
     oid = int(p.get("orientation_id", 0) or 0)
     row["rev_comp"] = "T" if oid == 1 else "F"     # AIRR rev_comp: reverse-complement only
     row["orientation"] = _ORIENT_LABEL.get(oid, "forward")
-    for _flag in ("segmentation_low_quality", "length_cropped"):   # logical extensions -> AIRR T/F
-        if _flag in row:
-            row[_flag] = "T" if row[_flag] else "F"
+    # normalize AIRR logical fields to T/F (standards-compliant; passes official `airr` validation).
+    # None/blank stays empty (unknown); the extensions are normalized too.
+    for _lf in ("productive", "vj_in_frame", "stop_codon", "productive_prediction",
+                "segmentation_low_quality", "length_cropped"):
+        if row.get(_lf) is not None and row.get(_lf) != "":
+            row[_lf] = _airr_bool(row[_lf])
     isc = p.get("is_contaminant")
     row["is_contaminant"] = ("T" if isc else "F") if isc is not None else None
     if not row.get("sequence_alignment"):          # fallback when build_airr was not run

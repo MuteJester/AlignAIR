@@ -440,9 +440,25 @@ require additional conventions.
 - IgBLAST and MiXCR comparisons use the same reference, orientation, and scoring definitions.
 - Unsupported fields/tools fail clearly rather than implying compatibility from a `.tsv` suffix.
 
-### P0-16 — Add tests for product invariants and scientific claims
+### P0-16 — Add tests for product invariants and scientific claims — 🟡 MOSTLY DONE (2026-07-13)
 
-The current 514 passing tests are valuable but miss several failures above. Test count is not a
+Added the missing test layers on top of the existing unit/contract coverage:
+- **Property/invariant** (`property/test_invariants.py`): orientation-transform involution, deterministic
+  prob-sorted selection, CIGAR query-consumption ≤ read length over randomized inputs.
+- **Golden AIRR + official validation** (`golden/test_golden_airr.py`): fixed inputs → exact normalized
+  rows that **pass the official `airr` library's schema validation** (also closes P0-14's remaining
+  item; logical fields normalized to `T`/`F`).
+- **Robustness/fuzz** (`fuzz/test_robustness.py`): malformed genotype/container/FASTQ, empty file,
+  NaN/Inf injection, oversized read → clean typed errors, never a crash or silent garbage.
+- **Version-controlled release gates** (`alignair/validation/gates.py`): `SCIENTIFIC_THRESHOLDS`
+  (per-task floors) + a `CLAIM_TESTS` map from each model-card claim to the named test that proves it.
+  Tests assert every claim points at a real test, and — on a machine with the model — the shipped IGH
+  model **clears the scientific gates**. Editing a threshold is a reviewed code change (no silent bypass).
+
+*Remaining:* differential IgBLAST/MiXCR gate (P0-15, needs those tools); artifact/system + performance-
+regression layers (need CI); wire the gates into the release workflow.
+
+The 514+ passing tests are valuable but miss several failures above. Test count is not a
 release metric; coverage of invariants is.
 
 **Required test layers**
