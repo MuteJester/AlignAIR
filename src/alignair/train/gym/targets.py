@@ -127,6 +127,9 @@ def build_targets(record: dict, reference_set, has_d: bool) -> dict:
         # and mask those terms (RC reference modelling is deferred).
         "d_inverted": bool(record.get("d_inverted", False)),
         "orientation_id": 0,  # forward-only gym for now
+        # locus index for the multi-chain chain_type head; the mixed-locus stream tags each record
+        # with its dataconfig position (== AlignAIRConfig chain_type order). Single-chain -> 0.
+        "chain_type": int(record.get("chain_type", 0)),
         "noise_count": float(record["n_quality_errors"] + record.get("n_pcr_errors", 0)),
         "mutation_rate": float(record["mutation_rate"]),
         "indel_count": float(record["n_indels"]),

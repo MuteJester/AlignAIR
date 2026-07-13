@@ -51,6 +51,8 @@ def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu"
     for k in ("mutation_rate", "indel_count", "productive"):
         targets[k] = b[k].to(device)
     targets["orientation"] = orient.to(device)
+    if getattr(cfg, "num_chain_types", 1) > 1:        # multi-chain: supervise the chain_type/locus head
+        targets["chain_type"] = b["chain_type"].to(device)
     # per-position edit-state labels (forward frame; the model canonicalizes internally) padded to L
     st = b["state_labels"]
     st = F.pad(st, (0, L - st.shape[1]), value=-100) if st.shape[1] < L else st[:, :L]
@@ -187,6 +189,19 @@ def _mixed_stream(dataconfig, progresses, heavy_shm, seed, short_boost=1, mutati
     yield from itertools.chain.from_iterable(zip(*streams))
 
 
+def _multi_locus_stream(dataconfigs, progresses, heavy_shm, seed, short_boost=1, mutation_cap=None):
+    """Interleave each locus's :func:`_mixed_stream`, tagging every record with its chain index
+    (== dataconfig order == the ``AlignAIRConfig`` chain_type order) so the collate can build the
+    chain_type/locus supervision. Reads are drawn round-robin across loci for a balanced batch."""
+    def tagged(stream, ci):
+        for rec in stream:
+            rec["chain_type"] = ci
+            yield rec
+    streams = [tagged(_mixed_stream(dc, progresses, heavy_shm, seed + 1013 * i, short_boost, mutation_cap), i)
+               for i, dc in enumerate(dataconfigs)]
+    yield from itertools.chain.from_iterable(zip(*streams))
+
+
 def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     """Per-task quality on a batch (AlignAIR heads) — the ModelXRay ``task_eval`` for this model
     family: allele top-1-in-set, segmentation MAE, orientation accuracy, mutation/indel MAE,
@@ -202,6 +217,9 @@ def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     if "orientation_logits" in out and "orientation" in targets:
         m["orientation_acc"] = float((out["orientation_logits"].argmax(-1)
                                       == targets["orientation"]).float().mean())
+    if "chain_type_logits" in out and "chain_type" in targets:
+        m["chain_type_acc"] = float((out["chain_type_logits"].argmax(-1)
+                                     == targets["chain_type"]).float().mean())
     m["mutation_mae"] = float((out["mutation_rate"] - targets["mutation_rate"]).abs().mean())
     m["indel_mae"] = float((out["indel_count"] - targets["indel_count"]).abs().mean())
     m["productive_acc"] = float(((out["productive"] > 0.5) == (targets["productive"] > 0.5)).float().mean())
@@ -215,11 +233,20 @@ def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     return m
 
 
-def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_size=32,
+def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
-          monitor_log=None, deep_every=500, mutation_cap=None):
+          monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False):
     from .gym import Curriculum
+    dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
+
+    def _build_stream(sd):                         # single-locus mix, or interleaved multi-locus mix
+        if len(dataconfigs) > 1:
+            return _multi_locus_stream(dataconfigs, progresses, heavy_shm, sd, short_boost, mutation_cap)
+        dc = dataconfigs[0]
+        if len(progresses) > 1 or heavy_shm > 0 or short_boost > 1:
+            return _mixed_stream(dc, progresses, heavy_shm, sd, short_boost, mutation_cap)
+        return _stream_records(dc, _capped(progresses[0]), sd)
 
     def _capped(pr):                               # curriculum params with SHM pinned low (TCR loci)
         s = dict(Curriculum().params(pr))
@@ -253,19 +280,22 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
                     grp["lr"] = lr
             start = int(ck.get("step", 0))
         print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
+    elif init_from:                                # warm-start: copy the shape-compatible backbone
+        from .transfer import load_source_state_dict, summarize, transfer_compatible_weights
+        src_sd = load_source_state_dict(init_from, device=device, trust_pickle=init_trust_pickle)
+        transferred, skipped = transfer_compatible_weights(model, src_sd)
+        print(f"WARM-START from {init_from}\n{summarize(transferred, skipped)}", flush=True)
 
     _train_args = {"lr": lr, "batch_size": batch_size, "progresses": list(progresses),
                    "heavy_shm": heavy_shm, "short_boost": short_boost, "seed": seed, "steps": steps,
                    "mutation_cap": mutation_cap}
-    _dcs = [dataconfig]
+    _dcs = dataconfigs
 
     # ModelXRay: a read-only training X-ray over a fixed held-out probe batch
     xray = probe_input = None
     if monitor_log:
         from ..xray import ModelXRay
-        ev = list(itertools.islice(
-            _stream_records(dataconfig, _capped(max(progresses)), seed + 99991),
-            batch_size))
+        ev = list(itertools.islice(_build_stream(seed + 99991), batch_size))
         probe_input, probe_targets = build_batch(ev, reference_set, cfg, device)
         from ..core.losses import hierarchical_loss
 
@@ -279,9 +309,7 @@ def train(model, reference_set, dataconfig, cfg, logvars, *, steps=2000, batch_s
                          uncertainty=logvars, task_eval=task_eval, task_losses=task_losses,
                          shared_module="embedding")
 
-    stream = (_mixed_stream(dataconfig, progresses, heavy_shm, seed + start, short_boost, mutation_cap)
-              if len(progresses) > 1 or heavy_shm > 0 or short_boost > 1
-              else _stream_records(dataconfig, _capped(progresses[0]), seed + start))
+    stream = _build_stream(seed + start)
     for step in range(start + 1, steps + 1):
         records = list(itertools.islice(stream, batch_size))
         if len(records) < batch_size:

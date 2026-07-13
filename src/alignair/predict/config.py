@@ -19,3 +19,4 @@ class PredictConfig:
     genotype: Optional[dict] = None   # {gene: set(allele names)} enables genotype constraint (subset)
     genotype_method: str = "mask"  # mask | renormalize (Bayes posterior) | redistribute (legacy)
     chain_types: Optional[tuple] = None  # ordered locus names; maps multi-chain chain_type index -> locus
+    allele_temperatures: Optional[dict] = None  # per-gene temperature for allele-confidence calibration

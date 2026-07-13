@@ -19,11 +19,14 @@ from .config import AlignAIRConfig, GeneSpec
 from .layers import ConvResidualFeatureExtractionBlock, SoftCutoutLayer
 
 
-def build_tower(cfg: AlignAIRConfig, kernels: tuple) -> ConvResidualFeatureExtractionBlock:
-    """A residual conv feature tower sized from a kernel schedule (N = len(kernels) - 1)."""
+def build_tower(cfg: AlignAIRConfig, kernels: tuple, filters: int | None = None,
+                out: int | None = None) -> ConvResidualFeatureExtractionBlock:
+    """A residual conv feature tower sized from a kernel schedule (N = len(kernels) - 1). ``filters`` /
+    ``out`` override the config defaults (used by the auto-scaled per-gene classification tower)."""
     return ConvResidualFeatureExtractionBlock(
         cfg.embed_dim, N=len(kernels) - 1, kernels=list(kernels), max_len=cfg.max_seq_length,
-        filters=cfg.filters, out=cfg.block_out)
+        filters=cfg.filters if filters is None else filters,
+        out=cfg.block_out if out is None else out)
 
 
 class GeneBranch(nn.Module):
@@ -35,13 +38,14 @@ class GeneBranch(nn.Module):
     def __init__(self, spec: GeneSpec, cfg: AlignAIRConfig):
         super().__init__()
         L = cfg.max_seq_length
-        latent = spec.latent(cfg.latent_size_factor)
+        # allele-discrimination sizing: legacy fixed dims, or auto-scaled to this gene's allele count
+        cls_out, cls_filters, latent = cfg.cls_spec(spec)
         self.seg_tower = build_tower(cfg, spec.seg_kernels)
         self.start_head = nn.Linear(cfg.block_out, L)
         self.end_head = nn.Linear(cfg.block_out, L)
         self.cutout = SoftCutoutLayer(L, k=3.0)
-        self.cls_tower = build_tower(cfg, spec.cls_kernels)
-        self.cls_mid = nn.Linear(cfg.block_out, latent)
+        self.cls_tower = build_tower(cfg, spec.cls_kernels, filters=cls_filters, out=cls_out)
+        self.cls_mid = nn.Linear(cls_out, latent)
         self.cls_head = nn.Linear(latent, spec.allele_count)
         self.register_buffer("_pos", torch.arange(L, dtype=torch.float32), persistent=False)
 

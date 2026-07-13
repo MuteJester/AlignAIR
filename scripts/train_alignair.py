@@ -30,10 +30,20 @@ def main():
     ap.add_argument("--max-len", type=int, default=576)
     ap.add_argument("--state-head", action="store_true",
                     help="add the per-position edit-state head (germline/substitution/insertion/deletion)")
+    ap.add_argument("--cls-scale", type=float, default=None,
+                    help="auto-scale the per-gene classification path (feature tower + prototype dim) to "
+                         "that gene's allele count: d=clamp(round(mult*A),min,max). e.g. 2.0. Recommended "
+                         "for large/similar allele spaces (light chains, multi-locus). Default: legacy fixed dims.")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=".private/models/alignair_single.alignair")
     ap.add_argument("--save-every", type=int, default=5000)
     ap.add_argument("--resume", default=None)
+    ap.add_argument("--init-from", default=None,
+                    help="warm-start on a new reference: copy the shape-compatible backbone (embedding/"
+                         "orientation/meta tower/segmentation towers/analysis heads) from another trained "
+                         "model; reference-specific heads keep fresh init. Not a resume — starts at step 0.")
+    ap.add_argument("--init-trust-pickle", action="store_true",
+                    help="allow a legacy .pt / pre-safe .alignair as the --init-from source")
     ap.add_argument("--log-every", type=int, default=100)
     ap.add_argument("--xray-points", type=int, default=None,
                     help="TOTAL number of deep X-ray snapshots over the whole run (overrides --deep-every)")
@@ -45,20 +55,21 @@ def main():
     dcs = [getattr(gd, name) for name in a.dataconfig]
     ref = ReferenceSet.from_dataconfigs(*dcs)
     cfg = AlignAIRConfig.from_dataconfigs(*dcs, max_seq_length=a.max_len,  # counts/has_d/chains auto-derived
-                                          state_head=a.state_head)
+                                          state_head=a.state_head, cls_scale_multiplier=a.cls_scale)
     model = AlignAIR(cfg)
     logvars = make_logvars(cfg)
     print(f"train {'+'.join(a.dataconfig)}: V={cfg.v_allele_count} D={cfg.d_allele_count} J={cfg.j_allele_count} "
           f"has_d={cfg.has_d} chains={cfg.num_chain_types} "
           f"params={sum(p.numel() for p in model.parameters())/1e6:.2f}M", flush=True)
     if cfg.num_chain_types > 1:
-        print("NOTE: multi-chain model built (chain_type head active), but the gym stream trains one "
-              "dataconfig at a time; multi-chain data mixing + chain_type targets are a follow-on.", flush=True)
+        print(f"multi-chain: {cfg.num_chain_types} chain types, reads mixed across loci + chain_type "
+              "head supervised", flush=True)
     monitor_log = a.monitor_log or (a.out[:-3] if a.out.endswith(".pt") else a.out) + ".diag.jsonl"
-    train(model, ref, dcs[0], cfg, logvars, steps=a.steps, batch_size=a.batch_size, lr=a.lr,
+    train(model, ref, dcs, cfg, logvars, steps=a.steps, batch_size=a.batch_size, lr=a.lr,
           progresses=tuple(a.progress), heavy_shm=a.heavy_shm, short_boost=a.short_boost, device=a.device,
           save_path=a.out, save_every=a.save_every, resume_path=a.resume, log_every=a.log_every,
-          monitor_log=monitor_log, deep_every=deep_every, mutation_cap=a.mutation_cap)
+          monitor_log=monitor_log, deep_every=deep_every, mutation_cap=a.mutation_cap,
+          init_from=a.init_from, init_trust_pickle=a.init_trust_pickle)
     print(f"saved -> {a.out}  (diagnostics: {monitor_log}, deep every {deep_every} "
           f"= {a.steps // deep_every} points)")
 
