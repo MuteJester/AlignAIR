@@ -121,7 +121,7 @@ alignair validate-airr out.tsv      # -> "VALID AIRR-C rearrangement"
 | `alignair compare` | agreement report between two AIRR TSVs (e.g. AlignAIR vs IgBLAST) on your data |
 | `alignair validate-airr` | validate a rearrangement TSV against the AIRR-C schema |
 | `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR, parasail) |
-| `alignair bundle` | package a raw checkpoint into a versioned, fingerprinted bundle |
+| `alignair convert` | convert a legacy checkpoint into a versioned, fingerprinted `.alignair` |
 
 Run `alignair <command> --help` for options.
 

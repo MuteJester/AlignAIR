@@ -5,7 +5,8 @@ from ..registry import cache, sources
 
 
 def register(sub) -> None:
-    p = sub.add_parser("models", help="download / manage shipped AlignAIR models")
+    # `model` is a documented alias of `models` (README/CI use both) — one command surface, two names.
+    p = sub.add_parser("models", aliases=["model"], help="download / manage shipped AlignAIR models")
     ms = p.add_subparsers(dest="models_cmd", required=True)
 
     def net(sp):
