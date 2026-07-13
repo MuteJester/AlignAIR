@@ -42,6 +42,11 @@ def register(sub) -> None:
     p.add_argument("--trust-pickle", action="store_true",
                    help="allow loading a legacy .pt / pre-safe .alignair (runs pickle); path-only")
     p.add_argument("--no-run-metadata", action="store_true", help="do not write the <out>.run.json sidecar")
+    p.add_argument("--max-assembly-failures", type=float, default=0.01,
+                   help="fail the job if the AIRR-assembly failure rate exceeds this fraction "
+                        "(default 0.01); assembly failures are always tagged per row regardless")
+    p.add_argument("--permissive", action="store_true",
+                   help="never fail on the AIRR-assembly failure rate (dirty repertoires); still tags rows")
     p.set_defaults(func=run)
 
 
@@ -53,7 +58,8 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def _write_run_metadata(out: str, model_path: str, args, n_reads: int, device: str) -> None:
+def _write_run_metadata(out: str, model_path: str, args, n_reads: int, device: str,
+                        failed: int = 0, fail_reasons: dict | None = None) -> None:
     from ..model_file import container, read_metadata
     md = read_metadata(model_path) if container.is_alignair_file(model_path) else {}
     ref = md.get("reference", {})
@@ -67,6 +73,7 @@ def _write_run_metadata(out: str, model_path: str, args, n_reads: int, device: s
         "command": {"input": args.input, "out": args.out, "columns": args.columns,
                     "locus": args.locus, "batch_size": args.batch_size, "device": device},
         "n_reads": n_reads, "offline": bool(args.offline),
+        "airr_assembly_failed": failed, "airr_assembly_fail_reasons": fail_reasons or {},
         "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
     with open(out + ".run.json", "w") as f:
@@ -104,17 +111,37 @@ def run(args) -> int:
     overrides = {}
     if args.genotype:
         from ..genotype.constraint import load_genotype
-        genotype, unknown = load_genotype(args.genotype, reference=reference, drop_unknown=True)
-        if any(unknown.values()):
-            print(f"note: dropped genotype alleles not in the model reference: "
-                  f"{ {g: sorted(v) for g, v in unknown.items() if v} }")
+        try:                    # fixed-head models cannot call novel alleles -> reject, do not drop
+            genotype = load_genotype(args.genotype, reference=reference, drop_unknown=False)
+        except ValueError as e:
+            print(f"invalid genotype: {e}")
+            return 1
         overrides = {"genotype": genotype, "genotype_method": args.genotype_method}
     records = predict_sequences(model, reference, seqs, device=device, batch_size=args.batch_size,
                                 airr=needs_assembly(args.columns), **overrides)
+
+    # AIRR-assembly failure accounting: rows are always tagged; fail the job if the rate is too high
+    # (unless --permissive), so a run cannot silently lose junction/region/alignment fields (P0-7).
+    from collections import Counter
+    failed = [r for r in records if r.get("airr_assembly_status") == "failed"]
+    fail_reasons = Counter(r.get("airr_assembly_error", "?").split(":")[0] for r in failed)
+    fail_rate = len(failed) / len(records) if records else 0.0
+    if failed and fail_rate > args.max_assembly_failures and not args.permissive:
+        write_airr(args.out, ids, seqs, records, locus=args.locus, columns=args.columns)
+        print(f"AIRR assembly failed for {len(failed)}/{len(records)} reads "
+              f"({fail_rate:.1%} > --max-assembly-failures {args.max_assembly_failures:.1%}); "
+              f"reasons: {dict(fail_reasons)}. Wrote tagged output to {args.out}. "
+              f"Re-run with --permissive to accept, or raise --max-assembly-failures.")
+        return 1
+
     write_airr(args.out, ids, seqs, records, locus=args.locus, columns=args.columns)
     if not args.no_run_metadata:
-        _write_run_metadata(args.out, model_path, args, len(records), device)
-    print(f"aligned {len(records)} reads ({stats['n_dropped']} dropped) -> {args.out}")
+        _write_run_metadata(args.out, model_path, args, len(records), device, failed=len(failed),
+                            fail_reasons=dict(fail_reasons))
+    msg = f"aligned {len(records)} reads ({stats['n_dropped']} dropped) -> {args.out}"
+    if failed:
+        msg += f"; {len(failed)} AIRR-assembly failures tagged ({dict(fail_reasons)})"
+    print(msg)
 
     pinned = os.path.exists(args.model) or "@" in args.model        # a path or a pinned id: no update noise
     maybe_notify_updates(sources_list=srcs, offline=args.offline, quiet=args.quiet, pinned=pinned)

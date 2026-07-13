@@ -80,3 +80,24 @@ def test_load_genotype_validates_against_reference(tmp_path):
     assert g["v"] == {"IGHV1-2*01"} and "NOT-A-REAL-ALLELE" in unknown["v"]
     with pytest.raises(ValueError, match="unknown"):
         load_genotype(str(p), reference=ref, drop_unknown=False)
+
+
+# --- P0-5: constraint safety (no empty allowed set, no NaN/Inf) ----------------------------------
+
+def test_empty_allowed_set_raises_before_inference():
+    import pytest
+    from alignair.genotype.constraint import NovelAlleleUnsupportedError
+    ref = _Ref(["V1", "V2", "V3"])
+    # a genotype of only novel alleles leaves nothing callable -> must fail loudly, not silently,
+    # with the typed fixed-reference-contract error (which is also a ValueError for back-compat).
+    with pytest.raises(NovelAlleleUnsupportedError, match="no allele|cannot call|not trained"):
+        adjust_for_genotype(_preds([[0.9, 0.1, 0.1]]), {"v": {"NOVEL1", "NOVEL2"}}, ref, method="mask")
+    assert issubclass(NovelAlleleUnsupportedError, ValueError)
+
+
+def test_no_constraint_method_emits_nonfinite():
+    ref = _Ref(["V1", "V2", "V3"])
+    for method in ("mask", "softmax", "renormalize", "redistribute"):
+        # adversarial: a single allowed allele with an extreme probability
+        out = adjust_for_genotype(_preds([[1.0, 0.0, 0.0]]), {"v": {"V1"}}, ref, method=method)
+        assert np.all(np.isfinite(out.allele["v"])), method

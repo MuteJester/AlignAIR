@@ -4,6 +4,7 @@ level, and set confidence)."""
 from __future__ import annotations
 
 import csv
+import os
 from typing import List
 
 GENES = ("v", "d", "j")
@@ -26,9 +27,16 @@ _PERGENE_ALN = [f"{g}_{k}" for g in GENES
                           "sequence_alignment_aa", "germline_alignment_aa",
                           "alignment_start", "alignment_end")]
 _EXT = [f"{g}_{k}" for g in GENES for k in ("call_set", "resolved_call", "call_level", "set_confidence")]
-_MISC = ["mutation_rate", "is_contaminant"]
+# extension fields: full-transform orientation label + original (pre-orientation) input read +
+# per-read segmentation quality flag. `orientation`/`input_sequence` keep the AIRR standard `rev_comp`
+# boolean honest (it is set only for a true reverse-complement) without losing the actual transform.
+_MISC = ["mutation_rate", "is_contaminant", "orientation", "input_sequence", "segmentation_low_quality",
+         "length_cropped", "airr_assembly_status", "airr_assembly_error"]
 COLUMNS = (_IDENT + _CALLS + _QUALITY + _ALN + _JUNCTION + _CIGAR + _COORDS
            + _REGIONS + _PERGENE_ALN + _EXT + _MISC)
+
+# orientation id -> AIRR-honest label (only id 1 is a reverse-complement; see _build_row)
+_ORIENT_LABEL = {0: "forward", 1: "reverse_complement", 2: "complement", 3: "reverse"}
 
 # Named column presets users can pick from (or pass their own list / comma-string). `full` is the
 # default; `airr` is the MiAIRR-minimal required rearrangement set; `core`/`minimal` are compact.
@@ -58,7 +66,9 @@ def resolve_columns(columns) -> list:
 
 
 # fields that come straight from the light predict() record (no build_airr assembly needed)
-_LIGHT_FIELDS = frozenset(_IDENT + _CALLS + ["productive", "mutation_rate"] + _CIGAR + _COORDS + _EXT)
+_LIGHT_FIELDS = frozenset(_IDENT + _CALLS + ["productive", "mutation_rate", "orientation",
+                          "input_sequence", "segmentation_low_quality", "length_cropped",
+                          "airr_assembly_status", "airr_assembly_error"] + _CIGAR + _COORDS + _EXT)
 
 
 def needs_assembly(columns) -> bool:
@@ -103,28 +113,50 @@ def _cigar(seq_len, ss, se, gs, ge):
 
 
 def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
-    """Build one AIRR rearrangement row from a predict()/build_airr record. `seq` is the CANONICAL
-    (forward) sequence the coordinates are in. Passes the record's AIRR fields through, applying the
-    AIRR conventions: 1-based sequence/germline starts, the ``rev_comp`` flag, and coordinate-derived
-    CIGAR / sequence_alignment fallbacks for records that did not go through ``build_airr``."""
+    """Build one AIRR rearrangement row from a predict()/build_airr record.
+
+    The **record owns** the canonical (forward) sequence its coordinates/CIGAR/alignment refer to
+    (``p["sequence"]``); that is what is emitted and what every slice is taken from — never the
+    ``seq`` argument, which is the *original* (pre-orientation) input read passed in parallel. This is
+    the P0-3 invariant: AIRR coordinates always describe the emitted ``sequence``. When the input read
+    was reoriented, the original is preserved in the ``input_sequence`` extension.
+
+    Applies the AIRR conventions: 1-based sequence/germline starts, an honest ``rev_comp`` (set only
+    for a true reverse-complement — id 1 — with the full transform kept in ``orientation``), and
+    coordinate-derived CIGAR / sequence_alignment fallbacks for records that skipped ``build_airr``."""
     row = dict(p)                                  # pass through all AIRR fields (junction/regions/...)
-    seq_len = len(seq)
+    canonical = p.get("sequence") if p.get("sequence") is not None else seq
+    seq_len = len(canonical)
     row["sequence_id"] = sid
-    row["sequence"] = seq
+    row["sequence"] = canonical
+    if seq is not None and seq != canonical:       # input was reoriented -> keep the original read
+        row["input_sequence"] = seq
     row.setdefault("locus", locus)
-    row["rev_comp"] = "T" if p.get("orientation_id", 0) != 0 else "F"
+    oid = int(p.get("orientation_id", 0) or 0)
+    row["rev_comp"] = "T" if oid == 1 else "F"     # AIRR rev_comp: reverse-complement only
+    row["orientation"] = _ORIENT_LABEL.get(oid, "forward")
+    for _flag in ("segmentation_low_quality", "length_cropped"):   # logical extensions -> AIRR T/F
+        if _flag in row:
+            row[_flag] = "T" if row[_flag] else "F"
     isc = p.get("is_contaminant")
     row["is_contaminant"] = ("T" if isc else "F") if isc is not None else None
     if not row.get("sequence_alignment"):          # fallback when build_airr was not run
         starts = [p.get(f"{g}_sequence_start") for g in GENES if p.get(f"{g}_sequence_start") is not None]
         ends = [p.get(f"{g}_sequence_end") for g in GENES if p.get(f"{g}_sequence_end")]
-        row["sequence_alignment"] = seq[min(starts):max(ends)] if starts and ends else ""
+        row["sequence_alignment"] = canonical[min(starts):max(ends)] if starts and ends else ""
     for g in GENES:
-        row[f"{g}_cigar"] = p.get(f"{g}_cigar") or _cigar(
-            seq_len, p.get(f"{g}_sequence_start"), p.get(f"{g}_sequence_end"),
-            p.get(f"{g}_germline_start"), p.get(f"{g}_germline_end"))
-        row[f"{g}_sequence_start"] = _airr_start(p.get(f"{g}_sequence_start"))   # 0-based -> 1-based
-        row[f"{g}_germline_start"] = _airr_start(p.get(f"{g}_germline_start"))
+        ss, se = p.get(f"{g}_sequence_start"), p.get(f"{g}_sequence_end")
+        # An absent / zero-length segment (e.g. Short-D) has no span; AIRR 1-based-inclusive coords
+        # cannot encode an empty interval (start would exceed end), so blank its coords + CIGAR.
+        if ss is not None and se is not None and se <= ss:
+            row[f"{g}_cigar"] = ""
+            row[f"{g}_sequence_start"] = row[f"{g}_sequence_end"] = None
+            row[f"{g}_germline_start"] = row[f"{g}_germline_end"] = None
+        else:
+            row[f"{g}_cigar"] = p.get(f"{g}_cigar") or _cigar(
+                seq_len, ss, se, p.get(f"{g}_germline_start"), p.get(f"{g}_germline_end"))
+            row[f"{g}_sequence_start"] = _airr_start(ss)                # 0-based -> 1-based
+            row[f"{g}_germline_start"] = _airr_start(p.get(f"{g}_germline_start"))
         cset = (p.get(f"{g}_call_set") or p.get(f"{g}_calls")
                 or ([p.get(f"{g}_call")] if p.get(f"{g}_call") else []))
         row[f"{g}_call_set"] = ",".join(c for c in cset if c)
@@ -140,12 +172,18 @@ class AirrWriter:
 
     def __init__(self, path: str, locus: str = "IGH", columns=None, extra_columns=None):
         """``columns``: which fields to emit (a preset name, comma-string, or list; default = the full
-        schema). ``extra_columns``: extra per-row metadata columns (barcode/UMI/sample) appended after."""
+        schema). ``extra_columns``: extra per-row metadata columns (barcode/UMI/sample) appended after.
+
+        A file output is written **atomically**: rows go to a sibling temp file that is renamed onto
+        ``path`` only on a clean ``close``/context exit, so an interrupted job never leaves a final path
+        that looks complete (P0-8)."""
         import sys
         self.locus = locus
         self.extra_columns = list(extra_columns or [])
         self._to_stdout = path == "-"
-        self._f = sys.stdout if self._to_stdout else open(path, "w", newline="")
+        self._final_path = None if self._to_stdout else path
+        self._tmp_path = None if self._to_stdout else f"{path}.tmp.{os.getpid()}"
+        self._f = sys.stdout if self._to_stdout else open(self._tmp_path, "w", newline="")
         base = resolve_columns(columns)
         fields = base + [c for c in self.extra_columns if c not in base]
         self._w = csv.DictWriter(self._f, fieldnames=fields, delimiter="\t", extrasaction="ignore")
@@ -153,32 +191,43 @@ class AirrWriter:
 
     def write(self, ids: List[str], sequences: List[str], preds: List[dict],
               metas: List[dict] | None = None) -> None:
-        """`metas`, if given, is a per-row dict of extra column values (e.g. preserved barcode/UMI/
-        sample metadata) merged into each output row."""
+        """`sequences` are the ORIGINAL (pre-orientation) input reads, kept only for provenance
+        (`input_sequence`); the emitted `sequence` and all coordinates come from each record's own
+        canonical sequence (P0-3). `metas`, if given, is a per-row dict of extra column values (e.g.
+        preserved barcode/UMI/sample metadata) merged into each output row."""
         for i, (sid, seq, p) in enumerate(zip(ids, sequences, preds)):
             row = _build_row(sid, seq, p, self.locus)
             if metas and metas[i]:
                 row.update(metas[i])
             self._w.writerow(row)
 
-    def close(self) -> None:
-        if not self._to_stdout:
+    def close(self, commit: bool = True) -> None:
+        """Close the output. For a file target, ``commit=True`` atomically renames the temp file onto
+        the final path; ``commit=False`` discards it (used on an aborted context exit)."""
+        if self._to_stdout:
+            return
+        if not self._f.closed:
             self._f.close()
+        if commit:
+            os.replace(self._tmp_path, self._final_path)
+        elif os.path.exists(self._tmp_path):
+            try:
+                os.remove(self._tmp_path)
+            except OSError:
+                pass
 
     def __enter__(self):
         return self
 
     def __exit__(self, *exc):
-        self.close()
+        self.close(commit=exc[0] is None)          # never commit a partial file on an exception
 
 
 def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict],
                locus: str = "IGH", columns=None) -> None:
     """Eager one-shot write (back-compat). For large inputs use AirrWriter incrementally.
-    `sequences` must be the CANONICAL (forward) sequences predict_reads' coordinates are in.
-    `columns` selects which fields to emit (preset name / comma-string / list; default = full)."""
-    w = AirrWriter(path, locus, columns=columns)
-    try:
+    `sequences` are the ORIGINAL input reads (provenance only); coordinates and the emitted `sequence`
+    come from each record's canonical sequence (P0-3). `columns` selects which fields to emit (preset
+    name / comma-string / list; default = full)."""
+    with AirrWriter(path, locus, columns=columns) as w:   # atomic: commit on clean exit, discard on error
         w.write(ids, sequences, preds)
-    finally:
-        w.close()

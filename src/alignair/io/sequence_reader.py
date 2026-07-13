@@ -36,11 +36,16 @@ def _open(path: str):
     return open(path, "r")
 
 
-def validate(seq: str) -> str | None:
-    """Uppercase, map IUPAC ambiguity -> N; return None if >20% chars are unusable."""
+def validate_sequence(seq: str, max_len: int | None = None) -> tuple[str | None, str | None]:
+    """The single content validator (used by the reader and the predict pipeline).
+
+    Returns ``(cleaned, reason)``: ``cleaned`` is the uppercased sequence with IUPAC ambiguity codes
+    mapped to ``N``; ``reason`` is ``None`` when accepted, else a machine-readable rejection code:
+    ``"empty"`` (blank), ``"ambiguous"`` (>20% unusable characters), or ``"too_long"`` (exceeds
+    ``max_len`` — callers decide crop vs reject; the reader never silently truncates)."""
     s = seq.strip().upper()
     if not s:
-        return None
+        return None, "empty"
     bad = 0
     out = []
     for c in s:
@@ -52,8 +57,16 @@ def validate(seq: str) -> str | None:
             bad += 1
             out.append("N")
     if bad / len(s) > 0.20:
-        return None
-    return "".join(out)
+        return None, "ambiguous"
+    cleaned = "".join(out)
+    if max_len is not None and len(cleaned) > max_len:
+        return None, "too_long"
+    return cleaned, None
+
+
+def validate(seq: str) -> str | None:
+    """Back-compat wrapper: the cleaned sequence, or ``None`` if unusable (see ``validate_sequence``)."""
+    return validate_sequence(seq)[0]
 
 
 def _sniff(path: str, head: str) -> str:
@@ -129,14 +142,29 @@ def _iter_records(path: str, fmt: str, head: str, seq_column, id_column):
                 yield name, "".join(buf)
     elif fmt == "fastq":
         with _open(path) as f:
+            ln = 0
             while True:
                 h = f.readline()
                 if not h:
                     break
-                s = f.readline(); f.readline(); f.readline()      # seq, '+', qual
-                if h.startswith("@"):
-                    tok = h.rstrip("\n")[1:].split()
-                    yield (tok[0] if tok else None), s.rstrip("\n")
+                ln += 1
+                if not h.startswith("@"):
+                    raise ValueError(f"malformed FASTQ at line {ln}: expected '@' header, "
+                                     f"got {h.rstrip()[:20]!r}")
+                s = f.readline(); plus = f.readline(); q = f.readline()
+                if not q:
+                    raise ValueError(f"malformed FASTQ: truncated record starting at line {ln} "
+                                     f"(a record needs 4 lines)")
+                if not plus.startswith("+"):
+                    raise ValueError(f"malformed FASTQ at line {ln + 2}: expected '+' separator, "
+                                     f"got {plus.rstrip()[:20]!r}")
+                seq, qual = s.rstrip("\n"), q.rstrip("\n")
+                if len(seq) != len(qual):
+                    raise ValueError(f"malformed FASTQ at line {ln + 3}: sequence length {len(seq)} "
+                                     f"!= quality length {len(qual)}")
+                ln += 3
+                tok = h.rstrip("\n")[1:].split()
+                yield (tok[0] if tok else None), seq
     elif fmt == "table":
         delim = "\t" if path.lower().rstrip(".gz").endswith(".tsv") or "\t" in head else ","
         with _open(path) as f:
@@ -177,12 +205,23 @@ def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = 
     ids: List[str] = []
     seqs: List[str] = []
     dropped = 0
+    seen: dict = {}                       # base id -> collision count (persists across chunks)
+
+    def _unique_id(rid, i):
+        base = rid if rid is not None else f"seq{i}"
+        n = seen.get(base)
+        if n is None:                     # first occurrence keeps its id; preserve input order
+            seen[base] = 0
+            return base
+        seen[base] = n + 1                # deterministic disambiguation of duplicate ids
+        return f"{base}_dup{n + 1}"
+
     for i, (rid, raw) in enumerate(_iter_records(path, fmt, head, seq_column, id_column)):
         v = validate(raw)
         if v is None:
             dropped += 1
         else:
-            ids.append(rid if rid is not None else f"seq{i}")
+            ids.append(_unique_id(rid, i))
             seqs.append(v)
         if len(seqs) >= chunk_size:
             yield ids, seqs, dropped

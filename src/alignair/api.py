@@ -49,6 +49,30 @@ def _remap_state_dict(state: dict) -> dict:
     return out
 
 
+def _gene_names(ref, g):
+    try:
+        return list(ref.gene(g).names)
+    except (KeyError, AttributeError):
+        return None
+
+
+def _assert_reference_matches(caller, embedded) -> None:
+    """A fixed-head model's V/D/J classification indices are tied to the embedded allele *order*, so a
+    caller-supplied reference must be identical (same genes, same alleles, same order). Otherwise output
+    columns would be mislabeled or prediction would fail late. Raises ``ValueError`` on any mismatch —
+    the safe path is to omit ``reference=`` and use the model's verified embedded reference (P0-1)."""
+    for g in ("V", "D", "J"):
+        emb, cal = _gene_names(embedded, g), _gene_names(caller, g)
+        if emb != cal:
+            n_emb = len(emb) if emb else 0
+            n_cal = len(cal) if cal else 0
+            raise ValueError(
+                f"supplied reference does not match the model's embedded reference for gene {g} "
+                f"(this fixed-head model's classification indices are tied to the embedded allele "
+                f"order; {n_cal} supplied vs {n_emb} embedded). Omit reference= to use the model's "
+                f"verified embedded reference, or retrain to change the reference.")
+
+
 def _build_reference(dataconfigs, reference):
     if reference is not None:
         return reference
@@ -73,6 +97,8 @@ def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSe
     from .model_file import container, load_model as _load_alignair
     if container.is_alignair_file(checkpoint_path):
         lm = _load_alignair(checkpoint_path, device=device, trust_pickle=trust_pickle)
+        if reference is not None:                    # fixed head: an override must match the embedded order
+            _assert_reference_matches(reference, lm.reference)
         return lm.model, (reference or lm.reference)
     if not trust_pickle:
         raise ValueError(
@@ -93,8 +119,8 @@ def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Seque
     ``threshold=``, ``germline_reader=``, ``genotype=``)."""
     device = device or next(model.parameters()).device.type
     cfg = model.cfg
-    pcfg = PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d,
-                         batch_size=batch_size, **predict_overrides)
+    pcfg = PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size,
+                         allele_temperatures=getattr(cfg, "allele_temperatures", None), **predict_overrides)
     return _predict(model, list(sequences), reference, pcfg, device=device)
 
 
@@ -113,6 +139,6 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
     cfg = AlignAIRConfig.from_dataconfigs(*dcs)
     model = AlignAIR(cfg)
     logvars = make_logvars(cfg)
-    _train(model, reference, dcs[0], cfg, logvars, steps=steps, device=device,
+    _train(model, reference, dcs, cfg, logvars, steps=steps, device=device,
            save_path=out_path, **train_overrides)
     return out_path

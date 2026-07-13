@@ -36,9 +36,16 @@ class Predictions:
 
 @dataclass
 class Segments:
-    """De-padded, clipped, order-repaired integer segment coordinates in the read frame."""
+    """De-padded, clipped, order-repaired integer segment coordinates in the read frame.
+
+    All coordinates satisfy ``0 <= start <= end <= seq_len`` and the biological ordering
+    ``v_end <= d_start <= d_end <= j_start <= j_end`` jointly (constrained projection, not a
+    one-directional repair). A segment squeezed to zero length is *absent* rather than a manufactured
+    one-base span. ``low_quality[i]`` flags reads whose mandatory V anchor collapsed to zero length —
+    no feasible segmentation exists for that read (e.g. read shorter than the called layout)."""
     start: dict[str, np.ndarray]      # {gene: [N] int}
     end: dict[str, np.ndarray]        # {gene: [N] int}
+    low_quality: Optional[np.ndarray] = None   # [N] bool: V anchor collapsed -> infeasible segmentation
 
 
 @dataclass(frozen=True)

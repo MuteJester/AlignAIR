@@ -26,14 +26,46 @@ from ..predict.state import Predictions
 METHODS = ("mask", "softmax", "renormalize", "redistribute")
 
 
+class NovelAlleleUnsupportedError(ValueError):
+    """A genotype (or supplied reference) names an allele the model was not trained on. A fixed-head
+    model's classification indices are tied to its trained allele catalog, so it cannot call a novel
+    allele at inference — retrain/fine-tune to add alleles (P0-1). Subclasses ``ValueError`` so existing
+    ``except ValueError`` handlers keep working while the type documents the fixed-reference contract."""
+
+
+def genotype_allowed_mask(genotype: dict, reference, genes=None) -> dict:
+    """Compute ``{gene: bool mask over head indices}`` for the alleles a genotype allows, validating
+    that every constrained gene present in both the genotype and the reference retains **at least one**
+    supported allele. Raises ``ValueError`` if a gene's allowed set is empty (e.g. an all-novel-allele
+    file) — this must fail before inference rather than silently calling a disallowed allele (P0-5)."""
+    out: dict[str, np.ndarray] = {}
+    for gene, allowed in genotype.items():
+        g = gene.lower()
+        if genes is not None and g not in genes:
+            continue
+        try:
+            names = reference.gene(g.upper()).names
+        except (KeyError, AttributeError):               # gene absent from this model's reference
+            continue
+        keep = np.array([n in allowed for n in names], dtype=bool)
+        if not keep.any():
+            raise NovelAlleleUnsupportedError(
+                f"genotype constraint for gene {g!r} allows no allele in the model's reference "
+                f"(a fixed-reference model cannot call alleles it was not trained on). "
+                f"Supplied: {sorted(allowed)[:8]}{'...' if len(allowed) > 8 else ''}")
+        out[g] = keep
+    return out
+
+
 def adjust_for_genotype(preds: Predictions, genotype: dict, reference, method: str = "renormalize") -> Predictions:
     if method not in METHODS:
         raise ValueError(f"unknown genotype method {method!r}; choose from {METHODS}")
+    masks = genotype_allowed_mask(genotype, reference, genes=set(preds.allele))   # validates non-empty
     for gene, allowed in genotype.items():
-        if gene not in preds.allele:
+        if gene.lower() not in preds.allele:
             continue
-        names = reference.gene(gene.upper()).names
-        keep = np.array([n in allowed for n in names], dtype=bool)
+        gene = gene.lower()
+        keep = masks[gene]
         probs = preds.allele[gene].astype(np.float64, copy=True)
         if method == "mask":
             probs[:, ~keep] = 0.0
@@ -81,7 +113,9 @@ def load_genotype(path: str, *, reference=None, drop_unknown: bool = True):
             if drop_unknown:
                 genotype[g] = names - bad
             else:
-                raise ValueError(f"unknown alleles in genotype for {g}: {sorted(bad)}")
+                raise NovelAlleleUnsupportedError(
+                    f"unknown alleles in genotype for {g}: {sorted(bad)} (not in the model reference; "
+                    f"a fixed-reference model cannot call alleles it was not trained on)")
     return genotype, unknown
 
 

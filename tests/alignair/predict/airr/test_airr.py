@@ -1,9 +1,57 @@
 """Tests for the AIRR assembly subpackage (Phase B)."""
+from types import SimpleNamespace
+
 import pytest
 
 from alignair.predict.airr import build_airr
+from alignair.predict.airr.builder import AirrAssemblyError
 from alignair.predict.airr.alignment import build_sequence_alignment
 from alignair.predict.airr.regions import compute_junction
+
+
+class _FakeRef:
+    """Minimal reference stub for status/error-handling tests (no germline math needed)."""
+    genes = {"V", "J"}
+
+    def gene(self, g):
+        return SimpleNamespace(names=["IGHV1-1*01"], sequences=["ACGT"], gapped=None, anchors={})
+
+
+def test_build_airr_tags_ok_status(monkeypatch):
+    from alignair.predict.airr import builder
+    monkeypatch.setattr(builder, "_build_one", lambda rec, *a, **k: dict(rec))
+    out = build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy")
+    assert out[0]["airr_assembly_status"] == "ok"
+
+
+def test_build_airr_unexpected_exception_raises_with_context(monkeypatch):
+    """A non-data (programming) exception must fail loudly with the record identifier, never silent."""
+    from alignair.predict.airr import builder
+
+    def boom(rec, *a, **k):
+        raise TypeError("bug")
+    monkeypatch.setattr(builder, "_build_one", boom)
+    with pytest.raises(AirrAssemblyError, match="ACGT|record"):
+        build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy")
+
+
+def test_build_airr_expected_exception_is_tagged_not_swallowed(monkeypatch):
+    from alignair.predict.airr import builder
+
+    def bad_data(rec, *a, **k):
+        raise ValueError("edge-case data")
+    monkeypatch.setattr(builder, "_build_one", bad_data)
+    out = build_airr([{"sequence": "ACGT", "v_call": "IGHV1-1*01"}], _FakeRef(), chain="heavy")
+    assert out[0]["airr_assembly_status"] == "failed"
+    assert "ValueError" in out[0]["airr_assembly_error"]
+    assert out[0]["v_call"] == "IGHV1-1*01"                 # light record preserved
+
+
+def test_build_airr_strict_raises_on_expected_error(monkeypatch):
+    from alignair.predict.airr import builder
+    monkeypatch.setattr(builder, "_build_one", lambda rec, *a, **k: (_ for _ in ()).throw(ValueError("x")))
+    with pytest.raises(AirrAssemblyError):
+        build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy", strict=True)
 
 
 def test_sequence_alignment_inserts_imgt_gaps():

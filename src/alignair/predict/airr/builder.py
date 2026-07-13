@@ -12,6 +12,22 @@ from .alignment import (build_germline_alignment, build_sequence_alignment,
                         extract_segment_alignments, translate_alignment)
 from .regions import cigar_has_indel, compute_junction, compute_junction_cigar, extract_regions
 
+# Exceptions edge-case *data* can legitimately raise inside assembly (bad coords, missing anchors,
+# out-of-range slices). These are tagged as per-record assembly failures and tracked; anything else is
+# treated as a programming defect and re-raised loudly (see build_airr / the pre-launch audit P0-7).
+_EXPECTED_ASSEMBLY_ERRORS = (ValueError, IndexError, KeyError)
+
+
+class AirrAssemblyError(Exception):
+    """AIRR assembly failed for one record. Carries the record identifier and the originating error so
+    an unexpected (non-data) failure surfaces with context instead of silently dropping AIRR fields."""
+
+    def __init__(self, ident, original):
+        self.ident = ident
+        self.original = original
+        super().__init__(f"AIRR assembly failed for {ident}: "
+                         f"{type(original).__name__}: {original}")
+
 
 def _germline_maps(reference):
     v, j = reference.gene("V"), reference.gene("J")
@@ -109,14 +125,31 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     return out
 
 
-def build_airr(records: list, reference, chain: str = "heavy") -> list:
+def build_airr(records: list, reference, chain: str = "heavy", strict: bool = False) -> list:
+    """Assemble full AIRR rows. Each returned record carries ``airr_assembly_status`` (``"ok"`` or
+    ``"failed"``); a failed record keeps its light fields (calls/coords/cigar) plus an
+    ``airr_assembly_error`` reason — the assembly is never *silently* dropped (P0-7).
+
+    Expected data-edge exceptions become tagged failures; any other exception is a programming defect
+    and is re-raised as :class:`AirrAssemblyError` with the record identifier. ``strict=True`` re-raises
+    even the expected data failures (used to gate release fixtures / tests that must assemble cleanly)."""
     v_gapped, j_ung, d_ung, j_anchors = _germline_maps(reference)
     v_names = reference.gene("V").names                          # locus gate: TCR (TRxV...) IMGT gapping
     is_tcr = bool(v_names) and str(v_names[0]).upper().startswith("TR")  # breaks the gapped column-309
     out = []                                                     # junction -> use the read-coordinate path
-    for rec in records:
+    for i, rec in enumerate(records):
+        ident = rec.get("sequence_id") or f"record[{i}] {str(rec.get('sequence', ''))[:24]!r}"
         try:
-            out.append(_build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr))
-        except Exception:
-            out.append(dict(rec))          # AIRR assembly failed -> keep the light record (calls/coords)
+            row = _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr)
+            row["airr_assembly_status"] = "ok"
+            out.append(row)
+        except _EXPECTED_ASSEMBLY_ERRORS as e:
+            if strict:
+                raise AirrAssemblyError(ident, e) from e
+            row = dict(rec)                # keep the light record (calls/coords) but TAG the failure
+            row["airr_assembly_status"] = "failed"
+            row["airr_assembly_error"] = f"{type(e).__name__}: {e}"
+            out.append(row)
+        except Exception as e:             # unexpected -> a programming defect, never silent
+            raise AirrAssemblyError(ident, e) from e
     return out

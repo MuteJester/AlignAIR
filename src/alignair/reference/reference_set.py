@@ -93,11 +93,15 @@ class ReferenceSet:
                       anchors: Dict[str, Dict[str, int]] | None = None) -> "ReferenceSet":
         """Build a reference from a genotype mapping {gene_type: {allele_name: dna_seq}}.
 
-        gene_type is V/J (+ D for heavy chains; omit D for light). Allele names need
-        NOT be from the training reference — NOVEL alleles are just rows the encoder
-        will embed at predict time, so the model conditions on whatever it is handed.
-        ``anchors`` optionally supplies {gene: {allele_name: pos}} so KNOWN alleles keep
-        their junction anchor (novel alleles simply omit it -> no junction emitted).
+        gene_type is V/J (+ D for heavy chains; omit D for light). ``anchors`` optionally supplies
+        {gene: {allele_name: pos}} so alleles keep their junction anchor.
+
+        NOTE (P0-1): the *fixed-head* production model's V/D/J classification indices are tied to the
+        allele order it was trained on. This builder produces a reference in whatever order the file
+        provides, which will **not** match a trained head — so it is for reference-conditioned/retrieval
+        code and for constructing a reference to (re)train against, NOT for relabeling a fixed-head
+        model's outputs. Novel alleles are not callable by a fixed-head model (see
+        :class:`alignair.genotype.NovelAlleleUnsupportedError`).
         """
         upper = {k.upper(): v for k, v in genes.items()}
         anc_in = {k.upper(): v for k, v in (anchors or {}).items()}
@@ -155,8 +159,10 @@ class ReferenceSet:
     def from_fasta(cls, path: str) -> "ReferenceSet":
         """Load a genotype FASTA (``>allele_name`` headers + DNA). Gene type (V/D/J) is
         inferred from each allele name; alleles whose segment can't be inferred are skipped.
-        Subset OR novel alleles both work — every record is a row the encoder embeds at
-        predict time, so the model conditions on exactly what the file provides."""
+
+        See :meth:`from_genotype` re: the fixed-head contract — the resulting allele order will not
+        match a trained head, so this is for (re)training / reference-conditioned code, not for
+        relabeling a fixed-head model's output columns (P0-1)."""
         genes: Dict[str, Dict[str, str]] = {"V": {}, "D": {}, "J": {}}
         name = None
         chunks: List[str] = []

@@ -55,20 +55,31 @@ SELECTORS = {"absolute": absolute_threshold, "largest_gap": largest_gap,
 
 
 def select_alleles(allele_probs: dict, names: dict, param: float = 0.5, cap: int = 3,
-                   selector: str = "absolute") -> dict:
+                   selector: str = "absolute", allowed: dict | None = None) -> dict:
     """Map per-gene probability matrices to per-read allele calls.
 
     ``allele_probs``: {gene: [N, C] sigmoid probs}. ``names``: {gene: [C] allele names, index-aligned
     to the model's output head}. ``param`` is the selector's scalar (threshold for ``"absolute"``,
     pct for the legacy rule, ignored for ``"largest_gap"``). Returns {gene: list[GeneCall]}.
+
+    ``allowed`` (genotype constraint): ``{gene: bool mask over head indices}``. When given for a gene,
+    selection runs over *only* the allowed indices, so a constrained call is **always** a member of the
+    allowed set — never a disallowed argmax fallback from zeroed probabilities (see the pre-launch
+    audit P0-5). The mask must have at least one ``True`` (validated upstream at constraint time).
     """
     fn = SELECTORS[selector]
     out: dict[str, list[GeneCall]] = {}
     for gene, probs in allele_probs.items():
         gene_names = names[gene]
+        amask = None if allowed is None else allowed.get(gene)
+        allowed_idx = None if amask is None else np.where(np.asarray(amask, dtype=bool))[0]
         calls = []
         for row in np.asarray(probs):
-            idx, lk = fn(row, param, cap)
+            if allowed_idx is not None:                  # select among allowed head indices only
+                sub_sel, lk = fn(row[allowed_idx], param, cap)
+                idx = allowed_idx[sub_sel]
+            else:
+                idx, lk = fn(row, param, cap)
             calls.append(GeneCall(tuple(gene_names[i] for i in idx),
                                   tuple(float(x) for x in lk)))
         out[gene] = calls

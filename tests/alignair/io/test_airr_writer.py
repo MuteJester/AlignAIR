@@ -4,7 +4,9 @@ import csv
 import os
 import tempfile
 
-from alignair.io.airr import COLUMN_PRESETS, COLUMNS, needs_assembly, resolve_columns, write_airr
+import pytest
+
+from alignair.io.airr import AirrWriter, COLUMN_PRESETS, COLUMNS, needs_assembly, resolve_columns, write_airr
 
 
 def _read_rows(path):
@@ -51,6 +53,43 @@ def test_writer_forward_read_is_not_rev_comp():
         os.remove(tmp)
 
 
+# --- P0-3: AIRR coordinates always refer to the emitted (canonical) sequence --------------------
+
+def test_writer_emits_canonical_sequence_not_external_input():
+    """A reoriented read: the record owns the canonical sequence the coords are in; the writer must
+    emit THAT (not the separately-passed original input), and preserve the input as provenance."""
+    canonical = "ACGTACGTAC"
+    original = "GTACGTACGT"                    # pre-orientation read, a different string
+    rec = {"sequence": canonical, "orientation_id": 1, "v_call": "IGHV1-1*01",
+           "v_sequence_start": 0, "v_sequence_end": 10}
+    tmp = tempfile.mktemp(suffix=".tsv")
+    try:
+        write_airr(tmp, ["r"], [original], [rec])     # external list carries the ORIGINAL input
+        row = _read_rows(tmp)[0]
+        assert row["sequence"] == canonical            # coordinates refer to this exact string
+        assert row["input_sequence"] == original       # original read preserved for provenance
+    finally:
+        os.remove(tmp)
+
+
+def test_rev_comp_true_only_for_reverse_complement_orientation():
+    """AIRR ``rev_comp`` means reverse-complement (orientation id 1). Complement-only (2) and
+    reverse-only (3) are NOT rev-comp; the full transform is preserved in the ``orientation`` field."""
+    expect = {0: ("F", "forward"), 1: ("T", "reverse_complement"),
+              2: ("F", "complement"), 3: ("F", "reverse")}
+    for oid, (rc, label) in expect.items():
+        rec = {"sequence": "ACGT", "orientation_id": oid, "v_call": "IGHV1-1*01",
+               "v_sequence_start": 0, "v_sequence_end": 4}
+        tmp = tempfile.mktemp(suffix=".tsv")
+        try:
+            write_airr(tmp, ["r"], ["ACGT"], [rec])
+            row = _read_rows(tmp)[0]
+            assert row["rev_comp"] == rc, oid
+            assert row["orientation"] == label, oid
+        finally:
+            os.remove(tmp)
+
+
 def test_writer_header_is_full_airr_schema():
     tmp = tempfile.mktemp(suffix=".tsv")
     try:
@@ -78,6 +117,19 @@ def test_needs_assembly_skips_for_light_selections():
     assert needs_assembly("minimal") is False                    # calls + productive only
     assert needs_assembly("v_call,j_call") is False
     assert needs_assembly("v_call,cdr3") is True                 # a region field needs assembly
+
+
+def test_writer_is_atomic_on_interrupt():
+    """An interrupted write must not leave the final path (only a discarded temp), so a crashed job is
+    never mistaken for a complete one (P0-8)."""
+    rec = {"sequence": "ACGT", "v_call": "IGHV1-1*01"}
+    tmp = tempfile.mktemp(suffix=".tsv")
+    with pytest.raises(RuntimeError):
+        with AirrWriter(tmp) as w:
+            w.write(["r"], ["ACGT"], [rec])
+            raise RuntimeError("boom")                 # simulate an interrupted job
+    assert not os.path.exists(tmp)                     # final path never appeared
+    assert not os.path.exists(f"{tmp}.tmp.{os.getpid()}")  # temp cleaned up
 
 
 def test_writer_emits_only_selected_columns():

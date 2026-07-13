@@ -49,3 +49,22 @@ def test_select_alleles_supports_largest_gap():
     preds = {"v": np.array([[0.9, 0.85, 0.1]])}
     calls = select_alleles(preds, names, selector="largest_gap")
     assert set(calls["v"][0].names) == {"V1", "V2"}
+
+
+# --- P0-5: an allowed-index set makes constrained calls always members of the set ----------------
+
+def test_allowed_set_restricts_call_even_when_disallowed_has_max_prob():
+    names = {"v": ["V1", "V2", "V3"]}
+    preds = {"v": np.array([[0.99, 0.30, 0.20]])}        # V1 (disallowed) has the max probability
+    allowed = {"v": np.array([False, True, True])}       # only V2/V3 allowed
+    calls = select_alleles(preds, names, allowed=allowed)
+    assert "V1" not in calls["v"][0].names               # never call an out-of-genotype allele
+    assert calls["v"][0].names[0] == "V2"                # best allowed allele (top-1 among allowed)
+
+
+def test_allowed_set_never_calls_index0_when_all_probs_zero():
+    names = {"v": ["V1", "V2", "V3"]}
+    preds = {"v": np.zeros((1, 3))}                       # degenerate: every probability exactly 0
+    allowed = {"v": np.array([False, False, True])}       # only V3 allowed
+    calls = select_alleles(preds, names, allowed=allowed)
+    assert calls["v"][0].names == ("V3",)                # not the default argmax index 0 (disallowed)
