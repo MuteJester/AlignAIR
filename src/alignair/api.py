@@ -119,6 +119,10 @@ def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Seque
     ``threshold=``, ``germline_reader=``, ``genotype=``)."""
     device = device or next(model.parameters()).device.type
     cfg = model.cfg
+    # propagate the reference's ordered locus schema so the pipeline maps chain_type -> locus, masks
+    # cross-locus alleles, and labels each record's locus (P0-6); None for a schema-less reference.
+    chain_types = reference.locus_names() or None if hasattr(reference, "locus_names") else None
+    predict_overrides.setdefault("chain_types", chain_types)
     pcfg = PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size,
                          allele_temperatures=getattr(cfg, "allele_temperatures", None), **predict_overrides)
     return _predict(model, list(sequences), reference, pcfg, device=device)

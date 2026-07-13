@@ -68,3 +68,23 @@ def test_allowed_set_never_calls_index0_when_all_probs_zero():
     allowed = {"v": np.array([False, False, True])}       # only V3 allowed
     calls = select_alleles(preds, names, allowed=allowed)
     assert calls["v"][0].names == ("V3",)                # not the default argmax index 0 (disallowed)
+
+
+def test_per_read_2d_mask_restricts_each_read_independently():
+    """P0-6 locus masking: a per-read (N, C) allowed mask restricts each read to its own allele set."""
+    names = {"v": ["V1", "V2", "V3"]}
+    preds = {"v": np.array([[0.9, 0.8, 0.1], [0.9, 0.1, 0.8]])}
+    allowed = {"v": np.array([[True, False, True],       # read 0: V1/V3 allowed (V2 masked out)
+                              [False, True, True]])}      # read 1: V2/V3 allowed (V1 masked out)
+    calls = select_alleles(preds, names, allowed=allowed)
+    assert "V2" not in calls["v"][0].names               # read 0 cannot call the masked V2
+    assert "V1" not in calls["v"][1].names               # read 1 cannot call the masked V1
+
+
+def test_empty_allowed_row_is_explicit_no_call():
+    """A read whose allowed set is empty (e.g. D for a light chain) gets a no-call, not a forced pick."""
+    names = {"d": ["D1", "D2"]}
+    preds = {"d": np.array([[0.9, 0.8]])}
+    allowed = {"d": np.array([[False, False]])}          # no D allowed for this (light-chain) read
+    calls = select_alleles(preds, names, allowed=allowed)
+    assert calls["d"][0].names == ()                     # explicit no-call

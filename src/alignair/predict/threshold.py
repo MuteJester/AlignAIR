@@ -62,25 +62,33 @@ def select_alleles(allele_probs: dict, names: dict, param: float = 0.5, cap: int
     to the model's output head}. ``param`` is the selector's scalar (threshold for ``"absolute"``,
     pct for the legacy rule, ignored for ``"largest_gap"``). Returns {gene: list[GeneCall]}.
 
-    ``allowed`` (genotype constraint): ``{gene: bool mask over head indices}``. When given for a gene,
-    selection runs over *only* the allowed indices, so a constrained call is **always** a member of the
-    allowed set — never a disallowed argmax fallback from zeroed probabilities (see the pre-launch
-    audit P0-5). The mask must have at least one ``True`` (validated upstream at constraint time).
+    ``allowed`` (genotype / locus constraint): ``{gene: bool mask}`` where the mask is either 1-D
+    ``(C,)`` — the same allowed set for every read (a genotype) — or 2-D ``(N, C)`` — a per-read allowed
+    set (locus masking in a multi-chain model, where each read's predicted locus restricts its callable
+    alleles). Selection runs over *only* the allowed indices, so a constrained call is **always** a
+    member of the allowed set — never a disallowed argmax fallback from zeroed probabilities (P0-5). A
+    read whose allowed set is empty (e.g. the D gene for a light-chain read) gets an explicit *no-call*
+    (empty ``GeneCall``) rather than a forced pick (P0-6).
     """
     fn = SELECTORS[selector]
     out: dict[str, list[GeneCall]] = {}
     for gene, probs in allele_probs.items():
         gene_names = names[gene]
         amask = None if allowed is None else allowed.get(gene)
-        allowed_idx = None if amask is None else np.where(np.asarray(amask, dtype=bool))[0]
+        amask = None if amask is None else np.asarray(amask, dtype=bool)
+        per_read = amask is not None and amask.ndim == 2
         calls = []
-        for row in np.asarray(probs):
-            if allowed_idx is not None:                  # select among allowed head indices only
+        for i, row in enumerate(np.asarray(probs)):
+            if amask is None:
+                idx, lk = fn(row, param, cap)
+            else:
+                allowed_idx = np.where(amask[i] if per_read else amask)[0]
+                if len(allowed_idx) == 0:                # no allowed allele -> explicit no-call
+                    calls.append(GeneCall((), ()))
+                    continue
                 sub_sel, lk = fn(row[allowed_idx], param, cap)
                 idx = allowed_idx[sub_sel]
-            else:
-                idx, lk = fn(row, param, cap)
-            calls.append(GeneCall(tuple(gene_names[i] for i in idx),
+            calls.append(GeneCall(tuple(gene_names[j] for j in idx),
                                   tuple(float(x) for x in lk)))
         out[gene] = calls
     return out

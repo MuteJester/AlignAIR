@@ -50,4 +50,39 @@ def test_to_records_maps_chain_type_index_to_locus():
 def test_to_records_no_locus_without_chain_type():
     calls, alns, preds = _preds(chain_type=None)
     recs = _to_records(["ACGT"], calls, alns, ("v", "j"), preds, chain_types=("IGH", "IGK"))
-    assert "chain_type_id" not in recs[0] and "locus" not in recs[0]
+    assert "chain_type_id" not in recs[0]                # no multi-chain chain_type_id...
+
+
+def test_to_records_single_locus_labels_without_chain_type():
+    """Single-chain models (no chain_type head) still label the record's one locus (no silent IGH)."""
+    calls, alns, preds = _preds(chain_type=None)
+    recs = _to_records(["ACGT"], calls, alns, ("v", "j"), preds, chain_types=("IGK",))
+    assert recs[0]["locus"] == "IGK"
+
+
+# --- P0-6: per-read locus masking makes cross-locus calls impossible by construction ---------------
+
+def test_locus_allowed_restricts_each_read_to_its_locus():
+    import GenAIRR.data as gd
+    from alignair.predict.pipeline import _locus_allowed
+    from alignair.reference.reference_set import ReferenceSet
+    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)   # loci = (IGK, IGL)
+    chain_type = np.array([0, 1])                        # read 0 -> IGK, read 1 -> IGL
+    allowed = _locus_allowed(chain_type, ref, ("v", "j"))
+    v_names = list(ref.gene("V").names)
+    igk_idx = [i for i, n in enumerate(v_names) if n.upper().startswith("IGKV")]
+    igl_idx = [i for i, n in enumerate(v_names) if n.upper().startswith("IGLV")]
+    assert allowed["v"].shape == (2, len(v_names))
+    assert allowed["v"][0][igk_idx].all() and not allowed["v"][0][igl_idx].any()   # read 0 = IGK only
+    assert allowed["v"][1][igl_idx].all() and not allowed["v"][1][igk_idx].any()   # read 1 = IGL only
+
+
+def test_locus_allowed_intersects_with_genotype():
+    import GenAIRR.data as gd
+    from alignair.predict.pipeline import _locus_allowed
+    from alignair.reference.reference_set import ReferenceSet
+    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
+    v_names = list(ref.gene("V").names)
+    geno = {"v": np.array([n == v_names[0] for n in v_names])}      # only the first IGK V allele
+    allowed = _locus_allowed(np.array([0]), ref, ("v",), geno)
+    assert allowed["v"][0].sum() == 1 and allowed["v"][0][0]        # locus ∩ genotype = {that allele}

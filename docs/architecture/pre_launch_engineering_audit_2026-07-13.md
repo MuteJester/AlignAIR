@@ -168,34 +168,19 @@ alleles (`drop_unknown=False`) instead of silently dropping them. Tests in `test
 method). *Remaining:* explicit `no_call` when the best allowed allele is below a quality floor (deferred;
 selection currently keeps top-1-within-allowed).
 
-### P0-6 — Fix multi-locus and no-D semantics before advertising unified models
+### P0-6 — Fix multi-locus and no-D semantics before advertising unified models — ✅ DONE (2026-07-13)
 
-**Observed issues**
-
-- The ordered chain/locus labels used during multi-dataconfig training are not persisted as a
-  first-class config field or propagated into `PredictConfig.chain_types` by the public API.
-- Without that mapping, the predicted chain index is not converted to a locus and the writer falls
-  back to the CLI's default `IGH`.
-- `has_d` is computed as `any(dataconfig.metadata.has_d)`. A mixed heavy/light model therefore uses
-  D heads and heavy-chain AIRR assembly globally, including for light-chain records.
-- Allele heads score the union of all loci. The predicted locus does not hard-mask impossible allele
-  classes, so a record can combine a locus with V/J/D alleles from another locus.
-
-**Required action**
-
-- Store a versioned per-locus schema in config and model metadata: chain index, locus, receptor,
-  has-D, ordered V/D/J ranges or runtime reference partition, anchor rules, and assembly policy.
-- Apply locus-aware allele masks before selection.
-- Perform AIRR assembly per record using its locus-specific `has_d` and anchor behavior.
-- Validate explicit `--locus` against model/reference metadata; do not use `IGH` as a silent default
-  when the model can infer or declare locus.
-
-**Acceptance criteria**
-
-- Mixed IGH/IGK/IGL and TRA/TRB tests prove correct locus, D presence/absence, allele namespace,
-  junction logic, and AIRR fields for every record.
-- Cross-locus calls are impossible by construction.
-- Model card and run provenance record the exact locus mapping.
+`ReferenceSet` now carries a versioned per-locus schema (`loci`: ordered AIRR locus, chain type, has-D,
+and per-gene `[start,end)` allele-index ranges), derived at build and persisted in `reference_json`; for
+models saved before the schema existed it is **inferred from allele-name prefixes** (`IGKV…→IGK`), so
+existing artifacts get it with no re-save. The public API propagates the ordered loci into
+`PredictConfig.chain_types`; the pipeline builds a **per-read** locus-allowed mask (`_locus_allowed`) and
+`select_alleles` selects only within it (2-D per-read masks; empty allowed set → explicit no-call), so a
+cross-locus call — an `IGKV` allele on an `IGL` read, or any D on a light-chain read — is **impossible by
+construction**. AIRR assembly uses each record's locus-specific has-D. Single-chain records get their one
+locus label (no silent `IGH`); the CLI validates `--locus` against the model's loci and records the locus
+mapping in `<out>.run.json`. **Verified end-to-end on the real IGK+IGL model: 24/24 correct locus, 0
+cross-locus V calls.** Tests: `test_locus_schema.py`, `test_multichain_locus.py`, `test_threshold.py`.
 
 ### P0-7 — Stop swallowing AIRR assembly failures — ✅ DONE (2026-07-13)
 

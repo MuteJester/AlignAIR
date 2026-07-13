@@ -136,11 +136,16 @@ def build_airr(records: list, reference, chain: str = "heavy", strict: bool = Fa
     v_gapped, j_ung, d_ung, j_anchors = _germline_maps(reference)
     v_names = reference.gene("V").names                          # locus gate: TCR (TRxV...) IMGT gapping
     is_tcr = bool(v_names) and str(v_names[0]).upper().startswith("TR")  # breaks the gapped column-309
+    # per-record chain: a multi-chain union may mix loci, so assemble each record with ITS locus's
+    # has-D / heavy-vs-light policy rather than one global chain (P0-6).
+    locus_hasd = {l.locus: l.has_d for l in getattr(reference, "loci", [])}
     out = []                                                     # junction -> use the read-coordinate path
     for i, rec in enumerate(records):
         ident = rec.get("sequence_id") or f"record[{i}] {str(rec.get('sequence', ''))[:24]!r}"
+        rec_chain = ("heavy" if locus_hasd[rec["locus"]] else "light") if rec.get("locus") in locus_hasd \
+            else chain
         try:
-            row = _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr)
+            row = _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, rec_chain, is_tcr)
             row["airr_assembly_status"] = "ok"
             out.append(row)
         except _EXPECTED_ASSEMBLY_ERRORS as e:

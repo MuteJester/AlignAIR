@@ -1,10 +1,58 @@
 """ReferenceSet: union 1..N GenAIRR dataconfigs into per-gene allele references."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from typing import Dict, Iterable, List
 
+import numpy as np
 import torch
+
+# GenAIRR chain-type value -> AIRR locus code
+_LOCUS_OF_CHAIN = {
+    "BCR_HEAVY": "IGH", "BCR_LIGHT_KAPPA": "IGK", "BCR_LIGHT_LAMBDA": "IGL",
+    "TCR_ALPHA": "TRA", "TCR_BETA": "TRB", "TCR_GAMMA": "TRG", "TCR_DELTA": "TRD",
+}
+_LOCUS_NAME_RE = re.compile(r"^(IG[HKL]|TR[ABGD])")
+
+
+def _locus_of(chain_type) -> str:
+    key = str(getattr(chain_type, "value", chain_type)).upper()
+    return _LOCUS_OF_CHAIN.get(key, key)
+
+
+def _locus_from_name(name: str):
+    """The AIRR locus a standard IMGT/AIRR allele name belongs to (IGKV1-5*01 -> IGK), or None."""
+    m = _LOCUS_NAME_RE.match(str(name).upper())
+    return m.group(1) if m else None
+
+
+def _infer_loci_from_names(genes: Dict[str, "GeneReference"]) -> List["LocusInfo"]:
+    """Reconstruct the per-locus schema from allele names alone — for references serialized before the
+    schema was stored. Order follows first appearance in the V head (== the union/chain_type-class-id
+    order, since the union appends per-dataconfig), so it aligns with a trained chain_type head."""
+    order: List[str] = []
+    spans: Dict[tuple, list] = {}
+    for G in ("V", "J", "D"):
+        ref = genes.get(G)
+        if ref is None:
+            continue
+        for i, name in enumerate(ref.names):
+            lc = _locus_from_name(name)
+            if lc is None:
+                continue
+            if lc not in order:
+                order.append(lc)
+            key = (lc, G)
+            if key in spans:
+                spans[key] = [min(spans[key][0], i), max(spans[key][1], i)]
+            else:
+                spans[key] = [i, i]
+    loci = []
+    for lc in order:
+        ranges = {G: (spans[(lc, G)][0], spans[(lc, G)][1] + 1) for G in ("V", "D", "J") if (lc, G) in spans}
+        loci.append(LocusInfo(locus=lc, chain_type=lc, has_d=(lc, "D") in spans, ranges=ranges))
+    return loci
 
 
 @dataclass
@@ -19,21 +67,54 @@ class GeneReference:
         return len(self.names)
 
 
+@dataclass
+class LocusInfo:
+    """One locus in a (possibly multi-chain) union: its AIRR code, GenAIRR chain type, whether it has
+    a D gene, and the per-gene ``[start, end)`` index ranges it occupies in the union allele heads.
+    The list index equals the model's chain_type class id, so a predicted chain_type maps straight to a
+    locus and to the allele-index range that read is allowed to call within (P0-6)."""
+    locus: str
+    chain_type: str
+    has_d: bool
+    ranges: Dict[str, tuple] = field(default_factory=dict)   # {"V": (s,e), "J": (s,e), ["D": (s,e)]}
+
+
 class ReferenceSet:
     """Per-gene union allele references built from one or more GenAIRR DataConfigs."""
 
-    def __init__(self, genes: Dict[str, GeneReference], has_d: bool):
+    def __init__(self, genes: Dict[str, GeneReference], has_d: bool, loci: List[LocusInfo] | None = None):
         self.genes = genes
         self.has_d = has_d
+        self.loci = loci or []
 
     def gene(self, g: str) -> GeneReference:
         return self.genes[g.upper()]
+
+    def locus_names(self) -> tuple:
+        """Ordered AIRR locus codes, aligned to the model's chain_type class id (empty if unknown)."""
+        return tuple(l.locus for l in self.loci)
+
+    def locus_mask(self, locus: str, gene: str) -> np.ndarray:
+        """Boolean mask over the ``gene`` head selecting exactly the alleles that belong to ``locus``
+        (all-True when the locus schema is absent, so single-chain models are unaffected)."""
+        n = len(self.gene(gene))
+        info = next((l for l in self.loci if l.locus == locus), None)
+        if info is None or gene.upper() not in info.ranges:
+            return np.ones(n, dtype=bool)
+        s, e = info.ranges[gene.upper()]
+        m = np.zeros(n, dtype=bool)
+        m[s:e] = True
+        return m
 
     @classmethod
     def from_dataconfigs(cls, *dataconfigs) -> "ReferenceSet":
         has_d = any(dc.metadata.has_d for dc in dataconfigs)
         wanted = ["v", "j"] + (["d"] if has_d else [])
         genes: Dict[str, GeneReference] = {}
+        locus_order: List[str] = []                       # distinct loci, in chain_type-class-id order
+        locus_hasd: Dict[str, bool] = {}
+        locus_chain: Dict[str, str] = {}
+        spans: Dict[tuple, tuple] = {}                    # (locus, GENE) -> [start, end) in the union head
         for g in wanted:
             names: List[str] = []
             sequences: List[str] = []
@@ -41,8 +122,14 @@ class ReferenceSet:
             anchors: Dict[str, int] = {}
             gapped: Dict[str, str] = {}
             for dc in dataconfigs:
+                locus = _locus_of(dc.metadata.chain_type)
+                if locus not in locus_order:
+                    locus_order.append(locus)
+                    locus_hasd[locus] = bool(dc.metadata.has_d)
+                    locus_chain[locus] = str(getattr(dc.metadata.chain_type, "value", dc.metadata.chain_type))
                 if g == "d" and not dc.metadata.has_d:
                     continue
+                start = len(names)
                 for allele in dc.allele_list(g):
                     if allele.name in index:
                         continue
@@ -57,9 +144,16 @@ class ReferenceSet:
                     gap = getattr(allele, "gapped_seq", None)
                     if gap:
                         gapped[allele.name] = gap.upper()
+                if len(names) > start:                    # this locus contributed a contiguous block
+                    key = (locus, g.upper())
+                    prev = spans.get(key)
+                    spans[key] = (min(prev[0], start), max(prev[1], len(names))) if prev else (start, len(names))
             genes[g.upper()] = GeneReference(names, sequences, index,
                                              anchors=anchors or None, gapped=gapped or None)
-        return cls(genes, has_d)
+        loci = [LocusInfo(locus=lc, chain_type=locus_chain[lc], has_d=locus_hasd[lc],
+                          ranges={G: spans[(lc, G)] for G in ("V", "D", "J") if (lc, G) in spans})
+                for lc in locus_order]
+        return cls(genes, has_d, loci=loci)
 
     def to_serializable(self) -> dict:
         """Plain-JSON-safe dict carrying everything inference needs — ordered ``names`` (== model-head
@@ -73,7 +167,9 @@ class ReferenceSet:
             genes[G] = {"names": list(ref.names), "sequences": list(ref.sequences),
                         "gapped": dict(ref.gapped) if ref.gapped else {},
                         "anchors": dict(ref.anchors) if ref.anchors else {}}
-        return {"schema": "alignair.reference.v1", "has_d": self.has_d, "genes": genes}
+        loci = [{"locus": l.locus, "chain_type": l.chain_type, "has_d": l.has_d,
+                 "ranges": {G: list(se) for G, se in l.ranges.items()}} for l in self.loci]
+        return {"schema": "alignair.reference.v1", "has_d": self.has_d, "genes": genes, "loci": loci}
 
     @classmethod
     def from_serializable(cls, data: dict) -> "ReferenceSet":
@@ -86,7 +182,13 @@ class ReferenceSet:
             gapped = {k: str(v).upper() for k, v in (gd.get("gapped") or {}).items()} or None
             out[G.upper()] = GeneReference(names, sequences, {n: i for i, n in enumerate(names)},
                                            anchors=anchors, gapped=gapped)
-        return cls(out, bool(data.get("has_d")))
+        loci = [LocusInfo(locus=l["locus"], chain_type=l.get("chain_type", l["locus"]),
+                          has_d=bool(l.get("has_d")),
+                          ranges={G: tuple(se) for G, se in (l.get("ranges") or {}).items()})
+                for l in data.get("loci", [])]
+        if not loci:                                     # references serialized before the schema existed
+            loci = _infer_loci_from_names(out)
+        return cls(out, bool(data.get("has_d")), loci=loci)
 
     @classmethod
     def from_genotype(cls, genes: Dict[str, Dict[str, str]],

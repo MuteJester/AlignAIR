@@ -25,7 +25,9 @@ def register(sub) -> None:
                         "model (it carries its own), required for a legacy .pt")
     p.add_argument("--input", required=True, help="reads to align (FASTA / FASTQ / TSV; .gz ok; '-' = stdin)")
     p.add_argument("--out", required=True, help="output AIRR TSV path")
-    p.add_argument("--locus", default="IGH", help="locus label for the AIRR output")
+    p.add_argument("--locus", default=None,
+                   help="locus label for records the model can't attribute (default: the model's locus "
+                        "if it declares exactly one; else IGH). Multi-chain records carry their own locus.")
     p.add_argument("--columns", default=None,
                    help="output columns: a preset (full/core/minimal/airr) or a comma-separated "
                         "field list (default: full). Light selections skip the AIRR assembly for speed.")
@@ -59,7 +61,7 @@ def _sha256_file(path: str) -> str:
 
 
 def _write_run_metadata(out: str, model_path: str, args, n_reads: int, device: str,
-                        failed: int = 0, fail_reasons: dict | None = None) -> None:
+                        failed: int = 0, fail_reasons: dict | None = None, loci=None) -> None:
     from ..model_file import container, read_metadata
     md = read_metadata(model_path) if container.is_alignair_file(model_path) else {}
     ref = md.get("reference", {})
@@ -70,6 +72,7 @@ def _write_run_metadata(out: str, model_path: str, args, n_reads: int, device: s
         "reference_fasta_sha256": ref.get("reference_fasta_sha256"),
         "allele_order_sha256": ref.get("allele_order_sha256"),
         "alignair_version": md.get("created_by_alignair"),
+        "loci": list(loci) if loci else [],            # the model's exact locus mapping (P0-6)
         "command": {"input": args.input, "out": args.out, "columns": args.columns,
                     "locus": args.locus, "batch_size": args.batch_size, "device": device},
         "n_reads": n_reads, "offline": bool(args.offline),
@@ -108,6 +111,14 @@ def run(args) -> int:
         print(str(e))
         return 1
 
+    # locus: don't silently default to IGH when the model declares its locus (P0-6). Validate an
+    # explicit --locus against the model's loci; otherwise use the model's single locus if it has one.
+    loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
+    if args.locus and loci and args.locus.upper() not in {l.upper() for l in loci}:
+        print(f"--locus {args.locus} is not one of this model's loci {loci}")
+        return 1
+    out_locus = args.locus or (loci[0] if len(loci) == 1 else "IGH")
+
     overrides = {}
     if args.genotype:
         from ..genotype.constraint import load_genotype
@@ -127,17 +138,17 @@ def run(args) -> int:
     fail_reasons = Counter(r.get("airr_assembly_error", "?").split(":")[0] for r in failed)
     fail_rate = len(failed) / len(records) if records else 0.0
     if failed and fail_rate > args.max_assembly_failures and not args.permissive:
-        write_airr(args.out, ids, seqs, records, locus=args.locus, columns=args.columns)
+        write_airr(args.out, ids, seqs, records, locus=out_locus, columns=args.columns)
         print(f"AIRR assembly failed for {len(failed)}/{len(records)} reads "
               f"({fail_rate:.1%} > --max-assembly-failures {args.max_assembly_failures:.1%}); "
               f"reasons: {dict(fail_reasons)}. Wrote tagged output to {args.out}. "
               f"Re-run with --permissive to accept, or raise --max-assembly-failures.")
         return 1
 
-    write_airr(args.out, ids, seqs, records, locus=args.locus, columns=args.columns)
+    write_airr(args.out, ids, seqs, records, locus=out_locus, columns=args.columns)
     if not args.no_run_metadata:
         _write_run_metadata(args.out, model_path, args, len(records), device, failed=len(failed),
-                            fail_reasons=dict(fail_reasons))
+                            fail_reasons=dict(fail_reasons), loci=loci)
     msg = f"aligned {len(records)} reads ({stats['n_dropped']} dropped) -> {args.out}"
     if failed:
         msg += f"; {len(failed)} AIRR-assembly failures tagged ({dict(fail_reasons)})"
