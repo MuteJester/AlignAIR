@@ -151,3 +151,103 @@ This is the differentiator and the biggest adoption gap. Dynamic genotype infere
 6. License, citation, support, and release versioning are unambiguous.
 
 With those six items, AlignAIR can credibly launch as both a pretrained AIRR aligner and the first practical "bring your own reference, train your own neural aligner" workflow for the AIRR community.
+
+## Round 2 Review - 2026-06-23
+
+This section supersedes the priority order above for pre-release adoption work. A large part of the
+first roadmap has been implemented. Under the current constraint, do not optimize for publishing
+to PyPI, pushing Docker images, or uploading hub models yet. Optimize for what a real AIRR user can
+try locally, trust, compare, and drop into an existing workflow before public release.
+
+### Current Assessment
+
+What is genuinely adoption-ready:
+
+- The public CLI surface is now real: `predict`, `train`, `model`, `reference`, `validate-airr`,
+  `doctor`, `bundle`, and `--version` are wired in one entrypoint (`src/alignair/cli.py:532-644`).
+- `predict` is much more pipeline-friendly than the first audit: it resolves local/catalog/HF model
+  specs, accepts genotype YAML/FASTA, supports stdin/stdout, column overrides, quiet/progress modes,
+  a seed, `--v-reader learned|parasail`, AIRR validation, and a provenance sidecar
+  (`src/alignair/cli.py:46-140`, `src/alignair/cli.py:151-187`, `src/alignair/cli.py:537-565`).
+- AIRR output moved from "AIRR-style" to a much stronger contract: core AIRR columns, per-gene
+  CIGARs, identities, sequence/germline alignments, and uncertainty columns are emitted
+  (`src/alignair/io/airr.py:15-22`, `src/alignair/io/airr.py:80-103`). The gapped alignment path is
+  real parasail alignment, not just coordinate decoration (`src/alignair/io/alignment.py:1-7`,
+  `src/alignair/io/alignment.py:67-118`).
+- Training is no longer just a research script. `alignair train` supports built-in GenAIRR
+  references, custom V/D/J FASTAs, presets, fine-tuning, resume, calibration, validation reports,
+  model cards, and self-contained bundles (`src/alignair/cli.py:322-357`,
+  `src/alignair/cli.py:387-529`, `src/alignair/serialization/dnalignair_bundle.py:53-109`).
+- Governance and engineering scaffolding are credible: CI tests Python 3.10-3.12 and Docker smoke
+  (`.github/workflows/ci.yml:8-41`), the Dockerfile is now an `alignair` CPU entrypoint with a
+  `doctor` healthcheck (`Dockerfile:1-38`), and docs/README now lead with dynamic reference,
+  benchmarks, CLI, and training (`README.md:17-22`, `README.md:44-89`).
+
+What is half-done or lower-quality than it looks:
+
+- The "first run" still is not self-contained. The README tells users to run `--model
+  human-igh-ogrdb` (`README.md:44-58`), the catalog advertises `human-igh-ogrdb` and will try to
+  download `AlignAIR/human-igh-ogrdb` (`src/alignair/hub.py:13-20`, `src/alignair/hub.py:46-50`),
+  but examples still say a model is "coming soon" and require a bundle/checkpoint
+  (`examples/README.md:10-24`). Until a local demo model or tiny train-then-predict path exists,
+  a new user can still bounce before seeing AlignAIR work.
+- The docs are improved but inconsistent. `docs/getting_started.md` says `alignair model download`
+  is on the roadmap (`docs/getting_started.md:21-37`), while the CLI and README now document the
+  command as implemented (`src/alignair/cli.py:190-218`, `README.md:107-117`).
+- Input handling is convenient, but not yet repertoire-scale. FASTQ and stdin are read fully into
+  memory (`src/alignair/io/sequence_reader.py:23-36`, `src/alignair/io/sequence_reader.py:100-105`),
+  and `predict` materializes all predictions before writing (`src/alignair/cli.py:114-128`). This
+  is fine for demos, risky for multi-million-read AIRR-seq runs.
+- "Schema-valid" is necessary but not the same as workflow-compatible. Immcantation/Change-O,
+  10x Cell Ranger, nf-core/airrflow, and MiXCR users think in pipeline inputs, sample metadata,
+  cell barcodes, UMI/duplicate counts, clone/QC summaries, and tool-to-tool comparison, not just a
+  valid TSV. Immcantation explicitly supports IgBLAST-style annotation workflows, Change-O has a
+  10x MakeDb path, nf-core/airrflow handles targeted bulk, 10x, assembled reads, and TCR/BCR
+  inputs, Cell Ranger has `filtered_contig_annotations.csv`/`all_contig_annotations.csv`, and
+  MiXCR users can export AIRR directly
+  ([Immcantation intro](https://immcantation.readthedocs.io/en/stable/getting_started/intro-lab.html),
+  [Change-O 10x example](https://changeo.readthedocs.io/en/latest/examples/10x.html),
+  [nf-core/airrflow](https://github.com/nf-core/airrflow),
+  [10x VDJ annotations](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-5p-outputs-annotations-vdj),
+  [MiXCR exportAirr](https://mixcr.com/mixcr/reference/mixcr-exportAirr/)).
+- The 4,400-case benchmark is strong, but it is still mostly a simulated-data trust story
+  (`docs/benchmarks.md:1-43`). The caveat that AlignAIR is slower than IgBLAST is honest
+  (`docs/benchmarks.md:38-43`), but a routine production user will still ask: "what happens on my
+  10x/bulk/UMI/primer-biased real data, and how much RAM/GPU time will it cost?"
+- The train-your-own path is powerful, but still expert-shaped. Users must know GenAIRR
+  dataconfig names or chain-type strings, and the custom FASTA path can require
+  `--allow-curatable` (`src/alignair/cli.py:330-357`, `src/alignair/cli.py:594-624`). There is no
+  `alignair train plan`/dry-run explaining expected wall time, anchor problems, or target metrics
+  before a long run.
+
+### New Or Refined Recommendations
+
+| Priority | Effort | Recommendation | Why It Drives Adoption |
+| --- | --- | --- | --- |
+| P0 | M | Build a no-network, no-published-model "first success" path. Either ship a deliberately tiny toy bundle in `examples/` or add a documented `alignair demo train-and-predict` recipe that trains a tiny smoke model, predicts on `examples/reads.fasta`, validates AIRR, and shows expected output. Fix docs so README, getting-started, examples, and hub catalog all tell the same truth until real models are published. | A user who cannot run one command successfully will not read the benchmark or try dynamic genotype. This is the biggest current bounce risk. |
+| P0 | M | Add a "prove it on my data" comparison workflow: `alignair compare` or documented scripts that take AlignAIR AIRR TSV plus IgBLAST/MiXCR AIRR TSV, align rows by `sequence_id`, and emit an HTML/Markdown report: call agreement, D/J improvements, V disagreements, fragment/orientation cases, junction mismatches, uncertainty set rescue, runtime, and examples to inspect. | Users switching from IgBLAST or MiXCR need side-by-side evidence on their own repertoire, not only simulated aggregate claims. This turns skepticism into an evaluation path. |
+| P0 | L | Make prediction repertoire-scale: chunked FASTA/FASTQ/table reading, chunked AIRR writing, bounded-memory stdin, multi-sample manifest input, resumable output, per-sample run summaries, and an optional `--max-reads`/`--sample` dry run. | AIRR users run large files and cohorts. Current buffered IO is good UX for small data but can fail silently as a production story. |
+| P0 | M | Add real-data input adapters before adding more model-zoo polish: 10x `filtered_contig_annotations.csv`/`all_contig_annotations.csv`, AIRR input TSV with sample metadata, and a "sequence column cookbook" for pRESTO/Change-O/Immcantation exports. Preserve `cell_id`, barcode, UMI/duplicate/consensus counts, sample ID, and chain columns into output where present. | AlignAIR wins adoption by fitting existing workflows. 10x and Immcantation users should not have to reshape common files by hand. |
+| P0 | M | Turn dynamic genotype into a killer guided workflow: `alignair genotype-template`, `alignair reference validate --explain`, a donor-genotype example with one novel allele, and a before/after report comparing full-reference vs donor-reference calls and uncertainty set sizes. | Dynamic reference is the unique reason to choose AlignAIR over classical tools. It needs to be visible as a workflow, not just a flag. |
+| P1 | M | Add a training preflight: `alignair train plan --reference ...` and `alignair train plan --v-fasta ...` should list inferred locus, V/D/J counts, anchor coverage, expected preset wall time/GPU memory, output files, calibration cost, and likely failure modes before training starts. | Train-your-own is the differentiator, but without a dry-run plan it feels risky and expert-only. |
+| P1 | M | Build a real-data validation matrix now, even if private: public OAS/10x/bulk datasets where licenses allow local recipes, plus internal reports for 10x BCR, 10x TCR, bulk IGH, short amplicons, noisy/primer-heavy reads, non-human references, and custom FASTA training. Track agreement with IgBLAST/MiXCR and where uncertainty is useful. | Wet-lab users distrust simulation-only claims. A matrix of known-good and known-bad real regimes is more persuasive than another aggregate benchmark. |
+| P1 | M | Add an "actionable uncertainty" layer: docs and optional summary columns/report that translate `*_call_set`, `*_call_level`, and `*_set_confidence` into recommendations: accept allele call, collapse to gene, abstain, inspect read, or use donor genotype. Include thresholds used in benchmarks. | Calibrated uncertainty is unfamiliar to many AIRR users. If they do not know how to act on it, they may treat it as noise. |
+| P1 | L | Improve throughput enough that the speed caveat stops dominating: batch auto-tuning, profiler output in `run.json`, separate fast presets (`--fast`, `--no-full-alignment`, `--v-reader parasail`), CPU multiprocessing for parasail-heavy steps, `torch.compile`/ONNX experiments, and a published internal speed table by read length/reference size. | The 2x deficit vs IgBLAST is not a launch blocker for accuracy/dynamic-genotype use cases, but it is a blocker for default replacement in routine high-throughput pipelines. |
+| P1 | M | Strengthen model/reference compatibility guardrails. Turn locus mismatch into a hard error by default with `--force-locus-mismatch`, and add bundle metadata for supported locus, reference species/source, max length, expected assay/read regime, training preset, and calibration regime. | A plausible-looking wrong run destroys trust faster than a clear refusal. The current warning is useful but too easy to miss in pipelines (`src/alignair/cli.py:90-99`). |
+| P1 | M | Add downstream field coverage consciously. Create a matrix of AIRR/Change-O/Alakazam/Scirpy/common QC fields and decide what AlignAIR can emit now: `c_call` when available, `vj_in_frame`, `stop_codon`, `np1`/`np2`, CDR/FWR regions, `duplicate_count`, `consensus_count`, `cell_id`, `sample_id`, and per-record QC flags. | "Reads back with Change-O" is a baseline. Adoption comes when downstream clone/QC workflows do not need custom glue code. |
+| P1 | M | Add local workflow templates: a small Nextflow/Snakemake example and a Galaxy wrapper draft that run local AlignAIR over a manifest and validate output. Do not publish them yet; use them to discover CLI and output gaps. | Wrapper work forces workflow-fit discipline and prepares for nf-core/Galaxy later without making release publishing the objective. |
+| P2 | S | Clean up copy and command consistency. Remove "coming soon" for implemented commands, mark model catalog entries as "placeholder/unavailable" unless a local path is used, and make `examples/README.md` match `README.md` and `docs/getting_started.md`. | This is small but high-trust: inconsistent docs make users wonder whether the benchmark claims are also stale. |
+| P2 | M | Add a "known failure modes" page tied to examples: exact junction-nt deficit, custom FASTA missing anchors causing empty junctions, short-read V ambiguity, no-D loci, locus mismatches, contaminants, and when to prefer IgBLAST/MiXCR. | Honest limitations increase trust and help users choose AlignAIR for the cases where it is strongest. |
+
+### Top 5 Pre-Release Adoption Moves
+
+1. Build a local runnable demo that does not depend on a published model: train tiny, predict,
+   validate AIRR, and show the dynamic-genotype path.
+2. Add an IgBLAST/MiXCR comparison report for users' own data, because that is how most switchers
+   will decide.
+3. Make `predict` scale to real repertoires: chunked IO, bounded memory, multi-sample manifests,
+   resumable output, and per-sample summaries.
+4. Add 10x/Cell Ranger and Immcantation/Change-O workflow adapters plus downstream metadata
+   preservation.
+5. Turn dynamic genotype and train-your-own into guided workflows with templates, preflight plans,
+   and concrete before/after reports.

@@ -10,6 +10,7 @@ nav:
   - Troubleshooting: troubleshooting.md
   - DNAlignAIR Design: dnalignair.md
   - Architecture:
+      - Pre-Launch Engineering Audit: architecture/pre_launch_engineering_audit_2026-07-13.md
       - User-Facing API Review: architecture/user_facing_api_review.md
       - Adoption Roadmap: architecture/adoption_roadmap.md
       - Coordinate Redesign: architecture/dnalignair_coordinate_redesign.md
