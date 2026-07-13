@@ -39,6 +39,7 @@ dependencies = [
     "PyYAML>=6.0",
     "biopython>=1.80",
     "psutil>=5.8",
+    "platformdirs>=3.0",     # per-OS cache/config locations (cross-platform, honors XDG/env overrides)
 ]
 
 # ── Optional extras ──────────────────────────────────────────────────────────

@@ -20,10 +20,18 @@ class IntegrityError(RuntimeError):
 
 
 def cache_root() -> Path:
+    """The local model cache root. Honors ``ALIGNAIR_CACHE_DIR``; otherwise the correct per-OS user
+    cache dir via ``platformdirs`` (``~/.cache/alignair`` on Linux honoring ``XDG_CACHE_HOME``,
+    ``~/Library/Caches/alignair`` on macOS, ``%LOCALAPPDATA%\\alignair`` on Windows), falling back to
+    the XDG/home convention if ``platformdirs`` is unavailable."""
     if os.environ.get("ALIGNAIR_CACHE_DIR"):
         return Path(os.environ["ALIGNAIR_CACHE_DIR"])
-    xdg = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-    return Path(xdg) / "alignair"
+    try:
+        import platformdirs
+        return Path(platformdirs.user_cache_dir("alignair"))
+    except ImportError:                                            # pragma: no cover - stdlib fallback
+        xdg = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+        return Path(xdg) / "alignair"
 
 
 def cache_path(model_id: str, version: str) -> Path:
@@ -39,14 +47,53 @@ def _sha256_file(path: Path) -> str:
 
 
 @contextlib.contextmanager
+def _excl_lock(path: Path, *, timeout: float = 600.0, stale_after: float = 3600.0, poll: float = 0.05):
+    """Portable cross-process mutual exclusion via an atomic ``O_EXCL`` lockfile (works where ``flock``
+    is absent, e.g. Windows — the previous no-op there let concurrent downloads corrupt the cache).
+    Acquire by exclusive create; spin-wait while another holder has it; reclaim a *stale* lock (a dead
+    holder's file older than ``stale_after``) so a crash can't deadlock the cache; time out otherwise."""
+    import time
+    fd = None
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            try:
+                age = time.time() - os.path.getmtime(path)
+            except OSError:
+                age = 0.0
+            if age > stale_after:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+                continue
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"timed out after {timeout}s acquiring cache lock {path}")
+            time.sleep(poll)
+    try:
+        os.write(fd, str(os.getpid()).encode())
+        yield
+    finally:
+        os.close(fd)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+@contextlib.contextmanager
 def _lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         import fcntl
-    except ImportError:                                            # pragma: no cover - non-posix
-        yield
+    except ImportError:                                            # non-posix (Windows): portable protocol
+        with _excl_lock(path):
+            yield
         return
-    with open(path, "w") as f:
+    with open(path, "w") as f:                                     # POSIX: robust, auto-released on death
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
             yield

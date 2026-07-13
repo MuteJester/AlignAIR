@@ -42,6 +42,18 @@ def diagnostics() -> dict:
         info["torch"] = f"MISSING ({e})"
     for mod in _OPTIONAL + tuple(m for m in _CRITICAL if m != "torch"):
         info[mod] = _module_version(mod)
+    try:                                               # resolved device + per-OS cache/config locations
+        from ..aligner import resolve_device
+        info["device_auto"] = resolve_device("auto")
+    except Exception:                                  # noqa: BLE001
+        pass
+    try:
+        from ..registry.cache import cache_root
+        from ..registry.sources import _config_dir
+        info["cache_dir"] = str(cache_root())
+        info["config_dir"] = _config_dir()
+    except Exception:                                  # noqa: BLE001
+        pass
     return info
 
 

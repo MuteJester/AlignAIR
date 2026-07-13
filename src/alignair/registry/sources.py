@@ -27,11 +27,20 @@ class OfflineError(RuntimeError):
 
 
 def _config_dir() -> str:
-    return os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    """The per-OS user config dir (``platformdirs``: ~/.config on Linux honoring XDG_CONFIG_HOME,
+    ~/Library/Application Support on macOS, %APPDATA% on Windows), with an XDG/home fallback."""
+    if os.environ.get("ALIGNAIR_CONFIG_DIR"):
+        return os.environ["ALIGNAIR_CONFIG_DIR"]
+    try:
+        import platformdirs
+        return platformdirs.user_config_dir("alignair")           # already includes the app name
+    except ImportError:                                            # pragma: no cover - stdlib fallback
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+        return os.path.join(base, "alignair")
 
 
 def _config_registries(config_path: str | None) -> list[str]:
-    path = config_path or os.path.join(_config_dir(), "alignair", "config.toml")
+    path = config_path or os.path.join(_config_dir(), "config.toml")
     if not os.path.exists(path):
         return []
     import tomllib

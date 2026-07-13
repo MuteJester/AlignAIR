@@ -312,7 +312,21 @@ not implemented despite the dependency comments, and remote publication remains 
 - Publishing is transactional: failed validation leaves neither an updated catalog nor a copied
   invalid artifact. The current local publisher writes before validation and must be changed.
 
-### P0-12 — Prove full runtime support on Linux, macOS, and Windows
+### P0-12 — Prove full runtime support on Linux, macOS, and Windows — 🟡 PARTIAL (2026-07-13)
+
+Fixed the two portability bugs that were verifiable/fixable here:
+- **Cache locking is now portable.** The Windows `fcntl` no-op (which let concurrent downloads corrupt
+  the cache) is replaced by an atomic `O_EXCL` lockfile protocol (`_excl_lock`) with stale-lock
+  reclamation + timeout on non-POSIX; POSIX keeps robust `flock`. Tested (mutual exclusion, stale
+  reclaim, timeout) in `test_lock.py`.
+- **Per-OS paths via `platformdirs`** (core dep) for cache *and* config, honoring `ALIGNAIR_CACHE_DIR`/
+  `ALIGNAIR_CONFIG_DIR`/XDG; Linux paths unchanged, macOS/Windows now correct.
+- **Apple MPS** is selected by `device="auto"` (`resolve_device`, P0-9); `doctor` reports the resolved
+  device + cache/config dirs.
+
+*Remaining (needs CI on macOS/Windows runners):* run the installed-wheel golden suite on Win/macOS
+Intel+arm64 for Py 3.10–3.12; CUDA in a GPU workflow; per-backend numerical tolerances; Unicode/CRLF/
+long-path/AV audit.
 
 **Observed gap**
 
