@@ -1,39 +1,18 @@
-# Multi-sample manifest (cohorts)
+# Multiple samples (cohorts)
 
-AIRR studies usually process a cohort, not one file. `alignair batch` aligns many
-samples from a manifest with the model **loaded once**, writes one AIRR TSV per
-sample, and emits a per-sample run summary — easier to wrap (Nextflow/Snakemake)
-and audit than a shell loop that reloads the model every time.
+AlignAIR aligns one input at a time; run a cohort by looping `alignair predict` over your samples with
+your workflow engine (Nextflow / Snakemake / Galaxy — see [`../../workflows/`](../../workflows/)) or a
+plain shell loop. Each run writes an AIRR rearrangement TSV plus a `<out>.run.json` provenance sidecar.
 
 ```bash
-alignair batch --manifest examples/batch/manifest.tsv -o results/ --model my_model/bundle
+# one AIRR TSV per sample from a simple sample list (sample_id<TAB>reads_path)
+while IFS=$'\t' read -r sample reads; do
+    alignair predict --model my_model/bundle --input "$reads" --out "results/${sample}.tsv" --quiet
+done < samples.tsv
 ```
 
-## Manifest format
+Per-sample options (`--genotype`, `--metadata` / `--keep-columns`, `--device`, `--rejects-out`) are
+passed on each `predict` call.
 
-A CSV or TSV with these columns:
-
-| Column | Required | Meaning |
-|--------|----------|---------|
-| `sample_id` | yes | output file name (`<sample_id>.tsv`) and summary key |
-| `input` | yes | reads file (FASTA/FASTQ/CSV/TSV, optionally `.gz`) |
-| `genotype` | no | per-sample donor genotype (YAML/FASTA); falls back to `--genotype` then the model default |
-| `metadata` | no | per-sample metadata table to join into the output (e.g. a 10x `filtered_contig_annotations.csv`) |
-
-Relative paths are tried as-is, then resolved against the manifest's own directory
-(so a manifest can sit next to its data and use bare file names).
-
-## Outputs
-
-```
-results/
-  donorA.tsv              # AIRR rearrangement TSV per sample (+ donorA.tsv.run.json)
-  donorB_10x.tsv
-  manifest_summary.tsv    # one row per sample: status, n_aligned, n_productive, dropped, seconds, ...
-  manifest_summary.json   # same, machine-readable
-```
-
-A sample that fails (missing file, bad reference) is recorded as `status=error` in
-the summary and the run continues; the command exits non-zero only if **no** sample
-aligned. Flags like `--genotype`, `--keep-columns`, `--device`, `--batch`,
-`--v-reader`, and `--no-full-alignment` apply to every sample.
+> A native `alignair batch` verb (one model load across samples, manifest validation, consolidated
+> provenance) is on the roadmap but not yet implemented — use a workflow engine or the loop above.

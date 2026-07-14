@@ -46,7 +46,8 @@ def test_predict_by_registry_id_writes_airr_and_provenance(reg, tmp_path, monkey
     assert os.path.exists(out)
     prov = json.load(open(out + ".run.json"))
     assert prov["model_id"] == "human-igh" and prov["model_version"] == "1.0.0"
-    assert len(prov["artifact_sha256"]) == 64 and prov["allele_order_sha256"] and prov["n_reads"] == 1
+    assert len(prov["artifact_sha256"]) == 64 and prov["allele_order_sha256"]
+    assert prov["counts"]["accepted_records"] == 1 and prov["counts"]["written_records"] == 1
     assert prov["command"]["input"] == fasta
 
 

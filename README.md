@@ -4,9 +4,9 @@
 
 <h1 align="center">AlignAIR</h1>
 <p align="center">
-  A neural aligner for immunoglobulin (IG) and T‑cell receptor (TCR) repertoires that
-  <b>conditions on your reference at runtime</b> — use a pretrained human IG/TCR model, or bring
-  your own reference (any subset, novel alleles, or species).<br>
+  A neural aligner for immunoglobulin (IG) and T‑cell receptor (TCR) repertoires — more accurate than
+  IgBLAST, with calibrated uncertainty and standard AIRR output. Constrain calls to a donor genotype (a
+  subset of the model's reference), or train a model for your own reference / species.<br>
   <a href="https://hub.docker.com/r/thomask90/alignair"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/thomask90/alignair"></a>
   <a href="https://doi.org/10.5281/zenodo.15687939"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.15687939.svg" alt="DOI"></a>
   <a href="LICENSE"><img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
@@ -17,7 +17,7 @@
 ## Why AlignAIR
 
 - **More accurate than IgBLAST across the board.** On a 4,400‑case / 22‑stratum benchmark (bootstrap CIs, Bonferroni‑corrected) AlignAIR wins **23 of 24 metrics** — biggest on short fragments, reverse‑complement / arbitrary orientation, and D/J calling, where classical seed‑and‑extend degrades. See [benchmarks](docs/benchmarks.md).
-- **Dynamic genotype.** The allele reference is an **input, not baked into the weights.** Supply a genotype as YAML or FASTA — a subset of the trained reference and/or **novel alleles never seen in training** — and the model conditions on exactly what you provide. (Validated: novel alleles are called as accurately as trained ones.)
+- **Donor genotype constraint.** Each model is trained against an embedded, fingerprinted germline reference. At inference you can restrict calls to a **compatible subset or donor genotype** drawn from that reference (as YAML or FASTA) — no retraining — which sharpens accuracy on ambiguous reads. Adding alleles the model was not trained on, changing species, or changing the allele universe requires **training or fine‑tuning** a compatible model.
 - **Calibrated uncertainty.** When a read can't distinguish alleles (e.g. short fragments), AlignAIR reports a calibrated **equivalence set** and degrades gracefully to gene/family level instead of guessing.
 - **AIRR output.** Standard AIRR rearrangement TSV (V/D/J calls, coordinates, junction, productivity) plus uncertainty columns.
 
@@ -67,13 +67,16 @@ alignair predict --input reads.fasta --out out.tsv --model my_model/bundle --gen
 `--genotype` simply *becomes* the reference for the run — no retraining, no extra flags. See
 [`examples/`](examples/) for runnable data.
 
-## Bring your own reference
+## Reference: donor subsets now, new references by training
 
-Because the reference is an input, AlignAIR works on any reference you hand it:
+Each model is tied to the germline reference it was trained on (embedded and fingerprinted in the
+model file). What you can do with it:
 
-- **A donor's genotype** (a subset of known alleles) — `--genotype donor.yaml` or `donor.fasta` at predict time.
-- **Novel alleles** — list them in the genotype file with their sequence; they're embedded and aligned at predict time, no retraining.
-- **A new species / locus** — **train your own model**:
+- **Constrain to a donor's genotype** — a subset of the model's reference — with `--genotype donor.yaml`
+  or `donor.fasta` at predict time. No retraining; calls are restricted to that donor's alleles.
+- **Add alleles / a new species / a new locus** — this changes the model's allele universe, so **train
+  or fine‑tune** a compatible model (novel alleles are not callable by a model that was not trained on
+  them):
 
 ```bash
 # train for any of GenAIRR's ~90 built-in references (human, mouse, rat, rabbit, dog, …)

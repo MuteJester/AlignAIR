@@ -1,17 +1,15 @@
-# Novel alleles & allele subsets (dynamic genotype)
+# Donor genotype subsets
 
-AlignAIR's reference is a **runtime input**, so a donor genotype can contain **fewer**
-alleles than the trained reference and/or **novel** alleles the model has never seen — no
-retraining. [`donor_with_novel.yaml`](donor_with_novel.yaml) is a small human-IGH genotype
-(a subset of the OGRDB reference) plus one novel V allele (`IGHVF1-G1*NOVEL01`, a real V
-with three point differences).
+A donor genotype restricts prediction to a **subset of the model's trained reference** — the alleles
+known to be present in that donor. This sharpens accuracy on ambiguous reads. It is applied at predict
+time with no retraining:
 
 ```bash
 alignair predict --input reads.fasta --out out.tsv --model my_model/bundle \
-    --genotype examples/novel_allele/donor_with_novel.yaml
+    --genotype examples/novel_allele/donor.yaml
 ```
 
-Reads from the novel allele are aligned against it directly — the model conditions on the
-sequences you provide rather than memorising a fixed allele set. A YAML/FASTA genotype
-carries sequences only; junction derivation needs the conserved anchors, so junctions are
-omitted for genotype-supplied alleles (see [Known failure modes](../../docs/known_failure_modes.md)).
+The genotype names alleles that must be a subset of the model's reference. **Novel alleles** (alleles
+the model was not trained on), a **new species**, or a **changed allele universe** are not callable by a
+fixed-reference model — supplying one is rejected with a clear error. To support them, train or
+fine-tune a compatible model against the new reference (see [`../custom_reference/`](../custom_reference/)).

@@ -91,12 +91,17 @@ def _sniff(path: str, head: str) -> str:
 _META_DEFAULTS = ["cell_id", "barcode", "sample_id", "umi_count", "umis", "reads",
                   "duplicate_count", "consensus_count", "raw_clonotype_id", "raw_consensus_id",
                   "chain", "c_call", "is_cell", "high_confidence"]
+# 10x Cell Ranger contig-annotation columns -> their AIRR-standard names (so Scirpy/AIRR consumers get
+# `cell_id`/`umi_count`/`c_call`, not just raw 10x columns). The raw columns are preserved as well.
+_10X_TO_AIRR = {"barcode": "cell_id", "umis": "umi_count", "reads": "consensus_count", "c_gene": "c_call"}
 
 
-def load_metadata(path: str, id_column: str | None = None, keep_columns=None):
+def load_metadata(path: str, id_column: str | None = None, keep_columns=None, normalize_10x: bool = False):
     """Load a per-read metadata table (CSV/TSV, e.g. 10x filtered_contig_annotations.csv or an AIRR
     TSV) -> ({read_id: {col: value}}, kept_columns). The id column is matched to the read ids in the
-    input; `keep_columns` (or a default 10x/AIRR set present in the file) are carried into output."""
+    input; `keep_columns` (or a default 10x/AIRR set present in the file) are carried into output.
+    ``normalize_10x`` additionally maps 10x column names to their AIRR equivalents
+    (``barcode->cell_id``, ``umis->umi_count``, ``c_gene->c_call``), keeping the raw columns too."""
     with open(path, newline="") as f:
         delim = "\t" if "\t" in f.readline() else ","
         f.seek(0)
@@ -114,8 +119,19 @@ def load_metadata(path: str, id_column: str | None = None, keep_columns=None):
                 raise ValueError(f"--keep-columns not in {path}: {missing} (have {fields})")
         else:
             keep = [c for c in _META_DEFAULTS if c in fields]
-        meta = {r[idcol]: {k: r.get(k, "") for k in keep} for r in reader if r.get(idcol)}
-    return meta, keep
+        norm = {src: tgt for src, tgt in _10X_TO_AIRR.items() if normalize_10x and src in fields}
+        out_cols = list(keep) + [tgt for tgt in norm.values() if tgt not in keep]
+        meta = {}
+        for r in reader:
+            rid = r.get(idcol)
+            if not rid:
+                continue
+            row = {k: r.get(k, "") for k in keep}
+            for src, tgt in norm.items():          # add the AIRR-normalized name (raw src kept too)
+                if r.get(src):
+                    row[tgt] = r[src]
+            meta[rid] = row
+    return meta, out_cols
 
 
 def _detect_format(path: str) -> str:

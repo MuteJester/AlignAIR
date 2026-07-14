@@ -15,13 +15,9 @@ Prerequisites that are not met yet (the project is pre-release):
 
 ## One samplesheet, several runners
 
-[`samplesheet.csv`](samplesheet.csv) has the same columns as an `alignair batch` manifest
-(`sample_id, input` and optional `genotype, metadata`), so the simplest "wrapper" is the
-built-in batch mode itself — no workflow manager required:
-
-```bash
-alignair batch --manifest workflows/samplesheet.csv -o results/ --model my_model/bundle
-```
+[`samplesheet.csv`](samplesheet.csv) has the columns each runner iterates
+(`sample_id, input` and optional `genotype, metadata`). The simplest "wrapper" is a shell loop over
+`alignair predict` (see [`../examples/batch/`](../examples/batch/)); the runners below parallelize it.
 
 ### Nextflow ([`nextflow/`](nextflow))
 
@@ -32,8 +28,7 @@ nextflow run workflows/nextflow/main.nf -profile docker \
 nextflow run workflows/nextflow/main.nf -profile local --model my_model/bundle
 ```
 
-One process per sample (parallel across cores/nodes). Note: the model reloads per process;
-for a single-node cohort, `alignair batch` (one model load) is faster.
+One process per sample (parallel across cores/nodes). Note: the model reloads per process.
 
 ### Snakemake ([`snakemake/`](snakemake))
 
@@ -53,10 +48,8 @@ submission waits on a published container/conda package.
 ## Known rough edges (the point of these drafts)
 
 - **Per-sample genotype/metadata** — the Nextflow draft applies a single `--genotype` to all
-  samples; per-row staging of `genotype`/`metadata` files needs proper Nextflow `path()`
-  inputs. `alignair batch` already supports per-row `genotype`/`metadata`.
-- **Path resolution** — `alignair batch` resolves relative manifest paths against the
-  manifest's directory; Nextflow/Snakemake resolve against the launch dir. Prefer absolute
-  paths in the samplesheet when mixing runners.
+  samples; per-row staging of `genotype`/`metadata` files needs proper Nextflow `path()` inputs.
+- **Path resolution** — Nextflow/Snakemake resolve relative paths against the launch dir. Prefer
+  absolute paths in the samplesheet when mixing runners.
 - **Containers/model** — pinned to an unpublished image/model; substitute your own until release.
 - **Resources** — `cpus`/`memory` hints are placeholders; tune for your reads and reference size.

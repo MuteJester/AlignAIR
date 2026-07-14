@@ -24,7 +24,7 @@
         <param name="model" type="text" value=""
                label="Model" help="A bundle directory, a catalog id, or an org/name Hugging Face repo id."/>
         <param name="genotype" type="data" format="yaml,fasta" optional="true"
-               label="Donor genotype (optional)" help="YAML or FASTA: allele subset and/or novel alleles."/>
+               label="Donor genotype (optional)" help="YAML or FASTA: a subset of the model's reference (donor genotype). Novel alleles require training a compatible model."/>
         <param name="metadata" type="data" format="csv,tabular" optional="true"
                label="Per-read metadata (optional)" help="e.g. 10x filtered_contig_annotations.csv; joined by read id."/>
     </inputs>

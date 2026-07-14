@@ -59,32 +59,50 @@ def register(sub) -> None:
                    help="allow loading a legacy .pt / pre-safe .alignair (runs pickle); path-only")
     p.add_argument("--no-run-metadata", action="store_true", help="do not write the <out>.run.json sidecar")
     p.add_argument("--max-assembly-failures", type=float, default=0.01,
-                   help="fail the job if the AIRR-assembly failure rate exceeds this fraction "
-                        "(default 0.01); assembly failures are always tagged per row regardless")
+                   help="fail the job if the AIRR-assembly FAILURE rate exceeds this fraction "
+                        "(default 0.01); failures are always tagged per row regardless")
+    p.add_argument("--max-partial-assemblies", type=float, default=1.0,
+                   help="fail the job if the PARTIAL-assembly rate exceeds this fraction "
+                        "(default 1.0 = never; partial rows are always tagged with a reason)")
     p.add_argument("--permissive", action="store_true",
-                   help="never fail on the AIRR-assembly failure rate (dirty repertoires); still tags rows")
+                   help="never fail on assembly failure/partial rates (dirty repertoires); still tags rows")
     p.set_defaults(func=run)
 
 
 def _load_metadata(args, ids):
     """Join a per-read metadata table (10x annotations / an AIRR TSV) to the read ids, returning
-    ``(per_row_metas, extra_columns)`` for the writer, or ``(None, None)`` if no --metadata given."""
+    ``(per_row_metas, extra_columns)`` for the writer, or ``(None, None)`` if no --metadata given.
+
+    Metadata may NEVER overwrite a model/scientific AIRR field: any metadata column whose name collides
+    with a produced field (sequence/v_call/productive/coords/…) is namespaced to ``meta_<col>`` so the
+    aligner's result is preserved (AIRR-review). 10x column names are normalized to AIRR."""
     if not args.metadata:
         return None, None
+    from ..io.airr import COLUMNS
     from ..io.sequence_reader import load_metadata
     keep = [c.strip() for c in args.keep_columns.split(",")] if args.keep_columns else None
-    meta, kept = load_metadata(args.metadata, id_column=args.metadata_id_column, keep_columns=keep)
-    return [meta.get(i, {}) for i in ids], kept
+    meta, kept = load_metadata(args.metadata, id_column=args.metadata_id_column, keep_columns=keep,
+                               normalize_10x=True)
+    protected = frozenset(COLUMNS)
+
+    def _safe(col):                                # protect model fields from metadata clobbering
+        return f"meta_{col}" if col in protected else col
+    kept_safe = [_safe(c) for c in kept]
+    metas = [{_safe(k): v for k, v in meta.get(i, {}).items()} for i in ids]
+    return metas, kept_safe
 
 
 def _write_rejects(path: str, rejects: list) -> None:
-    """Write dropped/invalid input records so they are never silently lost."""
+    """Write dropped/invalid input records (0-based `position`) so they are never silently lost. Written
+    atomically; a valid header-only table is emitted even when nothing was rejected."""
     import csv
-    with open(path, "w", newline="") as f:
+    tmp = f"{path}.tmp.{os.getpid()}"
+    with open(tmp, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["sequence_id", "position", "reason", "sequence"],
                            delimiter="\t")
         w.writeheader()
-        w.writerows(rejects)
+        w.writerows(rejects or [])
+    os.replace(tmp, path)
 
 
 def _sha256_file(path: str) -> str:
@@ -95,12 +113,16 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def _write_run_metadata(out: str, model_path: str, args, n_reads: int, device: str,
-                        failed: int = 0, fail_reasons: dict | None = None, loci=None,
+def _write_run_metadata(out: str, model_path: str, args, device: str, stats: dict, records: list, *,
+                        loci=None, failed: int = 0, fail_reasons: dict | None = None,
                         partial: dict | None = None) -> None:
     from ..model_file import container, read_metadata
     md = read_metadata(model_path) if container.is_alignair_file(model_path) else {}
     ref = md.get("reference", {})
+    n = len(records)
+    complete = sum(1 for r in records if r.get("airr_assembly_status") == "complete")
+    partial_n = sum(1 for r in records if r.get("airr_assembly_status") == "partial")
+    cropped = sum(1 for r in records if r.get("length_cropped"))
     prov = {
         "model_spec": args.model, "model_path": os.path.abspath(model_path),
         "model_id": md.get("model_id"), "model_version": md.get("model_version"),
@@ -111,9 +133,14 @@ def _write_run_metadata(out: str, model_path: str, args, n_reads: int, device: s
         "loci": list(loci) if loci else [],            # the model's exact locus mapping (P0-6)
         "command": {"input": args.input, "out": args.out, "columns": args.columns,
                     "locus": args.locus, "batch_size": args.batch_size, "device": device},
-        "n_reads": n_reads, "offline": bool(args.offline),
-        "airr_assembly_failed": failed, "airr_assembly_fail_reasons": fail_reasons or {},
-        "airr_assembly_partial": partial or {},
+        "counts": {                                    # full record accounting (AIRR-review item 5)
+            "input_records": stats.get("n_read", n + stats.get("n_dropped", 0)),
+            "accepted_records": n, "rejected_records": stats.get("n_dropped", 0),
+            "cropped_records": cropped, "complete_assemblies": complete,
+            "partial_assemblies": partial_n, "failed_assemblies": failed, "written_records": n,
+        },
+        "airr_assembly_fail_reasons": fail_reasons or {}, "airr_assembly_partial_reasons": partial or {},
+        "offline": bool(args.offline),
         "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
     with open(out + ".run.json", "w") as f:
@@ -128,8 +155,8 @@ def run(args) -> int:
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     ids, seqs, stats = read_sequences(args.input, seq_column=args.sequence_column,
                                       id_column=args.id_column, collect_rejects=bool(args.rejects_out))
-    if args.rejects_out and stats.get("rejects"):        # emit dropped records instead of hiding them
-        _write_rejects(args.rejects_out, stats["rejects"])
+    if args.rejects_out:                                 # emit dropped records (header-only if none)
+        _write_rejects(args.rejects_out, stats.get("rejects") or [])
     if not seqs:
         print(f"no valid reads in {args.input}")
         return 1
@@ -182,22 +209,33 @@ def run(args) -> int:
     partial = Counter(r.get("airr_assembly_reason", "?") for r in records
                       if r.get("airr_assembly_status") == "partial")
     fail_reasons = Counter(r.get("airr_assembly_error", "?").split(":")[0] for r in failed)
-    fail_rate = len(failed) / len(records) if records else 0.0
-    if failed and fail_rate > args.max_assembly_failures and not args.permissive:
-        write_airr(args.out, ids, seqs, records, locus=out_locus, columns=args.columns)
-        print(f"AIRR assembly failed for {len(failed)}/{len(records)} reads "
-              f"({fail_rate:.1%} > --max-assembly-failures {args.max_assembly_failures:.1%}); "
-              f"reasons: {dict(fail_reasons)}. Wrote tagged output to {args.out}. "
-              f"Re-run with --permissive to accept, or raise --max-assembly-failures.")
+    n = len(records)
+    fail_rate = len(failed) / n if n else 0.0
+    partial_rate = sum(partial.values()) / n if n else 0.0
+    metas, extra_cols = _load_metadata(args, ids)        # join per-read metadata (10x/AIRR) into output
+
+    def _finish():                                       # write the tagged output (always) + provenance
+        write_airr(args.out, ids, seqs, records, locus=out_locus, columns=args.columns,
+                   metas=metas, extra_columns=extra_cols)
+        if not args.no_run_metadata:
+            _write_run_metadata(args.out, model_path, args, device, stats, records, loci=loci,
+                                failed=len(failed), fail_reasons=dict(fail_reasons), partial=dict(partial))
+
+    if not args.permissive and failed and fail_rate > args.max_assembly_failures:
+        _finish()
+        print(f"AIRR assembly FAILED for {len(failed)}/{n} reads ({fail_rate:.1%} > "
+              f"--max-assembly-failures {args.max_assembly_failures:.1%}); reasons {dict(fail_reasons)}. "
+              f"Wrote tagged output to {args.out}. Re-run with --permissive or raise the threshold.")
+        return 1
+    if not args.permissive and partial and partial_rate > args.max_partial_assemblies:
+        _finish()
+        print(f"AIRR assembly PARTIAL for {sum(partial.values())}/{n} reads ({partial_rate:.1%} > "
+              f"--max-partial-assemblies {args.max_partial_assemblies:.1%}); reasons {dict(partial)}. "
+              f"Wrote tagged output to {args.out}. Re-run with --permissive or raise the threshold.")
         return 1
 
-    metas, extra_cols = _load_metadata(args, ids)        # join per-read metadata (10x/AIRR) into output
-    write_airr(args.out, ids, seqs, records, locus=out_locus, columns=args.columns,
-               metas=metas, extra_columns=extra_cols)
-    if not args.no_run_metadata:
-        _write_run_metadata(args.out, model_path, args, len(records), device, failed=len(failed),
-                            fail_reasons=dict(fail_reasons), loci=loci, partial=dict(partial))
-    msg = f"aligned {len(records)} reads ({stats['n_dropped']} dropped) -> {args.out}"
+    _finish()
+    msg = f"aligned {n} reads ({stats['n_dropped']} dropped) -> {args.out}"
     if failed or partial:
         msg += f"; {len(failed)} failed / {sum(partial.values())} partial AIRR assemblies tagged"
     print(msg)

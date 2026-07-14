@@ -75,3 +75,18 @@ def test_metadata_join_carries_10x_columns(tmp_path):
     from alignair.io.sequence_reader import load_metadata
     meta, kept = load_metadata(str(m), id_column="contig_id")
     assert "barcode" in kept and meta["c1"]["umi_count"] == "7"
+
+
+def test_10x_metadata_normalized_to_airr_names(tmp_path):
+    """A stock 10x annotations file gains AIRR-standard cell_id/umi_count/c_call (raw columns kept)."""
+    m = tmp_path / "filtered_contig_annotations.csv"
+    m.write_text("barcode,contig_id,reads,umis,chain,c_gene\n"
+                 "AAAA-1,c1,120,7,IGH,IGHM\n")
+    from alignair.io.sequence_reader import load_metadata
+    meta, kept = load_metadata(str(m), id_column="contig_id", normalize_10x=True)
+    assert meta["c1"]["cell_id"] == "AAAA-1"          # barcode -> cell_id
+    assert meta["c1"]["umi_count"] == "7"             # umis -> umi_count
+    assert meta["c1"]["c_call"] == "IGHM"             # c_gene -> c_call
+    assert meta["c1"]["barcode"] == "AAAA-1"          # raw 10x column preserved
+    for c in ("cell_id", "umi_count", "c_call"):
+        assert c in kept

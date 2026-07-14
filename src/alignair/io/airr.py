@@ -39,6 +39,10 @@ COLUMNS = (_IDENT + _CALLS + _QUALITY + _ALN + _JUNCTION + _CIGAR + _COORDS
 # orientation id -> AIRR-honest label (only id 1 is a reverse-complement; see _build_row)
 _ORIENT_LABEL = {0: "forward", 1: "reverse_complement", 2: "complement", 3: "reverse"}
 
+# model/scientific fields that per-read metadata must never overwrite (AIRR-review): every produced
+# AIRR column. Metadata may only add new columns or fill blanks; a collision keeps the model's value.
+_PROTECTED_FIELDS = frozenset(COLUMNS)
+
 # Named column presets users can pick from (or pass their own list / comma-string). `full` is the
 # default; `airr` is the MiAIRR-minimal required rearrangement set; `core`/`minimal` are compact.
 COLUMN_PRESETS = {
@@ -228,7 +232,10 @@ class AirrWriter:
         for i, (sid, seq, p) in enumerate(zip(ids, sequences, preds)):
             row = _build_row(sid, seq, p, self.locus)
             if metas and metas[i]:
-                row.update(metas[i])
+                for k, v in metas[i].items():      # metadata may NOT clobber a populated model field
+                    if k in _PROTECTED_FIELDS and row.get(k) not in (None, ""):
+                        continue
+                    row[k] = v
             self._w.writerow(row)
 
     def close(self, commit: bool = True) -> None:

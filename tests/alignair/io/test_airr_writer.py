@@ -158,6 +158,22 @@ def test_writer_carries_metadata_columns():
         os.remove(tmp)
 
 
+def test_metadata_cannot_overwrite_model_fields():
+    """Adversarial: metadata columns colliding with produced fields (v_call/sequence/productive) must
+    NOT clobber the aligner's result (AIRR-review)."""
+    rec = {"sequence": "ACGT", "v_call": "IGHV1-1*01", "productive": "T"}
+    tmp = tempfile.mktemp(suffix=".tsv")
+    try:
+        write_airr(tmp, ["r"], ["ACGT"], [rec], columns="minimal",
+                   metas=[{"v_call": "EVIL*99", "sequence": "GGGG", "cell_id": "AAAA-1"}],
+                   extra_columns=["cell_id"])
+        row = _read_rows(tmp)[0]
+        assert row["v_call"] == "IGHV1-1*01" and row["sequence"] == "ACGT"   # model result preserved
+        assert row["cell_id"] == "AAAA-1"                                    # new column added
+    finally:
+        os.remove(tmp)
+
+
 def test_writer_is_atomic_on_interrupt():
     """An interrupted write must not leave the final path (only a discarded temp), so a crashed job is
     never mistaken for a complete one (P0-8)."""
