@@ -25,7 +25,7 @@ process ALIGNAIR_PREDICT {
     script:
     def geno = params.genotype ? "--genotype ${params.genotype}" : ""
     """
-    alignair predict ${reads} -o ${sample_id}.tsv \\
+    alignair predict --input ${reads} --out ${sample_id}.tsv \\
         --model ${params.model} ${geno} --device ${params.device} --quiet
     """
 }

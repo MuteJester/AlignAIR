@@ -58,10 +58,10 @@ Train a model for your reference, then align with it:
 
 ```bash
 alignair train --reference HUMAN_IGH_OGRDB -o my_model --preset desktop   # ~minutes on a GPU
-alignair predict reads.fasta -o out.tsv --model my_model/bundle
+alignair predict --input reads.fasta --out out.tsv --model my_model/bundle
 
 # align against a donor genotype (fewer alleles and/or NOVEL alleles) — YAML or FASTA
-alignair predict reads.fasta -o out.tsv --model my_model/bundle --genotype donor.yaml
+alignair predict --input reads.fasta --out out.tsv --model my_model/bundle --genotype donor.yaml
 ```
 
 `--genotype` simply *becomes* the reference for the run — no retraining, no extra flags. See

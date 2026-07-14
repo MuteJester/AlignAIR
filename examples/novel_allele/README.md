@@ -7,7 +7,7 @@ retraining. [`donor_with_novel.yaml`](donor_with_novel.yaml) is a small human-IG
 with three point differences).
 
 ```bash
-alignair predict reads.fasta -o out.tsv --model my_model/bundle \
+alignair predict --input reads.fasta --out out.tsv --model my_model/bundle \
     --genotype examples/novel_allele/donor_with_novel.yaml
 ```
 

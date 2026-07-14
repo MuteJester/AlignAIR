@@ -38,5 +38,5 @@ rule predict:
     log:
         config["outdir"] + "/logs/{sample}.log",
     shell:
-        "alignair predict {input.reads} -o {output} --model {params.model} "
+        "alignair predict --input {input.reads} --out {output} --model {params.model} "
         "{params.genotype} --device {params.device} --quiet 2> {log}"

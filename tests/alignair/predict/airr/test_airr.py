@@ -17,11 +17,19 @@ class _FakeRef:
         return SimpleNamespace(names=["IGHV1-1*01"], sequences=["ACGT"], gapped=None, anchors={})
 
 
-def test_build_airr_tags_ok_status(monkeypatch):
+def test_build_airr_tags_complete_status(monkeypatch):
     from alignair.predict.airr import builder
     monkeypatch.setattr(builder, "_build_one", lambda rec, *a, **k: dict(rec))
     out = build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy")
-    assert out[0]["airr_assembly_status"] == "ok"
+    assert out[0]["airr_assembly_status"] == "complete"
+
+
+def test_build_airr_incomplete_record_is_partial_not_complete():
+    """A record that skips assembly (no v_call) is `partial` with a reason code — never a clean
+    `complete`/`ok` while germline_alignment/identity are blank (AIRR-review #5)."""
+    out = build_airr([{"sequence": "ACGT", "productive": True}], _FakeRef(), chain="heavy")[0]
+    assert out["airr_assembly_status"] == "partial"
+    assert out["airr_assembly_reason"] == "missing_calls_or_coordinates"
 
 
 def test_build_airr_unexpected_exception_raises_with_context(monkeypatch):

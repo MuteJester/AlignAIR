@@ -135,7 +135,15 @@ behavior tests in `test_new_commands.py`. `validate-airr` caught a real empty-se
 step that extracts+dry-runs shell commands from README; quarantine the legacy `src/AlignAIR` CLI;
 reconcile remaining README prose (e.g. the `reference` description) in the docs phase.
 
-### P0-3 — Correct canonical orientation and AIRR sequence/coordinate consistency — ✅ DONE (2026-07-13)
+### P0-3 — Correct canonical orientation and AIRR sequence/coordinate consistency — ✅ DONE (2026-07-13; orientation contract corrected 2026-07-14)
+
+**Orientation correction (AIRR-community review):** the earlier fix emitted `sequence`=canonical with
+`rev_comp=T`, which is inconsistent — AIRR defines `rev_comp=T` to mean coordinates are on
+`RC(sequence)`. Now, for a reverse-complement read, `sequence` is the **original query** and coords are
+on `RC(sequence)`==the aligned frame (IgBLAST/AIRR convention); complement/reverse-only emit the
+canonical frame with `rev_comp=F` and the true transform in `orientation`. Round-trip test proves
+`RC(sequence)`==coordinate frame (`test_airr_writer.py`).
+
 
 `_build_row` now emits the record's own canonical `sequence` (`p["sequence"]`) and takes every slice
 from it — never the parallel input list, which is now treated purely as the original read and preserved

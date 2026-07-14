@@ -32,7 +32,7 @@ _EXT = [f"{g}_{k}" for g in GENES for k in ("call_set", "resolved_call", "call_l
 # per-read segmentation quality flag. `orientation`/`input_sequence` keep the AIRR standard `rev_comp`
 # boolean honest (it is set only for a true reverse-complement) without losing the actual transform.
 _MISC = ["mutation_rate", "is_contaminant", "orientation", "input_sequence", "segmentation_low_quality",
-         "length_cropped", "airr_assembly_status", "airr_assembly_error"]
+         "length_cropped", "airr_assembly_status", "airr_assembly_reason", "airr_assembly_error"]
 COLUMNS = (_IDENT + _CALLS + _QUALITY + _ALN + _JUNCTION + _CIGAR + _COORDS
            + _REGIONS + _PERGENE_ALN + _EXT + _MISC)
 
@@ -69,7 +69,8 @@ def resolve_columns(columns) -> list:
 # fields that come straight from the light predict() record (no build_airr assembly needed)
 _LIGHT_FIELDS = frozenset(_IDENT + _CALLS + ["productive", "productive_prediction", "mutation_rate",
                           "orientation", "input_sequence", "segmentation_low_quality", "length_cropped",
-                          "airr_assembly_status", "airr_assembly_error"] + _CIGAR + _COORDS + _EXT)
+                          "airr_assembly_status", "airr_assembly_reason", "airr_assembly_error"]
+                          + _CIGAR + _COORDS + _EXT)
 
 
 def needs_assembly(columns) -> bool:
@@ -136,15 +137,30 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
     for a true reverse-complement — id 1 — with the full transform kept in ``orientation``), and
     coordinate-derived CIGAR / sequence_alignment fallbacks for records that skipped ``build_airr``."""
     row = dict(p)                                  # pass through all AIRR fields (junction/regions/...)
+    # `canonical` is the frame every coordinate / alignment / CIGAR is computed in (the model's forward
+    # frame). It is what all the slicing below uses. The emitted `sequence` field, however, follows the
+    # AIRR convention for `rev_comp` (below), which is NOT always the canonical frame.
     canonical = p.get("sequence") if p.get("sequence") is not None else seq
+    original = seq if seq is not None else canonical   # the read as submitted (pre-orientation)
     seq_len = len(canonical)
     row["sequence_id"] = sid
-    row["sequence"] = canonical
-    if seq is not None and seq != canonical:       # input was reoriented -> keep the original read
-        row["input_sequence"] = seq
     row.setdefault("locus", locus)
     oid = int(p.get("orientation_id", 0) or 0)
-    row["rev_comp"] = "T" if oid == 1 else "F"     # AIRR rev_comp: reverse-complement only
+    if oid == 1:
+        # AIRR reverse-complement: `sequence` is the ORIGINAL query and, per the schema, all alignment
+        # data (coordinates/CIGAR/alignments) are based on the REVERSE COMPLEMENT of `sequence` — which
+        # is exactly our canonical frame. So emit the original + rev_comp=T (IgBLAST / AIRR-consumer
+        # convention); a consumer reconstructs the aligned frame as RC(sequence) == canonical.
+        row["sequence"] = original
+        row["rev_comp"] = "T"
+    else:
+        # forward / complement-only / reverse-only: coordinates are on the emitted sequence directly, so
+        # emit the canonical frame and rev_comp=F. `rev_comp` can only encode reverse-complement, so the
+        # true transform for complement/reverse is preserved in the `orientation` extension.
+        row["sequence"] = canonical
+        row["rev_comp"] = "F"
+        if original != canonical:                  # complement/reverse: keep the original read too
+            row["input_sequence"] = original
     row["orientation"] = _ORIENT_LABEL.get(oid, "forward")
     # normalize AIRR logical fields to T/F (standards-compliant; passes official `airr` validation).
     # None/blank stays empty (unknown); the extensions are normalized too.
@@ -238,10 +254,11 @@ class AirrWriter:
 
 
 def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict],
-               locus: str = "IGH", columns=None) -> None:
+               locus: str = "IGH", columns=None, metas: List[dict] | None = None,
+               extra_columns=None) -> None:
     """Eager one-shot write (back-compat). For large inputs use AirrWriter incrementally.
-    `sequences` are the ORIGINAL input reads (provenance only); coordinates and the emitted `sequence`
-    come from each record's canonical sequence (P0-3). `columns` selects which fields to emit (preset
-    name / comma-string / list; default = full)."""
-    with AirrWriter(path, locus, columns=columns) as w:   # atomic: commit on clean exit, discard on error
-        w.write(ids, sequences, preds)
+    `sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR
+    orientation convention per record (P0-3). `columns` selects which fields to emit. `metas` (per-row
+    dicts) + `extra_columns` carry preserved input metadata (barcode/UMI/sample/cell_id) into output."""
+    with AirrWriter(path, locus, columns=columns, extra_columns=extra_columns) as w:  # atomic
+        w.write(ids, sequences, preds, metas=metas)

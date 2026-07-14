@@ -55,19 +55,45 @@ def test_writer_forward_read_is_not_rev_comp():
 
 # --- P0-3: AIRR coordinates always refer to the emitted (canonical) sequence --------------------
 
-def test_writer_emits_canonical_sequence_not_external_input():
-    """A reoriented read: the record owns the canonical sequence the coords are in; the writer must
-    emit THAT (not the separately-passed original input), and preserve the input as provenance."""
-    canonical = "ACGTACGTAC"
-    original = "GTACGTACGT"                    # pre-orientation read, a different string
-    rec = {"sequence": canonical, "orientation_id": 1, "v_call": "IGHV1-1*01",
+_COMPL = str.maketrans("ACGTN", "TGCAN")
+
+
+def _rc(s):
+    return s.translate(_COMPL)[::-1]
+
+
+def test_rev_comp_output_follows_airr_convention():
+    """AIRR: for a reverse-complement hit, `sequence` is the ORIGINAL query and all alignment data are
+    based on RC(sequence) == the aligned (canonical) frame. The writer must emit the original, so a
+    consumer that reverse-complements `sequence` recovers exactly the frame the coordinates are in."""
+    aligned = "ACGTACGTAC"                     # the frame coordinates/alignments are computed in
+    original = _rc(aligned)                     # the read as submitted (reverse-complemented)
+    rec = {"sequence": aligned, "orientation_id": 1, "v_call": "IGHV1-1*01",
            "v_sequence_start": 0, "v_sequence_end": 10}
     tmp = tempfile.mktemp(suffix=".tsv")
     try:
         write_airr(tmp, ["r"], [original], [rec])     # external list carries the ORIGINAL input
         row = _read_rows(tmp)[0]
-        assert row["sequence"] == canonical            # coordinates refer to this exact string
-        assert row["input_sequence"] == original       # original read preserved for provenance
+        assert row["rev_comp"] == "T"
+        assert row["sequence"] == original             # the query as submitted
+        assert _rc(row["sequence"]) == aligned         # RC(sequence) == the aligned/coordinate frame
+    finally:
+        os.remove(tmp)
+
+
+def test_complement_only_read_emits_canonical_with_rev_comp_false():
+    """rev_comp can only encode reverse-complement; a complement-only read emits the canonical frame
+    (coords valid on it) with rev_comp=F and the true transform in `orientation`."""
+    aligned = "ACGTACGTAC"
+    original = aligned.translate(_COMPL)              # complement-only (id 2), not a reverse-complement
+    rec = {"sequence": aligned, "orientation_id": 2, "v_call": "IGHV1-1*01",
+           "v_sequence_start": 0, "v_sequence_end": 10}
+    tmp = tempfile.mktemp(suffix=".tsv")
+    try:
+        write_airr(tmp, ["r"], [original], [rec])
+        row = _read_rows(tmp)[0]
+        assert row["rev_comp"] == "F" and row["orientation"] == "complement"
+        assert row["sequence"] == aligned and row["input_sequence"] == original
     finally:
         os.remove(tmp)
 
@@ -117,6 +143,19 @@ def test_needs_assembly_skips_for_light_selections():
     assert needs_assembly("minimal") is False                    # calls + productive only
     assert needs_assembly("v_call,j_call") is False
     assert needs_assembly("v_call,cdr3") is True                 # a region field needs assembly
+
+
+def test_writer_carries_metadata_columns():
+    """Per-read metadata (barcode/UMI/cell_id) is carried into extra output columns for 10x/Scirpy."""
+    rec = {"sequence": "ACGT", "v_call": "IGHV1-1*01"}
+    tmp = tempfile.mktemp(suffix=".tsv")
+    try:
+        write_airr(tmp, ["c1"], ["ACGT"], [rec], columns="minimal",
+                   metas=[{"barcode": "AAAA-1", "umi_count": "7"}], extra_columns=["barcode", "umi_count"])
+        row = _read_rows(tmp)[0]
+        assert row["barcode"] == "AAAA-1" and row["umi_count"] == "7" and row["v_call"] == "IGHV1-1*01"
+    finally:
+        os.remove(tmp)
 
 
 def test_writer_is_atomic_on_interrupt():

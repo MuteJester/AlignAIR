@@ -51,3 +51,27 @@ def test_fastq_valid_parses(tmp_path):
     p.write_text("@r1\nACGT\n+\nIIII\n@r2\nTTTT\n+\nIIII\n")
     ids, seqs, info = read_sequences(str(p))
     assert seqs == ["ACGT", "TTTT"] and ids == ["r1", "r2"]
+
+
+def test_table_input_custom_sequence_and_id_columns(tmp_path):
+    p = tmp_path / "d.tsv"
+    p.write_text("contig_id\tnt\tbarcode\nc1\tACGTACGT\tAAAA\nc2\tTTTTGGGG\tCCCC\n")
+    ids, seqs, info = read_sequences(str(p), seq_column="nt", id_column="contig_id")
+    assert ids == ["c1", "c2"] and seqs == ["ACGTACGT", "TTTTGGGG"]
+
+
+def test_collect_rejects_records_reason_and_sequence(tmp_path):
+    p = tmp_path / "mix.fasta"
+    p.write_text(">good\nACGTACGT\n>bad\nXXXXZZZZ\n>empty\n\n")   # bad = ambiguous, empty = blank
+    ids, seqs, info = read_sequences(str(p), collect_rejects=True)
+    assert seqs == ["ACGTACGT"]
+    reasons = {r["sequence_id"]: r["reason"] for r in info["rejects"]}
+    assert reasons["bad"] == "ambiguous" and reasons["empty"] == "empty"
+
+
+def test_metadata_join_carries_10x_columns(tmp_path):
+    m = tmp_path / "annot.csv"
+    m.write_text("contig_id,barcode,umi_count\nc1,AAAA-1,7\nc2,CCCC-1,3\n")
+    from alignair.io.sequence_reader import load_metadata
+    meta, kept = load_metadata(str(m), id_column="contig_id")
+    assert "barcode" in kept and meta["c1"]["umi_count"] == "7"

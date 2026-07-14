@@ -44,10 +44,10 @@ one with `alignair train`):
 alignair train --reference HUMAN_IGH_OGRDB -o my_model --preset desktop
 
 # align against the model's default (full) reference
-alignair predict examples/reads.fasta -o out.tsv --model my_model/bundle
+alignair predict --input examples/reads.fasta --out out.tsv --model my_model/bundle
 
 # align against a donor genotype (fewer alleles and/or novel alleles) — the dynamic-genotype feature
-alignair predict examples/reads.fasta -o out_donor.tsv \
+alignair predict --input examples/reads.fasta --out out_donor.tsv \
   --model my_model/bundle --genotype examples/donor_genotype.yaml
 ```
 

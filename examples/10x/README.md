@@ -10,7 +10,7 @@ output**, so the result drops straight into single-cell tooling (Scirpy, Change-
 Immcantation) where rows are grouped by cell.
 
 ```bash
-alignair predict examples/10x/filtered_contig.fasta -o tenx_airr.tsv \
+alignair predict --input examples/10x/filtered_contig.fasta --out tenx_airr.tsv \
   --model my_model/bundle \
   --metadata examples/10x/filtered_contig_annotations.csv
 ```

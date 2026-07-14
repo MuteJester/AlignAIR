@@ -7,8 +7,8 @@
     </requirements>
     <!-- detect_errors="exit_code" surfaces AlignAIR's non-zero exits as Galaxy job failures. -->
     <command detect_errors="exit_code"><![CDATA[
-        alignair predict '$reads'
-            -o '$airr'
+        alignair predict --input '$reads'
+            --out '$airr'
             --model '$model'
             #if $genotype
                 --genotype '$genotype'
@@ -16,7 +16,7 @@
             #if $metadata
                 --metadata '$metadata'
             #end if
-            --device cpu --quiet --no-provenance
+            --device cpu --quiet --no-run-metadata
     ]]></command>
     <inputs>
         <param name="reads" type="data" format="fasta,fastqsanger,tabular"

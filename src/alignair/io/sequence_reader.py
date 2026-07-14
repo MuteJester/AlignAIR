@@ -195,10 +195,12 @@ def _iter_records(path: str, fmt: str, head: str, seq_column, id_column):
 
 
 def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = None,
-                   id_column: str | None = None):
+                   id_column: str | None = None, rejects: list | None = None):
     """Stream (ids, sequences, n_dropped) in chunks of up to ``chunk_size`` validated reads, with
     bounded memory (never materializes the whole file). Sequences are validated as in
-    ``read_sequences``; ids default to ``seq{global_index}`` when the source has none."""
+    ``read_sequences``; ids default to ``seq{global_index}`` when the source has none. If ``rejects``
+    (a list) is given, each dropped read is appended as ``{id, position, reason, sequence}`` so the
+    caller can emit a rejects table rather than silently dropping records."""
     with _open(path) as f:
         head = f.readline()
     fmt = _sniff(path, head)
@@ -217,9 +219,12 @@ def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = 
         return f"{base}_dup{n + 1}"
 
     for i, (rid, raw) in enumerate(_iter_records(path, fmt, head, seq_column, id_column)):
-        v = validate(raw)
+        v, reason = validate_sequence(raw)
         if v is None:
             dropped += 1
+            if rejects is not None:
+                rejects.append({"sequence_id": rid if rid is not None else f"seq{i}", "position": i,
+                                "reason": reason, "sequence": str(raw).strip()})
         else:
             ids.append(_unique_id(rid, i))
             seqs.append(v)
@@ -230,15 +235,19 @@ def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = 
         yield ids, seqs, dropped
 
 
-def read_sequences(path: str, seq_column: str | None = None,
-                   id_column: str | None = None) -> Tuple[List[str], List[str], dict]:
+def read_sequences(path: str, seq_column: str | None = None, id_column: str | None = None,
+                   collect_rejects: bool = False) -> Tuple[List[str], List[str], dict]:
     """Eager read of all sequences (back-compat). For large files prefer ``iter_sequences``.
-    Returns (ids, sequences, info) with info.n_read/n_dropped/format."""
+    Returns (ids, sequences, info) with info.n_read/n_dropped/format; when ``collect_rejects`` is set,
+    info["rejects"] lists each dropped record ({id, position, reason, sequence})."""
     ids: List[str] = []
     seqs: List[str] = []
     dropped = 0
-    for cids, cseqs, drp in iter_sequences(path, chunk_size=10 ** 9,
-                                           seq_column=seq_column, id_column=id_column):
+    rejects: list | None = [] if collect_rejects else None
+    for cids, cseqs, drp in iter_sequences(path, chunk_size=10 ** 9, seq_column=seq_column,
+                                           id_column=id_column, rejects=rejects):
         ids += cids; seqs += cseqs; dropped += drp
-    return ids, seqs, {"n_read": len(ids) + dropped, "n_dropped": dropped,
-                       "format": _detect_format(path)}
+    info = {"n_read": len(ids) + dropped, "n_dropped": dropped, "format": _detect_format(path)}
+    if collect_rejects:
+        info["rejects"] = rejects
+    return ids, seqs, info
