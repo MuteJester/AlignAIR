@@ -49,5 +49,7 @@ def correct_segments(start: dict, end: dict, seq_lens: np.ndarray, max_len: int,
         out_s[g], out_e[g] = s, e
         prev = e
 
-    low_quality = (out_e["v"] - out_s["v"]) <= 0                    # V anchor collapsed -> infeasible
+    # a mandatory framework segment (V or J) collapsing to zero length => no feasible layout for the
+    # read (D is optional and may legitimately be absent, so it is not counted). (audit #7)
+    low_quality = ((out_e["v"] - out_s["v"]) <= 0) | ((out_e["j"] - out_s["j"]) <= 0)
     return Segments(out_s, out_e, low_quality=low_quality)

@@ -49,28 +49,37 @@ def _remap_state_dict(state: dict) -> dict:
     return out
 
 
-def _gene_names(ref, g):
+def _gene_fingerprint(ref, g):
+    """The parts of a gene reference the model's biology depends on: ordered names, germline sequences,
+    IMGT-gapped sequences, and junction anchors. Two references with equal fingerprints are
+    interchangeable; equal *names* alone are not (audit #8)."""
     try:
-        return list(ref.gene(g).names)
+        gr = ref.gene(g)
     except (KeyError, AttributeError):
         return None
+    return (tuple(gr.names), tuple(s.upper() for s in gr.sequences),
+            tuple(sorted((gr.gapped or {}).items())), tuple(sorted((gr.anchors or {}).items())))
 
 
 def _assert_reference_matches(caller, embedded) -> None:
-    """A fixed-head model's V/D/J classification indices are tied to the embedded allele *order*, so a
-    caller-supplied reference must be identical (same genes, same alleles, same order). Otherwise output
-    columns would be mislabeled or prediction would fail late. Raises ``ValueError`` on any mismatch —
-    the safe path is to omit ``reference=`` and use the model's verified embedded reference (P0-1)."""
+    """A fixed-head model's V/D/J classification indices are tied to the embedded reference, so a
+    caller-supplied reference must be identical — same alleles in the same order AND the same germline
+    sequences / gapped sequences / anchors (equal names with altered sequences would mislabel nothing
+    but silently align, junction, and score against the wrong biology; audit #8). Raises ``ValueError``
+    on any mismatch — the safe path is to omit ``reference=`` and use the verified embedded one (P0-1)."""
     for g in ("V", "D", "J"):
-        emb, cal = _gene_names(embedded, g), _gene_names(caller, g)
-        if emb != cal:
-            n_emb = len(emb) if emb else 0
-            n_cal = len(cal) if cal else 0
-            raise ValueError(
-                f"supplied reference does not match the model's embedded reference for gene {g} "
-                f"(this fixed-head model's classification indices are tied to the embedded allele "
-                f"order; {n_cal} supplied vs {n_emb} embedded). Omit reference= to use the model's "
-                f"verified embedded reference, or retrain to change the reference.")
+        emb, cal = _gene_fingerprint(embedded, g), _gene_fingerprint(caller, g)
+        if emb == cal:
+            continue
+        emb_names, cal_names = (emb[0] if emb else ()), (cal[0] if cal else ())
+        if list(emb_names) != list(cal_names):
+            detail = f"allele set/order differs ({len(cal_names)} supplied vs {len(emb_names)} embedded)"
+        else:
+            detail = "allele names match but germline sequences / anchors differ"
+        raise ValueError(
+            f"supplied reference does not match the model's embedded reference for gene {g}: {detail}. "
+            f"This fixed-head model is tied to its embedded reference — omit reference= to use it, or "
+            f"retrain to change the reference.")
 
 
 def _build_reference(dataconfigs, reference):

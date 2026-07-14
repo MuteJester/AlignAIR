@@ -230,7 +230,7 @@ provide the custom FASTA/preset/validation/bundle workflow described elsewhere.
 Adopt a small object API and make the CLI a thin client of it. A suitable target is:
 
 ```python
-from alignair import Aligner, TrainingConfig, train
+from alignair import Aligner, TrainingConfig, run_training  # `train` would collide with the train pkg
 
 aligner = Aligner.from_pretrained(
     "AlignAIR/human-igh-ogrdb",
@@ -245,7 +245,7 @@ result = aligner.predict(
 )
 result.write_airr("predictions.tsv")
 
-run = train(
+run = run_training(
     TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="desktop"),
     output_dir="runs/human_igh",
 )

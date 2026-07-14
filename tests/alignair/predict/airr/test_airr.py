@@ -54,6 +54,14 @@ def test_build_airr_strict_raises_on_expected_error(monkeypatch):
         build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy", strict=True)
 
 
+def test_build_airr_productive_blank_when_not_derivable():
+    """A record that skips assembly (no v_call) leaves AIRR `productive` BLANK (unknown), keeping the
+    neural call only in `productive_prediction` — no guess presented as a derived fact (audit #6)."""
+    out = build_airr([{"sequence": "ACGT", "productive": True}], _FakeRef(), chain="heavy")[0]
+    assert out["productive"] is None                    # underivable -> blank/unknown
+    assert out["productive_prediction"] is True         # the neural prediction is preserved separately
+
+
 def test_sequence_alignment_inserts_imgt_gaps():
     # gapped V ref has gaps at positions 2 and 5; the query (== ungapped V) is re-gapped to match.
     aln = build_sequence_alignment("ACGTACGT", "AC.GT.ACGT", 0, 8, 0, 8, j_seq_end=8)

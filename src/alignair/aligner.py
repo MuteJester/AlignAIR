@@ -8,16 +8,20 @@ and registry-aware.
     result = aligner.predict(["CAGGTGCAGCTG..."])
     result.write_airr("predictions.tsv")
 
-    from alignair import TrainingConfig, train
-    run = train(TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="desktop"), output_dir="runs/igh")
+    from alignair import TrainingConfig, run_training
+    run = run_training(TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="desktop"), output_dir="runs/igh")
     aligner = run.best_aligner()
+
+(The typed training entry is ``run_training`` rather than ``train`` because ``alignair.train`` is the
+training subpackage — a top-level ``train`` name would collide with it.)
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from typing import Iterator, Optional, Sequence
 
-__all__ = ["Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "train", "resolve_device"]
+__all__ = ["Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training",
+           "resolve_device"]
 
 
 def resolve_device(device: str | None = "auto") -> str:
@@ -112,13 +116,27 @@ class Aligner:
                             trust_pickle=trust_pickle)
         return cls(m, ref, device=dev, model_path=path, source_commit=hf.resolved_commit(path))
 
+    def _assert_distributable(self) -> None:
+        """Refuse to distribute a resumable checkpoint: those carry trusted **pickle** sections
+        (dataconfig / train_state) and must not be published — export a pickle-free inference artifact
+        first (audit #10)."""
+        if not self.model_path:
+            raise ValueError("needs an aligner loaded from a file (model_path is unset)")
+        from .model_file import read_metadata
+        secs = read_metadata(self.model_path).get("sections", {})
+        pickle_secs = [k for k in secs if str(k).startswith("dataconfig/") or k == "train_state"]
+        if pickle_secs:
+            raise ValueError(
+                f"{self.model_path} is a resumable checkpoint with pickle sections {pickle_secs}; it is "
+                f"not distributable. Export a pickle-free inference artifact first "
+                f"(`alignair convert <in> <out>` / save with include_trusted_pickle=False).")
+
     def save_pretrained(self, directory: str, *, filename: str = "model.alignair") -> str:
         """Copy the loaded model artifact into ``directory`` (for local distribution or a later
-        ``push_to_hub``). Requires an aligner loaded from a file. Returns the written path."""
+        ``push_to_hub``). Requires an aligner loaded from a **pickle-free** file. Returns the path."""
         import os
         import shutil
-        if not self.model_path:
-            raise ValueError("save_pretrained needs an aligner loaded from a file (model_path is unset)")
+        self._assert_distributable()
         os.makedirs(directory, exist_ok=True)
         dest = os.path.join(directory, filename)
         shutil.copyfile(self.model_path, dest)
@@ -129,8 +147,7 @@ class Aligner:
         """Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo. Requires
         ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). Returns the upload result."""
         import os
-        if not self.model_path:
-            raise ValueError("push_to_hub needs an aligner loaded from a file (model_path is unset)")
+        self._assert_distributable()               # never upload a pickle checkpoint (audit #10)
         try:
             from huggingface_hub import HfApi
         except ImportError as e:                    # pragma: no cover - optional dep
@@ -233,7 +250,8 @@ class TrainingRun:
         return Aligner.from_pretrained(self.best_model_path or self.model_path, device=device)
 
 
-def train(config: TrainingConfig, *, output_dir: str | None = None, out_path: str | None = None) -> TrainingRun:
+def run_training(config: TrainingConfig, *, output_dir: str | None = None,
+                 out_path: str | None = None) -> TrainingRun:
     """Train a model from a typed :class:`TrainingConfig`. Writes ``<output_dir>/model.alignair`` (or
     ``out_path``) plus a ``.best.alignair`` when ``val_every > 0``. Returns a :class:`TrainingRun`."""
     import os

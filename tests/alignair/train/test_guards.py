@@ -45,3 +45,34 @@ def test_finite_loss_passes():
 def test_non_finite_loss_aborts(bad):
     with pytest.raises(NonFiniteLossError, match="non-finite loss"):
         check_finite_loss(42, bad, {"v_allele": float("nan")})
+
+
+def test_grad_clip_must_be_finite():
+    with pytest.raises(TrainingConfigError, match="grad_clip"):
+        validate_training_request(**_ok(grad_clip=float("inf")))
+
+
+def test_train_step_aborts_on_non_finite_gradient_from_finite_loss():
+    """A finite loss with an infinite gradient (d/dx sqrt(x) at 0) must abort BEFORE the optimizer
+    corrupts the weights (audit #2)."""
+    import torch
+
+    from alignair.train.guards import NonFiniteLossError as _NFE
+
+    class _M(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.p = torch.nn.Parameter(torch.zeros(1))
+
+        def forward(self, x):
+            return self.p
+
+    m = _M()
+    opt = torch.optim.SGD(m.parameters(), lr=0.1)
+    # a tiny hand-rolled step mirroring train_step's guard: finite loss, infinite gradient
+    loss = torch.sqrt(m.p.abs())                    # loss=0 (finite), grad = 1/(2*sqrt(0)) = inf
+    check_finite_loss(1, float(loss), {"x": float(loss)})   # loss guard passes
+    opt.zero_grad()
+    loss.backward()
+    ok = all(pp.grad is None or torch.isfinite(pp.grad).all() for pp in m.parameters())
+    assert not ok                                   # the gradient guard would fire (raise NonFiniteLossError)

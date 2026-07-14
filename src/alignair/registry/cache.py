@@ -46,6 +46,32 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _sidecar(path: Path) -> Path:
+    return Path(str(path) + ".sha256")
+
+
+def _write_sidecar(dest: Path, sha: str | None) -> None:
+    """Record the verified artifact hash next to it, so a later offline pinned-cache hit can prove the
+    file was not corrupted/swapped after download (audit #11)."""
+    if sha:
+        try:
+            _sidecar(dest).write_text(sha)
+        except OSError:
+            pass
+
+
+def _sidecar_ok(path: Path):
+    """True/False if a sidecar exists (matches / mismatches), None if there is no sidecar to check."""
+    sc = _sidecar(path)
+    if not sc.exists():
+        return None
+    try:
+        expected = sc.read_text().strip()
+    except OSError:
+        return None
+    return _sha256_file(path) == expected
+
+
 @contextlib.contextmanager
 def _excl_lock(path: Path, *, timeout: float = 600.0, stale_after: float = 3600.0, poll: float = 0.05):
     """Portable cross-process mutual exclusion via an atomic ``O_EXCL`` lockfile (works where ``flock``
@@ -120,6 +146,7 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
     part = dest.with_name(dest.name + ".part")
     with _lock(dest.with_name(dest.name + ".lock")):
         if dest.exists() and (expected_sha256 is None or _sha256_file(dest) == expected_sha256):
+            _write_sidecar(dest, expected_sha256)                 # record hash for later offline checks
             return dest
         h = hashlib.sha256()
         with _open_stream(source, relpath, offline) as r, open(part, "wb") as w:
@@ -132,6 +159,7 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
             raise IntegrityError(
                 f"SHA256 mismatch for {relpath}: expected {expected_sha256}, got {got} — refusing to install.")
         os.replace(part, dest)                                     # atomic
+        _write_sidecar(dest, expected_sha256 or got)
     return dest
 
 
@@ -155,7 +183,10 @@ def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool 
     srcs = sources if sources is not None else _resolve_sources()
     if version:                                                    # pinned + cached -> no network
         cached = cache_path(model_id, version)
-        if cached.exists():
+        # return a cached pinned version without the network ONLY if its integrity sidecar still checks
+        # out (or there is no sidecar to check — legacy cache). A tampered/corrupt file falls through to
+        # a registry re-resolve instead of loading the wrong model (audit #11).
+        if cached.exists() and _sidecar_ok(cached) is not False:
             return cached
     found = _find(model_id, version, srcs, offline)
     if not found:

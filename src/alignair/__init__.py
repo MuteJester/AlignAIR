@@ -9,8 +9,8 @@ The stable object API (recommended):
 
 Train a custom model:
 
-    from alignair import TrainingConfig, train
-    run = train(TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="desktop"), output_dir="runs/igh")
+    from alignair import TrainingConfig, run_training
+    run = run_training(TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="desktop"), output_dir="runs/igh")
     aligner = run.best_aligner()
 
 The lower-level functional façade (``load_model`` / ``predict_sequences`` / ``train_model``) remains for
@@ -22,7 +22,7 @@ from .io.sequence_reader import read_sequences, iter_sequences
 from .io.airr import write_airr, AirrWriter
 from .compare import compare_airr
 from .api import load_model, predict_sequences, train_model
-from .aligner import Aligner, PredictionResult, TrainingConfig, TrainingRun, train, resolve_device
+from .aligner import Aligner, PredictionResult, TrainingConfig, TrainingRun, run_training, resolve_device
 from .core import AlignAIR
 from .core.config import AlignAIRConfig
 from .predict import PredictConfig
@@ -35,7 +35,7 @@ except Exception:                       # not pip-installed (e.g. run from a sou
 
 __all__ = [
     # stable object API
-    "Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "train", "resolve_device",
+    "Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training", "resolve_device",
     # functional façade (back-compat)
     "load_model", "predict_sequences", "train_model",
     "AlignAIR", "AlignAIRConfig", "PredictConfig",

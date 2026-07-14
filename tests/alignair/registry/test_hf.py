@@ -63,10 +63,11 @@ def test_aligner_from_pretrained_captures_hf_commit(monkeypatch, tmp_path):
     assert a.model_path == str(snap) and a.source_commit == "cafebabe99"
 
 
-def test_save_pretrained_copies_artifact(tmp_path):
+def test_save_pretrained_copies_artifact(monkeypatch, tmp_path):
     from alignair.aligner import Aligner
     src = tmp_path / "loaded.alignair"
     src.write_bytes(b"ALIGNAIR-artifact-bytes")
+    monkeypatch.setattr("alignair.model_file.read_metadata", lambda p: {"sections": {"config": {}}})
     a = Aligner(model=None, reference=None, model_path=str(src))
     dest = a.save_pretrained(str(tmp_path / "out"))
     assert open(dest, "rb").read() == b"ALIGNAIR-artifact-bytes"
@@ -74,3 +75,15 @@ def test_save_pretrained_copies_artifact(tmp_path):
     bare = Aligner(model=None, reference=None)                 # not loaded from a file
     with pytest.raises(ValueError, match="loaded from a file"):
         bare.save_pretrained(str(tmp_path / "out2"))
+
+
+def test_save_pretrained_refuses_pickle_checkpoint(monkeypatch, tmp_path):
+    """A resumable checkpoint (pickle sections) must not be distributed via save_pretrained (audit #10)."""
+    from alignair.aligner import Aligner
+    src = tmp_path / "ckpt.alignair"
+    src.write_bytes(b"x")
+    monkeypatch.setattr("alignair.model_file.read_metadata",
+                        lambda p: {"sections": {"config": {}, "dataconfig/0": {}, "train_state": {}}})
+    a = Aligner(model=None, reference=None, model_path=str(src))
+    with pytest.raises(ValueError, match="pickle sections|not distributable"):
+        a.save_pretrained(str(tmp_path / "out"))

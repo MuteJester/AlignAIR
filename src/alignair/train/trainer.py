@@ -65,7 +65,7 @@ def train_step(model, batch_in, targets, cfg, logvars, opt, *, step: int = 0, gr
     the weights; measures the gradient norm and clips to ``grad_clip`` when given. Returns
     ``(total, parts, grad_norm)``."""
     from ..core.losses import hierarchical_loss
-    from .guards import check_finite_loss
+    from .guards import NonFiniteLossError, check_finite_loss
     model.train()
     out = model(batch_in)
     total, parts = hierarchical_loss(out, targets, cfg, logvars)
@@ -73,7 +73,13 @@ def train_step(model, batch_in, targets, cfg, logvars, opt, *, step: int = 0, gr
     check_finite_loss(step, float(total.detach()), parts_f)     # fail fast, before backward corrupts grads
     opt.zero_grad()
     total.backward()
-    # always measure the grad norm (clip to it only when grad_clip is set; inf clip = measure-only)
+    # a finite loss can still have non-finite GRADIENTS (e.g. d/dx sqrt(x) at 0); reject them BEFORE
+    # clipping/stepping — otherwise the step corrupts the weights (audit #2). clip_grad_norm_ itself
+    # turns an inf grad into NaN, so this check must precede it.
+    if not all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()):
+        raise NonFiniteLossError(f"non-finite gradient at step {step} (loss was finite: {float(total):.3g}). "
+                                 f"Lower the learning rate or add gradient clipping (--grad-clip).")
+    # grads are now finite: measure the norm (inf clip = measure-only) or clip to `grad_clip`
     grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(),
                                                      grad_clip if grad_clip is not None else float("inf")))
     opt.step()
@@ -199,15 +205,25 @@ def _mixed_stream(dataconfig, progresses, heavy_shm, seed, short_boost=1, mutati
 
 
 def _multi_locus_stream(dataconfigs, progresses, heavy_shm, seed, short_boost=1, mutation_cap=None):
-    """Interleave each locus's :func:`_mixed_stream`, tagging every record with its chain index
-    (== dataconfig order == the ``AlignAIRConfig`` chain_type order) so the collate can build the
-    chain_type/locus supervision. Reads are drawn round-robin across loci for a balanced batch."""
+    """Interleave each locus's :func:`_mixed_stream`, tagging every record with its chain **class id**
+    (the index of its locus among the DISTINCT loci, == the ``AlignAIRConfig`` chain_type order) so the
+    collate builds valid chain_type/locus supervision even when two dataconfigs share a locus (e.g. two
+    IGH panels) — labelling by raw dataconfig position would emit an out-of-range class (audit #5).
+    Reads are drawn round-robin across dataconfigs for a balanced batch."""
+    from ..reference.reference_set import _locus_of
+    order: list = []
+    for dc in dataconfigs:
+        lc = _locus_of(dc.metadata.chain_type)
+        if lc not in order:
+            order.append(lc)
+    class_of = [order.index(_locus_of(dc.metadata.chain_type)) for dc in dataconfigs]
+
     def tagged(stream, ci):
         for rec in stream:
             rec["chain_type"] = ci
             yield rec
-    streams = [tagged(_mixed_stream(dc, progresses, heavy_shm, seed + 1013 * i, short_boost, mutation_cap), i)
-               for i, dc in enumerate(dataconfigs)]
+    streams = [tagged(_mixed_stream(dc, progresses, heavy_shm, seed + 1013 * i, short_boost, mutation_cap),
+                      class_of[i]) for i, dc in enumerate(dataconfigs)]
     yield from itertools.chain.from_iterable(zip(*streams))
 
 
@@ -348,6 +364,9 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
                     grp["lr"] = lr
             _restore_rng(ck.get("rng") or {})
             start = int(ck.get("step", 0))
+        if steps <= start:                          # nothing to do -> refuse rather than mis-save (audit #12)
+            raise ValueError(f"resume target steps={steps} is not beyond the checkpoint step {start}; "
+                             f"pass steps > {start} to continue training.")
         print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
     elif init_from:                                # warm-start: copy the shape-compatible backbone
         from .transfer import load_source_state_dict, summarize, transfer_compatible_weights
@@ -389,11 +408,13 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
             val_set.append(build_batch(vr, reference_set, cfg, device, augment_orientation=False))
     best_score = float("-inf")
 
-    stream = _build_stream(seed + start)
+    completed = start                              # the last step actually run (audit #12: a short/early
+    stream = _build_stream(seed + start)           # stream must not let the final save claim `steps`)
     for step in range(start + 1, steps + 1):
         records = list(itertools.islice(stream, batch_size))
         if len(records) < batch_size:
             break
+        completed = step
         batch_in, targets = build_batch(records, reference_set, cfg, device)
         total, parts, grad_norm = train_step(model, batch_in, targets, cfg, logvars, opt,
                                              step=step, grad_clip=grad_clip)
@@ -415,8 +436,8 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
                                 dataconfigs=_dcs, train_args={**_train_args, "val_score": vscore})
         if save_path and step % save_every == 0:
             save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args)
-    if save_path:
-        save_rotating(save_path, cfg, model, logvars, steps, opt, dataconfigs=_dcs, train_args=_train_args)
+    if save_path:                                  # save the ACTUAL completed step, not the requested one
+        save_rotating(save_path, cfg, model, logvars, completed, opt, dataconfigs=_dcs, train_args=_train_args)
     if xray is not None:
         xray.close()
     return model

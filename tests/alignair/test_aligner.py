@@ -34,7 +34,7 @@ def test_training_config_presets_and_immutability():
 
 
 def test_public_surface_snapshot():
-    for name in ("Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "train",
+    for name in ("Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training",
                  "resolve_device", "load_model", "predict_sequences", "train_model"):
         assert name in alignair.__all__ and hasattr(alignair, name)
     for m in ("from_pretrained", "from_model", "predict", "predict_iter", "loci", "default_locus"):
@@ -68,11 +68,11 @@ def test_aligner_predict_parity_with_functional_api():
 
 @pytest.mark.slow
 def test_train_api_end_to_end(tmp_path):
-    """TrainingConfig -> train -> TrainingRun.best_aligner -> predict, no private imports."""
-    from alignair import Aligner, TrainingConfig, train
+    """TrainingConfig -> run_training -> TrainingRun.best_aligner -> predict, no private imports."""
+    from alignair import Aligner, TrainingConfig, run_training
     cfg = TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="quick", steps=4, batch_size=4,
                                       val_every=2, grad_clip=1.0)
-    run = train(cfg, output_dir=str(tmp_path / "run"))
+    run = run_training(cfg, output_dir=str(tmp_path / "run"))
     assert os.path.exists(run.model_path)
     aligner = run.best_aligner(device="cpu")
     assert isinstance(aligner, Aligner)

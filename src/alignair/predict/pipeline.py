@@ -28,6 +28,20 @@ def _assert_finite(allele: dict, stage: str) -> None:
             raise ValueError(f"non-finite allele probabilities after {stage} (gene {g!r})")
 
 
+def _validate_predictions(preds, stage: str = "model forward") -> None:
+    """Fail loudly if ANY raw model output is non-finite (audit #3): a damaged checkpoint emitting NaN
+    would otherwise be silently turned into a plausible call (argmax fallback) and clipped coordinates."""
+    _assert_finite(preds.allele, stage)
+    for name, d in (("start", preds.start), ("end", preds.end)):
+        for g, a in d.items():
+            if not np.all(np.isfinite(a)):
+                raise ValueError(f"non-finite {name} coordinates after {stage} (gene {g!r})")
+    for name in ("mutation_rate", "indel_count"):
+        a = getattr(preds, name)
+        if a is not None and not np.all(np.isfinite(a)):
+            raise ValueError(f"non-finite {name} after {stage}")
+
+
 def _locus_allowed(chain_type, reference, genes, genotype_allowed=None) -> dict:
     """Per-read allele masks restricting each read to its predicted locus (P0-6). Returns
     ``{gene: (N, C) bool}``: row ``i`` is the locus mask for the locus at ``chain_type[i]``. When a
@@ -90,6 +104,7 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     # CONSISTENTLY so coords/AIRR refer to the same string (never a silent truncation).
     sequences, was_cropped = apply_input_policy(sequences, cfg.max_seq_length)
     preds = clean(run_model(model, sequences, cfg, device), genes)
+    _validate_predictions(preds)                   # raw outputs must be finite before any use (audit #3)
     allowed = None
     if cfg.allele_temperatures:                    # post-hoc allele-confidence calibration
         from .calibrate import apply_temperature

@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 from ..model_file import read_metadata
-from .cache import _version_key
+from .cache import _lock, _version_key
 from .validate import validate_registry
 
 
@@ -25,7 +25,15 @@ def publish_local(artifact_path: str, model_id: str, version: str, registry_dir:
     rel = f"{model_id}/{version}.alignair"
     (registry_dir / model_id).mkdir(parents=True, exist_ok=True)
     final = registry_dir / rel
-    staged = final.with_name(final.name + ".staging")
+    # per-registry lock: serialize concurrent publishers so they can't clobber each other's staged/tmp
+    # files or lose each other's registry updates (audit #9). Process-unique staging paths as well.
+    with _lock(registry_dir / "registry.json.lock"):
+        return _publish_locked(data, md, model_id, version, registry_dir, rel, final,
+                               description, entry_extra)
+
+
+def _publish_locked(data, md, model_id, version, registry_dir, rel, final, description, entry_extra):
+    staged = final.with_name(f"{final.name}.staging.{os.getpid()}")
     staged.write_bytes(data)                        # stage; the live artifact at `final` is untouched
     try:
         ref = md.get("reference", {})
@@ -58,7 +66,7 @@ def publish_local(artifact_path: str, model_id: str, version: str, registry_dir:
 
         os.replace(staged, final)                   # commit artifact (atomic)
         staged = None
-        tmp_reg = reg_path.with_name(reg_path.name + ".tmp")
+        tmp_reg = reg_path.with_name(f"{reg_path.name}.tmp.{os.getpid()}")
         tmp_reg.write_text(json.dumps(reg, indent=2, sort_keys=True))
         os.replace(tmp_reg, reg_path)               # commit catalog (atomic)
         return []

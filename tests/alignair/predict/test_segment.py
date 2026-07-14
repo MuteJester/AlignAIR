@@ -86,3 +86,13 @@ def test_low_quality_flag_when_v_collapses():
     end = {"v": np.array([9.0]), "j": np.array([10.0])}
     segs = correct_segments(start, end, np.array([9]), max_len=576)
     assert segs.low_quality is not None and bool(segs.low_quality[0]) is True
+
+
+def test_low_quality_flag_when_j_collapses():
+    """A collapsed mandatory J (not just V) is flagged low-quality too (audit #7)."""
+    # V fills [0,5]; J predicted inside V -> projected forward to [5,5] (zero length)
+    start = {"v": np.array([0.0]), "d": np.array([2.0]), "j": np.array([2.0])}
+    end = {"v": np.array([5.0]), "d": np.array([4.0]), "j": np.array([4.0])}
+    segs = correct_segments(start, end, np.array([5]), max_len=576)
+    assert segs.end["j"][0] == segs.start["j"][0]                 # J collapsed
+    assert bool(segs.low_quality[0]) is True

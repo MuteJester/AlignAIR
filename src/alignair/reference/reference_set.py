@@ -27,32 +27,49 @@ def _locus_from_name(name: str):
     return m.group(1) if m else None
 
 
+def _loci_from_membership(per_index: Dict[str, list], order: List[str],
+                          chain_of: Dict[str, str] | None = None) -> List["LocusInfo"]:
+    """Build the per-locus schema from per-gene per-index locus membership. Each locus must occupy a
+    single **contiguous** block within every gene head — same-locus dataconfigs merged adjacently are
+    fine, but an *interleaved / split* locus (another locus's alleles inside its range) is refused
+    rather than masked by a silently-widened min/max range (audit #4/#5). ``order`` is the class-id
+    order; ``chain_of`` maps a locus to its GenAIRR chain-type value (defaults to the locus code)."""
+    loci = []
+    for lc in order:
+        ranges: Dict[str, tuple] = {}
+        for G, loci_of in per_index.items():
+            idx = [i for i, x in enumerate(loci_of) if x == lc]
+            if not idx:
+                continue
+            s, e = idx[0], idx[-1] + 1
+            if idx != list(range(s, e)):                 # not a single contiguous block -> fail closed
+                raise ValueError(
+                    f"locus {lc!r} alleles are not contiguous in the {G} head (interleaved / split "
+                    f"loci); order the dataconfigs so each locus occupies one block, and merge "
+                    f"same-locus references before building.")
+            ranges[G] = (s, e)
+        loci.append(LocusInfo(locus=lc, chain_type=(chain_of or {}).get(lc, lc),
+                              has_d="D" in ranges, ranges=ranges))
+    return loci
+
+
 def _infer_loci_from_names(genes: Dict[str, "GeneReference"]) -> List["LocusInfo"]:
     """Reconstruct the per-locus schema from allele names alone — for references serialized before the
     schema was stored. Order follows first appearance in the V head (== the union/chain_type-class-id
-    order, since the union appends per-dataconfig), so it aligns with a trained chain_type head."""
+    order, since the union appends per-dataconfig), so it aligns with a trained chain_type head. Fails
+    closed on interleaved / nonstandard-named loci (see :func:`_loci_from_membership`)."""
     order: List[str] = []
-    spans: Dict[tuple, list] = {}
+    per_index: Dict[str, list] = {}                      # GENE -> [locus_or_None per allele index]
     for G in ("V", "J", "D"):
         ref = genes.get(G)
         if ref is None:
             continue
-        for i, name in enumerate(ref.names):
-            lc = _locus_from_name(name)
-            if lc is None:
-                continue
-            if lc not in order:
+        loci_of = [_locus_from_name(n) for n in ref.names]
+        per_index[G] = loci_of
+        for lc in loci_of:                               # V first -> chain_type-class-id order
+            if lc is not None and lc not in order:
                 order.append(lc)
-            key = (lc, G)
-            if key in spans:
-                spans[key] = [min(spans[key][0], i), max(spans[key][1], i)]
-            else:
-                spans[key] = [i, i]
-    loci = []
-    for lc in order:
-        ranges = {G: (spans[(lc, G)][0], spans[(lc, G)][1] + 1) for G in ("V", "D", "J") if (lc, G) in spans}
-        loci.append(LocusInfo(locus=lc, chain_type=lc, has_d=(lc, "D") in spans, ranges=ranges))
-    return loci
+    return _loci_from_membership(per_index, order)
 
 
 @dataclass
@@ -95,15 +112,19 @@ class ReferenceSet:
         return tuple(l.locus for l in self.loci)
 
     def locus_mask(self, locus: str, gene: str) -> np.ndarray:
-        """Boolean mask over the ``gene`` head selecting exactly the alleles that belong to ``locus``
-        (all-True when the locus schema is absent, so single-chain models are unaffected)."""
+        """Boolean mask over the ``gene`` head selecting exactly the alleles that belong to ``locus``.
+
+        No schema (single-chain) -> all-True (unconstrained). With a schema, a locus that *has* no
+        alleles for this gene (e.g. D on a light chain) -> **all-False** (an explicit no-call), NOT
+        all-True — otherwise a light-chain read could be handed every heavy-chain D allele (audit #1)."""
         n = len(self.gene(gene))
-        info = next((l for l in self.loci if l.locus == locus), None)
-        if info is None or gene.upper() not in info.ranges:
+        if not self.loci:                                # no locus schema -> unconstrained
             return np.ones(n, dtype=bool)
-        s, e = info.ranges[gene.upper()]
+        info = next((l for l in self.loci if l.locus == locus), None)
         m = np.zeros(n, dtype=bool)
-        m[s:e] = True
+        if info is not None and gene.upper() in info.ranges:
+            s, e = info.ranges[gene.upper()]
+            m[s:e] = True                                # else: known schema, locus lacks this gene -> no-call
         return m
 
     @classmethod
@@ -112,29 +133,28 @@ class ReferenceSet:
         wanted = ["v", "j"] + (["d"] if has_d else [])
         genes: Dict[str, GeneReference] = {}
         locus_order: List[str] = []                       # distinct loci, in chain_type-class-id order
-        locus_hasd: Dict[str, bool] = {}
         locus_chain: Dict[str, str] = {}
-        spans: Dict[tuple, tuple] = {}                    # (locus, GENE) -> [start, end) in the union head
+        per_index: Dict[str, list] = {}                   # GENE -> [locus per allele index]
         for g in wanted:
             names: List[str] = []
             sequences: List[str] = []
             index: Dict[str, int] = {}
             anchors: Dict[str, int] = {}
             gapped: Dict[str, str] = {}
+            membership: list = []
             for dc in dataconfigs:
                 locus = _locus_of(dc.metadata.chain_type)
                 if locus not in locus_order:
                     locus_order.append(locus)
-                    locus_hasd[locus] = bool(dc.metadata.has_d)
                     locus_chain[locus] = str(getattr(dc.metadata.chain_type, "value", dc.metadata.chain_type))
                 if g == "d" and not dc.metadata.has_d:
                     continue
-                start = len(names)
                 for allele in dc.allele_list(g):
                     if allele.name in index:
                         continue
                     index[allele.name] = len(names)
                     names.append(allele.name)
+                    membership.append(locus)              # which locus first contributed this allele
                     sequences.append(allele.ungapped_seq.upper())
                     # conserved junction anchor (Cys-104 for V, Trp/Phe-118 for J); ungapped
                     # germline position. Used to derive the AIRR junction; absent on D.
@@ -144,15 +164,12 @@ class ReferenceSet:
                     gap = getattr(allele, "gapped_seq", None)
                     if gap:
                         gapped[allele.name] = gap.upper()
-                if len(names) > start:                    # this locus contributed a contiguous block
-                    key = (locus, g.upper())
-                    prev = spans.get(key)
-                    spans[key] = (min(prev[0], start), max(prev[1], len(names))) if prev else (start, len(names))
             genes[g.upper()] = GeneReference(names, sequences, index,
                                              anchors=anchors or None, gapped=gapped or None)
-        loci = [LocusInfo(locus=lc, chain_type=locus_chain[lc], has_d=locus_hasd[lc],
-                          ranges={G: spans[(lc, G)] for G in ("V", "D", "J") if (lc, G) in spans})
-                for lc in locus_order]
+            per_index[g.upper()] = membership
+        # contiguity validation lives in the shared builder: same-locus dataconfigs merge fine (one
+        # adjacent block), an interleaved / split locus fails closed (audit #4/#5).
+        loci = _loci_from_membership(per_index, locus_order, locus_chain)
         return cls(genes, has_d, loci=loci)
 
     def to_serializable(self) -> dict:

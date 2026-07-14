@@ -51,6 +51,23 @@ def test_nonfinite_probabilities_are_caught():
         _assert_finite({"j": np.array([[np.inf, 0.1]])}, "fuzz")
 
 
+def test_raw_predictions_validated_before_use():
+    """A damaged checkpoint emitting NaN outputs is rejected right after clean() (audit #3), before it
+    can become a plausible argmax call or a clipped-NaN coordinate."""
+    from alignair.predict.pipeline import _validate_predictions
+    from alignair.predict.state import Predictions
+    bad_probs = Predictions(allele={"v": np.array([[np.nan, 0.2]])}, start={"v": np.array([0.0])},
+                            end={"v": np.array([1.0])}, mutation_rate=np.zeros(1),
+                            indel_count=np.zeros(1), productive=np.ones(1))
+    with pytest.raises(ValueError, match="non-finite allele"):
+        _validate_predictions(bad_probs)
+    bad_coord = Predictions(allele={"v": np.array([[0.9, 0.1]])}, start={"v": np.array([np.inf])},
+                            end={"v": np.array([1.0])}, mutation_rate=np.zeros(1),
+                            indel_count=np.zeros(1), productive=np.ones(1))
+    with pytest.raises(ValueError, match="non-finite start"):
+        _validate_predictions(bad_coord)
+
+
 def test_oversized_sequence_is_cropped_not_truncated_silently():
     from alignair.predict.pipeline import apply_input_policy
     long_read = "ACGT" * 500                                # 2000 nt, window 576

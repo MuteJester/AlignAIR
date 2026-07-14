@@ -70,16 +70,18 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     seq = rec["sequence"]
     out = dict(rec)                    # preserve the light record (calls/coords/cigar/orientation/likelihoods)
     out.setdefault("locus", "IGH")
-    # keep the model's neural call as `productive_prediction`; the AIRR `productive` field is a DERIVED
-    # fact (in-frame + no stop codon) set below once the alignment math runs. Until then it falls back
-    # to the prediction (records that skip assembly cannot derive it). (P0-14)
-    out["productive_prediction"] = bool(rec.get("productive", True))
-    out["productive"] = out["productive_prediction"]
+    # the model's neural call is kept as `productive_prediction`; AIRR `productive` is a DERIVED fact
+    # (in-frame + no stop codon) set below once the alignment math runs. If it cannot be derived (this
+    # record skipped assembly), `productive` stays **blank/unknown** rather than presenting the neural
+    # guess as a definitive fact (audit #6).
+    neural_productive = bool(rec.get("productive", True))
+    out["productive_prediction"] = neural_productive
+    out["productive"] = None
     out["ar_indels"] = rec.get("indel_count")
     cigar_junction = _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors, force=is_tcr)
-    # skip the heavy alignment math for clearly-garbage reads (non-productive with multiple indels);
-    # the indel-robust junction above is already attached for them.
-    if (not out["productive"]) and (rec.get("indel_count") or 0) > 1:
+    # skip the heavy alignment math for clearly-garbage reads (predicted non-productive with multiple
+    # indels); the indel-robust junction above is already attached, and AIRR `productive` stays blank.
+    if (not neural_productive) and (rec.get("indel_count") or 0) > 1:
         return out
     v_call = rec.get("v_call", "")
     if not v_call or rec.get("v_sequence_start") is None or rec.get("j_sequence_start") is None:

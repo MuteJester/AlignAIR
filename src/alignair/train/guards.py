@@ -35,8 +35,9 @@ def validate_training_request(*, steps, batch_size, lr, max_seq_length, referenc
         problems.append(f"heavy_shm must be in [0, 1] (got {heavy_shm!r})")
     if not (isinstance(short_boost, int) and short_boost >= 1):
         problems.append(f"short_boost must be an int >= 1 (got {short_boost!r})")
-    if grad_clip is not None and not (isinstance(grad_clip, (int, float)) and grad_clip > 0):
-        problems.append(f"grad_clip must be a positive number or None (got {grad_clip!r})")
+    if grad_clip is not None and not (isinstance(grad_clip, (int, float)) and grad_clip > 0
+                                      and math.isfinite(grad_clip)):
+        problems.append(f"grad_clip must be a positive finite number or None (got {grad_clip!r})")
     # reference must be non-empty for the genes the model will train (V and J are always required)
     try:
         n_v = len(reference.gene("V"))
