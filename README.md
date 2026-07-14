@@ -57,14 +57,14 @@ alignair demo
 Train a model for your reference, then align with it:
 
 ```bash
-alignair train --reference HUMAN_IGH_OGRDB -o my_model --preset desktop   # ~minutes on a GPU
-alignair predict --input reads.fasta --out out.tsv --model my_model/bundle
+alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop   # ~minutes on a GPU
+alignair predict --input reads.fasta --out out.tsv --model my_model/bundle/model.alignair
 
-# align against a donor genotype (fewer alleles and/or NOVEL alleles) — YAML or FASTA
-alignair predict --input reads.fasta --out out.tsv --model my_model/bundle --genotype donor.yaml
+# restrict calls to a donor's genotype (a subset of the model's reference) — YAML or FASTA
+alignair predict --input reads.fasta --out out.tsv --model my_model/bundle/model.alignair --genotype donor.yaml
 ```
 
-`--genotype` simply *becomes* the reference for the run — no retraining, no extra flags. See
+`--genotype` constrains the run to a subset of the model's reference — no retraining. See
 [`examples/`](examples/) for runnable data.
 
 ## Reference: donor subsets now, new references by training
@@ -80,21 +80,18 @@ model file). What you can do with it:
 
 ```bash
 # train for any of GenAIRR's ~90 built-in references (human, mouse, rat, rabbit, dog, …)
-alignair train --reference MOUSE_IGH_IMGT -o runs/mouse_igh --preset desktop
+alignair train --dataconfig MOUSE_IGH_IMGT --out runs/mouse_igh --preset desktop
 
-# or train from your OWN germline FASTAs (custom/novel reference or species)
+# or train from your OWN germline FASTAs (custom reference or species)
 alignair train --v-fasta v.fasta --d-fasta d.fasta --j-fasta j.fasta \
-  --chain-type BCR_HEAVY -o runs/my_ref --preset desktop
-
-# fine-tune from an existing model instead of training from scratch
-alignair train --reference HUMAN_IGK_OGRDB --base-model human_igh_bundle/ -o runs/igk
+  --chain-type BCR_HEAVY --out runs/my_ref --preset desktop
 ```
 
-This writes a self-contained `runs/.../bundle/` (custom references are **embedded** in the bundle),
-plus `model_card.md` and `validation_report.json`. Presets: `smoke` (quick check), `desktop`,
-`standard` (paper‑grade). Training fits the equivalence‑set calibration automatically and
-checkpoints each interval — resume an interrupted run with `--resume` (re‑run the same command and
-add the flag). Then just `alignair predict … --model runs/.../bundle`.
+This writes checkpoints to `runs/.../` plus a self-contained, pickle-free `runs/.../bundle/model.alignair`
+(the reference is **embedded**), a `model_card.md`, a `reference_manifest.json`, and a
+`validation_report.json`. Presets: `quick` (smoke), `desktop`, `full` (paper‑grade). Preview the
+reference/config/model size without training with `--plan`; resume an interrupted run with
+`--resume runs/.../model.alignair`. Then just `alignair predict … --model runs/.../bundle/model.alignair`.
 
 ## Output
 

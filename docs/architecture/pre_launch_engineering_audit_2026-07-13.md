@@ -294,8 +294,14 @@ and writes a **best checkpoint** (`<out>.best.alignair`) by mean V/D/J top-1. Le
 requires `--resume-trust-pickle` (arbitrary-code pickle gate). CLI help fixed to `.alignair`. Tests:
 `test_guards.py` + `test_trainer_robustness.py` (incl. slow end-to-end val/best/resume).
 
-*Remaining:* OOM auto-recovery; a frozen scientific acceptance suite as a release gate; resource-estimate
-presets; per-model published model-card completeness (calibration/validation/provenance) — ties P0-16.
+**Training CLI (2026-07-14, AIRR-review #6):** `alignair train` now takes a built-in `--dataconfig` OR
+custom `--v-fasta/--d-fasta/--j-fasta --chain-type` (a GenAIRR DataConfig is built via
+`cartridge_builder`); `--preset quick|desktop|full`; `--plan` validates the reference/config + prints
+model size WITHOUT training; and it auto-exports a **pickle-free** distributable bundle
+(`<out>/bundle/model.alignair` + `model_card.md` + `reference_manifest.json` + `validation_report.json`).
+`train/build.py` (`build_dataconfigs`/`training_plan`/`export_bundle`); tests in `test_build.py` (incl.
+slow custom-FASTA train→export→reload). *Remaining:* OOM auto-recovery; a frozen scientific acceptance
+suite as a release gate; `--base-model` fine-tuning (needs compatibility rules).
 
 ### P0-11 — Ship a real Hugging Face model experience — 🟡 MOSTLY DONE (2026-07-13)
 

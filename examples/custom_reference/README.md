@@ -9,13 +9,13 @@ train AlignAIR from germline FASTA files. [`v.fasta`](v.fasta) / [`j.fasta`](j.f
 alignair train --v-fasta examples/custom_reference/v.fasta \
     --j-fasta examples/custom_reference/j.fasta \
     --d-fasta examples/custom_reference/d.fasta \
-    --chain-type BCR_HEAVY -o my_model --preset desktop --plan
+    --chain-type BCR_HEAVY --out my_model --preset desktop --plan
 
 # train (drop --plan); add --allow-curatable if alleles have no detected anchor
 alignair train --v-fasta examples/custom_reference/v.fasta \
     --j-fasta examples/custom_reference/j.fasta \
     --d-fasta examples/custom_reference/d.fasta \
-    --chain-type BCR_HEAVY -o my_model --preset desktop --allow-curatable
+    --chain-type BCR_HEAVY --out my_model --preset desktop --allow-curatable
 ```
 
 `--chain-type` must be one of the GenAIRR chain types (`alignair reference list` shows them:
