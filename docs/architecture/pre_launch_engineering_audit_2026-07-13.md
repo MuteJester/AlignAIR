@@ -209,9 +209,12 @@ with mismatched coordinates; cropped rows are flagged `length_cropped`. Content 
 `validate_sequence(seq, max_len) -> (cleaned, reason)`. Strict FASTQ parser with line-numbered errors
 (`@`/`+` structure, seq==qual length, truncation). Duplicate IDs disambiguated deterministically with
 preserved input order. AIRR output written **atomically** (temp + rename; discarded on error) — tests in
-`test_sequence_reader.py` + `test_airr_writer.py`. *Remaining:* make chunked/streaming prediction the CLI
-default for bounded memory on 1M-read inputs (streaming reader/writer already exist); rejected/cropped
-counts in run metadata (partial — assembly counts done, crop counts TODO).
+`test_sequence_reader.py` + `test_airr_writer.py`. **Streaming (2026-07-14): the predict CLI now streams
+reader-chunk → predict → AIRR assembly → metadata join → writer → counters in bounded memory
+(`_stream_predict`, `--chunk-size` default 20000); order + cross-chunk dup-id preserved, rejects streamed
+incrementally + atomically, and full run.json accounting (input/accepted/rejected/cropped/complete/
+partial/failed/written). Order/chunk + bounded-memory tests in `test_streaming_predict.py`.** *Remaining:*
+a live 1M-read CI memory test (the unit test proves chunked processing + bounded peak locally).
 
 ### P0-9 — Establish a stable, registry-aware Python API — 🟡 MOSTLY DONE (2026-07-13)
 
