@@ -3,7 +3,7 @@
     python scripts/publish_model.py model.alignair --id human-igh --version 2.1.0 --registry-dir ./registry
 
 Copies the artifact, updates registry.json, and runs the validator (aborts on any problem). Uploading
-the resulting directory to HuggingFace (`alignair/alignair-models`) is a separate `huggingface-cli
+the resulting directory to HuggingFace (`AlignAIR/AlignAIR-pretrained`) is a separate `huggingface-cli
 upload` / git-push step (Phase 4). The published artifact MUST be pickle-free — save it with
 `include_trusted_pickle=False` (or `alignair convert … --trust-pickle`).
 """

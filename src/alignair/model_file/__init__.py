@@ -18,7 +18,7 @@ from ..core.config import AlignAIRConfig
 from ..reference.reference_set import ReferenceSet
 from . import container, serialize
 
-__all__ = ["save_model", "read_metadata", "load_model", "load_training_state",
+__all__ = ["save_model", "read_metadata", "update_card", "load_model", "load_training_state",
            "read_dataconfig", "read_reference", "LoadedModel", "TrainingState", "container"]
 
 _DEFAULT_CODECS = {"config": "zlib", "weights": "none", "logvars": "none",
@@ -157,6 +157,34 @@ def read_metadata(path) -> dict:
     md = container.read_header(path)
     md.pop("_sections_base", None)
     return md
+
+
+# header fields that are structural / integrity-bearing and must never be edited by update_card:
+# changing them would either corrupt the container or desync the card from the embedded model/reference.
+_UNEDITABLE_CARD_KEYS = {"format_version", "model_format_version", "model_class", "config_schema_version",
+                         "sections", "_formats", "_sections_base", "model", "reference"}
+
+
+def update_card(src_path, dst_path, updates: dict) -> dict:
+    """Maintainer utility: rewrite an .alignair with patched header/card fields (e.g. set
+    ``model_id``/``model_version``/``locus``/``species`` on an inference artifact before publishing),
+    preserving **every section byte-for-byte** — the payloads (weights, config, reference, reference_json)
+    are re-emitted unchanged, so the loaded model and all reference/integrity hashes are identical. Only
+    descriptive header fields may change; structural/integrity keys (:data:`_UNEDITABLE_CARD_KEYS`) are
+    rejected. Returns the new metadata. This edits metadata only — it cannot publish or upload."""
+    header = container.read_header(src_path)
+    sections, formats = {}, {}
+    for name, s in header.get("sections", {}).items():
+        sections[name] = (container.read_section(src_path, name), s["codec"])   # verifies checksums
+        formats[name] = s.get("format", "bytes")
+    new_header = {k: v for k, v in header.items() if not k.startswith("_") and k != "sections"}
+    bad = _UNEDITABLE_CARD_KEYS & set(updates)
+    if bad:
+        raise ValueError(f"update_card cannot change structural/integrity fields: {sorted(bad)}")
+    new_header.update(updates)
+    new_header["_formats"] = formats
+    container.write_container(dst_path, new_header, sections)
+    return read_metadata(dst_path)
 
 
 @dataclass

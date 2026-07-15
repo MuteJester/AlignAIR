@@ -50,22 +50,29 @@ model, aligns simulated reads, validates the AIRR output, and runs the donor-gen
 alignair demo
 ```
 
-> Pretrained models are not published yet. Today you train your own (below); `alignair model list`
-> shows the catalog and its status. `--model` accepts a local bundle / `.pt`, and (once published)
-> a catalog id or `org/name` Hugging Face repo id.
+Or use a **pretrained model** — downloaded automatically from the public
+[model hub](https://huggingface.co/AlignAIR/AlignAIR-pretrained) on first use, no login:
 
-Train a model for your reference, then align with it:
+```bash
+alignair models list                          # human IGH, IGK+IGL, TRB (fetched live from the hub)
+alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
+
+# restrict calls to a donor's genotype (a subset of the model's reference) — YAML or FASTA
+alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human --genotype donor.yaml
+```
+
+`--model <id>` downloads + hash-verifies + caches the model on first use (pin a version with
+`--model <id>@<version>`). `--genotype` constrains the run to a subset of the model's reference — no
+retraining.
+
+Prefer your own reference or species? Train a model, then align with it:
 
 ```bash
 alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop   # ~minutes on a GPU
 alignair predict --input reads.fasta --out out.tsv --model my_model/bundle/model.alignair
-
-# restrict calls to a donor's genotype (a subset of the model's reference) — YAML or FASTA
-alignair predict --input reads.fasta --out out.tsv --model my_model/bundle/model.alignair --genotype donor.yaml
 ```
 
-`--genotype` constrains the run to a subset of the model's reference — no retraining. See
-[`examples/`](examples/) for runnable data.
+See [`examples/`](examples/) for runnable data.
 
 ## Reference: donor subsets now, new references by training
 

@@ -37,18 +37,20 @@ alignair doctor      # environment check
 alignair demo        # tiny train -> predict -> validate AIRR -> donor genotype
 ```
 
-To run on these example reads with your own model (pretrained bundles aren't published yet — train
-one with `alignair train`):
+To run on these example reads with a pretrained model (downloaded on first use, no login), or with
+your own trained model:
 
 ```bash
-alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop
+# pretrained (human IGH / IGK+IGL / TRB — see `alignair models list`)
+alignair predict --input examples/reads.fasta --out out.tsv --model alignair-igh-human
 
-# align against the model's default (full) reference
+# or train your own, then align against the model's default (full) reference
+alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop
 alignair predict --input examples/reads.fasta --out out.tsv --model my_model/bundle/model.alignair
 
 # constrain to a donor genotype (a subset of the model's reference)
 alignair predict --input examples/reads.fasta --out out_donor.tsv \
-  --model my_model/bundle/model.alignair --genotype examples/donor_genotype.yaml
+  --model alignair-igh-human --genotype examples/donor_genotype.yaml
 ```
 
 The output is an AIRR rearrangement TSV (V/D/J calls + coordinates + junction + a per-gene

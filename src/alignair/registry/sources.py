@@ -18,7 +18,7 @@ import json
 import os
 from urllib.parse import urljoin
 
-DEFAULT_REGISTRY = "hf://alignair/alignair-models"
+DEFAULT_REGISTRY = "hf://AlignAIR/AlignAIR-pretrained"
 _HF = "https://huggingface.co"
 
 

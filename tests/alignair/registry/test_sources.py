@@ -22,8 +22,8 @@ def test_resolve_precedence_cli_env_config_default(tmp_path, monkeypatch):
 
 
 def test_artifact_url_per_scheme():
-    assert sources.artifact_url("hf://alignair/alignair-models", "human-igh/2.1.0.alignair") == \
-        "https://huggingface.co/alignair/alignair-models/resolve/main/human-igh/2.1.0.alignair"
+    assert sources.artifact_url("hf://AlignAIR/AlignAIR-pretrained", "alignair-igh-human/1.0.0.alignair") == \
+        "https://huggingface.co/AlignAIR/AlignAIR-pretrained/resolve/main/alignair-igh-human/1.0.0.alignair"
     assert sources.artifact_url("https://host/x/registry.json", "human-igh/1.0.0.alignair") == \
         "https://host/x/human-igh/1.0.0.alignair"                       # registry.json stripped -> base
     assert sources.artifact_url("file:///srv/reg", "registry.json") == "file:///srv/reg/registry.json"

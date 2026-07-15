@@ -32,9 +32,14 @@ output, and runs the donor-genotype path — proving the full pipeline with no m
 `alignair predict` needs a model — a `.alignair` model file (from `alignair train`, inside a
 `bundle/` directory), a catalog id, or a Hugging Face repo id. Options:
 
-- **Pretrained models** are not published yet. `alignair models list` shows the catalog and its
-  status; `alignair models get <id>` / `--model <id>` will work once a model is published.
-- **Train your own** for any reference or species (the path to use today):
+- **Use a pretrained model** (no login, downloaded on first use):
+  ```bash
+  alignair models list                      # human IGH, IGK+IGL, TRB (fetched live from the hub)
+  alignair predict --input examples/reads.fasta --out out.tsv --model alignair-igh-human
+  ```
+  `--model <id>` resolves from the public [model hub](https://huggingface.co/AlignAIR/AlignAIR-pretrained),
+  hash-verifies, and caches it; pin a version with `--model <id>@<version>`.
+- **Train your own** for any reference or species:
   ```bash
   # any of GenAIRR's ~90 built-in references
   alignair train --dataconfig HUMAN_IGH_OGRDB --out runs/my_igh --preset desktop
