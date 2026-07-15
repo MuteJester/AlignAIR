@@ -1,11 +1,26 @@
 name: build-wheels
 
 # Build binary wheels (with the compiled germline-CIGAR Cython kernel) for Linux/macOS/Windows.
-# Triggered manually or on a tagged release; upload/publish is left to the release process.
+# Runs the full cross-platform matrix on manual dispatch, on a tagged release, and — so the matrix is a
+# continuously-green gate — whenever the build itself changes (build config, the Cython source, or this
+# workflow) on a PR or on main. Code-only PRs are covered by the lighter cross-platform job in ci.yml.
 on:
   workflow_dispatch:
   release:
     types: [published]
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "setup.py"
+      - "src/alignair/predict/_derive_cy.pyx"
+      - ".github/workflows/wheels.yml"
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "setup.py"
+      - "src/alignair/predict/_derive_cy.pyx"
+      - ".github/workflows/wheels.yml"
 
 jobs:
   wheels:
