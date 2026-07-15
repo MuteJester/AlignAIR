@@ -78,13 +78,13 @@ server = [
 ]
 docs = [
     "mkdocs>=1.5",
-    "mkdocs-jupyter>=0.24",
+    "mkdocs-material>=9.5",
 ]
 dev = [
     "AlignAIR[cli,train,viz,server]",
     "pytest>=7.0",
     "mkdocs>=1.5",
-    "mkdocs-jupyter>=0.24",
+    "mkdocs-material>=9.5",
     "build>=1.0",
     "twine>=5.0",
     "cibuildwheel>=2.21",  # build binary wheels (with the compiled germline-CIGAR kernel) locally

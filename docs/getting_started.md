@@ -177,5 +177,7 @@ alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop --pl
 
 ## Next steps
 
-- [DNAlignAIR design & benchmarks](dnalignair.md) — architecture and head‑to‑head results.
-- [Adoption roadmap](architecture/adoption_roadmap.md) — model zoo, `alignair train`, packaging.
+- [Pretrained models](models.md) — the catalog and how `--model <id>` works.
+- [Command-line reference](cli.md) — every command and its options.
+- [Design & internals](dnalignair.md) — how the model works.
+- [Benchmarks](benchmarks.md) — head-to-head vs IgBLAST.

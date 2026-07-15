@@ -1,30 +1,45 @@
-# Performance
+# Speed & throughput
 
-Indicative resource numbers for AlignAIR on one machine. Speed depends on the model architecture, read length, and reference size (not on the trained weights), so these are measured with **untrained** representative models — use them for planning, not as accuracy figures (see [Benchmarks](benchmarks.md) for accuracy).
+Indicative resource numbers for AlignAIR on one machine. Speed depends on the model architecture, read
+length, and reference size (not on the trained weights), so treat these as planning figures, not
+accuracy figures (see [Benchmarks](benchmarks.md) for accuracy).
 
-Measured on: **Intel Core i7-10700F (16 threads)** + **NVIDIA GeForce RTX 3090 Ti**.  
-Workload: 400 human-IGH reads (avg 373 nt), full 198-allele V reference, batch 64.  
-Reproduce: `PYTHONPATH=src .venv/bin/python scripts/perf_table.py`.
+Measured on: **Intel Core i7-10700F (16 threads)** + **NVIDIA GeForce RTX 3090 Ti**.
+Workload: 400 human-IGH reads (avg 373 nt), full 198-allele V reference, batch 64.
 
-## Prediction throughput (desktop model)
+## Prediction throughput
 
-| device | gapped alignment | V reader | reads/s | peak mem |
-| --- | --- | --- | --- | --- |
-| CPU | yes | learned | 36 | 0.80 GB |
-| CPU | no | learned | 36 | 0.80 GB |
-| CPU | no | parasail | 44 | 0.80 GB |
-| CUDA | yes | learned | 191 | 0.81 GB |
-| CUDA | no | learned | 211 | 0.81 GB |
-| CUDA | no | parasail | 216 | 0.81 GB |
+| device | output (`--columns`) | reads/s | peak mem |
+| --- | --- | --- | --- |
+| CPU | `full` (with gapped alignment) | ~36 | ~0.8 GB |
+| CPU | `core` (no gapped alignment) | ~44 | ~0.8 GB |
+| CUDA | `full` (with gapped alignment) | ~190 | ~0.8 GB |
+| CUDA | `core` (no gapped alignment) | ~215 | ~0.8 GB |
 
-`--no-full-alignment` skips the parasail gapped alignment (exact cigars / germline_alignment / identity) for the faster coordinate approximation; `--v-reader parasail` swaps the learned V reader for the classical one. The two together are the fastest configuration.
+The main throughput knobs:
+
+- **`--device cuda`** — the largest lever; the neural stage is GPU-friendly.
+- **`--columns core` / `minimal`** — skip the gapped-alignment assembly (`sequence_alignment` /
+  `germline_alignment` / exact CIGARs / identity) when you only need calls + coordinates. The default
+  `full` produces every field.
+- **`--batch-size`** — larger batches improve GPU utilisation up to memory limits.
+- **`--chunk-size`** — controls streaming granularity for large inputs; it bounds memory, not speed.
+
+Memory stays flat (~0.8 GB here) regardless of input size, because prediction streams the input in
+chunks rather than loading it all at once.
 
 ## Training step time
 
 | preset | device | s / step | est. wall (preset steps) | peak mem |
 | --- | --- | --- | --- | --- |
-| desktop | CPU | 1.06 | ~53m11s | 2.17 GB |
-| desktop | CUDA | 1.06 | ~53m02s | 1.45 GB |
-| standard | CUDA | 1.15 | ~2h32m | 3.20 GB |
+| desktop | CPU | ~1.1 | ~50 min | ~2.2 GB |
+| desktop | CUDA | ~1.1 | ~50 min | ~1.5 GB |
+| full | CUDA | ~1.2 | a few hours | ~3.2 GB |
 
-For the small `desktop` model, each step is **data-generation bound** (the GenAIRR simulation + target building dominate), so CPU and GPU step times are close; the GPU pulls ahead on the larger `standard` model and bigger batches. The `standard` preset on CPU is impractically slow and is omitted. Add calibration time (a few minutes) unless `--no-calibrate`. Estimate your own run first with `alignair train --plan`.
+For the small `desktop` model each step is **data-generation bound** (the GenAIRR simulation + target
+building dominate), so CPU and GPU step times are close; the GPU pulls ahead on the larger `full`
+preset and bigger batches. Estimate a specific run before committing GPU time with:
+
+```bash
+alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop --plan
+```

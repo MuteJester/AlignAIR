@@ -206,6 +206,6 @@ def _write_card(path: str, training: dict, manifest: dict, report: dict) -> None
         lines += ["## Validation (fixed held-out stream)", ""]
         lines += [f"- {k}: {v}" for k, v in sorted(report.items())]
     lines += ["", "This is a fixed-reference classifier: the embedded reference is the callable set.",
-              "Adding alleles / species requires training a new model. See docs/architecture/model_contract.md."]
+              "Adding alleles / species requires training a new model. See docs/model_contract.md."]
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")

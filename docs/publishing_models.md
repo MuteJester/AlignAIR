@@ -15,7 +15,7 @@ AlignAIR distributes pretrained models through a single **public** Hugging Face 
   sees it immediately. You never edit or release the `alignair` package to ship a new model.
 
 The default registry is set in code once (`DEFAULT_REGISTRY` in
-[`src/alignair/registry/sources.py`](../src/alignair/registry/sources.py)); users can override it with
+[`src/alignair/registry/sources.py`](https://github.com/MuteJester/AlignAIR/blob/main/src/alignair/registry/sources.py)); users can override it with
 `--registry`, `$ALIGNAIR_REGISTRY`, or `~/.config/alignair/config.toml`.
 
 ## One-time setup
@@ -79,7 +79,7 @@ model download + hash-verify + cache + align run end-to-end.
 Two options — both end with an upload; the CLI catalog updates the moment `registry.json` changes:
 
 - **A new/retrained model in this canonical set:** add or edit an entry in the `MODELS` list at the top
-  of [`scripts/build_pretrained_registry.py`](../scripts/build_pretrained_registry.py) (bump `version`
+  of [`scripts/build_pretrained_registry.py`](https://github.com/MuteJester/AlignAIR/blob/main/scripts/build_pretrained_registry.py) (bump `version`
   to release an update to an existing id; add a dict for a new id), then re-run step 1 and step 2.
 - **A one-off already-carded artifact:** publish it directly into the registry, then upload:
 
@@ -96,7 +96,7 @@ Two options — both end with an upload; the CLI catalog updates the moment `reg
 
 ## What gets validated before anything publishes
 
-Every version is checked by [`registry/validate.py`](../src/alignair/registry/validate.py): size + SHA256
+Every version is checked by [`registry/validate.py`](https://github.com/MuteJester/AlignAIR/blob/main/src/alignair/registry/validate.py): size + SHA256
 match, the artifact is **pickle-free** (no `dataconfig`/`train_state` sections) and carries a safe
 `reference_json`, the card's `model_id`/`model_version` match the registry, and the reference hashes
 recompute from the embedded reference. `publish_local` runs this against the *staged* state and commits

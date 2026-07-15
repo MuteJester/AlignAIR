@@ -134,11 +134,14 @@ Run `alignair <command> --help` for options.
 
 ## Documentation
 
+Full docs: **<https://MuteJester.github.io/AlignAIR/>**
+
 - [Getting started](docs/getting_started.md)
+- [Pretrained models](docs/models.md)
+- [Command-line reference](docs/cli.md)
 - [Benchmarks — AlignAIR vs IgBLAST](docs/benchmarks.md)
-- [DNAlignAIR design & internals](docs/dnalignair.md)
+- [Design & internals](docs/dnalignair.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Adoption roadmap](docs/architecture/adoption_roadmap.md)
 
 ## Development
 
@@ -148,8 +151,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), and the
-[adoption roadmap](docs/architecture/adoption_roadmap.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Citation
 

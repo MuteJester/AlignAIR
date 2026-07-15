@@ -1,56 +1,90 @@
 # AlignAIR
 
-[AlignAIR](https://github.com/MuteJester/AlignAIR) is a **neural aligner** for Adaptive Immune
-Receptor Repertoire (AIRR) sequences — immunoglobulin (IG) and T‑cell receptor (TCR). It assigns
-V/D/J alleles, segment coordinates, junction/CDR3, productivity, and mutation rate, and writes
-standard AIRR rearrangement output. It is licensed **GPL‑3.0‑or‑later**.
+**AlignAIR** is a neural aligner for **Adaptive Immune Receptor Repertoire (AIRR)** sequences —
+immunoglobulin (IG) and T‑cell receptor (TCR). It assigns V/D/J alleles, segment coordinates,
+junction / CDR3, productivity, and mutation rate, and writes standard AIRR rearrangement output. It is
+more accurate than IgBLAST across a broad benchmark, and it is free software (GPL‑3.0‑or‑later).
 
-## What makes it different
+[Get started](getting_started.md){ .md-button .md-button--primary }
+[Benchmarks](benchmarks.md){ .md-button }
+[View on GitHub](https://github.com/MuteJester/AlignAIR){ .md-button }
 
-- **More accurate than IgBLAST across the board** (23/24 metrics on a 4,400‑case / 22‑stratum
-  benchmark with bootstrap CIs) — especially on short fragments, arbitrary orientation, and D/J.
-- **Dynamic genotype**: the allele reference is an **input**, not memorized in the weights. Supply
-  a genotype (YAML or FASTA) that is a subset of the trained reference and/or contains **novel
-  alleles**, and the model conditions on exactly that reference — no retraining.
-- **Calibrated uncertainty**: reports an equivalence set and degrades to gene/family level when a
-  read can't distinguish alleles, instead of guessing.
+## Why AlignAIR
+
+<div class="grid cards" markdown>
+
+-   :material-target: __More accurate than IgBLAST__
+
+    On a 4,400‑case / 22‑stratum benchmark (bootstrap CIs, Bonferroni‑corrected) AlignAIR wins
+    **23 of 24 metrics** — biggest on short fragments, reverse‑complement / arbitrary orientation,
+    and D/J calling. [See the benchmarks →](benchmarks.md)
+
+-   :material-download: __Pretrained models, one command__
+
+    `alignair predict --model alignair-igh-human` downloads a model from the public hub, verifies it,
+    and aligns — no login. Human IGH, IGK+IGL, and TRB are available today.
+    [Browse the models →](models.md)
+
+-   :material-tune: __Donor‑genotype aware__
+
+    Constrain calls to a donor's alleles (a subset of the model's reference) with `--genotype` — no
+    retraining — to sharpen accuracy on ambiguous reads. [How it works →](model_contract.md)
+
+-   :material-file-table: __Standard AIRR output__
+
+    A schema‑valid AIRR rearrangement TSV (validates against the official `airr` library; reads back
+    with Change‑O / Scirpy / Immcantation), plus an equivalence‑set column for ambiguous calls.
+    [Output fields →](airr_fields.md)
+
+</div>
 
 ## Install
 
-```bash
-pip install "AlignAIR[cli]"            # core + CLI
-pip install "AlignAIR[cli,reader]"     # + parasail (faster, sharper V calling)
-alignair doctor                        # verify Python / PyTorch+CUDA / GenAIRR
-```
+=== "pip"
 
-Docker:
+    ```bash
+    pip install "AlignAIR[cli]"            # core + CLI
+    pip install "AlignAIR[cli,reader]"     # + parasail (faster, sharper V calling)
+    alignair doctor                        # verify Python / PyTorch+CUDA / GenAIRR
+    ```
 
-```bash
-docker pull thomask90/alignair:latest
-docker run --rm thomask90/alignair:latest doctor
-```
+=== "Docker"
+
+    ```bash
+    docker pull thomask90/alignair:latest
+    docker run --rm thomask90/alignair:latest doctor
+    ```
+
+PyTorch is auto‑detected for GPU; for a CPU‑only install,
+`pip install torch --index-url https://download.pytorch.org/whl/cpu` first.
 
 ## Quick start
 
 ```bash
-# align reads -> AIRR rearrangement TSV
-alignair predict reads.fasta -o out.tsv --model <bundle_or_checkpoint>
+# align reads against a pretrained model -> AIRR rearrangement TSV
+alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
 
-# align against a donor genotype (fewer alleles and/or NOVEL alleles)
-alignair predict reads.fasta -o out.tsv --model <bundle_or_checkpoint> --genotype donor.yaml
+# constrain to a donor genotype (a subset of the model's reference)
+alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human --genotype donor.yaml
 ```
 
-See [Getting started](getting_started.md) for a full walk‑through and
-[DNAlignAIR design & benchmarks](dnalignair.md) for the architecture and results.
+!!! tip "See it work with no setup"
+    `alignair demo` trains a tiny model, aligns simulated reads, validates the AIRR output, and runs
+    the donor‑genotype path — entirely offline, in one command.
 
-## Loci
+Prefer your own reference or species? [Train a model](getting_started.md#2-get-a-model) — AlignAIR
+embeds the germline reference into the model file, so the result is self‑contained.
 
-AlignAIR supports IG and TCR loci (IGH, IGK, IGL, TCRB, …). A model is trained for a given
-locus/reference; you can also train your own model for a new species or reference (see the
-training workflow in [dnalignair.md](dnalignair.md)).
+## Loci & species
+
+AlignAIR handles IG and TCR loci (IGH, IGK, IGL, TRB, …). Each model is trained for a given
+reference; the pretrained catalog covers human IGH / IGK+IGL / TRB, and you can train your own model
+for a new species or reference. A model is a **fixed‑reference classifier** — the embedded catalog is
+exactly the set of alleles it can call ([model contract](model_contract.md)).
 
 ## Project
 
-- Source & issues: <https://github.com/MuteJester/AlignAIR>
-- Citation: `doi:10.5281/zenodo.15687939`
-- License: GPL‑3.0‑or‑later
+- **Source & issues:** <https://github.com/MuteJester/AlignAIR>
+- **Pretrained models:** <https://huggingface.co/AlignAIR/AlignAIR-pretrained>
+- **Citation:** `doi:10.5281/zenodo.15687939`
+- **License:** GPL‑3.0‑or‑later

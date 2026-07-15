@@ -13,15 +13,14 @@ than guessed.
 | `sequence_id`, `sequence`, `rev_comp` | `sequence` is the canonical (forward) orientation the coordinates refer to; `rev_comp=T` when the input read was reoriented. |
 | `locus` | inferred from the reference / model. |
 | `v_call`, `d_call`, `j_call` | top call per gene. |
-| `v_call_set`, `d_call_set`, `j_call_set` | equivalence set (all alleles the evidence cannot distinguish). |
-| `v_resolved_call`, `…_call_level`, `…_set_confidence` | most-specific safe call (allele→gene→family→abstain) + confidence. *AlignAIR extension columns.* |
+| `v_call_set`, `d_call_set`, `j_call_set` | equivalence set — all alleles the evidence cannot distinguish (comma-separated). *AlignAIR extension columns.* |
 | `productive` | model head. |
 | `vj_in_frame` | junction length is a multiple of 3. |
 | `stop_codon` | a stop appears in the V→J coding frame (anchored at the conserved Cys-104 codon). |
 | `junction`, `junction_aa`, `junction_length` | CDR3 incl. the conserved Cys/Trp(Phe) codons; empty when V/J anchors are unrecoverable (e.g. short fragments). |
 | `np1`, `np1_length`, `np2`, `np2_length` | non-templated nucleotides V→D and D→J (V→J when there is no D). |
 | `*_sequence_start/end`, `*_germline_start/end` | 1-based AIRR coordinates. |
-| `v_cigar`, `d_cigar`, `j_cigar` | exact CIGAR from gapped alignment (`--no-full-alignment` falls back to a coordinate-derived CIGAR). |
+| `v_cigar`, `d_cigar`, `j_cigar` | exact CIGAR from gapped alignment; a lighter `--columns` preset (which skips the gapped-alignment assembly) falls back to a coordinate-derived CIGAR. |
 | `sequence_alignment`, `germline_alignment` | gapped alignments (require `parasail`; in `[cli]` extra). |
 | `v_identity`, `d_identity`, `j_identity` | percent identity from the gapped alignment. |
 | `is_contaminant` | *AlignAIR extension*: advisory out-of-scope flag; calls are retained regardless. |
@@ -44,6 +43,7 @@ the [10x](https://github.com/MuteJester/AlignAIR/tree/main/examples/10x) and
 
 | Field(s) | Why |
 |----------|-----|
+| `*_resolved_call`, `*_call_level`, `*_set_confidence` | reserved extension columns for hierarchical resolution + calibrated confidence. Populated only after the optional (separate) calibration step; blank by default. Use `*_call_set` for ambiguity today. |
 | `fwr1..4`, `cdr1..3` (+ `_aa`, `_start`, `_end`) | require IMGT germline region numbering per allele, which AlignAIR does not model. Planned. |
 | `c_call` (from the read) | AlignAIR aligns V(D)J only; it does not detect the constant region. Use the assembler's `c_gene` via `--metadata` for now. |
 | `germline_alignment_d_mask`, `v_germline_alignment` … | per-segment germline alignments beyond the stitched `germline_alignment`. Planned. |

@@ -20,8 +20,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 # public surfaces users copy-paste from (implementation/architecture notes are intentionally excluded)
 _DOC_FILES = [
     _ROOT / "README.md",
-    _ROOT / "docs" / "getting_started.md",
-    _ROOT / "docs" / "python_api.md",
+    *sorted((_ROOT / "docs").glob("*.md")),          # every published top-level docs page
     *sorted((_ROOT / "examples").glob("**/README.md")),
 ]
 
