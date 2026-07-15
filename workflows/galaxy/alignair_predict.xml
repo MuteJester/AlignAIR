@@ -38,11 +38,12 @@
 **AlignAIR predict**
 
 Aligns immunoglobulin / T-cell-receptor reads and writes an AIRR-C rearrangement table
-(V/D/J calls, coordinates, junction, and calibrated equivalence-set columns).
+(V/D/J calls, coordinates, junction, and a per-gene equivalence-set column). Optional per-allele
+confidence calibration is available as a separate step.
 
 The *Model* may be a bundle directory, a catalog id, or a Hugging Face repo id. A *Donor
-genotype* (YAML or FASTA) is used as the reference for the run and may contain an allele
-subset and/or novel alleles. Optional *metadata* (e.g. a 10x annotations CSV) is preserved
+genotype* (YAML or FASTA) constrains the run to a subset of the model's reference (novel alleles
+require training a compatible model). Optional *metadata* (e.g. a 10x annotations CSV) is preserved
 into the output, joined by read id.
     ]]></help>
     <citations>

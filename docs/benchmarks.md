@@ -74,5 +74,5 @@ alignair compare --a alignair.tsv --b igblast.tsv --a-name AlignAIR --b-name IgB
 ```
 
 The report shows per-gene allele/gene agreement, junction and productivity concordance, coverage,
-and **set-rescue** — how often the other tool's call falls inside AlignAIR's calibrated equivalence
+and **set-rescue** — how often the other tool's call falls inside AlignAIR's equivalence
 set (shared ambiguity, not a real conflict) — plus example disagreements to inspect.

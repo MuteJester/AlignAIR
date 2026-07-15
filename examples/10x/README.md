@@ -11,7 +11,7 @@ Immcantation) where rows are grouped by cell.
 
 ```bash
 alignair predict --input examples/10x/filtered_contig.fasta --out tenx_airr.tsv \
-  --model my_model/bundle \
+  --model my_model/bundle/model.alignair \
   --metadata examples/10x/filtered_contig_annotations.csv
 ```
 

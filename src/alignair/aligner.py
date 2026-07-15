@@ -75,7 +75,9 @@ class PredictionResult:
     def write_airr(self, path: str, *, columns=None) -> str:
         """Write the records as an AIRR rearrangement TSV. Returns ``path``."""
         from .io.airr import write_airr as _write
-        seqs = [r.get("input_sequence", r.get("sequence", "")) for r in self.records]
+        # the record-owned post-crop pre-orientation read (falls back to canonical); the writer prefers
+        # each record's own `input_sequence`, so this equals the CLI's orientation output exactly.
+        seqs = [r.get("input_sequence") or r.get("sequence", "") for r in self.records]
         _write(path, self._ids(), seqs, self.records, locus=self.locus, columns=columns)
         return path
 

@@ -9,7 +9,7 @@ table onto the output by `sequence_id`.
 
 ```bash
 alignair predict --input examples/airr/reads.tsv --out out.tsv \
-  --model my_model/bundle \
+  --model my_model/bundle/model.alignair \
   --metadata examples/airr/sample_metadata.tsv \
   --keep-columns sample_id,subject_id,tissue,timepoint
 ```

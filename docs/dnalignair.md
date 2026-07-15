@@ -9,7 +9,7 @@ Package: `src/alignair` (the clean v3 rewrite; the legacy TF lineage under `src/
 is being retired).
 
 ## Outputs (per read)
-- V/D/J allele calls — **multi-label**: a calibrated equivalence *set* when alleles are
+- V/D/J allele calls — **multi-label**: an equivalence *set* when alleles are
   indistinguishable, not a forced single call.
 - In-sequence **and** germline start/end of each segment.
 - Per-position region tags `{pad,pre,V,N1,D,N2,J,post}` and edit states

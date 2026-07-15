@@ -15,9 +15,12 @@ def register(sub) -> None:
     p.add_argument("--d-fasta", default=None, help="custom D germline FASTA (heavy / D-bearing loci)")
     p.add_argument("--j-fasta", default=None, help="custom J germline FASTA")
     p.add_argument("--chain-type", default=None,
-                   help="GenAIRR chain type for a custom reference (BCR_HEAVY / BCR_LIGHT_KAPPA / "
-                        "BCR_LIGHT_LAMBDA / TCR_ALPHA|BETA|GAMMA|DELTA)")
+                   choices=["BCR_HEAVY", "BCR_LIGHT_KAPPA", "BCR_LIGHT_LAMBDA",
+                            "TCR_ALPHA", "TCR_BETA", "TCR_GAMMA", "TCR_DELTA"],
+                   help="GenAIRR chain type for a custom reference")
     p.add_argument("--out", required=True, help="output run directory (checkpoints + bundle/)")
+    p.add_argument("--overwrite", action="store_true",
+                   help="replace an existing bundle/ in --out (default: refuse, to protect a published bundle)")
     p.add_argument("--preset", choices=["quick", "desktop", "full"], default="desktop",
                    help="resource-tuned defaults for steps/batch/validation (default: desktop)")
     p.add_argument("--steps", type=int, default=None, help="override the preset's step count")
@@ -26,8 +29,6 @@ def register(sub) -> None:
     p.add_argument("--grad-clip", type=float, default=None, help="clip the global gradient norm")
     p.add_argument("--val-every", type=int, default=None, help="override the preset's validation interval")
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--allow-curatable", action="store_true",
-                   help="allow alleles with no detected anchor (already the training default)")
     p.add_argument("--plan", action="store_true",
                    help="validate the reference/config and print the plan WITHOUT training")
     p.add_argument("--device", default=None, help="cpu / cuda (default: auto)")
@@ -65,6 +66,13 @@ def run(args) -> int:
     if args.plan:
         return 0                         # --plan: validate + report only, no training
 
+    # fail closed BEFORE spending training time: don't train for minutes/hours only to refuse the export
+    bundle_dir = os.path.join(args.out, "bundle")
+    if os.path.exists(bundle_dir) and not args.overwrite:
+        print(f"bundle already exists: {bundle_dir}. Refusing to overwrite a possibly-published bundle — "
+              f"choose a new --out or pass --overwrite. (No training was run.)")
+        return 1
+
     try:
         run = run_training(cfg, output_dir=args.out)
     except TrainingConfigError as e:
@@ -72,8 +80,10 @@ def run(args) -> int:
         return 1
 
     checkpoint = run.best_model_path or run.model_path
+    sources = {"v_fasta": args.v_fasta, "d_fasta": args.d_fasta, "j_fasta": args.j_fasta} if args.v_fasta else None
     bundle = export_bundle(checkpoint, dcs, os.path.join(args.out, "bundle"),
                            training={"steps": cfg.steps, "batch_size": cfg.batch_size, "lr": cfg.lr},
-                           description="AlignAIR model (custom reference)" if args.v_fasta else "")
+                           description="AlignAIR model (custom reference)" if args.v_fasta else "",
+                           sources=sources, report=report, overwrite=args.overwrite)
     print(f"trained -> {run.model_path}\nexported pickle-free bundle -> {bundle}")
     return 0

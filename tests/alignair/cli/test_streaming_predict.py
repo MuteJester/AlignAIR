@@ -52,7 +52,8 @@ def test_stream_preserves_order_counts_and_chunks(tmp_path):
         rejects_out=str(tmp_path / "rej.tsv"))
     assert aligner.calls == 4                              # ceil(10/3) chunks -> streamed, not one shot
     assert counts == {"input": 11, "accepted": 10, "rejected": 1, "cropped": 0,
-                      "complete": 10, "partial": 0, "failed": 0, "written": 10}
+                      "complete": 10, "partial": 0, "failed": 0, "written": 10,
+                      "nonstandard_orientation": 0}
     rows = _rows(tmp_path / "out.tsv")
     assert [r["sequence_id"] for r in rows] == [f"r{i}" for i in range(10)]   # order preserved
     rej = _rows(tmp_path / "rej.tsv")

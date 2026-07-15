@@ -1,6 +1,6 @@
 // AlignAIR — Nextflow wrapper DRAFT (not yet stable; see ../README.md).
 // One process per sample (Nextflow handles parallelism across cores/nodes). The model
-// reloads per process — for a single-node cohort, `alignair batch` (one model load) is faster.
+// reloads per process
 nextflow.enable.dsl = 2
 
 params.samplesheet = "${projectDir}/../samplesheet.csv"   // columns: sample_id, input [, genotype]

@@ -1,7 +1,7 @@
 """Tool-to-tool AIRR agreement on the USER's own data (no ground truth needed): compare two
 rearrangement TSVs (e.g. AlignAIR vs IgBLAST or MiXCR `exportAirr`) row-by-row on `sequence_id`
 and report per-gene call agreement, junction/productivity concordance, coverage, and — uniquely —
-how often AlignAIR's calibrated equivalence SET already contains the other tool's call (so an
+how often AlignAIR's equivalence SET already contains the other tool's call (so an
 allele "disagreement" is really shared ambiguity, not a conflict).
 
 This turns "should I trust AlignAIR over my current tool?" into an evidence report on real data.
@@ -112,7 +112,7 @@ def format_report_md(r: dict) -> str:
               f"- productivity agreement: {pr*100:.1f}%" if pr is not None else "- productivity: n/a",
               "",
               f"**set-rescue** = of the cases where the top-1 allele differs, how often {b}'s call is "
-              f"inside {a}'s calibrated equivalence set (i.e. shared ambiguity, not a true conflict).",
+              f"inside {a}'s equivalence set (i.e. shared ambiguity, not a true conflict).",
               "", "## Example allele disagreements", ""]
     for g in GENES:
         ex = r["examples_disagree"][g]

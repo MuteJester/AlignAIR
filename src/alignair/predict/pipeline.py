@@ -133,8 +133,11 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     calls = select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector, allowed=allowed)
     alignments = align_germline(seqs, segs, calls, reference, aligner,
                                 reader=cfg.germline_reader, indel_counts=preds.indel_count)
+    # `sequences` here is the post-crop, PRE-orientation read; `seqs` is its canonical (forward) frame.
+    # The record must OWN the pre-orientation read (not a parallel external list) so the AIRR writer emits
+    # the correct `sequence`/`rev_comp` identically for the Python API and the CLI, and crop-consistently.
     records = _to_records(seqs, calls, alignments, genes, preds, cfg.chain_types, segs.low_quality,
-                          was_cropped)
+                          was_cropped, input_sequences=sequences)
     if cfg.airr:
         from .airr import build_airr
         records = build_airr(records, reference, chain=("heavy" if cfg.has_d else "light"))
@@ -142,7 +145,7 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
 
 
 def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, low_quality=None,
-                was_cropped=None) -> list:
+                was_cropped=None, input_sequences=None) -> list:
     orientation = preds.orientation
     records = []
     for i, seq in enumerate(sequences):
@@ -151,6 +154,11 @@ def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, lo
                "mutation_rate": float(preds.mutation_rate[i]),
                "indel_count": float(preds.indel_count[i]),
                "productive": bool(preds.productive[i])}
+        if input_sequences is not None:
+            # the post-crop, pre-orientation read (== `seq` when the read was already forward). The AIRR
+            # writer uses THIS as the emitted `sequence` for a reverse-complement read, so `RC(sequence)`
+            # equals the coordinate frame (`seq`) — regardless of any external sequence list.
+            rec["input_sequence"] = input_sequences[i]
         if low_quality is not None:
             rec["segmentation_low_quality"] = bool(low_quality[i])
         if was_cropped is not None and was_cropped[i]:

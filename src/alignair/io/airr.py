@@ -1,6 +1,7 @@
-"""Write DNAlignAIR predictions as an AIRR rearrangement TSV (+ calibrated-uncertainty
-extension columns the AIRR schema does not cover: per-gene equivalence set, resolution
-level, and set confidence)."""
+"""Write DNAlignAIR predictions as an AIRR rearrangement TSV (+ optional uncertainty/resolution
+extension columns the AIRR schema does not cover: per-gene equivalence set, resolution level, and
+set confidence). Only the equivalence set (``*_call_set``) is populated by default; the resolution
+level and set confidence are reserved for the optional (separate) calibration step."""
 from __future__ import annotations
 
 import csv
@@ -8,11 +9,15 @@ import os
 from typing import List
 
 GENES = ("v", "d", "j")
-# The full AIRR rearrangement schema we emit (a superset of what predict()+build_airr produce),
-# then our calibrated-uncertainty extensions. `sequence` is the CANONICAL (forward) sequence the
-# coordinates refer to; `rev_comp` flags that the input read was reoriented to produce it.
+# The full AIRR rearrangement schema we emit (a superset of what predict()+build_airr produce), then
+# our optional uncertainty/resolution extensions (only `*_call_set` is populated by default). Per the
+# AIRR `rev_comp` contract: a reverse-complement row (id 1) emits the ORIGINAL post-crop query as
+# `sequence` with `rev_comp=T`, and its coordinates/alignments are on `RC(sequence)` (the model's
+# forward frame); forward/complement/reverse rows emit the forward frame with `rev_comp=F`.
 _IDENT = ["sequence_id", "sequence", "rev_comp", "locus"]
-_CALLS = ["v_call", "d_call", "j_call"]
+# c_call (constant-region gene) is a valid AIRR field the model does not predict but a side table often
+# supplies (e.g. 10x c_gene). It is part of the schema so it is protected + fill-only (see below).
+_CALLS = ["v_call", "d_call", "j_call", "c_call"]
 _QUALITY = ["productive", "productive_prediction", "vj_in_frame", "stop_codon",
             "v_identity", "d_identity", "j_identity"]
 _ALN = ["sequence_alignment", "germline_alignment", "sequence_alignment_aa", "germline_alignment_aa"]
@@ -42,6 +47,16 @@ _ORIENT_LABEL = {0: "forward", 1: "reverse_complement", 2: "complement", 3: "rev
 # model/scientific fields that per-read metadata must never overwrite (AIRR-review): every produced
 # AIRR column. Metadata may only add new columns or fill blanks; a collision keeps the model's value.
 _PROTECTED_FIELDS = frozenset(COLUMNS)
+
+# AIRR fields we WANT a side metadata table to be able to fill (the model does not produce them) but
+# must never OVERWRITE if a value is already present: they keep their AIRR name (not namespaced to
+# ``meta_*``) and, being protected, the writer's merge fills them only when the record's value is blank.
+_METADATA_FILL_ONLY = frozenset({"c_call"})
+
+
+class PredictionCountMismatch(RuntimeError):
+    """The writer was given a different number of ids / sequences / predictions — a pipeline or model
+    defect. Raised instead of silently truncating (and losing reads) via ``zip``."""
 
 # Named column presets users can pick from (or pass their own list / comma-string). `full` is the
 # default; `airr` is the MiAIRR-minimal required rearrangement set; `core`/`minimal` are compact.
@@ -131,21 +146,32 @@ def _cigar(seq_len, ss, se, gs, ge):
 def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
     """Build one AIRR rearrangement row from a predict()/build_airr record.
 
-    The **record owns** the canonical (forward) sequence its coordinates/CIGAR/alignment refer to
-    (``p["sequence"]``); that is what is emitted and what every slice is taken from — never the
-    ``seq`` argument, which is the *original* (pre-orientation) input read passed in parallel. This is
-    the P0-3 invariant: AIRR coordinates always describe the emitted ``sequence``. When the input read
-    was reoriented, the original is preserved in the ``input_sequence`` extension.
+    Coordinates/CIGAR/alignments are always computed in the model's forward frame (``p["sequence"]``).
+    The emitted ``sequence`` field follows the AIRR convention for ``rev_comp`` (P0-3, corrected per the
+    AIRR-community review): for a reverse-complement read (id 1) ``sequence`` is the ORIGINAL query and
+    ``rev_comp=T`` (coordinates apply to ``RC(sequence)`` == the forward frame, the IgBLAST/AIRR
+    convention); for forward / complement-only / reverse-only, ``sequence`` is the forward frame with
+    ``rev_comp=F`` (the true transform kept in the ``orientation`` extension, original in
+    ``input_sequence``). So coordinates never require a double reverse.
 
-    Applies the AIRR conventions: 1-based sequence/germline starts, an honest ``rev_comp`` (set only
-    for a true reverse-complement — id 1 — with the full transform kept in ``orientation``), and
+    The "original query" is taken from the record itself (``p["input_sequence"]``, the post-crop
+    pre-orientation read the pipeline stores) so it is crop-consistent and identical for the Python API
+    and the CLI; the ``seq`` argument is only a fallback for records that predate that field.
+
+    Applies the AIRR conventions: 1-based sequence/germline starts, ``rev_comp`` set only for a true
+    reverse-complement (id 1), and
     coordinate-derived CIGAR / sequence_alignment fallbacks for records that skipped ``build_airr``."""
     row = dict(p)                                  # pass through all AIRR fields (junction/regions/...)
     # `canonical` is the frame every coordinate / alignment / CIGAR is computed in (the model's forward
     # frame). It is what all the slicing below uses. The emitted `sequence` field, however, follows the
     # AIRR convention for `rev_comp` (below), which is NOT always the canonical frame.
     canonical = p.get("sequence") if p.get("sequence") is not None else seq
-    original = seq if seq is not None else canonical   # the read as submitted (pre-orientation)
+    # the post-crop, pre-orientation read the RECORD owns (crop-consistent, path-independent); the
+    # external `seq` is only a fallback for older records without it.
+    original = p.get("input_sequence")
+    if original is None or original == "":
+        original = seq if seq is not None else canonical
+    row.pop("input_sequence", None)                # re-set below per orientation (never emit canonical==)
     seq_len = len(canonical)
     row["sequence_id"] = sid
     row.setdefault("locus", locus)
@@ -163,7 +189,7 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
         # true transform for complement/reverse is preserved in the `orientation` extension.
         row["sequence"] = canonical
         row["rev_comp"] = "F"
-        if original != canonical:                  # complement/reverse: keep the original read too
+        if original != canonical:                  # complement/reverse (or cropped): keep the original read
             row["input_sequence"] = original
     row["orientation"] = _ORIENT_LABEL.get(oid, "forward")
     # normalize AIRR logical fields to T/F (standards-compliant; passes official `airr` validation).
@@ -225,10 +251,19 @@ class AirrWriter:
 
     def write(self, ids: List[str], sequences: List[str], preds: List[dict],
               metas: List[dict] | None = None) -> None:
-        """`sequences` are the ORIGINAL (pre-orientation) input reads, kept only for provenance
-        (`input_sequence`); the emitted `sequence` and all coordinates come from each record's own
-        canonical sequence (P0-3). `metas`, if given, is a per-row dict of extra column values (e.g.
-        preserved barcode/UMI/sample metadata) merged into each output row."""
+        """`sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR
+        orientation convention per record. `metas`, if given, is a per-row dict of extra column values
+        (barcode/UMI/sample/cell_id) merged into each output row without overwriting model fields.
+
+        The three lists must be the same length — a mismatch (a pipeline/model defect returning fewer or
+        extra predictions) raises :class:`PredictionCountMismatch` rather than silently truncating via
+        ``zip`` and losing reads."""
+        if not (len(ids) == len(sequences) == len(preds)):
+            raise PredictionCountMismatch(
+                f"cardinality mismatch: ids={len(ids)}, sequences={len(sequences)}, "
+                f"predictions={len(preds)} — refusing to write (would silently drop reads)")
+        if metas is not None and len(metas) != len(ids):
+            raise PredictionCountMismatch(f"metas={len(metas)} != records={len(ids)}")
         for i, (sid, seq, p) in enumerate(zip(ids, sequences, preds)):
             row = _build_row(sid, seq, p, self.locus)
             if metas and metas[i]:

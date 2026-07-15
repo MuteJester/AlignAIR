@@ -5,7 +5,7 @@
 <h1 align="center">AlignAIR</h1>
 <p align="center">
   A neural aligner for immunoglobulin (IG) and T‑cell receptor (TCR) repertoires — more accurate than
-  IgBLAST, with calibrated uncertainty and standard AIRR output. Constrain calls to a donor genotype (a
+  IgBLAST, with uncertainty‑aware calls and standard AIRR output. Constrain calls to a donor genotype (a
   subset of the model's reference), or train a model for your own reference / species.<br>
   <a href="https://hub.docker.com/r/thomask90/alignair"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/thomask90/alignair"></a>
   <a href="https://doi.org/10.5281/zenodo.15687939"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.15687939.svg" alt="DOI"></a>
@@ -18,7 +18,7 @@
 
 - **More accurate than IgBLAST across the board.** On a 4,400‑case / 22‑stratum benchmark (bootstrap CIs, Bonferroni‑corrected) AlignAIR wins **23 of 24 metrics** — biggest on short fragments, reverse‑complement / arbitrary orientation, and D/J calling, where classical seed‑and‑extend degrades. See [benchmarks](docs/benchmarks.md).
 - **Donor genotype constraint.** Each model is trained against an embedded, fingerprinted germline reference. At inference you can restrict calls to a **compatible subset or donor genotype** drawn from that reference (as YAML or FASTA) — no retraining — which sharpens accuracy on ambiguous reads. Adding alleles the model was not trained on, changing species, or changing the allele universe requires **training or fine‑tuning** a compatible model.
-- **Calibrated uncertainty.** When a read can't distinguish alleles (e.g. short fragments), AlignAIR reports a calibrated **equivalence set** and degrades gracefully to gene/family level instead of guessing.
+- **Uncertainty‑aware.** When a read can't distinguish alleles (e.g. short fragments), AlignAIR reports an **equivalence set** of the alleles it cannot tell apart (`*_call_set`) instead of forcing a single guess. Optional per‑allele confidence calibration is available as a separate step.
 - **AIRR output.** Standard AIRR rearrangement TSV (V/D/J calls, coordinates, junction, productivity) plus uncertainty columns.
 
 ## Install
@@ -44,7 +44,7 @@ docker run --rm thomask90/alignair:latest doctor
 ## Quick start
 
 See it work end-to-end in one command — offline, no model download needed (it trains a tiny demo
-model, aligns simulated reads, validates the AIRR output, and runs the dynamic-genotype path):
+model, aligns simulated reads, validates the AIRR output, and runs the donor-genotype path):
 
 ```bash
 alignair demo
@@ -98,9 +98,9 @@ reference/config/model size without training with `--plan`; resume an interrupte
 `alignair predict` writes a **schema‑valid AIRR rearrangement TSV** (validates against the official
 `airr` library; reads back with Change‑O / Immcantation): `sequence_id`, `sequence`, `rev_comp`,
 `productive`, `v_call`/`d_call`/`j_call`, `junction`/`junction_aa`, gapped `sequence_alignment` /
-`germline_alignment`, per‑gene `*_cigar`, `*_identity`, and sequence/germline coordinates, plus
-calibrated‑uncertainty extension columns (`*_call_set`, `*_call_level`, `*_set_confidence`). The
-alignment fields come from a real gapped alignment (parasail).
+`germline_alignment`, per‑gene `*_cigar`, `*_identity`, and sequence/germline coordinates, plus a
+per‑gene equivalence‑set column (`*_call_set`) for alleles a read cannot distinguish. The alignment
+fields come from a real gapped alignment (parasail).
 
 Every run also writes a **`<output>.run.json` provenance sidecar** (model + fingerprint, reference,
 command, device, seed, and package versions). Validate any TSV explicitly:

@@ -5,7 +5,7 @@ known to be present in that donor. This sharpens accuracy on ambiguous reads. It
 time with no retraining:
 
 ```bash
-alignair predict --input reads.fasta --out out.tsv --model my_model/bundle \
+alignair predict --input reads.fasta --out out.tsv --model my_model/bundle/model.alignair \
     --genotype examples/novel_allele/donor.yaml
 ```
 

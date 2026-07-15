@@ -15,7 +15,8 @@ import os
 
 def register(sub) -> None:
     p = sub.add_parser("demo", help="tiny end-to-end train -> predict -> donor-compare (no network)")
-    p.add_argument("-o", "--out", required=True, help="output directory for the demo artifacts")
+    p.add_argument("-o", "--out", default=None,
+                   help="output directory for the demo artifacts (default: a fresh temp directory)")
     p.add_argument("--dataconfig", default="HUMAN_IGH_OGRDB", help="GenAIRR dataconfig to demo on")
     p.add_argument("--steps", type=int, default=5, help="training steps (tiny; 1 in the smoke test)")
     p.add_argument("--reads", type=int, default=8, help="number of simulated reads to predict")
@@ -38,8 +39,9 @@ def run(args) -> int:
     from ..io.airr import write_airr
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    os.makedirs(args.out, exist_ok=True)
-    bundle = os.path.join(args.out, "bundle")
+    out = args.out or __import__("tempfile").mkdtemp(prefix="alignair_demo_")  # zero-arg `alignair demo`
+    os.makedirs(out, exist_ok=True)
+    bundle = os.path.join(out, "bundle")
     os.makedirs(bundle, exist_ok=True)
     model_path = os.path.join(bundle, "model.alignair")
     dc = getattr(gd, args.dataconfig)
@@ -52,14 +54,14 @@ def run(args) -> int:
     ids = [f"demo{i}" for i in range(len(reads))]
     model, ref = load_model(model_path, device=device)
     records = predict_sequences(model, ref, reads, device=device)
-    write_airr(os.path.join(args.out, "demo.tsv"), ids, reads, records, locus="IGH")
+    write_airr(os.path.join(out, "demo.tsv"), ids, reads, records, locus="IGH")
 
     print("[demo] predicting under a donor (genotype-subset) reference...")
     donor = {g: set(list(ref.gene(g.upper()).names)[: max(2, len(ref.gene(g.upper())) // 3)])
              for g in (("v", "d", "j") if ref.has_d else ("v", "j"))}
     donor_records = predict_sequences(model, ref, reads, device=device,
                                       genotype=donor, genotype_method="mask")
-    write_airr(os.path.join(args.out, "demo_donor.tsv"), ids, reads, donor_records, locus="IGH")
+    write_airr(os.path.join(out, "demo_donor.tsv"), ids, reads, donor_records, locus="IGH")
 
-    print(f"[demo] done -> {args.out}  (bundle/, demo.tsv, demo_donor.tsv)")
+    print(f"[demo] done -> {out}  (bundle/, demo.tsv, demo_donor.tsv)")
     return 0

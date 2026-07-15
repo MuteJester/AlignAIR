@@ -13,7 +13,7 @@ than guessed.
 | `sequence_id`, `sequence`, `rev_comp` | `sequence` is the canonical (forward) orientation the coordinates refer to; `rev_comp=T` when the input read was reoriented. |
 | `locus` | inferred from the reference / model. |
 | `v_call`, `d_call`, `j_call` | top call per gene. |
-| `v_call_set`, `d_call_set`, `j_call_set` | calibrated equivalence set (all alleles the evidence cannot distinguish). |
+| `v_call_set`, `d_call_set`, `j_call_set` | equivalence set (all alleles the evidence cannot distinguish). |
 | `v_resolved_call`, `…_call_level`, `…_set_confidence` | most-specific safe call (allele→gene→family→abstain) + confidence. *AlignAIR extension columns.* |
 | `productive` | model head. |
 | `vj_in_frame` | junction length is a multiple of 3. |

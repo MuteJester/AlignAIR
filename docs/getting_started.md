@@ -1,7 +1,7 @@
 # Getting started
 
 A 5‑minute walk‑through of AlignAIR: install, check your environment, and align reads — including
-against your own donor/novel genotype.
+against a donor genotype (a subset of the model's reference).
 
 ## 1. Install
 
@@ -25,51 +25,55 @@ alignair demo
 ```
 
 Trains a tiny demo model (not production quality), aligns simulated reads, validates the AIRR
-output, and runs the dynamic-genotype path — proving the full pipeline with no model download.
+output, and runs the donor-genotype path — proving the full pipeline with no model download.
 
 ## 2. Get a model
 
-`alignair predict` needs a model — either a **bundle** directory or a raw `.pt` checkpoint. Options:
+`alignair predict` needs a model — a `.alignair` model file (from `alignair train`, inside a
+`bundle/` directory), a catalog id, or a Hugging Face repo id. Options:
 
-- **Pretrained bundles** are not published yet. `alignair model list` shows the catalog and its
-  status; `alignair model download <id>` / `--model <id>` will work once a model is published.
+- **Pretrained models** are not published yet. `alignair models list` shows the catalog and its
+  status; `alignair models get <id>` / `--model <id>` will work once a model is published.
 - **Train your own** for any reference or species (the path to use today):
   ```bash
   # any of GenAIRR's ~90 built-in references
-  alignair train --reference HUMAN_IGH_OGRDB -o runs/my_igh --preset desktop
-  # or your own germline FASTAs (custom/novel reference)
+  alignair train --dataconfig HUMAN_IGH_OGRDB --out runs/my_igh --preset desktop
+  # or your own germline FASTAs (custom reference)
   alignair train --v-fasta v.fa --d-fasta d.fa --j-fasta j.fa --chain-type BCR_HEAVY \
-    -o runs/custom --preset desktop --allow-curatable
+    --out runs/custom --preset desktop
   ```
-  This writes `runs/.../bundle/` (self-contained — custom references are embedded), plus a
-  `model_card.md` and `validation_report.json`. Use it with `--model runs/.../bundle`.
-- Package a raw checkpoint into a versioned bundle: `alignair bundle --model ckpt.pt -o my_bundle/`.
+  This writes `runs/.../bundle/` (self-contained — custom references are embedded), including
+  `model.alignair`, a `model_card.md`, a `reference_manifest.json`, and a `validation_report.json`.
+  Use it with `--model runs/.../bundle/model.alignair`.
+- Package a raw `.pt` checkpoint into a safe, pickle-free `.alignair`:
+  `alignair convert ckpt.pt model.alignair --dataconfig HUMAN_IGH_OGRDB --trust-pickle`.
 
 ## 3. Align reads
 
-Input may be FASTA, FASTQ, CSV/TSV, or TXT (optionally `.gz`):
+Input may be FASTA, FASTQ, CSV/TSV, or TXT (optionally `.gz`, or `-` for stdin):
 
 ```bash
-alignair predict examples/reads.fasta -o out.tsv --model <bundle_or_checkpoint>
+alignair predict --input examples/reads.fasta --out out.tsv --model runs/my_igh/bundle/model.alignair
 ```
 
 The output is an AIRR rearrangement TSV with `v_call`/`d_call`/`j_call`, per‑gene sequence and
-germline coordinates, `junction`/`junction_aa`, `productive`, `rev_comp`, and calibrated
-uncertainty columns (`*_call_set`, `*_call_level`, `*_set_confidence`).
+germline coordinates, `junction`/`junction_aa`, `productive`, `rev_comp`, and a per‑gene
+equivalence‑set column (`*_call_set`) listing the alleles a read cannot distinguish.
 
-## 4. Use your own reference (dynamic genotype)
+## 4. Constrain to a donor genotype
 
-The reference is an **input**. Supply a genotype as YAML or FASTA — it can contain **fewer alleles**
-than the trained reference and/or **novel alleles** the model has never seen:
+Supply a genotype as YAML or FASTA to restrict calls to a **subset of the model's reference** (a
+donor's alleles) — no retraining. Alleles the model was not trained on are not callable (train a new
+model to add them):
 
 ```bash
 # YAML: top-level v/d/j, each {allele_name: dna_sequence}
-alignair predict examples/reads.fasta -o out.tsv \
-  --model <bundle_or_checkpoint> --genotype examples/donor_genotype.yaml
+alignair predict --input examples/reads.fasta --out out.tsv \
+  --model runs/my_igh/bundle/model.alignair --genotype examples/donor_genotype.yaml
 
 # FASTA: >allele_name headers (gene type inferred from the AIRR/IMGT name)
-alignair predict examples/reads.fasta -o out.tsv \
-  --model <bundle_or_checkpoint> --genotype donor.fasta
+alignair predict --input examples/reads.fasta --out out.tsv \
+  --model runs/my_igh/bundle/model.alignair --genotype donor.fasta
 ```
 
 No retraining is required — the model conditions on exactly the alleles you provide, and every call
@@ -83,39 +87,38 @@ that already has `cell_id`/`duplicate_count`:
 
 ```bash
 # 10x: align the contigs, preserve barcode / UMI / chain / etc. for downstream single-cell tools
-alignair predict filtered_contig.fasta -o out.tsv --model <bundle> \
+alignair predict --input filtered_contig.fasta --out out.tsv --model <model.alignair> \
   --metadata filtered_contig_annotations.csv
 
 # carry specific columns (default: a known 10x/AIRR metadata set present in the file)
-alignair predict reads.tsv -o out.tsv --model <bundle> \
+alignair predict --input reads.tsv --out out.tsv --model <model.alignair> \
   --metadata reads.tsv --keep-columns cell_id,duplicate_count,sample_id
 ```
 
 The kept columns are appended to the AIRR TSV (still schema-valid), so Change-O / Scirpy /
-Immcantation single-cell workflows get `cell_id`, barcodes, and counts without custom glue.
+Immcantation single-cell workflows get `cell_id`, barcodes, and counts without custom glue. The
+join key must be unique; if a column repeats, pass `--metadata-id-column` to pick a unique one.
 
-## 4c. Acting on calibrated uncertainty
+## 4c. Handling uncertain calls
 
-For each gene AlignAIR reports more than a single call, so you can decide how much to trust it:
+When a read can't pin down a single allele, AlignAIR reports the ambiguity instead of guessing:
 
-| column | meaning | how to act |
-| --- | --- | --- |
-| `*_call` | top-1 allele | use it when `*_call_level` is `allele` |
-| `*_call_set` | calibrated equivalence set (alleles the read can't distinguish) | report the set when it's small |
-| `*_resolved_call` | the most-specific *safe* call | use directly — it already degrades when uncertain |
-| `*_call_level` | `allele` / `gene` / `family` / `none` | `allele`→accept; `gene`/`family`→use that level; `none`→abstain / inspect |
-| `*_set_confidence` | probability mass inside the set | threshold for stricter calling |
+| column | meaning |
+| --- | --- |
+| `*_call` | the top‑1 allele |
+| `*_call_set` | the set of alleles the read cannot distinguish (comma‑separated) |
 
-Rule of thumb: take `*_resolved_call` (it collapses to gene/family or abstains when the evidence
-can't support an allele) instead of forcing a possibly-wrong allele like classical tools do.
+When `*_call_set` holds more than one allele, treat the result as gene/family‑level rather than a
+confident single allele. Constraining the run to a donor genotype (below) shrinks these sets. (Optional
+per‑allele confidence calibration is available as a separate step but is not applied by default.)
 
 ## 4d. Try a donor genotype (before/after)
 
 ```bash
-alignair reference template HUMAN_IGH_OGRDB -o donor.yaml   # start from the full reference
-#   ... edit donor.yaml down to the donor's alleles and/or add novel alleles ...
-alignair predict reads.fasta -o full.tsv  --model <bundle>
-alignair predict reads.fasta -o donor.tsv --model <bundle> --genotype donor.yaml
+alignair reference export runs/my_igh/bundle/model.alignair --fasta donor.fasta  # the full reference
+#   ... edit donor.fasta down to the donor's alleles ...
+alignair predict --input reads.fasta --out full.tsv  --model runs/my_igh/bundle/model.alignair
+alignair predict --input reads.fasta --out donor.tsv --model runs/my_igh/bundle/model.alignair --genotype donor.fasta
 alignair compare --a donor.tsv --b full.tsv --a-name donor --b-name full --out genotype_effect.md
 ```
 
@@ -123,49 +126,49 @@ The report shows how conditioning on the donor reference changes calls and shrin
 
 ## 4e. Many samples at once (cohorts)
 
-Process a whole study with the model loaded once, instead of a shell loop:
+Process a cohort by looping `alignair predict` (or use a workflow engine — see `workflows/`):
 
 ```bash
-# manifest columns: sample_id, input (+ optional genotype, metadata per row)
-alignair batch --manifest samples.tsv -o results/ --model my_model/bundle
-# -> results/<sample_id>.tsv per sample + results/manifest_summary.tsv (per-sample stats)
+# samples.tsv: sample_id<TAB>reads_path
+while IFS=$'\t' read -r sample reads; do
+    alignair predict --model runs/my_igh/bundle/model.alignair --input "$reads" \
+        --out "results/${sample}.tsv" --quiet
+done < samples.tsv
 ```
 
-A failing sample is recorded as `status=error` in the summary and the run continues;
-the command exits non-zero only if no sample aligned. See
+Each run writes an AIRR TSV + a `<out>.run.json` provenance sidecar. See
 [examples/batch/](https://github.com/MuteJester/AlignAIR/tree/main/examples/batch).
 
 ## 4f. Scripting & tooling
 
 ```bash
-alignair doctor --json            # machine-readable environment report (CI-friendly)
-alignair model list --json        # the catalog as JSON
-alignair model inspect <bundle> --json
-alignair reference list           # built-in GenAIRR references + valid custom chain types
-alignair completion bash          # print the line to enable tab completion (needs AlignAIR[cli])
+alignair doctor --json                          # machine-readable environment report (CI-friendly)
+alignair models list                            # the model catalog + install/update status
+alignair info runs/my_igh/bundle/model.alignair --json   # a model file's metadata / card as JSON
+alignair reference list                         # built-in GenAIRR references + valid custom chain types
 ```
 
-Before spending GPU hours, dry-run a training plan — it reports the model size, a timed
-wall-clock and peak-memory estimate, the expected validation accuracy for the preset, and
-any anchor/GPU warnings:
+Before spending GPU hours, dry-run a training plan — it reports the model size and the resolved
+schedule, and validates the reference/config, without training:
 
 ```bash
-alignair train --reference HUMAN_IGH_OGRDB -o my_model --preset standard --plan
+alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop --plan
 ```
 
-## 5. Common options
+## 5. Common `predict` options
 
 | Flag | Meaning |
 | --- | --- |
-| `--genotype FILE` | YAML/FASTA reference for this run (subset and/or novel alleles) |
+| `--genotype FILE` | YAML/FASTA genotype for this run (a subset of the model's reference) |
+| `--genotype-method M` | how to apply it: `mask` (default) / `softmax` / `renormalize` / `redistribute` |
 | `--metadata FILE` | per-read metadata (CSV/TSV, e.g. 10x annotations) preserved into output |
-| `--chunk-size N` | reads per streaming chunk (repertoire-scale, bounded memory) |
-| `--calibration FILE` | allele‑set calibration JSON (overrides a bundled one) |
-| `--v-reader parasail` | use the fast classical V reader (needs `AlignAIR[reader]`) |
-| `--batch N` | batch size (default 64) |
-| `--device cuda|cpu` | force a device (auto if unset) |
-| `--quiet` | suppress progress output |
-| `--json` | machine-readable output (on `doctor`, `model list/inspect`, `compare`) |
+| `--keep-columns LIST` | comma-separated metadata columns to carry through |
+| `--chunk-size N` | reads per streaming chunk (repertoire-scale, bounded memory; default 20000) |
+| `--columns SPEC` | output columns: a preset (`full`/`core`/`minimal`/`airr`) or a field list |
+| `--rejects-out FILE` | write dropped/invalid input records here (id, position, reason, sequence) |
+| `--batch-size N` | batch size (default 64) |
+| `--device cuda\|cpu` | force a device (auto if unset) |
+| `--quiet` | suppress progress / update output |
 
 ## Next steps
 

@@ -7,7 +7,7 @@ plain shell loop. Each run writes an AIRR rearrangement TSV plus a `<out>.run.js
 ```bash
 # one AIRR TSV per sample from a simple sample list (sample_id<TAB>reads_path)
 while IFS=$'\t' read -r sample reads; do
-    alignair predict --model my_model/bundle --input "$reads" --out "results/${sample}.tsv" --quiet
+    alignair predict --model my_model/bundle/model.alignair --input "$reads" --out "results/${sample}.tsv" --quiet
 done < samples.tsv
 ```
 

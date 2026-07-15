@@ -79,18 +79,27 @@ def _load_metadata_table(args):
     result is preserved (AIRR-review). 10x column names are normalized to AIRR."""
     if not args.metadata:
         return None, None
-    from ..io.airr import COLUMNS
-    from ..io.sequence_reader import load_metadata
+    from ..io.airr import COLUMNS, _METADATA_FILL_ONLY
+    from ..io.sequence_reader import build_metadata_index
     keep = [c.strip() for c in args.keep_columns.split(",")] if args.keep_columns else None
-    meta, kept = load_metadata(args.metadata, id_column=args.metadata_id_column, keep_columns=keep,
-                               normalize_10x=True)
     protected = frozenset(COLUMNS)
 
     def _safe(col):                                # protect model fields from metadata clobbering
+        if col in _METADATA_FILL_ONLY:             # keep AIRR name (c_call); writer fills only when blank
+            return col
         return f"meta_{col}" if col in protected else col
-    kept_safe = [_safe(c) for c in kept]
-    meta_by_id = {rid: {_safe(k): v for k, v in row.items()} for rid, row in meta.items()}
-    return meta_by_id, kept_safe
+    index, kept_safe = build_metadata_index(args.metadata, id_column=args.metadata_id_column,
+                                            keep_columns=keep, normalize_10x=True, rename=_safe)
+    return index, kept_safe
+
+
+def _lookup_metas(meta_by_id, cids):
+    """Per-chunk metadata rows aligned to ``cids``. Uses a single batched SQLite query when the index
+    supports it (bounded, not one query per read); falls back to a plain dict for small/eager callers."""
+    if meta_by_id is None:
+        return None
+    found = meta_by_id.get_many(cids) if hasattr(meta_by_id, "get_many") else meta_by_id
+    return [found.get(i, {}) for i in cids]
 
 
 def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_column, id_column,
@@ -105,7 +114,8 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
     from ..io.airr import AirrWriter, needs_assembly
     from ..io.sequence_reader import iter_sequences
     do_airr = needs_assembly(columns)
-    counts = dict(input=0, accepted=0, rejected=0, cropped=0, complete=0, partial=0, failed=0, written=0)
+    counts = dict(input=0, accepted=0, rejected=0, cropped=0, complete=0, partial=0, failed=0,
+                  written=0, nonstandard_orientation=0)
     fail_reasons, partial_reasons = Counter(), Counter()
 
     rejects_buf = [] if rejects_out else None
@@ -131,7 +141,7 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
             if not cseqs:
                 continue
             records = aligner.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides).to_dicts()
-            metas = [meta_by_id.get(i, {}) for i in cids] if meta_by_id is not None else None
+            metas = _lookup_metas(meta_by_id, cids)  # ONE indexed query per chunk, not per read
             writer.write(cids, cseqs, records, metas=metas)
             counts["accepted"] += len(cseqs)
             counts["written"] += len(records)
@@ -147,6 +157,8 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
                     fail_reasons[r.get("airr_assembly_error", "?").split(":")[0]] += 1
                 if r.get("length_cropped"):
                     counts["cropped"] += 1
+                if r.get("orientation_id") in (2, 3):   # complement/reverse-only: not AIRR-representable
+                    counts["nonstandard_orientation"] += 1
         writer.close(commit=True)
         committed = True
     finally:
@@ -188,6 +200,9 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
             "rejected_records": counts["rejected"], "cropped_records": counts["cropped"],
             "complete_assemblies": counts["complete"], "partial_assemblies": counts["partial"],
             "failed_assemblies": counts["failed"], "written_records": counts["written"],
+            # complement/reverse-only reads: `sequence` is transformed and rev_comp can't express it
+            # (see the `orientation` extension). A surprising rate is a useful QC signal.
+            "nonstandard_orientation_records": counts["nonstandard_orientation"],
         },
         "airr_assembly_fail_reasons": fail_reasons or {}, "airr_assembly_partial_reasons": partial_reasons or {},
         "offline": bool(args.offline),
@@ -202,6 +217,15 @@ def run(args) -> int:
     from ..model_file import container
     from ..registry import maybe_notify_updates, resolve_model, sources as _sources
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+
+    if args.chunk_size <= 0 or args.batch_size <= 0:
+        print("--chunk-size and --batch-size must be positive")
+        return 1
+    for name, val in (("--max-assembly-failures", args.max_assembly_failures),
+                      ("--max-partial-assemblies", args.max_partial_assemblies)):
+        if not (0.0 <= val <= 1.0):
+            print(f"{name} must be a fraction in [0, 1] (got {val})")
+            return 1
 
     # 1) resolve + load the model ONCE (before reading, so a 1M-read input never sits in memory)
     srcs = _sources.resolve_sources(args.registry)
@@ -239,14 +263,27 @@ def run(args) -> int:
             return 1
         overrides = {"genotype": genotype, "genotype_method": args.genotype_method}
 
-    meta_by_id, extra_cols = _load_metadata_table(args)  # join table loaded once (bounded lookup)
+    from ..io.sequence_reader import DuplicateMetadataId
+    try:
+        meta_by_id, extra_cols = _load_metadata_table(args)  # disk-backed join index (bounded lookup)
+    except DuplicateMetadataId as e:
+        print(f"metadata error: {e}")
+        return 1
 
     # 2) stream reader-chunk -> predict -> assemble -> join -> write, in bounded memory (~chunk_size)
-    counts, fail_reasons, partial_reasons = _stream_predict(
-        aligner, input_path=args.input, out_path=args.out, columns=args.columns,
-        chunk_size=args.chunk_size, seq_column=args.sequence_column, id_column=args.id_column,
-        meta_by_id=meta_by_id, extra_cols=extra_cols, out_locus=out_locus, overrides=overrides,
-        batch_size=args.batch_size, rejects_out=args.rejects_out)
+    from ..io.airr import PredictionCountMismatch
+    try:
+        counts, fail_reasons, partial_reasons = _stream_predict(
+            aligner, input_path=args.input, out_path=args.out, columns=args.columns,
+            chunk_size=args.chunk_size, seq_column=args.sequence_column, id_column=args.id_column,
+            meta_by_id=meta_by_id, extra_cols=extra_cols, out_locus=out_locus, overrides=overrides,
+            batch_size=args.batch_size, rejects_out=args.rejects_out)
+    except PredictionCountMismatch as e:                  # a defect returned != 1 prediction per read
+        print(f"internal error: {e}. No output written.")
+        return 1
+    finally:
+        if hasattr(meta_by_id, "close"):                 # release the disk-backed metadata index
+            meta_by_id.close()
 
     if not args.no_run_metadata:
         _write_run_metadata(args.out, model_path, args, device, counts, loci=loci,
