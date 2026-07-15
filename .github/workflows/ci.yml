@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:      # allow manual runs on any branch (e.g. to check the cross-platform matrix)
 
 jobs:
   test:
