@@ -97,8 +97,8 @@ alignair train --v-fasta v.fasta --d-fasta d.fasta --j-fasta j.fasta \
 This writes checkpoints to `runs/.../` plus a self-contained, pickle-free `runs/.../bundle/model.alignair`
 (the reference is **embedded**), a `model_card.md`, a `reference_manifest.json`, and a
 `validation_report.json`. Presets: `quick` (smoke), `desktop`, `full` (paper‑grade). Preview the
-reference/config/model size without training with `--plan`; resume an interrupted run with
-`--resume runs/.../model.alignair`. Then just `alignair predict … --model runs/.../bundle/model.alignair`.
+reference/config/model size without training with `--plan`. Then just
+`alignair predict … --model runs/.../bundle/model.alignair`.
 
 ## Output
 
@@ -123,8 +123,8 @@ alignair validate-airr out.tsv      # -> "VALID AIRR-C rearrangement"
 | `alignair demo` | offline end-to-end trial (tiny train → predict → validate → genotype) |
 | `alignair predict` | align reads → AIRR rearrangement TSV |
 | `alignair train` | train a model for your own reference / species (built-in dataconfig or custom FASTA) |
-| `alignair model` | list / download / inspect pretrained models |
-| `alignair reference` | validate / convert a germline reference (YAML ↔ FASTA) |
+| `alignair models` | list / download / manage pretrained models |
+| `alignair reference` | list built-in references, or export a model's reference |
 | `alignair compare` | agreement report between two AIRR TSVs (e.g. AlignAIR vs IgBLAST) on your data |
 | `alignair validate-airr` | validate a rearrangement TSV against the AIRR-C schema |
 | `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR, parasail) |
@@ -140,7 +140,7 @@ Full docs: **<https://MuteJester.github.io/AlignAIR/>**
 - [Pretrained models](docs/models.md)
 - [Command-line reference](docs/cli.md)
 - [Benchmarks — AlignAIR vs IgBLAST](docs/benchmarks.md)
-- [Design & internals](docs/dnalignair.md)
+- [Design & internals](docs/design.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 ## Development

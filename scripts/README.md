@@ -1,49 +1,24 @@
-# DNAlignAIR scripts
+# scripts
 
-Run everything with `PYTHONPATH=src .venv/bin/python scripts/<name> ...`.
-The `benchmark` module (`python -m alignair_benchmark.cli`) is the canonical evaluator;
-these scripts are research drivers and the model→benchmark adapter.
+Maintainer and research helpers. Run with `PYTHONPATH=src .venv/bin/python scripts/<name> ...`. These
+are not part of the installed package — the user-facing entry point is the `alignair` CLI.
 
-## Training
-- `train_dnalignair.py` — train a DNAlignAIR checkpoint on a GenAIRR stream.
-- `headtohead.py` — train, then score the model vs IgBLAST on identical GenAIRR strata
-  (the research driver). Flags include `--reader`, `--scheduled-sampling`,
-  `--reader-novel-prob` (simulated-novel reader augmentation), `--backbone shared`.
+## Release / maintainer
 
-## Canonical benchmark (model → grade)
-- `run_benchmark.py` — run a checkpoint over a benchmark case JSONL and emit prediction
-  JSONL for `alignair_benchmark.cli evaluate` (feeds presented reads, full schema,
-  optional `--calibration`). Pipeline: `cli build` → `run_benchmark.py` → `cli evaluate`
-  → `cli assay`.
-- `calibrate_sets.py` — fit the per-gene equivalence-set calibration (temperature + ε,
-  `--objective f1`) on a representative GenAIRR mix → `allele_set_calibration.json`.
-- `baseline_igblast.py` — IgBLAST bar only (needs IgBLAST in `.private/tools/`). Imported
-  by several drivers for `gen_records`/`score`.
+- `build_pretrained_registry.py` — build the pretrained-model registry directory from local
+  `.alignair` artifacts (re-card + validate), ready to upload to Hugging Face. See
+  [`docs/publishing_models.md`](../docs/publishing_models.md).
+- `publish_model.py` — publish a single pickle-free `.alignair` into a local registry directory.
+- `release_smoke.sh` — end-to-end smoke (`doctor` → `demo` → `validate-airr` → `compare`) run by CI on
+  the built wheel and inside the Docker image.
+- `train_alignair.py` — training driver used to produce the pretrained models.
+- `calibrate_model.py` — fit and embed optional per-allele confidence calibration into a model.
 
-## Property-1 (dynamic genotype) evaluation
-- `heldout_alleles.py` — genotype-subset compliance + novel-allele recall (strict/gene/
-  equiv-class/set), with SNP-perturbed `~novel` stand-ins.
-- `novel_source_test.py` — **definitive** novel test: edits reads so they genuinely derive
-  from a novel germline (it is then the true closest), then measures recall.
-- `embargo_retrain.py` — **gold-standard** Property-1 test: retrain with ~18 V alleles
-  embargoed from BOTH the GenAIRR sim and the reference, then call them as novel against the
-  full reference; reports held-out vs control (trained) allele recall.
-- `hierarchical_eval.py` — value of hierarchical degradation + abstention on fragments
-  (hard-error vs honest-abstain vs correct coarser call).
-- `run_benchmark.py --genotype subset` exercises `genotype_mask_compliance`
-  (outside_genotype_call_rate + genotype_restricted_call_acc) as a standing benchmark metric.
+## Research / benchmark drivers
 
-## Real-data validation (no simulation)
-- `realdata_validation.py` — OAS real IGH reads: full-read concordance vs IgBLAST + the
-  crop-back fragment test (IgBLAST full-read call = silver truth, test fragment recovery).
-  Data lives gitignored under `.private/realdata/`.
+Ad-hoc drivers for evaluation and profiling (require data/tools under the gitignored `.private/`):
+`bench_alignair_h2h.py`, `run_1m_h2h.sh`, `baseline_igblast.py` (IgBLAST baseline),
+`aligner_microbench.py`, `diagnose_alignair.py`, `diag_d_ambiguity.py`.
 
-## Diagnostics (one-off investigation drivers; kept for provenance)
-- `segment_ablation.py` — oracle vs predicted segment → is segmentation the bottleneck?
-- `retrieval_probe.py` — cosine vs MaxSim vs k-mer retrieval recall (falsified the
-  late-interaction hypothesis: nothing beats cosine zero-shot).
-- `reader_recall_test.py` — reader call accuracy vs candidate-net width (showed recall is
-  not the heavy-SHM V cap; reader discrimination = SW parity is).
-- `novel_diagnostic.py` — decomposes novel-allele recall into retrieval vs discrimination
-  (showed the 0.33 was a metric artifact: retrieval is perfect, misses are real siblings).
-- `diag_d_ambiguity.py` — D-allele ambiguity inspection.
+The canonical, reproducible evaluator is the `alignair_benchmark` package (and the `alignair benchmark`
+CLI command), not these drivers.

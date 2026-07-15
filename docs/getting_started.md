@@ -179,5 +179,5 @@ alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop --pl
 
 - [Pretrained models](models.md) — the catalog and how `--model <id>` works.
 - [Command-line reference](cli.md) — every command and its options.
-- [Design & internals](dnalignair.md) — how the model works.
+- [Design & internals](design.md) — how the model works.
 - [Benchmarks](benchmarks.md) — head-to-head vs IgBLAST.

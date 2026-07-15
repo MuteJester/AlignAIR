@@ -20,7 +20,7 @@ nav:
   - Performance:
       - Benchmarks — vs IgBLAST: benchmarks.md
       - Speed & throughput: performance.md
-  - Design & internals: dnalignair.md
+  - Design & internals: design.md
   - Troubleshooting: troubleshooting.md
   - Maintainer:
       - Publishing models: publishing_models.md
