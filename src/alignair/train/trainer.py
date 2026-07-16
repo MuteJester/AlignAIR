@@ -74,7 +74,7 @@ def train_step(model, batch_in, targets, cfg, logvars, opt, *, step: int = 0, gr
     opt.zero_grad()
     total.backward()
     # a finite loss can still have non-finite GRADIENTS (e.g. d/dx sqrt(x) at 0); reject them BEFORE
-    # clipping/stepping — otherwise the step corrupts the weights (audit #2). clip_grad_norm_ itself
+    # clipping/stepping — otherwise the step corrupts the weights. clip_grad_norm_ itself
     # turns an inf grad into NaN, so this check must precede it.
     if not all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()):
         raise NonFiniteLossError(f"non-finite gradient at step {step} (loss was finite: {float(total):.3g}). "
@@ -190,16 +190,67 @@ def _amplicon_specs(progresses, heavy_shm, short_boost=1, mutation_cap=None):
     if heavy_shm > 0:
         hs = dict(cur.params(0.3)); hs["mutation_rate"] = heavy_shm   # heavy-SHM, full length
         specs.append(hs)
-    if mutation_cap is not None:                    # loci without SHM (e.g. TCR): pin S5F mutation low
+    if mutation_cap is not None:                    # loci without SHM (TCR): cap the S5F mutation rate
         for s in specs:
             s["mutation_rate"] = min(s["mutation_rate"], mutation_cap)
     return specs
 
 
+def _is_tcr(dataconfig) -> bool:
+    """TCR loci do not undergo somatic hypermutation (T-cells lack AID), and GenAIRR refuses
+    ``mutate()`` on them."""
+    return "TCR" in str(getattr(dataconfig.metadata, "chain_type", "")).upper()
+
+
+def _cap_for(dataconfig, mutation_cap):
+    """The SHM cap for ONE locus's stream. A TCR locus is always capped to 0 regardless of the
+    run-level cap; an IG locus keeps the run-level cap (normally ``None`` = uncapped). Deriving this
+    per dataconfig is what lets a MIXED IG+TCR run keep full SHM on its IG streams — a single global
+    cap (``0.0`` if any locus is TCR) would wrongly disable SHM for IGH."""
+    return 0.0 if _is_tcr(dataconfig) else mutation_cap
+
+
+def _dc_name(dataconfig) -> str:
+    """A stable, human-meaningful key for one dataconfig: its canonical GenAIRR name (e.g.
+    ``HUMAN_TCRA_IMGT``) for a built-in, else its own name, else its chain type (custom references)."""
+    try:
+        import GenAIRR.data as gd
+        # `vars()` = already-materialized module attributes only, so this never triggers a lazy build
+        # of every shipped dataconfig (a dir()+getattr scan does, and costs ~0.5s).
+        for k, v in vars(gd).items():
+            if v is dataconfig and not k.startswith("_"):
+                return k
+    except Exception:                                  # noqa: BLE001 - naming must never break training
+        pass
+    name = getattr(dataconfig, "name", None)
+    if name and str(name).strip().lower() not in ("none", "unnamed"):
+        return str(name)
+    ct = getattr(getattr(dataconfig, "metadata", None), "chain_type", "unknown")
+    return str(getattr(ct, "value", ct))
+
+
+def _effective_mutation_caps(dataconfigs, mutation_cap) -> dict:
+    """The SHM cap ACTUALLY applied to each locus's stream, keyed by dataconfig name.
+
+    The run-level ``mutation_cap`` is only the *request*; TCR loci are always capped to 0
+    (:func:`_cap_for`). A checkpoint that recorded only the request would misstate the training
+    distribution — e.g. a TRA run would read ``mutation_cap: null, heavy_shm: 0.25`` while every TRA
+    stream actually saw zero SHM. Recording the effective per-locus caps makes the card reproducible."""
+    out: dict = {}
+    for i, dc in enumerate(dataconfigs):
+        key = _dc_name(dc)
+        if key in out:                                 # two panels of one locus: keep both, disambiguated
+            key = f"{key}#{i}"
+        out[key] = _cap_for(dc, mutation_cap)
+    return out
+
+
 def _mixed_stream(dataconfig, progresses, heavy_shm, seed, short_boost=1, mutation_cap=None):
     """Round-robin the amplicon-mode mix (:func:`_amplicon_specs`) so every batch spans full-length
-    clean/hard + heavy-SHM + V-anchored/J-anchored/fragment short reads, all GenAIRR-native."""
-    specs = _amplicon_specs(progresses, heavy_shm, short_boost, mutation_cap)
+    clean/hard + heavy-SHM + V-anchored/J-anchored/fragment short reads, all GenAIRR-native. The SHM
+    cap is resolved for THIS locus (:func:`_cap_for`), so each locus in a multi-locus run gets its own
+    biology."""
+    specs = _amplicon_specs(progresses, heavy_shm, short_boost, _cap_for(dataconfig, mutation_cap))
     streams = [_stream_records(dataconfig, s, seed + i) for i, s in enumerate(specs)]
     yield from itertools.chain.from_iterable(zip(*streams))
 
@@ -208,7 +259,7 @@ def _multi_locus_stream(dataconfigs, progresses, heavy_shm, seed, short_boost=1,
     """Interleave each locus's :func:`_mixed_stream`, tagging every record with its chain **class id**
     (the index of its locus among the DISTINCT loci, == the ``AlignAIRConfig`` chain_type order) so the
     collate builds valid chain_type/locus supervision even when two dataconfigs share a locus (e.g. two
-    IGH panels) — labelling by raw dataconfig position would emit an out-of-range class (audit #5).
+    IGH panels) — labelling by raw dataconfig position would emit an out-of-range class.
     Reads are drawn round-robin across dataconfigs for a balanced batch."""
     from ..reference.reference_set import _locus_of
     order: list = []
@@ -229,7 +280,7 @@ def _multi_locus_stream(dataconfigs, progresses, heavy_shm, seed, short_boost=1,
 
 def _restore_rng(rng: dict) -> None:
     """Restore Python/NumPy/Torch(/CUDA) RNG state saved in a checkpoint so resumed augmentation,
-    dropout and shuffling continue from the same generators (P0-10). The GenAIRR data *stream* is
+    dropout and shuffling continue from the same generators. The GenAIRR data *stream* is
     re-seeded by ``seed + start`` — resume is statistically reproducible, not bitwise (a mid-stream
     generator position is not restored); this restores everything else."""
     if not rng:
@@ -313,7 +364,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
     from .gym import Curriculum
     from .guards import validate_training_request
     dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
-    # preflight: fail fast on a bad request rather than after a long run (P0-10)
+    # preflight: fail fast on a bad request rather than after a long run
     validate_training_request(steps=steps, batch_size=batch_size, lr=lr,
                               max_seq_length=cfg.max_seq_length, reference=reference_set,
                               progresses=progresses, heavy_shm=heavy_shm, short_boost=short_boost,
@@ -325,12 +376,13 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
         dc = dataconfigs[0]
         if len(progresses) > 1 or heavy_shm > 0 or short_boost > 1:
             return _mixed_stream(dc, progresses, heavy_shm, sd, short_boost, mutation_cap)
-        return _stream_records(dc, _capped(progresses[0]), sd)
+        return _stream_records(dc, _capped(dc, progresses[0]), sd)
 
-    def _capped(pr):                               # curriculum params with SHM pinned low (TCR loci)
+    def _capped(dc, pr):                           # curriculum params with THIS locus's SHM cap (TCR -> 0)
         s = dict(Curriculum().params(pr))
-        if mutation_cap is not None:
-            s["mutation_rate"] = min(s["mutation_rate"], mutation_cap)
+        cap = _cap_for(dc, mutation_cap)
+        if cap is not None:
+            s["mutation_rate"] = min(s["mutation_rate"], cap)
         return s
     model.to(device)
     logvars.to(device)                         # Kendall log-vars must share the model's device
@@ -349,7 +401,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
                 opt.load_state_dict(ts.optimizer_state)
                 for grp in opt.param_groups:    # honor the CLI lr on resume (e.g. lower lr for a fine-tune)
                     grp["lr"] = lr
-            _restore_rng(ts.rng)                # continue the same RNG streams (P0-10)
+            _restore_rng(ts.rng)  # continue the same RNG streams
             start = ts.step
         else:                                   # legacy .pt: arbitrary-code pickle -> require explicit trust
             if not resume_trust_pickle:
@@ -364,7 +416,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
                     grp["lr"] = lr
             _restore_rng(ck.get("rng") or {})
             start = int(ck.get("step", 0))
-        if steps <= start:                          # nothing to do -> refuse rather than mis-save (audit #12)
+        if steps <= start:  # nothing to do -> refuse rather than mis-save
             raise ValueError(f"resume target steps={steps} is not beyond the checkpoint step {start}; "
                              f"pass steps > {start} to continue training.")
         print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
@@ -376,7 +428,11 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
 
     _train_args = {"lr": lr, "batch_size": batch_size, "progresses": list(progresses),
                    "heavy_shm": heavy_shm, "short_boost": short_boost, "seed": seed, "steps": steps,
-                   "mutation_cap": mutation_cap}
+                   # `mutation_cap` is the run-level REQUEST; `effective_mutation_caps` is what each
+                   # locus actually got (TCR -> 0). Without the latter the card misstates the training
+                   # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
+                   "mutation_cap": mutation_cap,
+                   "effective_mutation_caps": _effective_mutation_caps(dataconfigs, mutation_cap)}
     _dcs = dataconfigs
 
     # ModelXRay: a read-only training X-ray over a fixed held-out probe batch
@@ -397,7 +453,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
                          uncertainty=logvars, task_eval=task_eval, task_losses=task_losses,
                          shared_module="embedding")
 
-    # fixed-seed, immutable validation batches for best-checkpoint selection (P0-10)
+    # fixed-seed, immutable validation batches for best-checkpoint selection
     val_set = []
     if val_every and val_every > 0:
         vstream = _build_stream(seed + 424242)         # a held-out seed, disjoint from training
@@ -408,7 +464,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
             val_set.append(build_batch(vr, reference_set, cfg, device, augment_orientation=False))
     best_score = float("-inf")
 
-    completed = start                              # the last step actually run (audit #12: a short/early
+    completed = start                              # the last step actually run (a short/early
     stream = _build_stream(seed + start)           # stream must not let the final save claim `steps`)
     for step in range(start + 1, steps + 1):
         records = list(itertools.islice(stream, batch_size))

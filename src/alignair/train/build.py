@@ -1,4 +1,4 @@
-"""Custom-reference training support (AIRR-review #6): build a GenAIRR DataConfig from user V/D/J
+"""Custom-reference training support: build a GenAIRR DataConfig from user V/D/J
 FASTAs, produce a pre-training plan (validate-only), and export a safe **pickle-free** model bundle
 (model + model card + reference manifest + validation report) after training.
 """
@@ -63,6 +63,29 @@ def training_plan(dcs, *, steps: int, batch_size: int) -> dict:
     }
 
 
+def _checkpoint_training(checkpoint_path: str) -> dict:
+    """The training provenance recorded IN the checkpoint (actual steps, lr, curriculum progresses,
+    heavy_shm, seed, and ``train_args`` incl. the effective per-locus SHM caps).
+
+    The checkpoint is the source of truth: a caller that hand-rebuilds a training dict silently drops
+    every field it does not know about — which is how the distributable bundle used to lose
+    ``effective_mutation_caps``. Returns ``{}`` for a legacy/unreadable artifact so export still works."""
+    try:
+        from .. import model_file as mf
+        return dict(mf.read_metadata(checkpoint_path).get("training") or {})
+    except Exception:                                  # noqa: BLE001 - provenance must never block export
+        return {}
+
+
+def required_segments(dataconfig) -> tuple:
+    """The segments a validation record must carry coordinates for, for THIS locus.
+
+    Derived per dataconfig, never from the union reference: in a mixed D / non-D run (e.g. TRA+TRB) the
+    union's ``has_d`` is True, which would drop EVERY TRA record for lacking D coordinates and silently
+    reduce the validation report to the D-bearing locus alone."""
+    return ("v", "d", "j") if bool(getattr(dataconfig.metadata, "has_d", False)) else ("v", "j")
+
+
 def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_size: int = 32,
                        seed: int = 424242) -> dict:
     """Evaluate the trained model on a fixed held-out stream and return per-task metrics."""
@@ -72,13 +95,17 @@ def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_s
 
     from ..api import load_model
     from ..train.gym import Curriculum, build_experiment
-    from ..train.trainer import build_batch, eval_metrics
+    from ..train.trainer import _is_tcr, build_batch, eval_metrics
     model, ref = load_model(checkpoint_path, device="cpu")
     agg: dict = {}
     for i, dc in enumerate(dcs):
-        exp = build_experiment(dc, dict(Curriculum().params(0.3)), allow_curatable=True)
+        params = dict(Curriculum().params(0.3))
+        if _is_tcr(dc):                            # TCR loci do not undergo SHM (GenAIRR forbids mutate())
+            params["mutation_rate"] = 0.0
+        exp = build_experiment(dc, params, allow_curatable=True)
+        segs = required_segments(dc)               # per-locus, not the union reference (see the helper)
         recs = [r for r in itertools.islice(exp.stream_records(n=None, seed=seed + i), batch_size * n_batches * 3)
-                if all(r.get(f"{g}_sequence_start") is not None for g in (("v", "d", "j") if ref.has_d else ("v", "j")))]
+                if all(r.get(f"{g}_sequence_start") is not None for g in segs)]
         for b in range(0, len(recs) - batch_size + 1, batch_size):    # +1: include the last full batch
             batch_in, targets = build_batch(recs[b:b + batch_size], ref, model.cfg, device="cpu")
             with torch.no_grad():
@@ -128,14 +155,20 @@ def _reference_manifest(ref, sources, report, model_path) -> dict:
     return manifest
 
 
-def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: dict,
+def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: Optional[dict] = None,
                   model_id: Optional[str] = None, description: str = "", validate: bool = True,
                   sources: Optional[dict] = None, report=None, overwrite: bool = False) -> str:
     """Export a **pickle-free**, distributable model bundle from a (resumable) training checkpoint:
     ``model.alignair`` (no trusted pickle) + ``model_card.md`` + ``reference_manifest.json`` + (unless
     ``validate=False``) ``validation_report.json``. Returns the model path.
 
-    Interruption-safe (AIRR-review): built in a sibling temp directory and renamed onto ``bundle_dir``
+    Training provenance is read FROM ``checkpoint_path`` (:func:`_checkpoint_training`) so the
+    distributable bundle carries the same record as the resumable checkpoint — actual steps, curriculum
+    progresses, heavy_shm, seed, and the effective per-locus SHM caps. ``training`` is an optional
+    override merged on top; callers must not have to restate the schema (a hand-built dict silently
+    dropped ``train_args``, and with it the effective caps, from every published bundle).
+
+    Interruption-safe: built in a sibling temp directory and renamed onto ``bundle_dir``
     only after every file succeeds and the model reloads. **Fails closed** — if ``bundle_dir`` already
     exists it is NOT overwritten unless ``overwrite=True`` (a fresh output dir is the normal path, so a
     published bundle is never silently destroyed). With ``overwrite=True`` the existing bundle is moved
@@ -154,6 +187,8 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: dict,
         raise FileExistsError(
             f"bundle directory already exists: {bundle_dir}. Refusing to overwrite a possibly-published "
             f"bundle — choose a new output directory or pass overwrite=True (--overwrite).")
+    # the checkpoint is the source of truth for provenance; explicit overrides win
+    training = {**_checkpoint_training(checkpoint_path), **(training or {})}
     # build in a secure sibling temp dir on the SAME filesystem (so the final rename is atomic)
     tmp = tempfile.mkdtemp(dir=parent, prefix=os.path.basename(bundle_dir) + ".building.")
     try:
@@ -201,11 +236,20 @@ def _write_card(path: str, training: dict, manifest: dict, report: dict) -> None
     lines = ["# AlignAIR model card", "",
              f"- loci: {loci}",
              "- alleles: " + ", ".join(f"{G}={d['n']}" for G, d in manifest["genes"].items()),
-             f"- training steps: {training.get('steps')}", ""]
+             f"- training steps: {training.get('steps')}"]
+    # The SHM cap actually applied to each locus (TCR -> 0). Without this the card misstates the
+    # training distribution: a TRA run otherwise reads as an uncapped curriculum with heavy_shm=0.25.
+    caps = (training.get("train_args") or {}).get("effective_mutation_caps")
+    if caps:
+        rendered = ", ".join(f"{k}={'uncapped' if v is None else v}" for k, v in caps.items())
+        lines.append(f"- effective SHM cap per locus: {rendered}")
+    if training.get("heavy_shm") is not None:
+        lines.append(f"- heavy-SHM stream (requested): {training['heavy_shm']}")
+    lines.append("")
     if report:
         lines += ["## Validation (fixed held-out stream)", ""]
         lines += [f"- {k}: {v}" for k, v in sorted(report.items())]
     lines += ["", "This is a fixed-reference classifier: the embedded reference is the callable set.",
-              "Adding alleles / species requires training a new model. See docs/model_contract.md."]
+              "Adding alleles / species requires training a new model. See the AlignAIR model-contract docs."]
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")

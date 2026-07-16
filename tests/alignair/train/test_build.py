@@ -1,5 +1,5 @@
-"""AIRR-review #6: custom-reference training support — build a DataConfig from V/D/J FASTAs, the
-pre-training plan, and the pickle-free bundle export."""
+"""Custom-reference training support: build a DataConfig from V/D/J FASTAs, the pre-training plan,
+and the pickle-free bundle export (including the provenance it must carry)."""
 import os
 
 import pytest
@@ -79,7 +79,7 @@ def test_export_bundle_fails_closed_on_existing_dir(tmp_path):
 
 def test_train_cli_refuses_existing_bundle_before_training(tmp_path):
     """`alignair train` fails closed on an existing bundle/ BEFORE spending training time (not only at
-    export), so a re-run can't clobber a published bundle after a long train (AIRR-review)."""
+    export), so a re-run can't clobber a published bundle after a long train."""
     from alignair.cli.main import main
     out = tmp_path / "run"
     (out / "bundle").mkdir(parents=True)
@@ -114,3 +114,60 @@ def test_custom_fasta_train_and_pickle_free_export(tmp_path):
     assert manifest["reference_fasta_sha256"]                                         # embedded-ref fingerprint
     assert manifest["model_artifact_sha256"] and "v_fasta" in manifest["sources"]
     assert manifest["genes"]["V"]["n"] == 8 and "anchored" in manifest["genes"]["V"]
+
+
+def test_checkpoint_training_tolerates_unreadable_artifact():
+    """Provenance lookup must never block an export (legacy .pt / missing file -> empty, not raise)."""
+    from alignair.train.build import _checkpoint_training
+    assert _checkpoint_training("/no/such/checkpoint.alignair") == {}
+
+
+@pytest.mark.slow
+def test_bundle_export_preserves_checkpoint_provenance(tmp_path):
+    """The resumable checkpoint and the distributable bundle must record the SAME training provenance.
+
+    `effective_mutation_caps` is the one that matters: a TRA run receives zero SHM, and a bundle that
+    dropped that field would read as an uncapped curriculum with heavy_shm=0.25. The bundle used to be
+    built from a caller-reconstructed training dict, which silently discarded `train_args` entirely.
+    """
+    import GenAIRR.data as gd
+
+    from alignair import TrainingConfig, run_training
+    from alignair import model_file as mf
+    from alignair.train.build import export_bundle
+
+    out = tmp_path / "run"
+    cfg = TrainingConfig.from_genairr("HUMAN_TCRA_IMGT", preset="quick", steps=2, batch_size=2)
+    run = run_training(cfg, output_dir=str(out))
+    bundle = export_bundle(run.model_path, [gd.HUMAN_TCRA_IMGT], str(out / "bundle"), validate=False)
+
+    ck = mf.read_metadata(run.model_path)["training"]
+    bd = mf.read_metadata(bundle)["training"]
+
+    assert ck["train_args"]["effective_mutation_caps"] == {"HUMAN_TCRA_IMGT": 0.0}
+    assert bd["train_args"]["effective_mutation_caps"] == ck["train_args"]["effective_mutation_caps"]
+    for k in ("progresses", "heavy_shm", "seed", "mutation_cap"):   # the rest survives too
+        assert bd["train_args"][k] == ck["train_args"][k], f"bundle lost train_args.{k}"
+
+    card = (out / "bundle" / "model_card.md").read_text()           # human-facing provenance
+    assert "effective SHM cap per locus" in card
+    assert "HUMAN_TCRA_IMGT=0.0" in card
+
+
+@pytest.mark.slow
+def test_bundle_export_override_wins_over_checkpoint(tmp_path):
+    """`training=` stays an override on top of the checkpoint, not a replacement of it."""
+    import GenAIRR.data as gd
+
+    from alignair import TrainingConfig, run_training
+    from alignair import model_file as mf
+    from alignair.train.build import export_bundle
+
+    out = tmp_path / "run"
+    cfg = TrainingConfig.from_genairr("HUMAN_TCRA_IMGT", preset="quick", steps=2, batch_size=2)
+    run = run_training(cfg, output_dir=str(out))
+    bundle = export_bundle(run.model_path, [gd.HUMAN_TCRA_IMGT], str(out / "bundle"),
+                           training={"lr": 0.123}, validate=False)
+    bd = mf.read_metadata(bundle)["training"]
+    assert bd["lr"] == 0.123                                        # override applied
+    assert bd["train_args"]["effective_mutation_caps"] == {"HUMAN_TCRA_IMGT": 0.0}   # base preserved

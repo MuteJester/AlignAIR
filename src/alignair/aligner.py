@@ -1,4 +1,4 @@
-"""Stable object API (P0-9): the public surface for loading a model and predicting, plus a typed
+"""Stable object API: the public surface for loading a model and predicting, plus a typed
 training entry. Everything here is a thin, documented wrapper over the internal functions
 (``load_model`` / ``predict`` / ``train``), so behavior is identical while the surface is stable, typed,
 and registry-aware.
@@ -121,7 +121,7 @@ class Aligner:
     def _assert_distributable(self) -> None:
         """Refuse to distribute a resumable checkpoint: those carry trusted **pickle** sections
         (dataconfig / train_state) and must not be published — export a pickle-free inference artifact
-        first (audit #10)."""
+        first."""
         if not self.model_path:
             raise ValueError("needs an aligner loaded from a file (model_path is unset)")
         from .model_file import read_metadata
@@ -149,7 +149,7 @@ class Aligner:
         """Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo. Requires
         ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). Returns the upload result."""
         import os
-        self._assert_distributable()               # never upload a pickle checkpoint (audit #10)
+        self._assert_distributable()  # never upload a pickle checkpoint
         try:
             from huggingface_hub import HfApi
         except ImportError as e:                    # pragma: no cover - optional dep
@@ -281,6 +281,9 @@ def run_training(config: TrainingConfig, *, output_dir: str | None = None,
     model = AlignAIR(cfg)
     logvars = make_logvars(cfg)
     dev = resolve_device(config.device)
+    # No run-level SHM cap: the trainer derives it PER dataconfig (TCR -> 0, IG -> uncapped), so a
+    # mixed IG+TCR run keeps full SHM on its IG streams. A global `0.0 if any(TCR)` would disable SHM
+    # for IGH in a combined IGH+TRB model.
     _train(model, reference, dcs, cfg, logvars, steps=config.steps, batch_size=config.batch_size,
            lr=config.lr, short_boost=config.short_boost, seed=config.seed, device=dev,
            save_path=path, grad_clip=config.grad_clip, val_every=config.val_every)

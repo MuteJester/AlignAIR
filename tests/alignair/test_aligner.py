@@ -1,4 +1,4 @@
-"""P0-9: the stable object API — Aligner / PredictionResult / TrainingConfig, device resolution, and a
+"""The stable object API — Aligner / PredictionResult / TrainingConfig, device resolution, and a
 public-surface snapshot. Model-backed tests use the shipped IGH model when present."""
 import csv
 import os
@@ -78,3 +78,59 @@ def test_train_api_end_to_end(tmp_path):
     assert isinstance(aligner, Aligner)
     result = aligner.predict(["CAGGTGCAGCTGGTGCAGTCTGGGGCTGAGGTGAAGAAGCCTGGGGCCTCAGTGAAGGTCTCC"])
     assert len(result) == 1 and result.records[0].get("v_call") is not None
+
+
+def _simulated_read(dataconfig_name: str, seed: int = 11) -> str:
+    """One GenAIRR read for this locus. TCR loci get ``mutation_rate=0`` (T-cells lack AID, and GenAIRR
+    refuses ``mutate()`` on a TCR refdata)."""
+    import itertools
+
+    import GenAIRR.data as gd
+
+    from alignair.train.gym import Curriculum, build_experiment
+    params = dict(Curriculum().params(0.1))
+    params["mutation_rate"] = 0.0
+    exp = build_experiment(getattr(gd, dataconfig_name), params, allow_curatable=True)
+    return next(itertools.islice(exp.stream_records(n=None, seed=seed), 1))["sequence"]
+
+
+@pytest.mark.slow
+def test_tcr_train_api_end_to_end(tmp_path):
+    """Training custom models on TCR loci (TRA: non-D, TRB: D-bearing) without AID SHM mutation failures,
+    then PREDICTING a simulated read of that locus.
+
+    The models are 2-step (untrained), so accuracy is meaningless here — but a fixed-reference model can
+    only ever emit alleles from its own embedded catalog, so the locus label and the call namespace are
+    strong, non-flaky assertions that the whole train -> load -> predict path works per locus."""
+    from alignair import Aligner, TrainingConfig, run_training
+
+    # 1. TRA Locus (no D gene)
+    cfg_tra = TrainingConfig.from_genairr("HUMAN_TCRA_IMGT", preset="quick", steps=2, batch_size=2)
+    run_tra = run_training(cfg_tra, output_dir=str(tmp_path / "run_tra"))
+    assert os.path.exists(run_tra.model_path)
+    aligner_tra = run_tra.best_aligner(device="cpu")
+    assert isinstance(aligner_tra, Aligner)
+
+    res_tra = aligner_tra.predict([_simulated_read("HUMAN_TCRA_IMGT")])
+    assert len(res_tra) == 1
+    assert res_tra.locus == "TRA"
+    rec_tra = res_tra.records[0]
+    assert rec_tra["v_call"].startswith("TRAV")          # calls come from THIS locus's catalog
+    assert rec_tra["j_call"].startswith("TRAJ")
+    assert not rec_tra.get("d_call")                     # TRA has no D segment
+
+    # 2. TRB Locus (has D gene)
+    cfg_trb = TrainingConfig.from_genairr("HUMAN_TCRB_IMGT", preset="quick", steps=2, batch_size=2)
+    run_trb = run_training(cfg_trb, output_dir=str(tmp_path / "run_trb"))
+    assert os.path.exists(run_trb.model_path)
+    aligner_trb = run_trb.best_aligner(device="cpu")
+    assert isinstance(aligner_trb, Aligner)
+
+    res_trb = aligner_trb.predict([_simulated_read("HUMAN_TCRB_IMGT")])
+    assert len(res_trb) == 1
+    assert res_trb.locus == "TRB"
+    rec_trb = res_trb.records[0]
+    assert rec_trb["v_call"].startswith("TRBV")
+    assert rec_trb["j_call"].startswith("TRBJ")
+    if rec_trb.get("d_call"):                            # D-bearing locus: any D call must be a TRBD
+        assert rec_trb["d_call"].startswith("TRBD")

@@ -81,8 +81,10 @@ def run(args) -> int:
 
     checkpoint = run.best_model_path or run.model_path
     sources = {"v_fasta": args.v_fasta, "d_fasta": args.d_fasta, "j_fasta": args.j_fasta} if args.v_fasta else None
+    # No `training=` override: export_bundle reads the full provenance from the checkpoint (actual
+    # steps + curriculum + effective per-locus SHM caps). Restating a reduced dict here is what used
+    # to drop `train_args` from every distributable bundle.
     bundle = export_bundle(checkpoint, dcs, os.path.join(args.out, "bundle"),
-                           training={"steps": cfg.steps, "batch_size": cfg.batch_size, "lr": cfg.lr},
                            description="AlignAIR model (custom reference)" if args.v_fasta else "",
                            sources=sources, report=report, overwrite=args.overwrite)
     print(f"trained -> {run.model_path}\nexported pickle-free bundle -> {bundle}")
