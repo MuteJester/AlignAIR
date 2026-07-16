@@ -18,8 +18,8 @@ back-compat. I/O + reference helpers: ``read_sequences``, ``write_airr``, ``Refe
 ``compare_airr``.
 """
 from .reference.reference_set import ReferenceSet
-from .io.sequence_reader import read_sequences, iter_sequences
-from .io.airr import write_airr, AirrWriter
+from .io.sequence_reader import read_sequences, iter_sequences, DuplicateMetadataId
+from .io.airr import write_airr, AirrWriter, PredictionCountMismatch
 from .compare import compare_airr
 from .api import load_model, predict_sequences, train_model
 from .aligner import Aligner, PredictionResult, TrainingConfig, TrainingRun, run_training, resolve_device
@@ -40,5 +40,5 @@ __all__ = [
     "load_model", "predict_sequences", "train_model",
     "AlignAIR", "AlignAIRConfig", "PredictConfig",
     "ReferenceSet", "read_sequences", "iter_sequences",
-    "write_airr", "AirrWriter", "compare_airr", "__version__",
+    "write_airr", "AirrWriter", "compare_airr", "DuplicateMetadataId", "PredictionCountMismatch", "__version__",
 ]

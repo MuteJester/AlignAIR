@@ -78,6 +78,9 @@ def _info(args) -> int:
     ac = md.get("model", {}).get("allele_counts", {})
     print(f"  alleles:  V={ac.get('v')} D={ac.get('d')} J={ac.get('j')}")
     print(f"  reference: allele_order_sha256={md.get('reference', {}).get('allele_order_sha256', '')[:12]}…")
+    dcs = [dc.get("name") for dc in md.get("reference", {}).get("dataconfigs", []) if dc.get("name")]
+    if dcs:
+        print(f"  dataconfigs: {', '.join(dcs)}")
     return 0
 
 

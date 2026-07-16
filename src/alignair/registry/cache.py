@@ -52,7 +52,7 @@ def _sidecar(path: Path) -> Path:
 
 def _write_sidecar(dest: Path, sha: str | None) -> None:
     """Record the verified artifact hash next to it, so a later offline pinned-cache hit can prove the
-    file was not corrupted/swapped after download (audit #11)."""
+    file was not corrupted/swapped after download."""
     if sha:
         try:
             _sidecar(dest).write_text(sha)
@@ -176,7 +176,7 @@ def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool 
     if os.path.exists(spec):
         return Path(spec)
     from . import hf
-    if hf.is_hf_repo_spec(spec):                          # direct one-repo-per-model HF loading (P0-11)
+    if hf.is_hf_repo_spec(spec):  # direct one-repo-per-model HF loading
         return hf.download_from_hub(spec, revision=revision, token=token, offline=offline)
     model_id, _, version = spec.partition("@")
     version = version or None
@@ -185,11 +185,30 @@ def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool 
         cached = cache_path(model_id, version)
         # return a cached pinned version without the network ONLY if its integrity sidecar still checks
         # out (or there is no sidecar to check — legacy cache). A tampered/corrupt file falls through to
-        # a registry re-resolve instead of loading the wrong model (audit #11).
+        # a registry re-resolve instead of loading the wrong model.
         if cached.exists() and _sidecar_ok(cached) is not False:
             return cached
-    found = _find(model_id, version, srcs, offline)
+    else:
+        # unpinned + offline -> fallback to latest cached version immediately
+        if offline:
+            inst = installed_models().get(model_id)
+            if inst:
+                cached = cache_path(model_id, inst[-1])
+                if cached.exists() and _sidecar_ok(cached) is not False:
+                    return cached
+
+    try:
+        found = _find(model_id, version, srcs, offline)
+    except Exception:
+        found = None
+
     if not found:
+        if not version:
+            inst = installed_models().get(model_id)
+            if inst:
+                cached = cache_path(model_id, inst[-1])
+                if cached.exists() and _sidecar_ok(cached) is not False:
+                    return cached
         known = _known_ids(srcs, offline)
         hint = f" Known ids: {', '.join(known)}." if known else ""
         raise ValueError(f"unknown model '{spec}' — pass a file path or a registry id.{hint}")

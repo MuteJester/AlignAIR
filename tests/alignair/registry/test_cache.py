@@ -1,4 +1,4 @@
-"""Phase 1 / Task 5: verified, atomic cache + resolve_model."""
+"""Verified, atomic cache + resolve_model."""
 import hashlib
 import json
 import shutil
@@ -78,7 +78,7 @@ def test_pinned_cache_with_valid_sidecar_returns(monkeypatch, tmp_path):
 
 def test_pinned_cache_tampered_file_is_not_returned(monkeypatch, tmp_path):
     """A cached pinned artifact whose sidecar no longer matches is NOT returned — it falls through to a
-    registry re-resolve instead of silently loading the wrong/corrupt model (audit #11)."""
+    registry re-resolve instead of silently loading the wrong/corrupt model."""
     monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "c"))
     dest = cache.cache_path("human-igh", "2.1.0")
     dest.parent.mkdir(parents=True)
@@ -86,3 +86,18 @@ def test_pinned_cache_tampered_file_is_not_returned(monkeypatch, tmp_path):
     cache._write_sidecar(dest, hashlib.sha256(b"the-original-artifact").hexdigest())   # != file
     with pytest.raises(ValueError, match="unknown"):     # offline + integrity fail -> clean error
         cache.resolve_model("human-igh@2.1.0", sources=["hf://unreachable/x"], offline=True)
+
+
+def test_unpinned_offline_cached_resolution_fallback(monkeypatch, tmp_path):
+    monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "c"))
+    payload = b"MODEL-BYTES-VERSION-1.0.0"
+    dest = cache.cache_path("human-igh", "1.0.0")
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(payload)
+    cache._write_sidecar(dest, hashlib.sha256(payload).hexdigest())
+
+    # Try resolving 'human-igh' (unpinned) in offline mode
+    # Since it is in the cache, it should fall back to using the latest installed version
+    p = cache.resolve_model("human-igh", sources=["hf://unreachable/x"], offline=True)
+    assert p == dest
+    assert p.read_bytes() == payload
