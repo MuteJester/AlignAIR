@@ -1,8 +1,8 @@
-"""Assemble full AIRR rearrangement records from predict() records + reference (Phase B).
+"""Assemble full AIRR rearrangement records from predict() records + reference.
 
-Faithful port of TF Pipeline/AIRR/builder: IMGT-gapped sequence_alignment, np1/np2, germline
-alignment, IMGT-frame positions, per-segment alignments, FWR/CDR regions, junction/CDR3 via the J
-anchor, and quality flags. Per-record ``try/except`` isolates edge cases (fall back to a bare row).
+Produces IMGT-gapped sequence_alignment, np1/np2, germline alignment, IMGT-frame positions,
+per-segment alignments, FWR/CDR regions, junction/CDR3 via the J anchor, and quality flags.
+Per-record ``try/except`` isolates edge cases (fall back to a bare row).
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .regions import cigar_has_indel, compute_junction, compute_junction_cigar, 
 
 # Exceptions edge-case *data* can legitimately raise inside assembly (bad coords, missing anchors,
 # out-of-range slices). These are tagged as per-record assembly failures and tracked; anything else is
-# treated as a programming defect and re-raised loudly (see build_airr / the pre-launch audit P0-7).
+# treated as a programming defect and re-raised loudly (see build_airr).
 _EXPECTED_ASSEMBLY_ERRORS = (ValueError, IndexError, KeyError)
 
 
@@ -81,7 +81,7 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     # the model's neural call is kept as `productive_prediction`; AIRR `productive` is a DERIVED fact
     # (in-frame + no stop codon) set below once the alignment math runs. If it cannot be derived (this
     # record skipped assembly), `productive` stays **blank/unknown** rather than presenting the neural
-    # guess as a definitive fact (audit #6).
+    # guess as a definitive fact.
     neural_productive = bool(rec.get("productive", True))
     out["productive_prediction"] = neural_productive
     out["productive"] = None
@@ -89,7 +89,7 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     cigar_junction = _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors, force=is_tcr)
     # skip the heavy alignment math for clearly-garbage reads (predicted non-productive with multiple
     # indels); the indel-robust junction above is already attached, and AIRR `productive` stays blank.
-    # These are PARTIAL, not ok — germline_alignment / identity are not derivable (audit #5).
+    # These are PARTIAL, not ok — germline_alignment / identity are not derivable.
     if (not neural_productive) and (rec.get("indel_count") or 0) > 1:
         return _partial(out, "nonproductive_indel")
     v_call = rec.get("v_call", "")
@@ -137,7 +137,7 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     out.update(junction)
     out["stop_codon"] = quality.stop_codon(seq_aa)
     out["vj_in_frame"] = vj_in_frame
-    for g in ("v", "d", "j"):                          # per-segment identity (was V-only; P0-14)
+    for g in ("v", "d", "j"):                          # per-segment identity (was V-only)
         ident = quality.segment_identity(seg.get(f"{g}_sequence_alignment"),
                                          seg.get(f"{g}_germline_alignment"))
         if ident is not None:
@@ -156,7 +156,7 @@ def build_airr(records: list, reference, chain: str = "heavy", strict: bool = Fa
     ``"complete"`` (all expected products derived), ``"partial"`` (valid calls but a product could not
     be assembled — with a machine-readable ``airr_assembly_reason``), or ``"failed"`` (an exception,
     keeping the light fields + an ``airr_assembly_error``). Incomplete records are never reported as a
-    clean success and the assembly is never *silently* dropped (P0-7 / AIRR-review #5).
+    clean success and the assembly is never *silently* dropped.
 
     Expected data-edge exceptions become tagged failures; any other exception is a programming defect
     and is re-raised as :class:`AirrAssemblyError` with the record identifier. ``strict=True`` re-raises
@@ -165,7 +165,7 @@ def build_airr(records: list, reference, chain: str = "heavy", strict: bool = Fa
     v_names = reference.gene("V").names                          # locus gate: TCR (TRxV...) IMGT gapping
     is_tcr = bool(v_names) and str(v_names[0]).upper().startswith("TR")  # breaks the gapped column-309
     # per-record chain: a multi-chain union may mix loci, so assemble each record with ITS locus's
-    # has-D / heavy-vs-light policy rather than one global chain (P0-6).
+    # has-D / heavy-vs-light policy rather than one global chain.
     locus_hasd = {l.locus: l.has_d for l in getattr(reference, "loci", [])}
     out = []                                                     # junction -> use the read-coordinate path
     for i, rec in enumerate(records):

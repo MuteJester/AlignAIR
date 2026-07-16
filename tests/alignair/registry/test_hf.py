@@ -1,4 +1,4 @@
-"""P0-11: direct Hugging Face repo loading — spec parsing, routing, offline behavior, provenance
+"""Direct Hugging Face repo loading — spec parsing, routing, offline behavior, provenance
 commit, and save_pretrained. Network is never touched (offline / mocked)."""
 import pytest
 
@@ -78,7 +78,7 @@ def test_save_pretrained_copies_artifact(monkeypatch, tmp_path):
 
 
 def test_save_pretrained_refuses_pickle_checkpoint(monkeypatch, tmp_path):
-    """A resumable checkpoint (pickle sections) must not be distributed via save_pretrained (audit #10)."""
+    """A resumable checkpoint (pickle sections) must not be distributed via save_pretrained."""
     from alignair.aligner import Aligner
     src = tmp_path / "ckpt.alignair"
     src.write_bytes(b"x")

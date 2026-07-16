@@ -1,4 +1,4 @@
-"""Phase 1 / Task 1: safe (no-pickle) reference serialization + canonical integrity hashes."""
+"""Safe (no-pickle) reference serialization + canonical integrity hashes."""
 import hashlib
 import json
 

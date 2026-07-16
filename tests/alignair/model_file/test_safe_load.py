@@ -1,4 +1,4 @@
-"""Phase 1 / Task 2: pickle-free publish artifacts + safe (no-pickle) inference load."""
+"""Pickle-free publish artifacts + safe (no-pickle) inference load."""
 import GenAIRR.data as gd
 import pytest
 import torch

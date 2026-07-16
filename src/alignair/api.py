@@ -52,7 +52,7 @@ def _remap_state_dict(state: dict) -> dict:
 def _gene_fingerprint(ref, g):
     """The parts of a gene reference the model's biology depends on: ordered names, germline sequences,
     IMGT-gapped sequences, and junction anchors. Two references with equal fingerprints are
-    interchangeable; equal *names* alone are not (audit #8)."""
+    interchangeable; equal *names* alone are not."""
     try:
         gr = ref.gene(g)
     except (KeyError, AttributeError):
@@ -65,8 +65,8 @@ def _assert_reference_matches(caller, embedded) -> None:
     """A fixed-head model's V/D/J classification indices are tied to the embedded reference, so a
     caller-supplied reference must be identical — same alleles in the same order AND the same germline
     sequences / gapped sequences / anchors (equal names with altered sequences would mislabel nothing
-    but silently align, junction, and score against the wrong biology; audit #8). Raises ``ValueError``
-    on any mismatch — the safe path is to omit ``reference=`` and use the verified embedded one (P0-1)."""
+    but silently align, junction, and score against the wrong biology). Raises ``ValueError``
+    on any mismatch — the safe path is to omit ``reference=`` and use the verified embedded one."""
     for g in ("V", "D", "J"):
         emb, cal = _gene_fingerprint(embedded, g), _gene_fingerprint(caller, g)
         if emb == cal:
@@ -129,7 +129,7 @@ def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Seque
     device = device or next(model.parameters()).device.type
     cfg = model.cfg
     # propagate the reference's ordered locus schema so the pipeline maps chain_type -> locus, masks
-    # cross-locus alleles, and labels each record's locus (P0-6); None for a schema-less reference.
+    # cross-locus alleles, and labels each record's locus; None for a schema-less reference.
     chain_types = reference.locus_names() or None if hasattr(reference, "locus_names") else None
     predict_overrides.setdefault("chain_types", chain_types)
     pcfg = PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size,
@@ -151,7 +151,7 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
     dcs = [getattr(gd, d) if isinstance(d, str) else d for d in dataconfigs]
     reference = ReferenceSet.from_dataconfigs(*dcs)
     cfg = AlignAIRConfig.from_dataconfigs(*dcs)
-    # validate the request BEFORE allocating the (potentially large) model (P0-10)
+    # validate the request BEFORE allocating the (potentially large) model
     validate_training_request(steps=steps, batch_size=train_overrides.get("batch_size", 32),
                               lr=train_overrides.get("lr", 3e-4), max_seq_length=cfg.max_seq_length,
                               reference=reference, progresses=train_overrides.get("progresses", (0.3,)),

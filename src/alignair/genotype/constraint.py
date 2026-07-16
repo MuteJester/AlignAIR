@@ -29,7 +29,7 @@ METHODS = ("mask", "softmax", "renormalize", "redistribute")
 class NovelAlleleUnsupportedError(ValueError):
     """A genotype (or supplied reference) names an allele the model was not trained on. A fixed-head
     model's classification indices are tied to its trained allele catalog, so it cannot call a novel
-    allele at inference — retrain/fine-tune to add alleles (P0-1). Subclasses ``ValueError`` so existing
+    allele at inference — retrain/fine-tune to add alleles. Subclasses ``ValueError`` so existing
     ``except ValueError`` handlers keep working while the type documents the fixed-reference contract."""
 
 
@@ -37,7 +37,7 @@ def genotype_allowed_mask(genotype: dict, reference, genes=None) -> dict:
     """Compute ``{gene: bool mask over head indices}`` for the alleles a genotype allows, validating
     that every constrained gene present in both the genotype and the reference retains **at least one**
     supported allele. Raises ``ValueError`` if a gene's allowed set is empty (e.g. an all-novel-allele
-    file) — this must fail before inference rather than silently calling a disallowed allele (P0-5)."""
+    file) — this must fail before inference rather than silently calling a disallowed allele."""
     out: dict[str, np.ndarray] = {}
     for gene, allowed in genotype.items():
         g = gene.lower()

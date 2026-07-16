@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-# TF-faithful conv-tower kernel schedules (len == N+1: N convs + 1 residual).
+# conv-tower kernel schedules (len == N+1: N convs + 1 residual).
 _SEG_KERNELS = (3, 3, 3, 2, 5)          # meta + all segmentation towers (N=4)
 _VJ_CLS_KERNELS = (3, 3, 3, 2, 2, 2, 5)  # V/J classification towers (N=6)
 _D_CLS_KERNELS = (3, 3, 2, 2, 5)         # D classification tower (shallower, N=4)

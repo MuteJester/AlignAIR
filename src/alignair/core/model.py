@@ -1,4 +1,4 @@
-"""The one AlignAIR model — a faithful PyTorch port of TF SingleChain/MultiChain, unified.
+"""The one AlignAIR model — SingleChain and MultiChain unified into a single class.
 
 Single vs multi chain is not two classes here, it is data: ``cfg.gene_specs`` says which genes exist
 and ``cfg.num_chain_types`` says whether a chain_type/locus head is present. Build the config from one

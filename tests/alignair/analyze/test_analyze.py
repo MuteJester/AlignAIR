@@ -1,4 +1,4 @@
-"""Phase 2: `alignair analyze` — repertoire + QC + AIRR validation of a predict TSV."""
+"""`alignair analyze` — repertoire + QC + AIRR validation of a predict TSV."""
 from alignair.analyze import analyze_file, analyze_rows, format_text, validate_airr
 from alignair.io.airr import write_airr
 

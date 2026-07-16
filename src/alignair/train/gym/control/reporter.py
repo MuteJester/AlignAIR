@@ -1,4 +1,4 @@
-"""StruggleReporter: render a GymState to JSON + markdown + a climb-curve line."""
+"""StruggleReporter: render a GymState to JSON + markdown + a progress-curve line."""
 import json
 import os
 
@@ -29,15 +29,15 @@ class StruggleReporter:
 
     def markdown(self, state: GymState) -> str:
         d = self.to_dict(state)
-        lines = [f"# Gym report — floor {state.level + 1}/{state.n_levels} "
+        lines = [f"# Curriculum report — level {state.level + 1}/{state.n_levels} "
                  f"\"{state.level_name}\" @ step {state.step:,}",
                  "", f"**Composite:** {d['composite']:.3f}  ·  "
-                 f"**Blocking:** {', '.join(d['blocking']) or 'none (cleared)'}", "",
-                 "## Locks", "", "| gate | value | threshold | open |",
+                 f"**Blocking:** {', '.join(d['blocking']) or 'none (all passed)'}", "",
+                 "## Gates", "", "| gate | value | threshold | open |",
                  "|---|---|---|---|"]
         for g in d["gates"]:
             lines.append(f"| {g['name']} | {g['value']:.3g} | {g['threshold']:.3g} "
-                         f"| {'✓' if g['open'] else '✗'} |")
+                         f"| {'yes' if g['open'] else 'no'} |")
         for a in d["axes"]:
             lines += ["", f"## Axis: {a['axis']}", "", "| bin | metric | n |", "|---|---|---|"]
             for b in a["bins"]:

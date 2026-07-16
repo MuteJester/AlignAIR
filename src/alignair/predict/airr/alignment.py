@@ -1,4 +1,4 @@
-"""IMGT-gapped alignment construction (faithful port of TF Pipeline/AIRR/alignment).
+"""IMGT-gapped alignment construction.
 
 Pure per-sequence functions. Reference germline maps are plain ``{allele_name: seq}`` dicts
 (``v_gapped`` = IMGT-gapped V, ``*_ungapped`` = ungapped) sourced from :class:`ReferenceSet`.

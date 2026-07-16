@@ -1,4 +1,4 @@
-"""AIRR-review #3: the predict CLI streams reader-chunk -> predict -> assemble -> write in bounded
+"""The predict CLI streams reader-chunk -> predict -> assemble -> write in bounded
 memory, preserving order + cross-chunk duplicate-id handling, streaming rejects, and accounting by
 state. Tested with a fake aligner (no model / no torch needed)."""
 import csv

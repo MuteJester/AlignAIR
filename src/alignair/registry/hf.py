@@ -1,4 +1,4 @@
-"""Direct Hugging Face Hub model loading (P0-11).
+"""Direct Hugging Face Hub model loading.
 
 The catalog path (``registry.json`` under a source) still works; this adds the *one-repo-per-model*
 path used by `Aligner.from_pretrained("hf://org/repo")` / `"org/repo"`: pull the ``.alignair`` straight

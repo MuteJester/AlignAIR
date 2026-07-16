@@ -1,6 +1,5 @@
 """Experimental: infer an individual's IG genotype from a repertoire, grounded in the model's
-predictions and its allele-prototype geometry. See
-docs/superpowers/specs/2026-07-10-alignair-genotype-inference-design.md.
+predictions and its allele-prototype geometry.
 """
 from .constraint import (NovelAlleleUnsupportedError, adjust_for_genotype, genotype_allowed_mask,
                          load_genotype)

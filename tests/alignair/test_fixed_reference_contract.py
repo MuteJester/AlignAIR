@@ -1,6 +1,6 @@
-"""Black-box acceptance tests for the fixed-reference model contract (docs/architecture/model_contract.md,
-P0-1): a novel allele absent from the trained catalog is REJECTED with a clear NovelAlleleUnsupportedError
-rather than silently dropped or mis-indexed; a donor subset of the trained catalog is accepted."""
+"""Black-box acceptance tests for the fixed-reference model contract: a novel allele absent from the
+trained catalog is REJECTED with a clear NovelAlleleUnsupportedError rather than silently dropped or
+mis-indexed; a donor subset of the trained catalog is accepted."""
 from types import SimpleNamespace
 
 import numpy as np

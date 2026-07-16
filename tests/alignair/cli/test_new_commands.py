@@ -1,4 +1,4 @@
-"""P0-2: behavior tests for the new diagnostic/validation/reference commands (no model needed)."""
+"""Behavior tests for the new diagnostic/validation/reference commands (no model needed)."""
 import argparse
 
 from alignair.cli import doctor, reference, validate_airr as validate_cmd

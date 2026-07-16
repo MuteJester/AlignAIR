@@ -1,6 +1,6 @@
 """Publish an artifact into a (local) registry directory — the maintainer-side write path.
 
-**Transactional** (P0-11): the artifact is *staged* and the new ``registry.json`` is built in memory,
+**Transactional**: the artifact is *staged* and the new ``registry.json`` is built in memory,
 then the validator runs against that staged state. Only if it passes are the artifact and catalog
 committed atomically (rename); on failure nothing is written — no updated catalog and no copied invalid
 artifact are left behind. HF upload is a maintainer follow-on (``Aligner.push_to_hub``).
@@ -26,7 +26,7 @@ def publish_local(artifact_path: str, model_id: str, version: str, registry_dir:
     (registry_dir / model_id).mkdir(parents=True, exist_ok=True)
     final = registry_dir / rel
     # per-registry lock: serialize concurrent publishers so they can't clobber each other's staged/tmp
-    # files or lose each other's registry updates (audit #9). Process-unique staging paths as well.
+    # files or lose each other's registry updates. Process-unique staging paths as well.
     with _lock(registry_dir / "registry.json.lock"):
         return _publish_locked(data, md, model_id, version, registry_dir, rel, final,
                                description, entry_extra)

@@ -44,7 +44,7 @@ COLUMNS = (_IDENT + _CALLS + _QUALITY + _ALN + _JUNCTION + _CIGAR + _COORDS
 # orientation id -> AIRR-honest label (only id 1 is a reverse-complement; see _build_row)
 _ORIENT_LABEL = {0: "forward", 1: "reverse_complement", 2: "complement", 3: "reverse"}
 
-# model/scientific fields that per-read metadata must never overwrite (AIRR-review): every produced
+# model/scientific fields that per-read metadata must never overwrite: every produced
 # AIRR column. Metadata may only add new columns or fill blanks; a collision keeps the model's value.
 _PROTECTED_FIELDS = frozenset(COLUMNS)
 
@@ -147,8 +147,8 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
     """Build one AIRR rearrangement row from a predict()/build_airr record.
 
     Coordinates/CIGAR/alignments are always computed in the model's forward frame (``p["sequence"]``).
-    The emitted ``sequence`` field follows the AIRR convention for ``rev_comp`` (P0-3, corrected per the
-    AIRR-community review): for a reverse-complement read (id 1) ``sequence`` is the ORIGINAL query and
+    The emitted ``sequence`` field follows the AIRR convention for ``rev_comp``: for a
+    reverse-complement read (id 1) ``sequence`` is the ORIGINAL query and
     ``rev_comp=T`` (coordinates apply to ``RC(sequence)`` == the forward frame, the IgBLAST/AIRR
     convention); for forward / complement-only / reverse-only, ``sequence`` is the forward frame with
     ``rev_comp=F`` (the true transform kept in the ``orientation`` extension, original in
@@ -236,7 +236,7 @@ class AirrWriter:
 
         A file output is written **atomically**: rows go to a sibling temp file that is renamed onto
         ``path`` only on a clean ``close``/context exit, so an interrupted job never leaves a final path
-        that looks complete (P0-8)."""
+        that looks complete."""
         import sys
         self.locus = locus
         self.extra_columns = list(extra_columns or [])
@@ -300,7 +300,7 @@ def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict
                extra_columns=None) -> None:
     """Eager one-shot write (back-compat). For large inputs use AirrWriter incrementally.
     `sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR
-    orientation convention per record (P0-3). `columns` selects which fields to emit. `metas` (per-row
+    orientation convention per record. `columns` selects which fields to emit. `metas` (per-row
     dicts) + `extra_columns` carry preserved input metadata (barcode/UMI/sample/cell_id) into output."""
     with AirrWriter(path, locus, columns=columns, extra_columns=extra_columns) as w:  # atomic
         w.write(ids, sequences, preds, metas=metas)

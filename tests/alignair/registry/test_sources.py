@@ -1,4 +1,4 @@
-"""Phase 1 / Task 4: registry source resolution + stdlib fetch."""
+"""Registry source resolution + stdlib fetch."""
 import json
 
 import pytest

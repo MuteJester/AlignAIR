@@ -1,4 +1,4 @@
-"""P0-10: training guards — preflight config validation and non-finite-loss abort."""
+"""Training guards — preflight config validation and non-finite-loss abort."""
 from types import SimpleNamespace
 
 import pytest
@@ -54,7 +54,7 @@ def test_grad_clip_must_be_finite():
 
 def test_train_step_aborts_on_non_finite_gradient_from_finite_loss():
     """A finite loss with an infinite gradient (d/dx sqrt(x) at 0) must abort BEFORE the optimizer
-    corrupts the weights (audit #2)."""
+    corrupts the weights."""
     import torch
 
     from alignair.train.guards import NonFiniteLossError as _NFE

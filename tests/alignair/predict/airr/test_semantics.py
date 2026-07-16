@@ -1,4 +1,4 @@
-"""P0-14: AIRR fields are semantically correct — `productive` is a DERIVED fact (not the neural
+"""AIRR fields are semantically correct — `productive` is a DERIVED fact (not the neural
 prediction), advertised per-segment identities are populated, and the validator enforces the
 productivity cross-field invariant."""
 from alignair.predict.airr import quality

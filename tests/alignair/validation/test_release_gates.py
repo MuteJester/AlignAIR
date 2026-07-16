@@ -1,4 +1,4 @@
-"""P0-16 acceptance: every model-card claim maps to a real named test, thresholds are sane and
+"""Acceptance: every model-card claim maps to a real named test, thresholds are sane and
 version-controlled, and (when the shipped model is present) the model clears the scientific gates."""
 import os
 import re

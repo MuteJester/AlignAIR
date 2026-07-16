@@ -1,4 +1,4 @@
-"""P0-16 layer 2 — property/invariant tests over randomized inputs: orientation involution,
+"""Property/invariant tests over randomized inputs: orientation involution,
 deterministic prob-sorted selection, and the CIGAR query-consumption bound."""
 import numpy as np
 
@@ -34,7 +34,7 @@ def test_select_alleles_is_prob_sorted_and_deterministic():
 
 def test_cigar_query_consumption_never_exceeds_sequence_length():
     """The coordinate-derived per-segment CIGAR never consumes more query bases than the read — the
-    invariant `validate-airr` enforces and downstream tools depend on (P0-3/P0-14)."""
+    invariant `validate-airr` enforces and downstream tools depend on."""
     rng = np.random.default_rng(2)
     for _ in range(500):
         L = int(rng.integers(1, 300))

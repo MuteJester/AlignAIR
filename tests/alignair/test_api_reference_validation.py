@@ -1,4 +1,4 @@
-"""P0-1 / audit #8: a fixed-head model's classification indices are tied to the embedded reference, so
+"""A fixed-head model's classification indices are tied to the embedded reference, so
 a caller-supplied reference must match it exactly — same alleles, same order, AND the same germline
 sequences / gapped / anchors (equal names with altered sequences must be rejected)."""
 from types import SimpleNamespace
@@ -43,7 +43,7 @@ def test_mismatched_gene_set_rejected():
 
 
 def test_same_names_but_different_sequences_rejected():
-    """The audit-#8 case: identical allele names/order but ALTERED germline sequences must be rejected
+    """The subtle case: identical allele names/order but ALTERED germline sequences must be rejected
     (they would silently align/junction/score against the wrong biology)."""
     emb = _ref(V=(["V1", "V2"], ["ACGTACGT", "TTTTGGGG"]), J=(["J1"], ["CCCC"]))
     caller = _ref(V=(["V1", "V2"], ["ACGTACGT", "AAAACCCC"]), J=(["J1"], ["CCCC"]))   # V2 seq altered

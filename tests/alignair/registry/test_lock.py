@@ -1,4 +1,4 @@
-"""P0-12: the portable atomic-lockfile protocol (`_excl_lock`) gives real cross-process mutual
+"""The portable atomic-lockfile protocol (`_excl_lock`) gives real cross-process mutual
 exclusion where flock is absent (Windows), reclaims stale locks, and times out — replacing the old
 Windows no-op that let concurrent downloads corrupt the cache. Also: env-override cache/config paths."""
 import os

@@ -13,14 +13,14 @@ def _state():
                     patience_max=8, best_level=6, headline="junction jitter")
 
 
-def test_render_plain_has_no_ansi_and_shows_floor_and_locks():
+def test_render_plain_has_no_ansi_and_shows_level_and_gates():
     out = GymHUD(color=False).render(_state())
     assert "\x1b" not in out
-    assert "7/10" in out                      # floor 6 shown 1-indexed as 7/10
+    assert "7/10" in out                      # level 6 shown 1-indexed as 7/10
     assert "Heavy-SHM Tower" in out
     assert "v_call" in out and "d_call" in out
-    # open vs closed lock glyphs both present (d_call open, v_call closed)
-    assert out.count("\n") > 3                 # multi-line box
+    # pass vs fail marks both present (d_call passing, v_call failing)
+    assert out.count("\n") > 3                 # multi-line report
 
 
 def test_render_color_has_ansi():
@@ -30,5 +30,5 @@ def test_render_color_has_ansi():
 
 def test_event_callouts():
     hud = GymHUD(color=False)
-    assert "CLEARED" in hud.event("cleared", _state()).upper()
-    assert "CEILING" in hud.event("ceiling", _state()).upper()
+    assert "ADVANCED" in hud.event("cleared", _state()).upper()
+    assert "TOP LEVEL" in hud.event("ceiling", _state()).upper()

@@ -32,7 +32,7 @@ def _loci_from_membership(per_index: Dict[str, list], order: List[str],
     """Build the per-locus schema from per-gene per-index locus membership. Each locus must occupy a
     single **contiguous** block within every gene head — same-locus dataconfigs merged adjacently are
     fine, but an *interleaved / split* locus (another locus's alleles inside its range) is refused
-    rather than masked by a silently-widened min/max range (audit #4/#5). ``order`` is the class-id
+    rather than masked by a silently-widened min/max range. ``order`` is the class-id
     order; ``chain_of`` maps a locus to its GenAIRR chain-type value (defaults to the locus code)."""
     loci = []
     for lc in order:
@@ -89,7 +89,7 @@ class LocusInfo:
     """One locus in a (possibly multi-chain) union: its AIRR code, GenAIRR chain type, whether it has
     a D gene, and the per-gene ``[start, end)`` index ranges it occupies in the union allele heads.
     The list index equals the model's chain_type class id, so a predicted chain_type maps straight to a
-    locus and to the allele-index range that read is allowed to call within (P0-6)."""
+    locus and to the allele-index range that read is allowed to call within."""
     locus: str
     chain_type: str
     has_d: bool
@@ -116,7 +116,7 @@ class ReferenceSet:
 
         No schema (single-chain) -> all-True (unconstrained). With a schema, a locus that *has* no
         alleles for this gene (e.g. D on a light chain) -> **all-False** (an explicit no-call), NOT
-        all-True — otherwise a light-chain read could be handed every heavy-chain D allele (audit #1)."""
+        all-True — otherwise a light-chain read could be handed every heavy-chain D allele."""
         n = len(self.gene(gene))
         if not self.loci:                                # no locus schema -> unconstrained
             return np.ones(n, dtype=bool)
@@ -168,7 +168,7 @@ class ReferenceSet:
                                              anchors=anchors or None, gapped=gapped or None)
             per_index[g.upper()] = membership
         # contiguity validation lives in the shared builder: same-locus dataconfigs merge fine (one
-        # adjacent block), an interleaved / split locus fails closed (audit #4/#5).
+        # adjacent block), an interleaved / split locus fails closed.
         loci = _loci_from_membership(per_index, locus_order, locus_chain)
         return cls(genes, has_d, loci=loci)
 
@@ -215,7 +215,7 @@ class ReferenceSet:
         gene_type is V/J (+ D for heavy chains; omit D for light). ``anchors`` optionally supplies
         {gene: {allele_name: pos}} so alleles keep their junction anchor.
 
-        NOTE (P0-1): the *fixed-head* production model's V/D/J classification indices are tied to the
+        NOTE: the *fixed-head* production model's V/D/J classification indices are tied to the
         allele order it was trained on. This builder produces a reference in whatever order the file
         provides, which will **not** match a trained head — so it is for reference-conditioned/retrieval
         code and for constructing a reference to (re)train against, NOT for relabeling a fixed-head
@@ -281,7 +281,7 @@ class ReferenceSet:
 
         See :meth:`from_genotype` re: the fixed-head contract — the resulting allele order will not
         match a trained head, so this is for (re)training / reference-conditioned code, not for
-        relabeling a fixed-head model's output columns (P0-1)."""
+        relabeling a fixed-head model's output columns."""
         genes: Dict[str, Dict[str, str]] = {"V": {}, "D": {}, "J": {}}
         name = None
         chunks: List[str] = []

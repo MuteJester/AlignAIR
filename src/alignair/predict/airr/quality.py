@@ -1,4 +1,4 @@
-"""AIRR quality flags: stop_codon, vj_in_frame, v_identity (faithful port of TF AIRR/quality)."""
+"""AIRR quality flags: stop_codon, vj_in_frame, v_identity."""
 from __future__ import annotations
 
 from typing import Optional

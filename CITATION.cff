@@ -1,6 +1,6 @@
 cff-version: 1.2.0
-message: "If you use AlignAIR, please cite it using the metadata below."
-title: "AlignAIR: a neural aligner for IG/TCR repertoires with a dynamic (runtime) reference"
+message: "If you use AlignAIR, please cite the following paper."
+title: "AlignAIR: a neural aligner for immunoglobulin and T-cell-receptor repertoires"
 type: software
 authors:
   - family-names: Konstantinovsky
@@ -8,13 +8,17 @@ authors:
     email: thomaskon90@gmail.com
   - family-names: Peres
     given-names: Ayelet
+  - family-names: Eisenberg
+    given-names: Ran
+  - family-names: Polak
+    given-names: Pazit
+  - family-names: Lindenbaum
+    given-names: Ofir
+  - family-names: Yaari
+    given-names: Gur
 license: GPL-3.0-or-later
 repository-code: "https://github.com/MuteJester/AlignAIR"
 url: "https://alignair.ai"
-identifiers:
-  - type: doi
-    value: 10.5281/zenodo.15687939
-    description: "Zenodo archive"
 keywords:
   - AIRR
   - immunoglobulin
@@ -22,3 +26,26 @@ keywords:
   - VDJ
   - sequence alignment
   - deep learning
+preferred-citation:
+  type: article
+  title: "Enhancing sequence alignment of adaptive immune receptors through multi-task deep learning"
+  authors:
+    - family-names: Konstantinovsky
+      given-names: Thomas
+    - family-names: Peres
+      given-names: Ayelet
+    - family-names: Eisenberg
+      given-names: Ran
+    - family-names: Polak
+      given-names: Pazit
+    - family-names: Lindenbaum
+      given-names: Ofir
+    - family-names: Yaari
+      given-names: Gur
+  journal: "Nucleic Acids Research"
+  year: 2025
+  month: 7
+  volume: 53
+  issue: 13
+  article-number: gkaf651
+  doi: 10.1093/nar/gkaf651

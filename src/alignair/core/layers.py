@@ -44,7 +44,7 @@ _ACT = {"tanh": torch.tanh, "gelu": F.gelu, "swish": F.silu}
 class Conv1DBatchNorm(nn.Module):
     """Three stacked same-padded Conv1d -> BatchNorm -> activation -> MaxPool (TF Layers.py:96).
 
-    Channels-first ``(B, C, L)``. TF-faithful: no activation *between* the three convs; single BN
+    Channels-first ``(B, C, L)``. No activation *between* the three convs; single BN
     with ``eps=0.8`` and TF ``momentum=0.1`` ported as PyTorch ``momentum=0.9``; ``MaxPool1d(pool)``.
     """
 

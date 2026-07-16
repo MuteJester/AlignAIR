@@ -1,8 +1,8 @@
 """The prediction pipeline orchestrator: model + reference + config -> AIRR-contract records.
 
 Reads top-to-bottom as the full flow. Each call is a pure stage from :mod:`alignair.predict`.
-Phase A emits the benchmark contract (calls + set + read/germline coords + CIGAR); Phase B will add
-the full ``airr/`` assembly (sequence_alignment, junction, regions, quality).
+It emits the calls + equivalence set + read/germline coordinates + CIGAR, and the full ``airr/``
+assembly (sequence_alignment, junction, regions, quality).
 """
 from __future__ import annotations
 
@@ -22,14 +22,14 @@ def _genes(cfg: PredictConfig):
 
 def _assert_finite(allele: dict, stage: str) -> None:
     """Fail loudly if any post-transform allele probability is non-finite (NaN/Inf) — a silently
-    NaN'd probability would otherwise propagate into calls/confidence (see the pre-launch audit)."""
+    NaN'd probability would otherwise propagate into calls/confidence."""
     for g, a in allele.items():
         if not np.all(np.isfinite(a)):
             raise ValueError(f"non-finite allele probabilities after {stage} (gene {g!r})")
 
 
 def _validate_predictions(preds, stage: str = "model forward") -> None:
-    """Fail loudly if ANY raw model output is non-finite (audit #3): a damaged checkpoint emitting NaN
+    """Fail loudly if ANY raw model output is non-finite: a damaged checkpoint emitting NaN
     would otherwise be silently turned into a plausible call (argmax fallback) and clipped coordinates."""
     _assert_finite(preds.allele, stage)
     for name, d in (("start", preds.start), ("end", preds.end)):
@@ -43,7 +43,7 @@ def _validate_predictions(preds, stage: str = "model forward") -> None:
 
 
 def _locus_allowed(chain_type, reference, genes, genotype_allowed=None) -> dict:
-    """Per-read allele masks restricting each read to its predicted locus (P0-6). Returns
+    """Per-read allele masks restricting each read to its predicted locus. Returns
     ``{gene: (N, C) bool}``: row ``i`` is the locus mask for the locus at ``chain_type[i]``. When a
     genotype constraint is also active, the per-read locus mask is AND-ed with the (broadcast) genotype
     mask so both hold. A read's predicted locus with no ``gene`` (e.g. D on a light chain) yields an
@@ -64,7 +64,7 @@ def _locus_allowed(chain_type, reference, genes, genotype_allowed=None) -> dict:
 
 
 def apply_input_policy(sequences, max_len: int) -> tuple[list, list]:
-    """The single input-length/content gate for prediction (P0-8): uppercase, reject empty reads, and
+    """The single input-length/content gate for prediction: uppercase, reject empty reads, and
     crop over-length reads to the model window **consistently** — the cropped string is what the
     tokenizer, coordinates, germline reader, and AIRR assembly all see, so an over-length read is never
     *silently* truncated with mismatched downstream coordinates. Returns ``(sequences, was_cropped)``."""
@@ -98,13 +98,13 @@ def _canonicalize(seq: str, orientation_id: int) -> str:
 
 def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu", aligner=None):
     genes = _genes(cfg)
-    # single input gate (P0-8): uppercase once (GenAIRR/FASTA mark bases with case; the germline reader
+    # single input gate: uppercase once (GenAIRR/FASTA mark bases with case; the germline reader
     # + AIRR assembly consume the raw string and case-mixed input mis-anchors the junction — DNA
     # alignment is case-insensitive), reject empty reads, and crop over-length reads to the model window
     # CONSISTENTLY so coords/AIRR refer to the same string (never a silent truncation).
     sequences, was_cropped = apply_input_policy(sequences, cfg.max_seq_length)
     preds = clean(run_model(model, sequences, cfg, device), genes)
-    _validate_predictions(preds)                   # raw outputs must be finite before any use (audit #3)
+    _validate_predictions(preds)  # raw outputs must be finite before any use
     allowed = None
     if cfg.allele_temperatures:                    # post-hoc allele-confidence calibration
         from .calibrate import apply_temperature
@@ -117,7 +117,7 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
         allowed = genotype_allowed_mask(cfg.genotype, reference, genes=set(preds.allele))  # validates
         preds = adjust_for_genotype(preds, cfg.genotype, reference, method=cfg.genotype_method)
         _assert_finite(preds.allele, "genotype constraint")
-    # multi-chain locus masking (P0-6): each read's predicted locus restricts its callable alleles to
+    # multi-chain locus masking: each read's predicted locus restricts its callable alleles to
     # that locus's index range, so a cross-locus call (e.g. an IGKV allele on an IGL read, or any D on a
     # light-chain read) is impossible by construction. Produces a per-read (N, C) mask per gene, AND-ed
     # with any genotype constraint.

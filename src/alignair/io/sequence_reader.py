@@ -19,7 +19,7 @@ _SEQ_COLS = ("sequence", "seq", "nucleotide", "read")
 
 def _open_stream(path: str):
     """Open ``path`` for a SINGLE streaming pass. stdin (``-``) is returned as-is — never slurped or
-    cached — so a piped 1M-read repertoire streams in bounded memory (audit AIRR-review #2)."""
+    cached — so a piped 1M-read repertoire streams in bounded memory."""
     if path == "-":
         import sys
         return sys.stdin
@@ -75,7 +75,7 @@ def _sniff(path: str, head: str, seq_column: str | None = None) -> str:
     if head.startswith("@"):
         return "fastq"
     # extensionless (e.g. piped stdin): a delimited header is a table if it names a known sequence
-    # column OR the caller explicitly told us the column via --sequence-column (AIRR-review).
+    # column OR the caller explicitly told us the column via --sequence-column.
     if any(c in head for c in (",", "\t")) and (
             seq_column is not None or any(k in head.lower() for k in _SEQ_COLS)):
         return "table"
@@ -143,7 +143,7 @@ def load_metadata(path: str, id_column: str | None = None, keep_columns=None, no
 class DuplicateMetadataId(ValueError):
     """The metadata join key is not unique (an id appears on more than one row), which would make the
     per-read join ambiguous. Raised so the caller can pick a unique --metadata-id-column instead of one
-    row silently winning (AIRR-review #3)."""
+    row silently winning."""
 
 
 # SQLite caps host parameters per statement (SQLITE_MAX_VARIABLE_NUMBER; historically 999). Stay well
@@ -153,7 +153,7 @@ _SQL_PARAM_CHUNK = 900
 
 class MetadataIndex:
     """A disk-backed (SQLite) per-read metadata lookup, so joining a large ``--metadata`` table does not
-    consume memory proportional to the repertoire (AIRR-review #3). Look reads up a CHUNK at a time with
+    consume memory proportional to the repertoire. Look reads up a CHUNK at a time with
     :meth:`get_many` (one indexed query per prediction batch, not one query per read)."""
 
     def __init__(self):

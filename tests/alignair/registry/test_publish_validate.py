@@ -1,4 +1,4 @@
-"""Phase 1 / Task 9: publish into a local registry + validator gate."""
+"""Publish into a local registry + validator gate."""
 import hashlib
 import json
 import shutil
@@ -40,7 +40,7 @@ def test_publish_sets_latest_to_max_semver(tmp_path):
 
 
 def test_publish_is_transactional_on_validation_failure(tmp_path):
-    """A publish that fails validation leaves NEITHER an updated catalog NOR a copied artifact (P0-11)."""
+    """A publish that fails validation leaves NEITHER an updated catalog NOR a copied artifact."""
     regdir = tmp_path / "registry"
     good = tmp_path / "good.alignair"
     _save(good, include_trusted_pickle=False, model_id="human-igh", model_version="2.1.0")

@@ -34,7 +34,7 @@ def test_center_pad_mode_shifts():
     assert segs.start["v"][0] == 0
 
 
-# --- P0-4: constrained bounded/ordered projection --------------------------------------------
+# --- Constrained bounded/ordered projection --------------------------------------------
 
 def test_short_read_never_exceeds_length():
     """Reproduction of the audited defect: a V filling a 10-base read must NOT push D/J to 11/12.
@@ -89,7 +89,7 @@ def test_low_quality_flag_when_v_collapses():
 
 
 def test_low_quality_flag_when_j_collapses():
-    """A collapsed mandatory J (not just V) is flagged low-quality too (audit #7)."""
+    """A collapsed mandatory J (not just V) is flagged low-quality too."""
     # V fills [0,5]; J predicted inside V -> projected forward to [5,5] (zero length)
     start = {"v": np.array([0.0]), "d": np.array([2.0]), "j": np.array([2.0])}
     end = {"v": np.array([5.0]), "d": np.array([4.0]), "j": np.array([4.0])}

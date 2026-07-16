@@ -76,7 +76,7 @@ def _load_metadata_table(args):
 
     Metadata may NEVER overwrite a model/scientific AIRR field: any metadata column colliding with a
     produced field (sequence/v_call/productive/coords/…) is namespaced to ``meta_<col>`` so the aligner's
-    result is preserved (AIRR-review). 10x column names are normalized to AIRR."""
+    result is preserved. 10x column names are normalized to AIRR."""
     if not args.metadata:
         return None, None
     from ..io.airr import COLUMNS, _METADATA_FILL_ONLY
@@ -191,11 +191,11 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
         "reference_fasta_sha256": ref.get("reference_fasta_sha256"),
         "allele_order_sha256": ref.get("allele_order_sha256"),
         "alignair_version": md.get("created_by_alignair"),
-        "loci": list(loci) if loci else [],            # the model's exact locus mapping (P0-6)
+        "loci": list(loci) if loci else [],  # the model's exact locus mapping
         "command": {"input": args.input, "out": args.out, "columns": args.columns,
                     "locus": args.locus, "batch_size": args.batch_size, "chunk_size": args.chunk_size,
                     "device": device},
-        "counts": {                                    # full record accounting (AIRR-review item 5)
+        "counts": {  # full record accounting
             "input_records": counts["input"], "accepted_records": counts["accepted"],
             "rejected_records": counts["rejected"], "cropped_records": counts["cropped"],
             "complete_assemblies": counts["complete"], "partial_assemblies": counts["partial"],
@@ -238,7 +238,7 @@ def run(args) -> int:
     if not container.is_alignair_file(model_path) and not args.dataconfig:
         print("--dataconfig is required for legacy .pt models")
         return 1
-    try:                        # the CLI is a thin client of the stable Aligner API (P0-9)
+    try:  # the CLI is a thin client of the stable Aligner API
         aligner = Aligner.from_pretrained(model_path, device=device, dataconfigs=args.dataconfig,
                                           trust_pickle=args.trust_pickle)
     except ValueError as e:
@@ -246,7 +246,7 @@ def run(args) -> int:
         return 1
     reference = aligner.reference
 
-    # locus: don't silently default to IGH when the model declares its locus (P0-6)
+    # locus: don't silently default to IGH when the model declares its locus
     loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
     if args.locus and loci and args.locus.upper() not in {l.upper() for l in loci}:
         print(f"--locus {args.locus} is not one of this model's loci {loci}")

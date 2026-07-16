@@ -59,7 +59,6 @@ MANIFEST.in
 /checkpoints/IGL_S5F_576.data-00000-of-00001
 /checkpoints/IGL_S5F_576.index
 /checkpoints/IGL_S5F_576.zip
-/docs/migration_guide.md
 /.idea/misc.xml
 /model_params.yaml
 /.idea/modules.xml
@@ -128,7 +127,6 @@ src/alignair/predict/_derive_cy.c
 *.so
 
 # Agent / AI dev tooling — private to development, never pushed or distributed
-docs/superpowers/
 .claude/
 CLAUDE.md
 AGENTS.md

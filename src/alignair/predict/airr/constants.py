@@ -1,4 +1,4 @@
-"""Constants for AIRR rearrangement formatting (faithful port of TF Pipeline/AIRR/constants)."""
+"""Constants for AIRR rearrangement formatting."""
 from __future__ import annotations
 
 # IMGT-numbered region boundaries (0-based on the IMGT-gapped alignment). None = per-sequence.

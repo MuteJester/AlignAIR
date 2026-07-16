@@ -1,4 +1,4 @@
-"""Machine-readable field map for the AIRR TSV AlignAIR emits (P0-14).
+"""Machine-readable field map for the AIRR TSV AlignAIR emits.
 
 For every emitted column it records a ``source`` — how the value is produced — plus its null policy.
 This is the single place that answers "what is this column, and is it a real value or a placeholder?".

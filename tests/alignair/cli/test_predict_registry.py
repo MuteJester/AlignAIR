@@ -1,4 +1,4 @@
-"""Phase 1 / Task 8: predict resolves --model id|path + writes run provenance."""
+"""Predict resolves --model id|path + writes run provenance."""
 import hashlib
 import json
 import os

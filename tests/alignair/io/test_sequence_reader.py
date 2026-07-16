@@ -1,4 +1,4 @@
-"""P0-8: input validation policies for the predict reader — no silent truncation, strict FASTQ,
+"""Input validation policies for the predict reader — no silent truncation, strict FASTQ,
 empty rejection, and duplicate-ID disambiguation with preserved order."""
 import pytest
 
@@ -71,7 +71,7 @@ def test_collect_rejects_records_reason_and_sequence(tmp_path):
 
 def test_stdin_is_streamed_not_slurped(monkeypatch):
     """`--input -` reads stdin as a single streaming pass (no `.read()` of the whole stream) — the
-    bounded-memory guarantee must hold for piped input (AIRR-review #2)."""
+    bounded-memory guarantee must hold for piped input."""
     import io as _io
 
     from alignair.io import sequence_reader as sr
@@ -87,7 +87,7 @@ def test_stdin_is_streamed_not_slurped(monkeypatch):
 
 def test_sniff_requires_seq_column_for_custom_table():
     """An extensionless delimited header (piped stdin) with a non-standard column is txt UNLESS the
-    caller names the sequence column, in which case it is a table (AIRR-review)."""
+    caller names the sequence column, in which case it is a table."""
     from alignair.io.sequence_reader import _sniff
     head = "contig_id,nt,barcode\n"
     assert _sniff("-", head) == "txt"                       # no known seq-col keyword, no hint
@@ -96,7 +96,7 @@ def test_sniff_requires_seq_column_for_custom_table():
 
 def test_stdin_custom_column_table_is_detected(monkeypatch):
     """A CSV piped over stdin with a non-standard --sequence-column reads as a table, not one-seq-per-line
-    txt — so `cat reads.csv | alignair predict --input - --sequence-column nt` works (AIRR-review)."""
+    txt — so `cat reads.csv | alignair predict --input - --sequence-column nt` works."""
     import io as _io
 
     from alignair.io import sequence_reader as sr
@@ -138,7 +138,7 @@ def _meta_csv(tmp_path, n):
 
 
 def test_metadata_index_get_many_batches_across_param_limit(tmp_path):
-    """get_many returns the right rows and chunks past SQLite's ~999-parameter limit (AIRR-review #3)."""
+    """get_many returns the right rows and chunks past SQLite's ~999-parameter limit."""
     from alignair.io.sequence_reader import build_metadata_index
     idx, cols = build_metadata_index(str(_meta_csv(tmp_path, 2500)), id_column="contig_id")
     try:

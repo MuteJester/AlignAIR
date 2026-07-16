@@ -2,7 +2,7 @@
 
 De-pad (per the *actual* configured ``max_len`` — TF legacy hardcoded 576, a bug the new TF pipeline
 fixed), floor, then a **constrained projection** that enforces every invariant *jointly* rather than a
-one-directional repair (which could push later segments past the read; see the pre-launch audit):
+one-directional repair (which could push later segments past the read):
 
   * bounds: ``0 <= start <= end <= seq_len`` for every segment;
   * ordering: ``v_end <= d_start <= d_end <= j_start <= j_end`` (light chains skip D);
@@ -50,6 +50,6 @@ def correct_segments(start: dict, end: dict, seq_lens: np.ndarray, max_len: int,
         prev = e
 
     # a mandatory framework segment (V or J) collapsing to zero length => no feasible layout for the
-    # read (D is optional and may legitimately be absent, so it is not counted). (audit #7)
+    # read (D is optional and may legitimately be absent, so it is not counted).
     low_quality = ((out_e["v"] - out_s["v"]) <= 0) | ((out_e["j"] - out_s["j"]) <= 0)
     return Segments(out_s, out_e, low_quality=low_quality)

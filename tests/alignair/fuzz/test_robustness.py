@@ -1,4 +1,4 @@
-"""P0-16 layer 7 — robustness/fuzz: malformed inputs produce clean, typed errors (or a safe negative),
+"""Robustness/fuzz: malformed inputs produce clean, typed errors (or a safe negative),
 never an uncaught crash or silent garbage."""
 import numpy as np
 import pytest
@@ -52,7 +52,7 @@ def test_nonfinite_probabilities_are_caught():
 
 
 def test_raw_predictions_validated_before_use():
-    """A damaged checkpoint emitting NaN outputs is rejected right after clean() (audit #3), before it
+    """A damaged checkpoint emitting NaN outputs is rejected right after clean(), before it
     can become a plausible argmax call or a clipped-NaN coordinate."""
     from alignair.predict.pipeline import _validate_predictions
     from alignair.predict.state import Predictions
@@ -72,4 +72,4 @@ def test_oversized_sequence_is_cropped_not_truncated_silently():
     from alignair.predict.pipeline import apply_input_policy
     long_read = "ACGT" * 500                                # 2000 nt, window 576
     seqs, cropped = apply_input_policy([long_read], max_len=576)
-    assert len(seqs[0]) == 576 and cropped == [True]        # cropped + FLAGGED (P0-8), never silent
+    assert len(seqs[0]) == 576 and cropped == [True] # cropped + FLAGGED, never silent

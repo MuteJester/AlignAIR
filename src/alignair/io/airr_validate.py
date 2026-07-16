@@ -1,8 +1,8 @@
 """Validate an AIRR rearrangement TSV for structural + coordinate soundness (a fast, dependency-free
 check used by ``alignair validate-airr`` and release gating).
 
-This enforces the invariants that matter for downstream tools and that the pre-launch audit calls out
-(P0-3/P0-8/P0-14): required columns present, non-empty sequence, in-bounds 1-based coordinates, and —
+This enforces the invariants that matter for downstream tools: required columns present,
+non-empty sequence, in-bounds 1-based coordinates, and —
 critically — that each per-gene CIGAR never consumes more query bases than the emitted ``sequence``.
 """
 from __future__ import annotations
@@ -75,7 +75,7 @@ def validate_airr_file(path: str) -> dict:
                     if not (1 <= s <= e <= L):
                         errors.append((sid, f"{g} coordinates out of bounds: start={s} end={e} len={L}"))
             # productivity cross-field invariant: a productive rearrangement must be in-frame and have
-            # no stop codon (when those derived fields are present). (P0-14)
+            # no stop codon (when those derived fields are present).
             prod, inframe, stop = (_bool(row.get("productive")), _bool(row.get("vj_in_frame")),
                                    _bool(row.get("stop_codon")))
             if prod is True:

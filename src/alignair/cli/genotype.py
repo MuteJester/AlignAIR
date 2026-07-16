@@ -2,7 +2,7 @@
 
 Writes an explainable report (`<stem>.genotype.report.{txt,json}`) and an AIRR GenotypeSet
 (`<stem>.genotype.airr.json`). Separate from `predict` so a genotype run is never confused with an
-alignment run. See docs/superpowers/specs/2026-07-10-alignair-genotype-inference-design.md.
+alignment run.
 """
 from __future__ import annotations
 

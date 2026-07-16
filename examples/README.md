@@ -21,7 +21,7 @@ Tiny, self-contained data for a first run.
 | Single-sample IGH predict | [`reads.fasta`](reads.fasta) |
 | Donor genotype (subset) | [`donor_genotype.yaml`](donor_genotype.yaml) |
 | Novel allele | [`novel_allele/`](novel_allele/) |
-| Light chain (IGK/IGL) / TCR | train or predict with the matching reference, e.g. `--dataconfig HUMAN_IGK_OGRDB` / `HUMAN_TRB_OGRDB` (`alignair reference list`) — same commands, different reference |
+| Light chain (IGK/IGL) / TCR | train or predict with the matching reference, e.g. `--dataconfig HUMAN_IGK_OGRDB` / `HUMAN_TCRB_IMGT` (`alignair reference list`) — same commands, different reference |
 | Custom reference / species | [`custom_reference/`](custom_reference/) |
 | Single-cell 10x BCR/TCR | [`10x/`](10x/) |
 | Bulk + sample metadata | [`airr/`](airr/) |

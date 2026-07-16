@@ -1,4 +1,4 @@
-"""P0-16 layer 4 — a golden AIRR output (fixed inputs -> exact normalized rows) that also passes the
+"""A golden AIRR output (fixed inputs -> exact normalized rows) that also passes the
 **official** `airr` Python library's schema validation, so our emitted rows are standards-conformant."""
 import csv
 

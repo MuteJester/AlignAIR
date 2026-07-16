@@ -82,7 +82,7 @@ def test_load_genotype_validates_against_reference(tmp_path):
         load_genotype(str(p), reference=ref, drop_unknown=False)
 
 
-# --- P0-5: constraint safety (no empty allowed set, no NaN/Inf) ----------------------------------
+# --- Constraint safety (no empty allowed set, no NaN/Inf) ----------------------------------
 
 def test_empty_allowed_set_raises_before_inference():
     import pytest

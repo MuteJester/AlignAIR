@@ -60,7 +60,7 @@ def test_to_records_single_locus_labels_without_chain_type():
     assert recs[0]["locus"] == "IGK"
 
 
-# --- P0-6: per-read locus masking makes cross-locus calls impossible by construction ---------------
+# --- Per-read locus masking makes cross-locus calls impossible by construction ---------------
 
 def test_locus_allowed_restricts_each_read_to_its_locus():
     import GenAIRR.data as gd

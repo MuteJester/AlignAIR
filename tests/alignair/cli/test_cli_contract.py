@@ -1,4 +1,4 @@
-"""P0-2: the CLI command surface is a versioned compatibility contract. This test asserts exactly the
+"""The CLI command surface is a versioned compatibility contract. This test asserts exactly the
 commands the README / CI / Docker health check / release smoke depend on exist and their `--help`
 parses, so the release workflows can never reference a missing command again."""
 import argparse

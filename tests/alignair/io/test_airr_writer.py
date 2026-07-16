@@ -53,7 +53,7 @@ def test_writer_forward_read_is_not_rev_comp():
         os.remove(tmp)
 
 
-# --- P0-3: AIRR coordinates always refer to the emitted (canonical) sequence --------------------
+# --- AIRR coordinates always refer to the emitted (canonical) sequence --------------------
 
 _COMPL = str.maketrans("ACGTN", "TGCAN")
 
@@ -205,7 +205,7 @@ def test_needs_assembly_skips_for_light_selections():
 
 def test_writer_rejects_prediction_count_mismatch():
     """Fewer/extra predictions than inputs must RAISE (never zip-truncate + silently drop reads);
-    the atomic output is discarded (AIRR-review #1)."""
+    the atomic output is discarded."""
     from alignair.io.airr import AirrWriter, PredictionCountMismatch
     tmp = tempfile.mktemp(suffix=".tsv")
     try:
@@ -233,7 +233,7 @@ def test_writer_carries_metadata_columns():
 
 def test_metadata_cannot_overwrite_model_fields():
     """Adversarial: metadata columns colliding with produced fields (v_call/sequence/productive) must
-    NOT clobber the aligner's result (AIRR-review)."""
+    NOT clobber the aligner's result."""
     rec = {"sequence": "ACGT", "v_call": "IGHV1-1*01", "productive": "T"}
     tmp = tempfile.mktemp(suffix=".tsv")
     try:
@@ -249,7 +249,7 @@ def test_metadata_cannot_overwrite_model_fields():
 
 def test_metadata_fills_blank_c_call():
     """c_call is fill-only: when the record has no constant-region call, the 10x c_gene (normalized to
-    c_call) fills it (AIRR-review correction 1)."""
+    c_call) fills it."""
     rec = {"sequence": "ACGT", "v_call": "IGHV1-1*01"}                # no c_call produced by the model
     tmp = tempfile.mktemp(suffix=".tsv")
     try:
@@ -289,7 +289,7 @@ def test_metadata_dangerous_call_column_is_namespaced():
 
 def test_writer_is_atomic_on_interrupt():
     """An interrupted write must not leave the final path (only a discarded temp), so a crashed job is
-    never mistaken for a complete one (P0-8)."""
+    never mistaken for a complete one."""
     rec = {"sequence": "ACGT", "v_call": "IGHV1-1*01"}
     tmp = tempfile.mktemp(suffix=".tsv")
     with pytest.raises(RuntimeError):

@@ -1,4 +1,4 @@
-"""Version-controlled release gates (P0-16).
+"""Version-controlled release gates.
 
 Two things live here, and both are code (so changing them is a reviewed change, never a silent
 bypass):

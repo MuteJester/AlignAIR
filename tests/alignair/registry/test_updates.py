@@ -1,4 +1,4 @@
-"""Phase 1 / Task 7: passive, careful update notices."""
+"""Passive, careful update notices."""
 import hashlib
 import io
 import json

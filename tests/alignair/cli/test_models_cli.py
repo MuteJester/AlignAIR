@@ -1,4 +1,4 @@
-"""Phase 1 / Task 6: `alignair models …` CLI."""
+"""`alignair models …` CLI."""
 import hashlib
 import json
 

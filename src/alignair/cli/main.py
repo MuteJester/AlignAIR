@@ -2,7 +2,7 @@
 
 The set of subcommands here (plus ``--version``) is the CLI's versioned compatibility contract; it is
 asserted by ``tests/alignair/cli/test_cli_contract.py`` and must stay in sync with the README, CI, the
-Docker health check, and ``scripts/release_smoke.sh`` (see the pre-launch audit P0-2)."""
+Docker health check, and ``scripts/release_smoke.sh``."""
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,4 @@
-"""Tests for the AIRR assembly subpackage (Phase B)."""
+"""Tests for the AIRR assembly subpackage."""
 from types import SimpleNamespace
 
 import pytest
@@ -26,7 +26,7 @@ def test_build_airr_tags_complete_status(monkeypatch):
 
 def test_build_airr_incomplete_record_is_partial_not_complete():
     """A record that skips assembly (no v_call) is `partial` with a reason code — never a clean
-    `complete`/`ok` while germline_alignment/identity are blank (AIRR-review #5)."""
+    `complete`/`ok` while germline_alignment/identity are blank."""
     out = build_airr([{"sequence": "ACGT", "productive": True}], _FakeRef(), chain="heavy")[0]
     assert out["airr_assembly_status"] == "partial"
     assert out["airr_assembly_reason"] == "missing_calls_or_coordinates"
@@ -64,7 +64,7 @@ def test_build_airr_strict_raises_on_expected_error(monkeypatch):
 
 def test_build_airr_productive_blank_when_not_derivable():
     """A record that skips assembly (no v_call) leaves AIRR `productive` BLANK (unknown), keeping the
-    neural call only in `productive_prediction` — no guess presented as a derived fact (audit #6)."""
+    neural call only in `productive_prediction` — no guess presented as a derived fact."""
     out = build_airr([{"sequence": "ACGT", "productive": True}], _FakeRef(), chain="heavy")[0]
     assert out["productive"] is None                    # underivable -> blank/unknown
     assert out["productive_prediction"] is True         # the neural prediction is preserved separately

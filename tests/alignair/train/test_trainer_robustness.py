@@ -1,4 +1,4 @@
-"""P0-10: trainer robustness — preflight rejection, grad-norm/clip, and (slow) validation/best/resume."""
+"""Trainer robustness — preflight rejection, grad-norm/clip, and (slow) validation/best/resume."""
 import glob
 from types import SimpleNamespace
 

@@ -1,4 +1,4 @@
-"""P0-9: the CLI and the Python API produce identical predictions on the same fixture (the CLI is a
+"""The CLI and the Python API produce identical predictions on the same fixture (the CLI is a
 thin client of the Aligner object). Skipped when the shipped IGH model is absent."""
 import csv
 import os

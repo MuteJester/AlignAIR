@@ -66,9 +66,9 @@ def select_alleles(allele_probs: dict, names: dict, param: float = 0.5, cap: int
     ``(C,)`` — the same allowed set for every read (a genotype) — or 2-D ``(N, C)`` — a per-read allowed
     set (locus masking in a multi-chain model, where each read's predicted locus restricts its callable
     alleles). Selection runs over *only* the allowed indices, so a constrained call is **always** a
-    member of the allowed set — never a disallowed argmax fallback from zeroed probabilities (P0-5). A
+    member of the allowed set — never a disallowed argmax fallback from zeroed probabilities. A
     read whose allowed set is empty (e.g. the D gene for a light-chain read) gets an explicit *no-call*
-    (empty ``GeneCall``) rather than a forced pick (P0-6).
+    (empty ``GeneCall``) rather than a forced pick.
     """
     fn = SELECTORS[selector]
     out: dict[str, list[GeneCall]] = {}

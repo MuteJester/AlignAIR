@@ -51,7 +51,7 @@ def test_select_alleles_supports_largest_gap():
     assert set(calls["v"][0].names) == {"V1", "V2"}
 
 
-# --- P0-5: an allowed-index set makes constrained calls always members of the set ----------------
+# --- An allowed-index set makes constrained calls always members of the set ----------------
 
 def test_allowed_set_restricts_call_even_when_disallowed_has_max_prob():
     names = {"v": ["V1", "V2", "V3"]}
@@ -71,7 +71,7 @@ def test_allowed_set_never_calls_index0_when_all_probs_zero():
 
 
 def test_per_read_2d_mask_restricts_each_read_independently():
-    """P0-6 locus masking: a per-read (N, C) allowed mask restricts each read to its own allele set."""
+    """Locus masking: a per-read (N, C) allowed mask restricts each read to its own allele set."""
     names = {"v": ["V1", "V2", "V3"]}
     preds = {"v": np.array([[0.9, 0.8, 0.1], [0.9, 0.1, 0.8]])}
     allowed = {"v": np.array([[True, False, True],       # read 0: V1/V3 allowed (V2 masked out)

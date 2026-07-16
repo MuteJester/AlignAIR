@@ -1,4 +1,4 @@
-"""Phase 3: in-package `alignair benchmark` — score + generate + end-to-end."""
+"""In-package `alignair benchmark` — score + generate + end-to-end."""
 import math
 
 import pytest

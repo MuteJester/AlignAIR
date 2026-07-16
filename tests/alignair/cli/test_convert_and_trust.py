@@ -1,4 +1,4 @@
-"""Phase 1 / Task 3: .pt pickle-gating in api.load_model + convert upgrade paths."""
+""".pt pickle-gating in api.load_model + convert upgrade paths."""
 from argparse import Namespace
 
 import GenAIRR.data as gd

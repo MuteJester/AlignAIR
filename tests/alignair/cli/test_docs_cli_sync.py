@@ -1,8 +1,8 @@
-"""AIRR-review guard: every ``alignair …`` command shown in the public docs/examples must actually
-parse against the real argparse CLI — not merely use known flag names. This runs the true
-``parser.parse_args`` (which never executes the command), so it rejects positional-vs-``--input`` drift,
-``-o``, missing required options, unknown subcommands, and missing nested subcommands. Prevents the
-class of doc bug the reviewer found (``-o``/``--reference``/``alignair bundle``)."""
+"""Guard: every ``alignair …`` command shown in the README / examples must actually parse against
+the real argparse CLI — not merely use known flag names. This runs the true ``parser.parse_args``
+(which never executes the command), so it rejects positional-vs-``--input`` drift, ``-o``, missing
+required options, unknown subcommands, and missing nested subcommands. Prevents the class of doc bug
+where a shown command uses a nonexistent flag or subcommand (``-o``/``--reference``/``alignair bundle``)."""
 from __future__ import annotations
 
 import contextlib
@@ -20,7 +20,6 @@ _ROOT = Path(__file__).resolve().parents[3]
 # public surfaces users copy-paste from (implementation/architecture notes are intentionally excluded)
 _DOC_FILES = [
     _ROOT / "README.md",
-    *sorted((_ROOT / "docs").glob("*.md")),          # every published top-level docs page
     *sorted((_ROOT / "examples").glob("**/README.md")),
 ]
 

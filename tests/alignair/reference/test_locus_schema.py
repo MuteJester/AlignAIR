@@ -1,4 +1,4 @@
-"""P0-6: the ReferenceSet carries a per-locus schema (ordered loci + per-gene allele-index membership)
+"""The ReferenceSet carries a per-locus schema (ordered loci + per-gene allele-index membership)
 so multi-chain prediction can label the locus, mask cross-locus alleles, and assemble per-record."""
 import os
 
@@ -49,7 +49,7 @@ def test_single_chain_has_one_locus():
 
 def test_locus_lacking_a_gene_masks_to_no_call():
     """A known locus that has no alleles for a gene (e.g. D on a light chain) -> all-False, so a
-    light-chain read is never handed a heavy-chain D allele (audit #1)."""
+    light-chain read is never handed a heavy-chain D allele."""
     from alignair.reference.reference_set import GeneReference, LocusInfo, ReferenceSet as RS
     genes = {"V": GeneReference(["IGHV1*01", "IGKV1*01"], ["A", "C"], {}),
              "D": GeneReference(["IGHD1*01"], ["G"], {})}
@@ -72,7 +72,7 @@ def test_same_locus_panels_merge_into_one_contiguous_locus():
 def test_real_multichain_model_locus_schema_matches_training():
     """The shipped IGK+IGL model's embedded reference (schema inferred from names, saved before the
     schema existed) yields chain-class order (IGK, IGL) with masks that partition the head — matching
-    the dataconfig order the chain_type head was trained on (audit: no test tied these together)."""
+    the dataconfig order the chain_type head was trained on."""
     from alignair.api import load_model
     _, ref = load_model(_IGKL, device="cpu")
     assert ref.locus_names() == ("IGK", "IGL")                  # class 0 = IGK, class 1 = IGL
@@ -86,7 +86,7 @@ def test_real_multichain_model_locus_schema_matches_training():
 
 def test_interleaved_split_locus_fails_closed():
     """A locus split by another locus's alleles (interleaved) is refused rather than masked by a
-    silently-widened min/max range (audit #4/#5)."""
+    silently-widened min/max range."""
     import pytest
     from alignair.reference.reference_set import GeneReference, ReferenceSet as RS
     genes = {"V": GeneReference(["IGKV1*01", "IGLV1*01", "IGKV2*01"], ["A", "C", "G"], {}),

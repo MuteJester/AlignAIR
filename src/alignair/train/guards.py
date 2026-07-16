@@ -1,4 +1,4 @@
-"""Training safety guards (P0-10): validate a training request before allocating the model, abort on
+"""Training safety guards: validate a training request before allocating the model, abort on
 non-finite loss/gradients with a diagnostic, and bound gradient norms — so a run fails fast and loudly
 on a bad config or a diverging optimizer instead of silently producing a broken model."""
 from __future__ import annotations

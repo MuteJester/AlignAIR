@@ -1,4 +1,4 @@
-"""FWR/CDR region extraction + junction/CDR3 via the J anchor (faithful port of TF AIRR/regions).
+"""FWR/CDR region extraction + junction/CDR3 via the J anchor.
 
 Two junction derivations live here. :func:`compute_junction` slices the fixed IMGT column 309 out of
 the (indel-blind) gapped ``sequence_alignment`` — exact on reads without a V/J-region indel.
