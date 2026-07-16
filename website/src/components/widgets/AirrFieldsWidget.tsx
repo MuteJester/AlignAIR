@@ -3,13 +3,14 @@ import { useState } from "react";
 export function AirrFieldsWidget() {
   const AIRR_FIELDS = [
     { key: "sequence_id", val: "read_0417", desc: "The identifier of the input read, carried through unchanged so every row traces back to its source." },
-    { key: "v_call", val: "IGHV3-23*01", color: "#574fd6", desc: "The V allele call. When a read genuinely cannot disambiguate alleles, the full equivalence set is reported in `v_call_set` — treat a multi-member set as a family-level call, not a confident single answer." },
-    { key: "d_call", val: "IGHD3-10*01", color: "#9b4bd6", desc: "The D allele call. D segments are short and mutated, so `d_call` is the least certain of the three — read it alongside `d_call_set`." },
-    { key: "j_call", val: "IGHJ4*02", color: "#3f7fd6", desc: "The J allele call. Like V and D it carries a `j_call_set` when several alleles remain consistent with the read." },
-    { key: "junction", val: "CARDYYGSGSYYFDYW", color: "#12805c", desc: "The CDR3 junction amino-acid sequence, when it can be derived. This is the region that defines clonal identity downstream." },
-    { key: "rev_comp", val: "F", desc: "Whether the read was reverse-complemented. `T` means the emitted `sequence` is the original query and coordinates apply to its reverse complement." },
-    { key: "productive", val: "", color: "#8b899d", desc: "A derived fact: in-frame with no stop codon. On a partial record it can be underivable, and AlignAIR leaves it **blank** — unknown, not `F`." },
-    { key: "airr_assembly_status", val: "complete", desc: "Honest quality flag: `complete`, `partial`, or `failed`. Filter to `complete` before junction or productivity analysis." },
+    { key: "v_call", val: "IGHV3-23*01", color: "#574fd6", desc: "The top V allele call. Alongside it, v_call_set lists the alleles the model scored as more-likely-present-than-not, ordered by probability and capped at three. Keep the set as reported: it is the model's candidate set, not a proof that the read cannot distinguish those alleles, and it is not exhaustive." },
+    { key: "d_call", val: "IGHD3-10*01", color: "#9b4bd6", desc: "The D allele call. D segments are short and heavily trimmed during junction assembly, so this is the least certain of the three - read it alongside d_call_set, and expect a set or a blank more often than for V or J." },
+    { key: "j_call", val: "IGHJ4*02", color: "#3f7fd6", desc: "The J allele call. Like V and D it carries a j_call_set when several alleles clear the threshold." },
+    { key: "junction", val: "TGTGCGAGAGATTACTATGGTTCGGGGAGTTATTATTTTGACTACTGG", color: "#12805c", desc: "The CDR3 junction as NUCLEOTIDES, including the conserved Cys and Trp/Phe codons. This is the region that defines clonal identity downstream. Blank when the anchors cannot be placed - honest absence, not a guess." },
+    { key: "junction_aa", val: "CARDYYGSGSYYFDYW", color: "#12805c", desc: "The same junction translated to amino acids. Clonal grouping is usually more robust on junction_aa than on single-nucleotide positions, because the junction coordinates can jitter by a nucleotide or two." },
+    { key: "rev_comp", val: "F", desc: "Whether the alignment used the reverse complement. T means the emitted sequence is the ORIGINAL query and the coordinates apply to its reverse complement - the AIRR and IgBLAST convention." },
+    { key: "productive", val: "", color: "#8b899d", desc: "A derived fact: in-frame with no stop codon. On a partial record it can be underivable, and AlignAIR leaves it blank - unknown, not false. The neural head's advisory guess lives separately in productive_prediction." },
+    { key: "airr_assembly_status", val: "complete", desc: "Honest quality flag: complete, partial, or failed. Filter to complete before junction or productivity analysis." },
   ];
 
   const [sel, setSel] = useState("sequence_id");

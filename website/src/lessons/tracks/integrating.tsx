@@ -76,14 +76,25 @@ const validate: Lesson = {
       body: () => (
         <>
           <p>
-            Before you hand a TSV to another tool — or archive it — confirm it is valid AIRR. AlignAIR ships a validator that checks the file against the official AIRR-C rearrangement schema:
+            Before you hand a TSV to another tool — or archive it — check it. AlignAIR ships a fast, dependency-free
+            structural validator:
           </p>
           <CodeBlock code="alignair validate-airr out.tsv" />
           <p>
-            A clean exit means every row parses and the required fields are present and well-typed; it reads back through the <code>airr</code> library and Change-O without surprises. This is the fast way to catch a broken hand-off before it fails deep inside a downstream pipeline.
+            A clean exit means the required columns are present, the coordinates are in bounds, no per-gene CIGAR
+            consumes more query than the emitted <code>sequence</code>, and productivity is self-consistent. It is the
+            fast way to catch a broken hand-off before it fails deep inside a downstream pipeline.
           </p>
-          <Callout kind="note" title="Schema-valid is not the same as fully-derived">
-            <code>validate-airr</code> checks the <em>shape</em> of the file, not whether every read aligned well. A row can be perfectly schema-valid and still be <code>partial</code>. Use <code>airr_assembly_status</code> for quality, <code>validate-airr</code> for format.
+          <Callout kind="note" title="Two different checks — do not confuse them">
+            <p style={{ margin: "0 0 8px" }}>
+              <code>validate-airr</code> is AlignAIR's own <strong>structural</strong> check; it does not call the
+              official <code>airr</code> library. For formal schema validation, run that too:
+            </p>
+            <CodeBlock lang="python" code={`import airr\nairr.validate_rearrangement("out.tsv")`} />
+            <p style={{ margin: "8px 0 0" }}>
+              And neither one tells you a read aligned <em>well</em>: a row can pass both and still be{" "}
+              <code>partial</code>. Use <code>airr_assembly_status</code> for quality, these validators for format.
+            </p>
           </Callout>
         </>
       ),
@@ -94,7 +105,9 @@ const validate: Lesson = {
       body: () => (
         <>
           <p>
-            How much AlignAIR writes per row is a choice. <code>--columns</code> trades detail for speed — the lighter presets skip the gapped-alignment assembly:
+            How much AlignAIR writes per row is a choice. <code>--columns</code> trades detail for speed. Read the table
+            carefully: only <code>minimal</code> actually skips the gapped-alignment assembly, because it is the only
+            preset that asks for nothing derived from it:
           </p>
           <div style={{ margin: "20px 0", overflowX: "auto", border: "1px solid #eae9f1", borderRadius: "12px" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13.5px" }}>
@@ -113,13 +126,18 @@ const validate: Lesson = {
                 </tr>
                 <tr style={{ borderBottom: "1px solid #f0eff5" }}>
                   <td style={{ padding: "11px 14px" }}><code>core</code></td>
-                  <td style={{ padding: "11px 14px" }}>Calls, call sets, coordinates, junction — no gapped alignment.</td>
-                  <td style={{ padding: "11px 14px" }}>Clonotype / repertoire summaries at higher throughput.</td>
+                  <td style={{ padding: "11px 14px" }}>Calls, call sets, coordinates, junction (27 fields). Still assembled — it asks for the junction.</td>
+                  <td style={{ padding: "11px 14px" }}>Clonotype / repertoire summaries: a much smaller file, same derived biology.</td>
                 </tr>
                 <tr style={{ borderBottom: "1px solid #f0eff5" }}>
-                  <td style={{ padding: "11px 14px" }}><code>minimal</code></td>
-                  <td style={{ padding: "11px 14px" }}>Just the essential calls and coordinates.</td>
-                  <td style={{ padding: "11px 14px" }}>Fast triage or huge inputs where you only need the calls.</td>
+                  <td style={{ padding: "11px 14px" }}>
+                    <code>minimal</code>
+                  </td>
+                  <td style={{ padding: "11px 14px" }}>
+                    Calls + <code>productive</code> only (7 fields). <strong>No coordinates, no junction</strong> — the
+                    only preset that skips the assembly.
+                  </td>
+                  <td style={{ padding: "11px 14px" }}>Fast triage or huge inputs where the allele calls are all you need.</td>
                 </tr>
                 <tr style={{ borderBottom: "1px solid #f0eff5" }}>
                   <td style={{ padding: "11px 14px" }}><code>airr</code></td>
@@ -140,18 +158,23 @@ const validate: Lesson = {
       kind: "mcq",
       prompt: () => (
         <p>
-          You need maximum throughput and only the V/D/J calls and coordinates — no gapped alignments. Which preset?
+          You want the smallest, fastest output that still gives you the junction for clonotype work. Which preset — and
+          what does it actually save?
         </p>
       ),
       options: [
-        "full — it is always safest",
-        "core or minimal — they skip the gapped-alignment assembly, which is the slow stage",
-        "airr — it is the fastest by definition",
+        "minimal — it is the fastest, and still gives you the junction",
+        "core — a much smaller file than full, but the assembly still runs, because the junction is derived from it",
+        "airr — the AIRR-required set is by definition the fastest",
       ],
       answer: 1,
       explanation: () => (
         <p>
-          The gapped-alignment assembly is the expensive post-processing step. <code>core</code> and <code>minimal</code> skip it, so you keep the calls and coordinates at higher throughput. <code>full</code> reconstructs everything; <code>airr</code> is about schema-completeness, not speed.
+          If you need the junction, the assembly has to run — the junction is one of its products. So <code>core</code>{" "}
+          buys you a far smaller file (27 fields vs 109), not a skipped assembly; the saving is mostly writing less.{" "}
+          <code>minimal</code> is the only preset that truly skips the assembly, and the price is exactly that: no
+          junction and no coordinates, just calls and <code>productive</code>. <code>airr</code> is about
+          schema-completeness, not speed.
         </p>
       ),
     },

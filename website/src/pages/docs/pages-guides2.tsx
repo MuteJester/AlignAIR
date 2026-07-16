@@ -20,7 +20,7 @@ const cli: DocPage = {
           [<code>reference</code>, "list built-in GenAIRR references, or export a model's reference"],
           [<code>export-reference</code>, "export the germline FASTA / dataconfig from a model file"],
           [<code>convert</code>, "package a legacy .pt checkpoint into a safe, pickle-free .alignair"],
-          [<code>validate-airr</code>, "validate an AIRR TSV against the AIRR-C schema"],
+          [<code>validate-airr</code>, "structural check of a rearrangement TSV (columns, coordinate/CIGAR bounds, productivity invariants)"],
           [<code>compare</code>, "agreement (concordance) report between two AIRR TSVs"],
           [<code>analyze</code>, "summarize composition, prediction QC, and validation of a TSV"],
           [<code>benchmark</code>, "evaluate a model on freshly-generated GenAIRR reads (self-check)"],
@@ -35,7 +35,7 @@ const cli: DocPage = {
         <li><code>--model</code> a pretrained id, local <code>.alignair</code>/<code>.pt</code>, or <code>org/name</code> HF repo id. Pin with <code>id@version</code>.</li>
         <li><code>--genotype FILE</code> constrain to a donor subset (<code>--genotype-method mask|softmax|renormalize|redistribute</code>).</li>
         <li><code>--metadata FILE</code> join a per-read side table by id; <code>--keep-columns a,b,c</code> selects columns.</li>
-        <li><code>--columns full|core|minimal|airr</code> output field set (lighter presets skip the gapped-alignment assembly).</li>
+        <li><code>--columns full|core|minimal|airr</code> output field set. <code>core</code> is a compact 27-field row (still assembled); <code>minimal</code> is calls + <code>productive</code> only and is the one preset that skips the AIRR assembly.</li>
         <li><code>--chunk-size N</code> stream in chunks (bounded memory; default 20000). <code>--device cpu|cuda|mps</code> (auto picks CUDA, then MPS, then CPU).</li>
         <li><code>--rejects-out FILE</code> write dropped/invalid input records.</li>
       </ul>
@@ -90,7 +90,7 @@ const cli: DocPage = {
 
       <h2>alignair info</h2>
       <p>Print a model file's card details (params count, creation timestamp, training hyperparameters, embedded references) without loading weights into memory:</p>
-      <CodeBlock code={`alignair info alignair-igh-human`} />
+      <CodeBlock code={`# 'models info' resolves a catalog id:\nalignair models info alignair-igh-human\n\n# 'info' reads a model FILE directly (it does not resolve ids):\nalignair info runs/my_igh/bundle/model.alignair`} />
 
       <h2>alignair models</h2>
       <p>List, download, verify, or prune cache elements:</p>
@@ -98,10 +98,10 @@ const cli: DocPage = {
 
       <h2>alignair reference &amp; export-reference</h2>
       <p>List built-in dataconfigs or dump reference sequences from a model:</p>
-      <CodeBlock code={`alignair reference list --species Human\nalignair reference export alignair-igh-human --fasta ref.fasta\n# export-reference is also available as a standalone command:\nalignair export-reference alignair-igh-human --fasta ref.fasta`} />
+      <CodeBlock code={`alignair reference list --species Human\n\n# 'reference export' takes a model FILE, not a catalog id - resolve the id to a path first:\nalignair models get alignair-igh-human\nMODEL="$(alignair models path alignair-igh-human)"\nalignair reference export "$MODEL" --fasta ref.fasta\n\n# export-reference is the same command, standalone:\nalignair export-reference "$MODEL" --fasta ref.fasta`} />
 
       <h2>Other utility commands</h2>
-      <CodeBlock code={`alignair demo                                        # offline end-to-end sandbox\nalignair convert model.pt model.alignair --dataconfig HUMAN_IGH_OGRDB --trust-pickle\nalignair validate-airr out.tsv                       # check against official AIRR-C schema\nalignair compare --a a.tsv --b b.tsv --a-name A --b-name B --out report.md`} />
+      <CodeBlock code={`alignair demo                                        # offline end-to-end sandbox\nalignair convert model.pt model.alignair --dataconfig HUMAN_IGH_OGRDB --trust-pickle\nalignair validate-airr out.tsv                       # structural check (not the official airr validator)\nalignair compare --a a.tsv --b b.tsv --a-name A --b-name B --out report.md`} />
       <p>
         <code>alignair compare</code> measures concordance between two tools, not accuracy (no ground truth is involved).
       </p>
@@ -211,7 +211,13 @@ const integrations: DocPage = {
         <li>Filter to complete records first (<code>airr_assembly_status == "complete"</code>) before clonotype or productivity analysis.</li>
         <li>AlignAIR is per-read; single-cell grouping (<code>cell_id</code>) and counts come from your <code>--metadata</code> table.</li>
       </ul>
-      <CodeBlock code={`alignair predict --input contigs.fasta --out out.tsv --model alignair-igh-human \\\n  --metadata filtered_contig_annotations.csv --keep-columns barcode,umi_count,c_gene`} />
+      <CodeBlock code={`alignair predict --input contigs.fasta --out out.tsv --model alignair-igh-human \\\n  --metadata filtered_contig_annotations.csv --keep-columns barcode,umis,c_gene`} />
+      <Callout kind="note" title="Name the RAW columns, not the normalized ones">
+        <code>--keep-columns</code> selects columns as they appear in your metadata file, and naming one that is not
+        there is an error. Cell Ranger writes <code>barcode</code> and <code>umis</code>, so ask for those.
+        AlignAIR normalizes the well-known 10x names on the way out, so the output carries <code>cell_id</code> and{" "}
+        <code>umi_count</code> (and <code>c_call</code> from <code>c_gene</code>) as Scirpy and Change-O expect.
+      </Callout>
 
       <h2>Scirpy (single-cell)</h2>
       <CodeBlock
@@ -220,10 +226,10 @@ const integrations: DocPage = {
       />
 
       <h2>Change-O / Immcantation</h2>
-      <CodeBlock code={`DefineClones.py -d out.tsv --act set --model ham --norm len --dist 0.16\nCreateGermlines.py -d out_clone-pass.tsv -r IGHV.fasta IGHD.fasta IGHJ.fasta\n# export the exact germline the model used:\nalignair reference export out.tsv.model.alignair --fasta germline.fasta`} />
+      <CodeBlock code={`# 1. keep only the fully-assembled records (see the rule above)\npython -c "import pandas as pd; t=pd.read_csv('out.tsv',sep='\\t'); \\\n  t[t.airr_assembly_status=='complete'].to_csv('out.complete.tsv',sep='\\t',index=False)"\n\n# 2. export the exact germline the model used, so germline reconstruction matches its calls\nMODEL="$(alignair models path alignair-igh-human)"\nalignair reference export "$MODEL" --fasta germline.fasta\n\n# 3. hand off to Change-O\nDefineClones.py -d out.complete.tsv --act set --model ham --norm len --dist 0.16\nCreateGermlines.py -d out.complete_clone-pass.tsv -r germline.fasta`} />
 
       <h2>IgBLAST (for comparison)</h2>
-      <CodeBlock code={`alignair reference export alignair-igh-human --fasta germline.fasta   # same germline\nigblastn -germline_db_V ... -germline_db_D ... -germline_db_J ... \\\n  -outfmt 19 -query reads.fasta > igblast.tsv\nalignair compare --a out.tsv --b igblast.tsv --a-name AlignAIR --b-name IgBLAST --out report.md`} />
+      <CodeBlock code={`# give IgBLAST the exact germline the model uses (resolve the id to a file first)\nMODEL="$(alignair models path alignair-igh-human)"\nalignair reference export "$MODEL" --fasta germline.fasta\n\nigblastn -germline_db_V ... -germline_db_D ... -germline_db_J ... \\\n  -outfmt 19 -query reads.fasta > igblast.tsv\nalignair compare --a out.tsv --b igblast.tsv --a-name AlignAIR --b-name IgBLAST --out report.md`} />
 
       <h2>nf-core/airrflow (assembled mode)</h2>
       <p>AlignAIR produces the per-sample TSV; you provide the samplesheet:</p>

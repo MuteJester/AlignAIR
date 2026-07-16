@@ -59,7 +59,7 @@ const knownFailureModes: DocPage = {
         rows={[
           ["Junction boundary jitter", "CDR3/junction coordinates can be off by ~1-2 nt (J side worse than V). The junction string is usually fine.", "Treat junction coordinates as approximate; group clones on junction_aa, not single-nt positions."],
           ["Missing anchors -> no junction", "If the reference lacks the conserved anchors for an allele, that read gets calls but an empty junction (honest absence).", "Add anchors to the reference, or accept junction-free rows. Built-in dataconfigs carry anchors."],
-          ["Short-read / fragment ambiguity", "A short read carries little signal, so the true allele is genuinely indistinguishable from many others.", "Surfaced in *_call_set. Treat multi-allele sets as gene/family-level."],
+          ["Short-read / fragment ambiguity", "A short read carries little signal, so the true allele is genuinely indistinguishable from many others.", "A multi-member *_call_set flags this. It is the model's candidate set (p >= 0.5, capped at 3), not a proof of which alleles are indistinguishable, so do not report the read at allele resolution."],
           ["Full-length, heavily-mutated V", "At high SHM on full-length reads, V allele accuracy is comparable to IgBLAST rather than higher - the hardest regime.", "Cross-check with IgBLAST for SHM-heavy lineage work; *_call_set still narrows candidates."],
           ["Model / reference mismatch", "Running a model on the wrong locus yields plausible-but-meaningless calls.", "Use a model trained for your locus; multi-locus models cannot make cross-locus calls."],
           ["Out-of-scope / contaminant reads", "Non-target sequences still get plausible-looking calls.", "No contaminant classifier runs (is_contaminant is reserved/blank). Screen upstream, or filter on assembly status."],
@@ -77,7 +77,7 @@ const knownFailureModes: DocPage = {
 
       <h2>When to prefer IgBLAST / MiXCR / partis</h2>
       <ul>
-        <li><strong>Raw throughput on CPU-only hardware</strong> - without a GPU, AlignAIR runs somewhat below IgBLAST's multi-threaded CPU baseline, so for very large bulk repertoires on CPU-only machines IgBLAST may finish sooner. With a GPU the position reverses substantially. A lighter <code>--columns</code> preset recovers roughly a tenth of the time (it skips the gapped-alignment assembly, which is a modest share of the cost, not the bulk of it). See <DocLink to="performance">Speed and throughput</DocLink> for the measured figures.</li>
+        <li><strong>Raw throughput on CPU-only hardware</strong> - without a GPU, AlignAIR runs somewhat below IgBLAST's multi-threaded CPU baseline, so for very large bulk repertoires on CPU-only machines IgBLAST may finish sooner. With a GPU the position reverses substantially. <code>--columns core</code> recovers roughly a tenth of the time by writing a much smaller row; <code>minimal</code> additionally skips the AIRR assembly, at the price of no coordinates and no junction. See <DocLink to="performance">Speed and throughput</DocLink> for the measured figures.</li>
         <li><strong>A long-established, citation-stable standard</strong> - if a pipeline or reviewer expects IgBLAST/IMGT output specifically.</li>
         <li><strong>End-to-end clonotype/repertoire assembly</strong> - MiXCR and Immcantation cover clustering, lineage, and stats AlignAIR does not; AlignAIR's job is the per-read alignment that feeds them.</li>
       </ul>
@@ -85,7 +85,7 @@ const knownFailureModes: DocPage = {
       <h2>Where AlignAIR fits best</h2>
       <ul>
         <li>A donor/study-specific genotype supplied at predict time with <code>--genotype</code>, no retraining.</li>
-        <li>Surfaced ambiguity: an equivalence set instead of a single, possibly wrong, top allele.</li>
+        <li>Surfaced ambiguity: a ranked candidate set alongside the top call, rather than a single, possibly wrong, allele.</li>
         <li>Non-human / custom species via <code>alignair train</code> on your own FASTA reference.</li>
         <li>Broad input coverage (fragments, reverse-complement, indels) in one model.</li>
       </ul>
@@ -143,8 +143,8 @@ const troubleshooting: DocPage = {
 
       <h2>AIRR output</h2>
       <ul>
-        <li><strong>Validate any TSV:</strong> <code>alignair validate-airr out.tsv</code>. The output is AIRR-C schema-valid and reads back via the <code>airr</code> library / Change-O.</li>
-        <li><strong>sequence_alignment / germline_alignment / *_cigar / *_identity</strong> are produced by AlignAIR's own IMGT-gap reconstruction on complete records; they do not require an external aligner. A lighter <code>--columns core</code>/<code>minimal</code> preset skips the gapped-alignment assembly and the CIGAR falls back to a coordinate-derived approximation.</li>
+        <li><strong>Validate any TSV:</strong> <code>alignair validate-airr out.tsv</code> is a fast, dependency-free structural check: required columns present, coordinates in bounds, CIGARs consuming no more query than the emitted sequence, and productivity invariants. It is <em>not</em> the official AIRR validator - for formal schema validation also run <code>airr.validate_rearrangement(path)</code> from the <code>airr</code> library (CI covers this for AlignAIR's own output).</li>
+        <li><strong>sequence_alignment / germline_alignment / *_cigar / *_identity</strong> are produced by AlignAIR's own IMGT-gap reconstruction on complete records; they do not require an external aligner. Under <code>--columns minimal</code> the assembly is skipped entirely, so those fields are not emitted at all; <code>core</code> still assembles (it requests the junction) and keeps the exact CIGARs.</li>
       </ul>
     </>
   ),

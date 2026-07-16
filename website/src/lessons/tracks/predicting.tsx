@@ -60,7 +60,8 @@ const firstPrediction: Lesson = {
           </p>
           <AirrFieldsWidget />
           <p>
-            When a <code>*_call_set</code> holds more than one allele, treat the result as family-level, not a confident single call.
+            When a <code>*_call_set</code> holds more than one allele, the model did not settle on one — do not report
+            that read at allele resolution.
           </p>
         </>
       ),
@@ -203,7 +204,7 @@ const genotype: Lesson = {
             A model can call any allele in its reference — but a given <strong>donor</strong> only carries a fraction of them. If you know (or have inferred) the donor’s genotype, you can tell AlignAIR to consider only that donor’s alleles.
           </p>
           <p>
-            This is a pure <strong>inference-time</strong> switch. It narrows the callable set, which removes impossible calls and tightens ambiguous equivalence sets — with <strong>no retraining</strong> and no new model.
+            This is a pure <strong>inference-time</strong> switch. It narrows the callable set, which removes impossible calls and tightens ambiguous candidate sets — with <strong>no retraining</strong> and no new model.
           </p>
         </>
       ),
@@ -330,11 +331,18 @@ const interpreting: Lesson = {
       body: () => (
         <>
           <p>
-            Each row has <code>v_call</code> / <code>d_call</code> / <code>j_call</code> — the top allele per gene. But when a read genuinely cannot distinguish alleles (a short fragment, say), AlignAIR does not guess: it reports the full <strong>equivalence set</strong> in <code>*_call_set</code>:
+            Each row has <code>v_call</code> / <code>d_call</code> / <code>j_call</code> — the top allele per gene. But
+            when a read genuinely cannot distinguish alleles (a short fragment, say), AlignAIR does not hide it behind a
+            single guess: <code>*_call_set</code> carries the model's <strong>candidate set</strong>:
           </p>
           <CodeBlock lang="text" code={`v_call        IGHV3-23*01\nv_call_set    IGHV3-23*01,IGHV3-23*04`} />
           <p>
-            When a <code>*_call_set</code> holds more than one allele, treat the result as <strong>family-level</strong>, not a confident single call. (A donor genotype often collapses these down to one.)
+            Read it for exactly what it is: every allele the model scored at <code>p &gt;= 0.5</code>, ranked, and{" "}
+            <strong>capped at three</strong>, falling back to the top-1 call when nothing clears the bar. So a
+            multi-member set means the model did not settle on one allele — do not report that read at allele
+            resolution. But it is <em>not</em> an exhaustive list of the alleles the read is compatible with (the cap
+            can truncate it), and a one-member set is not automatically confident (it may just be the fallback). A donor{" "}
+            <code>--genotype</code> is what actually narrows these.
           </p>
         </>
       ),
@@ -390,13 +398,18 @@ const interpreting: Lesson = {
       ),
       options: [
         "As a confident single-allele, productive call",
-        "As a family-level result: the allele is ambiguous (3-member set) and the record is only partial — keep it out of junction-level analysis",
+        "Below allele resolution: the allele is ambiguous (3-member set) and the record is only partial — keep it out of junction-level analysis",
         "Delete it — partial rows are errors",
       ],
       answer: 1,
       explanation: () => (
         <p>
-          Three alleles in the set means allele identity is ambiguous — read it at family level. <code>partial</code> means the junction/products were not assembled, so it should not feed junction or clonotype analysis. Partial and failed rows are still emitted (with their calls) so you can choose to use them at family level.
+          Three alleles in the set means the model did not settle on one, so do not report this read at allele
+          resolution. Note that three is the cap, so the true ambiguity may be wider than what you see — and check
+          whether the members actually share a gene before you roll the row up to gene or family level; they need not.{" "}
+          <code>partial</code> means the junction and other products were not assembled, so it must not feed junction or
+          clonotype analysis. Partial and failed rows are still emitted, calls included, so this row is usable — just
+          not at allele or junction resolution.
         </p>
       ),
     },

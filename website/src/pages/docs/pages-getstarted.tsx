@@ -70,7 +70,7 @@ const gettingStarted: DocPage = {
       <CodeBlock code={`alignair predict --input reads.csv --out out.tsv --model alignair-igh-human \\\n  --sequence-column sequence --id-column sequence_id`} />
       <p>
         The output is an AIRR rearrangement TSV with the V/D/J calls, coordinates, junction, productivity, and a per-gene
-        equivalence-set column (<code>*_call_set</code>). See <DocLink to="airr-fields">AIRR output fields</DocLink>.
+        candidate-set column (<code>*_call_set</code>). See <DocLink to="airr-fields">AIRR output fields</DocLink>.
       </p>
 
       <h2>5. Constrain to a donor genotype</h2>
@@ -142,7 +142,7 @@ const concepts: DocPage = {
       <h2>What AlignAIR gives you</h2>
       <p>For every read, in one pass:</p>
       <ul>
-        <li>V / D / J allele calls, plus an equivalence set (<code>*_call_set</code>) when the read is genuinely ambiguous.</li>
+        <li>V / D / J allele calls, plus a ranked candidate set (<code>*_call_set</code>) that widens when the read is genuinely ambiguous.</li>
         <li>Segment coordinates in the read and germline, and per-segment CIGAR / identity.</li>
         <li>Junction / CDR3, <code>productive</code>, mutation rate, and orientation.</li>
       </ul>

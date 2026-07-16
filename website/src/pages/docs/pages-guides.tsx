@@ -108,7 +108,7 @@ const models: DocPage = {
         rows={[
           [<code>alignair-igh-human</code>, "GenAIRR OGRDB, V198 / D33 / J7", "On full-length heavy-SHM V, accuracy is comparable to IgBLAST rather than higher; junctions can jitter ~1-2 nt. D-allele calling is inherently ambiguous due to chew-off deletions."],
           [<code>alignair-igkl-human</code>, "GenAIRR OGRDB, V349 / J18 (no D)", <>Multi-locus (IGK + IGL). <code>d_call</code> and <code>np2</code> empty by design; each read attributed to one locus. Designed for light chain alignment.</>],
-          [<code>alignair-tcrb-human</code>, "GenAIRR IMGT, V98 / D3 / J16", <>SHM set to zero (TCR does not hypermutate). Short TRB D is often an equivalence set or blank <code>d_call</code>. Limited to TRB locus; other TCR chains are not supported by this checkpoint.</>],
+          [<code>alignair-tcrb-human</code>, "GenAIRR IMGT, V98 / D3 / J16", <>SHM set to zero (TCR does not hypermutate). Short TRB D often yields a multi-member <code>d_call_set</code> or a blank <code>d_call</code>. Limited to TRB locus; other TCR chains are not supported by this checkpoint.</>],
         ]}
       />
       <p>
@@ -126,9 +126,11 @@ const models: DocPage = {
       <p>
         Each pretrained model carries post-hoc temperature scaling on the allele heads: a per-gene temperature fitted on
         held-out data, embedded in the model card and hash-verified. It is applied automatically; there is no flag.
-        Temperature scaling is monotonic, so it does not change which allele is called or the equivalence set - it
-        rescales the reported top-1 probability so it better matches observed accuracy. Held-out calibration quality
-        metrics are not yet published; the <code>*_set_confidence</code> column stays blank until that step.
+        Temperature scaling is monotonic, so it never reorders the alleles and never changes which one is called - it
+        rescales the reported probability so it better matches observed accuracy. It <em>can</em> change{" "}
+        <code>*_call_set</code> membership, though: the set rule is an absolute <code>p &gt;= 0.5</code> cut rather than
+        a rank cut, and rescaling moves probabilities across that line. Held-out calibration quality metrics are not yet
+        published; the <code>*_set_confidence</code> column stays blank until that step.
       </p>
 
       <h2>Managing the cache</h2>

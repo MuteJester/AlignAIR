@@ -21,12 +21,25 @@ const airrFields: DocPage = {
           [<><code>sequence_id</code>, <code>sequence</code>, <code>rev_comp</code></>, "See orientation, below."],
           [<code>locus</code>, "Inferred from the model / reference; a multi-locus model attributes each read to one locus."],
           [<>V/D/J <code>_call</code></>, "Top call per gene from the classifier heads (over the embedded reference)."],
-          [<>V/D/J <code>_call_set</code></>, "Equivalence set: every allele the read cannot distinguish. AlignAIR extension."],
+          [<>V/D/J <code>_call_set</code></>, "Candidate set: the alleles the model scores as more-likely-present-than-not (p >= 0.5), ordered by probability and capped at 3. Never empty - it falls back to the top-1 call. AlignAIR extension."],
           [<><code>*_sequence_start/end</code>, <code>*_germline_start/end</code></>, "1-based AIRR coordinates in the coordinate frame described under orientation."],
           [<>V/D/J <code>_cigar</code></>, "CIGAR from the germline reader; a lighter --columns preset falls back to a coordinate-derived CIGAR."],
           [<code>mutation_rate</code>, "Neural estimate of the read's SHM load (AlignAIR extension)."],
         ]}
       />
+
+      <Callout kind="warning" title="What *_call_set does and does not mean">
+        It is the model's <strong>candidate set</strong>: every allele whose calibrated probability clears 0.5, sorted by
+        probability and <strong>capped at three</strong>, with the top-1 call kept when nothing clears the threshold. Read
+        it accordingly:
+        <ul className="list-disc pl-6 space-y-1 my-2">
+          <li>It is <strong>not</strong> a proof that the read cannot distinguish those alleles - it is what the model believed.</li>
+          <li>Because of the cap it is <strong>not exhaustive</strong>: a genuinely ambiguous read may have more plausible alleles than the three reported.</li>
+          <li>A single-member set is not automatically a confident call - it can also mean nothing cleared the threshold and the top-1 was kept.</li>
+          <li>Members need not share a gene or family, so <strong>do not</strong> collapse a set to "family-level" unless every member actually shares that family.</li>
+        </ul>
+        Keep the set as reported, and let a donor <code>--genotype</code> narrow it when you know the donor's alleles.
+      </Callout>
 
       <h2>Junction and regions</h2>
       <p>Derived from the assembled alignment; blank on partial records.</p>
@@ -95,7 +108,10 @@ const airrFields: DocPage = {
         lang="python"
         code={`import pandas as pd\n\ntable = pd.read_csv("out.tsv", sep="\\t")\nusable = table[\n    (table["airr_assembly_status"] == "complete")\n    & ~table["segmentation_low_quality"].fillna(False).astype(bool)\n]`}
       />
-      <p>Partial and failed records are still emitted (with their calls); select them explicitly for family-level results.</p>
+      <p>
+        Partial and failed records are still emitted with their calls, so select them explicitly when you want
+        call-level results without the junction and other assembly products.
+      </p>
 
       <h2>Output presets</h2>
       <p>
@@ -104,9 +120,9 @@ const airrFields: DocPage = {
       <DocTable
         head={["Preset", "Description", "Fields Included"]}
         rows={[
-          [<code>full</code>, "The default schema. Emits all 78+ fields including full alignments, per-segment slices, and region boundaries.", "All fields in the schema."],
-          [<code>core</code>, "Compact output that skips gapped alignment reconstruction for maximum speed, but retains calls and coordinates.", "sequence_id, sequence, rev_comp, locus, v_call, d_call, j_call, c_call, productive, junction, junction_aa, junction_length, and all V/D/J sequence and germline coordinates & CIGARs."],
-          [<code>minimal</code>, "Bare minimum columns needed to identify V/D/J gene calls.", "sequence_id, sequence, locus, v_call, d_call, j_call, productive."],
+          [<code>full</code>, "The default schema (109 fields): full alignments, per-segment slices, and region boundaries. Runs the AIRR assembly.", "All fields in the schema."],
+          [<code>core</code>, "Compact output (27 fields): calls, coordinates and the junction. Still runs the AIRR assembly - the junction is one of its products - so it buys a smaller file, not a skipped stage.", "sequence_id, sequence, rev_comp, locus, v_call, d_call, j_call, c_call, productive, junction, junction_aa, junction_length, and all V/D/J sequence and germline coordinates & CIGARs."],
+          [<code>minimal</code>, "Calls and productivity only (7 fields). The only preset that skips the AIRR assembly - and therefore the only one with no coordinates and no junction.", "sequence_id, sequence, locus, v_call, d_call, j_call, productive."],
           [<code>airr</code>, "The MiAIRR-minimal required rearrangement columns.", "sequence_id, sequence, rev_comp, productive, v_call, d_call, j_call, sequence_alignment, germline_alignment, junction, junction_aa, v_cigar, d_cigar, j_cigar."],
         ]}
       />
@@ -125,7 +141,7 @@ const airrFields: DocPage = {
         head={["Field(s)", "Status"]}
         rows={[
           [<code>is_contaminant</code>, "Reserved. No contaminant classifier runs by default, so this column is present but always blank. Do not filter on it."],
-          [<><code>*_resolved_call</code>, <code>*_call_level</code>, <code>*_set_confidence</code></>, "Reserved for calibrated confidence; populated only by the optional calibration step. Use *_call_set for ambiguity today."],
+          [<><code>*_resolved_call</code>, <code>*_call_level</code>, <code>*_set_confidence</code></>, "Reserved. No supported prediction workflow populates these - they are blank. Do not filter or make confidence decisions on them. Use *_call_set for ambiguity, and validate against data representative of your own."],
           [<><code>c_call</code> (from the read)</>, "AlignAIR aligns V(D)J only. Supply the assembler's c_gene via --metadata."],
         ]}
       />

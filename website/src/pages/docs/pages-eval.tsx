@@ -56,7 +56,7 @@ const benchmarks: DocPage = {
       <p>
         Throughput is device-dependent, so it does not reduce to a single comparison. On CPU-only hardware AlignAIR runs
         somewhat below IgBLAST's multi-threaded CPU baseline; on a GPU it runs several times above it. A lighter{" "}
-        <code>--columns</code> preset recovers roughly a tenth of the time by skipping the gapped-alignment assembly. See{" "}
+        <code>--columns core</code> preset recovers roughly a tenth of the time by writing a much smaller row. See{" "}
         <DocLink to="performance">Speed and throughput</DocLink> for the measured per-device figures, stated with their
         hardware, backend and timing boundary.
       </p>
@@ -85,7 +85,8 @@ const benchmarks: DocPage = {
         The full head-to-head vs IgBLAST lives in the <code>alignair_benchmark</code> package. This package is excluded from the installed PyPI wheel to minimize the runtime install footprint (preventing heavy dev/statistical dependencies in production). It must be installed from a source clone. Its <code>evaluate</code>/<code>compare</code> commands add paired case-bootstrap
         confidence intervals, per-stratum intervals, and Bonferroni-corrected tests, and record provenance (AlignAIR
         version + commit, package versions, CUDA detail, reference/case hashes). Run IgBLAST against the same germline
-        (<code>alignair reference export &lt;model&gt; --fasta germline.fasta</code>) with <code>-outfmt 19</code>.
+        (resolve the id to a file with <code>alignair models path &lt;id&gt;</code>, then{" "}
+        <code>alignair reference export &lt;file&gt; --fasta germline.fasta</code>) with <code>-outfmt 19</code>.
       </p>
 
       <h2>Compare agreement on your own data</h2>
@@ -120,10 +121,10 @@ const performance: DocPage = {
       <DocTable
         head={["Device", "Output", "Median reads/s", "Measured peak memory*"]}
         rows={[
-          ["CPU", "full (with gapped alignment)", "~112", "~0.75 GB host RSS"],
-          ["CPU", "core (no gapped alignment)", "~123", "~0.75 GB host RSS"],
-          ["CUDA", "full (with gapped alignment)", "~1,480", "~0.16 GB CUDA allocated"],
-          ["CUDA", "core (no gapped alignment)", "~1,720", "~0.16 GB CUDA allocated"],
+          ["CPU", "full (109 fields)", "~112", "~0.75 GB host RSS"],
+          ["CPU", "core (27 fields)", "~123", "~0.75 GB host RSS"],
+          ["CUDA", "full (109 fields)", "~1,480", "~0.16 GB CUDA allocated"],
+          ["CUDA", "core (27 fields)", "~1,720", "~0.16 GB CUDA allocated"],
         ]}
       />
       <p>
@@ -134,7 +135,7 @@ const performance: DocPage = {
       <p>The main throughput knobs:</p>
       <ul>
         <li><code>--device cuda</code> - the largest lever; the neural stage is GPU-friendly.</li>
-        <li><code>--columns core</code> / <code>minimal</code> - skip the gapped-alignment assembly when you only need calls + coordinates.</li>
+        <li><code>--columns core</code> - a far smaller row (27 fields vs 109). Note both rows above still run the AIRR assembly: <code>core</code> asks for the junction, which is one of its products, so the ~10% gain is mostly writing less. Only <code>minimal</code> (calls + <code>productive</code>, no coordinates or junction) skips the assembly outright; it was not measured here.</li>
         <li><code>--batch-size</code> - larger batches improve GPU utilisation up to memory limits.</li>
         <li><code>--chunk-size</code> - bounds memory for large inputs, not speed.</li>
       </ul>
@@ -174,7 +175,7 @@ const design: DocPage = {
       <h2>End-to-end pipeline</h2>
       <CodeBlock
         lang="text"
-        code={`read (nucleotides)\n  |  tokenize (A/C/G/T/N + pad, fixed window)\n  v\nin-model orientation head -> detect orientation, re-orient to the forward frame\n  v\nconvolutional feature encoder (residual conv tower)\n  |- per-gene branches (V, D, J):\n  |    |- segmentation heads -> start / end position\n  |    '- classification head -> per-allele scores (over the embedded catalog)\n  '- meta heads -> mutation rate, indel count, productivity, locus\n  v\npost-processing (alignair.predict)\n  |- allele selection -> top call + equivalence set\n  |- germline reader -> refined coordinates, per-segment CIGAR, % identity\n  '- AIRR assembly -> IMGT-gapped alignments, junction / CDR3, np1/np2, flags\n  v\nAIRR rearrangement record`}
+        code={`read (nucleotides)\n  |  tokenize (A/C/G/T/N + pad, fixed window)\n  v\nin-model orientation head -> detect orientation, re-orient to the forward frame\n  v\nconvolutional feature encoder (residual conv tower)\n  |- per-gene branches (V, D, J):\n  |    |- segmentation heads -> start / end position\n  |    '- classification head -> per-allele scores (over the embedded catalog)\n  '- meta heads -> mutation rate, indel count, productivity, locus\n  v\npost-processing (alignair.predict)\n  |- allele selection -> top call + candidate set\n  |- germline reader -> refined coordinates, per-segment CIGAR, % identity\n  '- AIRR assembly -> IMGT-gapped alignments, junction / CDR3, np1/np2, flags\n  v\nAIRR rearrangement record`}
       />
       <p>
         The neural network localises each segment and scores alleles; a germline reader (a fast anchored aligner by
@@ -187,7 +188,7 @@ const design: DocPage = {
       <ul>
         <li><strong>In-model orientation.</strong> Orientation is predicted from the initial embeddings and corrected inside the model, so every downstream head and the coordinates operate on one canonical frame.</li>
         <li><strong>Segmentation + classification, jointly.</strong> Each gene regresses boundaries and scores alleles from a shared convolutional representation - one forward pass yields calls, coordinates, and quality together.</li>
-        <li><strong>Honest ambiguity.</strong> Allele selection emits an equivalence set, not a forced single call, when a read cannot distinguish alleles.</li>
+        <li><strong>Honest ambiguity.</strong> Allele selection emits a ranked candidate set alongside the top call, so a read that cannot distinguish alleles is visible as such rather than reported as a confident single call.</li>
         <li><strong>Fixed-reference classifier.</strong> The heads are tied to the embedded catalog; a donor genotype can subset it at inference, but adding alleles requires training.</li>
       </ul>
 

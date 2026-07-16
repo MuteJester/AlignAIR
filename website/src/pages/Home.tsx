@@ -99,7 +99,7 @@ export default function Home() {
                     <span style={{ color: "#16151f", fontWeight: 500 }}>IGHJ4*02</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px" }}>
-                    <span style={{ width: "68px", color: "#8b899d" }}>junction</span>
+                    <span style={{ width: "68px", color: "#8b899d" }}>junction_aa</span>
                     <span style={{ color: "#12805c", fontWeight: 500 }}>CARDYYGSGSYYFDYW</span>
                   </div>
                 </div>

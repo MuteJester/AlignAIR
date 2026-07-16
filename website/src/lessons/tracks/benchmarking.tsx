@@ -136,7 +136,7 @@ const benchmarking: Lesson = {
       explanation: () => (
         <p>
           With no ground truth, agreement is concordance, not accuracy. Set-rescue only shows the other tool's call is
-          present in AlignAIR's equivalence set, not which call is right. For accuracy you need the ground-truth
+          present in AlignAIR's candidate set, not which call is right. For accuracy you need the ground-truth
           benchmark.
         </p>
       ),
