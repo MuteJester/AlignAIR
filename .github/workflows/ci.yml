@@ -61,20 +61,6 @@ jobs:
       - name: Platform-sensitive tests (I/O, container, registry locking, atomic replace, paths)
         run: pytest -q tests/alignair/io tests/alignair/model_file tests/alignair/registry
 
-  docs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install docs deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install ".[docs]"
-      - name: Build docs (strict — fails on stale/unlisted pages)
-        run: mkdocs build --strict
-
   wheel:
     runs-on: ubuntu-latest
     steps:

@@ -1,5 +1,5 @@
 {% set name = "AlignAIR" %}
-{% set version = "2.0.2" %}   {# keep in sync with pyproject.toml [project].version #}
+{% set version = "3.0.0" %}   {# keep in sync with pyproject.toml [project].version #}
 {% set local_build = environ.get("ALIGNAIR_LOCAL_BUILD", "") %}
 
 # Bioconda recipe for AlignAIR. Submit to bioconda-recipes to unlock `conda install`
@@ -65,7 +65,7 @@ about:
   home: https://github.com/MuteJester/AlignAIR
   license: GPL-3.0-or-later
   license_file: LICENSE
-  summary: Neural IG/TCR sequence aligner with a dynamic (runtime) reference.
+  summary: End-to-end neural aligner for immunoglobulin (IG) and T-cell-receptor (TCR) V(D)J sequences, with standard AIRR output.
   doc_url: https://github.com/MuteJester/AlignAIR
   dev_url: https://github.com/MuteJester/AlignAIR
 

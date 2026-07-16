@@ -10,7 +10,7 @@ import platform
 import sys
 
 _CRITICAL = ("torch", "numpy")
-_OPTIONAL = ("pandas", "GenAIRR", "safetensors", "zstandard", "huggingface_hub")
+_OPTIONAL = ("pandas", "GenAIRR", "safetensors", "zstandard", "huggingface_hub", "parasail")
 
 
 def register(sub) -> None:
@@ -45,6 +45,11 @@ def diagnostics() -> dict:
     try:                                               # resolved device + per-OS cache/config locations
         from ..aligner import resolve_device
         info["device_auto"] = resolve_device("auto")
+    except Exception:                                  # noqa: BLE001
+        pass
+    try:    # germline-CIGAR kernel: the compiled Cython extension, or the pure-Python fallback
+        from ..predict.heuristic_matcher import DERIVE_BACKEND
+        info["derive_backend"] = DERIVE_BACKEND
     except Exception:                                  # noqa: BLE001
         pass
     try:

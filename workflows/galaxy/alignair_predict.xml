@@ -1,4 +1,4 @@
-<tool id="alignair_predict" name="AlignAIR predict" version="2.0.2" profile="23.0">
+<tool id="alignair_predict" name="AlignAIR predict" version="3.0.0" profile="23.0">
     <description>align IG/TCR reads into an AIRR rearrangement table</description>
     <!-- DRAFT Galaxy wrapper (not yet submitted to the Tool Shed; see ../README.md). -->
     <requirements>
