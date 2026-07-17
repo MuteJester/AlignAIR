@@ -3,31 +3,6 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { cn } from "../lib/util";
 
-function BrandMark({ className }: { className?: string }) {
-  return (
-    <span
-      className={className}
-      aria-hidden="true"
-      style={{
-        display: "inline-flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        gap: "3px",
-        width: "32px",
-        height: "32px",
-        borderRadius: "9px",
-        background: "#574fd6",
-        padding: "8px 7px",
-        boxShadow: "0 2px 8px rgba(87,79,214,0.35)",
-      }}
-    >
-      <span style={{ display: "block", height: "2.5px", width: "60%", background: "#fff", borderRadius: "2px" }}></span>
-      <span style={{ display: "block", height: "2.5px", width: "100%", background: "#fff", borderRadius: "2px" }}></span>
-      <span style={{ display: "block", height: "2.5px", width: "45%", background: "#fff", borderRadius: "2px" }}></span>
-    </span>
-  );
-}
-
 function Navbar() {
   const [open, setOpen] = useState(false);
   const loc = useLocation();
@@ -46,8 +21,7 @@ function Navbar() {
       }}
     >
       <div style={{ maxWidth: "1200px", margin: "0 auto", height: "64px", padding: "0 28px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Link to="/" style={{ display: "flex", alignItems: "center", gap: "11px", color: "#16151f" }}>
-          <BrandMark />
+        <Link to="/" style={{ display: "flex", alignItems: "center", color: "#16151f" }}>
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "18px", letterSpacing: "-0.01em" }}>
             AlignAIR
           </span>
@@ -189,8 +163,7 @@ function Footer() {
       <div style={{ maxWidth: "1200px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "24px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: "24px" }}>
           <div style={{ maxWidth: "340px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "11px", color: "#16151f" }}>
-              <BrandMark />
+            <div style={{ display: "flex", alignItems: "center", color: "#16151f" }}>
               <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "18px", letterSpacing: "-0.01em" }}>
                 AlignAIR
               </span>
