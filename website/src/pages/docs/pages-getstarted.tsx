@@ -115,6 +115,7 @@ const gettingStarted: DocPage = {
 
       <h2>Next</h2>
       <ul>
+        <li><strong>See a full run on real data.</strong> A public human IGH repertoire from download to validated AIRR: <DocLink to="worked-example">Worked example</DocLink>.</li>
         <li><strong>Read the output.</strong> Every column, how it is derived, and how to filter it: <DocLink to="airr-fields">AIRR output fields</DocLink>.</li>
         <li><strong>Coming from another tool.</strong> <DocLink to="migrating-from-igblast">Migrating from IgBLAST</DocLink>.</li>
         <li><strong>Know the limits.</strong> Where AlignAIR is weak and what to use instead: <DocLink to="known-failure-modes">Known failure modes</DocLink>.</li>

@@ -1,6 +1,7 @@
 import type { DocPage } from "./doc-kit";
 import { getStartedPages, conceptsPages } from "./pages-getstarted";
 import { migratePages } from "./pages-migrate";
+import { tutorialPages } from "./pages-tutorial";
 import { guidesPages, trainingPages } from "./pages-guides";
 import { guides2Pages } from "./pages-guides2";
 import { airrFieldsPages } from "./pages-airrfields";
@@ -18,6 +19,7 @@ import { communityPages } from "./pages-community";
 export const DOCS: DocPage[] = [
   ...getStartedPages, // getting-started
   ...migratePages, // migrating-from-igblast
+  ...tutorialPages, // worked-example
   ...conceptsPages, // concepts
   ...guidesPages, // models  [Using AlignAIR]
   ...guides2Pages, // cli, python-api, integrations  [Using AlignAIR]
