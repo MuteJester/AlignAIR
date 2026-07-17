@@ -14,16 +14,6 @@
       rel="stylesheet"
     />
     <title>AlignAIR</title>
-    <script>
-      // Apply the saved (or system) theme before paint to avoid a flash.
-      (function () {
-        try {
-          var t = localStorage.getItem("aa-theme");
-          var dark = t ? t === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
-          if (dark) document.documentElement.classList.add("dark");
-        } catch (e) {}
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

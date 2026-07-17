@@ -121,19 +121,19 @@ export default function Home() {
 
                 <div style={{ marginTop: "18px", borderTop: "1px dashed #eae9f1", paddingTop: "16px", display: "grid", gap: "8px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px" }}>
-                    <span style={{ width: "68px", color: "#6f6d85" }}>v_call</span>
+                    <span style={{ width: "92px", flexShrink: 0, color: "#6f6d85" }}>v_call</span>
                     <span style={{ color: "#16151f", fontWeight: 500 }}>IGHV3-23*01</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px" }}>
-                    <span style={{ width: "68px", color: "#6f6d85" }}>d_call</span>
+                    <span style={{ width: "92px", flexShrink: 0, color: "#6f6d85" }}>d_call</span>
                     <span style={{ color: "#16151f", fontWeight: 500 }}>IGHD3-10*01</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px" }}>
-                    <span style={{ width: "68px", color: "#6f6d85" }}>j_call</span>
+                    <span style={{ width: "92px", flexShrink: 0, color: "#6f6d85" }}>j_call</span>
                     <span style={{ color: "#16151f", fontWeight: 500 }}>IGHJ4*02</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px" }}>
-                    <span style={{ width: "68px", color: "#6f6d85" }}>junction_aa</span>
+                    <span style={{ width: "92px", flexShrink: 0, color: "#6f6d85" }}>junction_aa</span>
                     <span style={{ color: "#12805c", fontWeight: 500 }}>CARDYYGSGSYYFDYW</span>
                   </div>
                 </div>
