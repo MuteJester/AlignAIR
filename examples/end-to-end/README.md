@@ -14,7 +14,7 @@ The `alignair` commands are checked against the real CLI in CI. The download and
 | Study | Briney et al. 2019, *Nature* 566:393-397, "Commonality despite exceptional diversity in the baseline human antibody repertoire" |
 | Accession | ENA/SRA run **SRR8283604**, BioProject **PRJNA406949** |
 | Material | Human immunoglobulin heavy chain (IGH) repertoire, Illumina paired-end (2x250) |
-| License | INSDC record - sequence data is free to reuse without restriction |
+| Data access | INSDC record; under INSDC's data-access policy the sequence data is free to reuse without restriction (a data-access policy, not a software license) |
 | Model | `alignair-igh-human@1.0.0` (pinned) |
 
 We use a small, reproducible subset: the first 2000 read pairs of the run.
@@ -38,6 +38,10 @@ f855e9a9488ac446f82d5e9fd8413bbe  R1.sub.fastq
 7cb75441bb2bf3821bd84c41656f00c7  R2.sub.fastq
 ```
 
+These md5s cover the **extracted 2000-read subset**, computed here - not ENA/SRA's published checksums,
+which validate the complete `SRR8283604_1.fastq.gz` / `_2.fastq.gz` source files (~1.2 GB each). Verify
+the published hashes only if you download the full files.
+
 If your network blocks the ENA HTTPS host, use the FTP URL instead (`ftp://ftp.sra.ebi.ac.uk/vol1/...`);
 the subset and its checksums are identical either way.
 
@@ -56,8 +60,14 @@ pairs=2000 merged=1945          # 97% of pairs overlap and merge
 06c7767cbe5718367d84d2fb624353c6  merged.fastq
 ```
 
-The merged reads are 398-444 nt - the whole rearrangement, end to end. (This merger is demo-grade; for
-production use pRESTO, fastp, or vsearch, ideally with UMI consensus.)
+The merged reads span the whole rearrangement (the longest reach ~444 nt).
+
+`merge_pairs.py` is **deterministic demonstration preprocessing, not a production pipeline.** It takes
+the largest R1 / reverse-complement(R2) overlap of at least 20 nt with at most 10% mismatch,
+concatenates on that overlap, and **drops pairs that do not merge** (55 of 2000 here). It does no
+quality-aware consensus and no UMI correction - it exists so this example runs with nothing but Python,
+and so the merged output has a stable checksum. For real repertoire work use pRESTO AssemblePairs,
+`fastp --merge`, or vsearch, with UMI-based consensus.
 
 ## 3. Predict
 

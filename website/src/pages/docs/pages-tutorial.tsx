@@ -24,7 +24,7 @@ const workedExample: DocPage = {
           ["Study", <>Briney et al. 2019, <em>Nature</em> 566:393-397, &ldquo;Commonality despite exceptional diversity in the baseline human antibody repertoire&rdquo;</>],
           ["Accession", <>ENA/SRA run <code>SRR8283604</code>, BioProject <code>PRJNA406949</code></>],
           ["Material", "Human IGH (heavy chain) repertoire, Illumina paired-end 2x250"],
-          ["License", "INSDC record - sequence data is free to reuse without restriction"],
+          ["Data access", "INSDC record; under INSDC's data-access policy the sequence data is free to reuse without restriction (a data-access policy, not a software license)"],
           ["Model", <code>alignair-igh-human@1.0.0</code>],
         ]}
       />
@@ -37,6 +37,11 @@ const workedExample: DocPage = {
       />
       <p>The exact subset has a stable checksum, so anyone reproduces the same bytes:</p>
       <CodeBlock lang="text" code={`f855e9a9488ac446f82d5e9fd8413bbe  R1.sub.fastq\n7cb75441bb2bf3821bd84c41656f00c7  R2.sub.fastq`} />
+      <Callout kind="note" title="Which checksum is which">
+        These md5s cover the <strong>extracted 2000-read subset</strong>, computed here - not ENA/SRA's published
+        checksums, which validate the complete <code>SRR8283604_1/2.fastq.gz</code> source files (~1.2 GB each). Verify
+        the published hashes only if you download the full files.
+      </Callout>
       <p>
         If your network blocks the ENA HTTPS host, use the FTP URL instead (<code>ftp://ftp.sra.ebi.ac.uk/vol1/...</code>);
         the subset and its checksums are identical.
@@ -49,10 +54,14 @@ const workedExample: DocPage = {
       </p>
       <CodeBlock code={`python3 merge_pairs.py R1.sub.fastq R2.sub.fastq merged.fastq\nmd5sum merged.fastq`} />
       <CodeBlock lang="text" code={`pairs=2000 merged=1945          # 97% of pairs overlap and merge\n06c7767cbe5718367d84d2fb624353c6  merged.fastq`} />
-      <p>
-        The merged reads are 398-444 nt - the whole rearrangement, end to end. This merger is demo-grade; for
-        production use pRESTO, fastp, or vsearch, ideally with UMI consensus.
-      </p>
+      <p>The merged reads span the whole rearrangement (the longest reach ~444 nt).</p>
+      <Callout kind="note" title="The bundled merger is demonstration preprocessing, not a pipeline">
+        <code>merge_pairs.py</code> is deterministic: it takes the largest R1 / reverse-complement(R2) overlap of at
+        least 20 nt with at most 10% mismatch, concatenates on that overlap, and <strong>drops pairs that do not
+        merge</strong> (55 of 2000 here). It does no quality-aware consensus and no UMI correction - it exists so this
+        example runs with nothing but Python and produces a stable checksum. For real repertoire work use pRESTO
+        AssemblePairs, <code>fastp --merge</code>, or vsearch, with UMI-based consensus.
+      </Callout>
 
       <h2>3. Predict</h2>
       <CodeBlock code={`alignair predict --input merged.fastq --out briney_merged.tsv --model alignair-igh-human@1.0.0`} />
