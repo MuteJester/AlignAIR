@@ -26,7 +26,7 @@
 - **End-to-end neural model.** A single network detects read orientation, localizes the V/D/J segments, and calls alleles from a shared representation, producing V/D/J calls, segment coordinates, the junction, productivity, and mutation rate in one pass, with no multi-stage heuristic pipeline.
 - **Self-contained models.** Each model embeds a fingerprinted germline reference and loads without executing any pickle. Pretrained human IGH, IGK+IGL, and TRB models are a command away (`--model <id>`); the germline catalog travels with the model.
 - **Donor genotype constraint.** At inference you can restrict calls to a subset of the model's reference (a donor genotype, as YAML or FASTA) with no retraining. Adding alleles, a new species, or a new locus requires training a new compatible model.
-- **Uncertainty-aware.** When a read cannot distinguish alleles (e.g. short fragments), AlignAIR reports an **equivalence set** (`*_call_set`) rather than forcing a single call. Optional per-allele confidence calibration is available as a separate step.
+- **Uncertainty-aware.** When a read cannot distinguish alleles (e.g. short fragments), AlignAIR reports a **candidate set** (`*_call_set`) rather than forcing a single call. Optional per-allele confidence calibration is available as a separate step.
 - **AIRR output.** Standard AIRR rearrangement TSV (V/D/J calls, coordinates, junction, productivity) that reads directly into Change-O / Scirpy / Immcantation.
 - **Evaluated against IgBLAST.** On a 4,400-case / 22-stratum benchmark (bootstrap CIs, Bonferroni-corrected), AlignAIR reports higher accuracy on 23 of 24 metrics, with the largest improvements on short fragments, reverse-complement / arbitrary orientation, and D/J calling. See [benchmarks](https://mutejester.github.io/AlignAIR/#/docs/benchmarks).
 
@@ -123,7 +123,7 @@ reference/config/model size without training with `--plan`. Then just
 `airr` library; reads back with Change-O / Immcantation): `sequence_id`, `sequence`, `rev_comp`,
 `productive`, `v_call`/`d_call`/`j_call`, `junction`/`junction_aa`, gapped `sequence_alignment` /
 `germline_alignment`, per-gene `*_cigar`, `*_identity`, and sequence/germline coordinates, plus a
-per-gene equivalence-set column (`*_call_set`) for alleles a read cannot distinguish. The gapped
+per-gene candidate-set column (`*_call_set`) for alleles a read cannot distinguish. The gapped
 alignment fields are produced by AlignAIR's own IMGT-gap reconstruction (no external aligner required;
 `parasail` is bundled in `[cli]` for exact CIGARs and the fast reader).
 
