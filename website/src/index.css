@@ -22,6 +22,64 @@
   ::selection {
     background: rgba(87,79,214,0.18);
   }
+
+  /* Consistent, strong keyboard focus on every interactive element. Many controls are
+     inline-styled and set no outline of their own; this is the single source of truth.
+     :focus-visible keeps the ring off mouse clicks but on for keyboard/AT users. */
+  :focus-visible {
+    outline: 2px solid #574fd6;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Do not leave a dim default outline on controls that show the strong ring above. */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+/* The one keyframe the app references (previously undefined). Defining it here means the
+   reduced-motion block below can neutralize it in one place. */
+@keyframes aa-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Skip link: first tab stop, visually hidden until focused. */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 100;
+  background: #574fd6;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 12px;
+}
+
+/* Honor the OS "reduce motion" setting: neutralize transitions, animations and smooth
+   scrolling site-wide. Near-instant (0.01ms) rather than 0 so animation/transition end
+   events still fire. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .skip-link {
+    transition: none;
+  }
 }
 
 @layer components {

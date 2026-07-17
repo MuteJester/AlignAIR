@@ -9,7 +9,7 @@ export function AirrFieldsWidget() {
     { key: "junction", val: "TGTGCGAGAGATTACTATGGTTCGGGGAGTTATTATTTTGACTACTGG", color: "#12805c", desc: "The CDR3 junction as NUCLEOTIDES, including the conserved Cys and Trp/Phe codons. This is the region that defines clonal identity downstream. Blank when the anchors cannot be placed - honest absence, not a guess." },
     { key: "junction_aa", val: "CARDYYGSGSYYFDYW", color: "#12805c", desc: "The same junction translated to amino acids. Clonal grouping is usually more robust on junction_aa than on single-nucleotide positions, because the junction coordinates can jitter by a nucleotide or two." },
     { key: "rev_comp", val: "F", desc: "Whether the alignment used the reverse complement. T means the emitted sequence is the ORIGINAL query and the coordinates apply to its reverse complement - the AIRR and IgBLAST convention." },
-    { key: "productive", val: "", color: "#8b899d", desc: "A derived fact: in-frame with no stop codon. On a partial record it can be underivable, and AlignAIR leaves it blank - unknown, not false. The neural head's advisory guess lives separately in productive_prediction." },
+    { key: "productive", val: "", color: "#6f6d85", desc: "A derived fact: in-frame with no stop codon. On a partial record it can be underivable, and AlignAIR leaves it blank - unknown, not false. The neural head's advisory guess lives separately in productive_prediction." },
     { key: "airr_assembly_status", val: "complete", desc: "Honest quality flag: complete, partial, or failed. Filter to complete before junction or productivity analysis." },
   ];
 
@@ -18,11 +18,12 @@ export function AirrFieldsWidget() {
 
   return (
     <div style={{ margin: "22px 0", border: "1px solid #eae9f1", borderRadius: "14px", background: "#fff", overflow: "hidden" }}>
-      <div style={{ padding: "14px 16px 4px", display: "flex", flexWrap: "wrap", gap: "8px", background: "#faf9fd", borderBottom: "1px solid #f0eff5", paddingBottom: "14px" }}>
+      <div role="group" aria-label="AIRR output fields" style={{ padding: "14px 16px 4px", display: "flex", flexWrap: "wrap", gap: "8px", background: "#faf9fd", borderBottom: "1px solid #f0eff5", paddingBottom: "14px" }}>
         {AIRR_FIELDS.map((f) => (
           <button
             key={f.key}
             type="button"
+            aria-pressed={f.key === sel}
             onClick={() => setSel(f.key)}
             style={{
               fontFamily: "IBM Plex Mono, monospace",
@@ -41,9 +42,9 @@ export function AirrFieldsWidget() {
           </button>
         ))}
       </div>
-      <div style={{ padding: "20px 18px", animation: "aa-rise 0.25s ease-out both" }} key={sel}>
+      <div aria-live="polite" style={{ padding: "20px 18px", animation: "aa-rise 0.25s ease-out both" }} key={sel}>
         <div style={{ display: "flex", alignItems: "baseline", gap: "12px", flexWrap: "wrap" }}>
-          <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "13px", color: "#8b899d" }}>{sel}</span>
+          <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "13px", color: "#6f6d85" }}>{sel}</span>
           <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "14px", fontWeight: 600, color: active.color || "#16151f" }}>
             {active.val === "" ? "(blank — unknown)" : active.val}
           </span>

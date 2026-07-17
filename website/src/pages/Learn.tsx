@@ -6,7 +6,7 @@ export default function Learn() {
   return (
     <div style={{ maxWidth: "900px", margin: "0 auto", padding: "56px 28px 84px", fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#16151f" }}>
       <header style={{ marginBottom: "44px" }}>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8b899d" }}>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6f6d85" }}>
           Interactive lessons
         </span>
         <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "42px", letterSpacing: "-0.025em", margin: "12px 0 0", color: "#16151f" }}>
@@ -34,14 +34,21 @@ export default function Learn() {
                     <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: "22px", letterSpacing: "-0.015em", margin: 0, color: "#16151f" }}>
                       {t.title}
                     </h2>
-                    <span style={{ flexShrink: 0, fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#9b99ac" }}>
+                    <span style={{ flexShrink: 0, fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#6f6d85" }}>
                       {done}/{total} done
                     </span>
                   </div>
                   <p style={{ margin: "4px 0 0", fontSize: "14px", color: "#6f6d85" }}>
                     {t.description}
                   </p>
-                  <div style={{ marginTop: "12px", height: "6px", borderRadius: "999px", background: "#edecf4", overflow: "hidden" }}>
+                  <div
+                    role="progressbar"
+                    aria-valuenow={pct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuetext={`${done} of ${total} lessons complete`}
+                    style={{ marginTop: "12px", height: "6px", borderRadius: "999px", background: "#edecf4", overflow: "hidden" }}
+                  >
                     <div style={{ height: "100%", borderRadius: "999px", background: "#574fd6", transition: "width 0.5s", width: `${pct}%` }}></div>
                   </div>
                 </div>
@@ -61,6 +68,7 @@ export default function Learn() {
                         className="hover:border-indigo-200 hover:shadow-sm"
                       >
                         <span
+                          aria-hidden="true"
                           style={{
                             flexShrink: 0,
                             width: "20px",
@@ -78,15 +86,16 @@ export default function Learn() {
                         >
                           {d ? "✓" : ""}
                         </span>
+                        <span className="sr-only">{d ? "Completed. " : "Not started. "}</span>
                         <span style={{ flex: 1, minWidth: 0 }}>
                           <span style={{ display: "block", fontWeight: 600, fontSize: "15px" }}>
                             {l.title}
                           </span>
-                          <span style={{ display: "block", fontSize: "13px", color: "#8b899d", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <span style={{ display: "block", fontSize: "13px", color: "#6f6d85", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {l.summary}
                           </span>
                         </span>
-                        <span style={{ flexShrink: 0, fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#b9b7c7" }}>
+                        <span style={{ flexShrink: 0, fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#6f6d85" }}>
                           {l.minutes} min
                         </span>
                       </Link>

@@ -89,11 +89,11 @@ const VERDICT_CHIP: Record<Verdict, { text: string; fg: string; bg: string }> = 
 
 const MONO = "IBM Plex Mono, monospace";
 
-function Bar({ label, value, color, track }: { label: string; value: number; color: string; track: string }) {
+function Bar({ label, value, color, track, valueColor }: { label: string; value: number; color: string; track: string; valueColor: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "5px" }}>
-      <span style={{ width: "52px", fontFamily: MONO, fontSize: "10.5px", color: "#8b899d", flexShrink: 0 }}>{label}</span>
-      <div style={{ flex: 1, height: "13px", borderRadius: "7px", background: track, overflow: "hidden" }}>
+      <span style={{ width: "52px", fontFamily: MONO, fontSize: "10.5px", color: "#6f6d85", flexShrink: 0 }}>{label}</span>
+      <div aria-hidden="true" style={{ flex: 1, height: "13px", borderRadius: "7px", background: track, overflow: "hidden" }}>
         <div
           style={{
             height: "100%",
@@ -104,7 +104,7 @@ function Bar({ label, value, color, track }: { label: string; value: number; col
           }}
         ></div>
       </div>
-      <span style={{ width: "40px", textAlign: "right", fontFamily: MONO, fontSize: "12px", fontWeight: 600, color }}>
+      <span style={{ width: "40px", textAlign: "right", fontFamily: MONO, fontSize: "12px", fontWeight: 600, color: valueColor }}>
         {value.toFixed(3)}
       </span>
     </div>
@@ -117,16 +117,17 @@ export function BenchSandboxWidget() {
 
   return (
     <div style={{ margin: "22px 0", border: "1px solid #eae9f1", borderRadius: "14px", background: "#fff", padding: "18px" }}>
-      <span style={{ fontFamily: MONO, fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "#8b899d" }}>
+      <span id="bench-stratum-label" style={{ fontFamily: MONO, fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "#6f6d85" }}>
         BENCHMARK STRATUM
       </span>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+      <div role="group" aria-labelledby="bench-stratum-label" style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
         {STRATA.map((s) => {
           const on = s.key === active;
           return (
             <button
               key={s.key}
               type="button"
+              aria-pressed={on}
               onClick={() => setActive(s.key)}
               style={{
                 fontFamily: MONO,
@@ -171,8 +172,8 @@ export function BenchSandboxWidget() {
                   {chip.text}
                 </span>
               </div>
-              <Bar label="AlignAIR" value={g.alignair} color="#574fd6" track="#f1f0f8" />
-              <Bar label="IgBLAST" value={g.igblast} color="#8b899d" track="#f4f3f7" />
+              <Bar label="AlignAIR" value={g.alignair} color="#574fd6" track="#f1f0f8" valueColor="#4238c4" />
+              <Bar label="IgBLAST" value={g.igblast} color="#9795a8" track="#f4f3f7" valueColor="#6f6d85" />
             </div>
           );
         })}

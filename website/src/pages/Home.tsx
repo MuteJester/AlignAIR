@@ -25,9 +25,9 @@ export default function Home() {
     <div style={{ background: "#fbfbfd", color: "#16151f", fontFamily: "'IBM Plex Sans', system-ui, -apple-system, sans-serif" }}>
       {/* Hero */}
       <section style={{ position: "relative", overflow: "hidden", borderBottom: "1px solid #eae9f1" }}>
-        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(52% 46% at 68% -6%, rgba(87,79,214,0.13) 0%, rgba(87,79,214,0) 72%)" }}></div>
-        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.5, backgroundImage: "linear-gradient(#efeef6 1px, transparent 1px), linear-gradient(90deg, #efeef6 1px, transparent 1px)", backgroundSize: "46px 46px", WebkitMaskImage: "radial-gradient(60% 55% at 50% 0%, #000 0%, transparent 78%)", maskImage: "radial-gradient(60% 55% at 50% 0%, #000 0%, transparent 78%)" }}></div>
-        <div className="mx-auto" style={{ position: "relative", maxWidth: "1200px", padding: "92px 28px 84px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "56px", alignItems: "center" }}>
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(52% 46% at 68% -6%, rgba(87,79,214,0.13) 0%, rgba(87,79,214,0) 72%)" }}></div>
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.5, backgroundImage: "linear-gradient(#efeef6 1px, transparent 1px), linear-gradient(90deg, #efeef6 1px, transparent 1px)", backgroundSize: "46px 46px", WebkitMaskImage: "radial-gradient(60% 55% at 50% 0%, #000 0%, transparent 78%)", maskImage: "radial-gradient(60% 55% at 50% 0%, #000 0%, transparent 78%)" }}></div>
+        <div className="mx-auto" style={{ position: "relative", maxWidth: "1200px", padding: "92px 28px 84px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: "56px", alignItems: "center" }}>
           <div style={{ animation: "aa-rise 0.5s ease-out both" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "11.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4a41c9", background: "#efeefc", border: "1px solid #e0ddfa", padding: "6px 12px", borderRadius: "999px" }}>
               <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#574fd6" }}></span>
@@ -54,7 +54,7 @@ export default function Home() {
               </Link>
             </div>
             <div style={{ marginTop: "28px", display: "inline-flex", alignItems: "center", gap: "12px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13.5px", color: "#56546a", background: "#fff", border: "1px solid #eae9f1", borderRadius: "10px", padding: "11px 15px" }}>
-              <span style={{ color: "#9b99ac" }}>$</span>
+              <span aria-hidden="true" style={{ color: "#6f6d85" }}>$</span>
               <span>pip install <span style={{ color: "#16151f" }}>"AlignAIR[cli]"</span></span>
             </div>
 
@@ -72,7 +72,7 @@ export default function Home() {
                 >
                   Enhancing sequence alignment of adaptive immune receptors through multi-task deep learning
                 </a>{" "}
-                <span style={{ color: "#8b899d" }}>(Konstantinovsky et al., 2025, gkaf651)</span>.
+                <span style={{ color: "#6f6d85" }}>(Konstantinovsky et al., 2025, gkaf651)</span>.
               </p>
               <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap", gap: "8px 18px", fontSize: "14px", fontWeight: 600 }}>
                 <Link to="/docs/benchmarks" style={{ color: "#4a41c9", textDecoration: "underline" }}>
@@ -85,11 +85,16 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Signature alignment visual */}
-          <div style={{ animation: "aa-rise 0.6s ease-out both" }}>
+          {/* Signature alignment visual — a decorative illustration of one aligned read. Exposed to
+              assistive tech as a single labelled image rather than a soup of low-contrast spans. */}
+          <div
+            role="img"
+            aria-label="Illustration of a 312 bp human IGH read aligned to its V, D and J segments, producing the calls IGHV3-23*01, IGHD3-10*01 and IGHJ4*02 with junction_aa CARDYYGSGSYYFDYW."
+            style={{ animation: "aa-rise 0.6s ease-out both" }}
+          >
             <div style={{ background: "#fff", border: "1px solid #e7e6ef", borderRadius: "16px", boxShadow: "0 24px 60px -30px rgba(30,28,52,0.32), 0 6px 18px -12px rgba(30,28,52,0.14)", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: "1px solid #f0eff5", background: "#faf9fd" }}>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#8b899d" }}>read_0417 · 312 bp</span>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#6f6d85" }}>read_0417 · 312 bp</span>
                 <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", fontWeight: 600, color: "#4a41c9", background: "#efeefc", padding: "3px 9px", borderRadius: "6px" }}>IGH · human</span>
               </div>
               <div style={{ padding: "20px 18px 22px" }}>
@@ -116,19 +121,19 @@ export default function Home() {
 
                 <div style={{ marginTop: "18px", borderTop: "1px dashed #eae9f1", paddingTop: "16px", display: "grid", gap: "8px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px" }}>
-                    <span style={{ width: "68px", color: "#8b899d" }}>v_call</span>
+                    <span style={{ width: "68px", color: "#6f6d85" }}>v_call</span>
                     <span style={{ color: "#16151f", fontWeight: 500 }}>IGHV3-23*01</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px" }}>
-                    <span style={{ width: "68px", color: "#8b899d" }}>d_call</span>
+                    <span style={{ width: "68px", color: "#6f6d85" }}>d_call</span>
                     <span style={{ color: "#16151f", fontWeight: 500 }}>IGHD3-10*01</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px" }}>
-                    <span style={{ width: "68px", color: "#8b899d" }}>j_call</span>
+                    <span style={{ width: "68px", color: "#6f6d85" }}>j_call</span>
                     <span style={{ color: "#16151f", fontWeight: 500 }}>IGHJ4*02</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px" }}>
-                    <span style={{ width: "68px", color: "#8b899d" }}>junction_aa</span>
+                    <span style={{ width: "68px", color: "#6f6d85" }}>junction_aa</span>
                     <span style={{ color: "#12805c", fontWeight: 500 }}>CARDYYGSGSYYFDYW</span>
                   </div>
                 </div>
@@ -140,7 +145,7 @@ export default function Home() {
 
       {/* Features */}
       <section className="mx-auto" style={{ maxWidth: "1200px", padding: "84px 28px 0" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "18px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: "18px" }}>
           {features.map((f) => (
             <article key={f.num} style={{ background: "#fff", border: "1px solid #eae9f1", borderRadius: "14px", padding: "24px 22px 26px" }}>
               <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", fontWeight: 600, color: "#574fd6", letterSpacing: "0.06em" }}>
@@ -160,7 +165,7 @@ export default function Home() {
       {/* Model Finder */}
       <section className="mx-auto" style={{ maxWidth: "840px", padding: "92px 28px 0" }}>
         <div style={{ textAlign: "center" }}>
-          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8b899d" }}>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6f6d85" }}>
             Model Finder
           </span>
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "34px", letterSpacing: "-0.02em", margin: "12px 0 0", color: "#16151f" }}>
@@ -171,7 +176,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div style={{ marginTop: "32px", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "10px" }}>
+        <div role="group" aria-label="Choose your receptor locus" style={{ marginTop: "32px", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "10px" }}>
           {[
             { id: "igh", label: "Human IGH (Heavy)" },
             { id: "igkl", label: "Human IGK + IGL (Light)" },
@@ -180,6 +185,9 @@ export default function Home() {
           ].map((opt) => (
             <button
               key={opt.id}
+              type="button"
+              aria-pressed={alignType === opt.id}
+              aria-controls="model-finder-panel"
               onClick={() => setAlignType(opt.id as "igh" | "igkl" | "tcrb" | "other")}
               style={{
                 fontFamily: "'Space Grotesk', sans-serif",
@@ -200,7 +208,7 @@ export default function Home() {
           ))}
         </div>
 
-        <div style={{ marginTop: "24px", background: "#fff", border: "1px solid #eae9f1", borderRadius: "16px", padding: "28px", boxShadow: "0 10px 30px -15px rgba(30,28,52,0.1)" }}>
+        <div id="model-finder-panel" role="region" aria-live="polite" aria-label="Recommended model" style={{ marginTop: "24px", background: "#fff", border: "1px solid #eae9f1", borderRadius: "16px", padding: "28px", boxShadow: "0 10px 30px -15px rgba(30,28,52,0.1)" }}>
           {alignType === "igh" && (
             <div>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
@@ -212,7 +220,7 @@ export default function Home() {
                 Aligns human immunoglobulin heavy chains. Supports somatic hypermutations (SHM) and full-length V(D)J assembly. Limitations: junctions can jitter ~1-2 nt on heavy SHM; D-allele calls carry inherent biological ambiguity.
               </p>
               <pre style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
-                <span style={{ color: "#6f6c80" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
+                <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
               </pre>
             </div>
           )}
@@ -227,7 +235,7 @@ export default function Home() {
                 Multi-locus model for human IGK (Kappa) and IGL (Lambda) light chains. Automatically attributes reads to the correct locus. Limitations: no D segment is present (empty by design).
               </p>
               <pre style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
-                <span style={{ color: "#6f6c80" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igkl-human
+                <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igkl-human
               </pre>
             </div>
           )}
@@ -242,7 +250,7 @@ export default function Home() {
                 Aligns human T-cell receptor beta chains. Trained with somatic hypermutation set to zero, since T cells do not hypermutate. Scope: this checkpoint covers the TRB locus only. Alpha, gamma and delta are not in the pretrained registry — they are not excluded by the architecture, so you can train a model for them from a TRA/TRG/TRD reference with <strong>alignair train</strong>.
               </p>
               <pre style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
-                <span style={{ color: "#6f6c80" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-tcrb-human
+                <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-tcrb-human
               </pre>
             </div>
           )}
@@ -256,7 +264,7 @@ export default function Home() {
                 There is no pretrained model for other loci (like TCR Alpha/Gamma/Delta or IG Heavy/Light chains of non-human species). You must train a custom model using a built-in GenAIRR DataConfig or your own germline FASTA files.
               </p>
               <pre style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
-                <span style={{ color: "#6f6c80" }}>$</span> alignair train --v-fasta v.fasta --d-fasta d.fasta --j-fasta j.fasta --chain-type BCR_HEAVY --out runs/my_ref
+                <span style={{ color: "#9d9bb0" }}>$</span> alignair train --v-fasta v.fasta --d-fasta d.fasta --j-fasta j.fasta --chain-type BCR_HEAVY --out runs/my_ref
               </pre>
               <p style={{ margin: "12px 0 0 0", fontSize: "13.5px" }}>
                 Read the <Link to="/docs/training" style={{ color: "#4a41c9", textDecoration: "underline", fontWeight: 600 }}>Custom Reference Training guide</Link> to get started.
@@ -268,7 +276,7 @@ export default function Home() {
 
       {/* Quick start */}
       <section className="mx-auto" style={{ maxWidth: "760px", padding: "92px 28px 0", textAlign: "center" }}>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8b899d" }}>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6f6d85" }}>
           Quick start
         </span>
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "34px", letterSpacing: "-0.02em", margin: "12px 0 0", color: "#16151f" }}>
@@ -283,20 +291,21 @@ export default function Home() {
               <span style={{ width: "11px", height: "11px", borderRadius: "50%", background: "#3a3746" }}></span>
               <span style={{ width: "11px", height: "11px", borderRadius: "50%", background: "#3a3746" }}></span>
               <span style={{ width: "11px", height: "11px", borderRadius: "50%", background: "#3a3746" }}></span>
-              <span style={{ marginLeft: "8px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#6f6c80", letterSpacing: "0.08em" }}>bash</span>
+              <span style={{ marginLeft: "8px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#9d9bb0", letterSpacing: "0.08em" }}>bash</span>
             </div>
             <button
               type="button"
               onClick={copyQuick}
+              aria-label={copied ? "Copied to clipboard" : "Copy install commands"}
               style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#a9a7ba", background: "#2f2c3d", border: "none", borderRadius: "6px", padding: "4px 10px", cursor: "pointer" }}
             >
-              {copied ? "Copied ✓" : "Copy"}
+              <span aria-hidden="true">{copied ? "Copied ✓" : "Copy"}</span>
             </button>
           </div>
           <pre style={{ margin: 0, padding: "20px 18px", background: "#16151f", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13.5px", lineHeight: 2, color: "#e6e5f0", overflowX: "auto" }}>
-            <span style={{ color: "#6f6c80" }}>$</span> pip install <span style={{ color: "#b7f3d8" }}>"AlignAIR[cli]"</span>{"\n"}
-            <span style={{ color: "#6f6c80" }}>$</span> alignair doctor{"\n"}
-            <span style={{ color: "#6f6c80" }}>$</span> alignair demo
+            <span style={{ color: "#9d9bb0" }}>$</span> pip install <span style={{ color: "#b7f3d8" }}>"AlignAIR[cli]"</span>{"\n"}
+            <span style={{ color: "#9d9bb0" }}>$</span> alignair doctor{"\n"}
+            <span style={{ color: "#9d9bb0" }}>$</span> alignair demo
           </pre>
         </div>
 
@@ -309,15 +318,15 @@ export default function Home() {
             To run alignment on your own data, view available models and pass your sequence file. You can download sample files from the repository's <a href="https://github.com/MuteJester/AlignAIR/tree/main/examples" target="_blank" rel="noreferrer" style={{ color: "#4a41c9", textDecoration: "underline", fontWeight: 600 }}>examples/</a> folder:
           </p>
           <pre style={{ marginTop: "14px", padding: "16px 18px", background: "#16151f", border: "1px solid #24222f", borderRadius: "12px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", lineHeight: 1.8, color: "#e6e5f0", overflowX: "auto" }}>
-            <span style={{ color: "#6f6c80" }}>$</span> alignair models list{"\n"}
-            <span style={{ color: "#6f6c80" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
+            <span style={{ color: "#9d9bb0" }}>$</span> alignair models list{"\n"}
+            <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
           </pre>
         </div>
       </section>
 
       {/* Train section */}
       <section className="mx-auto" style={{ maxWidth: "1200px", padding: "92px 28px 0" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "48px", alignItems: "center", background: "linear-gradient(135deg, #1e1c34 0%, #11101d 100%)", borderRadius: "24px", padding: "48px", border: "1px solid #2f2c3d", boxShadow: "0 20px 40px -15px rgba(0,0,0,0.3)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: "48px", alignItems: "center", background: "linear-gradient(135deg, #1e1c34 0%, #11101d 100%)", borderRadius: "24px", padding: "48px", border: "1px solid #2f2c3d", boxShadow: "0 20px 40px -15px rgba(0,0,0,0.3)" }}>
           <div>
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "#9b8bf4" }}>
               Custom References
@@ -335,7 +344,7 @@ export default function Home() {
             </div>
           </div>
           <div style={{ background: "#16151f", borderRadius: "16px", border: "1px solid #24222f", padding: "24px", overflow: "hidden" }}>
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#6f6c80", display: "block", marginBottom: "12px" }}># Train model on a custom germline reference</span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#9d9bb0", display: "block", marginBottom: "12px" }}># Train model on a custom germline reference</span>
             <pre style={{ margin: 0, fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", lineHeight: 1.8, color: "#e6e5f0", overflowX: "auto" }}>
               <span style={{ color: "#cfcde3" }}>alignair train \</span>{"\n"}
               <span style={{ color: "#cfcde3" }}>  --v-fasta v.fasta \</span>{"\n"}
@@ -353,7 +362,7 @@ export default function Home() {
       <section className="mx-auto" style={{ maxWidth: "1200px", padding: "92px 28px 0" }}>
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "24px", marginBottom: "30px" }}>
           <div>
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8b899d" }}>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6f6d85" }}>
               Interactive lessons
             </span>
             <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "34px", letterSpacing: "-0.02em", margin: "10px 0 0", color: "#16151f" }}>
@@ -367,7 +376,7 @@ export default function Home() {
             All tracks <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>→</span>
           </Link>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "18px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: "18px" }}>
           {tracks.map((t) => (
             <Link
               key={t.slug}
@@ -382,7 +391,7 @@ export default function Home() {
                    t.slug === "training" ? "03" :
                    t.slug === "benchmarking" ? "04" : "05"}
                 </span>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#9b99ac" }}>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#6f6d85" }}>
                   {t.lessons.length} {t.lessons.length === 1 ? "lesson" : "lessons"}
                 </span>
               </div>

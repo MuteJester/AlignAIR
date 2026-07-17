@@ -31,33 +31,46 @@ function McqStep({
 
   const tryAgain = () => {
     setPicked(null);
+    // Return focus to the question so a keyboard/AT user can re-read and re-attempt.
+    window.setTimeout(() => {
+      document.getElementById("lesson-step-heading")?.focus({ preventScroll: true });
+    }, 0);
   };
 
   return (
     <div>
       <div style={{ marginBottom: "30px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-          <Link to={lessonBackHref} style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#8b899d" }}>
-            <span>←</span> {lessonTitle}
+          <Link to={lessonBackHref} style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#6f6d85" }}>
+            <span aria-hidden="true">←</span> {lessonTitle}
           </Link>
-          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#b9b7c7" }}>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#6f6d85" }}>
             Step {stepNum} / {stepTotal}
           </span>
         </div>
-        <div style={{ height: "5px", borderRadius: "999px", background: "#edecf4", overflow: "hidden" }}>
+        <div
+          role="progressbar"
+          aria-valuenow={stepPct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuetext={`Step ${stepNum} of ${stepTotal}`}
+          style={{ height: "5px", borderRadius: "999px", background: "#edecf4", overflow: "hidden" }}
+        >
           <div style={{ height: "100%", borderRadius: "999px", background: "#574fd6", transition: "width 0.4s", width: `${stepPct}%` }}></div>
         </div>
       </div>
 
       <div style={{ animation: "aa-rise 0.35s ease-out both" }}>
-        <span style={{ display: "inline-block", fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: "#574fd6", background: "#f2f1fb", padding: "4px 10px", borderRadius: "6px" }}>
-          Check your understanding
-        </span>
-        <div style={{ fontSize: "19px", lineHeight: "1.55", fontWeight: 500, color: "#16151f", marginTop: "16px" }}>
-          {step.prompt()}
+        <div id="lesson-step-heading" tabIndex={-1}>
+          <span style={{ display: "inline-block", fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: "#574fd6", background: "#f2f1fb", padding: "4px 10px", borderRadius: "6px" }}>
+            Check your understanding
+          </span>
+          <div style={{ fontSize: "19px", lineHeight: "1.55", fontWeight: 500, color: "#16151f", marginTop: "16px" }}>
+            {step.prompt()}
+          </div>
         </div>
 
-        <div style={{ marginTop: "22px", display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div role="group" aria-label="Answer options" style={{ marginTop: "22px", display: "flex", flexDirection: "column", gap: "10px" }}>
           {step.options.map((opt, i) => {
             const isPicked = picked === i;
             const right = answered && i === step.answer;
@@ -68,6 +81,7 @@ function McqStep({
             let optColor = "#2a2836";
             let mark = "";
             let markColor = "";
+            let srStatus = "";
 
             if (right) {
               optBorder = "#8fcfb4";
@@ -75,22 +89,27 @@ function McqStep({
               optColor = "#0f6b4e";
               mark = "✓";
               markColor = "#12805c";
+              srStatus = answered ? " — correct answer" : "";
             } else if (wrong) {
               optBorder = "#e9a9b4";
               optBg = "#fdeef0";
               optColor = "#a12b3f";
               mark = "✕";
               markColor = "#c0344a";
+              srStatus = " — your answer, incorrect";
             }
 
-            const opacity = answered && !right && !wrong ? "0.55" : "1";
+            // De-emphasize the untouched options after answering, but keep them dark enough to
+            // read (they stay reviewable by assistive tech, which is why they are not disabled).
+            const opacity = answered && !right && !wrong ? "0.72" : "1";
 
             return (
               <button
                 key={i}
                 type="button"
-                disabled={answered}
-                onClick={() => setPicked(i)}
+                aria-pressed={isPicked}
+                aria-disabled={answered || undefined}
+                onClick={() => { if (!answered) setPicked(i); }}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -111,9 +130,12 @@ function McqStep({
                   transition: "border-color 0.15s, background 0.15s",
                 }}
               >
-                <span>{opt}</span>
+                <span>
+                  {opt}
+                  {srStatus && <span className="sr-only">{srStatus}</span>}
+                </span>
                 {mark && (
-                  <span style={{ flexShrink: 0, fontWeight: 700, fontSize: "16px", color: markColor }}>
+                  <span aria-hidden="true" style={{ flexShrink: 0, fontWeight: 700, fontSize: "16px", color: markColor }}>
                     {mark}
                   </span>
                 )}
@@ -124,6 +146,8 @@ function McqStep({
 
         {answered && (
           <div
+            role="status"
+            aria-live="polite"
             style={{
               marginTop: "18px",
               border: `1px solid ${correct ? "#9ad3bb" : "#f0d59a"}`,
@@ -159,7 +183,7 @@ function McqStep({
                     cursor: "pointer",
                   }}
                 >
-                  Continue <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>→</span>
+                  Continue <span aria-hidden="true" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>→</span>
                 </button>
               </div>
             ) : (
@@ -174,7 +198,7 @@ function McqStep({
                   fontFamily: "inherit",
                   fontSize: "13.5px",
                   fontWeight: 600,
-                  color: "#a66a00",
+                  color: "#8a5600",
                   textDecoration: "underline",
                   textUnderlineOffset: "3px",
                 }}
@@ -196,7 +220,7 @@ function McqStep({
                 cursor: "pointer",
                 fontFamily: "inherit",
                 fontSize: "14px",
-                color: "#8b899d",
+                color: "#6f6d85",
               }}
             >
               ← Previous
@@ -216,7 +240,14 @@ export default function LessonPlayer({ lesson }: { lesson: Lesson }) {
   const next = useMemo(() => nextLessonOf(lesson.id), [lesson.id]);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+    // After a step change, move focus to the new step's heading so keyboard and screen-reader
+    // users land at the start of the new content instead of being stranded on the old control.
+    const t = window.setTimeout(() => {
+      document.getElementById("lesson-step-heading")?.focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [index, finished]);
 
   const advance = () => {
@@ -250,6 +281,7 @@ export default function LessonPlayer({ lesson }: { lesson: Lesson }) {
       <div style={{ maxWidth: "760px", margin: "0 auto", padding: "40px 28px 0" }}>
         <div style={{ textAlign: "center", padding: "64px 0 0", animation: "aa-rise 0.4s ease-out both" }}>
           <span
+            aria-hidden="true"
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -265,7 +297,7 @@ export default function LessonPlayer({ lesson }: { lesson: Lesson }) {
           >
             ✓
           </span>
-          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "32px", letterSpacing: "-0.02em", margin: "22px 0 0", color: "#16151f" }}>
+          <h1 id="lesson-step-heading" tabIndex={-1} style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "32px", letterSpacing: "-0.02em", margin: "22px 0 0", color: "#16151f" }}>
             Lesson complete
           </h1>
           <p style={{ margin: "10px 0 0", fontSize: "16px", color: "#56546a" }}>
@@ -287,7 +319,7 @@ export default function LessonPlayer({ lesson }: { lesson: Lesson }) {
                 boxShadow: "0 6px 20px rgba(87,79,214,0.28)",
               }}
             >
-              {nextLabel} <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>→</span>
+              {nextLabel} <span aria-hidden="true" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>→</span>
             </Link>
             <Link
               to="/learn"
@@ -314,7 +346,7 @@ export default function LessonPlayer({ lesson }: { lesson: Lesson }) {
               cursor: "pointer",
               fontFamily: "inherit",
               fontSize: "13.5px",
-              color: "#8b899d",
+              color: "#6f6d85",
               textDecoration: "underline",
               textUnderlineOffset: "3px",
             }}
@@ -348,19 +380,26 @@ export default function LessonPlayer({ lesson }: { lesson: Lesson }) {
     <div style={{ maxWidth: "760px", margin: "0 auto", padding: "40px 28px 84px", fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#16151f" }}>
       <div style={{ marginBottom: "30px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-          <Link to="/learn" style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#8b899d" }}>
-            <span>←</span> {lesson.title}
+          <Link to="/learn" style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#6f6d85" }}>
+            <span aria-hidden="true">←</span> {lesson.title}
           </Link>
-          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#b9b7c7" }}>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px", color: "#6f6d85" }}>
             Step {index + 1} / {total}
           </span>
         </div>
-        <div style={{ height: "5px", borderRadius: "999px", background: "#edecf4", overflow: "hidden" }}>
+        <div
+          role="progressbar"
+          aria-valuenow={stepPct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuetext={`Step ${index + 1} of ${total}`}
+          style={{ height: "5px", borderRadius: "999px", background: "#edecf4", overflow: "hidden" }}
+        >
           <div style={{ height: "100%", borderRadius: "999px", background: "#574fd6", transition: "width 0.4s", width: `${stepPct}%` }}></div>
         </div>
       </div>
 
-      <div style={{ animation: "aa-rise 0.35s ease-out both" }}>
+      <div id="lesson-step-heading" tabIndex={-1} style={{ animation: "aa-rise 0.35s ease-out both" }}>
         {step.title && (
           <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "27px", letterSpacing: "-0.02em", margin: "0 0 4px", color: "#16151f" }}>
             {step.title}
@@ -391,7 +430,7 @@ export default function LessonPlayer({ lesson }: { lesson: Lesson }) {
               boxShadow: "0 6px 20px rgba(87,79,214,0.28)",
             }}
           >
-            Continue <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>→</span>
+            Continue <span aria-hidden="true" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>→</span>
           </button>
           {index > 0 && (
             <button
@@ -403,7 +442,7 @@ export default function LessonPlayer({ lesson }: { lesson: Lesson }) {
                 cursor: "pointer",
                 fontFamily: "inherit",
                 fontSize: "14px",
-                color: "#8b899d",
+                color: "#6f6d85",
               }}
             >
               ← Previous

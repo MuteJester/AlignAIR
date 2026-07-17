@@ -7,10 +7,10 @@ import { cn } from "../lib/util";
 
 function Sidebar({ current }: { current: string }) {
   return (
-    <nav className="space-y-6">
+    <nav aria-label="Documentation" className="space-y-6">
       {DOC_SECTIONS.map((section) => (
         <div key={section.title}>
-          <p className="mb-2 px-3 text-xs font-bold uppercase tracking-wider text-slate-400">{section.title}</p>
+          <p className="mb-2 px-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{section.title}</p>
           <ul className="space-y-0.5">
             {section.pages.map((p) => (
               <li key={p.slug}>
@@ -95,14 +95,14 @@ export default function DocsPage() {
         <PageHeader title={doc.title} lead={doc.lead} />
         <div className="prose-aa max-w-none">{doc.body()}</div>
 
-        <nav className="mt-16 grid grid-cols-1 gap-4 border-t border-slate-200 pt-8 sm:grid-cols-2 dark:border-slate-800">
+        <nav aria-label="Documentation pages" className="mt-16 grid grid-cols-1 gap-4 border-t border-slate-200 pt-8 sm:grid-cols-2 dark:border-slate-800">
           {prev ? (
             <Link
               to={`/docs/${prev.slug}`}
               className="group flex flex-col rounded-xl border border-slate-200 p-4 transition-colors hover:border-brand-400 dark:border-slate-800 dark:hover:border-brand-500/50"
             >
-              <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-                <ArrowLeft className="h-3.5 w-3.5" /> Previous
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Previous
               </span>
               <span className="mt-1 font-semibold text-slate-800 group-hover:text-brand-600 dark:text-slate-100">
                 {prev.title}
@@ -116,8 +116,8 @@ export default function DocsPage() {
               to={`/docs/${next.slug}`}
               className="group flex flex-col items-end rounded-xl border border-slate-200 p-4 text-right transition-colors hover:border-brand-400 dark:border-slate-800 dark:hover:border-brand-500/50"
             >
-              <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-                Next <ArrowRight className="h-3.5 w-3.5" />
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                Next <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
               </span>
               <span className="mt-1 font-semibold text-slate-800 group-hover:text-brand-600 dark:text-slate-100">
                 {next.title}

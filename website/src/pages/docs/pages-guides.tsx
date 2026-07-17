@@ -51,7 +51,7 @@ const models: DocPage = {
               <td style={{ padding: "10px 12px" }}>1.0.0</td>
               <td style={{ padding: "10px 12px" }}>2026-07-13</td>
               <td style={{ padding: "10px 12px" }}>198 / 33 / 7</td>
-              <td style={{ padding: "10px 12px" }}><code title="d615b59babba6902cb876ed415809df8e565682511dc9ab6032d2fc294dd582a">d615b59babba…</code></td>
+              <td style={{ padding: "10px 12px" }}><code title="d615b59babba6902cb876ed415809df8e565682511dc9ab6032d2fc294dd582a"><span aria-hidden="true">d615b59babba…</span><span className="sr-only">allele-order SHA-256: d615b59babba6902cb876ed415809df8e565682511dc9ab6032d2fc294dd582a</span></code></td>
             </tr>
             <tr style={{ borderBottom: "1px solid #f0eff5" }}>
               <td style={{ padding: "10px 12px" }}><code>alignair-igkl-human</code></td>
@@ -61,7 +61,7 @@ const models: DocPage = {
               <td style={{ padding: "10px 12px" }}>1.0.0</td>
               <td style={{ padding: "10px 12px" }}>2026-07-13</td>
               <td style={{ padding: "10px 12px" }}>349 / 0 / 18</td>
-              <td style={{ padding: "10px 12px" }}><code title="d32cd6fe79114117a504def1321ee831d60c95ef585e1127358d6be36a826463">d32cd6fe7911…</code></td>
+              <td style={{ padding: "10px 12px" }}><code title="d32cd6fe79114117a504def1321ee831d60c95ef585e1127358d6be36a826463"><span aria-hidden="true">d32cd6fe7911…</span><span className="sr-only">allele-order SHA-256: d32cd6fe79114117a504def1321ee831d60c95ef585e1127358d6be36a826463</span></code></td>
             </tr>
             <tr style={{ borderBottom: "1px solid #f0eff5" }}>
               <td style={{ padding: "10px 12px" }}><code>alignair-tcrb-human</code></td>
@@ -71,13 +71,13 @@ const models: DocPage = {
               <td style={{ padding: "10px 12px" }}>1.0.0</td>
               <td style={{ padding: "10px 12px" }}>2026-07-13</td>
               <td style={{ padding: "10px 12px" }}>98 / 3 / 16</td>
-              <td style={{ padding: "10px 12px" }}><code title="657d771a8952784d913936d5eef1020ac0395528266790cae23ec928b935c359">657d771a8952…</code></td>
+              <td style={{ padding: "10px 12px" }}><code title="657d771a8952784d913936d5eef1020ac0395528266790cae23ec928b935c359"><span aria-hidden="true">657d771a8952…</span><span className="sr-only">allele-order SHA-256: 657d771a8952784d913936d5eef1020ac0395528266790cae23ec928b935c359</span></code></td>
             </tr>
           </tbody>
         </table>
       </div>
       <p style={{ fontSize: "12px", color: "#6f6d85", marginTop: "-10px" }}>
-        * Note: The allele-order fingerprint (<code>allele_order_sha256</code>) is the SHA-256 hash of the list of ordered alleles embedded in the model card to prevent reference drift; it is not the hash of the model checkpoint file or reference FASTA. Tooltips display full hash values.
+        * Note: The allele-order fingerprint (<code>allele_order_sha256</code>) is the SHA-256 hash of the list of ordered alleles embedded in the model card to prevent reference drift; it is not the hash of the model checkpoint file or reference FASTA. The full value is available to screen readers, and on hover as a tooltip.
       </p>
 
       <Callout kind="note" title="TCR Pretrained Coverage Limitation">

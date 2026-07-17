@@ -21,9 +21,10 @@ export function GenotypeWidget() {
 
   return (
     <div style={{ margin: "22px 0", border: "1px solid #eae9f1", borderRadius: "14px", background: "#fff", padding: "20px 18px" }}>
-      <div style={{ display: "inline-flex", padding: "4px", background: "#f1f0f8", borderRadius: "10px", gap: "4px" }}>
+      <div role="group" aria-label="Allele set" style={{ display: "inline-flex", padding: "4px", background: "#f1f0f8", borderRadius: "10px", gap: "4px" }}>
         <button
           type="button"
+          aria-pressed={mode === "full"}
           onClick={() => setMode("full")}
           style={{
             fontFamily: "inherit",
@@ -42,6 +43,7 @@ export function GenotypeWidget() {
         </button>
         <button
           type="button"
+          aria-pressed={mode === "donor"}
           onClick={() => setMode("donor")}
           style={{
             fontFamily: "inherit",
@@ -59,7 +61,7 @@ export function GenotypeWidget() {
           Donor genotype
         </button>
       </div>
-      <div style={{ marginTop: "16px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+      <div aria-live="polite" style={{ marginTop: "16px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
         {GENO_ALLELES.map((a) => {
           const c = mode === "full" || a.donor;
           return (
@@ -72,22 +74,24 @@ export function GenotypeWidget() {
                 padding: "6px 10px",
                 transition: "all 0.15s",
                 background: c ? "#eef0ff" : "#f6f6fa",
-                border: `1px solid ${c ? "#574fd6" : "#eae9f1"}`,
-                color: c ? "#4238c4" : "#b7b5c6",
+                border: `1px solid ${c ? "#574fd6" : "#d7d5e2"}`,
+                color: c ? "#4238c4" : "#6f6d85",
                 textDecoration: c ? "none" : "line-through",
               }}
             >
               {a.name}
+              {!c && <span className="sr-only"> (not callable in this genotype)</span>}
             </span>
           );
         })}
       </div>
       <div style={{ marginTop: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "12px", fontWeight: 600, color: "#4238c4" }}>
+        <span aria-live="polite" style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "12px", fontWeight: 600, color: "#4238c4" }}>
           {callable} of 10 alleles callable
         </span>
         <button
           type="button"
+          aria-pressed={novel}
           onClick={() => setNovel((n) => !n)}
           style={{ fontFamily: "inherit", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", border: "1px solid #e9a9b4", background: "#fff", color: "#a12b3f", borderRadius: "8px", padding: "6px 12px" }}
         >
@@ -95,8 +99,8 @@ export function GenotypeWidget() {
         </button>
       </div>
       {novel && (
-        <div style={{ marginTop: "12px", display: "flex", gap: "11px", alignItems: "flex-start", border: "1px solid #e9a9b4", background: "#fdeef0", borderRadius: "10px", padding: "12px 14px" }}>
-          <span style={{ fontFamily: "IBM Plex Mono, monospace", fontWeight: 700, color: "#c0344a" }}>✕</span>
+        <div role="status" aria-live="polite" style={{ marginTop: "12px", display: "flex", gap: "11px", alignItems: "flex-start", border: "1px solid #e9a9b4", background: "#fdeef0", borderRadius: "10px", padding: "12px 14px" }}>
+          <span aria-hidden="true" style={{ fontFamily: "IBM Plex Mono, monospace", fontWeight: 700, color: "#c0344a" }}>✕</span>
           <div>
             <p style={{ margin: 0, fontFamily: "IBM Plex Mono, monospace", fontSize: "12.5px", fontWeight: 600, color: "#a12b3f" }}>
               IGHV7-81*99 — rejected

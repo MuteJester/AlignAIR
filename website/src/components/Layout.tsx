@@ -7,6 +7,7 @@ function BrandMark({ className }: { className?: string }) {
   return (
     <span
       className={className}
+      aria-hidden="true"
       style={{
         display: "inline-flex",
         flexDirection: "column",
@@ -53,7 +54,7 @@ function Navbar() {
         </Link>
 
         {/* Desktop Nav */}
-        <nav style={{ display: "flex", alignItems: "center", gap: "6px" }} className="hidden md:flex">
+        <nav aria-label="Primary" style={{ display: "flex", alignItems: "center", gap: "6px" }} className="hidden md:flex">
           <NavLink
             to="/learn"
             className={({ isActive }) =>
@@ -114,10 +115,12 @@ function Navbar() {
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            aria-label="Menu"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            aria-controls="mobile-nav"
             style={{ border: "none", background: "none", cursor: "pointer", padding: "6px", color: "#16151f" }}
           >
-            {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            {open ? <X className="h-6 w-6" aria-hidden="true" /> : <Menu className="h-6 w-6" aria-hidden="true" />}
           </button>
         </div>
       </div>
@@ -125,6 +128,8 @@ function Navbar() {
       {/* Mobile nav dropdown */}
       {open && (
         <nav
+          id="mobile-nav"
+          aria-label="Primary"
           style={{
             borderTop: "1px solid #eae9f1",
             background: "#fbfbfd",
@@ -214,10 +219,10 @@ function Footer() {
           </div>
         </div>
         <div style={{ borderTop: "1px dashed #eae9f1", paddingTop: "24px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "12px" }}>
-          <p style={{ fontSize: "12.5px", lineHeight: 1.6, color: "#8b899d", margin: 0, maxWidth: "48em" }}>
+          <p style={{ fontSize: "12.5px", lineHeight: 1.6, color: "#6f6d85", margin: 0, maxWidth: "48em" }}>
             Cite: Konstantinovsky et al., Enhancing sequence alignment of adaptive immune receptors through multi-task deep learning, Nucleic Acids Research 2025, gkaf651.
           </p>
-          <p style={{ fontSize: "12.5px", color: "#8b899d", margin: 0 }}>
+          <p style={{ fontSize: "12.5px", color: "#6f6d85", margin: 0 }}>
             &copy; {new Date().getFullYear()} AlignAIR
           </p>
         </div>
@@ -229,8 +234,9 @@ function Footer() {
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "#fbfbfd" }}>
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <Navbar />
-      <main style={{ flex: 1 }}>{children}</main>
+      <main id="main-content" style={{ flex: 1 }}>{children}</main>
       <Footer />
     </div>
   );

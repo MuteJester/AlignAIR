@@ -31,24 +31,27 @@ export function CurriculumWidget() {
   return (
     <div style={{ margin: "22px 0", border: "1px solid #eae9f1", borderRadius: "14px", background: "#fff", padding: "20px 18px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
-        <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "#8b899d" }}>
+        <label htmlFor="curriculum-position" style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "#6f6d85" }}>
           CURRICULUM POSITION
-        </span>
-        <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "12.5px", fontWeight: 600, color: "#4238c4" }}>
+        </label>
+        <span aria-hidden="true" style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "12.5px", fontWeight: 600, color: "#4238c4" }}>
           progress {p.toFixed(2)} · {stage}
         </span>
       </div>
       <input
+        id="curriculum-position"
         type="range"
         min="0"
         max="1"
         step="0.05"
         value={p}
         onChange={(e) => setP(Number(e.target.value))}
+        aria-valuetext={`position ${p.toFixed(2)} of 1.00, ${stage}`}
+        aria-describedby="curriculum-note"
         style={{ width: "100%", marginTop: "12px", accentColor: "#574fd6", cursor: "pointer" }}
       />
 
-      <div style={{ marginTop: "14px", display: "flex", gap: "8px" }}>
+      <div role="group" aria-label="Locus" style={{ marginTop: "14px", display: "flex", gap: "8px" }}>
         {[
           { k: false, label: "IG locus (IGH / IGK / IGL)" },
           { k: true, label: "TCR locus (TRA / TRB)" },
@@ -56,6 +59,7 @@ export function CurriculumWidget() {
           <button
             key={String(o.k)}
             type="button"
+            aria-pressed={tcr === o.k}
             onClick={() => setTcr(o.k)}
             style={{
               flex: 1,
@@ -67,7 +71,7 @@ export function CurriculumWidget() {
               fontWeight: 600,
               border: `1px solid ${tcr === o.k ? "#574fd6" : "#eae9f1"}`,
               background: tcr === o.k ? "#f2f1fb" : "#fff",
-              color: tcr === o.k ? "#4238c4" : "#8b899d",
+              color: tcr === o.k ? "#4238c4" : "#56546a",
             }}
           >
             {o.label}
@@ -79,14 +83,14 @@ export function CurriculumWidget() {
         {knobs.map((k) => (
           <div key={k.label}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px" }}>
-              <span style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: "13px", color: k.muted ? "#a09eb2" : "#16151f" }}>
+              <span style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: "13px", color: k.muted ? "#6f6d85" : "#16151f" }}>
                 {k.label}
               </span>
-              <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "12px", fontWeight: 600, color: k.muted ? "#a09eb2" : "#4238c4" }}>
+              <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: "12px", fontWeight: 600, color: k.muted ? "#6f6d85" : "#4238c4" }}>
                 {k.value}
               </span>
             </div>
-            <div style={{ marginTop: "6px", height: "10px", borderRadius: "5px", background: "#f1f0f8", overflow: "hidden" }}>
+            <div aria-hidden="true" style={{ marginTop: "6px", height: "10px", borderRadius: "5px", background: "#f1f0f8", overflow: "hidden" }}>
               <div
                 style={{
                   height: "100%",
@@ -101,7 +105,7 @@ export function CurriculumWidget() {
         ))}
       </div>
 
-      <p style={{ margin: "16px 0 0", paddingTop: "12px", borderTop: "1px dashed #eae9f1", fontFamily: "IBM Plex Mono, monospace", fontSize: "11px", lineHeight: 1.6, color: "#a09eb2" }}>
+      <p id="curriculum-note" style={{ margin: "16px 0 0", paddingTop: "12px", borderTop: "1px dashed #eae9f1", fontFamily: "IBM Plex Mono, monospace", fontSize: "11px", lineHeight: 1.6, color: "#6f6d85" }}>
         Ramps mirror <code>Curriculum().params(p)</code>. Every batch also mixes amplicon shapes (V-anchored, J-anchored,
         both-ends fragments) and a heavy-SHM stream — switch to a TCR locus to see SHM drop to zero.
       </p>

@@ -35,10 +35,10 @@ export function CliWidget() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-            <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#3a3746" }}></span>
-            <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#3a3746" }}></span>
-            <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#3a3746" }}></span>
-            <span style={{ marginLeft: "6px", fontFamily: MONO, fontSize: "10.5px", color: "#6f6c80", letterSpacing: "0.08em" }}>
+            <span aria-hidden="true" style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#3a3746" }}></span>
+            <span aria-hidden="true" style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#3a3746" }}></span>
+            <span aria-hidden="true" style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#3a3746" }}></span>
+            <span style={{ marginLeft: "6px", fontFamily: MONO, fontSize: "10.5px", color: "#9d9bb0", letterSpacing: "0.08em" }}>
               bash — alignair
             </span>
           </div>
@@ -74,14 +74,12 @@ export function CliWidget() {
           }}
         >
           <div style={{ whiteSpace: "nowrap" }}>
-            <span style={{ color: "#6f6c80" }}>$</span> alignair predict --input reads.fasta --out out.tsv{" "}
+            <span aria-hidden="true" style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv{" "}
             <span style={{ color: "#b7f3d8" }}>--model alignair-igh-human</span>
           </div>
-          {ran && (
-            <div style={{ marginTop: "6px", whiteSpace: "nowrap", color: "#a9a7ba", animation: "aa-rise 0.3s ease-out both" }}>
-              {OUTPUT}
-            </div>
-          )}
+          <div aria-live="polite" style={{ marginTop: ran ? "6px" : 0, whiteSpace: "nowrap", color: "#a9a7ba" }}>
+            {ran && <span style={{ display: "inline-block", animation: "aa-rise 0.3s ease-out both" }}>{OUTPUT}</span>}
+          </div>
         </div>
 
         <div
@@ -111,7 +109,7 @@ export function CliWidget() {
               cursor: "pointer",
             }}
           >
-            ▶ Replay captured run
+            <span aria-hidden="true">▶</span> Replay captured run
           </button>
         </div>
       </div>

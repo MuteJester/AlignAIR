@@ -114,7 +114,7 @@ export function Callout({
   const Icon = s.icon;
   return (
     <div className={cn("my-5 flex gap-3 rounded-xl border p-4", s.wrap)}>
-      <Icon className={cn("mt-0.5 h-5 w-5 shrink-0", s.ic)} />
+      <Icon aria-hidden="true" className={cn("mt-0.5 h-5 w-5 shrink-0", s.ic)} />
       <div className="text-sm text-slate-700 dark:text-slate-300">
         {title && <p className="mb-1 font-semibold text-slate-900 dark:text-white">{title}</p>}
         {children}
@@ -145,14 +145,15 @@ export function CodeBlock({
   return (
     <div className="my-5 overflow-hidden rounded-xl border border-slate-800 bg-slate-900 text-slate-100 shadow-md">
       <div className="flex items-center justify-between border-b border-slate-700/60 bg-slate-800/50 px-4 py-2">
-        <span className="font-mono text-xs uppercase tracking-wide text-slate-400">{title ?? lang}</span>
+        <span className="font-mono text-xs uppercase tracking-wide text-slate-300">{title ?? lang}</span>
         <button
           type="button"
           onClick={copy}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-700/60 hover:text-white"
+          aria-label={copied ? "Copied to clipboard" : "Copy code"}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-slate-300 transition-colors hover:bg-slate-700/60 hover:text-white"
         >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          {copied ? "Copied" : "Copy"}
+          {copied ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+          <span aria-hidden="true">{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
       <pre className="aa-scrollbar overflow-x-auto p-4 text-sm leading-relaxed">
