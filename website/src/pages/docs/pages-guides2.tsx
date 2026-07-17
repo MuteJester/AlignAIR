@@ -4,7 +4,7 @@ import { DocTable, DocLink, type DocPage } from "./doc-kit";
 const cli: DocPage = {
   slug: "cli",
   title: "Command-line reference",
-  section: "Guides",
+  section: "Using AlignAIR",
   lead: "Every command supports alignair <command> --help. The command-line surface is the versioned contract of AlignAIR.",
   body: () => (
     <>
@@ -112,7 +112,7 @@ const cli: DocPage = {
 const pythonApi: DocPage = {
   slug: "python-api",
   title: "Python API",
-  section: "Guides",
+  section: "Using AlignAIR",
   lead: "A small, stable Python API. The CLI builds on these functions.",
   body: () => (
     <>
@@ -186,7 +186,7 @@ const pythonApi: DocPage = {
 const integrations: DocPage = {
   slug: "integrations",
   title: "Integrations",
-  section: "Guides",
+  section: "Using AlignAIR",
   lead: "AlignAIR writes standard AIRR, so its output feeds the AIRR ecosystem directly.",
   body: () => (
     <>

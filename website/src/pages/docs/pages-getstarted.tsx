@@ -8,6 +8,16 @@ const gettingStarted: DocPage = {
   lead: "Install AlignAIR, check your environment, and align your first reads - including against a donor genotype.",
   body: () => (
     <>
+      <Callout kind="note" title="Already using IgBLAST?">
+        AlignAIR writes the same AIRR schema, so most of a pipeline keeps working.{" "}
+        <DocLink to="migrating-from-igblast">Migrating from IgBLAST</DocLink> maps the commands and output field by
+        field, with a real side-by-side.
+      </Callout>
+      <p>
+        The path to your first real prediction is five steps:{" "}
+        <strong>install &rarr; see it work &rarr; get a model &rarr; align &rarr; read the output</strong>. You do not
+        need the lessons or the training guide to get there.
+      </p>
       <h2>1. Install</h2>
       <CodeBlock code={`pip install "AlignAIR[cli]"            # core + CLI (+ parasail + AIRR validation)`} />
       <p>
@@ -102,6 +112,14 @@ const gettingStarted: DocPage = {
           [<code>--device cuda|cpu|mps</code>, "force a device (auto if unset)"],
         ]}
       />
+
+      <h2>Next</h2>
+      <ul>
+        <li><strong>Read the output.</strong> Every column, how it is derived, and how to filter it: <DocLink to="airr-fields">AIRR output fields</DocLink>.</li>
+        <li><strong>Coming from another tool.</strong> <DocLink to="migrating-from-igblast">Migrating from IgBLAST</DocLink>.</li>
+        <li><strong>Know the limits.</strong> Where AlignAIR is weak and what to use instead: <DocLink to="known-failure-modes">Known failure modes</DocLink>.</li>
+        <li><strong>Go deeper.</strong> The <DocLink to="cli">command-line reference</DocLink> and <DocLink to="python-api">Python API</DocLink> for everyday use; <DocLink to="training">Training</DocLink> for a custom reference or species.</li>
+      </ul>
     </>
   ),
 };
@@ -157,4 +175,5 @@ const concepts: DocPage = {
   ),
 };
 
-export const getStartedPages: DocPage[] = [gettingStarted, concepts];
+export const getStartedPages: DocPage[] = [gettingStarted];
+export const conceptsPages: DocPage[] = [concepts];

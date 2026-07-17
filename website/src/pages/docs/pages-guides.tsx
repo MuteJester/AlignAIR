@@ -4,7 +4,7 @@ import { DocTable, DocLink, type DocPage } from "./doc-kit";
 const models: DocPage = {
   slug: "models",
   title: "Pretrained models",
-  section: "Guides",
+  section: "Using AlignAIR",
   lead: "The public model hub, how --model resolves, and what each model is.",
   body: () => (
     <>
@@ -156,7 +156,7 @@ const models: DocPage = {
 const training: DocPage = {
   slug: "training",
   title: "Training a custom model",
-  section: "Guides",
+  section: "Training",
   lead: "Train a model for a reference AlignAIR does not ship, and judge whether to trust it.",
   body: () => (
     <>
@@ -264,4 +264,5 @@ const training: DocPage = {
   ),
 };
 
-export const guidesPages: DocPage[] = [models, training];
+export const guidesPages: DocPage[] = [models];
+export const trainingPages: DocPage[] = [training];

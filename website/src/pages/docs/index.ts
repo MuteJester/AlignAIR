@@ -1,24 +1,33 @@
 import type { DocPage } from "./doc-kit";
-import { getStartedPages } from "./pages-getstarted";
-import { guidesPages } from "./pages-guides";
+import { getStartedPages, conceptsPages } from "./pages-getstarted";
+import { migratePages } from "./pages-migrate";
+import { guidesPages, trainingPages } from "./pages-guides";
 import { guides2Pages } from "./pages-guides2";
 import { airrFieldsPages } from "./pages-airrfields";
 import { referencePages } from "./pages-reference";
 import { evalPages } from "./pages-eval";
 import { maintainerPages } from "./pages-maintainer";
 
-/** All reference pages, in reading order. */
+/**
+ * All reference pages in section-grouped reading order, so the sidebar order and the
+ * Previous/Next flow agree. The primary journey lives in "Get started": install and predict
+ * (getting-started) -> migrate an existing pipeline -> the concepts behind the output. "Using
+ * AlignAIR" is everyday usage; Training and Evaluation are deliberately separate activities.
+ */
 export const DOCS: DocPage[] = [
-  ...getStartedPages,
-  ...guidesPages,
-  ...guides2Pages,
-  ...airrFieldsPages,
-  ...referencePages,
-  ...evalPages,
-  ...maintainerPages,
+  ...getStartedPages, // getting-started
+  ...migratePages, // migrating-from-igblast
+  ...conceptsPages, // concepts
+  ...guidesPages, // models  [Using AlignAIR]
+  ...guides2Pages, // cli, python-api, integrations  [Using AlignAIR]
+  ...airrFieldsPages, // airr-fields  [Reference]
+  ...referencePages, // model-contract, known-failure-modes, troubleshooting
+  ...trainingPages, // training  [Training]
+  ...evalPages, // benchmarks, performance  [Evaluation]; design  [Design]
+  ...maintainerPages, // publishing  [Maintainer]
 ];
 
-const SECTION_ORDER = ["Get started", "Guides", "Reference", "Evaluation", "Design", "Maintainer"];
+const SECTION_ORDER = ["Get started", "Using AlignAIR", "Reference", "Training", "Evaluation", "Design", "Maintainer"];
 
 export interface DocSection {
   title: string;
