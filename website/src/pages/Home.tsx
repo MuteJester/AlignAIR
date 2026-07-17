@@ -34,10 +34,13 @@ export default function Home() {
               End-to-end neural V(D)J aligner
             </span>
             <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "52px", lineHeight: 1.05, letterSpacing: "-0.03em", margin: "22px 0 0", color: "#16151f" }}>
-              Align immune repertoires in a single forward pass.
+              Align immune repertoires with one neural model.
             </h1>
             <p style={{ margin: "24px 0 0", fontSize: "18px", lineHeight: 1.6, color: "#56546a", maxWidth: "34em" }}>
-              AlignAIR predicts V, D and J allele calls, segment coordinates and the junction for immunoglobulin and T-cell-receptor reads — one neural model, standard AIRR output. Learn it by doing, then reach for the docs.
+              A single forward pass reads orientation, V/D/J segmentation and allele identity from one shared
+              representation — no multi-stage heuristic search. Deterministic post-processing then turns those
+              predictions into coordinates, CIGARs, the junction and a standard AIRR record. Learn it by doing, then
+              reach for the docs.
             </p>
             <div style={{ marginTop: "34px", display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "center" }}>
               <Link to="/docs/getting-started" style={{ display: "inline-flex", alignItems: "center", gap: "9px", padding: "13px 24px", borderRadius: "11px", background: "#574fd6", color: "#fff", fontSize: "15px", fontWeight: 600, boxShadow: "0 6px 20px rgba(87,79,214,0.28)", transition: "all 0.2s" }} className="hover:opacity-90">
@@ -53,6 +56,32 @@ export default function Home() {
             <div style={{ marginTop: "28px", display: "inline-flex", alignItems: "center", gap: "12px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13.5px", color: "#56546a", background: "#fff", border: "1px solid #eae9f1", borderRadius: "10px", padding: "11px 15px" }}>
               <span style={{ color: "#9b99ac" }}>$</span>
               <span>pip install <span style={{ color: "#16151f" }}>"AlignAIR[cli]"</span></span>
+            </div>
+
+            {/* Evidence strip: the method is peer-reviewed, the numbers are reproducible, and the
+                limits are documented. All three should be reachable without scrolling. */}
+            <div style={{ marginTop: "26px", paddingTop: "20px", borderTop: "1px solid #eae9f1", maxWidth: "34em" }}>
+              <p style={{ margin: 0, fontSize: "14px", lineHeight: 1.6, color: "#56546a" }}>
+                Published in{" "}
+                <em>Nucleic Acids Research</em>:{" "}
+                <a
+                  href="https://doi.org/10.1093/nar/gkaf651"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "#4a41c9", fontWeight: 600, textDecoration: "underline" }}
+                >
+                  Enhancing sequence alignment of adaptive immune receptors through multi-task deep learning
+                </a>{" "}
+                <span style={{ color: "#8b899d" }}>(Konstantinovsky et al., 2025, gkaf651)</span>.
+              </p>
+              <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap", gap: "8px 18px", fontSize: "14px", fontWeight: 600 }}>
+                <Link to="/docs/benchmarks" style={{ color: "#4a41c9", textDecoration: "underline" }}>
+                  Benchmarks &amp; how to reproduce them
+                </Link>
+                <Link to="/docs/known-failure-modes" style={{ color: "#4a41c9", textDecoration: "underline" }}>
+                  Where it fails
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -210,7 +239,7 @@ export default function Home() {
                 <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Source: <strong>IMGT (V98/D3/J16)</strong></span>
               </div>
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
-                Aligns human T-cell receptor beta chains. Specifically calibrated with somatic hypermutations set to zero (since TCRs do not hypermutate). Limitations: TRB locus only; other TCR chains (Alpha/Gamma/Delta) are not supported.
+                Aligns human T-cell receptor beta chains. Trained with somatic hypermutation set to zero, since T cells do not hypermutate. Scope: this checkpoint covers the TRB locus only. Alpha, gamma and delta are not in the pretrained registry — they are not excluded by the architecture, so you can train a model for them from a TRA/TRG/TRD reference with <strong>alignair train</strong>.
               </p>
               <pre style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
                 <span style={{ color: "#6f6c80" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-tcrb-human

@@ -37,9 +37,16 @@ const firstPrediction: Lesson = {
       body: () => (
         <>
           <p>
-            Pass a model <strong>id</strong>; it downloads, hash-verifies and caches on first use (no login). Press Run to watch a prediction go:
+            Pass a model <strong>id</strong>; it downloads, hash-verifies and caches on first use (no login). Replay a
+            real captured run to see exactly what it prints:
           </p>
           <CliWidget />
+          <p>
+            Worth noticing in that output: <strong>68 of the 400 reads assembled only partially</strong>, on reads with
+            no quality problem beyond ordinary hypermutation. That is not a failure, and the CLI does not treat it as
+            one — those rows still carry their V/D/J calls, they just could not have a junction derived. It is the
+            honest-absence contract in action, and you will meet it again when you filter output.
+          </p>
           <p>
             <code>--input</code> accepts FASTA, FASTQ, CSV/TSV or TXT (optionally <code>.gz</code>, or <code>-</code> for stdin). For a <strong>table</strong>, tell it which columns to read — otherwise it cannot find your sequences:
           </p>
