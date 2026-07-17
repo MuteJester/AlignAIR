@@ -7,6 +7,7 @@ import { airrFieldsPages } from "./pages-airrfields";
 import { referencePages } from "./pages-reference";
 import { evalPages } from "./pages-eval";
 import { maintainerPages } from "./pages-maintainer";
+import { communityPages } from "./pages-community";
 
 /**
  * All reference pages in section-grouped reading order, so the sidebar order and the
@@ -25,9 +26,10 @@ export const DOCS: DocPage[] = [
   ...trainingPages, // training  [Training]
   ...evalPages, // benchmarks, performance  [Evaluation]; design  [Design]
   ...maintainerPages, // publishing  [Maintainer]
+  ...communityPages, // citation-support  [Community]
 ];
 
-const SECTION_ORDER = ["Get started", "Using AlignAIR", "Reference", "Training", "Evaluation", "Design", "Maintainer"];
+const SECTION_ORDER = ["Get started", "Using AlignAIR", "Reference", "Training", "Evaluation", "Design", "Maintainer", "Community"];
 
 export interface DocSection {
   title: string;

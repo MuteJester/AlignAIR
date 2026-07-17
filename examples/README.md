@@ -54,7 +54,7 @@ alignair predict --input examples/reads.fasta --out out_donor.tsv \
 ```
 
 The output is an AIRR rearrangement TSV (V/D/J calls + coordinates + junction + a per-gene
-equivalence-set column `*_call_set`). A genotype file may be YAML or FASTA, and may contain a subset
+candidate-set column `*_call_set`). A genotype file may be YAML or FASTA, and may contain a subset
 of the trained reference's alleles — calls are then restricted to those alleles.
 
 ## Run with Docker

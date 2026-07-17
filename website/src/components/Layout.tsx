@@ -215,6 +215,9 @@ function Footer() {
               <a href="https://huggingface.co/AlignAIR/AlignAIR-pretrained" target="_blank" rel="noreferrer" style={{ fontSize: "14px", fontWeight: 500, color: "#56546a" }} className="hover:text-indigo-700 transition-colors">
                 Models
               </a>
+              <Link to="/docs/citation-support" style={{ fontSize: "14px", fontWeight: 500, color: "#56546a" }} className="hover:text-indigo-700 transition-colors">
+                Cite &amp; support
+              </Link>
             </div>
           </div>
         </div>

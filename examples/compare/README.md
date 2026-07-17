@@ -12,7 +12,7 @@ alignair compare --a examples/compare/alignair.tsv --b examples/compare/igblast.
 
 The report gives per-gene allele/gene agreement and, crucially, **set-rescue**: when the
 top-1 alleles differ, how often the other tool's call falls inside AlignAIR's
-equivalence set (`v_call_set`) — i.e. shared ambiguity rather than a real conflict. In this
+candidate set (`v_call_set`) — i.e. shared ambiguity rather than a real conflict. In this
 example r2's V alleles differ (`*01` vs `*04`) but both are in AlignAIR's set, so it is
 rescued; r3's D is a genuine disagreement.
 
