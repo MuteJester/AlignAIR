@@ -33,11 +33,11 @@ build:
 
 requirements:
   host:
-    - python >=3.9,<3.13
+    - python >=3.10,<3.13
     - pip
     - setuptools
   run:
-    - python >=3.9,<3.13
+    - python >=3.10,<3.13
     - pytorch >=2.2
     - genairr >=2.2.0          # NOTE: not yet on bioconda — submit/locate before this recipe lands
     - numpy >=1.24

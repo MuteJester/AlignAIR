@@ -3,7 +3,7 @@
 All notable changes to AlignAIR are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow semantic versioning.
 
-## [3.0.0] - unreleased
+## [3.0.0] - 2026-07-17
 
 A complete PyTorch rewrite of AlignAIR (`alignair` package) with a first-class CLI, a self-contained
 model format, pretrained models, and a modern documentation site. This is a major, breaking release —
@@ -24,15 +24,15 @@ the legacy TensorFlow lineage is gone.
   dataconfig or custom V/D/J FASTAs; exports a self-contained, pickle-free bundle + `model_card.md`,
   `reference_manifest.json`, and `validation_report.json`.
 - **AIRR-C output**: schema-valid rearrangement TSV (`sequence_alignment`, `*_cigar`, `*_identity`),
-  a per-gene equivalence-set column (`*_call_set`), and a `<output>.run.json` provenance sidecar.
+  a per-gene candidate-set column (`*_call_set`), and a `<output>.run.json` provenance sidecar.
 - **Bounded-memory streaming** prediction for repertoire-scale inputs; per-read metadata join
   (`--metadata`, e.g. 10x annotations).
 - **In-model orientation** detection/correction (forward / reverse-complement / complement / reverse).
 - CPU **Docker** image, cross-platform CI, and a compiled (optional) Cython germline-CIGAR kernel.
 
 ### Changed
-- Output is a schema-valid AIRR rearrangement TSV; ambiguity is surfaced as an equivalence set.
-- Documentation rebuilt as a Material for MkDocs site; license clarified as GPL-3.0-or-later.
+- Output is a schema-valid AIRR rearrangement TSV; ambiguity is surfaced as a candidate set.
+- Documentation rebuilt as a React/TypeScript site (reference, guides, and interactive lessons); license clarified as GPL-3.0-or-later.
 
 ### Removed
 - The entire legacy TensorFlow lineage (`app.py` entrypoint, SavedModel workflow, `src/AlignAIR`).

@@ -23,12 +23,12 @@
 
 ## Overview
 
-- **End-to-end neural model.** A single network detects read orientation, localizes the V/D/J segments, and calls alleles from a shared representation, producing V/D/J calls, segment coordinates, the junction, productivity, and mutation rate in one pass, with no multi-stage heuristic pipeline.
+- **End-to-end neural model.** One network reads orientation, localizes the V/D/J segments, calls alleles, and estimates productivity and mutation rate from a shared representation in a single forward pass, with no multi-stage heuristic search. Deterministic post-processing then turns those predictions into refined coordinates, the junction, and a standard AIRR record.
 - **Self-contained models.** Each model embeds a fingerprinted germline reference and loads without executing any pickle. Pretrained human IGH, IGK+IGL, and TRB models are a command away (`--model <id>`); the germline catalog travels with the model.
 - **Donor genotype constraint.** At inference you can restrict calls to a subset of the model's reference (a donor genotype, as YAML or FASTA) with no retraining. Adding alleles, a new species, or a new locus requires training a new compatible model.
 - **Uncertainty-aware.** When a read cannot distinguish alleles (e.g. short fragments), AlignAIR reports a **candidate set** (`*_call_set`) rather than forcing a single call. Optional per-allele confidence calibration is available as a separate step.
 - **AIRR output.** Standard AIRR rearrangement TSV (V/D/J calls, coordinates, junction, productivity) that reads directly into Change-O / Scirpy / Immcantation.
-- **Evaluated against IgBLAST.** On a 4,400-case / 22-stratum benchmark (bootstrap CIs, Bonferroni-corrected), AlignAIR reports higher accuracy on 23 of 24 metrics, with the largest improvements on short fragments, reverse-complement / arbitrary orientation, and D/J calling. See [benchmarks](https://mutejester.github.io/AlignAIR/#/docs/benchmarks).
+- **Evaluated against IgBLAST.** On a 4,400-case / 22-stratum benchmark (bootstrap CIs, Bonferroni-corrected), AlignAIR reports higher accuracy on 23 of 24 metrics, with the gains concentrated in D and J calling and in reverse-complement / arbitrary orientation. V-allele accuracy is comparable to IgBLAST rather than higher, especially on short fragments and heavily-mutated full-length reads. See [benchmarks](https://mutejester.github.io/AlignAIR/#/docs/benchmarks) and [known failure modes](https://mutejester.github.io/AlignAIR/#/docs/known-failure-modes).
 
 ## Install
 
@@ -131,7 +131,7 @@ Every run also writes a **`<output>.run.json` provenance sidecar** (model + fing
 command, device, seed, and package versions). Validate any TSV explicitly:
 
 ```bash
-alignair validate-airr out.tsv      # -> "VALID AIRR-C rearrangement"
+alignair validate-airr out.tsv      # structural check: columns, coordinate/CIGAR bounds, productivity
 ```
 
 ## Commands
@@ -144,7 +144,7 @@ alignair validate-airr out.tsv      # -> "VALID AIRR-C rearrangement"
 | `alignair models` | list / download / manage pretrained models |
 | `alignair reference` | list built-in references, or export a model's reference |
 | `alignair compare` | agreement report between two AIRR TSVs (e.g. AlignAIR vs IgBLAST) on your data |
-| `alignair validate-airr` | validate a rearrangement TSV against the AIRR-C schema |
+| `alignair validate-airr` | structural check of a rearrangement TSV (columns, coordinate/CIGAR bounds, productivity); not the official AIRR-C schema validator |
 | `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR, parasail) |
 | `alignair convert` | convert a legacy checkpoint into a versioned, fingerprinted `.alignair` |
 
