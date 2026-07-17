@@ -11,6 +11,12 @@
   <a href="https://hub.docker.com/r/thomask90/alignair"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/thomask90/alignair"></a>
   <a href="https://doi.org/10.1093/nar/gkaf651"><img src="https://img.shields.io/badge/DOI-10.1093%2Fnar%2Fgkaf651-blue" alt="DOI"></a>
   <a href="LICENSE"><img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
+  <a href="https://mutejester.github.io/AlignAIR/"><img alt="Documentation" src="https://img.shields.io/badge/docs-guides%20%26%20lessons-6d5cf5"></a>
+</p>
+
+<p align="center">
+  <b>📖 New to AlignAIR? Start on the docs site — reference, guides, and interactive lessons:<br>
+  <a href="https://mutejester.github.io/AlignAIR/">mutejester.github.io/AlignAIR</a></b>
 </p>
 
 ---
