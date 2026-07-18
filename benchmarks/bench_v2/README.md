@@ -1,8 +1,15 @@
-# bench_v2 - the canonical v3.0.0 head-to-head benchmark
+# bench_v2 - ARCHIVAL / pre-v3.0.0 (not the canonical v3 benchmark)
 
-The frozen, ground-truth AlignAIR-vs-IgBLAST benchmark that the documentation and the interactive
-widget report. This directory is the auditable evidence bundle: the comparison report, the case
-manifest, the generated cases, and their checksums.
+> **Status: archival, incomplete provenance.** The comparison in this bundle does **not** identify
+> which AlignAIR model produced the predictions (no model id / version / fingerprint / commit) or the
+> IgBLAST version, so its results **cannot be attributed to the v3.0.0 product** and must not be
+> published as v3 claims. It is retained for its frozen ground-truth **cases** (which are canonical
+> and reusable) and as a record of the earlier run. The verified v3.0.0 head-to-head - the released
+> model plus a recorded IgBLAST version, run against these same cases - is prepared under
+> `comparisons/` (see [`comparisons/RERUN.md`](comparisons/RERUN.md) and "Provenance gaps" below).
+
+The frozen ground-truth dataset and the earlier AlignAIR-vs-IgBLAST comparison, as an auditable
+bundle: the comparison report, the case manifest, the generated cases, and their checksums.
 
 ## Dataset
 
@@ -15,7 +22,7 @@ manifest, the generated cases, and their checksums.
   `ea6a5a32...`, D (33) `407322c5...`, J (7) `53c8788d...`.
 - **Scoring:** paired-case bootstrap, 95% intervals, Bonferroni-corrected across the 24 metrics.
 
-## Result
+## Result (of the archived run - NOT a v3.0.0 claim)
 
 Under the Bonferroni-corrected paired bootstrap, AlignAIR is statistically **better on 18 of 24
 metrics, IgBLAST on 4, with 2 inconclusive** (point estimates: AlignAIR higher on 18, IgBLAST on 6).

@@ -1,5 +1,10 @@
 import { useState } from "react";
 
+// ARCHIVED / PRE-v3.0.0 - NOT rendered on any launch-facing page and NOT exported from the widget
+// barrel. The numbers below come from the bench_v2 run whose AlignAIR model and IgBLAST version are
+// not pinned (see benchmarks/bench_v2/README.md), so they cannot be attributed to the v3.0.0 product.
+// Regenerate from the verified v3.0.0 head-to-head before re-publishing this widget.
+//
 // Every number below is a measured point estimate from the frozen 2,600-case human-IGH
 // benchmark (13 strata x 200 cases), metric `genes.<gene>.call_top1_in_set`, compared with
 // paired-case bootstrap and a Bonferroni-corrected 95% CI. `verdict` is the benchmark's own

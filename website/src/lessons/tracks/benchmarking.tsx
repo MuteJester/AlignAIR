@@ -1,6 +1,5 @@
 import { BarChart3 } from "lucide-react";
 import { CodeBlock, Callout } from "../../components/ui";
-import { BenchSandboxWidget } from "../../components/widgets";
 import type { Lesson, Track } from "../types";
 
 const benchmarking: Lesson = {
@@ -65,7 +64,7 @@ const benchmarking: Lesson = {
         <>
           <p>
             The self-check writes a JSON report <strong>keyed by stratum</strong>, not one flat score — because accuracy
-            depends on read quality. Each stratum carries its own metrics:
+            depends on read quality. Each stratum carries its own metrics (illustrative values):
           </p>
           <CodeBlock
             lang="json"
@@ -89,26 +88,26 @@ const benchmarking: Lesson = {
     },
     {
       kind: "explain",
-      title: "Where the differences actually are",
+      title: "Accuracy is not one number",
       body: () => (
         <>
           <p>
-            Accuracy is not one number, and it is not one direction either. Pick a stratum to see how AlignAIR and
-            IgBLAST each do on V, D and J allele calling:
+            A single headline accuracy hides everything that matters. The same tool can be strong on one read type and
+            weak on another, and two tools can trade places across strata - so a benchmark reports{" "}
+            <strong>per-stratum, per-gene</strong> results, not one scoreboard number. Read the shape of it: clean
+            full-length reads are near-perfect for good tools, while fragments, heavy SHM, and arbitrary orientation are
+            where methods separate.
           </p>
-          <BenchSandboxWidget />
           <p>
-            Read the shape of it rather than a scoreboard. On clean full-length reads both tools are essentially
-            perfect, so there is nothing to choose between them. AlignAIR's gains concentrate in <strong>D and J</strong>
-            , in <strong>degraded and junction-anchored reads</strong>, and in <strong>mixed orientation</strong>, where
-            it re-frames the read instead of scoring near chance. IgBLAST is <strong>genuinely better at calling V</strong>{" "}
-            on heavily-mutated full-length reads and on 5'-anchored fragments — a real limitation, documented in{" "}
-            <em>Known failure modes</em>, not an artifact of the benchmark.
+            And a visible gap is not automatically a result. Each metric carries a Bonferroni-corrected confidence
+            interval, and a difference whose interval still spans zero is not yet real - you read the point estimate{" "}
+            <em>and</em> its interval together.
           </p>
-          <Callout kind="note" title="Where a gap is not a result">
-            Two of these panels show a visible bar difference that the benchmark scores as <em>not significant</em> —
-            the Bonferroni-corrected interval still spans zero. That is the previous step's lesson made concrete: the
-            point estimate is where you start reading, not where you stop.
+          <Callout kind="warning" title="The v3.0.0 IgBLAST head-to-head is being re-verified">
+            A quantitative AlignAIR-vs-IgBLAST comparison on this dataset exists, but it does not pin the exact model or
+            IgBLAST version, so it is being re-run against the released model with full provenance before publication.
+            This lesson teaches how to <em>read</em> such a comparison; the verified numbers will land on the Benchmarks
+            page.
           </Callout>
         </>
       ),

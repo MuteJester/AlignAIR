@@ -9,28 +9,19 @@ const benchmarks: DocPage = {
   body: () => (
     <>
       <p>
-        To quantify accuracy, AlignAIR was evaluated against IgBLAST on a frozen, simulated benchmark with known ground
-        truth: 2,600 cases across 13 strata (200 each - clean, moderate and hard full-length, high SHM, high indel,
-        noisy/ambiguous, trimmed, five 5'- and 3'-anchored amplicon and short-fragment shapes, and arbitrary
-        orientation), scored with paired-case bootstrap confidence intervals and Bonferroni correction. Reference: human
-        IGH (OGRDB).
+        AlignAIR is validated on a frozen, simulated benchmark with known ground truth: 2,600 cases across 13 strata
+        (200 each - clean, moderate and hard full-length, high SHM, high indel, noisy/ambiguous, trimmed, five 5'- and
+        3'-anchored amplicon and short-fragment shapes, and arbitrary orientation), reference human IGH (OGRDB), scored
+        with paired-case bootstrap confidence intervals and Bonferroni correction. The metrics below define what is
+        measured on every read.
       </p>
 
-      <h2>Summary</h2>
-      <p>
-        On point estimates, AlignAIR is higher on 18 of the 24 metrics and IgBLAST on 6. Under the Bonferroni-corrected
-        paired bootstrap those resolve into statistically supported verdicts: AlignAIR better on 18, IgBLAST better on 4,
-        and 2 inconclusive. AlignAIR's gains concentrate in D and J allele calling and in reverse-complement / arbitrary
-        orientation. IgBLAST's four supported wins are V-allele calling (a small aggregate edge, 0.856 vs 0.828, from
-        short fragments and heavily-mutated full-length reads) and exact junction nt/aa recovery; the two inconclusive
-        metrics are the J-segment start/end coordinate MAEs, where IgBLAST's point estimate is higher but the interval
-        spans zero.
-      </p>
-      <Callout kind="note">
-        The 18 / 4 / 2 split is the Bonferroni-corrected verdict from the paired bootstrap, not a raw point-estimate
-        tally: every &ldquo;better&rdquo; above corresponds to a confidence interval that excludes zero after
-        multiple-comparison correction. The two inconclusive metrics are ones where IgBLAST's point estimate is higher
-        but its interval spans zero. Full per-metric intervals are in the benchmark report.
+      <Callout kind="warning" title="The IgBLAST head-to-head is being re-verified for v3.0.0">
+        An earlier AlignAIR-vs-IgBLAST comparison on this dataset is archived under{" "}
+        <code>benchmarks/bench_v2/</code>, but it does not record which AlignAIR model produced the predictions, nor the
+        IgBLAST version, so its numbers cannot be attributed to the v3.0.0 product. The comparison is being re-run
+        against the released model with full provenance; quantitative head-to-head scores and verdicts will be published
+        here once that lands. Until then this page states what the benchmark measures, not comparative scores.
       </Callout>
 
       <h2>Metrics</h2>
@@ -43,21 +34,10 @@ const benchmarks: DocPage = {
       </ul>
       <p>Global: junction nt/aa exact match, productivity and orientation accuracy, required-field presence, parseable-AIRR rate.</p>
 
-      <h2>Allele calling (top-1 in truth set)</h2>
-      <DocTable
-        head={["Gene", "IgBLAST", "AlignAIR"]}
-        rows={[
-          ["V", <strong>0.856</strong>, "0.828"],
-          ["D", "0.534", <strong>0.722</strong>],
-          ["J", "0.669", <strong>0.821</strong>],
-        ]}
-      />
       <p>
-        V is the one gene IgBLAST calls better here: the aggregate edge is small and comes from short fragments and
-        heavily-mutated full-length reads, where AlignAIR's V is comparable at best. AlignAIR's advantage is in D and J -
-        on the short J-anchored fragments (where most of the read lies 3' of V), D recovery is 0.735 vs 0.015 and J is
-        0.870 vs 0.085. Genuinely ambiguous reads are reported as a set (<code>*_call_set</code>) rather than a forced
-        single call.
+        Genuinely ambiguous reads are reported as a set (<code>*_call_set</code>) rather than a forced single call, so
+        the benchmark scores set-valued as well as top-1 accuracy. Where AlignAIR is strong and weak by gene and read
+        type is summarized qualitatively in <DocLink to="known-failure-modes">Known failure modes</DocLink>.
       </p>
 
       <h2>Throughput</h2>
@@ -202,10 +182,10 @@ const design: DocPage = {
 
       <h2>Evaluation</h2>
       <p>
-        In a controlled evaluation against IgBLAST on a frozen 2,600-case benchmark, under a Bonferroni-corrected paired
-        bootstrap AlignAIR is statistically better on 18 of 24 metrics (IgBLAST on 4, 2 inconclusive), with the gains
-        concentrated in D/J calling and arbitrary orientation; IgBLAST keeps an edge on V and on exact
-        junction-nucleotide recovery. Full methodology is on the <DocLink to="benchmarks">Benchmarks</DocLink> page.
+        AlignAIR is validated on a frozen 2,600-case / 13-stratum ground-truth benchmark, scored on V/D/J allele
+        accuracy, segment coordinates, the junction, productivity and orientation. A verified v3.0.0 head-to-head against
+        IgBLAST, with full model and IgBLAST provenance, is in preparation. Full methodology is on the{" "}
+        <DocLink to="benchmarks">Benchmarks</DocLink> page.
       </p>
 
       <h2>Training</h2>
