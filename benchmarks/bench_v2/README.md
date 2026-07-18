@@ -44,6 +44,9 @@ J-segment start/end coordinate MAEs. Full per-metric point estimates, intervals,
 | `cases/igh.fasta`, `cases/igh_airr_input.tsv` | The exact 2,600 generated cases (FASTA and AIRR-input TSV). |
 | `SHA256SUMS.txt` | SHA-256 of every file above. |
 
+Case files are stored with LF line endings (the source `igh_airr_input.tsv` used CRLF; normalized for the
+repo and pinned via `.gitattributes`). The records are unchanged, so re-running reproduces the same result.
+
 ## Validate
 
 The report and manifest validate against the `alignair_benchmark` artifact contracts:
