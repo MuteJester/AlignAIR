@@ -99,7 +99,9 @@ jobs:
           ALIGNAIR_LOCAL_BUILD: "1"
         run: |
           conda install -y conda-build
-          conda render conda/
+          # `conda render` was removed from modern conda; `conda-build --output` renders the recipe
+          # (evaluates the Jinja + resolves the output path) without building it.
+          conda-build conda/ --output
       - name: Conda-env runtime smoke (conda pytorch + pip install + tiny demo)
         run: |
           conda install -y "pytorch>=2.2" "numpy>=1.24" "pandas>=1.5" -c conda-forge

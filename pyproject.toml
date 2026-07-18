@@ -51,12 +51,15 @@ hub = ["huggingface-hub>=0.20"]
 cli = [
     "huggingface-hub>=0.20",
     "airr>=1.4",
-    "parasail>=1.3",       # gapped alignment (exact cigars / germline_alignment / identity) + fast V reader
+    # gapped alignment (exact cigars / germline_alignment / identity) + fast V reader. parasail ships
+    # no arm64-macOS wheel and would try to compile, so it is excluded on Apple Silicon; there the
+    # Biopython fallback in align/ is used instead. Installed everywhere a binary wheel exists.
+    "parasail>=1.3; platform_system != 'Darwin' or platform_machine != 'arm64'",
     "argcomplete>=3.0",    # optional shell completion (`alignair completion`)
 ]
 # alias kept for back-compat; parasail is now part of [cli]
 reader = [
-    "parasail>=1.3",
+    "parasail>=1.3; platform_system != 'Darwin' or platform_machine != 'arm64'",
 ]
 # WFA2 wavefront aligner: fast exact germline alignment for the speed-stack inference path
 # (the align/ package prefers it, falling back to parasail when absent).
@@ -79,6 +82,7 @@ server = [
 dev = [
     "AlignAIR[cli,train,viz,server]",
     "pytest>=7.0",
+    "tomli>=2.0; python_version < '3.11'",  # tomllib backport for the conda-recipe test on Python 3.10
     "build>=1.0",
     "twine>=5.0",
     "cibuildwheel>=2.21",  # build binary wheels (with the compiled germline-CIGAR kernel) locally
@@ -116,7 +120,8 @@ exclude = ["alignair_benchmark*"]
 # fallback, so wheels are a speed optimization, not a hard requirement.
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-*"
-skip = "*-musllinux_* *_i686"
+# skip musllinux, 32-bit Linux (i686), and 32-bit Windows (win32) - PyTorch has no wheels there.
+skip = "*-musllinux_* *_i686 *-win32"
 build-frontend = "build"
 # each runner builds its native arch (macos-13 -> x86_64, macos-14 -> arm64, etc.) so the compiled
 # kernel can be imported + tested in-place. Verify it actually loaded in every built wheel (the smoke

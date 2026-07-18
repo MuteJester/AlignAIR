@@ -19,12 +19,21 @@ class Aligner(Protocol):
 
 
 def get_aligner(prefer: str = "wfa") -> Aligner:
-    """Best available aligner. Tries WFA (pywfa) first when prefer=='wfa', else parasail."""
+    """Best *available* aligner, probing each optional backend before selecting it:
+    WFA (pywfa) when prefer=='wfa' -> parasail -> Biopython fallback.
+
+    The probe matters: constructing a backend does not import its native dependency (that is lazy),
+    so an unchecked selection would return a backend that fails only at align() time. Biopython is a
+    core dependency, so this always returns a working aligner even with no optional backend installed
+    (e.g. a default Apple Silicon install, where parasail has no wheel)."""
     if prefer == "wfa":
-        try:
+        from .wfa import wfa_available
+        if wfa_available():
             from .wfa import WFAAligner
             return WFAAligner()
-        except Exception:
-            pass
-    from .parasail import ParasailAligner
-    return ParasailAligner()
+    from .parasail import parasail_available
+    if parasail_available():
+        from .parasail import ParasailAligner
+        return ParasailAligner()
+    from .bio import BioAligner
+    return BioAligner()

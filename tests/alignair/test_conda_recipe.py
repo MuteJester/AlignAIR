@@ -1,6 +1,9 @@
 """Validate the conda recipe without a conda toolchain: dependency invariants (so it can't
 drift from pyproject) and that the Jinja renders to parseable YAML for both source modes."""
-import tomllib
+try:
+    import tomllib  # Python >= 3.11
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 from pathlib import Path
 
 import pytest
