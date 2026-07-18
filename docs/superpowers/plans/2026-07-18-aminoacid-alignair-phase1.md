@@ -1,4 +1,4 @@
-# Amino-Acid AlignAIR — Phase 1 (Minimal Learning Proof) Implementation Plan — **rev 2**
+# Amino-Acid AlignAIR — Phase 1 (Minimal Learning Proof) Implementation Plan — **rev 3**
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -7,6 +7,14 @@
 **Architecture:** `AAAlignAIR` composes reused core blocks (`TokenAndPositionEmbedding`, `GeneBranch`'s towers/heads) with a **softmax single-label** class head and **separate start/end boundary-slot masks**. No orientation head, no meta heads, **no D branch** (`has_d=False`). A minimal AA data adapter turns GenAIRR `sequence_aa` + projected boundaries + class targets into batches, with explicit rejection accounting.
 
 **Tech Stack:** Python 3, PyTorch, GenAIRR 2.2.0 (`HUMAN_IGH_OGRDB`), pytest. GPU for the real run; tests on CPU.
+
+## Revision note (rev 3)
+
+Two further review claims were verified empirically before this revision:
+- **GenAIRR simulation seeds are CONSECUTIVE per record** (`stream(100)[1:4] == stream(101)[0:3]` → `True`). A stream seeded `S` consumes per-record seeds `S, S+1, …`. The rev-2 starts (100 / 8,019 / 15,938) are ~7.9k apart while a 3,000×64 run consumes **~1.37M** raw records — the three "replicates" would have been **~99.4% the same simulations**, making seed-consistency meaningless. **Fixed** with provably disjoint, budgeted seed ranges (P1).
+- **The translation-length invariant holds on real records** (`len(sequence_aa) == (len(sequence) - frame_offset)//3`: 0 violations in 2,965 records), so enforcing it is a safe malformed-record guard. It also proved the rev-2 terminal-endpoint fixture was wrong (24 nt ⇒ 8 residues, but the fixture had a 9-residue `sequence_aa`). **Both fixed** (P3).
+
+Also in rev 3: paired bootstrap statistics replacing the invalid independent-Wilson comparison (P2); held-out set genuinely fingerprinted + per-stream counters (P4); the self-comparing loss assertion and the hope-for-diversity overfit batch replaced.
 
 ## Revision note (rev 2)
 
@@ -27,6 +35,21 @@ Three claims from review were verified empirically before rewriting:
 - **Softmax single-label class heads:** class head emits logits; loss is `cross_entropy`. Never sigmoid/multi-hot.
 - **Reject degenerate inputs:** empty sequences rejected explicitly; never feed an all-pad row (all-masked softmax ⇒ NaN).
 - **Determinism / provenance:** explicit seeds; the run artifact freezes class maps + hashes + versions + git commit + counts (P0.5).
+- **Disjoint, budgeted seed ranges (P1):** GenAIRR consumes **consecutive** per-record seeds, so every stream gets its own `[start, start+budget)` range, spaced far wider than its budget. A stream that exhausts its budget before collecting the required samples **fails loudly** — never silently short. Each run records its consumed `[first_seed, last_seed]`. The generalization model is constructed after an explicit **re-seed**, so its init does not depend on the preceding overfit run's RNG consumption.
+- **Translation-length invariant (P3):** reject any record where `len(sequence_aa) != (len(sequence) - frame_offset) // 3` (reason `translation_length_mismatch`) — otherwise boundaries and tokens live in different coordinate systems.
+- **Paired statistics only (P2):** the model and every baseline predict the **same** reads, so compare them with a **paired bootstrap of the per-read difference**, never two independent Wilson intervals. Practical margins are **predeclared** (below), not chosen after seeing results.
+- **Per-stream accounting (P4):** each stream (held-out, per-seed overfit, per-seed train) gets its **own** counter, and each must satisfy `generated == usable + sum(rejections)`.
+- **Held-out set is fingerprinted (P4):** SHA-256 over a canonical serialization of every held-out sample (tokens, V/J class, four boundaries, coverage + ambiguity strata), plus a gzipped manifest — "frozen" must be a verifiable claim, not just a stored seed.
+
+### Predeclared gate margins (fixed before the run)
+
+| Quantity | Hard requirement |
+|---|---|
+| Classification lift over majority | paired-bootstrap 95% CI lower bound **> 0** *and* mean lift **≥ 0.05** (5 pp) |
+| Boundary MAE reduction vs constant-median | paired-bootstrap 95% CI lower bound **> 0** *and* **≥ 10%** relative reduction, for **all four** boundaries |
+| Prior-learning guard | `macro_acc ≥ 0.5 × micro_acc` for V and J |
+| Seed consistency | all seeds pass the above **and** V micro-accuracy spread across seeds **≤ 0.10** absolute |
+| Stratified tables (coverage, ambiguity) | **diagnostic only** — reported and inspected, never auto-gated |
 - **Commits:** conventional messages; **never** a `Co-Authored-By: Claude` line or any Claude/Anthropic mention.
 - **Run env:** `PYTHONPATH=src .venv/bin/python …`. Tests under `tests/alignair/aa/` (no `__init__.py`); dataconfig/stream/training tests marked `@pytest.mark.slow`.
 - **Verified facts:** AA reads: p50 126, p95 133, **max 146** (< 192, so no truncation). `GeneBranch.__init__` builds `seg_tower/start_head/end_head/cutout/cls_tower/cls_mid/cls_head`; `_soft_argmax` and `_pos` are available to subclasses. `HUMAN_IGH_OGRDB`: **149 V classes, 7 J classes**. GenAIRR record fields: `sequence`, `sequence_aa`, `junction_start`, `v_call`/`j_call`, `v/d/j_sequence_start/end`, `productive`.
@@ -293,15 +316,23 @@ def test_terminal_end_target_is_penalized_more_than_a_wrong_reachable_one():
     assert loss_when_truth_is_8 > loss_when_truth_is_7           # predicting 7 is penalized iff truth is 8
 
 
-def test_loss_is_finite_and_components_normalized():
+def test_loss_is_finite_and_components_are_means_not_sums():
+    from alignair.core.losses import _soft_ce
+    from alignair.aa.loss import masked_soft_gaussian
     sm, em = _batch()
     out = _out(sm, em, torch.randn(2, 5), torch.randn(2, 3))
-    total, parts = aa_loss(out, _targets())
+    tg = _targets()
+    total, parts = aa_loss(out, tg)
     assert total.ndim == 0 and torch.isfinite(total)
     assert set(parts) == {"segmentation", "classification"}
-    # components are MEANS (not sums): segmentation of 4 identical terms == one term's value
-    assert torch.isclose(parts["segmentation"], parts["segmentation"])
-    assert float(parts["segmentation"]) < 10.0                  # a sum of 4 would be ~4x larger
+    # explicitly recompute the 4 boundary terms and compare against their MEAN (a sum would be 4x).
+    terms = []
+    for g in ("v", "j"):
+        for b, m in (("start", sm), ("end", em)):
+            terms.append(_soft_ce(out[f"{g}_{b}_logits"], masked_soft_gaussian(tg[f"{g}_{b}"], L, m), m))
+    expected_mean = torch.stack(terms).mean()
+    assert torch.isclose(parts["segmentation"], expected_mean, atol=1e-6)
+    assert not torch.isclose(parts["segmentation"], torch.stack(terms).sum(), atol=1e-6)
 
 
 def test_confident_correct_class_gives_near_zero_classification():
@@ -466,11 +497,12 @@ git commit -m "feat(aa): V/J-only AA IGH config factory (has_d=False)"
 
 **Interfaces:**
 - Produces:
-  - `REJECT_REASONS: tuple[str, ...]`.
+  - `REJECT_REASONS: tuple[str, ...]` (includes `translation_length_mismatch`); `class SeedBudgetExhausted(RuntimeError)`.
   - `record_to_sample(rec, class_maps, tokenizer, max_len) -> tuple[dict | None, str | None]` — `(sample, None)` or `(None, reason)`.
   - `collate_aa(samples, max_len, device="cpu") -> (batch_in, targets)`.
   - `build_class_maps(dc_name="HUMAN_IGH_OGRDB") -> (class_maps, meta)`.
-  - `stream_aa_samples(n, seed, class_maps, tokenizer, max_len, rate=0.05, dc_name=..., counter=None)` — generator; increments `counter` (a `Counter`) with `generated` and per-reason rejections.
+  - `collect_usable(*, start_seed, budget, want, class_maps, tokenizer, max_len, rate=0.05, dc_name=..., counter=None, select=None) -> (samples, info)` — collects from a **disjoint budgeted seed range**; raises `SeedBudgetExhausted` rather than returning short; `info` records the consumed `[first_seed, last_seed]`.
+  - `check_counter(counter) -> None` — asserts `generated == usable + sum(rejections)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -494,7 +526,8 @@ def _cmaps():
 
 
 def _rec(**over):
-    base = {"sequence": "A" * 24, "sequence_aa": "QVQLCWGQG", "junction_start": 0, "productive": True,
+    # 24 nt at frame 0 -> exactly 8 residues; sequence_aa MUST be 8 chars to stay in one coord system.
+    base = {"sequence": "A" * 24, "sequence_aa": "QVQLCWGQ", "junction_start": 0, "productive": True,
             "v_call": "IGHV1-1*01", "j_call": "IGHJ1*01",
             "v_sequence_start": 0, "v_sequence_end": 12,
             "d_sequence_start": 12, "d_sequence_end": 12,
@@ -512,13 +545,21 @@ def test_projects_boundaries_and_maps_classes():
 
 
 def test_nonzero_frame_offset_shifts_the_residue_grid():
-    # junction_start=1 -> frame 1; V=[1,13) J=[13,25); sequence 25nt -> 8 residues.
+    # junction_start=1 -> frame 1; V=[1,13) J=[13,25); sequence 25nt -> (25-1)//3 = 8 residues.
     s, why = record_to_sample(
         _rec(sequence="A" * 25, junction_start=1, v_sequence_start=1, v_sequence_end=13,
              d_sequence_start=13, d_sequence_end=13, j_sequence_start=13, j_sequence_end=25),
         _cmaps(), AAProteinTokenizer(), 192)
     assert why is None
     assert (s["v_start"], s["v_end"]) == (0, 4) and (s["j_start"], s["j_end"]) == (4, 8)
+
+
+def test_translation_length_mismatch_is_rejected():
+    """A sequence_aa whose length disagrees with (len(sequence)-frame)//3 would put boundaries and
+    tokens in different coordinate systems. Verified to hold on real records (0/2965 violations)."""
+    s, why = record_to_sample(_rec(sequence_aa="QVQLCWGQG"),      # 9 residues, but 24nt -> 8
+                              _cmaps(), AAProteinTokenizer(), 192)
+    assert s is None and why == "translation_length_mismatch"
 
 
 def test_straddling_codon_is_masked_out_of_owned_span():
@@ -528,9 +569,11 @@ def test_straddling_codon_is_masked_out_of_owned_span():
 
 
 def test_terminal_exclusive_endpoint_equals_residue_count():
+    """The genuine terminal case: the exclusive end lands exactly ON the token count, i.e. the
+    end slot n that rev-1 could never decode."""
     s, _ = record_to_sample(_rec(), _cmaps(), AAProteinTokenizer(), 192)
-    assert s["j_end"] == 8                            # == number of residues in sequence_aa
-    assert s["j_end"] <= len(s["tokens"])
+    assert len(s["tokens"]) == 8
+    assert s["j_end"] == 8 == len(s["tokens"])        # exclusive end == n, not n-1
 
 
 @pytest.mark.parametrize("over,reason", [
@@ -567,24 +610,31 @@ def test_collate_shapes_and_dtypes():
 
 
 @pytest.mark.slow
-def test_stream_real_igh_yields_valid_samples_and_counts_rejections():
-    from alignair.aa.data import build_class_maps, stream_aa_samples
+def test_collect_usable_real_igh_is_valid_budgeted_and_fully_accounted():
+    from alignair.aa.data import build_class_maps, collect_usable, check_counter
     cmaps, meta = build_class_maps("HUMAN_IGH_OGRDB")
     assert meta["n_v_classes"] == 149 and meta["n_j_classes"] == 7
     counter = Counter()
-    got = []
-    for s in stream_aa_samples(n=3000, seed=0, class_maps=cmaps, tokenizer=AAProteinTokenizer(),
-                               max_len=192, counter=counter):
-        got.append(s)
-        if len(got) >= 64:
-            break
+    got, info = collect_usable(start_seed=5_000_000, budget=20_000, want=64, class_maps=cmaps,
+                               tokenizer=AAProteinTokenizer(), max_len=192, counter=counter)
     assert len(got) == 64
-    assert counter["generated"] > 0
+    check_counter(counter)                                   # generated == usable + rejections
+    assert info["first_seed"] == 5_000_000
+    assert info["last_seed"] == 5_000_000 + info["generated"] - 1
     for s in got:
         assert 0 <= s["v_class"] < 149 and 0 <= s["j_class"] < 7
         assert 0 <= s["v_start"] < s["v_end"] <= len(s["tokens"])
         assert 0 <= s["j_start"] < s["j_end"] <= len(s["tokens"])
         assert len(s["tokens"]) < 192
+
+
+@pytest.mark.slow
+def test_collect_usable_raises_when_the_seed_budget_is_exhausted():
+    from alignair.aa.data import build_class_maps, collect_usable, SeedBudgetExhausted
+    cmaps, _ = build_class_maps("HUMAN_IGH_OGRDB")
+    with pytest.raises(SeedBudgetExhausted):                  # ~14% yield: 50 records cannot give 500
+        collect_usable(start_seed=6_000_000, budget=50, want=500, class_maps=cmaps,
+                       tokenizer=AAProteinTokenizer(), max_len=192)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -604,14 +654,20 @@ segment coordinates are projected into AA residue boundaries with straddling-cod
 Stop-containing reads are REJECTED, matching the Phase-0 input contract."""
 from __future__ import annotations
 
+from collections import Counter
+
 import numpy as np
 import torch
 
 from .equivalence import build_equivalence_classes, db_hash
 from .translation import frame_offset_of, project_codons
 
-REJECT_REASONS = ("not_productive", "no_aa", "no_frame", "stop_codon",
-                  "unknown_allele", "no_bounds", "too_long", "empty")
+REJECT_REASONS = ("not_productive", "no_aa", "no_frame", "stop_codon", "unknown_allele",
+                  "no_bounds", "too_long", "empty", "translation_length_mismatch")
+
+
+class SeedBudgetExhausted(RuntimeError):
+    """A stream ran out of its allotted seed range before collecting the samples requested."""
 
 _SEG_COLS = {"V": ("v_sequence_start", "v_sequence_end"),
              "D": ("d_sequence_start", "d_sequence_end"),
@@ -643,12 +699,16 @@ def record_to_sample(rec: dict, class_maps: dict, tokenizer, max_len: int):
         return None, "no_frame"
     if "*" in aa:
         return None, "stop_codon"
+    frame = frame_offset_of(rec["junction_start"])
+    if len(aa) != (len(rec["sequence"]) - frame) // 3:
+        # tokens and projected boundaries would live in different coordinate systems
+        return None, "translation_length_mismatch"
     try:
         v_class = class_maps["V"].class_of(_first(rec["v_call"]))
         j_class = class_maps["J"].class_of(_first(rec["j_call"]))
     except KeyError:
         return None, "unknown_allele"
-    proj = project_codons(len(rec["sequence"]), frame_offset_of(rec["junction_start"]), _segments(rec))
+    proj = project_codons(len(rec["sequence"]), frame, _segments(rec))
     vb, jb = proj.aa_bounds.get("V"), proj.aa_bounds.get("J")
     if vb is None or jb is None:
         return None, "no_bounds"
@@ -695,22 +755,49 @@ def build_class_maps(dc_name: str = "HUMAN_IGH_OGRDB"):
     return class_maps, meta
 
 
-def stream_aa_samples(n, seed, class_maps, tokenizer, max_len, rate=0.05,
-                      dc_name: str = "HUMAN_IGH_OGRDB", counter=None):
-    """Yield usable AA samples; tally ``generated`` and per-reason rejections into ``counter``."""
+def collect_usable(*, start_seed, budget, want, class_maps, tokenizer, max_len, rate=0.05,
+                   dc_name: str = "HUMAN_IGH_OGRDB", counter=None, select=None):
+    """Collect ``want`` usable samples from the seed range ``[start_seed, start_seed+budget)``.
+
+    GenAIRR consumes CONSECUTIVE per-record seeds, so a stream seeded ``S`` occupies ``S..S+N-1``
+    after N generated records. Ranges must therefore be allocated disjointly and each capped by a
+    budget; exhausting the budget raises rather than silently returning a short/overlapping set.
+
+    ``select`` optionally filters/prioritizes (see ``collect_diverse_batch``). Returns
+    ``(samples, info)`` where ``info`` records the consumed ``[first_seed, last_seed]``.
+    """
     import GenAIRR as ga
+    c = counter if counter is not None else Counter()
     exp = ga.Experiment.on(dc_name).recombine().mutate(model="s5f", rate=rate)
-    for rec in exp.stream_records(n=n, seed=seed):
-        if counter is not None:
-            counter["generated"] += 1
+    out: list = []
+    generated = 0
+    for rec in exp.stream_records(n=budget, seed=start_seed):
+        generated += 1
+        c["generated"] += 1
         s, why = record_to_sample(rec, class_maps, tokenizer, max_len)
         if s is None:
-            if counter is not None:
-                counter[why] += 1
+            c[why] += 1
             continue
-        if counter is not None:
-            counter["usable"] += 1
-        yield s
+        c["usable"] += 1
+        if select is None or select(s, out):
+            out.append(s)
+            if len(out) >= want:
+                break
+    if len(out) < want:
+        raise SeedBudgetExhausted(
+            f"collected {len(out)}/{want} usable samples after exhausting the {budget}-record "
+            f"budget at seeds [{start_seed}, {start_seed + generated - 1}]; widen the budget")
+    info = {"start_seed": start_seed, "budget": budget, "generated": generated,
+            "first_seed": start_seed, "last_seed": start_seed + generated - 1}
+    return out, info
+
+
+def check_counter(counter) -> None:
+    """Every generated record must be accounted for: generated == usable + sum(rejections)."""
+    rejected = sum(counter[r] for r in REJECT_REASONS)
+    if counter["generated"] != counter["usable"] + rejected:
+        raise AssertionError(f"unaccounted records: generated={counter['generated']} "
+                             f"usable={counter['usable']} rejected={rejected}")
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -738,6 +825,7 @@ git commit -m "feat(aa): AA data adapter with stop filtering + rejection account
 - Produces:
   - `aa_eval_metrics(out, targets, genes=("v","j")) -> dict` — `{g}_class_acc`, `{g}_{start|end}_mae`.
   - `assert_batch_diverse(samples, min_v_classes=3, min_j_classes=2) -> None` (raises `ValueError`).
+  - `diverse_selector(min_v_classes=3, min_j_classes=2)` → a `select(sample, chosen)` callable for `collect_usable` that **actively prioritizes** unseen V/J classes instead of hoping the first N records happen to be diverse.
   - `overfit_one_batch(model, batch_in, targets, *, steps=300, lr=1e-3, genes=("v","j")) -> dict` — includes `history` (per-step `total`/`segmentation`/`classification`) so a falling total cannot hide a stuck class term.
 
 - [ ] **Step 1: Write the failing test**
@@ -777,19 +865,26 @@ def test_assert_batch_diverse_rejects_degenerate_batches():
     assert_batch_diverse(mixed) is None
 
 
+def test_diverse_selector_prioritizes_unseen_classes():
+    from alignair.aa.train import diverse_selector
+    sel = diverse_selector(min_v_classes=2, min_j_classes=2)
+    chosen = [{"v_class": 1, "j_class": 0}]
+    assert sel({"v_class": 2, "j_class": 0}, chosen)          # new V -> take
+    assert sel({"v_class": 1, "j_class": 5}, chosen)          # new J -> take
+    assert not sel({"v_class": 1, "j_class": 0}, chosen)      # nothing new, quota unmet -> skip
+
+
 @pytest.mark.slow
 def test_overfit_one_batch_learns_classes_and_all_four_boundaries():
     torch.manual_seed(0)
-    from alignair.aa.data import build_class_maps, collate_aa, stream_aa_samples
+    from alignair.aa.data import build_class_maps, collate_aa, collect_usable
+    from alignair.aa.train import diverse_selector
     from alignair.aa.tokenizer import AAProteinTokenizer
     cmaps, meta = build_class_maps("HUMAN_IGH_OGRDB")
     cfg = aa_igh_config(meta["n_v_classes"], meta["n_j_classes"])
-    samples = []
-    for s in stream_aa_samples(n=8000, seed=1, class_maps=cmaps, tokenizer=AAProteinTokenizer(),
-                               max_len=cfg.max_seq_length):
-        samples.append(s)
-        if len(samples) >= 16:
-            break
+    samples, _ = collect_usable(start_seed=7_000_000, budget=50_000, want=16, class_maps=cmaps,
+                                tokenizer=AAProteinTokenizer(), max_len=cfg.max_seq_length,
+                                select=diverse_selector())    # actively diverse, not hoped-for
     assert_batch_diverse(samples)                       # the proof must not be trivially degenerate
     bi, tg = collate_aa(samples, cfg.max_seq_length)
     res = overfit_one_batch(AAAlignAIR(cfg), bi, tg, steps=300, lr=1e-3)
@@ -841,6 +936,21 @@ def assert_batch_diverse(samples, min_v_classes: int = 3, min_j_classes: int = 2
                          f"{nj} J classes (need >= {min_j_classes})")
 
 
+def diverse_selector(min_v_classes: int = 3, min_j_classes: int = 2):
+    """A ``select`` callable for ``collect_usable`` that ACTIVELY builds a diverse batch.
+
+    Takes a sample only if it contributes an unseen V or J class, until the diversity quota is
+    met; afterwards it accepts freely to fill the batch. Beats taking the first N records and
+    hoping ``assert_batch_diverse`` passes."""
+    def select(sample, chosen):
+        seen_v = {c["v_class"] for c in chosen}
+        seen_j = {c["j_class"] for c in chosen}
+        if len(seen_v) >= min_v_classes and len(seen_j) >= min_j_classes:
+            return True                                   # quota met -> fill the rest
+        return sample["v_class"] not in seen_v or sample["j_class"] not in seen_j
+    return select
+
+
 def overfit_one_batch(model, batch_in, targets, *, steps=300, lr=1e-3, genes=("v", "j")) -> dict:
     """Drive one batch to memorization. Returns initial/final loss, final metrics, and the
     per-step component history."""
@@ -890,10 +1000,11 @@ The scientific core: a metric between 0 and 1 means nothing without a baseline.
 
 **Interfaces:**
 - Produces:
-  - `wilson_interval(k, n, z=1.96) -> tuple[float, float]`.
+  - `wilson_interval(k, n, z=1.96) -> tuple[float, float]` (descriptive only).
   - `bootstrap_mean_ci(values, n_boot=1000, seed=0) -> tuple[float, float]`.
+  - `paired_diff_ci(diffs, n_boot=2000, seed=0) -> dict` — `{mean, ci95, lower_gt_zero}` for the **per-item paired difference**; this, not two independent Wilson intervals, is the gate statistic.
   - `majority_class_baseline(class_ids) -> float`; `constant_median_mae(values) -> float`.
-  - `evaluate_frozen(model, samples, cfg, class_maps, *, batch_size=128, device="cpu") -> dict` — micro/macro accuracy + Wilson CI vs majority baseline per gene; per-boundary MAE + bootstrap CI vs constant-median baseline; V accuracy stratified by observed V coverage and by equivalence-class ambiguity size.
+  - `evaluate_frozen(model, samples, cfg, class_maps, *, batch_size=128, device="cpu") -> dict` — per gene: micro/macro accuracy, majority baseline, and the **paired** lift `model_correct − majority_correct` with bootstrap CI; per boundary: MAE, constant-median baseline, and the **paired** improvement `constant_abs_err − model_abs_err` with bootstrap CI and relative reduction; plus diagnostic stratification by V coverage and ambiguity size.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -931,6 +1042,28 @@ def test_bootstrap_mean_ci_is_deterministic_and_brackets_the_mean():
     a = bootstrap_mean_ci(vals, n_boot=200, seed=0)
     assert a == bootstrap_mean_ci(vals, n_boot=200, seed=0)   # seeded -> reproducible
     assert a[0] <= 3.0 <= a[1]
+
+
+def test_paired_diff_ci_detects_a_real_advantage_and_rejects_a_null_one():
+    from alignair.aa.evaluate import paired_diff_ci
+    # model beats baseline on 30% of reads, never loses -> lower bound must clear zero
+    win = paired_diff_ci([1.0] * 300 + [0.0] * 700, n_boot=500, seed=0)
+    assert win["mean"] > 0 and win["lower_gt_zero"]
+    # symmetric wins/losses -> no detectable advantage
+    null = paired_diff_ci(([1.0] * 500 + [-1.0] * 500), n_boot=500, seed=0)
+    assert not null["lower_gt_zero"]
+
+
+def test_paired_comparison_is_not_the_same_as_independent_intervals():
+    """Paired differences see a consistent small advantage that overlapping marginal CIs miss."""
+    from alignair.aa.evaluate import paired_diff_ci
+    n = 2000
+    # model correct on 1020, baseline on 1000, and the model is right whenever the baseline is.
+    diffs = [1.0] * 20 + [0.0] * (n - 20)
+    paired = paired_diff_ci(diffs, n_boot=500, seed=0)
+    assert paired["lower_gt_zero"]                            # paired test resolves it
+    a, b = wilson_interval(1020, n), wilson_interval(1000, n)
+    assert a[0] < b[1]                                        # independent intervals overlap
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -974,8 +1107,20 @@ def bootstrap_mean_ci(values, n_boot: int = 1000, seed: int = 0):
         return (0.0, 0.0)
     rng = np.random.default_rng(seed)
     arr = np.asarray(values, dtype=float)
-    means = [float(rng.choice(arr, size=arr.size, replace=True).mean()) for _ in range(n_boot)]
+    idx = rng.integers(0, arr.size, size=(n_boot, arr.size))
+    means = arr[idx].mean(axis=1)
     return (float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5)))
+
+
+def paired_diff_ci(diffs, n_boot: int = 2000, seed: int = 0) -> dict:
+    """Bootstrap CI of the MEAN PER-ITEM DIFFERENCE (model advantage).
+
+    The model and the baseline predict the SAME reads, so their errors are correlated; comparing
+    two independent Wilson/bootstrap intervals is the wrong test and is far too conservative.
+    The gate statistic is this paired difference with its lower bound above zero."""
+    lo, hi = bootstrap_mean_ci(diffs, n_boot=n_boot, seed=seed)
+    mean = (sum(diffs) / len(diffs)) if len(diffs) else 0.0
+    return {"mean": mean, "ci95": (lo, hi), "lower_gt_zero": lo > 0.0}
 
 
 def majority_class_baseline(class_ids) -> float:
@@ -1024,22 +1169,32 @@ def evaluate_frozen(model, samples, cfg, class_maps, *, batch_size: int = 128,
 
     res: dict = {"n": len(samples), "classification": {}, "boundaries": {}, "stratified": {}}
     for g in ("v", "j"):
-        hits = sum(int(t == p) for t, p in zip(true[g], pred[g]))
         n = len(true[g])
+        hits = sum(int(t == p) for t, p in zip(true[g], pred[g]))
         micro = hits / n if n else 0.0
-        base = majority_class_baseline(true[g])
+        macro = _macro_accuracy(true[g], pred[g])
+        # PAIRED comparison: the majority predictor scores the same reads.
+        maj_class = Counter(true[g]).most_common(1)[0][0] if n else None
+        diffs = [int(t == p) - int(t == maj_class) for t, p in zip(true[g], pred[g])]
         res["classification"][g] = {
-            "micro_acc": micro, "macro_acc": _macro_accuracy(true[g], pred[g]),
-            "micro_acc_ci95": wilson_interval(hits, n),
-            "majority_baseline": base, "lift_over_majority": micro - base,
+            "micro_acc": micro, "macro_acc": macro,
+            "micro_acc_ci95": wilson_interval(hits, n),          # descriptive only
+            "majority_baseline": majority_class_baseline(true[g]),
+            "paired_lift": paired_diff_ci(diffs),                # <- the gate statistic
+            "macro_over_micro": (macro / micro) if micro else 0.0,
             "n_distinct_true_classes": len(set(true[g])),
         }
     for key, e in errs.items():
         mae = sum(e) / len(e) if e else 0.0
-        base = constant_median_mae(tgts[key])
+        base_mae = constant_median_mae(tgts[key])
+        med = sorted(tgts[key])[len(tgts[key]) // 2] if tgts[key] else 0.0
+        # PAIRED improvement: constant-predictor error minus model error, per read.
+        diffs = [abs(t - med) - me for t, me in zip(tgts[key], e)]
         res["boundaries"][key] = {
             "mae": mae, "mae_ci95": bootstrap_mean_ci(e),
-            "constant_median_baseline_mae": base, "beats_baseline": mae < base,
+            "constant_median_baseline_mae": base_mae,
+            "paired_improvement": paired_diff_ci(diffs),         # <- the gate statistic
+            "relative_reduction": ((base_mae - mae) / base_mae) if base_mae else 0.0,
         }
 
     # V accuracy stratified by observed coverage and by protein-class ambiguity size
@@ -1082,9 +1237,12 @@ git commit -m "feat(aa): frozen held-out evaluation with baselines, CIs and stra
 
 **Interfaces:**
 - Produces:
+  - `SEED_RANGES: dict` — the disjoint `[start, start+budget)` allocation for held-out / per-seed overfit / per-seed train, spaced far wider than any budget.
+  - `heldout_fingerprint(samples) -> str` — SHA-256 over a canonical serialization of every sample (tokens, V/J class, four boundaries, coverage + ambiguity strata).
+  - `write_heldout_manifest(samples, path) -> str` — gzipped JSONL manifest.
   - `provenance(cfg, class_maps, meta, model) -> dict` — serialized V/J class maps + their SHA-256, db hash, model config, GenAIRR/torch/CUDA versions, git commit, param count.
-  - `run_seed(seed, cfg, class_maps, heldout, *, train_steps, batch_size, lr, overfit_batch, overfit_steps, device) -> dict`.
-  - `run_learning_proof(*, seeds=(0,1,2), heldout_size=4096, train_steps=3000, batch_size=64, lr=1e-3, overfit_batch=32, overfit_steps=400, device="cpu", dc_name="HUMAN_IGH_OGRDB") -> dict`.
+  - `run_seed(seed, cfg, class_maps, heldout, *, train_steps, batch_size, lr, overfit_batch, overfit_steps, device, dc_name) -> dict` — uses its **own** seed ranges and **own** counters; re-seeds torch before building the generalization model.
+  - `run_learning_proof(*, seeds=(0,1,2), heldout_size=4096, train_steps=3000, batch_size=64, lr=1e-3, overfit_batch=32, overfit_steps=400, device="cpu", dc_name="HUMAN_IGH_OGRDB", manifest_path=None) -> dict`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1093,10 +1251,37 @@ git commit -m "feat(aa): frozen held-out evaluation with baselines, CIs and stra
 import pytest
 
 
+def test_seed_ranges_are_provably_disjoint():
+    """The rev-2 defect: replicate streams overlapped ~99%. Every allocated range must be disjoint."""
+    from alignair.aa.phase1 import SEED_RANGES, _range_for
+    spans = [(_range_for("heldout")["start_seed"], _range_for("heldout")["budget"])]
+    for rep in range(8):
+        for kind in ("overfit", "train"):
+            r = _range_for(kind, rep)
+            spans.append((r["start_seed"], r["budget"]))
+    spans.sort()
+    for (s1, b1), (s2, _) in zip(spans, spans[1:]):
+        assert s1 + b1 <= s2, f"seed ranges overlap: [{s1},{s1 + b1}) vs start {s2}"
+    # a 3000x64 run needs ~1.4M raw records at ~14% yield; the train budget must exceed that.
+    assert SEED_RANGES["train"]["budget"] > 3_000_000
+
+
+def test_heldout_fingerprint_is_stable_and_content_sensitive():
+    import numpy as np
+    from alignair.aa.phase1 import heldout_fingerprint
+    def s(v=0, vs=0):
+        return {"tokens": np.array([1, 2, 3]), "v_class": v, "j_class": 1,
+                "v_start": vs, "v_end": 2, "j_start": 2, "j_end": 3}
+    base = [s(), s(1)]
+    assert heldout_fingerprint(base) == heldout_fingerprint([s(), s(1)])
+    assert heldout_fingerprint(base) != heldout_fingerprint([s(), s(2)])      # class change
+    assert heldout_fingerprint(base) != heldout_fingerprint([s(0, 1), s(1)])  # boundary change
+
+
 @pytest.mark.slow
-def test_run_learning_proof_smoke_has_provenance_baselines_and_seeds():
+def test_run_learning_proof_smoke_has_provenance_paired_stats_and_disjoint_ranges():
     from alignair.aa.phase1 import run_learning_proof
-    r = run_learning_proof(seeds=(0, 1), heldout_size=256, train_steps=30, batch_size=16,
+    r = run_learning_proof(seeds=(0, 1), heldout_size=256, train_steps=10, batch_size=16,
                            overfit_batch=8, overfit_steps=40, device="cpu")
     p = r["provenance"]
     for key in ("class_maps", "class_map_sha256", "db_hash", "config", "versions",
@@ -1104,17 +1289,29 @@ def test_run_learning_proof_smoke_has_provenance_baselines_and_seeds():
         assert key in p
     assert set(p["class_maps"]) == {"V", "J"} and set(p["class_map_sha256"]) == {"V", "J"}
     assert p["versions"]["torch"] and p["versions"]["genairr"]
-    assert r["heldout_size"] == 256
+    assert r["heldout_size"] == 256 and len(r["heldout_fingerprint"]) == 64
     assert set(r["seeds"]) == {"0", "1"}
+
     one = r["seeds"]["0"]
     assert one["overfit"]["final_loss"] < one["overfit"]["initial_loss"]
     ev = one["heldout"]
     for g in ("v", "j"):
         c = ev["classification"][g]
-        assert 0.0 <= c["micro_acc"] <= 1.0 and "majority_baseline" in c and "lift_over_majority" in c
+        assert 0.0 <= c["micro_acc"] <= 1.0 and "majority_baseline" in c
+        assert set(c["paired_lift"]) == {"mean", "ci95", "lower_gt_zero"}    # paired gate statistic
     for key in ("v_start", "v_end", "j_start", "j_end"):
-        assert "constant_median_baseline_mae" in ev["boundaries"][key]
-    assert "rejections" in r and r["rejections"]["generated"] > 0
+        b = ev["boundaries"][key]
+        assert "constant_median_baseline_mae" in b and "relative_reduction" in b
+        assert set(b["paired_improvement"]) == {"mean", "ci95", "lower_gt_zero"}
+
+    # per-stream accounting, and replicates must occupy DIFFERENT seed ranges
+    for kind in ("overfit", "train"):
+        c = one["counters"][kind]
+        assert c["generated"] == c["usable"] + sum(v for k, v in c.items()
+                                                   if k not in ("generated", "usable"))
+    a = r["seeds"]["0"]["seed_ranges"]["train"]
+    b = r["seeds"]["1"]["seed_ranges"]["train"]
+    assert a["last_seed"] < b["first_seed"] or b["last_seed"] < a["first_seed"]
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1132,7 +1329,6 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
-import itertools
 import json
 import subprocess
 from collections import Counter
@@ -1140,12 +1336,12 @@ from collections import Counter
 import torch
 
 from .config import aa_igh_config
-from .data import build_class_maps, collate_aa, stream_aa_samples
+from .data import build_class_maps, check_counter, collate_aa, collect_usable
 from .evaluate import evaluate_frozen
 from .loss import aa_loss
 from .model import AAAlignAIR
 from .tokenizer import AAProteinTokenizer
-from .train import assert_batch_diverse, overfit_one_batch
+from .train import assert_batch_diverse, diverse_selector, overfit_one_batch
 
 
 def _git_commit() -> str:
@@ -1175,79 +1371,131 @@ def provenance(cfg, class_maps, meta, model) -> dict:
     }
 
 
-def _take(stream, k):
-    return list(itertools.islice(stream, k))
+# Disjoint seed ranges. GenAIRR consumes CONSECUTIVE per-record seeds, so a stream seeded S
+# occupies [S, S+generated). A 3000x64 run needs ~192k usable ~= ~1.4M raw records at the observed
+# ~14% yield, so training ranges are 50M apart with a 20M budget -- provably non-overlapping.
+SEED_RANGES = {
+    "heldout": {"start": 1_000_000_000, "budget": 5_000_000},
+    "overfit": {"start": 2_000_000_000, "stride": 50_000_000, "budget": 5_000_000},
+    "train":   {"start": 3_000_000_000, "stride": 50_000_000, "budget": 20_000_000},
+}
 
 
-def run_seed(seed, cfg, class_maps, heldout, *, train_steps, batch_size, lr,
-             overfit_batch, overfit_steps, device, dc_name, counter) -> dict:
-    torch.manual_seed(seed)
+def _range_for(kind: str, replicate: int = 0) -> dict:
+    r = SEED_RANGES[kind]
+    start = r["start"] + replicate * r.get("stride", 0)
+    return {"start_seed": start, "budget": r["budget"]}
+
+
+def heldout_fingerprint(samples) -> str:
+    """SHA-256 over a canonical serialization of the held-out cohort. 'Frozen' must be verifiable,
+    not merely 'reproducible from a seed'."""
+    h = hashlib.sha256()
+    for s in samples:
+        h.update(",".join(str(int(t)) for t in s["tokens"]).encode())
+        h.update(f"|{s['v_class']},{s['j_class']},{s['v_start']},{s['v_end']},"
+                 f"{s['j_start']},{s['j_end']},{s['v_end'] - s['v_start']}\n".encode())
+    return h.hexdigest()
+
+
+def write_heldout_manifest(samples, path: str) -> str:
+    import gzip
+    with gzip.open(path, "wt") as f:
+        for s in samples:
+            f.write(json.dumps({"tokens": [int(t) for t in s["tokens"]],
+                                "v_class": s["v_class"], "j_class": s["j_class"],
+                                "v_start": s["v_start"], "v_end": s["v_end"],
+                                "j_start": s["j_start"], "j_end": s["j_end"]},
+                               sort_keys=True) + "\n")
+    return path
+
+
+def run_seed(seed, cfg, class_maps, heldout, *, replicate, train_steps, batch_size, lr,
+             overfit_batch, overfit_steps, device, dc_name) -> dict:
     tok = AAProteinTokenizer()
+    counters = {"overfit": Counter(), "train": Counter()}
 
-    def stream(sd):
-        return stream_aa_samples(n=None, seed=sd, class_maps=class_maps, tokenizer=tok,
-                                 max_len=cfg.max_seq_length, dc_name=dc_name, counter=counter)
-
-    # (a) capacity: overfit one DIVERSE batch
-    ob = _take(stream(seed * 7919 + 1), overfit_batch)
+    # (a) capacity: overfit one ACTIVELY DIVERSE batch, from this replicate's own seed range
+    torch.manual_seed(seed)
+    ob_range = _range_for("overfit", replicate)
+    ob, ob_info = collect_usable(**ob_range, want=overfit_batch, class_maps=class_maps,
+                                 tokenizer=tok, max_len=cfg.max_seq_length, dc_name=dc_name,
+                                 counter=counters["overfit"], select=diverse_selector())
     assert_batch_diverse(ob)
     obi, obt = collate_aa(ob, cfg.max_seq_length, device)
     overfit = overfit_one_batch(AAAlignAIR(cfg).to(device), obi, obt,
                                 steps=overfit_steps, lr=lr)
 
-    # (b) generalization: short train, then evaluate the FROZEN held-out set
+    # (b) generalization. RE-SEED first so this model's init does not depend on how much RNG the
+    # overfit run above consumed.
+    torch.manual_seed(seed + 10_000)
+    tr_range = _range_for("train", replicate)
+    train_samples, tr_info = collect_usable(**tr_range, want=train_steps * batch_size,
+                                            class_maps=class_maps, tokenizer=tok,
+                                            max_len=cfg.max_seq_length, dc_name=dc_name,
+                                            counter=counters["train"])
     model = AAAlignAIR(cfg).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    tr = stream(seed * 7919 + 100)
     model.train()
     losses = []
-    for _ in range(train_steps):
-        batch = _take(tr, batch_size)
-        if len(batch) < batch_size:
-            break
+    for i in range(train_steps):
+        batch = train_samples[i * batch_size:(i + 1) * batch_size]
         bi, bt = collate_aa(batch, cfg.max_seq_length, device)
         total, parts = aa_loss(model(bi), bt)
         losses.append({"total": float(total.detach()),
                        **{k: float(v.detach()) for k, v in parts.items()}})
         opt.zero_grad(); total.backward(); opt.step()
 
+    for c in counters.values():
+        check_counter(c)                       # generated == usable + rejections, per stream
+
     return {"overfit": {k: v for k, v in overfit.items() if k != "history"},
             "overfit_history_last": overfit["history"][-1],
             "train_loss_first": losses[0] if losses else None,
             "train_loss_last": losses[-1] if losses else None,
+            "seed_ranges": {"overfit": ob_info, "train": tr_info},
+            "counters": {k: dict(v) for k, v in counters.items()},
             "heldout": evaluate_frozen(model, heldout, cfg, class_maps,
                                        batch_size=batch_size, device=device)}
 
 
 def run_learning_proof(*, seeds=(0, 1, 2), heldout_size=4096, train_steps=3000, batch_size=64,
                        lr=1e-3, overfit_batch=32, overfit_steps=400, device="cpu",
-                       dc_name="HUMAN_IGH_OGRDB") -> dict:
+                       dc_name="HUMAN_IGH_OGRDB", manifest_path=None) -> dict:
     class_maps, meta = build_class_maps(dc_name)
     cfg = aa_igh_config(meta["n_v_classes"], meta["n_j_classes"])
-    counter = Counter()
     tok = AAProteinTokenizer()
 
-    # ONE frozen held-out set, disjoint from every training seed, evaluated in full
-    heldout = _take(stream_aa_samples(n=None, seed=987654321, class_maps=class_maps, tokenizer=tok,
-                                      max_len=cfg.max_seq_length, dc_name=dc_name, counter=counter),
-                    heldout_size)
+    # ONE held-out cohort from its own seed range, disjoint from every train/overfit range.
+    ho_counter = Counter()
+    heldout, ho_info = collect_usable(**_range_for("heldout"), want=heldout_size,
+                                      class_maps=class_maps, tokenizer=tok,
+                                      max_len=cfg.max_seq_length, dc_name=dc_name,
+                                      counter=ho_counter)
+    check_counter(ho_counter)
 
     per_seed = {}
-    for sd in seeds:
-        per_seed[str(sd)] = run_seed(sd, cfg, class_maps, heldout, train_steps=train_steps,
-                                     batch_size=batch_size, lr=lr, overfit_batch=overfit_batch,
-                                     overfit_steps=overfit_steps, device=device,
-                                     dc_name=dc_name, counter=counter)
+    for rep, sd in enumerate(seeds):
+        per_seed[str(sd)] = run_seed(sd, cfg, class_maps, heldout, replicate=rep,
+                                     train_steps=train_steps, batch_size=batch_size, lr=lr,
+                                     overfit_batch=overfit_batch, overfit_steps=overfit_steps,
+                                     device=device, dc_name=dc_name)
 
     ref_model = AAAlignAIR(cfg)
-    return {"schema": "alignair.aa.phase1.v1",
-            "provenance": provenance(cfg, class_maps, meta, ref_model),
-            "heldout_size": len(heldout),
-            "rejections": dict(counter),
-            "settings": {"seeds": list(seeds), "train_steps": train_steps,
-                         "batch_size": batch_size, "lr": lr, "overfit_batch": overfit_batch,
-                         "overfit_steps": overfit_steps, "device": device},
-            "seeds": per_seed}
+    out = {"schema": "alignair.aa.phase1.v2",
+           "provenance": provenance(cfg, class_maps, meta, ref_model),
+           "heldout_size": len(heldout),
+           "heldout_fingerprint": heldout_fingerprint(heldout),
+           "heldout_seed_range": ho_info,
+           "heldout_counters": dict(ho_counter),
+           "seed_ranges_declared": SEED_RANGES,
+           "settings": {"seeds": list(seeds), "train_steps": train_steps,
+                        "batch_size": batch_size, "lr": lr, "overfit_batch": overfit_batch,
+                        "overfit_steps": overfit_steps, "device": device},
+           "seeds": per_seed}
+    if manifest_path:
+        out["heldout_manifest"] = write_heldout_manifest(heldout, manifest_path)
+    return out
 ```
 
 ```python
@@ -1274,23 +1522,32 @@ def main() -> None:
     ap.add_argument("--overfit-steps", type=int, default=400)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--out", default="experiments/aa/phase1/proof.json")
+    ap.add_argument("--manifest", default="experiments/aa/phase1/heldout.jsonl.gz")
     args = ap.parse_args()
 
+    os.makedirs(os.path.dirname(args.out), exist_ok=True)
     r = run_learning_proof(seeds=tuple(args.seeds), heldout_size=args.heldout_size,
                            train_steps=args.train_steps, batch_size=args.batch_size, lr=args.lr,
                            overfit_batch=args.overfit_batch, overfit_steps=args.overfit_steps,
-                           device=args.device)
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
+                           device=args.device, manifest_path=args.manifest)
     with open(args.out, "w") as f:
         json.dump(r, f, indent=2, sort_keys=True)
-    # console summary (the full class maps live in the artifact, not the terminal)
+    # console summary (full class maps + manifest live in the artifact, not the terminal)
+    print(f"held-out {r['heldout_size']} reads  fingerprint {r['heldout_fingerprint'][:16]}…")
     for sd, s in sorted(r["seeds"].items()):
         c, b = s["heldout"]["classification"], s["heldout"]["boundaries"]
-        print(f"seed {sd}: V {c['v']['micro_acc']:.3f} (maj {c['v']['majority_baseline']:.3f}, "
-              f"macro {c['v']['macro_acc']:.3f})  J {c['j']['micro_acc']:.3f} "
-              f"(maj {c['j']['majority_baseline']:.3f})  "
-              + " ".join(f"{k} {b[k]['mae']:.2f}/{b[k]['constant_median_baseline_mae']:.2f}"
-                         for k in ("v_start", "v_end", "j_start", "j_end")))
+        for g in ("v", "j"):
+            lift = c[g]["paired_lift"]
+            print(f"  seed {sd} {g.upper()}: acc {c[g]['micro_acc']:.3f} "
+                  f"(macro {c[g]['macro_acc']:.3f}, maj {c[g]['majority_baseline']:.3f}) "
+                  f"lift {lift['mean']:+.3f} CI[{lift['ci95'][0]:+.3f},{lift['ci95'][1]:+.3f}] "
+                  f"{'PASS' if lift['lower_gt_zero'] and lift['mean'] >= 0.05 else 'FAIL'}")
+        for k in ("v_start", "v_end", "j_start", "j_end"):
+            imp = b[k]["paired_improvement"]
+            ok = imp["lower_gt_zero"] and b[k]["relative_reduction"] >= 0.10
+            print(f"  seed {sd} {k}: MAE {b[k]['mae']:.2f} vs const "
+                  f"{b[k]['constant_median_baseline_mae']:.2f} "
+                  f"({b[k]['relative_reduction']:+.1%}) {'PASS' if ok else 'FAIL'}")
     print(f"wrote {args.out}")
 
 
@@ -1327,16 +1584,19 @@ Expected: a per-seed summary line + the frozen artifact.
 
 - [ ] **Step 3: Evaluate the Phase-1 gate**
 
-Read `experiments/aa/phase1/proof.json` and check **every** criterion (record the real numbers; do not pre-judge):
+Read `experiments/aa/phase1/proof.json` and check **every** criterion against the **predeclared margins** (record the real numbers; do not pre-judge, and do not renegotiate the margins after seeing them):
 
-1. **Capacity:** overfit batch reaches ≥0.90 V *and* J class accuracy and <5-residue MAE on **all four** boundaries.
-2. **Classification beats prior:** held-out V and J micro accuracy exceed their majority baselines by a declared margin, with non-overlapping Wilson intervals.
-3. **Boundaries beat constant:** every one of the four boundary MAEs beats its constant-median baseline (`beats_baseline: true`).
-4. **Seed consistency:** results directionally consistent across all three seeds.
-5. **Not just allele priors:** coverage- and ambiguity-stratified V accuracy does not reveal that aggregate accuracy is carried by a few frequent classes (check `macro_acc` vs `micro_acc` and the strata).
-6. **Hygiene:** no NaNs, no empty batches, no masked endpoint targets, no silent truncations (`rejections` accounts for every generated record).
+| # | Criterion | Operational test | Type |
+|---|---|---|---|
+| 1 | **Capacity** | overfit `v_class_acc ≥ 0.90` **and** `j_class_acc ≥ 0.90`, and all four `*_mae < 5.0` | hard |
+| 2 | **Classification beats prior** | for V **and** J: `paired_lift.lower_gt_zero` **and** `paired_lift.mean ≥ 0.05` | hard |
+| 3 | **Boundaries beat constant** | for all four boundaries: `paired_improvement.lower_gt_zero` **and** `relative_reduction ≥ 0.10` | hard |
+| 4 | **Not just allele priors** | `macro_over_micro ≥ 0.5` for V and J | hard |
+| 5 | **Seed consistency** | criteria 1–4 hold for every seed, **and** max−min V `micro_acc` across seeds `≤ 0.10` | hard |
+| 6 | **Hygiene** | every stream: `generated == usable + Σrejections`; no NaN in any loss/metric; `heldout_fingerprint` present; replicate train ranges disjoint | hard |
+| 7 | **Coverage / ambiguity strata** | inspect `stratified.*` for pathologies | **diagnostic only** |
 
-**Gate:** proceed to Phase 1b only if 1–6 all hold. If classification beats baseline but boundaries do not (or vice versa), that is a partial result — record it as such rather than declaring success.
+**Gate:** proceed to Phase 1b only if criteria **1–6** all pass. Criterion 7 is reported and discussed but never auto-gates. If classification passes but boundaries fail (or vice versa), record **PARTIAL** — never round a partial result up to success.
 
 - [ ] **Step 4: Record the verdict and commit**
 
@@ -1365,6 +1625,13 @@ git commit -m "chore(aa): freeze Phase-1 learning-proof results + gate verdict"
 
 **Placeholder scan:** none — all code complete and runnable; all run steps have exact commands. Task 8's "record the real numbers" is the experimental output.
 
-**Type consistency:** `boundary_masks` → `start_mask`/`end_mask` emitted by `AAAlignAIR.forward`, consumed by `aa_loss` and nothing else. `record_to_sample` returns `(sample|None, reason|None)` — every caller (`stream_aa_samples`, tests) unpacks the tuple. Sample keys match `collate_aa`, whose target keys match `aa_loss`/`aa_eval_metrics`/`evaluate_frozen`. `build_class_maps` → `(class_maps, meta)` with `meta` keys used in `provenance` (`db_hash`, `quarantined_v/j`) and `aa_igh_config` (`n_v_classes`, `n_j_classes`). `evaluate_frozen` needs `class_maps` for ambiguity stratification — passed by `run_seed`. ✅
+**Type consistency:** `boundary_masks` → `start_mask`/`end_mask` emitted by `AAAlignAIR.forward`, consumed by `aa_loss` and nothing else. `record_to_sample` returns `(sample|None, reason|None)` — every caller (`collect_usable`, tests) unpacks the tuple. Sample keys match `collate_aa`, whose target keys match `aa_loss`/`aa_eval_metrics`/`evaluate_frozen`. `build_class_maps` → `(class_maps, meta)` with `meta` keys used in `provenance` (`db_hash`, `quarantined_v/j`) and `aa_igh_config` (`n_v_classes`, `n_j_classes`). `evaluate_frozen` needs `class_maps` for ambiguity stratification — passed by `run_seed`. ✅
 
-**Known limitation (recorded, not hidden):** the held-out set uses a disjoint *seed*, not clonal-lineage-based splitting. GenAIRR's plain stream models each read as an independent rearrangement, so leakage risk is limited to exact-duplicate VDJ+junction; true lineage-aware splitting is a Phase-2 requirement.
+**rev-3 review corrections addressed:**
+- **P1 seed overlap** → `SEED_RANGES` allocates provably disjoint, budgeted ranges (held-out 1e9, overfit 2e9+50M·rep, train 3e9+50M·rep with a 20M budget vs the ~1.4M records a 3000×64 run consumes); `collect_usable` raises `SeedBudgetExhausted` rather than returning short; each run records `[first_seed, last_seed]`; the generalization model is built after an explicit `torch.manual_seed(seed + 10_000)` re-seed. A unit test asserts pairwise range disjointness. ✅
+- **P2 invalid statistics** → `paired_diff_ci` replaces the independent-Wilson comparison as the gate statistic for both classification (`model_correct − majority_correct`) and boundaries (`constant_abs_err − model_abs_err`); Wilson is retained as descriptive only. Margins (≥5 pp lift, ≥10% relative MAE reduction, `macro_over_micro ≥ 0.5`, seed spread ≤ 0.10) are **predeclared** in Global Constraints and restated in the Task 8 table; strata are explicitly demoted to diagnostic. A test shows the paired test resolves an advantage that overlapping marginal intervals miss. ✅
+- **P3 fixture/validation** → the fixture is now 8 residues for 24 nt (a genuine terminal-endpoint case, asserting `j_end == 8 == len(tokens)`), and the adapter enforces `len(sequence_aa) == (len(sequence) − frame)//3` with the new `translation_length_mismatch` reason (verified 0/2965 violations on real records, so it rejects only malformed input). ✅
+- **P4 freezing/accounting** → `heldout_fingerprint` (SHA-256 over tokens, classes, four boundaries, coverage stratum) + optional gzipped manifest; **per-stream** counters (held-out / per-seed overfit / per-seed train) with `check_counter` asserting `generated == usable + Σrejections`. ✅
+- **Test fixes** → the self-comparing segmentation assertion now recomputes the four terms explicitly and checks the value equals their **mean** and *not* their sum; the overfit batch is built with `diverse_selector` (actively prioritizing unseen V/J classes) instead of taking the first N and hoping. ✅
+
+**Known limitation (recorded, not hidden):** the held-out cohort is drawn from a disjoint *seed range*, not a clonal-lineage split. GenAIRR's plain stream models each read as an independent rearrangement, so leakage is limited to exact-duplicate VDJ+junction; true lineage-aware splitting remains a Phase-2 requirement.
