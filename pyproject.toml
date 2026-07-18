@@ -40,6 +40,7 @@ dependencies = [
     "biopython>=1.80",
     "psutil>=5.8",
     "platformdirs>=3.0",     # per-OS cache/config locations (cross-platform, honors XDG/env overrides)
+    "tomli>=2; python_version < '3.11'",   # tomllib backport: runtime TOML registry-config reader on Python 3.10
 ]
 
 # ── Optional extras ──────────────────────────────────────────────────────────
@@ -82,7 +83,6 @@ server = [
 dev = [
     "AlignAIR[cli,train,viz,server]",
     "pytest>=7.0",
-    "tomli>=2.0; python_version < '3.11'",  # tomllib backport for the conda-recipe test on Python 3.10
     "build>=1.0",
     "twine>=5.0",
     "cibuildwheel>=2.21",  # build binary wheels (with the compiled germline-CIGAR kernel) locally

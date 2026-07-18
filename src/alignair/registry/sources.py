@@ -18,6 +18,11 @@ import json
 import os
 from urllib.parse import urljoin
 
+try:
+    import tomllib  # Python >= 3.11
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
+
 DEFAULT_REGISTRY = "hf://AlignAIR/AlignAIR-pretrained"
 _HF = "https://huggingface.co"
 
@@ -43,7 +48,6 @@ def _config_registries(config_path: str | None) -> list[str]:
     path = config_path or os.path.join(_config_dir(), "config.toml")
     if not os.path.exists(path):
         return []
-    import tomllib
     with open(path, "rb") as f:
         data = tomllib.load(f)
     regs = data.get("registries")
