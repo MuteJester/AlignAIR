@@ -132,11 +132,11 @@ const troubleshooting: DocPage = {
         Run without installing anything. Mount an input and output directory, and a named volume for the
         model cache so a downloaded <code>--model &lt;id&gt;</code> is not re-fetched on every run:
       </p>
-      <CodeBlock code={`docker run --rm \\\n  -v "$PWD:/data" -v alignair-cache:/home/appuser/.cache/alignair \\\n  thomask90/alignair:latest \\\n  predict --input /data/reads.fasta --out /data/out.tsv --model alignair-igh-human`} />
+      <CodeBlock code={`docker run --rm \\\n  -v "$PWD:/data" -v alignair-cache:/home/appuser/.cache/alignair \\\n  ghcr.io/mutejester/alignair:latest \\\n  predict --input /data/reads.fasta --out /data/out.tsv --model alignair-igh-human`} />
       <ul>
         <li><strong>Permission denied writing output.</strong> The image runs as a non-root user (uid 1000). Mount a writable output dir; add <code>--user $(id -u):$(id -g)</code> if your host uid differs.</li>
         <li><strong>Model re-downloads every run.</strong> Persist the cache with a volume mounted at <code>/home/appuser/.cache/alignair</code> (as above), or mount a local <code>.alignair</code> file and pass it as <code>--model</code>.</li>
-        <li><strong>Reproducibility.</strong> Pin a version tag (<code>thomask90/alignair:3.0.0</code>) rather than <code>latest</code>. The default image is CPU-only; <code>alignair doctor</code> inside it reports <code>derive_backend: cython</code> (the compiled fast kernel) and <code>parasail</code>.</li>
+        <li><strong>Reproducibility.</strong> Pin a version tag (<code>ghcr.io/mutejester/alignair:3.0.0</code>) rather than <code>latest</code>. The default image is CPU-only; <code>alignair doctor</code> inside it reports <code>derive_backend: cython</code> (the compiled fast kernel) and <code>parasail</code>.</li>
       </ul>
 
       <h2>Training</h2>

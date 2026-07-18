@@ -1,49 +1,194 @@
 name: Release
 
-# Tag a release (e.g. `git tag v3.0.0 && git push --tags`) to build + publish artifacts.
+# Tag a release (`git tag v3.0.0 && git push origin v3.0.0`) to build ONE authoritative artifact
+# set, test it, then publish those exact artifacts to TestPyPI, PyPI, GHCR, and a GitHub Release.
+#
+# Design notes:
+#  - PyPI/TestPyPI use Trusted Publishing (OIDC) via `id-token: write` + the `pypi`/`testpypi`
+#    GitHub environments. No PYPI_API_TOKEN.
+#  - Wheels + sdist are built once (build-wheels/build-sdist) and only downloaded — never rebuilt —
+#    by the publishing jobs.
+#  - The GitHub Release is created as a DRAFT before any irreversible publish, and flipped to
+#    published only after PyPI and GHCR both succeed. Cross-registry publication cannot be atomic;
+#    this minimizes visible partial releases.
+#  - The container tag strips the leading `v` (release tag v3.0.0 -> image :3.0.0), and the GHCR
+#    path is hardcoded lowercase (github.repository is mixed-case and GHCR requires lowercase).
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
-  packages: write
+
+env:
+  IMAGE: ghcr.io/mutejester/alignair
 
 jobs:
-  pypi:
+  # 1. Build the authoritative artifact set ONCE.
+  build-wheels:
+    name: wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-13, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  build-sdist:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: python -m pip install --upgrade pip build twine
-      - run: python -m build                       # sdist + wheel into dist/
-      - run: twine check dist/*
-      - name: Release smoke on the built wheel (doctor -> demo -> validate-airr -> compare)
-        run: |
-          python -m venv /tmp/relenv
-          /tmp/relenv/bin/pip install --upgrade pip
-          /tmp/relenv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
-          /tmp/relenv/bin/pip install "$(ls dist/*.whl)[cli]"
-          ALIGNAIR=/tmp/relenv/bin/alignair sh scripts/release_smoke.sh "$RUNNER_TEMP/rel_smoke"
-      - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}   # set this repo secret
-        run: twine upload dist/*
+          python-version: "3.12"
+      - run: pipx run build --sdist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: ./dist/*.tar.gz
 
-  docker:
+  # 2. Smoke-test one built wheel before any publication (doctor -> demo -> validate-airr -> compare).
+  smoke:
+    needs: [build-wheels]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build image locally
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-ubuntu-latest
+          path: dist
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the built wheel (+ CPU torch) and run the release smoke
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          WHEEL=$(ls dist/alignair-*-cp311-cp311-manylinux*_x86_64.whl | head -1)
+          test -n "$WHEEL"
+          pip install "${WHEEL}[cli]"
+          ALIGNAIR=$(command -v alignair) sh scripts/release_smoke.sh "$RUNNER_TEMP/rel_smoke"
+
+  # 3. Publish the exact artifacts to TestPyPI (OIDC). Reruns tolerate an identical upload.
+  testpypi:
+    needs: [smoke, build-sdist]
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
+          skip-existing: true
+
+  # 4. Install AlignAIR from TestPyPI (deps resolved safely from PyPI) and smoke it.
+  testpypi-smoke:
+    needs: [testpypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install from TestPyPI (AlignAIR) + PyPI (deps) and smoke
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            "AlignAIR[cli]==${VER}"
+          alignair --version
+          alignair doctor
+
+  # 5. Draft GitHub Release with all wheels + sdist + SHA-256 checksums (before any irreversible publish).
+  draft-release:
+    needs: [testpypi-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+      - name: Checksums
+        run: cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS.txt
+      - name: Create draft release with artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "AlignAIR $GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/*.whl dist/*.tar.gz dist/SHA256SUMS.txt
+
+  # 6a. Publish to PyPI (OIDC, protected environment) — the same artifacts, never rebuilt.
+  pypi:
+    needs: [draft-release]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  # 6b. Publish the container to GHCR — built once, smoke-tested, then pushed.
+  ghcr:
+    needs: [draft-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image version (strip leading v)
+        id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (load locally for smoke)
         uses: docker/build-push-action@v6
         with:
           context: .
           load: true
-          tags: alignair:rel
-      - name: Release smoke inside the container before pushing
+          tags: ${{ env.IMAGE }}:${{ steps.v.outputs.version }}
+      - name: Smoke inside the container before pushing
         run: |
           mkdir -p "$RUNNER_TEMP/rel_docker_smoke"
           docker run --rm \
@@ -52,18 +197,27 @@ jobs:
             -e HOME=/out \
             -v "$PWD/scripts:/scripts:ro" \
             -v "$RUNNER_TEMP/rel_docker_smoke:/out" \
-            alignair:rel /scripts/release_smoke.sh /out
+            ${{ env.IMAGE }}:${{ steps.v.outputs.version }} /scripts/release_smoke.sh /out
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push (tag + latest) — reuses the smoke-tested build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:latest
+      - name: Tag :latest and push both
+        run: |
+          docker tag ${{ env.IMAGE }}:${{ steps.v.outputs.version }} ${{ env.IMAGE }}:latest
+          docker push ${{ env.IMAGE }}:${{ steps.v.outputs.version }}
+          docker push ${{ env.IMAGE }}:latest
+
+  # 7. Flip the draft Release to published only after PyPI and GHCR both succeed.
+  publish-release:
+    needs: [pypi, ghcr]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest

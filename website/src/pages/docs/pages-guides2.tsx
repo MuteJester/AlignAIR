@@ -242,7 +242,7 @@ const integrations: DocPage = {
       <h2>Workflow engines</h2>
       <CodeBlock
         lang="groovy"
-        code={`process alignair {\n  container 'thomask90/alignair:3.0.0'\n  input:  path reads\n  output: path 'out.tsv'\n  script: 'alignair predict --input $reads --out out.tsv --model alignair-igh-human@1.0.0'\n}`}
+        code={`process alignair {\n  container 'ghcr.io/mutejester/alignair:3.0.0'\n  input:  path reads\n  output: path 'out.tsv'\n  script: 'alignair predict --input $reads --out out.tsv --model alignair-igh-human@1.0.0'\n}`}
       />
       <p>Pre-cache the model and mount the cache (or run with <code>--offline</code>) so the pipeline never fetches at run time.</p>
     </>
