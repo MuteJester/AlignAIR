@@ -1,28 +1,19 @@
-{% set name = "AlignAIR" %}
-{% set version = "3.0.0" %}   {# keep in sync with pyproject.toml [project].version #}
-{% set local_build = environ.get("ALIGNAIR_LOCAL_BUILD", "") %}
-
-# Bioconda recipe for AlignAIR. Submit to bioconda-recipes to unlock `conda install`
-# + BioContainers (the path to many Galaxy / nf-core deployments).
+# Local-source conda recipe. CI uses this to validate the build and run the smoke commands.
 #
-# PREREQUISITE: GenAIRR must be available on a conda channel (bioconda) before this
-# recipe can build/solve there — it is currently PyPI-only. Until then:
-#   * CI builds this recipe from the LOCAL source tree (ALIGNAIR_LOCAL_BUILD=1) to
-#     validate the recipe and run the test commands, and
-#   * the release process injects the real sdist hash via ALIGNAIR_SDIST_SHA256.
-
+# It is deliberately LITERAL - no top-level Jinja set-preamble and no environ access - so it renders
+# identically on conda-build's two rendering passes (the earlier dual-mode recipe relied on preamble
+# variables that the second pass drops, which broke `conda-build --output`).
+#
+# The PyPI-source recipe for an eventual Bioconda submission is separate work: Bioconda builds from a
+# published sdist (url + sha256), not a local path, and it also requires GenAIRR to be on a conda
+# channel first (it is PyPI-only today). Keep this file the local/CI recipe; add the Bioconda recipe
+# when submitting to bioconda-recipes. Keep `version` in sync with pyproject.toml [project].version.
 package:
   name: alignair
-  version: {{ version }}
+  version: "3.0.0"
 
 source:
-{% if local_build %}
   path: ..
-{% else %}
-  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
-  # filled at release time: `ALIGNAIR_SDIST_SHA256=$(sha256sum dist/*.tar.gz | cut -d' ' -f1)`
-  sha256: {{ environ.get("ALIGNAIR_SDIST_SHA256", "0000000000000000000000000000000000000000000000000000000000000000") }}
-{% endif %}
 
 build:
   noarch: python
@@ -39,7 +30,7 @@ requirements:
   run:
     - python >=3.10,<3.13
     - pytorch >=2.2
-    - genairr >=2.2.0          # NOTE: not yet on bioconda — submit/locate before this recipe lands
+    - genairr >=2.2.0          # NOTE: not yet on bioconda — submit/locate before a Bioconda recipe lands
     - numpy >=1.24
     - pandas >=1.5
     - scipy >=1.11
@@ -66,7 +57,7 @@ about:
   license: GPL-3.0-or-later
   license_file: LICENSE
   summary: End-to-end neural aligner for immunoglobulin (IG) and T-cell-receptor (TCR) V(D)J sequences, with standard AIRR output.
-  doc_url: https://github.com/MuteJester/AlignAIR
+  doc_url: https://mutejester.github.io/AlignAIR/
   dev_url: https://github.com/MuteJester/AlignAIR
 
 extra:

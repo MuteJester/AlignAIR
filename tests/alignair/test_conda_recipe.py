@@ -29,7 +29,7 @@ def test_recipe_deps_match_the_cli_dependency_story():
 
 def test_recipe_version_matches_pyproject():
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
-    assert f'set version = "{version}"' in META.read_text()
+    assert f'version: "{version}"' in META.read_text()
 
 
 def test_recipe_smoke_commands_present():
@@ -39,21 +39,18 @@ def test_recipe_smoke_commands_present():
     assert "alignair = alignair.cli:main" in text     # entry point
 
 
-def test_recipe_renders_for_both_source_modes():
+def test_recipe_is_literal_local_source_and_renders_stably():
+    """The recipe is literal / local-source (no top-level Jinja vars, no environ), so it renders the
+    same regardless of context - which is what makes conda-build's two-pass render robust."""
     jinja2 = pytest.importorskip("jinja2")
     import yaml
     tmpl = jinja2.Environment().from_string(META.read_text())
-
-    # default (release) mode -> PyPI url + sha placeholder/injected
-    released = yaml.safe_load(tmpl.render(environ={}, PYTHON="$PYTHON"))
-    assert "url" in released["source"] and "sha256" in released["source"]
-    assert released["package"]["name"] == "alignair"
-
-    # injected sha is honoured
-    inj = yaml.safe_load(tmpl.render(environ={"ALIGNAIR_SDIST_SHA256": "a" * 64}, PYTHON="$PYTHON"))
-    assert inj["source"]["sha256"] == "a" * 64
-
-    # local-build mode -> path source (what CI uses to build/test without a published sdist)
-    local = yaml.safe_load(tmpl.render(environ={"ALIGNAIR_LOCAL_BUILD": "1"}, PYTHON="$PYTHON"))
-    assert local["source"].get("path") == ".."
-    assert local["build"]["noarch"] == "python"
+    rendered = yaml.safe_load(tmpl.render(environ={}, PYTHON="$PYTHON"))
+    assert rendered["package"]["name"] == "alignair"
+    assert str(rendered["package"]["version"]) == "3.0.0"
+    assert rendered["source"].get("path") == ".."          # local source, no PyPI url / sha
+    assert "url" not in rendered["source"]
+    assert rendered["build"]["noarch"] == "python"
+    # rendering does not depend on environ (so both conda-build passes agree)
+    again = yaml.safe_load(tmpl.render(environ={"ALIGNAIR_LOCAL_BUILD": "", "X": "y"}, PYTHON="$PYTHON"))
+    assert again == rendered

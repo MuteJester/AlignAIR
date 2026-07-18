@@ -94,13 +94,12 @@ jobs:
           python-version: "3.11"
           channels: conda-forge,bioconda
           channel-priority: strict
-      - name: Validate the recipe renders (local-source mode)
-        env:
-          ALIGNAIR_LOCAL_BUILD: "1"
+      - name: Validate the recipe renders
         run: |
           conda install -y conda-build
           # `conda render` was removed from modern conda; `conda-build --output` renders the recipe
-          # (evaluates the Jinja + resolves the output path) without building it.
+          # (evaluates the Jinja + resolves the output path) without building it. The recipe is a
+          # literal, local-source recipe, so this renders identically on conda-build's two passes.
           conda-build conda/ --output
       - name: Conda-env runtime smoke (conda pytorch + pip install + tiny demo)
         run: |
