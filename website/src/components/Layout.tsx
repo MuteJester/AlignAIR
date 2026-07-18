@@ -28,7 +28,7 @@ function Navbar() {
         </Link>
 
         {/* Desktop Nav */}
-        <nav aria-label="Primary" style={{ display: "flex", alignItems: "center", gap: "6px" }} className="hidden md:flex">
+        <nav aria-label="Primary" style={{ alignItems: "center", gap: "6px" }} className="hidden md:flex">
           <NavLink
             to="/learn"
             className={({ isActive }) =>
@@ -208,11 +208,17 @@ function Footer() {
 }
 
 export default function Layout({ children }: { children: ReactNode }) {
+  const skipToMain = () => {
+    document.getElementById("main-content")?.focus({ preventScroll: false });
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "#fbfbfd" }}>
-      <a href="#main-content" className="skip-link">Skip to main content</a>
+      {/* HashRouter owns the URL fragment, so an href="#main-content" would destroy the current
+          route. Move focus directly instead and leave the route untouched. */}
+      <button type="button" onClick={skipToMain} className="skip-link">Skip to main content</button>
       <Navbar />
-      <main id="main-content" style={{ flex: 1 }}>{children}</main>
+      <main id="main-content" tabIndex={-1} style={{ flex: 1 }}>{children}</main>
       <Footer />
     </div>
   );

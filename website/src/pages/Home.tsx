@@ -145,6 +145,7 @@ export default function Home() {
 
       {/* Features */}
       <section className="mx-auto" style={{ maxWidth: "1200px", padding: "84px 28px 0" }}>
+        <h2 className="sr-only">Why use AlignAIR</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: "18px" }}>
           {features.map((f) => (
             <article key={f.num} style={{ background: "#fff", border: "1px solid #eae9f1", borderRadius: "14px", padding: "24px 22px 26px" }}>
@@ -219,7 +220,7 @@ export default function Home() {
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
                 Aligns human immunoglobulin heavy chains. Supports somatic hypermutations (SHM) and full-length V(D)J assembly. Limitations: junctions can jitter ~1-2 nt on heavy SHM; D-allele calls carry inherent biological ambiguity.
               </p>
-              <pre style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
+              <pre tabIndex={0} aria-label="Human IGH prediction command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
                 <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
               </pre>
             </div>
@@ -234,7 +235,7 @@ export default function Home() {
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
                 Multi-locus model for human IGK (Kappa) and IGL (Lambda) light chains. Automatically attributes reads to the correct locus. Limitations: no D segment is present (empty by design).
               </p>
-              <pre style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
+              <pre tabIndex={0} aria-label="Human IGK and IGL prediction command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
                 <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igkl-human
               </pre>
             </div>
@@ -249,7 +250,7 @@ export default function Home() {
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
                 Aligns human T-cell receptor beta chains. Trained with somatic hypermutation set to zero, since T cells do not hypermutate. Scope: this checkpoint covers the TRB locus only. Alpha, gamma and delta are not in the pretrained registry — they are not excluded by the architecture, so you can train a model for them from a TRA/TRG/TRD reference with <strong>alignair train</strong>.
               </p>
-              <pre style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
+              <pre tabIndex={0} aria-label="Human TRB prediction command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
                 <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-tcrb-human
               </pre>
             </div>
@@ -263,7 +264,7 @@ export default function Home() {
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
                 There is no pretrained model for other loci (like TCR Alpha/Gamma/Delta or IG Heavy/Light chains of non-human species). You must train a custom model using a built-in GenAIRR DataConfig or your own germline FASTA files.
               </p>
-              <pre style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
+              <pre tabIndex={0} aria-label="Custom reference training command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
                 <span style={{ color: "#9d9bb0" }}>$</span> alignair train --v-fasta v.fasta --d-fasta d.fasta --j-fasta j.fasta --chain-type BCR_HEAVY --out runs/my_ref
               </pre>
               <p style={{ margin: "12px 0 0 0", fontSize: "13.5px" }}>
@@ -302,7 +303,7 @@ export default function Home() {
               <span aria-hidden="true">{copied ? "Copied ✓" : "Copy"}</span>
             </button>
           </div>
-          <pre style={{ margin: 0, padding: "20px 18px", background: "#16151f", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13.5px", lineHeight: 2, color: "#e6e5f0", overflowX: "auto" }}>
+          <pre tabIndex={0} aria-label="Quick start commands" style={{ margin: 0, padding: "20px 18px", background: "#16151f", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13.5px", lineHeight: 2, color: "#e6e5f0", overflowX: "auto" }}>
             <span style={{ color: "#9d9bb0" }}>$</span> pip install <span style={{ color: "#b7f3d8" }}>"AlignAIR[cli]"</span>{"\n"}
             <span style={{ color: "#9d9bb0" }}>$</span> alignair doctor{"\n"}
             <span style={{ color: "#9d9bb0" }}>$</span> alignair demo
@@ -317,7 +318,7 @@ export default function Home() {
           <p style={{ margin: "8px 0 0", fontSize: "14.5px", color: "#56546a", lineHeight: 1.5 }}>
             To run alignment on your own data, view available models and pass your sequence file. You can download sample files from the repository's <a href="https://github.com/MuteJester/AlignAIR/tree/main/examples" target="_blank" rel="noreferrer" style={{ color: "#4a41c9", textDecoration: "underline", fontWeight: 600 }}>examples/</a> folder:
           </p>
-          <pre style={{ marginTop: "14px", padding: "16px 18px", background: "#16151f", border: "1px solid #24222f", borderRadius: "12px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", lineHeight: 1.8, color: "#e6e5f0", overflowX: "auto" }}>
+          <pre tabIndex={0} aria-label="Real sequence prediction commands" style={{ marginTop: "14px", padding: "16px 18px", background: "#16151f", border: "1px solid #24222f", borderRadius: "12px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", lineHeight: 1.8, color: "#e6e5f0", overflowX: "auto" }}>
             <span style={{ color: "#9d9bb0" }}>$</span> alignair models list{"\n"}
             <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
           </pre>
@@ -345,7 +346,7 @@ export default function Home() {
           </div>
           <div style={{ background: "#16151f", borderRadius: "16px", border: "1px solid #24222f", padding: "24px", overflow: "hidden" }}>
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#9d9bb0", display: "block", marginBottom: "12px" }}># Train model on a custom germline reference</span>
-            <pre style={{ margin: 0, fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", lineHeight: 1.8, color: "#e6e5f0", overflowX: "auto" }}>
+            <pre tabIndex={0} aria-label="Custom germline reference training command" style={{ margin: 0, fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", lineHeight: 1.8, color: "#e6e5f0", overflowX: "auto" }}>
               <span style={{ color: "#cfcde3" }}>alignair train \</span>{"\n"}
               <span style={{ color: "#cfcde3" }}>  --v-fasta v.fasta \</span>{"\n"}
               <span style={{ color: "#cfcde3" }}>  --d-fasta d.fasta \</span>{"\n"}

@@ -130,7 +130,7 @@ const fixedReference: Lesson = {
             You can constrain a run to a <strong>donor genotype</strong> — a subset of the model's reference — with no
             retraining. Calls are hard-restricted to that donor's alleles:
           </p>
-          <pre style={{ margin: "20px 0", padding: "16px", background: "#16151f", borderRadius: "12px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px", lineHeight: "1.85", color: "#e6e5f0", overflowX: "auto" }}>
+          <pre tabIndex={0} aria-label="AIRR output example" style={{ margin: "20px 0", padding: "16px", background: "#16151f", borderRadius: "12px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px", lineHeight: "1.85", color: "#e6e5f0", overflowX: "auto" }}>
             <code>{`alignair predict --input reads.fasta --out out.tsv \\\n  --model alignair-igh-human --genotype donor.yaml`}</code>
           </pre>
           <p>

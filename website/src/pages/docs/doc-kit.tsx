@@ -34,7 +34,12 @@ export function PageHeader({ title, lead }: { title: string; lead?: ReactNode })
 /** A styled table from a head row + body rows (cells may be strings or JSX). */
 export function DocTable({ head, rows }: { head: ReactNode[]; rows: ReactNode[][] }) {
   return (
-    <div className="aa-scrollbar my-6 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label="Scrollable data table"
+      className="aa-scrollbar my-6 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800"
+    >
       <table className="w-full border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/60">

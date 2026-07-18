@@ -43,6 +43,7 @@ export default function Learn() {
                   </p>
                   <div
                     role="progressbar"
+                    aria-label={`${t.title} track progress`}
                     aria-valuenow={pct}
                     aria-valuemin={0}
                     aria-valuemax={100}

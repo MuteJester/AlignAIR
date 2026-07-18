@@ -50,6 +50,7 @@ function McqStep({
         </div>
         <div
           role="progressbar"
+          aria-label={`${lessonTitle} lesson progress`}
           aria-valuenow={stepPct}
           aria-valuemin={0}
           aria-valuemax={100}
@@ -389,6 +390,7 @@ export default function LessonPlayer({ lesson }: { lesson: Lesson }) {
         </div>
         <div
           role="progressbar"
+          aria-label={`${lesson.title} lesson progress`}
           aria-valuenow={stepPct}
           aria-valuemin={0}
           aria-valuemax={100}

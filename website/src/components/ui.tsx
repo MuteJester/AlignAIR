@@ -156,7 +156,11 @@ export function CodeBlock({
           <span aria-hidden="true">{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
-      <pre className="aa-scrollbar overflow-x-auto p-4 text-sm leading-relaxed">
+      <pre
+        tabIndex={0}
+        aria-label={`${title ?? lang} code example`}
+        className="aa-scrollbar overflow-x-auto p-4 text-sm leading-relaxed"
+      >
         <code className="font-mono">{code}</code>
       </pre>
     </div>

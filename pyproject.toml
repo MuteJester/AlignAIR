@@ -126,6 +126,11 @@ build-frontend = "build"
 # each runner builds its native arch (macos-13 -> x86_64, macos-14 -> arm64, etc.) so the compiled
 # kernel can be imported + tested in-place. Verify it actually loaded in every built wheel (the smoke
 # test loads the .so directly, so it needs no heavy runtime deps like torch).
+# Preinstall a frozen, binary-only scientific stack before cibuildwheel installs AlignAIR. Without
+# this, a future SciPy/Pandas release can drop an older manylinux tag, making pip attempt an unrelated
+# source build inside the wheel-test container (which has no OpenBLAS) even though AlignAIR's wheel
+# itself built correctly. The release smoke later tests normal dependency resolution independently.
+before-test = "python -m pip install --only-binary=:all: -r {package}/constraints/cibuildwheel-test.txt"
 test-command = "python {project}/tests/wheel_smoke.py"
 
 # ── Pytest configuration ────────────────────────────────────────────────────
