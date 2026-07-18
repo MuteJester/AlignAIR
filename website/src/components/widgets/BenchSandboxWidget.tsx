@@ -193,8 +193,11 @@ export function BenchSandboxWidget() {
         Measured point estimates from a frozen 2,600-case human-IGH benchmark, 200 cases per stratum. Verdicts come from
         a paired-case bootstrap with a Bonferroni-corrected 95% interval - &ldquo;not significant&rdquo; means the
         interval spans zero, so the visible gap is not yet a real difference. Strata are discrete generated regimes, not
-        points on a length axis; nothing is interpolated between them. Reproduce with{" "}
-        <code style={{ color: "#4238c4" }}>alignair benchmark</code>.
+        points on a length axis; nothing is interpolated between them. This IgBLAST head-to-head is produced by the{" "}
+        <code style={{ color: "#4238c4" }}>alignair_benchmark</code> harness (build the cases, evaluate each tool, then
+        compare) - the built-in <code style={{ color: "#4238c4" }}>alignair benchmark</code> command is a separate,
+        AlignAIR-only self-check on four strata. The frozen report, config, and exact commands are in{" "}
+        <code style={{ color: "#4238c4" }}>benchmarks/bench_v2/</code>.
       </p>
     </div>
   );

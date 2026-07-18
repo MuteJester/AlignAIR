@@ -1,0 +1,3211 @@
+{
+  "artifact": {
+    "kind": "benchmark_manifest",
+    "schema_name": "alignair.benchmark.benchmark_manifest.v0.1",
+    "schema_version": "0.1"
+  },
+  "benchmark": {
+    "case_id_first": "human_igh_ogrdb_broad:clean_full:000000",
+    "case_id_last": "human_igh_ogrdb_broad:orientation:000199",
+    "input_frame": "presented",
+    "n_cases": 2600,
+    "sequence_id_policy": "sequence_id equals benchmark case_id",
+    "strata": {
+      "amplicon_fr1": 200,
+      "amplicon_fr2": 200,
+      "amplicon_janchor": 200,
+      "amplicon_janchor_rc": 200,
+      "amplicon_jxshort": 200,
+      "clean_full": 200,
+      "hard_full": 200,
+      "high_indel": 200,
+      "high_shm": 200,
+      "moderate_full": 200,
+      "noisy_ambiguous": 200,
+      "orientation": 200,
+      "trimmed": 200
+    }
+  },
+  "coordinate_conventions": {
+    "airr_prediction_inputs": "AIRR-style prediction starts are converted from 1-based by adapters",
+    "case_jsonl": "0-based starts, end-exclusive sequence coordinates"
+  },
+  "coverage": {
+    "alleles": {
+      "d": {
+        "max_count": 162,
+        "mean_count": 95.84848484848484,
+        "min_count": 64,
+        "n_observed": 33
+      },
+      "j": {
+        "max_count": 394,
+        "mean_count": 374.42857142857144,
+        "min_count": 357,
+        "n_observed": 7
+      },
+      "v": {
+        "max_count": 75,
+        "mean_count": 27.196969696969695,
+        "min_count": 9,
+        "n_observed": 198
+      }
+    },
+    "by_stratum": {
+      "amplicon_fr1": 200,
+      "amplicon_fr2": 200,
+      "amplicon_janchor": 200,
+      "amplicon_janchor_rc": 200,
+      "amplicon_jxshort": 200,
+      "clean_full": 200,
+      "hard_full": 200,
+      "high_indel": 200,
+      "high_shm": 200,
+      "moderate_full": 200,
+      "noisy_ambiguous": 200,
+      "orientation": 200,
+      "trimmed": 200
+    },
+    "length": {
+      "max": 420,
+      "mean": 261.8242307692308,
+      "min": 44
+    },
+    "multi_call_cases": {
+      "d": 513,
+      "j": 18,
+      "v": 821
+    },
+    "n_cases": 2600,
+    "orientation": {
+      "0": 2250,
+      "1": 250,
+      "2": 50,
+      "3": 50
+    }
+  },
+  "created_at_utc": "2026-07-08T20:18:50.190029Z",
+  "files": {
+    "airr_input_tsv": ".private/bench_v2/igh_airr_input.tsv",
+    "fasta": ".private/bench_v2/igh.fasta",
+    "manifest": ".private/bench_v2/igh_manifest.json"
+  },
+  "generation": {
+    "dataconfig_name": "HUMAN_IGH_OGRDB",
+    "genairr_feature_validation": {
+      "errors": [],
+      "n_features": 22,
+      "statuses": {
+        "integrated": 13,
+        "partial": 8,
+        "planned": 1
+      },
+      "valid": true
+    },
+    "genairr_features": [
+      {
+        "benchmark_surface": [
+          "StratumSpec.progress",
+          "stratum param_overrides"
+        ],
+        "genairr_entry_points": [
+          "Experiment.on",
+          "Experiment.recombine"
+        ],
+        "name": "vdj_recombination",
+        "notes": "Core record generation path for all benchmark cases.",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "productive_only_clean",
+          "productive_only param override"
+        ],
+        "genairr_entry_points": [
+          "Experiment.productive_only"
+        ],
+        "name": "productive_only",
+        "notes": "",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "mutation_rate",
+          "mutation_count",
+          "high_shm strata"
+        ],
+        "genairr_entry_points": [
+          "Experiment.mutate"
+        ],
+        "name": "s5f_mutation",
+        "notes": "Benchmark can use rate or explicit count distributions through stratum params.",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "trimmed",
+          "extreme_end_loss",
+          "end_loss_5/end_loss_3 overrides"
+        ],
+        "genairr_entry_points": [
+          "Experiment.end_loss_5prime",
+          "Experiment.end_loss_3prime"
+        ],
+        "name": "end_loss_trimming",
+        "notes": "",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "high_indel",
+          "high_indel_extreme",
+          "indel_count overrides"
+        ],
+        "genairr_entry_points": [
+          "Experiment.polymerase_indels"
+        ],
+        "name": "polymerase_indels",
+        "notes": "",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "seq_error_rate",
+          "noisy_ambiguous",
+          "ambiguous_n_extreme"
+        ],
+        "genairr_entry_points": [
+          "Experiment.sequencing_errors"
+        ],
+        "name": "sequencing_errors",
+        "notes": "",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "ambiguous_count",
+          "noisy_ambiguous",
+          "ambiguous_n_extreme"
+        ],
+        "genairr_entry_points": [
+          "Experiment.ambiguous_base_calls"
+        ],
+        "name": "ambiguous_base_calls",
+        "notes": "",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "forced_d_inversion",
+          "invert_d_prob override"
+        ],
+        "genairr_entry_points": [
+          "Experiment.invert_d"
+        ],
+        "name": "d_inversion",
+        "notes": "",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "receptor_revision",
+          "receptor_revision_prob override"
+        ],
+        "genairr_entry_points": [
+          "Experiment.receptor_revision"
+        ],
+        "name": "receptor_revision",
+        "notes": "",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "contaminant",
+          "contaminate_prob override"
+        ],
+        "genairr_entry_points": [
+          "Experiment.contaminate"
+        ],
+        "name": "contamination",
+        "notes": "",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "paired_end",
+          "read_layout coverage labels"
+        ],
+        "genairr_entry_points": [
+          "Experiment.paired_end"
+        ],
+        "name": "paired_end_reads",
+        "notes": "",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "adaptive_igh_strata",
+          "apply_benchmark_crop"
+        ],
+        "genairr_entry_points": [
+          "GenAIRR AIRR coordinates"
+        ],
+        "name": "adaptive_anchor_amplicons",
+        "notes": "Benchmark-side crop policy models FR/J anchored amplicons while preserving GenAIRR truth.",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "orientation_ids",
+          "presented_genes",
+          "presented labels"
+        ],
+        "genairr_entry_points": [
+          "GenAIRR forward AIRR records"
+        ],
+        "name": "deterministic_orientation_transforms",
+        "notes": "Orientation is applied after GenAIRR so canonical and presented truth are both retained.",
+        "status": "integrated"
+      },
+      {
+        "benchmark_surface": [
+          "strict_sampling param override"
+        ],
+        "genairr_entry_points": [
+          "stream_records(strict=...)",
+          "run_records(strict=...)"
+        ],
+        "name": "strict_sampling",
+        "notes": "Generation can request strict stream sampling; CI-level record validation remains planned.",
+        "status": "partial"
+      },
+      {
+        "benchmark_surface": [
+          "segment_rates/v_subregion_rates param overrides"
+        ],
+        "genairr_entry_points": [
+          "Experiment.mutate(segment_rates=...)",
+          "Experiment.mutate(v_subregion_rates=...)"
+        ],
+        "name": "segment_targeted_mutation",
+        "notes": "Supported by the shared experiment builder; dedicated assay strata are still planned.",
+        "status": "partial"
+      },
+      {
+        "benchmark_surface": [
+          "pcr_error_rate/pcr_error_count param overrides"
+        ],
+        "genairr_entry_points": [
+          "Experiment.pcr_amplify"
+        ],
+        "name": "pcr_substitution_errors",
+        "notes": "Supported by the shared experiment builder; dedicated PCR-error strata are still planned.",
+        "status": "partial"
+      },
+      {
+        "benchmark_surface": [
+          "metadata param override"
+        ],
+        "genairr_entry_points": [
+          "Experiment.with_metadata"
+        ],
+        "name": "metadata_stamping",
+        "notes": "Supported as a param pass-through; subject/cohort metadata recipes are still planned.",
+        "status": "partial"
+      },
+      {
+        "benchmark_surface": [
+          "restrict_alleles param override",
+          "rare allele and missing allele strata"
+        ],
+        "genairr_entry_points": [
+          "Experiment.restrict_alleles"
+        ],
+        "name": "allele_restriction",
+        "notes": "Builder pass-through exists; curated rare/missing-allele assay strata are still planned.",
+        "status": "partial"
+      },
+      {
+        "benchmark_surface": [
+          "genotype_seed/genotype_subject_id param overrides",
+          "genotype_subject_spec"
+        ],
+        "genairr_entry_points": [
+          "Experiment.with_genotype",
+          "Experiment.run_cohort"
+        ],
+        "name": "genotype_and_cohort_sampling",
+        "notes": "Single-subject genotype strata are available; true run_cohort orchestration remains planned.",
+        "status": "partial"
+      },
+      {
+        "benchmark_surface": [
+          "clone-aware benchmark recipes"
+        ],
+        "genairr_entry_points": [
+          "Experiment.clonal_repertoire",
+          "Experiment.clonal_lineage"
+        ],
+        "name": "clonal_repertoire_and_lineage",
+        "notes": "",
+        "status": "planned"
+      },
+      {
+        "benchmark_surface": [
+          "validate_records param override",
+          "validate_stratum_records"
+        ],
+        "genairr_entry_points": [
+          "run_records(validate_records=True)",
+          "SimulationResult.validate_records"
+        ],
+        "name": "record_validation_gate",
+        "notes": "Available for bounded generation/preflight; large streaming builds still default to zero-overhead streaming.",
+        "status": "partial"
+      },
+      {
+        "benchmark_surface": [
+          "multi_locus_specs"
+        ],
+        "genairr_entry_points": [
+          "GenAIRR.data"
+        ],
+        "name": "multi_locus_configs",
+        "notes": "Per-DataConfig locus probes are available; unified cross-locus reporting remains planned.",
+        "status": "partial"
+      }
+    ],
+    "generation_report": {
+      "profile": {
+        "acceptance_rate": 1.0,
+        "accepted_cases": 2600,
+        "candidates_per_second": 2516.149235987582,
+        "cases_per_second": 2516.149235987582,
+        "generated_candidates": 2600,
+        "mode": "fixed_size",
+        "n_cases": 2600,
+        "parallel": true,
+        "wall_time_seconds": 1.0333250360563397,
+        "workers": 8
+      },
+      "specs": [
+        {
+          "dataconfig_name": "HUMAN_IGH_OGRDB",
+          "description": "Broad GenAIRR human IGH benchmark for end-to-end alignment tools.",
+          "name": "human_igh_ogrdb_broad",
+          "seed": 123,
+          "strata": [
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "Near-naive full-length reads with minimal corruption.",
+              "n": 200,
+              "name": "clean_full",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {
+                "ambiguous_count": [
+                  0,
+                  0
+                ],
+                "crop_prob": 0.0,
+                "end_loss_3": [
+                  0,
+                  0
+                ],
+                "end_loss_5": [
+                  0,
+                  0
+                ],
+                "indel_count": [
+                  0,
+                  0
+                ],
+                "invert_d_prob": 0.0,
+                "mutation_rate": 0.005,
+                "seq_error_rate": 0.0
+              },
+              "progress": 0.0,
+              "seed_offset": 0,
+              "tags": [
+                "full",
+                "clean"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "Moderate SHM/trimming/noise without forced crop.",
+              "n": 200,
+              "name": "moderate_full",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {},
+              "progress": 0.5,
+              "seed_offset": 0,
+              "tags": [
+                "full",
+                "moderate"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "Hard full-read corruption regime.",
+              "n": 200,
+              "name": "hard_full",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {},
+              "progress": 1.0,
+              "seed_offset": 0,
+              "tags": [
+                "full",
+                "hard"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "FR1 5'-primer amplicon (~120bp; V 5' retained, D/J trimmed off).",
+              "n": 200,
+              "name": "amplicon_fr1",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {
+                "end_loss_3": [
+                  255,
+                  255
+                ],
+                "end_loss_5": [
+                  0,
+                  0
+                ]
+              },
+              "progress": 0.5,
+              "seed_offset": 0,
+              "tags": [
+                "amplicon",
+                "fr1",
+                "short"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "FR2-primer amplicon (~115bp; V mid-region).",
+              "n": 200,
+              "name": "amplicon_fr2",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {
+                "end_loss_3": [
+                  180,
+                  180
+                ],
+                "end_loss_5": [
+                  85,
+                  85
+                ]
+              },
+              "progress": 0.5,
+              "seed_offset": 0,
+              "tags": [
+                "amplicon",
+                "fr2",
+                "short"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "3'/J-primer amplicon (~120bp; D + J retained, V trimmed).",
+              "n": 200,
+              "name": "amplicon_janchor",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {
+                "end_loss_3": [
+                  0,
+                  0
+                ],
+                "end_loss_5": [
+                  255,
+                  255
+                ]
+              },
+              "progress": 0.5,
+              "seed_offset": 0,
+              "tags": [
+                "amplicon",
+                "j_anchored",
+                "short"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "Extreme 3' amplicon (~70bp; D + J retained).",
+              "n": 200,
+              "name": "amplicon_jxshort",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {
+                "end_loss_3": [
+                  0,
+                  0
+                ],
+                "end_loss_5": [
+                  300,
+                  300
+                ]
+              },
+              "progress": 0.5,
+              "seed_offset": 0,
+              "tags": [
+                "amplicon",
+                "j_anchored",
+                "extreme",
+                "short"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "J-anchored amplicon in reverse-complement orientation.",
+              "n": 200,
+              "name": "amplicon_janchor_rc",
+              "orientation_ids": [
+                1
+              ],
+              "param_overrides": {
+                "end_loss_3": [
+                  0,
+                  0
+                ],
+                "end_loss_5": [
+                  255,
+                  255
+                ]
+              },
+              "progress": 0.5,
+              "seed_offset": 0,
+              "tags": [
+                "amplicon",
+                "j_anchored",
+                "short",
+                "orientation"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "High SHM stress, full reads retained.",
+              "n": 200,
+              "name": "high_shm",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {
+                "crop_prob": 0.0,
+                "mutation_rate": 0.2
+              },
+              "progress": 1.0,
+              "seed_offset": 0,
+              "tags": [
+                "full",
+                "shm"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "Polymerase indel stress.",
+              "n": 200,
+              "name": "high_indel",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {
+                "crop_prob": 0.0,
+                "indel_count": [
+                  3,
+                  8
+                ]
+              },
+              "progress": 0.8,
+              "seed_offset": 0,
+              "tags": [
+                "full",
+                "indel"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "Sequencing-error and ambiguous-base stress.",
+              "n": 200,
+              "name": "noisy_ambiguous",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {
+                "ambiguous_count": [
+                  4,
+                  12
+                ],
+                "crop_prob": 0.0,
+                "seq_error_rate": 0.04
+              },
+              "progress": 0.8,
+              "seed_offset": 0,
+              "tags": [
+                "full",
+                "noise",
+                "ambiguous"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "5-prime/3-prime end-loss stress.",
+              "n": 200,
+              "name": "trimmed",
+              "orientation_ids": [
+                0
+              ],
+              "param_overrides": {
+                "crop_prob": 0.0,
+                "end_loss_3": [
+                  12,
+                  40
+                ],
+                "end_loss_5": [
+                  12,
+                  40
+                ]
+              },
+              "progress": 0.8,
+              "seed_offset": 0,
+              "tags": [
+                "full",
+                "trim"
+              ]
+            },
+            {
+              "anchor": null,
+              "crop_to": null,
+              "description": "Clean records cycled through all four orientation transforms.",
+              "n": 200,
+              "name": "orientation",
+              "orientation_ids": [
+                0,
+                1,
+                2,
+                3
+              ],
+              "param_overrides": {
+                "ambiguous_count": [
+                  0,
+                  0
+                ],
+                "crop_prob": 0.0,
+                "end_loss_3": [
+                  0,
+                  0
+                ],
+                "end_loss_5": [
+                  0,
+                  0
+                ],
+                "indel_count": [
+                  0,
+                  0
+                ],
+                "invert_d_prob": 0.0,
+                "mutation_rate": 0.005,
+                "seq_error_rate": 0.0
+              },
+              "progress": 0.0,
+              "seed_offset": 0,
+              "tags": [
+                "orientation"
+              ]
+            }
+          ],
+          "version": "0.1"
+        }
+      ]
+    },
+    "measurement_scenario_validation": {
+      "errors": [
+        "coordinate_and_orientation: strata missing from spec ['adaptive_fr3_revcomp', 'all_orientations_hard']",
+        "segmentation_and_boundaries: strata missing from spec ['fragment_120', 'fragment_50', 'fragment_80']",
+        "junction_and_np_recovery: strata missing from spec ['fragment_120', 'fragment_50', 'fragment_80', 'ultra_short_fragment_40']",
+        "shm_isolation: strata missing from spec ['high_shm_extreme']",
+        "indel_isolation: strata missing from spec ['high_indel_extreme']",
+        "noise_and_ambiguity_isolation: strata missing from spec ['ambiguous_n_extreme']",
+        "edit_state_labels: strata missing from spec ['ambiguous_n_extreme', 'high_indel_extreme', 'high_shm_extreme']",
+        "end_loss_and_layout: strata missing from spec ['extreme_end_loss', 'paired_end']",
+        "adaptive_fragment_observability: strata missing from spec ['adaptive_fr1', 'adaptive_fr2', 'adaptive_fr3', 'adaptive_fr3_revcomp', 'adaptive_janchor']",
+        "d_inversion: strata missing from spec ['forced_d_inversion']",
+        "receptor_revision: strata missing from spec ['receptor_revision']",
+        "contaminant_handling: strata missing from spec ['contaminant']",
+        "productivity_and_frame: strata missing from spec ['productive_only_clean']"
+      ],
+      "n_represented_criteria": 40,
+      "n_required_contexts": 71,
+      "n_scenarios": 18,
+      "statuses": {
+        "coverage_planned": 5,
+        "integrated": 13,
+        "planned": 0
+      },
+      "valid": false
+    },
+    "measurement_scenarios": [
+      {
+        "controlled_variables": [
+          "no forced contamination",
+          "no forced read-layout transform"
+        ],
+        "criteria": [
+          "airr_schema_completeness",
+          "prediction_completeness"
+        ],
+        "genairr_features": [
+          "vdj_recombination",
+          "metadata_stamping"
+        ],
+        "isolated_variables": [
+          "valid GenAIRR AIRR record contract"
+        ],
+        "metric_keys": [
+          "required_field_presence",
+          "optional_field_presence",
+          "parseable_airr_rate",
+          "found_rate",
+          "missing_call_rate",
+          "missing_coordinate_rate"
+        ],
+        "name": "airr_contract_baseline",
+        "notes": "Baseline records make output-contract failures visible before stress slices are interpreted.",
+        "required_coverage_labels": [
+          "stratum:clean_full",
+          "stratum:moderate_full",
+          "stratum:hard_full"
+        ],
+        "scenario_axes": [
+          "difficulty_stratum",
+          "locus_chain"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "clean_full",
+          "moderate_full",
+          "hard_full"
+        ]
+      },
+      {
+        "controlled_variables": [
+          "canonical GenAIRR truth retained separately from presented truth"
+        ],
+        "criteria": [
+          "coordinate_convention_compliance",
+          "orientation_detection"
+        ],
+        "genairr_features": [
+          "deterministic_orientation_transforms"
+        ],
+        "isolated_variables": [
+          "presented read orientation"
+        ],
+        "metric_keys": [
+          "coordinate_parse_rate",
+          "coordinate_frame_error_rate",
+          "off_by_one_rate",
+          "orientation_acc"
+        ],
+        "name": "coordinate_and_orientation",
+        "notes": "",
+        "required_coverage_labels": [
+          "orientation:identity",
+          "orientation:reverse_complement",
+          "orientation:complement",
+          "orientation:reverse"
+        ],
+        "scenario_axes": [
+          "orientation",
+          "segment_presence"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "orientation",
+          "all_orientations_hard",
+          "adaptive_fr3_revcomp"
+        ]
+      },
+      {
+        "controlled_variables": [
+          "allele truth derived from the same GenAIRR record used for labels"
+        ],
+        "criteria": [
+          "per_position_region_tags",
+          "in_sequence_boundaries",
+          "segment_length_and_order",
+          "germline_boundaries"
+        ],
+        "genairr_features": [
+          "vdj_recombination",
+          "end_loss_trimming",
+          "adaptive_anchor_amplicons"
+        ],
+        "isolated_variables": [
+          "V/D/J region and boundary localization"
+        ],
+        "metric_keys": [
+          "region_acc",
+          "region_macro_f1",
+          "region_per_class_recall",
+          "region_pad_recall",
+          "region_pad_f1",
+          "region_pre_recall",
+          "region_pre_f1",
+          "region_v_recall",
+          "region_v_f1",
+          "region_n1_recall",
+          "region_n1_f1",
+          "region_d_recall",
+          "region_d_f1",
+          "region_n2_recall",
+          "region_n2_f1",
+          "region_j_recall",
+          "region_j_f1",
+          "region_post_recall",
+          "region_post_f1",
+          "ss_exact",
+          "se_exact",
+          "ss_within1",
+          "se_within1",
+          "ss_within3",
+          "se_within3",
+          "ss_within10",
+          "se_within10",
+          "ss_mae",
+          "se_mae",
+          "seq_span_iou",
+          "segment_length_mae",
+          "vdj_order_valid",
+          "overlap_rate",
+          "negative_span_rate",
+          "gs_exact",
+          "ge_exact",
+          "gs_within1",
+          "ge_within1",
+          "gs_within3",
+          "ge_within3",
+          "gs_within10",
+          "ge_within10",
+          "gs_mae",
+          "ge_mae"
+        ],
+        "name": "segmentation_and_boundaries",
+        "notes": "",
+        "required_coverage_labels": [
+          "segment_presence:all_segments_visible",
+          "segment_presence:short_v_tail"
+        ],
+        "scenario_axes": [
+          "difficulty_stratum",
+          "length",
+          "segment_presence",
+          "orientation"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "clean_full",
+          "moderate_full",
+          "trimmed",
+          "fragment_120",
+          "fragment_80",
+          "fragment_50"
+        ]
+      },
+      {
+        "controlled_variables": [
+          "short-read windows are junction-centered unless explicitly adaptive-anchored"
+        ],
+        "criteria": [
+          "junction_and_np_regions",
+          "junction_sequence_and_translation",
+          "np_and_p_nucleotide_recovery"
+        ],
+        "genairr_features": [
+          "vdj_recombination"
+        ],
+        "isolated_variables": [
+          "junction/CDR3 and N/P-addition annotation"
+        ],
+        "metric_keys": [
+          "junction_start_mae",
+          "junction_end_mae",
+          "n1_length_mae",
+          "n2_length_mae",
+          "cdr3_overlap_iou",
+          "junction_nt_exact",
+          "junction_aa_exact",
+          "junction_length_mae",
+          "junction_aa_length_mae",
+          "np1_exact",
+          "np2_exact",
+          "np1_length_mae",
+          "np2_length_mae",
+          "p_region_length_mae"
+        ],
+        "name": "junction_and_np_recovery",
+        "notes": "",
+        "required_coverage_labels": [
+          "junction_length:short_junction",
+          "junction_length:typical_junction",
+          "junction_length:long_junction"
+        ],
+        "scenario_axes": [
+          "junction_biology",
+          "length",
+          "segment_presence"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "clean_full",
+          "fragment_120",
+          "fragment_80",
+          "fragment_50",
+          "ultra_short_fragment_40"
+        ]
+      },
+      {
+        "controlled_variables": [
+          "end loss",
+          "indels",
+          "sequencing/PCR noise",
+          "fragment crop"
+        ],
+        "criteria": [
+          "allele_top1_call",
+          "mutation_site_detection",
+          "regional_shm_profile",
+          "mutation_noise_indel_scalars",
+          "segment_identity_and_support"
+        ],
+        "genairr_features": [
+          "s5f_mutation",
+          "segment_targeted_mutation"
+        ],
+        "isolated_variables": [
+          "somatic hypermutation burden"
+        ],
+        "metric_keys": [
+          "call_top1_in_set",
+          "shm_site_precision",
+          "shm_site_recall",
+          "shm_site_f1",
+          "false_shm_from_noise_rate",
+          "fwr1_mutation_count_mae",
+          "cdr1_mutation_count_mae",
+          "fwr2_mutation_count_mae",
+          "cdr2_mutation_count_mae",
+          "fwr3_mutation_count_mae",
+          "mutation_rate_mae",
+          "noise_count_mae",
+          "indel_count_mae",
+          "identity_mae",
+          "support_rank_corr",
+          "score_rank_corr"
+        ],
+        "name": "shm_isolation",
+        "notes": "",
+        "required_coverage_labels": [
+          "mutation:12-18%",
+          "mutation:>18%",
+          "tag:shm"
+        ],
+        "scenario_axes": [
+          "mutation_burden",
+          "allele_ambiguity"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "high_shm",
+          "high_shm_extreme"
+        ]
+      },
+      {
+        "controlled_variables": [
+          "SHM",
+          "sequencing/PCR noise",
+          "end loss",
+          "fragment crop"
+        ],
+        "criteria": [
+          "alignment_path_and_cigar",
+          "indel_event_detection",
+          "mutation_noise_indel_scalars"
+        ],
+        "genairr_features": [
+          "polymerase_indels"
+        ],
+        "isolated_variables": [
+          "polymerase insertion/deletion burden"
+        ],
+        "metric_keys": [
+          "cigar_exact",
+          "cigar_edit_distance",
+          "alignment_column_f1",
+          "gap_event_f1",
+          "indel_event_precision",
+          "indel_event_recall",
+          "indel_event_f1",
+          "indel_length_mae",
+          "mutation_rate_mae",
+          "noise_count_mae",
+          "indel_count_mae"
+        ],
+        "name": "indel_isolation",
+        "notes": "",
+        "required_coverage_labels": [
+          "indel:3-5",
+          "indel:>5",
+          "tag:indel"
+        ],
+        "scenario_axes": [
+          "indel_burden",
+          "length"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "high_indel",
+          "high_indel_extreme"
+        ]
+      },
+      {
+        "controlled_variables": [
+          "SHM",
+          "indels",
+          "end loss",
+          "fragment crop"
+        ],
+        "criteria": [
+          "ambiguous_base_handling",
+          "mutation_noise_indel_scalars",
+          "mutation_site_detection"
+        ],
+        "genairr_features": [
+          "sequencing_errors",
+          "ambiguous_base_calls",
+          "pcr_substitution_errors"
+        ],
+        "isolated_variables": [
+          "sequencing/PCR error and N-base burden"
+        ],
+        "metric_keys": [
+          "n_base_boundary_mae",
+          "n_base_call_acc",
+          "n_base_state_acc",
+          "mutation_rate_mae",
+          "noise_count_mae",
+          "indel_count_mae",
+          "shm_site_precision",
+          "shm_site_recall",
+          "shm_site_f1",
+          "false_shm_from_noise_rate"
+        ],
+        "name": "noise_and_ambiguity_isolation",
+        "notes": "",
+        "required_coverage_labels": [
+          "noise:3-8",
+          "noise:>8",
+          "tag:noise",
+          "tag:ambiguous"
+        ],
+        "scenario_axes": [
+          "noise_burden",
+          "mutation_burden"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "noisy_ambiguous",
+          "ambiguous_n_extreme"
+        ]
+      },
+      {
+        "controlled_variables": "single-variable extreme strata isolate each edit-state driver",
+        "criteria": [
+          "per_position_edit_state"
+        ],
+        "genairr_features": [
+          "s5f_mutation",
+          "polymerase_indels",
+          "sequencing_errors",
+          "ambiguous_base_calls"
+        ],
+        "isolated_variables": [
+          "per-position germline/substitution/insertion/deletion state classes"
+        ],
+        "metric_keys": [
+          "state_acc",
+          "state_macro_f1",
+          "state_per_class_recall",
+          "state_germline_recall",
+          "state_germline_f1",
+          "state_substitution_recall",
+          "state_substitution_f1",
+          "state_insertion_recall",
+          "state_insertion_f1",
+          "state_deletion_recall",
+          "state_deletion_f1",
+          "substitution_precision",
+          "substitution_recall",
+          "substitution_f1",
+          "insertion_precision",
+          "insertion_recall",
+          "insertion_f1",
+          "deletion_precision",
+          "deletion_recall",
+          "deletion_f1"
+        ],
+        "name": "edit_state_labels",
+        "notes": "",
+        "required_coverage_labels": [
+          "tag:shm",
+          "tag:indel",
+          "tag:noise",
+          "mutation:>18%",
+          "indel:>5",
+          "noise:>8"
+        ],
+        "scenario_axes": [
+          "mutation_burden",
+          "indel_burden",
+          "noise_burden"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "high_shm_extreme",
+          "high_indel_extreme",
+          "ambiguous_n_extreme",
+          "hard_full"
+        ]
+      },
+      {
+        "controlled_variables": "SHM/noise/indels controlled in focused end-loss and paired-end strata",
+        "criteria": [
+          "trim_recovery",
+          "read_layout_and_end_loss"
+        ],
+        "genairr_features": [
+          "end_loss_trimming",
+          "paired_end_reads"
+        ],
+        "isolated_variables": [
+          "read-end loss",
+          "read layout"
+        ],
+        "metric_keys": [
+          "trim_5_mae",
+          "trim_3_mae",
+          "r1_r2_coordinate_consistency",
+          "end_loss_boundary_mae",
+          "layout_specific_call_acc"
+        ],
+        "name": "end_loss_and_layout",
+        "notes": "",
+        "required_coverage_labels": [
+          "tag:trim",
+          "read_layout:paired_end"
+        ],
+        "scenario_axes": [
+          "read_layout",
+          "segment_presence",
+          "length"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "trimmed",
+          "extreme_end_loss",
+          "paired_end"
+        ]
+      },
+      {
+        "controlled_variables": "GenAIRR full truth retained so scoring can distinguish model error from unobservability",
+        "criteria": [
+          "set_valued_allele_call",
+          "graceful_degradation",
+          "fragment_observability",
+          "allele_uncertainty_calibration",
+          "boundary_uncertainty_calibration"
+        ],
+        "genairr_features": [
+          "adaptive_anchor_amplicons"
+        ],
+        "isolated_variables": [
+          "observable evidence loss from adaptive-style amplicons"
+        ],
+        "metric_keys": [
+          "call_set_precision",
+          "call_set_recall",
+          "call_set_f1",
+          "call_exact_set",
+          "set_size_mae",
+          "truth_set_size",
+          "pred_set_size",
+          "overcall_rate",
+          "undercall_rate",
+          "graceful_abstain",
+          "graceful_useful",
+          "graceful_hard_error",
+          "graceful_non_error",
+          "observable_gene_acc",
+          "observable_set_recall",
+          "unobservable_set_width",
+          "allele_ece",
+          "allele_brier",
+          "set_coverage_at_95",
+          "mean_set_size_at_95",
+          "boundary_ece",
+          "boundary_coverage_at_95",
+          "mean_boundary_width_at_95"
+        ],
+        "name": "adaptive_fragment_observability",
+        "notes": "",
+        "required_coverage_labels": [
+          "tag:adaptive",
+          "tag:fr1",
+          "tag:fr2",
+          "tag:fr3",
+          "tag:j_anchored"
+        ],
+        "scenario_axes": [
+          "allele_ambiguity",
+          "segment_presence",
+          "length"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "adaptive_fr1",
+          "adaptive_fr2",
+          "adaptive_fr3",
+          "adaptive_janchor",
+          "adaptive_fr3_revcomp"
+        ]
+      },
+      {
+        "controlled_variables": [
+          "SHM",
+          "indels",
+          "noise",
+          "end loss",
+          "fragment crop"
+        ],
+        "criteria": [
+          "d_orientation_and_inversion"
+        ],
+        "genairr_features": [
+          "d_inversion"
+        ],
+        "isolated_variables": [
+          "D-segment inversion"
+        ],
+        "metric_keys": [
+          "d_inversion_acc",
+          "inverted_d_call_acc",
+          "inverted_d_germline_mae"
+        ],
+        "name": "d_inversion",
+        "notes": "",
+        "required_coverage_labels": [
+          "d_orientation:inverted",
+          "tag:d_inversion"
+        ],
+        "scenario_axes": [
+          "d_orientation"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "forced_d_inversion"
+        ]
+      },
+      {
+        "controlled_variables": [
+          "SHM",
+          "indels",
+          "noise",
+          "end loss",
+          "fragment crop"
+        ],
+        "criteria": [
+          "receptor_revision_cases"
+        ],
+        "genairr_features": [
+          "receptor_revision"
+        ],
+        "isolated_variables": [
+          "receptor revision-like V replacement"
+        ],
+        "metric_keys": [
+          "revision_case_call_acc",
+          "revision_case_boundary_mae",
+          "revision_flag_acc"
+        ],
+        "name": "receptor_revision",
+        "notes": "",
+        "required_coverage_labels": [
+          "revision:yes",
+          "tag:receptor_revision"
+        ],
+        "scenario_axes": [
+          "difficulty_stratum"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "receptor_revision"
+        ]
+      },
+      {
+        "controlled_variables": "all receptor-specific corruption is irrelevant after contaminant replacement",
+        "criteria": [
+          "contaminant_and_out_of_scope_handling"
+        ],
+        "genairr_features": [
+          "contamination"
+        ],
+        "isolated_variables": [
+          "invalid/contaminant input sequence"
+        ],
+        "metric_keys": [
+          "contaminant_no_call_rate",
+          "contaminant_handled_rate",
+          "contaminant_flag_acc",
+          "false_positive_alignment_rate",
+          "out_of_locus_call_rate"
+        ],
+        "name": "contaminant_handling",
+        "notes": "",
+        "required_coverage_labels": [
+          "contaminant:yes",
+          "tag:contaminant"
+        ],
+        "scenario_axes": [
+          "input_validity"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "contaminant"
+        ]
+      },
+      {
+        "controlled_variables": "productive-only positive control plus coverage-accepted negative classes",
+        "criteria": [
+          "productive_status",
+          "frame_and_stop_codon"
+        ],
+        "genairr_features": [
+          "productive_only",
+          "vdj_recombination"
+        ],
+        "isolated_variables": [
+          "productive/frame/stop-codon class"
+        ],
+        "metric_keys": [
+          "productive_acc",
+          "vj_in_frame_acc",
+          "stop_codon_acc",
+          "junction_aa_exact"
+        ],
+        "name": "productivity_and_frame",
+        "notes": "GenAIRR has a productive-only constraint; nonproductive subclasses are isolated by coverage acceptance.",
+        "required_coverage_labels": [
+          "productivity:yes",
+          "productivity:no",
+          "junction_frame:in_frame",
+          "junction_frame:out_of_frame",
+          "junction_frame:stop_codon"
+        ],
+        "scenario_axes": [
+          "productivity",
+          "junction_biology"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": [
+          "productive_only_clean",
+          "clean_full",
+          "hard_full"
+        ]
+      },
+      {
+        "controlled_variables": "coverage planning can require per-reference allele and allele/context counts",
+        "criteria": [
+          "gene_level_call",
+          "sibling_allele_resolution",
+          "topk_candidate_recall",
+          "rare_allele_coverage"
+        ],
+        "genairr_features": [
+          "allele_restriction",
+          "vdj_recombination"
+        ],
+        "isolated_variables": [
+          "truth allele identity and candidate recall"
+        ],
+        "metric_keys": [
+          "gene_top1_in_set",
+          "same_gene_sibling_top1",
+          "one_snp_sibling_margin",
+          "sibling_set_recall",
+          "top1_recall",
+          "top3_recall",
+          "top5_recall",
+          "top10_recall",
+          "topk_truth_set_recall",
+          "rare_allele_call_acc",
+          "per_allele_min_recall",
+          "missing_reference_alleles"
+        ],
+        "name": "allele_coverage_and_candidates",
+        "notes": "",
+        "required_coverage_labels": [
+          "measurement:allele_coverage_and_candidates",
+          "ambiguity:any_multi",
+          "ambiguity:all_single"
+        ],
+        "scenario_axes": [
+          "allele_frequency",
+          "genotype_size",
+          "allele_ambiguity"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": [
+          "clean_full",
+          "moderate_full",
+          "hard_full",
+          "high_shm"
+        ]
+      },
+      {
+        "controlled_variables": "current default GenAIRR IGH records often lack C calls; readiness reports this explicitly",
+        "criteria": [
+          "constant_region_call"
+        ],
+        "genairr_features": [
+          "vdj_recombination"
+        ],
+        "isolated_variables": [
+          "constant-region truth availability"
+        ],
+        "metric_keys": [
+          "c_call_acc",
+          "c_gene_acc",
+          "c_found_rate"
+        ],
+        "name": "constant_region",
+        "notes": "",
+        "required_coverage_labels": [
+          "constant_region:present",
+          "constant_region:absent"
+        ],
+        "scenario_axes": [
+          "read_layout"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": [
+          "clean_full",
+          "moderate_full",
+          "hard_full"
+        ]
+      },
+      {
+        "controlled_variables": "same scoring contract across IGH/IGK/IGL/TCR configs",
+        "criteria": [
+          "locus_and_chain_support"
+        ],
+        "genairr_features": [
+          "multi_locus_configs"
+        ],
+        "isolated_variables": [
+          "locus and D/no-D chain type"
+        ],
+        "metric_keys": [
+          "locus_acc",
+          "has_d_routing_acc",
+          "chain_type_acc"
+        ],
+        "name": "multi_locus_chain",
+        "notes": "",
+        "required_coverage_labels": [
+          "measurement:multi_locus_chain"
+        ],
+        "scenario_axes": [
+          "locus_chain"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": []
+      },
+      {
+        "controlled_variables": "same query distribution across full-reference and restricted-genotype runs",
+        "criteria": [
+          "genotype_mask_compliance",
+          "runtime_and_memory"
+        ],
+        "genairr_features": [
+          "genotype_and_cohort_sampling",
+          "allele_restriction"
+        ],
+        "isolated_variables": [
+          "candidate genotype size and cohort-specific allele support"
+        ],
+        "metric_keys": [
+          "outside_genotype_call_rate",
+          "genotype_restricted_call_acc",
+          "genotype_speedup",
+          "reads_per_second",
+          "seconds_per_read",
+          "milliseconds_per_read",
+          "peak_memory_mb",
+          "peak_memory_delta_mb",
+          "python_tracemalloc_peak_mb",
+          "candidate_count",
+          "rerank_count"
+        ],
+        "name": "genotype_masked_inference",
+        "notes": "",
+        "required_coverage_labels": [
+          "measurement:genotype_masked_inference"
+        ],
+        "scenario_axes": [
+          "genotype_size",
+          "allele_frequency"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": []
+      }
+    ],
+    "spec": {
+      "dataconfig_name": "HUMAN_IGH_OGRDB",
+      "description": "Broad GenAIRR human IGH benchmark for end-to-end alignment tools.",
+      "name": "human_igh_ogrdb_broad",
+      "seed": 123,
+      "strata": [
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "Near-naive full-length reads with minimal corruption.",
+          "n": 200,
+          "name": "clean_full",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {
+            "ambiguous_count": [
+              0,
+              0
+            ],
+            "crop_prob": 0.0,
+            "end_loss_3": [
+              0,
+              0
+            ],
+            "end_loss_5": [
+              0,
+              0
+            ],
+            "indel_count": [
+              0,
+              0
+            ],
+            "invert_d_prob": 0.0,
+            "mutation_rate": 0.005,
+            "seq_error_rate": 0.0
+          },
+          "progress": 0.0,
+          "seed_offset": 0,
+          "tags": [
+            "full",
+            "clean"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "Moderate SHM/trimming/noise without forced crop.",
+          "n": 200,
+          "name": "moderate_full",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {},
+          "progress": 0.5,
+          "seed_offset": 0,
+          "tags": [
+            "full",
+            "moderate"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "Hard full-read corruption regime.",
+          "n": 200,
+          "name": "hard_full",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {},
+          "progress": 1.0,
+          "seed_offset": 0,
+          "tags": [
+            "full",
+            "hard"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "FR1 5'-primer amplicon (~120bp; V 5' retained, D/J trimmed off).",
+          "n": 200,
+          "name": "amplicon_fr1",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {
+            "end_loss_3": [
+              255,
+              255
+            ],
+            "end_loss_5": [
+              0,
+              0
+            ]
+          },
+          "progress": 0.5,
+          "seed_offset": 0,
+          "tags": [
+            "amplicon",
+            "fr1",
+            "short"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "FR2-primer amplicon (~115bp; V mid-region).",
+          "n": 200,
+          "name": "amplicon_fr2",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {
+            "end_loss_3": [
+              180,
+              180
+            ],
+            "end_loss_5": [
+              85,
+              85
+            ]
+          },
+          "progress": 0.5,
+          "seed_offset": 0,
+          "tags": [
+            "amplicon",
+            "fr2",
+            "short"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "3'/J-primer amplicon (~120bp; D + J retained, V trimmed).",
+          "n": 200,
+          "name": "amplicon_janchor",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {
+            "end_loss_3": [
+              0,
+              0
+            ],
+            "end_loss_5": [
+              255,
+              255
+            ]
+          },
+          "progress": 0.5,
+          "seed_offset": 0,
+          "tags": [
+            "amplicon",
+            "j_anchored",
+            "short"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "Extreme 3' amplicon (~70bp; D + J retained).",
+          "n": 200,
+          "name": "amplicon_jxshort",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {
+            "end_loss_3": [
+              0,
+              0
+            ],
+            "end_loss_5": [
+              300,
+              300
+            ]
+          },
+          "progress": 0.5,
+          "seed_offset": 0,
+          "tags": [
+            "amplicon",
+            "j_anchored",
+            "extreme",
+            "short"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "J-anchored amplicon in reverse-complement orientation.",
+          "n": 200,
+          "name": "amplicon_janchor_rc",
+          "orientation_ids": [
+            1
+          ],
+          "param_overrides": {
+            "end_loss_3": [
+              0,
+              0
+            ],
+            "end_loss_5": [
+              255,
+              255
+            ]
+          },
+          "progress": 0.5,
+          "seed_offset": 0,
+          "tags": [
+            "amplicon",
+            "j_anchored",
+            "short",
+            "orientation"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "High SHM stress, full reads retained.",
+          "n": 200,
+          "name": "high_shm",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {
+            "crop_prob": 0.0,
+            "mutation_rate": 0.2
+          },
+          "progress": 1.0,
+          "seed_offset": 0,
+          "tags": [
+            "full",
+            "shm"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "Polymerase indel stress.",
+          "n": 200,
+          "name": "high_indel",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {
+            "crop_prob": 0.0,
+            "indel_count": [
+              3,
+              8
+            ]
+          },
+          "progress": 0.8,
+          "seed_offset": 0,
+          "tags": [
+            "full",
+            "indel"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "Sequencing-error and ambiguous-base stress.",
+          "n": 200,
+          "name": "noisy_ambiguous",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {
+            "ambiguous_count": [
+              4,
+              12
+            ],
+            "crop_prob": 0.0,
+            "seq_error_rate": 0.04
+          },
+          "progress": 0.8,
+          "seed_offset": 0,
+          "tags": [
+            "full",
+            "noise",
+            "ambiguous"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "5-prime/3-prime end-loss stress.",
+          "n": 200,
+          "name": "trimmed",
+          "orientation_ids": [
+            0
+          ],
+          "param_overrides": {
+            "crop_prob": 0.0,
+            "end_loss_3": [
+              12,
+              40
+            ],
+            "end_loss_5": [
+              12,
+              40
+            ]
+          },
+          "progress": 0.8,
+          "seed_offset": 0,
+          "tags": [
+            "full",
+            "trim"
+          ]
+        },
+        {
+          "anchor": null,
+          "crop_to": null,
+          "description": "Clean records cycled through all four orientation transforms.",
+          "n": 200,
+          "name": "orientation",
+          "orientation_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "param_overrides": {
+            "ambiguous_count": [
+              0,
+              0
+            ],
+            "crop_prob": 0.0,
+            "end_loss_3": [
+              0,
+              0
+            ],
+            "end_loss_5": [
+              0,
+              0
+            ],
+            "indel_count": [
+              0,
+              0
+            ],
+            "invert_d_prob": 0.0,
+            "mutation_rate": 0.005,
+            "seq_error_rate": 0.0
+          },
+          "progress": 0.0,
+          "seed_offset": 0,
+          "tags": [
+            "orientation"
+          ]
+        }
+      ],
+      "version": "0.1"
+    }
+  },
+  "manifest_version": "0.1",
+  "measurement_coverage": {
+    "by_measurement": {
+      "adaptive_fragment_observability": 1000,
+      "airr_contract_baseline": 600,
+      "allele_coverage_and_candidates": 2600,
+      "constant_region": 2600,
+      "coordinate_and_orientation": 2600,
+      "d_inversion": 116,
+      "edit_state_labels": 1752,
+      "end_loss_and_layout": 200,
+      "indel_isolation": 589,
+      "junction_and_np_recovery": 2600,
+      "noise_and_ambiguity_isolation": 1181,
+      "productivity_and_frame": 2600,
+      "segmentation_and_boundaries": 2053,
+      "shm_isolation": 1862
+    },
+    "explicit_by_measurement": {},
+    "n_cases": 2600,
+    "n_scenarios": 18,
+    "n_unmapped_cases": 0,
+    "scenarios": [
+      {
+        "criteria": [
+          "airr_schema_completeness",
+          "prediction_completeness"
+        ],
+        "metric_keys": [
+          "required_field_presence",
+          "optional_field_presence",
+          "parseable_airr_rate",
+          "found_rate",
+          "missing_call_rate",
+          "missing_coordinate_rate"
+        ],
+        "n_cases": 600,
+        "n_explicit_cases": 0,
+        "name": "airr_contract_baseline",
+        "required_coverage_labels": [
+          "stratum:clean_full",
+          "stratum:moderate_full",
+          "stratum:hard_full"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "clean_full",
+          "moderate_full",
+          "hard_full"
+        ]
+      },
+      {
+        "criteria": [
+          "coordinate_convention_compliance",
+          "orientation_detection"
+        ],
+        "metric_keys": [
+          "coordinate_parse_rate",
+          "coordinate_frame_error_rate",
+          "off_by_one_rate",
+          "orientation_acc"
+        ],
+        "n_cases": 2600,
+        "n_explicit_cases": 0,
+        "name": "coordinate_and_orientation",
+        "required_coverage_labels": [
+          "orientation:identity",
+          "orientation:reverse_complement",
+          "orientation:complement",
+          "orientation:reverse"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "orientation",
+          "all_orientations_hard",
+          "adaptive_fr3_revcomp"
+        ]
+      },
+      {
+        "criteria": [
+          "per_position_region_tags",
+          "in_sequence_boundaries",
+          "segment_length_and_order",
+          "germline_boundaries"
+        ],
+        "metric_keys": [
+          "region_acc",
+          "region_macro_f1",
+          "region_per_class_recall",
+          "region_pad_recall",
+          "region_pad_f1",
+          "region_pre_recall",
+          "region_pre_f1",
+          "region_v_recall",
+          "region_v_f1",
+          "region_n1_recall",
+          "region_n1_f1",
+          "region_d_recall",
+          "region_d_f1",
+          "region_n2_recall",
+          "region_n2_f1",
+          "region_j_recall",
+          "region_j_f1",
+          "region_post_recall",
+          "region_post_f1",
+          "ss_exact",
+          "se_exact",
+          "ss_within1",
+          "se_within1",
+          "ss_within3",
+          "se_within3",
+          "ss_within10",
+          "se_within10",
+          "ss_mae",
+          "se_mae",
+          "seq_span_iou",
+          "segment_length_mae",
+          "vdj_order_valid",
+          "overlap_rate",
+          "negative_span_rate",
+          "gs_exact",
+          "ge_exact",
+          "gs_within1",
+          "ge_within1",
+          "gs_within3",
+          "ge_within3",
+          "gs_within10",
+          "ge_within10",
+          "gs_mae",
+          "ge_mae"
+        ],
+        "n_cases": 2053,
+        "n_explicit_cases": 0,
+        "name": "segmentation_and_boundaries",
+        "required_coverage_labels": [
+          "segment_presence:all_segments_visible",
+          "segment_presence:short_v_tail"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "clean_full",
+          "moderate_full",
+          "trimmed",
+          "fragment_120",
+          "fragment_80",
+          "fragment_50"
+        ]
+      },
+      {
+        "criteria": [
+          "junction_and_np_regions",
+          "junction_sequence_and_translation",
+          "np_and_p_nucleotide_recovery"
+        ],
+        "metric_keys": [
+          "junction_start_mae",
+          "junction_end_mae",
+          "n1_length_mae",
+          "n2_length_mae",
+          "cdr3_overlap_iou",
+          "junction_nt_exact",
+          "junction_aa_exact",
+          "junction_length_mae",
+          "junction_aa_length_mae",
+          "np1_exact",
+          "np2_exact",
+          "np1_length_mae",
+          "np2_length_mae",
+          "p_region_length_mae"
+        ],
+        "n_cases": 2600,
+        "n_explicit_cases": 0,
+        "name": "junction_and_np_recovery",
+        "required_coverage_labels": [
+          "junction_length:short_junction",
+          "junction_length:typical_junction",
+          "junction_length:long_junction"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "clean_full",
+          "fragment_120",
+          "fragment_80",
+          "fragment_50",
+          "ultra_short_fragment_40"
+        ]
+      },
+      {
+        "criteria": [
+          "allele_top1_call",
+          "mutation_site_detection",
+          "regional_shm_profile",
+          "mutation_noise_indel_scalars",
+          "segment_identity_and_support"
+        ],
+        "metric_keys": [
+          "call_top1_in_set",
+          "shm_site_precision",
+          "shm_site_recall",
+          "shm_site_f1",
+          "false_shm_from_noise_rate",
+          "fwr1_mutation_count_mae",
+          "cdr1_mutation_count_mae",
+          "fwr2_mutation_count_mae",
+          "cdr2_mutation_count_mae",
+          "fwr3_mutation_count_mae",
+          "mutation_rate_mae",
+          "noise_count_mae",
+          "indel_count_mae",
+          "identity_mae",
+          "support_rank_corr",
+          "score_rank_corr"
+        ],
+        "n_cases": 1862,
+        "n_explicit_cases": 0,
+        "name": "shm_isolation",
+        "required_coverage_labels": [
+          "mutation:12-18%",
+          "mutation:>18%",
+          "tag:shm"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "high_shm",
+          "high_shm_extreme"
+        ]
+      },
+      {
+        "criteria": [
+          "alignment_path_and_cigar",
+          "indel_event_detection",
+          "mutation_noise_indel_scalars"
+        ],
+        "metric_keys": [
+          "cigar_exact",
+          "cigar_edit_distance",
+          "alignment_column_f1",
+          "gap_event_f1",
+          "indel_event_precision",
+          "indel_event_recall",
+          "indel_event_f1",
+          "indel_length_mae",
+          "mutation_rate_mae",
+          "noise_count_mae",
+          "indel_count_mae"
+        ],
+        "n_cases": 589,
+        "n_explicit_cases": 0,
+        "name": "indel_isolation",
+        "required_coverage_labels": [
+          "indel:3-5",
+          "indel:>5",
+          "tag:indel"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "high_indel",
+          "high_indel_extreme"
+        ]
+      },
+      {
+        "criteria": [
+          "ambiguous_base_handling",
+          "mutation_noise_indel_scalars",
+          "mutation_site_detection"
+        ],
+        "metric_keys": [
+          "n_base_boundary_mae",
+          "n_base_call_acc",
+          "n_base_state_acc",
+          "mutation_rate_mae",
+          "noise_count_mae",
+          "indel_count_mae",
+          "shm_site_precision",
+          "shm_site_recall",
+          "shm_site_f1",
+          "false_shm_from_noise_rate"
+        ],
+        "n_cases": 1181,
+        "n_explicit_cases": 0,
+        "name": "noise_and_ambiguity_isolation",
+        "required_coverage_labels": [
+          "noise:3-8",
+          "noise:>8",
+          "tag:noise",
+          "tag:ambiguous"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "noisy_ambiguous",
+          "ambiguous_n_extreme"
+        ]
+      },
+      {
+        "criteria": [
+          "per_position_edit_state"
+        ],
+        "metric_keys": [
+          "state_acc",
+          "state_macro_f1",
+          "state_per_class_recall",
+          "state_germline_recall",
+          "state_germline_f1",
+          "state_substitution_recall",
+          "state_substitution_f1",
+          "state_insertion_recall",
+          "state_insertion_f1",
+          "state_deletion_recall",
+          "state_deletion_f1",
+          "substitution_precision",
+          "substitution_recall",
+          "substitution_f1",
+          "insertion_precision",
+          "insertion_recall",
+          "insertion_f1",
+          "deletion_precision",
+          "deletion_recall",
+          "deletion_f1"
+        ],
+        "n_cases": 1752,
+        "n_explicit_cases": 0,
+        "name": "edit_state_labels",
+        "required_coverage_labels": [
+          "tag:shm",
+          "tag:indel",
+          "tag:noise",
+          "mutation:>18%",
+          "indel:>5",
+          "noise:>8"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "high_shm_extreme",
+          "high_indel_extreme",
+          "ambiguous_n_extreme",
+          "hard_full"
+        ]
+      },
+      {
+        "criteria": [
+          "trim_recovery",
+          "read_layout_and_end_loss"
+        ],
+        "metric_keys": [
+          "trim_5_mae",
+          "trim_3_mae",
+          "r1_r2_coordinate_consistency",
+          "end_loss_boundary_mae",
+          "layout_specific_call_acc"
+        ],
+        "n_cases": 200,
+        "n_explicit_cases": 0,
+        "name": "end_loss_and_layout",
+        "required_coverage_labels": [
+          "tag:trim",
+          "read_layout:paired_end"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "trimmed",
+          "extreme_end_loss",
+          "paired_end"
+        ]
+      },
+      {
+        "criteria": [
+          "set_valued_allele_call",
+          "graceful_degradation",
+          "fragment_observability",
+          "allele_uncertainty_calibration",
+          "boundary_uncertainty_calibration"
+        ],
+        "metric_keys": [
+          "call_set_precision",
+          "call_set_recall",
+          "call_set_f1",
+          "call_exact_set",
+          "set_size_mae",
+          "truth_set_size",
+          "pred_set_size",
+          "overcall_rate",
+          "undercall_rate",
+          "graceful_abstain",
+          "graceful_useful",
+          "graceful_hard_error",
+          "graceful_non_error",
+          "observable_gene_acc",
+          "observable_set_recall",
+          "unobservable_set_width",
+          "allele_ece",
+          "allele_brier",
+          "set_coverage_at_95",
+          "mean_set_size_at_95",
+          "boundary_ece",
+          "boundary_coverage_at_95",
+          "mean_boundary_width_at_95"
+        ],
+        "n_cases": 1000,
+        "n_explicit_cases": 0,
+        "name": "adaptive_fragment_observability",
+        "required_coverage_labels": [
+          "tag:adaptive",
+          "tag:fr1",
+          "tag:fr2",
+          "tag:fr3",
+          "tag:j_anchored"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "adaptive_fr1",
+          "adaptive_fr2",
+          "adaptive_fr3",
+          "adaptive_janchor",
+          "adaptive_fr3_revcomp"
+        ]
+      },
+      {
+        "criteria": [
+          "d_orientation_and_inversion"
+        ],
+        "metric_keys": [
+          "d_inversion_acc",
+          "inverted_d_call_acc",
+          "inverted_d_germline_mae"
+        ],
+        "n_cases": 116,
+        "n_explicit_cases": 0,
+        "name": "d_inversion",
+        "required_coverage_labels": [
+          "d_orientation:inverted",
+          "tag:d_inversion"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "forced_d_inversion"
+        ]
+      },
+      {
+        "criteria": [
+          "receptor_revision_cases"
+        ],
+        "metric_keys": [
+          "revision_case_call_acc",
+          "revision_case_boundary_mae",
+          "revision_flag_acc"
+        ],
+        "n_cases": 0,
+        "n_explicit_cases": 0,
+        "name": "receptor_revision",
+        "required_coverage_labels": [
+          "revision:yes",
+          "tag:receptor_revision"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "receptor_revision"
+        ]
+      },
+      {
+        "criteria": [
+          "contaminant_and_out_of_scope_handling"
+        ],
+        "metric_keys": [
+          "contaminant_no_call_rate",
+          "contaminant_handled_rate",
+          "contaminant_flag_acc",
+          "false_positive_alignment_rate",
+          "out_of_locus_call_rate"
+        ],
+        "n_cases": 0,
+        "n_explicit_cases": 0,
+        "name": "contaminant_handling",
+        "required_coverage_labels": [
+          "contaminant:yes",
+          "tag:contaminant"
+        ],
+        "status": "integrated",
+        "stratum_names": [
+          "contaminant"
+        ]
+      },
+      {
+        "criteria": [
+          "productive_status",
+          "frame_and_stop_codon"
+        ],
+        "metric_keys": [
+          "productive_acc",
+          "vj_in_frame_acc",
+          "stop_codon_acc",
+          "junction_aa_exact"
+        ],
+        "n_cases": 2600,
+        "n_explicit_cases": 0,
+        "name": "productivity_and_frame",
+        "required_coverage_labels": [
+          "productivity:yes",
+          "productivity:no",
+          "junction_frame:in_frame",
+          "junction_frame:out_of_frame",
+          "junction_frame:stop_codon"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": [
+          "productive_only_clean",
+          "clean_full",
+          "hard_full"
+        ]
+      },
+      {
+        "criteria": [
+          "gene_level_call",
+          "sibling_allele_resolution",
+          "topk_candidate_recall",
+          "rare_allele_coverage"
+        ],
+        "metric_keys": [
+          "gene_top1_in_set",
+          "same_gene_sibling_top1",
+          "one_snp_sibling_margin",
+          "sibling_set_recall",
+          "top1_recall",
+          "top3_recall",
+          "top5_recall",
+          "top10_recall",
+          "topk_truth_set_recall",
+          "rare_allele_call_acc",
+          "per_allele_min_recall",
+          "missing_reference_alleles"
+        ],
+        "n_cases": 2600,
+        "n_explicit_cases": 0,
+        "name": "allele_coverage_and_candidates",
+        "required_coverage_labels": [
+          "measurement:allele_coverage_and_candidates",
+          "ambiguity:any_multi",
+          "ambiguity:all_single"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": [
+          "clean_full",
+          "moderate_full",
+          "hard_full",
+          "high_shm"
+        ]
+      },
+      {
+        "criteria": [
+          "constant_region_call"
+        ],
+        "metric_keys": [
+          "c_call_acc",
+          "c_gene_acc",
+          "c_found_rate"
+        ],
+        "n_cases": 2600,
+        "n_explicit_cases": 0,
+        "name": "constant_region",
+        "required_coverage_labels": [
+          "constant_region:present",
+          "constant_region:absent"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": [
+          "clean_full",
+          "moderate_full",
+          "hard_full"
+        ]
+      },
+      {
+        "criteria": [
+          "locus_and_chain_support"
+        ],
+        "metric_keys": [
+          "locus_acc",
+          "has_d_routing_acc",
+          "chain_type_acc"
+        ],
+        "n_cases": 0,
+        "n_explicit_cases": 0,
+        "name": "multi_locus_chain",
+        "required_coverage_labels": [
+          "measurement:multi_locus_chain"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": []
+      },
+      {
+        "criteria": [
+          "genotype_mask_compliance",
+          "runtime_and_memory"
+        ],
+        "metric_keys": [
+          "outside_genotype_call_rate",
+          "genotype_restricted_call_acc",
+          "genotype_speedup",
+          "reads_per_second",
+          "seconds_per_read",
+          "milliseconds_per_read",
+          "peak_memory_mb",
+          "peak_memory_delta_mb",
+          "python_tracemalloc_peak_mb",
+          "candidate_count",
+          "rerank_count"
+        ],
+        "n_cases": 0,
+        "n_explicit_cases": 0,
+        "name": "genotype_masked_inference",
+        "required_coverage_labels": [
+          "measurement:genotype_masked_inference"
+        ],
+        "status": "coverage_planned",
+        "stratum_names": []
+      }
+    ],
+    "unmapped_case_ids": []
+  },
+  "observed_truth": {
+    "allele_counts": {
+      "d": {
+        "IGHD1-1*01": 91,
+        "IGHD1-14*01": 91,
+        "IGHD1-20*01": 112,
+        "IGHD1-26*01": 80,
+        "IGHD1-7*01": 116,
+        "IGHD2-15*01": 91,
+        "IGHD2-2*01": 118,
+        "IGHD2-2*02": 110,
+        "IGHD2-21*01": 68,
+        "IGHD2-21*02": 89,
+        "IGHD2-8*01": 88,
+        "IGHD2-8*02": 92,
+        "IGHD3-10*01": 89,
+        "IGHD3-10*03": 90,
+        "IGHD3-16*02": 72,
+        "IGHD3-16*03": 89,
+        "IGHD3-22*01": 90,
+        "IGHD3-3*01": 93,
+        "IGHD3-9*01": 79,
+        "IGHD4-11*01": 156,
+        "IGHD4-17*01": 88,
+        "IGHD4-23*01": 72,
+        "IGHD4-4*01": 162,
+        "IGHD5-12*01": 98,
+        "IGHD5-18*01": 132,
+        "IGHD5-18*02": 95,
+        "IGHD5-24*01": 91,
+        "IGHD5-5*01": 128,
+        "IGHD6-13*01": 83,
+        "IGHD6-19*01": 101,
+        "IGHD6-25*01": 64,
+        "IGHD6-6*01": 69,
+        "IGHD7-27*01": 76
+      },
+      "j": {
+        "IGHJ1*01": 370,
+        "IGHJ2*01": 384,
+        "IGHJ3*02": 361,
+        "IGHJ4*02": 394,
+        "IGHJ5*02": 368,
+        "IGHJ6*02": 357,
+        "IGHJ6*03": 387
+      },
+      "v": {
+        "IGHVF1-G1*01": 20,
+        "IGHVF1-G1*02": 25,
+        "IGHVF1-G1*03": 24,
+        "IGHVF1-G2*01": 28,
+        "IGHVF1-G2*02": 20,
+        "IGHVF1-G3*01": 17,
+        "IGHVF1-G3*02": 24,
+        "IGHVF1-G3*03": 22,
+        "IGHVF1-G3*04": 16,
+        "IGHVF1-G3*05": 17,
+        "IGHVF1-G3*06": 19,
+        "IGHVF10-G33*01": 12,
+        "IGHVF10-G33*02": 21,
+        "IGHVF10-G33*03": 16,
+        "IGHVF10-G33*04": 24,
+        "IGHVF10-G34*01": 17,
+        "IGHVF10-G34*02": 16,
+        "IGHVF10-G35*01": 12,
+        "IGHVF10-G35*02": 26,
+        "IGHVF10-G35*03": 22,
+        "IGHVF10-G35*04": 31,
+        "IGHVF10-G36*01": 13,
+        "IGHVF10-G37*01": 20,
+        "IGHVF10-G37*02": 24,
+        "IGHVF10-G37*03": 25,
+        "IGHVF10-G37*04": 25,
+        "IGHVF10-G37*05": 22,
+        "IGHVF10-G37*06": 27,
+        "IGHVF10-G37*07": 23,
+        "IGHVF10-G37*08": 20,
+        "IGHVF10-G37*09": 29,
+        "IGHVF10-G37*10": 28,
+        "IGHVF10-G37*11": 15,
+        "IGHVF10-G38*01": 28,
+        "IGHVF10-G38*02": 22,
+        "IGHVF10-G38*03": 22,
+        "IGHVF10-G38*04": 24,
+        "IGHVF10-G38*05": 33,
+        "IGHVF10-G38*06": 23,
+        "IGHVF10-G39*01": 24,
+        "IGHVF10-G40*01": 19,
+        "IGHVF10-G40*02": 19,
+        "IGHVF10-G40*03": 14,
+        "IGHVF10-G40*04": 12,
+        "IGHVF10-G40*05": 18,
+        "IGHVF10-G40*06": 24,
+        "IGHVF10-G40*07": 28,
+        "IGHVF10-G41*01": 31,
+        "IGHVF10-G41*02": 22,
+        "IGHVF10-G41*03": 22,
+        "IGHVF10-G42*01": 21,
+        "IGHVF10-G42*02": 18,
+        "IGHVF10-G42*03": 27,
+        "IGHVF10-G42*04": 21,
+        "IGHVF10-G42*05": 22,
+        "IGHVF10-G43*01": 21,
+        "IGHVF10-G43*02": 25,
+        "IGHVF10-G43*03": 25,
+        "IGHVF10-G44*01": 34,
+        "IGHVF10-G44*02": 21,
+        "IGHVF10-G44*03": 37,
+        "IGHVF10-G44*04": 27,
+        "IGHVF10-G45*01": 19,
+        "IGHVF10-G46*01": 20,
+        "IGHVF10-G46*02": 24,
+        "IGHVF10-G46*03": 19,
+        "IGHVF10-G47*01": 16,
+        "IGHVF10-G48*01": 22,
+        "IGHVF10-G48*02": 16,
+        "IGHVF10-G49*01": 25,
+        "IGHVF10-G49*02": 31,
+        "IGHVF10-G49*03": 31,
+        "IGHVF10-G49*04": 35,
+        "IGHVF10-G50*01": 27,
+        "IGHVF10-G50*02": 30,
+        "IGHVF10-G50*03": 25,
+        "IGHVF10-G50*04": 28,
+        "IGHVF10-G51*01": 30,
+        "IGHVF10-G51*02": 24,
+        "IGHVF10-G51*03": 34,
+        "IGHVF10-G51*04": 34,
+        "IGHVF10-G51*05": 24,
+        "IGHVF10-G52*01": 17,
+        "IGHVF10-G52*02": 16,
+        "IGHVF10-G52*03": 28,
+        "IGHVF10-G52*04": 29,
+        "IGHVF10-G52*05": 26,
+        "IGHVF10-G52*06": 24,
+        "IGHVF2-G4*01": 27,
+        "IGHVF2-G4*02": 14,
+        "IGHVF3-G10*01": 17,
+        "IGHVF3-G10*02": 17,
+        "IGHVF3-G10*03": 29,
+        "IGHVF3-G10*04": 20,
+        "IGHVF3-G10*05": 18,
+        "IGHVF3-G10*06": 27,
+        "IGHVF3-G10*07": 13,
+        "IGHVF3-G11*01": 22,
+        "IGHVF3-G11*02": 19,
+        "IGHVF3-G11*03": 26,
+        "IGHVF3-G11*04": 16,
+        "IGHVF3-G11*05": 27,
+        "IGHVF3-G11*06": 21,
+        "IGHVF3-G12*01": 21,
+        "IGHVF3-G12*02": 26,
+        "IGHVF3-G12*03": 18,
+        "IGHVF3-G12*04": 18,
+        "IGHVF3-G5*01": 15,
+        "IGHVF3-G6*01": 20,
+        "IGHVF3-G6*02": 20,
+        "IGHVF3-G6*03": 11,
+        "IGHVF3-G6*04": 31,
+        "IGHVF3-G6*05": 24,
+        "IGHVF3-G6*06": 29,
+        "IGHVF3-G6*07": 26,
+        "IGHVF3-G6*08": 17,
+        "IGHVF3-G7*01": 26,
+        "IGHVF3-G7*02": 22,
+        "IGHVF3-G7*03": 18,
+        "IGHVF3-G7*04": 17,
+        "IGHVF3-G7*05": 17,
+        "IGHVF3-G8*01": 27,
+        "IGHVF3-G8*02": 30,
+        "IGHVF3-G8*03": 27,
+        "IGHVF3-G8*04": 20,
+        "IGHVF3-G9*01": 31,
+        "IGHVF3-G9*02": 28,
+        "IGHVF3-G9*03": 26,
+        "IGHVF3-G9*04": 31,
+        "IGHVF3-G9*04_A319G": 21,
+        "IGHVF4-G13*01": 26,
+        "IGHVF4-G13*02": 32,
+        "IGHVF4-G14*01": 27,
+        "IGHVF4-G14*02": 13,
+        "IGHVF4-G14*03": 31,
+        "IGHVF4-G14*04": 25,
+        "IGHVF5-G15*01": 9,
+        "IGHVF5-G16*01": 21,
+        "IGHVF5-G16*02": 21,
+        "IGHVF5-G16*03": 21,
+        "IGHVF5-G16*04": 17,
+        "IGHVF6-G17*01": 18,
+        "IGHVF6-G18*01": 18,
+        "IGHVF6-G19*01": 15,
+        "IGHVF6-G19*02": 27,
+        "IGHVF6-G19*03": 21,
+        "IGHVF6-G20*01": 21,
+        "IGHVF6-G20*02": 22,
+        "IGHVF6-G21*01": 68,
+        "IGHVF6-G21*02": 46,
+        "IGHVF6-G21*03": 70,
+        "IGHVF6-G21*04": 70,
+        "IGHVF6-G21*05": 74,
+        "IGHVF6-G21*06": 75,
+        "IGHVF6-G21*07": 68,
+        "IGHVF6-G21*08": 46,
+        "IGHVF6-G21*09": 65,
+        "IGHVF6-G21*10": 72,
+        "IGHVF6-G21*11": 74,
+        "IGHVF6-G21*12": 58,
+        "IGHVF6-G21*13": 68,
+        "IGHVF6-G21*14": 34,
+        "IGHVF6-G21*15": 64,
+        "IGHVF6-G21*16": 66,
+        "IGHVF6-G22*01": 37,
+        "IGHVF6-G22*02": 32,
+        "IGHVF6-G22*03": 43,
+        "IGHVF6-G23*01": 63,
+        "IGHVF6-G23*02": 64,
+        "IGHVF6-G23*03": 23,
+        "IGHVF6-G24*01": 21,
+        "IGHVF6-G24*02": 31,
+        "IGHVF6-G24*03": 36,
+        "IGHVF6-G24*04": 39,
+        "IGHVF6-G24*05": 45,
+        "IGHVF6-G25*01": 36,
+        "IGHVF6-G25*02": 34,
+        "IGHVF6-G25*03": 19,
+        "IGHVF6-G26*01": 21,
+        "IGHVF6-G26*02": 32,
+        "IGHVF6-G26*03": 31,
+        "IGHVF6-G26*04": 23,
+        "IGHVF7-G27*01": 31,
+        "IGHVF7-G27*02": 36,
+        "IGHVF7-G27*03": 26,
+        "IGHVF7-G27*04": 29,
+        "IGHVF8-G28*01": 16,
+        "IGHVF8-G29*01": 27,
+        "IGHVF8-G29*02": 22,
+        "IGHVF8-G30*01": 24,
+        "IGHVF8-G30*02": 25,
+        "IGHVF8-G30*03": 21,
+        "IGHVF8-G31*01": 29,
+        "IGHVF8-G31*02": 30,
+        "IGHVF9-G32*01": 16,
+        "IGHVF9-G32*02": 21,
+        "IGHVF9-G32*03": 10,
+        "IGHVF9-G32*04": 21
+      }
+    }
+  },
+  "readiness": {
+    "artifact": {
+      "kind": "benchmark_readiness_report",
+      "schema_name": "alignair.benchmark.benchmark_readiness_report.v0.1",
+      "schema_version": "0.1"
+    },
+    "checks": [
+      {
+        "details": {},
+        "grade": "pass",
+        "message": "Total generated cases should be large enough to stabilize aggregate metrics.",
+        "name": "case_count",
+        "observed": 2600,
+        "threshold": 1000
+      },
+      {
+        "details": {
+          "low_strata": {}
+        },
+        "grade": "pass",
+        "message": "Each generated stratum should have enough cases for sliced metrics.",
+        "name": "stratum_counts",
+        "observed": {
+          "amplicon_fr1": 200,
+          "amplicon_fr2": 200,
+          "amplicon_janchor": 200,
+          "amplicon_janchor_rc": 200,
+          "amplicon_jxshort": 200,
+          "clean_full": 200,
+          "hard_full": 200,
+          "high_indel": 200,
+          "high_shm": 200,
+          "moderate_full": 200,
+          "noisy_ambiguous": 200,
+          "orientation": 200,
+          "trimmed": 200
+        },
+        "threshold": 50
+      },
+      {
+        "details": {
+          "low_orientations": {}
+        },
+        "grade": "pass",
+        "message": "Required orientation transforms should be represented.",
+        "name": "orientation_counts",
+        "observed": {
+          "complement": 50,
+          "identity": 2250,
+          "reverse": 50,
+          "reverse_complement": 250
+        },
+        "threshold": 25
+      },
+      {
+        "details": {
+          "low_contexts": {
+            "constant_region:present": 0,
+            "contaminant:yes": 0,
+            "length:<=60": 11,
+            "measurement:allele_coverage_and_candidates": 0,
+            "measurement:genotype_masked_inference": 0,
+            "measurement:multi_locus_chain": 0,
+            "read_layout:paired_end": 0,
+            "revision:yes": 0,
+            "stratum:adaptive_fr1": 0,
+            "stratum:adaptive_fr2": 0,
+            "stratum:adaptive_fr3": 0,
+            "stratum:adaptive_fr3_revcomp": 0,
+            "stratum:adaptive_janchor": 0,
+            "stratum:all_orientations_hard": 0,
+            "stratum:ambiguous_n_extreme": 0,
+            "stratum:contaminant": 0,
+            "stratum:extreme_end_loss": 0,
+            "stratum:forced_d_inversion": 0,
+            "stratum:fragment_120": 0,
+            "stratum:fragment_50": 0,
+            "stratum:fragment_80": 0,
+            "stratum:high_indel_extreme": 0,
+            "stratum:high_shm_extreme": 0,
+            "stratum:paired_end": 0,
+            "stratum:productive_only_clean": 0
+          },
+          "n_low_contexts": 32
+        },
+        "grade": "fail",
+        "message": "Core biological/stress contexts should be covered before model comparison.",
+        "name": "required_context_counts",
+        "observed": {
+          "ambiguity:all_single": 1374,
+          "ambiguity:any_multi": 1226,
+          "constant_region:absent": 2600,
+          "constant_region:present": 0,
+          "contaminant:no": 2600,
+          "contaminant:yes": 0,
+          "d_orientation:forward": 2484,
+          "d_orientation:inverted": 116,
+          "indel:0": 976,
+          "indel:1-2": 1035,
+          "indel:3-5": 475,
+          "indel:>5": 114,
+          "junction_frame:in_frame": 620,
+          "junction_frame:out_of_frame": 1980,
+          "junction_frame:stop_codon": 319,
+          "junction_length:long_junction": 377,
+          "junction_length:short_junction": 747,
+          "junction_length:typical_junction": 1476,
+          "length:131-250": 251,
+          "length:61-90": 151,
+          "length:91-130": 587,
+          "length:<=60": 11,
+          "length:>250": 1600,
+          "measurement:allele_coverage_and_candidates": 0,
+          "measurement:genotype_masked_inference": 0
+        },
+        "threshold": 25
+      },
+      {
+        "details": {
+          "low_genes": {},
+          "note": "Per-gene thresholds are capped by the reference allele count when a reference set is supplied."
+        },
+        "grade": "pass",
+        "message": "Each gene class should cover enough distinct GenAIRR truth alleles.",
+        "name": "observed_allele_counts",
+        "observed": {
+          "d": {
+            "n_observed": 33,
+            "n_reference": 33,
+            "threshold": 25
+          },
+          "j": {
+            "n_observed": 7,
+            "n_reference": 7,
+            "threshold": 7
+          },
+          "v": {
+            "n_observed": 198,
+            "n_reference": 198,
+            "threshold": 25
+          }
+        },
+        "threshold": 25
+      },
+      {
+        "details": {
+          "low_genes": {}
+        },
+        "grade": "pass",
+        "message": "Observed truth alleles should cover a meaningful fraction of the DataConfig reference set.",
+        "name": "reference_allele_fraction",
+        "observed": {
+          "d": {
+            "fraction_observed": 1.0,
+            "n_observed": 33,
+            "n_reference": 33
+          },
+          "j": {
+            "fraction_observed": 1.0,
+            "n_observed": 7,
+            "n_reference": 7
+          },
+          "v": {
+            "fraction_observed": 1.0,
+            "n_observed": 198,
+            "n_reference": 198
+          }
+        },
+        "threshold": 0.25
+      }
+    ],
+    "coverage": {
+      "alleles": {
+        "d": {
+          "max_count": 162,
+          "mean_count": 95.84848484848484,
+          "min_count": 64,
+          "n_observed": 33
+        },
+        "j": {
+          "max_count": 394,
+          "mean_count": 374.42857142857144,
+          "min_count": 357,
+          "n_observed": 7
+        },
+        "v": {
+          "max_count": 75,
+          "mean_count": 27.196969696969695,
+          "min_count": 9,
+          "n_observed": 198
+        }
+      },
+      "by_stratum": {
+        "amplicon_fr1": 200,
+        "amplicon_fr2": 200,
+        "amplicon_janchor": 200,
+        "amplicon_janchor_rc": 200,
+        "amplicon_jxshort": 200,
+        "clean_full": 200,
+        "hard_full": 200,
+        "high_indel": 200,
+        "high_shm": 200,
+        "moderate_full": 200,
+        "noisy_ambiguous": 200,
+        "orientation": 200,
+        "trimmed": 200
+      },
+      "length": {
+        "max": 420,
+        "mean": 261.8242307692308,
+        "min": 44
+      },
+      "multi_call_cases": {
+        "d": 513,
+        "j": 18,
+        "v": 821
+      },
+      "n_cases": 2600,
+      "orientation": {
+        "0": 2250,
+        "1": 250,
+        "2": 50,
+        "3": 50
+      }
+    },
+    "grade": "fail",
+    "grade_counts": {
+      "fail": 1,
+      "pass": 5
+    },
+    "n_cases": 2600,
+    "observed_required_context_counts": {
+      "ambiguity:all_single": 1374,
+      "ambiguity:any_multi": 1226,
+      "constant_region:absent": 2600,
+      "constant_region:present": 0,
+      "contaminant:no": 2600,
+      "contaminant:yes": 0,
+      "d_orientation:forward": 2484,
+      "d_orientation:inverted": 116,
+      "indel:0": 976,
+      "indel:1-2": 1035,
+      "indel:3-5": 475,
+      "indel:>5": 114,
+      "junction_frame:in_frame": 620,
+      "junction_frame:out_of_frame": 1980,
+      "junction_frame:stop_codon": 319,
+      "junction_length:long_junction": 377,
+      "junction_length:short_junction": 747,
+      "junction_length:typical_junction": 1476,
+      "length:131-250": 251,
+      "length:61-90": 151,
+      "length:91-130": 587,
+      "length:<=60": 11,
+      "length:>250": 1600,
+      "measurement:allele_coverage_and_candidates": 0,
+      "measurement:genotype_masked_inference": 0
+    },
+    "profile": "assay",
+    "thresholds": {
+      "allele_contexts": [],
+      "description": "Professional preflight profile before comparing alignment models.",
+      "min_cases": 1000,
+      "min_observed_alleles_per_gene": 25,
+      "min_per_allele_context": 0,
+      "min_per_orientation": 25,
+      "min_per_reference_allele": 0,
+      "min_per_required_context": 25,
+      "min_per_stratum": 50,
+      "min_reference_allele_fraction": 0.25,
+      "profile": "assay",
+      "required_contexts": [
+        "ambiguity:all_single",
+        "ambiguity:any_multi",
+        "constant_region:absent",
+        "constant_region:present",
+        "contaminant:no",
+        "contaminant:yes",
+        "d_orientation:forward",
+        "d_orientation:inverted",
+        "indel:0",
+        "indel:1-2",
+        "indel:3-5",
+        "indel:>5",
+        "junction_frame:in_frame",
+        "junction_frame:out_of_frame",
+        "junction_frame:stop_codon",
+        "junction_length:long_junction",
+        "junction_length:short_junction",
+        "junction_length:typical_junction",
+        "length:131-250",
+        "length:61-90",
+        "length:91-130",
+        "length:<=60",
+        "length:>250",
+        "measurement:allele_coverage_and_candidates",
+        "measurement:genotype_masked_inference",
+        "measurement:multi_locus_chain",
+        "mutation:1-5%",
+        "mutation:12-18%",
+        "mutation:5-12%",
+        "mutation:<=1%",
+        "mutation:>18%",
+        "noise:0",
+        "noise:1-2",
+        "noise:3-8",
+        "noise:>8",
+        "orientation:complement",
+        "orientation:identity",
+        "orientation:reverse",
+        "orientation:reverse_complement",
+        "productivity:no",
+        "productivity:yes",
+        "read_layout:paired_end",
+        "read_layout:single",
+        "revision:no",
+        "revision:yes",
+        "segment_presence:all_segments_visible",
+        "segment_presence:short_d",
+        "segment_presence:short_j_head",
+        "segment_presence:short_v_tail",
+        "stratum:adaptive_fr1",
+        "stratum:adaptive_fr2",
+        "stratum:adaptive_fr3",
+        "stratum:adaptive_fr3_revcomp",
+        "stratum:adaptive_janchor",
+        "stratum:all_orientations_hard",
+        "stratum:ambiguous_n_extreme",
+        "stratum:clean_full",
+        "stratum:contaminant",
+        "stratum:extreme_end_loss",
+        "stratum:forced_d_inversion",
+        "stratum:fragment_120",
+        "stratum:fragment_50",
+        "stratum:fragment_80",
+        "stratum:hard_full",
+        "stratum:high_indel",
+        "stratum:high_indel_extreme",
+        "stratum:high_shm",
+        "stratum:high_shm_extreme",
+        "stratum:moderate_full",
+        "stratum:noisy_ambiguous",
+        "stratum:orientation",
+        "stratum:paired_end",
+        "stratum:productive_only_clean",
+        "stratum:receptor_revision",
+        "stratum:trimmed",
+        "stratum:ultra_short_fragment_40",
+        "tag:adaptive",
+        "tag:ambiguous",
+        "tag:contaminant",
+        "tag:d_inversion",
+        "tag:fr1",
+        "tag:fr2",
+        "tag:fr3",
+        "tag:indel",
+        "tag:j_anchored",
+        "tag:noise",
+        "tag:receptor_revision",
+        "tag:shm",
+        "tag:trim"
+      ],
+      "required_orientation_ids": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "truth_source": "GenAIRR benchmark cases"
+  },
+  "reference": {
+    "genes": {
+      "d": {
+        "n_alleles": 33,
+        "sha256": "407322c5d95bbc92c2a865d5db3d3c426869e56aa04e7a30cf24bd33a66ec840"
+      },
+      "j": {
+        "n_alleles": 7,
+        "sha256": "53c8788de1c184cda649c1fe4edb590981faa4f313733242249682a82e0f7318"
+      },
+      "v": {
+        "n_alleles": 198,
+        "sha256": "ea6a5a324d30b3584a72804a6ae9703808ef230b87f6058776381a23a8a5e67d"
+      }
+    },
+    "has_d": true,
+    "sha256": "ea5e9b9332020c65e135e193d7ecee93bc484c7a18840811e33fbb0fb05fe627"
+  },
+  "software": {
+    "alignair_version": "2.0.2",
+    "genairr_version": "2.2.0",
+    "python_version": "3.12.3"
+  }
+}

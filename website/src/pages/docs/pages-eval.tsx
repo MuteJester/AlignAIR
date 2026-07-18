@@ -18,15 +18,19 @@ const benchmarks: DocPage = {
 
       <h2>Summary</h2>
       <p>
-        Of the 24 scored metrics, AlignAIR is better on 18, IgBLAST on 4, and 2 are inconclusive. The gains concentrate
-        in D and J allele calling and in reverse-complement / arbitrary orientation. Two axes favour IgBLAST: V-allele
-        calling - a small aggregate edge (0.856 vs 0.828), driven by short fragments and heavily-mutated full-length
-        reads - and exact junction-nucleotide recovery.
+        On point estimates, AlignAIR is higher on 18 of the 24 metrics and IgBLAST on 6. Under the Bonferroni-corrected
+        paired bootstrap those resolve into statistically supported verdicts: AlignAIR better on 18, IgBLAST better on 4,
+        and 2 inconclusive. AlignAIR's gains concentrate in D and J allele calling and in reverse-complement / arbitrary
+        orientation. IgBLAST's four supported wins are V-allele calling (a small aggregate edge, 0.856 vs 0.828, from
+        short fragments and heavily-mutated full-length reads) and exact junction nt/aa recovery; the two inconclusive
+        metrics are the J-segment start/end coordinate MAEs, where IgBLAST's point estimate is higher but the interval
+        spans zero.
       </p>
       <Callout kind="note">
-        These are counts of point-estimate differences. Each metric also carries a paired-bootstrap confidence interval
-        and a Bonferroni-corrected significance flag in the benchmark output, and not every point-estimate difference is
-        individually significant; consult the per-metric intervals rather than the headline count alone.
+        The 18 / 4 / 2 split is the Bonferroni-corrected verdict from the paired bootstrap, not a raw point-estimate
+        tally: every &ldquo;better&rdquo; above corresponds to a confidence interval that excludes zero after
+        multiple-comparison correction. The two inconclusive metrics are ones where IgBLAST's point estimate is higher
+        but its interval spans zero. Full per-metric intervals are in the benchmark report.
       </Callout>
 
       <h2>Metrics</h2>
@@ -198,10 +202,10 @@ const design: DocPage = {
 
       <h2>Evaluation</h2>
       <p>
-        In a controlled evaluation against IgBLAST on a frozen 2,600-case benchmark, AlignAIR is better on 18 of 24
-        metrics, with the gains concentrated in D/J calling and arbitrary orientation; IgBLAST keeps an edge on V and on
-        exact junction-nucleotide recovery. Full methodology is on the <DocLink to="benchmarks">Benchmarks</DocLink>{" "}
-        page.
+        In a controlled evaluation against IgBLAST on a frozen 2,600-case benchmark, under a Bonferroni-corrected paired
+        bootstrap AlignAIR is statistically better on 18 of 24 metrics (IgBLAST on 4, 2 inconclusive), with the gains
+        concentrated in D/J calling and arbitrary orientation; IgBLAST keeps an edge on V and on exact
+        junction-nucleotide recovery. Full methodology is on the <DocLink to="benchmarks">Benchmarks</DocLink> page.
       </p>
 
       <h2>Training</h2>
