@@ -12,7 +12,6 @@ __pychache__/*
 *.pyc
 model/*
 /src/AlignAIR/Scripts/
-MANIFEST.in
 /site/404.html
 /tests/debug_report/alignair_evaluation_report_20250804_172900.html
 /tests/AlignAIR_IGH_EXT_Model_weights_final_epoch.data-00000-of-00001

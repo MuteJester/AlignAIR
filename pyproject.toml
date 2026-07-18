@@ -123,9 +123,9 @@ build = "cp310-* cp311-* cp312-*"
 # skip musllinux, 32-bit Linux (i686), and 32-bit Windows (win32) - PyTorch has no wheels there.
 skip = "*-musllinux_* *_i686 *-win32"
 build-frontend = "build"
-# each runner builds its native arch (macos-13 -> x86_64, macos-14 -> arm64, etc.) so the compiled
-# kernel can be imported + tested in-place. Verify it actually loaded in every built wheel (the smoke
-# test loads the .so directly, so it needs no heavy runtime deps like torch).
+# each runner builds its native arch (macos-15-intel -> x86_64, macos-15 -> arm64, etc.) so the
+# compiled kernel can be imported + tested in-place. Verify it actually loaded in every built wheel
+# (the smoke test loads the extension directly).
 # Preinstall a frozen, binary-only scientific stack before cibuildwheel installs AlignAIR. Without
 # this, a future SciPy/Pandas release can drop an older manylinux tag, making pip attempt an unrelated
 # source build inside the wheel-test container (which has no OpenBLAS) even though AlignAIR's wheel
