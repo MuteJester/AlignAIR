@@ -205,6 +205,46 @@ Mirror `tests/alignair/` under `tests/alignair/aa/`:
 - D representation: three frame-conditioned prototypes vs prototype-free classifier — decide in 0A/1b.
 - Real-data source for Phase 3 (which repertoire, what labels count as "independently defensible").
 
+## 13. Phase 1 — Learning-Proof Results & Gate Verdict (2026-07-18)
+
+Frozen artifact: `docs/superpowers/artifacts/2026-07-18-aa-phase1/` (`proof.json`, `heldout.jsonl.gz`, `run.log`). 3 seeds × 3,000 steps × batch 64 on an RTX 3090 Ti; one frozen 4,096-read held-out cohort (fingerprint `56be2a9d8efb9c13…`); model 4,212,872 params; torch 2.11.0+cu128 / CUDA 12.8; git `944a1221`.
+
+### Verdict: **PARTIAL** — 5 of 6 hard criteria pass; criterion 3 fails on 1 of 4 boundaries.
+
+Per the predeclared rule, a partial result is **not** rounded up to GO. The failure is diagnosed below and is a **degenerate metric**, not a segmentation failure — but the gate was declared in advance and is not renegotiated after seeing results.
+
+| # | Criterion | Result | Verdict |
+|---|---|---|---|
+| 1 | Capacity (overfit ≥0.90 acc, all MAE <5) | V **1.000**, J **1.000**; MAEs 0.91/0.00/0.01/0.91 | **PASS** |
+| 2 | Classification beats prior (paired lift CI>0, ≥0.05) | V **+0.926** CI[+0.918,+0.934]; J **+0.840** CI[+0.827,+0.851] | **PASS** |
+| 3 | All 4 boundaries beat constant (CI>0, ≥10%) | v_end **+65.0%**, j_start **+85.1%**, j_end **+74.6%**; **v_start +0.0%** | **FAIL (1/4)** |
+| 4 | Prior-learning guard (macro/micro ≥0.5) | V **0.980–0.992**, J **1.000** | **PASS** |
+| 5 | Seed consistency (spread ≤0.10) | V acc 0.9495 / 0.9370 / 0.9409, spread **0.0125** | **PASS** |
+| 6 | Hygiene | counters balanced (49,382 = 4,096 + 45,286); train ranges disjoint; no NaN; fingerprint present | **PASS** |
+| 7 | Strata (diagnostic) | ambiguity 1→0.947, 2→0.945, ≥3→0.965; coverage: single bucket | *diagnostic* |
+
+### Headline result
+
+The model learns V/J protein-equivalence classes **far** beyond the prior: **V 0.949 vs a 0.023 majority baseline** (149 classes) and **J 0.987 vs 0.147**. Macro accuracy tracks micro almost exactly (0.98–1.00 ratio), so this is **not** frequency-prior learning — performance is spread across classes, not concentrated in common ones. Three of four boundaries beat their constant baselines by 62–86%.
+
+### Why `v_start` failed — degenerate target, not a model failure
+
+`v_start` is **exactly constant (0) in all 4,096 held-out reads** (1 distinct value). A constant predictor is therefore perfect by construction (baseline MAE **0.000**), so "beat the constant baseline by ≥10%" is **mathematically unsatisfiable** for a zero-variance target. The criterion is ill-posed here, not failed on merit.
+
+It does expose one **real, minor limitation**: the model scores 0.925 MAE on a constant target, i.e. it cannot emit an exact edge value. The pattern is systematic — the two **extreme** boundaries (`v_start` at 0, `j_end` at n) both sit at ≈0.92 MAE, while the two **interior** boundaries are 0.21 (`v_end`) and 0.46 (`j_start`). This is **soft-argmax edge bias**: the expectation `Σ softmax(logits)·position` at slot 0 can only be ≥0, so any probability leakage biases it upward. Worth addressing in Phase 2 (e.g. an explicit edge-aware decode or a hard-argmax refinement).
+
+### Scope limitation (important, and it explains both anomalies)
+
+Phase-1 training and evaluation used **full-length reads only**. That single fact produces both oddities: every read starts at V residue 0 (⇒ `v_start` has no variance) and every read lands in the `coverage ≥80` stratum (⇒ the coverage stratification is uninformative, n=4096 in one bucket). **Consequently the Phase-0 coverage-conditioned identifiability finding — that short/truncated reads collapse protein classes — is entirely untested by this proof.** The 0.949 V accuracy is measured in the easiest possible regime and should not be read as a general-purpose number.
+
+### Recommended path (for decision, not applied unilaterally)
+
+1. **Preferred:** introduce read-length variation (truncated / fragment reads) in Phase 1b. This simultaneously gives `v_start` real variance (making criterion 3 well-posed), exercises the coverage strata, and tests the Phase-0 short-read identifiability collapse — the scientifically informative fix.
+2. **Alternative:** formally declare zero-variance targets out of scope for the beat-the-baseline criterion. Legitimate as a spec correction, but on its own it is goalpost-moving and leaves the short-read question untested.
+3. Independently: record the soft-argmax edge bias as a Phase-2 work item.
+
+Data yield held at the Phase-0 estimate: 49,382 records generated → 4,096 usable (8.3%), rejections 42,426 non-productive + 2,860 stop-codon — the stop filter is doing real work, consistent with the Phase-0 finding that "productive" does not imply stop-free.
+
 ## 12. Phase 0 — Results & Gate Verdict (2026-07-18)
 
 Frozen report: `docs/superpowers/artifacts/2026-07-18-aa-phase0/report.json` / `.md` (regenerate via `scripts/aa/phase0_report.py`, whose default `--out experiments/aa/phase0` is a gitignored scratch path) — 200,000 simulated `HUMAN_IGH_OGRDB` reads (s5f rate 0.05, seed 0, productive-only), germline DB hash `bf12d1517d0f2a29`. All 198 V and 7 J germlines passed anchor QC (0 quarantined).
@@ -221,4 +261,4 @@ Frozen report: `docs/superpowers/artifacts/2026-07-18-aa-phase0/report.json` / `
 - **"Productive" is a junction-level contract, not a whole-sequence guarantee:** unknown-residue fraction is 0.0, but **0.4% of residues are stops even in productive reads** (stops outside the junction). Resolves the §11 stop-handling question: keep `*` as its own explicit token AND reject/flag stops at the input-contract layer — never fold stop into `X`.
 - **Data yield:** only **14.1%** of simulated IGH reads are productive + in-frame with a derivable AA sequence. Simulation is cheap so this is not a blocker, but Phase 1 must over-generate ~7× to hit a target productive count.
 - **D is less hopeless than assumed:** reads retain a **mean 5.6 fully-owned D residues**, and only 0.28% have zero owned D residues — more surviving D content than the pessimistic §5.3 estimate. D-as-source-classification (Phase 1b) is worth pursuing; owned-residue content ≠ allele discriminability, so the source-classification framing stands. The prototype vs prototype-free choice remains open for the 1b experiment.
-- **Length:** AA length p50/p95 = **126/133** residues, **max 146** (corrected 2026-07-18: an earlier revision of this section wrongly reported max=133 by conflating p95 with the maximum). The provisional `max_seq_length=192` still has comfortable headroom; no need to revisit upward.
+- **Length (see also §13):** AA length p50/p95 = **126/133** residues, **max 146** (corrected 2026-07-18: an earlier revision of this section wrongly reported max=133 by conflating p95 with the maximum). The provisional `max_seq_length=192` still has comfortable headroom; no need to revisit upward.
