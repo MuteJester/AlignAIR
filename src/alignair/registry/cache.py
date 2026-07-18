@@ -86,19 +86,28 @@ def _excl_lock(path: Path, *, timeout: float = 600.0, stale_after: float = 3600.
             fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             break
         except FileExistsError:
+            pass                       # another holder owns the lockfile: contention
+        except PermissionError:
+            # Windows raises PermissionError (a sharing violation: WinError 32/5 -> errno 13) instead
+            # of FileExistsError when another holder has the lockfile open. Treat that as contention,
+            # but only when the lockfile actually exists; a genuine permission failure (the path
+            # cannot be created at all) must propagate rather than spin until timeout.
+            if not os.path.exists(path):
+                raise
+        # contention: reclaim a stale lock (a dead holder's file), else wait until the deadline.
+        try:
+            age = time.time() - os.path.getmtime(path)
+        except OSError:
+            age = 0.0
+        if age > stale_after:
             try:
-                age = time.time() - os.path.getmtime(path)
+                os.unlink(path)
             except OSError:
-                age = 0.0
-            if age > stale_after:
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
-                continue
-            if time.monotonic() > deadline:
-                raise TimeoutError(f"timed out after {timeout}s acquiring cache lock {path}")
-            time.sleep(poll)
+                pass
+            continue
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"timed out after {timeout}s acquiring cache lock {path}")
+        time.sleep(poll)
     try:
         os.write(fd, str(os.getpid()).encode())
         yield
