@@ -1,0 +1,63 @@
+name: Deploy website
+
+# Builds the React/TypeScript site in website/ and publishes it to GitHub Pages.
+# On pull requests it runs a build-only check (never deploys). Deployment is restricted to main.
+# The site is served at https://mutejester.github.io/AlignAIR/ .
+# NOTE: requires the repository Pages source to be set to "GitHub Actions".
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/website.yml"
+  pull_request:
+    paths:
+      - "website/**"
+      - ".github/workflows/website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize deployments per ref; a newer push supersedes an in-progress one. PR builds get their own
+# group so they never cancel a main deployment.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      # Prepare the Pages artifact only for real deployments (main / manual), not for PR checks.
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    # Deployment is restricted to main. A manual dispatch on any other branch gets the build only,
+    # never a production deploy.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

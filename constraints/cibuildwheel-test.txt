@@ -1,0 +1,12 @@
+# Deterministic binary dependencies for cibuildwheel's per-ABI extension smoke.
+#
+# These versions publish wheels for CPython 3.10-3.12 on manylinux2014 x86_64,
+# Windows x86_64, macOS x86_64, and macOS arm64. They are installed before the
+# AlignAIR wheel so cibuildwheel does not try to compile a newer scientific-stack
+# sdist inside its intentionally minimal test environment.
+#
+# This is not an end-user lock file. Normal dependency resolution is exercised by
+# CI's wheel release smoke and again by the tagged PyPI release pipeline.
+numpy==2.2.6
+pandas==2.2.3
+scipy==1.15.3

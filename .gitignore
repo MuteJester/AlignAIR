@@ -12,7 +12,6 @@ __pychache__/*
 *.pyc
 model/*
 /src/AlignAIR/Scripts/
-MANIFEST.in
 /site/404.html
 /tests/debug_report/alignair_evaluation_report_20250804_172900.html
 /tests/AlignAIR_IGH_EXT_Model_weights_final_epoch.data-00000-of-00001
@@ -59,7 +58,6 @@ MANIFEST.in
 /checkpoints/IGL_S5F_576.data-00000-of-00001
 /checkpoints/IGL_S5F_576.index
 /checkpoints/IGL_S5F_576.zip
-/docs/migration_guide.md
 /.idea/misc.xml
 /model_params.yaml
 /.idea/modules.xml
@@ -113,5 +111,23 @@ MANIFEST.in
 /Load Models.html
 /tests/edf_sample.csv
 /.venv311/
+/.venv/
 /tmp_run/
 /checkpoints/
+/experiments/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Cython build artifacts
+build/
+src/alignair/predict/_derive_cy.c
+*.so
+
+# Agent / AI dev tooling — private to development, never pushed or distributed
+.claude/
+CLAUDE.md
+AGENTS.md
+.cursor/
+.aider*

@@ -4,342 +4,186 @@
 
 <h1 align="center">AlignAIR</h1>
 <p align="center">
-  Alignment and allele calling for immunoglobulin (IG) and T‑cell receptor (TCR) repertoires.<br>
-  <a href="https://hub.docker.com/r/thomask90/alignair"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/thomask90/alignair"></a>
-  <a href="https://doi.org/10.5281/zenodo.15687939"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.15687939.svg" alt="DOI"></a>
+  A neural aligner for immunoglobulin (IG) and T-cell receptor (TCR) repertoires. A single end-to-end
+  model predicts V/D/J allele calls, segment coordinates, and the junction, and writes standard AIRR
+  output. Constrain calls to a donor genotype (a subset of the model's reference), or train a model for
+  your own reference / species.<br>
+  <a href="https://github.com/MuteJester/AlignAIR/pkgs/container/alignair"><img alt="Container: GHCR" src="https://img.shields.io/badge/container-ghcr.io-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://doi.org/10.1093/nar/gkaf651"><img src="https://img.shields.io/badge/DOI-10.1093%2Fnar%2Fgkaf651-blue" alt="DOI"></a>
   <a href="LICENSE"><img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
+  <a href="https://mutejester.github.io/AlignAIR/"><img alt="Documentation" src="https://img.shields.io/badge/docs-guides%20%26%20lessons-6d5cf5"></a>
+</p>
+
+<p align="center">
+  <b>📖 New to AlignAIR? Start on the docs site — reference, guides, and interactive lessons:<br>
+  <a href="https://mutejester.github.io/AlignAIR/">mutejester.github.io/AlignAIR</a></b>
 </p>
 
 ---
 
-## Table of Contents
+## Overview
 
-1. [Quick Start](#quick-start)
-2. [Selecting a Model](#selecting-a-model)
-3. [Model Bundles](#model-bundles)
-4. [Running Predictions](#running-predictions)
-5. [Multi-Chain Details](#multi-chain-details)
-6. [SavedModel Export & Fine-Tuning](#savedmodel-export--fine-tuning)
-7. [Parameters Reference](#parameters-reference)
-8. [Docker (Advanced)](#docker-advanced)
-9. [Development & Contribution](#development--contribution)
-10. [Data & Citation](#data--citation)
-11. [License](#license)
-12. [Contact](#contact)
+- **End-to-end neural model.** One network reads orientation, localizes the V/D/J segments, calls alleles, and estimates productivity and mutation rate from a shared representation in a single forward pass, with no multi-stage heuristic search. Deterministic post-processing then turns those predictions into refined coordinates, the junction, and a standard AIRR record.
+- **Self-contained models.** Each model embeds a fingerprinted germline reference and loads without executing any pickle. Pretrained human IGH, IGK+IGL, and TRB models are a command away (`--model <id>`); the germline catalog travels with the model.
+- **Donor genotype constraint.** At inference you can restrict calls to a subset of the model's reference (a donor genotype, as YAML or FASTA) with no retraining. Adding alleles, a new species, or a new locus requires training a new compatible model.
+- **Uncertainty-aware.** When a read cannot distinguish alleles (e.g. short fragments), AlignAIR reports a **candidate set** (`*_call_set`) rather than forcing a single call. Optional per-allele confidence calibration is available as a separate step.
+- **AIRR output.** Standard AIRR rearrangement TSV (V/D/J calls, coordinates, junction, productivity) that reads directly into Change-O / Scirpy / Immcantation.
+- **Validated on a frozen, ground-truth benchmark.** AlignAIR is evaluated on a simulated 2,600-case / 13-stratum human-IGH benchmark with known truth (clean, SHM, indels, fragments, arbitrary orientation), scoring V/D/J allele accuracy, segment coordinates, the junction, productivity, and orientation. A verified v3.0.0 head-to-head against IgBLAST, with full model and IgBLAST provenance, is in preparation and will be published with the benchmark. See [benchmarks](https://mutejester.github.io/AlignAIR/#/docs/benchmarks) and [known failure modes](https://mutejester.github.io/AlignAIR/#/docs/known-failure-modes).
 
----
-
-## Quick Start
-
-### A. Docker
-
-Pull image:
-```bash
-docker pull thomask90/alignair:latest
-```
-
-List bundled pretrained models:
-```bash
-docker run --rm -it thomask90/alignair:latest list-pretrained
-```
-Example output:
-```
-Bundle                 Type           SeqLen   Chains                             Status
-IGH_S5F_576            single_chain   576      -                                  OK
-IGH_S5F_576_Extended   single_chain   576      -                                  OK
-IGL_S5F_576            multi_chain    576      BCR_LIGHT_LAMBDA,BCR_LIGHT_KAPPA   OK
-TCRB_UNIFORM_576       single_chain   576      -                                  OK
-```
-
-Optional flags:
-```bash
-docker run --rm -it thomask90/alignair:latest list-pretrained --show-files
-docker run --rm -it thomask90/alignair:latest list-pretrained --json-output
-```
-
-Run heavy chain (extended):
-```bash
-docker run --rm -v /path/to/input:/data -v /path/to/output:/out \
-  thomask90/alignair:latest run \
-  --model-dir=/app/pretrained_models/IGH_S5F_576_Extended \
-  --genairr-dataconfig=HUMAN_IGH_EXTENDED \
-  --sequences=/data/sequences.csv \
-  --save-path=/out \
-  --translate-to-asc
-```
-
-Windows (PowerShell) path example:
-```powershell
-docker run --rm `
-  -v C:/Users/you/Datasets:/data `
-  -v C:/Users/you/Downloads:/out `
-  thomask90/alignair:latest run `
-  --model-dir=/app/pretrained_models/IGH_S5F_576_Extended `
-  --genairr-dataconfig=HUMAN_IGH_EXTENDED `
-  --sequences=/data/sequences.csv `
-  --save-path=/out
-```
-
-Output file: `/out/<input_basename>_alignairr_results.csv`
-
-### B. Local (Editable Install)
+## Install
 
 ```bash
-git clone https://github.com/MuteJester/AlignAIR.git
-cd AlignAIR
-python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -e .
-python app.py list-pretrained --root checkpoints
-python app.py run --model-dir=checkpoints/IGH_S5F_576 --sequences=tests/data/test/sample_igh_extended.csv --save-path=tmp_out
-```
-Python requirement: >=3.9,<3.12.
-
----
-
-## Selecting a Model
-
-| Bundle | Type | Max Seq Len | Chains (multi) | Path |
-|--------|------|-------------|----------------|------|
-| IGH_S5F_576 | single_chain | 576 | - | `/app/pretrained_models/IGH_S5F_576` |
-| IGH_S5F_576_Extended | single_chain | 576 | - | `/app/pretrained_models/IGH_S5F_576_Extended` |
-| IGL_S5F_576 | multi_chain | 576 | Lambda,Kappa | `/app/pretrained_models/IGL_S5F_576` |
-| TCRB_UNIFORM_576 | single_chain | 576 | - | `/app/pretrained_models/TCRB_UNIFORM_576` |
-
-Choose:
-- Standard heavy chain: `IGH_S5F_576`
-- Extended heavy chain: `IGH_S5F_576_Extended`
-- Lambda + Kappa (classification): `IGL_S5F_576`
-- TCR beta: `TCRB_UNIFORM_576`
-
-List programmatically:
-```bash
-docker run --rm thomask90/alignair:latest list-pretrained
+pip install "AlignAIR[cli]"            # core + CLI (recommended)
+alignair doctor                        # verify Python / PyTorch+CUDA / GenAIRR
 ```
 
----
+Install extras: `[cli]` (CLI + model download + AIRR validation + parasail), `[train]` (training
+extras), `[all]`. PyTorch is auto-detected for GPU; for a CPU-only install, `pip install torch
+--index-url https://download.pytorch.org/whl/cpu` first.
 
-## Model Bundles
-
-Bundle layout:
-```
-model_dir/
-  config.json
-  dataconfig.pkl
-  training_meta.json        # optional
-  VERSION
-  fingerprint.txt
-  saved_model/
-  checkpoint.weights.h5     # optional (fine‑tuning)
-  README.md                 # optional
-```
-
-Why bundles:
-- Structural + dataconfig reproducibility
-- Integrity check via fingerprint
-- Single directory: metadata + SavedModel (+ optional weights)
-
-Legacy non‑bundle checkpoints still load; prefer bundles for new work.
-
-Create during training (example):
-```python
-trainer.train(..., save_pretrained=True)
-```
-
-Load in Python:
-```python
-from AlignAIR.Models.SingleChainAlignAIR.SingleChainAlignAIR import SingleChainAlignAIR
-model = SingleChainAlignAIR.from_pretrained('path/to/bundle')
-```
-
-CLI:
-```bash
-python app.py run --model-dir=path/to/bundle --genairr-dataconfig=HUMAN_IGH_OGRDB --sequences=input.csv --save-path=out
-```
-
-Integrity: mismatch raises on load if fingerprint differs.
-
-Migrate legacy:
-```python
-legacy_model.save_pretrained('new_bundle_dir')
-```
-
----
-
-## Running Predictions
+Or Docker (no local install needed):
 
 ```bash
-python app.py run \
-  --model-dir=checkpoints/IGH_S5F_576 \
-  --genairr-dataconfig=HUMAN_IGH_OGRDB \
-  --sequences=tests/data/test/sample_igh_extended.csv \
-  --save-path=tmp_out
+docker pull ghcr.io/mutejester/alignair:latest
+docker run --rm ghcr.io/mutejester/alignair:latest doctor
+
+# align reads: mount an input dir + an output dir, and persist the model cache across runs
+docker run --rm \
+  -v "$PWD:/data" -v alignair-cache:/home/appuser/.cache/alignair \
+  ghcr.io/mutejester/alignair:latest \
+  predict --input /data/reads.fasta --out /data/out.tsv --model alignair-igh-human
 ```
 
-Output naming: `<input_basename>_alignairr_results.csv` in `--save-path`.
+The default image is CPU-only; pin a version tag (`ghcr.io/mutejester/alignair:3.0.0`) for reproducibility. The
+container runs as a non-root user, so mount a writable output dir (add `--user $(id -u):$(id -g)` if
+your host uid differs). Models are not baked in - the `alignair-cache` volume above keeps a downloaded
+`--model <id>` from being re-fetched on every run. GPU is auto-detected when you run in a CUDA base image.
 
-Threshold application: probabilities filtered by threshold; caps applied afterward.
+## Quick start
 
-Optional flags:
-- `--translate-to-asc` for ASC allele labels
-- `--airr-format` for AIRR schema output
+See it work end-to-end in one command - offline, no model download needed (it trains a tiny demo
+model, aligns simulated reads, validates the AIRR output, and runs the donor-genotype path):
 
----
-
-## Multi-Chain Details
-
-Triggered when `--genairr-dataconfig` has >1 comma‑separated entry.
-
-Example (Lambda + Kappa):
-```
---genairr-dataconfig=HUMAN_IGL_OGRDB,HUMAN_IGK_OGRDB
-```
-Ordering must match training (Lambda first). Output includes `chain_type`.
-
-Single chain: supply one identifier or path to a dataconfig pickle.
-
----
-
-## SavedModel Export & Fine-Tuning
-
-SavedModel is under `saved_model/` inside a bundle.
-
-Export (via bundle creation):
-```python
-model.save_pretrained('bundle_dir')
-```
-
-Direct export:
-```python
-model.export_saved_model('export_dir/saved_model')
-```
-
-Load SavedModel:
-```python
-import tensorflow as tf
-sm = tf.saved_model.load('bundle_dir/saved_model')
-serving_fn = sm.signatures['serving_default']
-```
-
-Bundle vs SavedModel:
-- General use & metadata: bundle path
-- Serving stack: `saved_model/`
-- Fine‑tuning: rebuild model + load `checkpoint.weights.h5` if present
-
-Fine‑tuning steps:
-```python
-from pathlib import Path
-from AlignAIR.Serialization.io import load_bundle
-from AlignAIR.Models.SingleChainAlignAIR.SingleChainAlignAIR import SingleChainAlignAIR
-cfg, dataconfig, meta = load_bundle(Path('bundle'))
-model = SingleChainAlignAIR(max_seq_length=cfg.max_seq_length, dataconfig=dataconfig)
-if (Path('bundle') / 'checkpoint.weights.h5').exists():
-    model.load_weights('bundle/checkpoint.weights.h5').expect_partial()
-```
-
----
-
-## Parameters Reference
-
-### Core
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--model-dir` | Model bundle directory | (required) |
-| `--model-checkpoint` | Legacy checkpoint directory | None |
-| `--genairr-dataconfig` | Built‑in name(s) or path(s); comma‑separated for multi-chain | HUMAN_IGH_OGRDB |
-| `--sequences` | Input CSV/TSV/FASTA | (required) |
-| `--save-path` | Output directory | (required) |
-| `--batch-size` | Batch size | 2048 |
-
-### Threshold / Caps
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--v-allele-threshold` | V allele threshold | 0.75 |
-| `--d-allele-threshold` | D allele threshold | 0.30 |
-| `--j-allele-threshold` | J allele threshold | 0.80 |
-| `--v-cap` / `--d-cap` / `--j-cap` | Max retained alleles | 3 |
-
-### Output / Format
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--translate-to-asc` | Translate allele names | False |
-| `--airr-format` | AIRR schema output | False |
-| `--fix-orientation` | Orientation correction | True |
-
-### Misc
-| Flag | Description |
-|------|-------------|
-| `--config-file` | YAML with parameters |
-| `--custom-orientation-pipeline-path` | Custom orientation pipeline |
-| `--custom-genotype` | Genotype file for likelihood adjustment |
-| `--save-predict-object` | Persist internal object (debug) |
-
-Full help: `docker run thomask90/alignair:latest run --help`
-
----
-
-## Docker (Advanced)
-
-Custom bundle:
 ```bash
-docker run --rm -v /models/my_bundle:/bundle -v /data:/data -v /out:/out \
-  thomask90/alignair:latest run \
-  --model-dir=/bundle \
-  --sequences=/data/sequences.csv \
-  --genairr-dataconfig=HUMAN_IGH_OGRDB \
-  --save-path=/out
+alignair demo
 ```
 
-List mounted directory:
+Or use a **pretrained model** - downloaded automatically from the public
+[model hub](https://huggingface.co/AlignAIR/AlignAIR-pretrained) on first use, no login:
+
 ```bash
-docker run --rm -v /models:/extra thomask90/alignair:latest list-pretrained --root /extra --json-output > bundles.json
+alignair models list                          # human IGH, IGK+IGL, TRB (fetched live from the hub)
+alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
+
+# restrict calls to a donor's genotype (a subset of the model's reference) - YAML or FASTA
+alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human --genotype donor.yaml
 ```
 
-JSON inspection:
+`--model <id>` downloads + hash-verifies + caches the model on first use (pin a version with
+`--model <id>@<version>`). `--genotype` constrains the run to a subset of the model's reference - no
+retraining.
+
+Prefer your own reference or species? Train a model, then align with it:
+
 ```bash
-docker run --rm thomask90/alignair:latest list-pretrained --json-output | jq '.[].name'
+alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop   # ~minutes on a GPU
+alignair predict --input reads.fasta --out out.tsv --model my_model/bundle/model.alignair
 ```
 
-Windows paths: prefer forward slashes; ensure drive sharing is enabled.
+See [`examples/`](examples/) for runnable data.
 
----
+## Reference: donor subsets now, new references by training
 
-## Development & Contribution
+Each model is tied to the germline reference it was trained on (embedded and fingerprinted in the
+model file). What you can do with it:
 
-Quick commands:
+- **Constrain to a donor's genotype** - a subset of the model's reference - with `--genotype donor.yaml`
+  or `donor.fasta` at predict time. No retraining; calls are restricted to that donor's alleles.
+- **Add alleles / a new species / a new locus** - this changes the model's allele universe, so **train
+  a new compatible model** (novel alleles are not callable by a model that was not trained on them):
+
 ```bash
-pip install -e .
-pytest -q
-python app.py list-pretrained --root checkpoints
-python app.py run --model-dir=checkpoints/IGH_S5F_576 --sequences=tests/data/test/sample_igh_extended.csv --save-path=tmp_out
+# train for any of GenAIRR's ~90 built-in references (human, mouse, rat, rabbit, dog, ...)
+alignair train --dataconfig MOUSE_IGH_IMGT --out runs/mouse_igh --preset desktop
+
+# or train from your OWN germline FASTAs (custom reference or species)
+alignair train --v-fasta v.fasta --d-fasta d.fasta --j-fasta j.fasta \
+  --chain-type BCR_HEAVY --out runs/my_ref --preset desktop
 ```
 
-Workflow:
-1. Branch
-2. Add/update tests
-3. `pytest -q`
-4. Open PR
+This writes checkpoints to `runs/.../` plus a self-contained, pickle-free `runs/.../bundle/model.alignair`
+(the reference is **embedded**), a `model_card.md`, a `reference_manifest.json`, and a
+`validation_report.json`. Presets: `quick` (smoke), `desktop`, `full` (paper-grade). Preview the
+reference/config/model size without training with `--plan`. Then just
+`alignair predict ... --model runs/.../bundle/model.alignair`.
 
-License: GPLv3 (see `LICENSE`).
+## Output
 
----
+`alignair predict` writes a **schema-valid AIRR rearrangement TSV** (validates against the official
+`airr` library; reads back with Change-O / Immcantation): `sequence_id`, `sequence`, `rev_comp`,
+`productive`, `v_call`/`d_call`/`j_call`, `junction`/`junction_aa`, gapped `sequence_alignment` /
+`germline_alignment`, per-gene `*_cigar`, `*_identity`, and sequence/germline coordinates, plus a
+per-gene candidate-set column (`*_call_set`) for alleles a read cannot distinguish. The gapped
+alignment fields are produced by AlignAIR's own IMGT-gap reconstruction (no external aligner required;
+`parasail` is bundled in `[cli]` for exact CIGARs and the fast reader).
 
-## Data & Citation
+Every run also writes a **`<output>.run.json` provenance sidecar** (model + fingerprint, reference,
+command, device, seed, and package versions). Validate any TSV explicitly:
 
-Citation DOI:
+```bash
+alignair validate-airr out.tsv      # structural check: columns, coordinate/CIGAR bounds, productivity
 ```
-doi:10.5281/zenodo.15687939
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `alignair demo` | offline end-to-end trial (tiny train → predict → validate → genotype) |
+| `alignair predict` | align reads → AIRR rearrangement TSV |
+| `alignair train` | train a model for your own reference / species (built-in dataconfig or custom FASTA) |
+| `alignair models` | list / download / manage pretrained models |
+| `alignair reference` | list built-in references, or export a model's reference |
+| `alignair compare` | agreement report between two AIRR TSVs (e.g. AlignAIR vs IgBLAST) on your data |
+| `alignair validate-airr` | structural check of a rearrangement TSV (columns, coordinate/CIGAR bounds, productivity); not the official AIRR-C schema validator |
+| `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR, parasail) |
+| `alignair convert` | convert a legacy checkpoint into a versioned, fingerprinted `.alignair` |
+
+Run `alignair <command> --help` for options.
+
+## Documentation
+
+Full docs, reference, and interactive lessons: **<https://mutejester.github.io/AlignAIR/>**
+
+- [Getting started](https://mutejester.github.io/AlignAIR/#/docs/getting-started)
+- [Pretrained models](https://mutejester.github.io/AlignAIR/#/docs/models)
+- [Command-line reference](https://mutejester.github.io/AlignAIR/#/docs/cli)
+- [Benchmarks](https://mutejester.github.io/AlignAIR/#/docs/benchmarks)
+- [Design & internals](https://mutejester.github.io/AlignAIR/#/docs/design)
+- [Troubleshooting](https://mutejester.github.io/AlignAIR/#/docs/troubleshooting)
+
+## Development
+
+```bash
+git clone https://github.com/MuteJester/AlignAIR && cd AlignAIR
+pip install -e ".[dev]"
+pytest
 ```
 
----
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+
+## Citation
+
+If you use AlignAIR, please cite:
+
+> Thomas Konstantinovsky, Ayelet Peres, Ran Eisenberg, Pazit Polak, Ofir Lindenbaum, Gur Yaari.
+> Enhancing sequence alignment of adaptive immune receptors through multi-task deep learning.
+> *Nucleic Acids Research*, Volume 53, Issue 13, 22 July 2025, gkaf651.
+> <https://doi.org/10.1093/nar/gkaf651>
 
 ## License
 
-GPL v3.0 or later (see `LICENSE`).
-
----
+GPL-3.0-or-later (see [`LICENSE`](LICENSE)).
 
 ## Contact
 
-Issues: GitHub issues
-Email: thomaskon90@gmail.com
-Site: https://alignair.ai
+Issues: [GitHub issues](https://github.com/MuteJester/AlignAIR/issues) · Email: thomaskon90@gmail.com · Site: https://alignair.ai

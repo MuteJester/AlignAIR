@@ -1,0 +1,93 @@
+{
+  "decision": {
+    "guardrail_metrics": [
+      "genes.v.ss_mae"
+    ],
+    "guardrails": [
+      {
+        "basis": "point_estimate",
+        "metric": "genes.v.ss_mae",
+        "model_b_advantage": -2.0,
+        "reason": "point estimate exceeds the regression limit",
+        "role": "guardrail",
+        "status": "fail"
+      }
+    ],
+    "multiple_comparison": {
+      "applied": false,
+      "family_confidence": null,
+      "family_size": 2,
+      "method": "none",
+      "per_metric_confidence": null
+    },
+    "primary_endpoints": [
+      {
+        "basis": "point_estimate",
+        "metric": "genes.v.call_top1_in_set",
+        "model_b_advantage": 1.0,
+        "reason": "point estimate clears the primary improvement threshold",
+        "role": "primary",
+        "status": "pass"
+      }
+    ],
+    "primary_metrics": [
+      "genes.v.call_top1_in_set"
+    ],
+    "status_counts": {
+      "fail": 1,
+      "pass": 1
+    },
+    "verdict": "blocked_by_guardrail_regression"
+  },
+  "overall": {
+    "genes.v.call_top1_in_set": {
+      "direction": "higher_is_better",
+      "metric": "genes.v.call_top1_in_set",
+      "model_a": 0.0,
+      "model_b": 1.0,
+      "model_b_advantage": 1.0,
+      "n_cases": 2,
+      "n_compared_cases": 2,
+      "preferred_model": "new",
+      "raw_delta_model_b_minus_model_a": 1.0,
+      "verdict": "model_b_better",
+      "win_loss_tie": {
+        "model_a_win_rate": 0.0,
+        "model_a_wins": 0,
+        "model_b_win_rate": 1.0,
+        "model_b_wins": 2,
+        "tie_rate": 0.0,
+        "ties": 0
+      }
+    },
+    "genes.v.ss_mae": {
+      "direction": "lower_is_better",
+      "metric": "genes.v.ss_mae",
+      "model_a": 0.0,
+      "model_b": 2.0,
+      "model_b_advantage": -2.0,
+      "n_cases": 2,
+      "n_compared_cases": 2,
+      "preferred_model": "old",
+      "raw_delta_model_b_minus_model_a": 2.0,
+      "verdict": "model_a_better",
+      "win_loss_tie": {
+        "model_a_win_rate": 1.0,
+        "model_a_wins": 2,
+        "model_b_win_rate": 0.0,
+        "model_b_wins": 0,
+        "tie_rate": 0.0,
+        "ties": 0
+      }
+    }
+  },
+  "summary": {
+    "n_metrics": 2,
+    "n_scored_metrics": 2,
+    "verdict": "mixed",
+    "verdict_counts": {
+      "model_a_better": 1,
+      "model_b_better": 1
+    }
+  }
+}

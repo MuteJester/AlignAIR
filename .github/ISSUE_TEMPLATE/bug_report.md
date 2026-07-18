@@ -1,38 +1,39 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Report incorrect behaviour, a crash, or a wrong result
 title: ''
-labels: ''
+labels: bug
 assignees: ''
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**What happened**
+A clear description of the problem, and what you expected instead.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**Command**
+The exact command you ran:
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+```bash
+alignair predict --input ... --out ... --model ...
+```
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Version**
+Output of `alignair --version` (e.g. `alignair 3.0.0`).
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+**Model**
+The model id you used, pinned (e.g. `alignair-igh-human@1.0.0`), or the path to your `.alignair` file.
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+**Environment**
+Paste the full output of `alignair doctor` (Python, PyTorch + CUDA/MPS, GenAIRR, parasail, cache dir):
+
+```
+<alignair doctor output>
+```
+
+**Minimal reproducer**
+The smallest input that triggers it (a few reads is ideal). Attach the file, or paste a synthetic
+sequence that reproduces the same error. If the input is sensitive, a synthetic read that triggers it
+is perfect.
 
 **Additional context**
-Add any other context about the problem here.
+Anything else that helps - a stack trace, a screenshot, or the relevant rows of the output TSV.

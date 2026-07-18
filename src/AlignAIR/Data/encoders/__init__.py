@@ -1,2 +1,0 @@
-from .allele_encoder import AlleleEncoder
-from .chain_type_ohe import ChainTypeOneHotEncoder

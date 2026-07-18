@@ -1,0 +1,179 @@
+{
+  "allele_diagnostics_v": {
+    "exact_set_rate": 1.0,
+    "missing_prediction_rate": 0.0,
+    "n_truth_cases": 2,
+    "overcall_rate": 0.0,
+    "same_family_wrong_gene_rate": 0.0,
+    "same_gene_wrong_allele_rate": 0.0,
+    "top1_accepted_allele_rate": 1.0,
+    "top1_same_family_rate": 1.0,
+    "top1_same_gene_rate": 1.0,
+    "undercall_rate": 0.0,
+    "wrong_family_rate": 0.0
+  },
+  "assay_summary": {
+    "completeness_gate_grade": "pass",
+    "grade": "warn",
+    "grade_counts": {
+      "not_scored": 16,
+      "pass": 19,
+      "planned": 4,
+      "warn": 1
+    },
+    "n_blocking_unscored_core_criteria": 0,
+    "n_criteria": 40,
+    "n_criteria_with_results": 20,
+    "n_failed_criteria": 0,
+    "n_truth_unavailable_core_criteria": 5,
+    "n_warned_criteria": 1
+  },
+  "benchmark": {
+    "case_id_first": "golden-1",
+    "case_id_last": "golden-2",
+    "n_cases": 2,
+    "strata": [
+      "easy",
+      "hard"
+    ]
+  },
+  "boundary_diagnostics_v": {
+    "exact_all_coordinates_rate": 1.0,
+    "exact_germline_span_rate": 1.0,
+    "exact_query_span_rate": 1.0,
+    "germline_coordinate_parse_rate": 1.0,
+    "germline_end_mae": 0.0,
+    "germline_start_mae": 0.0,
+    "missing_coordinates_rate": 0.0,
+    "n_truth_segments": 2,
+    "query_coordinate_parse_rate": 1.0,
+    "sequence_end_mae": 0.0,
+    "sequence_start_mae": 0.0,
+    "wrong_length_rate": 0.0
+  },
+  "coverage": {
+    "alleles": {
+      "d": {
+        "max_count": 0,
+        "mean_count": 0.0,
+        "min_count": 0,
+        "n_observed": 0
+      },
+      "j": {
+        "max_count": 2,
+        "mean_count": 2.0,
+        "min_count": 2,
+        "n_observed": 1
+      },
+      "v": {
+        "max_count": 1,
+        "mean_count": 1.0,
+        "min_count": 1,
+        "n_observed": 2
+      }
+    },
+    "by_stratum": {
+      "easy": 1,
+      "hard": 1
+    },
+    "length": {
+      "max": 100,
+      "mean": 100.0,
+      "min": 100
+    },
+    "multi_call_cases": {},
+    "n_cases": 2,
+    "orientation": {
+      "0": 2
+    }
+  },
+  "criteria_audit_summary": {
+    "has_case_truth_audit": true,
+    "n_available_but_unobserved": 5,
+    "n_available_truth_field_gaps": 9,
+    "n_criteria": 40,
+    "n_metric_keys_without_criteria": 0,
+    "n_observed_metric_keys": 71,
+    "status_counts": {
+      "available": 20,
+      "partial": 16,
+      "planned": 4
+    }
+  },
+  "frame": "canonical",
+  "genes": {
+    "j": {
+      "call_exact_set": 1.0,
+      "call_set_f1": 1.0,
+      "call_set_precision": 1.0,
+      "call_set_recall": 1.0,
+      "call_top1_in_set": 1.0,
+      "coordinate_parse_rate": 1.0,
+      "found_rate": 1.0,
+      "ge_mae": 0.0,
+      "gene_top1_in_set": 1.0,
+      "gs_mae": 0.0,
+      "missing_call_rate": 0.0,
+      "missing_coordinate_rate": 0.0,
+      "se_mae": 0.0,
+      "segment_length_mae": 0.0,
+      "seq_span_iou": 1.0,
+      "ss_mae": 0.0
+    },
+    "v": {
+      "call_exact_set": 1.0,
+      "call_set_f1": 1.0,
+      "call_set_precision": 1.0,
+      "call_set_recall": 1.0,
+      "call_top1_in_set": 1.0,
+      "coordinate_parse_rate": 1.0,
+      "found_rate": 1.0,
+      "ge_mae": 0.0,
+      "gene_top1_in_set": 1.0,
+      "gs_mae": 0.0,
+      "missing_call_rate": 0.0,
+      "missing_coordinate_rate": 0.0,
+      "se_mae": 0.0,
+      "segment_length_mae": 0.0,
+      "seq_span_iou": 1.0,
+      "ss_mae": 0.0
+    }
+  },
+  "global": {
+    "indel_count_mae": 0.0,
+    "junction_aa_exact": 1.0,
+    "junction_end_mae": 0.0,
+    "junction_length_mae": 0.0,
+    "junction_nt_exact": 1.0,
+    "junction_start_mae": 0.0,
+    "mutation_rate_mae": 0.0,
+    "n1_length_mae": 0.0,
+    "n2_length_mae": 0.0,
+    "noise_count_mae": 0.0,
+    "np1_exact": 1.0,
+    "np2_exact": 1.0,
+    "optional_field_presence": 0.2727272727272727,
+    "orientation_acc": 1.0,
+    "p_region_length_mae": 0.0,
+    "parseable_airr_rate": 1.0,
+    "productive_acc": 1.0,
+    "required_field_presence": 1.0,
+    "stop_codon_acc": 1.0,
+    "vj_in_frame_acc": 1.0
+  },
+  "prediction_validation": {
+    "case_aware": true,
+    "has_d": "per_case",
+    "has_d_counts": {
+      "has_d": 0,
+      "no_d": 2
+    },
+    "level": "core",
+    "malformed_field_counts": {},
+    "mean_coverage_fraction": 1.0,
+    "missing_field_counts": {},
+    "n_predictions": 2,
+    "n_valid": 2,
+    "valid_fraction": 1.0
+  }
+}

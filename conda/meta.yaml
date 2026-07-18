@@ -1,0 +1,65 @@
+# Local-source conda recipe. CI uses this to validate the build and run the smoke commands.
+#
+# It is deliberately LITERAL - no top-level Jinja set-preamble and no environ access - so it renders
+# identically on conda-build's two rendering passes (the earlier dual-mode recipe relied on preamble
+# variables that the second pass drops, which broke `conda-build --output`).
+#
+# The PyPI-source recipe for an eventual Bioconda submission is separate work: Bioconda builds from a
+# published sdist (url + sha256), not a local path, and it also requires GenAIRR to be on a conda
+# channel first (it is PyPI-only today). Keep this file the local/CI recipe; add the Bioconda recipe
+# when submitting to bioconda-recipes. Keep `version` in sync with pyproject.toml [project].version.
+package:
+  name: alignair
+  version: "3.0.0"
+
+source:
+  path: ..
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  entry_points:
+    - alignair = alignair.cli:main
+
+requirements:
+  host:
+    - python >=3.10,<3.13
+    - pip
+    - setuptools
+  run:
+    - python >=3.10,<3.13
+    - pytorch >=2.2
+    - genairr >=2.2.0          # NOTE: not yet on bioconda — submit/locate before a Bioconda recipe lands
+    - numpy >=1.24
+    - pandas >=1.5
+    - scipy >=1.11
+    - pyyaml >=6.0
+    - biopython >=1.80
+    - psutil >=5.8
+    # CLI extra (matches pyproject [cli]: huggingface_hub, airr, parasail, argcomplete)
+    - huggingface_hub >=0.20
+    - airr >=1.4
+    - parasail-python >=1.3
+    - argcomplete >=3.0
+
+test:
+  imports:
+    - alignair
+  commands:
+    - alignair --version
+    - alignair doctor
+    - alignair reference list
+    - alignair demo --steps 1 --device cpu -o demo_smoke   # tiny offline end-to-end
+
+about:
+  home: https://github.com/MuteJester/AlignAIR
+  license: GPL-3.0-or-later
+  license_file: LICENSE
+  summary: End-to-end neural aligner for immunoglobulin (IG) and T-cell-receptor (TCR) V(D)J sequences, with standard AIRR output.
+  doc_url: https://mutejester.github.io/AlignAIR/
+  dev_url: https://github.com/MuteJester/AlignAIR
+
+extra:
+  recipe-maintainers:
+    - MuteJester

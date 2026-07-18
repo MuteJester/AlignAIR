@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  :root.dark {
+    color-scheme: dark;
+  }
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background-color: #fbfbfd;
+    color: #16151f;
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  }
+  ::selection {
+    background: rgba(87,79,214,0.18);
+  }
+
+  /* Consistent, strong keyboard focus on every interactive element. Many controls are
+     inline-styled and set no outline of their own; this is the single source of truth.
+     :focus-visible keeps the ring off mouse clicks but on for keyboard/AT users. */
+  :focus-visible {
+    outline: 2px solid #574fd6;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Do not leave a dim default outline on controls that show the strong ring above. */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+/* The one keyframe the app references (previously undefined). Defining it here means the
+   reduced-motion block below can neutralize it in one place. */
+@keyframes aa-rise {
+  from { transform: translateY(8px); }
+  to   { transform: none; }
+}
+
+/* Skip link: first tab stop, visually hidden until focused. */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 100;
+  border: 0;
+  background: #574fd6;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 12px;
+}
+
+/* Honor the OS "reduce motion" setting: neutralize transitions, animations and smooth
+   scrolling site-wide. Near-instant (0.01ms) rather than 0 so animation/transition end
+   events still fire. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .skip-link {
+    transition: none;
+  }
+}
+
+@layer components {
+  /* Prose: styling for reference pages authored as TSX (no markdown). */
+  .prose-aa {
+    @apply text-slate-700 dark:text-slate-300 leading-relaxed;
+  }
+  .prose-aa h2 {
+    @apply mt-12 mb-4 text-2xl font-bold text-slate-900 dark:text-white scroll-mt-24;
+  }
+  .prose-aa h3 {
+    @apply mt-8 mb-3 text-lg font-semibold text-slate-900 dark:text-white scroll-mt-24;
+  }
+  .prose-aa p {
+    @apply my-4;
+  }
+  .prose-aa a {
+    @apply text-brand-600 dark:text-brand-400 font-medium underline decoration-brand-300/50 underline-offset-2 hover:decoration-brand-500;
+  }
+  .prose-aa ul {
+    @apply my-4 list-disc pl-6 space-y-2 marker:text-brand-400;
+  }
+  .prose-aa ol {
+    @apply my-4 list-decimal pl-6 space-y-2 marker:text-slate-400;
+  }
+  .prose-aa code:not(pre code) {
+    @apply rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[0.85em] font-mono text-brand-700 dark:text-brand-300;
+  }
+  .prose-aa strong {
+    @apply font-semibold text-slate-900 dark:text-white;
+  }
+  .prose-aa blockquote {
+    @apply my-5 border-l-4 border-brand-300 pl-4 italic text-slate-600 dark:border-brand-500/40 dark:text-slate-400;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #dcdbe8;
+    border-radius: 6px;
+    border: 2px solid #fbfbfd;
+  }
+}

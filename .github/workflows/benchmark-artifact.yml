@@ -1,0 +1,40 @@
+name: benchmark artifact
+
+# Validate the frozen bench_v2 evidence bundle against the alignair_benchmark artifact contracts,
+# and verify its checksums. Runs when the bundle changes (PR or main) and on manual dispatch.
+on:
+  pull_request:
+    paths:
+      - "benchmarks/bench_v2/**"
+      - ".github/workflows/benchmark-artifact.yml"
+  push:
+    branches: [main]
+    paths:
+      - "benchmarks/bench_v2/**"
+      - ".github/workflows/benchmark-artifact.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install (CPU torch to avoid CUDA) + package
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e .
+      - name: Validate artifacts against the benchmark contracts
+        run: |
+          PYTHONPATH=src python -m alignair_benchmark.cli validate-artifact \
+            --path benchmarks/bench_v2/comparison_report.json --kind model_comparison_report
+          PYTHONPATH=src python -m alignair_benchmark.cli validate-artifact \
+            --path benchmarks/bench_v2/manifest.json --kind benchmark_manifest
+      - name: Verify checksums
+        run: cd benchmarks/bench_v2 && sha256sum -c SHA256SUMS.txt

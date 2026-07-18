@@ -1,0 +1,42 @@
+# AlignAIR — Snakemake wrapper DRAFT (not yet stable; see ../README.md).
+# Usage:
+#   snakemake -j4 --use-singularity --configfile config.yaml
+#   snakemake -n   # dry run (recommended first)
+import csv
+
+configfile: "config.yaml"
+
+
+def _load_samples(path):
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    return {r["sample_id"]: r for r in rows if r.get("sample_id") and r.get("input")}
+
+
+SAMPLES = _load_samples(config["samplesheet"])
+
+
+rule all:
+    input:
+        expand(config["outdir"] + "/{sample}.tsv", sample=SAMPLES),
+
+
+rule predict:
+    input:
+        reads=lambda wc: SAMPLES[wc.sample]["input"],
+    output:
+        config["outdir"] + "/{sample}.tsv",
+    params:
+        model=config["model"],
+        device=config.get("device", "cpu"),
+        genotype=lambda wc: (
+            "--genotype " + SAMPLES[wc.sample]["genotype"]
+            if SAMPLES[wc.sample].get("genotype") else ""
+        ),
+    container:
+        config.get("container", "docker://thomask90/alignair:latest")
+    log:
+        config["outdir"] + "/logs/{sample}.log",
+    shell:
+        "alignair predict --input {input.reads} --out {output} --model {params.model} "
+        "{params.genotype} --device {params.device} --quiet 2> {log}"

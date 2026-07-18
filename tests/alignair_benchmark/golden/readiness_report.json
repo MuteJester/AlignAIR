@@ -1,0 +1,92 @@
+{
+  "checks": [
+    {
+      "grade": "fail",
+      "name": "case_count",
+      "observed": 2,
+      "threshold": 3
+    },
+    {
+      "grade": "fail",
+      "name": "stratum_counts",
+      "observed": {
+        "easy": 1,
+        "hard": 1
+      },
+      "threshold": 2
+    },
+    {
+      "grade": "fail",
+      "name": "orientation_counts",
+      "observed": {
+        "identity": 2,
+        "reverse_complement": 0
+      },
+      "threshold": 1
+    },
+    {
+      "grade": "fail",
+      "name": "observed_allele_counts",
+      "observed": {
+        "d": {
+          "n_observed": 0,
+          "n_reference": null,
+          "threshold": 2
+        },
+        "j": {
+          "n_observed": 1,
+          "n_reference": null,
+          "threshold": 2
+        },
+        "v": {
+          "n_observed": 2,
+          "n_reference": null,
+          "threshold": 2
+        }
+      },
+      "threshold": 2
+    }
+  ],
+  "coverage": {
+    "alleles": {
+      "d": {
+        "max_count": 0,
+        "mean_count": 0.0,
+        "min_count": 0,
+        "n_observed": 0
+      },
+      "j": {
+        "max_count": 2,
+        "mean_count": 2.0,
+        "min_count": 2,
+        "n_observed": 1
+      },
+      "v": {
+        "max_count": 1,
+        "mean_count": 1.0,
+        "min_count": 1,
+        "n_observed": 2
+      }
+    },
+    "by_stratum": {
+      "easy": 1,
+      "hard": 1
+    },
+    "length": {
+      "max": 100,
+      "mean": 100.0,
+      "min": 100
+    },
+    "multi_call_cases": {},
+    "n_cases": 2,
+    "orientation": {
+      "0": 2
+    }
+  },
+  "grade": "fail",
+  "grade_counts": {
+    "fail": 4
+  },
+  "n_cases": 2,
+  "profile": "golden"
+}

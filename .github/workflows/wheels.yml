@@ -1,0 +1,56 @@
+name: build-wheels
+
+# Build binary wheels (with the compiled germline-CIGAR Cython kernel) for Linux/macOS/Windows.
+# This is the PR/main BUILD GATE: it runs the full cross-platform matrix on manual dispatch and —
+# so the matrix stays continuously green — whenever the build itself changes (build config, the
+# Cython source, or this workflow) on a PR or on main. Code-only PRs are covered by the lighter
+# cross-platform job in ci.yml. The authoritative release build + publish lives in release.yml.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "setup.py"
+      - "src/alignair/predict/_derive_cy.pyx"
+      - ".github/workflows/wheels.yml"
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "setup.py"
+      - "src/alignair/predict/_derive_cy.pyx"
+      - ".github/workflows/wheels.yml"
+
+jobs:
+  wheels:
+    name: wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15-intel, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21
+        # config (build targets, skips, test-command) lives in [tool.cibuildwheel] in pyproject.toml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pipx run build --sdist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: ./dist/*.tar.gz

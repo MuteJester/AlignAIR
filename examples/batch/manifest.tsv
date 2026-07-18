@@ -1,0 +1,3 @@
+sample_id	input	metadata
+donorA	../reads.fasta
+donorB_10x	../10x/filtered_contig.fasta	../10x/filtered_contig_annotations.csv
