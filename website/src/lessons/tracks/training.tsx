@@ -187,8 +187,9 @@ const simulation: Lesson = {
             <li>A <strong>heavily-mutated full-length</strong> stream — the hardest V regime (IG only).</li>
           </ul>
           <p>
-            This is why the pretrained models hold up on short fragments and arbitrary orientation: those reads were
-            never an afterthought, they were in <em>every</em> batch.
+            This is why the pretrained models handle fragments and arbitrary orientation rather than treating them as
+            out-of-distribution: those reads were in <em>every</em> batch. V calling still weakens on the shortest
+            fragments - there is only so much V gene in a 3'-anchored read - but D, J, and orientation hold up.
           </p>
         </>
       ),

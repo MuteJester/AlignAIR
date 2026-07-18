@@ -47,8 +47,9 @@ jobs:
           path: website/dist
 
   deploy:
-    # Deployment is restricted to main / manual dispatch; PRs get the build check above only.
-    if: github.event_name != 'pull_request'
+    # Deployment is restricted to main. A manual dispatch on any other branch gets the build only,
+    # never a production deploy.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:

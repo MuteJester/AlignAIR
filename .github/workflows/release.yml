@@ -1,18 +1,21 @@
 name: Release
 
 # Tag a release (`git tag v3.0.0 && git push origin v3.0.0`) to build ONE authoritative artifact
-# set, test it, then publish those exact artifacts to TestPyPI, PyPI, GHCR, and a GitHub Release.
+# set, test it, prove its provenance, then publish those exact artifacts.
 #
-# Design notes:
-#  - PyPI/TestPyPI use Trusted Publishing (OIDC) via `id-token: write` + the `pypi`/`testpypi`
-#    GitHub environments. No PYPI_API_TOKEN.
-#  - Wheels + sdist are built once (build-wheels/build-sdist) and only downloaded — never rebuilt —
-#    by the publishing jobs.
-#  - The GitHub Release is created as a DRAFT before any irreversible publish, and flipped to
-#    published only after PyPI and GHCR both succeed. Cross-registry publication cannot be atomic;
-#    this minimizes visible partial releases.
-#  - The container tag strips the leading `v` (release tag v3.0.0 -> image :3.0.0), and the GHCR
-#    path is hardcoded lowercase (github.repository is mixed-case and GHCR requires lowercase).
+# Safety / ordering:
+#  - `guard` refuses to publish unless the tag matches pyproject's version AND the tagged commit is
+#    contained in origin/main; `test` reruns the Linux suite on the tagged commit. Nothing builds
+#    until both pass.
+#  - Wheels + sdist are built once and only downloaded — never rebuilt — by later jobs.
+#  - TestPyPI is verified by provenance: the wheel served by TestPyPI must be byte-identical
+#    (SHA-256 + filename) to the authoritative build, and it is installed with deps resolved from
+#    normal PyPI (no --extra-index-url, so no dependency-confusion surface).
+#  - The irreversible step (PyPI, immutable) runs LAST: draft-release -> GHCR (reversible) ->
+#    protected PyPI -> flip the GitHub Release to published. Cross-registry publication cannot be
+#    atomic; this minimizes visible partial releases.
+#  - PyPI/TestPyPI use Trusted Publishing (OIDC) via `id-token: write` + the pypi/testpypi
+#    environments. No PYPI_API_TOKEN.
 on:
   push:
     tags: ["v*"]
@@ -24,9 +27,43 @@ env:
   IMAGE: ghcr.io/mutejester/alignair
 
 jobs:
-  # 1. Build the authoritative artifact set ONCE.
+  # 0a. Refuse to publish a mismatched or off-main tag.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag matches pyproject version and the commit is on origin/main
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          PYVER=$(grep -oP '^version\s*=\s*"\K[^"]+' pyproject.toml | head -1)
+          echo "tag=$VER  pyproject=$PYVER  commit=$GITHUB_SHA"
+          [ "$VER" = "$PYVER" ] || { echo "::error::tag $GITHUB_REF_NAME does not match pyproject version $PYVER"; exit 1; }
+          git fetch --no-tags --depth=1 origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::tagged commit is not contained in origin/main"; exit 1; }
+          echo "guard OK"
+
+  # 0b. Rerun the Linux test suite on the exact tagged commit.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install and run the suite
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
+          pytest -q
+
+  # 1. Build the authoritative artifact set ONCE (only after guard + test pass).
   build-wheels:
     name: wheels on ${{ matrix.os }}
+    needs: [guard, test]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -42,6 +79,7 @@ jobs:
           path: ./wheelhouse/*.whl
 
   build-sdist:
+    needs: [guard, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +92,7 @@ jobs:
           name: sdist
           path: ./dist/*.tar.gz
 
-  # 2. Smoke-test one built wheel before any publication (doctor -> demo -> validate-airr -> compare).
+  # 2. Smoke-test one built wheel before any publication.
   smoke:
     needs: [build-wheels]
     runs-on: ubuntu-latest
@@ -76,7 +114,8 @@ jobs:
           pip install "${WHEEL}[cli]"
           ALIGNAIR=$(command -v alignair) sh scripts/release_smoke.sh "$RUNNER_TEMP/rel_smoke"
 
-  # 3. Publish the exact artifacts to TestPyPI (OIDC). Reruns tolerate an identical upload.
+  # 3. Publish the exact artifacts to TestPyPI (OIDC). skip-existing tolerates identical reruns;
+  #    a *differing* existing file is caught by the provenance check in testpypi-smoke.
   testpypi:
     needs: [smoke, build-sdist]
     runs-on: ubuntu-latest
@@ -99,27 +138,49 @@ jobs:
           packages-dir: dist
           skip-existing: true
 
-  # 4. Install AlignAIR from TestPyPI (deps resolved safely from PyPI) and smoke it.
+  # 4. Provenance: the wheel TestPyPI serves must be byte-identical to the authoritative build.
+  #    Install that wheel with dependencies from normal PyPI (no --extra-index-url).
   testpypi-smoke:
-    needs: [testpypi]
+    needs: [testpypi, build-wheels]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install from TestPyPI (AlignAIR) + PyPI (deps) and smoke
+      - name: Download the authoritative Linux cp311 wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-ubuntu-latest
+          path: authoritative
+      - name: Fetch the same wheel from TestPyPI and require SHA-256 + filename match
         run: |
           VER="${GITHUB_REF_NAME#v}"
           python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install \
+          mkdir -p fromtest
+          pip download --no-deps --only-binary :all: \
             --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
-            "AlignAIR[cli]==${VER}"
+            --dest fromtest "AlignAIR==${VER}"
+          AUTH=$(ls authoritative/alignair-*-cp311-cp311-manylinux*_x86_64.whl | head -1)
+          test -n "$AUTH" || { echo "::error::no authoritative cp311 wheel"; ls -R authoritative; exit 1; }
+          NAME=$(basename "$AUTH")
+          TEST="fromtest/$NAME"
+          test -f "$TEST" || { echo "::error::TestPyPI did not serve $NAME"; ls -R fromtest; exit 1; }
+          A=$(sha256sum "$AUTH" | awk '{print $1}')
+          B=$(sha256sum "$TEST" | awk '{print $1}')
+          echo "authoritative $NAME: $A"
+          echo "testpypi      $NAME: $B"
+          [ "$A" = "$B" ] || { echo "::error::SHA-256 mismatch — TestPyPI artifact differs from the authoritative build"; exit 1; }
+          echo "provenance OK"
+      - name: Install the TestPyPI wheel; dependencies from normal PyPI
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          NAME=$(basename "$(ls authoritative/alignair-*-cp311-cp311-manylinux*_x86_64.whl | head -1)")
+          pip install "fromtest/${NAME}[cli]"
           alignair --version
           alignair doctor
 
-  # 5. Draft GitHub Release with all wheels + sdist + SHA-256 checksums (before any irreversible publish).
+  # 5. Draft GitHub Release with all wheels + sdist + SHA-256 (before any irreversible publish).
+  #    Idempotent: create if absent, re-upload with --clobber if a draft exists, refuse if public.
   draft-release:
     needs: [testpypi-smoke]
     runs-on: ubuntu-latest
@@ -138,38 +199,24 @@ jobs:
           path: dist
       - name: Checksums
         run: cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS.txt
-      - name: Create draft release with artifacts
+      - name: Create or refresh the draft release (rerun-safe)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --draft \
-            --title "AlignAIR $GITHUB_REF_NAME" \
-            --generate-notes \
-            dist/*.whl dist/*.tar.gz dist/SHA256SUMS.txt
+          TAG="$GITHUB_REF_NAME"
+          FILES="dist/*.whl dist/*.tar.gz dist/SHA256SUMS.txt"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+              echo "draft $TAG exists — re-uploading artifacts (--clobber)"
+              gh release upload "$TAG" $FILES --clobber
+            else
+              echo "::error::release $TAG is already published; refusing to modify it"; exit 1
+            fi
+          else
+            gh release create "$TAG" --draft --title "AlignAIR $TAG" --generate-notes $FILES
+          fi
 
-  # 6a. Publish to PyPI (OIDC, protected environment) — the same artifacts, never rebuilt.
-  pypi:
-    needs: [draft-release]
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: wheels-*
-          path: dist
-          merge-multiple: true
-      - uses: actions/download-artifact@v4
-        with:
-          name: sdist
-          path: dist
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist
-
-  # 6b. Publish the container to GHCR — built once, smoke-tested, then pushed.
+  # 6a. GHCR (reversible) — built once, smoke-tested, then pushed. Runs before the immutable PyPI step.
   ghcr:
     needs: [draft-release]
     runs-on: ubuntu-latest
@@ -210,9 +257,30 @@ jobs:
           docker push ${{ env.IMAGE }}:${{ steps.v.outputs.version }}
           docker push ${{ env.IMAGE }}:latest
 
-  # 7. Flip the draft Release to published only after PyPI and GHCR both succeed.
+  # 6b. PyPI (OIDC, protected environment) — the irreversible step, LAST. Same artifacts, never rebuilt.
+  pypi:
+    needs: [ghcr]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  # 7. Flip the draft Release to published only after GHCR and PyPI both succeed.
   publish-release:
-    needs: [pypi, ghcr]
+    needs: [pypi]
     runs-on: ubuntu-latest
     permissions:
       contents: write

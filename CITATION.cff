@@ -3,7 +3,6 @@ message: "If you use AlignAIR, please cite the following paper."
 title: "AlignAIR: a neural aligner for immunoglobulin and T-cell-receptor repertoires"
 type: software
 version: "3.0.0"
-date-released: "2026-07-17"
 authors:
   - family-names: Konstantinovsky
     given-names: Thomas

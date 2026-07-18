@@ -10,16 +10,18 @@ const benchmarks: DocPage = {
     <>
       <p>
         To quantify accuracy, AlignAIR was evaluated against IgBLAST on a frozen, simulated benchmark with known ground
-        truth: 4,400 cases across 22 strata (clean, heavy SHM, indels, fragments down to 40 bp, arbitrary orientation,
-        D-inversion, contaminants, ambiguous), scored with paired bootstrap confidence intervals and Bonferroni
-        correction. Reference: human IGH (OGRDB).
+        truth: 2,600 cases across 13 strata (200 each - clean, moderate and hard full-length, high SHM, high indel,
+        noisy/ambiguous, trimmed, five 5'- and 3'-anchored amplicon and short-fragment shapes, and arbitrary
+        orientation), scored with paired-case bootstrap confidence intervals and Bonferroni correction. Reference: human
+        IGH (OGRDB).
       </p>
 
       <h2>Summary</h2>
       <p>
-        Across the 24 scored metrics, AlignAIR shows a higher point estimate on 23, with the largest improvements in D
-        and J allele calling, and on degraded reads (short fragments, reverse-complement / arbitrary orientation). The
-        remaining metric, exact junction-nucleotide recovery, favours IgBLAST.
+        Of the 24 scored metrics, AlignAIR is better on 18, IgBLAST on 4, and 2 are inconclusive. The gains concentrate
+        in D and J allele calling and in reverse-complement / arbitrary orientation. Two axes favour IgBLAST: V-allele
+        calling - a small aggregate edge (0.856 vs 0.828), driven by short fragments and heavily-mutated full-length
+        reads - and exact junction-nucleotide recovery.
       </p>
       <Callout kind="note">
         These are counts of point-estimate differences. Each metric also carries a paired-bootstrap confidence interval
@@ -41,15 +43,17 @@ const benchmarks: DocPage = {
       <DocTable
         head={["Gene", "IgBLAST", "AlignAIR"]}
         rows={[
-          ["V", "0.745", <strong>0.776</strong>],
-          ["D", "0.538", <strong>0.694</strong>],
-          ["J", "0.713", <strong>0.842</strong>],
+          ["V", <strong>0.856</strong>, "0.828"],
+          ["D", "0.534", <strong>0.722</strong>],
+          ["J", "0.669", <strong>0.821</strong>],
         ]}
       />
       <p>
-        V is the closest axis (IgBLAST stronger on full-length heavy-SHM V, AlignAIR stronger on fragments and
-        orientation). On ~80 bp fragments D is ~0.72 vs 0.34 and J ~0.88 vs 0.47. Genuinely ambiguous reads are reported
-        as a set (<code>*_call_set</code>) rather than a forced single call.
+        V is the one gene IgBLAST calls better here: the aggregate edge is small and comes from short fragments and
+        heavily-mutated full-length reads, where AlignAIR's V is comparable at best. AlignAIR's advantage is in D and J -
+        on the short J-anchored fragments (where most of the read lies 3' of V), D recovery is 0.735 vs 0.015 and J is
+        0.870 vs 0.085. Genuinely ambiguous reads are reported as a set (<code>*_call_set</code>) rather than a forced
+        single call.
       </p>
 
       <h2>Throughput</h2>
@@ -194,9 +198,10 @@ const design: DocPage = {
 
       <h2>Evaluation</h2>
       <p>
-        In a controlled evaluation against IgBLAST on a frozen 4,400-case benchmark, AlignAIR reports higher accuracy on
-        23 of 24 metrics, with the largest improvements on short fragments, arbitrary orientation, and D/J calling. Full
-        methodology is on the <DocLink to="benchmarks">Benchmarks</DocLink> page.
+        In a controlled evaluation against IgBLAST on a frozen 2,600-case benchmark, AlignAIR is better on 18 of 24
+        metrics, with the gains concentrated in D/J calling and arbitrary orientation; IgBLAST keeps an edge on V and on
+        exact junction-nucleotide recovery. Full methodology is on the <DocLink to="benchmarks">Benchmarks</DocLink>{" "}
+        page.
       </p>
 
       <h2>Training</h2>

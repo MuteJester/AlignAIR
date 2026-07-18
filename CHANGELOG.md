@@ -3,7 +3,7 @@
 All notable changes to AlignAIR are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow semantic versioning.
 
-## [3.0.0] - 2026-07-17
+## [3.0.0] - unreleased
 
 A complete PyTorch rewrite of AlignAIR (`alignair` package) with a first-class CLI, a self-contained
 model format, pretrained models, and a modern documentation site. This is a major, breaking release —
