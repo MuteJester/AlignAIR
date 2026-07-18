@@ -79,11 +79,14 @@ def test_excl_lock_propagates_genuine_permission_error(tmp_path, monkeypatch):
     """A real permission failure - the lockfile cannot be created and does NOT exist - must surface,
     not be mistaken for contention and spun until timeout."""
     lock = tmp_path / "noperm.lock"                                    # does not exist
+    attempts = 0
 
     real_open = os.open
 
     def fake_open(p, flags, *a, **k):
+        nonlocal attempts
         if str(p) == str(lock) and (flags & os.O_EXCL):
+            attempts += 1
             raise PermissionError(13, "access denied")                 # and the file is absent
         return real_open(p, flags, *a, **k)
 
@@ -92,6 +95,30 @@ def test_excl_lock_propagates_genuine_permission_error(tmp_path, monkeypatch):
     with pytest.raises(PermissionError):                              # not TimeoutError
         with _excl_lock(lock, timeout=0.5, poll=0.01):
             pass
+    assert attempts == 2                                               # one race retry, then propagate
+
+
+def test_excl_lock_retries_permission_error_when_holder_just_disappeared(tmp_path, monkeypatch):
+    """A Windows sharing violation can race with the holder deleting the lock before exists() runs.
+    Retry that transient absence instead of misclassifying it as a genuine permission failure."""
+    lock = tmp_path / "vanished.lock"
+    attempts = 0
+    real_open = os.open
+
+    def fake_open(p, flags, *a, **k):
+        nonlocal attempts
+        if str(p) == str(lock) and (flags & os.O_EXCL):
+            attempts += 1
+            if attempts == 1:
+                raise PermissionError(13, "sharing violation")         # holder released concurrently
+        return real_open(p, flags, *a, **k)
+
+    monkeypatch.setattr(os, "open", fake_open)
+
+    with _excl_lock(lock, timeout=0.5, poll=0.01):
+        assert lock.exists()
+    assert attempts == 2
+    assert not lock.exists()
 
 
 def test_cache_and_config_roots_honor_env_overrides(monkeypatch, tmp_path):
