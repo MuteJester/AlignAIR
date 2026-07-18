@@ -204,3 +204,21 @@ Mirror `tests/alignair/` under `tests/alignair/aa/`:
 - Stop token vs stop rejection — decide in 0B from the stop-frequency audit.
 - D representation: three frame-conditioned prototypes vs prototype-free classifier — decide in 0A/1b.
 - Real-data source for Phase 3 (which repertoire, what labels count as "independently defensible").
+
+## 12. Phase 0 — Results & Gate Verdict (2026-07-18)
+
+Frozen report: `docs/superpowers/artifacts/2026-07-18-aa-phase0/report.json` / `.md` (regenerate via `scripts/aa/phase0_report.py`, whose default `--out experiments/aa/phase0` is a gitignored scratch path) — 200,000 simulated `HUMAN_IGH_OGRDB` reads (s5f rate 0.05, seed 0, productive-only), germline DB hash `bf12d1517d0f2a29`. All 198 V and 7 J germlines passed anchor QC (0 quarantined).
+
+**Verdict: GO to Phase 1.**
+
+**Identifiability ceiling (the gate):**
+- **V:** 198 alleles collapse to **149 protein-equivalence classes**. 115 alleles (58%) are uniquely identifiable (singleton classes); the rest fall into 34 multi-allele classes — 24 pairs, 6 triples, 3 quads, 1 quintet. **Max ambiguity = 5.** A protein V prediction therefore resolves to a nucleotide-allele set of median size 1 and worst case 5 — a workable ceiling, not a wall.
+- **J:** 7/7 alleles are protein-distinct — full identifiability.
+- **Coverage-conditioned (V prefix):** degrades gracefully — first 30 residues → 60 classes (0.10 unique), 60 → 118 (0.36), 90 → 137 (0.50), ~full (≥120) → the 149-class ceiling (0.58). N-terminal (FR1-side) fragments collapse many classes; near-full-length reads recover the ceiling. This makes coverage-aware, ambiguity-set reporting mandatory (as designed), not optional.
+
+**Findings that validate / refine the design:**
+- **Boundary masking is essential, not an edge case:** the V-end boundary straddles a codon in **81%** of reads and J-start in **68%**. The codon-provenance projection with mixed-provenance masking (§5.2) is load-bearing.
+- **"Productive" is a junction-level contract, not a whole-sequence guarantee:** unknown-residue fraction is 0.0, but **0.4% of residues are stops even in productive reads** (stops outside the junction). Resolves the §11 stop-handling question: keep `*` as its own explicit token AND reject/flag stops at the input-contract layer — never fold stop into `X`.
+- **Data yield:** only **14.1%** of simulated IGH reads are productive + in-frame with a derivable AA sequence. Simulation is cheap so this is not a blocker, but Phase 1 must over-generate ~7× to hit a target productive count.
+- **D is less hopeless than assumed:** reads retain a **mean 5.6 fully-owned D residues**, and only 0.28% have zero owned D residues — more surviving D content than the pessimistic §5.3 estimate. D-as-source-classification (Phase 1b) is worth pursuing; owned-residue content ≠ allele discriminability, so the source-classification framing stands. The prototype vs prototype-free choice remains open for the 1b experiment.
+- **Length:** AA length p50/p95 = **126/133** residues (max 133). The provisional `max_seq_length=192` has comfortable headroom; no need to revisit upward.
