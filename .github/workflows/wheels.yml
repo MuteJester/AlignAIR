@@ -1,13 +1,12 @@
 name: build-wheels
 
 # Build binary wheels (with the compiled germline-CIGAR Cython kernel) for Linux/macOS/Windows.
-# Runs the full cross-platform matrix on manual dispatch, on a tagged release, and — so the matrix is a
-# continuously-green gate — whenever the build itself changes (build config, the Cython source, or this
-# workflow) on a PR or on main. Code-only PRs are covered by the lighter cross-platform job in ci.yml.
+# This is the PR/main BUILD GATE: it runs the full cross-platform matrix on manual dispatch and —
+# so the matrix stays continuously green — whenever the build itself changes (build config, the
+# Cython source, or this workflow) on a PR or on main. Code-only PRs are covered by the lighter
+# cross-platform job in ci.yml. The authoritative release build + publish lives in release.yml.
 on:
   workflow_dispatch:
-  release:
-    types: [published]
   pull_request:
     paths:
       - "pyproject.toml"
