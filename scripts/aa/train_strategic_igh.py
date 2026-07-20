@@ -24,13 +24,13 @@ def main() -> None:
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
 
     torch.manual_seed(args.seed)
-    model, cfg, class_maps, meta = strategic_setup("HUMAN_IGH_OGRDB", 192)
+    model, cfg, class_maps, meta = strategic_setup("HUMAN_IGH_OGRDB", 192, has_d=True)
     print(f"strategic AA model: {sum(p.numel() for p in model.parameters()):,} params; "
-          f"V/J protein classes {meta['n_v_classes']}/{meta['n_j_classes']}; sub_aug p={args.sub_prob}",
-          flush=True)
-    strategic_train(model, cfg, class_maps, steps=args.steps, batch_size=args.batch_size, lr=args.lr,
-                    sub_prob=args.sub_prob, seed=args.seed, device=args.device, log_every=250,
-                    save_path=args.out, save_every=5000)
+          f"V/J protein classes {meta['n_v_classes']}/{meta['n_j_classes']}; D alleles "
+          f"{meta['n_d_alleles']}; sub_aug p={args.sub_prob}", flush=True)
+    strategic_train(model, cfg, class_maps, d_index=meta["d_index"], steps=args.steps,
+                    batch_size=args.batch_size, lr=args.lr, sub_prob=args.sub_prob, seed=args.seed,
+                    device=args.device, log_every=250, save_path=args.out, save_every=5000)
     print("done", flush=True)
 
 

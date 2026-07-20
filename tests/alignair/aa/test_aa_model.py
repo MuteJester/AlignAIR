@@ -79,8 +79,9 @@ def test_all_pad_row_is_rejected_not_silently_nan():
         AAAlignAIR(_cfg()).eval()({"tokenized_sequence": torch.zeros(1, 192, dtype=torch.long)})
 
 
-def test_model_refuses_a_config_with_d():
+def test_model_builds_d_branch_when_has_d():
     cfg = AlignAIRConfig(v_allele_count=5, j_allele_count=3, d_allele_count=4, has_d=True,
                          num_chain_types=1, max_seq_length=192, vocab_size=23)
-    with pytest.raises(ValueError, match="has_d=False"):
-        AAAlignAIR(cfg)
+    out = AAAlignAIR(cfg).eval()({"tokenized_sequence": _tokens([120, 100])})
+    assert out["d_class_logits"].shape == (2, 4)              # D allele head over 4 D alleles
+    assert out["d_start"].shape == (2, 1) and out["d_end"].shape == (2, 1)

@@ -81,11 +81,16 @@ def collate_aa(samples: list, max_len: int, device: str = "cpu"):
         t = np.asarray(s["tokens"], dtype=np.int64)
         tokens[i, :len(t)] = torch.from_numpy(t)
     batch_in = {"tokenized_sequence": tokens.to(device)}
-    targets = {k: torch.tensor([s[k] for s in samples], dtype=torch.long, device=device)
-               for k in ("v_class", "j_class")}
-    for k in ("v_start", "v_end", "j_start", "j_end"):
-        targets[k] = torch.tensor([[float(s[k])] for s in samples],
-                                  dtype=torch.float32, device=device)
+    genes = ["v", "j"] + (["d"] if "d_class" in samples[0] else [])
+    targets = {f"{g}_class": torch.tensor([s[f"{g}_class"] for s in samples], dtype=torch.long, device=device)
+               for g in genes}
+    for g in genes:
+        for b in ("start", "end"):
+            targets[f"{g}_{b}"] = torch.tensor([[float(s[f"{g}_{b}"])] for s in samples],
+                                               dtype=torch.float32, device=device)
+    if "d" in genes:                                          # D validity (0 for inverted/absent -> masked)
+        targets["d_valid"] = torch.tensor([float(s.get("d_valid", 1.0)) for s in samples],
+                                          dtype=torch.float32, device=device)
     return batch_in, targets
 
 

@@ -19,17 +19,33 @@ def masked_soft_gaussian(gt: torch.Tensor, length: int, slot_mask: torch.Tensor,
     return t / t.sum(-1, keepdim=True).clamp_min(1e-8)
 
 
+def _soft_ce_per_sample(logits, soft_target, pos_mask):
+    """Per-sample soft-label CE over positions (mean over the batch reproduces core `_soft_ce`)."""
+    logits = logits.masked_fill(~pos_mask, float("-inf"))
+    logp = torch.log_softmax(logits, dim=-1)
+    term = soft_target * logp
+    term = torch.where(pos_mask, term, term.new_zeros(()))
+    return -term.sum(-1)                                       # (B,)
+
+
 def aa_loss(out: dict, targets: dict, genes=("v", "j")):
+    """Soft-Gaussian boundary CE + softmax class CE, averaged. A gene may carry a per-sample validity
+    mask ``{g}_valid`` (D: 0 for inverted/absent) — its boundary terms are averaged over valid samples
+    and its class CE ignores the -1 sentinel. V/J have no mask (all valid)."""
     L = out["v_start_logits"].shape[-1]
     masks = {"start": out["start_mask"], "end": out["end_mask"]}
 
-    seg_terms = []
+    seg_terms, clf_terms = [], []
     for g in genes:
+        valid = targets.get(f"{g}_valid")                     # (B,) float, or None (all valid)
         for b in ("start", "end"):
             m = masks[b]
-            tgt = masked_soft_gaussian(targets[f"{g}_{b}"], L, m)
-            seg_terms.append(_soft_ce(out[f"{g}_{b}_logits"], tgt, m))
-    clf_terms = [F.cross_entropy(out[f"{g}_class_logits"], targets[f"{g}_class"]) for g in genes]
+            ps = _soft_ce_per_sample(out[f"{g}_{b}_logits"], masked_soft_gaussian(targets[f"{g}_{b}"], L, m), m)
+            if valid is None:
+                seg_terms.append(ps.mean())
+            else:
+                seg_terms.append((ps * valid).sum() / valid.sum().clamp_min(1.0))
+        clf_terms.append(F.cross_entropy(out[f"{g}_class_logits"], targets[f"{g}_class"], ignore_index=-1))
 
     seg = torch.stack(seg_terms).mean()
     clf = torch.stack(clf_terms).mean()

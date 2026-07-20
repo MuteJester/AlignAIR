@@ -47,8 +47,8 @@ class AAGeneBranch(GeneBranch):
 class AAAlignAIR(nn.Module):
     def __init__(self, cfg: AlignAIRConfig):
         super().__init__()
-        if cfg.has_d:
-            raise ValueError("Phase 1 is V/J only: build the AA config with has_d=False")
+        # V/J or V/D/J (has_d): the D branch is a softmax head over D alleles + D segmentation. D has no
+        # clean protein-equivalence class, so its predictions are low-confidence by nature (calibrated set).
         self.cfg = cfg
         self.embedding = TokenAndPositionEmbedding(cfg.vocab_size, cfg.embed_dim, cfg.max_seq_length)
         self.branches = nn.ModuleDict({s.name: AAGeneBranch(s, cfg) for s in cfg.gene_specs})

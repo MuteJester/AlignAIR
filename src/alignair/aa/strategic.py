@@ -21,16 +21,24 @@ from .train_gym import _usable_stream
 from .translation import frame_offset_of, project_codons
 
 
-def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192):
+def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192, has_d: bool = True):
+    import GenAIRR as ga
+
+    from ..reference.reference_set import ReferenceSet
+    dc = getattr(ga, dc_name)
+    ref = ReferenceSet.from_dataconfigs(dc)
     class_maps, meta = build_class_maps(dc_name)
-    cfg = aa_igh_config(meta["n_v_classes"], meta["n_j_classes"], max_seq_length)
+    d_index = dict(ref.gene("D").index) if has_d else {}
+    cfg = aa_igh_config(meta["n_v_classes"], meta["n_j_classes"], len(d_index), max_seq_length, has_d=has_d)
+    meta = {**meta, "n_d_alleles": len(d_index), "d_index": d_index}
     return AAAlignAIR(cfg), cfg, class_maps, meta
 
 
-def _class_sample(rec, class_maps, tok, max_len):
+def _class_sample(rec, class_maps, d_index, tok, max_len):
     """Junction-intact gym record -> class-target sample. Lighter than data.record_to_sample: keeps
     non-productive/stop-containing reads (the V/J CLASS label is still the germline call, and stop
-    exposure is realistic), which restores training throughput."""
+    exposure is realistic), which restores training throughput. D is added at the allele level
+    (inverted/absent D -> d_class=-1, d_valid=0, masked from the loss)."""
     try:
         vc = class_maps["V"].class_of(rec["v_call"].split(",")[0].strip())
         jc = class_maps["J"].class_of(rec["j_call"].split(",")[0].strip())
@@ -48,14 +56,23 @@ def _class_sample(rec, class_maps, tok, max_len):
     enc = tok.encode(rec["sequence_aa"])
     if len(enc) == 0 or len(enc) >= max_len:
         return None
-    return {"tokens": enc, "v_class": vc, "j_class": jc,
-            "v_start": vb[0], "v_end": vb[1], "j_start": jb[0], "j_end": jb[1]}
+    s = {"tokens": enc, "v_class": vc, "j_class": jc,
+         "v_start": vb[0], "v_end": vb[1], "j_start": jb[0], "j_end": jb[1]}
+    if d_index:
+        db = proj.aa_bounds.get("D")
+        dcall = rec.get("d_call")
+        d0 = dcall.split(",")[0].strip() if dcall else None
+        valid = (not rec.get("d_inverted", False)) and (d0 in d_index) and (db is not None)
+        s["d_class"] = d_index[d0] if valid else -1
+        s["d_start"], s["d_end"] = db if valid else (0, 0)
+        s["d_valid"] = 1.0 if valid else 0.0
+    return s
 
 
-def _sample_stream(dc_name, class_maps, tok, max_len, sub_prob, seed, rng):
+def _sample_stream(dc_name, class_maps, d_index, tok, max_len, sub_prob, seed, rng):
     """Real gym records -> class-target samples, with length-preserving substitution augmentation."""
     for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, seed, 1, None):
-        s = _class_sample(rec, class_maps, tok, max_len)
+        s = _class_sample(rec, class_maps, d_index, tok, max_len)
         if s is None:
             continue
         if sub_prob and rng.random() < sub_prob:
@@ -65,14 +82,16 @@ def _sample_stream(dc_name, class_maps, tok, max_len, sub_prob, seed, rng):
         yield s
 
 
-def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, steps=50000, batch_size=64,
-                    lr=3e-4, sub_prob=0.5, seed=0, device="cpu", log_every=250, grad_clip=1.0,
-                    save_path=None, save_every=5000):
+def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, d_index=None, steps=50000,
+                    batch_size=64, lr=3e-4, sub_prob=0.5, seed=0, device="cpu", log_every=250,
+                    grad_clip=1.0, save_path=None, save_every=5000):
     tok = AAProteinTokenizer()
     rng = np.random.default_rng(seed)
     model.to(device).train()
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    stream = _sample_stream(dc_name, class_maps, tok, cfg.max_seq_length, sub_prob, seed, rng)
+    d_index = d_index or {}
+    genes = ("v", "d", "j") if cfg.has_d else ("v", "j")
+    stream = _sample_stream(dc_name, class_maps, d_index, tok, cfg.max_seq_length, sub_prob, seed, rng)
 
     history = []
     for step in range(1, steps + 1):
@@ -81,7 +100,7 @@ def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, steps=
             break
         bi, tg = collate_aa(batch, cfg.max_seq_length, device)
         out = model(bi)
-        total, parts = aa_loss(out, tg)
+        total, parts = aa_loss(out, tg, genes=genes)
         opt.zero_grad()
         total.backward()
         if grad_clip:
