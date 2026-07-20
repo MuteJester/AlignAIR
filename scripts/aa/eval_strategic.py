@@ -24,7 +24,8 @@ from alignair.aa.strategic import strategic_setup
 from alignair.aa.tokenizer import AAProteinTokenizer
 
 
-def strategic_v_classes(model, seqs, cfg, device, batch=256):
+def strategic_pred(model, seqs, cfg, device, key, batch=256):
+    """argmax of a class-logit head (`v_class_logits` or `d_class_logits`) over a list of AA strings."""
     tok = AAProteinTokenizer()
     L = cfg.max_seq_length
     out = []
@@ -36,9 +37,13 @@ def strategic_v_classes(model, seqs, cfg, device, batch=256):
             n = min(len(e), L)
             toks[j, :n] = torch.from_numpy(e[:n])
         with torch.no_grad():
-            lg = model({"tokenized_sequence": toks.to(device)})["v_class_logits"].cpu().numpy()
+            lg = model({"tokenized_sequence": toks.to(device)})[key].cpu().numpy()
         out += [int(lg[j].argmax()) for j in range(len(chunk))]
     return out
+
+
+def strategic_v_classes(model, seqs, cfg, device, batch=256):
+    return strategic_pred(model, seqs, cfg, device, "v_class_logits", batch)
 
 
 def main() -> None:
@@ -75,7 +80,9 @@ def main() -> None:
         call = r["v_call"].split(",")[0]
         if call not in vclass:
             continue
-        rec = {"aa": r["sequence_aa"], "tc": vclass[call]}
+        dcall = (r.get("d_call") or "").split(",")[0].strip()
+        rec = {"aa": r["sequence_aa"], "tc": vclass[call],
+               "d_call": dcall, "d_inv": bool(r.get("d_inverted", False))}
         ni, nv = int(r.get("n_indels", 0)), int(r.get("n_v_indels", 0))
         if ni == 0 and c.stratum in ("clean_full", "moderate_full"):
             coh["clean"].append(rec)
@@ -109,9 +116,31 @@ def main() -> None:
         results[s] = {"n": len(rows), "model_acc": float((neu == tcs).mean()),
                       "aligner_acc": float((aln == tcs).mean())}
 
+    # ---- D allele evaluation (honest: allele + gene level vs the D-frequency prior) ----
+    d_index = meta["d_index"]
+    d_name = {i: n for n, i in d_index.items()}
+    def d_gene(name):
+        return name.split("*")[0]
+    d_report = {}
+    for s in ("clean", "aa_subs_7pct", "aa_single_indel"):
+        rows = [r for r in coh.get(s, [])[:args.cap] if r["d_call"] in d_index and not r["d_inv"]]
+        if not rows:
+            continue
+        seqs = [r["aa"] for r in rows]
+        true = [r["d_call"] for r in rows]
+        pred = [d_name[i] for i in strategic_pred(model, seqs, cfg, args.device, "d_class_logits")]
+        allele_acc = float(np.mean([p == t for p, t in zip(pred, true)]))
+        gene_acc = float(np.mean([d_gene(p) == d_gene(t) for p, t in zip(pred, true)]))
+        from collections import Counter
+        maj = Counter(true).most_common(1)[0][1] / len(true)
+        maj_gene = Counter(d_gene(t) for t in true).most_common(1)[0][1] / len(true)
+        d_report[s] = {"n": len(rows), "d_allele_acc": allele_acc, "d_gene_acc": gene_acc,
+                       "d_allele_prior": maj, "d_gene_prior": maj_gene}
+
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w") as f:
-        json.dump({"per_stratum": results, "model": args.model}, f, indent=2, sort_keys=True)
+        json.dump({"per_stratum": results, "d_eval": d_report, "model": args.model}, f,
+                  indent=2, sort_keys=True)
 
     print(f"\n==== STRATEGIC AA model (class heads) vs alignment reference — V class acc ====")
     print(f"{'stratum':18s} {'n':>5} {'model':>7} {'aligner':>7} {'gap':>7}")
@@ -121,6 +150,11 @@ def main() -> None:
         d = results[s]
         print(f"{s:18s} {d['n']:5d} {d['model_acc']:7.3f} {d['aligner_acc']:7.3f} "
               f"{d['model_acc'] - d['aligner_acc']:+7.3f}")
+    print(f"\n==== D allele head (honest: vs D-frequency prior) ====")
+    print(f"{'stratum':18s} {'n':>5} {'D-allele':>9} {'(prior)':>8} {'D-gene':>8} {'(prior)':>8}")
+    for s, d in d_report.items():
+        print(f"{s:18s} {d['n']:5d} {d['d_allele_acc']:9.3f} {d['d_allele_prior']:8.3f} "
+              f"{d['d_gene_acc']:8.3f} {d['d_gene_prior']:8.3f}")
     print(f"\nwrote {args.out}")
 
 
