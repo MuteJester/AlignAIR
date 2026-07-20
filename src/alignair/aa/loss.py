@@ -35,17 +35,25 @@ def aa_loss(out: dict, targets: dict, genes=("v", "j")):
     L = out["v_start_logits"].shape[-1]
     masks = {"start": out["start_mask"], "end": out["end_mask"]}
 
+    def _reduce(ps, valid):
+        return ps.mean() if valid is None else (ps * valid).sum() / valid.sum().clamp_min(1.0)
+
     seg_terms, clf_terms = [], []
     for g in genes:
         valid = targets.get(f"{g}_valid")                     # (B,) float, or None (all valid)
         for b in ("start", "end"):
             m = masks[b]
             ps = _soft_ce_per_sample(out[f"{g}_{b}_logits"], masked_soft_gaussian(targets[f"{g}_{b}"], L, m), m)
-            if valid is None:
-                seg_terms.append(ps.mean())
-            else:
-                seg_terms.append((ps * valid).sum() / valid.sum().clamp_min(1.0))
-        clf_terms.append(F.cross_entropy(out[f"{g}_class_logits"], targets[f"{g}_class"], ignore_index=-1))
+            seg_terms.append(_reduce(ps, valid))
+        logits = out[f"{g}_class_logits"]
+        if f"{g}_compatible" in targets:                      # PARTIAL-LABEL: -log Σ_{c∈compatible} p[c]
+            logp = torch.log_softmax(logits, dim=-1)
+            comp = targets[f"{g}_compatible"]                 # (B, C) multi-hot; a singleton -> plain CE
+            ps = -torch.logsumexp(logp.masked_fill(comp == 0, float("-inf")), dim=-1)
+            clf_terms.append(_reduce(ps, valid))
+        else:
+            ce = F.cross_entropy(logits, targets[f"{g}_class"], ignore_index=-1, reduction="none")
+            clf_terms.append(_reduce(ce, valid))
 
     seg = torch.stack(seg_terms).mean()
     clf = torch.stack(clf_terms).mean()
