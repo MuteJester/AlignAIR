@@ -96,11 +96,13 @@ def main() -> None:
         if c.stratum == "amplicon_janchor":
             coh["short_janchor"].append(rec)
 
+    def _syn(aa, rec):                                        # keep V/D truth, swap the AA sequence
+        return {"aa": aa, "tc": rec["tc"], "d_call": rec["d_call"], "d_inv": rec["d_inv"]}
     for rec in clean_pool[:args.cap]:
-        coh["aa_subs_7pct"].append({"aa": aa_substitute(rec["aa"], 0.07, rng), "tc": rec["tc"]})
-        coh["aa_single_indel"].append({"aa": aa_indel(rec["aa"], rng), "tc": rec["tc"]})
-        coh["aa_il_ambiguity"].append({"aa": il_ambiguity(rec["aa"]), "tc": rec["tc"]})
-        coh["aa_truncate_50_80"].append({"aa": aa_truncate(rec["aa"], 0.5, 0.8, rng), "tc": rec["tc"]})
+        coh["aa_subs_7pct"].append(_syn(aa_substitute(rec["aa"], 0.07, rng), rec))
+        coh["aa_single_indel"].append(_syn(aa_indel(rec["aa"], rng), rec))
+        coh["aa_il_ambiguity"].append(_syn(il_ambiguity(rec["aa"]), rec))
+        coh["aa_truncate_50_80"].append(_syn(aa_truncate(rec["aa"], 0.5, 0.8, rng), rec))
 
     order = ["clean", "aa_subs_7pct", "aa_single_indel", "aa_il_ambiguity", "aa_truncate_50_80",
              "short_janchor", "dj_indel", "v_indel_1", "v_indel_multi"]
