@@ -205,6 +205,33 @@ Mirror `tests/alignair/` under `tests/alignair/aa/`:
 - D representation: three frame-conditioned prototypes vs prototype-free classifier — decide in 0A/1b.
 - Real-data source for Phase 3 (which repertoire, what labels count as "independently defensible").
 
+## 17. Strategic V/D/J model (b) — results (2026-07-20)
+
+Explicit protein-equivalence CLASS heads (V 149, J 7) + a D **allele** head (33) with segmentation,
+trained on the real gym distribution + AA-native substitution augmentation, 40k steps
+(`aa/strategic.py`, `scripts/aa/train_strategic_igh.py`, model `experiments/aa/strategic/model_vdj_40k.pt`,
+`docs/superpowers/artifacts/2026-07-20-aa-strategic/eval_vdj.json`). Evaluated vs the no-training
+alignment reference (V) and vs the D-frequency prior (D).
+
+**V class accuracy** (aligner ceiling in parens): clean **0.979** (0.99), AA-subs-7% **0.938** (0.96),
+AA-single-indel **0.970** (0.99), I/L-ambiguity **0.969** (0.98) — near the alignment ceiling on
+everything that matters for real protein input. Beats the aligner on nucleotide V-indels (0.67/0.70 vs
+0.45/0.44 — frameshift robustness learned from gym exposure, no special mechanism). **Weak spot:
+truncation/partial-coverage 0.635** (aligner 0.876) — because only substitution augmentation was used;
+truncation/coverage augmentation is the fix.
+
+**D allele head** (proving the earlier decision to include D was right — and my "D will be modest"
+prediction was too pessimistic): clean **D-allele 0.767 / D-gene 0.830** vs a 0.040 / 0.072 frequency
+prior (≈19× / 12× the prior); robust to AA-native errors (allele 0.73–0.75). The junction-frame D
+residues + CDR3 context carry real, learnable D signal. Open refinement: D-allele **protein-equivalence
+merging** (some D alleles may be AA-identical → conflicting labels, as with V) could raise D-allele
+accuracy further.
+
+**Net:** a V/D/J amino-acid aligner whose V matches the alignment ceiling and is robust to real
+AA-native errors, with genuinely recovered D — validating the strategic reframe (explicit classes +
+AA-native robustness + longer training) over the frameshift line. Remaining (b4): truncation/coverage
+augmentation + partial-label loss + conformal calibration → calibrated V/D/J allele **sets**.
+
 ## 16. De-risk (a): no-training local aligner vs neural head (2026-07-20)
 
 Pure-AA Smith-Waterman (BLOSUM62 affine) local alignment of `sequence_aa` against the 149 V
