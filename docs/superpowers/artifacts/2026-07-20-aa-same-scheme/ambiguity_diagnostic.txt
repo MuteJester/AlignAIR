@@ -1,0 +1,6 @@
+held-out V reads: 4096  (singleton-class 2546, multi-member 1550)
+multi-member (ambiguous) reads analyzed: 1550
+  mean probability MASS on the true synonymous class : 0.071
+  mean probability on a NON-member allele            : 0.0566
+  top-|class| recall of the class members            : 0.633
+  argmax lands inside the true class                 : 0.635

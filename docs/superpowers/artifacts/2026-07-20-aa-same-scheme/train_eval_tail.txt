@@ -1,0 +1,20 @@
+[17750/20000] loss 4.933 gnorm 29.21 segmentation=6.24 classification=0.33 mutation=-0.87 indel=0.66 productive=-1.44
+[18000/20000] loss 4.951 gnorm 93.45 segmentation=6.32 classification=0.34 mutation=-0.93 indel=0.72 productive=-1.49
+[18250/20000] loss 4.668 gnorm 61.63 segmentation=6.27 classification=0.29 mutation=-0.93 indel=0.53 productive=-1.49
+[18500/20000] loss 4.578 gnorm 37.84 segmentation=6.27 classification=0.31 mutation=-1.03 indel=0.52 productive=-1.49
+[18750/20000] loss 4.789 gnorm 58.29 segmentation=6.31 classification=0.31 mutation=-0.96 indel=0.60 productive=-1.47
+[19000/20000] loss 4.646 gnorm 13.66 segmentation=6.23 classification=0.30 mutation=-1.05 indel=0.65 productive=-1.49
+[19250/20000] loss 4.989 gnorm 49.93 segmentation=6.33 classification=0.35 mutation=-0.98 indel=0.74 productive=-1.45
+[19500/20000] loss 4.665 gnorm 30.56 segmentation=6.29 classification=0.33 mutation=-1.04 indel=0.57 productive=-1.50
+[19750/20000] loss 4.860 gnorm 14.02 segmentation=6.31 classification=0.35 mutation=-0.83 indel=0.53 productive=-1.50
+[20000/20000] loss 5.291 gnorm 33.70 segmentation=6.40 classification=0.30 mutation=-1.02 indel=0.59 productive=-0.98
+
+==== EMERGENT-AMBIGUITY EVALUATION ====
+held-out 4096 reads | final train loss 5.291
+  V: nt_top1 0.515  true_in_set 0.339  set_size 0.83  |  class_top1 0.625  nt_errors_within_class 0.226
+  D: nt_top1 0.648  true_in_set 0.566  set_size 0.83
+  J: nt_top1 0.942  true_in_set 0.932  set_size 0.97  |  class_top1 0.942  nt_errors_within_class 0.000
+  seg MAE (residues): v_start=0.89 v_end=0.68 j_start=1.64 j_end=1.61 d_start=1.09 d_end=1.15
+  mutation_mae 0.0236  productive_acc 0.999
+
+wrote experiments/aa/same_scheme/metrics.json + model.pt

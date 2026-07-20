@@ -1,0 +1,43 @@
+{
+  "alleles": {
+    "d": {
+      "mean_pred_set_size": 0.8271484375,
+      "n": 4096,
+      "nt_top1": 0.648193359375,
+      "true_in_predicted_set": 0.566162109375
+    },
+    "j": {
+      "class_top1": 0.941650390625,
+      "frac_errors_within_class": 0.0,
+      "mean_pred_set_size": 0.97412109375,
+      "n": 4096,
+      "nt_error_rate": 0.058349609375,
+      "nt_top1": 0.941650390625,
+      "true_in_predicted_set": 0.931884765625
+    },
+    "v": {
+      "class_top1": 0.624755859375,
+      "frac_errors_within_class": 0.22608257804632426,
+      "mean_pred_set_size": 0.82861328125,
+      "n": 4096,
+      "nt_error_rate": 0.48486328125,
+      "nt_top1": 0.51513671875,
+      "true_in_predicted_set": 0.339111328125
+    }
+  },
+  "final_train_loss": 5.291319370269775,
+  "mutation_mae": 0.02356230712030083,
+  "n": 4096,
+  "n_j_classes": 7,
+  "n_v_classes": 149,
+  "productive_acc": 0.99853515625,
+  "segmentation_mae": {
+    "d_end": 1.1521268635988235,
+    "d_start": 1.087430227547884,
+    "j_end": 1.6086900010704994,
+    "j_start": 1.6381959468126297,
+    "v_end": 0.6802593357861042,
+    "v_start": 0.8914731927216053
+  },
+  "train_steps": 20000
+}

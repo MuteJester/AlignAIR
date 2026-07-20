@@ -205,6 +205,51 @@ Mirror `tests/alignair/` under `tests/alignair/aa/`:
 - D representation: three frame-conditioned prototypes vs prototype-free classifier — decide in 0A/1b.
 - Real-data source for Phase 3 (which repertoire, what labels count as "independently defensible").
 
+## 14. Same-Scheme Experiment — AA input into the real DNA pipeline (2026-07-20)
+
+A different, simpler line than the Phase-1 thin module (user-directed): reuse the **real** nucleotide
+training scheme unchanged — same `AlignAIR` model, `hierarchical_loss`, gym curriculum, and **full
+nucleotide-allele multi-hot targets (198/33/7)** — and change only the input to amino acids (with
+AA-space coordinates, forced by the masked soft-argmax). The one core change was a backward-compatible
+`use_orientation=False` flag (RC is undefined for protein and its complement table is nt-only; nt
+checkpoints stay byte-identical). Code: `src/alignair/aa/{gym_bridge,train_gym,eval_gym}.py`. Artifact:
+`docs/superpowers/artifacts/2026-07-20-aa-same-scheme/`.
+
+**Question:** with single-allele targets and AA input, does synonymous-allele ambiguity **emerge on
+its own** (sigmoid heads spreading across the equivalence class), as hypothesised — no equivalence
+classes, no reverse-translation layer?
+
+**Run:** 20,000 steps, batch 64, lr 3e-4, RTX 3090 Ti; 4,096-read held-out (junction-intact subset).
+
+**What worked (the pipeline is sound):**
+- J allele: nt_top1 **0.942** (7 J alleles are all protein-distinct → no synonymous ambiguity to express)
+- Segmentation MAE **0.68–1.64 residues** (V/D/J start+end) — coordinates learn cleanly in AA space
+- mutation MAE **0.024**, productive acc **0.999** — the meta heads work
+
+**What did NOT happen — the ambiguity hypothesis is not confirmed at this budget:**
+- V: nt_top1 **0.515**, protein-class_top1 **0.625**. Only **22.6%** of V nt-errors are within-class
+  (synonymous); ~77% are real cross-class errors.
+- Threshold-free diagnostic on the 1,550 ambiguous (multi-member-class) V reads: probability **mass on
+  the true synonymous class = 0.071** (members ≈1.3% of alleles get ~7% of mass — elevated ~5× over
+  uniform but far from concentrated); per-allele prob on a **non-member 0.057** (≈ members);
+  **top-|class| recall 0.63**. The head produces a **diffuse low-confidence smear across all 198
+  alleles**, not a spike on the equivalence class. `mean_pred_set_size` < 1 at τ=0.5 (under-confident).
+
+**Verdict: the naive "let ambiguity emerge" approach did NOT produce crisp synonymous-set spreading.**
+The model gets diffusely uncertain on V rather than concentrating on the alleles it genuinely cannot
+distinguish.
+
+**Load-bearing caveat:** the shipped DNA IGH model trained **~490k steps**; this ran **20k** (24× less).
+The classification loss did plateau early (~0.30 by step 3k), so it is not purely step-starved, but the
+absolute V numbers are a **floor**, and "ambiguity fundamentally cannot emerge" is **not** a supported
+conclusion — only "it has not emerged at 20k steps, and the trend does not suggest it is about to."
+
+**Cleanest next test (proposed, not yet run):** train the identical scheme with **nucleotide** input for
+the **same 20k steps** and evaluate identically. Any V/D/J gap at equal budget = pure AA information
+loss, with the under-training confound removed. Separately, this result *motivates* explicit ambiguity
+modelling (equivalence-class targets, or the reverse-translation/superposition layer) since emergence
+did not occur naturally.
+
 ## 13. Phase 1 — Learning-Proof Results & Gate Verdict (2026-07-18)
 
 Frozen artifact: `docs/superpowers/artifacts/2026-07-18-aa-phase1/` (`proof.json`, `heldout.jsonl.gz`, `run.log`). 3 seeds × 3,000 steps × batch 64 on an RTX 3090 Ti; one frozen 4,096-read held-out cohort (fingerprint `56be2a9d8efb9c13…`); model 4,212,872 params; torch 2.11.0+cu128 / CUDA 12.8; git `944a1221`.
