@@ -18,7 +18,7 @@ def test_stage1_train_runs_with_crops_and_partial_labels():
     torch.manual_seed(0)
     model, cfg, class_maps, meta = strategic_setup("HUMAN_IGH_OGRDB", 192, has_d=True)
     hist = stage1_train(model, cfg, class_maps, meta, steps=40, batch_size=16, lr=3e-4,
-                        p_crop=0.4, p_native=0.3, seed=1, device="cpu", log_every=1000)
+                        p_crop=0.4, p_sub=0.4, p_il=0.15, seed=1, device="cpu", log_every=1000)
     assert len(hist) == 40
     assert all(h["total"] == h["total"] for h in hist)          # no NaN (partial-label + masked genes)
     assert hist[-1]["total"] < hist[0]["total"]

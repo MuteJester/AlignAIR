@@ -12,7 +12,7 @@ import itertools
 import numpy as np
 import torch
 
-from .augment import aa_indel, aa_substitute, il_ambiguity
+from .augment import aa_substitute, il_ambiguity
 from .data import collate_aa
 from .loss import aa_loss
 from .reference import build_aa_germlines
@@ -43,65 +43,58 @@ def _compat(true_c, obs_lo, obs_hi, full_span, protos):
 
 
 def stage1_sample(rec, class_maps, d_index, protos, tok, max_len, rng,
-                  p_crop=0.4, p_native=0.3):
-    """Full-length gym record -> a training sample, augmented. Adds {g}_compatible (set),
-    {g}_valid, per gene. D never gets a compatible set (allele posterior)."""
+                  p_crop=0.4, p_sub=0.4, p_il=0.15):
+    """Full-length gym record -> a training sample. DECOUPLED axes: (1) crop (coordinate-aware,
+    boundaries shifted/clipped, absent genes masked, partial V/J -> compatible-class set); then
+    (2) length-preserving AA-native subs / I/L applied ON TOP (so substitution exposure ~p_sub
+    regardless of cropping). D never gets a compatible set (allele posterior; masked when partial)."""
     base = _class_sample(rec, class_maps, d_index, tok, max_len)
     if base is None:
         return None
-    aa = rec["sequence_aa"]
     genes = ("v", "j", "d")
+    spans0 = {g: (base[f"{g}_start"], base[f"{g}_end"]) for g in genes}
+    dv = base.get("d_valid", 1.0)
 
-    def finalize(tokens, spans, valids, compat):
-        s = {"tokens": tokens}
-        for g in genes:
-            s[f"{g}_start"], s[f"{g}_end"] = spans[g]
-            s[f"{g}_valid"] = valids[g]
-            s[f"{g}_class"] = base[f"{g}_class"] if valids[g] else 0
-            s[f"{g}_compatible"] = compat[g]                 # set of class ids (>=1 element)
-        return s
-
-    spans = {g: (base[f"{g}_start"], base[f"{g}_end"]) for g in genes}
-    roll = rng.random()
-
-    # ---- crop (coordinate-aware) ----
-    if roll < p_crop and int(rec.get("v_germline_start", 0)) <= 3:
-        n = len(aa)
+    # ---- axis 1: crop (coordinate-aware) ----
+    if rng.random() < p_crop and int(rec.get("v_germline_start", 0)) <= 3:
+        n = len(rec["sequence_aa"])
         keep = int(rng.uniform(0.4, 0.9) * n)
         lo, hi = crop_window(n, str(rng.choice(["nterm", "cterm", "internal"])), keep)
-        enc = tok.encode(aa[lo:hi])
-        if 10 <= len(enc) < max_len:
-            sp, vl, cp = {}, {}, {}
-            for g in genes:
-                sc = shift_clip(spans[g], lo, hi)
-                if sc is None:                               # gene absent in crop -> mask
-                    sp[g], vl[g], cp[g] = (0, 0), 0.0, {base[f"{g}_class"] if base.get(f"{g}_valid", 1.0) else 0}
-                else:
-                    sp[g], vl[g] = sc, base.get(f"{g}_valid", 1.0)
-                    if g == "d":
-                        # D partial -> mask (don't merge D by isolated translation)
-                        full = spans[g][0] >= lo and spans[g][1] <= hi
-                        vl[g] = base.get("d_valid", 1.0) if full else 0.0
-                        cp[g] = {base["d_class"] if vl[g] else 0}
-                    else:
-                        cp[g] = _compat(base[f"{g}_class"], lo, hi, spans[g], protos[g]) if vl[g] else {0}
-            return finalize(enc, sp, vl, cp)
+        aa = rec["sequence_aa"][lo:hi]
+        spans, valids, compat = {}, {}, {}
+        for g in genes:
+            sc = shift_clip(spans0[g], lo, hi)
+            if sc is None:
+                spans[g], valids[g], compat[g] = (0, 0), 0.0, {0}
+            elif g == "d":
+                full = spans0[g][0] >= lo and spans0[g][1] <= hi
+                spans[g], valids[g] = sc, (dv if full else 0.0)
+                compat[g] = {base["d_class"] if valids[g] else 0}
+            else:
+                spans[g], valids[g] = sc, 1.0
+                compat[g] = _compat(base[f"{g}_class"], lo, hi, spans0[g], protos[g])
+    else:
+        aa = rec["sequence_aa"]
+        spans = spans0
+        valids = {"v": 1.0, "j": 1.0, "d": dv}
+        compat = {g: {base[f"{g}_class"] if valids[g] else 0} for g in genes}
 
-    # ---- AA-native (subs / single indel / I/L) ----
-    if roll < p_crop + p_native:
-        op = rng.random()
-        aug = (aa_substitute(aa, float(rng.uniform(0.02, 0.12)), rng) if op < 0.5
-               else il_ambiguity(aa) if op < 0.7 else aa_indel(aa, rng))
-        enc = tok.encode(aug)
-        if len(enc) >= max_len or len(enc) == 0:
-            enc = tok.encode(aa)
-        vl = {g: base.get(f"{g}_valid", 1.0) for g in genes}
-        vl["d"] = base.get("d_valid", 1.0)
-        return finalize(enc, spans, vl, {g: {base[f"{g}_class"] if vl[g] else 0} for g in genes})
+    # ---- axis 2: length-preserving AA-native on top (keeps boundaries + compatible sets valid) ----
+    if rng.random() < p_sub:
+        aa = aa_substitute(aa, float(rng.uniform(0.02, 0.12)), rng)
+    if rng.random() < p_il:
+        aa = il_ambiguity(aa)
+    enc = tok.encode(aa)
+    if len(enc) == 0 or len(enc) >= max_len:
+        return None
 
-    # ---- full-length rehearsal ----
-    vl = {"v": 1.0, "j": 1.0, "d": base.get("d_valid", 1.0)}
-    return finalize(base["tokens"], spans, vl, {g: {base[f"{g}_class"] if vl[g] else 0} for g in genes})
+    s = {"tokens": enc}
+    for g in genes:
+        s[f"{g}_start"], s[f"{g}_end"] = spans[g]
+        s[f"{g}_valid"] = valids[g]
+        s[f"{g}_class"] = base[f"{g}_class"] if valids[g] else 0
+        s[f"{g}_compatible"] = compat[g]
+    return s
 
 
 def collate_stage1(samples, max_len, n_classes: dict, device="cpu"):
@@ -119,8 +112,8 @@ def collate_stage1(samples, max_len, n_classes: dict, device="cpu"):
 
 
 def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, steps=40000, batch_size=64,
-                 lr=3e-4, p_crop=0.4, p_native=0.3, seed=0, device="cpu", log_every=250, grad_clip=1.0,
-                 save_path=None, save_every=5000):
+                 lr=3e-4, p_crop=0.4, p_sub=0.4, p_il=0.15, seed=0, device="cpu", log_every=250,
+                 grad_clip=1.0, save_path=None, save_every=5000):
     import GenAIRR as ga
     dc = getattr(ga, dc_name)
     protos = {"v": prototypes_by_class(dc, class_maps["V"], "V"),
@@ -135,7 +128,7 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
     def gen():
         for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, seed, 1, None):
             s = stage1_sample(rec, class_maps, d_index, protos, tok, cfg.max_seq_length, rng,
-                              p_crop, p_native)
+                              p_crop, p_sub, p_il)
             if s is not None:
                 yield s
     stream = gen()
