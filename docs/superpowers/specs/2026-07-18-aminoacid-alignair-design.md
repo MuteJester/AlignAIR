@@ -205,6 +205,35 @@ Mirror `tests/alignair/` under `tests/alignair/aa/`:
 - D representation: three frame-conditioned prototypes vs prototype-free classifier — decide in 0A/1b.
 - Real-data source for Phase 3 (which repertoire, what labels count as "independently defensible").
 
+## 16. De-risk (a): no-training local aligner vs neural head (2026-07-20)
+
+Pure-AA Smith-Waterman (BLOSUM62 affine) local alignment of `sequence_aa` against the 149 V
+protein-class prototypes — no true junction, no CIGAR (`aa/local_aligner.py`,
+`scripts/aa/derisk_local_aligner.py`, `derisk_aligner.json`). V protein-class accuracy:
+
+| stratum | neural (20k) | aligner (no training) | Δ |
+|---|---|---|---|
+| clean | 0.771 | **0.990** | +0.219 |
+| AA subs 7% | 0.718 | **0.935** | +0.218 |
+| AA single indel | 0.784 | **0.985** | +0.201 |
+| short (J-anchored, V trimmed) | 0.185 | 0.216 | +0.031 |
+| downstream (D/J) indel | 0.331 | 0.436 | +0.105 |
+| **1 V-indel** | 0.605 | 0.502 | **−0.103** |
+| **≥2 V-indel** | 0.516 | 0.446 | **−0.070** |
+
+**Predeclared rule (V-indel ≥+0.05 AND clean ≤0.02 loss): FAILED** on V-indel (gain −0.086). Per the
+pre-agreed decision, **do NOT add a runtime alignment re-ranker for the frameshift case; proceed to
+(b).** The aligner loses only on nucleotide-frameshift V-indels (the region we are deprioritizing).
+
+**But the more important, honest finding:** the no-training aligner **dominates on clean (0.99 vs
+0.77) and on AA-native errors (0.94/0.99 vs 0.72/0.78)** — the strata that matter for real protein
+input. This independently proves (i) the 20k neural model is **severely under-trained** (a trivial
+aligner reaches 0.99 where it reaches 0.77 → the strategic explicit-class training path has ~0.99
+headroom), and (ii) alignment is **near-perfect on AA-native substitutions/single-residue indels**,
+which is exactly the real error model. So even without a runtime re-ranker, alignment is a strong
+**reference/target/eval** signal for (b) (distillation target, oracle, hard-negative miner). Frameshift
+V-indels remain the one place alignment underperforms — consistent with keeping that out of scope.
+
 ## 15. External review corrections (Codex, 2026-07-20) — VERIFIED
 
 An external architecture review (Codex) challenged three of the "proven" claims in §14 and the

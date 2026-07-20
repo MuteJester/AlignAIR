@@ -1,0 +1,55 @@
+{
+  "per_stratum": {
+    "aa_single_indel": {
+      "aligner_acc": 0.985,
+      "diag_mean_correctable_res": null,
+      "n": 800,
+      "neural_acc": 0.78375
+    },
+    "aa_subs_7pct": {
+      "aligner_acc": 0.935,
+      "diag_mean_correctable_res": null,
+      "n": 800,
+      "neural_acc": 0.7175
+    },
+    "clean": {
+      "aligner_acc": 0.99,
+      "diag_mean_correctable_res": 97.9875,
+      "n": 800,
+      "neural_acc": 0.77125
+    },
+    "dj_indel": {
+      "aligner_acc": 0.43625,
+      "diag_mean_correctable_res": 39.65625,
+      "n": 800,
+      "neural_acc": 0.33125
+    },
+    "short_janchor": {
+      "aligner_acc": 0.21625,
+      "diag_mean_correctable_res": 12.82875,
+      "n": 800,
+      "neural_acc": 0.185
+    },
+    "v_indel_1": {
+      "aligner_acc": 0.5025,
+      "diag_mean_correctable_res": 93.12375,
+      "n": 800,
+      "neural_acc": 0.605
+    },
+    "v_indel_multi": {
+      "aligner_acc": 0.44625,
+      "diag_mean_correctable_res": 91.40125,
+      "n": 800,
+      "neural_acc": 0.51625
+    }
+  },
+  "predeclared_rule": {
+    "PROCEED": false,
+    "clean_aligner": 0.99,
+    "clean_loss": -0.21875,
+    "clean_neural": 0.77125,
+    "vindel_aligner": 0.474375,
+    "vindel_gain": -0.08625000000000005,
+    "vindel_neural": 0.560625
+  }
+}
