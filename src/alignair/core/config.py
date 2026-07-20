@@ -62,6 +62,11 @@ class AlignAIRConfig:
     cls_dim_max: int = 1024        # cap: bound the O(A^2) classification params for large unions
     cls_filter_cap: int = 256      # cap on the auto-raised classification-tower width
     state_head: bool = False       # add the per-position edit-state head (germline/sub/ins/del)
+    # in-model orientation (reverse-complement detect/correct/re-embed). Nucleotide default. Set
+    # False for alphabets with no reverse complement (amino acids) — the RC path is both undefined
+    # and its complement table is nucleotide-only. Kept True by default so nt checkpoints are
+    # byte-identical.
+    use_orientation: bool = True
     # post-hoc allele-confidence calibration: per-gene temperature {"v":T,...} applied to the sigmoid
     # allele probabilities at inference (sigmoid(logit(p)/T)); fitted post-training, argmax-preserving.
     allele_temperatures: Optional[dict] = None
