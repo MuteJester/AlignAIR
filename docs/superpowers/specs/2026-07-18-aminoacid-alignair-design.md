@@ -205,6 +205,57 @@ Mirror `tests/alignair/` under `tests/alignair/aa/`:
 - D representation: three frame-conditioned prototypes vs prototype-free classifier — decide in 0A/1b.
 - Real-data source for Phase 3 (which repertoire, what labels count as "independently defensible").
 
+## 15. External review corrections (Codex, 2026-07-20) — VERIFIED
+
+An external architecture review (Codex) challenged three of the "proven" claims in §14 and the
+forensics/masking artifacts. I re-verified each empirically; **all three corrections hold.** Recording
+them because the original framing overstated what was proven.
+
+1. **The AA-nearest-germline "oracle" is a strong baseline, NOT an information-theoretic ceiling.**
+   `nearest_germline` (`aa/forensics.py`) is raw Cys-anchored identity — no allele priors, codon/SHM
+   probabilities, gaps, coverage, or full posterior. Proof it is not an upper bound: the trained model
+   **beats it on 5.6% of reads** (`forensics.json::model_beats_oracle_frac = 0.056`). Therefore the
+   0.90 "ceiling" is the accuracy of an identity baseline, and the **"83% model-deficiency / 17%
+   information-loss" split is a heuristic decomposition, not a proof.** (The directional read — that a
+   simple baseline recovers much of what the 20k model misses, i.e. real training headroom — still
+   stands; the *proof* language does not.) Also: the 0.73-vs-0.90 comparison is on the 2,674 indel-free
+   selected reads; the full 4,096-read V class accuracy is **0.625** (`metrics.json`).
+
+2. **The masking analysis masked the WRONG side of a V indel — its 52%/94% numbers are invalid.**
+   GenAIRR builds `sequence_aa` in the frame anchored at the V-Cys/junction (`junction_start % 3`). So
+   for an indel *before* the Cys, the **anchor-proximal** (3', near-Cys) region stays in-frame and the
+   **5' region goes off-frame** — the opposite of `mask_recovery.py`'s "first M-run is the valid
+   prefix." Verified on 200 single-V-indel reads: Cys-anchor-proximal identity **0.640** vs 5'-most
+   identity **0.218**. (The script also uses `sum(runs)//3` instead of `sum(run//3 for run in runs)`,
+   combining partial boundary codons.) **The masking recovery estimates are retracted** pending a
+   redo using anchor-relative cumulative phase + complete-codon provenance, and measured AA-only class
+   recovery (not a hidden-CIGAR length proxy with a chosen 25-residue threshold).
+
+3. **The "ambiguity did not emerge" conclusion is confounded by the loss.** BCE target is
+   `y*0.9 + 0.05` (`losses.py`), training every one of the 197 negative V alleles toward 0.05; the
+   measured non-member mean **0.0566 ≈ 0.05**. The diffuse smear is largely this floor, not evidence
+   the network cannot localize ambiguity. The right fix (per review) is **explicit protein-equivalence
+   class targets + partial-label likelihood over the compatible set + post-hoc conformal calibration**,
+   not normalized sigmoid sums.
+
+**Strategic reframe (endorsed).** Nucleotide frameshift is a self-inflicted DNA-translation artifact;
+real protein input has none. Keep the frameshift suite as an adversarial/legacy benchmark; do NOT let
+it drive the architecture. The high-value path is: explicit protein-equivalence targets, longer
+training, AA-native errors (substitutions/indels, truncation/coverage, I/L equivalence), calibrated
+class sets, and real protein validation — building on Phase 1's ~0.95 full-length V class accuracy.
+
+**Verdict on the complex/Fourier superposition idea:** rejected for now (review + our own read). The
+abstraction ("marginalize over latent alignment/frame paths") is right, but a log-space forward
+algorithm / differentiable alignment computes it more directly with clean probability semantics;
+Z₃-phase Fourier is a possible later ablation of the transition kernel, not the architecture.
+
+**Recommended order (endorsed):** (1) correct the oracle/masking claims [done here]; (2) split the
+AA-native benchmark from the mis-translated-DNA stress suite; (3) restore explicit protein-equivalence
+targets + calibrated class sets; (4) run the no-training Cys-scanning local-alignment de-risk
+experiment; (5) add a learned residue-integrity gate only if local evidence proves useful; (6) attempt
+the candidate-conditioned nt→protein transducer only if shifted-suffix evidence shows headroom;
+(7) route nucleotide-derived cases to nucleotide AlignAIR whenever DNA is available.
+
 ## 14. Same-Scheme Experiment — AA input into the real DNA pipeline (2026-07-20)
 
 A different, simpler line than the Phase-1 thin module (user-directed): reuse the **real** nucleotide
@@ -235,9 +286,10 @@ classes, no reverse-translation layer?
   **top-|class| recall 0.63**. The head produces a **diffuse low-confidence smear across all 198
   alleles**, not a spike on the equivalence class. `mean_pred_set_size` < 1 at τ=0.5 (under-confident).
 
-**Verdict: the naive "let ambiguity emerge" approach did NOT produce crisp synonymous-set spreading.**
-The model gets diffusely uncertain on V rather than concentrating on the alleles it genuinely cannot
-distinguish.
+**Verdict: the naive "let ambiguity emerge" approach did NOT produce crisp synonymous-set spreading**
+at this budget **and under this loss** — but see §15: the diffuse output is substantially an artifact
+of the BCE label-smoothing floor (0.05), so this does NOT prove the network intrinsically cannot
+localize ambiguity.
 
 **Load-bearing caveat:** the shipped DNA IGH model trained **~490k steps**; this ran **20k** (24× less).
 The classification loss did plateau early (~0.30 by step 3k), so it is not purely step-starved, but the
