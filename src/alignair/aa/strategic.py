@@ -12,11 +12,13 @@ import torch
 
 from .augment import aa_substitute
 from .config import aa_igh_config
-from .data import build_class_maps, collate_aa, record_to_sample
+from .data import build_class_maps, collate_aa
+from .gym_bridge import aa_usable
 from .loss import aa_loss
 from .model import AAAlignAIR
 from .tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
+from .translation import frame_offset_of, project_codons
 
 
 def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192):
@@ -25,15 +27,39 @@ def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192)
     return AAAlignAIR(cfg), cfg, class_maps, meta
 
 
+def _class_sample(rec, class_maps, tok, max_len):
+    """Junction-intact gym record -> class-target sample. Lighter than data.record_to_sample: keeps
+    non-productive/stop-containing reads (the V/J CLASS label is still the germline call, and stop
+    exposure is realistic), which restores training throughput."""
+    try:
+        vc = class_maps["V"].class_of(rec["v_call"].split(",")[0].strip())
+        jc = class_maps["J"].class_of(rec["j_call"].split(",")[0].strip())
+    except KeyError:
+        return None
+    segs = {}
+    for g, G in (("v", "V"), ("d", "D"), ("j", "J")):
+        s, e = rec.get(f"{g}_sequence_start"), rec.get(f"{g}_sequence_end")
+        if s is not None and e is not None:
+            segs[G] = (int(s), int(e))
+    proj = project_codons(len(rec["sequence"]), frame_offset_of(rec["junction_start"]), segs)
+    vb, jb = proj.aa_bounds.get("V"), proj.aa_bounds.get("J")
+    if vb is None or jb is None:
+        return None
+    enc = tok.encode(rec["sequence_aa"])
+    if len(enc) == 0 or len(enc) >= max_len:
+        return None
+    return {"tokens": enc, "v_class": vc, "j_class": jc,
+            "v_start": vb[0], "v_end": vb[1], "j_start": jb[0], "j_end": jb[1]}
+
+
 def _sample_stream(dc_name, class_maps, tok, max_len, sub_prob, seed, rng):
     """Real gym records -> class-target samples, with length-preserving substitution augmentation."""
     for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, seed, 1, None):
-        s, why = record_to_sample(rec, class_maps, tok, max_len)
+        s = _class_sample(rec, class_maps, tok, max_len)
         if s is None:
             continue
         if sub_prob and rng.random() < sub_prob:
-            aug = aa_substitute(rec["sequence_aa"], float(rng.uniform(0.02, 0.10)), rng)
-            enc = tok.encode(aug)
+            enc = tok.encode(aa_substitute(rec["sequence_aa"], float(rng.uniform(0.02, 0.10)), rng))
             if len(enc) == len(s["tokens"]):               # substitution preserves length -> boundaries valid
                 s = {**s, "tokens": enc}
         yield s
