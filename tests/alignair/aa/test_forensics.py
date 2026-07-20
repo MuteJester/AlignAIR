@@ -1,6 +1,5 @@
-import numpy as np
-
 from alignair.aa.forensics import germline_id_matrix, nearest_germline
+from alignair.aa.reference import AAGermline
 from alignair.aa.tokenizer import AAProteinTokenizer
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
@@ -10,32 +9,42 @@ def _ref():
     return ReferenceSet({"V": g, "J": GeneReference([], [], {})}, has_d=False)
 
 
-def test_germline_matrix_follows_reference_order():
+def _germlines(seqs, anchors):
+    return {n: AAGermline(n, s, 0, anchors[n], "V") for n, s in seqs.items()}
+
+
+def test_germline_matrix_follows_reference_order_and_keeps_anchors():
     ref = _ref()
-    aa = {"a*01": "MKVC", "a*02": "MKVC", "b*01": "MKLC"}
-    names, G, glen = germline_id_matrix(ref, aa, "V")
+    gl = _germlines({"a*01": "MKVCAAAA", "a*02": "MKVCAAAA", "b*01": "MKLCAAAA"},
+                    {"a*01": 3, "a*02": 3, "b*01": 3})
+    names, G, glen, ganchor = germline_id_matrix(ref, gl, "V")
     assert names == ["a*01", "a*02", "b*01"]
-    assert glen.tolist() == [4, 4, 4]
+    assert glen.tolist() == [8, 8, 8]
+    assert ganchor.tolist() == [3, 3, 3]
 
 
-def test_nearest_germline_picks_the_aa_closest_allele():
+def test_cys_anchored_identity_is_robust_to_a_frame_or_trim_offset():
     ref = _ref()
-    aa = {"a*01": "MKVC", "a*02": "MKVC", "b*01": "MKLC"}
-    names, G, _ = germline_id_matrix(ref, aa, "V")
+    # germline V regions before the Cys(anchor idx 4): a="MKVC?", b="MKLC?"; anchor residue 4 = the 'C'
+    gl = _germlines({"a*01": "QMKVCXXXX", "a*02": "QMKVCXXXX", "b*01": "QMKLCXXXX"},
+                    {"a*01": 4, "a*02": 4, "b*01": 4})
+    names, G, _, ganchor = germline_id_matrix(ref, gl, "V")
     tok = AAProteinTokenizer()
-    # exact match to the a-class protein -> nearest is a*01 or a*02 (both identical, tie -> first)
-    idx, ident = nearest_germline(tok.encode("MKVC"), G)
-    assert names[idx] in ("a*01", "a*02") and ident[idx] == 1.0
-    assert ident[0] == ident[1] == 1.0 and ident[2] == 0.75      # b differs at position 2
-    # a protein one residue from b -> nearest is b
-    idx2, ident2 = nearest_germline(tok.encode("MKLC"), G)
-    assert names[idx2] == "b*01" and ident2[2] == 1.0
-
-
-def test_partial_observation_still_ranks_by_identity_over_the_window():
-    ref = _ref()
-    names, G, _ = germline_id_matrix(ref, {"a*01": "MKVC", "a*02": "MKVC", "b*01": "MKLC"}, "V")
-    # only first 3 residues observed: "MKV" matches a (3/3) better than b (2/3)
-    idx, ident = nearest_germline(AAProteinTokenizer().encode("MKV"), G)
+    # OBSERVED read is 5'-trimmed: it lost the leading 'Q', so its V is "MKVC" with Cys at residue 3.
+    # A residue-0 (prefix) anchor would misalign; Cys-anchoring (obs_cys=3 <-> ganchor=4) recovers it.
+    obs = tok.encode("MKVC")
+    idx, ident = nearest_germline(obs, obs_cys=3, G=G, ganchor=ganchor, min_overlap=3)
     assert names[idx] in ("a*01", "a*02")
-    assert ident[0] == 1.0 and abs(ident[2] - 2 / 3) < 1e-9
+    assert ident[0] == 1.0 and ident[2] < 1.0                     # a matches fully, b differs at V-residue
+    # an obs matching the b protein selects b
+    idx2, _ = nearest_germline(tok.encode("MKLC"), 3, G, ganchor, min_overlap=3)
+    assert names[idx2] == "b*01"
+
+
+def test_too_little_overlap_is_not_scored():
+    ref = _ref()
+    gl = _germlines({"a*01": "MKVCA", "a*02": "MKVCA", "b*01": "MKLCA"}, {"a*01": 3, "a*02": 3, "b*01": 3})
+    _, G, _, ganchor = germline_id_matrix(ref, gl, "V")
+    _, ident = nearest_germline(AAProteinTokenizer().encode("MK"), obs_cys=2, G=G, ganchor=ganchor,
+                                min_overlap=15)
+    assert (ident == -1.0).all()                                  # < min_overlap comparable residues
