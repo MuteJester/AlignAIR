@@ -1,11 +1,18 @@
-"""How much of the INDEL damage to V is recoverable by MASKING vs by frame CORRECTION?
+"""How much INDEL damage to V is recoverable by MASKING vs frame CORRECTION? (corrected 2026-07-20)
 
-Measured robustly from the V CIGAR (no fragile frame-guessing):
-  - an indel splits the V alignment into contiguous match (M) runs;
-  - MASKING (keep only the valid pre-frameshift prefix) recovers the FIRST M-run;
-  - full frame CORRECTION (re-frame at each indel) recovers ALL M-runs (total M).
-Split by indel location: an indel downstream of V (D/J) leaves V's frame intact (V undamaged);
-an indel inside V frameshifts it. Also report the model's current V accuracy per split.
+CORRECTION over the earlier version: GenAIRR builds `sequence_aa` in the frame anchored at the V-Cys
+(`junction_start % 3`). So for an indel *before* the Cys, the ANCHOR-PROXIMAL (near-Cys) region stays
+in-frame and the 5' region goes off-frame — the OPPOSITE of "keep the first match run". The maskable
+valid region is therefore the contiguous in-frame run adjacent to the Cys (measured anchor-relative
+against the true germline). Verified: near-Cys identity ~0.64 vs 5'-most ~0.22 on single-V-indel reads.
+
+Two recovery notions, complete-codon counted:
+  - MASKING: keep the anchor-proximal in-frame run only (residues from the Cys back to the first indel).
+  - CORRECTION: re-frame at each indel and keep all match runs (sum of complete codons per CIGAR run).
+
+NOTE: `maskable` here uses the true germline + true junction to locate the frameshift — it is a
+HIDDEN-TRUTH diagnostic (a ceiling for what a perfect mask could keep), NOT an AA-only method. The
+no-training local aligner (de-risk experiment) does the AA-only version by scanning Cys candidates.
 
 Run: PYTHONPATH=src .venv/bin/python scripts/aa/mask_recovery.py --device cuda --n-per-stratum 1500
 """
@@ -21,24 +28,33 @@ from alignair_benchmark import default_igh_spec, stream_benchmark
 
 from alignair.aa.data import build_class_maps
 from alignair.aa.gym_bridge import aa_usable, build_batch_aa
+from alignair.aa.reference import build_aa_germlines
 from alignair.aa.train_gym import setup_aa
 
 
-def m_runs_nt(cigar: str):
-    """Contiguous match-run lengths (nt) of a V CIGAR, split by internal indels; leading/trailing
-    germline trims (D with no read consumption at the ends) do not create spurious runs."""
+def _m_runs_nt(cigar: str):
     runs, cur = [], 0
     for n, op in re.findall(r"(\d+)([MID])", cigar or ""):
         n = int(n)
         if op == "M":
             cur += n
-        else:                                    # I or D breaks the in-frame run
+        else:
             if cur:
                 runs.append(cur)
                 cur = 0
     if cur:
         runs.append(cur)
     return runs
+
+
+def _anchor_proximal_run(match_from5: list, win: int = 5) -> int:
+    """Length of the in-frame run adjacent to the Cys anchor: scan 5' FROM the anchor (reversed),
+    stop at the first window with <=1 match (the frameshift boundary)."""
+    rev = match_from5[::-1]                        # index 0 = anchor-proximal residue
+    for i in range(len(rev) - win + 1):
+        if sum(rev[i:i + win]) <= 1:
+            return i
+    return len(rev)
 
 
 def main() -> None:
@@ -56,6 +72,8 @@ def main() -> None:
     model.load_state_dict(torch.load(args.model, map_location="cpu")["model"])
     model.to(args.device).eval()
     vclass = build_class_maps(args.dc)[0]["V"].allele_class
+    germ = {n: g for n, g in build_aa_germlines(getattr(__import__("GenAIRR"), args.dc),
+                                                genes=("V",)).genes["V"].items()}
     names = ref.gene("V").names
     idx_class = np.array([vclass.get(n, -1) for n in names])
 
@@ -70,55 +88,65 @@ def main() -> None:
             probs = model(build_batch_aa(chunk, ref, cfg, args.device)[0])["v_allele"].cpu().numpy()
             for k, rec in enumerate(chunk):
                 call = rec["v_call"].split(",")[0]
-                if call not in vclass:
+                if call not in vclass or call not in germ:
                     continue
                 true_c = vclass[call]
                 model_ok = int(int(idx_class[int(probs[k].argmax())]) == true_c)
-                runs = m_runs_nt(rec.get("v_cigar", ""))
-                row = {"model_ok": model_ok,
-                       "maskable_res": (runs[0] // 3) if runs else 0,       # first in-frame run
-                       "correctable_res": sum(runs) // 3}                   # all match runs
-                (dj if int(rec.get("n_v_indels", 0)) == 0 else vind).append(row)
+                correctable = sum(r // 3 for r in _m_runs_nt(rec.get("v_cigar", "")))
 
-    def frac(rows, pred):
-        return float(np.mean([pred(r) for r in rows])) if rows else 0.0
+                if int(rec.get("n_v_indels", 0)) == 0:
+                    dj.append({"model_ok": model_ok, "correctable_res": correctable})
+                    continue
+                # anchor-proximal maskable run (hidden-truth): Cys-anchor vs true germline
+                g = germ[call]
+                obs_cys = int(rec["junction_start"]) // 3
+                t = min(obs_cys, g.anchor_aa)
+                aa = rec["sequence_aa"]
+                o, gg = aa[obs_cys - t:obs_cys], g.aa_seq[g.anchor_aa - t:g.anchor_aa]
+                L = min(len(o), len(gg))
+                maskable = _anchor_proximal_run([o[j] == gg[j] for j in range(L)]) if L else 0
+                vind.append({"model_ok": model_ok, "maskable_res": maskable,
+                             "correctable_res": correctable})
 
     def mean(rows, key):
         return float(np.mean([r[key] for r in rows])) if rows else 0.0
 
+    def frac(rows, pred):
+        return float(np.mean([pred(r) for r in rows])) if rows else 0.0
+
     mc = args.min_call_residues
+    tot = len(dj) + len(vind)
     report = {
-        "n_indel_reads": len(dj) + len(vind), "min_call_residues": mc,
-        "dj_indels": {"n": len(dj), "frac_of_indel_reads": len(dj) / max(1, len(dj) + len(vind)),
-                      "model_v_acc": mean(dj, "model_ok"),
-                      "mean_correctable_res": mean(dj, "correctable_res")},
-        "v_indels": {"n": len(vind), "frac_of_indel_reads": len(vind) / max(1, len(dj) + len(vind)),
+        "n_indel_reads": tot, "min_call_residues": mc,
+        "note": "maskable = anchor-proximal in-frame run (near Cys); hidden-truth diagnostic, not AA-only",
+        "dj_indels": {"n": len(dj), "frac": len(dj) / max(1, tot),
+                      "model_v_acc": mean(dj, "model_ok"), "mean_correctable_res": mean(dj, "correctable_res")},
+        "v_indels": {"n": len(vind), "frac": len(vind) / max(1, tot),
                      "model_v_acc": mean(vind, "model_ok"),
                      "mean_maskable_res": mean(vind, "maskable_res"),
                      "mean_correctable_res": mean(vind, "correctable_res"),
                      "frac_maskable_ge_min": frac(vind, lambda r: r["maskable_res"] >= mc),
-                     "frac_needs_correction": frac(
-                         vind, lambda r: r["maskable_res"] < mc <= r["correctable_res"]),
-                     "frac_v_truly_lost": frac(vind, lambda r: r["correctable_res"] < mc)},
+                     "frac_needs_correction": frac(vind, lambda r: r["maskable_res"] < mc <= r["correctable_res"]),
+                     "frac_truly_lost": frac(vind, lambda r: r["correctable_res"] < mc)},
     }
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(report, f, indent=2, sort_keys=True)
 
     d, v = report["dj_indels"], report["v_indels"]
-    tot = report["n_indel_reads"]
-    print(f"\n==== INDEL DAMAGE TO V: what MASKING vs CORRECTION can recover (n={tot} indel reads) ====")
-    print(f"\n[{d['frac_of_indel_reads']:.0%}] indel is DOWNSTREAM of V (D/J) -> V frame INTACT ({d['n']} reads)")
-    print(f"    V undamaged; model currently gets {d['model_v_acc']:.3f} (a model gap, not a masking one)")
-    print(f"\n[{v['frac_of_indel_reads']:.0%}] indel is INSIDE V -> V frameshifted ({v['n']} reads)")
-    print(f"    model currently gets {v['model_v_acc']:.3f} on the frameshifted input")
-    print(f"    valid V residues -- MASKING (first run): {v['mean_maskable_res']:.0f}   "
-          f"CORRECTION (all runs): {v['mean_correctable_res']:.0f}")
-    print(f"    of these V-indel reads (>= {mc} residues to call V):")
-    print(f"       MASKING alone suffices:            {v['frac_maskable_ge_min']:.0%}")
-    print(f"       needs full frame CORRECTION:       {v['frac_needs_correction']:.0%}")
-    print(f"       V truly lost (too little even so): {v['frac_v_truly_lost']:.0%}")
-    print(f"\nwrote {args.out}")
+    print(f"\n==== INDEL DAMAGE TO V (CORRECTED anchor-relative) — n={tot} indel reads ====")
+    print(f"\n[{d['frac']:.0%}] indel DOWNSTREAM of V (D/J) -> V frame intact ({d['n']} reads); "
+          f"model V acc {d['model_v_acc']:.3f}")
+    print(f"\n[{v['frac']:.0%}] indel INSIDE V ({v['n']} reads); model V acc {v['model_v_acc']:.3f}")
+    print(f"    anchor-proximal MASKABLE V residues: {v['mean_maskable_res']:.0f}   "
+          f"CORRECTABLE (all runs): {v['mean_correctable_res']:.0f}")
+    print(f"    of V-indel reads (>= {mc} residues to call V):")
+    print(f"       MASKING (anchor-proximal) suffices: {v['frac_maskable_ge_min']:.0%}")
+    print(f"       needs full frame CORRECTION:        {v['frac_needs_correction']:.0%}")
+    print(f"       V truly lost:                       {v['frac_truly_lost']:.0%}")
+    print(f"\n(maskable is a HIDDEN-TRUTH ceiling; the AA-only recovery number comes from the "
+          f"no-training local aligner)")
+    print(f"wrote {args.out}")
 
 
 if __name__ == "__main__":

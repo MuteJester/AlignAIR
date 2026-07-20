@@ -1,19 +1,20 @@
 {
   "dj_indels": {
-    "frac_of_indel_reads": 0.12047065115657174,
+    "frac": 0.12047065115657174,
     "mean_correctable_res": 45.69700332963374,
     "model_v_acc": 0.3706992230854606,
     "n": 901
   },
   "min_call_residues": 25,
   "n_indel_reads": 7479,
+  "note": "maskable = anchor-proximal in-frame run (near Cys); hidden-truth diagnostic, not AA-only",
   "v_indels": {
-    "frac_maskable_ge_min": 0.45226512617816966,
-    "frac_needs_correction": 0.4843417452113104,
-    "frac_of_indel_reads": 0.8795293488434283,
-    "frac_v_truly_lost": 0.06339312861051992,
-    "mean_correctable_res": 86.62678625722104,
-    "mean_maskable_res": 28.21176649437519,
+    "frac": 0.8795293488434283,
+    "frac_maskable_ge_min": 0.28215262997871693,
+    "frac_needs_correction": 0.6544542414107631,
+    "frac_truly_lost": 0.06339312861051992,
+    "mean_correctable_res": 85.7777439951353,
+    "mean_maskable_res": 18.537701429005775,
     "model_v_acc": 0.48221343873517786,
     "n": 6578
   }

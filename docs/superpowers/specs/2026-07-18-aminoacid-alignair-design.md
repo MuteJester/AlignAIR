@@ -227,9 +227,13 @@ them because the original framing overstated what was proven.
    **5' region goes off-frame** — the opposite of `mask_recovery.py`'s "first M-run is the valid
    prefix." Verified on 200 single-V-indel reads: Cys-anchor-proximal identity **0.640** vs 5'-most
    identity **0.218**. (The script also uses `sum(runs)//3` instead of `sum(run//3 for run in runs)`,
-   combining partial boundary codons.) **The masking recovery estimates are retracted** pending a
-   redo using anchor-relative cumulative phase + complete-codon provenance, and measured AA-only class
-   recovery (not a hidden-CIGAR length proxy with a chosen 25-residue threshold).
+   combining partial boundary codons.) **Corrected** (`mask_recovery.py` rewritten anchor-relative +
+   complete-codon; `mask_recovery.json` regenerated): of V-indel reads the anchor-proximal in-frame run
+   is mean **19** residues; **masking suffices for only 28%** (was wrongly 45%), **65% need full frame
+   correction**, 6% truly lost; correctable (all runs) mean **86** → correction recovers ~94%. So
+   masking is *weaker* than first reported and frame-correction is the real fix. NB: `maskable` still
+   uses true germline+junction (a hidden-truth ceiling); the **AA-only** recovery number comes from the
+   no-training Cys-scanning local aligner (de-risk (a)).
 
 3. **The "ambiguity did not emerge" conclusion is confounded by the loss.** BCE target is
    `y*0.9 + 0.05` (`losses.py`), training every one of the 197 negative V alleles toward 0.05; the
