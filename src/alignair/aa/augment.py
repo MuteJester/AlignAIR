@@ -34,9 +34,10 @@ def aa_indel(seq: str, rng, n: int = 1) -> str:
     return s
 
 
-def il_ambiguity(seq: str, symbol: str = "J") -> str:
+def il_ambiguity(seq: str, symbol: str = "I") -> str:
     """Collapse isoleucine (I) and leucine (L) to one symbol — mass spectrometry cannot tell them
-    apart (identical mass). ``J`` is the IUPAC code for I/L."""
+    apart (identical mass; IUPAC code J). We default to ``I`` (a real residue) so the collapsed
+    sequence stays valid for both the AA tokenizer and the BLOSUM aligner."""
     return "".join(symbol if c in "IL" else c for c in seq)
 
 
