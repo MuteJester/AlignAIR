@@ -1,0 +1,17 @@
+alias	imgt_family	imgt_gene	citation
+VH4-59 human germline acceptor sequence	IGHV4		VH4 family ('VH4-' prefix; source names VH4-59 germline acceptor). Family only; VH4-59 != asserted IMGT allele
+common sequence of subgroup III of the human antibody VH	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+consensus of human group III germ line genes	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+heavy chain subgroup III consensus framework	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+humIII heavy subgroup III consensus	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+human V_H group III consensus (Kabat)	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+human consensus heavy chain subgroup III	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+human consensus heavy chain subgroup III (humIII)	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+human germline VH segment DP53	IGHV3		DP53 ∈ VH3 family: Tomlinson 1992 (PMID 1404388) + PMID 10594701; NOT IGHV3-53
+human germline VH sequences of KABAT subgroup VHIII	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+human germline VH1-10 (VBASE)	IGHV1		VH1 family (VBASE 'VH1-' prefix; source states human germline VH1-10). Family only; VH1-10 != IGHV1-10
+human germline VH1-69 (HuVH1-69/JH4)	IGHV1		VH1 family ('VH1-' prefix; source names HuVH1-69). Family only
+human group 3 framework graft (gh3hTNF40.4)	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+human heavy chain germline DP-14 in subgroup VH1	IGHV1		VH1 family (source co-states 'subgroup VH1'). Family only; DP-14 not mapped to an exact IMGT gene
+human heavy-chain subgroup III (V_HIII) consensus	IGHV3		Kabat VH subgroup III ≡ IMGT IGHV3 family; IMGT Scaviner 1999 + co-stated in US11866496/US11401333
+human sub-group I germline framework VH1-3,DP7	IGHV1		sub-group I (source co-states 'sub-group I germline framework VH1-3,DP7'). Family only

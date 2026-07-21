@@ -5,7 +5,15 @@
     "download_exists": true,
     "download_endpoint_status": "historical static CSV path now serves the SAbDab2 SPA shell; live endpoint must be captured during implementation",
     "germline_field_present": false,
-    "fields_reported": ["INN", "format", "isotype", "light_chain_category", "highest_clinical_stage", "developmental_status", "sequences"],
+    "fields_reported": [
+      "INN",
+      "format",
+      "isotype",
+      "light_chain_category",
+      "highest_clinical_stage",
+      "developmental_status",
+      "sequences"
+    ],
     "redistribution_license": "not established; no explicit permissive redistribution license located",
     "handling": "manifest + acquisition script; do NOT commit raw sequences",
     "citation": "https://academic.oup.com/nar/article/48/D1/D383/5573951"
@@ -27,5 +35,26 @@
     ],
     "estimated_exact_gene_source_declared_lineages": "far below the 15-lineage floor; plausibly near zero",
     "statistical_note": "zero-error exact one-sided 95% lower bound needs ~59 independent observations to reach 0.95"
+  },
+  "hydration": {
+    "source": "Thera-SAbDab PL132 (Feb 2025)",
+    "local_path": ".private/aa-phase3/TheraSAbDab_PL132.csv (git-ignored, NOT redistributed)",
+    "pl132_sha256": "cc9402788297ed7b6ab3d676daa21953a6d28ebbd9cc78ec7248b19f74d49d6d",
+    "retrieval_date": "2026-07-21",
+    "n_records": 1133,
+    "handling": "VH hydrated to git-ignored hydrated_sequences.tsv; only sha256(vh_aa) committed",
+    "column_used": "HeavySequence"
+  },
+  "gold_cohort": {
+    "n_gold": 16,
+    "n_independent_lineages": 16,
+    "family_distribution": {
+      "IGHV3": 11,
+      "IGHV1": 4,
+      "IGHV4": 1
+    },
+    "resolution": "family-level (subgroup_only) for all rows per user directive; VBASE names not mapped to exact IMGT genes",
+    "gate": "PASS (>=15)",
+    "label_kind": "independent design-ancestry label (not germline ground truth)"
   }
 }
