@@ -42,6 +42,8 @@ def score_gold(rows, preds, cmap, alpha, seed, n_boot: int = 2000) -> dict:
     cat_fams = catalogue_families(cmap)
     # binding: representatives only
     ridx = [i for i, r in enumerate(rows) if _is_rep(r)]
+    if not ridx:
+        raise ValueError("cohort has no lineage-representative rows")
     lids = [rows[i].lineage_id for i in ridx]
     top = {rows[i].lineage_id: (rows[i].true_v_family in class_families(preds[i].top_class, cmap)) for i in ridx}
     cov = {rows[i].lineage_id: (rows[i].true_v_family in _set_family(preds[i], cmap)) for i in ridx}
@@ -81,6 +83,8 @@ def score_gold(rows, preds, cmap, alpha, seed, n_boot: int = 2000) -> dict:
 def score_concordance(rows, preds, cmap, alpha) -> dict:
     _check(rows, preds)
     ridx = [i for i, r in enumerate(rows) if _is_rep(r)]
+    if not ridx:
+        raise ValueError("cohort has no lineage-representative rows")
     agree = [rows[i].true_v_gene in class_genes(preds[i].top_class, cmap) for i in ridx]
     cov = [rows[i].true_v_gene in _set_gene(preds[i], cmap) for i in ridx]
     n = len(ridx); ka = sum(agree); kc = sum(cov)

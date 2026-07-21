@@ -49,3 +49,17 @@ def test_concordance_reports_agreement_and_interval():
     assert out["label_kind"].startswith("alignment-derived")
     assert out["top_class_gene_agreement"] == 1.0
     assert len(out["agreement_ci"]) == 2
+
+def test_score_gold_no_representatives_raises_valueerror():
+    """Non-empty cohort with no representatives should raise ValueError, not ZeroDivisionError."""
+    rows = [_r(f"m{i}", f"L{i}", "IGHV3", "false") for i in range(5)]
+    preds = [Prediction(0, {0}) for _ in rows]
+    with pytest.raises(ValueError, match="no lineage-representative rows"):
+        score_gold(rows, preds, FakeMap(), 0.05, 0)
+
+def test_score_concordance_no_representatives_raises_valueerror():
+    """Non-empty cohort with no representatives should raise ValueError, not IndexError."""
+    rows = [_r(f"m{i}", f"L{i}", "IGHV3", "false", gene="IGHV3-23") for i in range(5)]
+    preds = [Prediction(0, {0}) for _ in rows]
+    with pytest.raises(ValueError, match="no lineage-representative rows"):
+        score_concordance(rows, preds, FakeMap(), 0.05)
