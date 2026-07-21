@@ -145,6 +145,26 @@ def load_labels(path: str) -> tuple[list, list]:
     return admitted, audit
 
 
+def load_crosswalk(path: str) -> dict:
+    """alias -> (imgt_family, imgt_gene_or_empty, citation). Every row MUST carry a citation."""
+    out = {}
+    with open(path, newline="") as fh:
+        for d in csv.DictReader(fh, delimiter="\t"):
+            if not d.get("citation"):
+                raise ValueError(f"crosswalk row for {d.get('alias')!r} has no citation")
+            out[d["alias"]] = (d["imgt_family"], d.get("imgt_gene", ""), d["citation"])
+    return out
+
+
+def load_hydrated(path: str) -> dict:
+    """exact_vh_id -> vh_aa (from the git-ignored hydrated file)."""
+    out = {}
+    with open(path, newline="") as fh:
+        for d in csv.DictReader(fh, delimiter="\t"):
+            out[d["exact_vh_id"]] = d["vh_aa"]
+    return out
+
+
 def cohort_sha256(rows: list, hydrated: dict) -> str:
     h = hashlib.sha256()
     for line in sorted(
