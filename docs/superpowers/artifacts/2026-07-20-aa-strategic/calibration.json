@@ -19,16 +19,25 @@
           "n": 1242
         }
       },
+      "calibration_frozen": {
+        "groups_fitted": [
+          "full",
+          "short",
+          "trunc"
+        ],
+        "pooled_fallback_exercised": false,
+        "q_mondrian": {
+          "full": 0.9339342452989416,
+          "short": 0.9986270411880149,
+          "trunc": 0.9952707053934611
+        },
+        "q_pooled": 0.9924141631401484
+      },
       "coverage_ci95": [
         0.9735257892438303,
         0.9816955164282681
       ],
       "empirical_coverage": 0.977977977977978,
-      "mondrian_groups_fitted": [
-        "full",
-        "short",
-        "trunc"
-      ],
       "n_test": 4995,
       "set_size": {
         "mean": 10.294494494494494,
@@ -55,16 +64,25 @@
           "n": 1245
         }
       },
+      "calibration_frozen": {
+        "groups_fitted": [
+          "full",
+          "short",
+          "trunc"
+        ],
+        "pooled_fallback_exercised": false,
+        "q_mondrian": {
+          "full": 0.9529973996360313,
+          "short": 0.9969635737496482,
+          "trunc": 0.9950339015495734
+        },
+        "q_pooled": 0.9908063246545513
+      },
       "coverage_ci95": [
         0.9879792819291034,
         0.9932668070757923
       ],
       "empirical_coverage": 0.991,
-      "mondrian_groups_fitted": [
-        "full",
-        "short",
-        "trunc"
-      ],
       "n_test": 5000,
       "nt_allele_set_size": {
         "mean": 3.1334,
@@ -97,16 +115,25 @@
           "n": 1245
         }
       },
+      "calibration_frozen": {
+        "groups_fitted": [
+          "full",
+          "short",
+          "trunc"
+        ],
+        "pooled_fallback_exercised": false,
+        "q_mondrian": {
+          "full": 0.9353423896173368,
+          "short": 0.9383917223101277,
+          "trunc": 0.9330629308246624
+        },
+        "q_pooled": 0.9345120931931847
+      },
       "coverage_ci95": [
         0.9945614091827297,
         0.9978760812446252
       ],
       "empirical_coverage": 0.9966,
-      "mondrian_groups_fitted": [
-        "full",
-        "short",
-        "trunc"
-      ],
       "n_test": 5000,
       "nt_allele_set_size": {
         "mean": 2.8802,
@@ -124,5 +151,16 @@
   },
   "model": "experiments/aa/strategic/model_stage1_PASS.pt",
   "n_cal": 5000,
-  "n_test": 5000
+  "n_test": 5000,
+  "provenance": {
+    "bin_defs": "coverage groups: full=uncropped; trunc=kept\u2208[0.6,0.9]; short=kept\u2208[0.3,0.6)",
+    "class_map_db_hash": {
+      "J": "e1a455b87f614f0d",
+      "V": "e1a455b87f614f0d"
+    },
+    "min_group_fallback": 500,
+    "model_sha256": "54eef812942e7b96f3d49c9ed881e878c06f8978576a9f16345e797c8937dfc6",
+    "supported_distribution": "SIMULATOR-DOMAIN ONLY: GenAIRR HUMAN_IGH_OGRDB, coverage-mix (full+truncated). Guarantee holds under exchangeability within each Mondrian group; NOT validated on real protein \u2014 recalibrate before real-data use.",
+    "target_coverage": 0.95
+  }
 }

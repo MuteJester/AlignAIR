@@ -225,6 +225,21 @@ On full-length reads the model is confident (near-singleton V/J, D≈2); on trun
 balloons (D→~24 of 33 alleles) — the honest "return more alleles when less certain" behavior, now
 **guaranteed** rather than emergent. APS is mildly conservative (over-covers), the safe direction.
 
+**Precise scope of the guarantee (do not overstate):**
+- The 95% guarantee holds **under exchangeability with the calibration distribution**, and **within
+  each predefined Mondrian group**. It does **NOT** cover real-protein distribution shift — this
+  calibration is **simulator-domain only** until recalibrated on representative real inputs (Phase 3).
+- In this run **all three coverage groups were fitted** (each ≥ min_group), so the **pooled fallback was
+  not exercised**; a fallback group would receive only the **pooled marginal** guarantee, not a
+  group-conditional one.
+
+**Research vs product:** calibration currently exists as an *evaluation procedure*, not a deployable
+artifact. A frozen research snapshot (model SHA, class-map fingerprint, serialized per-gene pooled +
+Mondrian quantiles, α/APS params/bin defs/fallback policy, class→nt-allele maps, supported-distribution
+statement) is recorded in `SNAPSHOT.md` + `calibration.json`. A *production* AA feature additionally
+needs an inference API that loads the quantiles and emits calibrated sets (class set, nt-allele set,
+set size, applied calibration group) — a product blocker, not an experiment-closing one.
+
 **This closes the strategic (b) program.** The AA IGH aligner: V near the alignment reference and
 robust to AA-native errors + partial coverage; D genuinely recovered (proven by ablation) and honestly
 uncertain when unobservable; J solved; all three emitting calibrated, coverage-guaranteed allele sets
@@ -264,7 +279,7 @@ trained on the real gym distribution + AA-native substitution augmentation, 40k 
 `docs/superpowers/artifacts/2026-07-20-aa-strategic/eval_vdj.json`). Evaluated vs the no-training
 alignment reference (V) and vs the D-frequency prior (D).
 
-**V class accuracy** (aligner ceiling in parens): clean **0.979** (0.99), AA-subs-7% **0.938** (0.96),
+**V class accuracy** (alignment reference in parens): clean **0.979** (0.99), AA-subs-7% **0.938** (0.96),
 AA-single-indel **0.970** (0.99), I/L-ambiguity **0.969** (0.98) — near the alignment reference on
 everything that matters for real protein input. Beats the aligner on nucleotide V-indels (0.67/0.70 vs
 0.45/0.44 — frameshift robustness learned from gym exposure, no special mechanism). **Weak spot:
@@ -282,7 +297,7 @@ accuracy further.
 - **J measured:** clean **0.993** (Wilson CI [0.986, 0.997]) — J is effectively solved; robust under indels (0.945–0.969).
 - **V:** clean **0.976** (CI [0.965, 0.984]) vs alignment-**reference** 0.990; on V-indels model **0.774** vs reference **0.491** — the model *exceeds* the reference, confirming it is a reference/baseline, **not a ceiling**.
 - **D is balanced, not a prior artifact:** clean D-allele **micro 0.781 = macro 0.782** (CI [0.754, 0.806]), gene 0.844, vs a 0.040 prior.
-- **D-evidence ablation (decisive):** masking the observed junction/D residues (V-end..J-start) with X **collapses D-allele accuracy 0.781 → 0.033 ≈ the prior** (drop 0.748). So the D call comes from **observable D-region residues, not correlated rearrangement context** — the 0.78 is real observation.
+- **D-evidence ablation (decisive):** masking the V-end..J-start junction region with X **collapses D-allele accuracy 0.781 → 0.033 ≈ the prior** (drop 0.748). So the D call comes from **junction-region sequence evidence, not from correlated rearrangement context** (V/J identity, read length). **Scope of this ablation:** it masks the *entire* junction (np1+D+np2), so it proves D uses junction-region sequence — not *specifically* D-owned residues; a D-owned-only mask would be needed for that stronger claim.
 
 **Net:** a V/D/J amino-acid aligner whose V matches the alignment reference and is robust to real
 AA-native errors, with genuinely recovered D — validating the strategic reframe (explicit classes +

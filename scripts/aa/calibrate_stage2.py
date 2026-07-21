@@ -8,6 +8,7 @@ by coverage stratum. V/J protein-class sets are expanded to nucleotide-allele se
 Run: PYTHONPATH=src .venv/bin/python scripts/aa/calibrate_stage2.py --model experiments/aa/strategic/model_stage1_PASS.pt --device cuda
 """
 import argparse
+import hashlib
 import json
 import os
 
@@ -96,7 +97,22 @@ def main() -> None:
     tst = _cohort(dc, ref, vclass, jclass, d_index, args.n, seed=9000, rng=np.random.default_rng(2))
     print(f"calibration {len(cal)} / test {len(tst)} (disjoint seeds); target coverage {1 - args.alpha:.0%}")
 
-    report = {"model": args.model, "alpha": args.alpha, "n_cal": len(cal), "n_test": len(tst), "genes": {}}
+    h = hashlib.sha256()
+    with open(args.model, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    report = {"model": args.model, "alpha": args.alpha, "n_cal": len(cal), "n_test": len(tst),
+              "provenance": {
+                  "model_sha256": h.hexdigest(),
+                  "class_map_db_hash": {"V": class_maps["V"].db_hash, "J": class_maps["J"].db_hash},
+                  "target_coverage": 1 - args.alpha,
+                  "bin_defs": "coverage groups: full=uncropped; trunc=kept∈[0.6,0.9]; short=kept∈[0.3,0.6)",
+                  "min_group_fallback": 500,
+                  "supported_distribution": ("SIMULATOR-DOMAIN ONLY: GenAIRR HUMAN_IGH_OGRDB, coverage-mix "
+                                             "(full+truncated). Guarantee holds under exchangeability within "
+                                             "each Mondrian group; NOT validated on real protein — recalibrate "
+                                             "before real-data use."),
+              }, "genes": {}}
     for gene, key, cmap in (("V", "v_class_logits", class_maps["V"]),
                             ("J", "j_class_logits", class_maps["J"]),
                             ("D", "d_class_logits", None)):
@@ -125,7 +141,11 @@ def main() -> None:
              "by_coverage_stratum": {cv: {"n": len(v), "coverage": float(np.mean([x[1] for x in v])),
                                           "mean_set": float(np.mean([x[0] for x in v]))}
                                      for cv, v in by_cov.items()},
-             "mondrian_groups_fitted": list(conf.q_group.keys())}
+             "calibration_frozen": {                          # the deployable quantiles (research snapshot)
+                 "q_pooled": conf.q_pooled,
+                 "q_mondrian": {str(k): float(vq) for k, vq in conf.q_group.items()},
+                 "groups_fitted": list(conf.q_group.keys()),
+                 "pooled_fallback_exercised": len(conf.q_group) < len(set(cov_cal))}}
         if nt_sizes:
             g["nt_allele_set_size"] = _set_stats(nt_sizes)
         report["genes"][gene] = g
