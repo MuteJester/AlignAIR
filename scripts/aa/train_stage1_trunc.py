@@ -22,6 +22,7 @@ def main() -> None:
     ap.add_argument("--p-il", type=float, default=0.15)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--init", default=None, help="warm-start checkpoint (fine-tune)")
     ap.add_argument("--out", default="experiments/aa/strategic/model_stage1.pt")
     args = ap.parse_args()
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
@@ -33,7 +34,7 @@ def main() -> None:
           f"p_crop={args.p_crop} p_sub={args.p_sub} p_il={args.p_il}", flush=True)
     stage1_train(model, cfg, class_maps, meta, steps=args.steps, batch_size=args.batch_size,
                  lr=args.lr, p_crop=args.p_crop, p_sub=args.p_sub, p_il=args.p_il, seed=args.seed,
-                 device=args.device, log_every=250, save_path=args.out, save_every=5000)
+                 device=args.device, log_every=250, save_path=args.out, save_every=5000, init_path=args.init)
     print("done", flush=True)
 
 

@@ -1,0 +1,73 @@
+{
+  "d_eval": {
+    "aa_single_indel": {
+      "d_allele_acc": 0.75875,
+      "d_allele_prior": 0.04,
+      "d_gene_acc": 0.825,
+      "d_gene_prior": 0.0725,
+      "n": 800
+    },
+    "aa_subs_7pct": {
+      "d_allele_acc": 0.73,
+      "d_allele_prior": 0.04,
+      "d_gene_acc": 0.79625,
+      "d_gene_prior": 0.0725,
+      "n": 800
+    },
+    "clean": {
+      "d_allele_acc": 0.76875,
+      "d_allele_prior": 0.04,
+      "d_gene_acc": 0.8375,
+      "d_gene_prior": 0.0725,
+      "n": 800
+    }
+  },
+  "model": "experiments/aa/strategic/model_stage1.pt",
+  "per_stratum": {
+    "aa_il_ambiguity": {
+      "aligner_acc": 0.97875,
+      "model_acc": 0.94125,
+      "n": 800
+    },
+    "aa_single_indel": {
+      "aligner_acc": 0.98875,
+      "model_acc": 0.94625,
+      "n": 800
+    },
+    "aa_subs_7pct": {
+      "aligner_acc": 0.96125,
+      "model_acc": 0.90625,
+      "n": 800
+    },
+    "aa_truncate_50_80": {
+      "aligner_acc": 0.87625,
+      "model_acc": 0.84,
+      "n": 800
+    },
+    "clean": {
+      "aligner_acc": 0.99,
+      "model_acc": 0.9475,
+      "n": 800
+    },
+    "dj_indel": {
+      "aligner_acc": 0.48044692737430167,
+      "model_acc": 0.5013966480446927,
+      "n": 716
+    },
+    "short_janchor": {
+      "aligner_acc": 0.215,
+      "model_acc": 0.26125,
+      "n": 800
+    },
+    "v_indel_1": {
+      "aligner_acc": 0.445,
+      "model_acc": 0.6675,
+      "n": 800
+    },
+    "v_indel_multi": {
+      "aligner_acc": 0.44125,
+      "model_acc": 0.7075,
+      "n": 800
+    }
+  }
+}

@@ -113,8 +113,10 @@ def collate_stage1(samples, max_len, n_classes: dict, device="cpu"):
 
 def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, steps=40000, batch_size=64,
                  lr=3e-4, p_crop=0.4, p_sub=0.4, p_il=0.15, seed=0, device="cpu", log_every=250,
-                 grad_clip=1.0, save_path=None, save_every=5000):
+                 grad_clip=1.0, save_path=None, save_every=5000, init_path=None):
     import GenAIRR as ga
+    if init_path:                                            # warm-start (fine-tune a passing baseline)
+        model.load_state_dict(torch.load(init_path, map_location="cpu")["model"])
     dc = getattr(ga, dc_name)
     protos = {"v": prototypes_by_class(dc, class_maps["V"], "V"),
               "j": prototypes_by_class(dc, class_maps["J"], "J")}
