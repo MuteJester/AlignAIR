@@ -1,0 +1,29 @@
+{
+  "by_bin": {
+    "full": {
+      "family_coverage": 1.0,
+      "n": 16,
+      "quantile": 0.9353423896173368
+    },
+    "short": {
+      "family_coverage": 1.0,
+      "keep_range": [
+        0.3,
+        0.6
+      ],
+      "n": 16,
+      "quantile": 0.9383917223101277
+    },
+    "trunc": {
+      "family_coverage": 1.0,
+      "keep_range": [
+        0.6,
+        0.9
+      ],
+      "n": 16,
+      "quantile": 0.9330629308246624
+    }
+  },
+  "kind": "SYNTHETIC truncation stress test on real VH \u2014 separate from the primary result",
+  "seed": 0
+}
