@@ -69,3 +69,17 @@ class Conformal:
     def predict_set(self, prob_row, group=None) -> set:
         q = self.q_group.get(group, self.q_pooled) if group is not None else self.q_pooled
         return aps_set(prob_row, q, self.lam, self.k_reg)
+
+
+class FrozenConformal:
+    """Deployable calibrator: a fixed qhat loaded from frozen calibration.json. No re-fitting."""
+
+    def __init__(self, qhat: float, lam: float = 0.0, k_reg: int = 1):
+        self.qhat, self.lam, self.k_reg = float(qhat), lam, k_reg
+
+    def predict_set(self, prob_row) -> set:
+        return aps_set(prob_row, self.qhat, self.lam, self.k_reg)
+
+    @classmethod
+    def from_calibration_json(cls, cal, gene, group="full", lam=0.0, k_reg=1):
+        return cls(cal["genes"][gene]["calibration_frozen"]["q_mondrian"][group], lam, k_reg)
