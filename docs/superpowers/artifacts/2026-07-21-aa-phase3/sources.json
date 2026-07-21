@@ -1,0 +1,31 @@
+{
+  "spike_date": "2026-07-21",
+  "model_inference_run": false,
+  "thera_sabdab": {
+    "download_exists": true,
+    "download_endpoint_status": "historical static CSV path now serves the SAbDab2 SPA shell; live endpoint must be captured during implementation",
+    "germline_field_present": false,
+    "fields_reported": ["INN", "format", "isotype", "light_chain_category", "highest_clinical_stage", "developmental_status", "sequences"],
+    "redistribution_license": "not established; no explicit permissive redistribution license located",
+    "handling": "manifest + acquisition script; do NOT commit raw sequences",
+    "citation": "https://academic.oup.com/nar/article/48/D1/D383/5573951"
+  },
+  "imgt": {
+    "license": "CC BY 4.0",
+    "terms_recorded_date": "2026-07-21",
+    "attribution_required": true,
+    "citation": "https://www.imgt.org/about/termsofuse.php",
+    "role": "Tier-2 (expert-curated, alignment-informed) only; not Gold"
+  },
+  "gold_label_feasibility": {
+    "definition": "source-declared, exact-gene, alignment-independent human IGHV",
+    "verdict": "NO-GO as specified",
+    "reasons": [
+      "humanization templates are usually consensus/subgroup (subgroup_only), not a specific germline gene",
+      "enumerable therapeutic germline-of-origin resources are alignment-derived (ANARCI/IMGT closest-match)",
+      "fully-human therapeutics have no declared germline, only a closest match"
+    ],
+    "estimated_exact_gene_source_declared_lineages": "far below the 15-lineage floor; plausibly near zero",
+    "statistical_note": "zero-error exact one-sided 95% lower bound needs ~59 independent observations to reach 0.95"
+  }
+}
