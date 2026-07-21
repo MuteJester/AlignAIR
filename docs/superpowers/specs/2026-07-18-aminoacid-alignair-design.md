@@ -205,6 +205,30 @@ Mirror `tests/alignair/` under `tests/alignair/aa/`:
 - D representation: three frame-conditioned prototypes vs prototype-free classifier — decide in 0A/1b.
 - Real-data source for Phase 3 (which repertoire, what labels count as "independently defensible").
 
+## 18. Stage 1 — coordinate-aware truncation training: GATE PASSED (2026-07-21)
+
+Two gated stages (per review). Stage-0 baseline completion is in §17. **Stage 1** adds partial-coverage
+robustness with coordinate-aware crops (offset-tracked; V/D/J boundaries shifted+clipped; absent genes
+masked; partial V/J supervised by the **partial-label compatible-class** loss `−log Σ p[c∈compatible]`;
+D kept an allele posterior — no isolated-D merging, per review) + AA-native subs/I-L in *training*.
+Code: `aa/truncation.py`, `aa/strategic_trunc.py`, `scripts/aa/train_stage1_trunc.py`.
+
+**Predeclared gate:** V-trunc ≥0.80, clean V ≥0.96, no AA-native stratum losing >2 pt, D within ~3 pt,
+J near current. Honored strictly:
+- **v1** (from-scratch, mutually-exclusive aug): FAILED — aa_subs −3.2 pt (substitution crowded out).
+- **v2** (from-scratch, decoupled axes): FAILED — clean 0.948 <0.96 (over-augmented; clean crowded out).
+- **v3 = fine-tune the passing baseline** (`model_vdj_40k`, lr 1e-4, p_crop 0.35, 18k steps): **PASSED all 5**,
+  and *improved every metric* — clean **0.986** (was 0.979), aa_subs **0.953** (+1.5), single-indel 0.980,
+  I/L 0.978, **truncation 0.870** (was 0.635, +23.5), D 0.781/0.841 (up), J 0.992. Frozen:
+  `model_stage1_PASS.pt` sha `54eef812942e7b96…`, `eval_stage1_PASS.json`. Failed v1/v2 evals kept
+  (`eval_stage1_v1_FAILED.json`, `eval_stage1_v2_FAILED.json`).
+
+**Lesson:** surgical fine-tune of a model that already clears 4/5 gates beats from-scratch reshuffling —
+it adds the missing robustness without disturbing what passed (and the extra diverse-augmentation steps
+acted as beneficial regularization, lifting clean too). Frameshift stays shelved. Next: **Stage 2 —
+conformal calibration** (distinct cohorts, APS/RAPS @95%, Mondrian/coverage-conditioned, V/J→nt-allele
+set output).
+
 ## 17. Strategic V/D/J model (b) — results (2026-07-20)
 
 Explicit protein-equivalence CLASS heads (V 149, J 7) + a D **allele** head (33) with segmentation,
