@@ -205,6 +205,33 @@ Mirror `tests/alignair/` under `tests/alignair/aa/`:
 - D representation: three frame-conditioned prototypes vs prototype-free classifier — decide in 0A/1b.
 - Real-data source for Phase 3 (which repertoire, what labels count as "independently defensible").
 
+## 19. Stage 2 — conformal calibration: calibrated V/D/J allele sets (2026-07-21)
+
+Split-conformal APS at a 95% target (`aa/conformal.py`, `scripts/aa/calibrate_stage2.py`,
+`calibration.json`), on the frozen Stage-1 model. Distinct calibration/test cohorts (disjoint gym
+seeds 1000/9000), each a coverage mix (half full-length, half truncated). Per gene, Mondrian
+(coverage-bin) calibration + pooled fallback; RAPS available (untuned). V/J protein-class sets are
+expanded to **nucleotide-allele sets** (the output contract).
+
+**The set grows honestly as evidence shrinks, with the coverage guarantee holding** (n_test≈5k each):
+
+| gene | coverage (95% target) | mean set — full / trunc / short | singleton | nt-allele mean |
+|---|---|---|---|---|
+| V | 0.997 [0.995,0.998] | **1.17 / 1.38 / 3.35** | 0.68 | 2.88 |
+| J | 0.991 [0.988,0.993] | **1.06 / 4.39 / 5.97** | 0.59 | 3.13 |
+| D | 0.978 [0.974,0.982] | **2.20 / 12.10 / 24.43** | 0.28 | — |
+
+On full-length reads the model is confident (near-singleton V/J, D≈2); on truncated reads the set
+balloons (D→~24 of 33 alleles) — the honest "return more alleles when less certain" behavior, now
+**guaranteed** rather than emergent. APS is mildly conservative (over-covers), the safe direction.
+
+**This closes the strategic (b) program.** The AA IGH aligner: V near the alignment reference and
+robust to AA-native errors + partial coverage; D genuinely recovered (proven by ablation) and honestly
+uncertain when unobservable; J solved; all three emitting calibrated, coverage-guaranteed allele sets
+mapped back to nucleotide alleles. Frameshift stays shelved (self-inflicted artifact; route
+DNA-with-indels to the nucleotide model). Remaining future work: real-protein-repertoire validation
+(Phase 3), light chains/TCR, full IMGT numbering.
+
 ## 18. Stage 1 — coordinate-aware truncation training: GATE PASSED (2026-07-21)
 
 Two gated stages (per review). Stage-0 baseline completion is in §17. **Stage 1** adds partial-coverage
