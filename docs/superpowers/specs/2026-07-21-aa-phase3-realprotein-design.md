@@ -19,22 +19,25 @@ is reported as **"simulator-domain calibration evaluated under real-domain shift
 real-domain guarantee.
 
 **The redefinition that makes Phase 3 defensible (post-spike, 2026-07-21).** The blinded acquisition spike
-(`docs/superpowers/artifacts/2026-07-21-aa-phase3/feasibility_report.md`) established that *alignment-independent
-per-sequence germline truth does not exist for real antibodies* — assigning a germline to an observed, mutated
-sequence **is** the alignment task. The only alignment-independent label is the developer's **declared design
+(`docs/superpowers/artifacts/2026-07-21-aa-phase3/feasibility_report.md`) established that
+*alignment-independent per-sequence germline truth was not available at sufficient scale in this therapeutic
+cohort* — for therapeutics, assigning a specific germline to an observed, engineered sequence is itself an
+alignment. The one alignment-independent label available is the developer's **declared design ancestry /
 template**, which for therapeutic antibodies is almost always a **subgroup/family consensus** (e.g. "VH
-subgroup III"), not a specific gene. Therefore:
+subgroup III"), not a specific gene — and is *engineered* ancestry, not a natural germline. Therefore:
 
-- **Gold (ground-truth, headline)** is redefined to **subgroup/family resolution** — the model's V-family
-  assignment vs the source-declared template family. Zero circularity; coarse.
+- **Gold (independent design-ancestry label, headline)** is redefined to **subgroup/family resolution** — the
+  model's V-family assignment vs the source-declared template family. This is a **design-ancestry** label,
+  **not** literal germline ground truth; zero circularity; coarse.
 - **Concordance (secondary, NOT ground truth)** is the exact-gene comparison vs IMGT/ANARCI closest-match,
   reported explicitly as **tool agreement under shift**, never as validation.
 
-**Consequence stated up front — what Phase 3 can and cannot conclude.** Because no alignment-independent
-allele/class truth exists on real data, Phase 3 **cannot `support` the original simulator-domain 95%
-allele/class guarantee.** It can (a) *falsify* transfer at family granularity, (b) report a real-domain
-**family-accuracy anchor**, and (c) report **concordance** with an established aligner. A positive outcome is
-"family-level transfer not falsified + high concordance" — honestly weaker than the simulator-domain claim.
+**Consequence stated up front — what Phase 3 can and cannot conclude.** Because alignment-independent
+allele/class truth was not available at scale here, Phase 3 **cannot `support` the original simulator-domain
+95% allele/class guarantee.** It can (a) *falsify* transfer at family granularity, (b) report a real-domain
+**family design-ancestry accuracy anchor**, and (c) report **concordance** with an established aligner. A
+positive outcome is "family-level transfer not falsified + high concordance" — honestly weaker than the
+simulator-domain claim.
 
 **Predeclared decision (α = 0.05, exact one-sided binomial / Clopper–Pearson, one representative VH per
 lineage — see below).** Per endpoint: `fail` if the upper (1−α) bound for coverage < 0.95; `support` if the
@@ -76,10 +79,11 @@ come from the tier-specific provenance below. A row is admitted only if **sequen
 resolve.
 
 ### Tiers (redefined post-spike)
-- **Tier 1 — Gold (ground truth, headline), FAMILY resolution.** Truth = the **source-declared human IGHV
-  design-template subgroup/family** (e.g. "VH subgroup III" → IGHV3), from the originating paper/patent/INN,
-  independent of AlignAIR and **not** a sequence alignment. One **citation per row**. This is the only
-  alignment-independent label available for therapeutics; it is coarse (family) by necessity.
+- **Tier 1 — Gold (independent design-ancestry label, headline), FAMILY resolution.** Label = the
+  **source-declared human IGHV design-template subgroup/family** (e.g. "VH subgroup III" → IGHV3), from the
+  originating paper/patent/INN, independent of AlignAIR and **not** a sequence alignment. A design-ancestry
+  label (engineered ancestry), **not** literal germline ground truth. One **citation per row**. This is the
+  alignment-independent label available at scale for therapeutics; it is coarse (family) by necessity.
 - **Tier 2 — Concordance (secondary, NOT ground truth), GENE/ALLELE resolution.** Exact-gene labels from
   **IMGT/mAb-DB** and/or **ANARCI closest-match**, always labeled *"alignment-derived → tool concordance, not
   validation."* Reported in a separate block; **never pooled with Gold** and **never changes the headline
@@ -182,7 +186,7 @@ a **sensitivity audit**, so the selection can be inspected for bias.
 
 ### Coarsening ladder (allele → gene → family)
 Coverage gets **monotonically easier** as truth is coarsened. The conformal object was calibrated on protein
-classes/alleles; mapping to genes is easier; mapping to **families** (Gold ground truth) is easiest of all.
+classes/alleles; mapping to genes is easier; mapping to **families** (Gold design-ancestry label) is easiest of all.
 So **family coverage < 0.95 disproves transfer** (strong), but **family coverage ≥ 0.95 establishes nothing**
 about the allele/class guarantee. This is why the informative Gold metric is a **point accuracy**, not the
 family-coverage guarantee. **"Top prediction" may not be a single gene/family** — a top-ranked protein class
@@ -190,7 +194,7 @@ can expand to alleles from multiple genes/families; always score against the **s
 class represents, **never an arbitrary single pick**.
 
 ### Reported metrics
-**Gold tier (ground truth, family resolution) — headline:**
+**Gold tier (independent design-ancestry label, family resolution) — headline:**
 - **Top-class family-set accuracy** — the documented template family ∈ families(top-ranked class). *Primary
   informative number.* Exact-binomial CI on the one-representative-VH-per-lineage cohort.
 - **Family-set conformal coverage** — reported, but *falsification-only and loose* (feeds the §1 `failed`
@@ -214,8 +218,8 @@ the `trunc`/`short` Mondrian groups under real partial coverage (truth gene unch
 ### Central caveat (the most important correction)
 > A small, **family-resolution** cohort of source-declared templates **can falsify severe transfer failure**
 > and provide a real-domain **family-accuracy anchor**, but **cannot validate** the original 95% allele/class
-> guarantee — no alignment-independent allele/class truth exists on real data. The exact-gene concordance
-> tier shows agreement with an established aligner, not ground truth.
+> guarantee — alignment-independent allele/class truth was not available at scale in this cohort. The
+> exact-gene concordance tier shows agreement with an established aligner, not ground truth.
 
 ---
 
@@ -268,7 +272,7 @@ isolated on `experiment/aminoacid-alignair`.
 ## Predeclarations to freeze before running
 α = 0.05; exact one-sided binomial (Clopper–Pearson) decision rule; **binding statistical unit = one frozen
 representative VH per `lineage_id`**; cluster-bootstrap resampling unit = `lineage_id` (descriptive only);
-**Gold ground truth = family resolution**; primary informative metric = **top-class family-set accuracy**;
+**Gold design-ancestry label = family resolution**; primary informative metric = **top-class family-set accuracy**;
 family-coverage endpoint = falsification-only (emits `failed`/`inconclusive`, never `supported`); exact-gene
 comparison = **concordance tier only** (not ground truth, never changes the decision); Gold feasibility floor
 = 15 **independent lineage representatives** (feasibility, not evidence — cf. the ≈59-observation reality in
