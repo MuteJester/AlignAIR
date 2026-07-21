@@ -83,11 +83,13 @@ def main() -> None:
         cal = json.load(f)
     model_sha = _sha256_file(args.model)
     expect_model_sha = cal["provenance"]["model_sha256"]
-    assert model_sha == expect_model_sha, (
-        f"PRECONDITION FAILED: model sha256 {model_sha} != calibration.json "
-        f"provenance.model_sha256 {expect_model_sha}")
-    assert cal["alpha"] == args.alpha, (
-        f"PRECONDITION FAILED: calibration.json alpha {cal['alpha']} != expected {args.alpha}")
+    if not model_sha == expect_model_sha:
+        raise RuntimeError(
+            f"PRECONDITION FAILED: model sha256 {model_sha} != calibration.json "
+            f"provenance.model_sha256 {expect_model_sha}")
+    if not cal["alpha"] == args.alpha:
+        raise RuntimeError(
+            f"PRECONDITION FAILED: calibration.json alpha {cal['alpha']} != expected {args.alpha}")
 
     model, cfg, class_maps, meta = strategic_setup(DC_NAME, 192, has_d=True)
     model.load_state_dict(torch.load(args.model, map_location="cpu")["model"])
@@ -96,9 +98,10 @@ def main() -> None:
     # ---- Step 2: class-map fingerprint must match the fingerprint the calibration was fit under ----
     v_db_hash = class_maps["V"].db_hash
     expect_v_db_hash = cal["provenance"]["class_map_db_hash"]["V"]
-    assert v_db_hash == expect_v_db_hash, (
-        f"PRECONDITION FAILED: class_maps['V'].db_hash {v_db_hash} != calibration.json "
-        f"provenance.class_map_db_hash.V {expect_v_db_hash}")
+    if not v_db_hash == expect_v_db_hash:
+        raise RuntimeError(
+            f"PRECONDITION FAILED: class_maps['V'].db_hash {v_db_hash} != calibration.json "
+            f"provenance.class_map_db_hash.V {expect_v_db_hash}")
 
     # The model's V class map is keyed by OGRDB ASC allele names (e.g. "IGHVF1-G1*01"), not IMGT --
     # gold labels are IMGT families, so translate class_members via the dataconfig's authoritative
@@ -112,25 +115,29 @@ def main() -> None:
     per_file = {}
     for fname, expect_hash in manifest["files"].items():
         actual_hash = _sha256_file(art / fname)
-        assert actual_hash == expect_hash, (
-            f"PRECONDITION FAILED: bundle file {fname!r} sha256 {actual_hash} != "
-            f"bundle.manifest.json {expect_hash}")
+        if not actual_hash == expect_hash:
+            raise RuntimeError(
+                f"PRECONDITION FAILED: bundle file {fname!r} sha256 {actual_hash} != "
+                f"bundle.manifest.json {expect_hash}")
         per_file[fname] = actual_hash
     overall = hashlib.sha256("".join(per_file[f] for f in manifest["files"]).encode()).hexdigest()
-    assert overall == manifest["bundle_sha256"], (
-        f"PRECONDITION FAILED: recomputed bundle_sha256 {overall} != "
-        f"bundle.manifest.json bundle_sha256 {manifest['bundle_sha256']}")
+    if not overall == manifest["bundle_sha256"]:
+        raise RuntimeError(
+            f"PRECONDITION FAILED: recomputed bundle_sha256 {overall} != "
+            f"bundle.manifest.json bundle_sha256 {manifest['bundle_sha256']}")
 
     # ---- Step 4: load + validate the cohort; cohort hash must match the frozen manifest ----
     gold, audit = load_labels(str(art / "gold_labels.tsv"))
     hydrated = load_hydrated(str(art / "hydrated_sequences.tsv"))
     crosswalk = load_crosswalk(str(art / "alias_crosswalk.tsv"))
     errs = validate_cohort(gold, hydrated, crosswalk)
-    assert not errs, f"PRECONDITION FAILED: cohort validation errors: {errs}"
+    if errs:
+        raise RuntimeError(f"PRECONDITION FAILED: cohort validation errors: {errs}")
     cohort_hash = cohort_sha256(gold, hydrated)
-    assert cohort_hash == manifest["cohort_sha256"], (
-        f"PRECONDITION FAILED: recomputed cohort_sha256 {cohort_hash} != "
-        f"bundle.manifest.json cohort_sha256 {manifest['cohort_sha256']}")
+    if not cohort_hash == manifest["cohort_sha256"]:
+        raise RuntimeError(
+            f"PRECONDITION FAILED: recomputed cohort_sha256 {cohort_hash} != "
+            f"bundle.manifest.json cohort_sha256 {manifest['cohort_sha256']}")
 
     # ---- Step 5: frozen conformal calibrator (V gene, full-coverage Mondrian group; no re-fit) ----
     fc = FrozenConformal.from_calibration_json(cal, "V", "full")

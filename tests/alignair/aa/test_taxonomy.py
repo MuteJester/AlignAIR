@@ -45,6 +45,36 @@ def test_asc_to_imgt_map():
     }
 
 
+class FakeDataConfigSameFamilyCollision:
+    """A new_allele appears twice, mapping to two imgt_alleles of the SAME family (gene differs)."""
+    asc_tables = {
+        "V": [
+            {"imgt_allele": "IGHV3-23*01", "new_allele": "IGHVF10-G41*03"},
+            {"imgt_allele": "IGHV3-23D*01", "new_allele": "IGHVF10-G41*03"},
+        ]
+    }
+
+
+class FakeDataConfigDifferentFamilyCollision:
+    """A new_allele appears twice, mapping to imgt_alleles of DIFFERENT families -- must hard-fail."""
+    asc_tables = {
+        "V": [
+            {"imgt_allele": "IGHV3-23*01", "new_allele": "IGHVF10-G41*03"},
+            {"imgt_allele": "IGHV2-70*04", "new_allele": "IGHVF10-G41*03"},
+        ]
+    }
+
+
+def test_asc_to_imgt_map_same_family_collision_returns_first_occurrence():
+    m = asc_to_imgt_map(FakeDataConfigSameFamilyCollision())
+    assert m == {"IGHVF10-G41*03": "IGHV3-23*01"}
+
+
+def test_asc_to_imgt_map_different_family_collision_raises():
+    with pytest.raises(ValueError):
+        asc_to_imgt_map(FakeDataConfigDifferentFamilyCollision())
+
+
 def test_imgt_view_translates_class_members():
     asc2imgt = asc_to_imgt_map(FakeDataConfig())
     view = ImgtView(FakeAscMap(), asc2imgt)
