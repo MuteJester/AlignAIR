@@ -20,7 +20,8 @@ def test_perfect_family_but_small_n_inconclusive_and_sizes_reported():
     preds = [Prediction(0, {0}) for _ in rows]
     out = score_gold(rows, preds, FakeMap(), 0.05, 0)
     assert out["binding"]["top_class_family_accuracy"] == 1.0
-    assert out["binding"]["decision"] in ("inconclusive", "failed") != "supported"
+    assert out["binding"]["decision"] in ("inconclusive", "failed")
+    assert out["binding"]["decision"] != "supported"
     assert out["binding"]["n_lineages"] == 15
     assert out["set_size"]["families"]["mean"] == 1.0   # class 0 -> single family
     assert out["set_size"]["alleles"]["mean"] == 2.0    # class 0 -> two alleles

@@ -150,9 +150,10 @@ def main() -> None:
     # ---- Step 8: score (IMGT-translated vmap for ALL scoring, never the raw ASC-keyed class map) ----
     gold_score = score_gold(gold, preds, vmap, alpha=args.alpha, seed=0)
     decision = gold_score["binding"]["decision"]
-    assert decision in ("failed", "inconclusive"), (
-        f"PRECONDITION FAILED: gold binding decision {decision!r} must be 'failed' or "
-        f"'inconclusive' (family endpoint must never emit 'supported')")
+    if decision not in ("failed", "inconclusive"):
+        raise RuntimeError(
+            f"PRECONDITION FAILED: gold binding decision {decision!r} must be 'failed' or "
+            f"'inconclusive' (family endpoint must never emit 'supported')")
 
     concordance_rows = [r for r in gold if r.tier == "concordance"]
     if concordance_rows:
