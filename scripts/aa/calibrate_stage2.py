@@ -23,8 +23,8 @@ from alignair.aa.conformal import Conformal
 from alignair.aa.data import build_class_maps
 from alignair.aa.evaluate import wilson_interval
 from alignair.aa.gym_bridge import aa_usable
+from alignair.aa.infer import class_probs as _probs
 from alignair.aa.strategic import strategic_setup
-from alignair.aa.tokenizer import AAProteinTokenizer
 from alignair.reference.reference_set import ReferenceSet
 
 
@@ -49,23 +49,6 @@ def _cohort(dc, ref, vclass, jclass, d_index, n, seed, rng):
         if len(rows) >= n:
             break
     return rows
-
-
-def _probs(model, seqs, cfg, device, key, batch=256):
-    tok = AAProteinTokenizer()
-    L = cfg.max_seq_length
-    out = []
-    for i in range(0, len(seqs), batch):
-        chunk = seqs[i:i + batch]
-        toks = torch.zeros(len(chunk), L, dtype=torch.long)
-        for j, s in enumerate(chunk):
-            e = tok.encode(s)
-            n = min(len(e), L)
-            toks[j, :n] = torch.from_numpy(e[:n])
-        with torch.no_grad():
-            lg = model({"tokenized_sequence": toks.to(device)})[key].cpu()
-        out.append(torch.softmax(lg, -1).numpy())
-    return np.concatenate(out, 0)
 
 
 def _set_stats(sizes):
