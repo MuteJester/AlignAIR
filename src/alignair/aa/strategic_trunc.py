@@ -173,9 +173,12 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
                   f"— this is the one unavoidable non-faithful hop.", flush=True)
 
     rng = np.random.default_rng([seed, start_step])           # deterministic stream re-seed at the resume point
+    stream_seed = seed + start_step                            # gym/corpus stream must also re-seed at the
+                                                                # resume point (mirrors trainer.py's seed+start),
+                                                                # else every resume replays the corpus from record 0
 
     def gen():
-        for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, seed, 1, None):
+        for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, stream_seed, 1, None):
             s = stage1_sample(rec, class_maps, d_index, protos, tok, cfg.max_seq_length, rng,
                               p_crop, p_sub, p_il)
             if s is not None:
@@ -206,7 +209,7 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
         if ckpt_dir and step in ckpt_steps:
             provenance = {
                 "git_sha": _git_sha(), "base_model_sha256": _sha256_file(resume_path),
-                "seed": seed, "dc_name": dc_name,
+                "seed": seed, "dc_name": dc_name, "created_step": step,
                 "hyperparams": {"base_lr": base_lr, "lr_min": lr_min, "total_budget": total_budget,
                                 "batch_size": batch_size, "p_crop": p_crop, "p_sub": p_sub, "p_il": p_il},
             }
