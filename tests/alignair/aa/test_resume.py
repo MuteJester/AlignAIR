@@ -1,5 +1,5 @@
 import numpy as np, torch
-from alignair.aa.resume import save_checkpoint, load_checkpoint
+from alignair.aa.resume import save_checkpoint, load_checkpoint, capture_rng, restore_rng
 
 def _tiny():
     m = torch.nn.Linear(4, 3)
@@ -28,3 +28,16 @@ def test_old_format_load_is_graceful(tmp_path):
     torch.save({"model": torch.nn.Linear(4, 3).state_dict(), "cfg": {}, "step": 40000}, p)
     ck = load_checkpoint(p)
     assert ck["step"] == 40000 and ck["optimizer"] is None and ck["scheduler"] is None
+    assert ck["rng_cuda"] is None, "old-format load must return None for rng_cuda"
+
+def test_rng_roundtrip_is_bit_exact():
+    np.random.seed(123)
+    torch.manual_seed(123)
+    _ = np.random.rand(5)
+    _ = torch.rand(5)  # advance both
+    snap = capture_rng()
+    expect_np = np.random.rand(4)
+    expect_t = torch.rand(4)  # sequence AFTER snapshot
+    restore_rng(*snap)  # rewind to snapshot
+    assert np.allclose(np.random.rand(4), expect_np), "numpy RNG must be bit-exact after restore"
+    assert torch.allclose(torch.rand(4), expect_t), "torch RNG must be bit-exact after restore"
