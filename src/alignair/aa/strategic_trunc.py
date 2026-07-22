@@ -4,10 +4,17 @@ Augmentation mix per read: full-length rehearsal, N/C/internal crops (coordinate
 shifted+clipped into crop coords, absent genes masked, partially-observed V/J supervised against the
 compatible protein-class SET), and AA-native subs / single-residue indel / I/L ambiguity. D stays an
 allele posterior (no protein-equivalence merging — its observability is frame/trim/junction-dependent):
-fully observed -> singleton true allele; partial/absent -> masked."""
+fully observed -> singleton true allele; partial/absent -> masked.
+
+Resumability: `stage1_train` can be continued from a full-state checkpoint (`resume.save_checkpoint` /
+`load_checkpoint`) that carries the optimizer/scheduler/RNG state, making a continuation mathematically
+faithful (not a cold restart). See docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md §2."""
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 import itertools
+import subprocess
 
 import numpy as np
 import torch
@@ -16,6 +23,7 @@ from .augment import aa_substitute, il_ambiguity
 from .data import collate_aa
 from .loss import aa_loss
 from .reference import build_aa_germlines
+from .resume import load_checkpoint, restore_rng, save_checkpoint
 from .strategic import _class_sample
 from .tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
@@ -111,9 +119,31 @@ def collate_stage1(samples, max_len, n_classes: dict, device="cpu"):
     return bi, tg
 
 
+def _git_sha() -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:                                        # noqa: BLE001 - provenance must not break a run
+        return "unknown"
+
+
+def _sha256_file(path) -> str | None:
+    if not path:
+        return None
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
 def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, steps=40000, batch_size=64,
                  lr=3e-4, p_crop=0.4, p_sub=0.4, p_il=0.15, seed=0, device="cpu", log_every=250,
-                 grad_clip=1.0, save_path=None, save_every=5000, init_path=None):
+                 grad_clip=1.0, save_path=None, save_every=5000, init_path=None,
+                 resume_path=None, base_lr=1e-4, lr_min=1e-5, total_budget=None,
+                 val_every=0, val_fn=None, ckpt_dir=None, ckpt_steps=(), plateau_k=0):
     import GenAIRR as ga
     if init_path:                                            # warm-start (fine-tune a passing baseline)
         model.load_state_dict(torch.load(init_path, map_location="cpu")["model"])
@@ -122,10 +152,27 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
               "j": prototypes_by_class(dc, class_maps["J"], "J")}
     n_classes = {"v": meta["n_v_classes"], "j": meta["n_j_classes"], "d": meta["n_d_alleles"]}
     tok = AAProteinTokenizer()
-    rng = np.random.default_rng(seed)
     d_index = meta["d_index"]
     model.to(device).train()
-    opt = torch.optim.AdamW(model.parameters(), lr=lr)
+    opt = torch.optim.AdamW(model.parameters(), lr=base_lr)
+    sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=(total_budget or steps), eta_min=lr_min)
+
+    start_step = 0
+    if resume_path:
+        ck = load_checkpoint(resume_path)
+        model.load_state_dict(ck["model"])
+        if ck["optimizer"] is not None:                       # full-state checkpoint -> faithful continuation
+            opt.load_state_dict(ck["optimizer"])
+            sch.load_state_dict(ck["scheduler"])
+            restore_rng(ck["rng_numpy"], ck["rng_torch"], ck.get("rng_cuda"))
+            start_step = ck["step"]
+        else:                                                 # old {model,cfg,step} incumbent -> warm-start only
+            start_step = ck.get("step") or 0
+            print(f"[resume] '{resume_path}' has no optimizer state (old-format checkpoint); "
+                  f"warm-starting weights only from step {start_step} with a FRESH optimizer/scheduler "
+                  f"— this is the one unavoidable non-faithful hop.", flush=True)
+
+    rng = np.random.default_rng([seed, start_step])           # deterministic stream re-seed at the resume point
 
     def gen():
         for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, seed, 1, None):
@@ -136,7 +183,8 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
     stream = gen()
 
     history = []
-    for step in range(1, steps + 1):
+    val_history = []
+    for step in range(start_step + 1, start_step + steps + 1):
         batch = list(itertools.islice(stream, batch_size))
         if len(batch) < batch_size:
             break
@@ -148,19 +196,37 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
         if grad_clip:
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         opt.step()
-        history.append({"step": step, "total": float(total.detach()),
+        sch.step()
+        history.append({"step": step, "total": float(total.detach()), "lr": sch.get_last_lr()[0],
                         **{k: float(v.detach()) for k, v in parts.items()}})
         if log_every and step % log_every == 0:
             h = history[-1]
-            print(f"[{step}/{steps}] loss {h['total']:.3f} seg {h['segmentation']:.3f} "
-                  f"cls {h['classification']:.3f}", flush=True)
+            print(f"[{step}/{start_step + steps}] loss {h['total']:.3f} seg {h['segmentation']:.3f} "
+                  f"cls {h['classification']:.3f} lr {h['lr']:.2e}", flush=True)
+        if ckpt_dir and step in ckpt_steps:
+            provenance = {
+                "git_sha": _git_sha(), "base_model_sha256": _sha256_file(resume_path),
+                "seed": seed, "dc_name": dc_name,
+                "hyperparams": {"base_lr": base_lr, "lr_min": lr_min, "total_budget": total_budget,
+                                "batch_size": batch_size, "p_crop": p_crop, "p_sub": p_sub, "p_il": p_il},
+            }
+            save_checkpoint(f"{ckpt_dir}/model_cont_step{step}.pt", model=model,
+                            cfg=dataclasses.asdict(cfg), step=step, optimizer=opt, scheduler=sch,
+                            lr=sch.get_last_lr()[0], history=history, provenance=provenance)
+        if val_every and val_fn and step % val_every == 0:
+            v = val_fn(model, step)
+            val_history.append(v)
+            objectives = [r.get("objective") for r in val_history[-plateau_k:]] if plateau_k else []
+            if plateau_k and len(objectives) >= plateau_k and all(o is not None for o in objectives) \
+                    and all(objectives[i] <= objectives[i - 1] for i in range(1, len(objectives))):
+                print(f"[plateau] validation objective has not improved over the last {plateau_k} "
+                      f"evaluations (step {step}).", flush=True)
         if save_path and save_every and step % save_every == 0:
             _save(save_path, model, cfg, step)
     if save_path:
-        _save(save_path, model, cfg, history[-1]["step"] if history else 0)
+        _save(save_path, model, cfg, history[-1]["step"] if history else start_step)
     return history
 
 
 def _save(path, model, cfg, step):
-    import dataclasses
     torch.save({"model": model.state_dict(), "cfg": dataclasses.asdict(cfg), "step": step}, path)
