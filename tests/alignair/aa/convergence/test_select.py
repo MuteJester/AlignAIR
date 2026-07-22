@@ -198,6 +198,88 @@ def test_set_size_p95_improvement_also_recognized():
 
 
 # ---------------------------------------------------------------------------
+# (f) isolated gate failures on non-macro-regression gates (clean_j, coverage)
+# ---------------------------------------------------------------------------
+
+def test_gate_failure_clean_j_acc_below_threshold():
+    """A candidate failing clean_j_acc gate alone (0.987 < 0.988) while all other gates pass."""
+    cand = make_metrics("cand_clean_j_fail", 25_000, clean_j_acc=0.987, d_allele_macro=0.90)
+    result = select_checkpoint(INCUMBENT, [cand])
+
+    pc = pc_by_name(result, "cand_clean_j_fail")
+    assert pc["gates_passed"] is False
+    assert any("clean_j_acc" in f for f in pc["gate_failures"])
+    assert pc["objective_count"] == 0
+    assert result["winner"] == "incumbent"
+
+
+def test_gate_failure_j_macro_regression_over_threshold():
+    """A candidate failing j_macro gate alone (regression > 0.5pt) while all other gates pass."""
+    cand = make_metrics("cand_j_macro_regress", 25_000, j_macro=0.95 - 0.006, d_allele_macro=0.90)
+    result = select_checkpoint(INCUMBENT, [cand])
+
+    pc = pc_by_name(result, "cand_j_macro_regress")
+    assert pc["gates_passed"] is False
+    assert any("j_macro" in f for f in pc["gate_failures"])
+    assert pc["objective_count"] == 0
+    assert result["winner"] == "incumbent"
+
+
+def test_gate_failure_conformal_coverage_missing():
+    """A candidate with conformal.coverage missing (None) is treated as gate failure (fail-closed)."""
+    cand = make_metrics("cand_coverage_missing", 25_000, conformal={}, d_allele_macro=0.90)
+    result = select_checkpoint(INCUMBENT, [cand])
+
+    pc = pc_by_name(result, "cand_coverage_missing")
+    assert pc["gates_passed"] is False
+    assert any("coverage" in f for f in pc["gate_failures"])
+    assert pc["objective_count"] == 0
+    assert result["winner"] == "incumbent"
+
+
+def test_gate_failure_conformal_dict_missing_entirely():
+    """A candidate with conformal field missing entirely (None) is treated as gate failure."""
+    cand = make_metrics("cand_no_conformal", 25_000, conformal=None, d_allele_macro=0.90)
+    result = select_checkpoint(INCUMBENT, [cand])
+
+    pc = pc_by_name(result, "cand_no_conformal")
+    assert pc["gates_passed"] is False
+    assert any("coverage" in f for f in pc["gate_failures"])
+    assert pc["objective_count"] == 0
+    assert result["winner"] == "incumbent"
+
+
+# ---------------------------------------------------------------------------
+# (g) single-weakness improvements: shortread_acc and macro_minus_micro
+# ---------------------------------------------------------------------------
+
+def test_shortread_acc_improvement_only_wins():
+    """A candidate improving only shortread_acc (>= incumbent + 0.01) should have objective_count==1
+    and beat incumbent."""
+    cand = make_metrics("cand_shortread_only", 25_000, shortread_acc=0.55 + 0.01)
+    result = select_checkpoint(INCUMBENT, [cand])
+
+    pc = pc_by_name(result, "cand_shortread_only")
+    assert pc["gates_passed"] is True
+    assert pc["objective_count"] == 1
+    assert set(pc["weaknesses_improved"]) == {"shortread_acc"}
+    assert result["winner"] == "cand_shortread_only"
+
+
+def test_macro_minus_micro_improvement_only_wins():
+    """A candidate improving only macro_minus_micro (>= incumbent + 0.01) should have
+    objective_count==1 and beat incumbent."""
+    cand = make_metrics("cand_macro_minus_micro_only", 25_000, macro_minus_micro=-0.05 + 0.01)
+    result = select_checkpoint(INCUMBENT, [cand])
+
+    pc = pc_by_name(result, "cand_macro_minus_micro_only")
+    assert pc["gates_passed"] is True
+    assert pc["objective_count"] == 1
+    assert set(pc["weaknesses_improved"]) == {"macro_minus_micro"}
+    assert result["winner"] == "cand_macro_minus_micro_only"
+
+
+# ---------------------------------------------------------------------------
 # Rationale / per_candidate shape sanity
 # ---------------------------------------------------------------------------
 
