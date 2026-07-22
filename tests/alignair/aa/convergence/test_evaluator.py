@@ -8,7 +8,7 @@ DC_NAME = "HUMAN_IGH_OGRDB"
 SEED = 20250722          # disjoint from calibrate_stage2's 1000/9000 and training seed 0
 N_PER_STRATUM = 40       # small but big enough that D/truncate/short_janchor buckets are non-empty
 
-REQUIRED_STRATA = ("clean", "aa_truncate_50_80", "short_janchor")
+REQUIRED_STRATA = ("clean", "aa_truncate_50_80", "short_janchor", "moderate_full")
 
 
 @pytest.fixture(scope="module")
@@ -42,6 +42,19 @@ def test_build_cohort_fingerprint_changes_with_seed():
 def test_build_cohort_strata_are_subset_of_declared_order(cohort):
     coh, _fp = cohort
     assert set(coh["by_stratum"].keys()) <= set(STRATA_ORDER)
+
+
+def test_moderate_full_is_its_own_stratum_not_merged_into_clean(cohort):
+    """`clean` must be clean_full-only (matches the frozen baseline/§5 gates); moderate_full
+    (n_indels==0 rows from the moderate_full GenAIRR stratum) is scored SEPARATELY and must never
+    be pooled into `clean`."""
+    coh, _fp = cohort
+    assert "moderate_full" in coh["by_stratum"]
+    assert coh["by_stratum"]["moderate_full"], "moderate_full stratum must be non-empty"
+
+    clean_ids = {id(r["record"]) for r in coh["by_stratum"]["clean"]}
+    moderate_ids = {id(r["record"]) for r in coh["by_stratum"]["moderate_full"]}
+    assert clean_ids.isdisjoint(moderate_ids)
 
 
 def test_evaluate_checkpoint_well_formed(cohort):

@@ -32,7 +32,7 @@ from .metrics import brier_score, macro_accuracy, per_frequency_bins, softmax_nl
 
 # Stratum names/order: matches scripts/aa/eval_strategic.py exactly, so cohorts built here are
 # directly comparable to that script's ad-hoc reports.
-STRATA_ORDER = ("clean", "aa_subs_7pct", "aa_single_indel", "aa_il_ambiguity",
+STRATA_ORDER = ("clean", "moderate_full", "aa_subs_7pct", "aa_single_indel", "aa_il_ambiguity",
                 "aa_truncate_50_80", "short_janchor", "dj_indel", "v_indel_1", "v_indel_multi")
 
 _DEFAULT_FREQ_EDGES = (0.0, 0.02, 0.05, 1.0)
@@ -48,14 +48,20 @@ def build_cohort(dc_name: str = "HUMAN_IGH_OGRDB", n_per_stratum: int = 200,
 
     Reuses the exact strata-construction logic of ``scripts/aa/eval_strategic.py``: a clean pool
     from ``stream_benchmark(default_igh_spec(...))`` (AA-usable, orientation 0, known V+J allele,
-    ``n_indels==0``, stratum in ``clean_full``/``moderate_full``), AA-native augmentation strata
-    built from that pool (``aa_substitute``/``aa_indel``/``il_ambiguity``/``aa_truncate``), plus
-    native-indel buckets (``v_indel_1``/``v_indel_multi``/``dj_indel``) and a J-anchored short
-    stratum (``short_janchor``, from the ``amplicon_janchor`` stratum).
+    ``n_indels==0``, stratum == ``clean_full`` ONLY -- this matches the frozen baseline/§5 gates,
+    which were computed against ``clean_full`` alone), AA-native augmentation strata built from
+    that pool (``aa_substitute``/``aa_indel``/``il_ambiguity``/``aa_truncate``), plus native-indel
+    buckets (``v_indel_1``/``v_indel_multi``/``dj_indel``) and a J-anchored short stratum
+    (``short_janchor``, from the ``amplicon_janchor`` stratum). ``n_indels==0`` rows from the
+    ``moderate_full`` stratum are collected SEPARATELY into their own ``moderate_full`` bucket
+    (scored like any other stratum in ``by_stratum`` -- not pooled into ``clean``).
 
-    A fixed ``cal_frac`` slice of the clean pool is carved off as ``calibration`` (never scored as
-    ``"clean"``) so conformal calibration in ``evaluate_checkpoint`` never touches the accuracy-eval
-    rows.
+    A fixed ``cal_frac`` slice of the clean (``clean_full``-only) pool is carved off as
+    ``calibration`` (never scored as ``"clean"``) so conformal calibration in
+    ``evaluate_checkpoint`` never touches the accuracy-eval rows. The pool is deterministically
+    shuffled (seeded on ``seed``) before the calibration/eval split, since the underlying stream
+    is not randomly ordered (front-of-stream rows skew easier) -- both halves must be
+    representative, not just disjoint.
 
     Returns ``(cohort, fingerprint_sha256)``:
     - ``cohort = {"by_stratum": {name: [row, ...]}, "calibration": [row, ...], "dc_name": ...,
@@ -96,8 +102,10 @@ def build_cohort(dc_name: str = "HUMAN_IGH_OGRDB", n_per_stratum: int = 200,
             continue
         row = _row(r, r["sequence_aa"])
         n_indels, n_v_indels = int(r.get("n_indels", 0)), int(r.get("n_v_indels", 0))
-        if n_indels == 0 and c.stratum in ("clean_full", "moderate_full"):
+        if n_indels == 0 and c.stratum == "clean_full":
             clean_pool.append(row)
+        elif n_indels == 0 and c.stratum == "moderate_full":
+            buckets["moderate_full"].append(row)
         elif n_v_indels == 1:
             buckets["v_indel_1"].append(row)
         elif n_v_indels >= 2:
@@ -107,9 +115,14 @@ def build_cohort(dc_name: str = "HUMAN_IGH_OGRDB", n_per_stratum: int = 200,
         if c.stratum == "amplicon_janchor":
             buckets["short_janchor"].append(row)
 
-    # Disjoint split of the clean pool: a calibration slice (never scored as "clean") + the
-    # eval/augmentation source. Index-based split of a deterministically-ordered stream -> no
-    # extra seed needed to keep it reproducible.
+    # Disjoint split of the clean (clean_full-only) pool: a calibration slice (never scored as
+    # "clean") + the eval/augmentation source. The underlying stream is NOT randomly ordered
+    # (progress-ramped generation skews front-of-stream rows easier), so a deterministically
+    # seeded shuffle runs before the index split -- otherwise both the calibration slice and the
+    # "clean" eval slice would be systematically biased by their position in the stream.
+    shuffle_rng = np.random.default_rng(seed)
+    order = shuffle_rng.permutation(len(clean_pool)) if clean_pool else np.array([], dtype=int)
+    clean_pool = [clean_pool[i] for i in order]
     n_cal = max(1, int(round(cal_frac * len(clean_pool)))) if clean_pool else 0
     calibration = clean_pool[:n_cal]
     eval_source = clean_pool[n_cal:]
