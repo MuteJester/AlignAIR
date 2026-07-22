@@ -1,0 +1,14 @@
+{
+  "model": "cont_step318000 (winner)",
+  "descriptive": true,
+  "top_class_family_accuracy": 1.0,
+  "family_set_coverage": 1.0,
+  "family_set_coverage_ci": [
+    0.8292502770175191,
+    1.0
+  ],
+  "decision": "inconclusive",
+  "n_lineages": 16,
+  "set_size_families_mean": 1.0,
+  "calibration": "docs/superpowers/artifacts/2026-07-22-aa-convergence/calibration_cont_step318000.json"
+}

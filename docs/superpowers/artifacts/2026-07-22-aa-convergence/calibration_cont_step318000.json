@@ -1,0 +1,166 @@
+{
+  "alpha": 0.05,
+  "genes": {
+    "D": {
+      "by_coverage_stratum": {
+        "full": {
+          "coverage": 0.9955770004020909,
+          "mean_set": 2.0257338158423805,
+          "n": 2487
+        },
+        "short": {
+          "coverage": 0.95260663507109,
+          "mean_set": 24.144549763033176,
+          "n": 1266
+        },
+        "trunc": {
+          "coverage": 0.9589371980676329,
+          "mean_set": 12.87037037037037,
+          "n": 1242
+        }
+      },
+      "calibration_frozen": {
+        "groups_fitted": [
+          "full",
+          "short",
+          "trunc"
+        ],
+        "pooled_fallback_exercised": false,
+        "q_mondrian": {
+          "full": 0.9373180066230374,
+          "short": 0.9991172265828931,
+          "trunc": 0.9978771619399524
+        },
+        "q_pooled": 0.9960281988502584
+      },
+      "coverage_ci95": [
+        0.9709153035689478,
+        0.9795048897814477
+      ],
+      "empirical_coverage": 0.9755755755755756,
+      "n_test": 4995,
+      "set_size": {
+        "mean": 10.328328328328329,
+        "median": 2.0,
+        "p95": 32.0,
+        "singleton_rate": 0.2880880880880881
+      }
+    },
+    "J": {
+      "by_coverage_stratum": {
+        "full": {
+          "coverage": 0.9995980707395499,
+          "mean_set": 1.0442122186495177,
+          "n": 2488
+        },
+        "short": {
+          "coverage": 0.9802683504340963,
+          "mean_set": 5.946329913180742,
+          "n": 1267
+        },
+        "trunc": {
+          "coverage": 0.9718875502008032,
+          "mean_set": 4.232128514056225,
+          "n": 1245
+        }
+      },
+      "calibration_frozen": {
+        "groups_fitted": [
+          "full",
+          "short",
+          "trunc"
+        ],
+        "pooled_fallback_exercised": false,
+        "q_mondrian": {
+          "full": 0.9510494169202047,
+          "short": 0.9968188839911747,
+          "trunc": 0.994009956357058
+        },
+        "q_pooled": 0.9904079675820622
+      },
+      "coverage_ci95": [
+        0.984360817234479,
+        0.9904901852432973
+      ],
+      "empirical_coverage": 0.9878,
+      "n_test": 5000,
+      "nt_allele_set_size": {
+        "mean": 3.0802,
+        "median": 1.0,
+        "p95": 7.0,
+        "singleton_rate": 0.5918
+      },
+      "set_size": {
+        "mean": 3.0802,
+        "median": 1.0,
+        "p95": 7.0,
+        "singleton_rate": 0.5918
+      }
+    },
+    "V": {
+      "by_coverage_stratum": {
+        "full": {
+          "coverage": 0.9991961414790996,
+          "mean_set": 1.107717041800643,
+          "n": 2488
+        },
+        "short": {
+          "coverage": 0.9968429360694554,
+          "mean_set": 2.745067087608524,
+          "n": 1267
+        },
+        "trunc": {
+          "coverage": 1.0,
+          "mean_set": 1.2570281124497993,
+          "n": 1245
+        }
+      },
+      "calibration_frozen": {
+        "groups_fitted": [
+          "full",
+          "short",
+          "trunc"
+        ],
+        "pooled_fallback_exercised": false,
+        "q_mondrian": {
+          "full": 0.9421060853724227,
+          "short": 0.9328571638395071,
+          "trunc": 0.9334613283537704
+        },
+        "q_pooled": 0.9358932386220989
+      },
+      "coverage_ci95": [
+        0.9973841880734831,
+        0.9994499243412664
+      ],
+      "empirical_coverage": 0.9988,
+      "n_test": 5000,
+      "nt_allele_set_size": {
+        "mean": 2.5928,
+        "median": 2.0,
+        "p95": 6.0,
+        "singleton_rate": 0.4124
+      },
+      "set_size": {
+        "mean": 1.5598,
+        "median": 1.0,
+        "p95": 3.0,
+        "singleton_rate": 0.7506
+      }
+    }
+  },
+  "model": "experiments/aa/strategic/model_cont_step318000_modelonly.pt",
+  "n_cal": 5000,
+  "n_test": 5000,
+  "provenance": {
+    "bin_defs": "coverage groups: full=uncropped; trunc=kept\u2208[0.6,0.9]; short=kept\u2208[0.3,0.6)",
+    "class_map_db_hash": {
+      "J": "e1a455b87f614f0d",
+      "V": "e1a455b87f614f0d"
+    },
+    "min_group_fallback": 500,
+    "model_sha256": "81255006fa88bf42973d64bff56984230be89a986a19a749d763c696d97d06de",
+    "supported_distribution": "SIMULATOR-DOMAIN ONLY: GenAIRR HUMAN_IGH_OGRDB, coverage-mix (full+truncated). Guarantee holds under exchangeability within each Mondrian group; NOT validated on real protein \u2014 recalibrate before real-data use.",
+    "target_coverage": 0.95
+  }
+}
