@@ -191,7 +191,7 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
 
     # ---- 4. resumed continuation training, checkpointing at ABSOLUTE step numbers ----
     abs_ckpt_steps = tuple(start_step + rel for rel in ckpt_steps)
-    total_budget = start_step + budget
+    total_budget = budget  # T_max = number of scheduler steps this run traverses, not absolute step number
 
     def val_fn(m, step):
         out = evaluate_checkpoint(m, cfg, class_maps, meta, cohort, device=device)
