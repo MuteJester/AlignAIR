@@ -37,6 +37,8 @@ def register(sub) -> None:
     p.add_argument("--coverage-group", choices=["full", "trunc", "short"], default=None,
                    help="§7 Mondrian calibration group to apply to every record "
                         "(default: pooled fallback -- see §7)")
+    p.add_argument("--on-invalid", choices=["error", "skip"], default="skip",
+                   help="error = fail fast on invalid sequence; skip = emit per-record error (default: skip)")
     p.add_argument("--device", default="auto", help="cpu / cuda / auto (default: auto)")
     p.add_argument("--out", required=True, help="output path: one §6 AAPrediction JSON object per line")
     p.add_argument("--no-run-metadata", action="store_true",
@@ -91,7 +93,7 @@ def _write_run_metadata(out: str, predictor, args, counts: dict) -> None:
         "n_errors": counts["n_errors"],
         "command": {
             "input": args.input, "out": args.out, "model": args.model,
-            "coverage_group": args.coverage_group, "device": args.device,
+            "coverage_group": args.coverage_group, "on_invalid": args.on_invalid, "device": args.device,
         },
         "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
@@ -106,10 +108,8 @@ def run(args) -> int:
         return 1
 
     predictor = load_aa_model(args.model, device=args.device)
-    # `on_invalid="skip"`: a batch file job should never abort wholesale on one malformed record --
-    # each invalid record becomes a structured per-record error line instead (§9.1), and every other
-    # record still gets predicted.
-    results = predictor.predict(records, coverage_group=args.coverage_group, on_invalid="skip")
+    # Pass through the on_invalid flag from the CLI (default: "skip" for batch-friendly mode).
+    results = predictor.predict(records, coverage_group=args.coverage_group, on_invalid=args.on_invalid)
 
     n_errors = 0
     with open(args.out, "w") as f:

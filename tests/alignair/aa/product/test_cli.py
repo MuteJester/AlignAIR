@@ -173,3 +173,58 @@ def test_cli_uses_coverage_group_flag(tmp_path):
     [parsed] = [json.loads(line) for line in out.read_text().strip().splitlines()]
     assert parsed["applied_calibration_group"]["group"] == "full"
     assert parsed["applied_calibration_group"]["source"] == "supplied"
+
+
+def test_cli_on_invalid_flag_defaults_to_skip(tmp_path):
+    """--on-invalid defaults to 'skip', so invalid records emit error dicts, not fatal errors."""
+    fasta = tmp_path / "reads.fasta"
+    _write_fasta(fasta, [("good", _VH_1), ("bad", "EV*QL")])
+    out = tmp_path / "out.jsonl"
+
+    args = _parse_args(["predict-aa", str(fasta), "--out", str(out)])
+    # Should not raise; on_invalid="skip" is default
+    assert args.on_invalid == "skip"
+    rc = run(args)
+    assert rc == 0
+
+    parsed = [json.loads(line) for line in out.read_text().strip().splitlines()]
+    assert len(parsed) == 2
+    assert "provenance" in parsed[0]
+    assert parsed[1] == {"sequence_id": "bad", "error": "invalid_character", "detail": parsed[1]["detail"]}
+
+
+def test_cli_on_invalid_error_raises_on_bad_record(tmp_path):
+    """--on-invalid error causes the CLI to fail when an invalid record is encountered."""
+    fasta = tmp_path / "reads.fasta"
+    _write_fasta(fasta, [("good", _VH_1), ("bad", "EV*QL")])
+    out = tmp_path / "out.jsonl"
+
+    args = _parse_args(["predict-aa", str(fasta), "--out", str(out), "--on-invalid", "error"])
+    assert args.on_invalid == "error"
+
+    # With on_invalid="error", the predictor should raise ValueError on the bad record
+    import pytest
+    with pytest.raises(ValueError, match="stop character"):
+        run(args)
+
+
+def test_cli_on_invalid_skip_writes_error_records_to_output(tmp_path):
+    """--on-invalid skip writes per-record error dicts to output, allowing the batch to continue."""
+    fasta = tmp_path / "reads.fasta"
+    _write_fasta(fasta, [("r1", _VH_1), ("r2", "EV*QL"), ("r3", _VH_2)])
+    out = tmp_path / "out.jsonl"
+
+    args = _parse_args(["predict-aa", str(fasta), "--out", str(out), "--on-invalid", "skip"])
+    rc = run(args)
+    assert rc == 0
+
+    parsed = [json.loads(line) for line in out.read_text().strip().splitlines()]
+    assert len(parsed) == 3
+    assert "provenance" in parsed[0]
+    assert parsed[1] == {"sequence_id": "r2", "error": "invalid_character", "detail": parsed[1]["detail"]}
+    assert "provenance" in parsed[2]
+
+    meta = json.loads(open(str(out) + ".run.json").read())
+    assert meta["command"]["on_invalid"] == "skip"
+    assert meta["n_predicted"] == 2
+    assert meta["n_errors"] == 1

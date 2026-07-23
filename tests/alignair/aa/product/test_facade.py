@@ -82,3 +82,36 @@ def test_load_aa_model_is_reexported_and_matches_the_product_loader():
     from alignair.aa.product.loader import load_aa_model as _direct
 
     assert alignair.load_aa_model is _direct
+
+
+def test_predict_aa_string_path_is_not_file_read():
+    """§9 contract: a path-like string (e.g., 'reads.fasta' or '/etc/passwd') is treated as a
+    sequence, never as a file path. With default on_invalid='error', any string containing invalid
+    AA characters (like '/', '.') raises ValueError."""
+    import pytest
+
+    # "reads.fasta" contains invalid AA characters ('.', 'f', etc.) so it should raise
+    with pytest.raises(ValueError, match="invalid character"):
+        alignair.predict_aa("reads.fasta")
+
+    # "/etc/passwd" contains invalid AA characters so it should raise, not read the file
+    with pytest.raises(ValueError, match="invalid character"):
+        alignair.predict_aa("/etc/passwd")
+
+
+def test_predict_aa_bare_valid_string_returns_one_result():
+    """A single valid AA sequence string is treated as one sequence, not parsed char-by-char."""
+    [result] = alignair.predict_aa("EVQLVESGGG")
+    assert result["sequence_id"] == "seq_0"
+    assert result["input_length"] == 10
+    assert "segments" in result
+
+
+def test_predict_aa_on_invalid_error_default_raises_on_invalid_char():
+    """§9.1 documented default: on_invalid='error' causes prediction to raise ValueError on
+    encountering an invalid character (not silently skip or wrap in error dict)."""
+    import pytest
+
+    # Default on_invalid="error" should raise on the invalid '*'
+    with pytest.raises(ValueError, match="stop character"):
+        alignair.predict_aa(["EVQLVESGGG", "EV*QL"])
