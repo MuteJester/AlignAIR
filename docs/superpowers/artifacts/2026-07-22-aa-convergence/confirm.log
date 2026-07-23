@@ -1,0 +1,11 @@
+confirmation started 2026-07-23T05:49:15Z
+=== PROMOTION CONFIRMATION (incumbent vs winner) ===
+clean V inc 0.9841 -> win 0.9906 | clean J 0.9928 -> 0.9935
+D-allele-macro 0.8006 -> 0.7976  diffCI [-0.0029516927894743805, -0.05986497143068763, 0.05796326937108652]
+D-gene         0.8491 -> 0.8549  diffCI [0.005776173285198638, -0.010830324909747224, 0.02238267148014439]
+moderate_full   0.9250 -> 0.9380  diffCI [-0.0032626427406198255,0.029363784665579096]  mcnemar_p 0.15158963203430176
+v_indel_multi   0.7290 -> 0.7836  diffCI [0.04544706076074434,0.06454799934134692]  mcnemar_p 4.6032580645719855e-29
+conformal V coverage: inc 0.9990 -> win 0.9990 (gate >=0.94)
+criteria: {'c1_gates': True, 'c2_D_gains': False, 'c3_frontier_no_regress': True, 'c4_no_stratum_loses_1pt': True, 'c5_coverage_valid': True}
+DECISION: HOLD
+confirm exited 0 at 2026-07-23T05:50:47Z
