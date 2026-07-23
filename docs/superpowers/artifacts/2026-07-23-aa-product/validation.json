@@ -1,0 +1,93 @@
+{
+  "all_pass": true,
+  "checks": {
+    "coordinates": {
+      "detail": {
+        "bounds_ok": true,
+        "junction_ok": true,
+        "n_reads": 45,
+        "n_segments_checked": 135,
+        "n_voided_organic_in_cohort": 9,
+        "violations": [],
+        "voiding_contract": {
+          "clipping_ok": true,
+          "voided_ok": true
+        }
+      },
+      "pass": true
+    },
+    "golden_cohort": {
+      "detail": {
+        "coverage_bin_defs": "full=uncropped; trunc=aa_truncate keep in [0.6,0.9]; short=aa_truncate keep in [0.3,0.6) -- matches scripts/aa/calibrate_stage2.py's Mondrian bin definitions",
+        "dc_name": "HUMAN_IGH_OGRDB",
+        "deterministic_rebuild": true,
+        "n_full": 15,
+        "n_per_stratum": 60,
+        "n_short": 15,
+        "n_target_full_reads": 15,
+        "n_total": 45,
+        "n_trunc": 15,
+        "seed": 20260201,
+        "truth_labels_present_in_bundle_class_maps": true
+      },
+      "pass": true
+    },
+    "groups": {
+      "detail": {
+        "n_reads": 45,
+        "n_reads_where_full_set_differs_from_pooled_set": 1,
+        "pooled_labeled_pooled_fallback": true,
+        "q_mondrian_full_V": 0.9421060853724227,
+        "q_pooled_V": 0.9358932386220989,
+        "supplied_full_v_set_matches_q_mondrian_full": true,
+        "supplied_labeled_supplied": true,
+        "supplied_warning_present": true
+      },
+      "pass": true
+    },
+    "parity": {
+      "detail": {
+        "genes": [
+          "V",
+          "J",
+          "D"
+        ],
+        "mismatches": [],
+        "n_checks": 135,
+        "n_mismatches": 0,
+        "n_reads": 45
+      },
+      "pass": true
+    },
+    "phase3_descriptive": {
+      "detail": {
+        "family_accuracy": 1.0,
+        "family_accuracy_fraction": "16/16",
+        "hits": 16,
+        "misses": [],
+        "n_gold": 16,
+        "n_missing_hydration": 0,
+        "n_scored": 16,
+        "note": "DESCRIPTIVE ONLY -- no gate/promotion decision. This re-confirms the PRODUCT path (load_aa_model -> AAPredictor.predict, one-to-many ASC->IMGT bridge) reproduces the family-accuracy anchor already established by the research path in phase3_eval.json; Phase-3's overall decision remains 'inconclusive' (see PHASE3.md) regardless of this number.",
+        "status": "ran"
+      },
+      "pass": true
+    },
+    "tamper_rejection": {
+      "detail": {
+        "good_bundle_load_error": null,
+        "good_bundle_loads": true,
+        "tamper_error": "section 'weights' failed compressed checksum (corrupt/modified file)",
+        "tamper_flip_byte_in_weights_raises": true,
+        "wrong_model_calibration_binding_raises": true,
+        "wrong_model_error": "calibration<->model binding: provenance.model_sha256 does not match this model's reference_provenance.source_model_sha256 (calibration was fit against a different model)"
+      },
+      "pass": true
+    }
+  },
+  "cohort_seed": 20260201,
+  "dc_name": "HUMAN_IGH_OGRDB",
+  "device": "cuda",
+  "model": "alignair-aa-igh-human@2.0.0",
+  "n_reads": 45
+}
