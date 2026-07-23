@@ -54,7 +54,12 @@ def normalize_inputs(
 
     Raises:
         ValueError: If on_invalid="error" and an invalid record is encountered.
+        ValueError: If on_invalid is not "error" or "skip".
     """
+    # Validate on_invalid parameter
+    if on_invalid not in ("error", "skip"):
+        raise ValueError(f"on_invalid must be 'error' or 'skip', got {on_invalid!r}")
+
     records: list[Record] = []
     errors: list[ErrorResult] = []
 
@@ -63,7 +68,9 @@ def normalize_inputs(
 
     # Process each record
     for i, record_data in enumerate(input_records):
-        sequence_id = record_data.get("sequence_id", f"seq_{i}")
+        # Use provided sequence_id only if it's a non-empty string; otherwise fallback
+        provided_id = record_data.get("sequence_id")
+        sequence_id = provided_id if isinstance(provided_id, str) and provided_id else f"seq_{i}"
         sequence = record_data.get("sequence", "")
 
         # Validate and normalize
@@ -96,10 +103,19 @@ def _normalize_input_format(
 
     A bare string is treated as a single sequence, not a file path.
     Supports mixed lists of strings and dicts.
+
+    Raises:
+        TypeError: If sequences is a bare dict (not wrapped in a list).
     """
     if isinstance(sequences, str):
         # Bare string is a single sequence
         return [{"sequence": sequences}]
+
+    # Reject bare dict (must be wrapped in a list)
+    if isinstance(sequences, dict):
+        raise TypeError(
+            "sequences must be a str, an iterable of str, or an iterable of {sequence,sequence_id} dicts — not a single dict"
+        )
 
     # Must be iterable; convert to list
     seq_list = list(sequences)

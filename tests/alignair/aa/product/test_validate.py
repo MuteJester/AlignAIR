@@ -403,3 +403,108 @@ class TestNormalizeInputsComplexScenarios:
         assert "empty" in errors[0].detail.lower() or len(errors[0].detail) > 0
         assert "whitespace" in errors[1].detail.lower() or len(errors[1].detail) > 0
         assert "*" in errors[2].detail or "stop" in errors[2].detail.lower() or len(errors[2].detail) > 0
+
+
+class TestOnInvalidValidation:
+    """Test Fix 1: on_invalid parameter validation."""
+
+    def test_on_invalid_wrong_case_raises_value_error(self):
+        """on_invalid='Skip' (wrong case) raises ValueError."""
+        with pytest.raises(ValueError, match="on_invalid must be 'error' or 'skip'"):
+            normalize_inputs("EVQL", on_invalid="Skip")
+
+    def test_on_invalid_bogus_value_raises_value_error(self):
+        """on_invalid='bogus' raises ValueError."""
+        with pytest.raises(ValueError, match="on_invalid must be 'error' or 'skip'"):
+            normalize_inputs("EVQL", on_invalid="bogus")
+
+    def test_on_invalid_error_accepted(self):
+        """on_invalid='error' is accepted."""
+        records, errors = normalize_inputs("EVQL", on_invalid="error")
+        assert len(records) == 1
+        assert len(errors) == 0
+
+    def test_on_invalid_skip_accepted(self):
+        """on_invalid='skip' is accepted."""
+        records, errors = normalize_inputs("EVQL", on_invalid="skip")
+        assert len(records) == 1
+        assert len(errors) == 0
+
+
+class TestExcludedIUPACCodes:
+    """Test Fix 2: Excluded IUPAC ambiguity codes are rejected."""
+
+    def test_iupac_b_rejected(self):
+        """IUPAC code B (Asp or Asn) is rejected."""
+        records, errors = normalize_inputs("EVB", on_invalid="skip")
+        assert len(records) == 0
+        assert len(errors) == 1
+        assert errors[0].error == "invalid_character"
+
+    def test_iupac_j_rejected(self):
+        """IUPAC code J (Leu or Ile) is rejected."""
+        records, errors = normalize_inputs("EVJ", on_invalid="skip")
+        assert len(records) == 0
+        assert len(errors) == 1
+        assert errors[0].error == "invalid_character"
+
+    def test_iupac_o_rejected(self):
+        """IUPAC code O (Pyrrolysine) is rejected."""
+        records, errors = normalize_inputs("EVO", on_invalid="skip")
+        assert len(records) == 0
+        assert len(errors) == 1
+        assert errors[0].error == "invalid_character"
+
+    def test_iupac_u_rejected(self):
+        """IUPAC code U (Selenocysteine) is rejected."""
+        records, errors = normalize_inputs("EVU", on_invalid="skip")
+        assert len(records) == 0
+        assert len(errors) == 1
+        assert errors[0].error == "invalid_character"
+
+    def test_iupac_z_rejected(self):
+        """IUPAC code Z (Glu or Gln) is rejected."""
+        records, errors = normalize_inputs("EVZ", on_invalid="skip")
+        assert len(records) == 0
+        assert len(errors) == 1
+        assert errors[0].error == "invalid_character"
+
+
+class TestBareDict:
+    """Test Fix 3: Bare dict as sequences raises TypeError."""
+
+    def test_bare_dict_raises_type_error(self):
+        """A bare dict (not in a list) raises TypeError."""
+        with pytest.raises(TypeError, match="sequences must be a str, an iterable of str, or an iterable of .* dicts"):
+            normalize_inputs({"sequence": "EVQL"})
+
+
+class TestEmptySequenceId:
+    """Test Fix 4: Empty or None sequence_id falls back to seq_<i>."""
+
+    def test_empty_string_sequence_id_fallback(self):
+        """Empty string sequence_id is treated as not-provided (fallback to seq_0)."""
+        records, errors = normalize_inputs([{"sequence_id": "", "sequence": "EVQL"}])
+        assert len(records) == 1
+        assert len(errors) == 0
+        assert records[0].sequence_id == "seq_0"
+
+    def test_none_sequence_id_fallback(self):
+        """None sequence_id is treated as not-provided (fallback to seq_0)."""
+        records, errors = normalize_inputs([{"sequence_id": None, "sequence": "EVQL"}])
+        assert len(records) == 1
+        assert len(errors) == 0
+        assert records[0].sequence_id == "seq_0"
+
+    def test_empty_and_nonempty_sequence_id_mixed(self):
+        """Mixed empty and non-empty sequence_ids."""
+        records, errors = normalize_inputs([
+            {"sequence_id": "", "sequence": "EVQL"},
+            {"sequence_id": "custom", "sequence": "TSVS"},
+            {"sequence_id": None, "sequence": "AAAA"},
+        ])
+        assert len(records) == 3
+        assert len(errors) == 0
+        assert records[0].sequence_id == "seq_0"
+        assert records[1].sequence_id == "custom"
+        assert records[2].sequence_id == "seq_2"
