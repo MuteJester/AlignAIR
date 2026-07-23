@@ -15,6 +15,16 @@ def _fam(a):
     if not m: raise ValueError(f"cannot parse family from {a!r}")
     return m.group(1)
 
+# Public wrappers around the same allele-name parse, for callers with a single concrete allele name
+# and no class map to expand through (the D segment: `class_id` is a D allele-head index, not a
+# protein-equivalence class — see `product.schema.AAPrediction` — so its gene/family come straight
+# from parsing `d_allele_order[class_id]` rather than via `class_genes`/`class_families`).
+def gene_of(allele: str) -> str:
+    return _gene(allele)
+
+def family_of(allele: str) -> str:
+    return _fam(allele)
+
 def class_alleles(class_id, cmap, asc_multi) -> list:
     out = set()
     for member in cmap.class_members[class_id]:

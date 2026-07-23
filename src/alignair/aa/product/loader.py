@@ -35,6 +35,7 @@ from ..equivalence import EquivalenceClassMap
 from ..model import AAAlignAIR
 from ..tokenizer import AAProteinTokenizer
 from .bundle import canonical_json
+from .predictor import _predict
 
 # Hard-coded model-id -> local bundle path map. Task 8 replaces this with real registry resolution
 # (catalog ids resolved through `alignair.registry`, same as the nucleotide `Aligner.from_pretrained`);
@@ -69,6 +70,12 @@ class AAPredictor:
     conformal: dict             # {gene: {"pooled": FrozenConformal, "mondrian": {group: FrozenConformal}}}
     card: dict                  # the verified header (== container.read_header, sans "_sections_base")
     device: str
+
+    def predict(self, sequences, *, coverage_group=None, on_invalid="error") -> list:
+        """§9 ``predict_aa`` core (Task 5): validated V/D/J calls + §5 coordinates + junction_aa, one
+        `AAPrediction`/`ErrorResult` per input record in original order. Calibrated-set fields are
+        Task-7 placeholders — see `alignair.aa.product.predictor._predict` for the full contract."""
+        return _predict(self, sequences, coverage_group=coverage_group, on_invalid=on_invalid)
 
 
 def _resolve_path(model) -> str:
