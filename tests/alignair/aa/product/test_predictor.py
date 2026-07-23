@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import torch
 
+from alignair.aa.conformal import FrozenConformal
 from alignair.aa.equivalence import EquivalenceClassMap
 from alignair.aa.product.loader import AAPredictor, load_aa_model
 from alignair.aa.product.schema import AAPrediction
@@ -46,12 +47,19 @@ def test_predict_real_v2_bundle_returns_full_schema_for_two_vh_reads():
                 assert 0 <= coords["end"] <= len(seq)
                 assert coords["start"] <= coords["end"]
 
-            # Task-7 placeholders — empty/zero until calibration is wired in
-            assert seg["calibrated_class_set"] == []
-            assert seg["calibrated_allele_set"] == []
-            assert seg["calibrated_gene_set"] == []
-            assert seg["calibrated_family_set"] == []
-            assert seg["set_size"] == {"classes": 0, "alleles": 0, "genes": 0}
+            # §7 calibrated sets (Task 7) — see test_calibrated_sets.py for the full contract
+            # (parity, group selection, one-to-many expansion); here just the basic invariants.
+            assert isinstance(seg["calibrated_class_set"], list) and len(seg["calibrated_class_set"]) >= 1
+            assert isinstance(seg["calibrated_allele_set"], list) and len(seg["calibrated_allele_set"]) >= 1
+            assert isinstance(seg["calibrated_gene_set"], list) and len(seg["calibrated_gene_set"]) >= 1
+            assert isinstance(seg["calibrated_family_set"], list) and len(seg["calibrated_family_set"]) >= 1
+            assert seg["set_size"] == {
+                "classes": len(seg["calibrated_class_set"]),
+                "alleles": len(seg["calibrated_allele_set"]),
+                "genes": len(seg["calibrated_gene_set"]),
+            }
+            # APS always includes at least the top-ranked (argmax) class.
+            assert top_call["class_id"] in seg["calibrated_class_set"]
 
         # D segment documents allele-head-index semantics: class_id indexes d_allele_order directly
         d_call = result.segments["D"]["top_call"]
@@ -160,7 +168,10 @@ def _fake_predictor() -> AAPredictor:
                    "J": _minimal_class_map("J", "IGHJ1*01")},
         d_allele_order=["IGHD1-1*01"],
         asc_multi={"IGHV1-1*01": ["IGHV1-1*01"], "IGHJ1*01": ["IGHJ1*01"]},
-        conformal={},
+        # Single-class logits above -> softmax==1.0 -> predict_set always == {0} regardless of qhat;
+        # these coordinate-focused stub tests don't exercise coverage_group, so no mondrian entries
+        # are needed (Task-7 calibrated-set *content* is covered by test_calibrated_sets.py).
+        conformal={g: {"pooled": FrozenConformal(0.99), "mondrian": {}} for g in ("V", "J", "D")},
         card={"model_id": "fake-model", "model_version": "0.0.0-fake",
              "alignair_version": "3.0.0-test", "calibration_scope": "TEST SIMULATOR SCOPE STRING",
              "integrity": {"weights_sha256": "abc123", "calibration_sha256": "def456"},

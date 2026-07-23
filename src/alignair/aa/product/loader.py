@@ -72,9 +72,9 @@ class AAPredictor:
     device: str
 
     def predict(self, sequences, *, coverage_group=None, on_invalid="error") -> list:
-        """§9 ``predict_aa`` core (Task 5): validated V/D/J calls + §5 coordinates + junction_aa, one
-        `AAPrediction`/`ErrorResult` per input record in original order. Calibrated-set fields are
-        Task-7 placeholders — see `alignair.aa.product.predictor._predict` for the full contract."""
+        """§9 ``predict_aa`` core (Task 5 + Task 7): validated V/D/J calls + §5 coordinates +
+        junction_aa + §7 calibrated conformal sets, one `AAPrediction`/`ErrorResult` per input record
+        in original order — see `alignair.aa.product.predictor._predict` for the full contract."""
         return _predict(self, sequences, coverage_group=coverage_group, on_invalid=on_invalid)
 
 

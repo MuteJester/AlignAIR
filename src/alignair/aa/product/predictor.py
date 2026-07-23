@@ -1,10 +1,22 @@
-"""``AAPredictor.predict`` core (Task 5): one forward pass -> per-gene top call (plural genes/families
-via the Task-1 one-to-many ASC->IMGT expansion) + hardened §5 AA coordinates + junction_aa.
+"""``AAPredictor.predict`` core (Task 5 + Task 7): one forward pass -> per-gene top call (plural
+genes/families via the Task-1 one-to-many ASC->IMGT expansion) + hardened §5 AA coordinates +
+junction_aa + §7 calibrated-set output.
 
-Calibrated-set output (§7) is NOT wired in here — every ``calibrated_*``/``set_size`` field is an
-empty/zero placeholder, and ``applied_calibration_group`` is a fixed ``pooled``/``pooled_fallback``
-stub. Task 7 replaces both with the real conformal-set + calibration-group-selection contract; this
-module only needs to leave the schema shape stable underneath that later change.
+**Calibrated sets (§7, Task 7).** Per gene, per sequence: resolve the calibration group once per
+sequence (Task-6 ``resolve_group``), pick that gene's ``FrozenConformal`` (pooled, or the matching
+Mondrian group), run ``predict_set`` on the SAME per-gene softmax probabilities used for the top call
+(one forward pass total — see ``_forward``), and expand the resulting class-id set to
+alleles/genes/families via the Task-1 one-to-many ``class_alleles``/``class_genes``/``class_families``
+(D bypasses the class map entirely: its "classes" already ARE D allele-head indices, so its allele set
+is built directly from ``d_allele_order`` — see ``_calibrated_fields``).
+
+``applied_calibration_group`` is one field per *sequence* (§6 schema — not per gene), so group
+selection/availability is resolved once per sequence and applied uniformly across V/J/D: if the
+supplied group is available in every active gene's Mondrian table the group is used as given; if it is
+missing from ANY of them, the whole sequence falls back to pooled (never a half-applied group) and an
+extra warning is appended. In practice this fallback path never triggers on a real bundle (all genes
+share the same fitted group set), but it is exercised directly with a crafted predictor in
+``test_calibrated_sets.py``.
 
 ``_predict`` takes a duck-typed ``predictor`` (the ``AAPredictor`` dataclass in ``loader.py``) rather
 than importing that class, so this module has ZERO dependency on ``loader.py`` — ``loader.py`` imports
@@ -16,6 +28,7 @@ from __future__ import annotations
 import torch
 
 from .asc import class_alleles, class_families, class_genes, family_of, gene_of
+from .calibration_group import resolve_group
 from .schema import AAPrediction
 from .validate import normalize_inputs
 
@@ -78,14 +91,43 @@ def _forward(predictor, sequences: list) -> dict:
         return predictor.model({"tokenized_sequence": toks.to(predictor.device)})
 
 
-def _empty_calibration_fields() -> dict:
-    """Task-7 placeholders — see module docstring."""
+def _select_conformal(predictor, genes: tuple, group: str):
+    """Resolve, for ONE sequence, which ``FrozenConformal`` each gene actually uses.
+
+    ``group == "pooled"`` always uses each gene's pooled conformal (never a fallback in itself). For a
+    supplied Mondrian group, the group is used only if it is present in EVERY active gene's
+    ``mondrian`` table; if it is missing from any of them, ALL genes fall back to pooled together, so
+    ``applied_calibration_group`` (one field per sequence, §6) never describes a half-applied group.
+
+    Returns ``(fc_by_gene, actual_group, fell_back)``.
+    """
+    if group == "pooled":
+        return {g: predictor.conformal[g]["pooled"] for g in genes}, "pooled", False
+    available = all(group in predictor.conformal[g]["mondrian"] for g in genes)
+    if available:
+        return {g: predictor.conformal[g]["mondrian"][group] for g in genes}, group, False
+    return {g: predictor.conformal[g]["pooled"] for g in genes}, "pooled", True
+
+
+def _calibrated_fields(gene: str, class_set: list, predictor) -> dict:
+    """§6 ``calibrated_*``/``set_size`` for one gene, given its already-computed
+    ``calibrated_class_set`` (sorted list of int class ids — for D these are D allele-head indices,
+    not protein-equivalence class ids, per ``schema.AAPrediction``'s D-segment convention)."""
+    if gene == "D":
+        allele_set = sorted({predictor.d_allele_order[c] for c in class_set})
+        gene_set = sorted({gene_of(a) for a in allele_set})
+        family_set = sorted({family_of(a) for a in allele_set})
+    else:
+        cmap = predictor.class_maps[gene]
+        allele_set = sorted({a for c in class_set for a in class_alleles(c, cmap, predictor.asc_multi)})
+        gene_set = sorted({g for c in class_set for g in class_genes(c, cmap, predictor.asc_multi)})
+        family_set = sorted({f for c in class_set for f in class_families(c, cmap, predictor.asc_multi)})
     return {
-        "calibrated_class_set": [],
-        "calibrated_allele_set": [],
-        "calibrated_gene_set": [],
-        "calibrated_family_set": [],
-        "set_size": {"classes": 0, "alleles": 0, "genes": 0},
+        "calibrated_class_set": class_set,
+        "calibrated_allele_set": allele_set,
+        "calibrated_gene_set": gene_set,
+        "calibrated_family_set": family_set,
+        "set_size": {"classes": len(class_set), "alleles": len(allele_set), "genes": len(gene_set)},
     }
 
 
@@ -144,9 +186,12 @@ def _top_call_d(class_id: int, probability: float, predictor) -> dict:
     }
 
 
-def _predict_valid(predictor, records: list) -> list:
+def _predict_valid(predictor, records: list, indices: list, coverage_group) -> list:
     """Run the model once on ``records`` (already-validated ``Record``s, in order) and build one
-    `AAPrediction` per record."""
+    `AAPrediction` per record. ``indices[i]`` is record ``i``'s position in the CALLER's original
+    input batch (not its position among only the valid records) — required so a per-sequence
+    ``coverage_group`` list/dict (§7) resolves against the same index space the caller supplied it
+    in, even when ``on_invalid="skip"`` has dropped some earlier items."""
     sequences = [r.sequence for r in records]
     out = _forward(predictor, sequences)
     genes = ("V", "J", "D") if getattr(predictor.cfg, "has_d", False) else ("V", "J")
@@ -163,6 +208,20 @@ def _predict_valid(predictor, records: list) -> list:
         segments: dict = {}
         coords_by_gene: dict = {}
 
+        # §7: resolve the calibration group ONCE per sequence (it is not gene-specific), then pick
+        # each gene's FrozenConformal consistently — see `_select_conformal`'s docstring.
+        group, source, group_warning = resolve_group(coverage_group, rec.sequence_id, indices[i])
+        fc_by_gene, actual_group, fell_back = _select_conformal(predictor, genes, group)
+        if fell_back:
+            source = "pooled_fallback"
+        if group_warning:
+            warnings.append(group_warning)
+        if fell_back:
+            warnings.append(
+                f"calibration group {group!r} unavailable in this model's calibration; "
+                "used pooled fallback instead")
+        applied_calibration_group = {"group": actual_group, "source": source}
+
         for gene in genes:
             class_id = int(probs[gene][i].argmax())
             probability = float(probs[gene][i, class_id])
@@ -172,7 +231,9 @@ def _predict_valid(predictor, records: list) -> list:
             coords = _coordinates(float(starts[gene][i]), float(ends[gene][i]), seq_len, gene, warnings)
             coords_by_gene[gene] = coords
 
-            segments[gene] = {"top_call": top_call, **_empty_calibration_fields(),
+            class_set = sorted(fc_by_gene[gene].predict_set(probs[gene][i]))
+            segments[gene] = {"top_call": top_call,
+                              **_calibrated_fields(gene, class_set, predictor),
                               "coordinates": coords}
 
         v_coords, j_coords, d_coords = (coords_by_gene.get("V"), coords_by_gene.get("J"),
@@ -193,10 +254,7 @@ def _predict_valid(predictor, records: list) -> list:
             input_length=seq_len,
             segments=segments,
             junction_aa=junction_aa,
-            # §7 placeholder — Task 6/7 wire the real calibration-group-selection contract; `coverage_group`
-            # is accepted by `_predict`'s signature already so the public API doesn't have to change shape
-            # then, but it is intentionally UNUSED here.
-            applied_calibration_group={"group": "pooled", "source": "pooled_fallback"},
+            applied_calibration_group=applied_calibration_group,
             provenance=provenance,
             warnings=warnings,
         ))
@@ -205,9 +263,9 @@ def _predict_valid(predictor, records: list) -> list:
 
 def _predict(predictor, sequences, *, coverage_group=None, on_invalid="error") -> list:
     """``AAPredictor.predict`` core. Returns a list of `AAPrediction` / `ErrorResult`, one per input
-    record, in the caller's original order (§9.1). ``coverage_group`` is accepted but not yet applied
-    (§7 placeholder — see ``_predict_valid``); ``on_invalid`` is exactly the §9.1 contract, delegated
-    to ``normalize_inputs`` per item (see ``_split_batch``'s docstring for why per-item)."""
+    record, in the caller's original order (§9.1). ``coverage_group`` (§7) is resolved per sequence in
+    ``_predict_valid``; ``on_invalid`` is exactly the §9.1 contract, delegated to ``normalize_inputs``
+    per item (see ``_split_batch``'s docstring for why per-item)."""
     if on_invalid not in ("error", "skip"):
         raise ValueError(f"on_invalid must be 'error' or 'skip', got {on_invalid!r}")
     max_len = getattr(predictor.cfg, "max_seq_length", 192)
@@ -229,7 +287,8 @@ def _predict(predictor, sequences, *, coverage_group=None, on_invalid="error") -
             valid_records.append(recs[0])
 
     if valid_records:
-        for slot, pred in zip(valid_slots, _predict_valid(predictor, valid_records)):
+        predictions = _predict_valid(predictor, valid_records, valid_slots, coverage_group)
+        for slot, pred in zip(valid_slots, predictions):
             ordered[slot] = pred
 
     return ordered

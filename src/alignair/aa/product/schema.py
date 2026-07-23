@@ -2,8 +2,8 @@
 CIGAR strings, productivity calls, or full IMGT numbering).
 
 This module owns only the top-level result *shape* + JSON serialization. ``AAPredictor.predict``
-(``predictor.py``) fills it in; the calibrated-set fields it writes here are Task-7 placeholders
-(empty lists / zero counts) until the §7 calibration-group contract is wired in.
+(``predictor.py``) fills it in, including the §7 calibrated-set fields (conformal class/allele/gene/
+family sets + ``set_size`` + the resolved ``applied_calibration_group``).
 """
 from __future__ import annotations
 
@@ -27,11 +27,11 @@ class AAPrediction:
                 "families": [str, ...],       # PLURAL — and potentially >1 family
                 "probability": float,
             },
-            "calibrated_class_set": [...],    # Task-7 placeholder: [] here
-            "calibrated_allele_set": [...],   # Task-7 placeholder: [] here
-            "calibrated_gene_set": [...],     # Task-7 placeholder: [] here
-            "calibrated_family_set": [...],   # Task-7 placeholder: [] here
-            "set_size": {"classes": 0, "alleles": 0, "genes": 0},   # Task-7 placeholder
+            "calibrated_class_set": [...],     # §7 conformal prediction set (class/D-allele-index ids)
+            "calibrated_allele_set": [...],    # one-to-many ASC-expanded IMGT alleles of the class set
+            "calibrated_gene_set": [...],      # every IMGT gene any covered class maps to
+            "calibrated_family_set": [...],    # every IMGT family any covered class maps to
+            "set_size": {"classes": int, "alleles": int, "genes": int},
             "coordinates": {"start": int, "end": int} | None,       # §5
         }
 
