@@ -179,7 +179,8 @@ def test_supplied_group_unavailable_falls_back_to_pooled_with_warning():
     [result] = predictor.predict(["ACDEFGHIKL"], coverage_group="full")
 
     assert result.applied_calibration_group == {"group": "pooled", "source": "pooled_fallback"}
-    assert SUPPLIED_WARNING in result.warnings
+    # When falling back to pooled, SUPPLIED_WARNING should NOT be present (the supplied group was not used)
+    assert SUPPLIED_WARNING not in result.warnings
     assert any("unavailable" in w.lower() and "full" in w for w in result.warnings)
     # both V and J actually used the pooled FrozenConformal (not a half-applied group)
     assert result.segments["V"]["calibrated_class_set"] == [0]

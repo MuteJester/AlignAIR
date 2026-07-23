@@ -65,6 +65,18 @@ def test_read_records_stdin(monkeypatch):
     assert records == [{"sequence_id": "only", "sequence": _VH_1}]
 
 
+def test_read_records_ignores_leading_blank_lines_before_first_header(tmp_path):
+    """A FASTA with blank lines before the first >header should not create an empty record."""
+    fasta = tmp_path / "reads.fasta"
+    with open(fasta, "w") as f:
+        f.write(f"\n\n>read-1\n{_VH_1}\n>read-2\n{_VH_2}\n")
+
+    records = _read_records(str(fasta))
+    assert len(records) == 2
+    assert records[0] == {"sequence_id": "read-1", "sequence": _VH_1}
+    assert records[1] == {"sequence_id": "read-2", "sequence": _VH_2}
+
+
 # --------------------------------------------------------------------------------- CLI end-to-end
 
 

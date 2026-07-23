@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 
 from .loader import load_aa_model
 from .predictor import _provenance
+from .validate import ErrorResult
 
 
 def register(sub) -> None:
@@ -69,13 +70,13 @@ def _read_records(path: str) -> list[dict]:
         name, buf = None, []
         for line in text.splitlines():
             if line.startswith(">"):
-                if name is not None or buf:
+                if (name is not None or buf) and "".join(buf).strip():
                     records.append({"sequence_id": name, "sequence": "".join(buf)})
                 tok = line[1:].split()
                 name, buf = (tok[0] if tok else None), []
             else:
                 buf.append(line.strip())
-        if name is not None or buf:
+        if (name is not None or buf) and "".join(buf).strip():
             records.append({"sequence_id": name, "sequence": "".join(buf)})
     else:
         for line in text.splitlines():
@@ -114,10 +115,9 @@ def run(args) -> int:
     n_errors = 0
     with open(args.out, "w") as f:
         for r in results:
-            d = r.to_dict()
-            if "error" in d and "provenance" not in d:
+            if isinstance(r, ErrorResult):
                 n_errors += 1
-            f.write(json.dumps(d) + "\n")
+            f.write(json.dumps(r.to_dict()) + "\n")
 
     counts = {"n_input": len(records), "n_predicted": len(results) - n_errors, "n_errors": n_errors}
     if not args.no_run_metadata:

@@ -214,7 +214,7 @@ def _predict_valid(predictor, records: list, indices: list, coverage_group) -> l
         fc_by_gene, actual_group, fell_back = _select_conformal(predictor, genes, group)
         if fell_back:
             source = "pooled_fallback"
-        if group_warning:
+        if group_warning and not fell_back:
             warnings.append(group_warning)
         if fell_back:
             warnings.append(

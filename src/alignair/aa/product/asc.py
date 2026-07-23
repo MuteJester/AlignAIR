@@ -4,6 +4,9 @@ import re
 _FAM = re.compile(r"^(IGH[VDJ]\d+)")
 
 def asc_to_imgt_multi(dc) -> dict:
+    extra_keys = set(dc.asc_tables) - {"V"}
+    if extra_keys:
+        raise ValueError(f"asc_to_imgt_multi assumes only V is ASC-clustered; got extra keys {sorted(extra_keys)}")
     out: dict[str, set] = {}
     for row in dc.asc_tables["V"]:
         out.setdefault(row["new_allele"], set()).add(row["imgt_allele"])
