@@ -86,7 +86,8 @@ def _require(cond: bool, message: str) -> None:
 
 
 def _integrity_manifest(header: dict, *, class_maps_bytes: bytes, asc_bytes: bytes,
-                        tokenizer_bytes: bytes, weights_bytes: bytes, calibration_bytes: bytes) -> None:
+                        tokenizer_bytes: bytes, weights_bytes: bytes, calibration_bytes: bytes,
+                        config_bytes: bytes) -> None:
     """Recompute every AA integrity-manifest hash from the freshly-read section bytes and assert
     equality with what the header claims (`container.read_section` already checked each section against
     its OWN stored checksum before this ever runs; this additionally catches a header edited
@@ -109,6 +110,8 @@ def _integrity_manifest(header: dict, *, class_maps_bytes: bytes, asc_bytes: byt
              "integrity: weights_sha256")
     _require(container.sha256_hex(calibration_bytes) == integ.get("calibration_sha256"),
              "integrity: calibration_sha256")
+    _require(container.sha256_hex(config_bytes) == integ.get("config_sha256"),
+             "integrity: config_sha256")
 
 
 def _rebuild_tokenizer(tokenizer_section: dict) -> AAProteinTokenizer:
@@ -144,6 +147,14 @@ def _check_calibration_complete(calibration: dict, genes: tuple) -> None:
                  f"calibration incomplete: genes.{gene}.calibration_frozen.q_mondrian")
 
 
+def _require_nonempty_hex(value, message: str) -> None:
+    """Presence + type gate for a binding-anchor hash field, so that two ABSENT fields (both `None`)
+    never satisfy a later `==` comparison -- a bare equality check alone is vacuously true when both
+    sides are missing, which is exactly how a header/calibration can have its binding fields deleted
+    outright and still "match"."""
+    _require(isinstance(value, str) and len(value) > 0, message)
+
+
 def _check_binding(header: dict, calibration: dict, *, class_maps: dict, d_allele_order: list,
                    cfg, model: AAAlignAIR) -> tuple:
     """Calibration<->model cryptographic binding + label-count agreement. Returns the tuple of gene
@@ -152,16 +163,42 @@ def _check_binding(header: dict, calibration: dict, *, class_maps: dict, d_allel
     rp = header.get("reference_provenance") or {}
     prov = calibration.get("provenance") or {}
 
-    _require(prov.get("model_sha256") == rp.get("source_model_sha256"),
+    cal_model_sha = prov.get("model_sha256")
+    hdr_model_sha = rp.get("source_model_sha256")
+    _require_nonempty_hex(cal_model_sha,
+             "calibration<->model binding: provenance.model_sha256 missing")
+    _require_nonempty_hex(hdr_model_sha,
+             "calibration<->model binding: reference_provenance.source_model_sha256 missing")
+    _require(cal_model_sha == hdr_model_sha,
              "calibration<->model binding: provenance.model_sha256 does not match this model's "
              "reference_provenance.source_model_sha256 (calibration was fit against a different model)")
 
+    # Anchor on the REAL, checksum-verified class maps (`class_maps[gene].db_hash`, loaded via
+    # `EquivalenceClassMap.from_json` from the `class_maps` section whose bytes `_integrity_manifest`
+    # already verified) -- NOT on the header's `reference_provenance.class_map_db_hash`, which is just
+    # another editable header field. Comparing calibration-claim against header-claim only proves the
+    # two header/section duplicates agree with EACH OTHER, not that either matches the actual reference
+    # data the model was built against.
     cal_db_hash = prov.get("class_map_db_hash") or {}
     header_db_hash = rp.get("class_map_db_hash") or {}
     for gene in ("V", "J"):
-        _require(cal_db_hash.get(gene) == header_db_hash.get(gene),
+        real_hash = class_maps[gene].db_hash
+        cal_hash = cal_db_hash.get(gene)
+        _require_nonempty_hex(real_hash,
+                 f"calibration<->model binding: class_maps.{gene}.db_hash missing")
+        _require_nonempty_hex(cal_hash,
+                 f"calibration<->model binding: provenance.class_map_db_hash.{gene} missing")
+        _require(cal_hash == real_hash,
                  f"calibration<->model binding: provenance.class_map_db_hash.{gene} does not match "
-                 f"this model's reference_provenance.class_map_db_hash.{gene}")
+                 f"the verified class_maps.{gene}.db_hash (calibration was fit against a different "
+                 f"reference set)")
+        # advisory: the header's own duplicate claim should also agree with the real data (catches a
+        # header edited independently of both the calibration and the class_maps section itself).
+        _require_nonempty_hex(header_db_hash.get(gene),
+                 f"calibration<->model binding: reference_provenance.class_map_db_hash.{gene} missing")
+        _require(header_db_hash.get(gene) == real_hash,
+                 f"calibration<->model binding: reference_provenance.class_map_db_hash.{gene} does not "
+                 f"match the verified class_maps.{gene}.db_hash")
 
     header_counts = header.get("class_counts") or {}
     head_counts = {name: branch.cls_head.out_features for name, branch in model.branches.items()}
@@ -246,7 +283,7 @@ def load_aa_model(model, *, device: str = "auto", trust_pickle: bool = False) ->
 
     _integrity_manifest(header, class_maps_bytes=class_maps_bytes, asc_bytes=asc_bytes,
                         tokenizer_bytes=tokenizer_bytes, weights_bytes=weights_bytes,
-                        calibration_bytes=calibration_bytes)
+                        calibration_bytes=calibration_bytes, config_bytes=config_bytes)
 
     cfg = serialize.config_from_bytes(config_bytes)
     class_maps_obj = json.loads(class_maps_bytes.decode("utf-8"))

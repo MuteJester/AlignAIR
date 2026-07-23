@@ -284,6 +284,83 @@ def test_calibration_missing_q_mondrian_raises(tmp_path, built):
         load_aa_model(str(path))
 
 
+def test_missing_binding_anchors_on_both_sides_raises(tmp_path, built):
+    """Both `header.reference_provenance` and `calibration.provenance` have their binding-anchor
+    fields (`source_model_sha256` / `class_map_db_hash`) deleted outright. A naive `left == right`
+    binding check is vacuously satisfied when both sides are `None`; the loader must instead require
+    BOTH sides to be present (non-empty) before ever comparing them, so deleting the anchors is itself
+    a rejection, not a silent bypass."""
+    path = tmp_path / "ok.alignair"
+    _write_bundle(built, path)
+
+    cal = json.loads(container.read_section(str(path), "calibration"))
+    cal["provenance"] = {"supported_distribution": cal["provenance"]["supported_distribution"]}
+    stripped_cal = tmp_path / "stripped_cal.alignair"
+    _rewrite_calibration_section(path, stripped_cal, cal)
+
+    final = tmp_path / "stripped_both.alignair"
+
+    def _strip(h):
+        h["reference_provenance"].pop("source_model_sha256", None)
+        h["reference_provenance"].pop("class_map_db_hash", None)
+
+    _rewrite_header(stripped_cal, final, _strip)
+
+    with pytest.raises(ValueError, match="calibration<->model binding.*missing"):
+        load_aa_model(str(final))
+
+
+def test_fabricated_but_mutually_matching_class_map_db_hash_raises(tmp_path, built):
+    """Header and calibration both claim the SAME fabricated `class_map_db_hash` -- they agree with
+    each other, but neither matches the real, checksum-verified `class_maps[gene].db_hash`. The
+    binding must anchor on the real class maps, not on two mutually-consistent header/calibration
+    duplicates."""
+    fake = {"V": "ffffffffffffffff", "J": "ffffffffffffffff"}
+    path = tmp_path / "ok.alignair"
+    _write_bundle(built, path)
+
+    real_v_hash = built["class_maps"]["V"].db_hash
+    assert real_v_hash != fake["V"]
+
+    cal = json.loads(container.read_section(str(path), "calibration"))
+    cal["provenance"]["class_map_db_hash"] = dict(fake)
+    faked_cal = tmp_path / "faked_cal.alignair"
+    _rewrite_calibration_section(path, faked_cal, cal)
+
+    final = tmp_path / "faked_both.alignair"
+    _rewrite_header(faked_cal, final,
+                    lambda h: h["reference_provenance"].__setitem__("class_map_db_hash", dict(fake)))
+
+    with pytest.raises(ValueError, match="calibration<->model binding.*class_map_db_hash"):
+        load_aa_model(str(final))
+
+
+def test_missing_model_sha256_on_header_side_only_raises(tmp_path, built):
+    """Calibration still carries `provenance.model_sha256`; only the header's
+    `reference_provenance.source_model_sha256` is deleted -- a present-vs-absent mismatch, not a
+    present-vs-present value mismatch, must still be rejected."""
+    path = tmp_path / "ok.alignair"
+    _write_bundle(built, path)
+    stripped = tmp_path / "stripped_header_model_sha.alignair"
+    _rewrite_header(path, stripped,
+                    lambda h: h["reference_provenance"].pop("source_model_sha256", None))
+    with pytest.raises(ValueError, match="calibration<->model binding.*model_sha256 missing"):
+        load_aa_model(str(stripped))
+
+
+def test_config_sha256_stale_relative_to_intact_section_raises(tmp_path, built):
+    """The header's `integrity.config_sha256` no longer matches the (untouched, self-consistent)
+    `config` section -- the integrity manifest must independently recompute and check this hash, not
+    just rely on `read_section`'s own per-section checksum."""
+    path = tmp_path / "ok.alignair"
+    _write_bundle(built, path)
+    stale = tmp_path / "stale_config.alignair"
+    _rewrite_header(path, stale,
+                    lambda h: h["integrity"].__setitem__("config_sha256", "0" * 64))
+    with pytest.raises(ValueError, match="integrity: config_sha256"):
+        load_aa_model(str(stale))
+
+
 def test_label_count_mismatch_raises(tmp_path, built):
     """The header's `class_counts.v` disagrees with the (untouched, correct) class_maps section and
     model head -- simulates a calibration/bundle assembled against a different label-count reference."""
