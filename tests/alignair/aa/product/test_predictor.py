@@ -213,3 +213,113 @@ def test_predict_junction_aa_is_the_v_end_to_j_start_substring():
     assert result.segments["V"]["coordinates"] == {"start": 0, "end": 4}
     assert result.segments["J"]["coordinates"] == {"start": 7, "end": 10}
     assert result.junction_aa == seq[4:7]
+
+
+# ---------------------------------------------------------------------------------
+# §5 coordinate CLIP boundary tests
+
+
+def test_predict_clips_negative_start_to_zero():
+    """§5: negative soft-argmax start is clipped to 0."""
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[-3.0]])    # negative start
+    predictor.model._out["v_end"] = torch.tensor([[5.0]])
+    predictor.model._out["j_start"] = torch.tensor([[6.0]])
+    predictor.model._out["j_end"] = torch.tensor([[10.0]])
+
+    seq = "ACDEFGHIKL"
+    [result] = predictor.predict([seq])
+
+    # V start of -3.0 -> rounds to -3 -> clips to max(0, -3) = 0
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 5}
+
+
+def test_predict_clips_end_beyond_sequence_length():
+    """§5: soft-argmax end beyond sequence length is clipped to seq_len."""
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[0.0]])
+    predictor.model._out["v_end"] = torch.tensor([[999.0]])     # end way beyond sequence
+    predictor.model._out["j_start"] = torch.tensor([[6.0]])
+    predictor.model._out["j_end"] = torch.tensor([[10.0]])
+
+    seq = "ACDEFGHIKL"  # length 10
+    [result] = predictor.predict([seq])
+
+    # V end of 999.0 -> rounds to 999 -> clips to min(10, 999) = 10
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 10}
+
+
+# ---------------------------------------------------------------------------------
+# D-out-of-range cross-gene overlap warning tests
+
+
+def test_predict_d_out_of_range_start_warns_without_repair():
+    """§5: D start < V end triggers cross-gene overlap warning."""
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[0.0]])
+    predictor.model._out["v_end"] = torch.tensor([[5.0]])
+    predictor.model._out["j_start"] = torch.tensor([[8.0]])
+    predictor.model._out["j_end"] = torch.tensor([[10.0]])
+    predictor.model._out["d_start"] = torch.tensor([[3.0]])     # D start < V end -> overlap
+    predictor.model._out["d_end"] = torch.tensor([[6.0]])
+
+    seq = "ACDEFGHIKL"
+    [result] = predictor.predict([seq])
+
+    # V and J are coherent, D is not
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 5}
+    assert result.segments["J"]["coordinates"] == {"start": 8, "end": 10}
+    assert result.segments["D"]["coordinates"] == {"start": 3, "end": 6}
+    # warning should be present
+    assert "segment coordinates overlap/out-of-order" in result.warnings
+    # coordinates are NOT repaired, reported as-is
+    # junction_aa is still computed because V/J are coherent (warning is for D issue only)
+    assert result.junction_aa == seq[5:8]
+
+
+def test_predict_d_out_of_range_end_warns_without_repair():
+    """§5: D end > J start triggers cross-gene overlap warning."""
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[0.0]])
+    predictor.model._out["v_end"] = torch.tensor([[4.0]])
+    predictor.model._out["j_start"] = torch.tensor([[7.0]])
+    predictor.model._out["j_end"] = torch.tensor([[10.0]])
+    predictor.model._out["d_start"] = torch.tensor([[5.0]])
+    predictor.model._out["d_end"] = torch.tensor([[8.0]])       # D end > J start -> overlap
+
+    seq = "ACDEFGHIKL"
+    [result] = predictor.predict([seq])
+
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 4}
+    assert result.segments["J"]["coordinates"] == {"start": 7, "end": 10}
+    assert result.segments["D"]["coordinates"] == {"start": 5, "end": 8}
+    assert "segment coordinates overlap/out-of-order" in result.warnings
+    # junction is still computed correctly (V/J coherent)
+    assert result.junction_aa == seq[4:7]
+
+
+# ---------------------------------------------------------------------------------
+# Tokenizer vocab equality parity test
+
+
+def test_predict_loaded_tokenizer_vocab_matches_fresh_aatokenizer():
+    """§3 parity: loaded v2 predictor's tokenizer vocabulary is identical to a fresh AAProteinTokenizer()."""
+    from alignair.aa.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT
+
+    predictor = load_aa_model(_REAL_MODEL_ID)
+
+    # Fresh tokenizer with no arguments (uses default AA_TOKEN_DICT)
+    fresh_tokenizer = AAProteinTokenizer()
+
+    # Both should have identical token_dict
+    assert predictor.tokenizer.token_dict == fresh_tokenizer.token_dict
+
+    # Verify both match the module default exactly
+    assert predictor.tokenizer.token_dict == AA_TOKEN_DICT
+    assert fresh_tokenizer.token_dict == AA_TOKEN_DICT
+
+    # Encoding parity: a probe string should encode identically
+    probe = "ACDEFGHIKLMNPQRSTVWYX"
+    predicted_encoded = predictor.tokenizer.encode(probe)
+    fresh_encoded = fresh_tokenizer.encode(probe)
+    assert (predicted_encoded == fresh_encoded).all()
