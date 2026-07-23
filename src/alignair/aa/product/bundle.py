@@ -59,17 +59,40 @@ def _first(*vals):
     return None
 
 
+def complete_calibration(calibration: dict) -> dict:
+    """Return a COPY of `calibration` with the conformal method parameters guaranteed present under a
+    top-level `method` block: `{"name", "alpha", "lambda", "k_reg"}`. The frozen calibration JSONs
+    (e.g. `calibration_cont_step318000.json`) predate this block entirely -- their calibrator
+    (`aa/conformal.py`) ran with the `FrozenConformal` defaults (APS, i.e. `lambda=0.0`, `k_reg=1`) but
+    never wrote those defaults back into the JSON, and `alpha` lives only at top level. This backfills
+    exactly those gaps so Task-3's §4 binding (which requires an embedded `method/alpha/lambda/k_reg`)
+    holds for artifacts built from those frozen snapshots, WITHOUT ever overwriting a value the source
+    calibration already set explicitly (a future calibrator that writes its own `method` block wins)."""
+    out = dict(calibration)
+    method = dict(out.get("method") or {})
+    method.setdefault("name", "APS")
+    method.setdefault("alpha", calibration.get("alpha"))
+    method.setdefault("lambda", 0.0)
+    method.setdefault("k_reg", 1)
+    out["method"] = method
+    return out
+
+
 def _calibration_provenance(calibration: dict) -> dict:
-    """Pull method/alpha/n_cal/n_test/supported_distribution from wherever they live in the
-    calibration JSON. The frozen `calibration_cont_step318000.json` shape has `alpha`/`n_cal`/`n_test`
-    at the top level and `supported_distribution` under `provenance`; it has no `method` key (the
-    calibrator's default is APS — lam=0.0 — but that default is not itself recorded), so `method` is
-    genuinely absent -> null. A `meta` block (if a future calibration JSON carries one) takes priority."""
+    """Pull method/alpha/lambda/k_reg/n_cal/n_test/supported_distribution from wherever they live in
+    the calibration JSON. `method`/`lambda`/`k_reg`/(the fill for) `alpha` are resolved via
+    `complete_calibration` -- so, per its contract, they are non-null defaults (APS/0.0/1) unless the
+    source calibration set them explicitly. The frozen `calibration_cont_step318000.json` shape has
+    `alpha`/`n_cal`/`n_test` at the top level and `supported_distribution` under `provenance`; a `meta`
+    block (if a future calibration JSON carries one) takes priority for those three."""
     meta = calibration.get("meta") if isinstance(calibration.get("meta"), dict) else {}
     prov = calibration.get("provenance") if isinstance(calibration.get("provenance"), dict) else {}
+    method = complete_calibration(calibration)["method"]
     return {
-        "method": _first(meta.get("method"), calibration.get("method"), prov.get("method")),
-        "alpha": _first(meta.get("alpha"), calibration.get("alpha"), prov.get("alpha")),
+        "method": method["name"],
+        "alpha": method["alpha"],
+        "lambda": method["lambda"],
+        "k_reg": method["k_reg"],
         "n_cal": _first(meta.get("n_cal"), calibration.get("n_cal"), prov.get("n_cal")),
         "n_test": _first(meta.get("n_test"), calibration.get("n_test"), prov.get("n_test")),
         "supported_distribution": _first(meta.get("supported_distribution"),
@@ -85,9 +108,15 @@ def save_aa_bundle(path, *, state_dict, cfg, class_maps, d_allele_order, asc_mul
 
     ``class_maps`` = ``{"V": EquivalenceClassMap, "J": EquivalenceClassMap}``; ``d_allele_order`` = the
     ordered list of D allele names (index == the model's D allele-head index); ``card_extra`` supplies
-    ``model_id``, ``model_version``, ``calibration_scope`` (required — the §8 guarantee-scope string)
-    plus optional ``created``/``license``/``citation``. Only these whitelisted fields are copied into
-    the header, so arbitrary extra keys (e.g. accidental host/user) never leak into the card.
+    ``model_id``, ``model_version``, ``calibration_scope`` (required — the §8 guarantee-scope string),
+    ``source_model_sha256`` (required — the SHA-256 of the source ``.pt`` checkpoint file the weights
+    were loaded from; this is the binding anchor a calibration JSON's ``provenance.model_sha256`` is
+    checked against, since that hash is over raw ``.pt`` bytes and can never equal ``weights_sha256``
+    (a hash over the re-serialized safetensors bytes) — two different hash domains over the same
+    weights), plus optional ``created``/``license``/``citation``. Only these whitelisted fields are
+    copied into the header, so arbitrary extra keys (e.g. accidental host/user) never leak into the
+    card. The embedded ``calibration`` section is ``complete_calibration(calibration)``, not the raw
+    input, so it always carries a ``method`` block (``name``/``alpha``/``lambda``/``k_reg``).
     """
     card_extra = card_extra or {}
     d_allele_order = list(d_allele_order)
@@ -99,7 +128,7 @@ def save_aa_bundle(path, *, state_dict, cfg, class_maps, d_allele_order, asc_mul
     class_maps_bytes = canonical_json(
         {"V": v_map.to_json(), "J": j_map.to_json(), "D_alleles": d_allele_order})
     asc_bytes = canonical_json(asc_multi)
-    calibration_bytes = canonical_json(calibration)
+    calibration_bytes = canonical_json(complete_calibration(calibration))
 
     sections = {
         "weights": (weights_bytes, _CODECS["weights"]),
@@ -131,6 +160,7 @@ def save_aa_bundle(path, *, state_dict, cfg, class_maps, d_allele_order, asc_mul
             "class_map_sha256": container.sha256_hex(class_maps_bytes),
             "asc_table_sha256": container.sha256_hex(asc_bytes),
             "tokenizer_sha256": container.sha256_hex(tokenizer_bytes),
+            "source_model_sha256": card_extra["source_model_sha256"],
         },
         "calibration_provenance": _calibration_provenance(calibration),
         "integrity": {

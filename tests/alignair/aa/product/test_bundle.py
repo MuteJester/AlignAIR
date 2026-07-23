@@ -1,7 +1,9 @@
+import json
+
 import GenAIRR as ga
 
 from alignair.aa.product.asc import asc_to_imgt_multi
-from alignair.aa.product.bundle import canonical_json, save_aa_bundle
+from alignair.aa.product.bundle import canonical_json, complete_calibration, save_aa_bundle
 from alignair.aa.strategic import strategic_setup
 from alignair.model_file import container
 
@@ -13,11 +15,13 @@ _CALIBRATION = {
     "genes": {},
 }
 
+_SOURCE_MODEL_SHA256 = "deadbeef" * 8   # fake-but-64-hex-char .pt sha256, for tests only
+
 
 def _card_extra(**overrides):
     card = {"model_id": "alignair-aa-igh-human", "model_version": "0.0.0-test",
             "calibration_scope": "TEST §8 SCOPE STRING", "license": "GPL-3.0-or-later",
-            "citation": "AlignAIR"}
+            "citation": "AlignAIR", "source_model_sha256": _SOURCE_MODEL_SHA256}
     card.update(overrides)
     return card
 
@@ -86,7 +90,42 @@ def test_calibration_provenance_pulled_from_top_level_and_provenance_block(tmp_p
     assert cp["n_cal"] == 10
     assert cp["n_test"] == 10
     assert cp["supported_distribution"] == "SIMULATOR-DOMAIN ONLY: test fixture"
-    assert cp["method"] is None            # genuinely absent from this calibration shape
+    # method/lambda/k_reg are absent from this calibration shape, so they fill to the
+    # FrozenConformal defaults (APS, lambda=0.0, k_reg=1) rather than staying null (Task-3 §4 binding).
+    assert cp["method"] == "APS"
+    assert cp["lambda"] == 0.0
+    assert cp["k_reg"] == 1
+
+
+def test_reference_provenance_carries_source_model_sha256(tmp_path):
+    _, manifest = _build_bundle(tmp_path)
+    assert manifest["reference_provenance"]["source_model_sha256"] == _SOURCE_MODEL_SHA256
+
+
+def test_embedded_calibration_is_complete_with_method_block(tmp_path):
+    path, _ = _build_bundle(tmp_path)
+    calibration = json.loads(container.read_section(str(path), "calibration"))
+    method = calibration["method"]
+    assert method["name"] == "APS"
+    assert method["lambda"] == 0.0
+    assert method["k_reg"] == 1
+    assert method["alpha"] == 0.05
+
+
+def test_complete_calibration_never_overwrites_explicit_method_fields():
+    calibration = {"alpha": 0.1, "method": {"name": "RAPS", "alpha": 0.1, "lambda": 0.3, "k_reg": 2}}
+    out = complete_calibration(calibration)
+    assert out["method"] == {"name": "RAPS", "alpha": 0.1, "lambda": 0.3, "k_reg": 2}
+    # and the original dict is untouched (a genuine copy, not an in-place mutation)
+    assert calibration["method"] == {"name": "RAPS", "alpha": 0.1, "lambda": 0.3, "k_reg": 2}
+
+
+def test_complete_calibration_fills_missing_alpha_from_top_level():
+    out = complete_calibration({"alpha": 0.07})
+    assert out["method"]["alpha"] == 0.07
+    assert out["method"]["name"] == "APS"
+    assert out["method"]["lambda"] == 0.0
+    assert out["method"]["k_reg"] == 1
 
 
 def test_integrity_hashes_match_recomputation(tmp_path):
