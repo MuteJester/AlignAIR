@@ -28,12 +28,33 @@ class AAPrediction:
                 "probability": float,
             },
             "calibrated_class_set": [...],     # §7 conformal prediction set (class/D-allele-index ids)
+            "calibrated_classes": [            # SAME set, ranked by the model's softmax class posterior
+                {"class_id": int, "rank": int, "probability": float,
+                 "alleles": [str, ...], "genes": [str, ...], "families": [str, ...]},
+                ...
+            ],
             "calibrated_allele_set": [...],    # one-to-many ASC-expanded IMGT alleles of the class set
             "calibrated_gene_set": [...],      # every IMGT gene any covered class maps to
             "calibrated_family_set": [...],    # every IMGT family any covered class maps to
             "set_size": {"classes": int, "alleles": int, "genes": int},
             "coordinates": {"start": int, "end": int} | None,       # §5
         }
+
+    **``calibrated_classes`` — scores are class-level, and only class-level.** This is the same
+    calibrated set as ``calibrated_class_set``, re-presented as a list ranked by the model's own
+    softmax CLASS posterior (rank 1 = most probable). ``probability`` is that class's softmax posterior
+    copied *verbatim* — never renormalized over the set, and (for V/J) never divided among the class's
+    one-to-many alleles. When a class expands to several IMGT alleles they are indistinguishable under
+    the bundled ASC/protein representation and share the single class-level score; the model has no
+    evidence for a within-class split, so none is invented:
+
+        Probabilities belong to model classes. All alleles expanded from one class share that
+        class-level evidence; no within-class allele probabilities are identifiable.
+
+    ``calibrated_allele_set`` is retained as a flat convenience view and is exactly the de-duplicated
+    union of the per-class ``alleles`` lists (no allele added or dropped). **D is the one exception:**
+    its head predicts allele indices directly, so each D entry maps to exactly one allele and carries a
+    defensible individual-allele probability.
 
     **D-segment convention** (documented here per §6): D has no protein-equivalence class, so
     ``top_call.class_id`` for the ``"D"`` segment is directly a **D allele-head index**

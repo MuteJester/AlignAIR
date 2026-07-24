@@ -35,8 +35,9 @@ def test_predict_aa_returns_schema_dicts_for_a_real_vh_read():
 
     for gene in ("V", "D", "J"):
         seg = d["segments"][gene]
-        assert set(seg) == {"top_call", "calibrated_class_set", "calibrated_allele_set",
-                            "calibrated_gene_set", "calibrated_family_set", "set_size", "coordinates"}
+        assert set(seg) == {"top_call", "calibrated_class_set", "calibrated_classes",
+                            "calibrated_allele_set", "calibrated_gene_set", "calibrated_family_set",
+                            "set_size", "coordinates"}
         top = seg["top_call"]
         assert isinstance(top["genes"], list) and isinstance(top["families"], list)
         assert isinstance(top["top_alleles"], list)

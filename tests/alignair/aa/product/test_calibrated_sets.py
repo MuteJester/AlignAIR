@@ -211,3 +211,102 @@ def test_predict_skip_coverage_group_list_aligns_by_original_batch_index(predict
     assert v1.applied_calibration_group["group"] == "full"
     assert err.error == "invalid_character"
     assert v2.applied_calibration_group["group"] == "short"
+
+
+# --------------------------------------------------- §6 calibrated_classes (ranked class-level scores)
+#
+# Contract: `calibrated_classes` is the SAME calibrated set as `calibrated_class_set`, re-presented as
+# a list ranked by the model's own softmax CLASS posterior. Scores are protein-class posteriors copied
+# verbatim — never renormalized over the set, never divided among a class's one-to-many alleles. (D is
+# the exception: its head predicts allele indices directly, so a D entry's single allele carries a
+# defensible individual-allele probability.)
+
+
+@pytest.mark.parametrize("gene", ["V", "J"])
+@pytest.mark.parametrize("seq", [_VH_1, _VH_2], ids=["vh1", "vh2"])
+def test_calibrated_classes_probabilities_are_softmax_verbatim(predictor, gene, seq):
+    """Every ranked class carries the model's softmax posterior for that exact class id, taken
+    straight from the class head (parity with `class_probs`) — not a renormalized or invented value."""
+    [result] = predictor.predict([seq])
+    seg = result.segments[gene]
+    prob_row = class_probs(predictor.model, [seq], predictor.cfg, predictor.device,
+                           f"{gene.lower()}_class_logits")[0]
+    for entry in seg["calibrated_classes"]:
+        assert entry["probability"] == pytest.approx(float(prob_row[entry["class_id"]]))
+    # rank-1 IS the argmax `top_call`, reported at its raw (un-renormalized) probability
+    top = seg["calibrated_classes"][0]
+    assert top["rank"] == 1
+    assert top["class_id"] == seg["top_call"]["class_id"]
+    assert top["probability"] == pytest.approx(seg["top_call"]["probability"])
+
+
+@pytest.mark.parametrize("gene", ["V", "D", "J"])
+def test_calibrated_classes_are_rank_sorted_and_dense(predictor, gene):
+    """Ranks are dense 1..N, probabilities are non-increasing, and the class ids are exactly the
+    (order-independent) `calibrated_class_set` — no class added or dropped by the ranked view."""
+    [result] = predictor.predict([_VH_1])
+    seg = result.segments[gene]
+    classes = seg["calibrated_classes"]
+    assert [c["rank"] for c in classes] == list(range(1, len(classes) + 1))
+    probs = [c["probability"] for c in classes]
+    assert probs == sorted(probs, reverse=True)
+    assert sorted(c["class_id"] for c in classes) == seg["calibrated_class_set"]
+
+
+@pytest.mark.parametrize("gene", ["V", "D", "J"])
+def test_calibrated_classes_map_exhaustively_and_without_duplication(predictor, gene):
+    """The per-class allele/gene/family lists union EXACTLY to the flattened `*_set` convenience
+    fields (nothing added, nothing dropped), and no allele is emitted by more than one class."""
+    [result] = predictor.predict([_VH_1])
+    seg = result.segments[gene]
+    classes = seg["calibrated_classes"]
+    alleles_flat = [a for c in classes for a in c["alleles"]]
+    assert sorted(set(alleles_flat)) == seg["calibrated_allele_set"]   # exhaustive + no extras
+    assert len(alleles_flat) == len(set(alleles_flat))                 # never duplicated across classes
+    assert sorted({g for c in classes for g in c["genes"]}) == seg["calibrated_gene_set"]
+    assert sorted({f for c in classes for f in c["families"]}) == seg["calibrated_family_set"]
+
+
+def test_calibrated_classes_scores_are_not_renormalized(predictor):
+    """Scores are raw class posteriors: their sum equals the softmax mass over the covered classes,
+    and is NEVER rescaled to sum to 1."""
+    [result] = predictor.predict([_VH_1])
+    seg = result.segments["V"]
+    covered = seg["calibrated_class_set"]
+    prob_row = class_probs(predictor.model, [_VH_1], predictor.cfg, predictor.device,
+                           "v_class_logits")[0]
+    total = sum(c["probability"] for c in seg["calibrated_classes"])
+    # (1) exactly the raw softmax posteriors of the covered classes — a renormalized set would sum
+    #     to 1.0 instead of to this true covered mass.
+    assert total == pytest.approx(sum(float(prob_row[cid]) for cid in covered))
+    # (2) softmax assigns every one of the model's classes strictly positive mass, so any set that
+    #     OMITS at least one class necessarily sums to < 1 (a renormalized set would be forced to 1).
+    if len(covered) < len(prob_row):
+        assert total < 1.0 - 1e-9
+
+
+def test_calibrated_classes_D_carry_defensible_per_allele_probability(predictor):
+    """D's head predicts allele indices directly, so each D entry maps to exactly one allele and its
+    probability is that allele's own softmax posterior — the one place a per-allele score is honest."""
+    [result] = predictor.predict([_VH_1])
+    d = result.segments["D"]
+    prob_row = class_probs(predictor.model, [_VH_1], predictor.cfg, predictor.device,
+                           "d_class_logits")[0]
+    for entry in d["calibrated_classes"]:
+        assert len(entry["alleles"]) == 1
+        assert entry["alleles"][0] == predictor.d_allele_order[entry["class_id"]]
+        assert entry["probability"] == pytest.approx(float(prob_row[entry["class_id"]]))
+
+
+def test_calibrated_classes_one_class_keeps_one_score_across_expanded_alleles():
+    """A single protein class that expands to three IMGT alleles yields exactly ONE ranked entry with
+    ONE class-level probability and all three alleles — the score is never split per allele, and the
+    flattened `calibrated_allele_set` is exactly that entry's `alleles`."""
+    predictor = _stub_predictor_for_expansion()
+    [result] = predictor.predict(["ACDEFGHIKL"])
+    seg = result.segments["V"]
+    [entry] = seg["calibrated_classes"]                 # one class, not three
+    assert entry["class_id"] == 0 and entry["rank"] == 1
+    assert entry["alleles"] == ["IGHV1-1*01", "IGHV1-1*02", "IGHV1-2*01"]   # 3 alleles ...
+    assert entry["probability"] == pytest.approx(1.0)                       # ... ONE probability
+    assert seg["calibrated_allele_set"] == entry["alleles"]

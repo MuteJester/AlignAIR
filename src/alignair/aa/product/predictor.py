@@ -109,21 +109,60 @@ def _select_conformal(predictor, genes: tuple, group: str):
     return {g: predictor.conformal[g]["pooled"] for g in genes}, "pooled", True
 
 
-def _calibrated_fields(gene: str, class_set: list, predictor) -> dict:
+def _class_expansion(gene: str, class_id: int, predictor) -> tuple:
+    """The (alleles, genes, families) one-to-many ASC->IMGT expansion of ONE covered class. For D
+    (whose ``class_id`` is a D allele-head index, not a protein-equivalence class — see
+    ``schema.AAPrediction``) this is the single ``d_allele_order`` allele and its parsed gene/family;
+    for V/J it is the class's full member expansion. Shared by ``_calibrated_fields`` (which unions
+    these across the set) and ``_ranked_classes`` (which keeps them per-class), so the flattened
+    ``calibrated_*_set`` fields and ``calibrated_classes`` can never disagree about a class's members."""
+    if gene == "D":
+        allele = predictor.d_allele_order[class_id]
+        return [allele], [gene_of(allele)], [family_of(allele)]
+    cmap = predictor.class_maps[gene]
+    return (class_alleles(class_id, cmap, predictor.asc_multi),
+            class_genes(class_id, cmap, predictor.asc_multi),
+            class_families(class_id, cmap, predictor.asc_multi))
+
+
+def _ranked_classes(gene: str, class_set: list, prob_row, predictor) -> list:
+    """§6 ``calibrated_classes``: the calibrated set re-presented as a list ranked by the model's own
+    softmax CLASS posterior (rank 1 = most probable; dense 1..N, tie-broken by ``class_id`` for
+    determinism). ``probability`` is the class's softmax posterior copied VERBATIM from ``prob_row``
+    — never renormalized over the set, and (for V/J) never divided among the class's one-to-many
+    alleles, which are indistinguishable under the bundled ASC/protein representation and share the
+    single class-level score (no within-class allele probability is identifiable). D is the one
+    exception: its head predicts allele indices directly, so each D entry's lone allele carries a
+    defensible individual-allele probability."""
+    ranked = sorted(class_set, key=lambda c: (-float(prob_row[c]), c))
+    out = []
+    for rank, class_id in enumerate(ranked, start=1):
+        alleles, genes, families = _class_expansion(gene, class_id, predictor)
+        out.append({
+            "class_id": class_id,
+            "rank": rank,
+            "probability": float(prob_row[class_id]),
+            "alleles": alleles,
+            "genes": genes,
+            "families": families,
+        })
+    return out
+
+
+def _calibrated_fields(gene: str, class_set: list, prob_row, predictor) -> dict:
     """§6 ``calibrated_*``/``set_size`` for one gene, given its already-computed
     ``calibrated_class_set`` (sorted list of int class ids — for D these are D allele-head indices,
-    not protein-equivalence class ids, per ``schema.AAPrediction``'s D-segment convention)."""
-    if gene == "D":
-        allele_set = sorted({predictor.d_allele_order[c] for c in class_set})
-        gene_set = sorted({gene_of(a) for a in allele_set})
-        family_set = sorted({family_of(a) for a in allele_set})
-    else:
-        cmap = predictor.class_maps[gene]
-        allele_set = sorted({a for c in class_set for a in class_alleles(c, cmap, predictor.asc_multi)})
-        gene_set = sorted({g for c in class_set for g in class_genes(c, cmap, predictor.asc_multi)})
-        family_set = sorted({f for c in class_set for f in class_families(c, cmap, predictor.asc_multi)})
+    not protein-equivalence class ids, per ``schema.AAPrediction``'s D-segment convention) and the
+    per-class softmax ``prob_row`` (for the ranked ``calibrated_classes`` view). The flattened
+    ``calibrated_allele_set`` is exactly the de-duplicated union of the per-class ``alleles`` lists in
+    ``calibrated_classes`` — both are built from ``_class_expansion`` over the same ``class_set``."""
+    expanded = [_class_expansion(gene, c, predictor) for c in class_set]
+    allele_set = sorted({a for alleles, _, _ in expanded for a in alleles})
+    gene_set = sorted({g for _, genes, _ in expanded for g in genes})
+    family_set = sorted({f for _, _, families in expanded for f in families})
     return {
         "calibrated_class_set": class_set,
+        "calibrated_classes": _ranked_classes(gene, class_set, prob_row, predictor),
         "calibrated_allele_set": allele_set,
         "calibrated_gene_set": gene_set,
         "calibrated_family_set": family_set,
@@ -160,13 +199,13 @@ def _provenance(card: dict) -> dict:
 
 
 def _top_call_v_or_j(gene: str, class_id: int, probability: float, predictor) -> dict:
-    cmap = predictor.class_maps[gene]
+    alleles, genes, families = _class_expansion(gene, class_id, predictor)
     return {
         "class_id": class_id,
         "class_name": f"{gene.lower()}_class_{class_id}",
-        "top_alleles": class_alleles(class_id, cmap, predictor.asc_multi),
-        "genes": class_genes(class_id, cmap, predictor.asc_multi),
-        "families": class_families(class_id, cmap, predictor.asc_multi),
+        "top_alleles": alleles,
+        "genes": genes,
+        "families": families,
         "probability": probability,
     }
 
@@ -174,14 +213,16 @@ def _top_call_v_or_j(gene: str, class_id: int, probability: float, predictor) ->
 def _top_call_d(class_id: int, probability: float, predictor) -> dict:
     """D's ``class_id`` is a D allele-head index (``predictor.d_allele_order[class_id]``), not a
     protein-equivalence class id — see ``schema.AAPrediction``'s docstring for the full rationale.
-    ``class_name`` is the D allele name itself (the natural, already-unique label for this index)."""
-    allele = predictor.d_allele_order[class_id]
+    ``class_name`` is the D allele name itself (the natural, already-unique label for this index).
+    ``top_alleles``/``genes``/``families`` come from the same ``_class_expansion`` used by the
+    calibrated-set view, so a class's members are identical wherever they appear."""
+    alleles, genes, families = _class_expansion("D", class_id, predictor)
     return {
         "class_id": class_id,
-        "class_name": allele,
-        "top_alleles": [allele],
-        "genes": [gene_of(allele)],
-        "families": [family_of(allele)],
+        "class_name": predictor.d_allele_order[class_id],
+        "top_alleles": alleles,
+        "genes": genes,
+        "families": families,
         "probability": probability,
     }
 
@@ -233,7 +274,7 @@ def _predict_valid(predictor, records: list, indices: list, coverage_group) -> l
 
             class_set = sorted(fc_by_gene[gene].predict_set(probs[gene][i]))
             segments[gene] = {"top_call": top_call,
-                              **_calibrated_fields(gene, class_set, predictor),
+                              **_calibrated_fields(gene, class_set, probs[gene][i], predictor),
                               "coordinates": coords}
 
         v_coords, j_coords, d_coords = (coords_by_gene.get("V"), coords_by_gene.get("J"),

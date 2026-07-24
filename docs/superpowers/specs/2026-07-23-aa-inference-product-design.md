@@ -109,7 +109,15 @@ segments: { V|D|J: {
                 genes:    [IMGT gene, ...],             # a protein-class can span >1 gene -> PLURAL
                 families: [IMGT family, ...],           # and potentially >1 family -> PLURAL
                 probability },
-    calibrated_class_set:  [class_id, ...],
+    calibrated_class_set:  [class_id, ...],             # sorted by class_id (stable set view)
+    calibrated_classes: [                               # SAME set, ranked by the model's class posterior
+        { class_id, rank,                               # rank 1 = most probable; 1..N, no ties in rank
+          probability,                                  # the class's softmax posterior, VERBATIM (see below)
+          alleles:  [IMGT-allele names, ...],           # this ONE class's full one-to-many ASC->IMGT members
+          genes:    [IMGT gene, ...],
+          families: [IMGT family, ...] },
+        ...
+    ],
     calibrated_allele_set: [IMGT-allele names, ...],    # class set -> members -> ALL originating IMGT alleles
     calibrated_gene_set:   [IMGT gene, ...],            # every gene any covered class maps to (retain all)
     calibrated_family_set: [IMGT family, ...],
@@ -134,6 +142,20 @@ warnings: [str, ...]                                    # e.g. input>max_len (re
 - **Uncertainty in v1 is the calibrated-set size + top probability, per gene** — there is **no `abstain` flag**
   and no invented confidence threshold. (A versioned abstention rule may be added in a later version; it is
   deliberately omitted from v1 rather than guessed.)
+- **`calibrated_classes` scores are class-level, and only class-level.** For V/J the model predicts protein-
+  equivalence classes; `probability` is that class's softmax posterior copied verbatim — never renormalized over
+  the set, and never divided among the class's alleles. When one class expands to several IMGT alleles, those
+  alleles are **indistinguishable under the bundled ASC/protein representation** and share the single class-level
+  score; the model has no evidence for a within-class split, so none is invented. The governing statement:
+  > *Probabilities belong to model classes. All alleles expanded from one class share that class-level evidence;
+  > no within-class allele probabilities are identifiable.*
+  **D is the one exception:** its head predicts allele indices directly, so each D entry's single allele carries a
+  defensible individual-allele probability. The flattened `calibrated_allele_set` is retained for convenience and
+  is exactly the union of the `alleles` lists across `calibrated_classes` (no allele added or dropped).
+- **What the calibrated set is — and is not.** The set is the smallest top-ranked class prefix whose calibrated
+  cumulative softmax mass reaches the frozen threshold `qhat` (APS). It always contains at least the argmax class.
+  Classes with similar posteriors often *widen* the set, but APS does **not** detect biological ambiguity or apply
+  any exact-tie rule — a wider set is a consequence of the calibrated threshold, not a tie decision.
 
 **Explicitly NOT present** (and must not be implied): nucleotide coordinates, CIGAR strings, productivity calls,
 or complete IMGT numbering. The schema may map compatible *concepts* to AIRR field names in a separate optional
