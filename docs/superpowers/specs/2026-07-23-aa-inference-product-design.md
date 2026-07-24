@@ -124,7 +124,7 @@ segments: { V|D|J: {
     set_size: { classes: int, alleles: int, genes: int },
     coordinates: { start: int, end: int } | null        # §5
 } }
-junction_aa: str | null                                 # V-end..J-start substring when derivable
+inter_vj_aa: str | null                                 # method-defined V-end..J-start substring; NOT the AIRR junction/CDR3 (no anchor motif)
 applied_calibration_group: { group: "full"|"trunc"|"short"|"pooled",
                              source: "supplied"|"pooled_fallback" }    # §7 (per-sequence; "estimated" gated off)
 provenance: { model_id, model_version, weights_sha256, calibration_sha256,
@@ -259,7 +259,7 @@ New package `src/alignair/aa/product/`:
   2. a **frozen simulator golden cohort** spanning `full`/`trunc`/`short`;
   3. **V/D/J call + calibrated-set parity** between the product path and the research path (`class_probs` +
      `FrozenConformal`) on the golden cohort — they must agree exactly;
-  4. **coordinate + junction** checks (bounds, `start>end` voiding, junction substring correctness);
+  4. **coordinate + inter_vj** checks (bounds, `start>end` voiding, `inter_vj_aa` substring correctness);
   5. **pooled vs supplied-group** behavior (correct quantile, labels, warnings);
   6. **tamper + wrong-calibration/wrong-model rejection** (mutated section → fail; calibration from a different
      model → §4 binding fail).
@@ -284,7 +284,7 @@ so these are settled here, first.
   interior whitespace rejected; ID generation + uppercase normalization; `on_invalid="error"` fail-fast vs
   `"skip"` structured per-record errors.
 - **Coordinates (§5):** soft-argmax→rounded int, clip to `[0,len]`, `start>end` → null + warning, cross-gene
-  overlap flagged not repaired; junction substring correctness.
+  overlap flagged not repaired; `inter_vj_aa` substring correctness.
 - **Calibration group (§7):** supplied group uses its quantile + attaches the supplied-group warning; `None` →
   pooled fallback labeled; per-sequence groups in a mixed batch.
 - **Provenance/scope:** the §8 scope string appears in every result + the card; card carries no `host`/`user`.

@@ -62,6 +62,14 @@ class AAPrediction:
     defensible allele-specific ``softmax_score`` (still an uncalibrated softmax value, not a calibrated
     allele probability).
 
+    **``inter_vj_aa`` is method-defined — it is NOT the AIRR ``junction``.** It is simply the input
+    residues between the predicted V-segment end and J-segment start (``sequence[V_end:J_start]``, or
+    ``None`` when V/J coordinates are missing/incoherent). The AIRR standard defines ``junction`` as the
+    CDR3 plus its conserved flanking residues, anchored on conserved motifs; this product performs no
+    such anchoring, so reusing the name ``junction_aa`` would assert a definition it has not validated.
+    The field is named ``inter_vj_aa`` precisely to avoid that collision. Interpreting it as a CDR3 or
+    an AIRR junction is unsupported until anchor-based equivalence is separately validated.
+
     **D-segment convention** (documented here per §6): D has no protein-equivalence class, so
     ``top_call.class_id`` for the ``"D"`` segment is directly a **D allele-head index**
     (``predictor.d_allele_order[class_id]``), not a class id into a class map. Its ``top_alleles`` /
@@ -71,7 +79,7 @@ class AAPrediction:
     sequence_id: str
     input_length: int
     segments: dict
-    junction_aa: Optional[str]
+    inter_vj_aa: Optional[str]               # method-defined V_end..J_start substring; NOT an AIRR junction/CDR3
     applied_calibration_group: dict          # {"group": "pooled"|"full"|"trunc"|"short", "source": ...}  (§7)
     provenance: dict                         # {model_id, model_version, weights_sha256,
                                               #  calibration_sha256, class_map_db_hash,
@@ -85,7 +93,7 @@ class AAPrediction:
             "sequence_id": self.sequence_id,
             "input_length": self.input_length,
             "segments": {gene: dict(seg) for gene, seg in self.segments.items()},
-            "junction_aa": self.junction_aa,
+            "inter_vj_aa": self.inter_vj_aa,
             "applied_calibration_group": dict(self.applied_calibration_group),
             "provenance": dict(self.provenance),
             "warnings": list(self.warnings),

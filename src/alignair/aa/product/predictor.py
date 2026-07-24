@@ -1,6 +1,6 @@
 """``AAPredictor.predict`` core (Task 5 + Task 7): one forward pass -> per-gene top call (plural
 genes/families via the Task-1 one-to-many ASC->IMGT expansion) + hardened §5 AA coordinates +
-junction_aa + §7 calibrated-set output.
+inter_vj_aa (method-defined V_end..J_start substring, NOT an AIRR junction) + §7 calibrated-set output.
 
 **Calibrated sets (§7, Task 7).** Per gene, per sequence: resolve the calibration group once per
 sequence (Task-6 ``resolve_group``), pick that gene's ``FrozenConformal`` (pooled, or the matching
@@ -291,15 +291,17 @@ def _predict_valid(predictor, records: list, indices: list, coverage_group) -> l
         if v_j_overlap or d_out_of_range:
             warnings.append(_OVERLAP_WARNING)
 
-        junction_aa = None
+        # Method-defined residues between V-end and J-start. NOT the AIRR `junction` (CDR3 + conserved
+        # flanks) — no anchor motif is used — hence the name `inter_vj_aa`; see schema.AAPrediction.
+        inter_vj_aa = None
         if v_coords and j_coords and v_coords["end"] <= j_coords["start"]:
-            junction_aa = rec.sequence[v_coords["end"]:j_coords["start"]]
+            inter_vj_aa = rec.sequence[v_coords["end"]:j_coords["start"]]
 
         results.append(AAPrediction(
             sequence_id=rec.sequence_id,
             input_length=seq_len,
             segments=segments,
-            junction_aa=junction_aa,
+            inter_vj_aa=inter_vj_aa,
             applied_calibration_group=applied_calibration_group,
             provenance=provenance,
             warnings=warnings,

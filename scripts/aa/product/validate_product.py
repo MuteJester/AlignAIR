@@ -14,7 +14,7 @@ Six checks (spec §11 Slice 5 / task-9 brief):
   2. parity              — product-path V/D/J top_class + calibrated_class_set == research path
                            (`class_probs` + `FrozenConformal` reconstructed from the bundle's own raw
                            calibration bytes), exactly, on every read x gene in the golden cohort.
-  3. coordinates         — §5: coordinates within [0, len] or null; V_end<=J_start -> junction_aa ==
+  3. coordinates         — §5: coordinates within [0, len] or null; V_end<=J_start -> inter_vj_aa ==
                            sequence[V_end:J_start]; start>end voiding verified end-to-end.
   4. groups              — §7: coverage_group=None -> pooled_fallback; coverage_group="full" ->
                            supplied (+ warning), and the supplied set matches q_mondrian["full"].
@@ -213,7 +213,7 @@ def check_parity(predictor: AAPredictor, cohort: list[dict], raw_calibration: di
     }}
 
 
-# ============================================================== Check 3: coordinates + junction
+# ============================================================== Check 3: coordinates + inter_vj
 
 
 def _minimal_class_map(gene: str, allele: str) -> EquivalenceClassMap:
@@ -278,7 +278,7 @@ def check_start_gt_end_voiding_contract() -> tuple[bool, dict]:
     voided_ok = (result.segments["V"]["coordinates"] is None
                 and "V: incoherent start>end" in result.warnings
                 and result.segments["J"]["coordinates"] == {"start": 5, "end": 9}
-                and result.junction_aa is None)
+                and result.inter_vj_aa is None)
 
     out2 = dict(out)
     out2["v_start"], out2["v_end"] = torch.tensor([[-5.0]]), torch.tensor([[999.0]])   # clip both ways
@@ -290,7 +290,7 @@ def check_start_gt_end_voiding_contract() -> tuple[bool, dict]:
 
 def check_coordinates(cohort: list[dict], product_results: list) -> dict:
     bounds_ok = True
-    junction_ok = True
+    inter_vj_ok = True
     n_segments_checked = 0
     n_voided_organic = 0
     violations = []
@@ -316,20 +316,20 @@ def check_coordinates(cohort: list[dict], product_results: list) -> dict:
         derivable = bool(v and j and v["end"] <= j["start"])
         if derivable:
             expected = row["sequence"][v["end"]:j["start"]]
-            if d["junction_aa"] != expected:
-                junction_ok = False
-                violations.append({"sequence_id": d["sequence_id"], "issue": "junction_aa mismatch",
-                                   "expected_len": len(expected), "got_len": len(d["junction_aa"] or "")})
-        elif d["junction_aa"] is not None:
-            junction_ok = False
+            if d["inter_vj_aa"] != expected:
+                inter_vj_ok = False
+                violations.append({"sequence_id": d["sequence_id"], "issue": "inter_vj_aa mismatch",
+                                   "expected_len": len(expected), "got_len": len(d["inter_vj_aa"] or "")})
+        elif d["inter_vj_aa"] is not None:
+            inter_vj_ok = False
             violations.append({"sequence_id": d["sequence_id"],
-                               "issue": "junction_aa should be null when V/J not both coherent"})
+                               "issue": "inter_vj_aa should be null when V/J not both coherent"})
 
     voiding_pass, voiding_detail = check_start_gt_end_voiding_contract()
-    pass_ = bounds_ok and junction_ok and voiding_pass
+    pass_ = bounds_ok and inter_vj_ok and voiding_pass
     return {"pass": pass_, "detail": {
         "n_reads": len(cohort), "n_segments_checked": n_segments_checked,
-        "bounds_ok": bounds_ok, "junction_ok": junction_ok,
+        "bounds_ok": bounds_ok, "inter_vj_ok": inter_vj_ok,
         "n_voided_organic_in_cohort": n_voided_organic,
         "voiding_contract": voiding_detail,
         "violations": violations[:20],
@@ -525,7 +525,7 @@ def render_markdown(result: dict) -> str:
                          f"deterministic rebuild: {g['deterministic_rebuild']}",
         "parity": f"{p['n_checks']} (read x gene) checks over {p['n_reads']} reads x "
                   f"{len(p['genes'])} genes ({', '.join(p['genes'])}); {p['n_mismatches']} mismatches",
-        "coordinates": f"bounds_ok={co['bounds_ok']} junction_ok={co['junction_ok']} "
+        "coordinates": f"bounds_ok={co['bounds_ok']} inter_vj_ok={co['inter_vj_ok']} "
                        f"voiding_contract={co['voiding_contract']}",
         "groups": f"pooled/supplied labels + warning correct; supplied 'full' V-set == q_mondrian['full']: "
                   f"{gr['supplied_full_v_set_matches_q_mondrian_full']} "
@@ -601,7 +601,7 @@ def main() -> None:
     print(f"    parity: {'PASS' if checks['parity']['pass'] else 'FAIL'} "
          f"({pd_['n_checks']} checks, {pd_['n_mismatches']} mismatches)")
 
-    print("[4/7] coordinate + junction checks ...")
+    print("[4/7] coordinate + inter_vj checks ...")
     batch = [{"sequence_id": r["sequence_id"], "sequence": r["sequence"]} for r in cohort]
     pooled_results = predictor.predict(batch, coverage_group=None)
     checks["coordinates"] = check_coordinates(cohort, pooled_results)

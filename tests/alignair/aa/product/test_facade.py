@@ -24,7 +24,7 @@ def test_predict_aa_returns_schema_dicts_for_a_real_vh_read():
     assert d["sequence_id"] == "seq_0"
     assert d["input_length"] == len(_VH_1)
     assert set(d["segments"]) == {"V", "D", "J"}
-    assert "junction_aa" in d
+    assert "inter_vj_aa" in d
     assert set(d["applied_calibration_group"]) == {"group", "source"}
     assert "warnings" in d and isinstance(d["warnings"], list)
 

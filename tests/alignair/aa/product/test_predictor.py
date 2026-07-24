@@ -1,4 +1,4 @@
-"""Tests for `AAPredictor.predict` (Task 5): calls + §5 coordinates + junction_aa, no calibration yet."""
+"""Tests for `AAPredictor.predict` (Task 5): calls + §5 coordinates + inter_vj_aa, no calibration yet."""
 from __future__ import annotations
 
 import torch
@@ -77,8 +77,8 @@ def test_predict_real_v2_bundle_returns_full_schema_for_two_vh_reads():
         assert prov["alignair_version"]
         assert "simulator" in prov["calibration_scope"].lower()
 
-        if result.junction_aa is not None:
-            assert isinstance(result.junction_aa, str)
+        if result.inter_vj_aa is not None:
+            assert isinstance(result.inter_vj_aa, str)
 
         d = result.to_dict()
         assert d["sequence_id"] == result.sequence_id
@@ -191,8 +191,8 @@ def test_predict_voids_coordinates_and_warns_on_start_greater_than_end():
     assert result.segments["J"]["coordinates"] == {"start": 5, "end": 9}
     assert result.segments["D"]["coordinates"] == {"start": 4, "end": 6}
 
-    # junction_aa cannot be derived because V's coordinates were voided
-    assert result.junction_aa is None
+    # inter_vj_aa cannot be derived because V's coordinates were voided
+    assert result.inter_vj_aa is None
 
 
 def test_predict_cross_gene_overlap_warns_without_repair():
@@ -208,10 +208,10 @@ def test_predict_cross_gene_overlap_warns_without_repair():
     assert result.segments["J"]["coordinates"] == {"start": 5, "end": 9}
     assert "segment coordinates overlap/out-of-order" in result.warnings
     # not repaired: coordinates are reported exactly as produced
-    assert result.junction_aa is None
+    assert result.inter_vj_aa is None
 
 
-def test_predict_junction_aa_is_the_v_end_to_j_start_substring():
+def test_predict_inter_vj_aa_is_the_v_end_to_j_start_substring():
     predictor = _fake_predictor()
     predictor.model._out["v_start"] = torch.tensor([[0.0]])
     predictor.model._out["v_end"] = torch.tensor([[4.0]])
@@ -223,7 +223,7 @@ def test_predict_junction_aa_is_the_v_end_to_j_start_substring():
 
     assert result.segments["V"]["coordinates"] == {"start": 0, "end": 4}
     assert result.segments["J"]["coordinates"] == {"start": 7, "end": 10}
-    assert result.junction_aa == seq[4:7]
+    assert result.inter_vj_aa == seq[4:7]
 
 
 # ---------------------------------------------------------------------------------
@@ -284,8 +284,8 @@ def test_predict_d_out_of_range_start_warns_without_repair():
     # warning should be present
     assert "segment coordinates overlap/out-of-order" in result.warnings
     # coordinates are NOT repaired, reported as-is
-    # junction_aa is still computed because V/J are coherent (warning is for D issue only)
-    assert result.junction_aa == seq[5:8]
+    # inter_vj_aa is still computed because V/J are coherent (warning is for D issue only)
+    assert result.inter_vj_aa == seq[5:8]
 
 
 def test_predict_d_out_of_range_end_warns_without_repair():
@@ -305,8 +305,8 @@ def test_predict_d_out_of_range_end_warns_without_repair():
     assert result.segments["J"]["coordinates"] == {"start": 7, "end": 10}
     assert result.segments["D"]["coordinates"] == {"start": 5, "end": 8}
     assert "segment coordinates overlap/out-of-order" in result.warnings
-    # junction is still computed correctly (V/J coherent)
-    assert result.junction_aa == seq[4:7]
+    # inter_vj is still computed correctly (V/J coherent)
+    assert result.inter_vj_aa == seq[4:7]
 
 
 # ---------------------------------------------------------------------------------
