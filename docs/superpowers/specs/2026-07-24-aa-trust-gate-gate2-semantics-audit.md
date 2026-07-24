@@ -5,7 +5,7 @@
 > convention, trustworthy interpretation, and failure behavior. This audit resolves `inter_vj_aa`, D's
 > status, the meaning of segment coordinates, and the reference semantics.
 
-**Status:** DRAFT for review · **Date:** 2026-07-24 · **Model:** `alignair-aa-igh-human 2.0.0`.
+**Status:** ✅ **APPROVED (2026-07-24)** · **Model:** `alignair-aa-igh-human 2.0.0`.
 Companion to [Gate 1 product contract](2026-07-24-aa-trust-gate-gate1-product-contract.md).
 
 ## Evidence vocabulary (used throughout)
@@ -125,8 +125,10 @@ genes, families}`), `calibrated_allele_set`, `calibrated_gene_set`, `calibrated_
 - **Training target:** the conformal quantile is calibrated so the set covers the true **class** with
   probability ≈ 1−α = 0.95 **under the applied Mondrian group** (`full`/`trunc`/`short`) or the pooled
   marginal fallback.
-- **Validation evidence:** **SIM-strong** — coverage ~0.95+ on held-out simulator data (V). **Real
-  coverage: NONE.** On real/OOD input the set is descriptive, not a 95% guarantee.
+- **Validation evidence:** **SIM-strong for V** — coverage ~0.95+ on held-out simulator data (V).
+  **J and D set coverage are not separately reported**, so any *generic* "calibrated set" status is
+  **conservative and currently cites V only.** **Real coverage: NONE** for all segments. On real/OOD input
+  the set is descriptive, not a 95% guarantee.
 - **AIRR/IMGT collision:** none — no AIRR equivalent; custom fields.
 - **Trustworthy interpretation:** the set is the honest uncertainty signal *within the simulator domain*.
   Use `set_size` and the class/allele set to separate **narrower from broader simulator-calibrated
@@ -211,7 +213,7 @@ genes, families}`), `calibrated_allele_set`, `calibrated_gene_set`, `calibrated_
 | **V/J** coordinates | clean-sim only: V start 0.92 / end 0.17 aa; J start 0.34 / end 0.91 aa MAE (n=115) | **NONE** | Limited (clean sim); SHM/indel/trunc unquantified |
 | **D** coordinates | **unreported** (no boundary MAE recorded) | **NONE** | **Unvalidated** |
 | `inter_vj_aa` | SIM-mechanical | **NONE** | Method-defined; not CDR3/junction |
-| Calibrated set coverage | SIM-strong (~0.95) | **NONE** | Simulator-domain guarantee only |
+| Calibrated set coverage | **SIM-strong, V only** (~0.95; J/D not separately reported) | **NONE** | Simulator-domain guarantee only; generic status is conservative (cites V) |
 | Calibration-group selection | SIM-mechanical (mechanism) | **NONE** | Verified selection; coverage is the separate SIM evidence above |
 | `softmax_score` | n/a (uncalibrated) | **NONE** | Ranking signal only |
 | Reference (IMGT names) | V: frozen ASC→IMGT provenance map; J: IMGT-direct | — | Provenance mapping (V), not IMGT alignment |

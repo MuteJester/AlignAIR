@@ -6,7 +6,7 @@
 > publication until Gates 1–4 pass** (Gate 1 contract, Gate 2 semantics audit, Gate 3 adversarial/OOD
 > applicability, Gate 4 comparative scientific utility).
 
-**Status:** DRAFT for review · **Date:** 2026-07-24 · **Model in scope:** `alignair-aa-igh-human 2.0.0`
+**Status:** ✅ **APPROVED (2026-07-24)** · **Model in scope:** `alignair-aa-igh-human 2.0.0`
 (v2 = `cont_step318000`; 149 V protein-equivalence classes, 33 D allele-head indices, 7 J classes; input
 ≤ 192 aa; simulator-domain conformal calibration only).
 
@@ -69,13 +69,14 @@ Only **one** workflow has any real-domain evidence, and even that is provisional
 
 **Provisional (has limited real-domain evidence):**
 
-1. **Frozen-reference V family/class assignment hypothesis for engineered/therapeutic VH proteins.**
-   Input human VH protein sequences; for each get the top V protein-class → IMGT alleles, its family/gene,
-   and the calibrated alternative set. The output is a **reference/similarity assignment against the frozen
-   germline set** — potentially informative when discussing a construct's *declared* design ancestry, but
-   it **cannot independently prove** the historical template or lineage of the construct. *Evidence:
-   descriptive on 16 therapeutic antibodies, **three families, IGHV3-dominated, inconclusive** (n=16); not
-   certified for general human IGHV-family assignment.*
+1. **Frozen-reference V-family assignment hypothesis for engineered/therapeutic VH proteins.**
+   Input human VH protein sequences; for each get the top V protein-class → IMGT alleles and the calibrated
+   alternative set. **Only the V family carries any real-domain evidence; the class, gene, and allele
+   remain simulator-only** and must not be presented as validated. The output is a **reference/similarity
+   assignment against the frozen germline set** — potentially informative when discussing a construct's
+   *declared* design ancestry, but it **cannot independently prove** the historical template or lineage.
+   *Evidence (family only): descriptive on 16 therapeutic antibodies, **three families, IGHV3-dominated,
+   inconclusive** (n=16); not certified for general human IGHV-family assignment.*
 
 **Candidate (simulator evidence only — not validated on real proteins):**
 
