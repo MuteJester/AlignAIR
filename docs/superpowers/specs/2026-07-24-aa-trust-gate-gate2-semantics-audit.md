@@ -32,18 +32,23 @@ evidence, and the calibration guarantee is simulator-domain only.
 - **Training target:** n/a (bookkeeping). **Evidence:** n/a.
 - **AIRR/IMGT collision:** none. **Coordinate convention:** n/a.
 - **Trustworthy interpretation:** exact. `input_length` is the validated aa length (whitespace stripped).
-- **Failure behavior:** invalid inputs return an `ErrorResult` (codes: `empty`, `invalid_character`,
-  `interior_whitespace`, `overlength`) instead of an `AAPrediction`; nothing is silently coerced.
+- **Failure behavior (mode-dependent):** with `on_invalid="error"` (**default**) validation **raises
+  `ValueError`** on the first invalid record. With `on_invalid="skip"` it returns an **`ErrorResult`**
+  (codes: `empty`, `invalid_character`, `interior_whitespace`, `overlength`) in the record's original
+  batch position, alongside valid `AAPrediction`s. Nothing is ever silently coerced. Leading/trailing
+  whitespace is stripped and input is uppercased before validation; interior whitespace is rejected.
 
 ## B. V and J segment — class / allele / gene / family
 
 Applies to `segments.V` and `segments.J`: `top_call.{class_id, class_name, top_alleles, genes, families,
 softmax_score}` and the `calibrated_*` fields (audited in §E).
 
-- **Biological definition:** the model predicts an **OGRDB-ASC protein-equivalence class** (149 for V, 7
-  for J) — a set of germline alleles that are *identical under the bundled translated/ASC representation*.
-  `top_alleles`/`genes`/`families` are that class's IMGT members via the frozen ASC→IMGT provenance map
-  (§G). `class_name` (`v_class_<id>`) is an internal label, not a biological name.
+- **Biological definition:** the model predicts a **protein-equivalence class** per gene — a set of
+  germline alleles identical under the bundled translated representation (149 for V, 7 for J). **V and J
+  are named differently:** **V** classes live in **OGRDB-ASC** space and are expanded to IMGT alleles via
+  the frozen **ASC→IMGT bridge** (§G); **J** classes already carry **IMGT-style** allele names and pass
+  through **without any ASC mapping**. `top_alleles`/`genes`/`families` are the class's members;
+  `class_name` (`v_class_<id>` / `j_class_<id>`) is an internal label, not a biological name.
 - **Training target:** the ground-truth germline V/J **protein-equivalence class** of simulated human IGH
   reads (GenAIRR `HUMAN_IGH_OGRDB`).
 - **Validation evidence:**
@@ -53,9 +58,10 @@ softmax_score}` and the `calibrated_*` fields (audited in §E).
     accuracy on real proteins: NONE.**
   - J, simulator: **SIM-strong** on clean (~0.994). J, real: **NONE**.
 - **AIRR/IMGT naming collision:** the *field names* (`top_alleles`, `genes`, `families`, `top_call`) do
-  **not** reuse AIRR `v_call`/`j_call`; no collision. The *values* are IMGT allele/gene/family names, but
-  they are a **provenance expansion of an ASC class**, not an alignment against the current IMGT database
-  (§G). ASC family ≠ IMGT family in general.
+  **not** reuse AIRR `v_call`/`j_call`; no collision. The *values* are IMGT allele/gene/family names. For
+  **V** they are a **provenance expansion of an ASC class** (§G), not an alignment against the current
+  IMGT database, and ASC family ≠ IMGT family in general. For **J** they are the IMGT-named class members
+  directly (no ASC layer).
 - **Coordinate convention:** n/a (class fields).
 - **Trustworthy interpretation:** on in-contract human VH, the **V family** is the most defensible unit
   (the only one with any real evidence). Treat the **class** (and its allele expansion) as "alleles
@@ -88,12 +94,19 @@ Applies to `segments.{V,D,J}.coordinates = {start, end} | null`.
 - **Biological definition:** the model's estimate of where the segment begins/ends **in the input aa
   sequence**.
 - **Training target:** simulated segment boundaries (soft-argmax start/end heads).
-- **Validation evidence:** **SIM-moderate** — soft-argmax boundaries carry ±1–2 residue jitter in
-  simulation; **real: NONE**.
+- **Validation evidence — per segment, CLEAN SIMULATOR ONLY** (n=115 surviving clean examples;
+  convergence evaluation `boundary_mae`, `docs/.../2026-07-22-aa-convergence/checkpoints_metrics.json`):
+  - **V:** start MAE **0.92 aa**, end MAE **0.17 aa**.
+  - **J:** start MAE **0.34 aa**, end MAE **0.91 aa**.
+  - **D coordinates: UNREPORTED** — the convergence evaluation records **no** D boundary MAE. D
+    coordinates are therefore **unvalidated even in simulation** (NOT `SIM-moderate`).
+  - **Real-domain: NONE** for all segments. Evidence is confined to the **clean** stratum; boundary error
+    under SHM / indel / truncation is **unquantified**.
 - **AIRR/IMGT collision — IMPORTANT:** AIRR `v_sequence_start`/`v_sequence_end` (etc.) are **1-based,
   closed, nucleotide** coordinates. These are **0-based, half-open, amino-acid** offsets into the input
-  (`start` inclusive, `end` exclusive). Different base, different closure, different molecule. The field
-  names deliberately do **not** reuse AIRR coordinate names.
+  (`start` inclusive, `end` exclusive). Different base, different closure, different molecule. AIRR permits
+  uniquely-named **custom** fields; AlignAIR-AA uses its **own** 0-based AA schema and deliberately does
+  **not** overload AIRR coordinate field names.
 - **Coordinate convention (canonical):** **0-based half-open aa offsets into the input sequence.** Not
   IMGT numbering; not nucleotide; not repaired.
 - **Trustworthy interpretation:** approximate boundaries for locating regions, not exact delimitation.
@@ -116,9 +129,11 @@ genes, families}`), `calibrated_allele_set`, `calibrated_gene_set`, `calibrated_
   coverage: NONE.** On real/OOD input the set is descriptive, not a 95% guarantee.
 - **AIRR/IMGT collision:** none — no AIRR equivalent; custom fields.
 - **Trustworthy interpretation:** the set is the honest uncertainty signal *within the simulator domain*.
-  Use `set_size` and the class/allele set to separate confident from ambiguous calls. **A widened set is
-  simulator-domain ambiguity, not OOD detection** (Gate 1 §5). Allele expansion **preserves inclusion**
-  deterministically but does not add allele-level resolution.
+  Use `set_size` and the class/allele set to separate **narrower from broader simulator-calibrated
+  hypothesis sets**. A **singleton or small set on real/OOD input is NOT established confidence** — the
+  guarantee is simulator-domain. **A widened set is simulator-domain ambiguity, not OOD detection**
+  (Gate 1 §5). Allele expansion **preserves inclusion** deterministically but adds no allele-level
+  resolution.
 - **Failure behavior:** always contains ≥ the argmax class. On a supplied coverage group unavailable in
   the calibration, the whole sequence falls back to pooled with a warning (never a half-applied group).
 
@@ -138,7 +153,11 @@ genes, families}`), `calibrated_allele_set`, `calibrated_gene_set`, `calibrated_
 
 ## G. Reference semantics — `top_alleles`/`genes`/`families` values and provenance
 
-- **What the model actually learns:** OGRDB **ASC** space — it predicts cluster names like
+> **This section is V-specific.** Only **V** is ASC-clustered and needs the ASC→IMGT bridge. **J**
+> classes are **not** ASC — their members are IMGT-style J allele names used directly, with no mapping
+> layer. Do not read the rest of this section as applying to J.
+
+- **What the model actually learns (V):** OGRDB **ASC** space — it predicts cluster names like
   `IGHVF1-G1*01`, **not** IMGT `IGHV3-23*01`.
 - **What the emitted IMGT names are:** the `imgt_allele` **provenance** of each ASC cluster, via the
   frozen `asc_tables` mapping bundled with the model. This is a **provenance mapping, not an alignment
@@ -168,7 +187,10 @@ genes, families}`), `calibrated_allele_set`, `calibrated_gene_set`, `calibrated_
 - **`applied_calibration_group` = {group, source}:** which Mondrian group (or pooled) the set used, and
   why (`supplied` / `pooled_fallback`). Honest default is **pooled** (no group claimed from raw length).
   Supplied groups carry a warning that conditional coverage holds only if the label matches the
-  calibration protocol. **Evidence:** SIM-strong (mechanism); real NONE.
+  calibration protocol. **Evidence — keep two claims separate:** the quantile-**selection mechanism** is
+  **SIM-mechanical** (verified it picks the right frozen quantile, and falls back to pooled when a
+  supplied group is absent); the **empirical set coverage** that results is the simulator evidence,
+  reported under §E (SIM-strong for V). Real: **NONE**.
 - **`provenance`:** `model_id`, `model_version`, `weights_sha256`, `calibration_sha256`,
   `class_map_db_hash`, `alignair_version`, and the `calibration_scope` string (the simulator-domain
   guarantee statement, surfaced in **every** result). Exact/verifiable. No AIRR collision.
@@ -181,16 +203,18 @@ genes, families}`), `calibrated_allele_set`, `calibrated_gene_set`, `calibrated_
 
 | Field | Simulator evidence | Real-domain evidence | Status |
 |---|---|---|---|
-| V family (`genes`→family / `families`) | SIM-strong→moderate | **REAL-descriptive (n=16, inconclusive)** | Supported (family only) |
+| V family (`genes`→family / `families`) | SIM-strong→moderate | **REAL-descriptive (n=16, inconclusive)** | **Provisional real-domain anchor:** 16 therapeutic antibodies, 3 families, IGHV3-dominated; **not certified** for general human IGHV-family assignment |
 | V gene (`genes`) | SIM-strong→moderate | **NONE** | Simulator-only |
 | V allele (`top_alleles`) | SIM-moderate | **NONE** | Simulator-only |
 | J (class/gene/allele) | SIM-strong (clean) | **NONE** | Simulator-only |
 | **D (all)** | SIM-moderate (noisy) | **NONE** | **Experimental** |
-| Segment coordinates | SIM-moderate (±1–2 jitter) | **NONE** | Simulator-only |
+| **V/J** coordinates | clean-sim only: V start 0.92 / end 0.17 aa; J start 0.34 / end 0.91 aa MAE (n=115) | **NONE** | Limited (clean sim); SHM/indel/trunc unquantified |
+| **D** coordinates | **unreported** (no boundary MAE recorded) | **NONE** | **Unvalidated** |
 | `inter_vj_aa` | SIM-mechanical | **NONE** | Method-defined; not CDR3/junction |
 | Calibrated set coverage | SIM-strong (~0.95) | **NONE** | Simulator-domain guarantee only |
+| Calibration-group selection | SIM-mechanical (mechanism) | **NONE** | Verified selection; coverage is the separate SIM evidence above |
 | `softmax_score` | n/a (uncalibrated) | **NONE** | Ranking signal only |
-| Reference (IMGT names) | provenance map (frozen) | — | Provenance mapping, not IMGT alignment |
+| Reference (IMGT names) | V: frozen ASC→IMGT provenance map; J: IMGT-direct | — | Provenance mapping (V), not IMGT alignment |
 
 ## Resolutions produced by this audit
 
