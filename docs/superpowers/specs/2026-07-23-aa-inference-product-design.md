@@ -108,11 +108,11 @@ segments: { V|D|J: {
                 top_alleles: [IMGT-allele names, ...],  # top class's members, one-to-many ASC-expanded (ALL)
                 genes:    [IMGT gene, ...],             # a protein-class can span >1 gene -> PLURAL
                 families: [IMGT family, ...],           # and potentially >1 family -> PLURAL
-                probability },
+                softmax_score },                        # raw uncalibrated softmax value (NOT a calibrated prob)
     calibrated_class_set:  [class_id, ...],             # sorted by class_id (stable set view)
-    calibrated_classes: [                               # SAME set, ranked by the model's class posterior
-        { class_id, rank,                               # rank 1 = most probable; 1..N, no ties in rank
-          probability,                                  # the class's softmax posterior, VERBATIM (see below)
+    calibrated_classes: [                               # SAME set, ranked by the model's class softmax score
+        { class_id, rank,                               # rank 1 = highest score; 1..N, deterministic class-id tie-break
+          softmax_score,                                # the class's raw softmax value, VERBATIM (see below)
           alleles:  [IMGT-allele names, ...],           # this ONE class's full one-to-many ASC->IMGT members
           genes:    [IMGT gene, ...],
           families: [IMGT family, ...] },
@@ -139,23 +139,31 @@ warnings: [str, ...]                                    # e.g. input>max_len (re
   protein-equivalence class); its `top_alleles` is that one D allele and `calibrated_allele_set` is the D-allele
   set. This is documented in the schema and the card.
 - **Allele/gene set expansion retains EVERY mapping** (one-to-many ASC→IMGT, §3) — no arbitrary representative.
-- **Uncertainty in v1 is the calibrated-set size + top probability, per gene** — there is **no `abstain` flag**
+- **Uncertainty in v1 is the calibrated-set size + top score, per gene** — there is **no `abstain` flag**
   and no invented confidence threshold. (A versioned abstention rule may be added in a later version; it is
   deliberately omitted from v1 rather than guessed.)
 - **`calibrated_classes` scores are class-level, and only class-level.** For V/J the model predicts protein-
-  equivalence classes; `probability` is that class's softmax posterior copied verbatim — never renormalized over
+  equivalence classes; `softmax_score` is that class's raw softmax value copied verbatim — never renormalized over
   the set, and never divided among the class's alleles. When one class expands to several IMGT alleles, those
   alleles are **indistinguishable under the bundled ASC/protein representation** and share the single class-level
   score; the model has no evidence for a within-class split, so none is invented. The governing statement:
-  > *Probabilities belong to model classes. All alleles expanded from one class share that class-level evidence;
-  > no within-class allele probabilities are identifiable.*
+  > *Scores belong to model classes. All alleles expanded from one class share that class-level evidence;
+  > no within-class allele score is identifiable.*
   **D is the one exception:** its head predicts allele indices directly, so each D entry's single allele carries a
-  defensible individual-allele probability. The flattened `calibrated_allele_set` is retained for convenience and
+  defensible allele-specific `softmax_score`. The flattened `calibrated_allele_set` is retained for convenience and
   is exactly the union of the `alleles` lists across `calibrated_classes` (no allele added or dropped).
+- **The field is `softmax_score`, not `probability`, by design.** Split-conformal calibration calibrates the
+  *set's* coverage (1−α), **not** the individual softmax value as an empirical probability of correctness. The
+  per-class (and per-D-allele) score is an **uncalibrated model output**; consumers that need a coverage guarantee
+  must use the calibrated *set* + `set_size`, not the raw score. This holds for D too: its allele-specific score is
+  defensible but is not a calibrated allele probability.
 - **What the calibrated set is — and is not.** The set is the smallest top-ranked class prefix whose calibrated
   cumulative softmax mass reaches the frozen threshold `qhat` (APS). It always contains at least the argmax class.
-  Classes with similar posteriors often *widen* the set, but APS does **not** detect biological ambiguity or apply
-  any exact-tie rule — a wider set is a consequence of the calibrated threshold, not a tie decision.
+  Classes with similar scores often *widen* the set, but APS does **not** detect biological ambiguity or apply any
+  exact-tie rule — a wider set is a consequence of the calibrated threshold, not a tie decision. The `rank` field
+  in `calibrated_classes` uses an independent deterministic class-id tie-break for presentation only; it is not a
+  calibration decision. **Displayed score examples are rounded** (e.g. `0.862 + 0.138 = 1.000` is rounding): the
+  raw included softmax mass is strictly below 1 whenever any class remains outside the set.
 
 **Explicitly NOT present** (and must not be implied): nucleotide coordinates, CIGAR strings, productivity calls,
 or complete IMGT numbering. The schema may map compatible *concepts* to AIRR field names in a separate optional

@@ -232,12 +232,12 @@ def test_calibrated_classes_probabilities_are_softmax_verbatim(predictor, gene, 
     prob_row = class_probs(predictor.model, [seq], predictor.cfg, predictor.device,
                            f"{gene.lower()}_class_logits")[0]
     for entry in seg["calibrated_classes"]:
-        assert entry["probability"] == pytest.approx(float(prob_row[entry["class_id"]]))
-    # rank-1 IS the argmax `top_call`, reported at its raw (un-renormalized) probability
+        assert entry["softmax_score"] == pytest.approx(float(prob_row[entry["class_id"]]))
+    # rank-1 IS the argmax `top_call`, reported at its raw (un-renormalized) softmax_score
     top = seg["calibrated_classes"][0]
     assert top["rank"] == 1
     assert top["class_id"] == seg["top_call"]["class_id"]
-    assert top["probability"] == pytest.approx(seg["top_call"]["probability"])
+    assert top["softmax_score"] == pytest.approx(seg["top_call"]["softmax_score"])
 
 
 @pytest.mark.parametrize("gene", ["V", "D", "J"])
@@ -248,7 +248,7 @@ def test_calibrated_classes_are_rank_sorted_and_dense(predictor, gene):
     seg = result.segments[gene]
     classes = seg["calibrated_classes"]
     assert [c["rank"] for c in classes] == list(range(1, len(classes) + 1))
-    probs = [c["probability"] for c in classes]
+    probs = [c["softmax_score"] for c in classes]
     assert probs == sorted(probs, reverse=True)
     assert sorted(c["class_id"] for c in classes) == seg["calibrated_class_set"]
 
@@ -275,7 +275,7 @@ def test_calibrated_classes_scores_are_not_renormalized(predictor):
     covered = seg["calibrated_class_set"]
     prob_row = class_probs(predictor.model, [_VH_1], predictor.cfg, predictor.device,
                            "v_class_logits")[0]
-    total = sum(c["probability"] for c in seg["calibrated_classes"])
+    total = sum(c["softmax_score"] for c in seg["calibrated_classes"])
     # (1) exactly the raw softmax posteriors of the covered classes — a renormalized set would sum
     #     to 1.0 instead of to this true covered mass.
     assert total == pytest.approx(sum(float(prob_row[cid]) for cid in covered))
@@ -295,7 +295,7 @@ def test_calibrated_classes_D_carry_defensible_per_allele_probability(predictor)
     for entry in d["calibrated_classes"]:
         assert len(entry["alleles"]) == 1
         assert entry["alleles"][0] == predictor.d_allele_order[entry["class_id"]]
-        assert entry["probability"] == pytest.approx(float(prob_row[entry["class_id"]]))
+        assert entry["softmax_score"] == pytest.approx(float(prob_row[entry["class_id"]]))
 
 
 def test_calibrated_classes_one_class_keeps_one_score_across_expanded_alleles():
@@ -308,5 +308,5 @@ def test_calibrated_classes_one_class_keeps_one_score_across_expanded_alleles():
     [entry] = seg["calibrated_classes"]                 # one class, not three
     assert entry["class_id"] == 0 and entry["rank"] == 1
     assert entry["alleles"] == ["IGHV1-1*01", "IGHV1-1*02", "IGHV1-2*01"]   # 3 alleles ...
-    assert entry["probability"] == pytest.approx(1.0)                       # ... ONE probability
+    assert entry["softmax_score"] == pytest.approx(1.0)                       # ... ONE probability
     assert seg["calibrated_allele_set"] == entry["alleles"]

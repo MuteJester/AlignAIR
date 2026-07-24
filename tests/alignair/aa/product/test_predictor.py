@@ -38,7 +38,7 @@ def test_predict_real_v2_bundle_returns_full_schema_for_two_vh_reads():
             assert isinstance(top_call["genes"], list) and len(top_call["genes"]) >= 1
             assert isinstance(top_call["families"], list) and len(top_call["families"]) >= 1
             assert isinstance(top_call["top_alleles"], list) and len(top_call["top_alleles"]) >= 1
-            assert 0.0 <= top_call["probability"] <= 1.0
+            assert 0.0 <= top_call["softmax_score"] <= 1.0
 
             coords = seg["coordinates"]
             if coords is not None:
@@ -82,7 +82,7 @@ def test_predict_real_v2_bundle_returns_full_schema_for_two_vh_reads():
 
         d = result.to_dict()
         assert d["sequence_id"] == result.sequence_id
-        assert d["segments"]["V"]["top_call"]["probability"] == result.segments["V"]["top_call"]["probability"]
+        assert d["segments"]["V"]["top_call"]["softmax_score"] == result.segments["V"]["top_call"]["softmax_score"]
 
 
 def test_predict_generates_sequential_ids_when_not_supplied():

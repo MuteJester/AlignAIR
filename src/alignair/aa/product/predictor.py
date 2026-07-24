@@ -127,13 +127,16 @@ def _class_expansion(gene: str, class_id: int, predictor) -> tuple:
 
 def _ranked_classes(gene: str, class_set: list, prob_row, predictor) -> list:
     """§6 ``calibrated_classes``: the calibrated set re-presented as a list ranked by the model's own
-    softmax CLASS posterior (rank 1 = most probable; dense 1..N, tie-broken by ``class_id`` for
-    determinism). ``probability`` is the class's softmax posterior copied VERBATIM from ``prob_row``
+    softmax CLASS score (rank 1 = highest score; dense 1..N, tie-broken by ``class_id`` for
+    determinism). ``softmax_score`` is the class's raw softmax value copied VERBATIM from ``prob_row``
     — never renormalized over the set, and (for V/J) never divided among the class's one-to-many
     alleles, which are indistinguishable under the bundled ASC/protein representation and share the
-    single class-level score (no within-class allele probability is identifiable). D is the one
-    exception: its head predicts allele indices directly, so each D entry's lone allele carries a
-    defensible individual-allele probability."""
+    single class-level score (no within-class allele score is identifiable). It is named
+    ``softmax_score``, not ``probability``, deliberately: conformal calibration calibrates the *set's*
+    coverage, NOT the individual softmax value as an empirical probability of correctness — the score
+    is an uncalibrated model output. D is the one exception to the class-level rule: its head predicts
+    allele indices directly, so each D entry's lone allele carries a defensible allele-specific score
+    (still an uncalibrated softmax value, not a calibrated allele probability)."""
     ranked = sorted(class_set, key=lambda c: (-float(prob_row[c]), c))
     out = []
     for rank, class_id in enumerate(ranked, start=1):
@@ -141,7 +144,7 @@ def _ranked_classes(gene: str, class_set: list, prob_row, predictor) -> list:
         out.append({
             "class_id": class_id,
             "rank": rank,
-            "probability": float(prob_row[class_id]),
+            "softmax_score": float(prob_row[class_id]),
             "alleles": alleles,
             "genes": genes,
             "families": families,
@@ -199,7 +202,7 @@ def _provenance(card: dict) -> dict:
     }
 
 
-def _top_call_v_or_j(gene: str, class_id: int, probability: float, predictor) -> dict:
+def _top_call_v_or_j(gene: str, class_id: int, softmax_score: float, predictor) -> dict:
     alleles, genes, families = _class_expansion(gene, class_id, predictor)
     return {
         "class_id": class_id,
@@ -207,16 +210,17 @@ def _top_call_v_or_j(gene: str, class_id: int, probability: float, predictor) ->
         "top_alleles": alleles,
         "genes": genes,
         "families": families,
-        "probability": probability,
+        "softmax_score": softmax_score,
     }
 
 
-def _top_call_d(class_id: int, probability: float, predictor) -> dict:
+def _top_call_d(class_id: int, softmax_score: float, predictor) -> dict:
     """D's ``class_id`` is a D allele-head index (``predictor.d_allele_order[class_id]``), not a
     protein-equivalence class id — see ``schema.AAPrediction``'s docstring for the full rationale.
     ``class_name`` is the D allele name itself (the natural, already-unique label for this index).
     ``top_alleles``/``genes``/``families`` come from the same ``_class_expansion`` used by the
-    calibrated-set view, so a class's members are identical wherever they appear."""
+    calibrated-set view, so a class's members are identical wherever they appear. ``softmax_score`` is
+    the head's raw (uncalibrated) softmax value for this D allele index."""
     alleles, genes, families = _class_expansion("D", class_id, predictor)
     return {
         "class_id": class_id,
@@ -224,7 +228,7 @@ def _top_call_d(class_id: int, probability: float, predictor) -> dict:
         "top_alleles": alleles,
         "genes": genes,
         "families": families,
-        "probability": probability,
+        "softmax_score": softmax_score,
     }
 
 
@@ -266,9 +270,9 @@ def _predict_valid(predictor, records: list, indices: list, coverage_group) -> l
 
         for gene in genes:
             class_id = int(probs[gene][i].argmax())
-            probability = float(probs[gene][i, class_id])
-            top_call = (_top_call_d(class_id, probability, predictor) if gene == "D"
-                        else _top_call_v_or_j(gene, class_id, probability, predictor))
+            softmax_score = float(probs[gene][i, class_id])
+            top_call = (_top_call_d(class_id, softmax_score, predictor) if gene == "D"
+                        else _top_call_v_or_j(gene, class_id, softmax_score, predictor))
 
             coords = _coordinates(float(starts[gene][i]), float(ends[gene][i]), seq_len, gene, warnings)
             coords_by_gene[gene] = coords
