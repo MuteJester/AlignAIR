@@ -154,15 +154,16 @@ def _calibrated_fields(gene: str, class_set: list, prob_row, predictor) -> dict:
     ``calibrated_class_set`` (sorted list of int class ids — for D these are D allele-head indices,
     not protein-equivalence class ids, per ``schema.AAPrediction``'s D-segment convention) and the
     per-class softmax ``prob_row`` (for the ranked ``calibrated_classes`` view). The flattened
-    ``calibrated_allele_set`` is exactly the de-duplicated union of the per-class ``alleles`` lists in
-    ``calibrated_classes`` — both are built from ``_class_expansion`` over the same ``class_set``."""
-    expanded = [_class_expansion(gene, c, predictor) for c in class_set]
-    allele_set = sorted({a for alleles, _, _ in expanded for a in alleles})
-    gene_set = sorted({g for _, genes, _ in expanded for g in genes})
-    family_set = sorted({f for _, _, families in expanded for f in families})
+    ``calibrated_allele_set``/``gene_set``/``family_set`` are derived *from* the per-class lists in
+    ``calibrated_classes`` — so "flat set == de-duplicated union of the per-class members" holds by
+    construction, not by two parallel expansions that happen to agree."""
+    ranked = _ranked_classes(gene, class_set, prob_row, predictor)
+    allele_set = sorted({a for entry in ranked for a in entry["alleles"]})
+    gene_set = sorted({g for entry in ranked for g in entry["genes"]})
+    family_set = sorted({f for entry in ranked for f in entry["families"]})
     return {
         "calibrated_class_set": class_set,
-        "calibrated_classes": _ranked_classes(gene, class_set, prob_row, predictor),
+        "calibrated_classes": ranked,
         "calibrated_allele_set": allele_set,
         "calibrated_gene_set": gene_set,
         "calibrated_family_set": family_set,
