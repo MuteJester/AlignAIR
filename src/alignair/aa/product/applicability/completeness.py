@@ -1,37 +1,37 @@
 """Stage-1 of the Gate-3 applicability detector: a rule-based COMPLETENESS / STRUCTURE gate.
 
-Decides whether an input is a *complete human VH domain in N->C order* before the Stage-2 membership
-score is ever consulted. The rules are derived from the **domain contract** of an Ig V-domain (conserved
-FR1 Cys, FR3 Cys, FR4 Trp-Gly landmarks; plausible domain length; no leader/constant flanks) — NOT
-reverse-engineered from the cohort's negatives. It never trims or repairs; it accepts or rejects with a
-specific reason, so the caller can withhold V/D/J calls with an honest explanation.
+**Locus-agnostic** (owner decision 2026-07-24): Stage-1 asks only "is this a complete immunoglobulin/
+TCR-fold variable domain in N->C order, free of leader/constant flanks?" — NOT "is it IGH?". Locus
+membership (human IGH VH vs IGK/IGL/TCR/other) is Stage-2's job. This split fixes a ~12% false-reject on
+complete VHs whose FR4 Trp is SHM-divergent (they now pass Stage-1), and puts locus discrimination where
+it belongs.
+
+The universal landmarks of an Ig/TCR V-domain are the two conserved cysteines forming the intradomain
+disulfide (FR1 Cys ~pos 22, FR3 Cys ~pos 96, ~50-85 apart) followed by a CDR3 and a J-region. The rules
+are derived from that contract, not reverse-engineered from the cohort's negatives.
 
 Reasons: ``too_short``, ``reversed_order``, ``missing_v_anchor``, ``missing_j_anchor``,
-``leader_or_constant_contamination``, ``low_domain_fraction``.
+``leader_or_constant_contamination``.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 
-RULESET_VERSION = "completeness_v1"
+RULESET_VERSION = "completeness_v2_locus_agnostic"
 
-_CYS = re.compile(r"[YFH][YFH]C")                       # FR3-end conserved Cys (before CDR3)
-# FR4 detection must survive SHM. Primary anchor: the FR4 Trp-Gly (WGxG, tolerating WGxxG) sitting near
-# the C-terminus (the variable domain ends ~11 residues later). Fallback for a mutated FR4 Trp: the
-# highly conserved C-terminal tail V[TL]VSS. A WGxG far from the C-terminus (constant domain following)
-# is deliberately NOT a C-terminal FR4 -> such input is caught as contamination via the trailing tail.
-_FR4_WG = re.compile(r"WG.{1,3}G")
-_FR4_TAIL = re.compile(r"[VLT][TL]VS[SA]")
-_FR4_CTERM_WINDOW = 20    # a complete VH's FR4 Trp sits within ~20 residues of the C-terminus
-_FR4_SPAN = 11            # the domain ends ~11 residues after the FR4 Trp-Gly
-_FR1 = re.compile(r"[QE][VILA][QKE][LV]")               # FR1 opening (EVQL/QVQL/QLQL/... ) at the N-term
+# J-region motif shared across loci: heavy FR4 WGxG, light/TCR FGxG (Trp/Phe-Gly-x-Gly), tolerating a
+# 1-3 residue gap under SHM; plus the highly conserved C-terminal tail as a mutated-Trp fallback.
+_JMOTIF = re.compile(r"[WFY]G.{1,3}G")
+_JTAIL = re.compile(r"[VLT][TL][VK][SLA]")
+_REV_START = re.compile(r"^[SAT]{1,2}[VITL][TL]V")     # a reversed FR4 tail (…VTVSS -> SSVTV…) at the N-term
 
-MIN_DOMAIN = 90        # a complete VH variable domain is ~95-140 aa
-MAX_DOMAIN = 150       # beyond this, a bare VH is implausible -> leader and/or constant present
-MAX_TRAIL = 6          # residues allowed after the FR4 domain end before it reads as VH+constant
-MAX_LEADER = 5         # the FR1 opening should sit at the N-term; further in implies a leader prefix
-MIN_DOMAIN_FRACTION = 0.85
+MIN_DOMAIN = 90        # a complete variable domain is ~95-140 aa
+MAX_DOMAIN = 150       # beyond this, a bare V-domain is implausible -> leader and/or constant present
+CYS_PAIR_MIN, CYS_PAIR_MAX = 50, 88     # FR1-Cys .. FR3-Cys separation
+FR1_CYS_MAX = 32       # the FR1 Cys sits ~pos 22; much later implies a leader prefix
+MIN_J_TRAIL = 13       # residues after the FR3 Cys (CDR3 + a J-region's worth)
+J_CTERM_WINDOW = 22    # the J motif sits within ~22 residues of the C-terminus
 
 
 @dataclass
@@ -46,14 +46,20 @@ def _fail(reason, **detail):
     return CompletenessResult(False, reason, RULESET_VERSION, detail)
 
 
-def _fr4_end(seq: str):
-    """End index of the FR4 domain, or None. Primary: the last FR4 Trp-Gly within the C-terminal window
-    (domain ends ~``_FR4_SPAN`` later). Fallback (mutated Trp): the last conserved V[TL]VSS tail."""
-    wg = [m for m in _FR4_WG.finditer(seq) if m.start() >= len(seq) - _FR4_CTERM_WINDOW]
-    if wg:
-        return min(len(seq), wg[-1].start() + _FR4_SPAN)
-    tail = list(_FR4_TAIL.finditer(seq))
-    return tail[-1].end() if tail else None
+def _cys_pair(seq: str):
+    """Positions (c1, c2) of the FR1/FR3 disulfide cysteines, or None."""
+    cys = [i for i, a in enumerate(seq) if a == "C"]
+    for c1 in cys:
+        if c1 > FR1_CYS_MAX + 20:          # no plausible FR1 Cys even allowing a leader
+            break
+        for c2 in cys:
+            if CYS_PAIR_MIN <= c2 - c1 <= CYS_PAIR_MAX:
+                return c1, c2
+    return None
+
+
+def _has_j_region(seq: str) -> bool:
+    return bool(_JMOTIF.search(seq[-J_CTERM_WINDOW:]) or _JTAIL.search(seq[-12:]))
 
 
 def check_completeness(sequence: str) -> CompletenessResult:
@@ -61,34 +67,20 @@ def check_completeness(sequence: str) -> CompletenessResult:
     n = len(seq)
     if n < MIN_DOMAIN:
         return _fail("too_short", length=n)
+    if _REV_START.match(seq):
+        return _fail("reversed_order")
 
-    fr4_end = _fr4_end(seq)
-    if fr4_end is None:
-        # no forward FR4 — is it a reversed domain? (the reverse read carries the FR4 Trp-Gly + FR3 Cys)
-        rev = seq[::-1]
-        if _FR4_WG.search(rev) and _CYS.search(rev):
-            return _fail("reversed_order")
-        return _fail("missing_j_anchor")
-
-    # V anchor: the invariant FR3 Cys (position ~96) sits ~10-35 residues before the FR4 end. Require a
-    # Cys in that window rather than the aromatic-aromatic-Cys motif, which SHM readily disrupts.
-    if "C" not in seq[max(0, fr4_end - 40):max(0, fr4_end - 6)]:
+    pair = _cys_pair(seq)
+    if pair is None:
         return _fail("missing_v_anchor")
+    c1, c2 = pair
 
-    # leader / constant contamination
-    trailing = n - fr4_end
-    if trailing > MAX_TRAIL:
-        return _fail("leader_or_constant_contamination", trailing=trailing, kind="constant")
-    fr1 = _FR1.search(seq[:35])
-    domain_start = fr1.start() if fr1 else 0            # a leader pushes the FR1 opening off the N-term
-    if domain_start > MAX_LEADER:
-        return _fail("leader_or_constant_contamination", leader_len=domain_start, kind="leader")
+    if c1 > FR1_CYS_MAX:
+        return _fail("leader_or_constant_contamination", kind="leader", fr1_cys=c1)
+    if n - c2 < MIN_J_TRAIL or not _has_j_region(seq):
+        return _fail("missing_j_anchor", trailing=n - c2)
     if n > MAX_DOMAIN:
-        return _fail("leader_or_constant_contamination", length=n)
-
-    # the recognized V-domain (FR1 opening .. FR4 end) must dominate the input
-    if (fr4_end - domain_start) / n < MIN_DOMAIN_FRACTION:
-        return _fail("low_domain_fraction", domain_span=fr4_end - domain_start, length=n)
+        return _fail("leader_or_constant_contamination", kind="constant", length=n)
 
     return CompletenessResult(True, None, RULESET_VERSION,
-                              {"length": n, "fr4_end": fr4_end, "domain_start": domain_start})
+                              {"length": n, "fr1_cys": c1, "fr3_cys": c2})

@@ -38,10 +38,20 @@ def test_leader_plus_vh_is_contamination():
     assert r.reason == "leader_or_constant_contamination"
 
 
-def test_vh_plus_constant_is_contamination():
+def test_vh_plus_constant_is_rejected():
+    # a VH + CH1 constant domain must be REJECTED (its J-region is buried before the constant, so the
+    # locus-agnostic gate rejects it as missing_j_anchor or as constant contamination — either is a reject)
     r = check_completeness(_VH + _CH1)
-    assert r.reason == "leader_or_constant_contamination"
-    assert r.detail.get("kind") == "constant"
+    assert not r.passed
+    assert r.reason in ("leader_or_constant_contamination", "missing_j_anchor")
+
+
+def test_a_light_chain_is_a_complete_domain_and_passes_stage1():
+    # locus-agnostic: a kappa light-chain V-domain is a COMPLETE Ig fold -> passes Stage-1 (Stage-2, the
+    # membership score, is what rejects non-IGH loci). It must NOT be rejected here as incomplete.
+    kappa = ("DIQMTQSPSSLSASVGDRVTITCRASQSISSYLNWYQQKPGKAPKLLIYAASSLQSGVPSRFSGSGSGTDFTLTISSLQPEDFATYYC"
+             "QQSYSTPPTFGQGTKVEIK")
+    assert check_completeness(kappa).passed
 
 
 def test_passing_is_not_tuned_on_a_specific_family():
