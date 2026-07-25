@@ -4,8 +4,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import alignair
 from alignair.aa.product.applicability.embedding import branch_features, REPRESENTATION_VERSION
-from alignair.aa.product.applicability.loader import _V2_BUNDLE_PATH, load_aa_model
 
 _VH1 = ("EVQLVESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSAISGSGGSTYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDT"
         "AVYYCAKDLYYYGMDVWGQGTTVTVSS")
@@ -15,7 +15,7 @@ _VH2 = ("QVQLVQSGAEVKKPGASVKVSCKASGYTFTSYYMHWVRQAPGQGLEWMGIINPSGGSTSYAQKFQGRVTMT
 
 @pytest.fixture(scope="module")
 def predictor():
-    return load_aa_model("alignair-aa-igh-human@2.0.0")
+    return alignair.load_aa_model("alignair-aa-igh-human@2.0.0")
 
 
 def test_features_are_fixed_width_and_deterministic(predictor):
