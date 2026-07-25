@@ -1,8 +1,8 @@
 {
   "anchor_prepared_counts": {
-    "fit": 20,
+    "fit": 21,
     "test": 39,
-    "val": 52
+    "val": 51
   },
   "anchor_prepared_positives_note": "categories prepared by motif_fr4_junction_v1 are marked prepared_by_anchor_rule; Task 10 must report completeness FRR both including and excluding them, must NOT tune Stage-1 motifs/thresholds on them, and treats their result as descriptive. Primary real-positive gate = repertoire + therapeutic VH (direct-prepared).",
   "category_holdouts": {
@@ -116,7 +116,7 @@
     },
     "positive_real": {
       "fit": {
-        "lineage_set_sha16": "e4f37883596f9fd6",
+        "lineage_set_sha16": "00406b9b10423463",
         "n": 140
       },
       "locked_test_floor_ok": {
@@ -129,8 +129,8 @@
         "n": 105
       },
       "val": {
-        "lineage_set_sha16": "9f59d92971540c9c",
-        "n": 106
+        "lineage_set_sha16": "44b69df5710b392f",
+        "n": 105
       }
     },
     "positive_sim": {
@@ -216,10 +216,10 @@
     "surviving": 0
   },
   "record_digest": {
-    "fit": "9e713ff7ff9acc9672e06b4fb29836092b946d136a01880ebfcafd27ac17c1f3",
-    "global": "318f278039b8fce7a8f799903452088d297c863d344afc4bd29023cf8254251a",
+    "fit": "d391f06192688717a1b86cef9303e66875f3d67c11350b797bef83c979ba82bb",
+    "global": "254e82c48c206ee43a5239aeada15a4c2177df418666d9776b1c91a86e328056",
     "test": "8b30ecdce6793542c55854a0dd72e32a1837b50712139cfb67bab8cb5b55c465",
-    "val": "1032590c831cc50c8139ffd41f3e965b4922321dc67706262475767a9225b2c1"
+    "val": "3ee4b6c8cc2885ab2acd6fb04846796482dc76f1cf5ddff3ea7eaec704e04f5a"
   },
   "sequence_collision_audit": {
     "contradictions": 0,

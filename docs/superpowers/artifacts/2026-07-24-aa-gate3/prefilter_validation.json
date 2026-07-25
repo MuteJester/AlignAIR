@@ -1,0 +1,73 @@
+{
+  "design": "high-specificity prefilter: hard-reject decisive defects only; defer everything else (mutated Cys/FR4 never reject) to Stage-2. Documents the superseded rule-gate's ~12% FRR ceiling (commit 1a2e87a) as the reason motif presence cannot be mandatory.",
+  "hard_rule_status": {
+    "leader_or_constant_contamination": {
+      "positive_rejects": 0,
+      "status": "HARD"
+    },
+    "reversed_order": {
+      "positive_rejects": 0,
+      "status": "HARD"
+    },
+    "too_short": {
+      "positive_rejects": 0,
+      "status": "HARD"
+    }
+  },
+  "positive_frr": {
+    "by_category": {
+      "design_human_framework": {
+        "deferred": 44,
+        "hard_rejects": {},
+        "n": 44
+      },
+      "humanized": {
+        "deferred": 40,
+        "hard_rejects": {},
+        "n": 40
+      },
+      "pos_igh_repertoire": {
+        "deferred": 128,
+        "hard_rejects": {},
+        "n": 128
+      },
+      "pos_igh_simulator": {
+        "deferred": 150,
+        "hard_rejects": {},
+        "n": 150
+      },
+      "pos_igh_structure": {
+        "deferred": 33,
+        "hard_rejects": {},
+        "n": 33
+      }
+    },
+    "by_rule": {},
+    "total_hard_rejects": 0
+  },
+  "ruleset_version": "prefilter_v3_high_specificity",
+  "structural_negative_prefilter": {
+    "cdr3_only": {
+      "too_short": 28
+    },
+    "j_only": {
+      "too_short": 16
+    },
+    "leader_vh": {
+      "leader_or_constant_contamination": 35
+    },
+    "reversed_vh": {
+      "DEFER": 8,
+      "leader_or_constant_contamination": 1,
+      "reversed_order": 26
+    },
+    "v_only": {
+      "DEFER": 15,
+      "too_short": 19
+    },
+    "vh_constant": {
+      "leader_or_constant_contamination": 35
+    }
+  },
+  "verdict": "PASS"
+}

@@ -41,6 +41,15 @@ def _valid(aa: str) -> bool:
     return bool(aa) and set(aa.upper()) <= _AA and 30 <= len(aa) <= 400
 
 
+def _independently_complete(r) -> bool:
+    """INDEPENDENT completeness check for repertoire positives (NOT Stage-1 predictions): the AA must
+    contain the OAS-annotated CDR3 and carry >=4 residues after it (i.e. the read spans through CDR3
+    into the J/FR4 region). Uses database annotation, so it cannot be circular with the detector."""
+    cdr3 = (r.get("cdr3_aa") or "").strip()
+    aa = r["aa"]
+    return len(cdr3) >= 4 and cdr3 in aa and (len(aa) - (aa.index(cdr3) + len(cdr3))) >= 4
+
+
 def _rec(cat, i, lineage_key, aa):
     s = CAT[cat]
     return {"id": f"{cat}_{i}", "category": cat, "group": s.group,
@@ -142,18 +151,23 @@ def run():
                                       "drop_reason": "ADC V-domain extraction empty; descriptive stratum "
                                                      "deferred to a networked IMGT TRGV/TRDV fetch (NON-BLOCKING)"}
 
-    # pass-through (validate; drop invalid)
+    # pass-through (validate; drop invalid). pos_igh_repertoire ALSO gets an INDEPENDENT completeness
+    # filter (cdr3_aa annotation, NOT Stage-1) removing genuinely-incomplete reads.
     for cat in ("pos_igh_simulator", "igsf_vset", *PASSTHROUGH):
         raw = buckets[cat]
-        kept = dropped = 0
+        kept = dropped = incomplete = 0
         for i, r in enumerate(raw):
             aa = r["aa"]
-            if _valid(aa):
-                cleaned.append(_rec(cat, i, r["lineage_key"], aa)); kept += 1
-            else:
+            if not _valid(aa):
                 dropped += 1
+                continue
+            if cat == "pos_igh_repertoire" and not _independently_complete(r):
+                incomplete += 1
+                continue
+            cleaned.append(_rec(cat, i, r["lineage_key"], aa)); kept += 1
         summary["categories"][cat] = {"raw": len(raw), "cleaned": kept, "dropped": dropped,
-                                      "drop_reason": "invalid sequence" if dropped else None}
+                                      "drop_reason": "invalid sequence" if dropped else None,
+                                      **({"independently_incomplete_dropped": incomplete} if cat == "pos_igh_repertoire" else {})}
 
     # (5) validate: the cleaned cohort must contain ZERO invalid sequences. cdr3_only and j_only are
     # intentionally SHORT fragments (expected `insufficient_evidence`), so they bypass the 30aa floor

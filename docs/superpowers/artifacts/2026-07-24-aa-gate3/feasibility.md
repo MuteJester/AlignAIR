@@ -11,7 +11,7 @@ Cleaned cohort has **zero invalid sequences**. Floors (zero-error 95% upper boun
 | vhh_nonhuman | 138 | 138 | 58 | YES |
 | igsf | 357 | 357 | 58 | YES |
 | structural | 70 | 70 | 58 | YES |
-| positive_real | 362 | 362 | 116 | YES |
+| positive_real | 361 | 361 | 116 | YES |
 | positive_sim | 200 | 200 | 116 | YES |
 
 ## Cleanup applied (procedures + drops)

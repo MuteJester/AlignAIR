@@ -63,9 +63,10 @@
       "raw": 50
     },
     "pos_igh_repertoire": {
-      "cleaned": 200,
+      "cleaned": 199,
       "drop_reason": null,
       "dropped": 0,
+      "independently_incomplete_dropped": 1,
       "raw": 200
     },
     "pos_igh_simulator": {

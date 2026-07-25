@@ -44,13 +44,13 @@
       "required_effective_n": 58
     },
     "positive_real": {
-      "alloc_fit": 181,
+      "alloc_fit": 180,
       "alloc_test": 90,
       "alloc_val": 90,
       "both_loci_present": true,
-      "counts_toward_floor": 362,
+      "counts_toward_floor": 361,
       "descriptive_present": 0,
-      "effective_after_dedup": 362,
+      "effective_after_dedup": 361,
       "locked_test_floor": 29,
       "missing_loci": [],
       "powered": true,
