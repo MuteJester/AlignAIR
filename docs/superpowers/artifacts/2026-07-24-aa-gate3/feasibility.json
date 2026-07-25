@@ -1,0 +1,251 @@
+{
+  "allocation_policy": {
+    "neg": [
+      0.0,
+      0.5,
+      0.5
+    ],
+    "pos": [
+      0.5,
+      0.25,
+      0.25
+    ]
+  },
+  "decision": "GO",
+  "floors": {
+    "10pct": 29,
+    "5pct": 59
+  },
+  "groups": {
+    "ighk_igl": {
+      "alloc_fit": 0,
+      "alloc_test": 160,
+      "alloc_val": 160,
+      "both_loci_present": true,
+      "counts_toward_floor": 320,
+      "descriptive_present": 0,
+      "effective_after_dedup": 320,
+      "locked_test_floor": 59,
+      "missing_loci": [],
+      "powered": true,
+      "required_effective_n": 118
+    },
+    "igsf": {
+      "alloc_fit": 0,
+      "alloc_test": 178,
+      "alloc_val": 178,
+      "both_loci_present": true,
+      "counts_toward_floor": 357,
+      "descriptive_present": 0,
+      "effective_after_dedup": 357,
+      "locked_test_floor": 29,
+      "missing_loci": [],
+      "powered": true,
+      "required_effective_n": 58
+    },
+    "positive_real": {
+      "alloc_fit": 185,
+      "alloc_test": 92,
+      "alloc_val": 92,
+      "both_loci_present": true,
+      "counts_toward_floor": 370,
+      "descriptive_present": 0,
+      "effective_after_dedup": 370,
+      "locked_test_floor": 29,
+      "missing_loci": [],
+      "powered": true,
+      "required_effective_n": 116
+    },
+    "positive_sim": {
+      "alloc_fit": 100,
+      "alloc_test": 50,
+      "alloc_val": 50,
+      "both_loci_present": true,
+      "counts_toward_floor": 200,
+      "descriptive_present": 0,
+      "effective_after_dedup": 200,
+      "locked_test_floor": 29,
+      "missing_loci": [],
+      "powered": true,
+      "required_effective_n": 116
+    },
+    "structural": {
+      "alloc_fit": 0,
+      "alloc_test": 35,
+      "alloc_val": 35,
+      "both_loci_present": true,
+      "counts_toward_floor": 70,
+      "descriptive_present": 0,
+      "effective_after_dedup": 70,
+      "locked_test_floor": 29,
+      "missing_loci": [],
+      "powered": true,
+      "required_effective_n": 58
+    },
+    "tcr": {
+      "alloc_fit": 0,
+      "alloc_test": 115,
+      "alloc_val": 115,
+      "both_loci_present": true,
+      "counts_toward_floor": 230,
+      "descriptive_present": 12,
+      "effective_after_dedup": 242,
+      "locked_test_floor": 59,
+      "missing_loci": [],
+      "powered": true,
+      "required_effective_n": 118
+    },
+    "vhh_nonhuman": {
+      "alloc_fit": 0,
+      "alloc_test": 79,
+      "alloc_val": 79,
+      "both_loci_present": true,
+      "counts_toward_floor": 159,
+      "descriptive_present": 0,
+      "effective_after_dedup": 159,
+      "locked_test_floor": 29,
+      "missing_loci": [],
+      "powered": true,
+      "required_effective_n": 58
+    }
+  },
+  "qc": {
+    "caveats": [
+      "pos_igh_structure: median length 221 aa suggests constant-domain (CH1) contamination \u2014 trim to the VH domain (e.g. ANARCI/IMGT) before Task 3",
+      "murine_vh: median length 217 aa suggests constant-domain (CH1) contamination \u2014 trim to the VH domain (e.g. ANARCI/IMGT) before Task 3",
+      "trg: 100% invalid sequences (broken emitter) \u2014 fix before Task 3",
+      "trd: 100% invalid sequences (broken emitter) \u2014 fix before Task 3",
+      "cdr3_only: 100% invalid sequences (broken emitter) \u2014 fix before Task 3",
+      "j_only: 100% invalid sequences (broken emitter) \u2014 fix before Task 3"
+    ],
+    "per_category": {
+      "cdr3_only": {
+        "bad_fraction": 1.0,
+        "median_len": 0,
+        "n": 70,
+        "valid": 0
+      },
+      "chimeric_murine_variable": {
+        "bad_fraction": 0.0,
+        "median_len": 119,
+        "n": 60,
+        "valid": 60
+      },
+      "design_human_framework": {
+        "bad_fraction": 0.0,
+        "median_len": 120,
+        "n": 60,
+        "valid": 60
+      },
+      "humanized": {
+        "bad_fraction": 0.0,
+        "median_len": 119,
+        "n": 60,
+        "valid": 60
+      },
+      "igk": {
+        "bad_fraction": 0.0,
+        "median_len": 106,
+        "n": 160,
+        "valid": 160
+      },
+      "igl": {
+        "bad_fraction": 0.0,
+        "median_len": 109,
+        "n": 160,
+        "valid": 160
+      },
+      "igsf_vset": {
+        "bad_fraction": 0.0,
+        "median_len": 110,
+        "n": 357,
+        "valid": 357
+      },
+      "j_only": {
+        "bad_fraction": 1.0,
+        "median_len": 0,
+        "n": 70,
+        "valid": 0
+      },
+      "leader_vh": {
+        "bad_fraction": 0.0,
+        "median_len": 131,
+        "n": 70,
+        "valid": 70
+      },
+      "murine_vh": {
+        "bad_fraction": 0.0,
+        "median_len": 217,
+        "n": 50,
+        "valid": 50
+      },
+      "pos_igh_repertoire": {
+        "bad_fraction": 0.0,
+        "median_len": 112,
+        "n": 200,
+        "valid": 200
+      },
+      "pos_igh_simulator": {
+        "bad_fraction": 0.0,
+        "median_len": 126,
+        "n": 200,
+        "valid": 200
+      },
+      "pos_igh_structure": {
+        "bad_fraction": 0.0,
+        "median_len": 221,
+        "n": 50,
+        "valid": 50
+      },
+      "reversed_vh": {
+        "bad_fraction": 0.0,
+        "median_len": 112,
+        "n": 70,
+        "valid": 70
+      },
+      "tra": {
+        "bad_fraction": 0.0,
+        "median_len": 111,
+        "n": 186,
+        "valid": 186
+      },
+      "trb": {
+        "bad_fraction": 0.0,
+        "median_len": 114,
+        "n": 44,
+        "valid": 44
+      },
+      "trd": {
+        "bad_fraction": 1.0,
+        "median_len": 0,
+        "n": 10,
+        "valid": 0
+      },
+      "trg": {
+        "bad_fraction": 1.0,
+        "median_len": 0,
+        "n": 2,
+        "valid": 0
+      },
+      "v_only": {
+        "bad_fraction": 0.0,
+        "median_len": 82,
+        "n": 70,
+        "valid": 70
+      },
+      "vh_constant": {
+        "bad_fraction": 0.0,
+        "median_len": 210,
+        "n": 70,
+        "valid": 70
+      },
+      "vhh": {
+        "bad_fraction": 0.02,
+        "median_len": 127,
+        "n": 49,
+        "valid": 48
+      }
+    }
+  },
+  "stops": []
+}
