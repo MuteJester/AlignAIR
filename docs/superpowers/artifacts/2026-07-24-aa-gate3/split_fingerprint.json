@@ -1,44 +1,50 @@
 {
+  "anchor_prepared_counts": {
+    "fit": 20,
+    "test": 39,
+    "val": 52
+  },
+  "anchor_prepared_positives_note": "categories prepared by motif_fr4_junction_v1 are marked prepared_by_anchor_rule; Task 10 must report completeness FRR both including and excluding them, must NOT tune Stage-1 motifs/thresholds on them, and treats their result as descriptive. Primary real-positive gate = repertoire + therapeutic VH (direct-prepared).",
   "category_holdouts": {
     "cdr3_only": {
       "test_n": 29,
       "test_sha16": "3a7ffa02d6825288"
     },
     "chimeric_murine_variable": {
-      "test_n": 34,
-      "test_sha16": "c5679a6d994483be"
+      "test_n": 31,
+      "test_sha16": "f91f745cc08100e7"
     },
     "design_human_framework": {
       "test_n": 16,
       "test_sha16": "cb1febe28c6c6567"
     },
     "humanized": {
-      "test_n": 14,
-      "test_sha16": "cdce6f3184ea061a"
+      "test_n": 13,
+      "test_sha16": "d45987bef73682ea"
     },
     "igk": {
       "test_n": 80,
       "test_sha16": "0bd17e31e5759a48"
     },
     "igl": {
-      "test_n": 80,
-      "test_sha16": "1be328eece42a90e"
+      "test_n": 79,
+      "test_sha16": "cbb25d1ed7f9cbae"
     },
     "igsf_vset": {
       "test_n": 179,
       "test_sha16": "2e839f0d91c026d7"
     },
     "j_only": {
-      "test_n": 29,
-      "test_sha16": "3a7ffa02d6825288"
+      "test_n": 20,
+      "test_sha16": "0ae788e56516c0b6"
     },
     "leader_vh": {
       "test_n": 35,
       "test_sha16": "4ce5e0e00231931e"
     },
     "murine_vh": {
-      "test_n": 16,
-      "test_sha16": "d346ba70b613c593"
+      "test_n": 15,
+      "test_sha16": "43edd9a1436af48b"
     },
     "pos_igh_repertoire": {
       "test_n": 71,
@@ -57,16 +63,16 @@
       "test_sha16": "4ce5e0e00231931e"
     },
     "tra": {
-      "test_n": 89,
-      "test_sha16": "33693751734071cc"
+      "test_n": 75,
+      "test_sha16": "d9c1b8da51a223c4"
     },
     "trb": {
-      "test_n": 26,
-      "test_sha16": "34d3e6b6deaad572"
+      "test_n": 15,
+      "test_sha16": "b5cd5e73651c4573"
     },
     "v_only": {
-      "test_n": 35,
-      "test_sha16": "4ce5e0e00231931e"
+      "test_n": 34,
+      "test_sha16": "41f088c0e710135b"
     },
     "vh_constant": {
       "test_n": 35,
@@ -82,15 +88,15 @@
       "locked_test_floor_ok": {
         "floor": 59,
         "meets_floor": true,
-        "test_lineages": 160
+        "test_lineages": 159
       },
       "test": {
-        "lineage_set_sha16": "ed3cd10db4976c22",
-        "n": 160
+        "lineage_set_sha16": "c4a2452123a16d33",
+        "n": 159
       },
       "val": {
-        "lineage_set_sha16": "02106df3fecf7237",
-        "n": 160
+        "lineage_set_sha16": "edd676f05bfb710a",
+        "n": 159
       }
     },
     "igsf": {
@@ -110,20 +116,20 @@
     },
     "positive_real": {
       "fit": {
-        "lineage_set_sha16": "6bfc23fe89d07109",
-        "n": 142
+        "lineage_set_sha16": "e4f37883596f9fd6",
+        "n": 140
       },
       "locked_test_floor_ok": {
         "floor": 29,
         "meets_floor": true,
-        "test_lineages": 106
+        "test_lineages": 105
       },
       "test": {
-        "lineage_set_sha16": "57452cd6e782613f",
-        "n": 106
+        "lineage_set_sha16": "6952c6dbaf30131e",
+        "n": 105
       },
       "val": {
-        "lineage_set_sha16": "c955cba6f0353dd1",
+        "lineage_set_sha16": "9f59d92971540c9c",
         "n": 106
       }
     },
@@ -165,44 +171,65 @@
       "locked_test_floor_ok": {
         "floor": 59,
         "meets_floor": true,
-        "test_lineages": 115
+        "test_lineages": 90
       },
       "test": {
-        "lineage_set_sha16": "f5abc52b667ac218",
-        "n": 115
+        "lineage_set_sha16": "b7d063a30d90cfc3",
+        "n": 90
       },
       "val": {
-        "lineage_set_sha16": "5e260bb5a93b93ed",
-        "n": 115
+        "lineage_set_sha16": "dad763799db8ac00",
+        "n": 90
       }
     },
     "vhh_nonhuman": {
       "locked_test_floor_ok": {
         "floor": 29,
         "meets_floor": true,
-        "test_lineages": 69
+        "test_lineages": 65
       },
       "test": {
-        "lineage_set_sha16": "d116668fd587542e",
-        "n": 69
+        "lineage_set_sha16": "6397dd65691cb224",
+        "n": 65
       },
       "val": {
-        "lineage_set_sha16": "06fefa306b774ec4",
-        "n": 68
+        "lineage_set_sha16": "84b9d70ad65c1eb6",
+        "n": 64
       }
     }
   },
-  "phase3_excluded": {
+  "phase3": {
+    "absent": 12,
     "by_reason": {
       "phase3_inn": 3,
       "phase3_vh_hash": 6
     },
-    "n": 9
+    "excluded_records": 9,
+    "matched_and_excluded": 4,
+    "matched_names": [
+      "bevacizumab",
+      "certolizumab",
+      "crenezumab",
+      "trastuzumab"
+    ],
+    "reference": 16,
+    "surviving": 0
+  },
+  "record_digest": {
+    "fit": "9e713ff7ff9acc9672e06b4fb29836092b946d136a01880ebfcafd27ac17c1f3",
+    "global": "318f278039b8fce7a8f799903452088d297c863d344afc4bd29023cf8254251a",
+    "test": "8b30ecdce6793542c55854a0dd72e32a1837b50712139cfb67bab8cb5b55c465",
+    "val": "1032590c831cc50c8139ffd41f3e965b4922321dc67706262475767a9225b2c1"
+  },
+  "sequence_collision_audit": {
+    "contradictions": 0,
+    "removed_intra_group_duplicates": 86,
+    "residual_cross_group": 0
   },
   "split_policy": {
     "assignment": "balanced rank by sha256(lineage_key)",
-    "leakage": "structural parents (70/70 shared with repertoire positives) restricted to val/test; structural fragment split = parent split; structural negatives are Stage-1 completeness targets",
     "neg": "val .50 / test .50",
     "pos": "fit .50 / val .25 / test .25"
-  }
+  },
+  "structural_scoring_note": "score structural at PARENT-lineage level: a parent is falsely accepted if ANY of its 6 expected-incomplete transforms is accepted. The 35 test parents are the independent units for the confidence bound \u2014 do NOT count 6 correlated transforms as 6 observations."
 }
