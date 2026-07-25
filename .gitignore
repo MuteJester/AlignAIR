@@ -135,3 +135,6 @@ AGENTS.md
 # Phase-3 real-protein: never commit raw VH sequences or sequence-bearing predictions
 docs/superpowers/artifacts/2026-07-21-aa-phase3/hydrated_sequences.tsv
 docs/superpowers/artifacts/2026-07-21-aa-phase3/predictions.jsonl
+
+# Gate-3 applicability cohort hydration (raw sequences — never committed)
+.private/aa-gate3-hydration/
