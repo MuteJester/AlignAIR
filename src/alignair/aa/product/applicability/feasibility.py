@@ -8,7 +8,7 @@ validation are ADDITIONAL. Zero-error floors — observed errors during real eva
 requirement (recompute with `min_n_for_upper_bound`).
 
 Group-specific rules (from the settled decisions):
-- Combined groups (`ighk_igl`, `tcr`) require BOTH constituent loci present; a missing locus -> STOP.
+- Combined groups (`igk_igl`, `tcr`) require BOTH constituent loci present; a missing locus -> STOP.
 - gamma/delta TCR (TRG/TRD) are DESCRIPTIVE — present but excluded from the TCR floor count.
 - Structural-negative effective N counts PARENT lineages, not derived transforms (the dedup key is the
   parent lineage).
@@ -20,7 +20,7 @@ import math
 from collections import defaultdict
 
 from .cohort import (MANIFEST, DESCRIPTIVE, GATED_5, GATED_10, POSITIVE, STRUCTURAL,
-                     G_IGHK_IGL, G_TCR, G_VHH_NONHUMAN, G_IGSF, G_STRUCTURAL,
+                     G_IGK_IGL, G_TCR, G_VHH_NONHUMAN, G_IGSF, G_STRUCTURAL,
                      G_POS_REAL, G_POS_SIM)
 
 
@@ -53,7 +53,7 @@ NEG_TEST_FRAC, NEG_VAL_FRAC = 0.50, 0.50                        # negatives: no 
 
 # group -> (floor, role)
 GROUP_GATE = {
-    G_IGHK_IGL: (FLOOR_5, "neg"),
+    G_IGK_IGL: (FLOOR_5, "neg"),
     G_TCR: (FLOOR_5, "neg"),
     G_VHH_NONHUMAN: (FLOOR_10, "neg"),
     G_IGSF: (FLOOR_10, "neg"),
@@ -63,7 +63,7 @@ GROUP_GATE = {
 }
 # combined groups that require >=1 deduped entry in EACH listed category (the TCR floor is carried by
 # TRA/TRB; gamma/delta are descriptive and excluded from the floor but still must be reportable).
-BOTH_LOCI = {G_IGHK_IGL: {"igk", "igl"}, G_TCR: {"tra", "trb"}}
+BOTH_LOCI = {G_IGK_IGL: {"igk", "igl"}, G_TCR: {"tra", "trb"}}
 
 _CATEGORY_GATE = {spec.key: spec.gate for spec in MANIFEST}
 

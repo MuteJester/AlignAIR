@@ -17,7 +17,7 @@
     "5pct": 59
   },
   "groups": {
-    "ighk_igl": {
+    "igk_igl": {
       "alloc_fit": 0,
       "alloc_test": 160,
       "alloc_val": 160,
@@ -44,13 +44,13 @@
       "required_effective_n": 58
     },
     "positive_real": {
-      "alloc_fit": 185,
-      "alloc_test": 92,
-      "alloc_val": 92,
+      "alloc_fit": 181,
+      "alloc_test": 90,
+      "alloc_val": 90,
       "both_loci_present": true,
-      "counts_toward_floor": 370,
+      "counts_toward_floor": 362,
       "descriptive_present": 0,
-      "effective_after_dedup": 370,
+      "effective_after_dedup": 362,
       "locked_test_floor": 29,
       "missing_loci": [],
       "powered": true,
@@ -88,8 +88,8 @@
       "alloc_val": 115,
       "both_loci_present": true,
       "counts_toward_floor": 230,
-      "descriptive_present": 12,
-      "effective_after_dedup": 242,
+      "descriptive_present": 0,
+      "effective_after_dedup": 230,
       "locked_test_floor": 59,
       "missing_loci": [],
       "powered": true,
@@ -97,154 +97,16 @@
     },
     "vhh_nonhuman": {
       "alloc_fit": 0,
-      "alloc_test": 79,
-      "alloc_val": 79,
+      "alloc_test": 69,
+      "alloc_val": 69,
       "both_loci_present": true,
-      "counts_toward_floor": 159,
+      "counts_toward_floor": 138,
       "descriptive_present": 0,
-      "effective_after_dedup": 159,
+      "effective_after_dedup": 138,
       "locked_test_floor": 29,
       "missing_loci": [],
       "powered": true,
       "required_effective_n": 58
-    }
-  },
-  "qc": {
-    "caveats": [
-      "pos_igh_structure: median length 221 aa suggests constant-domain (CH1) contamination \u2014 trim to the VH domain (e.g. ANARCI/IMGT) before Task 3",
-      "murine_vh: median length 217 aa suggests constant-domain (CH1) contamination \u2014 trim to the VH domain (e.g. ANARCI/IMGT) before Task 3",
-      "trg: 100% invalid sequences (broken emitter) \u2014 fix before Task 3",
-      "trd: 100% invalid sequences (broken emitter) \u2014 fix before Task 3",
-      "cdr3_only: 100% invalid sequences (broken emitter) \u2014 fix before Task 3",
-      "j_only: 100% invalid sequences (broken emitter) \u2014 fix before Task 3"
-    ],
-    "per_category": {
-      "cdr3_only": {
-        "bad_fraction": 1.0,
-        "median_len": 0,
-        "n": 70,
-        "valid": 0
-      },
-      "chimeric_murine_variable": {
-        "bad_fraction": 0.0,
-        "median_len": 119,
-        "n": 60,
-        "valid": 60
-      },
-      "design_human_framework": {
-        "bad_fraction": 0.0,
-        "median_len": 120,
-        "n": 60,
-        "valid": 60
-      },
-      "humanized": {
-        "bad_fraction": 0.0,
-        "median_len": 119,
-        "n": 60,
-        "valid": 60
-      },
-      "igk": {
-        "bad_fraction": 0.0,
-        "median_len": 106,
-        "n": 160,
-        "valid": 160
-      },
-      "igl": {
-        "bad_fraction": 0.0,
-        "median_len": 109,
-        "n": 160,
-        "valid": 160
-      },
-      "igsf_vset": {
-        "bad_fraction": 0.0,
-        "median_len": 110,
-        "n": 357,
-        "valid": 357
-      },
-      "j_only": {
-        "bad_fraction": 1.0,
-        "median_len": 0,
-        "n": 70,
-        "valid": 0
-      },
-      "leader_vh": {
-        "bad_fraction": 0.0,
-        "median_len": 131,
-        "n": 70,
-        "valid": 70
-      },
-      "murine_vh": {
-        "bad_fraction": 0.0,
-        "median_len": 217,
-        "n": 50,
-        "valid": 50
-      },
-      "pos_igh_repertoire": {
-        "bad_fraction": 0.0,
-        "median_len": 112,
-        "n": 200,
-        "valid": 200
-      },
-      "pos_igh_simulator": {
-        "bad_fraction": 0.0,
-        "median_len": 126,
-        "n": 200,
-        "valid": 200
-      },
-      "pos_igh_structure": {
-        "bad_fraction": 0.0,
-        "median_len": 221,
-        "n": 50,
-        "valid": 50
-      },
-      "reversed_vh": {
-        "bad_fraction": 0.0,
-        "median_len": 112,
-        "n": 70,
-        "valid": 70
-      },
-      "tra": {
-        "bad_fraction": 0.0,
-        "median_len": 111,
-        "n": 186,
-        "valid": 186
-      },
-      "trb": {
-        "bad_fraction": 0.0,
-        "median_len": 114,
-        "n": 44,
-        "valid": 44
-      },
-      "trd": {
-        "bad_fraction": 1.0,
-        "median_len": 0,
-        "n": 10,
-        "valid": 0
-      },
-      "trg": {
-        "bad_fraction": 1.0,
-        "median_len": 0,
-        "n": 2,
-        "valid": 0
-      },
-      "v_only": {
-        "bad_fraction": 0.0,
-        "median_len": 82,
-        "n": 70,
-        "valid": 70
-      },
-      "vh_constant": {
-        "bad_fraction": 0.0,
-        "median_len": 210,
-        "n": 70,
-        "valid": 70
-      },
-      "vhh": {
-        "bad_fraction": 0.02,
-        "median_len": 127,
-        "n": 49,
-        "valid": 48
-      }
     }
   },
   "stops": []

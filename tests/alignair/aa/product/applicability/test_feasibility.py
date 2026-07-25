@@ -22,8 +22,8 @@ def _entries(category, group, state, n, *, lineage_prefix=None, shared_lineage=N
 def _powered_cohort():
     """A cohort that clears every gated group's locked-test floor."""
     e = []
-    e += _entries("igk", "ighk_igl", "unknown_ood", 60)
-    e += _entries("igl", "ighk_igl", "unknown_ood", 60)          # combined 120 >= 118
+    e += _entries("igk", "igk_igl", "unknown_ood", 60)
+    e += _entries("igl", "igk_igl", "unknown_ood", 60)          # combined 120 >= 118
     e += _entries("tra", "tcr", "unknown_ood", 60)
     e += _entries("trb", "tcr", "unknown_ood", 60)               # 120 >= 118 (gamma/delta excluded)
     e += _entries("trg", "tcr", "unknown_ood", 5)               # descriptive, present
@@ -58,8 +58,8 @@ def test_missing_locus_forces_STOP():
     cohort = [e for e in _powered_cohort() if e.category != "igl"]   # drop IGL entirely
     rep = feasibility_report(cohort)
     assert rep["decision"] == "STOP"
-    assert rep["groups"]["ighk_igl"]["both_loci_present"] is False
-    assert "igl" in rep["groups"]["ighk_igl"]["missing_loci"]
+    assert rep["groups"]["igk_igl"]["both_loci_present"] is False
+    assert "igl" in rep["groups"]["igk_igl"]["missing_loci"]
 
 
 def test_gamma_delta_alone_cannot_power_tcr():

@@ -28,7 +28,7 @@ STRUCTURAL = "structural"    # expected `insufficient_evidence` via the Stage-1 
 
 # ------------------------------------------------------------------ gating groups
 # The 95% FAR upper-bound gate applies to these COMBINED groups (spec Gate-3 amendment 2):
-G_IGHK_IGL = "ighk_igl"          # combined IGK/IGL, <=5% (both loci must be present)
+G_IGK_IGL = "igk_igl"          # combined IGK/IGL, <=5% (both loci must be present)
 G_TCR = "tcr"                    # combined TCR, <=5% (carried by TRA/TRB; gamma/delta descriptive)
 G_VHH_NONHUMAN = "vhh_nonhuman"  # VHH + non-human VH (murine, murine-variable chimera), <=10%
 G_IGSF = "igsf"                  # IgSF V-set (non-IG/TR), <=10%
@@ -80,11 +80,11 @@ MANIFEST: list[CategorySpec] = [
                  "IGH", "human", "VH", "N->C", "simulator ground-truth boundaries",
                  "n/a", "simulation seed lineage"),
     # ------------------------------------------------------------ NEAR-OOD, combined IGK/IGL (<=5%)
-    CategorySpec("igk", "unknown_ood", G_IGHK_IGL, GATED_5,
+    CategorySpec("igk", "unknown_ood", G_IGK_IGL, GATED_5,
                  "OAS unpaired human light", f"{_OAS} Species=human&Chain=Light (locus=IGK in unit)",
                  "IGK", "human", "V", "N->C", "AIRR locus annotation", "CC-BY 4.0",
                  "subject+study+CDR3/V clonal lineage"),
-    CategorySpec("igl", "unknown_ood", G_IGHK_IGL, GATED_5,
+    CategorySpec("igl", "unknown_ood", G_IGK_IGL, GATED_5,
                  "OAS unpaired human light", f"{_OAS} Species=human&Chain=Light (locus=IGL in unit)",
                  "IGL", "human", "V", "N->C", "AIRR locus annotation", "CC-BY 4.0",
                  "subject+study+CDR3/V clonal lineage"),
