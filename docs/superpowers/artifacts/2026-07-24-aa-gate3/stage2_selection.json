@@ -10,14 +10,14 @@
       "separation_diagnostic": {
         "knn": {
           "structural": {
-            "auc": 0.692,
+            "auc": 0.694,
             "far_ub_at_frr10": 0.662,
             "n": 35
           }
         },
         "shrinkage_mahalanobis": {
           "structural": {
-            "auc": 0.702,
+            "auc": 0.704,
             "far_ub_at_frr10": 0.662,
             "n": 35
           }

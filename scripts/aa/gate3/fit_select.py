@@ -115,13 +115,18 @@ def run():
                 for i in neg_ids:
                     grp[_MEMB_NEG_GROUP[by_id[i]["category"]]].append(score_of(i))
                 neg_groups = {g: np.array(v) for g, v in grp.items()}
-            # diagnostic: separation AUC per group + the best FAR upper bound achievable at FRR_ub<=10%
-            tau10 = np.quantile(pos_scores, 0.0)                 # start; find the highest tau with FRR_ub<=10%
-            taus = np.unique(pos_scores)
-            feas = [t for t in taus if cp_upper(int((pos_scores < t).sum()), len(pos_scores)) <= FRR_BOUND]
+            # diagnostic: separation AUC (ties count 0.5) per group + the FAR upper bound achievable at the
+            # highest threshold whose FRR upper bound is still <= 10%.
+            feas = [t for t in np.unique(pos_scores)
+                    if cp_upper(int((pos_scores < t).sum()), len(pos_scores)) <= FRR_BOUND]
             tau_at_frr10 = max(feas) if feas else float(pos_scores.min())
-            diag[name] = {g: {"n": int(len(v)),
-                              "auc": round(float((pos_scores[:, None] > v[None, :]).mean()), 3),
+
+            def _auc(pos, neg):
+                gt = (pos[:, None] > neg[None, :]).mean()
+                eq = (pos[:, None] == neg[None, :]).mean()
+                return round(float(gt + 0.5 * eq), 3)
+
+            diag[name] = {g: {"n": int(len(v)), "auc": _auc(pos_scores, v),
                               "far_ub_at_frr10": round(cp_upper(int((v >= tau_at_frr10).sum()), len(v)), 3)}
                           for g, v in neg_groups.items()}
             chosen = select(pos_scores, neg_groups, far_bounds)

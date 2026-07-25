@@ -1,4 +1,57 @@
 {
+  "completeness_positive_frr": {
+    "by_category": {
+      "chimeric_murine_variable": {
+        "deferred": 25,
+        "hard_rejects": {},
+        "n": 25
+      },
+      "igk": {
+        "deferred": 79,
+        "hard_rejects": {},
+        "n": 79
+      },
+      "igl": {
+        "deferred": 80,
+        "hard_rejects": {},
+        "n": 80
+      },
+      "murine_vh": {
+        "deferred": 13,
+        "hard_rejects": {
+          "leader_or_constant_contamination": 1
+        },
+        "n": 14
+      },
+      "tra": {
+        "deferred": 67,
+        "hard_rejects": {
+          "too_short": 9
+        },
+        "n": 76
+      },
+      "trb": {
+        "deferred": 14,
+        "hard_rejects": {},
+        "n": 14
+      },
+      "vhh": {
+        "deferred": 24,
+        "hard_rejects": {
+          "leader_or_constant_contamination": 1
+        },
+        "n": 25
+      }
+    },
+    "by_rule": {
+      "leader_or_constant_contamination": 2,
+      "too_short": 9
+    },
+    "n": 313,
+    "rate": 0.0351,
+    "scope": "non-IGH complete-domain positives (locus-agnostic)",
+    "total_hard_rejects": 11
+  },
   "design": "high-specificity prefilter: hard-reject decisive defects only; defer everything else (mutated Cys/FR4 never reject) to Stage-2. Documents the superseded rule-gate's ~12% FRR ceiling (commit 1a2e87a) as the reason motif presence cannot be mandatory.",
   "hard_rule_status": {
     "leader_or_constant_contamination": {
@@ -14,7 +67,7 @@
       "status": "HARD"
     }
   },
-  "positive_frr": {
+  "igh_positive_frr": {
     "by_category": {
       "design_human_framework": {
         "deferred": 44,
@@ -45,6 +98,7 @@
     "by_rule": {},
     "total_hard_rejects": 0
   },
+  "note": "IGH-positive FRR is 0 (all hard rules stay HARD). The non-IGH complete-domain positives have a small prefilter FRR (~3.5%: mostly genuinely-short TCR reads via too_short, a few murine leader/constant), well within the completeness bound and far too small to explain the Stage-2 separation failure (66-100% FAR at FRR<=10%).",
   "ruleset_version": "prefilter_v3_high_specificity",
   "structural_negative_prefilter": {
     "cdr3_only": {

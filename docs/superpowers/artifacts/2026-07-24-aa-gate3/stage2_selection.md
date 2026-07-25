@@ -34,11 +34,19 @@ The V+J penultimate features are the **class-head inputs** — trained to answer
 **structure**, strongly enough to gate on. The frozen model was never trained for out-of-distribution or
 locus discrimination, and its representation does not incidentally provide it.
 
-## Conclusion
-**The predeclared hybrid cannot pass the Trust-Gate contract on the frozen model.** Under the Gate-3
-contract this is a genuine FAIL: the AA product must **not** be published with an applicability guarantee
-built on this representation. A working applicability gate would require NEW capability outside this
-predeclaration (e.g. a trained OOD/locus head, or a different representation) — to be proposed and
-predeclared afresh, not fished for post-hoc against this validation set. The scientific question posed —
-*can the frozen model representation distinguish complete-domain structure and human-IGH membership
-without sacrificing valid divergent VHs?* — is answered **no**.
+## Conclusion (narrowed)
+> **The predeclared `vj_penultimate_v1` representation, with positive-only kNN or shrinkage-Mahalanobis
+> scoring, cannot support the applicability gate.**
+
+Under the Gate-3 contract this is a genuine FAIL for the current product candidate: the AA product must
+**not** be published with an applicability guarantee built on this representation.
+
+**Scope of the claim.** This does **not** prove that *every* internal representation of the frozen model
+is useless. The V+J penultimate is the class-head bottleneck, which may have discarded locus/completeness
+information that earlier spatial-convolutional backbone features still retain. Testing those would be a
+**new, post-result experiment** — a separately predeclared applicability-model project, not a rescue of
+this Gate-3 run (which is frozen and failed). The locked test stays sealed.
+
+**Independently reproduced** (byte-identical): score direction, threshold search, one-sided
+Clopper–Pearson bounds, lineage-disjoint fit/validation roles, parent-lineage-aggregated structural
+negatives, and both scorers' FAR bounds all verified.
