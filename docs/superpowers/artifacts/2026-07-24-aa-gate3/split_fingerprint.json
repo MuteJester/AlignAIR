@@ -1,0 +1,208 @@
+{
+  "category_holdouts": {
+    "cdr3_only": {
+      "test_n": 29,
+      "test_sha16": "3a7ffa02d6825288"
+    },
+    "chimeric_murine_variable": {
+      "test_n": 34,
+      "test_sha16": "c5679a6d994483be"
+    },
+    "design_human_framework": {
+      "test_n": 16,
+      "test_sha16": "cb1febe28c6c6567"
+    },
+    "humanized": {
+      "test_n": 14,
+      "test_sha16": "cdce6f3184ea061a"
+    },
+    "igk": {
+      "test_n": 80,
+      "test_sha16": "0bd17e31e5759a48"
+    },
+    "igl": {
+      "test_n": 80,
+      "test_sha16": "1be328eece42a90e"
+    },
+    "igsf_vset": {
+      "test_n": 179,
+      "test_sha16": "2e839f0d91c026d7"
+    },
+    "j_only": {
+      "test_n": 29,
+      "test_sha16": "3a7ffa02d6825288"
+    },
+    "leader_vh": {
+      "test_n": 35,
+      "test_sha16": "4ce5e0e00231931e"
+    },
+    "murine_vh": {
+      "test_n": 16,
+      "test_sha16": "d346ba70b613c593"
+    },
+    "pos_igh_repertoire": {
+      "test_n": 71,
+      "test_sha16": "aa26a7c7bf0af756"
+    },
+    "pos_igh_simulator": {
+      "test_n": 50,
+      "test_sha16": "ba731f3eae593fd2"
+    },
+    "pos_igh_structure": {
+      "test_n": 5,
+      "test_sha16": "89f50c16621421e9"
+    },
+    "reversed_vh": {
+      "test_n": 35,
+      "test_sha16": "4ce5e0e00231931e"
+    },
+    "tra": {
+      "test_n": 89,
+      "test_sha16": "33693751734071cc"
+    },
+    "trb": {
+      "test_n": 26,
+      "test_sha16": "34d3e6b6deaad572"
+    },
+    "v_only": {
+      "test_n": 35,
+      "test_sha16": "4ce5e0e00231931e"
+    },
+    "vh_constant": {
+      "test_n": 35,
+      "test_sha16": "4ce5e0e00231931e"
+    },
+    "vhh": {
+      "test_n": 19,
+      "test_sha16": "ac776ea099d394d9"
+    }
+  },
+  "groups": {
+    "igk_igl": {
+      "locked_test_floor_ok": {
+        "floor": 59,
+        "meets_floor": true,
+        "test_lineages": 160
+      },
+      "test": {
+        "lineage_set_sha16": "ed3cd10db4976c22",
+        "n": 160
+      },
+      "val": {
+        "lineage_set_sha16": "02106df3fecf7237",
+        "n": 160
+      }
+    },
+    "igsf": {
+      "locked_test_floor_ok": {
+        "floor": 29,
+        "meets_floor": true,
+        "test_lineages": 179
+      },
+      "test": {
+        "lineage_set_sha16": "2e839f0d91c026d7",
+        "n": 179
+      },
+      "val": {
+        "lineage_set_sha16": "895e72a622cbc6f0",
+        "n": 178
+      }
+    },
+    "positive_real": {
+      "fit": {
+        "lineage_set_sha16": "6bfc23fe89d07109",
+        "n": 142
+      },
+      "locked_test_floor_ok": {
+        "floor": 29,
+        "meets_floor": true,
+        "test_lineages": 106
+      },
+      "test": {
+        "lineage_set_sha16": "57452cd6e782613f",
+        "n": 106
+      },
+      "val": {
+        "lineage_set_sha16": "c955cba6f0353dd1",
+        "n": 106
+      }
+    },
+    "positive_sim": {
+      "fit": {
+        "lineage_set_sha16": "a4883bbc2bb33021",
+        "n": 100
+      },
+      "locked_test_floor_ok": {
+        "floor": 29,
+        "meets_floor": true,
+        "test_lineages": 50
+      },
+      "test": {
+        "lineage_set_sha16": "ba731f3eae593fd2",
+        "n": 50
+      },
+      "val": {
+        "lineage_set_sha16": "73deff3f7a6f3af2",
+        "n": 50
+      }
+    },
+    "structural": {
+      "locked_test_floor_ok": {
+        "floor": 29,
+        "meets_floor": true,
+        "test_lineages": 35
+      },
+      "test": {
+        "lineage_set_sha16": "4ce5e0e00231931e",
+        "n": 35
+      },
+      "val": {
+        "lineage_set_sha16": "788ca058e6926678",
+        "n": 35
+      }
+    },
+    "tcr": {
+      "locked_test_floor_ok": {
+        "floor": 59,
+        "meets_floor": true,
+        "test_lineages": 115
+      },
+      "test": {
+        "lineage_set_sha16": "f5abc52b667ac218",
+        "n": 115
+      },
+      "val": {
+        "lineage_set_sha16": "5e260bb5a93b93ed",
+        "n": 115
+      }
+    },
+    "vhh_nonhuman": {
+      "locked_test_floor_ok": {
+        "floor": 29,
+        "meets_floor": true,
+        "test_lineages": 69
+      },
+      "test": {
+        "lineage_set_sha16": "d116668fd587542e",
+        "n": 69
+      },
+      "val": {
+        "lineage_set_sha16": "06fefa306b774ec4",
+        "n": 68
+      }
+    }
+  },
+  "phase3_excluded": {
+    "by_reason": {
+      "phase3_inn": 3,
+      "phase3_vh_hash": 6
+    },
+    "n": 9
+  },
+  "split_policy": {
+    "assignment": "balanced rank by sha256(lineage_key)",
+    "leakage": "structural parents (70/70 shared with repertoire positives) restricted to val/test; structural fragment split = parent split; structural negatives are Stage-1 completeness targets",
+    "neg": "val .50 / test .50",
+    "pos": "fit .50 / val .25 / test .25"
+  }
+}
