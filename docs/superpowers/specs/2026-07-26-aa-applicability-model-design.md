@@ -58,6 +58,21 @@ The guard executes before annotation. The frozen v2 annotator runs only when the
    the decisive defects already validated by Gate 3; fresh-validation observations cannot add new hard
    motif rules. Learned completeness is additional evidence, not a license to reintroduce the failed
    mandatory-anchor design.
+
+10. **VHH holdout is GENUS-ONLY (AMENDED 2026-07-26).** Stage-1 hydration found the temporal-deposition
+    holdout unusable — the pre-split Gate-3 VHH span the latest depositions, so no post-cutoff challenge
+    window exists. VHH therefore holds out by **genus**: selection = *L. glama*; blind-LOCO challenge =
+    non-*L. glama* camelids (vicugna / camelus). Deposition date is a soft ordering preference only. The
+    **single-source (SAbDab) limitation is retained and stated in the model card**: this is a genus/temporal
+    holdout within one database, not an independent second source (1,038 seal-disjoint distinct-lineage VHH:
+    537 *L. glama* / 501 non-*L. glama*). Fallback to sha-rank halving only if a genus side < 19 lineages,
+    with the mode recorded.
+
+11. **Global sequence deduplication precedes allocation; combined loci are balanced.** All hydrated fresh
+    records are deduplicated by sequence sha256 across every source (and against the denylist) BEFORE
+    selection/blind-LOCO allocation. Each combined 5%-gate group is balanced across its constituent loci so
+    one locus cannot carry the gate: target 37 IGK + 37 IGL per 74-record IGK/IGL subset, and 37 TRA + 37
+    TRB per 74-record TCR subset (TRG/TRD descriptive).
 10. **Certification scope follows the sealed instrument.** The locked test can certify the represented
     human-IGH positives, IGK/IGL, TRA/TRB, combined VHH/non-human VH, IgSF V-set, and parent-aggregated
     structural categories. It cannot certify generic non-antibody proteins, de-novo antibody-like
