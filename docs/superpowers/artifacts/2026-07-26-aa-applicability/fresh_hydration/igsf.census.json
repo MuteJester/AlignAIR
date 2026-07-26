@@ -1,0 +1,36 @@
+{
+  "aa_len": {
+    "max": 117,
+    "min": 74
+  },
+  "denylist_dropped": {
+    "donor": 0,
+    "lineage": 1,
+    "phase3": 0,
+    "seqhash": 0,
+    "study": 0
+  },
+  "distinct_lineages_extracted": 318,
+  "distinct_organisms": 28,
+  "excluded_gate3_used_accessions": 357,
+  "interpro_coords_available": 1002,
+  "kept_after_denylist": 317,
+  "no_interpro_coord": 0,
+  "provenance": {
+    "interpro_endpoint": "https://www.ebi.ac.uk/interpro/api/protein/reviewed/entry/interpro/IPR013106/?page_size=200",
+    "interpro_entry": "IPR013106",
+    "uniprot_query": "(xref:interpro-IPR013106) AND (reviewed:true) NOT gene:IGHV* NOT gene:IGKV* NOT gene:IGLV* NOT gene:TRAV* NOT gene:TRBV* NOT gene:TRGV* NOT gene:TRDV*",
+    "uniprot_raw_sha256": "01dde6156af1a8db95f3b10be92453e46f6b72286b014284d80958a03f1c1324",
+    "vset_extraction": "InterPro IPR013106 match coords applied to UniProt sequence (independent of guard)"
+  },
+  "source": "igsf",
+  "top_organisms": {
+    "Bos taurus": 9,
+    "Homo sapiens": 56,
+    "Mus musculus": 165,
+    "Oryctolagus cuniculus": 14,
+    "Rattus norvegicus": 21,
+    "Xenopus laevis": 6
+  },
+  "uniprot_results": 735
+}
