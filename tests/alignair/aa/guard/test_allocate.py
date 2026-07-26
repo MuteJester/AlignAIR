@@ -28,15 +28,15 @@ def test_all_lama_input_falls_back_to_sha_rank_split():
     assert a.vhh_mode == "fallback_sha_rank"
 
 
-def test_genus_and_temporal_diversity_uses_strict_holdout():
-    # L. glama pre-cutoff -> selection; vicugna/camelus post-cutoff -> challenge; each >= 19.
+def test_genus_diversity_uses_genus_holdout():
+    # L. glama -> selection; vicugna/camelus -> blind-LOCO challenge; each >= 19 (genus-only holdout).
     sel_side = [{"group": "vhh_nonhuman", "category": "vhh", "lineage_key": f"S{i}",
                  "heavy_species": "lama glama", "deposition_date": "2018-01-01"} for i in range(25)]
     chal_side = [{"group": "vhh_nonhuman", "category": "vhh", "lineage_key": f"C{i}",
                   "heavy_species": "vicugna pacos", "deposition_date": "2024-01-01"} for i in range(25)]
-    a = allocate_fresh(sel_side + chal_side, vhh_temporal_cutoff="2020-01-01")
-    assert a.vhh_mode == "genus_temporal_holdout"
-    # selection VHH are the L. glama pre-cutoff; challenge VHH are the vicugna post-cutoff
+    a = allocate_fresh(sel_side + chal_side)
+    assert a.vhh_mode == "genus_holdout"
+    # selection VHH are the L. glama; challenge VHH are the non-L. glama (vicugna) regardless of date
     assert {f"S{i}" for i in range(25)} <= a.selection["vhh_nonhuman"]
     assert {f"C{i}" for i in range(25)} <= a.loco_challenge["vhh_nonhuman"]
     assert not (a.selection["vhh_nonhuman"] & a.loco_challenge["vhh_nonhuman"])

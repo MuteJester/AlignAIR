@@ -73,7 +73,7 @@ def test_run_stage1_go_on_well_powered_disjoint_cohort(tmp_path):
     )
     assert decision == "GO"
     result = json.loads((tmp_path / "art" / "fresh_cohort_census.json").read_text())
-    assert result["vhh_mode"] == "genus_temporal_holdout"
+    assert result["vhh_mode"] == "genus_holdout"
     # private allocation written; artifact carries counts only (no sequences)
     assert (tmp_path / "priv" / "allocation.json").exists()
     assert "aa" not in json.dumps(result)

@@ -4,11 +4,14 @@ Each binding group is split into two DISJOINT subsets — a threshold-selection 
 challenge subset — that are never pooled (spec 3.3/8.3). Splits are deterministic by sha256(lineage_key).
 
 VHH is special: to extract the strongest possible unseen-category signal from a single source (SAbDab),
-the preferred split is a genus + temporal-deposition holdout (selection = *L. glama* at/before the frozen
-cutoff; challenge = non-*L. glama* after it). When the data cannot fill both sides to the VHH minimum
-(e.g. a single genus), the allocator falls back to a deterministic sha-rank halving and RECORDS the mode,
-so Stage-1 execution can treat a real-data fallback as a documented limitation (genus independence not
-achieved) rather than a silent weakening.
+the preferred split is a GENUS holdout (selection = *L. glama*; blind-LOCO challenge = non-*L. glama*
+camelids: vicugna / camelus). Deposition date is a soft ordering preference within the challenge (prefer
+later depositions), NOT a hard filter — a hard temporal cutoff is unusable here because the pre-split
+Gate-3 VHH span the latest depositions, leaving no post-cutoff window (Stage-1 empirical finding
+2026-07-26; 537 *L. glama* / 501 non-*L. glama* seal-disjoint lineages available). When the data cannot
+fill both genus sides to the VHH minimum (e.g. a single genus), the allocator falls back to a
+deterministic sha-rank halving and RECORDS the mode, so a real-data fallback is a documented limitation
+rather than a silent weakening.
 """
 from __future__ import annotations
 
@@ -57,24 +60,31 @@ def _halve(lineages) -> tuple[set, set]:
 
 
 def _allocate_vhh_nonhuman(recs, cutoff) -> tuple[set, set, str]:
-    """Return (selection_lineages, challenge_lineages, mode) for the vhh_nonhuman group."""
+    """Return (selection_lineages, challenge_lineages, mode) for the vhh_nonhuman group.
+
+    Genus holdout: selection = *L. glama*; challenge = non-*L. glama* camelids. `cutoff` is retained only as
+    a soft ordering preference (later depositions preferred in the challenge); it never filters records out.
+    """
     vhh = [r for r in recs if r.get("category") == "vhh"]
     other = [r for r in recs if r.get("category") != "vhh"]
 
     def _genus(r):
         return (r.get("heavy_species") or "").strip().lower()
 
+    def _is_lama(r):
+        return _genus(r) == _LAMA or "glama" in _genus(r)
+
     def _date(r):
         return r.get("deposition_date") or ""
 
-    # Preferred: strict genus + temporal holdout.
-    sel_vhh = {r["lineage_key"] for r in vhh
-               if _genus(r) == _LAMA and (cutoff is None or _date(r) <= cutoff)}
-    chal_vhh = {r["lineage_key"] for r in vhh
-                if _genus(r) != _LAMA and (cutoff is None or _date(r) > cutoff)}
+    # Preferred: genus holdout (selection = L. glama; challenge = non-L. glama camelids).
+    sel_vhh = {r["lineage_key"] for r in vhh if _is_lama(r)}
+    # Soft temporal preference: order the challenge by later deposition first (does not filter).
+    chal_recs = sorted((r for r in vhh if not _is_lama(r)), key=_date, reverse=True)
+    chal_vhh = {r["lineage_key"] for r in chal_recs}
 
     if len(sel_vhh) >= VHH_MIN and len(chal_vhh) >= VHH_MIN and not (sel_vhh & chal_vhh):
-        mode = "genus_temporal_holdout"
+        mode = "genus_holdout"
     else:
         # Fallback: deterministic sha-rank halving of ALL VHH (recorded; genus independence not achieved).
         sel_vhh, chal_vhh = _halve({r["lineage_key"] for r in vhh})
