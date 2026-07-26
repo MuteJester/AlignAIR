@@ -34,6 +34,7 @@ UA = {"User-Agent": "Mozilla/5.0 (AlignAIR fresh-cohort recon)"}
 TARGET = {"igk": 120, "igl": 120, "pos_igh_repertoire": 120}   # oversample vs floors (74/74/72)
 MIN_STUDIES = 6            # donor diversity: draw from several fresh studies
 MAX_UNITS = 80            # bound HUMAN-eligible downloads (only these consume quota)
+MAX_UNITS_PER_STUDY = 8  # donor diversity: no single study dominates a category's budget
 MAX_UNIT_MB = 60          # skip giant units
 PER_UNIT_CAP = 40        # candidate seqs extracted per unit (bound ANARCII work)
 RATE_S = 0.4             # polite delay between downloads
@@ -218,24 +219,31 @@ def main():
     listing = _get(BASE).decode("utf-8", "replace")
     studies = [h for h in re.findall(r'href="([A-Z][^"/]+)/"', listing)]
     fresh = [s for s in studies if _norm(s) not in used]
-    # Only catalog-eligible (explicit human + complete-read median) studies enter the loop.
+    # Only catalog-eligible (explicit human + complete-read median) studies. Process LIGHT-eligible studies
+    # FIRST (the scarce resource) so their light units are not starved by abundant heavy units.
     eligible = [s for s in fresh if s in per and (_eligible(per[s], "heavy") or _eligible(per[s], "light"))]
+    ordered = ([s for s in sorted(eligible) if _eligible(per[s], "light")]
+               + [s for s in sorted(eligible) if not _eligible(per[s], "light")])
+
+    def _cat_full(cats):
+        return all(raw_have[c] >= 2 * TARGET[c] for c in cats)
 
     rej = {"non_human_unit": 0, "unknown_species_unit": 0, "partial_ineligible_chain": 0,
-           "untouched_donor_audit_drop": 0, "anarcii_rejected": 0}
+           "category_already_full": 0, "untouched_donor_audit_drop": 0, "anarcii_rejected": 0}
     raw, downloaded, raw_studies = [], 0, set()
     raw_have = {k: 0 for k in TARGET}
-    for st in sorted(eligible):
-        enough = all(raw_have[k] >= 2 * TARGET[k] for k in TARGET) and len(raw_studies) >= MIN_STUDIES
-        if downloaded >= MAX_UNITS or enough:
+    for st in ordered:
+        if downloaded >= MAX_UNITS or _cat_full(list(TARGET)):
             break
         e = per[st]
         try:
             units = re.findall(r'href="([^"]+\.csv\.gz)"', _get(f"{BASE}{st}/csv/").decode("utf-8", "replace"))
         except Exception:
             continue
+        units = sorted(units, key=lambda u: 0 if "Light" in u else 1)   # light units first (scarce)
+        study_units = 0
         for unit in units:
-            if downloaded >= MAX_UNITS:
+            if downloaded >= MAX_UNITS or study_units >= MAX_UNITS_PER_STUDY:
                 break
             chain = "Heavy" if "Heavy" in unit else "Light" if "Light" in unit else None
             if chain is None:
@@ -243,6 +251,10 @@ def main():
             clabel = "heavy" if chain == "Heavy" else "light"
             if not _eligible(e, clabel):          # complete-read eligibility BEFORE download; no quota spent
                 rej["partial_ineligible_chain"] += 1
+                continue
+            cats = ["pos_igh_repertoire"] if chain == "Heavy" else ["igk", "igl"]
+            if _cat_full(cats):                   # this category already oversampled; don't spend quota
+                rej["category_already_full"] += 1
                 continue
             gz = _download_unit(st, unit)
             if gz is None:
@@ -253,6 +265,7 @@ def main():
                 rej["non_human_unit" if sp and sp != "?" else "unknown_species_unit"] += 1
                 continue
             downloaded += 1                       # only confirmed-human eligible units consume the quota
+            study_units += 1
             cands = _candidates(meta, rows, chain)
             # untouched study/donor audit BEFORE counting
             fresh_cands = [c for c in cands if (_norm(c["study"]), c["donor"]) not in used_donors]
