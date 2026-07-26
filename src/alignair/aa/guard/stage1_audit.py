@@ -1,0 +1,187 @@
+"""Final global Stage-1 audit: combine the three allocation modes, dedup globally after assignment, and
+verify every owner-required completion gate before a Stage-1 GO.
+
+Allocation routing:
+  * study-based groups (igk_igl, tcr, positive_real) -> study/donor split barrier (study_allocate), all
+    together so heavy+light of one study share a role;
+  * vhh_nonhuman -> genus holdout (allocate);
+  * other groups (igsf, positive_sim) -> deterministic lineage sha-rank split;
+  * structural inherits its real-IGH parent's role+lineage (applied upstream, before this audit).
+
+Audit gates: post-dedup counts; counts by role/locus/study/donor; ZERO study/donor/lineage overlap
+between roles; IGK/IGL 37/37 balance per subset + powered real-IGH; frozen allocator policy hash
+reproduced exactly.
+"""
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass, field
+
+from alignair.aa.guard.allocate import GROUP_GATE_KIND, GUARDBAND_FLOOR, _allocate_vhh_nonhuman, _halve
+from alignair.aa.guard.study_allocate import GROUP_LOCI, assign_studies, canonical_study
+
+STUDY_GROUPS = {"igk_igl", "tcr", "positive_real"}
+VHH_GROUP = "vhh_nonhuman"
+
+
+def _sha(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()
+
+
+def global_dedup(records):
+    """Global sequence dedup (by sha256(aa)) across all sources; returns (kept, dropped_count)."""
+    seen, kept, dropped = set(), [], 0
+    for r in records:
+        h = _sha(r["aa"])
+        if h in seen:
+            dropped += 1
+            continue
+        seen.add(h)
+        kept.append(r)
+    return kept, dropped
+
+
+def combine_allocation(records, *, vhh_cutoff=None):
+    """Route each group to its allocation mode and merge into (selection, loco, study_alloc)."""
+    by_group: dict = {}
+    for r in records:
+        by_group.setdefault(r["group"], []).append(r)
+
+    selection: dict = {}
+    loco: dict = {}
+
+    study_records = [r for r in records if r["group"] in STUDY_GROUPS]
+    study_alloc = assign_studies(study_records) if study_records else None
+    if study_alloc:
+        for g in STUDY_GROUPS:
+            if g in study_alloc.selection:
+                selection[g] = set(study_alloc.selection[g])
+            if g in study_alloc.loco_challenge:
+                loco[g] = set(study_alloc.loco_challenge[g])
+
+    if VHH_GROUP in by_group:
+        sel, lc, _mode = _allocate_vhh_nonhuman(by_group[VHH_GROUP], vhh_cutoff)
+        selection[VHH_GROUP] = sel
+        loco[VHH_GROUP] = lc
+
+    for g, recs in by_group.items():
+        if g in STUDY_GROUPS or g == VHH_GROUP:
+            continue
+        s, l = _halve({r["lineage_key"] for r in recs})
+        selection[g] = s
+        loco[g] = l
+
+    return selection, loco, study_alloc
+
+
+@dataclass
+class AuditReport:
+    decision: str
+    role_overlap: dict                     # {"lineage": n, "donor": n, "study": n}
+    counts_by_role: dict                   # role -> group -> count
+    counts_by_locus: dict                  # role -> category -> count
+    counts_by_study: dict                  # role -> #studies
+    counts_by_donor: dict                  # role -> #donors
+    floors_ok: dict
+    locus_balance_37_37: dict
+    powered_real_igh: dict
+    policy_hash_reproduced: bool
+    source_checksums: dict
+    failures: list = field(default_factory=list)
+
+
+def _role_of_lineage(selection, loco):
+    role = {}
+    for g, s in selection.items():
+        for lk in s:
+            role[lk] = "selection"
+    for g, s in loco.items():
+        for lk in s:
+            role.setdefault(lk, None)
+            role[lk] = "loco" if role[lk] is None else "BOTH"
+    return role
+
+
+def audit_stage1(*, records, selection, loco, study_alloc, source_checksums, expected_policy_hash=None):
+    failures = []
+
+    # 1. ZERO role overlap — lineage, donor, study.
+    lineage_overlap = 0
+    for g in set(selection) | set(loco):
+        lineage_overlap += len(selection.get(g, set()) & loco.get(g, set()))
+    # donor/study overlap: map each lineage to its donor/study (donor-based records only)
+    lk_meta = {r["lineage_key"]: r for r in records}
+    sel_lk = set().union(*selection.values()) if selection else set()
+    loc_lk = set().union(*loco.values()) if loco else set()
+
+    def _donors(lks):
+        return {(lk_meta[lk].get("study"), lk_meta[lk].get("donor"))
+                for lk in lks if lk in lk_meta and lk_meta[lk].get("donor")}
+
+    def _studies(lks):
+        return {canonical_study(lk_meta[lk].get("repository", "oas"), lk_meta[lk].get("study"))
+                for lk in lks if lk in lk_meta and lk_meta[lk].get("study")}
+
+    donor_overlap = len(_donors(sel_lk) & _donors(loc_lk))
+    study_overlap = len(_studies(sel_lk) & _studies(loc_lk))
+    role_overlap = {"lineage": lineage_overlap, "donor": donor_overlap, "study": study_overlap}
+    if any(role_overlap.values()):
+        failures.append(f"role_overlap {role_overlap}")
+
+    # 2/3. counts by role / locus / study / donor.
+    counts_by_role = {"selection": {}, "loco": {}}
+    counts_by_locus = {"selection": {}, "loco": {}}
+    for role, alloc in (("selection", selection), ("loco", loco)):
+        for g, lks in alloc.items():
+            counts_by_role[role][g] = len(lks)
+            for lk in lks:
+                cat = lk_meta.get(lk, {}).get("category", "?")
+                counts_by_locus[role][cat] = counts_by_locus[role].get(cat, 0) + 1
+    counts_by_study = {"selection": len(_studies(sel_lk)), "loco": len(_studies(loc_lk))}
+    counts_by_donor = {"selection": len(_donors(sel_lk)), "loco": len(_donors(loc_lk))}
+
+    # 4. floors per group per role (guardband floors).
+    floors_ok = {}
+    for g in set(selection) | set(loco):
+        floor = GUARDBAND_FLOOR[GROUP_GATE_KIND.get(g, "gate_10pct")]
+        floors_ok[g] = {"selection": len(selection.get(g, set())) >= floor,
+                        "loco": len(loco.get(g, set())) >= floor}
+        if not (floors_ok[g]["selection"] and floors_ok[g]["loco"]):
+            failures.append(f"floor {g} {floors_ok[g]}")
+
+    # 5. IGK/IGL 37/37 balance per subset + powered real-IGH.
+    locus_balance = {}
+    for g, loci in GROUP_LOCI.items():
+        if g not in (set(selection) | set(loco)):
+            continue
+        ok = True
+        for role, cbl in (("selection", counts_by_locus["selection"]), ("loco", counts_by_locus["loco"])):
+            for loc_ in loci:
+                if cbl.get(loc_, 0) < 37:
+                    ok = False
+        locus_balance[g] = ok
+        if not ok:
+            failures.append(f"locus_balance_37_37 {g}")
+    powered_real_igh = {"selection": counts_by_role["selection"].get("positive_real", 0) >= 36,
+                        "loco": counts_by_role["loco"].get("positive_real", 0) >= 36}
+    if "positive_real" in (set(selection) | set(loco)) and not all(powered_real_igh.values()):
+        failures.append(f"real_igh_underpowered {powered_real_igh}")
+
+    # 6. frozen allocator policy hash reproduced exactly.
+    policy_ok = True
+    if study_alloc is not None:
+        if expected_policy_hash is not None:
+            policy_ok = study_alloc.policy_hash == expected_policy_hash
+        # reproducibility: re-run must yield the same hash
+        study_records = [r for r in records if r.get("group") in STUDY_GROUPS]
+        if study_records:
+            policy_ok = policy_ok and assign_studies(study_records).policy_hash == study_alloc.policy_hash
+    if not policy_ok:
+        failures.append("policy_hash_not_reproduced")
+
+    decision = "GO" if not failures else "STOP_STAGE1_AUDIT:" + ";".join(failures)
+    return AuditReport(
+        decision=decision, role_overlap=role_overlap, counts_by_role=counts_by_role,
+        counts_by_locus=counts_by_locus, counts_by_study=counts_by_study, counts_by_donor=counts_by_donor,
+        floors_ok=floors_ok, locus_balance_37_37=locus_balance, powered_real_igh=powered_real_igh,
+        policy_hash_reproduced=policy_ok, source_checksums=source_checksums, failures=failures)
