@@ -1,5 +1,12 @@
 {
   "artifact": "oas_feasibility",
+  "both_roles_power_check": {
+    "igl_37_in_both_roles_achievable": false,
+    "light_studies": 2,
+    "min_igl_among_light_studies": 10,
+    "rule": "whole-study split -> 1 light study per role; each role needs >=37 IGK AND >=37 IGL",
+    "verdict": "SHORTFALL: only 2 fresh human complete-light studies and the IGL-poorer (Zhou_2013, 10 IGL) cannot reach 37 IGL in its role. OAS unpaired cannot power both roles for IGK/IGL (IGL-limited)."
+  },
   "by_status": {
     "confirmed_ineligible": 21,
     "eligible_human_complete": 11
@@ -9,6 +16,7 @@
     "confirmed_ineligible": 21,
     "eligible_human_complete": 11
   },
+  "decision": "ADD_PROVENANCE_AUDITED_HUMAN_LIGHT_SOURCE (OAS unpaired light insufficient; do not compensate with exhausted donors or partial reads)",
   "fresh_studies": 32,
   "heavy_eligible_studies": [
     "Joyce_2016",
@@ -33,5 +41,23 @@
     "temporarily_inaccessible": 0,
     "unknown_metadata": 0
   },
-  "preliminary_assessment": "IGH heavy (positive_real) well-sourced: 11 fresh human complete-read studies. IGK/IGL light THIN: only 2 fresh human complete-light studies (Vander_Heiden_2017, Zhou_2013) -> likely underpowered for donor-disjoint 37/37 across two roles; pending puller yield, else add a provenance-audited human light source."
+  "preliminary_assessment": "IGH heavy (positive_real) well-sourced: 11 fresh human complete-read studies. IGK/IGL light THIN: only 2 fresh human complete-light studies (Vander_Heiden_2017, Zhou_2013) -> likely underpowered for donor-disjoint 37/37 across two roles; pending puller yield, else add a provenance-audited human light source.",
+  "puller_result": {
+    "by_category": {
+      "igk": 319,
+      "igl": 149,
+      "pos_igh_repertoire": 218
+    },
+    "distinct_donors": 9,
+    "per_light_study_locus": {
+      "vander_2017": {
+        "igk": 145,
+        "igl": 139
+      },
+      "zhou_2013": {
+        "igk": 174,
+        "igl": 10
+      }
+    }
+  }
 }
