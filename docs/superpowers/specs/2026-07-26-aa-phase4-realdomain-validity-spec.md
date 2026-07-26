@@ -96,12 +96,26 @@ the independent lineage/donor cluster, not the sequence).
 - **D keeps EXPERIMENTAL status.** Gold is the simulator → Gold D evidence is simulator-domain and cannot
   promote D to real-supported. Promotion requires real construction-truth D evidence, which this phase lacks.
 
-## §5 Leakage controls
+## §5 Leakage controls + independence design
 
+**Independence design (owner, 2026-07-26) — roles are distinct:**
+- **Prediction unit:** one **clonal-lineage representative**.
+- **Dependence cluster:** the **donor** (sequences within a donor share genotype + V-usage; not independent).
+- **Split barrier:** **donor AND source/study** (no donor or source crosses partitions).
+- **Binding exact analysis (the coverage non-inferiority endpoint):** **one deterministically sampled
+  lineage per donor** — so the exact independent N is a **donor count**, and the SAME donor-lineage units
+  validate BOTH V and J (not 882 per head).
+- **Real-domain conformal calibration:** the guarantee-producing quantile is fit on **one lineage per
+  calibration donor**; additional lineages enter only the secondary cluster-aware analysis.
+- **Secondary precision analysis:** additional lineages per donor, reported with **donor-cluster bootstrap**
+  intervals; these NEVER inflate the binding independent N.
+
+**Leakage controls:**
 - **Freeze v2** (weights + simulator `calibration.json`, both sha256-pinned) **before any acquisition.**
-- **Split Real by:** donor · study · clonal lineage · germline family (where practical) · **data source.**
-- **No clone, donor, therapeutic lineage, or near-identical VH crosses any two of the trigger/calibration/
-  test partitions.** Near-identical-VH dedup at a predeclared identity threshold.
+- **Split Real by donor + source/study** (barriers above); **germline family** balanced where practical;
+  **near-identical-VH dedup** at a predeclared identity threshold; **duplicate sequences audited across
+  repositories** (OAS↔ADC) and donor identity **harmonized** (source accession + subject id).
+- No clone, donor, therapeutic lineage, or near-identical VH crosses any two partitions.
 - Partition membership committed as **hashes/counts/fingerprints only** (raw sequences git-ignored).
 
 ## §6 Calibration data flow (three partitions, no reuse) + the two endpoints
@@ -163,20 +177,29 @@ lineage/donor-cluster bootstrap. Real-tier language is always **concordance/incl
 ## §11 Feasibility-first (Phase-4 Phase 0 — a HARD gate)
 
 Gold is generatable at will. The binding question is the Real cohort. **Do NOT use the "≈59 for a ≤5%
-zero-failure bound" shortcut** — that bounds an error rate, it does not power a coverage non-inferiority
-test. Instead compute **exact prospective power** for the actual hypothesis
+zero-failure bound" shortcut** — that bounds an error rate, not a coverage non-inferiority test. Compute
+**exact prospective power** for `H0: coverage ≤ 0.93` vs expected ≈ 0.95 (one-sided, α=0.05, power 0.80):
+**≈882 donor-lineage units** (fewer if expected coverage is higher: 544 at 0.955, 360 at 0.96).
 
-> H0: coverage ≤ 0.93  vs  expected coverage ≈ 0.95
+**Per-partition sizing (NOT 4×882):**
+- **Exchangeable locked test (A):** the ~**882 donor-lineage** units are **binding here** — and the SAME
+  units validate both V and J (one deterministically sampled lineage per test donor). This is the only
+  partition that must satisfy the 882 gate.
+- **Trigger/selection:** small; it only decides recalibration. If too small to establish LB ≥ 0.93, the
+  conservative outcome is simply "recalibrate" — it can never wrongly APPROVE the simulator calibration.
+- **Calibration:** sized for **conformal-quantile stability/efficiency** (one lineage per calibration
+  donor), from a **predeclared quantile-stability simulation** — not the coverage hypothesis test.
+- **Source-held-out stress (B):** descriptive transfer only; sized for a usable estimate, not the 882 gate.
 
-which requires **hundreds** of independent lineages, powered **separately for each primary V and J
-endpoint and any binding stratum**, across BOTH the calibration and each test partition. Required
-feasibility outputs (STOP and report if any fails — never substitute the shortcut):
-- **eligible real records BEFORE concordance filtering** (the denominator);
-- **concordance and discordance rates** (and how much conditioning shrinks/biases the cohort);
-- **independent lineage counts** across trigger / calibration / test partitions;
-- **exact power** for V and J (and binding strata) at the H0-vs-0.95 hypothesis;
-- **enough distinct sources** for BOTH the source-balanced exchangeable inference (A) AND a separate
-  source-held-out stress test (B).
+**Donor-first recon outputs (STOP if any fails; never substitute the shortcut):**
+- **source/study/donor census** with OAS↔ADC donor-identity **harmonization** (source accession + subject id)
+  and a **cross-repository duplicate-sequence audit**;
+- **eligible records before concordance filtering** (productive, complete_vdj, human IGH; denominator);
+- **concordance and discordance rates reported separately at V/J GENE and ALLELE resolution** (and how much
+  conditioning shrinks/biases the cohort);
+- **donors retaining ≥1 concordant lineage** (the real independent-N supply);
+- a **donor-DISJOINT allocation** to trigger / calibration / ~882-donor locked test / source-held-out that
+  fits the available donor pool, with additional-lineage counts reported **separately** (never inflating N).
 
 ## §12 Non-goals
 - Not training; not packaging; not the applicability gate.
