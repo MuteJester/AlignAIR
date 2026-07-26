@@ -1,159 +1,196 @@
 # Phase 4 — Real-Domain Result Validity & Calibration (paired DNA→AA benchmark)
 
-> **Status:** DRAFT for review · **Date:** 2026-07-26 · **Model in scope:** frozen `alignair-aa-igh-human
-> 2.0.0` (v2 = `cont_step318000`) + its frozen simulator calibration.
+> **Status:** ✅ **APPROVED (2026-07-26)** — amended per review · **Model in scope:** frozen
+> `alignair-aa-igh-human 2.0.0` (v2 = `cont_step318000`) + its frozen simulator calibration.
 >
 > Gate 3 tested whether an **input** can be trusted. Phase 4 tests whether, on **manually-admitted complete
 > human IGH amino-acid sequences**, the emitted **V/D/J results and calibrated sets** can be trusted. This
-> is **not** training, **not** packaging, and **not** the applicability gate (that remains the separate,
-> later trained-applicability-head project). Phase 4 is output validity + calibration only.
+> is **not** training, **not** packaging, and **not** the applicability gate (the separate, later
+> trained-applicability-head project). Phase 4 is output validity + calibration only.
 
 ## §0 Standing decisions (owner, 2026-07-26)
-1. **Gold = GenAIRR simulator, documented.** The Gold known-truth tier is a frozen GenAIRR held-out
-   simulation whose V/D/J alleles are known **by construction**. It validates the result-producing
-   *procedure* against **exact** truth — especially D (allele/gene) and allele-resolution, where real truth
-   is unobtainable — and the calibrated-set mechanics. **It is the training-distribution simulator: weak
-   independence.** Gold provides simulator-domain procedure evidence, NOT real-domain generalization; the
-   two tiers are **never pooled**.
-2. **Recalibration trigger (predeclared):** recalibrate iff the real-domain V calibrated-set coverage
-   one-sided **95% lower bound < 0.93** (the 0.95 target minus a 2-pt tolerance).
-3. **Discordant real records = a separate lower tier** (descriptive only, never pooled with the concordant
-   real cohort).
-4. **v2 (model + simulator calibration) is frozen and hash-pinned BEFORE acquisition.**
-5. **Simulator calibration is evaluated on real data UNCHANGED first**, before any real-domain calibration.
+1. **Gold = GenAIRR simulator, tightly scoped (§9).** Frozen GenAIRR held-out simulation, V/D/J known **by
+   construction**. **It is the training-distribution simulator: weak independence.** Its evidentiary role is
+   limited to (a) procedure/regression correctness, (b) calibrated-set + class→allele expansion mechanics,
+   (c) **D** construction-truth. Gold V/J accuracy may be reported for completeness but **only** as a
+   simulator-domain regression result; it **never** strengthens a real-domain release claim, and the tiers
+   are **never pooled**.
+2. **Real concordance is a SECONDARY CONSENSUS LABEL, not truth (§1).** IgBLASTn + nucleotide-AlignAIR
+   agreement carries **incorporation bias** — nucleotide AlignAIR shares reference and architecture ancestry
+   with the AA model — and conditioning on agreement selects easier cases. Real-tier metrics are named as
+   **concordance**, never "accuracy"/"true-class coverage".
+3. **Three frozen real partitions (§6), no reuse:** **trigger/selection**, **calibration**, **untouched
+   test** (opened exactly once).
+4. **Recalibration trigger:** recalibrate iff **V OR J** calibrated-set coverage 95% lower bound < **0.93**
+   (target 0.95 − 2pt), evaluated on the trigger/selection partition, for the **default** product behavior.
+5. **Two evaluation endpoints (§6):** a source-balanced, donor/lineage-disjoint test = the **primary
+   conformal (exchangeable) audit**; a source-held-out test = **transfer stress test, descriptive only, no
+   formal conformal guarantee.**
+6. **Discordant real records = a separate lower tier** (descriptive only, never pooled).
+7. **v2 (model + simulator calibration) frozen and sha256-pinned BEFORE acquisition.**
 
 ## §1 Two evidence tiers (never pooled)
 
 **Tier G — Gold (construction-known, simulator-domain).** Frozen GenAIRR `HUMAN_IGH_OGRDB` held-out
-simulation with exact V/D/J alleles, junction/boundary coordinates, and controllable SHM/indel/truncation.
-Role: exact-truth validation of (a) the result-producing procedure and calibrated-set behavior, and (b) D
-allele/gene recovery where real truth is impossible. **Explicitly labelled simulator-domain / weak
-independence** everywhere it appears — a Gold result never counts as real-domain evidence.
+simulation with exact V/D/J alleles, boundary coordinates, and controllable SHM/indel/truncation. Role:
+the three §9 purposes only. Labelled simulator-domain / weak independence everywhere.
 
-**Tier R — Real concordance (secondary-reference truth).** Productive, complete human IGH **nucleotide**
-rearrangements from multiple donors and studies (OAS + AIRR Data Commons), translated to amino acid. The
-DNA is retained as the source for nucleotide concordance references; the AA is what AA AlignAIR consumes.
-Truth is a **secondary reference**, established by **agreement between independent nucleotide methods**
-(IgBLASTn + nucleotide AlignAIR) at the required call resolution, and — where possible — constrained by
-donor genotypes and versioned AIRR-C/OGRDB germline sets. Strata:
-- **R-concordant:** independent nt methods agree → the real-domain evaluation cohort.
-- **R-discordant:** they disagree → a **separate lower tier**, reported descriptively, never pooled.
+**Tier R — Real (nucleotide→AA), truth = a secondary consensus, not biology.** Productive, complete human
+IGH **nucleotide** rearrangements from multiple donors and studies (OAS + AIRR Data Commons), translated to
+amino acid; the DNA is retained for the nucleotide references. AIRR fields (`sequence_aa`, `complete_vdj`,
+`locus`, gene calls, alignment coordinates) are **annotations, not experimental truth.** The consensus
+label is **agreement between IgBLASTn and nucleotide AlignAIR** at the required resolution — an imperfect,
+incorporation-biased reference (§0.2), optionally constrained by donor genotypes and versioned AIRR-C/OGRDB
+germline sets. Strata:
+- **R-concordant:** the two nt methods agree → the real-domain **concordance** cohort. **The concordance
+  rate is itself reported over ALL otherwise-eligible sequences** (conditioning on agreement selects easier
+  cases and must be visible).
+- **R-discordant:** they disagree → a **separate lower tier**, descriptive only, never pooled.
 
 ## §2 What must be validated — per gene head (V, J; D per §4)
 
-On both tiers as applicable (Gold for exact truth; Real-concordant for real-domain), all confidence-bounded
-(one-sided exact Clopper–Pearson), reported per tier and never pooled:
+All confidence-bounded, per tier, never pooled. **Binary endpoints (coverage, top-call correctness) use
+one-sided exact Clopper–Pearson; all aggregate/continuous endpoints (macro accuracy, NLL, Brier, MAE,
+percentiles, risk–coverage curves) use lineage/donor-cluster BOOTSTRAP intervals** (the resampling unit is
+the independent lineage/donor cluster, not the sequence).
 
-- **Top-class accuracy** at three resolutions: protein-equivalence **class**, **gene**, **allele**.
-- **Calibrated class-set coverage** (does the true class fall in the emitted set at ≥ 1−α?).
-- **Class→nucleotide-allele expansion coverage** (does the true allele fall in the one-to-many ASC→IMGT
-  expansion of the covered class?).
-- **Set sizes:** mean, median, p95 (classes / alleles / genes).
-- **`softmax_score` reliability:** NLL, Brier, and reliability (calibration) plots — reported as an
-  uncalibrated model score, **never renamed "probability".**
-- **Selective risk:** error rate as uncertain / wide-set results are progressively withheld (risk–coverage
-  curve).
-- **Macro accuracy** (per-family averaged) so common IGHV families cannot conceal rare-family failure.
+- **Top-call correctness** at three resolutions — protein-equivalence **class**, **gene**, **allele**:
+  - Gold: `top_class/gene/allele_accuracy` (construction truth).
+  - Real: `top_call_concordance` (agrees with the nt consensus). Not "accuracy".
+  - **Gene/allele success = truth/reference INCLUSION in the TOP CLASS's one-to-many ASC→IMGT expansion**
+    (a top class may expand to several genes/alleles). **Never select an arbitrary representative.**
+- **Calibrated class-set coverage:**
+  - Gold: `class_set_coverage` (true class ∈ set).
+  - Real: `reference_call_inclusion` (nt-consensus class ∈ set). Not "true-class coverage".
+- **Class→nucleotide-allele expansion coverage** (truth/reference allele ∈ the covered classes' expansion).
+- **Set sizes:** mean, median, p95 (classes / alleles / genes) — bootstrap CIs.
+- **`softmax_score` reliability — at CLASS RESOLUTION only, on the COMPLETE class softmax vector:** NLL,
+  Brier, reliability (calibration) plot. Computed on the full per-class softmax, **not** an expanded
+  gene/allele call. Reported as an uncalibrated model score; **never renamed "probability".**
+- **Selective risk:** error/concordance-loss vs coverage as wide/uncertain sets are progressively withheld
+  (risk–coverage curve, bootstrap band).
+- **Macro accuracy** (per-family averaged, lineage-cluster bootstrap) so common IGHV families cannot conceal
+  rare-family failure.
 
 ## §3 Boundaries (coordinates)
 
-- **V/J start and end error in amino-acid residues**, using the paired DNA→AA reference: the nt-annotated
-  V/J boundaries (from the concordant nt methods) mapped to AA offsets. Reported as MAE + p95.
-- **Stratified** by truncation, SHM level, indels, and V family.
-- **`inter_vj_aa` is validated ONLY as the model-defined V-end→J-start substring** — that it equals
-  `sequence[V_end:J_start]` and its semantics — **never** as an AIRR junction or CDR3. No AIRR-junction
-  claim is made or tested.
+- **V/J start and end error in amino-acid residues** — `boundary_concordance` on Real (vs the nt-consensus
+  boundaries projected to AA), `boundary_accuracy` on Gold (construction truth). Reported as MAE + p95 with
+  bootstrap CIs, stratified by truncation, SHM level, indels, and V family.
+- **Explicit nt→AA coordinate projection (deterministic).** AIRR nucleotide coordinates are **1-based
+  closed**; AA AlignAIR emits **0-based half-open** AA offsets. The projection must be defined and
+  implemented deterministically, handling the **reading-frame offset** and **non-codon-aligned boundaries**
+  (a boundary mid-codon maps to a defined AA index by a stated rule). This projection is part of the
+  benchmark, spec'd and tested before any boundary metric is computed.
+- **`inter_vj_aa` is validated ONLY** as the model-defined `sequence[V_end:J_start]` substring and its
+  semantics — **never** as an AIRR junction or CDR3. No AIRR-junction claim is made or tested.
 
 ## §4 D — construction-truth only, stays experimental
 
-- **Allele and gene recovery only where construction truth exists → Tier G (Gold) only.** On Tier R there
-  is no reliable D allele/gene truth (D is short, junctionally eroded, and nt methods disagree), so D
-  allele/gene is **not** validated on real data.
-- **Evidence-conditioned performance:** stratify by the number of observable D residues.
-- **Calibrated D-set coverage and width** (on Gold, where truth is exact).
-- **D keeps EXPERIMENTAL status.** Because Gold is the simulator, Gold D evidence is *simulator-domain*; it
-  can document simulator D behaviour but **cannot promote D to real-supported.** Promotion to non-
-  experimental requires real construction-truth D evidence, which this phase does not have.
+- **Allele and gene recovery only where construction truth exists → Tier G (Gold) only.** Tier R has no
+  reliable D allele/gene truth (short segment, junctional erosion, nt methods disagree) → D allele/gene is
+  **not** validated on real data.
+- **Evidence-conditioned performance: observable D residues are computed from CONSTRUCTION truth**, never
+  from predicted D boundaries. Stratify by observable-residue count.
+- **Calibrated D-set coverage and width** (Gold, exact truth).
+- **D keeps EXPERIMENTAL status.** Gold is the simulator → Gold D evidence is simulator-domain and cannot
+  promote D to real-supported. Promotion requires real construction-truth D evidence, which this phase lacks.
 
 ## §5 Leakage controls
 
-- **Freeze v2** (model weights + simulator `calibration.json`, both sha256-pinned) **before any acquisition.**
+- **Freeze v2** (weights + simulator `calibration.json`, both sha256-pinned) **before any acquisition.**
 - **Split Real by:** donor · study · clonal lineage · germline family (where practical) · **data source.**
-- **No clone, donor, therapeutic lineage, or near-identical VH may cross the calibration and test
-  partitions.** Near-identical VH deduplication (identity threshold predeclared).
-- **Source-held-out evaluation:** use OAS donor/study metadata so test sources are unseen in any
-  calibration/fit partition.
-- All partition membership is committed as **hashes/counts/fingerprints only** (raw sequences git-ignored,
-  per the established data policy).
+- **No clone, donor, therapeutic lineage, or near-identical VH crosses any two of the trigger/calibration/
+  test partitions.** Near-identical-VH dedup at a predeclared identity threshold.
+- Partition membership committed as **hashes/counts/fingerprints only** (raw sequences git-ignored).
 
-## §6 Calibration decision flow
+## §6 Calibration data flow (three partitions, no reuse) + the two endpoints
 
-1. **Evaluate the frozen simulator calibration UNCHANGED on Tier R-concordant.** Report V/J coverage
-   (with 95% LB), set sizes, class→allele expansion coverage.
-2. **If real V coverage 95% LB < 0.93** (§0.2): the simulator calibration undercovers → build a **new
-   real-domain calibration** on a **separate real calibration partition** (disjoint from test by every
-   §5 leakage key).
-3. **Evaluate the new real-domain calibration ONCE on the untouched real test partition.** The model is
-   never tuned on the test partition.
-4. **Report both** results side by side: simulator-calibration-on-real, and (if triggered) real-
-   calibration-on-real-test. The simulator calibration and its scope string remain the product default
-   unless a validated real-domain calibration is explicitly promoted in a later phase.
+**Partitions** (frozen, leakage-disjoint per §5):
+- **Trigger/selection** — evaluate the **unchanged** frozen simulator calibration; decide recalibration by
+  §0.4 (V OR J coverage 95% LB < 0.93). No other decision touches this partition.
+- **Calibration** — if triggered, fit new real-domain conformal quantiles here (and here only).
+- **Test (untouched)** — **opened exactly once**, at the end, to evaluate **both** the simulator calibration
+  and (if fitted) the real-domain calibration **side by side.** The model is never tuned on it.
 
-## §7 Comparative evidence (does native AA AlignAIR add utility?)
+**Product behavior tested (the claim must follow what users get by default):**
+- **Default `coverage_group=None` (pooled marginal)** — the primary release claim.
+- **Explicit `full` group** — reported separately (does not substitute for the default).
 
-Run the **same** sequences through, and compare on the metrics above:
-- **AA AlignAIR v2** (native).
-- **Simple protein local alignment** against the **identical** ASC→IMGT protein reference (e.g. parasail
-  Smith–Waterman) — the "translate then align conventionally" baseline.
-- **IgBLAST protein mode** where applicable.
-- **Nucleotide AlignAIR** and **IgBLASTn** on the source DNA (the concordance references / truth-establishers).
+**Two endpoints (exchangeability vs transfer):**
+- **(A) Source-balanced, donor/lineage-disjoint test — PRIMARY conformal coverage audit.** Calibration and
+  test are drawn to be exchangeable (source-balanced); this is where the formal 1−α coverage contract is
+  assessed.
+- **(B) Source-held-out test — transfer stress test, DESCRIPTIVE ONLY.** A deliberately unseen-source cohort
+  is distribution-shifted by design; conformal exchangeability does not hold, so **no formal conformal
+  guarantee** is claimed — coverage is reported as transfer evidence only.
 
-The question this answers: does native AA AlignAIR add real utility (accuracy, calibrated uncertainty,
-robustness) **beyond translation followed by conventional alignment**?
+## §7 Comparative evidence (does native AA AlignAIR add utility?) — without circularity
+
+The nt reference generators must **not** be scored against their own selected truth:
+- **Genuine accuracy comparisons → Gold construction truth only.** AA AlignAIR v2 vs a simple protein
+  local alignment against the identical ASC→IMGT protein reference (e.g. parasail Smith–Waterman) vs IgBLAST
+  protein mode, all scored on Gold's exact truth.
+- **Method-to-method agreement/disagreement → UNFILTERED eligible real records** (before concordance
+  filtering), so the reference generators (IgBLASTn, nt AlignAIR) and AA AlignAIR are compared on the same
+  unselected population — not on records their agreement admitted.
+- **AA-vs-consensus concordance → R-concordant only.** Reported as concordance (§2 naming), acknowledging the
+  consensus is what defined that cohort.
 
 ## §8 Release decision — field-level evidence matrix
 
-Phase 4 produces this matrix; each output is releasable only against its required evidence:
-
 | Output | Required evidence |
 |---|---|
-| **V/J top calls** | Gold + real-cohort accuracy (per-resolution, confidence-bounded) |
-| **Calibrated V/J sets** | Real-domain coverage + set-size audit (and expansion coverage) |
-| **D calls** | Gold construction-truth evidence only → otherwise **experimental** (stays experimental this phase) |
-| **Coordinates** | Paired DNA→AA boundary validation (AA-residue error, stratified) |
-| **`softmax_score`** | Reliability evidence (NLL/Brier/reliability plot); **never renamed probability** |
+| **V/J top calls** | Gold accuracy (simulator-domain regression) **+ real-cohort top-call CONCORDANCE** (per-resolution, confidence-bounded) |
+| **Calibrated V/J sets** | Real-domain **reference-call-inclusion coverage** on the primary exchangeable test (default pooled group) + set-size audit + expansion-inclusion; source-held-out transfer reported descriptively |
+| **D calls** | Gold construction-truth only → otherwise **experimental** (stays experimental this phase) |
+| **Coordinates** | Paired DNA→AA **boundary concordance** (AA-residue error, stratified) + Gold boundary accuracy |
+| **`softmax_score`** | Class-resolution reliability (NLL/Brier/reliability plot on the full softmax vector); **never renamed probability** |
 | **`inter_vj_aa`** | Semantic correctness only (V-end→J-start substring); **no AIRR-junction claim** |
 
-## §9 Statistical framing
+## §9 Gold's tightened evidentiary role
+Gold serves exactly three purposes: **(1) procedure/regression correctness; (2) calibrated-set + class→
+allele expansion mechanics; (3) D construction-truth evaluation.** Gold V/J accuracy may be reported for
+completeness, labelled a **simulator-domain regression result**; it must not strengthen the real-domain
+release claim, and Gold and Real are never pooled.
 
-No statistical study can prove an individual prediction is correct. What Phase 4 proves is that, for a
-**precisely defined population** (Tier G construction-truth; Tier R-concordant real human IGH), the
-**set-producing procedure** achieves a **predeclared error/coverage contract with quantified uncertainty**
-(confidence-bounded). Point estimates are never the gate; one-sided 95% bounds are.
+## §10 Statistical framing
+No study proves an individual prediction correct. Phase 4 proves that, for a **precisely defined
+population**, the **set-producing procedure** meets a **predeclared coverage/error contract with quantified
+uncertainty**. Binary endpoints: one-sided exact Clopper–Pearson. Aggregate/continuous endpoints:
+lineage/donor-cluster bootstrap. Real-tier language is always **concordance/inclusion**, never accuracy.
 
-## §10 Feasibility-first (Phase-4 Phase 0 — a hard gate, like Gate 3)
+## §11 Feasibility-first (Phase-4 Phase 0 — a HARD gate)
 
-Before the study: a **data recon + sample-size feasibility gate.** Gold is generatable at will (GenAIRR).
-The binding question is the Real cohort: after donor/study/clonal-lineage/near-identical-VH deduplication
-and source-held-out splitting, are there **enough independent R-concordant examples** to power the coverage
-/accuracy bounds (predeclared minimum effective N per stratum, e.g. ≈59 for a ≤5% two-sided-ish coverage-
-miss bound, scaled to the contract) across a separate **calibration** and **test** partition? If the powered
-real cohort cannot be assembled, **STOP and report feasibility** — do not weaken the contract.
+Gold is generatable at will. The binding question is the Real cohort. **Do NOT use the "≈59 for a ≤5%
+zero-failure bound" shortcut** — that bounds an error rate, it does not power a coverage non-inferiority
+test. Instead compute **exact prospective power** for the actual hypothesis
 
-## §11 Non-goals
+> H0: coverage ≤ 0.93  vs  expected coverage ≈ 0.95
 
-- Not training; not packaging; not the applicability gate (Gate 3 / the separate trained-applicability-head
-  project).
-- Not IMGT numbering or CDR delimitation; `inter_vj_aa` is never an AIRR junction/CDR3.
-- `softmax_score` is never renamed or reinterpreted as a calibrated probability.
-- Gold (simulator) evidence is never presented as real-domain evidence, and the two tiers are never pooled.
+which requires **hundreds** of independent lineages, powered **separately for each primary V and J
+endpoint and any binding stratum**, across BOTH the calibration and each test partition. Required
+feasibility outputs (STOP and report if any fails — never substitute the shortcut):
+- **eligible real records BEFORE concordance filtering** (the denominator);
+- **concordance and discordance rates** (and how much conditioning shrinks/biases the cohort);
+- **independent lineage counts** across trigger / calibration / test partitions;
+- **exact power** for V and J (and binding strata) at the H0-vs-0.95 hypothesis;
+- **enough distinct sources** for BOTH the source-balanced exchangeable inference (A) AND a separate
+  source-held-out stress test (B).
 
-## §12 Sequencing
+## §12 Non-goals
+- Not training; not packaging; not the applicability gate.
+- Not IMGT numbering/CDR delimitation; `inter_vj_aa` is never an AIRR junction/CDR3.
+- `softmax_score` is never renamed/reinterpreted as a calibrated probability.
+- Gold (simulator) evidence is never presented as real-domain evidence; tiers never pooled; nt-consensus
+  concordance is never called biological accuracy.
 
-1. **This spec** approved.
-2. **Phase-4 implementation plan** (writing-plans), beginning with §10 feasibility (Real recon + powered
-   split) before any evaluation, then: freeze/hash v2 + Gold generation → Real acquisition + nt-concordance
-   truth + leakage-controlled split → the §2–§4 evaluation on both tiers → §6 calibration decision →
-   §7 comparative baselines → §8 evidence matrix + frozen Phase-4 result artifact.
-3. After Phase 4, the separate **trained-applicability-head project** remains the final prerequisite for a
+## §13 Sequencing
+1. This spec (approved).
+2. **Writing-plans**, beginning with §11 feasibility (Real recon → eligible/concordance counts → exact power
+   → leakage-controlled trigger/calibration/test split with sources for (A) and (B)) BEFORE any evaluation;
+   STOP there if underpowered. Then: freeze/hash v2 + Gold generation → the §2–§4 evaluation on both tiers →
+   §6 calibration decision + two endpoints → §7 comparative (Gold + unfiltered + concordant) → §8 evidence
+   matrix + frozen Phase-4 artifact.
+3. After Phase 4, the separate trained-applicability-head project remains the final prerequisite for a
    trustworthy public product.
