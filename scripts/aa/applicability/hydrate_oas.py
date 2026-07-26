@@ -52,10 +52,9 @@ def _load_catalog():
 
 
 def _eligible(entry, chain):
-    """Explicit human species + complete-read median from the catalog. Unknown species -> NOT eligible."""
-    sp = (entry.get(f"{chain}_species") or "").lower()
-    med = entry.get(f"{chain}_median_aa", 0)
-    return sp == "human" and med >= (HEAVY_MIN_AA if chain == "heavy" else LIGHT_MIN_AA)
+    """Per-chain eligibility from the catalog: the probe already classified explicit-human + complete-read
+    as status 'eligible' (nested under entry[chain])."""
+    return (entry.get(chain, {}) or {}).get("status") == "eligible"
 
 
 def _get(url):
