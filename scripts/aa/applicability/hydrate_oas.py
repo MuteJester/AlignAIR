@@ -12,12 +12,12 @@ Run (background):  PYTHONPATH=src .venv/bin/python scripts/aa/applicability/hydr
 from __future__ import annotations
 
 import csv
-import gzip
 import io
 import json
 import re
 import time
 import urllib.request
+import zlib
 from pathlib import Path
 
 from alignair.aa.guard.disjoint import build_gate3_global_denylist
@@ -90,27 +90,51 @@ def _used_donors():
     return donors
 
 
+_PARTIAL = 1 << 20   # 1 MB partial read (metadata + thousands of rows; enough for PER_UNIT_CAP candidates)
+
+
+def _decompress_multi(raw):
+    """Decompress possibly-multi-member, possibly-TRUNCATED gzip (OAS metadata member + data member)."""
+    out = b""
+    while raw:
+        d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            out += d.decompress(raw)
+        except Exception:
+            break
+        raw = d.unused_data
+        if not raw:
+            break
+    return out
+
+
 def _download_unit(study, unit):
-    cache = UNITS / f"{study}__{unit}"
+    """Bounded PARTIAL download (no full-unit fetch); cached + checksummed + resumable + rate-limited."""
+    cache = UNITS / f"{study}__{unit}.part"
     if cache.exists():
         return cache.read_bytes()
     url = f"{BASE}{study}/csv/{unit}"
-    try:
-        head = urllib.request.urlopen(urllib.request.Request(url, method="HEAD", headers=UA), timeout=30)
-        size = int(head.headers.get("content-length") or 0)
-        if size > MAX_UNIT_MB * 1_000_000:
-            return None
-    except Exception:
-        pass
-    gz = fetch_with_retry(lambda: _get(url), retries=4, sleep=time.sleep)
+
+    def _open():
+        resp = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=90)
+        buf = b""
+        while len(buf) < _PARTIAL:
+            chunk = resp.read(_PARTIAL - len(buf))
+            if not chunk:
+                break
+            buf += chunk
+        resp.close()
+        return buf
+
+    gz = fetch_with_retry(_open, retries=4, sleep=time.sleep)
     atomic_write_bytes(cache, gz)
-    atomic_write_text(UNITS / f"{study}__{unit}.sha256", sha256_bytes(gz))
+    atomic_write_text(UNITS / f"{study}__{unit}.part.sha256", sha256_bytes(gz))
     time.sleep(RATE_S)
     return gz
 
 
 def _parse_unit(gz):
-    txt = gzip.decompress(gz).decode("utf-8", "replace")
+    txt = _decompress_multi(gz).decode("utf-8", "replace")
     lines = txt.split("\n")
     try:
         meta = json.loads(lines[0].strip().strip('"').replace('""', '"'))
