@@ -33,11 +33,29 @@ UA = {"User-Agent": "Mozilla/5.0 (AlignAIR fresh-cohort recon)"}
 
 TARGET = {"igk": 120, "igl": 120, "pos_igh_repertoire": 120}   # oversample vs floors (74/74/72)
 MIN_STUDIES = 6            # donor diversity: draw from several fresh studies
-MAX_UNITS = 60            # bound total downloads
+MAX_UNITS = 80            # bound HUMAN-eligible downloads (only these consume quota)
 MAX_UNIT_MB = 60          # skip giant units
 PER_UNIT_CAP = 40        # candidate seqs extracted per unit (bound ANARCII work)
 RATE_S = 0.4             # polite delay between downloads
+HEAVY_MIN_AA = 100        # complete-read eligibility (catalog median) for heavy VH
+LIGHT_MIN_AA = 95         # complete-read eligibility for light VL
 AA = set("ACDEFGHIKLMNPQRSTVWYX")
+CATALOG = STORE / "oas_species_probe.json"
+
+
+def _load_catalog():
+    """Cached species/completeness catalog from probe_oas_species.py — REQUIRED (never infer species)."""
+    if not CATALOG.exists():
+        raise SystemExit("catalog missing: run scripts/aa/applicability/probe_oas_species.py first")
+    raw = CATALOG.read_bytes()
+    return json.loads(raw), sha256_bytes(raw)
+
+
+def _eligible(entry, chain):
+    """Explicit human species + complete-read median from the catalog. Unknown species -> NOT eligible."""
+    sp = (entry.get(f"{chain}_species") or "").lower()
+    med = entry.get(f"{chain}_median_aa", 0)
+    return sp == "human" and med >= (HEAVY_MIN_AA if chain == "heavy" else LIGHT_MIN_AA)
 
 
 def _get(url):
@@ -58,6 +76,18 @@ def _used_studies():
         if e.get("category") in ("igk", "igl", "pos_igh_repertoire"):
             used.add(_norm(e["lineage_key"].split("::")[0]))
     return used
+
+
+def _used_donors():
+    """Gate-3 donors as (normalized_study, subject) for the untouched-donor audit."""
+    donors = set()
+    for line in open(CLEANED):
+        e = json.loads(line)
+        if e.get("category") in ("igk", "igl", "pos_igh_repertoire"):
+            parts = e["lineage_key"].split("::")
+            if len(parts) >= 2:
+                donors.add((_norm(parts[0]), parts[1]))
+    return donors
 
 
 def _download_unit(study, unit):
@@ -120,10 +150,14 @@ def _candidates(meta, rows, chain):
 def _anarcii_verify(cands):
     """ANARCII chain/locus/completeness. Keep records whose numbered domain matches the expected chain and
     is complete; store the numbered domain as the sequence."""
+    if not cands:
+        return []
     from anarcii import Anarcii
     model = Anarcii(seq_type="antibody", mode="speed", batch_size=64, cpu=True, ncpu=1, verbose=False)
     named = [(c["lineage_key"], c["aa"]) for c in cands]
     res = model.number(named)
+    if res is None:
+        return []
     got = res if isinstance(res, dict) else dict(enumerate(res))
     expect = {"igk": "K", "igl": "L", "pos_igh_repertoire": "H"}
     by_lk = {}
@@ -154,16 +188,25 @@ def main():
     ART.mkdir(parents=True, exist_ok=True)
     denylist = build_gate3_global_denylist(CLEANED, json.load(open(FP)))
     used = _used_studies()
+    used_donors = _used_donors()
+    catalog, catalog_sha = _load_catalog()
+    per = catalog.get("per_study", {})
 
     listing = _get(BASE).decode("utf-8", "replace")
     studies = [h for h in re.findall(r'href="([A-Z][^"/]+)/"', listing)]
     fresh = [s for s in studies if _norm(s) not in used]
+    # Only catalog-eligible (explicit human + complete-read median) studies enter the loop.
+    eligible = [s for s in fresh if s in per and (_eligible(per[s], "heavy") or _eligible(per[s], "light"))]
 
-    collected, downloaded, studies_hit = [], 0, set()
-    have = {k: 0 for k in TARGET}
-    for st in fresh:
-        if downloaded >= MAX_UNITS or (all(have[k] >= TARGET[k] for k in TARGET) and len(studies_hit) >= MIN_STUDIES):
+    rej = {"non_human_unit": 0, "unknown_species_unit": 0, "partial_ineligible_chain": 0,
+           "untouched_donor_audit_drop": 0, "anarcii_rejected": 0}
+    raw, downloaded, raw_studies = [], 0, set()
+    raw_have = {k: 0 for k in TARGET}
+    for st in sorted(eligible):
+        enough = all(raw_have[k] >= 2 * TARGET[k] for k in TARGET) and len(raw_studies) >= MIN_STUDIES
+        if downloaded >= MAX_UNITS or enough:
             break
+        e = per[st]
         try:
             units = re.findall(r'href="([^"]+\.csv\.gz)"', _get(f"{BASE}{st}/csv/").decode("utf-8", "replace"))
         except Exception:
@@ -174,19 +217,33 @@ def main():
             chain = "Heavy" if "Heavy" in unit else "Light" if "Light" in unit else None
             if chain is None:
                 continue
+            clabel = "heavy" if chain == "Heavy" else "light"
+            if not _eligible(e, clabel):          # complete-read eligibility BEFORE download; no quota spent
+                rej["partial_ineligible_chain"] += 1
+                continue
             gz = _download_unit(st, unit)
             if gz is None:
                 continue
-            downloaded += 1
             meta, rows = _parse_unit(gz)
-            if (meta.get("Species") or "").lower() != "human":
+            sp = (meta.get("Species") or "").lower()
+            if sp != "human":                     # explicit human only; unknown excluded; NO quota consumed
+                rej["non_human_unit" if sp and sp != "?" else "unknown_species_unit"] += 1
                 continue
-            verified = _anarcii_verify(_candidates(meta, rows, chain))
-            if verified:
-                studies_hit.add(_norm(st))
-                for v in verified:
-                    have[v["category"]] = have.get(v["category"], 0) + 1
-                collected.extend(verified)
+            downloaded += 1                       # only confirmed-human eligible units consume the quota
+            cands = _candidates(meta, rows, chain)
+            # untouched study/donor audit BEFORE counting
+            fresh_cands = [c for c in cands if (_norm(c["study"]), c["donor"]) not in used_donors]
+            rej["untouched_donor_audit_drop"] += len(cands) - len(fresh_cands)
+            if fresh_cands:
+                raw_studies.add(_norm(st))
+                for c in fresh_cands:
+                    raw_have[c["category"]] = raw_have.get(c["category"], 0) + 1
+                raw.extend(fresh_cands)
+
+    # Phase B: single ANARCII pass over all raw candidates (one model instantiation).
+    collected = _anarcii_verify(raw)
+    rej["anarcii_rejected"] = len(raw) - len(collected)
+    studies_hit = {_norm(r["study"]) for r in collected}
 
     # within-source lineage dedup + denylist
     seen, dd = set(), []
@@ -203,10 +260,13 @@ def main():
 
     census = {
         "source": "oas_shared",
-        "provenance": {"base": BASE, "draw": "fresh studies (Gate-3 studies excluded), human only",
+        "provenance": {"base": BASE, "draw": "catalog-eligible human studies only (explicit species)",
                        "verification": "ANARCII chain/locus/completeness on the numbered variable domain",
-                       "units_downloaded": downloaded, "unit_cache": str(UNITS)},
+                       "catalog_sha256": catalog_sha, "human_units_downloaded": downloaded,
+                       "unit_cache": str(UNITS)},
         "fresh_studies_available": len(fresh),
+        "catalog_eligible_human_studies": len(eligible),
+        "rejection_reasons": rej,
         "studies_contributing": sorted(studies_hit),
         "by_category": {c: cnt(c) for c in ("igk", "igl", "pos_igh_repertoire")},
         "kept_after_denylist": len(kept),
