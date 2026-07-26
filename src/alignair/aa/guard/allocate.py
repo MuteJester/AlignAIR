@@ -16,9 +16,14 @@ rather than a silent weakening.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 
 GUARDBAND_FLOOR = {"gate_5pct": 74, "gate_10pct": 36}
+
+# Combined 5%-gate groups are balanced across their constituent loci so one locus cannot carry the gate.
+# Per-locus floor = ceil(guardband_floor / #loci) = 37 for both (74 / 2). TRG/TRD stay descriptive.
+COMBINED_LOCI = {"igk_igl": ["igk", "igl"], "tcr": ["tra", "trb"]}
 
 # Which guardband floor each binding group is held to (5% gates vs 10% gates).
 GROUP_GATE_KIND = {
@@ -42,7 +47,9 @@ class Allocation:
     floors_ok: dict          # group -> bool (both subsets meet the guardband floor)
     vhh_min_ok: dict         # {"selection": bool, "loco_challenge": bool} (>= VHH_MIN VHH each)
     pooled_overlap: set      # must be empty
-    vhh_mode: str            # "genus_temporal_holdout" | "fallback_sha_rank" | "n/a"
+    vhh_mode: str            # "genus_holdout" | "fallback_sha_rank" | "n/a"
+    locus_counts: dict = field(default_factory=dict)   # combined group -> subset -> locus -> count
+    locus_min_ok: dict = field(default_factory=dict)   # combined group -> subset -> bool (all loci >= min)
 
 
 def _sha(s: str) -> str:
@@ -95,6 +102,26 @@ def _allocate_vhh_nonhuman(recs, cutoff) -> tuple[set, set, str]:
     return sel_vhh | sel_other, chal_vhh | chal_other, mode
 
 
+def _allocate_combined(recs, loci, per_locus_min) -> tuple[set, set, dict, dict]:
+    """Balanced split of a combined-locus group: each constituent category is halved independently, so
+    both subsets carry a floor of every locus. Returns (selection, loco, counts, per-subset locus_ok)."""
+    by_cat: dict = {}
+    for r in recs:
+        by_cat.setdefault(r["category"], []).append(r)
+    sel: set = set()
+    loc: set = set()
+    counts: dict = {"selection": {}, "loco_challenge": {}}
+    for cat, crecs in by_cat.items():
+        s, l = _halve({r["lineage_key"] for r in crecs})
+        sel |= s
+        loc |= l
+        counts["selection"][cat] = len(s)
+        counts["loco_challenge"][cat] = len(l)
+    ok = {sub: all(counts[sub].get(loc_, 0) >= per_locus_min for loc_ in loci)
+          for sub in ("selection", "loco_challenge")}
+    return sel, loc, counts, ok
+
+
 def allocate_fresh(records, *, vhh_temporal_cutoff=None) -> Allocation:
     by_group: dict = {}
     for r in records:
@@ -102,10 +129,18 @@ def allocate_fresh(records, *, vhh_temporal_cutoff=None) -> Allocation:
 
     selection: dict = {}
     loco: dict = {}
+    locus_counts: dict = {}
+    locus_min_ok: dict = {}
     vhh_mode = "n/a"
     for g, recs in by_group.items():
         if g == "vhh_nonhuman":
             sel, loc, vhh_mode = _allocate_vhh_nonhuman(recs, vhh_temporal_cutoff)
+        elif g in COMBINED_LOCI:
+            loci = COMBINED_LOCI[g]
+            per = math.ceil(GUARDBAND_FLOOR[GROUP_GATE_KIND[g]] / len(loci))
+            sel, loc, counts, ok = _allocate_combined(recs, loci, per)
+            locus_counts[g] = counts
+            locus_min_ok[g] = ok
         else:
             sel, loc = _halve({r["lineage_key"] for r in recs})
         selection[g] = sel
@@ -128,4 +163,5 @@ def allocate_fresh(records, *, vhh_temporal_cutoff=None) -> Allocation:
         pooled_overlap |= (selection[g] & loco[g])
 
     return Allocation(selection=selection, loco_challenge=loco, floors_ok=floors_ok,
-                      vhh_min_ok=vhh_min_ok, pooled_overlap=pooled_overlap, vhh_mode=vhh_mode)
+                      vhh_min_ok=vhh_min_ok, pooled_overlap=pooled_overlap, vhh_mode=vhh_mode,
+                      locus_counts=locus_counts, locus_min_ok=locus_min_ok)

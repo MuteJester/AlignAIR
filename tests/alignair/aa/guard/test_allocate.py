@@ -40,3 +40,21 @@ def test_genus_diversity_uses_genus_holdout():
     assert {f"S{i}" for i in range(25)} <= a.selection["vhh_nonhuman"]
     assert {f"C{i}" for i in range(25)} <= a.loco_challenge["vhh_nonhuman"]
     assert not (a.selection["vhh_nonhuman"] & a.loco_challenge["vhh_nonhuman"])
+
+
+def test_combined_locus_balancing_both_loci_floored():
+    recs = ([{"group": "igk_igl", "category": "igk", "lineage_key": f"K{i}"} for i in range(80)]
+            + [{"group": "igk_igl", "category": "igl", "lineage_key": f"L{i}"} for i in range(80)])
+    a = allocate_fresh(recs)
+    assert a.locus_min_ok["igk_igl"]["selection"] and a.locus_min_ok["igk_igl"]["loco_challenge"]
+    assert a.locus_counts["igk_igl"]["selection"]["igk"] >= 37
+    assert a.locus_counts["igk_igl"]["selection"]["igl"] >= 37
+    assert not (a.selection["igk_igl"] & a.loco_challenge["igk_igl"])
+
+
+def test_combined_locus_imbalance_flagged():
+    # One locus dominates (200 TRA, 10 TRB) -> locus balance must fail.
+    recs = ([{"group": "tcr", "category": "tra", "lineage_key": f"A{i}"} for i in range(200)]
+            + [{"group": "tcr", "category": "trb", "lineage_key": f"B{i}"} for i in range(10)])
+    a = allocate_fresh(recs)
+    assert not (a.locus_min_ok["tcr"]["selection"] and a.locus_min_ok["tcr"]["loco_challenge"])

@@ -11,6 +11,7 @@ partition file is never read.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -19,11 +20,13 @@ from alignair.aa.guard.disjoint import audit_disjoint
 
 
 def stage1_decision(status: dict, clean: bool) -> str:
-    """Pure Stage-1 gate. GO iff every group meets its guardband floor, both VHH minimums hold, and the
-    disjointness audit is clean. Otherwise STOP_FRESH_COHORT_UNPOWERED."""
+    """Pure Stage-1 gate. GO iff every group meets its guardband floor, both VHH minimums hold, every
+    combined-locus balance holds, and the disjointness audit is clean. Otherwise STOP_FRESH_COHORT_UNPOWERED."""
     floors_ok = all(status.get("floors_ok", {}).values()) and bool(status.get("floors_ok"))
     vhh_ok = all(status.get("vhh_min_ok", {}).values()) and bool(status.get("vhh_min_ok"))
-    if clean and floors_ok and vhh_ok:
+    locus = status.get("locus_min_ok", {})
+    locus_ok = all(all(sub.values()) for sub in locus.values()) if locus else True
+    if clean and floors_ok and vhh_ok and locus_ok:
         return "GO"
     reasons = []
     if not clean:
@@ -32,7 +35,24 @@ def stage1_decision(status: dict, clean: bool) -> str:
         reasons.append("guardband_floor")
     if not vhh_ok:
         reasons.append("vhh_minimum")
+    if not locus_ok:
+        reasons.append("locus_balance")
     return "STOP_FRESH_COHORT_UNPOWERED:" + ",".join(reasons)
+
+
+def _global_seq_dedup(records) -> tuple[list, int]:
+    """Global sequence deduplication across ALL sources, by sequence sha256, before allocation."""
+    seen: set = set()
+    out: list = []
+    dropped = 0
+    for r in records:
+        h = hashlib.sha256(r["aa"].encode()).hexdigest()
+        if h in seen:
+            dropped += 1
+            continue
+        seen.add(h)
+        out.append(r)
+    return out, dropped
 
 
 def _counts(alloc) -> dict:
@@ -69,8 +89,12 @@ def run_stage1(fresh_records, *, gate3_denylist, phase3, vhh_temporal_cutoff,
         (artifact_dir / "fresh_cohort_census.json").write_text(json.dumps(census, indent=2, sort_keys=True))
         return census["decision"]
 
-    alloc = allocate_fresh(fresh_records, vhh_temporal_cutoff=vhh_temporal_cutoff)
-    status = {"floors_ok": alloc.floors_ok, "vhh_min_ok": alloc.vhh_min_ok}
+    # Global sequence deduplication across all sources BEFORE allocation (spec standing decision 11).
+    deduped, seq_dropped = _global_seq_dedup(fresh_records)
+
+    alloc = allocate_fresh(deduped, vhh_temporal_cutoff=vhh_temporal_cutoff)
+    status = {"floors_ok": alloc.floors_ok, "vhh_min_ok": alloc.vhh_min_ok,
+              "locus_min_ok": alloc.locus_min_ok}
     decision = stage1_decision(status, clean=report.clean)
 
     # Private allocation (lineage keys) + fresh cohort (sequences) — git-ignored.
@@ -80,7 +104,7 @@ def run_stage1(fresh_records, *, gate3_denylist, phase3, vhh_temporal_cutoff,
         "vhh_mode": alloc.vhh_mode,
     }, indent=2, sort_keys=True))
     with open(private_dir / "fresh_cohort.jsonl", "w") as fh:
-        for r in fresh_records:
+        for r in deduped:
             fh.write(json.dumps(r) + "\n")
 
     # Committed census — counts only, no sequences.
@@ -90,6 +114,9 @@ def run_stage1(fresh_records, *, gate3_denylist, phase3, vhh_temporal_cutoff,
         "floors_ok": alloc.floors_ok,
         "vhh_min_ok": alloc.vhh_min_ok,
         "vhh_mode": alloc.vhh_mode,
+        "locus_counts": alloc.locus_counts,
+        "locus_min_ok": alloc.locus_min_ok,
+        "global_seq_dedup_dropped": seq_dropped,
         "pooled_overlap": len(alloc.pooled_overlap),
     })
     (artifact_dir / "fresh_cohort_census.json").write_text(json.dumps(census, indent=2, sort_keys=True))
