@@ -12,7 +12,6 @@ studies are cached and skipped; only temporarily_inaccessible / unprobed studies
 from __future__ import annotations
 
 import csv
-import gzip
 import io
 import json
 import re
@@ -20,6 +19,7 @@ import socket
 import time
 import urllib.error
 import urllib.request
+import zlib
 from pathlib import Path
 
 from alignair.aa.guard.hydration import atomic_write_text
@@ -77,26 +77,43 @@ def _used():
     return u
 
 
-def _head_size(url):
-    try:
-        return int(_get(url, "HEAD").headers.get("content-length") or 1 << 62)
-    except _Transient:
-        raise
-    except Exception:
-        return 1 << 62
+_PARTIAL = 262144   # read only the first 256 KB (metadata line + first rows live at the gzip head)
+
+
+def _decompress_multi(raw):
+    """Decompress possibly-multi-member, possibly-TRUNCATED gzip (OAS concatenates a metadata member +
+    a data member). Tolerant of a truncated final member."""
+    out = b""
+    while raw:
+        d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            out += d.decompress(raw)
+        except Exception:
+            break
+        raw = d.unused_data
+        if not raw:
+            break
+    return out
 
 
 def _sample_chain(study, units, min_aa):
-    """Return a per-chain status dict. Transient -> temporarily_inaccessible (retryable)."""
+    """Return a per-chain status dict from a BOUNDED partial read (no whole-unit download).
+    Transient -> temporarily_inaccessible (retryable)."""
     if not units:
         return {"status": "no_units"}
     try:
-        smallest = min(units, key=lambda u: _head_size(f"{BASE}{study}/csv/{u}"))
-        gz = _get(f"{BASE}{study}/csv/{smallest}").read()
-    except _Transient as e:
+        resp = _get(f"{BASE}{study}/csv/{units[0]}")   # any unit; partial read is species-representative
+        raw = b""
+        while len(raw) < _PARTIAL:                       # read() returns one socket chunk; loop to the target
+            chunk = resp.read(_PARTIAL - len(raw))
+            if not chunk:
+                break
+            raw += chunk
+        resp.close()
+    except (_Transient, urllib.error.URLError, socket.timeout, ConnectionError, TimeoutError, OSError) as e:
         return {"status": "temporarily_inaccessible", "detail": str(e)[:80]}
     try:
-        txt = gzip.decompress(gz).decode("utf-8", "replace")
+        txt = _decompress_multi(raw).decode("utf-8", "replace")
         lines = txt.split("\n")
         meta = json.loads(lines[0].strip().strip('"').replace('""', '"'))
         rows = list(csv.DictReader(io.StringIO("\n".join(lines[1:250]))))
@@ -110,6 +127,8 @@ def _sample_chain(study, units, min_aa):
         return {"status": "unknown_metadata", "median_aa": med}
     if sp.lower() != "human":
         return {"status": "confirmed_ineligible", "species": sp, "median_aa": med, "reason": "non_human"}
+    if med == 0:                                          # completeness UNMEASURED, not confirmed partial
+        return {"status": "unknown_metadata", "species": sp, "median_aa": med, "reason": "no_measurable_reads"}
     if med < min_aa:
         return {"status": "confirmed_ineligible", "species": sp, "median_aa": med, "reason": "partial_reads"}
     return {"status": "eligible", "species": sp, "median_aa": med}
