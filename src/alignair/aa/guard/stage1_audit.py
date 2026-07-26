@@ -22,6 +22,8 @@ from alignair.aa.guard.study_allocate import GROUP_LOCI, assign_studies, canonic
 
 STUDY_GROUPS = {"igk_igl", "tcr", "positive_real"}
 VHH_GROUP = "vhh_nonhuman"
+REQUIRED_GROUPS = {"igk_igl", "tcr", "vhh_nonhuman", "igsf", "structural",
+                   "positive_real", "positive_sim"}
 
 
 def _sha(s: str) -> str:
@@ -102,8 +104,15 @@ def _role_of_lineage(selection, loco):
     return role
 
 
-def audit_stage1(*, records, selection, loco, study_alloc, source_checksums, expected_policy_hash=None):
+def audit_stage1(*, records, selection, loco, study_alloc, source_checksums, expected_policy_hash=None,
+                 required_groups=REQUIRED_GROUPS):
     failures = []
+
+    # 0. all binding groups must be present (a partial cohort STOPs, never falsely GOes).
+    present_groups = set(selection) | set(loco)
+    missing = set(required_groups) - present_groups
+    if missing:
+        failures.append(f"missing_groups {sorted(missing)}")
 
     # 1. ZERO role overlap — lineage, donor, study.
     lineage_overlap = 0

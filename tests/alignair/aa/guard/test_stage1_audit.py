@@ -45,7 +45,8 @@ def test_audit_passes_on_powered_disjoint_cohort():
     selection, loco, study_alloc = combine_allocation(recs)
     kept, dropped = global_dedup(recs)
     rep = audit_stage1(records=kept, selection=selection, loco=loco, study_alloc=study_alloc,
-                       source_checksums={"sabdab": "abc"})
+                       source_checksums={"sabdab": "abc"},
+                       required_groups={"igk_igl", "vhh_nonhuman", "igsf", "positive_real"})
     assert rep.decision == "GO", rep.failures
     assert rep.role_overlap == {"lineage": 0, "donor": 0, "study": 0}
     assert rep.locus_balance_37_37["igk_igl"]
