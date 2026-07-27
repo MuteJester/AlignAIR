@@ -1,0 +1,102 @@
+{
+  "artifact": "stage4_run_manifest",
+  "bank_checksum": "65e0809a8e0804ae7d9f7617a3585c782047cd1588b397c9ee90b9f702f07736",
+  "candidates": [
+    "C1",
+    "C2",
+    "C3",
+    "C4"
+  ],
+  "checkpoint_dir": ".private/aa-applicability/checkpoints",
+  "class_map_hash": "adc091d6cd2e92fd252fe99673b3bef4c50d37dbd4345651864a221a44e7b3ea",
+  "dev_ids_sha256": "1815a7a14f3c9b7711bef75f2dc36416295e46a4c682d610b03e7b9b27329d46",
+  "energy_margins": {
+    "m_in": 5.0,
+    "m_out": 10.0
+  },
+  "expected_runs": 12,
+  "feature_order": [
+    "human_igh_score",
+    "best_alt_score",
+    "margin",
+    "best_v_score",
+    "best_v_evalue_log10",
+    "best_j_score",
+    "best_j_evalue_log10",
+    "v_qfrac",
+    "v_pfrac",
+    "j_qfrac",
+    "j_pfrac",
+    "v_before_j",
+    "inter_vj_gap",
+    "combined_coverage",
+    "unaligned_n",
+    "unaligned_c",
+    "n_significant_hits",
+    "has_v",
+    "has_j",
+    "order_ok",
+    "coverage_ok",
+    "seq_len"
+  ],
+  "forbidden_fresh_seqhashes_count": 3380,
+  "forbidden_fresh_seqhashes_sha256": "37d492ef24c44e16f34c767ec22c17129cb657c6564b9a6c9578ffa902079c83",
+  "forbidden_leak_into_dev_by_sequence": 0,
+  "grl_lambda": 1.0,
+  "immutable": true,
+  "inaccessible_during_stage4": [
+    "fresh_selection",
+    "blind_loco",
+    "far_ood",
+    "sealed_locked_test"
+  ],
+  "loss_weights": {
+    "app": 1.0,
+    "complete": 1.0,
+    "contrast": 0.5,
+    "oe": 0.5,
+    "source": 0.5
+  },
+  "manifest_sha256": "0a30e0bbdcaa207e12dcc84c72014d998d187ca212a41ae6e7df9a762f82e6d6",
+  "mining": {
+    "policy": "smallest-margin, lineage-deduped (mining.py); disabled for the main seed sweep \u2014 deterministic balanced stream only",
+    "rounds": 0
+  },
+  "n_dev": 209,
+  "n_train": 860,
+  "oe": {
+    "cap_fraction": 0.15,
+    "policy": "seeded residue-shuffle of TRAIN sequences (train-only auxiliary outliers)"
+  },
+  "optimizer": {
+    "lr": 0.001,
+    "name": "AdamW",
+    "weight_decay": 0.01
+  },
+  "production_seed_rule": "min_dev_total_loss, tie -> lowest seed (dev-only; raises on any fresh field)",
+  "schedule": {
+    "name": "cosine",
+    "warmup_steps": 50
+  },
+  "sealed_test_exclusion": "structural: dev_cohort = Gate-3 fit+val, produced by split_freeze; the locked test partition is a separate file that is never opened.",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "temperatures": {
+    "supcon": 0.1
+  },
+  "train_ids_sha256": "05df5c7e8b5551c71ad476b0085df557e10db8faada53269045cb542144eb248",
+  "train_partition_hash": "ee3b2f0f0ea4e82484948d6fb48ca1dbc81d952b36a41d2661214642731fad76",
+  "training": {
+    "amp": true,
+    "batch_size": 32,
+    "early_stop_metric": "dev_total_loss",
+    "early_stop_patience": 6,
+    "eval_every": 50,
+    "grad_clip": 1.0,
+    "max_steps": 1200,
+    "min_delta": 0.001
+  }
+}
