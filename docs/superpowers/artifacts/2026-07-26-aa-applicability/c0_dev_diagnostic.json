@@ -42,6 +42,7 @@
     "min_human_margin": 5.0,
     "min_human_score": 20.0,
     "precision_gated_loci": [
+      "camelid_igh",
       "human_igk",
       "human_igl",
       "igsf_vset",
@@ -49,21 +50,20 @@
       "tra",
       "trb",
       "trd",
-      "trg",
-      "vhh"
+      "trg"
     ]
   },
-  "computed_utc": "2026-07-27T10:46:25.790325+00:00",
+  "computed_utc": "2026-07-27T11:29:14.871466+00:00",
   "expected_state": "supported (all 240 fit records are positive human IGH VH)",
   "fit_n": 240,
   "kind": "development diagnostic (burned Gate-3 FIT split only) \u2014 NOT fresh evidence, NOT a release PASS",
   "misclassification_reasons": {
     "insufficient_evidence:incomplete_domain_geometry": 11,
+    "unknown_ood:alt_not_precision_gated:camelid_igh": 23,
     "unknown_ood:alt_not_precision_gated:murine_vh": 2,
-    "unknown_ood:alt_not_precision_gated:vhh": 23,
     "unknown_ood:human_igh_weak_margin": 59,
-    "unsupported_locus:alt_locus:murine_vh": 2,
-    "unsupported_locus:alt_locus:vhh": 10
+    "unsupported_locus:alt_locus:camelid_igh": 10,
+    "unsupported_locus:alt_locus:murine_vh": 2
   },
   "note": "thresholds/grid frozen on burned-dev; the production grid point is selected on FRESH data in Stage 6, never here.",
   "seal_safety": "reads dev_cohort.jsonl split=='fit' only; locked_test.jsonl (seal) never opened; fresh selection / blind-LOCO never read",

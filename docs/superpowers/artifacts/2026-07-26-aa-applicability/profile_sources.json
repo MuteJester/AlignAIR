@@ -23,6 +23,7 @@
     "usage_distinction": "AlignAIR downloads germline DATA and builds profile HMMs locally with pyhmmer (vendored HMMER, not an IMGT tool); it does NOT redistribute IMGT-hosted files nor invoke IMGT web tools/services (IMGT tool-use terms therefore do not apply)."
   },
   "required_profiles": [
+    "camelid_igh",
     "human_igh",
     "human_igk",
     "human_igl",
@@ -31,8 +32,7 @@
     "tra",
     "trb",
     "trd",
-    "trg",
-    "vhh"
+    "trg"
   ],
   "resolution": {
     "all_required_profiles_resolved": true,
@@ -43,6 +43,25 @@
     "mode": "redistributable_bundle"
   },
   "sources": {
+    "camelid_igh": {
+      "attribution": "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline.",
+      "group": "camelid_igh",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build"
+      },
+      "license": "CC-BY-4.0",
+      "name": "imgt_camelid_ighv_ighj",
+      "notes": "IMGT cleared CC BY-4.0; camelid IGH germline (non-human/camelid evidence, not a biologically definitive 'VHH' profile).",
+      "redistributable": true,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "production",
+      "url": "https://www.imgt.org/genedb/",
+      "version": "IMGT/GENE-DB Vicugna pacos IGHV,IGHJ (pin release)"
+    },
     "human_igh": {
       "attribution": "",
       "group": "human_igh",
@@ -212,25 +231,6 @@
       "role": "production",
       "url": "https://www.imgt.org/genedb/",
       "version": "IMGT/GENE-DB Human TRGV,TRGJ (pin release)"
-    },
-    "vhh": {
-      "attribution": "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline.",
-      "group": "vhh",
-      "input_hashes": {
-        "j": "bound_at_bank_build",
-        "v": "bound_at_bank_build"
-      },
-      "license": "CC-BY-4.0",
-      "name": "imgt_camelid_ighv_ighj",
-      "notes": "IMGT cleared CC BY-4.0; no other curated camelid germline set exists.",
-      "redistributable": true,
-      "regions": [
-        "j",
-        "v"
-      ],
-      "role": "production",
-      "url": "https://www.imgt.org/genedb/",
-      "version": "IMGT/GENE-DB Lama/Vicugna/Camelus IGHV,IGHJ (pin release)"
     }
   }
 }

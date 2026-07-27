@@ -31,7 +31,10 @@ import io
 from dataclasses import dataclass, field
 
 # Receptor groups whose profile bank needs a V and a J region; plus the igsf_vset full-domain profile.
-RECEPTOR_GROUPS = {"human_igh", "human_igk", "human_igl", "tra", "trb", "trg", "trd", "vhh", "murine_vh"}
+# Profile-bank group keys are germline IDENTITIES, not input verdicts: camelid IGH germline is
+# 'camelid_igh' (it provides non-human/camelid evidence), NOT proof the input is a VHH. (A fresh-cohort
+# record verified as a VHH keeps category 'vhh'; that is a separate namespace from these profile keys.)
+RECEPTOR_GROUPS = {"human_igh", "human_igk", "human_igl", "tra", "trb", "trg", "trd", "camelid_igh", "murine_vh"}
 REQUIRED_PROFILES = RECEPTOR_GROUPS | {"igsf_vset"}
 
 PENDING = "bound_at_bank_build"      # exact per-file sha256 is pinned when the bank is built (Task 2.2)
@@ -131,8 +134,9 @@ PROFILE_SOURCES: dict[str, ProfileSource] = {
                       "IMGT cleared CC BY-4.0; OGRDB human TR sets not yet released."),
     "murine_vh": _imgt_prod("imgt_mouse_ighv_ighj", "IMGT/GENE-DB Mus musculus IGHV,IGHJ (pin release)",
                             "IMGT cleared CC BY-4.0; OGRDB mouse release unconfirmed."),
-    "vhh": _imgt_prod("imgt_camelid_ighv_ighj", "IMGT/GENE-DB Lama/Vicugna/Camelus IGHV,IGHJ (pin release)",
-                      "IMGT cleared CC BY-4.0; no other curated camelid germline set exists."),
+    "camelid_igh": _imgt_prod("imgt_camelid_ighv_ighj", "IMGT/GENE-DB Vicugna pacos IGHV,IGHJ (pin release)",
+                              "IMGT cleared CC BY-4.0; camelid IGH germline (non-human/camelid evidence, "
+                              "not a biologically definitive 'VHH' profile)."),
 }
 
 

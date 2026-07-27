@@ -36,3 +36,14 @@ def test_v_only_never_sets_complete_domain_coverage():
     f = hmm_features(BANK, V_ONLY)
     assert f.has_v and not f.has_j
     assert not f.coverage_ok and not f.order_ok
+
+
+def test_profile_identity_is_camelid_igh_not_vhh():
+    # the camelid germline profile is identified as camelid_igh (evidence), never 'vhh' (an input verdict)
+    from alignair.aa.guard.profiles import RECEPTOR_GROUPS
+    assert "camelid_igh" in RECEPTOR_GROUPS and "vhh" not in RECEPTOR_GROUPS
+    assert all("vhh" not in name for name in FEATURE_NAMES)
+    bank = build_bank_fixture(regions={"human_igh": {"v": IGH_V, "j": IGH_J},
+                                       "camelid_igh": {"v": IGH_V, "j": IGH_J}})
+    f = hmm_features(bank, COMPLETE_VH)
+    assert "camelid_igh" in f.per_group_v_score and "vhh" not in f.per_group_v_score

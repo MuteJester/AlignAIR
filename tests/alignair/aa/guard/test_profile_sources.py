@@ -6,7 +6,7 @@ from alignair.aa.guard.profiles import (IMGT_CLEARANCE, PROFILE_SOURCES, RECEPTO
 
 LOCK = Path("requirements/aa-guard-build.lock")
 CC0_GROUPS = {"human_igh", "human_igk", "human_igl", "igsf_vset"}
-IMGT_GROUPS = {"tra", "trb", "trg", "trd", "murine_vh", "vhh"}
+IMGT_GROUPS = {"tra", "trb", "trg", "trd", "murine_vh", "camelid_igh"}
 
 
 def test_all_required_groups_have_a_source():

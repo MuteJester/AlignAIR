@@ -216,17 +216,16 @@ def build():
         ("trg", "v", "Homo sapiens", "TRGV"), ("trg", "j", "Homo sapiens", "TRGJ"),
         ("trd", "v", "Homo sapiens", "TRDV"), ("trd", "j", "Homo sapiens", "TRDJ"),
         ("murine_vh", "v", "Mus musculus", "IGHV"), ("murine_vh", "j", "Mus musculus", "IGHJ"),
-        # camelid: IMGT's camelid IGH germline is Vicugna pacos; labelled camelid_igh (non-human/camelid
-        # evidence), NOT a biologically definitive "VHH profile"
-        ("vhh", "v", "Vicugna pacos", "IGHV"), ("vhh", "j", "Vicugna pacos", "IGHJ"),
+        # camelid IGH germline (IMGT Vicugna pacos); profile identity is camelid_igh — non-human/camelid
+        # evidence, NOT a biologically definitive "VHH" profile
+        ("camelid_igh", "v", "Vicugna pacos", "IGHV"), ("camelid_igh", "j", "Vicugna pacos", "IGHJ"),
     ]
-    label = {"vhh": "camelid_igh"}
     for group, region, species, prefix in IMGT_PLAN:
         reglab = "V-REGION" if region == "v" else "J-REGION"
         alleles = imgt_alleles(imgt_recs, species, prefix, reglab)
         msa, counts, _ = process_alleles(alleles, region)
         _persist(manifest_profiles, group, region, msa, counts, "imgt_gene_db", "CC-BY-4.0",
-                 f"IMGT {species} {prefix} {reglab} (F)", label.get(group, group), PROF,
+                 f"IMGT {species} {prefix} {reglab} (F)", group, PROF,
                  "IMGT unique numbering (WithGaps reference); annotated frame per allele")
 
     # OGRDB (CC0) — human IGH/IGK/IGL, per-set gapped download

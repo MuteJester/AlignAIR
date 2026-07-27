@@ -96,7 +96,7 @@ def _species_of(group: str) -> str:
         return "human"
     if group == "murine_vh":
         return "mouse"
-    if group == "vhh":
+    if group == "camelid_igh":
         return "camelid"
     return "other"
 

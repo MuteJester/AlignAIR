@@ -24,7 +24,7 @@ C0_THRESHOLDS = {
     # reason-precision-gated alternative loci (allowlist established on burned-dev): only these may yield a
     # named unsupported_locus verdict; any other winner is unknown_ood.
     "precision_gated_loci": frozenset({"human_igk", "human_igl", "tra", "trb", "trg", "trd",
-                                       "vhh", "murine_vh", "igsf_vset"}),
+                                       "camelid_igh", "murine_vh", "igsf_vset"}),
 }
 
 STATES = ("supported", "insufficient_evidence", "unsupported_locus", "unknown_ood")
