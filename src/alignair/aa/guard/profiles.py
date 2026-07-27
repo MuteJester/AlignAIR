@@ -293,3 +293,21 @@ def build_bank_fixture(regions: dict) -> ProfileBank:
     """Build a small in-memory bank from {group: {region: aligned_fasta_bytes}} (burned-dev fixtures/tests)."""
     profiles = {g: {r: build_profile(g, r, msa) for r, msa in regs.items()} for g, regs in regions.items()}
     return ProfileBank(profiles=profiles)
+
+
+def load_bank(profiles_dir) -> ProfileBank:
+    """Load a persisted bank of ``<group>_<region>.hmm`` files (pyhmmer HMMFile, non-pickle) into a
+    ProfileBank; each profile's sha is the sha256 of its file bytes. Loaded HMMs search under the shared
+    amino alphabet."""
+    import hashlib
+    import pathlib
+
+    from pyhmmer import plan7
+    _amino()                              # ensure the shared alphabet is initialized
+    profiles: dict = {}
+    for p in sorted(pathlib.Path(profiles_dir).glob("*.hmm")):
+        group, region = p.stem.rsplit("_", 1)          # e.g. human_igh_v -> (human_igh, v); igsf_vset_domain
+        with plan7.HMMFile(str(p)) as hf:
+            hmm = hf.read()
+        profiles.setdefault(group, {})[region] = (hmm, hashlib.sha256(p.read_bytes()).hexdigest())
+    return ProfileBank(profiles=profiles)

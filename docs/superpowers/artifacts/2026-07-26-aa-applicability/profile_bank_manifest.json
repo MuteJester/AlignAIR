@@ -1,0 +1,433 @@
+{
+  "alignment_method": "IMGT unique numbering (source WithGaps reference); protein-dedup before build; pyhmmer Builder seed=42; DATE/COM neutralized for determinism",
+  "artifact": "profile_bank_manifest",
+  "bank_checksum": "e5c8e7352e2e17920352475b40b1c38abe72ab2dafa7785e5cba05d14eb26f55",
+  "built_utc": "2026-07-27T10:45:24.193840+00:00",
+  "hmmer_runtime": "pyhmmer 0.12.1 / HMMER 3.4",
+  "profiles": {
+    "human_igh": {
+      "j": {
+        "alignment_method": "reading-frame-resolved ([WF]G.G motif, no internal stop) + motif-anchor alignment",
+        "counts": {
+          "accepted": 7,
+          "input": 7,
+          "protein_distinct": 7,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0,
+          "rej_unresolved_frame": 0
+        },
+        "hmm_M": 17,
+        "hmm_sha256": "0daf1525451efbe23ba38d9a159c3602c82db603db67eaec9406b2c1b0ce6c41",
+        "label": "human_igh_j",
+        "license": "CC0-1.0",
+        "msa_sha256": "333813ed77a3b3a696ade4c64fe5c9e5e23e83ce313bf6bcb1216b0f8a96289a",
+        "region_label": "OGRDB human_igh IGHJ published/gapped",
+        "source": "ogrdb_human_igh"
+      },
+      "v": {
+        "alignment_method": "IMGT unique numbering (OGRDB published/gapped, frame 1)",
+        "counts": {
+          "accepted": 203,
+          "input": 209,
+          "protein_distinct": 148,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 6,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 98,
+        "hmm_sha256": "266065d8f3ae0272da0c4e67c63d23f7be3102c1cdecd715e3fcda47cd8a370c",
+        "label": "human_igh_v",
+        "license": "CC0-1.0",
+        "msa_sha256": "2c5e7021418ba3b1cc09d0f6ffe8028b398e68ce03e415b0c345e03d58431938",
+        "region_label": "OGRDB human_igh IGHV published/gapped",
+        "source": "ogrdb_human_igh"
+      }
+    },
+    "human_igk": {
+      "j": {
+        "alignment_method": "reading-frame-resolved ([WF]G.G motif, no internal stop) + motif-anchor alignment",
+        "counts": {
+          "accepted": 7,
+          "input": 7,
+          "protein_distinct": 7,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0,
+          "rej_unresolved_frame": 0
+        },
+        "hmm_M": 12,
+        "hmm_sha256": "de9bffd1e3cf52b9f41db21710840a96dc803dad53acdbce62caaa7c7ef3fcdf",
+        "label": "human_igk_j",
+        "license": "CC0-1.0",
+        "msa_sha256": "53bc24dd52e598065bb48af8f19aa37f7eca20ed5d980b45ed2c3b3501d59df6",
+        "region_label": "OGRDB human_igk IGKJ published/gapped",
+        "source": "ogrdb_human_igk"
+      },
+      "v": {
+        "alignment_method": "IMGT unique numbering (OGRDB published/gapped, frame 1)",
+        "counts": {
+          "accepted": 79,
+          "input": 82,
+          "protein_distinct": 64,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 3,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 95,
+        "hmm_sha256": "e4e84fd3bbd26c2e64d44d37da9f1c95b55100f496cebfacb44c9130e48fab4a",
+        "label": "human_igk_v",
+        "license": "CC0-1.0",
+        "msa_sha256": "99b6d9ffc14eb8d61dcb21ca013b8e62718ba387c30651611f79d16de5e6a1a2",
+        "region_label": "OGRDB human_igk IGKV published/gapped",
+        "source": "ogrdb_human_igk"
+      }
+    },
+    "human_igl": {
+      "j": {
+        "alignment_method": "reading-frame-resolved ([WF]G.G motif, no internal stop) + motif-anchor alignment",
+        "counts": {
+          "accepted": 10,
+          "input": 10,
+          "protein_distinct": 8,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0,
+          "rej_unresolved_frame": 0
+        },
+        "hmm_M": 12,
+        "hmm_sha256": "272ceea96f4fc69bdb33e9fc490689a249a1c6beae111be5760002f8d784c877",
+        "label": "human_igl_j",
+        "license": "CC0-1.0",
+        "msa_sha256": "397809c377ec418f9b08ba77e69dd202f7c6b1a421269ec5ad887551b046c242",
+        "region_label": "OGRDB human_igl IGLJ published/gapped",
+        "source": "ogrdb_human_igl"
+      },
+      "v": {
+        "alignment_method": "IMGT unique numbering (OGRDB published/gapped, frame 1)",
+        "counts": {
+          "accepted": 83,
+          "input": 88,
+          "protein_distinct": 76,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 5,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 98,
+        "hmm_sha256": "c467b9b9e21f75b484bd0840988cf0375b889610afdb0ee858be15a88a2357fd",
+        "label": "human_igl_v",
+        "license": "CC0-1.0",
+        "msa_sha256": "67735e30d6b5745ca282f82ae076d6c79e6d66317a9668030ae54fe1fca71966",
+        "region_label": "OGRDB human_igl IGLV published/gapped",
+        "source": "ogrdb_human_igl"
+      }
+    },
+    "igsf_vset": {
+      "domain": {
+        "hmm_sha256": "50f73e5284888038131d70b1379e0d668357191f44b3b2ee27e360125a631281",
+        "label": "pfam_v_set_PF07686",
+        "license": "CC0",
+        "note": "Pfam-A HMM used directly (CC0, no attribution); full-domain V-set profile",
+        "pfam_accession": "PF07686.24",
+        "raw_gz_sha256": "61380d057a30652ebacc948935fee9d59ed12a9a4a58f4ffc9498d640762a5cc",
+        "region_label": "domain",
+        "source": "pfam_pf07686"
+      }
+    },
+    "murine_vh": {
+      "j": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 8,
+          "input": 8,
+          "protein_distinct": 6,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 17,
+        "hmm_sha256": "80d7e5e47ed50826922c09549b7f80a7f567600e7420df432729b708b3dac723",
+        "label": "murine_vh_j",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "d95e6274c42aa5367c629d81d59b8479306f41018cd42eea08988a8eadda8b60",
+        "region_label": "IMGT Mus musculus IGHJ J-REGION (F)",
+        "source": "imgt_gene_db"
+      },
+      "v": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 405,
+          "input": 415,
+          "protein_distinct": 377,
+          "rej_gap_align": 6,
+          "rej_internal_stop": 1,
+          "rej_invalid_nt": 0,
+          "rej_partial": 3
+        },
+        "hmm_M": 98,
+        "hmm_sha256": "c5d3ef2a63bfcf3eb19a0582d17632a55edcbaffe4946a0c62dd110011df4139",
+        "label": "murine_vh_v",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "169ff27a817900d4541edc92e08e6838bff2d2dce8fa0d292ca3c684bc9ff8d3",
+        "region_label": "IMGT Mus musculus IGHV V-REGION (F)",
+        "source": "imgt_gene_db"
+      }
+    },
+    "tra": {
+      "j": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 62,
+          "input": 62,
+          "protein_distinct": 58,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 20,
+        "hmm_sha256": "ea4ee7afbb6dc96e18da4a2be84815f6c5def095c4664ec9d200a12bf5721884",
+        "label": "tra_j",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "2e56c426f4b778d153032b352ff19e9f3cdffba4dfdf0c7724a610bdd3d30da5",
+        "region_label": "IMGT Homo sapiens TRAJ J-REGION (F)",
+        "source": "imgt_gene_db"
+      },
+      "v": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 94,
+          "input": 94,
+          "protein_distinct": 72,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 93,
+        "hmm_sha256": "a600b6155163ea321e6a470351863e61e8c7c4e82c07879dcfa67a52214edcc5",
+        "label": "tra_v",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "ce71c532c1721a2cd0ef47d267e3b0d941ab81479bc0b79c1bcb46d312d74ee4",
+        "region_label": "IMGT Homo sapiens TRAV V-REGION (F)",
+        "source": "imgt_gene_db"
+      }
+    },
+    "trb": {
+      "j": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 14,
+          "input": 14,
+          "protein_distinct": 13,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 16,
+        "hmm_sha256": "0fb5ba90e1d258e41ca30daa2089354d84a620ba622c87be450064904f642e5b",
+        "label": "trb_j",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "c3bebc704aad868973250ea8a7b936d65b8e3e227a17c6e5a149d03349a6d113",
+        "region_label": "IMGT Homo sapiens TRBJ J-REGION (F)",
+        "source": "imgt_gene_db"
+      },
+      "v": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 103,
+          "input": 103,
+          "protein_distinct": 85,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 95,
+        "hmm_sha256": "abfc9ad67712c421ba62cad63e6bbe0baec575749710df10db0d3f6b5677b834",
+        "label": "trb_v",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "1d714307f76a8f2ea1b92fe9ac22f60f3581219f9b7e4e1bcf3f0725d2627516",
+        "region_label": "IMGT Homo sapiens TRBV V-REGION (F)",
+        "source": "imgt_gene_db"
+      }
+    },
+    "trd": {
+      "j": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 5,
+          "input": 5,
+          "protein_distinct": 4,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 16,
+        "hmm_sha256": "5ccfdbc3d741133f244e6b6bfa163a90dceaacf7b751d4f2c26b55eef9857201",
+        "label": "trd_j",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "03834d6ebbb1876f61a0715bdab739b8c33a26f2929fe93dbc395e653686c207",
+        "region_label": "IMGT Homo sapiens TRDJ J-REGION (F)",
+        "source": "imgt_gene_db"
+      },
+      "v": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 7,
+          "input": 7,
+          "protein_distinct": 7,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 95,
+        "hmm_sha256": "ff0e111c176bbe9b960197795463cdcb64b2fed8e31bb8536bfbe6565217caae",
+        "label": "trd_v",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "c193cc8a6f51238f4b0e5ef660311f44e1f5684298261e763ba0786c900b84bb",
+        "region_label": "IMGT Homo sapiens TRDV V-REGION (F)",
+        "source": "imgt_gene_db"
+      }
+    },
+    "trg": {
+      "j": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 7,
+          "input": 7,
+          "protein_distinct": 5,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 19,
+        "hmm_sha256": "a6c1670c7c639e398e3800ddb3868dabf73418f88a93675bbe9fae60a36cd1cc",
+        "label": "trg_j",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "e6d5537f5bc7fae88c9f038078245163d2fcefc380cca49adc8d591ce0996174",
+        "region_label": "IMGT Homo sapiens TRGJ J-REGION (F)",
+        "source": "imgt_gene_db"
+      },
+      "v": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 14,
+          "input": 14,
+          "protein_distinct": 10,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 100,
+        "hmm_sha256": "0432b318af949cd722dabdcb27339e973797ebbe3e0d827a853485533653db1a",
+        "label": "trg_v",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "018a0c76d7edafd124c234c92a8183654096d177f26dde454f863416cd8d5698",
+        "region_label": "IMGT Homo sapiens TRGV V-REGION (F)",
+        "source": "imgt_gene_db"
+      }
+    },
+    "vhh": {
+      "j": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 6,
+          "input": 6,
+          "protein_distinct": 6,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 16,
+        "hmm_sha256": "d1f33031d01a549e3bd8e2647dbdd5d1c56aed22c02fabfaebfd449e7296cc95",
+        "label": "camelid_igh_j",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "0255c8f0a0015090a04151555e81f09e4d7d6aa04893ae8ed484624f65b45e63",
+        "region_label": "IMGT Vicugna pacos IGHJ J-REGION (F)",
+        "source": "imgt_gene_db"
+      },
+      "v": {
+        "alignment_method": "IMGT unique numbering (WithGaps reference); annotated frame per allele",
+        "counts": {
+          "accepted": 73,
+          "input": 73,
+          "protein_distinct": 73,
+          "rej_gap_align": 0,
+          "rej_internal_stop": 0,
+          "rej_invalid_nt": 0,
+          "rej_partial": 0
+        },
+        "hmm_M": 96,
+        "hmm_sha256": "42ef416da7ddb8061d5102b3564870d8fe6719b70203f5dd33e62b069f7c48b8",
+        "label": "camelid_igh_v",
+        "license": "CC-BY-4.0",
+        "msa_sha256": "c3d06b2831871fb99f16c2838350dc3870af0e33a0559cf14e575874f3ca6a7c",
+        "region_label": "IMGT Vicugna pacos IGHV V-REGION (F)",
+        "source": "imgt_gene_db"
+      }
+    }
+  },
+  "ship_policy": "raw germline files are NOT shipped; only derived HMM profiles are redistributed (CC BY-4.0 with attribution+modification-notice for IMGT-derived; CC0 for OGRDB/Pfam)",
+  "sources": {
+    "imgt_gene_db": {
+      "attribution_required": true,
+      "bytes": 6333257,
+      "evidence": "docs/superpowers/artifacts/2026-07-26-aa-applicability/license_evidence.json",
+      "license": "CC-BY-4.0",
+      "private_path": ".private/aa-applicability/germline_raw/IMGTGENEDB-ReferenceSequences.fasta-nt-WithGaps-F+ORF+inframeP",
+      "retrieved_utc": "2026-07-27T10:45:23.593799+00:00",
+      "sha256": "8ebe18455497f9bc2c3c9cd30e9862dbbf14d6e8f076e57912feab762788d413",
+      "url": "https://www.imgt.org/download/GENE-DB/IMGTGENEDB-ReferenceSequences.fasta-nt-WithGaps-F%2BORF%2BinframeP"
+    },
+    "ogrdb_human_igh": {
+      "attribution_required": false,
+      "bytes": 72614,
+      "license": "CC0-1.0",
+      "private_path": ".private/aa-applicability/germline_raw/ogrdb_human_igh_gapped.fasta",
+      "retrieved_utc": "2026-07-27T10:45:24.039342+00:00",
+      "sha256": "681db69932757bd09253cbef990a64959f8c8745e46f364bcb35963ea4f16a65",
+      "url": "https://ogrdb.airr-community.org/download_germline_set/Homo%20sapiens/IGH_VDJ/published/gapped"
+    },
+    "ogrdb_human_igk": {
+      "attribution_required": false,
+      "bytes": 29388,
+      "license": "CC0-1.0",
+      "private_path": ".private/aa-applicability/germline_raw/ogrdb_human_igk_gapped.fasta",
+      "retrieved_utc": "2026-07-27T10:45:24.096294+00:00",
+      "sha256": "592ed2724a9f6c92d1f1c75ad900fd9de4389b6d8d5f32049f865613729a943f",
+      "url": "https://ogrdb.airr-community.org/download_germline_set/Homo%20sapiens/IGKappa_VJ/published/gapped"
+    },
+    "ogrdb_human_igl": {
+      "attribution_required": false,
+      "bytes": 32012,
+      "license": "CC0-1.0",
+      "private_path": ".private/aa-applicability/germline_raw/ogrdb_human_igl_gapped.fasta",
+      "retrieved_utc": "2026-07-27T10:45:24.144643+00:00",
+      "sha256": "28533d72a46f343c95fc04a30a823a74b2591ab570fd185f57b73cce4f6deb1a",
+      "url": "https://ogrdb.airr-community.org/download_germline_set/Homo%20sapiens/IGLambda_VJ/published/gapped"
+    },
+    "pfam_pf07686": {
+      "attribution_required": false,
+      "bytes": 11796,
+      "license": "CC0",
+      "private_path": ".private/aa-applicability/germline_raw/PF07686.hmm.gz",
+      "retrieved_utc": "2026-07-27T10:45:24.193406+00:00",
+      "sha256": "61380d057a30652ebacc948935fee9d59ed12a9a4a58f4ffc9498d640762a5cc",
+      "url": "https://www.ebi.ac.uk/interpro/wwwapi/entry/pfam/PF07686/?annotation=hmm"
+    }
+  }
+}
