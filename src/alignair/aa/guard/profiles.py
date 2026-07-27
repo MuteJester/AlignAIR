@@ -40,12 +40,22 @@ IMGT_CLEARANCE = {
     "license": "CC-BY-4.0",
     "cleared_by": "owner",
     "cleared_date": "2026-07-27",
+    "relicensing_date": "2026-07-01",          # IMGT homepage dates the CC BY-NC-ND -> CC BY-4.0 change here
     "evidence_url": "https://www.imgt.org/about/termsofuse.php",
     "evidence_fetched": "2026-07-27",
     "evidence_quote": "The IMGT® data are provided to both public and private users under the CC BY-4.0 license.",
+    "evidence_archive": "docs/superpowers/artifacts/2026-07-26-aa-applicability/license_evidence.json",
     "supersedes": "historically-cited CC BY-NC-ND 4.0 (e.g. 2022 IMGT NAR paper)",
-    "obligations": "attribute IMGT + indicate changes (CC BY-4.0); do not use the IMGT name for promotion "
-                   "without written approval (trademark).",
+    "usage_distinction": "AlignAIR downloads germline DATA and builds profile HMMs locally with pyhmmer "
+                         "(vendored HMMER, not an IMGT tool); it does NOT redistribute IMGT-hosted files nor "
+                         "invoke IMGT web tools/services (IMGT tool-use terms therefore do not apply).",
+    "obligations": {
+        "attribution": "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0.",
+        "modification_notice": "Modified: profile HMMs were built from the germline sequences.",
+        "placement": ["shipped bundle NOTICE", "model card", "profile manifest"],
+        "no_endorsement": "Attribution must not imply IMGT endorsement; the IMGT name must not be used for "
+                          "publicity/business promotion without written approval (trademark).",
+    },
 }
 
 

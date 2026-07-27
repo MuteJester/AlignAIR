@@ -29,9 +29,15 @@ def test_imgt_cleared_as_cc_by_production_with_attribution():
         assert "imgt" in s.name.lower()
         assert s.role == "production" and s.redistributable, group
         assert s.license == "CC-BY-4.0" and s.attribution, group
-    # the clearance is recorded with auditable evidence
+    # the clearance is recorded with auditable evidence + full obligations
     assert IMGT_CLEARANCE["license"] == "CC-BY-4.0"
     assert IMGT_CLEARANCE["evidence_url"] and IMGT_CLEARANCE["evidence_quote"]
+    assert IMGT_CLEARANCE["relicensing_date"] == "2026-07-01"
+    assert IMGT_CLEARANCE["evidence_archive"].endswith("license_evidence.json")
+    assert "pyhmmer" in IMGT_CLEARANCE["usage_distinction"] and "not" in IMGT_CLEARANCE["usage_distinction"].lower()
+    ob = IMGT_CLEARANCE["obligations"]
+    assert ob["attribution"] and ob["modification_notice"] and ob["no_endorsement"]
+    assert {"shipped bundle NOTICE", "model card", "profile manifest"} == set(ob["placement"])
 
 
 def test_all_required_profiles_resolve_to_go():
