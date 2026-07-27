@@ -15,6 +15,26 @@
       "params": 800014,
       "wall_s": 48.9
     },
+    "C1.s2.igk_igl": {
+      "gpu_h": 0.0025,
+      "params": 800014,
+      "wall_s": 9.2
+    },
+    "C1.s2.igsf": {
+      "gpu_h": 0.0021,
+      "params": 800014,
+      "wall_s": 7.6
+    },
+    "C1.s2.tcr": {
+      "gpu_h": 0.0027,
+      "params": 800014,
+      "wall_s": 9.8
+    },
+    "C1.s2.vhh_nonhuman": {
+      "gpu_h": 0.0041,
+      "params": 800014,
+      "wall_s": 14.6
+    },
     "C2.s0": {
       "gpu_h": 0.0094,
       "params": 800322,
@@ -24,6 +44,26 @@
       "gpu_h": 0.011,
       "params": 800322,
       "wall_s": 39.4
+    },
+    "C2.s1.igk_igl": {
+      "gpu_h": 0.0022,
+      "params": 800322,
+      "wall_s": 8.1
+    },
+    "C2.s1.igsf": {
+      "gpu_h": 0.0037,
+      "params": 800322,
+      "wall_s": 13.2
+    },
+    "C2.s1.tcr": {
+      "gpu_h": 0.0035,
+      "params": 800322,
+      "wall_s": 12.5
+    },
+    "C2.s1.vhh_nonhuman": {
+      "gpu_h": 0.0033,
+      "params": 800322,
+      "wall_s": 12.0
     },
     "C2.s2": {
       "gpu_h": 0.0086,
@@ -40,6 +80,26 @@
       "params": 800322,
       "wall_s": 64.4
     },
+    "C3.s1.igk_igl": {
+      "gpu_h": 0.0032,
+      "params": 800322,
+      "wall_s": 11.7
+    },
+    "C3.s1.igsf": {
+      "gpu_h": 0.0034,
+      "params": 800322,
+      "wall_s": 12.2
+    },
+    "C3.s1.tcr": {
+      "gpu_h": 0.0029,
+      "params": 800322,
+      "wall_s": 10.6
+    },
+    "C3.s1.vhh_nonhuman": {
+      "gpu_h": 0.0041,
+      "params": 800322,
+      "wall_s": 14.7
+    },
     "C3.s2": {
       "gpu_h": 0.0088,
       "params": 800322,
@@ -54,6 +114,26 @@
       "gpu_h": 0.0187,
       "params": 803663,
       "wall_s": 67.2
+    },
+    "C4.s1.igk_igl": {
+      "gpu_h": 0.0042,
+      "params": 803149,
+      "wall_s": 15.0
+    },
+    "C4.s1.igsf": {
+      "gpu_h": 0.007,
+      "params": 803406,
+      "wall_s": 25.3
+    },
+    "C4.s1.tcr": {
+      "gpu_h": 0.0042,
+      "params": 803149,
+      "wall_s": 15.2
+    },
+    "C4.s1.vhh_nonhuman": {
+      "gpu_h": 0.0031,
+      "params": 802892,
+      "wall_s": 11.2
     },
     "C4.s2": {
       "gpu_h": 0.0185,
