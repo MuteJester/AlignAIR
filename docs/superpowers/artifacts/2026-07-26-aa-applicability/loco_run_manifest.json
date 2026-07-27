@@ -1,0 +1,219 @@
+{
+  "artifact": "loco_run_manifest",
+  "bank_checksum": "65e0809a8e0804ae7d9f7617a3585c782047cd1588b397c9ee90b9f702f07736",
+  "base_partition_hash": "ee3b2f0f0ea4e82484948d6fb48ca1dbc81d952b36a41d2661214642731fad76",
+  "candidates": [
+    "C1",
+    "C2",
+    "C3",
+    "C4"
+  ],
+  "checkpoint_dir": ".private/aa-applicability/loco_checkpoints",
+  "class_map_hash": "adc091d6cd2e92fd252fe99673b3bef4c50d37dbd4345651864a221a44e7b3ea",
+  "energy_margins": {
+    "m_in": 5.0,
+    "m_out": 10.0
+  },
+  "exclusion_scope": [
+    "training",
+    "internal_dev",
+    "mining",
+    "normalization_fit",
+    "source_balancing",
+    "early_stopping"
+  ],
+  "expected_models": 16,
+  "files_opened_audit": {
+    "NOT_opened": [
+      "fresh_selection (*.normalized.json fresh cohort)",
+      "loco_challenge subsets",
+      "far_ood pools",
+      ".private/aa-gate3-hydration/locked_test.jsonl (SEAL)"
+    ],
+    "opened": [
+      ".private/aa-gate3-hydration/dev_cohort.jsonl",
+      ".private/aa-applicability/profiles/*",
+      "stage4 manifests (config)"
+    ]
+  },
+  "folds": {
+    "igk_igl": {
+      "excluded_ids_sha256": "1c0d6e5df083ffb69b66be8f528cae76f0a200ab6cca503869dbfd452add4229",
+      "excluded_seqhash_sha256": "16249118765acb7f32046ae679db1262a5239c30c9e2641f40bbf54fb67a969a",
+      "loco_dev_ids_sha256": "617a1a07f9f74f3c715715680f2b64bbeeeb734d4410bf00214ad30a35ee59bf",
+      "loco_train_ids_sha256": "267dbc05e80d419851994995d781a5714d2e21b08943ff59089a0380a45e4277",
+      "masked_profiles": [
+        "human_igk",
+        "human_igl"
+      ],
+      "n_dev_after_exclusion": 181,
+      "n_excluded": 159,
+      "n_sources": 11,
+      "n_train_after_exclusion": 729,
+      "source_eligible_domain_types": [
+        0,
+        6
+      ],
+      "source_vocab_ordered": [
+        "chimeric_murine_variable",
+        "design_human_framework",
+        "humanized",
+        "igsf_vset",
+        "murine_vh",
+        "pos_igh_repertoire",
+        "pos_igh_simulator",
+        "pos_igh_structure",
+        "tra",
+        "trb",
+        "vhh"
+      ],
+      "source_vocab_sha256": "0250e1c78c1e04fabdcee2364d85a630b00ee4ed4757d16eaa669fe5e62d2f62"
+    },
+    "igsf": {
+      "excluded_ids_sha256": "e614ae3f6968a74577ef0fb3d4ef91a0c55d9e120df027b183d4d1e9c17b77a8",
+      "excluded_seqhash_sha256": "96404089ef127e77b03e12d3e2e3e87855bbedfaa5b253c8c1ff695c8a01447c",
+      "loco_dev_ids_sha256": "87995aa3aafd446f38b6f43b3db3bc286b926155de88845d0343f17a6a7c0497",
+      "loco_train_ids_sha256": "3eb8a5eab7ca94f11864960da1f664c3f68093919fe9959313285884ce870845",
+      "masked_profiles": [
+        "igsf_vset"
+      ],
+      "n_dev_after_exclusion": 172,
+      "n_excluded": 178,
+      "n_sources": 12,
+      "n_train_after_exclusion": 719,
+      "source_eligible_domain_types": [
+        0,
+        6
+      ],
+      "source_vocab_ordered": [
+        "chimeric_murine_variable",
+        "design_human_framework",
+        "humanized",
+        "igk",
+        "igl",
+        "murine_vh",
+        "pos_igh_repertoire",
+        "pos_igh_simulator",
+        "pos_igh_structure",
+        "tra",
+        "trb",
+        "vhh"
+      ],
+      "source_vocab_sha256": "f0f5ca583829b4026fb49c30c0d88f425cace394c47ab523133123a62b670ae3"
+    },
+    "tcr": {
+      "excluded_ids_sha256": "efda64e8626d764569f8bc4f749e880d60077700995fd3cbdda9baa2e44cb12d",
+      "excluded_seqhash_sha256": "53ee0dc7f876706c20a314e3bd4aef98be9ae3712b92281d2e8b04581b326b62",
+      "loco_dev_ids_sha256": "be3ef0ad9fa00ce57530913d7509b660c4965e928a89e66c602b2f9d98b1fabc",
+      "loco_train_ids_sha256": "4b341c99ec04e01cb58197f56a5949c0f51805dcfdb9c3b00d00efd4b4f27e77",
+      "masked_profiles": [
+        "tra",
+        "trb",
+        "trd",
+        "trg"
+      ],
+      "n_dev_after_exclusion": 186,
+      "n_excluded": 90,
+      "n_sources": 11,
+      "n_train_after_exclusion": 793,
+      "source_eligible_domain_types": [
+        0,
+        6
+      ],
+      "source_vocab_ordered": [
+        "chimeric_murine_variable",
+        "design_human_framework",
+        "humanized",
+        "igk",
+        "igl",
+        "igsf_vset",
+        "murine_vh",
+        "pos_igh_repertoire",
+        "pos_igh_simulator",
+        "pos_igh_structure",
+        "vhh"
+      ],
+      "source_vocab_sha256": "57dc657787cacfff0d27e02bfae7f7ee187b2d043c1e112e445c38c28303b83a"
+    },
+    "vhh_nonhuman": {
+      "excluded_ids_sha256": "9b3df4c87243a6c7aecfb72364ddaccc1b74afb9f22daaf9c4e45471ee21962e",
+      "excluded_seqhash_sha256": "eb8b53848df58ca8417043ab04c29f19329406245d788ac266c1e38322865573",
+      "loco_dev_ids_sha256": "280b65854fa30f2b960d00bd8b46f330592ea716b09483486b5d6d9f3b5620a7",
+      "loco_train_ids_sha256": "2c49d18be947c6ac96556970caead39912e59b9ed474783ef79674a448595da6",
+      "masked_profiles": [
+        "camelid_igh",
+        "murine_vh"
+      ],
+      "n_dev_after_exclusion": 198,
+      "n_excluded": 64,
+      "n_sources": 10,
+      "n_train_after_exclusion": 807,
+      "source_eligible_domain_types": [
+        0
+      ],
+      "source_vocab_ordered": [
+        "design_human_framework",
+        "humanized",
+        "igk",
+        "igl",
+        "igsf_vset",
+        "pos_igh_repertoire",
+        "pos_igh_simulator",
+        "pos_igh_structure",
+        "tra",
+        "trb"
+      ],
+      "source_vocab_sha256": "cb89cb2307fc378bc43d5caa67e9e1d89dc465c831c9ab2507ccea11a235172c"
+    }
+  },
+  "frozen_seeds": {
+    "C1": 2,
+    "C2": 1,
+    "C3": 1,
+    "C4": 1
+  },
+  "grl_lambda": 1.0,
+  "hyperparameters": "inherited unchanged from stage4_run_manifest.json",
+  "immutable": true,
+  "loco_mask_hash": "9101c1735bbe5ba634e5eb518a0be33e9f7c7130c095a773fc3206e453e406b5",
+  "loss_weights": {
+    "app": 1.0,
+    "complete": 1.0,
+    "contrast": 0.5,
+    "oe": 0.5,
+    "source": 0.5
+  },
+  "manifest_sha256": "7d73bce970013fbf1aef507e9042e9ac7f8ea451a431a10de49ec456c3cf0218",
+  "mining": {
+    "policy": "smallest-margin, lineage-deduped (mining.py); disabled for the main seed sweep \u2014 deterministic balanced stream only",
+    "rounds": 0
+  },
+  "oe": {
+    "cap_fraction": 0.15,
+    "policy": "seeded residue-shuffle of TRAIN sequences (train-only auxiliary outliers)"
+  },
+  "optimizer": {
+    "lr": 0.001,
+    "name": "AdamW",
+    "weight_decay": 0.01
+  },
+  "partition_policy": "RESTRICT the frozen Stage-4 parent-lineage partition after excluding fold g; remaining records keep their original train/dev assignment (no reshuffle)",
+  "schedule": {
+    "name": "cosine",
+    "warmup_steps": 50
+  },
+  "stage4_manifest_sha256": "0a30e0bbdcaa207e12dcc84c72014d998d187ca212a41ae6e7df9a762f82e6d6",
+  "temperatures": {
+    "supcon": 0.1
+  },
+  "training": {
+    "amp": true,
+    "batch_size": 32,
+    "early_stop_metric": "dev_total_loss",
+    "early_stop_patience": 6,
+    "eval_every": 50,
+    "grad_clip": 1.0,
+    "max_steps": 1200,
+    "min_delta": 0.001
+  }
+}

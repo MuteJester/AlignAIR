@@ -70,17 +70,18 @@ def _completeness(rec):
     return COMPLETENESS_INDEX[c] if c else -1            # reversed_vh / others -> masked
 
 
-def precompute_features(recs, bank):
-    cache = json.loads(FEAT_CACHE.read_text()) if FEAT_CACHE.exists() else {}
+def precompute_features(recs, bank, mask_groups=frozenset(), cache_path=FEAT_CACHE):
     import hashlib
+    cache_path = Path(cache_path)
+    cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
     changed = False
     for r in recs:
         h = hashlib.sha256(r["aa"].encode()).hexdigest()
         if h not in cache:
-            cache[h] = hmm_features(bank, r["aa"]).to_vector().tolist()
+            cache[h] = hmm_features(bank, r["aa"], mask_groups=mask_groups).to_vector().tolist()
             changed = True
     if changed:
-        FEAT_CACHE.write_text(json.dumps(cache))
+        cache_path.write_text(json.dumps(cache))
     return cache
 
 
@@ -109,7 +110,8 @@ def _source_setup(train):
     return cat2id, eligible, len(all_cats)
 
 
-def build_tensors(records, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, is_oe=False):
+def build_tensors(records, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, is_oe=False,
+                  mask_groups=frozenset()):
     import hashlib
     ids_l, mask_l, hmm_l = [], [], []
     dt_t, dt_m, cp_t, cp_m, app_t, en_out, en_m, src_t, src_m, ct_t, ct_m = ([] for _ in range(11))
@@ -117,7 +119,7 @@ def build_tensors(records, feat_cache, fusion, tok, bank_checksum, cat2id, eligi
         if not enforce_length_contract(r["aa"]).ok:
             continue
         h = hashlib.sha256(r["aa"].encode()).hexdigest()
-        vec = feat_cache.get(h) or hmm_features(load_bank(PROF), r["aa"]).to_vector().tolist()
+        vec = feat_cache.get(h) or hmm_features(load_bank(PROF), r["aa"], mask_groups=mask_groups).to_vector().tolist()
         hmm_l.append(fusion.normalize(vec, feature_names=FEATURE_NAMES, bank_checksum=bank_checksum))
         i, m = tok.encode(r["aa"]); ids_l.append(i); mask_l.append(m)
         if is_oe:
@@ -176,13 +178,16 @@ def _rng_state():
             "python": random.getstate(), "numpy": np.random.get_state()}
 
 
-def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sources):
+def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sources, *,
+              mask_groups=frozenset(), ckpt_dir=None, extra_provenance=None, run_tag=None):
     from alignair.aa.guard.model import CANDIDATE_CONFIG
-    tag = f"{cid}.s{seed}"
-    final_path = CKPT / f"{tag}.final.pt"
+    ckpt_dir = Path(ckpt_dir) if ckpt_dir else CKPT
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    tag = run_tag or f"{cid}.s{seed}"                  # LOCO passes e.g. C1.s2.igk_igl (no filename collision)
+    final_path = ckpt_dir / f"{tag}.final.pt"
     if final_path.exists():                            # already completed -> skip on resumable restart
         return torch.load(final_path, map_location="cpu", weights_only=False)["metrics"]
-    ckpt_path = CKPT / f"{tag}.pt"
+    ckpt_path = ckpt_dir / f"{tag}.pt"
     cfg = CANDIDATE_CONFIG[cid]                         # static config (no throwaway model / no source_head)
     torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
     tr = MAN["training"]; W = MAN["loss_weights"]; margins = MAN["energy_margins"]
@@ -191,8 +196,9 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
     fusion = fit_fusion(FEATURE_NAMES, [feat_cache[__import__("hashlib").sha256(r["aa"].encode()).hexdigest()]
                                         for r in train], bank_checksum)   # TRAIN-only normalization
     tok = AaTokenizer(max_len=MAX_LEN)
-    T_dev = build_tensors(dev, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt)
-    T_oe = build_tensors(oe, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, is_oe=True) if oe else None
+    T_dev = build_tensors(dev, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, mask_groups=mask_groups)
+    T_oe = build_tensors(oe, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, is_oe=True,
+                         mask_groups=mask_groups) if oe else None
 
     model = GuardModel(cid, hmm_dim=len(FEATURE_NAMES), n_sources=n_sources).to(DEVICE)   # size source_head to data
     opt = torch.optim.AdamW(model.parameters(), lr=MAN["optimizer"]["lr"],
@@ -227,10 +233,11 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
         model.train()
         for step in range(start_step, max_steps):
             batch = [rng.choice(by_role[r]) for r in roles for _ in range(per_role)]
-            Tb = build_tensors(batch, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt)
+            Tb = build_tensors(batch, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt,
+                               mask_groups=mask_groups)
             if oe and n_oe:
                 Toe = build_tensors([rng.choice(oe) for _ in range(n_oe)], feat_cache, fusion, tok,
-                                    bank_checksum, cat2id, eligible_dt, is_oe=True)
+                                    bank_checksum, cat2id, eligible_dt, is_oe=True, mask_groups=mask_groups)
                 for k in Tb:
                     Tb[k] = torch.cat([Tb[k], Toe[k]], dim=0)
             opt.zero_grad()
@@ -276,11 +283,17 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
                     "peak_vram_mb": round(torch.cuda.max_memory_allocated() / 1e6, 1) if DEVICE == "cuda" else 0,
                     "params": sum(p.numel() for p in model.parameters()),
                     "eligible_source_fraction": round(float(T_dev["source_m"].mean()), 4)})
-    prov = build_provenance(bank_checksum=bank_checksum, training_manifest_hash=MAN["manifest_sha256"],
-                            partition_hash=MAN["train_partition_hash"], seed=seed,
-                            loss_mask_config={"candidate": cid, "weights": W, "margins": margins})
-    torch.save({"model": model.state_dict(), "provenance": prov.to_dict(), "metrics": metrics},
-               CKPT / f"{tag}.final.pt")
+    import hashlib as _hl
+    xp = dict(extra_provenance or {})
+    xp["normalization_stats_sha256"] = _hl.sha256(fusion.mean.tobytes() + fusion.std.tobytes()).hexdigest()
+    prov = build_provenance(bank_checksum=bank_checksum,
+                            training_manifest_hash=xp.get("training_manifest_hash", MAN["manifest_sha256"]),
+                            partition_hash=xp.get("partition_hash", MAN["train_partition_hash"]), seed=seed,
+                            loss_mask_config={"candidate": cid, "weights": W, "margins": margins,
+                                              "loco_mask_hash": xp.get("loco_mask_hash"), "fold": xp.get("fold"),
+                                              "norm_stats_sha256": xp["normalization_stats_sha256"]})
+    torch.save({"model": model.state_dict(), "provenance": prov.to_dict(), "metrics": metrics, "bound_extra": xp},
+               final_path)
     budget.record(tag, metrics["wall_s"], metrics["gpu_h"], metrics["params"])
     return metrics
 
