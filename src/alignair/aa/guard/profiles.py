@@ -242,10 +242,14 @@ def _digitize_msa(aligned_fasta_bytes: bytes, name: bytes):
 
 
 def _serialize_deterministic(hmm) -> bytes:
-    hmm.creation_time = None      # drop the run-varying DATE line
-    hmm.command_line = None       # stable COM placeholder (no varying content)
+    # Serialize a COPY: hmm.write() leaves the object un-searchable (p7_ProfileConfig eslEINVAL), so the
+    # original must be returned untouched for pyhmmer search. The copy is date/command-neutralized so the
+    # same MSA yields the same bytes (hence sha256) across runs.
+    c = hmm.copy()
+    c.creation_time = None        # drop the run-varying DATE line
+    c.command_line = None         # stable COM placeholder (no varying content)
     buf = io.BytesIO()
-    hmm.write(buf)
+    c.write(buf)
     return buf.getvalue()
 
 
