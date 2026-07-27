@@ -1,0 +1,39 @@
+{
+  "by_category": {
+    "igk": 286,
+    "igl": 216
+  },
+  "denylist_dropped": {
+    "donor": 0,
+    "lineage": 0,
+    "phase3": 0,
+    "seqhash": 0,
+    "study": 0
+  },
+  "distinct_donors": 1,
+  "fresh_studies_available": 17,
+  "kept_after_denylist": 502,
+  "per_study_locus": {
+    "eccles_2020": {
+      "igk": 286,
+      "igl": 216
+    }
+  },
+  "provenance": {
+    "base": "https://opig.stats.ox.ac.uk/webapps/ngsdb/paired/",
+    "draw": "fresh human paired studies (Gate-3 studies + unpaired-used excluded)",
+    "units_downloaded": 3,
+    "verification": "ANARCII light chain/locus/completeness (K/L) on numbered V domain"
+  },
+  "rejection_reasons": {
+    "anarcii_rejected": 0,
+    "non_human_unit": 2,
+    "temporarily_inaccessible": 2,
+    "unknown_species_unit": 0,
+    "untouched_donor_audit_drop": 0
+  },
+  "source": "oas_paired",
+  "studies_contributing": [
+    "eccles_2020"
+  ]
+}
