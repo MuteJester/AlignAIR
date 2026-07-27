@@ -26,6 +26,8 @@ source so the bundle can emit correct NOTICE/attribution at ship time.
 """
 from __future__ import annotations
 
+import hashlib
+import io
 from dataclasses import dataclass, field
 
 # Receptor groups whose profile bank needs a V and a J region; plus the igsf_vset full-domain profile.
@@ -206,3 +208,77 @@ def source_matrix() -> dict:
     except NoPublishableProfileSource as e:
         matrix["resolution"] = {"decision": "STOP_NO_PUBLISHABLE_PROFILE_SOURCE", "unresolved": e.unresolved}
     return matrix
+
+
+# --- Task 2.2: deterministic profile builder (pyhmmer) -------------------------------------------------
+# Receptor groups carry independently versioned V and J profiles; a complete domain needs BOTH (V-only
+# supports locus evidence but never a complete domain). IgSF uses a validated full-domain profile. Builds
+# are deterministic: fixed builder seed + the varying HMMER DATE/COM header lines neutralized before
+# serialization, so the same MSA yields the same sha256 across runs (verified Phase 0).
+_BUILDER_SEED = 42
+
+
+def _amino():
+    from pyhmmer import easel
+    return easel.Alphabet.amino()
+
+
+def _digitize_msa(aligned_fasta_bytes: bytes, name: bytes):
+    from pyhmmer import easel
+    records, cur, seq = [], None, []
+    for line in aligned_fasta_bytes.decode("utf-8").splitlines():
+        if line.startswith(">"):
+            if cur is not None:
+                records.append((cur, "".join(seq)))
+            cur, seq = line[1:].strip(), []
+        elif line.strip():
+            seq.append(line.strip())
+    if cur is not None:
+        records.append((cur, "".join(seq)))
+    abc = _amino()
+    msa = easel.TextMSA(name=name,
+                        sequences=[easel.TextSequence(name=n.encode(), sequence=s) for n, s in records])
+    return msa.digitize(abc)
+
+
+def _serialize_deterministic(hmm) -> bytes:
+    hmm.creation_time = None      # drop the run-varying DATE line
+    hmm.command_line = None       # stable COM placeholder (no varying content)
+    buf = io.BytesIO()
+    hmm.write(buf)
+    return buf.getvalue()
+
+
+def build_profile(group: str, region: str, aligned_fasta_bytes: bytes):
+    """Build one deterministic profile HMM from an aligned FASTA MSA; return (HMM, sha256_hex of bytes)."""
+    from pyhmmer import plan7
+    abc = _amino()
+    dmsa = _digitize_msa(aligned_fasta_bytes, name=f"{group}:{region}".encode())
+    builder = plan7.Builder(abc, seed=_BUILDER_SEED)
+    hmm, _, _ = builder.build_msa(dmsa, plan7.Background(abc))
+    data = _serialize_deterministic(hmm)
+    return hmm, hashlib.sha256(data).hexdigest()
+
+
+@dataclass
+class ProfileBank:
+    """In-memory profile bank: group -> region -> (HMM, sha256_hex). Persisted elsewhere via pyhmmer
+    HMMFile write (non-pickle); the checksum is over the per-profile hashes only."""
+    profiles: dict
+
+    def supports_complete_domain(self, group: str) -> bool:
+        regs = set(self.profiles.get(group, {}))
+        if group == "igsf_vset":
+            return "domain" in regs
+        return {"v", "j"} <= regs         # a complete receptor domain needs BOTH V and J profiles
+
+    def checksum(self) -> str:
+        parts = [f"{g}:{r}:{self.profiles[g][r][1]}"
+                 for g in sorted(self.profiles) for r in sorted(self.profiles[g])]
+        return hashlib.sha256("\n".join(parts).encode()).hexdigest()
+
+
+def build_bank_fixture(regions: dict) -> ProfileBank:
+    """Build a small in-memory bank from {group: {region: aligned_fasta_bytes}} (burned-dev fixtures/tests)."""
+    profiles = {g: {r: build_profile(g, r, msa) for r, msa in regs.items()} for g, regs in regions.items()}
+    return ProfileBank(profiles=profiles)
