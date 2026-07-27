@@ -1,29 +1,92 @@
 {
-  "artifact_digest": "58adad1175efa24265633cda5c9c60904dbc019e97f9165c0247a0eda79d5874",
-  "bundle_sha256": "d7a2329814e6a1f9f38510742d01339a22fc07509007213cba98f72590267a76",
+  "artifact_digest": "90096213b2710adc6e18279900cf5959bc4939e2774ebbbb8b233104183fa541",
+  "bundle_sha256": "4c79a69b2df5df3c5c68251610de60b95d99c202752eeba30059ad5ab13139e3",
+  "candidate": "C2",
+  "challenge_digest": "c068fb122c1a55490a3ac06e6385fbbcf8c5bfb8b00950282c579962c36a2672",
   "checks": [
+    "demo_parent_lineage_aggregation",
+    "demo_real_vs_sim_frr_separation",
+    "demo_one_group_failure_no_pooling",
+    "demo_no_admissible_threshold_stop",
+    "selection_binding_is_blind_only",
+    "passing_multi_group_threshold_frozen",
     "barrier1_selection_cannot_open_challenge",
-    "dual_eval_selection_binding_is_blind_only",
-    "threshold_freeze_writes_complete_hash_bound_artifact",
     "barrier2_challenge_refused_without_artifact",
-    "barrier5_changed_hash_hard_fails",
-    "barrier4_atomic_audit_before_scoring",
+    "barrier5_changed_weight_file_hard_fails",
+    "barrier4_7_audit_then_verified_challenge_bytes",
+    "barrier7_tampered_challenge_writes_failure_audit",
     "dual_eval_challenge_raw_scores_blind_masked",
     "full_hash_set_consistent"
   ],
+  "demonstrations": {
+    "frr_separation": {
+      "real": [
+        2,
+        40,
+        false
+      ],
+      "sim": [
+        0,
+        60,
+        true
+      ]
+    },
+    "no_admissible_threshold_stop": true,
+    "one_group_fail_despite_pooled_success": {
+      "igsf": [
+        1,
+        40,
+        0.1132,
+        false
+      ],
+      "pooled_upper": 0.0389,
+      "select_result": "None(STOP)"
+    },
+    "parent_lineage_aggregation": {
+      "records": 100,
+      "units": 4
+    },
+    "passing_multi_group": {
+      "igsf": [
+        40,
+        true
+      ],
+      "positive_real": [
+        60,
+        true
+      ],
+      "positive_sim": [
+        60,
+        true
+      ],
+      "structural": [
+        80,
+        true
+      ],
+      "tcr": [
+        80,
+        true
+      ]
+    }
+  },
   "mock_fold": "igk_igl",
-  "n_challenge": 2,
-  "n_checks": 8,
-  "n_selection": 2,
+  "n_checks": 13,
   "passed": true,
   "raw_score_sample": {
     "blind": [
-      -15.144590377807617,
-      0.3417770266532898
+      -10.493806838989258,
+      0.4064985513687134
     ],
     "reference_covered": [
-      0.20593562722206116,
-      0.3417770266532898
+      0.1886136531829834,
+      0.4064985513687134
     ]
-  }
+  },
+  "required_groups": [
+    "tcr",
+    "igsf",
+    "structural",
+    "positive_real",
+    "positive_sim"
+  ]
 }
