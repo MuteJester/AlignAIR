@@ -1,20 +1,14 @@
 {
-  "comparators": {
-    "imgt_gene_db": {
-      "group": "imgt_gene_db",
-      "input_hashes": {},
-      "license": "IMGT terms (restricted)",
-      "name": "imgt_gene_db",
-      "notes": "Local research comparator only until redistribution is explicitly cleared.",
-      "redistributable": false,
-      "regions": [
-        "j",
-        "v"
-      ],
-      "role": "comparator_only",
-      "url": "https://www.imgt.org/genedb/",
-      "version": "IMGT/GENE-DB (research comparator)"
-    }
+  "imgt_clearance": {
+    "cleared_by": "owner",
+    "cleared_date": "2026-07-27",
+    "evidence_fetched": "2026-07-27",
+    "evidence_quote": "The IMGT\u00ae data are provided to both public and private users under the CC BY-4.0 license.",
+    "evidence_url": "https://www.imgt.org/about/termsofuse.php",
+    "license": "CC-BY-4.0",
+    "obligations": "attribute IMGT + indicate changes (CC BY-4.0); do not use the IMGT name for promotion without written approval (trademark).",
+    "source": "IMGT/GENE-DB",
+    "supersedes": "historically-cited CC BY-NC-ND 4.0 (e.g. 2022 IMGT NAR paper)"
   },
   "required_profiles": [
     "human_igh",
@@ -29,18 +23,16 @@
     "vhh"
   ],
   "resolution": {
-    "decision": "STOP_NO_PUBLISHABLE_PROFILE_SOURCE",
-    "unresolved": [
-      "murine_vh",
-      "tra",
-      "trb",
-      "trd",
-      "trg",
-      "vhh"
-    ]
+    "all_required_profiles_resolved": true,
+    "attributions": [
+      "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline."
+    ],
+    "decision": "GO",
+    "mode": "redistributable_bundle"
   },
   "sources": {
     "human_igh": {
+      "attribution": "",
       "group": "human_igh",
       "input_hashes": {
         "j": "bound_at_bank_build",
@@ -59,6 +51,7 @@
       "version": "AIRR-C Human IGH set (OGRDB/Zenodo, pin rev)"
     },
     "human_igk": {
+      "attribution": "",
       "group": "human_igk",
       "input_hashes": {
         "j": "bound_at_bank_build",
@@ -78,6 +71,7 @@
       "version": "AIRR-C Human IGKappa VJ rev_4 (DOI 10.5281/zenodo.13923289)"
     },
     "human_igl": {
+      "attribution": "",
       "group": "human_igl",
       "input_hashes": {
         "j": "bound_at_bank_build",
@@ -96,6 +90,7 @@
       "version": "AIRR-C Human IGLambda set (OGRDB/Zenodo, pin rev)"
     },
     "igsf_vset": {
+      "attribution": "",
       "group": "igsf_vset",
       "input_hashes": {
         "domain": "bound_at_bank_build"
@@ -112,94 +107,118 @@
       "version": "Pfam PF07686 (InterPro IPR013106)"
     },
     "murine_vh": {
+      "attribution": "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline.",
       "group": "murine_vh",
-      "input_hashes": {},
-      "license": "IMGT terms (restricted)",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build"
+      },
+      "license": "CC-BY-4.0",
       "name": "imgt_mouse_ighv_ighj",
-      "notes": "Mouse released-set status unconfirmed on OGRDB (species page shows no affirmed sequences); only IMGT (comparator_only) confirmed today. UNRESOLVED pending an OGRDB mouse release.",
-      "redistributable": false,
+      "notes": "IMGT cleared CC BY-4.0; OGRDB mouse release unconfirmed.",
+      "redistributable": true,
       "regions": [
         "j",
         "v"
       ],
-      "role": "comparator_only",
+      "role": "production",
       "url": "https://www.imgt.org/genedb/",
-      "version": "IMGT/GENE-DB Mus musculus IGHV,IGHJ"
+      "version": "IMGT/GENE-DB Mus musculus IGHV,IGHJ (pin release)"
     },
     "tra": {
+      "attribution": "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline.",
       "group": "tra",
-      "input_hashes": {},
-      "license": "IMGT terms (restricted)",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build"
+      },
+      "license": "CC-BY-4.0",
       "name": "imgt_human_trav_traj",
-      "notes": "OGRDB human TR sets are still in development (not released/pinnable); only IMGT (comparator_only) exists today. UNRESOLVED. CC0 resolves once OGRDB releases TRA.",
-      "redistributable": false,
+      "notes": "IMGT cleared CC BY-4.0; OGRDB human TR sets not yet released.",
+      "redistributable": true,
       "regions": [
         "j",
         "v"
       ],
-      "role": "comparator_only",
+      "role": "production",
       "url": "https://www.imgt.org/genedb/",
-      "version": "IMGT/GENE-DB Human TRAV,TRAJ"
+      "version": "IMGT/GENE-DB Human TRAV,TRAJ (pin release)"
     },
     "trb": {
+      "attribution": "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline.",
       "group": "trb",
-      "input_hashes": {},
-      "license": "IMGT terms (restricted)",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build"
+      },
+      "license": "CC-BY-4.0",
       "name": "imgt_human_trbv_trbj",
-      "notes": "OGRDB human TR sets are still in development; only IMGT (comparator_only). UNRESOLVED.",
-      "redistributable": false,
+      "notes": "IMGT cleared CC BY-4.0; OGRDB human TR sets not yet released.",
+      "redistributable": true,
       "regions": [
         "j",
         "v"
       ],
-      "role": "comparator_only",
+      "role": "production",
       "url": "https://www.imgt.org/genedb/",
-      "version": "IMGT/GENE-DB Human TRBV,TRBJ"
+      "version": "IMGT/GENE-DB Human TRBV,TRBJ (pin release)"
     },
     "trd": {
+      "attribution": "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline.",
       "group": "trd",
-      "input_hashes": {},
-      "license": "IMGT terms (restricted)",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build"
+      },
+      "license": "CC-BY-4.0",
       "name": "imgt_human_trdv_trdj",
-      "notes": "OGRDB human TR sets are still in development; only IMGT (comparator_only). UNRESOLVED.",
-      "redistributable": false,
+      "notes": "IMGT cleared CC BY-4.0; OGRDB human TR sets not yet released.",
+      "redistributable": true,
       "regions": [
         "j",
         "v"
       ],
-      "role": "comparator_only",
+      "role": "production",
       "url": "https://www.imgt.org/genedb/",
-      "version": "IMGT/GENE-DB Human TRDV,TRDJ"
+      "version": "IMGT/GENE-DB Human TRDV,TRDJ (pin release)"
     },
     "trg": {
+      "attribution": "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline.",
       "group": "trg",
-      "input_hashes": {},
-      "license": "IMGT terms (restricted)",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build"
+      },
+      "license": "CC-BY-4.0",
       "name": "imgt_human_trgv_trgj",
-      "notes": "OGRDB human TR sets are still in development; only IMGT (comparator_only). UNRESOLVED.",
-      "redistributable": false,
+      "notes": "IMGT cleared CC BY-4.0; OGRDB human TR sets not yet released.",
+      "redistributable": true,
       "regions": [
         "j",
         "v"
       ],
-      "role": "comparator_only",
+      "role": "production",
       "url": "https://www.imgt.org/genedb/",
-      "version": "IMGT/GENE-DB Human TRGV,TRGJ"
+      "version": "IMGT/GENE-DB Human TRGV,TRGJ (pin release)"
     },
     "vhh": {
+      "attribution": "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline.",
       "group": "vhh",
-      "input_hashes": {},
-      "license": "IMGT terms (restricted)",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build"
+      },
+      "license": "CC-BY-4.0",
       "name": "imgt_camelid_ighv_ighj",
-      "notes": "No redistributable curated camelid germline set exists (absent from OGRDB). IMGT is comparator_only; scattered public-domain GenBank submissions are not an authoritative curated pinned set. UNRESOLVED.",
-      "redistributable": false,
+      "notes": "IMGT cleared CC BY-4.0; no other curated camelid germline set exists.",
+      "redistributable": true,
       "regions": [
         "j",
         "v"
       ],
-      "role": "comparator_only",
+      "role": "production",
       "url": "https://www.imgt.org/genedb/",
-      "version": "IMGT/GENE-DB Lama/Vicugna/Camelus IGHV,IGHJ"
+      "version": "IMGT/GENE-DB Lama/Vicugna/Camelus IGHV,IGHJ (pin release)"
     }
   }
 }

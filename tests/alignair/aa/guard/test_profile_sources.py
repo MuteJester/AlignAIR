@@ -1,12 +1,12 @@
 from pathlib import Path
 
-import pytest
-
-from alignair.aa.guard.profiles import (NoPublishableProfileSource, PROFILE_SOURCES,
-                                        RECEPTOR_GROUPS, resolve_production_bank, source_matrix,
+from alignair.aa.guard.profiles import (IMGT_CLEARANCE, PROFILE_SOURCES, RECEPTOR_GROUPS,
+                                        resolve_production_bank, source_matrix,
                                         synthetic_hydration_resolution)
 
 LOCK = Path("requirements/aa-guard-build.lock")
+CC0_GROUPS = {"human_igh", "human_igk", "human_igl", "igsf_vset"}
+IMGT_GROUPS = {"tra", "trb", "trg", "trd", "murine_vh", "vhh"}
 
 
 def test_all_required_groups_have_a_source():
@@ -15,40 +15,39 @@ def test_all_required_groups_have_a_source():
         assert {"v", "j"} <= set(PROFILE_SOURCES[group].regions), group
 
 
-def test_imgt_is_comparator_only_until_cleared():
-    for s in PROFILE_SOURCES.values():
-        if "imgt" in s.name.lower():
-            assert not s.redistributable and s.role == "comparator_only"
-
-
-RESOLVED_TODAY = {"human_igh", "human_igk", "human_igl", "igsf_vset"}
-UNRESOLVED_TODAY = {"tra", "trb", "trg", "trd", "murine_vh", "vhh"}
-
-
-def test_only_released_cc0_sources_are_production():
-    # human IG (released AIRR-C sets) + Pfam igsf are the only CC0 redistributable production sources today
-    for group in RESOLVED_TODAY:
+def test_cc0_sources_are_production_without_attribution():
+    for group in CC0_GROUPS:
         s = PROFILE_SOURCES[group]
         assert s.role == "production" and s.redistributable, group
-        assert s.license.upper().startswith("CC0"), (group, s.license)
-    # TR/mouse/camelid resolve only to IMGT comparator_only (not redistributable)
-    for group in UNRESOLVED_TODAY:
+        assert s.license.upper().startswith("CC0") and s.attribution == "", group
+
+
+def test_imgt_cleared_as_cc_by_production_with_attribution():
+    # owner cleared IMGT to CC BY-4.0 -> production + redistributable, but attribution is REQUIRED
+    for group in IMGT_GROUPS:
         s = PROFILE_SOURCES[group]
-        assert s.role == "comparator_only" and not s.redistributable, group
+        assert "imgt" in s.name.lower()
+        assert s.role == "production" and s.redistributable, group
+        assert s.license == "CC-BY-4.0" and s.attribution, group
+    # the clearance is recorded with auditable evidence
+    assert IMGT_CLEARANCE["license"] == "CC-BY-4.0"
+    assert IMGT_CLEARANCE["evidence_url"] and IMGT_CLEARANCE["evidence_quote"]
 
 
-def test_unresolved_required_profiles_trigger_stop():
-    # owner directive: any unresolved required profile -> STOP_NO_PUBLISHABLE_PROFILE_SOURCE.
-    with pytest.raises(NoPublishableProfileSource) as ei:
-        resolve_production_bank()
-    assert set(ei.value.unresolved) == UNRESOLVED_TODAY
-    assert "STOP_NO_PUBLISHABLE_PROFILE_SOURCE" in str(ei.value)
+def test_all_required_profiles_resolve_to_go():
+    res = resolve_production_bank()
+    assert res.mode == "redistributable_bundle"
+    assert res.all_required_profiles_resolved
+    assert set(res.resolutions) == RECEPTOR_GROUPS | {"igsf_vset"}
+    # the IMGT CC BY-4.0 attribution must be surfaced for the shipped bundle to emit
+    assert any("IMGT" in a for a in res.attributions)
 
 
-def test_source_matrix_reports_stop_decision():
+def test_source_matrix_reports_go_decision():
     m = source_matrix()
-    assert m["resolution"]["decision"] == "STOP_NO_PUBLISHABLE_PROFILE_SOURCE"
-    assert set(m["resolution"]["unresolved"]) == UNRESOLVED_TODAY
+    assert m["resolution"]["decision"] == "GO"
+    assert m["resolution"]["all_required_profiles_resolved"] is True
+    assert any("IMGT" in a for a in m["resolution"]["attributions"])
 
 
 def test_user_hydration_binds_exact_inputs_and_output():

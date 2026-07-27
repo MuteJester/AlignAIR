@@ -1,33 +1,28 @@
 """Redistribution-gated profile-source registry for the AA applicability guard's competitive profile-HMM
 bank (Stage 2, Task 2.1).
 
-Every required V/J or full-domain profile must resolve to a PUBLISHABLE production path — either a
-redistribution-compatible bundle we may ship, or an exact user-side hydration recipe that deterministically
-reproduces the pinned bank — BEFORE any bank is built or any candidate is trained. IMGT is registered
-``comparator_only`` until redistribution is explicitly cleared. If any required profile is unresolved,
-``resolve_production_bank`` raises ``NoPublishableProfileSource`` → Stage-2 ``STOP_NO_PUBLISHABLE_PROFILE_SOURCE``.
+Every required V/J or full-domain profile must resolve to a PUBLISHABLE production path — a
+redistribution-compatible source we may ship (with any required attribution), or an exact user-side
+hydration recipe that deterministically reproduces the pinned bank — BEFORE any bank is built or any
+candidate is trained. If any required profile is unresolved, ``resolve_production_bank`` raises
+``NoPublishableProfileSource`` → Stage-2 ``STOP_NO_PUBLISHABLE_PROFILE_SOURCE``.
 
 License evidence is REVIEWED from primary sources (verified 2026-07-27), never inferred from popularity:
 
-- OGRDB / AIRR-C germline sets — **CC0 1.0** (each Zenodo set carries its own ``licence.txt`` = CC0; e.g.
-  Human IGKappa VJ rev_4, DOI 10.5281/zenodo.13923289). CC0 permits redistribution of the data AND of
-  derived HMM profiles with no attribution/share-alike. **Released today: human IG only (IGH, IGK, IGL).**
-  Human **TR** reference sets are explicitly "still in development" on OGRDB (not released/pinnable); **mouse**
-  released status is unconfirmed from public evidence. So OGRDB currently resolves ONLY human IG.
-- Pfam PF07686 (Immunoglobulin V-set; InterPro IPR013106) — **CC0** (Pfam flatfiles/HMMs, EBI FTP). Covers
-  the ``igsf_vset`` full-domain profile.
-- IMGT/GENE-DB — authoritative for all IG/TR incl. camelid AND mouse, but redistribution-restricted →
-  ``comparator_only`` until explicitly cleared. It is the only released authoritative source for TR, mouse,
-  and camelid today.
-- Camelid VHH germline — **no CC0/permissive curated set exists** (absent from OGRDB, whose species are
-  human/macaque/mouse/trout; only IMGT + scattered public-domain GenBank submissions).
+- OGRDB / AIRR-C germline sets — **CC0 1.0** (each Zenodo set's own ``licence.txt`` = CC0; e.g. Human
+  IGKappa VJ rev_4, DOI 10.5281/zenodo.13923289). Released today: human IG (IGH/IGK/IGL). CC0 → derived
+  HMM profiles freely redistributable, no attribution.
+- Pfam PF07686 (Immunoglobulin V-set; InterPro IPR013106) — **CC0** (EBI FTP). Covers ``igsf_vset``.
+- IMGT/GENE-DB — **CLEARED to CC BY-4.0 by owner (2026-07-27)**. IMGT's terms-of-use page states verbatim:
+  *"The IMGT® data are provided to both public and private users under the CC BY-4.0 license."*
+  (https://www.imgt.org/about/termsofuse.php, fetched 2026-07-27). CC BY-4.0 permits redistribution AND
+  derivative works (our HMM profiles) with **attribution**; a trademark carve-out forbids using the IMGT
+  name for promotion without approval. This supersedes IMGT's historically-cited CC BY-NC-ND 4.0 (see the
+  2022 IMGT paper) — a relicensing the owner explicitly accepted. IMGT is the released authoritative source
+  for human TR (TRA/TRB/TRG/TRD), mouse, and camelid VHH germline, so clearing it resolves those loci.
 
-RESOLVED (CC0 production) today: human_igh, human_igk, human_igl, igsf_vset. UNRESOLVED (only IMGT
-comparator, or OGRDB-in-development, or no source): tra, trb, trg, trd, murine_vh, vhh → Stage-2 STOP.
-
-NOTE (plan deviation): the plan's Task-2.1 test optimistically assumed resolution succeeds. The owner's
-governing directive — "any unresolved required profile produces STOP_NO_PUBLISHABLE_PROFILE_SOURCE" —
-takes precedence, so ``resolve_production_bank`` raises here. See ``test_profile_sources.py``.
+All required profiles now resolve (CC0 or CC BY-4.0) → Stage-2 GO. Attribution obligations are carried per
+source so the bundle can emit correct NOTICE/attribution at ship time.
 """
 from __future__ import annotations
 
@@ -39,10 +34,24 @@ REQUIRED_PROFILES = RECEPTOR_GROUPS | {"igsf_vset"}
 
 PENDING = "bound_at_bank_build"      # exact per-file sha256 is pinned when the bank is built (Task 2.2)
 
+# Owner license clearance record (auditable): what was cleared, on what evidence, when.
+IMGT_CLEARANCE = {
+    "source": "IMGT/GENE-DB",
+    "license": "CC-BY-4.0",
+    "cleared_by": "owner",
+    "cleared_date": "2026-07-27",
+    "evidence_url": "https://www.imgt.org/about/termsofuse.php",
+    "evidence_fetched": "2026-07-27",
+    "evidence_quote": "The IMGT® data are provided to both public and private users under the CC BY-4.0 license.",
+    "supersedes": "historically-cited CC BY-NC-ND 4.0 (e.g. 2022 IMGT NAR paper)",
+    "obligations": "attribute IMGT + indicate changes (CC BY-4.0); do not use the IMGT name for promotion "
+                   "without written approval (trademark).",
+}
+
 
 class NoPublishableProfileSource(Exception):
     """Raised when one or more REQUIRED profiles have neither a redistributable bundle nor an exact
-    user-hydration recipe (IMGT/comparator_only does not count). Carries the unresolved group names."""
+    user-hydration recipe. Carries the unresolved group names."""
 
     def __init__(self, unresolved):
         self.unresolved = sorted(unresolved)
@@ -58,35 +67,37 @@ class ProfileSource:
     license: str
     redistributable: bool                     # may we redistribute profiles DERIVED from this source?
     role: str                                 # "production" | "comparator_only"
+    attribution: str = ""                     # required attribution string, "" if none (CC0)
     input_hashes: dict = field(default_factory=dict)   # region/file -> hash (or PENDING)
     hydration: dict | None = None             # exact user-hydration recipe when not directly bundled
     notes: str = ""
 
 
-# --- Registry: reviewed evidence per required profile ---------------------------------------------------
 _OGRDB_URL = "https://ogrdb.airr-community.org/germline_sets/Homo%20sapiens"
 _PFAM_URL = "https://www.ebi.ac.uk/interpro/entry/pfam/PF07686"
+_IMGT_URL = "https://www.imgt.org/genedb/"
+_IMGT_ATTR = "Data derived from IMGT/GENE-DB (imgt.org), CC BY-4.0; changes: profile HMMs built from germline."
 
 
 def _ogrdb_released(name, url, version, input_hashes=None):
-    """A CONFIRMED-released OGRDB CC0 set (human IG today) -> redistributable production source."""
+    """A CONFIRMED-released OGRDB CC0 set (human IG today) -> redistributable production source, no attribution."""
     return ProfileSource(
         name=name, url=url, version=version, regions=frozenset({"v", "j"}),
-        license="CC0-1.0", redistributable=True, role="production",
+        license="CC0-1.0", redistributable=True, role="production", attribution="",
         input_hashes=input_hashes or {"v": PENDING, "j": PENDING},
         notes="OGRDB/AIRR-C released germline set; per-set Zenodo licence.txt = CC0 (verified).")
 
 
-def _imgt_only(name, version, why):
-    """A required profile whose only released authoritative source is IMGT (comparator_only) -> UNRESOLVED."""
+def _imgt_prod(name, version, why):
+    """IMGT germline cleared to CC BY-4.0 -> redistributable production source WITH attribution."""
     return ProfileSource(
-        name=name, url="https://www.imgt.org/genedb/", version=version,
-        regions=frozenset({"v", "j"}), license="IMGT terms (restricted)", redistributable=False,
-        role="comparator_only", notes=why)
+        name=name, url=_IMGT_URL, version=version, regions=frozenset({"v", "j"}),
+        license="CC-BY-4.0", redistributable=True, role="production", attribution=_IMGT_ATTR,
+        input_hashes={"v": PENDING, "j": PENDING}, notes=why)
 
 
 PROFILE_SOURCES: dict[str, ProfileSource] = {
-    # --- resolved: CC0 released, redistributable production -------------------------------------------
+    # --- CC0 released (no attribution) ----------------------------------------------------------------
     "human_igh": _ogrdb_released("ogrdb_human_ighv_ighj", _OGRDB_URL, "AIRR-C Human IGH set (OGRDB/Zenodo, pin rev)"),
     "human_igk": _ogrdb_released("ogrdb_human_igkv_igkj", _OGRDB_URL,
                                  "AIRR-C Human IGKappa VJ rev_4 (DOI 10.5281/zenodo.13923289)",
@@ -96,35 +107,20 @@ PROFILE_SOURCES: dict[str, ProfileSource] = {
     "igsf_vset": ProfileSource(
         name="pfam_v_set_PF07686", url=_PFAM_URL, version="Pfam PF07686 (InterPro IPR013106)",
         regions=frozenset({"domain"}), license="CC0", redistributable=True, role="production",
-        input_hashes={"domain": PENDING}, notes="Pfam-A HMM; Pfam flatfiles/HMMs are CC0 (EBI FTP)."),
-    # --- unresolved: OGRDB TR sets are "still in development" (not released) -> only IMGT (comparator) --
-    "tra": _imgt_only("imgt_human_trav_traj", "IMGT/GENE-DB Human TRAV,TRAJ",
-                      "OGRDB human TR sets are still in development (not released/pinnable); only IMGT "
-                      "(comparator_only) exists today. UNRESOLVED. CC0 resolves once OGRDB releases TRA."),
-    "trb": _imgt_only("imgt_human_trbv_trbj", "IMGT/GENE-DB Human TRBV,TRBJ",
-                      "OGRDB human TR sets are still in development; only IMGT (comparator_only). UNRESOLVED."),
-    "trg": _imgt_only("imgt_human_trgv_trgj", "IMGT/GENE-DB Human TRGV,TRGJ",
-                      "OGRDB human TR sets are still in development; only IMGT (comparator_only). UNRESOLVED."),
-    "trd": _imgt_only("imgt_human_trdv_trdj", "IMGT/GENE-DB Human TRDV,TRDJ",
-                      "OGRDB human TR sets are still in development; only IMGT (comparator_only). UNRESOLVED."),
-    # --- unresolved: mouse release status unconfirmed on OGRDB -> only IMGT (comparator) ---------------
-    "murine_vh": _imgt_only("imgt_mouse_ighv_ighj", "IMGT/GENE-DB Mus musculus IGHV,IGHJ",
-                            "Mouse released-set status unconfirmed on OGRDB (species page shows no affirmed "
-                            "sequences); only IMGT (comparator_only) confirmed today. UNRESOLVED pending an "
-                            "OGRDB mouse release."),
-    # --- unresolved: no curated camelid germline set exists at all -------------------------------------
-    "vhh": _imgt_only("imgt_camelid_ighv_ighj", "IMGT/GENE-DB Lama/Vicugna/Camelus IGHV,IGHJ",
-                      "No redistributable curated camelid germline set exists (absent from OGRDB). IMGT is "
-                      "comparator_only; scattered public-domain GenBank submissions are not an authoritative "
-                      "curated pinned set. UNRESOLVED."),
-}
-
-# IMGT registered explicitly as a comparator (human IG/TR), never a production source until cleared.
-PROFILE_SOURCES_COMPARATORS: dict[str, ProfileSource] = {
-    "imgt_gene_db": ProfileSource(
-        name="imgt_gene_db", url="https://www.imgt.org/genedb/", version="IMGT/GENE-DB (research comparator)",
-        regions=frozenset({"v", "j"}), license="IMGT terms (restricted)", redistributable=False,
-        role="comparator_only", notes="Local research comparator only until redistribution is explicitly cleared."),
+        attribution="", input_hashes={"domain": PENDING}, notes="Pfam-A HMM; Pfam flatfiles/HMMs are CC0 (EBI FTP)."),
+    # --- IMGT CC BY-4.0 (cleared 2026-07-27; attribution required) ------------------------------------
+    "tra": _imgt_prod("imgt_human_trav_traj", "IMGT/GENE-DB Human TRAV,TRAJ (pin release)",
+                      "IMGT cleared CC BY-4.0; OGRDB human TR sets not yet released."),
+    "trb": _imgt_prod("imgt_human_trbv_trbj", "IMGT/GENE-DB Human TRBV,TRBJ (pin release)",
+                      "IMGT cleared CC BY-4.0; OGRDB human TR sets not yet released."),
+    "trg": _imgt_prod("imgt_human_trgv_trgj", "IMGT/GENE-DB Human TRGV,TRGJ (pin release)",
+                      "IMGT cleared CC BY-4.0; OGRDB human TR sets not yet released."),
+    "trd": _imgt_prod("imgt_human_trdv_trdj", "IMGT/GENE-DB Human TRDV,TRDJ (pin release)",
+                      "IMGT cleared CC BY-4.0; OGRDB human TR sets not yet released."),
+    "murine_vh": _imgt_prod("imgt_mouse_ighv_ighj", "IMGT/GENE-DB Mus musculus IGHV,IGHJ (pin release)",
+                            "IMGT cleared CC BY-4.0; OGRDB mouse release unconfirmed."),
+    "vhh": _imgt_prod("imgt_camelid_ighv_ighj", "IMGT/GENE-DB Lama/Vicugna/Camelus IGHV,IGHJ (pin release)",
+                      "IMGT cleared CC BY-4.0; no other curated camelid germline set exists."),
 }
 
 
@@ -133,6 +129,7 @@ class ProductionBankResolution:
     mode: str                                 # "redistributable_bundle" | "exact_user_hydration"
     all_required_profiles_resolved: bool
     resolutions: dict                         # group -> (path_mode, ProfileSource)
+    attributions: tuple = ()                  # distinct attribution strings the bundle must emit
 
 
 @dataclass(frozen=True)
@@ -151,13 +148,15 @@ def resolve_production_bank() -> ProductionBankResolution:
     """Resolve every REQUIRED profile to a publishable path, or raise NoPublishableProfileSource.
 
     A profile resolves as ``redistributable_bundle`` if its source is production + redistributable, or as
-    ``exact_user_hydration`` if it carries a pinned hydration recipe. A ``comparator_only`` source (e.g. IMGT)
-    with no hydration recipe is UNRESOLVED."""
-    unresolved, resolutions = [], {}
+    ``exact_user_hydration`` if it carries a pinned hydration recipe. A ``comparator_only`` source with no
+    hydration recipe is UNRESOLVED."""
+    unresolved, resolutions, attributions = [], {}, set()
     for group in REQUIRED_PROFILES:
         src = PROFILE_SOURCES[group]
         if src.role == "production" and src.redistributable:
             resolutions[group] = ("redistributable_bundle", src)
+            if src.attribution:
+                attributions.add(src.attribution)
         elif src.hydration is not None:
             resolutions[group] = ("exact_user_hydration", src)
         else:
@@ -166,7 +165,8 @@ def resolve_production_bank() -> ProductionBankResolution:
         raise NoPublishableProfileSource(unresolved)
     modes = {m for m, _ in resolutions.values()}
     mode = "redistributable_bundle" if modes == {"redistributable_bundle"} else "exact_user_hydration"
-    return ProductionBankResolution(mode=mode, all_required_profiles_resolved=True, resolutions=resolutions)
+    return ProductionBankResolution(mode=mode, all_required_profiles_resolved=True,
+                                    resolutions=resolutions, attributions=tuple(sorted(attributions)))
 
 
 def synthetic_hydration_resolution() -> HydrationResolution:
@@ -185,13 +185,14 @@ def source_matrix() -> dict:
     def _row(g, s):
         return {"group": g, "name": s.name, "url": s.url, "version": s.version,
                 "regions": sorted(s.regions), "license": s.license, "redistributable": s.redistributable,
-                "role": s.role, "input_hashes": s.input_hashes, "notes": s.notes}
+                "role": s.role, "attribution": s.attribution, "input_hashes": s.input_hashes, "notes": s.notes}
     matrix = {"required_profiles": sorted(REQUIRED_PROFILES),
               "sources": {g: _row(g, PROFILE_SOURCES[g]) for g in sorted(PROFILE_SOURCES)},
-              "comparators": {k: _row(k, v) for k, v in PROFILE_SOURCES_COMPARATORS.items()}}
+              "imgt_clearance": IMGT_CLEARANCE}
     try:
         res = resolve_production_bank()
-        matrix["resolution"] = {"decision": "GO", "mode": res.mode, "all_required_profiles_resolved": True}
+        matrix["resolution"] = {"decision": "GO", "mode": res.mode,
+                                "all_required_profiles_resolved": True, "attributions": list(res.attributions)}
     except NoPublishableProfileSource as e:
         matrix["resolution"] = {"decision": "STOP_NO_PUBLISHABLE_PROFILE_SOURCE", "unresolved": e.unresolved}
     return matrix
