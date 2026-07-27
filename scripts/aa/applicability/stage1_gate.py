@@ -19,7 +19,9 @@ STORE = Path(".private/aa-applicability/fresh_hydration")
 ART = Path("docs/superpowers/artifacts/2026-07-26-aa-applicability")
 CENSUS_DIR = ART / "fresh_hydration"
 
-SOURCES = ["sabdab", "igsf", "genairr_sim", "oas", "vdjserver"]
+# vdjserver dropped: ADC fresh TCR is confirmed infeasible for full-length domains (see
+# vdjserver_tcr_feasibility.json); the tcr group is powered by 10x single-cell V(D)J (tenx_tcr).
+SOURCES = ["sabdab", "igsf", "genairr_sim", "oas", "oas_paired", "tenx_tcr"]
 
 
 def _load_sources():

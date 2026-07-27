@@ -137,24 +137,38 @@ def audit_stage1(*, records, selection, loco, study_alloc, source_checksums, exp
     if any(role_overlap.values()):
         failures.append(f"role_overlap {role_overlap}")
 
-    # 2/3. counts by role / locus / study / donor.
-    counts_by_role = {"selection": {}, "loco": {}}
+    # 2/3. counts by role / locus / study / donor — computed from the POST-DEDUP `records` assigned to
+    # each role (owner directive: recheck floors after global dedup). Counting records (not the pre-dedup
+    # lineage-key sets) also gives an accurate per-locus census: structural records share their parent's
+    # lineage_key, so a set-based count would both double-count and mislabel them.
+    def _role_of(rec):
+        g, lk = rec.get("group"), rec.get("lineage_key")
+        if lk in selection.get(g, set()):
+            return "selection"
+        if lk in loco.get(g, set()):
+            return "loco"
+        return None
+
+    role_group_lineages = {"selection": {}, "loco": {}}   # role -> group -> set(lineage_key), post-dedup
     counts_by_locus = {"selection": {}, "loco": {}}
-    for role, alloc in (("selection", selection), ("loco", loco)):
-        for g, lks in alloc.items():
-            counts_by_role[role][g] = len(lks)
-            for lk in lks:
-                cat = lk_meta.get(lk, {}).get("category", "?")
-                counts_by_locus[role][cat] = counts_by_locus[role].get(cat, 0) + 1
+    for rec in records:
+        role = _role_of(rec)
+        if role is None:
+            continue
+        g, lk, cat = rec.get("group"), rec.get("lineage_key"), rec.get("category", "?")
+        role_group_lineages[role].setdefault(g, set()).add(lk)
+        counts_by_locus[role][cat] = counts_by_locus[role].get(cat, 0) + 1
+    counts_by_role = {role: {g: len(lks) for g, lks in gm.items()}
+                      for role, gm in role_group_lineages.items()}
     counts_by_study = {"selection": len(_studies(sel_lk)), "loco": len(_studies(loc_lk))}
     counts_by_donor = {"selection": len(_donors(sel_lk)), "loco": len(_donors(loc_lk))}
 
-    # 4. floors per group per role (guardband floors).
+    # 4. floors per group per role (guardband floors), on the post-dedup counts.
     floors_ok = {}
     for g in set(selection) | set(loco):
         floor = GUARDBAND_FLOOR[GROUP_GATE_KIND.get(g, "gate_10pct")]
-        floors_ok[g] = {"selection": len(selection.get(g, set())) >= floor,
-                        "loco": len(loco.get(g, set())) >= floor}
+        floors_ok[g] = {"selection": counts_by_role["selection"].get(g, 0) >= floor,
+                        "loco": counts_by_role["loco"].get(g, 0) >= floor}
         if not (floors_ok[g]["selection"] and floors_ok[g]["loco"]):
             failures.append(f"floor {g} {floors_ok[g]}")
 

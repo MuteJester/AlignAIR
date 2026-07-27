@@ -73,6 +73,36 @@ def test_audit_flags_policy_hash_mismatch():
     assert not rep.policy_hash_reproduced and rep.decision.startswith("STOP")
 
 
+def test_audit_rechecks_floors_after_global_dedup():
+    # igsf sequences collapse to 3 distinct aa -> global_dedup leaves only 3 igsf records -> floor STOP.
+    recs = _cohort()
+    for i, r in enumerate([x for x in recs if x["group"] == "igsf"]):
+        r["aa"] = f"IGSFDUP{i % 3}"
+    selection, loco, study_alloc = combine_allocation(recs)
+    kept, dropped = global_dedup(recs)
+    rep = audit_stage1(records=kept, selection=selection, loco=loco, study_alloc=study_alloc,
+                       source_checksums={},
+                       required_groups={"igk_igl", "vhh_nonhuman", "igsf", "positive_real"})
+    assert rep.decision.startswith("STOP")
+    assert any(f.startswith("floor igsf") for f in rep.failures), rep.failures
+
+
+def test_locus_census_not_polluted_by_structural_shared_lineage():
+    # structural records share their parent's lineage_key; the per-locus census must still report the
+    # parent's true category (record-based count), not be overwritten by a structural category.
+    from alignair.aa.guard.structural import structural_records
+    parent = {"group": "positive_real", "category": "pos_igh_repertoire",
+              "aa": "QVQLVQSGAEVKKPGSSVKVSCKASGGTFSSYAISWVRQAPGQGLEWMG",
+              "lineage_key": "S::d::IGHV3-23", "repository": "oas", "study": "S_2020", "donor": "d"}
+    struct = structural_records(parent, role_of_parent="selection")
+    selection = {"positive_real": {parent["lineage_key"]}, "structural": {parent["lineage_key"]}}
+    rep = audit_stage1(records=[parent] + struct, selection=selection, loco={}, study_alloc=None,
+                       source_checksums={}, required_groups=set())
+    assert rep.counts_by_locus["selection"].get("pos_igh_repertoire", 0) == 1
+    assert rep.counts_by_locus["selection"].get("?", 0) == 0
+    assert rep.counts_by_role["selection"].get("structural") == 1   # 6 transforms share 1 parent lineage
+
+
 def test_global_dedup_removes_cross_source_duplicates():
     recs = [_igsf(1), {**_igsf(1), "lineage_key": "igsf-other"}]  # same aa, different lineage
     kept, dropped = global_dedup(recs)
