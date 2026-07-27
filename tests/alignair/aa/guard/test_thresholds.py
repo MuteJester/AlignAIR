@@ -1,4 +1,6 @@
-from alignair.aa.guard.thresholds import (clopper_pearson_upper, passes_guardband, select_thresholds)
+from alignair.aa.guard.thresholds import (
+    ceiling_for, clopper_pearson_upper, far_limit, passes_guardband,
+)
 
 
 def test_clopper_pearson_zero_error_floors():
@@ -16,15 +18,6 @@ def test_passes_guardband_rejects_bound_over_ceiling():
     assert passes_guardband(0.079, 0.079, "gate_10pct")
 
 
-def test_select_thresholds_picks_first_admissible_grid_point():
-    grid = [
-        ({"cut": 0.9}, 3, 74, 0, 74),      # far_k=3/74 -> upper ~0.10 > 0.04 -> rejected
-        ({"cut": 0.5}, 0, 74, 0, 74),      # zero-error at 74 -> passes
-    ]
-    t = select_thresholds("C2", "sel", grid, gate_kind="gate_5pct")
-    assert t is not None and t.grid_point == {"cut": 0.5} and t.far_upper <= 0.04
-
-
-def test_select_returns_none_when_no_point_passes():
-    grid = [({"cut": 0.9}, 5, 74, 0, 74)]
-    assert select_thresholds("C2", "sel", grid, gate_kind="gate_5pct") is None
+def test_limits_and_ceilings():
+    assert far_limit("gate_5pct") == 0.04 and far_limit("gate_10pct") == 0.08
+    assert ceiling_for("far", "gate_5pct") == 0.04 and ceiling_for("frr", "frr") == 0.08

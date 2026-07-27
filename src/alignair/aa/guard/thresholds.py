@@ -1,13 +1,14 @@
-"""Stage-6 Task 6.1 (implemented early per the corrected Stage-5 sequence) — exact Clopper-Pearson bounds +
-guardband threshold-grid selection.
+"""Stage-6 Task 6.1 (implemented early per the corrected Stage-5 sequence) — exact Clopper-Pearson bound
+PRIMITIVES + guardband ceilings.
 
 The pre-unlock winner's-curse guardband requires the ONE-SIDED exact upper bound (not the point estimate) to
 sit at <=80% of the release limit: FAR upper <= 4% for a 5% gate / <= 8% for a 10% gate, and FRR upper <= 8%.
-A candidate's operating point is chosen from a FROZEN finite grid on the fresh selection subset only.
+
+Threshold SELECTION (deriving per-group failure counts internally from scored records, unit aggregation, and
+the multi-group gate) lives in ``selection.py``; this module only holds the exact-bound math + ceilings so both
+the selector and the tests share one source of truth.
 """
 from __future__ import annotations
-
-from dataclasses import dataclass
 
 from scipy.stats import beta
 
@@ -25,35 +26,15 @@ def clopper_pearson_upper(k: int, n: int, alpha: float = 0.05) -> float:
     return float(beta.ppf(1 - alpha, k + 1, n - k))
 
 
-@dataclass(frozen=True)
-class Thresholds:
-    candidate: str
-    grid_point: dict            # the frozen operating point (e.g. score cutoffs)
-    far_upper: float
-    frr_upper: float
-    n_neg: int
-    n_pos: int
-    gate_kind: str              # "gate_5pct" | "gate_10pct"
-
-
-def _far_limit(gate_kind: str) -> float:
+def far_limit(gate_kind: str) -> float:
     return FAR_LIMIT_5PCT if gate_kind == "gate_5pct" else FAR_LIMIT_10PCT
+
+
+def ceiling_for(kind: str, gate_kind: str) -> float:
+    """The guardband ceiling for a group's exact upper bound: FAR uses the gate ceiling, FRR uses 8%."""
+    return far_limit(gate_kind) if kind == "far" else FRR_LIMIT
 
 
 def passes_guardband(far_upper: float, frr_upper: float, gate_kind: str) -> bool:
     """FAR upper <= gate ceiling AND FRR upper <= 8%."""
-    return far_upper <= _far_limit(gate_kind) + 1e-12 and frr_upper <= FRR_LIMIT + 1e-12
-
-
-def select_thresholds(candidate, selection_subset, grid, *, gate_kind="gate_5pct") -> Thresholds | None:
-    """Choose the frozen operating point from `grid` on the fresh SELECTION subset only.
-
-    `grid`: iterable of (grid_point, far_k, far_n, frr_k, frr_n). Returns the first grid point (in the grid's
-    predeclared order) whose exact upper bounds pass the guardband, else None (no admissible point)."""
-    for grid_point, far_k, far_n, frr_k, frr_n in grid:
-        fu = clopper_pearson_upper(far_k, far_n)
-        fr = clopper_pearson_upper(frr_k, frr_n)
-        if passes_guardband(fu, fr, gate_kind):
-            return Thresholds(candidate=candidate, grid_point=dict(grid_point), far_upper=round(fu, 5),
-                              frr_upper=round(fr, 5), n_neg=far_n, n_pos=frr_n, gate_kind=gate_kind)
-    return None
+    return far_upper <= far_limit(gate_kind) + 1e-12 and frr_upper <= FRR_LIMIT + 1e-12

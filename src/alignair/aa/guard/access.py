@@ -1,15 +1,17 @@
 """Stage-5 Task 5.3 — mechanical access barrier around the fresh-selection / loco-challenge boundary.
 
-The owner's five enforced invariants (this is the *gate*, not a convention):
+The owner's enforced invariants (this is the *gate*, not a convention):
   1. The fresh-selection loader CANNOT open challenge files (hard filesystem-boundary refusal).
   2. The challenge loader REFUSES to open unless a COMPLETE, hash-bound fold-threshold artifact already exists.
-  3. That artifact must identify: fold checkpoint, selection manifest, excluded group/proxies, score
-     directions, the finite grid, and the mask hash.
-  4. Challenge access writes an ATOMIC audit record BEFORE any scoring/read of challenge data.
+  3. That artifact must identify: fold checkpoint (provenance digest AND actual file SHA-256), selection
+     manifest, excluded group/proxies, score directions, the finite grid, the mask hash, and the pre-frozen
+     challenge-file digest.
+  4. Challenge access writes an ATOMIC audit record BEFORE any read; then it hashes the opened bytes and — on
+     mismatch with the pre-frozen challenge digest — writes an atomic audit FAILURE record and refuses.
   5. Any changed hash HARD-FAILS; there is NO silent recomputation.
 
-The predeclared score directions, finite grid, and per-fold gate are frozen HERE (before any fresh read) and
-hashed into the pre-unlock bundle via ``threshold_grid_hash()``.
+The predeclared score directions, candidate-specific finite grids, per-fold gate, and selection-gate map are
+frozen in ``decision``/``selection`` (before any fresh read) and hashed via ``threshold_grid_hash()``.
 """
 from __future__ import annotations
 
@@ -21,19 +23,11 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from alignair.aa.guard.decision import COMPONENT_DIRECTIONS, COMPONENT_LEVELS, CandidateSpec, candidate_grid
 from alignair.aa.guard.dual_eval import ModeScores, assert_binding_is_blind
 from alignair.aa.guard.loco import LOCO_MASK_HASH, masked_profiles_for
-from alignair.aa.guard.thresholds import select_thresholds
+from alignair.aa.guard.selection import SELECTION_GATES, select_thresholds
 
-# ---- frozen decision spec (predeclared BEFORE any fresh data is seen) --------------------------------
-SCORE_DIRECTIONS = {
-    "applicability_logit": "higher_is_more_supported",
-    "energy": "lower_is_more_in_domain",
-    "c0_margin": "higher_is_more_human_igh",
-}
-# Finite operating-point grid: candidate applicability-logit cutoffs, in predeclared order.
-PREDECLARED_GRID = tuple({"applicability_logit_cutoff": round(c, 3)}
-                         for c in (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0))
 FOLD_GATE = {"igk_igl": "gate_5pct", "tcr": "gate_5pct", "vhh_nonhuman": "gate_10pct", "igsf": "gate_10pct"}
 
 
@@ -42,9 +36,12 @@ def _sha_json(obj) -> str:
 
 
 def threshold_grid_hash() -> str:
-    """Digest of the frozen grid + score directions + per-fold gate map (bundle slot ``threshold_grid``)."""
-    return _sha_json({"grid": [dict(g) for g in PREDECLARED_GRID],
-                      "score_directions": SCORE_DIRECTIONS, "fold_gate": FOLD_GATE})
+    """Digest of the FULL frozen decision spec: every candidate's finite grid + score directions + component
+    levels + the per-group selection gates + the per-fold gate (bundle slot ``threshold_grid``)."""
+    return _sha_json({
+        "candidate_grids": {cid: [dict(g) for g in candidate_grid(cid)] for cid in ("C0", "C1", "C2", "C3", "C4")},
+        "score_directions": COMPONENT_DIRECTIONS, "component_levels": {k: list(v) for k, v in COMPONENT_LEVELS.items()},
+        "selection_gates": SELECTION_GATES, "fold_gate": FOLD_GATE})
 
 
 class AccessViolation(RuntimeError):
@@ -56,39 +53,45 @@ class ThresholdArtifactMissing(RuntimeError):
 
 
 class HashMismatch(RuntimeError):
-    """A bound identity in the fold-threshold artifact no longer matches the frozen bundle — hard stop."""
+    """A bound identity (checkpoint bytes, mask, grid, bundle, selection manifest, or challenge file) drifted."""
+
+
+class NoAdmissibleThreshold(RuntimeError):
+    """No grid point satisfied every applicable selection gate — a STOP, never a relaxation."""
 
 
 # ---- fold-threshold artifact -------------------------------------------------------------------------
 @dataclass(frozen=True)
 class FoldThresholdArtifact:
     fold: str
-    fold_checkpoint_sha256: str        # (3) identifies the fold checkpoint
-    selection_manifest_sha256: str     # (3) identifies the selection manifest it was frozen on
-    excluded_group: str                # (3) held-out cohort group
-    excluded_proxies: tuple            # (3) masked profile groups (proxies)
-    score_directions: dict             # (3) frozen score directions
-    grid: tuple                        # (3) the finite operating-point grid
-    mask_hash: str                     # (3) LOCO_MASK_HASH
-    gate_kind: str
-    bundle_sha256: str                 # the pre-unlock bundle this threshold was bound to
-    chosen_grid_point: dict            # the frozen operating point (selected on the blind selection subset)
-    far_upper: float
-    frr_upper: float
-    n_neg: int
-    n_pos: int
-    mock: bool = False                 # True for the synthetic one-shot (never a production operating point)
-    marker: str = ""                   # provenance marker (audit note)
+    candidate: str
+    fold_checkpoint_sha256: str            # combined model identity (== bundle "model" slot)
+    checkpoint_provenance_digest: str      # (3) metadata identity
+    checkpoint_file_sha256: str            # (3) actual weight-file bytes identity
+    selection_manifest_sha256: str         # (3) selection manifest it was frozen on
+    challenge_file_sha256: str             # (3) pre-frozen challenge-file digest (referenced, not inspected)
+    excluded_group: str                    # (3) held-out cohort group
+    excluded_proxies: tuple                # (3) masked profile groups (proxies)
+    score_directions: dict                 # (3) frozen score directions
+    grid: tuple                            # (3) the candidate's finite grid
+    mask_hash: str                         # (3) LOCO_MASK_HASH
+    gate_kind: str                         # the held-out fold's own FAR gate
+    bundle_sha256: str                     # the pre-unlock bundle this threshold was bound to
+    chosen_grid_point: dict                # the frozen conjunctive operating point
+    per_group: dict                        # full per-group k/n/estimate/upper/ceiling/pass table (no pooling)
+    required_groups: tuple                 # the groups that had to pass on the selection subset
+    mock: bool = False                     # True for the synthetic one-shot (never a production operating point)
+    marker: str = ""
 
     def is_complete(self) -> bool:
-        """(2)+(3): all identity fields present. A missing identity = an incomplete artifact = refuse."""
-        return bool(self.fold and self.fold_checkpoint_sha256 and self.selection_manifest_sha256
-                    and self.excluded_group and self.score_directions and self.grid
-                    and self.mask_hash and self.gate_kind and self.bundle_sha256 and self.chosen_grid_point)
+        return bool(self.fold and self.candidate and self.fold_checkpoint_sha256
+                    and self.checkpoint_provenance_digest and self.checkpoint_file_sha256
+                    and self.selection_manifest_sha256 and self.challenge_file_sha256 and self.excluded_group
+                    and self.score_directions and self.grid and self.mask_hash and self.gate_kind
+                    and self.bundle_sha256 and self.chosen_grid_point and self.per_group)
 
     def grid_digest(self) -> str:
-        return _sha_json({"grid": [dict(g) for g in self.grid], "score_directions": self.score_directions,
-                          "fold_gate": FOLD_GATE})
+        return threshold_grid_hash()
 
     def digest(self) -> str:
         return _sha_json(self.to_dict())
@@ -97,16 +100,20 @@ class FoldThresholdArtifact:
         d = asdict(self)
         d["grid"] = [dict(g) for g in self.grid]
         d["excluded_proxies"] = list(self.excluded_proxies)
+        d["required_groups"] = list(self.required_groups)
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "FoldThresholdArtifact":
-        return cls(fold=d["fold"], fold_checkpoint_sha256=d["fold_checkpoint_sha256"],
-                   selection_manifest_sha256=d["selection_manifest_sha256"], excluded_group=d["excluded_group"],
+        return cls(fold=d["fold"], candidate=d["candidate"], fold_checkpoint_sha256=d["fold_checkpoint_sha256"],
+                   checkpoint_provenance_digest=d["checkpoint_provenance_digest"],
+                   checkpoint_file_sha256=d["checkpoint_file_sha256"],
+                   selection_manifest_sha256=d["selection_manifest_sha256"],
+                   challenge_file_sha256=d["challenge_file_sha256"], excluded_group=d["excluded_group"],
                    excluded_proxies=tuple(d["excluded_proxies"]), score_directions=d["score_directions"],
                    grid=tuple(dict(g) for g in d["grid"]), mask_hash=d["mask_hash"], gate_kind=d["gate_kind"],
                    bundle_sha256=d["bundle_sha256"], chosen_grid_point=d["chosen_grid_point"],
-                   far_upper=d["far_upper"], frr_upper=d["frr_upper"], n_neg=d["n_neg"], n_pos=d["n_pos"],
+                   per_group=d["per_group"], required_groups=tuple(d["required_groups"]),
                    mock=d.get("mock", False), marker=d.get("marker", ""))
 
 
@@ -120,41 +127,42 @@ def _atomic_write_json(path, obj) -> None:
             json.dump(obj, fh, sort_keys=True, indent=2)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, path)                       # atomic swap
+        os.replace(tmp, path)
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
 
 
-def freeze_fold_threshold(fold, blind_selection: ModeScores, *, fold_checkpoint_sha256,
-                          selection_manifest_sha256, frozen_bundle, guardband_grid, out_path,
-                          mock=False, marker="") -> FoldThresholdArtifact:
-    """Select ONE operating point from the frozen grid on the BLIND selection scores (blind is the only mode
-    that may bind), bind it to the frozen bundle, and write the artifact atomically.
-
-    ``guardband_grid``: iterable of (grid_point, far_k, far_n, frr_k, frr_n) — the exact-bound inputs from the
-    selection subset. Refuses if the binding mode is not blind, or if no grid point passes the guardband."""
+def freeze_fold_threshold(fold, candidate, blind_selection: ModeScores, required_groups, *,
+                          model_identity_hash, checkpoint_provenance_digest, checkpoint_file_sha256,
+                          selection_manifest_sha256, challenge_file_sha256, frozen_bundle, out_path,
+                          grid=None, mock=False, marker="") -> FoldThresholdArtifact:
+    """Select ONE conjunctive operating point on the BLIND selection scores (blind is the only mode that may
+    bind), with all per-group failure counts DERIVED INTERNALLY (no caller counts), and bind it to the frozen
+    bundle. Raises ``NoAdmissibleThreshold`` (STOP) if no grid point passes every required gate."""
     assert_binding_is_blind(blind_selection)                          # reference_covered can never bind
-    gate_kind = FOLD_GATE[fold]
-    chosen = select_thresholds(fold, blind_selection.scores, guardband_grid, gate_kind=gate_kind)
-    if chosen is None:
-        raise ValueError(f"no admissible operating point for fold {fold!r} under {gate_kind} guardband")
+    spec = CandidateSpec.of(candidate)
+    used_grid = tuple(grid) if grid is not None else candidate_grid(candidate)
+    sel = select_thresholds(spec, blind_selection.scores, required_groups, grid=used_grid)
+    if sel is None:
+        raise NoAdmissibleThreshold(f"no admissible operating point for {candidate} fold {fold!r} — STOP")
     art = FoldThresholdArtifact(
-        fold=fold, fold_checkpoint_sha256=fold_checkpoint_sha256,
-        selection_manifest_sha256=selection_manifest_sha256, excluded_group=fold,
-        excluded_proxies=tuple(sorted(masked_profiles_for(fold))), score_directions=SCORE_DIRECTIONS,
-        grid=PREDECLARED_GRID, mask_hash=LOCO_MASK_HASH, gate_kind=gate_kind,
-        bundle_sha256=frozen_bundle.bundle_sha256(), chosen_grid_point=chosen.grid_point,
-        far_upper=chosen.far_upper, frr_upper=chosen.frr_upper, n_neg=chosen.n_neg, n_pos=chosen.n_pos,
-        mock=mock, marker=marker)
+        fold=fold, candidate=candidate, fold_checkpoint_sha256=model_identity_hash,
+        checkpoint_provenance_digest=checkpoint_provenance_digest, checkpoint_file_sha256=checkpoint_file_sha256,
+        selection_manifest_sha256=selection_manifest_sha256, challenge_file_sha256=challenge_file_sha256,
+        excluded_group=fold, excluded_proxies=tuple(sorted(masked_profiles_for(fold))),
+        score_directions=COMPONENT_DIRECTIONS, grid=used_grid, mask_hash=LOCO_MASK_HASH, gate_kind=FOLD_GATE[fold],
+        bundle_sha256=frozen_bundle.bundle_sha256(), chosen_grid_point=sel.grid_point, per_group=sel.per_group,
+        required_groups=tuple(required_groups), mock=mock, marker=marker)
     _atomic_write_json(out_path, art.to_dict())
     return art
 
 
 def verify_challenge_access(artifact: FoldThresholdArtifact, frozen_bundle, *,
-                            expected_selection_manifest_sha256, expected_excluded) -> None:
+                            expected_selection_manifest_sha256, expected_excluded,
+                            expected_challenge_digest) -> None:
     """Hard-fail (no recompute) if the artifact is incomplete or any bound identity drifted from the frozen
-    bundle. This is invariant (5): a changed hash stops the pipeline, it never silently re-derives."""
+    bundle / registry. Invariant (5): a changed hash stops the pipeline, it never silently re-derives."""
     if not artifact.is_complete():
         raise ThresholdArtifactMissing(f"incomplete fold-threshold artifact for fold {artifact.fold!r}")
     b = frozen_bundle.hashes
@@ -165,6 +173,7 @@ def verify_challenge_access(artifact: FoldThresholdArtifact, frozen_bundle, *,
         "threshold_grid": (artifact.grid_digest(), b["threshold_grid"]),
         "bundle": (artifact.bundle_sha256, frozen_bundle.bundle_sha256()),
         "selection_manifest": (artifact.selection_manifest_sha256, expected_selection_manifest_sha256),
+        "challenge_digest_ref": (artifact.challenge_file_sha256, expected_challenge_digest),
     }
     drift = [name for name, (got, exp) in checks.items() if got != exp]
     if (artifact.excluded_group, tuple(artifact.excluded_proxies)) != tuple(expected_excluded):
@@ -200,8 +209,9 @@ class SelectionLoader:
 
 @dataclass
 class ChallengeLoader:
-    """(2),(4),(5): opens challenge files only after a complete, hash-verified fold-threshold artifact exists,
-    and writes an atomic audit record BEFORE returning any challenge bytes."""
+    """(2),(4),(5): opens challenge files only after a complete, hash-verified fold-threshold artifact exists;
+    writes an atomic audit record BEFORE reading; then verifies the opened bytes against the pre-frozen
+    challenge digest, writing an atomic audit FAILURE record and refusing on mismatch."""
     challenge_root: Path
     selection_root: Path
     threshold_artifact_path: Path
@@ -209,6 +219,7 @@ class ChallengeLoader:
     frozen_bundle: object
     expected_selection_manifest_sha256: str
     expected_excluded: tuple
+    expected_challenge_digest: str
     marker: str = ""
     _opened: list = field(default_factory=list)
 
@@ -219,7 +230,7 @@ class ChallengeLoader:
         return FoldThresholdArtifact.from_dict(json.loads(p.read_text()))
 
     def _atomic_audit(self, record: dict) -> None:
-        """Append one audit record, whole-file temp+replace (atomic). Written BEFORE any challenge read."""
+        """Append one audit record, whole-file temp+replace (atomic)."""
         path = Path(self.audit_path)
         existing = []
         if path.exists():
@@ -246,10 +257,19 @@ class ChallengeLoader:
         artifact = self._load_artifact()                             # (2) refuse if missing/incomplete
         verify_challenge_access(artifact, self.frozen_bundle,        # (5) hard-fail on any drift, no recompute
                                 expected_selection_manifest_sha256=self.expected_selection_manifest_sha256,
-                                expected_excluded=self.expected_excluded)
-        self._atomic_audit({"event": "challenge_unlock", "fold": artifact.fold, "challenge_path": str(p),
-                            "artifact_digest": artifact.digest(), "bundle_sha256": artifact.bundle_sha256,
-                            "ts_unix": time.time(), "marker": self.marker})   # (4) audit BEFORE scoring
-        data = p.read_bytes()                                        # only now is challenge data exposed
+                                expected_excluded=self.expected_excluded,
+                                expected_challenge_digest=self.expected_challenge_digest)
+        self._atomic_audit({"event": "challenge_unlock", "fold": artifact.fold, "candidate": artifact.candidate,
+                            "challenge_path": str(p), "artifact_digest": artifact.digest(),
+                            "bundle_sha256": artifact.bundle_sha256, "ts_unix": time.time(),
+                            "marker": self.marker})                   # (4) audit BEFORE reading
+        data = p.read_bytes()
+        got = hashlib.sha256(data).hexdigest()
+        if got != self.expected_challenge_digest:                    # (7) opened bytes must match pre-frozen digest
+            self._atomic_audit({"event": "challenge_digest_mismatch", "fold": artifact.fold,
+                                "challenge_path": str(p), "expected": self.expected_challenge_digest,
+                                "got": got, "ts_unix": time.time(), "failure": True})
+            raise HashMismatch(f"challenge file digest mismatch: expected {self.expected_challenge_digest[:12]}, "
+                               f"got {got[:12]} — challenge bytes not the pre-frozen file")
         self._opened.append(str(p))
         return data

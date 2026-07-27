@@ -2,9 +2,16 @@ import pytest
 
 from alignair.aa.guard.classes import CLASS_MAP_HASH
 from alignair.aa.guard.freeze import (
-    REQUIRED_SLOTS, FrozenBundle, feature_order_hash, freeze_pre_unlock_bundle, preprocessing_hash,
+    REQUIRED_SLOTS, FrozenBundle, feature_order_hash, freeze_pre_unlock_bundle, model_identity, preprocessing_hash,
 )
 from alignair.aa.guard.loco import LOCO_MASK_HASH
+
+
+def test_model_identity_binds_both_metadata_and_weight_bytes():
+    base = model_identity("prov" * 16, "file" * 16)
+    assert base == model_identity("prov" * 16, "file" * 16)                 # deterministic
+    assert base != model_identity("prov" * 16, "OTHR" * 16)                 # weight-file change drifts it
+    assert base != model_identity("OTHR" * 16, "file" * 16)                 # metadata change drifts it
 
 
 def _bundle():

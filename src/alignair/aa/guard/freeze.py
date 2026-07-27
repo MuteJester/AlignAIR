@@ -38,6 +38,12 @@ def feature_order_hash() -> str:
     return _sha_json(list(FEATURE_NAMES))
 
 
+def model_identity(provenance_digest: str, checkpoint_file_sha256: str) -> str:
+    """The ``model`` slot binds BOTH the provenance metadata digest AND the actual checkpoint-file bytes, so a
+    weight file swapped under identical metadata drifts this hash and hard-fails at challenge unlock."""
+    return _sha_json({"provenance_digest": provenance_digest, "checkpoint_file_sha256": checkpoint_file_sha256})
+
+
 def preprocessing_hash() -> str:
     """Tokenizer + length-contract identity (pads-only, no-truncation contract)."""
     return _sha_json({"tokenizer": f"AaTokenizer(max_len={MAX_LEN},vocab={VOCAB_SIZE})",
