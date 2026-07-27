@@ -1,0 +1,51 @@
+{
+  "candidate_replacement": {
+    "endpoint": "https://opig.stats.ox.ac.uk/webapps/stcrdab-stcrpred/summary/all",
+    "human_alpha_chain_entries": 670,
+    "human_beta_chain_entries": 687,
+    "human_pdbs": 465,
+    "note": "full-length ab-TCR V domains from PDB; ANARCII tcr-mode verifiable (chain A/B); heavy redundancy -> distinct-sequence yield to be measured after extraction; no donor/study -> would route via lineage split + clonotype-cluster guard (like igsf/vhh).",
+    "source": "STCRDab (opig) structural human TCR"
+  },
+  "classification": {
+    "confirmed_ineligible_partial_reads": "all fresh TRA (<=57aa) and Adaptive TRB (~29aa)",
+    "eligible_human_complete_TRA": 0,
+    "eligible_human_complete_TRB": 0,
+    "temporarily_inaccessible": 0,
+    "unknown_metadata": 0
+  },
+  "conclusion": "CONFIRMED SHORTFALL: VDJServer ADC cannot power full-length TCR V domains for the tcr negative group (needs 37 TRA + 37 TRB per role = 74 TRA + 74 TRB, disjoint). Fresh TRA full-length availability = 0; abundant TRB is CDR3-only amplicon. Per owner directive, record shortfall and add a separately provenance-audited human source (do NOT relax the 37/37 floors or use partial reads).",
+  "confirmed_findings": {
+    "distinct_studies": 26,
+    "fresh_TRA": {
+      "detail": "hash-study TRA sequence_alignment_aa median=57aa (< 95aa completeness floor); PRJNA1232000 sequence_alignment_aa EMPTY (median=0). 0 usable full-length human TRA V domains.",
+      "distinct_subjects": 6,
+      "full_length_status": "PARTIAL/UNUSABLE",
+      "studies": [
+        "1371444213709729305-242ac11c-0001-012 (hash-id study)",
+        "PRJNA1232000"
+      ],
+      "tra_bearing_reps": 31
+    },
+    "fresh_TRB": {
+      "detail": "Adaptive sequence_alignment_aa median=29aa (CDR3 region only, not a complete V domain).",
+      "dominant_source": "Adaptive immunoSEQ (emerson-2017, COVID-19-* cohorts)",
+      "full_length_status": "PARTIAL (CDR3 amplicon)",
+      "trb_bearing_reps": 2595
+    },
+    "fresh_studies_gate3_disjoint": 17,
+    "total_human_tra_trb_repertoires": 2894
+  },
+  "gate3_exclusion": {
+    "policy": "study+subject+repertoire disjoint from Gate-3 TCR corpus",
+    "repertoires": 187,
+    "studies": 10,
+    "subjects": 88
+  },
+  "node": "https://vdjserver.org/airr/v1",
+  "query": {
+    "locus_filter": "sample.pcr_target.pcr_target_locus in [TRA, TRB]",
+    "species": "Homo sapiens (explicit metadata)"
+  },
+  "source": "vdjserver_adc_tcr"
+}

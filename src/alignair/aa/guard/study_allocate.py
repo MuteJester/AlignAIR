@@ -28,11 +28,18 @@ def _sha(s: str) -> str:
 
 
 def canonical_study(repository: str, study: str) -> str:
-    """repository::surname_year — collapses aliases like 'Bernat_2019_1/2' and 'Bernat et al., 2019'."""
+    """repository::surname_year for 'Author et al., YYYY' studies — collapses aliases like
+    'Bernat_2019_1/2' and 'Bernat et al., 2019'. For yearless studies (e.g. 10x datasets, which share a
+    leading token like '10x_vdj_...') fall back to repository::full-slug so distinct datasets are never
+    merged by a shared surname token."""
+    repo = (repository or "oas").lower()
     s = (study or "").lower().strip()
-    surname = re.split(r"[ _,]", s)[0] if s else ""
     yr = re.search(r"(?:19|20)\d\d", s)
-    return f"{(repository or 'oas').lower()}::{surname}_{yr.group() if yr else ''}"
+    if yr:
+        surname = re.split(r"[ _,]", s)[0] if s else ""
+        return f"{repo}::{surname}_{yr.group()}"
+    slug = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return f"{repo}::{slug}"
 
 
 @dataclass(frozen=True)

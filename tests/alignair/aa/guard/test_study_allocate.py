@@ -15,6 +15,27 @@ def test_canonical_study_collapses_aliases():
     assert canonical_study("vdjserver", "Bernat_2019_1") != a
 
 
+def test_yearless_datasets_stay_distinct():
+    # 10x-style dataset names share the leading token '10x' and have no year; they must NOT collapse,
+    # else all four donors become one study and TCR can only fill one role.
+    names = [f"10x_vdj_v1_hs_donor{n}" for n in (1, 2, 3, 4)]
+    cans = {canonical_study("10x", n) for n in names}
+    assert len(cans) == 4, cans
+    # a real 'Author et al., YYYY' study still collapses its aliases
+    assert canonical_study("oas", "Vander_2017_1") == canonical_study("oas", "Vander et al., 2017")
+
+
+def test_yearless_tcr_studies_fill_both_roles():
+    # four disjoint yearless TCR datasets, each with TRA+TRB, must split across both roles at >=37/37
+    recs = []
+    for n in range(4):
+        for i in range(60):
+            recs.append(_rec(f"10x_donor{n}", f"HealthyDonor{n}", "tra", "tcr", f"{n}-A{i}", repo="10x"))
+            recs.append(_rec(f"10x_donor{n}", f"HealthyDonor{n}", "trb", "tcr", f"{n}-B{i}", repo="10x"))
+    a = assign_studies(recs)
+    assert a.locus_min_ok["tcr"]["selection"] and a.locus_min_ok["tcr"]["loco_challenge"]
+
+
 def test_whole_study_never_split_across_roles():
     recs = []
     for st in range(10):

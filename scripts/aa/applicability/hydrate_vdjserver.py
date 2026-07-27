@@ -6,12 +6,13 @@ via the numbered V-domain span); the numbered domain is the stored sequence. Rec
 repository/study/donor for the study-level split allocator, denylist-filtered, counts-only census.
 No guard/annotator inference runs.
 
-STAGE-1 FINDING (2026-07-26): the ADC cache is effectively exhausted — its 58 fresh (unused) TRA
-repertoires hold only 49-aa PARTIAL `sequence_alignment_aa` rows (the full-length domains belonged to
-Gate-3's used reps). So this source, like OAS, needs a FRESH ADC API pull (vdjserver.org/airr/v1:
-POST /repertoire for TRA/TRB human repertoires disjoint from Gate-3's studies/subjects, then
-POST /rearrangement for full sequence_alignment_aa). The ANARCII-TCR verification + extraction here is the
-reusable foundation; only the candidate source changes from cache to fresh API.
+STAGE-1 RESOLUTION (2026-07-27): DROPPED — VDJServer/ADC is CONFIRMED INFEASIBLE for full-length TCR.
+The fresh (Gate-3-disjoint) ADC snapshot yields 0 usable full-length TRA (the only fresh TRA studies are
+57-aa partial or empty-AA) and its abundant TRB is Adaptive immunoSEQ CDR3-amplicon (~29 aa). Evidence:
+docs/superpowers/artifacts/2026-07-26-aa-applicability/vdjserver_tcr_feasibility.json. Per the owner
+directive ("add a separately provenance-audited human source; do not use partial reads"), the tcr group is
+now powered by 10x single-cell V(D)J — see scripts/aa/applicability/hydrate_tenx_tcr.py. This module is
+retained for provenance; it is no longer in the Stage-1 gate SOURCES list.
 
 Run:  PYTHONPATH=src .venv/bin/python scripts/aa/applicability/hydrate_vdjserver.py
 """
