@@ -1,0 +1,227 @@
+{
+  "allocation": {
+    "policy_hash": "6e61d33e13e296008503dcf24d3860e38cfa23a75a99d48df194f7e3686f3179",
+    "role_of_study": {
+      "10x::10x-vdj-v1-hs-donor1": "selection",
+      "10x::10x-vdj-v1-hs-donor2": "loco_challenge",
+      "10x::10x-vdj-v1-hs-donor3": "selection",
+      "10x::10x-vdj-v1-hs-donor4": "loco_challenge",
+      "oas::joyce_2016": "loco_challenge",
+      "oas::rubelt_2016": "selection",
+      "oas::vander_2017": "selection",
+      "oas::zhou_2013": "loco_challenge",
+      "oas_paired::eccles_2020": "selection",
+      "oas_paired::gao_2024": "selection",
+      "oas_paired::james_2020": "loco_challenge",
+      "oas_paired::phad_2022": "loco_challenge",
+      "oas_paired::santos_2024": "selection",
+      "oas_paired::setliff_2019": "selection",
+      "oas_paired::sokal_2021": "loco_challenge",
+      "oas_paired::wang_2023": "loco_challenge"
+    }
+  },
+  "artifact": "FROZEN_COHORT_MANIFEST",
+  "audit": {
+    "counts_by_donor": {
+      "loco": 15,
+      "selection": 10
+    },
+    "counts_by_locus": {
+      "loco": {
+        "cdr3_only": 139,
+        "igk": 432,
+        "igl": 282,
+        "igsf_vset": 147,
+        "j_only": 163,
+        "leader_vh": 163,
+        "murine_vh": 10,
+        "pos_igh_repertoire": 163,
+        "pos_igh_simulator": 60,
+        "reversed_vh": 163,
+        "tra": 224,
+        "trb": 217,
+        "v_only": 163,
+        "vh_constant": 163,
+        "vhh": 66
+      },
+      "selection": {
+        "cdr3_only": 44,
+        "igk": 514,
+        "igl": 456,
+        "igsf_vset": 153,
+        "j_only": 55,
+        "leader_vh": 55,
+        "murine_vh": 10,
+        "pos_igh_repertoire": 55,
+        "pos_igh_simulator": 60,
+        "reversed_vh": 55,
+        "tra": 221,
+        "trb": 231,
+        "v_only": 55,
+        "vh_constant": 55,
+        "vhh": 79
+      }
+    },
+    "counts_by_role": {
+      "loco": {
+        "igk_igl": 714,
+        "igsf": 147,
+        "positive_real": 163,
+        "positive_sim": 60,
+        "structural": 163,
+        "tcr": 441,
+        "vhh_nonhuman": 76
+      },
+      "selection": {
+        "igk_igl": 970,
+        "igsf": 153,
+        "positive_real": 55,
+        "positive_sim": 60,
+        "structural": 55,
+        "tcr": 452,
+        "vhh_nonhuman": 89
+      }
+    },
+    "counts_by_study": {
+      "loco": 8,
+      "selection": 8
+    },
+    "floors_ok": {
+      "igk_igl": {
+        "loco": true,
+        "selection": true
+      },
+      "igsf": {
+        "loco": true,
+        "selection": true
+      },
+      "positive_real": {
+        "loco": true,
+        "selection": true
+      },
+      "positive_sim": {
+        "loco": true,
+        "selection": true
+      },
+      "structural": {
+        "loco": true,
+        "selection": true
+      },
+      "tcr": {
+        "loco": true,
+        "selection": true
+      },
+      "vhh_nonhuman": {
+        "loco": true,
+        "selection": true
+      }
+    },
+    "locus_balance_37_37": {
+      "igk_igl": true,
+      "tcr": true
+    },
+    "locus_diversity": {
+      "igk": {
+        "loco": {
+          "donors": 12,
+          "ok": true,
+          "studies": 5
+        },
+        "selection": {
+          "donors": 7,
+          "ok": true,
+          "studies": 5
+        }
+      },
+      "igl": {
+        "loco": {
+          "donors": 8,
+          "ok": true,
+          "studies": 5
+        },
+        "selection": {
+          "donors": 7,
+          "ok": true,
+          "studies": 5
+        }
+      },
+      "tra": {
+        "loco": {
+          "donors": 2,
+          "ok": true,
+          "studies": 2
+        },
+        "selection": {
+          "donors": 2,
+          "ok": true,
+          "studies": 2
+        }
+      },
+      "trb": {
+        "loco": {
+          "donors": 2,
+          "ok": true,
+          "studies": 2
+        },
+        "selection": {
+          "donors": 2,
+          "ok": true,
+          "studies": 2
+        }
+      }
+    },
+    "policy_hash_reproduced": true,
+    "powered_real_igh": {
+      "loco": true,
+      "selection": true
+    },
+    "role_overlap": {
+      "donor": 0,
+      "lineage": 0,
+      "study": 0
+    }
+  },
+  "decision": "GO",
+  "frozen_date": "2026-07-27",
+  "manifest_sha256": "a61feb7f218a760570f87d6a48b86f4550521e49b7473b6414154ca167d36e67",
+  "seal_provenance": {
+    "note": "every source was denylist-filtered against the reproduced Gate-3 global record digest (build_gate3_global_denylist raises on digest mismatch); the sealed locked_test is never read during hydration or gating.",
+    "split_fingerprint": "docs/superpowers/artifacts/2026-07-24-aa-gate3/split_fingerprint.json",
+    "split_fingerprint_sha256": "ca4edeff6f37c9d2102f0c8788af4eb3f70635a4c4b401f859069798dc3be69b"
+  },
+  "sources": {
+    "genairr_sim": {
+      "normalized_sha256": "dd861944900b212a852751ad7fbdb0cf2d8c36ff688db5d22817e9aa184923e8",
+      "records": 120
+    },
+    "igsf": {
+      "normalized_sha256": "4c4b045cdce56b16380153ed29a0fcb1359349bf5a8bdaba06a74aca14ff0c76",
+      "records": 317
+    },
+    "oas": {
+      "normalized_sha256": "06a235a7300fcf381f0bc1eaa46b452dbdbec49a6d5bc8a91482c4c37c04bccb",
+      "records": 686
+    },
+    "oas_paired": {
+      "normalized_sha256": "32aca34d7a6d5fdf6a286ce1cda70c7203cee7887d8d59d716efd1590c6ebf0d",
+      "records": 502
+    },
+    "oas_paired_diverse": {
+      "normalized_sha256": "718d34e5fcc9bd059afaa178b746fd9d73a308fefc970b3ccc7b17b9bc334750",
+      "records": 784
+    },
+    "sabdab": {
+      "normalized_sha256": "834b04dccc755e2cedd44c1cf2ea9329c1db3c58fb64aa514091ceb170a99ab7",
+      "records": 165
+    },
+    "tenx_tcr": {
+      "normalized_sha256": "f8d9c84596566cd2490fa1fe3dac7d0237ca0e07614fbd4221d0528fbbb6b881",
+      "records": 917
+    }
+  },
+  "totals": {
+    "global_dedup_dropped": 146,
+    "kept": 4653,
+    "total_records": 4799
+  }
+}

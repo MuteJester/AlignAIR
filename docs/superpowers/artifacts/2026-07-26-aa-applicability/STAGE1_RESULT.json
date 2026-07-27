@@ -1,69 +1,69 @@
 {
-  "allocator_policy_hash": "1ed54a66283d8498132c402b3f17885aef80427a06bf471bde6b47f7af7cf6a4",
+  "allocator_policy_hash": "6e61d33e13e296008503dcf24d3860e38cfa23a75a99d48df194f7e3686f3179",
   "artifact": "stage1_gate",
   "counts_by_donor": {
-    "loco": 4,
+    "loco": 15,
     "selection": 10
   },
   "counts_by_locus": {
     "loco": {
-      "cdr3_only": 44,
-      "igk": 275,
-      "igl": 210,
-      "igsf_vset": 147,
-      "j_only": 55,
-      "leader_vh": 55,
-      "murine_vh": 10,
-      "pos_igh_repertoire": 55,
-      "pos_igh_simulator": 60,
-      "reversed_vh": 55,
-      "tra": 228,
-      "trb": 220,
-      "v_only": 55,
-      "vh_constant": 55,
-      "vhh": 66
-    },
-    "selection": {
       "cdr3_only": 139,
-      "igk": 314,
-      "igl": 149,
-      "igsf_vset": 153,
+      "igk": 432,
+      "igl": 282,
+      "igsf_vset": 147,
       "j_only": 163,
       "leader_vh": 163,
       "murine_vh": 10,
       "pos_igh_repertoire": 163,
       "pos_igh_simulator": 60,
       "reversed_vh": 163,
-      "tra": 217,
-      "trb": 228,
+      "tra": 224,
+      "trb": 217,
       "v_only": 163,
       "vh_constant": 163,
+      "vhh": 66
+    },
+    "selection": {
+      "cdr3_only": 44,
+      "igk": 514,
+      "igl": 456,
+      "igsf_vset": 153,
+      "j_only": 55,
+      "leader_vh": 55,
+      "murine_vh": 10,
+      "pos_igh_repertoire": 55,
+      "pos_igh_simulator": 60,
+      "reversed_vh": 55,
+      "tra": 221,
+      "trb": 231,
+      "v_only": 55,
+      "vh_constant": 55,
       "vhh": 79
     }
   },
   "counts_by_role": {
     "loco": {
-      "igk_igl": 485,
+      "igk_igl": 714,
       "igsf": 147,
-      "positive_real": 55,
-      "positive_sim": 60,
-      "structural": 55,
-      "tcr": 448,
-      "vhh_nonhuman": 76
-    },
-    "selection": {
-      "igk_igl": 463,
-      "igsf": 153,
       "positive_real": 163,
       "positive_sim": 60,
       "structural": 163,
-      "tcr": 445,
+      "tcr": 441,
+      "vhh_nonhuman": 76
+    },
+    "selection": {
+      "igk_igl": 970,
+      "igsf": 153,
+      "positive_real": 55,
+      "positive_sim": 60,
+      "structural": 55,
+      "tcr": 452,
       "vhh_nonhuman": 89
     }
   },
   "counts_by_study": {
-    "loco": 4,
-    "selection": 5
+    "loco": 8,
+    "selection": 8
   },
   "decision": "GO",
   "failures": [],
@@ -97,11 +97,61 @@
       "selection": true
     }
   },
-  "global_dedup_dropped": 98,
-  "kept": 3917,
+  "global_dedup_dropped": 146,
+  "kept": 4653,
   "locus_balance_37_37": {
     "igk_igl": true,
     "tcr": true
+  },
+  "locus_diversity": {
+    "igk": {
+      "loco": {
+        "donors": 12,
+        "ok": true,
+        "studies": 5
+      },
+      "selection": {
+        "donors": 7,
+        "ok": true,
+        "studies": 5
+      }
+    },
+    "igl": {
+      "loco": {
+        "donors": 8,
+        "ok": true,
+        "studies": 5
+      },
+      "selection": {
+        "donors": 7,
+        "ok": true,
+        "studies": 5
+      }
+    },
+    "tra": {
+      "loco": {
+        "donors": 2,
+        "ok": true,
+        "studies": 2
+      },
+      "selection": {
+        "donors": 2,
+        "ok": true,
+        "studies": 2
+      }
+    },
+    "trb": {
+      "loco": {
+        "donors": 2,
+        "ok": true,
+        "studies": 2
+      },
+      "selection": {
+        "donors": 2,
+        "ok": true,
+        "studies": 2
+      }
+    }
   },
   "policy_hash_reproduced": true,
   "powered_real_igh": {
@@ -118,6 +168,7 @@
     "igsf": "01dde6156af1a8db95f3b10be92453e46f6b72286b014284d80958a03f1c1324",
     "oas": "n/a",
     "oas_paired": "n/a",
+    "oas_paired_diverse": "n/a",
     "sabdab": "n/a",
     "tenx_tcr": "n/a"
   },
@@ -127,7 +178,8 @@
     "genairr_sim(120)",
     "oas(686)",
     "oas_paired(502)",
+    "oas_paired_diverse(784)",
     "tenx_tcr(917)"
   ],
-  "total_records": 4015
+  "total_records": 4799
 }
