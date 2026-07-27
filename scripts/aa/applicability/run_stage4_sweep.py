@@ -177,9 +177,13 @@ def _rng_state():
 
 
 def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sources):
+    from alignair.aa.guard.model import CANDIDATE_CONFIG
     tag = f"{cid}.s{seed}"
+    final_path = CKPT / f"{tag}.final.pt"
+    if final_path.exists():                            # already completed -> skip on resumable restart
+        return torch.load(final_path, map_location="cpu", weights_only=False)["metrics"]
     ckpt_path = CKPT / f"{tag}.pt"
-    cfg = GuardModel(cid, hmm_dim=len(FEATURE_NAMES)).cfg
+    cfg = CANDIDATE_CONFIG[cid]                         # static config (no throwaway model / no source_head)
     torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
     tr = MAN["training"]; W = MAN["loss_weights"]; margins = MAN["energy_margins"]
     bank_checksum = MAN["bank_checksum"]
@@ -190,7 +194,7 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
     T_dev = build_tensors(dev, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt)
     T_oe = build_tensors(oe, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, is_oe=True) if oe else None
 
-    model = GuardModel(cid, hmm_dim=len(FEATURE_NAMES)).to(DEVICE)
+    model = GuardModel(cid, hmm_dim=len(FEATURE_NAMES), n_sources=n_sources).to(DEVICE)   # size source_head to data
     opt = torch.optim.AdamW(model.parameters(), lr=MAN["optimizer"]["lr"],
                             weight_decay=MAN["optimizer"]["weight_decay"])
     max_steps, warm = tr["max_steps"], MAN["schedule"]["warmup_steps"]
@@ -258,8 +262,8 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
                 if patience >= tr["early_stop_patience"]:
                     break
     except (torch.cuda.OutOfMemoryError, FloatingPointError, RuntimeError) as e:  # engineering failure
-        return {"tag": tag, "status": "engineering_failure", "reason": f"{type(e).__name__}: {str(e)[:120]}",
-                "step": stop_step}
+        return {"tag": tag, "cid": cid, "seed": seed, "status": "engineering_failure",
+                "reason": f"{type(e).__name__}: {str(e)[:120]}", "step": stop_step}
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -347,7 +351,7 @@ def main():
     frozen = {}
     for cid in MAN["candidates"]:
         dev_results = {r["seed"]: {"dev_loss": r["dev_total_loss"]} for r in results.values()
-                       if r["cid"] == cid and r["status"] == "ok"}
+                       if r.get("status") == "ok" and r.get("cid") == cid}
         if dev_results:
             frozen[cid] = choose_production_seed(dev_results)
 

@@ -63,20 +63,24 @@ def energy_margin_loss(energy, is_outlier, mask, m_in: float = 5.0, m_out: float
 
 
 def supcon_loss(rep, labels, mask, temperature: float = 0.1):
-    """Supervised contrastive loss over the L2-normalized representation, restricted to labeled samples."""
+    """Supervised contrastive loss over the L2-normalized representation, restricted to labeled samples.
+    Computed in fp32 with a FINITE self-mask (-1e4, not -inf) so it is numerically stable under AMP fp16
+    (an -inf self-mask makes logsumexp produce inf-inf -> NaN)."""
     if mask is None or mask.sum() < 2:
         return rep.sum() * 0.0
     idx = mask.bool()
-    z = F.normalize(rep[idx], dim=-1)
+    z = F.normalize(rep[idx].float(), dim=-1)
     y = labels[idx].long()
     sim = z @ z.t() / temperature
     n = z.shape[0]
     self_mask = torch.eye(n, dtype=torch.bool, device=z.device)
-    sim = sim.masked_fill(self_mask, float("-inf"))
+    sim = sim.masked_fill(self_mask, -1e4)                     # finite -> stable logsumexp under AMP
     logp = sim - torch.logsumexp(sim, dim=1, keepdim=True)
     pos = (y[:, None] == y[None, :]) & ~self_mask
     denom = pos.sum(1).clamp(min=1)
-    return -((logp * pos).sum(1) / denom).mean()
+    loss = -((logp * pos).sum(1) / denom)
+    finite = torch.isfinite(loss)
+    return loss[finite].mean() if finite.any() else rep.sum() * 0.0
 
 
 def guard_loss(outputs, targets, weights, masks):
