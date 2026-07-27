@@ -21,6 +21,11 @@ from dataclasses import dataclass
 PER_ROLE_TARGET = {"igk": 37, "igl": 37, "tra": 37, "trb": 37, "pos_igh_repertoire": 36}
 # Constituent loci that must each clear the per-locus floor within a combined group.
 GROUP_LOCI = {"igk_igl": ["igk", "igl"], "tcr": ["tra", "trb"]}
+# Per-role per-locus donor/study diversity targets — the allocator steers toward these (and the Stage-1
+# audit hard-gates them) so no validation locus slice rests on a single donor/study. Light chains (paired
+# repertoires, many donors) require >=3 donors / >=2 studies; TCR (10x, four donor-datasets) >=2 / >=2.
+DIVERSITY_TARGET = {"igk": {"donors": 3, "studies": 2}, "igl": {"donors": 3, "studies": 2},
+                    "tra": {"donors": 2, "studies": 2}, "trb": {"donors": 2, "studies": 2}}
 
 
 def _sha(s: str) -> str:
@@ -54,7 +59,7 @@ class StudyAllocation:
     policy_hash: str          # frozen policy + seed + study-list + tie-break
 
 
-def assign_studies(records, *, targets=PER_ROLE_TARGET) -> StudyAllocation:
+def assign_studies(records, *, targets=PER_ROLE_TARGET, diversity=DIVERSITY_TARGET) -> StudyAllocation:
     by_study: dict = {}
     alias: dict = {}
     for r in records:
@@ -62,43 +67,64 @@ def assign_studies(records, *, targets=PER_ROLE_TARGET) -> StudyAllocation:
         by_study.setdefault(cs, []).append(r)
         alias.setdefault(cs, set()).add(r.get("study", ""))
 
-    # per-study distinct-lineage counts by category
+    # per-study distinct-lineage counts by category + the donor set each study contributes per category
     study_counts: dict = {}
+    study_donors: dict = {}
     for cs, recs in by_study.items():
-        seen, cc = set(), {}
+        seen, cc, dd = set(), {}, {}
         for r in recs:
             key = (r["category"], r["lineage_key"])
             if key in seen:
                 continue
             seen.add(key)
             cc[r["category"]] = cc.get(r["category"], 0) + 1
+            if r.get("donor"):
+                dd.setdefault(r["category"], set()).add((cs, r["donor"]))
         study_counts[cs] = cc
+        study_donors[cs] = dd
 
     def deficit(rc):
         return sum(max(0, targets.get(c, 0) - rc.get(c, 0)) for c in targets)
+
+    def div_deficit(dn, stu):
+        """Unmet donor+study diversity across the balanced loci for one role's (donors, studies) sets."""
+        return sum(max(0, t["donors"] - len(dn.get(c, set()))) + max(0, t["studies"] - len(stu.get(c, set())))
+                   for c, t in diversity.items())
 
     def total(rc):
         return sum(rc.values())
 
     role_counts = {"selection": {}, "loco_challenge": {}}
+    role_donors = {"selection": {}, "loco_challenge": {}}    # role -> cat -> set[(cs, donor)]
+    role_studies = {"selection": {}, "loco_challenge": {}}   # role -> cat -> set[cs]
     role_of: dict = {}
-    # Deterministic greedy: process studies in frozen sha256 order; assign each to the role that
-    # minimizes (total remaining deficit across both roles, then count imbalance); tie -> selection.
+    # Deterministic greedy in frozen sha256 order; assign each study to the role minimizing, in priority:
+    # (1) total count deficit (floors), (2) total donor/study diversity deficit, (3) count imbalance; tie
+    # -> selection. (2) is what steers a whole light study into whichever role still lacks IGL/IGK donors.
     for cs in sorted(by_study, key=_sha):
         sc = study_counts[cs]
+        sd = study_donors[cs]
         best = None
         for role in ("selection", "loco_challenge"):
             other = "loco_challenge" if role == "selection" else "selection"
             trial = dict(role_counts[role])
             for c, n in sc.items():
                 trial[c] = trial.get(c, 0) + n
+            t_dn = {c: set(s) for c, s in role_donors[role].items()}
+            t_stu = {c: set(s) for c, s in role_studies[role].items()}
+            for c in sc:
+                t_dn.setdefault(c, set()).update(sd.get(c, set()))
+                t_stu.setdefault(c, set()).add(cs)
             score = (deficit(trial) + deficit(role_counts[other]),
+                     div_deficit(t_dn, t_stu) + div_deficit(role_donors[other], role_studies[other]),
                      abs(total(trial) - total(role_counts[other])),
                      0 if role == "selection" else 1)
             if best is None or score < best[0]:
-                best = (score, role, trial)
-        _, role, trial = best
+                best = (score, role, trial, t_dn, t_stu)
+        _, role, trial, t_dn, t_stu = best
         role_counts[role] = trial
+        role_donors[role] = t_dn
+        role_studies[role] = t_stu
         role_of[cs] = role
 
     selection: dict = {}
@@ -130,11 +156,11 @@ def assign_studies(records, *, targets=PER_ROLE_TARGET) -> StudyAllocation:
                                 default=36)
                 floors_ok[g][role] = len(role_set) >= cat_floor
 
-    policy = {"rule": "deterministic_greedy_min_deficit_then_balance",
+    policy = {"rule": "deterministic_greedy_min_deficit_then_diversity_then_balance",
               "unit": "canonical_study (repository::surname_year)",
               "seed": "sha256(canonical_study) ascending",
-              "tie_break": "lower_total_deficit, then lower count-imbalance, then selection",
-              "targets": targets, "study_list": sorted(by_study)}
+              "tie_break": "lower_total_deficit, then lower diversity-deficit, then count-imbalance, then selection",
+              "targets": targets, "diversity": diversity, "study_list": sorted(by_study)}
     policy_hash = _sha(json.dumps(policy, sort_keys=True))
 
     return StudyAllocation(

@@ -121,6 +121,24 @@ def test_same_donor_positive_real_straddle_detected_despite_structural():
     assert rep.counts_by_study == {"selection": 1, "loco": 1}   # study visible, not masked by structural
 
 
+def test_audit_flags_single_donor_igl_slice():
+    # A validation (loco) IGL slice resting on ONE donor/study must trip the diversity gate even though
+    # its lineage count clears the 37 floor. Selection here is diverse and must pass.
+    sel_recs = ([_oas("SelA_2020", f"a{i}", "igl", i) for i in range(40)] +
+                [_oas("SelB_2020", f"b{i}", "igl", i) for i in range(40)] +
+                [_oas("SelC_2020", f"c{i}", "igl", i) for i in range(40)])
+    loco_recs = [_oas("LocoX_2021", "solo", "igl", i) for i in range(40)]
+    records = sel_recs + loco_recs
+    selection = {"igk_igl": {r["lineage_key"] for r in sel_recs}}
+    loco = {"igk_igl": {r["lineage_key"] for r in loco_recs}}
+    rep = audit_stage1(records=records, selection=selection, loco=loco, study_alloc=None,
+                       source_checksums={}, required_groups=set())
+    assert rep.locus_diversity["igl"]["loco"] == {"donors": 1, "studies": 1, "ok": False}
+    assert rep.locus_diversity["igl"]["selection"]["ok"] is True
+    assert any(f.startswith("locus_diversity igl loco") for f in rep.failures)
+    assert rep.decision.startswith("STOP")
+
+
 def test_global_dedup_removes_cross_source_duplicates():
     recs = [_igsf(1), {**_igsf(1), "lineage_key": "igsf-other"}]  # same aa, different lineage
     kept, dropped = global_dedup(recs)

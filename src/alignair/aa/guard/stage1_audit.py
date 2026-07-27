@@ -18,12 +18,19 @@ import hashlib
 from dataclasses import dataclass, field
 
 from alignair.aa.guard.allocate import GROUP_GATE_KIND, GUARDBAND_FLOOR, _allocate_vhh_nonhuman, _halve
-from alignair.aa.guard.study_allocate import GROUP_LOCI, assign_studies, canonical_study
+from alignair.aa.guard.study_allocate import (DIVERSITY_TARGET, GROUP_LOCI, assign_studies,
+                                              canonical_study)
 
 STUDY_GROUPS = {"igk_igl", "tcr", "positive_real"}
 VHH_GROUP = "vhh_nonhuman"
 REQUIRED_GROUPS = {"igk_igl", "tcr", "vhh_nonhuman", "igsf", "structural",
                    "positive_real", "positive_sim"}
+
+# Per-role per-locus donor/study diversity floors for the discriminative 5%-gate loci: a validation slice
+# must never rest on a single donor/study. Sourced from the allocator's policy so the objective the greedy
+# steers toward and the gate the audit enforces are the SAME contract. Owner directive scoped IGL; IGK
+# shares the identical single-donor risk and is held to the same bar (see DIVERSITY_TARGET).
+LOCUS_DIVERSITY = DIVERSITY_TARGET
 
 
 def _sha(s: str) -> str:
@@ -86,6 +93,7 @@ class AuditReport:
     counts_by_donor: dict                  # role -> #donors
     floors_ok: dict
     locus_balance_37_37: dict
+    locus_diversity: dict                   # cat -> role -> {donors, studies, ok}
     powered_real_igh: dict
     policy_hash_reproduced: bool
     source_checksums: dict
@@ -197,6 +205,33 @@ def audit_stage1(*, records, selection, loco, study_alloc, source_checksums, exp
     if "positive_real" in (set(selection) | set(loco)) and not all(powered_real_igh.values()):
         failures.append(f"real_igh_underpowered {powered_real_igh}")
 
+    # 5b. per-role per-locus donor/study DIVERSITY (no validation slice may rest on one donor/study).
+    rl_donors = {"selection": {}, "loco": {}}
+    rl_studies = {"selection": {}, "loco": {}}
+    for rec in records:
+        cat = rec.get("category")
+        if cat not in LOCUS_DIVERSITY or not rec.get("study"):
+            continue
+        role = _role_of(rec)
+        if role is None:
+            continue
+        cs = canonical_study(rec.get("repository", "oas"), rec.get("study"))
+        rl_donors[role].setdefault(cat, set()).add((cs, rec.get("donor")))
+        rl_studies[role].setdefault(cat, set()).add(cs)
+    present_cats = set(counts_by_locus["selection"]) | set(counts_by_locus["loco"])
+    locus_diversity = {}
+    for cat, tgt in LOCUS_DIVERSITY.items():
+        if cat not in present_cats:
+            continue
+        locus_diversity[cat] = {}
+        for role in ("selection", "loco"):
+            nd = len(rl_donors[role].get(cat, set()))
+            ns = len(rl_studies[role].get(cat, set()))
+            ok = nd >= tgt["donors"] and ns >= tgt["studies"]
+            locus_diversity[cat][role] = {"donors": nd, "studies": ns, "ok": ok}
+            if not ok:
+                failures.append(f"locus_diversity {cat} {role} donors={nd}<{tgt['donors']} or studies={ns}<{tgt['studies']}")
+
     # 6. frozen allocator policy hash reproduced exactly.
     policy_ok = True
     if study_alloc is not None:
@@ -213,5 +248,6 @@ def audit_stage1(*, records, selection, loco, study_alloc, source_checksums, exp
     return AuditReport(
         decision=decision, role_overlap=role_overlap, counts_by_role=counts_by_role,
         counts_by_locus=counts_by_locus, counts_by_study=counts_by_study, counts_by_donor=counts_by_donor,
-        floors_ok=floors_ok, locus_balance_37_37=locus_balance, powered_real_igh=powered_real_igh,
-        policy_hash_reproduced=policy_ok, source_checksums=source_checksums, failures=failures)
+        floors_ok=floors_ok, locus_balance_37_37=locus_balance, locus_diversity=locus_diversity,
+        powered_real_igh=powered_real_igh, policy_hash_reproduced=policy_ok,
+        source_checksums=source_checksums, failures=failures)

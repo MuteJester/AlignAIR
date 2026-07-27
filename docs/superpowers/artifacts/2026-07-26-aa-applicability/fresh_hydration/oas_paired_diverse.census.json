@@ -1,0 +1,95 @@
+{
+  "by_category": {
+    "igk": 388,
+    "igl": 396
+  },
+  "denylist_dropped": {
+    "donor": 0,
+    "lineage": 0,
+    "phase3": 0,
+    "seqhash": 3,
+    "study": 0
+  },
+  "distinct_donors": 11,
+  "donors_by_study": {
+    "gao_2024": [
+      "Pt2"
+    ],
+    "james_2020": [
+      "417c"
+    ],
+    "phad_2022": [
+      "Donor-1",
+      "Donor-2"
+    ],
+    "santos_2024": [
+      "CeD6"
+    ],
+    "setliff_2019": [
+      "Donor-45",
+      "Donor-N90"
+    ],
+    "sokal_2021": [
+      "S-CoV10",
+      "S-CoV11"
+    ],
+    "wang_2023": [
+      "C146",
+      "C148"
+    ]
+  },
+  "kept_after_denylist": 784,
+  "per_study_locus": {
+    "gao_2024": {
+      "igk": 41,
+      "igl": 43
+    },
+    "james_2020": {
+      "igk": 44,
+      "igl": 44
+    },
+    "phad_2022": {
+      "igk": 81,
+      "igl": 86
+    },
+    "santos_2024": {
+      "igk": 8,
+      "igl": 5
+    },
+    "setliff_2019": {
+      "igk": 61,
+      "igl": 65
+    },
+    "sokal_2021": {
+      "igk": 77,
+      "igl": 80
+    },
+    "wang_2023": {
+      "igk": 76,
+      "igl": 73
+    }
+  },
+  "provenance": {
+    "base": "https://opig.stats.ox.ac.uk/webapps/ngsdb/paired/",
+    "diversity_policy": "<= 2 donors/study, <= 45/chain/donor",
+    "draw": "fresh human paired studies (Gate-3 + vander/zhou/eccles excluded)",
+    "verification": "ANARCII light chain/locus/completeness (K/L) on numbered V domain"
+  },
+  "rejection_reasons": {
+    "anarcii_rejected": 4,
+    "non_human_unit": 8,
+    "temporarily_inaccessible": 0,
+    "unknown_species_unit": 0,
+    "untouched_donor_audit_drop": 0
+  },
+  "source": "oas_paired_diverse",
+  "studies_contributing": [
+    "gao_2024",
+    "james_2020",
+    "phad_2022",
+    "santos_2024",
+    "setliff_2019",
+    "sokal_2021",
+    "wang_2023"
+  ]
+}

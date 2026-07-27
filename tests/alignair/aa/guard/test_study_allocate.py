@@ -77,6 +77,26 @@ def test_balances_toward_locus_floors():
     assert a.locus_min_ok["igk_igl"]["selection"] and a.locus_min_ok["igk_igl"]["loco_challenge"]
 
 
+def test_diversity_aware_spreads_light_donors_across_roles():
+    # Six single-donor IGL studies: the diversity-aware greedy must place them so BOTH roles reach the
+    # per-role IGL diversity bar (>=3 donors, >=2 studies), not concentrate all donors in one role.
+    recs = []
+    for st in range(6):
+        for i in range(40):
+            recs.append(_rec(f"L{st}_2020", f"don{st}", "igl", "igk_igl", f"{st}-L{i}"))
+    a = assign_studies(recs)
+    by_role = {"selection": {"donors": set(), "studies": set()},
+               "loco_challenge": {"donors": set(), "studies": set()}}
+    for r in recs:
+        cs = canonical_study("oas", r["study"])
+        role = a.role_of_study[cs]
+        by_role[role]["donors"].add(r["donor"])
+        by_role[role]["studies"].add(cs)
+    for role in ("selection", "loco_challenge"):
+        assert len(by_role[role]["donors"]) >= 3, (role, sorted(by_role[role]["donors"]))
+        assert len(by_role[role]["studies"]) >= 2, (role, sorted(by_role[role]["studies"]))
+
+
 def test_policy_hash_is_frozen_and_deterministic():
     recs = [_rec("A_2020", "d1", "igk", "igk_igl", "K1"), _rec("B_2021", "d2", "igl", "igk_igl", "L1")]
     a1 = assign_studies(recs)
