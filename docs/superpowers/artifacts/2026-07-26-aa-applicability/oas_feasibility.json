@@ -35,6 +35,32 @@
     "Vander_Heiden_2017",
     "Zhou_2013"
   ],
+  "light_gap_resolution": {
+    "both_roles_37_37_igk_igl": true,
+    "caveat": "selection-role IGL is a single donor (Eccles paired, 216 IGL); meets the 37 floor but thin donor-diversity for that role. loco IGL = 3 donors.",
+    "combined_light_studies": [
+      "Vander_Heiden_2017",
+      "Zhou_2013",
+      "Eccles_2020(paired)"
+    ],
+    "fallback_source": "OAS paired (human)",
+    "paired_light": {
+      "donors": 1,
+      "igk": 286,
+      "igl": 216,
+      "study": "Eccles_2020"
+    },
+    "per_role": {
+      "loco_challenge": {
+        "igk": 319,
+        "igl": 149
+      },
+      "selection": {
+        "igk": 286,
+        "igl": 216
+      }
+    }
+  },
   "n_heavy_eligible": 11,
   "n_light_eligible": 2,
   "non_confirmed_kept_separate": {
