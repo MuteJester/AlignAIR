@@ -14,6 +14,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from alignair.aa.guard.manifest import MANIFEST_HASH_FIELD, seal_manifest
 from alignair.aa.guard.stage1_audit import audit_stage1, combine_allocation, global_dedup
 from alignair.aa.guard.structural import structural_records
 
@@ -136,9 +137,11 @@ def _freeze_manifest(report, study_alloc, census):
                     "(build_gate3_global_denylist raises on digest mismatch); the sealed locked_test is "
                     "never read during hydration or gating.",
         },
+        "manifest_sha256_rule": (
+            f"sha256(json.dumps(manifest_without_'{MANIFEST_HASH_FIELD}', sort_keys=True, "
+            "separators=(',',':'))) — non-recursive; see alignair.aa.guard.manifest.compute_manifest_hash"),
     }
-    manifest["manifest_sha256"] = hashlib.sha256(
-        json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+    manifest = seal_manifest(manifest)      # sets manifest_sha256 under the documented non-recursive rule
     (ART / "FROZEN_COHORT_MANIFEST.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
 
 

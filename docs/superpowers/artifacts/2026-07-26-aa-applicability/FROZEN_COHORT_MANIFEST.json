@@ -183,7 +183,8 @@
   },
   "decision": "GO",
   "frozen_date": "2026-07-27",
-  "manifest_sha256": "a61feb7f218a760570f87d6a48b86f4550521e49b7473b6414154ca167d36e67",
+  "manifest_sha256": "8995c88cbed6cf258139a16bd76260111d4c82032b9e515b703ef0abc913a37e",
+  "manifest_sha256_rule": "sha256(json.dumps(manifest_without_'manifest_sha256', sort_keys=True, separators=(',',':'))) \u2014 non-recursive; see alignair.aa.guard.manifest.compute_manifest_hash",
   "seal_provenance": {
     "note": "every source was denylist-filtered against the reproduced Gate-3 global record digest (build_gate3_global_denylist raises on digest mismatch); the sealed locked_test is never read during hydration or gating.",
     "split_fingerprint": "docs/superpowers/artifacts/2026-07-24-aa-gate3/split_fingerprint.json",
