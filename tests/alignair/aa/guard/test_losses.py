@@ -51,11 +51,11 @@ def test_objective_masks_isolate_terms():
     zero = torch.zeros(B)
     masks = {k: zero for k in ("type", "complete", "app", "energy", "contrast", "source")}
     total, parts = guard_loss(outputs, targets, weights, masks)
-    assert float(total) == 0.0 and all(float(v) == 0.0 for v in parts.values())
+    assert float(total.detach()) == 0.0 and all(float(v.detach()) == 0.0 for v in parts.values())
     # turn on only the type objective -> only that term is non-trivial
     masks2 = dict(masks, type=torch.ones(B))
     _, parts2 = guard_loss(outputs, targets, weights, masks2)
-    assert float(parts2["type"]) > 0.0 and float(parts2["source"]) == 0.0
+    assert float(parts2["type"].detach()) > 0.0 and float(parts2["source"].detach()) == 0.0
 
 
 def test_confounding_zero_source_mask_removes_source_term():
