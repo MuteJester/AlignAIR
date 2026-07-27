@@ -216,11 +216,18 @@ def source_matrix() -> dict:
 # are deterministic: fixed builder seed + the varying HMMER DATE/COM header lines neutralized before
 # serialization, so the same MSA yields the same sha256 across runs (verified Phase 0).
 _BUILDER_SEED = 42
+_AMINO = None
 
 
 def _amino():
-    from pyhmmer import easel
-    return easel.Alphabet.amino()
+    """Cached singleton amino alphabet. MUST be shared across build AND search: an HMM built with one
+    Alphabet instance fails p7_ProfileConfig (eslEINVAL) when searched with a Pipeline made from a
+    different instance."""
+    global _AMINO
+    if _AMINO is None:
+        from pyhmmer import easel
+        _AMINO = easel.Alphabet.amino()
+    return _AMINO
 
 
 def _digitize_msa(aligned_fasta_bytes: bytes, name: bytes):

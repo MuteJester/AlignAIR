@@ -104,7 +104,9 @@ def _species_of(group: str) -> str:
 def hmm_features(bank, seq: str, *, evalue_sig: float = 1e-3, coverage_min: float = 0.80) -> HmmFeatures:
     """Competitive search of `seq` against every profile in `bank` → fixed feature record."""
     from pyhmmer import easel
-    abc = easel.Alphabet.amino()
+
+    from alignair.aa.guard.profiles import _amino
+    abc = _amino()             # SAME shared alphabet the bank's HMMs were built with (avoids ProfileConfig)
     q = easel.TextSequence(name=b"query", sequence=seq).digitize(abc)
     block = easel.DigitalSequenceBlock(abc, [q])
     L = len(seq)
