@@ -1,0 +1,205 @@
+{
+  "comparators": {
+    "imgt_gene_db": {
+      "group": "imgt_gene_db",
+      "input_hashes": {},
+      "license": "IMGT terms (restricted)",
+      "name": "imgt_gene_db",
+      "notes": "Local research comparator only until redistribution is explicitly cleared.",
+      "redistributable": false,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "comparator_only",
+      "url": "https://www.imgt.org/genedb/",
+      "version": "IMGT/GENE-DB (research comparator)"
+    }
+  },
+  "required_profiles": [
+    "human_igh",
+    "human_igk",
+    "human_igl",
+    "igsf_vset",
+    "murine_vh",
+    "tra",
+    "trb",
+    "trd",
+    "trg",
+    "vhh"
+  ],
+  "resolution": {
+    "decision": "STOP_NO_PUBLISHABLE_PROFILE_SOURCE",
+    "unresolved": [
+      "murine_vh",
+      "tra",
+      "trb",
+      "trd",
+      "trg",
+      "vhh"
+    ]
+  },
+  "sources": {
+    "human_igh": {
+      "group": "human_igh",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build"
+      },
+      "license": "CC0-1.0",
+      "name": "ogrdb_human_ighv_ighj",
+      "notes": "OGRDB/AIRR-C released germline set; per-set Zenodo licence.txt = CC0 (verified).",
+      "redistributable": true,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "production",
+      "url": "https://ogrdb.airr-community.org/germline_sets/Homo%20sapiens",
+      "version": "AIRR-C Human IGH set (OGRDB/Zenodo, pin rev)"
+    },
+    "human_igk": {
+      "group": "human_igk",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build",
+        "vj_ungapped_fasta_md5": "3a2857d50403f95f8bce3b713fbcc5be"
+      },
+      "license": "CC0-1.0",
+      "name": "ogrdb_human_igkv_igkj",
+      "notes": "OGRDB/AIRR-C released germline set; per-set Zenodo licence.txt = CC0 (verified).",
+      "redistributable": true,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "production",
+      "url": "https://ogrdb.airr-community.org/germline_sets/Homo%20sapiens",
+      "version": "AIRR-C Human IGKappa VJ rev_4 (DOI 10.5281/zenodo.13923289)"
+    },
+    "human_igl": {
+      "group": "human_igl",
+      "input_hashes": {
+        "j": "bound_at_bank_build",
+        "v": "bound_at_bank_build"
+      },
+      "license": "CC0-1.0",
+      "name": "ogrdb_human_iglv_iglj",
+      "notes": "OGRDB/AIRR-C released germline set; per-set Zenodo licence.txt = CC0 (verified).",
+      "redistributable": true,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "production",
+      "url": "https://ogrdb.airr-community.org/germline_sets/Homo%20sapiens",
+      "version": "AIRR-C Human IGLambda set (OGRDB/Zenodo, pin rev)"
+    },
+    "igsf_vset": {
+      "group": "igsf_vset",
+      "input_hashes": {
+        "domain": "bound_at_bank_build"
+      },
+      "license": "CC0",
+      "name": "pfam_v_set_PF07686",
+      "notes": "Pfam-A HMM; Pfam flatfiles/HMMs are CC0 (EBI FTP).",
+      "redistributable": true,
+      "regions": [
+        "domain"
+      ],
+      "role": "production",
+      "url": "https://www.ebi.ac.uk/interpro/entry/pfam/PF07686",
+      "version": "Pfam PF07686 (InterPro IPR013106)"
+    },
+    "murine_vh": {
+      "group": "murine_vh",
+      "input_hashes": {},
+      "license": "IMGT terms (restricted)",
+      "name": "imgt_mouse_ighv_ighj",
+      "notes": "Mouse released-set status unconfirmed on OGRDB (species page shows no affirmed sequences); only IMGT (comparator_only) confirmed today. UNRESOLVED pending an OGRDB mouse release.",
+      "redistributable": false,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "comparator_only",
+      "url": "https://www.imgt.org/genedb/",
+      "version": "IMGT/GENE-DB Mus musculus IGHV,IGHJ"
+    },
+    "tra": {
+      "group": "tra",
+      "input_hashes": {},
+      "license": "IMGT terms (restricted)",
+      "name": "imgt_human_trav_traj",
+      "notes": "OGRDB human TR sets are still in development (not released/pinnable); only IMGT (comparator_only) exists today. UNRESOLVED. CC0 resolves once OGRDB releases TRA.",
+      "redistributable": false,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "comparator_only",
+      "url": "https://www.imgt.org/genedb/",
+      "version": "IMGT/GENE-DB Human TRAV,TRAJ"
+    },
+    "trb": {
+      "group": "trb",
+      "input_hashes": {},
+      "license": "IMGT terms (restricted)",
+      "name": "imgt_human_trbv_trbj",
+      "notes": "OGRDB human TR sets are still in development; only IMGT (comparator_only). UNRESOLVED.",
+      "redistributable": false,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "comparator_only",
+      "url": "https://www.imgt.org/genedb/",
+      "version": "IMGT/GENE-DB Human TRBV,TRBJ"
+    },
+    "trd": {
+      "group": "trd",
+      "input_hashes": {},
+      "license": "IMGT terms (restricted)",
+      "name": "imgt_human_trdv_trdj",
+      "notes": "OGRDB human TR sets are still in development; only IMGT (comparator_only). UNRESOLVED.",
+      "redistributable": false,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "comparator_only",
+      "url": "https://www.imgt.org/genedb/",
+      "version": "IMGT/GENE-DB Human TRDV,TRDJ"
+    },
+    "trg": {
+      "group": "trg",
+      "input_hashes": {},
+      "license": "IMGT terms (restricted)",
+      "name": "imgt_human_trgv_trgj",
+      "notes": "OGRDB human TR sets are still in development; only IMGT (comparator_only). UNRESOLVED.",
+      "redistributable": false,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "comparator_only",
+      "url": "https://www.imgt.org/genedb/",
+      "version": "IMGT/GENE-DB Human TRGV,TRGJ"
+    },
+    "vhh": {
+      "group": "vhh",
+      "input_hashes": {},
+      "license": "IMGT terms (restricted)",
+      "name": "imgt_camelid_ighv_ighj",
+      "notes": "No redistributable curated camelid germline set exists (absent from OGRDB). IMGT is comparator_only; scattered public-domain GenBank submissions are not an authoritative curated pinned set. UNRESOLVED.",
+      "redistributable": false,
+      "regions": [
+        "j",
+        "v"
+      ],
+      "role": "comparator_only",
+      "url": "https://www.imgt.org/genedb/",
+      "version": "IMGT/GENE-DB Lama/Vicugna/Camelus IGHV,IGHJ"
+    }
+  }
+}
