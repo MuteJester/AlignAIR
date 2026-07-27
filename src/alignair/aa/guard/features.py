@@ -75,6 +75,7 @@ class HmmFeatures:
     coverage_ok: bool
     seq_len: int
     per_group_v_score: dict = field(default_factory=dict)
+    masked_groups: tuple = ()          # blind-LOCO: profile groups excluded from the competitive set
 
     def to_vector(self) -> np.ndarray:
         def _l10(e):
@@ -101,26 +102,34 @@ def _species_of(group: str) -> str:
     return "other"
 
 
-def hmm_features(bank, seq: str, *, evalue_sig: float = 1e-3, coverage_min: float = 0.80) -> HmmFeatures:
-    """Competitive search of `seq` against every profile in `bank` → fixed feature record."""
+def hmm_features(bank, seq: str, *, evalue_sig: float = 1e-3, coverage_min: float = 0.80,
+                 mask_groups=frozenset()) -> HmmFeatures:
+    """Competitive search of `seq` against every profile in `bank` → fixed feature record.
+
+    Blind-LOCO: `mask_groups` are removed from the competitive set BEFORE any scoring, so the masked
+    profiles influence neither the raw features, the competitive margins, nor any derived value. The masked
+    groups therefore can never be the winner/best-alternative and can never surface in a decision reason."""
     from pyhmmer import easel
 
     from alignair.aa.guard.profiles import _amino
+    mask_groups = frozenset(mask_groups)
     abc = _amino()             # SAME shared alphabet the bank's HMMs were built with (avoids ProfileConfig)
     q = easel.TextSequence(name=b"query", sequence=seq).digitize(abc)
     block = easel.DigitalSequenceBlock(abc, [q])
     L = len(seq)
 
-    # search every profile; collect per group/region
+    # search every profile EXCEPT masked groups; collect per group/region
     res = {}  # (group, region) -> hit dict or None
     for group, regions in bank.profiles.items():
+        if group in mask_groups:
+            continue           # blind: excluded from the competitive search entirely
         for region, (hmm, _sha) in regions.items():
             res[(group, region)] = _search_one(hmm, block, abc)
 
     def v_res(group):
         return res.get((group, "v")) or res.get((group, "domain"))
 
-    groups = list(bank.profiles)
+    groups = [g for g in bank.profiles if g not in mask_groups]     # masked groups fully excluded
     per_group_v = {g: _q_score(v_res(g)) for g in groups}
     human_igh_score = per_group_v.get("human_igh", _NEG)
     alts = {g: s for g, s in per_group_v.items() if g != "human_igh"}
@@ -176,4 +185,4 @@ def hmm_features(bank, seq: str, *, evalue_sig: float = 1e-3, coverage_min: floa
         v_before_j=v_before_j, inter_vj_gap=int(inter_vj_gap), combined_coverage=combined_coverage,
         unaligned_n=int(unaligned_n), unaligned_c=int(unaligned_c), n_significant_hits=n_sig,
         has_v=has_v, has_j=has_j, order_ok=order_ok, coverage_ok=coverage_ok, seq_len=L,
-        per_group_v_score=per_group_v)
+        per_group_v_score=per_group_v, masked_groups=tuple(sorted(mask_groups)))
