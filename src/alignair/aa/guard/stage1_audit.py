@@ -118,8 +118,15 @@ def audit_stage1(*, records, selection, loco, study_alloc, source_checksums, exp
     lineage_overlap = 0
     for g in set(selection) | set(loco):
         lineage_overlap += len(selection.get(g, set()) & loco.get(g, set()))
-    # donor/study overlap: map each lineage to its donor/study (donor-based records only)
-    lk_meta = {r["lineage_key"]: r for r in records}
+    # donor/study overlap: map each lineage to its donor/study. Structural records share their parent's
+    # lineage_key but carry no study/donor; if one shadowed the parent here, a positive_real-only study
+    # would become invisible to the overlap check. Prefer the study-bearing record for each lineage_key.
+    lk_meta = {}
+    for r in records:
+        lk = r["lineage_key"]
+        prev = lk_meta.get(lk)
+        if prev is None or (r.get("study") and not prev.get("study")):
+            lk_meta[lk] = r
     sel_lk = set().union(*selection.values()) if selection else set()
     loc_lk = set().union(*loco.values()) if loco else set()
 

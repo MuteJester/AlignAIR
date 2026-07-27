@@ -2,8 +2,8 @@
   "allocator_policy_hash": "1ed54a66283d8498132c402b3f17885aef80427a06bf471bde6b47f7af7cf6a4",
   "artifact": "stage1_gate",
   "counts_by_donor": {
-    "loco": 3,
-    "selection": 9
+    "loco": 4,
+    "selection": 10
   },
   "counts_by_locus": {
     "loco": {
@@ -62,8 +62,8 @@
     }
   },
   "counts_by_study": {
-    "loco": 3,
-    "selection": 4
+    "loco": 4,
+    "selection": 5
   },
   "decision": "GO",
   "failures": [],

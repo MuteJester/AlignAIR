@@ -103,6 +103,24 @@ def test_locus_census_not_polluted_by_structural_shared_lineage():
     assert rep.counts_by_role["selection"].get("structural") == 1   # 6 transforms share 1 parent lineage
 
 
+def test_same_donor_positive_real_straddle_detected_despite_structural():
+    # Integrity: same study+donor, two DIFFERENT lineages split across roles must flag study+donor overlap
+    # even though each parent has structural children that share its lineage_key and carry no study field.
+    from alignair.aa.guard.structural import structural_records
+    p1 = {"group": "positive_real", "category": "pos_igh_repertoire", "aa": "QVQLVQSGAEVKKPGSSVKVSCKAS",
+          "lineage_key": "X_2020::d::IGHV1", "repository": "oas", "study": "X_2020", "donor": "d"}
+    p2 = {**p1, "aa": "EVQLVESGGGLVQPGGSLRLSCAAS", "lineage_key": "X_2020::d::IGHV3"}
+    s1 = structural_records(p1, role_of_parent="selection")
+    s2 = structural_records(p2, role_of_parent="loco")
+    selection = {"positive_real": {p1["lineage_key"]}, "structural": {p1["lineage_key"]}}
+    loco = {"positive_real": {p2["lineage_key"]}, "structural": {p2["lineage_key"]}}
+    rep = audit_stage1(records=[p1, p2] + s1 + s2, selection=selection, loco=loco, study_alloc=None,
+                       source_checksums={}, required_groups=set())
+    assert rep.role_overlap["study"] >= 1 and rep.role_overlap["donor"] >= 1
+    assert rep.decision.startswith("STOP")
+    assert rep.counts_by_study == {"selection": 1, "loco": 1}   # study visible, not masked by structural
+
+
 def test_global_dedup_removes_cross_source_duplicates():
     recs = [_igsf(1), {**_igsf(1), "lineage_key": "igsf-other"}]  # same aa, different lineage
     kept, dropped = global_dedup(recs)
