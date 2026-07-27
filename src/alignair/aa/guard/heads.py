@@ -7,8 +7,10 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-N_COMPLETENESS = 5      # e.g. supported / insufficient_evidence / unsupported_locus / unknown_ood / other
-N_DOMAIN_TYPE = 8       # recognized domain/locus types (in-domain classes for the energy)
+from alignair.aa.guard.classes import COMPLETENESS_CLASSES, DOMAIN_TYPE_CLASSES
+
+N_COMPLETENESS = len(COMPLETENESS_CLASSES)      # frozen ordered semantics (classes.py)
+N_DOMAIN_TYPE = len(DOMAIN_TYPE_CLASSES)        # recognized in-domain types for the open-set energy
 
 
 class GuardHeads(nn.Module):
