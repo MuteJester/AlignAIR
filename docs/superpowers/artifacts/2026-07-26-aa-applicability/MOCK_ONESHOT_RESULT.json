@@ -1,0 +1,29 @@
+{
+  "artifact_digest": "58adad1175efa24265633cda5c9c60904dbc019e97f9165c0247a0eda79d5874",
+  "bundle_sha256": "d7a2329814e6a1f9f38510742d01339a22fc07509007213cba98f72590267a76",
+  "checks": [
+    "barrier1_selection_cannot_open_challenge",
+    "dual_eval_selection_binding_is_blind_only",
+    "threshold_freeze_writes_complete_hash_bound_artifact",
+    "barrier2_challenge_refused_without_artifact",
+    "barrier5_changed_hash_hard_fails",
+    "barrier4_atomic_audit_before_scoring",
+    "dual_eval_challenge_raw_scores_blind_masked",
+    "full_hash_set_consistent"
+  ],
+  "mock_fold": "igk_igl",
+  "n_challenge": 2,
+  "n_checks": 8,
+  "n_selection": 2,
+  "passed": true,
+  "raw_score_sample": {
+    "blind": [
+      -15.144590377807617,
+      0.3417770266532898
+    ],
+    "reference_covered": [
+      0.20593562722206116,
+      0.3417770266532898
+    ]
+  }
+}
