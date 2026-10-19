@@ -89,9 +89,22 @@ def test_shrink_never_removes_all_columns():
     allele = "AAAAA"
     seg = observe_segment(read, allele, "X*01", 0, 0, "5M")
     bt = boundary_intervals(read, allele, seg, 0, 5)
-    # the most-shrunk segment still keeps at least one base
-    assert bt.seq_end[0] - bt.seq_start[1] >= 1
-    assert bt.germ_end[0] - bt.germ_start[1] >= 1
+    # tie-break is deliberate: the right edge gets the shrink budget first
+    assert bt.seq_end == (1, 5)
+    assert bt.germ_end == (1, 5)
+    assert bt.seq_start == (0, 0)
+    assert bt.germ_start == (0, 0)
+
+
+def test_read_n_at_edge_is_shrink_eligible():
+    read = "ACGTN" + "TTTTT"
+    seg = _seg(read, 0, 0, "5M")
+    bt = boundary_intervals(read, ALLELE, seg, 0, len(read))
+    assert bt.seq_end == (4, 5)
+    read = "NCGTA" + "TTTTT"
+    seg = _seg(read, 0, 0, "5M")
+    bt = boundary_intervals(read, ALLELE, seg, 0, len(read))
+    assert bt.seq_start == (0, 1)
 
 
 def test_indel_stops_shrink_run():
@@ -103,15 +116,17 @@ def test_indel_stops_shrink_run():
     assert bt.seq_end == (6, 7)
 
 
-def test_generative_boundary_inside_interval():
-    exp = (ga.Experiment.on("human_igh").recombine().mutate(rate=0.08)
-           .polymerase_indels(count=(0, 4)).end_loss_5prime(length=(0, 120))
-           .end_loss_3prime(length=(0, 30)))
-    recs = exp.run_records(n=300, seed=3)
+def test_generative_boundary_matches_np_oracle():
+    """Unmutated, error-free reads: expected extension comes from the NP sequence, not the read."""
     from alignair_assay.reference import Reference
     ref = Reference.from_dataconfig("HUMAN_IGH_OGRDB")
-    checked = nondegenerate = 0
+    exp = (ga.Experiment.on("human_igh").recombine()
+           .end_loss_5prime(length=(0, 20)).end_loss_3prime(length=(0, 10)))
+    recs = exp.run_records(n=300, seed=5)
+    v_pos = j_pos = v_checked = j_checked = 0
     for rec in recs:
+        if any(rec[k] for k in ("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length")):
+            continue
         read = rec["sequence"].upper()
         segs = {}
         for g in "vdj":
@@ -122,16 +137,37 @@ def test_generative_boundary_inside_interval():
                                 rec[f"{g}_germline_start"], rec[f"{g}_cigar"])
             if s is not None:
                 segs[g] = s
-        order = [g for g in "vdj" if g in segs]
-        for i, g in enumerate(order):
-            seg = segs[g]
-            left = segs[order[i - 1]].seq_end if i > 0 else 0
-            right = segs[order[i + 1]].seq_start if i + 1 < len(order) else len(read)
-            bt = boundary_intervals(read, ref.seq(seg.allele), seg, left, right)
-            for (lo, hi), x in [(bt.seq_start, seg.seq_start), (bt.seq_end, seg.seq_end),
-                                (bt.germ_start, seg.germ_start), (bt.germ_end, seg.germ_end)]:
-                assert lo <= x <= hi, (g, bt, seg)
-                checked += 1
-                nondegenerate += lo < hi
-    assert checked > 1000
-    assert nondegenerate > 0
+        if not {"v", "d", "j"} <= set(segs):
+            continue
+        v, d, j = segs["v"], segs["d"], segs["j"]
+        np1, np2 = rec["np1"].upper(), rec["np2"].upper()
+
+        if d.seq_start == v.seq_end + len(np1):
+            allele = ref.seq(v.allele).upper()
+            assert read[v.seq_end:v.seq_end + len(np1)] == np1
+            k = 0
+            while (k < len(np1) and v.germ_end + k < len(allele)
+                   and np1[k] == allele[v.germ_end + k]):
+                k += 1
+            bt = boundary_intervals(read, allele, v, 0, d.seq_start)
+            assert bt.seq_end == (v.seq_end, v.seq_end + k), (rec["np1"], bt)
+            assert bt.germ_end == (v.germ_end, v.germ_end + k)
+            v_checked += 1
+            v_pos += k > 0
+
+        if j.seq_start == d.seq_end + len(np2):
+            allele = ref.seq(j.allele).upper()
+            assert read[d.seq_end:j.seq_start] == np2
+            k = 0
+            while (k < len(np2) and j.germ_start - 1 - k >= 0
+                   and np2[len(np2) - 1 - k] == allele[j.germ_start - 1 - k]):
+                k += 1
+            bt = boundary_intervals(read, allele, j, d.seq_end, len(read))
+            assert bt.seq_start == (j.seq_start - k, j.seq_start), (rec["np2"], bt)
+            assert bt.germ_start == (j.germ_start - k, j.germ_start)
+            j_checked += 1
+            j_pos += k > 0
+
+    assert v_checked > 100 and j_checked > 100
+    assert v_pos >= 20, v_pos
+    assert j_pos >= 20, j_pos

@@ -55,7 +55,7 @@ def boundary_intervals(read: str, allele_seq: str, seg: ObservedSegment,
     n_aligned = sum(f is not None for f in flags)
     shrink_r = _mismatch_run(flags[::-1])
     shrink_l = _mismatch_run(flags)
-    # Keep at least one aligned column.
+    # Keep at least one aligned column; the right edge gets the shrink budget first (deliberate tie-break).
     cap = max(n_aligned - 1, 0)
     shrink_r = min(shrink_r, cap)
     shrink_l = min(shrink_l, cap - shrink_r)
