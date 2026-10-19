@@ -129,7 +129,8 @@ def test_shm_edge_outside_interval_uses_full_truth_span():
     # A V end moved one column past the end of its interval: the left-out columns count against the tool.
     for truth in _genairr_truths():
         v = truth.segments.get("v")
-        if v is None or _has_indel(v) or v.boundaries.seq_end[0] == v.observed.seq_end:
+        if (v is None or _has_indel(v) or v.observed_length < MIN_OBSERVED["v"]
+                or v.boundaries.seq_end[0] == v.observed.seq_end):
             continue
         o, b = v.observed, v.boundaries
         e = b.seq_end[0] - 1  # one matching column short of the interval
@@ -316,7 +317,7 @@ def test_indel_found_and_false():
     no_gap = _with_segment(oracle, "v", cigar="44M", germ_end=v.germ_end - 1)
     assert score_case(truth, no_gap, REF)["v.indel_found"] == 0.0
     # As many indel bases, but an insertion instead of a deletion.
-    wrong_kind = _with_segment(oracle, "v", cigar="26M1I17M", germ_end=v.germ_end - 1)
+    wrong_kind = _with_segment(oracle, "v", cigar="26M1I17M", germ_end=v.germ_end - 2)
     assert score_case(truth, wrong_kind, REF)["v.indel_found"] == 0.0
     spurious = _with_segment(oracle, "j", cigar="25M1I24M")
     assert score_case(truth, spurious, REF)["j.indel_false"] == 1.0

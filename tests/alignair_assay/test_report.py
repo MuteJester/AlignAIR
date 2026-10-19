@@ -67,8 +67,9 @@ def test_comparison_report_and_markdown():
     assert "differences in percentage points (pp)" in md
     # Own means with n and coverage, then the paired subset: rate differences in pp, errors as raw numbers.
     assert "| clone_key.exact | 50.0% (n=20, 100%) | 100.0% (n=16, 80%) | 16 | 62.5% | 100.0% | +37.5 pp | [+" in md
-    row = next(ln for ln in md.splitlines() if ln.startswith("| clone_key.exact |"))
-    assert row.count(" pp") == 3 and "%," not in row.split("|")[8]
+    cells = [c.strip() for c in next(ln for ln in md.splitlines() if ln.startswith("| clone_key.exact |")).split("|")]
+    ci_low, ci_high = cells[8].strip("[]").split(", ")
+    assert ci_low.endswith(" pp") and ci_high.endswith(" pp")
     assert "| v.mutation_count_err | 2.000 (n=20, 100%) | 1.000 (n=20, 100%) | 20 | 2.000 | 1.000 | -1.000 | [" in md
 
 
