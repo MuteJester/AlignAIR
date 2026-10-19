@@ -127,6 +127,7 @@ def test_cli_end_to_end_small(tmp_path, capsys):
     assert set(slices["d_len_bin"]) <= D_BINS and len(slices["d_len_bin"]) >= 3
     prov = report["provenance"]
     assert prov["command"] == "score" and prov["tool"] == "oracle" and prov["reference"] == "HUMAN_IGH_OGRDB"
+    assert prov["min_observed"] == {"v": 20, "d": 8, "j": 10}
     assert prov["inputs"]["truth"] == {"path": str(truth_path), "sha256": _sha256(truth_path)}
     assert prov["inputs"]["predictions"] == {"path": str(tsv), "sha256": _sha256(tsv)}
     assert "git_commit" in prov and prov["timestamp_utc"].endswith("+00:00")
@@ -172,6 +173,7 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
     assert rep["kind"] == "alignair_assay.comparison_report" and (rep["a"], rep["b"]) == ("oracle", "broken")
     prov = rep["provenance"]
     assert prov["command"] == "compare"
+    assert prov["min_observed"] == {"v": 20, "d": 8, "j": 10}
     assert (prov["n_boot"], prov["seed"], prov["alpha"]) == (200, 7, 0.05)
     assert set(prov["inputs"]) == {"truth", "a", "b"}
     assert prov["inputs"]["b"]["sha256"] == _sha256(b_tsv)

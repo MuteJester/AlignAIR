@@ -13,13 +13,18 @@ from alignair_assay.truth.build import ObservableTruth
 
 _NO_CALL = PredSegment()
 
+# Default minimum observed germline bases per segment below which a call is too unreliable to require.
+MIN_OBSERVED = {"v": 20, "d": 8, "j": 10}
+
 
 def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Reference, *,
-               d_min_observed: int = 8) -> CaseScores:
+               v_min_observed: int = MIN_OBSERVED["v"], d_min_observed: int = MIN_OBSERVED["d"],
+               j_min_observed: int = MIN_OBSERVED["j"]) -> CaseScores:
     """Metric values for one read; ``{}`` for an excluded truth, ``pred=None`` when the tool emitted no row.
 
-    Observed segments get allele and boundary metrics; a D with fewer than ``d_min_observed`` observed germline
-    bases gets only the ``d_short`` call/abstention metrics. Segments of the locus absent from the read get a
+    Observed segments get allele and boundary metrics; a segment with fewer observed germline bases than its
+    ``{g}_min_observed`` gets only the ``{g}_short`` call/abstention metrics instead of every ``{g}.*`` allele,
+    boundary, indel and SHM metric. Segments of the locus absent from the read get a
     spurious-call metric. Genes whose truth could not be built (``truth.unscorable``) get no metric at all.
     Observed V and J also get indel metrics, and observed V mutation-count and germline-reconstruction metrics.
     A missing row fails every accuracy metric (abstention included) and leaves error and presence metrics
@@ -31,6 +36,7 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
         return {}
     scores: CaseScores = {}
     missing = pred is None
+    min_observed = {"v": v_min_observed, "d": d_min_observed, "j": j_min_observed}
     for g in GENES:
         if g in truth.unscorable:
             continue
@@ -39,8 +45,8 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
         if seg is None:
             if reference.alleles.get(g):
                 scores.update(spurious_call(g, p, missing=missing))
-        elif g == "d" and seg.observed_length < d_min_observed:
-            scores.update(short_call_metrics("d_short", seg.alleles, p, missing=missing))
+        elif seg.observed_length < min_observed[g]:
+            scores.update(short_call_metrics(f"{g}_short", seg.alleles, p, missing=missing))
         else:
             scores.update(call_metrics(g, seg.alleles, p))
             scores.update(read_boundary_metrics(g, seg.boundaries, p))

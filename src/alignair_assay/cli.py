@@ -21,7 +21,7 @@ from pathlib import Path
 
 from alignair_assay.ingest.airr import GENES, load_airr_tsv
 from alignair_assay.metrics import CaseScores, is_informational, lower_is_better
-from alignair_assay.metrics.case import score_case
+from alignair_assay.metrics.case import MIN_OBSERVED, score_case
 from alignair_assay.reference import Reference
 from alignair_assay.report import build_comparison_report, build_score_report, to_markdown
 from alignair_assay.stats import by_slice, compare, summarize
@@ -231,6 +231,7 @@ def _provenance(command: str, inputs: dict[str, str], **extra) -> dict:
         "inputs": {k: {"path": str(p), "sha256": _sha256(p)} for k, p in inputs.items()},
         "git_commit": _git_commit(),
         "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "min_observed": dict(MIN_OBSERVED),
         **extra,
     }
 

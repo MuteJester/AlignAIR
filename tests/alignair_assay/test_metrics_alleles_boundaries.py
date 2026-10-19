@@ -9,7 +9,7 @@ import pytest
 from alignair_assay.ingest.airr import PredSegment, Prediction, load_airr_tsv
 from alignair_assay.metrics import INFORMATIONAL, lower_is_better
 from alignair_assay.metrics.boundaries import germline_boundary_metrics
-from alignair_assay.metrics.case import score_case
+from alignair_assay.metrics.case import MIN_OBSERVED, score_case
 from alignair_assay.reference import Reference
 from alignair_assay.seqops import revcomp
 from alignair_assay.testing import oracle_prediction
@@ -95,7 +95,7 @@ def test_oracle_scores_perfect():
     assert inverted >= 20
     for name in ("v.germ_start_exact", "v.germ_end_err", "d.germ_start_exact", "j.germ_end_exact",
                  "d.seq_start_exact", "d_short.abstain_ok", "d_short.top1_in_set", "v.spurious_call",
-                 "d.spurious_call", "v.set_precision"):
+                 "d.spurious_call", "v.set_precision", "v_short.top1_in_set", "v_short.abstain_ok"):
         assert seen[name] > 0, name
 
 
@@ -218,6 +218,32 @@ def test_short_d_scored_as_abstention():
     scores = score_case(truth, oracle, REF, d_min_observed=d.observed_length)
     assert scores["d.top1_in_set"] == 1.0
     assert "d_short.abstain_ok" not in scores
+
+
+@pytest.mark.parametrize("g,threshold", [("v", 20), ("j", 10)])
+def test_short_v_and_j_scored_as_abstention(g, threshold):
+    full = _fixture_truth("amplicon_janchor_000000.json")
+    oracle = oracle_prediction(full)
+
+    def shortened(length):
+        return replace(full, segments={**full.segments, g: replace(full.segments[g], observed_length=length)})
+
+    scores = score_case(shortened(threshold - 1), oracle, REF)
+    assert (scores[f"{g}_short.top1_in_set"], scores[f"{g}_short.abstain_ok"]) == (1.0, 1.0)
+    # No allele, boundary, indel or SHM metric for the short segment.
+    assert not any(k.startswith((f"{g}.", f"{g}_indel.")) for k in scores)
+    abstained = replace(oracle, segments={**oracle.segments, g: PredSegment()})
+    scores = score_case(shortened(threshold - 1), abstained, REF)
+    assert (scores[f"{g}_short.top1_in_set"], scores[f"{g}_short.abstain_ok"]) == (0.0, 1.0)
+    scores = score_case(shortened(threshold - 1), None, REF)
+    assert (scores[f"{g}_short.top1_in_set"], scores[f"{g}_short.abstain_ok"]) == (0.0, 0.0)
+
+    scores = score_case(shortened(threshold), oracle, REF)
+    assert scores[f"{g}.top1_in_set"] == 1.0 and f"{g}.seq_start_exact" in scores
+    assert not any(k.startswith(f"{g}_short.") for k in scores)
+    lowered = score_case(shortened(threshold - 1), oracle, REF, **{f"{g}_min_observed": threshold - 1})
+    assert f"{g}.top1_in_set" in lowered and f"{g}_short.top1_in_set" not in lowered
+    assert MIN_OBSERVED == {"v": 20, "d": 8, "j": 10}
 
 
 def test_wrong_and_partial_calls():

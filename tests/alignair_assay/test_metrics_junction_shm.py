@@ -9,7 +9,7 @@ import pytest
 from alignair_assay.cigar import parse_cigar, walk
 from alignair_assay.ingest.airr import Prediction
 from alignair_assay.metrics import INFORMATIONAL, is_informational, lower_is_better
-from alignair_assay.metrics.case import score_case
+from alignair_assay.metrics.case import MIN_OBSERVED, score_case
 from alignair_assay.metrics.junction import junction_metrics
 from alignair_assay.reference import Reference, gene_name
 from alignair_assay.testing import oracle_prediction
@@ -98,7 +98,7 @@ def test_shm_metrics_accept_every_edge_in_the_equivalence_interval():
     moved = 0
     for truth in _genairr_truths():
         v = truth.segments.get("v")
-        if v is None or _has_indel(v):
+        if v is None or _has_indel(v) or v.observed_length < MIN_OBSERVED["v"]:
             continue
         o, b = v.observed, v.boundaries
         oracle = oracle_prediction(truth)
@@ -161,9 +161,10 @@ def test_oracle_perfect_extended():
                 seen[name] += 1
         assert ("junction.nt_exact" in scores) == (truth.junction is not None)
         assert ("clone_key.exact" in scores) == (truth.clone_key is not None)
-        v_indel = "v" in truth.segments and _has_indel(truth.segments["v"])
-        assert ("v.mutation_count_err" in scores) == ("v" in truth.segments and not v_indel)
-        assert ("v_indel.mutation_count_err" in scores) == v_indel
+        v = truth.segments.get("v")
+        long_v = v is not None and v.observed_length >= MIN_OBSERVED["v"]
+        assert ("v.mutation_count_err" in scores) == (long_v and not _has_indel(v))
+        assert ("v_indel.mutation_count_err" in scores) == (long_v and _has_indel(v))
 
         # A tool that reports only the junction string: aa from translation, coordinates by location.
         if truth.junction is not None:
