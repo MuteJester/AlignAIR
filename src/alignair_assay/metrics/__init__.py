@@ -15,6 +15,12 @@ INFORMATIONAL: frozenset[str] = frozenset({".set_size", "junction.start_err", "j
 _LOWER_IS_BETTER = ("_err", ".no_call", ".spurious_call", ".germline_errors", ".mutation_count_err")
 
 
+def is_informational(name: str) -> bool:
+    """True for a metric that is reported but not compared: a name listed in ``INFORMATIONAL``, or one ending
+    with a listed suffix that starts with ``.`` (``v.set_size``)."""
+    return name in INFORMATIONAL or any(s.startswith(".") and name.endswith(s) for s in INFORMATIONAL)
+
+
 def lower_is_better(name: str) -> bool:
     """True for metrics where a smaller value is better (errors, failure rates and counts).
 
