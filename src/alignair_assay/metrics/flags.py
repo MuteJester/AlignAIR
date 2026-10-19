@@ -6,10 +6,10 @@ on how a tool resolves a frameshift.
 """
 from __future__ import annotations
 
-from alignair_assay.ingest.airr import Prediction
+from alignair_assay.core.prediction import Prediction
+from alignair_assay.core.seqops import revcomp
 from alignair_assay.metrics import CaseScores
-from alignair_assay.seqops import revcomp
-from alignair_assay.truth.build import ObservableTruth
+from alignair_assay.truth.model import ObservableTruth
 
 _PRODUCTIVITY = ("productive", "vj_in_frame", "stop_codon")
 

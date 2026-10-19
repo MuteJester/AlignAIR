@@ -1,7 +1,7 @@
 import builtins
 
-from alignair_assay.ingest import airr
-from alignair_assay.ingest.airr import load_airr_tsv
+from alignair_assay.airr import reader
+from alignair_assay.airr.reader import load_airr_tsv
 
 SID = "human_igh_ogrdb_broad:amplicon_janchor:000000"
 SEQ = "ACGT" * 30
@@ -100,7 +100,7 @@ def test_tsv_read_as_utf8(tmp_path, monkeypatch):
         encodings.append(kwargs.get("encoding"))
         return builtins.open(file, *args, **kwargs)
 
-    monkeypatch.setattr(airr, "open", spy, raising=False)
+    monkeypatch.setattr(reader, "open", spy, raising=False)
     preds, _ = load_airr_tsv(path)
     assert encodings == ["utf-8"] and preds[SID].sequence == SEQ
 

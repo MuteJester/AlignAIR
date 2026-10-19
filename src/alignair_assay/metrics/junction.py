@@ -8,12 +8,12 @@ use their ``*_abs_err`` twins.
 """
 from __future__ import annotations
 
-from alignair_assay.ingest.airr import PredSegment, Prediction
+from alignair_assay.core.prediction import PredSegment, Prediction
+from alignair_assay.core.reference import gene_name
+from alignair_assay.core.seqops import translate
 from alignair_assay.metrics import CaseScores
 from alignair_assay.metrics.alleles import predicted_set
-from alignair_assay.reference import gene_name
-from alignair_assay.seqops import translate
-from alignair_assay.truth.build import JunctionTruth
+from alignair_assay.truth.model import JunctionTruth
 
 NAN = float("nan")
 

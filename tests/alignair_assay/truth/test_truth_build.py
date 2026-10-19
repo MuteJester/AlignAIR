@@ -1,20 +1,16 @@
 import dataclasses
-import json
-from pathlib import Path
 
 import pytest
 
-from alignair_assay.cigar import parse_cigar
-from alignair_assay.reference import Reference
-from alignair_assay.seqops import revcomp, translate
-from alignair_assay.truth.build import truth_from_bench_case, truth_from_genairr_record
+from alignair_assay.core.cigar import parse_cigar
+from alignair_assay.core.reference import Reference
+from alignair_assay.core.seqops import revcomp, translate
+from alignair_assay.truth.bench import truth_from_bench_case
+from alignair_assay.truth.build import truth_from_genairr_record
 from alignair_assay.truth.io import read_truth_jsonl, write_truth_jsonl
 from alignair_assay.truth.segment import check_invariants
 
 ga = pytest.importorskip("GenAIRR")
-
-REF = Reference.from_dataconfig("HUMAN_IGH_OGRDB")
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _exp(mutate=None, indels=None, e5=None, e3=None, invert_d=False):
@@ -32,13 +28,9 @@ def _exp(mutate=None, indels=None, e5=None, e3=None, invert_d=False):
     return exp
 
 
-def _truths(recs):
-    return [truth_from_genairr_record(rec, REF, case_id=f"rec{i}", stratum="test")
+def _truths(recs, reference):
+    return [truth_from_genairr_record(rec, reference, case_id=f"rec{i}", stratum="test")
             for i, rec in enumerate(recs)]
-
-
-def _fixture(name):
-    return json.loads((FIXTURES / name).read_text())
 
 
 def test_seqops():
@@ -57,10 +49,10 @@ def test_translate_iupac():
     assert translate("cgnTT-") == "RX"
 
 
-def test_junction_translated_regardless_of_productivity():
+def test_junction_translated_regardless_of_productivity(reference):
     recs = _exp(mutate=0.05).run_records(n=200, seed=21)
     in_frame = nonproductive_in_frame = 0
-    for t in _truths(recs):
+    for t in _truths(recs, reference):
         if t.junction is None:
             continue
         if t.junction.length % 3 == 0:
@@ -74,9 +66,9 @@ def test_junction_translated_regardless_of_productivity():
     assert nonproductive_in_frame > 0
 
 
-def test_junction_absent_when_anchor_clipped():
+def test_junction_absent_when_anchor_clipped(reference):
     recs = _exp(e5=(300, 300)).run_records(n=20, seed=4)
-    for t in _truths(recs):
+    for t in _truths(recs, reference):
         assert t.junction is None
         assert t.productive is None
         assert t.vj_in_frame is None
@@ -86,21 +78,21 @@ def test_junction_absent_when_anchor_clipped():
     # V still observed but its Cys anchor clipped -> no junction; anchor kept -> junction.
     recs = _exp(e5=(285, 300)).run_records(n=60, seed=4)
     clipped_with_v = 0
-    for t in _truths(recs):
+    for t in _truths(recs, reference):
         v = t.segments.get("v")
         if v is None:
             continue
-        clipped = v.observed.germ_start > REF.anchors[v.observed.allele]
+        clipped = v.observed.germ_start > reference.anchors[v.observed.allele]
         assert (t.junction is None) == clipped
         assert (t.productive is None) == clipped
         clipped_with_v += clipped
     assert clipped_with_v >= 10
 
 
-def test_matches_simulator_junction_when_observable():
+def test_matches_simulator_junction_when_observable(reference):
     recs = _exp(mutate=0.05).run_records(n=200, seed=8)
     checked = 0
-    for rec, t in zip(recs, _truths(recs)):
+    for rec, t in zip(recs, _truths(recs, reference)):
         if not rec["junction"]:
             continue
         assert t.junction is not None
@@ -110,9 +102,9 @@ def test_matches_simulator_junction_when_observable():
     assert checked > 150
 
 
-def test_productivity_and_clone_key_fields():
+def test_productivity_and_clone_key_fields(reference):
     recs = _exp(mutate=0.05).run_records(n=200, seed=9)
-    for t in _truths(recs):
+    for t in _truths(recs, reference):
         assert t.v_mismatches == t.segments["v"].observed.n_mismatch
         if t.junction is None:
             continue
@@ -128,10 +120,10 @@ def _net_indel(seg):
     return sum(n for n, op in ops if op == "I") - sum(n for n, op in ops if op == "D")
 
 
-def test_frameshift_makes_read_unproductive():
+def test_frameshift_makes_read_unproductive(reference):
     recs = _exp(mutate=0.05, indels=(1, 4)).run_records(n=300, seed=19)
     shifted_in_frame = 0
-    for t in _truths(recs):
+    for t in _truths(recs, reference):
         for g in "vj":
             want = None if g not in t.segments else _net_indel(t.segments[g]) % 3 != 0
             assert getattr(t, f"{g}_frameshift") == want, (t.case_id, g)
@@ -146,14 +138,14 @@ def test_frameshift_makes_read_unproductive():
     assert shifted_in_frame >= 5
 
 
-def test_stop_codon_scans_v_frame_beyond_junction():
+def test_stop_codon_scans_v_frame_beyond_junction(reference):
     # Unmutated read with a stop planted in FR3 (in the V-anchor frame, outside the junction).
     recs = _exp().run_records(n=20, seed=3)
-    rec, t = next((r, t) for r, t in zip(recs, _truths(recs)) if t.stop_codon is False)
+    rec, t = next((r, t) for r, t in zip(recs, _truths(recs, reference)) if t.stop_codon is False)
     seq = rec["sequence"].upper()
     pos = t.junction.start - 30
     mutated = dict(rec, sequence=seq[:pos] + "TAA" + seq[pos + 3:])
-    t2 = truth_from_genairr_record(mutated, REF, case_id="x", stratum="test")
+    t2 = truth_from_genairr_record(mutated, reference, case_id="x", stratum="test")
     assert t2.junction.nt == t.junction.nt
     assert t2.stop_codon is True
     assert t2.productive is False
@@ -180,40 +172,40 @@ def test_simulator_alignment_past_allele_end_is_unscorable():
     (1000, 0, "past the end of"),
     (0, 1000, "past the read end"),
 ])
-def test_inconsistent_simulator_alignment_dropped(shift_germline, shift_read, message):
+def test_inconsistent_simulator_alignment_dropped(shift_germline, shift_read, message, reference):
     rec = _exp().run_records(n=1, seed=3)[0]
     bad = dict(rec, v_germline_start=rec["v_germline_start"] + shift_germline,
                v_sequence_start=rec["v_sequence_start"] + shift_read)
-    t = truth_from_genairr_record(bad, REF, case_id="x", stratum="test")
+    t = truth_from_genairr_record(bad, reference, case_id="x", stratum="test")
     assert "v" not in t.segments
     assert t.unscorable == frozenset({"v"})
     assert any(w.startswith("v: simulator alignment") and message in w for w in t.warnings), t.warnings
-    assert truth_from_genairr_record(rec, REF, case_id="x", stratum="test").unscorable == frozenset()
+    assert truth_from_genairr_record(rec, reference, case_id="x", stratum="test").unscorable == frozenset()
 
 
-def test_unknown_primary_allele_is_unscorable():
+def test_unknown_primary_allele_is_unscorable(reference):
     rec = _exp().run_records(n=1, seed=3)[0]
-    t = truth_from_genairr_record(dict(rec, j_call="IGHJ99*01"), REF, case_id="x", stratum="test")
+    t = truth_from_genairr_record(dict(rec, j_call="IGHJ99*01"), reference, case_id="x", stratum="test")
     assert "j" not in t.segments
     assert t.unscorable == frozenset({"j"})
 
 
-def test_clipped_segment_is_unobserved_not_unscorable():
-    for t in _truths(_exp(e5=(330, 330)).run_records(n=5, seed=7)):
+def test_clipped_segment_is_unobserved_not_unscorable(reference):
+    for t in _truths(_exp(e5=(330, 330)).run_records(n=5, seed=7), reference):
         assert t.unscorable == frozenset()
-    assert any("v" not in t.segments for t in _truths(_exp(e5=(330, 330)).run_records(n=5, seed=7)))
+    assert any("v" not in t.segments for t in _truths(_exp(e5=(330, 330)).run_records(n=5, seed=7), reference))
 
 
-def test_rev_comp_record_rejected():
+def test_rev_comp_record_rejected(reference):
     rec = _exp().run_records(n=1, seed=3)[0]
     with pytest.raises(ValueError):
-        truth_from_genairr_record(dict(rec, rev_comp=True), REF, case_id="x", stratum="test")
+        truth_from_genairr_record(dict(rec, rev_comp=True), reference, case_id="x", stratum="test")
 
 
-def test_property_records_build_cleanly():
+def test_property_records_build_cleanly(reference):
     recs = _exp(mutate=0.08, indels=(0, 4), e5=(0, 120), e3=(0, 30)).run_records(n=300, seed=3)
     with_junction = 0
-    for t in _truths(recs):
+    for t in _truths(recs, reference):
         assert t.warnings == ()
         for g, s in t.segments.items():
             assert s.observed_length == s.observed.germ_end - s.observed.germ_start
@@ -230,58 +222,58 @@ def test_property_records_build_cleanly():
     # GenAIRR does not record deletions inside an inverted D; the builder places them.
     ({"indels": (2, 8)}, 5),
 ])
-def test_inverted_d_unmutated_zero_mismatch(recipe, min_placed):
+def test_inverted_d_unmutated_zero_mismatch(recipe, min_placed, reference):
     recs = _exp(invert_d=True, **recipe).run_records(n=200, seed=13)
     checked = placed = 0
-    for rec, t in zip(recs, _truths(recs)):
+    for rec, t in zip(recs, _truths(recs, reference)):
         placed += any("placed by minimum mismatch" in w for w in t.warnings)
         assert not any("dropped" in w for w in t.warnings), t.warnings
         assert rec["d_inverted"]
         if "d" not in t.segments:
             continue
         d = t.segments["d"]
-        rc_allele = revcomp(REF.seq(d.observed.allele))
+        rc_allele = revcomp(reference.seq(d.observed.allele))
         assert d.inverted
         assert d.observed.n_mismatch == 0, (rec["d_cigar"], d.observed)
         assert check_invariants(t.sequence, rc_allele, d.observed) == []
         assert d.observed.observed_germline == rc_allele[d.observed.germ_start:d.observed.germ_end]
         for name in d.alleles.alleles:
-            assert d.observed.observed_germline in revcomp(REF.seq(name))
+            assert d.observed.observed_germline in revcomp(reference.seq(name))
         checked += 1
     assert checked >= 50
     assert placed >= min_placed
 
 
-def test_bench_case_orientations():
-    fwd = truth_from_bench_case(_fixture("amplicon_janchor_000000.json"), REF)
+def test_bench_case_orientations(reference, load_fixture):
+    fwd = truth_from_bench_case(load_fixture("amplicon_janchor_000000.json"), reference)
     assert fwd.orientation == 0 and fwd.excluded is None
     assert fwd.case_id == "human_igh_ogrdb_broad:amplicon_janchor:000000"
     assert fwd.stratum == "amplicon_janchor"
 
-    case = _fixture("orientation_000001.json")
+    case = load_fixture("orientation_000001.json")
     assert case["orientation_id"] == 1
-    t = truth_from_bench_case(case, REF)
+    t = truth_from_bench_case(case, reference)
     assert t.orientation == 1
     assert t.excluded is None
     assert t.sequence == revcomp(case["sequence"]).upper() == case["record"]["sequence"].upper()
 
-    case = _fixture("orientation_000002.json")
+    case = load_fixture("orientation_000002.json")
     assert case["orientation_id"] == 2
-    t = truth_from_bench_case(case, REF)
+    t = truth_from_bench_case(case, reference)
     assert t.excluded == "non_biological_orientation"
     assert t.orientation == 2
     assert t.sequence == case["record"]["sequence"].upper()
 
     reverse_only = dict(case, orientation_id=3, sequence=case["record"]["sequence"][::-1])
-    assert truth_from_bench_case(reverse_only, REF).excluded == "non_biological_orientation"
+    assert truth_from_bench_case(reverse_only, reference).excluded == "non_biological_orientation"
     with pytest.raises(ValueError):  # presented sequence inconsistent with the orientation id
-        truth_from_bench_case(dict(case, orientation_id=3), REF)
+        truth_from_bench_case(dict(case, orientation_id=3), reference)
 
 
-def test_jsonl_roundtrip(tmp_path):
+def test_jsonl_roundtrip(tmp_path, reference):
     recs = list(_exp(mutate=0.05, indels=(0, 2), e5=(0, 300)).run_records(n=40, seed=5))
     recs += list(_exp(invert_d=True).run_records(n=10, seed=5))
-    truths = _truths(recs)
+    truths = _truths(recs, reference)
     truths.append(dataclasses.replace(truths[0], unscorable=frozenset({"v", "d"})))
     assert any(t.junction is None for t in truths) and any(t.junction for t in truths)
     assert any("d" in t.segments and t.segments["d"].inverted for t in truths)

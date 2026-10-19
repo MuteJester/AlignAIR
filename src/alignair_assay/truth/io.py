@@ -1,20 +1,24 @@
 """JSON Lines (de)serialisation of observable truth records; ``.gz`` paths are gzip-compressed.
 
-A truth file may start with a header line ``{"header": {...}}`` describing how it was built (the reference and
-its digest); ``read_truth_jsonl`` skips it and ``read_truth_header`` returns it.
+A truth file may start with a header line ``{"header": {...}}`` describing how it was built (``kind`` and
+``version``, the reference and its digest, the GenAIRR provenance); ``read_truth_jsonl`` skips it and
+``read_truth_header`` returns it. File access goes through ``core.jsonl``, so this module stays pure.
 """
 from __future__ import annotations
 
-import gzip
-import json
 from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
 
+from alignair_assay.core.jsonl import read_header, read_jsonl, write_jsonl
 from alignair_assay.truth.alleles import AlleleTruth
 from alignair_assay.truth.boundaries import BoundaryTruth
-from alignair_assay.truth.build import JunctionTruth, ObservableTruth, SegmentTruth
+from alignair_assay.truth.model import JunctionTruth, ObservableTruth, SegmentTruth
 from alignair_assay.truth.segment import ObservedSegment
+
+# Header ``kind`` and ``version`` of a truth file.
+TRUTH_KIND = "alignair_assay.truth"
+TRUTH_VERSION = "1"
 
 
 def truth_to_dict(t: ObservableTruth) -> dict:
@@ -41,6 +45,7 @@ def truth_to_dict(t: ObservableTruth) -> dict:
 
 
 def truth_from_dict(d: dict) -> ObservableTruth:
+    """Inverse of ``truth_to_dict``."""
     clone_key = d["clone_key"]
     return ObservableTruth(
         case_id=d["case_id"],
@@ -64,32 +69,18 @@ def truth_from_dict(d: dict) -> ObservableTruth:
 
 
 def write_truth_jsonl(truths: Iterable[ObservableTruth], path: str | Path, header: dict | None = None) -> None:
-    with _open(path, "wt") as fh:
-        if header is not None:
-            fh.write(json.dumps({"header": header}, separators=(",", ":")) + "\n")
-        for t in truths:
-            fh.write(json.dumps(truth_to_dict(t), separators=(",", ":")) + "\n")
+    """Write one truth record per line, after the header line when ``header`` is given."""
+    write_jsonl((truth_to_dict(t) for t in truths), path, header=header)
 
 
 def read_truth_jsonl(path: str | Path) -> list[ObservableTruth]:
-    with _open(path, "rt") as fh:
-        rows = (json.loads(line) for line in fh if line.strip())
-        return [truth_from_dict(row) for row in rows if "header" not in row]
+    """Every truth record of the file, in file order; the header line is skipped."""
+    return [truth_from_dict(row) for row in read_jsonl(path)]
 
 
 def read_truth_header(path: str | Path) -> dict | None:
     """The header of a truth file, or None when it has none."""
-    with _open(path, "rt") as fh:
-        for line in fh:
-            if line.strip():
-                return json.loads(line).get("header")
-    return None
-
-
-def _open(path: str | Path, mode: str):
-    if str(path).endswith(".gz"):
-        return gzip.open(path, mode, encoding="utf-8")
-    return open(path, mode, encoding="utf-8")
+    return read_header(path)
 
 
 def _segment_to_dict(s: SegmentTruth) -> dict:

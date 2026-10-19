@@ -70,6 +70,21 @@ def test_binary_metric_uses_exact_mcnemar():
     assert compare(a, b, ["m"], lower_is_better=set())["m"]["p_value"] == 1.0
 
 
+def test_binary_delta_ci_clipped_to_attainable_range():
+    a = {f"c{i}": {"m": 1.0} for i in range(12)}
+    b = {f"c{i}": {"m": 1.0 if i == 0 else 0.0} for i in range(12)}
+    r = compare(a, b, ["m"], lower_is_better=set())["m"]
+    assert r["ci95"][0] == -1.0 and r["ci"][0] == -1.0 and r["ci95"][1] <= 1.0
+    # Only the bound past -1 moves; the other keeps its normal-theory value (one metric: ci is the 95% interval).
+    se = math.sqrt((1 / 12) / 12)
+    assert math.isclose(r["ci95"][1], -11 / 12 + NormalDist().inv_cdf(0.975) * se)
+    assert r["ci"] == r["ci95"]
+    # Continuous metrics are not clipped.
+    wide = compare({c: {"m": 0.0} for c in a}, {c: {"m": 3.0 * (i % 2)} for i, c in enumerate(a)}, ["m"],
+                   lower_is_better=set())["m"]
+    assert wide["ci95"][1] > 1.0
+
+
 def test_continuous_metric_uses_paired_z():
     a = {f"c{i}": {"m": 0.0} for i in range(20)}
     b = {f"c{i}": {"m": 1.0 if i % 2 else 3.0} for i in range(20)}

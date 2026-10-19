@@ -61,7 +61,8 @@ def compare(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[st
     two-sided paired z-test on the differences, and 1.0 below ``MIN_PAIRED`` pairs. Verdicts are Holm-corrected
     across ``metrics`` at ``alpha``, oriented by ``lower_is_better``. ``ci95`` is delta +/- 1.96 standard errors;
     ``ci`` is the simultaneous Bonferroni interval (z at 1 - alpha / (2m)), conservative relative to the Holm
-    decisions. Both are None below two pairs.
+    decisions. Both are None below two pairs. When every paired value is 0 or 1 both are clipped to [-1, 1], the
+    range a difference of two rates can take.
     """
     sum_a = summarize(a, list(a))
     sum_b = summarize(b, list(b))
@@ -90,8 +91,9 @@ def compare(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[st
         if n >= 2:
             delta = entry["delta"]
             se = math.sqrt(math.fsum((r - delta) ** 2 for r in raw) / (n - 1) / n)
-            entry["ci95"] = (delta - z95 * se, delta + z95 * se)
-            entry["ci"] = (delta - z_family * se, delta + z_family * se)
+            limit = 1.0 if binary else math.inf
+            entry["ci95"] = _interval(delta, z95 * se, limit)
+            entry["ci"] = _interval(delta, z_family * se, limit)
         if n < MIN_PAIRED:
             entry["test"], p = "too_few_pairs", 1.0
         elif binary:
@@ -106,6 +108,11 @@ def compare(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[st
         entry["verdict"] = ("b_better" if reject[name] and direction > 0
                             else "a_better" if reject[name] and direction < 0 else "tie_or_inconclusive")
     return res
+
+
+def _interval(center: float, half_width: float, limit: float) -> tuple[float, float]:
+    """``center`` +/- ``half_width``, clipped to [-limit, limit]."""
+    return max(center - half_width, -limit), min(center + half_width, limit)
 
 
 def to_dict(obj):

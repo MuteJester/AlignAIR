@@ -1,9 +1,5 @@
-import pytest
-
 from alignair_assay.truth.boundaries import boundary_intervals
 from alignair_assay.truth.segment import observe_segment
-
-ga = pytest.importorskip("GenAIRR")
 
 ALLELE = "ACGTACGTAC"
 
@@ -116,11 +112,9 @@ def test_indel_stops_shrink_run():
     assert bt.seq_end == (6, 7)
 
 
-def test_generative_boundary_matches_np_oracle():
+def test_generative_boundary_matches_np_oracle(genairr, reference):
     """Unmutated, error-free reads: expected extension comes from the NP sequence, not the read."""
-    from alignair_assay.reference import Reference
-    ref = Reference.from_dataconfig("HUMAN_IGH_OGRDB")
-    exp = (ga.Experiment.on("human_igh").recombine()
+    exp = (genairr.Experiment.on("human_igh").recombine()
            .end_loss_5prime(length=(0, 20)).end_loss_3prime(length=(0, 10)))
     recs = exp.run_records(n=300, seed=5)
     v_pos = j_pos = v_checked = j_checked = 0
@@ -133,7 +127,7 @@ def test_generative_boundary_matches_np_oracle():
             if not rec.get(f"{g}_call"):
                 continue
             call = rec[f"{g}_call"].split(",")[0]
-            s = observe_segment(read, ref.seq(call), call, rec[f"{g}_sequence_start"],
+            s = observe_segment(read, reference.seq(call), call, rec[f"{g}_sequence_start"],
                                 rec[f"{g}_germline_start"], rec[f"{g}_cigar"])
             if s is not None:
                 segs[g] = s
@@ -143,7 +137,7 @@ def test_generative_boundary_matches_np_oracle():
         np1, np2 = rec["np1"].upper(), rec["np2"].upper()
 
         if d.seq_start == v.seq_end + len(np1):
-            allele = ref.seq(v.allele).upper()
+            allele = reference.seq(v.allele).upper()
             assert read[v.seq_end:v.seq_end + len(np1)] == np1
             k = 0
             while (k < len(np1) and v.germ_end + k < len(allele)
@@ -156,7 +150,7 @@ def test_generative_boundary_matches_np_oracle():
             v_pos += k > 0
 
         if j.seq_start == d.seq_end + len(np2):
-            allele = ref.seq(j.allele).upper()
+            allele = reference.seq(j.allele).upper()
             assert read[d.seq_end:j.seq_start] == np2
             k = 0
             while (k < len(np2) and j.germ_start - 1 - k >= 0

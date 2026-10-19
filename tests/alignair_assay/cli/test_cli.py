@@ -1,6 +1,5 @@
 import gzip
 import hashlib
-import importlib.metadata
 import json
 import math
 import subprocess
@@ -9,29 +8,27 @@ from pathlib import Path
 
 import pytest
 
-from alignair_assay.cigar import format_cigar, parse_cigar
-from alignair_assay.cli import d_len_bin, git_state, main, slice_labels
-from alignair_assay.ingest.airr import PredSegment, Prediction, load_airr_tsv
+from alignair_assay.airr.reader import load_airr_tsv
+from alignair_assay.airr.writer import write_airr_tsv
+from alignair_assay.cli import main
+from alignair_assay.core.cigar import format_cigar, parse_cigar
+from alignair_assay.core.prediction import PredSegment, Prediction
+from alignair_assay.core.provenance import genairr_provenance, git_state
+from alignair_assay.core.reference import gene_name
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.metrics.case import score_case
-from alignair_assay.reference import Reference, gene_name
-from alignair_assay.testing import oracle_prediction, write_airr_tsv
-from alignair_assay.truth.build import truth_from_bench_case
+from alignair_assay.scoring.slices import d_len_bin, slice_labels
+from alignair_assay.truth.bench import truth_from_bench_case
 from alignair_assay.truth.io import read_truth_header, read_truth_jsonl, write_truth_jsonl
+from alignair_assay.truth.oracle import oracle_prediction
 
 ga = pytest.importorskip("GenAIRR")
 
-REF = Reference.from_dataconfig("HUMAN_IGH_OGRDB")
-FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE_NAMES = ("amplicon_janchor_000000.json", "orientation_000001.json", "orientation_000002.json")
 D_BINS = {"absent", "<5", "5-7", "8-9", "10-11", "12-14", ">=15"}
 
 
-def _fixture(name):
-    return json.loads((FIXTURES / name).read_text())
-
-
-def _bench_cases():
+def _bench_cases(load_fixture):
     """40 forward GenAIRR records (one with an unknown J allele, ten with an inverted D) plus the three fixtures."""
     recs = list(ga.Experiment.on("human_igh").recombine().mutate(rate=0.05).polymerase_indels(count=(0, 2))
                 .end_loss_5prime(length=(0, 120)).end_loss_3prime(length=(0, 30)).run_records(n=30, seed=17))
@@ -39,7 +36,7 @@ def _bench_cases():
     recs[0] = dict(recs[0], j_call="IGHJ99*01")
     cases = [{"case_id": f"sim:{i:03d}", "stratum": "inverted_d" if rec["d_inverted"] else "sim",
               "orientation_id": 0, "sequence": rec["sequence"], "record": rec} for i, rec in enumerate(recs)]
-    return cases + [_fixture(name) for name in FIXTURE_NAMES]
+    return cases + [load_fixture(name) for name in FIXTURE_NAMES]
 
 
 def _write_jsonl(rows, path):
@@ -75,8 +72,8 @@ def _without_empty_segments(pred):
     return replace(pred, segments={g: s for g, s in pred.segments.items() if s != PredSegment()})
 
 
-def test_cli_end_to_end_small(tmp_path, capsys):
-    truth_path, truths = _build_truth(tmp_path, _bench_cases())
+def test_cli_end_to_end_small(tmp_path, capsys, reference, load_fixture):
+    truth_path, truths = _build_truth(tmp_path, _bench_cases(load_fixture))
     printed = capsys.readouterr().out
     unscorable = {g: sum(g in t.unscorable for t in truths) for g in "vdj"}
     assert unscorable["j"] >= 1
@@ -92,7 +89,7 @@ def test_cli_end_to_end_small(tmp_path, capsys):
             f"d={disagreements['d']} j={disagreements['j']}\n") in printed
 
     scored = [t for t in truths if t.excluded is None]
-    assert [t.case_id for t in truths] == [c["case_id"] for c in _bench_cases()]
+    assert [t.case_id for t in truths] == [c["case_id"] for c in _bench_cases(load_fixture)]
     assert len(scored) == 42
     assert {t.orientation for t in scored} == {0, 1}
     assert any("d" in t.segments and t.segments["d"].inverted for t in scored)
@@ -117,7 +114,7 @@ def test_cli_end_to_end_small(tmp_path, capsys):
     assert list(cli_scores) == [t.case_id for t in scored]
     checked = 0
     for t, p in zip(scored, oracles):
-        assert cli_scores[t.case_id] == _jsonable(score_case(t, p, REF))
+        assert cli_scores[t.case_id] == _jsonable(score_case(t, p, reference))
         for name, value in cli_scores[t.case_id].items():
             if not is_informational(name):
                 assert value == (0.0 if lower_is_better(name) else 1.0), (t.case_id, name, value)
@@ -150,8 +147,8 @@ def test_cli_end_to_end_small(tmp_path, capsys):
     assert "## By d_len_bin" in md
 
 
-def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
-    truth_path, truths = _build_truth(tmp_path, _bench_cases())
+def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys, reference, load_fixture):
+    truth_path, truths = _build_truth(tmp_path, _bench_cases(load_fixture))
     scored = [t for t in truths if t.excluded is None]
     excluded = next(t for t in truths if t.excluded is not None)
     oracles = [oracle_prediction(t) for t in scored]
@@ -165,7 +162,7 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
         segments = dict(p.segments)
         if "v" in segments:
             v = segments["v"]
-            other = next(a for a in sorted(REF.alleles["v"]) if gene_name(a) != gene_name(v.call))
+            other = next(a for a in sorted(reference.alleles["v"]) if gene_name(a) != gene_name(v.call))
             segments["v"] = replace(v, call=other, call_set=(other,))
         if p.junction_start is not None:
             start, end = p.junction_start - 3, p.junction_end - 3
@@ -203,7 +200,7 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
     preds_b, _ = load_airr_tsv(b_tsv)
     names = set()
     for t, p in zip(scored, oracles):
-        names |= set(score_case(t, p, REF)) | set(score_case(t, preds_b.get(t.case_id), REF))
+        names |= set(score_case(t, p, reference)) | set(score_case(t, preds_b.get(t.case_id), reference))
     comp = rep["comparison"]
     assert set(comp) == {n for n in names if not is_informational(n)}
     assert prov["family_size"] == len(comp)
@@ -223,19 +220,19 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
     assert "| Metric | oracle | broken | n paired | oracle (paired) | broken (paired) | Δ (b−a) |" in md
 
 
-def _igblast_cigar(seg, read_len):
+def _igblast_cigar(seg, read_len, reference):
     """IgBLAST pads CIGARs with read soft clips (S) and skipped germline (N) on both sides."""
-    allele_len = len(REF.seq(seg.call))
+    allele_len = len(reference.seq(seg.call))
     ops = [(seg.seq_start, "S"), (seg.germ_start, "N"), *parse_cigar(seg.cigar),
            (read_len - seg.seq_end, "S"), (allele_len - seg.germ_end, "N")]
     return format_cigar(ops)
 
 
-def test_rev_comp_row_scores_like_forward(tmp_path):
-    case = _fixture("orientation_000001.json")
+def test_rev_comp_row_scores_like_forward(tmp_path, reference, load_fixture):
+    case = load_fixture("orientation_000001.json")
     assert case["orientation_id"] == 1
-    forward = truth_from_bench_case(dict(case, orientation_id=0, sequence=case["record"]["sequence"]), REF)
-    expected = _jsonable(score_case(forward, oracle_prediction(forward), REF))
+    forward = truth_from_bench_case(dict(case, orientation_id=0, sequence=case["record"]["sequence"]), reference)
+    expected = _jsonable(score_case(forward, oracle_prediction(forward), reference))
 
     truth_path, (truth,) = _build_truth(tmp_path, [case], name="cases.jsonl")
     assert truth.orientation == 1
@@ -245,7 +242,7 @@ def test_rev_comp_row_scores_like_forward(tmp_path):
     # no junction coordinates.
     n = len(truth.sequence)
     row = replace(oracle, sequence=truth.sequence, junction_start=None, junction_end=None,
-                  segments={g: replace(s, cigar=_igblast_cigar(s, n)) for g, s in oracle.segments.items()})
+                  segments={g: replace(s, cigar=_igblast_cigar(s, n, reference)) for g, s in oracle.segments.items()})
     assert all("S" in s.cigar and "N" in s.cigar for s in row.segments.values())
     tsv = tmp_path / "igblast.tsv"
     write_airr_tsv([row], tsv)
@@ -273,13 +270,13 @@ def test_d_len_bin(length, label):
     assert d_len_bin(length) == label
 
 
-def test_truth_records_reference_and_scoring_checks_it(tmp_path, capsys):
-    cases = [_fixture(name) for name in FIXTURE_NAMES]
+def test_truth_records_reference_and_scoring_checks_it(tmp_path, capsys, reference, load_fixture):
+    cases = [load_fixture(name) for name in FIXTURE_NAMES]
     truth_path, truths = _build_truth(tmp_path, cases, name="cases.jsonl")
     assert len(truths) == 3  # the header line is not a truth record
     header = read_truth_header(truth_path)
     assert header == {"kind": "alignair_assay.truth", "version": "1", "reference": "HUMAN_IGH_OGRDB",
-                      "reference_digest": REF.digest(), "genairr_version": importlib.metadata.version("GenAIRR")}
+                      "reference_digest": reference.digest(), **genairr_provenance()}
     tsv = tmp_path / "oracle.tsv"
     write_airr_tsv([oracle_prediction(t) for t in truths if t.excluded is None], tsv)
     capsys.readouterr()
@@ -288,7 +285,7 @@ def test_truth_records_reference_and_scoring_checks_it(tmp_path, capsys):
     assert main(["score", "--truth", str(truth_path), "--predictions", str(tsv), "--tool", "oracle",
                  "--out-dir", str(out_dir)]) == 0
     prov = json.loads((out_dir / "oracle.report.json").read_text())["provenance"]
-    assert prov["reference_digest"] == REF.digest() and prov["truth_header"] == header
+    assert prov["reference_digest"] == reference.digest() and prov["truth_header"] == header
 
     # Scoring against another reference fails loudly instead of scoring calls against the wrong alleles.
     for command in (["score", "--truth", str(truth_path), "--predictions", str(tsv), "--tool", "oracle"],
@@ -307,8 +304,8 @@ def test_truth_records_reference_and_scoring_checks_it(tmp_path, capsys):
     assert "records no reference digest" in capsys.readouterr().err
 
 
-def test_no_matching_prediction_ids_fail_loudly(tmp_path, capsys):
-    truth_path, truths = _build_truth(tmp_path, [_fixture(name) for name in FIXTURE_NAMES], name="cases.jsonl")
+def test_no_matching_prediction_ids_fail_loudly(tmp_path, capsys, load_fixture):
+    truth_path, truths = _build_truth(tmp_path, [load_fixture(name) for name in FIXTURE_NAMES], name="cases.jsonl")
     tsv = tmp_path / "renamed.tsv"
     write_airr_tsv([replace(oracle_prediction(t), sequence_id=f"read{i}")
                     for i, t in enumerate(truths) if t.excluded is None], tsv)
@@ -323,8 +320,8 @@ def test_no_matching_prediction_ids_fail_loudly(tmp_path, capsys):
         assert str(tsv) in err
 
 
-def test_missing_input_file_is_an_error(tmp_path, capsys):
-    truth_path, _ = _build_truth(tmp_path, [_fixture("amplicon_janchor_000000.json")], name="cases.jsonl")
+def test_missing_input_file_is_an_error(tmp_path, capsys, load_fixture):
+    truth_path, _ = _build_truth(tmp_path, [load_fixture("amplicon_janchor_000000.json")], name="cases.jsonl")
     capsys.readouterr()
     missing = tmp_path / "nope.tsv"
     assert main(["score", "--truth", str(truth_path), "--predictions", str(missing), "--tool", "x",
@@ -351,8 +348,8 @@ def test_git_state_reports_dirty_tree(tmp_path):
     assert git_state(tmp_path / "missing") == {"git_commit": None, "git_dirty": None}
 
 
-def test_d_inverted_slice():
-    truth = truth_from_bench_case(_fixture("amplicon_janchor_000000.json"), REF)
+def test_d_inverted_slice(reference, load_fixture):
+    truth = truth_from_bench_case(load_fixture("amplicon_janchor_000000.json"), reference)
     d = truth.segments["d"]
     assert slice_labels(truth)["d_inverted"] == "no"
     assert slice_labels(replace(truth, segments={**truth.segments, "d": replace(d, inverted=True)}))[

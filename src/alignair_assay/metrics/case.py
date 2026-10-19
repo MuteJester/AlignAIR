@@ -1,15 +1,15 @@
 """Score one tool's prediction for one read against its observable truth."""
 from __future__ import annotations
 
-from alignair_assay.ingest.airr import GENES, PredSegment, Prediction
+from alignair_assay.core.prediction import GENES, PredSegment, Prediction
+from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import CaseScores
 from alignair_assay.metrics.alleles import call_metrics, short_call_metrics, spurious_call
 from alignair_assay.metrics.boundaries import germline_boundary_metrics, read_boundary_metrics
 from alignair_assay.metrics.flags import flag_metrics
 from alignair_assay.metrics.junction import clone_key_metric, junction_metrics
 from alignair_assay.metrics.shm import germline_metrics, indel_metrics
-from alignair_assay.reference import Reference
-from alignair_assay.truth.build import ObservableTruth
+from alignair_assay.truth.model import ObservableTruth
 
 _NO_CALL = PredSegment()
 

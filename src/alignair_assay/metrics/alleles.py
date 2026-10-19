@@ -5,9 +5,9 @@ a top-1 call counts as no call.
 """
 from __future__ import annotations
 
-from alignair_assay.ingest.airr import PredSegment
+from alignair_assay.core.prediction import PredSegment
+from alignair_assay.core.reference import gene_name
 from alignair_assay.metrics import CaseScores
-from alignair_assay.reference import gene_name
 from alignair_assay.truth.alleles import AlleleTruth
 
 NAN = float("nan")

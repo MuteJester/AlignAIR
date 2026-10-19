@@ -5,11 +5,11 @@
 """
 from __future__ import annotations
 
-from alignair_assay.ingest.airr import PredSegment
+from alignair_assay.core.prediction import PredSegment
+from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import CaseScores
-from alignair_assay.reference import Reference
 from alignair_assay.truth.boundaries import BoundaryTruth, Interval
-from alignair_assay.truth.build import SegmentTruth
+from alignair_assay.truth.model import SegmentTruth
 
 NAN = float("nan")
 

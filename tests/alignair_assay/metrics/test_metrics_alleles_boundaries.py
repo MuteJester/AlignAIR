@@ -1,35 +1,36 @@
-import json
 import math
 from collections import Counter
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
-from alignair_assay.ingest.airr import PredSegment, Prediction, load_airr_tsv
+from alignair_assay.airr.reader import load_airr_tsv
+from alignair_assay.core.prediction import PredSegment, Prediction
+from alignair_assay.core.reference import Reference
+from alignair_assay.core.seqops import revcomp
 from alignair_assay.metrics import INFORMATIONAL, lower_is_better
 from alignair_assay.metrics.boundaries import germline_boundary_metrics
 from alignair_assay.metrics.case import MIN_OBSERVED, score_case
-from alignair_assay.reference import Reference
-from alignair_assay.seqops import revcomp
-from alignair_assay.testing import oracle_prediction
 from alignair_assay.truth.alleles import AlleleTruth
+from alignair_assay.truth.bench import truth_from_bench_case
 from alignair_assay.truth.boundaries import BoundaryTruth
-from alignair_assay.truth.build import SegmentTruth, truth_from_bench_case, truth_from_genairr_record
+from alignair_assay.truth.build import truth_from_genairr_record
+from alignair_assay.truth.model import SegmentTruth
+from alignair_assay.truth.oracle import oracle_prediction
 from alignair_assay.truth.segment import ObservedSegment
 
 ga = pytest.importorskip("GenAIRR")
 
-REF = Reference.from_dataconfig("HUMAN_IGH_OGRDB")
-FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE_NAMES = ("amplicon_janchor_000000.json", "orientation_000001.json", "orientation_000002.json")
 
 _ONE = ("top1_in_set", "gene_top1", "any_overlap", "_exact", "set_precision", "abstain_ok")
 _ZERO = ("_err", ".no_call", ".spurious_call")
 
 
-def _fixture_truth(name):
-    return truth_from_bench_case(json.loads((FIXTURES / name).read_text()), REF)
+@pytest.fixture
+def fixture_truth(load_fixture, reference):
+    """``fixture_truth(name)``: the truth of the committed bench case ``name``."""
+    return lambda name: truth_from_bench_case(load_fixture(name), reference)
 
 
 def _exp(mutate=None, indels=None, e5=None, e3=None, invert_d=False):
@@ -47,7 +48,7 @@ def _exp(mutate=None, indels=None, e5=None, e3=None, invert_d=False):
     return exp
 
 
-def _genairr_truths():
+def _genairr_truths(reference):
     recipes = [
         (300, 3, {"mutate": 0.08, "indels": (0, 4), "e5": (0, 120), "e3": (0, 30)}),
         (60, 5, {"invert_d": True, "mutate": 0.05, "e5": (0, 300)}),
@@ -56,7 +57,7 @@ def _genairr_truths():
     truths = []
     for n, seed, recipe in recipes:
         recs = _exp(**recipe).run_records(n=n, seed=seed)
-        truths += [truth_from_genairr_record(rec, REF, case_id=f"s{seed}-{i}", stratum="test")
+        truths += [truth_from_genairr_record(rec, reference, case_id=f"s{seed}-{i}", stratum="test")
                    for i, rec in enumerate(recs)]
     return truths
 
@@ -76,12 +77,12 @@ def _assert_perfect(scores, truth) -> int:
     return checked
 
 
-def test_oracle_scores_perfect():
+def test_oracle_scores_perfect(reference, fixture_truth):
     checked = 0
     seen: Counter = Counter()
     inverted = 0
-    for truth in _genairr_truths() + [_fixture_truth(n) for n in FIXTURE_NAMES]:
-        scores = score_case(truth, oracle_prediction(truth), REF)
+    for truth in _genairr_truths(reference) + [fixture_truth(n) for n in FIXTURE_NAMES]:
+        scores = score_case(truth, oracle_prediction(truth), reference)
         if truth.excluded is not None:
             assert scores == {}
             continue
@@ -103,9 +104,9 @@ def _same(a, b):
     return a.keys() == b.keys() and all(a[k] == b[k] or (math.isnan(a[k]) and math.isnan(b[k])) for k in a)
 
 
-def test_missing_prediction_counts_as_wrong():
-    truth = _fixture_truth("amplicon_janchor_000000.json")
-    scores = score_case(truth, None, REF)
+def test_missing_prediction_counts_as_wrong(reference, fixture_truth):
+    truth = fixture_truth("amplicon_janchor_000000.json")
+    scores = score_case(truth, None, reference)
     for g in "vdj":
         assert scores[f"{g}.top1_in_set"] == 0.0
         assert scores[f"{g}.gene_top1"] == 0.0
@@ -121,22 +122,22 @@ def test_missing_prediction_counts_as_wrong():
     germ = [k for k in scores if ".germ_" in k]
     assert len(germ) == 12 and all(math.isnan(scores[k]) for k in germ)
     # A prediction row without segments scores the same as no prediction at all, except that the row exists.
-    empty = score_case(truth, Prediction(sequence_id=truth.case_id, sequence=truth.sequence), REF)
+    empty = score_case(truth, Prediction(sequence_id=truth.case_id, sequence=truth.sequence), reference)
     for name in ("airr.valid", "airr.sequence_ok"):
         assert (empty.pop(name), scores.pop(name)) == (1.0, 0.0)
     assert _same(empty, scores)
 
 
-def test_excluded_truth_scores_nothing():
-    truth = _fixture_truth("orientation_000002.json")
+def test_excluded_truth_scores_nothing(reference, fixture_truth):
+    truth = fixture_truth("orientation_000002.json")
     assert truth.excluded is not None
-    assert score_case(truth, oracle_prediction(truth), REF) == {}
-    assert score_case(truth, None, REF) == {}
+    assert score_case(truth, oracle_prediction(truth), reference) == {}
+    assert score_case(truth, None, reference) == {}
 
 
-def test_igblast_correct_coordinates_on_clipped_read(tmp_path):
-    case = json.loads((FIXTURES / "amplicon_janchor_000000.json").read_text())
-    truth = truth_from_bench_case(case, REF)
+def test_igblast_correct_coordinates_on_clipped_read(tmp_path, reference, load_fixture):
+    case = load_fixture("amplicon_janchor_000000.json")
+    truth = truth_from_bench_case(case, reference)
     header = ["sequence_id", "sequence", "rev_comp", "productive", "v_call",
               "v_sequence_start", "v_sequence_end", "v_germline_start", "v_germline_end",
               "v_cigar", "j_cigar", "j_sequence_start", "j_sequence_end",
@@ -146,7 +147,7 @@ def test_igblast_correct_coordinates_on_clipped_read(tmp_path):
     path = tmp_path / "igblast.tsv"
     path.write_text("\t".join(header) + "\n" + "\t".join(row) + "\n")
     preds, _ = load_airr_tsv(path)
-    scores = score_case(truth, preds[case["case_id"]], REF)
+    scores = score_case(truth, preds[case["case_id"]], reference)
 
     assert scores["v.top1_in_set"] == 1.0
     assert scores["v.set_precision"] == 1.0
@@ -165,100 +166,100 @@ def test_igblast_correct_coordinates_on_clipped_read(tmp_path):
     assert scores["d.no_call"] == 1.0
 
 
-def test_spurious_call_on_unobserved_segment():
-    truth = _fixture_truth("amplicon_janchor_000000.json")
+def test_spurious_call_on_unobserved_segment(reference, fixture_truth):
+    truth = fixture_truth("amplicon_janchor_000000.json")
     no_d = replace(truth, segments={g: s for g, s in truth.segments.items() if g != "d"})
-    scores = score_case(no_d, oracle_prediction(truth), REF)
+    scores = score_case(no_d, oracle_prediction(truth), reference)
     assert scores["d.spurious_call"] == 1.0
     assert not any(k.startswith("d.") and k != "d.spurious_call" for k in scores)
-    assert score_case(no_d, oracle_prediction(no_d), REF)["d.spurious_call"] == 0.0
-    assert math.isnan(score_case(no_d, None, REF)["d.spurious_call"])  # no row: not covered
+    assert score_case(no_d, oracle_prediction(no_d), reference)["d.spurious_call"] == 0.0
+    assert math.isnan(score_case(no_d, None, reference)["d.spurious_call"])  # no row: not covered
 
     # A locus without D genes has no D presence metric at all.
-    light = Reference(alleles={g: t for g, t in REF.alleles.items() if g != "d"}, anchors=REF.anchors)
+    light = Reference(alleles={g: t for g, t in reference.alleles.items() if g != "d"}, anchors=reference.anchors)
     assert not any(k.startswith("d") for k in score_case(no_d, oracle_prediction(truth), light))
 
 
-def test_unscorable_gene_emits_nothing():
-    truth = _fixture_truth("amplicon_janchor_000000.json")
+def test_unscorable_gene_emits_nothing(reference, fixture_truth):
+    truth = fixture_truth("amplicon_janchor_000000.json")
     oracle = oracle_prediction(truth)
     no_v = replace(truth, segments={g: s for g, s in truth.segments.items() if g != "v"},
                    unscorable=frozenset({"v"}))
     for pred in (oracle, None):
-        scores = score_case(no_v, pred, REF)
+        scores = score_case(no_v, pred, reference)
         assert not any(k.startswith("v.") for k in scores)
         assert any(k.startswith("j.") for k in scores)
     # Unscorable wins even if a segment is (inconsistently) present.
-    scores = score_case(replace(truth, unscorable=frozenset({"v"})), oracle, REF)
+    scores = score_case(replace(truth, unscorable=frozenset({"v"})), oracle, reference)
     assert not any(k.startswith("v.") for k in scores)
 
 
-def test_short_d_scored_as_abstention():
-    truth = _fixture_truth("orientation_000001.json")
+def test_short_d_scored_as_abstention(reference, fixture_truth):
+    truth = fixture_truth("orientation_000001.json")
     d = truth.segments["d"]
     assert d.observed_length < 8
     oracle = oracle_prediction(truth)
 
-    scores = score_case(truth, oracle, REF)
+    scores = score_case(truth, oracle, reference)
     assert scores["d_short.top1_in_set"] == 1.0
     assert scores["d_short.abstain_ok"] == 1.0
     assert not any(k.startswith("d.") for k in scores)
 
     abstained = replace(oracle, segments={**oracle.segments, "d": PredSegment()})
-    scores = score_case(truth, abstained, REF)
+    scores = score_case(truth, abstained, reference)
     assert (scores["d_short.top1_in_set"], scores["d_short.abstain_ok"]) == (0.0, 1.0)
     # No row at all is a failure, not an abstention.
-    scores = score_case(truth, None, REF)
+    scores = score_case(truth, None, reference)
     assert (scores["d_short.top1_in_set"], scores["d_short.abstain_ok"]) == (0.0, 0.0)
 
-    wrong = next(a for a in sorted(REF.alleles["d"]) if a not in d.alleles.alleles)
+    wrong = next(a for a in sorted(reference.alleles["d"]) if a not in d.alleles.alleles)
     called_wrong = replace(oracle, segments={**oracle.segments, "d": PredSegment(call=wrong, call_set=(wrong,))})
-    scores = score_case(truth, called_wrong, REF)
+    scores = score_case(truth, called_wrong, reference)
     assert (scores["d_short.top1_in_set"], scores["d_short.abstain_ok"]) == (0.0, 0.0)
 
-    scores = score_case(truth, oracle, REF, d_min_observed=d.observed_length)
+    scores = score_case(truth, oracle, reference, d_min_observed=d.observed_length)
     assert scores["d.top1_in_set"] == 1.0
     assert "d_short.abstain_ok" not in scores
 
 
 @pytest.mark.parametrize("g,threshold", [("v", 20), ("j", 10)])
-def test_short_v_and_j_scored_as_abstention(g, threshold):
-    full = _fixture_truth("amplicon_janchor_000000.json")
+def test_short_v_and_j_scored_as_abstention(g, threshold, reference, fixture_truth):
+    full = fixture_truth("amplicon_janchor_000000.json")
     oracle = oracle_prediction(full)
 
     def shortened(length):
         return replace(full, segments={**full.segments, g: replace(full.segments[g], observed_length=length)})
 
-    scores = score_case(shortened(threshold - 1), oracle, REF)
+    scores = score_case(shortened(threshold - 1), oracle, reference)
     assert (scores[f"{g}_short.top1_in_set"], scores[f"{g}_short.abstain_ok"]) == (1.0, 1.0)
     # No allele, boundary, indel or SHM metric for the short segment.
     assert not any(k.startswith((f"{g}.", f"{g}_indel.")) for k in scores)
     abstained = replace(oracle, segments={**oracle.segments, g: PredSegment()})
-    scores = score_case(shortened(threshold - 1), abstained, REF)
+    scores = score_case(shortened(threshold - 1), abstained, reference)
     assert (scores[f"{g}_short.top1_in_set"], scores[f"{g}_short.abstain_ok"]) == (0.0, 1.0)
-    scores = score_case(shortened(threshold - 1), None, REF)
+    scores = score_case(shortened(threshold - 1), None, reference)
     assert (scores[f"{g}_short.top1_in_set"], scores[f"{g}_short.abstain_ok"]) == (0.0, 0.0)
 
-    scores = score_case(shortened(threshold), oracle, REF)
+    scores = score_case(shortened(threshold), oracle, reference)
     assert scores[f"{g}.top1_in_set"] == 1.0 and f"{g}.seq_start_exact" in scores
     assert not any(k.startswith(f"{g}_short.") for k in scores)
-    lowered = score_case(shortened(threshold - 1), oracle, REF, **{f"{g}_min_observed": threshold - 1})
+    lowered = score_case(shortened(threshold - 1), oracle, reference, **{f"{g}_min_observed": threshold - 1})
     assert f"{g}.top1_in_set" in lowered and f"{g}_short.top1_in_set" not in lowered
     assert MIN_OBSERVED == {"v": 20, "d": 8, "j": 10}
 
 
-def test_wrong_and_partial_calls():
-    full = _fixture_truth("amplicon_janchor_000000.json")
+def test_wrong_and_partial_calls(reference, fixture_truth):
+    full = fixture_truth("amplicon_janchor_000000.json")
     v = full.segments["v"]
     assert v.alleles.alleles == {"IGHVF1-G2*01", "IGHVF1-G2*02"}
     # Narrow the truth to *01 so *02 is a wrong allele of the right gene.
     narrowed = replace(v, alleles=replace(v.alleles, alleles=frozenset({"IGHVF1-G2*01"})))
     truth = replace(full, segments={**full.segments, "v": narrowed})
     oracle = oracle_prediction(full)
-    other_gene = next(a for a in sorted(REF.alleles["v"]) if not a.startswith("IGHVF1-G2*"))
+    other_gene = next(a for a in sorted(reference.alleles["v"]) if not a.startswith("IGHVF1-G2*"))
     pred = PredSegment(call="IGHVF1-G2*02", call_set=("IGHVF1-G2*02", "IGHVF1-G2*01"),
                        seq_start=0, seq_end=47, germ_start=255, germ_end=300)
-    scores = score_case(truth, replace(oracle, segments={**oracle.segments, "v": pred}), REF)
+    scores = score_case(truth, replace(oracle, segments={**oracle.segments, "v": pred}), reference)
     assert scores["v.top1_in_set"] == 0.0
     assert scores["v.gene_top1"] == 1.0
     assert scores["v.any_overlap"] == 1.0
@@ -269,7 +270,7 @@ def test_wrong_and_partial_calls():
     assert len(germ) == 4 and all(math.isnan(v) for v in germ)  # frame not comparable
 
     pred = PredSegment(call=other_gene, call_set=(other_gene,))
-    scores = score_case(truth, replace(oracle, segments={**oracle.segments, "v": pred}), REF)
+    scores = score_case(truth, replace(oracle, segments={**oracle.segments, "v": pred}), reference)
     assert (scores["v.gene_top1"], scores["v.any_overlap"], scores["v.set_precision"]) == (0.0, 0.0, 0.0)
     assert math.isnan(scores["v.seq_start_err"])
 
@@ -330,8 +331,8 @@ def test_repeated_observed_germline_uses_truth_occurrence():
         assert scores["v.germ_start_exact"] == scores["v.germ_end_exact"] == 1.0, pred.call
 
 
-def test_oracle_prediction_fields():
-    truth = _fixture_truth("orientation_000001.json")
+def test_oracle_prediction_fields(fixture_truth):
+    truth = fixture_truth("orientation_000001.json")
     pred = oracle_prediction(truth)
     assert pred.sequence_id == truth.case_id
     assert pred.rev_comp is True
@@ -346,7 +347,7 @@ def test_oracle_prediction_fields():
         truth.junction.nt, truth.junction.start, truth.junction.end)
     assert pred.productive is truth.productive
 
-    fwd = _fixture_truth("amplicon_janchor_000000.json")
+    fwd = fixture_truth("amplicon_janchor_000000.json")
     assert oracle_prediction(fwd).rev_comp is False
     assert oracle_prediction(fwd).sequence == fwd.sequence
 

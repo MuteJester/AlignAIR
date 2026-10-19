@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from alignair_assay.cigar import Op, format_cigar, parse_cigar, walk
+from alignair_assay.core.cigar import Op, format_cigar, parse_cigar, walk
 
 
 @dataclass(frozen=True)

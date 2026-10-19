@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from alignair_assay.cigar import parse_cigar, walk
+from alignair_assay.core.cigar import parse_cigar, walk
 from alignair_assay.truth.segment import ObservedSegment
 
 Interval = tuple[int, int]  # inclusive (lo, hi)

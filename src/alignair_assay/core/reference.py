@@ -1,4 +1,7 @@
-"""Germline reference used by the assay: allele sequences per gene plus conserved anchors."""
+"""Germline reference used by the assay: allele sequences per gene plus conserved anchors.
+
+This is the only assay module that imports ``alignair`` (``Reference.from_dataconfig``).
+"""
 from __future__ import annotations
 
 import hashlib
@@ -12,21 +15,27 @@ def gene_name(allele: str) -> str:
 
 @dataclass(frozen=True)
 class Reference:
+    """The germline alleles every truth and score is built against, keyed by gene letter and allele name, with the
+    conserved junction anchors (0-based germline positions)."""
+
     # gene letter ("v" | "d" | "j") -> allele name -> uppercase germline sequence
     alleles: dict[str, dict[str, str]]
     # allele name -> 0-based germline anchor (V Cys codon start, J Trp/Phe codon start)
     anchors: dict[str, int]
 
     def seq(self, name: str) -> str:
+        """Germline sequence of allele ``name`` (KeyError when it is not in the reference)."""
         return self.alleles[self.gene_letter(name)][name]
 
     def gene_letter(self, name: str) -> str:
+        """``"v"``, ``"d"`` or ``"j"``: the gene table holding allele ``name`` (KeyError when none does)."""
         for letter, table in self.alleles.items():
             if name in table:
                 return letter
         raise KeyError(name)
 
     def has(self, name: str) -> bool:
+        """True when allele ``name`` is in the reference."""
         return any(name in table for table in self.alleles.values())
 
     def digest(self) -> str:
@@ -39,6 +48,8 @@ class Reference:
 
     @classmethod
     def from_reference_set(cls, rs) -> "Reference":
+        """Copy an ``alignair`` ReferenceSet: uppercase sequences per gene (D only when the locus has one) and the
+        V/J anchors."""
         alleles: dict[str, dict[str, str]] = {}
         anchors: dict[str, int] = {}
         for letter in ("V", "D", "J"):
@@ -52,6 +63,8 @@ class Reference:
 
     @classmethod
     def from_dataconfig(cls, name: str) -> "Reference":
+        """The reference of GenAIRR dataconfig ``name`` (an attribute of ``GenAIRR.data``, e.g. ``HUMAN_IGH_OGRDB``);
+        ValueError for an unknown name."""
         import GenAIRR.data as gdata
 
         from alignair.reference.reference_set import ReferenceSet

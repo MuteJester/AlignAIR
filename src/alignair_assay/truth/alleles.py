@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from alignair_assay.reference import Reference, gene_name
+from alignair_assay.core.reference import Reference, gene_name
 from alignair_assay.truth.segment import ObservedSegment
 
 
