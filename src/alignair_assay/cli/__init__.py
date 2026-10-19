@@ -2,8 +2,10 @@
 
   python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB]
       [--seed 20261019] [--scale 1.0] [--workers 8]
-  python -m alignair_assay run --run-dir RUN --tool igblast|oracle --suites S0,S1 [--arm shared]
-      [--igblast-dir DIR] [--threads 8] [--cpus 0-7]
+  python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-local|oracle --suites S0,S1
+      [--arm shared|genotype] [--threads 8] [--cpus 0-7] [--igblast-dir DIR] [--image IMAGE]
+      [--model alignair-igh-human@1.0.0] [--cache-dir DIR] [--checkpoint MODEL.alignair] [--device cpu]
+      [--batch-size 64]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR

@@ -16,7 +16,14 @@ from alignair_assay.core.cases import read_fasta
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.reference import Reference
-from alignair_assay.runners.base import RunnerOptions, RunResult, fasta_ids, timed_command
+from alignair_assay.runners.base import (
+    RunnerOptions,
+    RunResult,
+    error_line,
+    failed_run,
+    fasta_ids,
+    timed_command,
+)
 from alignair_assay.runners.reference import write_segment_fastas
 
 _SEGMENTS = ("v", "d", "j")
@@ -123,17 +130,25 @@ class IgBlastRunner:
         in ``log_dir/db`` (its ``makeblastdb`` commands come first in ``commands``). The log is
         ``log_dir/igblastn.log``. The provenance is ``prepare``'s: the release, version and binary digests, and
         the ``database`` searched (directory, allele counts per gene letter, SHA-256 of every database file and
-        segment FASTA, and the ``makeblastdb`` commands that built it); plus ``threads`` and ``cpus``.
-        RuntimeError before ``prepare``.
+        segment FASTA, and the ``makeblastdb`` commands that built it); plus ``threads``, ``cpus`` and, for a
+        failed run, the ``error`` line of its log. A restricted database that cannot be built (an allele not in
+        the reference, a gene letter left without alleles, a failed ``makeblastdb``) is a failed run
+        (``base.failed_run``), not an exception. RuntimeError before ``prepare``.
         """
         if self._setup is None:
             raise RuntimeError("the igblast runner is not prepared: call prepare first")
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
+        log = log_dir / "igblastn.log"
         database, commands = self._database, []
         if alleles is not None:
             restricted = log_dir / "db"
-            database = _database_record(restricted, self.build_database(self._reference, restricted, alleles))
+            try:
+                database = _database_record(restricted, self.build_database(self._reference, restricted, alleles))
+            except (ValueError, RuntimeError) as error:
+                return failed_run(self.name, suite=suite, arm=arm, fasta=fasta, out_tsv=out_tsv, log_path=log,
+                                  message=f"the restricted germline database could not be built: {error}",
+                                  provenance={**self._setup, "threads": self.threads, "cpus": self.cpus})
             commands = list(database["commands"])
         directory = Path(database["directory"])
         argv = [str(self.igblastn),
@@ -141,10 +156,11 @@ class IgBlastRunner:
                 "-germline_db_J", str(directory / "J"), "-auxiliary_data", str(self.auxiliary_data),
                 "-organism", "human", "-ig_seqtype", "Ig", "-num_threads", str(self.threads), "-outfmt", "19",
                 "-query", str(fasta), "-out", str(out_tsv)]
-        returncode, wall, rss = timed_command(argv, log_path=log_dir / "igblastn.log", env=self._env(),
-                                              cpus=self.cpus)
+        returncode, wall, rss = timed_command(argv, log_path=log, env=self._env(), cpus=self.cpus)
         commands.append(["env", f"IGDATA={self.igblast_dir}", *argv])
         provenance = {**self._setup, "database": database, "threads": self.threads, "cpus": self.cpus}
+        if returncode != 0:
+            provenance["error"] = error_line(log)
         return RunResult(tool=self.name, suite=suite, arm=arm, predictions=str(out_tsv), n_reads=len(fasta_ids(fasta)),
                          wall_seconds=wall, peak_rss_kb=rss, returncode=returncode, commands=commands,
                          provenance=provenance)

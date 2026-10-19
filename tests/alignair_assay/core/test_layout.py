@@ -23,6 +23,11 @@ def test_layout_paths(tmp_path):
         (layout.run_json("alignair-local", "S8", "genotype"), "runs/alignair-local/S8/genotype/run.json"),
         (layout.logs_dir("oracle", "S0", "shared"), "runs/oracle/S0/shared/logs"),
         (layout.work_dir("igblast"), "runs/igblast/_work"),
+        (layout.donor_reads("alignair", "S1", "genotype", "donor03"),
+         "runs/alignair/S1/genotype/donors/reads.donor03.fasta"),
+        (layout.donor_predictions("alignair", "S1", "genotype", "donor03"),
+         "runs/alignair/S1/genotype/donors/predictions.donor03.tsv"),
+        (layout.donor_logs_dir("alignair", "S1", "genotype", "donor03"), "runs/alignair/S1/genotype/logs/donor03"),
         (layout.scores_dir("S1", "genotype"), "scores/S1/genotype"),
         (layout.speed_dir, "speed"),
         (layout.speed_json, "speed/speed.json"),
@@ -50,3 +55,5 @@ def test_layout_rejects_names_that_are_not_one_component(tmp_path, name):
         layout.run_dir(name, "S1", "shared")
     with pytest.raises(ValueError, match="path component"):
         layout.work_dir(name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.donor_reads("alignair", "S1", "genotype", name)

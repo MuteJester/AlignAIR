@@ -213,8 +213,16 @@ def test_failed_run_is_refused(tmp_path):
 
 # --- registry and oracle ----------------------------------------------------------------------------------------
 
+def test_runner_options_paths_are_absolute(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    options = RunnerOptions(igblast_dir="igblast", alignair_checkpoint="~/m.alignair", cache_dir="cache")
+    assert options.igblast_dir == str(tmp_path / "igblast") and options.cache_dir == str(tmp_path / "cache")
+    assert options.alignair_checkpoint == str(Path.home() / "m.alignair")
+    assert RunnerOptions().igblast_dir is None and RunnerOptions().cache_dir is None
+
+
 def test_registry(tmp_path):
-    assert {"igblast", "oracle"} <= set(RUNNERS)
+    assert {"igblast", "oracle", "alignair", "alignair-local"} <= set(RUNNERS)
     assert isinstance(make_runner("oracle", RunnerOptions()), OracleRunner)
     runner = make_runner("igblast", RunnerOptions(igblast_dir=str(tmp_path), threads=2, cpus="0-1"))
     assert isinstance(runner, IgBlastRunner) and runner.name == "igblast"
@@ -274,6 +282,14 @@ def test_cli_run_oracle(run_layout, reference, capsys):
     assert scores == assert_oracle_perfect(truths, reference)
     printed = capsys.readouterr().out.splitlines()
     assert len(printed) == 1 and printed[0].startswith("oracle S0/shared: return code 0, 50 reads")
+
+
+def test_cli_run_records_absolute_paths(run_layout, monkeypatch):
+    monkeypatch.chdir(run_layout.root.parent)
+    assert main(["run", "--run-dir", run_layout.root.name, "--tool", "oracle", "--suites", "S0"]) == 0
+    result = read_run_json(run_layout.run_json("oracle", "S0", "shared"))
+    assert result.predictions == str(run_layout.predictions("oracle", "S0", "shared"))
+    assert Path(result.predictions).is_absolute() and Path(result.provenance["reads"]["path"]).is_absolute()
 
 
 def test_cli_run_refuses_mismatched_reference(run_layout, reference, capsys):
@@ -357,6 +373,35 @@ def test_cli_run_records_failed_run(run_layout, monkeypatch, capsys):
 def test_igblast_prepare_needs_the_release(run_layout, reference, tmp_path):
     with pytest.raises(FileNotFoundError, match="igblastn"):
         IgBlastRunner(tmp_path / "no_igblast").prepare(run_layout, reference)
+
+
+def _fake_release(directory: Path) -> Path:
+    """A stand-in IgBLAST release: ``igblastn`` prints a version, and ``makeblastdb`` succeeds except on a FASTA
+    under a ``db`` directory (the restricted databases), where it fails with status 3."""
+    (directory / "bin").mkdir(parents=True)
+    (directory / "optional_file").mkdir()
+    (directory / "optional_file" / "human_gl.aux").write_text("aux\n")
+    scripts = {"igblastn": 'echo "igblastn: 1.22.0"\n',
+               "makeblastdb": 'case "$*" in */db/*) echo "makeblastdb: cannot build" >&2; exit 3;; esac\n'}
+    for name, body in scripts.items():
+        path = directory / "bin" / name
+        path.write_text("#!/bin/sh\n" + body)
+        path.chmod(0o755)
+    return directory
+
+
+def test_igblast_restricted_database_failure_is_recorded(run_layout, reference, tmp_path):
+    runner = IgBlastRunner(_fake_release(tmp_path / "release"), threads=1)
+    runner.prepare(run_layout, reference)
+    v, d, j = (sorted(reference.alleles[g])[:2] for g in "vdj")
+    # A genotype with no D allele, and a makeblastdb that fails, are failed runs, not exceptions.
+    for alleles, expected, name in (([*v, *j], "no d allele", "no_d"), ([*v, *d, *j], "makeblastdb failed", "fails")):
+        log_dir = tmp_path / name
+        result = runner.run(run_layout.reads("S0"), tmp_path / f"{name}.tsv", suite="S0", arm="genotype",
+                            log_dir=log_dir, alleles=alleles)
+        assert result.returncode != 0 and result.n_reads == 50 and result.commands == []
+        assert expected in result.provenance["error"] and expected in (log_dir / "igblastn.log").read_text()
+        assert result.provenance["version"] == "igblastn: 1.22.0"
 
 
 @needs_igblast

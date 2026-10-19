@@ -10,6 +10,7 @@ RUN/
   suites/<S>/donors.json              suites with donors only
   suites/<S>/build.json               counts, warnings, timing, config hash (written last)
   runs/<tool>/<S>/<arm>/predictions.tsv + run.json + logs/
+  runs/<tool>/<S>/genotype/donors/    per donor: reads.<subject>.fasta, predictions.<subject>.tsv (+ logs/<subject>/)
   runs/<tool>/_work/                  the tool's one-time setup (e.g. IgBLAST's germline databases)
   scores/<S>/<arm>/
   speed/speed.json
@@ -26,7 +27,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class RunLayout:
-    """Paths of one run directory rooted at ``root``. Suite, tool and arm names must each be a single path
+    """Paths of one run directory rooted at ``root``. Suite, tool, arm and donor names must each be a single path
     component (ValueError otherwise), so no name can point outside its directory."""
 
     root: Path
@@ -93,6 +94,18 @@ class RunLayout:
     def logs_dir(self, tool: str, suite: str, arm: str) -> Path:
         """The tool run's logs and scratch files."""
         return self.run_dir(tool, suite, arm) / "logs"
+
+    def donor_reads(self, tool: str, suite: str, arm: str, subject: str) -> Path:
+        """One donor's reads of the suite, as given to the tool in a per-donor arm (``genotype``)."""
+        return self.run_dir(tool, suite, arm) / "donors" / f"reads.{_component(subject)}.fasta"
+
+    def donor_predictions(self, tool: str, suite: str, arm: str, subject: str) -> Path:
+        """The tool's AIRR TSV for one donor's reads, before the donors are merged into ``predictions``."""
+        return self.run_dir(tool, suite, arm) / "donors" / f"predictions.{_component(subject)}.tsv"
+
+    def donor_logs_dir(self, tool: str, suite: str, arm: str, subject: str) -> Path:
+        """The logs and scratch files of the tool's run on one donor's reads."""
+        return self.logs_dir(tool, suite, arm) / _component(subject)
 
     def work_dir(self, tool: str) -> Path:
         """The tool's one-time setup shared by its runs (e.g. IgBLAST's germline databases); ``_work`` cannot

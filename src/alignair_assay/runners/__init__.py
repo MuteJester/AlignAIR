@@ -7,12 +7,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from alignair_assay.runners.alignair import AlignAIRImage, AlignAIRLocal
 from alignair_assay.runners.base import Runner, RunnerOptions
 from alignair_assay.runners.igblast import IgBlastRunner
 from alignair_assay.runners.oracle import OracleRunner
 
 RUNNERS: dict[str, Callable[[RunnerOptions], Runner]] = {
     "igblast": IgBlastRunner.from_options,
+    "alignair": AlignAIRImage.from_options,
+    "alignair-local": AlignAIRLocal.from_options,
     "oracle": OracleRunner.from_options,
 }
 

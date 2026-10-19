@@ -46,7 +46,9 @@ class RunResult:
 @dataclass(frozen=True)
 class RunnerOptions:
     """Tool settings, one set for every runner; each runner reads the fields it needs. ``threads`` is the
-    tool's thread count and ``cpus`` a ``taskset``/cpuset CPU list (``"0-7"``) to pin it to."""
+    tool's thread count and ``cpus`` a ``taskset``/cpuset CPU list (``"0-7"``) to pin it to. The path fields
+    (``igblast_dir``, ``alignair_checkpoint``, ``cache_dir``) are made absolute, ``~`` expanded, so the commands
+    a run records can be re-run from anywhere."""
 
     igblast_dir: str | None = None
     threads: int = 8
@@ -58,6 +60,12 @@ class RunnerOptions:
     batch_size: int = 64
     cache_dir: str | None = None
 
+    def __post_init__(self) -> None:
+        for name in ("igblast_dir", "alignair_checkpoint", "cache_dir"):
+            value = getattr(self, name)
+            if value:
+                object.__setattr__(self, name, absolute_path(value))
+
 
 class Runner(Protocol):
     """A tool under test.
@@ -66,8 +74,9 @@ class Runner(Protocol):
     reference (already verified equal to the truth reference) and returns its provenance; it raises when the
     tool cannot be set up. ``run(fasta, out_tsv, ...)`` then annotates the reads of ``fasta`` into the AIRR TSV
     ``out_tsv``, keeping logs and scratch files in ``log_dir``; ``alleles``, when given, restricts the tool to
-    those reference alleles (the genotype arm). A tool that fails returns a ``RunResult`` with its non-zero return
-    code rather than raising, so the failure is recorded.
+    those reference alleles (the genotype arm). A tool that fails, or a restriction it cannot take, returns a
+    ``RunResult`` with a non-zero return code and the reason as the provenance's ``error`` rather than raising, so
+    the failure is recorded.
     """
 
     name: str
@@ -101,9 +110,42 @@ def timed_command(argv, *, log_path: Path, env: dict[str, str] | None = None,
     return completed.returncode, wall, _peak_rss_kb(rss_path)
 
 
+def absolute_path(path) -> str:
+    """``path`` with ``~`` expanded, made absolute against the current directory and normalised (no symlinks
+    resolved)."""
+    return os.path.abspath(os.path.expanduser(str(path)))
+
+
 def fasta_ids(fasta) -> list[str]:
     """The read ids of a FASTA file, in file order."""
     return [name for name, _ in read_fasta(fasta)]
+
+
+def failed_run(tool: str, *, suite: str, arm: str, fasta: Path, out_tsv: Path, log_path: Path, message: str,
+               provenance: dict | None = None) -> RunResult:
+    """The record of a run that failed before its tool could run, for example on a genotype the tool cannot be
+    restricted to: return code 1, no wall time (0.0 s), no peak RSS and no command. ``message`` is written to
+    ``log_path`` (its directory is created) and kept as the provenance's ``error``."""
+    log_path = Path(log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(message + "\n", encoding="utf-8")
+    return RunResult(tool=tool, suite=suite, arm=arm, predictions=str(out_tsv), n_reads=len(fasta_ids(fasta)),
+                     wall_seconds=0.0, peak_rss_kb=None, returncode=1, commands=[],
+                     provenance={**(provenance or {}), "error": message})
+
+
+def error_line(log_path: Path) -> str | None:
+    """The line of a failed command's log that says why it failed: the last non-empty line that is not a bare
+    number (a peak-memory readout), such as the exception line ending a Python traceback; None without one."""
+    try:
+        lines = Path(log_path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        line = line.strip()
+        if line and not line.isdigit():
+            return line
+    return None
 
 
 def write_run_json(result: RunResult, path: Path) -> None:
