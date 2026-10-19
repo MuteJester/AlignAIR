@@ -84,3 +84,28 @@ def test_edge_gaps_stripped():
 def test_fully_clipped_segment_absent():
     recs = _records(5, 7, e5=(330, 330))
     assert any(_observe(rec, "v") is None for rec in recs)
+
+
+def test_unmutated_segments_have_zero_mismatches():
+    # Error-free recipe: any mismatch means the truth coordinates are wrong.
+    recs = _records(300, 11, e5=(0, 120), e3=(0, 30))
+    checked = 0
+    for rec in recs:
+        for g in "vdj":
+            if not rec.get(f"{g}_call"):
+                continue
+            seg = _observe(rec, g)
+            if seg is None:
+                continue
+            checked += 1
+            assert seg.n_mismatch == 0, (g, rec[f"{g}_cigar"], seg)
+    assert checked > 300
+
+
+@pytest.mark.parametrize("cigar,seq_end,germ_end", [("2D5M", 5, 7), ("5M1I", 6, 5)])
+def test_invariants_flag_edge_gaps(cigar, seq_end, germ_end):
+    from alignair_assay.truth.segment import ObservedSegment
+    allele = "ACGTACGTAC"
+    germ_start = 2 if cigar.startswith("2D") else 0
+    seg = ObservedSegment("X*01", 0, seq_end, germ_start, germ_end, cigar, 0, 5, "")
+    assert check_invariants("ACGTACGTAC", allele, seg)

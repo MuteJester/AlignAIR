@@ -68,6 +68,8 @@ def check_invariants(read: str, allele_seq: str, seg: ObservedSegment) -> list[s
     i = sum(n for n, op in ops if op == "I")
     d = sum(n for n, op in ops if op == "D")
     problems: list[str] = []
+    if ops and (ops[0][1] in "DI" or ops[-1][1] in "DI"):
+        problems.append(f"alignment begins or ends with a gap: {seg.cigar}")
     if m + i != seg.seq_end - seg.seq_start:
         problems.append(f"M+I={m + i} != read span {seg.seq_end - seg.seq_start}")
     if m + d != seg.germ_end - seg.germ_start:
