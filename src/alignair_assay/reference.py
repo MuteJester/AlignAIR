@@ -56,4 +56,7 @@ class Reference:
 
         from alignair.reference.reference_set import ReferenceSet
 
-        return cls.from_reference_set(ReferenceSet.from_dataconfigs(getattr(gdata, name)))
+        config = getattr(gdata, name, None)
+        if config is None:
+            raise ValueError(f"unknown GenAIRR dataconfig {name!r}")
+        return cls.from_reference_set(ReferenceSet.from_dataconfigs(config))

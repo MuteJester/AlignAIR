@@ -331,6 +331,9 @@ def test_missing_input_file_is_an_error(tmp_path, capsys):
                  "--out-dir", str(tmp_path / "out")]) == 2
     err = capsys.readouterr().err
     assert err.startswith("error: ") and "nope.tsv" in err
+    assert main(["truth", "--bench-cases", str(tmp_path / "cases.jsonl"), "--reference", "NOT_A_DATACONFIG",
+                 "--out", str(tmp_path / "t.jsonl")]) == 2
+    assert "unknown GenAIRR dataconfig 'NOT_A_DATACONFIG'" in capsys.readouterr().err
 
 
 def test_git_state_reports_dirty_tree(tmp_path):
