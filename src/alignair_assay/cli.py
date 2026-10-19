@@ -5,7 +5,9 @@
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR
 
 Predictions are matched to truth by AIRR ``sequence_id`` == truth ``case_id``. Excluded truths are not scored and
-their predictions are ignored; a truth case without a prediction is scored as missing (never dropped).
+their predictions are ignored; a truth case without a prediction is scored as missing (never dropped). A prediction
+file matching no scored case is an error (exit status 2), as are missing files and a truth file built against
+another reference.
 """
 from __future__ import annotations
 
@@ -194,6 +196,10 @@ def _score_tool(truths: list[ObservableTruth], predictions_path, reference: Refe
                 ) -> tuple[dict[str, CaseScores], dict]:
     """Per-case scores of one tool over the non-excluded truths, plus prediction/truth matching counts."""
     preds, stats = load_airr_tsv(predictions_path)
+    scored_ids = [t.case_id for t in truths if t.excluded is None]
+    if not any(cid in preds for cid in scored_ids):
+        example = f" (e.g. {next(iter(preds))!r} vs {scored_ids[0]!r})" if preds and scored_ids else ""
+        raise ValueError(f"{predictions_path}: no prediction sequence_id matches a truth case_id{example}")
     scores = {t.case_id: score_case(t, preds.get(t.case_id), reference) for t in truths if t.excluded is None}
     truth_ids = {t.case_id for t in truths}
     matching = {
@@ -262,7 +268,7 @@ def _provenance(command: str, inputs: dict[str, str], **extra) -> dict:
     return {
         "command": command,
         "inputs": {k: {"path": str(p), "sha256": _sha256(p)} for k, p in inputs.items()},
-        "git_commit": _git_commit(),
+        **git_state(Path(__file__).resolve().parent),
         "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "min_observed": dict(MIN_OBSERVED),
         **extra,
@@ -284,12 +290,20 @@ def _genairr_version() -> str | None:
         return None
 
 
-def _git_commit() -> str | None:
-    """HEAD of the source tree this package runs from, or None outside a git checkout."""
+def git_state(directory) -> dict:
+    """``git_commit`` (HEAD) and ``git_dirty`` (uncommitted changes) of the checkout holding ``directory``; both
+    None outside a git checkout."""
+    commit = _git(directory, "rev-parse", "HEAD")
+    if not commit:
+        return {"git_commit": None, "git_dirty": None}
+    status = _git(directory, "status", "--porcelain")
+    return {"git_commit": commit, "git_dirty": None if status is None else bool(status)}
+
+
+def _git(directory, *args: str) -> str | None:
+    """Stripped stdout of a git command run in ``directory``, or None if it fails."""
     try:
-        r = subprocess.run(["git", "-C", str(Path(__file__).resolve().parent), "rev-parse", "HEAD"],
-                           capture_output=True, text=True, timeout=10)
+        r = subprocess.run(["git", "-C", str(directory), *args], capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
-    sha = r.stdout.strip() if r.returncode == 0 else ""
-    return sha or None
+    return r.stdout.strip() if r.returncode == 0 else None

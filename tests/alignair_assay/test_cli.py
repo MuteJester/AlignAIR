@@ -3,13 +3,14 @@ import hashlib
 import importlib.metadata
 import json
 import math
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from alignair_assay.cigar import format_cigar, parse_cigar
-from alignair_assay.cli import d_len_bin, main, slice_labels
+from alignair_assay.cli import d_len_bin, git_state, main, slice_labels
 from alignair_assay.ingest.airr import PredSegment, Prediction, load_airr_tsv
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.metrics.case import score_case
@@ -140,6 +141,7 @@ def test_cli_end_to_end_small(tmp_path, capsys):
     assert prov["inputs"]["truth"] == {"path": str(truth_path), "sha256": _sha256(truth_path)}
     assert prov["inputs"]["predictions"] == {"path": str(tsv), "sha256": _sha256(tsv)}
     assert "git_commit" in prov and prov["timestamp_utc"].endswith("+00:00")
+    assert prov["git_dirty"] in (True, False)  # the tests run from a git checkout
     assert prov["matching"] == {"truth_cases": 43, "excluded": 1, "scored": 42, "rows": 42, "predictions": 42,
                                 "duplicates": 0, "invalid_rows": 0, "missing": 0, "extra": 0,
                                 "excluded_ignored": 0}
@@ -303,6 +305,47 @@ def test_truth_records_reference_and_scoring_checks_it(tmp_path, capsys):
     assert main(["score", "--truth", str(bare), "--predictions", str(tsv), "--tool", "oracle",
                  "--out-dir", str(out_dir)]) == 2
     assert "records no reference digest" in capsys.readouterr().err
+
+
+def test_no_matching_prediction_ids_fail_loudly(tmp_path, capsys):
+    truth_path, truths = _build_truth(tmp_path, [_fixture(name) for name in FIXTURE_NAMES], name="cases.jsonl")
+    tsv = tmp_path / "renamed.tsv"
+    write_airr_tsv([replace(oracle_prediction(t), sequence_id=f"read{i}")
+                    for i, t in enumerate(truths) if t.excluded is None], tsv)
+    good = tmp_path / "good.tsv"
+    write_airr_tsv([oracle_prediction(t) for t in truths if t.excluded is None], good)
+    capsys.readouterr()
+    for command in (["score", "--predictions", str(tsv), "--tool", "x"],
+                    ["compare", "--a", str(good), "--a-name", "x", "--b", str(tsv), "--b-name", "y"]):
+        assert main(command + ["--truth", str(truth_path), "--out-dir", str(tmp_path / "out")]) == 2
+        err = capsys.readouterr().err
+        assert err.startswith("error: ") and "no prediction sequence_id matches a truth case_id" in err
+        assert str(tsv) in err
+
+
+def test_missing_input_file_is_an_error(tmp_path, capsys):
+    truth_path, _ = _build_truth(tmp_path, [_fixture("amplicon_janchor_000000.json")], name="cases.jsonl")
+    capsys.readouterr()
+    missing = tmp_path / "nope.tsv"
+    assert main(["score", "--truth", str(truth_path), "--predictions", str(missing), "--tool", "x",
+                 "--out-dir", str(tmp_path / "out")]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error: ") and "nope.tsv" in err
+
+
+def test_git_state_reports_dirty_tree(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(git + ["init", "-q"], check=True)
+    (repo / "f.txt").write_text("a\n")
+    subprocess.run(git + ["add", "f.txt"], check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "init"], check=True)
+    state = git_state(repo)
+    assert len(state["git_commit"]) == 40 and state["git_dirty"] is False
+    (repo / "f.txt").write_text("b\n")
+    assert git_state(repo)["git_dirty"] is True
+    assert git_state(tmp_path / "missing") == {"git_commit": None, "git_dirty": None}
 
 
 def test_d_inverted_slice():
