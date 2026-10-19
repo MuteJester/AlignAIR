@@ -23,16 +23,17 @@ FIXTURE_NAMES = ("amplicon_janchor_000000.json", "orientation_000001.json", "ori
 
 _ACCURACY = ("junction.nt_exact", "junction.aa_exact", "junction.length_exact", "clone_key.exact",
              "productive.correct", "vj_in_frame.correct", "stop_codon.correct", "orientation.correct",
-             "airr.valid", "v.indel_exact", "j.indel_exact")
+             "airr.valid", "v.indel_found", "j.indel_found")
 _ERRORS = ("junction.start_err", "junction.end_err", "junction.start_abs_err", "junction.end_abs_err",
-           "v.mutation_count_err", "v.germline_errors", "v_indel.mutation_count_err", "v_indel.germline_errors")
+           "v.mutation_count_err", "v.germline_errors", "v_indel.mutation_count_err", "v_indel.germline_errors",
+           "v.indel_false", "j.indel_false")
 _FAMILIES = {
     "junction": ("junction.nt_exact", "junction.aa_exact", "junction.length_exact", "junction.start_err",
                  "junction.end_err", "junction.start_abs_err", "junction.end_abs_err"),
     "clone_key": ("clone_key.exact",),
     "mutations": ("v.mutation_count_err",),
     "germline": ("v.germline_errors",),
-    "indel": ("v.indel_exact", "j.indel_exact"),
+    "indel": ("v.indel_found", "j.indel_found", "v.indel_false", "j.indel_false"),
     "productivity": ("productive.correct", "vj_in_frame.correct", "stop_codon.correct"),
     "orientation": ("orientation.correct",),
     "validity": ("airr.valid",),
@@ -299,21 +300,32 @@ def test_n_bases_excluded():
     assert scores["v.germline_errors"] == 0.0
 
 
-def test_indel_exact():
+def test_indel_found_and_false():
     truth = _fixture_truth("amplicon_janchor_000000.json")
     assert truth.segments["v"].observed.cigar == "26M1D18M"
     assert truth.segments["j"].observed.cigar == "50M"
     oracle = oracle_prediction(truth)
     scores = score_case(truth, oracle, REF)
-    assert scores["v.indel_exact"] == 1.0
-    assert "j.indel_exact" not in scores  # no indel in the truth or the prediction
+    # Truth V has an indel: only indel_found applies. Truth J has none: only indel_false applies.
+    assert scores["v.indel_found"] == 1.0 and "v.indel_false" not in scores
+    assert scores["j.indel_false"] == 0.0 and "j.indel_found" not in scores
 
     v = oracle.segments["v"]
     no_gap = _with_segment(oracle, "v", cigar="44M", germ_end=v.germ_end - 1)
-    assert score_case(truth, no_gap, REF)["v.indel_exact"] == 0.0
-    assert score_case(truth, _with_segment(oracle, "v", cigar=None), REF)["v.indel_exact"] == 0.0
+    assert score_case(truth, no_gap, REF)["v.indel_found"] == 0.0
+    # As many indel bases, but an insertion instead of a deletion.
+    wrong_kind = _with_segment(oracle, "v", cigar="26M1I17M", germ_end=v.germ_end - 1)
+    assert score_case(truth, wrong_kind, REF)["v.indel_found"] == 0.0
     spurious = _with_segment(oracle, "j", cigar="25M1I24M")
-    assert score_case(truth, spurious, REF)["j.indel_exact"] == 0.0
+    assert score_case(truth, spurious, REF)["j.indel_false"] == 1.0
+
+    # Missing: no CIGAR fails indel_found but leaves indel_false uncovered; so does a missing row.
+    no_cigar = _with_segment(_with_segment(oracle, "v", cigar=None), "j", cigar=None)
+    for pred in (no_cigar, None):
+        scores = score_case(truth, pred, REF)
+        assert scores["v.indel_found"] == 0.0
+        assert math.isnan(scores["j.indel_false"])
+    assert lower_is_better("j.indel_false") and not lower_is_better("v.indel_found")
 
 
 def test_flags_orientation_and_validity():
@@ -368,7 +380,7 @@ def test_missing_prediction_new_metrics():
         scores = score_case(truth, pred, REF)
         assert scores["airr.valid"] == valid
         for name in ("junction.nt_exact", "junction.length_exact", "clone_key.exact", "productive.correct",
-                     "vj_in_frame.correct", "orientation.correct", "v.indel_exact"):
+                     "vj_in_frame.correct", "orientation.correct", "v.indel_found"):
             assert scores[name] == 0.0, name
         # The truth junction is out of frame (and V has a frameshift): no translation or stop-codon metric.
         assert "junction.aa_exact" not in scores and "stop_codon.correct" not in scores

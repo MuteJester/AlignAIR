@@ -117,7 +117,9 @@ def test_missing_prediction_counts_as_wrong():
         assert math.isnan(scores[f"{g}.set_size"])
     errs = [k for k in scores if k.endswith("_err")]
     assert errs and all(math.isnan(scores[k]) for k in errs)
-    assert not any(".germ_" in k for k in scores)  # germline frame needs a correct top-1 call
+    # Germline frame: applicable to every observed forward segment, uncovered without a correct top-1 call.
+    germ = [k for k in scores if ".germ_" in k]
+    assert len(germ) == 12 and all(math.isnan(scores[k]) for k in germ)
     # A prediction row without segments scores the same as no prediction at all, except that the row exists.
     empty = score_case(truth, Prediction(sequence_id=truth.case_id), REF)
     assert (empty.pop("airr.valid"), scores.pop("airr.valid")) == (1.0, 0.0)
@@ -158,7 +160,7 @@ def test_igblast_correct_coordinates_on_clipped_read(tmp_path):
     assert scores["j.seq_start_err"] == 12.0  # predicted 60, truth 72
     assert scores["j.seq_start_exact"] == 0.0
     assert scores["j.seq_end_err"] == 10.0  # predicted 112, truth 122
-    assert not any(k.startswith("j.germ_") for k in scores)
+    assert all(math.isnan(scores[f"j.germ_{e}"]) for e in ("start_exact", "start_err", "end_exact", "end_err"))
     assert scores["d.no_call"] == 1.0
 
 
@@ -169,7 +171,7 @@ def test_spurious_call_on_unobserved_segment():
     assert scores["d.spurious_call"] == 1.0
     assert not any(k.startswith("d.") and k != "d.spurious_call" for k in scores)
     assert score_case(no_d, oracle_prediction(no_d), REF)["d.spurious_call"] == 0.0
-    assert score_case(no_d, None, REF)["d.spurious_call"] == 0.0
+    assert math.isnan(score_case(no_d, None, REF)["d.spurious_call"])  # no row: not covered
 
     # A locus without D genes has no D presence metric at all.
     light = Reference(alleles={g: t for g, t in REF.alleles.items() if g != "d"}, anchors=REF.anchors)
@@ -204,6 +206,9 @@ def test_short_d_scored_as_abstention():
     abstained = replace(oracle, segments={**oracle.segments, "d": PredSegment()})
     scores = score_case(truth, abstained, REF)
     assert (scores["d_short.top1_in_set"], scores["d_short.abstain_ok"]) == (0.0, 1.0)
+    # No row at all is a failure, not an abstention.
+    scores = score_case(truth, None, REF)
+    assert (scores["d_short.top1_in_set"], scores["d_short.abstain_ok"]) == (0.0, 0.0)
 
     wrong = next(a for a in sorted(REF.alleles["d"]) if a not in d.alleles.alleles)
     called_wrong = replace(oracle, segments={**oracle.segments, "d": PredSegment(call=wrong, call_set=(wrong,))})
@@ -233,7 +238,8 @@ def test_wrong_and_partial_calls():
     assert scores["v.set_precision"] == 0.5
     assert scores["v.no_call"] == 0.0
     assert (scores["v.seq_end_exact"], scores["v.seq_end_err"]) == (0.0, 2.0)  # interval (44, 45)
-    assert not any(k.startswith("v.germ_") for k in scores)
+    germ = [v for k, v in scores.items() if k.startswith("v.germ_")]
+    assert len(germ) == 4 and all(math.isnan(v) for v in germ)  # frame not comparable
 
     pred = PredSegment(call=other_gene, call_set=(other_gene,))
     scores = score_case(truth, replace(oracle, segments={**oracle.segments, "v": pred}), REF)
@@ -263,10 +269,27 @@ def test_germline_coordinates_shifted_into_truth_frame():
     assert (scores["v.germ_start_exact"], scores["v.germ_start_err"]) == (0.0, 3.0)
     assert scores["v.germ_end_exact"] == 0.0 and math.isnan(scores["v.germ_end_err"])
 
-    assert germline_boundary_metrics("v", _toy_segment({"X*01"}), sibling, ref) == {}  # call not in set
+    # Applicable but not comparable (no call, a call outside the truth set or the reference): uncovered.
+    uncovered = dict.fromkeys(("v.germ_start_exact", "v.germ_start_err", "v.germ_end_exact", "v.germ_end_err"),
+                              "nan")
+    for truth_seg, pred in ((_toy_segment({"X*01"}), sibling), (seg, PredSegment()),
+                            (seg, PredSegment(call="X*09", call_set=("X*09",), germ_start=3, germ_end=9))):
+        scores = germline_boundary_metrics("v", truth_seg, pred, ref)
+        assert {k: "nan" if math.isnan(v) else v for k, v in scores.items()} == uncovered
+    # An inverted D has no germline-frame metric at all.
     assert germline_boundary_metrics("v", _toy_segment({"X*01", "X*02"}, inverted=True), sibling, ref) == {}
-    absent = Reference(alleles={"v": {"X*01": "GGGACGTACGG", "X*02": "TTTTTTTTTTTT"}}, anchors={})
-    assert germline_boundary_metrics("v", seg, sibling, absent) == {}  # observed germline not in the call
+
+
+def test_tie_allele_without_the_observed_germline_placed_by_hamming():
+    # Simulator ties can lack the exact observed germline (ACGTAC at X*01[3:9]). A sibling of the primary's
+    # length keeps the primary frame; another length is placed at its best-Hamming offset.
+    ref = Reference(alleles={"v": {"X*01": "GGGACGTACGG", "X*02": "GGGACCTACGG", "X*03": "TTGGGACCTACGG"}},
+                    anchors={})
+    seg = _toy_segment({"X*01", "X*02", "X*03"})
+    for call, germ_start in (("X*02", 3), ("X*03", 5)):
+        pred = PredSegment(call=call, call_set=(call,), germ_start=germ_start, germ_end=germ_start + 6)
+        assert germline_boundary_metrics("v", seg, pred, ref) == {
+            "v.germ_start_exact": 1.0, "v.germ_start_err": 0.0, "v.germ_end_exact": 1.0, "v.germ_end_err": 0.0}
 
 
 def test_repeated_observed_germline_uses_truth_occurrence():

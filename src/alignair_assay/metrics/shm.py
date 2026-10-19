@@ -39,7 +39,7 @@ def germline_metrics(g: str, truth: SegmentTruth, read: str, pred: PredSegment,
     coordinates or CIGAR, or a walk outside the read or the allele).
     """
     obs = truth.observed
-    prefix = f"{g}_indel" if _indel_bases(parse_cigar(obs.cigar)) else g
+    prefix = f"{g}_indel" if any(_indel_counts(parse_cigar(obs.cigar))) else g
     names = (f"{prefix}.mutation_count_err", f"{prefix}.germline_errors")
     aligned = _predicted_germline(g, read, pred, reference)
     if aligned is None:
@@ -64,17 +64,19 @@ def germline_metrics(g: str, truth: SegmentTruth, read: str, pred: PredSegment,
     return {names[0]: float(abs(pred_mismatches - truth_mismatches)), names[1]: float(errors)}
 
 
-def indel_metric(g: str, truth: SegmentTruth, pred: PredSegment) -> CaseScores:
-    """1.0 when the predicted CIGAR has as many inserted plus deleted bases as the observed truth CIGAR.
+def indel_metrics(g: str, truth: SegmentTruth, pred: PredSegment) -> CaseScores:
+    """Indel detection, scored on the same cases for every tool (applicability depends on the truth only).
 
-    Scored only when either side has an indel; a prediction without a CIGAR then counts as wrong.
+    ``indel_found`` (truth alignment has an indel): 1.0 when the predicted CIGAR has exactly the truth's numbers
+    of inserted and of deleted bases; a missing CIGAR is 0.0. ``indel_false`` (truth has no indel; lower is
+    better): 1.0 when the predicted CIGAR reports any insertion or deletion; ``nan`` without a predicted CIGAR.
     """
-    want = _indel_bases(parse_cigar(truth.observed.cigar))
+    want = _indel_counts(parse_cigar(truth.observed.cigar))
     ops = _ops(pred.cigar)
-    got = None if ops is None else _indel_bases(ops)
-    if not want and not got:
-        return {}
-    return {f"{g}.indel_exact": float(got == want)}
+    got = None if ops is None else _indel_counts(ops)
+    if any(want):
+        return {f"{g}.indel_found": float(got == want)}
+    return {f"{g}.indel_false": NAN if got is None else float(any(got))}
 
 
 def _inside(x: int, interval: tuple[int, int]) -> bool:
@@ -112,5 +114,6 @@ def _ops(cigar: str | None) -> list[Op] | None:
         return None
 
 
-def _indel_bases(ops: list[Op]) -> int:
-    return sum(n for n, op in ops if op in "ID")
+def _indel_counts(ops: list[Op]) -> tuple[int, int]:
+    """(inserted bases, deleted bases)."""
+    return sum(n for n, op in ops if op == "I"), sum(n for n, op in ops if op == "D")

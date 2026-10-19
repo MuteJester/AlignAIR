@@ -34,16 +34,17 @@ def read_boundary_metrics(prefix: str, truth: BoundaryTruth, pred: PredSegment) 
 
 def germline_boundary_metrics(prefix: str, truth: SegmentTruth, pred: PredSegment,
                               reference: Reference) -> CaseScores:
-    """Germline-frame edges; scored only when the top-1 call is in the truth set, never for an inverted D.
+    """Germline-frame edges of an observed segment; an inverted D has none.
 
     The predicted coordinates are in the called allele's frame and are moved into the truth (primary allele)
-    frame by the offset of the observed germline inside the called allele.
+    frame (see ``_frame_shift``). Without a top-1 call in the truth set the frames are not comparable: the metrics
+    still apply but are ``nan`` (not covered).
     """
-    if truth.inverted or pred.call not in truth.alleles.alleles:
+    if truth.inverted:
         return {}
-    shift = _frame_shift(truth, pred.call, reference)
+    shift = _frame_shift(truth, pred.call, reference) if pred.call in truth.alleles.alleles else None
     if shift is None:
-        return {}
+        return {f"{prefix}.{edge}_{kind}": NAN for edge in ("germ_start", "germ_end") for kind in ("exact", "err")}
     starts = None if pred.germ_start is None else pred.germ_start - shift
     ends = None if pred.germ_end is None else pred.germ_end - shift
     return {**_edge(prefix, "germ_start", starts, truth.boundaries.germ_start),
@@ -51,10 +52,11 @@ def germline_boundary_metrics(prefix: str, truth: SegmentTruth, pred: PredSegmen
 
 
 def _frame_shift(truth: SegmentTruth, call: str, reference: Reference) -> int | None:
-    """Offset of the called allele's frame from the primary's, or None if the observed germline is absent.
+    """Offset of the called allele's frame from the primary's; None for a call not in the reference.
 
-    When the observed germline occurs more than once in the called allele, the occurrence nearest the truth
-    position is taken (the primary allele's own frame is exact by construction).
+    The observed germline is placed in the called allele: at its occurrence nearest the truth position (the
+    primary allele's own frame is exact by construction); when it does not occur (a simulator tie differing
+    inside the observed span), at offset 0 for an allele as long as the primary, else at the best-Hamming offset.
     """
     obs = truth.observed
     if call == obs.allele:
@@ -67,6 +69,17 @@ def _frame_shift(truth: SegmentTruth, call: str, reference: Reference) -> int | 
     while pos != -1:
         hits.append(pos)
         pos = seq.find(obs.observed_germline, pos + 1)
-    if not hits:
-        return None
-    return min(hits, key=lambda p: abs(p - obs.germ_start)) - obs.germ_start
+    if hits:
+        return min(hits, key=lambda p: abs(p - obs.germ_start)) - obs.germ_start
+    if len(seq) == len(reference.seq(obs.allele)):
+        return 0
+    return _best_hamming_offset(obs.observed_germline, seq, obs.germ_start) - obs.germ_start
+
+
+def _best_hamming_offset(s: str, seq: str, near: int) -> int:
+    """Offset of ``s`` against ``seq`` with the fewest mismatches (overhanging bases count as mismatches); ties go
+    to the offset nearest ``near``, then the lower one."""
+    def cost(p: int) -> int:
+        return sum(not 0 <= p + k < len(seq) or seq[p + k] != base for k, base in enumerate(s))
+
+    return min(range(1 - len(s), len(seq)), key=lambda p: (cost(p), abs(p - near), p))

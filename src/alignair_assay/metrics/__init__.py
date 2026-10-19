@@ -1,8 +1,9 @@
 """Per-case metrics: one tool's prediction for one read, scored against observable truth.
 
 ``CaseScores`` maps a metric name (``"<scope>.<metric>"``, e.g. ``"v.top1_in_set"``) to a value. An absent key
-means the metric does not apply to the case. An applicable metric the tool did not cover is ``nan``, except
-accuracy-type metrics, which score a missing prediction as 0.0 and so are never ``nan``.
+means the metric does not apply to the case. An applicable metric the tool did not cover is ``nan``; accuracy-type
+metrics score a missing prediction as 0.0 instead, except germline-frame edges, which cannot be compared without
+a top-1 call in the truth set (``nan``).
 """
 from __future__ import annotations
 
@@ -14,7 +15,8 @@ CaseScores = dict[str, float]
 INFORMATIONAL: frozenset[str] = frozenset({".set_size", "junction.start_err", "junction.end_err",
                                            "v_indel.mutation_count_err", "v_indel.germline_errors"})
 
-_LOWER_IS_BETTER = ("_err", ".no_call", ".spurious_call", ".germline_errors", ".mutation_count_err")
+_LOWER_IS_BETTER = ("_err", ".no_call", ".spurious_call", ".germline_errors", ".mutation_count_err",
+                    ".indel_false")
 
 
 def is_informational(name: str) -> bool:

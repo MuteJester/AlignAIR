@@ -34,14 +34,18 @@ def call_metrics(prefix: str, truth: AlleleTruth, pred: PredSegment) -> CaseScor
     }
 
 
-def short_call_metrics(prefix: str, truth: AlleleTruth, pred: PredSegment) -> CaseScores:
-    """Metrics for a segment too short to call reliably: abstaining is as correct as a right call."""
+def short_call_metrics(prefix: str, truth: AlleleTruth, pred: PredSegment, *, missing: bool) -> CaseScores:
+    """Metrics for a segment too short to call reliably: abstaining is as correct as a right call.
+
+    ``missing`` (the tool emitted no row) is a failure, not an abstention.
+    """
     return {
         f"{prefix}.top1_in_set": float(pred.call in truth.alleles),
-        f"{prefix}.abstain_ok": float(pred.call is None or pred.call in truth.alleles),
+        f"{prefix}.abstain_ok": 0.0 if missing else float(pred.call is None or pred.call in truth.alleles),
     }
 
 
-def spurious_call(prefix: str, pred: PredSegment) -> CaseScores:
-    """Presence metric for a segment absent from the read: 1.0 when the tool called it anyway."""
-    return {f"{prefix}.spurious_call": float(pred.call is not None)}
+def spurious_call(prefix: str, pred: PredSegment, *, missing: bool) -> CaseScores:
+    """Presence metric for a segment absent from the read: 1.0 when the tool called it anyway; ``nan`` when the
+    tool emitted no row (``missing``), which says nothing about presence."""
+    return {f"{prefix}.spurious_call": NAN if missing else float(pred.call is not None)}
