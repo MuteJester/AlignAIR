@@ -1,3 +1,4 @@
+import dataclasses
 import json
 from pathlib import Path
 
@@ -123,6 +124,48 @@ def test_stop_codon_scans_v_frame_beyond_junction():
     assert t2.productive is False
 
 
+def test_simulator_alignment_past_allele_end_is_unscorable():
+    # GenAIRR defect: this record's V CIGAR (105D148M1I43M, germline end 296) claims a germline base past the
+    # end of the 295-nt allele IGHVF6-G21*14; the read's extra base is attributed to V instead of NP1.
+    recs = _exp(mutate=0.08, indels=(0, 4), e5=(0, 120), e3=(0, 30)).run_records(n=500, seed=11)
+    rec = recs[319]
+    assert (rec["v_call"], rec["v_cigar"]) == ("IGHVF6-G21*14", "105D148M1I43M")
+    t = truth_from_genairr_record(rec, REF, case_id="x", stratum="test")
+    assert "v" not in t.segments
+    assert t.unscorable == frozenset({"v"})
+    assert ("v: simulator alignment 105D148M1I43M from germline 0 ends at 296, past the end of "
+            "IGHVF6-G21*14 (295 nt); segment dropped") in t.warnings
+    assert {"d", "j"} <= set(t.segments)
+
+
+@pytest.mark.parametrize("shift_germline,shift_read,message", [
+    (1000, 0, "past the end of"),
+    (0, 1000, "past the read end"),
+])
+def test_inconsistent_simulator_alignment_dropped(shift_germline, shift_read, message):
+    rec = _exp().run_records(n=1, seed=3)[0]
+    bad = dict(rec, v_germline_start=rec["v_germline_start"] + shift_germline,
+               v_sequence_start=rec["v_sequence_start"] + shift_read)
+    t = truth_from_genairr_record(bad, REF, case_id="x", stratum="test")
+    assert "v" not in t.segments
+    assert t.unscorable == frozenset({"v"})
+    assert any(w.startswith("v: simulator alignment") and message in w for w in t.warnings), t.warnings
+    assert truth_from_genairr_record(rec, REF, case_id="x", stratum="test").unscorable == frozenset()
+
+
+def test_unknown_primary_allele_is_unscorable():
+    rec = _exp().run_records(n=1, seed=3)[0]
+    t = truth_from_genairr_record(dict(rec, j_call="IGHJ99*01"), REF, case_id="x", stratum="test")
+    assert "j" not in t.segments
+    assert t.unscorable == frozenset({"j"})
+
+
+def test_clipped_segment_is_unobserved_not_unscorable():
+    for t in _truths(_exp(e5=(330, 330)).run_records(n=5, seed=7)):
+        assert t.unscorable == frozenset()
+    assert any("v" not in t.segments for t in _truths(_exp(e5=(330, 330)).run_records(n=5, seed=7)))
+
+
 def test_rev_comp_record_rejected():
     rec = _exp().run_records(n=1, seed=3)[0]
     with pytest.raises(ValueError):
@@ -201,6 +244,7 @@ def test_jsonl_roundtrip(tmp_path):
     recs = list(_exp(mutate=0.05, indels=(0, 2), e5=(0, 300)).run_records(n=40, seed=5))
     recs += list(_exp(invert_d=True).run_records(n=10, seed=5))
     truths = _truths(recs)
+    truths.append(dataclasses.replace(truths[0], unscorable=frozenset({"v", "d"})))
     assert any(t.junction is None for t in truths) and any(t.junction for t in truths)
     assert any("d" in t.segments and t.segments["d"].inverted for t in truths)
     for name in ("truth.jsonl", "truth.jsonl.gz"):

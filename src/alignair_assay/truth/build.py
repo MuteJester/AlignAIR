@@ -57,6 +57,8 @@ class ObservableTruth:
     sequence: str  # canonical (forward) read, uppercase
     orientation: int  # 0 forward, 1 reverse complement (bench ids 2/3 are excluded)
     segments: dict[str, SegmentTruth]  # only observed segments
+    # Genes the simulator called whose truth could not be built (reason in ``warnings``); never scored.
+    unscorable: frozenset[str]
     junction: JunctionTruth | None
     vj_in_frame: bool | None
     stop_codon: bool | None
@@ -76,6 +78,7 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
     warnings: list[str] = []
 
     observed: dict[str, tuple[ObservedSegment, str, list[str], bool]] = {}
+    unscorable: set[str] = set()
     for g in "vdj":
         calls = [c for c in (record.get(f"{g}_call") or "").split(",") if c]
         if not calls:
@@ -83,6 +86,7 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
         primary = calls[0]
         if not reference.has(primary):
             warnings.append(f"{g}: primary allele {primary} not in reference; segment dropped")
+            unscorable.add(g)
             continue
         allele_seq = reference.seq(primary)
         inverted = g == "d" and bool(record.get("d_inverted"))
@@ -92,11 +96,13 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
             if inverted:
                 seg = _observe_inverted_d(read, allele_seq, primary, record, problems)
             else:
-                seg = observe_segment(read, allele_seq, primary, record[f"{g}_sequence_start"],
-                                      record[f"{g}_germline_start"], record[f"{g}_cigar"])
+                seg = _observe_forward(read, allele_seq, primary, record, g, problems)
         except (IndexError, TypeError, ValueError) as exc:
             seg = None
             problems.append(f"unusable simulator alignment ({exc}); segment dropped")
+        # A missing segment with a problem was dropped; without one, the read simply does not show it.
+        if seg is None and problems:
+            unscorable.add(g)
         if seg is not None:
             problems += check_invariants(read, frame_seq, seg)
             observed[g] = (seg, frame_seq, calls, inverted)
@@ -132,8 +138,8 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
 
     return ObservableTruth(
         case_id=case_id, stratum=stratum, sequence=read, orientation=orientation, segments=segments,
-        junction=junction, vj_in_frame=vj_in_frame, stop_codon=stop_codon, productive=productive,
-        clone_key=clone_key,
+        unscorable=frozenset(unscorable), junction=junction, vj_in_frame=vj_in_frame, stop_codon=stop_codon,
+        productive=productive, clone_key=clone_key,
         v_mismatches=segments["v"].observed.n_mismatch if "v" in segments else None,
         excluded=None, warnings=tuple(warnings),
     )
@@ -154,6 +160,33 @@ def truth_from_bench_case(case: dict, reference: Reference) -> ObservableTruth:
     if oid in (2, 3):
         truth = replace(truth, excluded=NON_BIOLOGICAL_ORIENTATION)
     return truth
+
+
+def _observe_forward(read: str, allele_seq: str, allele: str, record: dict, g: str,
+                     problems: list[str]) -> ObservedSegment | None:
+    """Observed alignment of a forward segment, or None (with a problem) if the record's alignment is
+    inconsistent with the read or the allele.
+
+    GenAIRR occasionally reports an alignment that runs past the allele end (an extra read base attributed to
+    the segment after an insertion), which cannot be projected onto the reference.
+    """
+    seq_start, germ_start = record[f"{g}_sequence_start"], record[f"{g}_germline_start"]
+    cigar = record[f"{g}_cigar"]
+    ops = parse_cigar(cigar)
+    read_end = seq_start + sum(n for n, op in ops if op in "MI=X")
+    germ_end = germ_start + sum(n for n, op in ops if op in "MD=X")
+    where = f"simulator alignment {cigar} from"
+    if seq_start < 0 or germ_start < 0:
+        problems.append(f"{where} read {seq_start} / germline {germ_start} starts before 0; segment dropped")
+    elif germ_end > len(allele_seq):
+        problems.append(f"{where} germline {germ_start} ends at {germ_end}, past the end of {allele} "
+                        f"({len(allele_seq)} nt); segment dropped")
+    elif read_end > len(read):
+        problems.append(f"{where} read {seq_start} ends at {read_end}, past the read end ({len(read)} nt); "
+                        f"segment dropped")
+    else:
+        return observe_segment(read, allele_seq, allele, seq_start, germ_start, cigar)
+    return None
 
 
 def _observe_inverted_d(read: str, allele_seq: str, allele: str, record: dict,

@@ -174,6 +174,20 @@ def test_spurious_call_on_unobserved_segment():
     assert not any(k.startswith("d") for k in score_case(no_d, oracle_prediction(truth), light))
 
 
+def test_unscorable_gene_emits_nothing():
+    truth = _fixture_truth("amplicon_janchor_000000.json")
+    oracle = oracle_prediction(truth)
+    no_v = replace(truth, segments={g: s for g, s in truth.segments.items() if g != "v"},
+                   unscorable=frozenset({"v"}))
+    for pred in (oracle, None):
+        scores = score_case(no_v, pred, REF)
+        assert not any(k.startswith("v.") for k in scores)
+        assert any(k.startswith("j.") for k in scores)
+    # Unscorable wins even if a segment is (inconsistently) present.
+    scores = score_case(replace(truth, unscorable=frozenset({"v"})), oracle, REF)
+    assert not any(k.startswith("v.") for k in scores)
+
+
 def test_short_d_scored_as_abstention():
     truth = _fixture_truth("orientation_000001.json")
     d = truth.segments["d"]

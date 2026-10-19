@@ -17,12 +17,14 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
 
     Observed segments get allele and boundary metrics; a D with fewer than ``d_min_observed`` observed germline
     bases gets only the ``d_short`` call/abstention metrics. Segments of the locus absent from the read get a
-    spurious-call metric.
+    spurious-call metric. Genes whose truth could not be built (``truth.unscorable``) get no metric at all.
     """
     if truth.excluded is not None:
         return {}
     scores: CaseScores = {}
     for g in GENES:
+        if g in truth.unscorable:
+            continue
         p = pred.segments.get(g, _NO_CALL) if pred is not None else _NO_CALL
         seg = truth.segments.get(g)
         if seg is None:
