@@ -5,6 +5,9 @@ from alignair_assay.ingest.airr import GENES, PredSegment, Prediction
 from alignair_assay.metrics import CaseScores
 from alignair_assay.metrics.alleles import call_metrics, short_call_metrics, spurious_call
 from alignair_assay.metrics.boundaries import germline_boundary_metrics, read_boundary_metrics
+from alignair_assay.metrics.flags import flag_metrics
+from alignair_assay.metrics.junction import clone_key_metric, junction_metrics
+from alignair_assay.metrics.shm import germline_metrics, indel_metric
 from alignair_assay.reference import Reference
 from alignair_assay.truth.build import ObservableTruth
 
@@ -18,6 +21,9 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
     Observed segments get allele and boundary metrics; a D with fewer than ``d_min_observed`` observed germline
     bases gets only the ``d_short`` call/abstention metrics. Segments of the locus absent from the read get a
     spurious-call metric. Genes whose truth could not be built (``truth.unscorable``) get no metric at all.
+    Observed V and J also get an indel metric, and observed V mutation-count and germline-reconstruction metrics.
+    Junction, clone-key and productivity metrics apply when the truth defines them; orientation and AIRR validity
+    are scored for every read.
     """
     if truth.excluded is not None:
         return {}
@@ -36,4 +42,13 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
             scores.update(call_metrics(g, seg.alleles, p))
             scores.update(read_boundary_metrics(g, seg.boundaries, p))
             scores.update(germline_boundary_metrics(g, seg, p, reference))
+            if g in ("v", "j"):
+                scores.update(indel_metric(g, seg, p))
+            if g == "v":
+                scores.update(germline_metrics(g, seg, truth.sequence, p, reference))
+    if truth.junction is not None:
+        scores.update(junction_metrics(truth.junction, truth.sequence, pred))
+    if truth.clone_key is not None:
+        scores.update(clone_key_metric(truth.clone_key, pred))
+    scores.update(flag_metrics(truth, pred))
     return scores

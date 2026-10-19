@@ -118,8 +118,10 @@ def test_missing_prediction_counts_as_wrong():
     errs = [k for k in scores if k.endswith("_err")]
     assert errs and all(math.isnan(scores[k]) for k in errs)
     assert not any(".germ_" in k for k in scores)  # germline frame needs a correct top-1 call
-    # A prediction row without segments scores the same as no prediction at all.
-    assert _same(score_case(truth, Prediction(sequence_id=truth.case_id), REF), scores)
+    # A prediction row without segments scores the same as no prediction at all, except that the row exists.
+    empty = score_case(truth, Prediction(sequence_id=truth.case_id), REF)
+    assert (empty.pop("airr.valid"), scores.pop("airr.valid")) == (1.0, 0.0)
+    assert _same(empty, scores)
 
 
 def test_excluded_truth_scores_nothing():
@@ -305,4 +307,4 @@ def test_metric_direction():
         assert lower_is_better(name), name
     for name in ("v.top1_in_set", "v.seq_start_exact", "d_short.abstain_ok", "v.set_precision"):
         assert not lower_is_better(name), name
-    assert INFORMATIONAL == frozenset({".set_size"})
+    assert INFORMATIONAL == frozenset({".set_size", "junction.start_err", "junction.end_err"})
