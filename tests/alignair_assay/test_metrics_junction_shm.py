@@ -267,7 +267,8 @@ def test_flags_orientation_and_validity():
     scores = score_case(truth, replace(oracle, productive=True, rev_comp=False,
                                        invalid=("v_cigar: malformed CIGAR 'x'",)), REF)
     assert scores["productive.correct"] == 0.0
-    assert scores["vj_in_frame.correct"] == scores["stop_codon.correct"] == 1.0
+    assert scores["vj_in_frame.correct"] == 1.0
+    assert "stop_codon.correct" not in scores  # out-of-frame junction: the frame is ambiguous
     assert scores["orientation.correct"] == 0.0
     assert scores["airr.valid"] == 0.0
 
@@ -280,15 +281,41 @@ def test_flags_orientation_and_validity():
     assert not any(k.endswith(".correct") and k != "orientation.correct" for k in scores)
 
 
+def test_aa_and_stop_codon_scored_only_on_frame_unambiguous_reads():
+    recs = _exp(mutate=0.05, indels=(1, 4)).run_records(n=300, seed=19)
+    seen = {True: 0, False: 0}
+    for i, rec in enumerate(recs):
+        truth = truth_from_genairr_record(rec, REF, case_id=f"f{i}", stratum="test")
+        if truth.junction is None or not truth.vj_in_frame:
+            continue
+        unambiguous = not (truth.v_frameshift or truth.j_frameshift)
+        assert truth.frame_unambiguous == unambiguous
+        scores = score_case(truth, oracle_prediction(truth), REF)
+        assert ("junction.aa_exact" in scores) == unambiguous, truth.case_id
+        assert ("stop_codon.correct" in scores) == unambiguous, truth.case_id
+        assert "productive.correct" in scores and "vj_in_frame.correct" in scores
+        if not unambiguous:
+            assert truth.productive is False
+        seen[unambiguous] += 1
+    assert seen[True] >= 20 and seen[False] >= 5, seen
+
+    # An out-of-frame junction is frame-ambiguous as well.
+    out_of_frame = _fixture_truth("orientation_000001.json")
+    assert out_of_frame.vj_in_frame is False
+    scores = score_case(out_of_frame, oracle_prediction(out_of_frame), REF)
+    assert "junction.aa_exact" not in scores and "stop_codon.correct" not in scores
+
+
 def test_missing_prediction_new_metrics():
     truth = _fixture_truth("amplicon_janchor_000000.json")
     for pred, valid in ((None, 0.0), (Prediction(sequence_id=truth.case_id), 1.0)):
         scores = score_case(truth, pred, REF)
         assert scores["airr.valid"] == valid
         for name in ("junction.nt_exact", "junction.length_exact", "clone_key.exact", "productive.correct",
-                     "vj_in_frame.correct", "stop_codon.correct", "orientation.correct", "v.indel_exact"):
+                     "vj_in_frame.correct", "orientation.correct", "v.indel_exact"):
             assert scores[name] == 0.0, name
-        assert "junction.aa_exact" not in scores  # truth junction is out of frame
+        # The truth junction is out of frame (and V has a frameshift): no translation or stop-codon metric.
+        assert "junction.aa_exact" not in scores and "stop_codon.correct" not in scores
         for name in _ERRORS:
             assert math.isnan(scores[name]), name
 

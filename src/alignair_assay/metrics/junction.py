@@ -20,14 +20,19 @@ NAN = float("nan")
 _NO_CALL = PredSegment()
 
 
-def junction_metrics(truth: JunctionTruth, sequence: str, pred: Prediction | None) -> CaseScores:
-    """Junction string, translation, length and edge metrics; ``sequence`` is the canonical read."""
+def junction_metrics(truth: JunctionTruth, sequence: str, pred: Prediction | None, *,
+                     frame_unambiguous: bool = True) -> CaseScores:
+    """Junction string, translation, length and edge metrics; ``sequence`` is the canonical read.
+
+    The translation is scored only for an in-frame truth junction on a frame-unambiguous read (no V/J
+    frameshift; see ``ObservableTruth.frame_unambiguous``).
+    """
     nt = _pred_nt(pred)
     scores: CaseScores = {
         "junction.nt_exact": float(nt == truth.nt),
         "junction.length_exact": float(nt is not None and len(nt) == truth.length),
     }
-    if truth.aa is not None:
+    if truth.aa is not None and frame_unambiguous:
         scores["junction.aa_exact"] = float(_pred_aa(pred, nt) == truth.aa)
     start, end = _pred_span(pred, nt, sequence)
     scores.update(_signed_edge("start", start, truth.start))

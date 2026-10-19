@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from alignair_assay.cigar import parse_cigar
 from alignair_assay.reference import Reference
 from alignair_assay.seqops import revcomp, translate
 from alignair_assay.truth.build import truth_from_bench_case, truth_from_genairr_record
@@ -44,6 +45,16 @@ def test_seqops():
     assert revcomp("ACGTN") == "NACGT"
     assert translate("TGTTGGTAA") == "CW*"
     assert translate("TGTNNNTG") == "CX"
+
+
+def test_translate_iupac():
+    # An ambiguous codon translates when every expansion gives the same amino acid.
+    assert translate("CGN") == "R"
+    assert translate("GCN") == "A"
+    assert translate("TAR") == "*"
+    assert translate("TTN") == "X"  # TTT/TTC = F, TTA/TTG = L
+    assert translate("NNN") == "X"
+    assert translate("cgnTT-") == "RX"
 
 
 def test_junction_translated_regardless_of_productivity():
@@ -106,9 +117,33 @@ def test_productivity_and_clone_key_fields():
         if t.junction is None:
             continue
         assert t.vj_in_frame == (t.junction.length % 3 == 0)
+        assert t.v_frameshift is False and t.j_frameshift is False  # no indels in this mix
         assert t.productive == (t.vj_in_frame and not t.stop_codon)
         assert t.clone_key == (t.segments["v"].alleles.genes, t.segments["j"].alleles.genes,
                                t.junction.length)
+
+
+def _net_indel(seg):
+    ops = parse_cigar(seg.observed.cigar)
+    return sum(n for n, op in ops if op == "I") - sum(n for n, op in ops if op == "D")
+
+
+def test_frameshift_makes_read_unproductive():
+    recs = _exp(mutate=0.05, indels=(1, 4)).run_records(n=300, seed=19)
+    shifted_in_frame = 0
+    for t in _truths(recs):
+        for g in "vj":
+            want = None if g not in t.segments else _net_indel(t.segments[g]) % 3 != 0
+            assert getattr(t, f"{g}_frameshift") == want, (t.case_id, g)
+        if t.junction is None:
+            assert t.productive is None
+            continue
+        frameshift = t.v_frameshift or t.j_frameshift
+        assert t.productive == (t.vj_in_frame and not t.stop_codon and not frameshift)
+        assert t.frame_unambiguous == (t.vj_in_frame and not frameshift)
+        shifted_in_frame += frameshift and t.vj_in_frame
+    # Reads whose junction is in frame but whose V or J alignment is shifted: unproductive, frame ambiguous.
+    assert shifted_in_frame >= 5
 
 
 def test_stop_codon_scans_v_frame_beyond_junction():

@@ -47,7 +47,8 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
             if g == "v":
                 scores.update(germline_metrics(g, seg, truth.sequence, p, reference))
     if truth.junction is not None:
-        scores.update(junction_metrics(truth.junction, truth.sequence, pred))
+        scores.update(junction_metrics(truth.junction, truth.sequence, pred,
+                                       frame_unambiguous=truth.frame_unambiguous))
     if truth.clone_key is not None:
         scores.update(clone_key_metric(truth.clone_key, pred))
     scores.update(flag_metrics(truth, pred))

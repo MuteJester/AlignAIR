@@ -65,8 +65,21 @@ class ObservableTruth:
     productive: bool | None
     clone_key: tuple[frozenset[str], frozenset[str], int] | None
     v_mismatches: int | None
+    # Net inserted minus deleted bases of the observed V / J alignment not a multiple of 3 (None: not observed).
+    v_frameshift: bool | None
+    j_frameshift: bool | None
     excluded: str | None
     warnings: tuple[str, ...]
+
+    @property
+    def frame_unambiguous(self) -> bool:
+        """True when the reading frame is known everywhere: an in-frame junction and no V/J frameshift.
+
+        Translations and stop codons are scored only then; otherwise the frame depends on how a tool
+        resolves the frameshift.
+        """
+        return bool(self.junction is not None and self.vj_in_frame
+                    and not self.v_frameshift and not self.j_frameshift)
 
 
 def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: str, stratum: str,
@@ -128,12 +141,13 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
         )
 
     junction = _junction(read, segments, reference, warnings)
+    v_frameshift, j_frameshift = (_frameshift(segments[g].observed) if g in segments else None for g in "vj")
     vj_in_frame = stop_codon = productive = clone_key = None
     if junction is not None:
         vj_in_frame = junction.length % 3 == 0
         stop_codon = _stop_codon(read, junction.start, segments["v"].observed.seq_start,
                                  segments["j"].observed.seq_end)
-        productive = vj_in_frame and not stop_codon
+        productive = vj_in_frame and not stop_codon and not (v_frameshift or j_frameshift)
         clone_key = (segments["v"].alleles.genes, segments["j"].alleles.genes, junction.length)
 
     return ObservableTruth(
@@ -141,7 +155,7 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
         unscorable=frozenset(unscorable), junction=junction, vj_in_frame=vj_in_frame, stop_codon=stop_codon,
         productive=productive, clone_key=clone_key,
         v_mismatches=segments["v"].observed.n_mismatch if "v" in segments else None,
-        excluded=None, warnings=tuple(warnings),
+        v_frameshift=v_frameshift, j_frameshift=j_frameshift, excluded=None, warnings=tuple(warnings),
     )
 
 
@@ -316,6 +330,11 @@ def _junction(read: str, segments: dict[str, SegmentTruth], reference: Reference
     length = end - start
     return JunctionTruth(start=start, end=end, nt=nt, aa=translate(nt) if length % 3 == 0 else None,
                          length=length)
+
+
+def _frameshift(seg: ObservedSegment) -> bool:
+    ops = parse_cigar(seg.cigar)
+    return (sum(n for n, op in ops if op == "I") - sum(n for n, op in ops if op == "D")) % 3 != 0
 
 
 def _stop_codon(read: str, junction_start: int, v_start: int, j_end: int) -> bool:

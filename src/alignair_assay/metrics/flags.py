@@ -1,7 +1,8 @@
 """Read-level flag metrics: productivity calls, orientation and AIRR validity.
 
 A missing prediction or flag is wrong (0.0). Productivity flags are scored only where the truth defines them
-(the truth junction exists).
+(the truth junction exists); the stop-codon flag only on frame-unambiguous reads, where the frame does not depend
+on how a tool resolves a frameshift.
 """
 from __future__ import annotations
 
@@ -16,6 +17,8 @@ def flag_metrics(truth: ObservableTruth, pred: Prediction | None) -> CaseScores:
     scores: CaseScores = {}
     for name in _PRODUCTIVITY:
         want = getattr(truth, name)
+        if name == "stop_codon" and not truth.frame_unambiguous:
+            continue
         if want is not None:
             scores[f"{name}.correct"] = float(pred is not None and getattr(pred, name) == want)
     rev_comp = pred.rev_comp if pred is not None else None

@@ -29,6 +29,8 @@ def truth_to_dict(t: ObservableTruth) -> dict:
         "clone_key": (None if t.clone_key is None
                       else [sorted(t.clone_key[0]), sorted(t.clone_key[1]), t.clone_key[2]]),
         "v_mismatches": t.v_mismatches,
+        "v_frameshift": t.v_frameshift,
+        "j_frameshift": t.j_frameshift,
         "excluded": t.excluded,
         "warnings": list(t.warnings),
     }
@@ -50,6 +52,8 @@ def truth_from_dict(d: dict) -> ObservableTruth:
         clone_key=(None if clone_key is None
                    else (frozenset(clone_key[0]), frozenset(clone_key[1]), clone_key[2])),
         v_mismatches=d["v_mismatches"],
+        v_frameshift=d["v_frameshift"],
+        j_frameshift=d["j_frameshift"],
         excluded=d["excluded"],
         warnings=tuple(d["warnings"]),
     )
