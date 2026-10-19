@@ -3,7 +3,7 @@
     <!-- DRAFT Galaxy wrapper (not yet submitted to the Tool Shed; see ../README.md). -->
     <requirements>
         <!-- Once published: a bioconda package or the container. Container shown for now. -->
-        <container type="docker">thomask90/alignair:latest</container>
+        <container type="docker">alignair/alignair:3.0.0</container>
     </requirements>
     <!-- detect_errors="exit_code" surfaces AlignAIR's non-zero exits as Galaxy job failures. -->
     <command detect_errors="exit_code"><![CDATA[

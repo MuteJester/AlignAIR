@@ -5,13 +5,13 @@ Thin wrappers that run AlignAIR inside common bioinformatics workflow managers. 
 exit codes, logs, containers, multi-sample output) before AlignAIR is published. They are
 **not** advertised entry points and will change.
 
-Prerequisites that are not met yet (the project is pre-release):
+Prerequisites:
 
-- a **published model** (`alignair model list` currently shows none) — until then, point
-  `--model` at a locally trained bundle (`alignair train ... -o my_model`), and
-- a **published container** — the wrappers reference `thomask90/alignair:latest`; build it
-  locally (`docker build -t alignair:local .`) and substitute that tag, or run the wrappers
-  against a local `alignair` already on `PATH` (Nextflow `-profile local`).
+- a **model** — a published id (`alignair models list`, e.g. `alignair-igh-human`) or a locally
+  trained bundle (`alignair train ... -o my_model`), and
+- the **container** — the wrappers pin `alignair/alignair:3.0.0` (also mirrored at
+  `ghcr.io/mutejester/alignair:3.0.0`), or run them against a local `alignair` already on `PATH`
+  (Nextflow `-profile local`).
 
 ## One samplesheet, several runners
 
