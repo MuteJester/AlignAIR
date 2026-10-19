@@ -32,20 +32,24 @@ def genairr_provenance() -> dict:
     directory).
 
     The metadata version of an editable install can lag the source, so the commit identifies the simulator. The git
-    fields are None outside a checkout, and every field but the version is None when GenAIRR cannot be imported.
+    fields are None unless the package's own file is tracked by the checkout holding it: an install inside another
+    project's checkout (a virtual environment under its tree, ignored or not) is not that project's code. Every
+    field but the version is None when GenAIRR cannot be imported.
     """
     try:
         version = importlib.metadata.version("GenAIRR")
     except importlib.metadata.PackageNotFoundError:
         version = None
+    git = {"git_commit": None, "git_dirty": None}
     try:
         import GenAIRR
     except ImportError:
         source = None
-        git = {"git_commit": None, "git_dirty": None}
     else:
-        source = Path(GenAIRR.__file__).resolve().parent
-        git = git_state(source)
+        package_file = Path(GenAIRR.__file__).resolve()
+        source = package_file.parent
+        if _git(source, "ls-files", "--error-unmatch", "--", package_file.name) is not None:
+            git = git_state(source)
     return {"genairr_version": version, "genairr_source": None if source is None else str(source),
             "genairr_git_commit": git["git_commit"], "genairr_git_dirty": git["git_dirty"]}
 
