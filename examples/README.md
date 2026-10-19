@@ -68,7 +68,7 @@ docker run --rm \
   -v "$PWD/examples:/data:ro" \
   -v "/path/to/models:/models:ro" \
   -v "$PWD/out:/out" \
-  ghcr.io/mutejester/alignair:latest \
+  alignair/alignair:latest \
   predict --input /data/reads.fasta --out /out/result.tsv --model /models/<model.alignair>
 ```
 

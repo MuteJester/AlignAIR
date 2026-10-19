@@ -8,7 +8,7 @@
   model predicts V/D/J allele calls, segment coordinates, and the junction, and writes standard AIRR
   output. Constrain calls to a donor genotype (a subset of the model's reference), or train a model for
   your own reference / species.<br>
-  <a href="https://github.com/MuteJester/AlignAIR/pkgs/container/alignair"><img alt="Container: GHCR" src="https://img.shields.io/badge/container-ghcr.io-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://hub.docker.com/r/alignair/alignair"><img alt="Docker Hub: alignair/alignair" src="https://img.shields.io/badge/docker-alignair%2Falignair-2496ED?logo=docker&logoColor=white"></a>
   <a href="https://doi.org/10.1093/nar/gkaf651"><img src="https://img.shields.io/badge/DOI-10.1093%2Fnar%2Fgkaf651-blue" alt="DOI"></a>
   <a href="LICENSE"><img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
   <a href="https://mutejester.github.io/AlignAIR/"><img alt="Documentation" src="https://img.shields.io/badge/docs-guides%20%26%20lessons-6d5cf5"></a>
@@ -44,17 +44,19 @@ extras), `[all]`. PyTorch is auto-detected for GPU; for a CPU-only install, `pip
 Or Docker (no local install needed):
 
 ```bash
-docker pull ghcr.io/mutejester/alignair:latest
-docker run --rm ghcr.io/mutejester/alignair:latest doctor
+docker pull alignair/alignair:latest
+docker run --rm alignair/alignair:latest doctor
 
 # align reads: mount an input dir + an output dir, and persist the model cache across runs
 docker run --rm \
   -v "$PWD:/data" -v alignair-cache:/home/appuser/.cache/alignair \
-  ghcr.io/mutejester/alignair:latest \
+  alignair/alignair:latest \
   predict --input /data/reads.fasta --out /data/out.tsv --model alignair-igh-human
 ```
 
-The default image is CPU-only; pin a version tag (`ghcr.io/mutejester/alignair:3.0.0`) for reproducibility. The
+The same image is mirrored at `ghcr.io/mutejester/alignair` (identical tags) if Docker Hub's anonymous
+pull limit is a problem, e.g. on a shared cluster. The default image is CPU-only; pin a version tag
+(`alignair/alignair:3.0.0`) for reproducibility. The
 container runs as a non-root user, so mount a writable output dir (add `--user $(id -u):$(id -g)` if
 your host uid differs). Models are not baked in - the `alignair-cache` volume above keeps a downloaded
 `--model <id>` from being re-fetched on every run. GPU is auto-detected when you run in a CUDA base image.
