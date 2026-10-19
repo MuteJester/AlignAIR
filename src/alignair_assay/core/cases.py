@@ -47,3 +47,20 @@ def write_fasta(cases: Iterable[dict], path: str | Path) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         for case in cases:
             fh.write(f">{case['case_id']}\n{case['sequence']}\n")
+
+
+def read_fasta(path: str | Path) -> list[tuple[str, str]]:
+    """``(name, sequence)`` per FASTA record, in file order. The name is the header's first word; a sequence may
+    span several lines, which are joined as written. Sequence text before the first header raises ValueError."""
+    records: list[tuple[str, list[str]]] = []
+    with open(path, encoding="utf-8") as fh:
+        for number, line in enumerate(fh, 1):
+            line = line.strip()
+            if line.startswith(">"):
+                words = line[1:].split()
+                records.append((words[0] if words else "", []))
+            elif line:
+                if not records:
+                    raise ValueError(f"{path}:{number}: sequence before the first FASTA header")
+                records[-1][1].append(line)
+    return [(name, "".join(parts)) for name, parts in records]

@@ -7,6 +7,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
+from alignair_assay.core.cases import read_fasta
+
 # The GenAIRR dataconfig every command uses unless ``--reference`` names another.
 DEFAULT_REFERENCE = "HUMAN_IGH_OGRDB"
 
@@ -74,6 +76,22 @@ class Reference:
             if gene.anchors:
                 anchors.update({k: int(v) for k, v in gene.anchors.items()})
         return cls(alleles=alleles, anchors=anchors)
+
+    @classmethod
+    def from_fasta(cls, path) -> "Reference":
+        """The reference a FASTA file holds (for example one a tool exported): one allele per record, named by
+        the header's first word, with its sequence uppercased. The gene letter is the lower-cased fourth
+        character of the name (``IGHV1-2*02`` -> ``v``). Anchors are not in a FASTA file, so they are ``{}``.
+        A name whose letter is not ``v``, ``d`` or ``j``, or that appears twice, raises ValueError."""
+        alleles: dict[str, dict[str, str]] = {}
+        for name, sequence in read_fasta(path):
+            letter = name[3:4].lower()
+            if letter not in ("v", "d", "j"):
+                raise ValueError(f"{path}: allele {name!r} has no V, D or J gene letter as its fourth character")
+            if any(name in table for table in alleles.values()):
+                raise ValueError(f"{path}: allele {name!r} appears twice")
+            alleles.setdefault(letter, {})[name] = sequence.upper()
+        return cls(alleles=alleles, anchors={})
 
     @classmethod
     def from_dataconfig(cls, name: str) -> "Reference":

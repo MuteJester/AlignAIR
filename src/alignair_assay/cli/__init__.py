@@ -1,7 +1,9 @@
-"""Command-line entry point: build suites, build observable truth, score one tool, compare two tools.
+"""Command-line entry point: build suites, run a tool, build observable truth, score one tool, compare two tools.
 
   python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB]
       [--seed 20261019] [--scale 1.0] [--workers 8]
+  python -m alignair_assay run --run-dir RUN --tool igblast|oracle --suites S0,S1 [--arm shared]
+      [--igblast-dir DIR] [--threads 8] [--cpus 0-7]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR
@@ -19,9 +21,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from alignair_assay.cli import build, compare, score, truth
+from alignair_assay.cli import build, compare, run, score, truth
 
-COMMANDS = (build, truth, score, compare)
+COMMANDS = (build, run, truth, score, compare)
 
 
 def main(argv: list[str] | None = None) -> int:

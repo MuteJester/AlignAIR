@@ -10,6 +10,7 @@ RUN/
   suites/<S>/donors.json              suites with donors only
   suites/<S>/build.json               counts, warnings, timing, config hash (written last)
   runs/<tool>/<S>/<arm>/predictions.tsv + run.json + logs/
+  runs/<tool>/_work/                  the tool's one-time setup (e.g. IgBLAST's germline databases)
   scores/<S>/<arm>/
   speed/speed.json
   report.json, report.md
@@ -92,6 +93,11 @@ class RunLayout:
     def logs_dir(self, tool: str, suite: str, arm: str) -> Path:
         """The tool run's logs and scratch files."""
         return self.run_dir(tool, suite, arm) / "logs"
+
+    def work_dir(self, tool: str) -> Path:
+        """The tool's one-time setup shared by its runs (e.g. IgBLAST's germline databases); ``_work`` cannot
+        collide with a suite name."""
+        return self.root / "runs" / _component(tool) / "_work"
 
     def scores_dir(self, suite: str, arm: str) -> Path:
         """Scores of every tool on one suite and arm, and their comparison."""

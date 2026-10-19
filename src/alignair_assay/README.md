@@ -17,7 +17,7 @@ Each subpackage is a layer and may import only the layers in its row.
 
 | Layer | Holds | May import from `alignair_assay.` |
 |---|---|---|
-| `core` | shared primitives: `reference` (the germline reference, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`, `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data) | core |
+| `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`, `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data) | core |
 | `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle`, `summary` (what a truth set could not score) | core, truth |
 | `airr` | AIRR TSV `reader` and `writer` | core, airr |
 | `metrics` | per-case scorers (pure) and the metric registries | core, truth, metrics |
@@ -25,7 +25,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `report` | JSON reports and markdown summaries | core, stats, report |
 | `scoring` | `pipeline` (score one tool against a truth file) and `slices` | core, truth, airr, metrics, stats, scoring |
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
-| `runners` | one runner per tool (from P2 Task 6) | core, airr, truth, suites, runners |
+| `runners` | one runner per tool (`igblast`, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`) | core, airr, truth, suites, runners |
 | `workflow` | build → run → score → report orchestration over a run directory: `build` (one suite) | everything except cli |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (returns the oracle's per-case scores) | everything |
@@ -102,6 +102,7 @@ RUN/
   suites/<S>/donors.json              suites with donors only
   suites/<S>/build.json               counts, warnings, timing, config hash; written last
   runs/<tool>/<S>/<arm>/predictions.tsv + run.json + logs/
+  runs/<tool>/_work/                  the tool's one-time setup (IgBLAST: the germline databases)
   scores/<S>/<arm>/<tool>.* and comparison.{json,md}
   speed/speed.json
   report.json, report.md
@@ -113,6 +114,7 @@ RUN/
 | `reference/`, `germline.fasta`, `reference.json` | `reference_dir`, `reference_fasta`, `reference_json` |
 | `suites/<S>/` and its files | `suite_dir(s)`, `cases(s)`, `truth(s)`, `reads(s)`, `donors(s)`, `build_json(s)` |
 | `runs/<tool>/<S>/<arm>/` and its files | `run_dir(tool, s, arm)`, `predictions(...)`, `run_json(...)`, `logs_dir(...)` |
+| `runs/<tool>/_work/` | `work_dir(tool)` |
 | `scores/<S>/<arm>/` | `scores_dir(s, arm)` |
 | `speed/`, `speed.json` | `speed_dir`, `speed_json` |
 | `report.json`, `report.md` | `report_json`, `report_md` |
@@ -128,6 +130,8 @@ Run from the repository root with `PYTHONPATH=src`:
 ```
 python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB] \
     [--seed 20261019] [--scale 1.0] [--workers 8]
+python -m alignair_assay run --run-dir RUN --tool igblast|oracle --suites S0,S1 [--arm shared] \
+    [--igblast-dir DIR] [--threads 8] [--cpus 0-7]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05]
@@ -142,6 +146,17 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   (`truth.summary.truth_summary`: excluded cases, warnings, unscorable genes, simulator disagreements), the worker
   count and the wall time in `seconds`; a suite with donors adds `donors_summary` (see Donors). It is removed first
   and written last, so it marks a complete build. The command prints one line per suite.
+- `run` runs one registered tool on built suites of `RUN`. It first checks every input: the tool and its options,
+  and that each suite is built (`build.json`) against one truth reference, whose dataconfig must still have the
+  digest the truth headers record. It then makes `reference/germline.fasta` the shared reference
+  (`runners.reference.ensure_shared_reference`): an existing file, such as a tool's exported reference, is verified
+  against the truth reference, and any difference stops the command before anything runs, naming both
+  references' allele counts and the first allele that is missing, extra or has a different sequence; otherwise
+  the file is written from the truth reference. `reference/reference.json` records its `digest`, `counts`,
+  `source` (`truth` or `existing`) and `sha256`. The tool is prepared once, then run per suite on
+  `suites/<S>/reads.fasta` (`runners.base.run_suite`), writing `predictions.tsv`, `logs/` and `run.json`. The
+  command prints one line per run (return code, reads, wall time, peak RSS) and exits with status 2 when any
+  run's return code is not 0; failed runs are recorded too.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit` and `genairr_git_dirty`. The
   command then prints the excluded cases, warnings, unscorable genes and simulator disagreements.
@@ -151,7 +166,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
 - Predictions are matched to truth by AIRR `sequence_id` == truth `case_id`. A truth case without a prediction is
   scored as missing, never dropped.
 - A missing file, an unknown reference, a truth file built against another reference, a prediction file
-  matching no case, or `compare` given the same name for both tools exits with status 2.
+  matching no case, `compare` given the same name for both tools, an unknown tool, an unbuilt suite, a shared
+  reference that is not the truth reference, or a failed tool run exits with status 2.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
 `cli.COMMANDS`. The module owns its own input checks: `run` raises ValueError (or FileNotFoundError) for invalid
@@ -286,6 +302,42 @@ reference alleles carried, each novel allele replaced by its base.
 human IGH donors, across seeds, the defaults realise 6.5 to 6.9 deleted genes per donor, a heterozygous share of
 0.39 to 0.40 and 1.22 to 1.24 alleles per gene (V about 1.32).
 
-## Adding a runner (from P2 Task 6)
+## Adding a runner
 
-To be written with the runner infrastructure.
+A runner turns a FASTA of reads into an AIRR rearrangement TSV. It implements `runners.base.Runner`:
+
+- `name`: the tool name, used as `runs/<tool>/` (one path component).
+- `prepare(layout, reference) -> dict`: the tool's one-time setup for run directory `layout`, against the shared
+  reference (already verified equal to the truth reference). Put setup files in `layout.work_dir(name)`. Return
+  the setup's provenance, and raise (FileNotFoundError, ValueError, RuntimeError) when the tool cannot be set up.
+- `run(fasta, out_tsv, *, suite, arm, log_dir, alleles=None) -> RunResult`: annotate every read of `fasta` into
+  `out_tsv`, keeping logs and scratch files in `log_dir`. `alleles`, when given, restricts the tool to those
+  reference alleles (the genotype arm): IgBLAST builds a database from them in `log_dir/db`; the oracle ignores
+  them. A tool that fails must return its non-zero return code in the `RunResult`, not raise, so the failure is
+  recorded and never scored. Run external commands through `runners.base.timed_command`, which measures the wall
+  time and the peak RSS (GNU `/usr/bin/time`), pins the command to `cpus` with `taskset` and logs its output.
+
+`RunResult` holds `tool`, `suite`, `arm`, `predictions` (the TSV path), `n_reads` (reads given), `wall_seconds`,
+`peak_rss_kb` (None when not measured), `returncode`, `commands` (every tool command executed, as argument lists
+that can be re-run; environment variables as an `env` prefix; without the `time`/`taskset` wrappers, whose CPUs
+the provenance records) and `provenance`. Provenance must identify what
+ran: the tool's version text and the SHA-256 of its binaries or image, of its model or database files, and the
+threads and CPUs. `run_suite` adds the reads' path and SHA-256 (`reads`) and writes the record as `run.json`,
+removing the old one first, so a run that raises leaves none. Anything that scores a run first calls
+`require_successful_run(run_json)`, which refuses a missing record or a non-zero return code, naming the tool,
+suite, arm and return code.
+
+To register a runner, write one module in `runners/` and add a factory `Callable[[RunnerOptions], Runner]` to
+`RUNNERS` in `runners/__init__.py` (by convention a `from_options` classmethod). `RunnerOptions` holds every
+tool's settings (`igblast_dir`, `threads`, `cpus`, the AlignAIR image, model, checkpoint, device, batch size and
+cache directory); a factory reads the fields it needs and raises ValueError naming a missing one. Expose new
+options as `run` flags. Test the runner in `tests/alignair_assay/runners/`; a test that needs the tool installed
+skips unless its environment variable is set (`ALIGNAIR_ASSAY_IGBLAST_DIR`, `ALIGNAIR_ASSAY_DOCKER`,
+`ALIGNAIR_ASSAY_MODEL`).
+
+Registered runners:
+
+| Tool | Runner | Setup (`prepare`) | Run |
+|---|---|---|---|
+| `oracle` | `runners.oracle.OracleRunner` | binds the run directory | writes `truth.oracle.oracle_prediction` rows for the reads of the FASTA, in its order, from the suite's truth (in-process: no command, no RSS) |
+| `igblast` | `runners.igblast.IgBlastRunner` (`--igblast-dir`, `--threads`, `--cpus`) | checks the release; writes `germline_{v,d,j}.fasta` and builds the BLAST databases (`makeblastdb -parse_seqids -dbtype nucl`) in `runs/igblast/_work/` | `IGDATA=<dir> igblastn -germline_db_V/D/J <db>/V,D,J -auxiliary_data optional_file/human_gl.aux -organism human -ig_seqtype Ig -num_threads <threads> -outfmt 19 -query <fasta> -out <tsv>`; provenance: version text, SHA-256 of `igblastn`, `makeblastdb`, the auxiliary file and every database file, threads and CPUs |
