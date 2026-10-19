@@ -90,3 +90,31 @@ def test_unknown_simulator_call_flags_disagreement_without_crashing():
     assert "IGHJ99*01" not in truth.alleles
     assert truth.primary == name
     assert truth.genes == frozenset(gene_name(a) for a in truth.alleles)
+
+
+def _seg(allele, kmer, seq):
+    start = seq.index(kmer)
+    n = len(kmer)
+    return ObservedSegment(allele, 0, n, start, start + n, f"{n}M", 0, n, kmer)
+
+
+def test_substring_set_exact_on_handbuilt_reference():
+    ref = Reference(
+        alleles={"v": {"X*01": "ACGTACGTAA", "X*02": "ACGTACGTTT", "Y*01": "GGGCCCAAAT"}},
+        anchors={},
+    )
+    seg = _seg("X*01", "CGTAC", ref.seq("X*01"))
+    truth = observable_alleles(seg, ref, "v", ["X*01"])
+    assert truth.alleles == frozenset({"X*01", "X*02"})
+    assert truth.genes == frozenset({"X"})
+
+    seg = _seg("X*01", "GTAA", ref.seq("X*01"))
+    truth = observable_alleles(seg, ref, "v", ["X*01"])
+    assert truth.alleles == frozenset({"X*01"})
+
+
+def test_empty_observed_germline_rejected():
+    ref = Reference(alleles={"v": {"X*01": "ACGTACGTAA"}}, anchors={})
+    seg = ObservedSegment("X*01", 0, 0, 3, 3, "", 0, 0, "")
+    with pytest.raises(ValueError):
+        observable_alleles(seg, ref, "v", ["X*01"])
