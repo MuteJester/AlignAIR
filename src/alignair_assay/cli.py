@@ -23,7 +23,7 @@ from alignair_assay.ingest.airr import GENES, load_airr_tsv
 from alignair_assay.metrics import CaseScores, is_informational, lower_is_better
 from alignair_assay.metrics.case import MIN_OBSERVED, score_case
 from alignair_assay.reference import Reference
-from alignair_assay.report import build_comparison_report, build_score_report, to_markdown
+from alignair_assay.report import build_comparison_report, build_score_report, headline_table, to_markdown
 from alignair_assay.stats import by_slice, compare, summarize
 from alignair_assay.truth.build import ObservableTruth, truth_from_bench_case
 from alignair_assay.truth.io import read_truth_jsonl, write_truth_jsonl
@@ -159,9 +159,8 @@ def _cmd_compare(args) -> int:
     out.mkdir(parents=True, exist_ok=True)
     paths = (out / "comparison.json", out / "comparison.md")
     _write_report(report, *paths)
-    verdicts = Counter(entry["verdict"] for entry in comparison.values())
-    print(f"compared {len(family)} metrics: {args.a_name} better {verdicts['a_better']}, "
-          f"{args.b_name} better {verdicts['b_better']}, tie or inconclusive {verdicts['tie_or_inconclusive']}")
+    print(f"compared {len(family)} metrics; headline:")
+    print(headline_table(report), end="")
     print("wrote " + ", ".join(map(str, paths)))
     return 0
 

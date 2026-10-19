@@ -1,7 +1,7 @@
 import json
 import math
 
-from alignair_assay.report import build_comparison_report, build_score_report, to_markdown
+from alignair_assay.report import build_comparison_report, build_score_report, headline_table, to_markdown
 from alignair_assay.stats import MetricSummary, compare
 
 
@@ -46,25 +46,43 @@ def test_markdown_shows_coverage_and_formats():
     assert "| junction.nt_exact | — | 0 | 0% |" in md
 
 
-def test_comparison_report_and_markdown():
-    a = {f"c{i}": {"clone_key.exact": float(i % 2), "v.mutation_count_err": 2.0} for i in range(20)}
-    b = {f"c{i}": {"clone_key.exact": 1.0, "v.mutation_count_err": 1.0} for i in range(20)}
-    comp = compare(a, b, ["clone_key.exact", "v.mutation_count_err"], lower_is_better={"v.mutation_count_err"})
+def _comparison():
+    # B covers 16 of 20 clone keys, so its own mean, the paired means and the difference all differ.
+    a = {f"c{i}": {"clone_key.exact": float(i < 10), "v.mutation_count_err": 2.0} for i in range(20)}
+    b = {f"c{i}": {"clone_key.exact": 1.0 if i < 16 else math.nan, "v.mutation_count_err": 1.0} for i in range(20)}
+    comp = compare(a, b, ["clone_key.exact", "v.mutation_count_err", "zzz.other_err"],
+                   lower_is_better={"v.mutation_count_err", "zzz.other_err"})
     sl = {"stratum": {"s1": {"clone_key.exact": _ms(0.5)}}}
-    rep = build_comparison_report("A", "B", comp, sl, sl, {"x": 1})
+    return build_comparison_report("A", "B", comp, sl, sl, {"x": 1})
+
+
+def test_comparison_report_and_markdown():
+    rep = _comparison()
     assert rep["kind"] == "alignair_assay.comparison_report"
     assert rep["a"] == "A" and rep["b"] == "B"
     json.dumps(rep, allow_nan=False)
     md = to_markdown(rep)
-    assert "| Metric | A | B | Δ (b−a) | 95% CI | Verdict | Coverage A | Coverage B |" in md
+    assert "| Metric | A | B | n paired | A (paired) | B (paired) | Δ (b−a) | 95% CI | Verdict |" in md
     assert "Verdicts: Holm-corrected paired tests (exact McNemar for 0/1 metrics, paired z otherwise)" in md
-    assert "| clone_key.exact | 50.0% | 100.0% |" in md
+    assert "differences in percentage points (pp)" in md
+    # Own means with n and coverage, then the paired subset: rate differences in pp, errors as raw numbers.
+    assert "| clone_key.exact | 50.0% (n=20, 100%) | 100.0% (n=16, 80%) | 16 | 62.5% | 100.0% | +37.5 pp | [+" in md
+    row = next(ln for ln in md.splitlines() if ln.startswith("| clone_key.exact |"))
+    assert row.count(" pp") == 3 and "%," not in row.split("|")[8]
+    assert "| v.mutation_count_err | 2.000 (n=20, 100%) | 1.000 (n=20, 100%) | 20 | 2.000 | 1.000 | -1.000 | [" in md
+
+
+def test_headline_table_has_only_headline_rows():
+    table = headline_table(_comparison())
+    lines = table.splitlines()
+    assert lines[0] == "| Metric | A | B | n paired | A (paired) | B (paired) | Δ (b−a) | 95% CI | Verdict |"
+    assert [ln.split("|")[1].strip() for ln in lines[2:]] == ["clone_key.exact", "v.mutation_count_err"]
 
 
 def test_slice_cells_show_coverage():
     sl = {"stratum": {"s1": {"clone_key.exact": _ms(0.973, cov=0.7), "junction.nt_exact": _ms(None, n=0, cov=0.0)}}}
     md = to_markdown(build_score_report("tool", _summary(), sl, {}))
-    assert "| clone_key.exact | 97.3% (70%) |" in md
+    assert "| clone_key.exact | 97.3% (n=10, 70%) |" in md
     assert "| junction.nt_exact | — |" in md
 
 
@@ -76,8 +94,8 @@ def test_comparison_keeps_b_only_dimension_and_coverage():
                                   {"d_len_bin": {"long": {"clone_key.exact": _ms(0.9)}}}, {})
     md = to_markdown(rep)
     assert "## By d_len_bin (A / B)" in md
-    assert "— / 90.0% (100%)" in md
-    assert "50.0% (70%) / —" in md
+    assert "— / 90.0% (n=10, 100%)" in md
+    assert "50.0% (n=10, 70%) / —" in md
 
 
 def test_pipes_escaped_and_missing_verdict():
@@ -85,7 +103,7 @@ def test_pipes_escaped_and_missing_verdict():
     md = to_markdown(rep)
     assert "| a\\|b | 50.0% |" in md
     assert "l\\|1" in md
-    comp = {"clone_key.exact": {"a": None, "b": None, "delta": None, "ci95": None, "verdict": None,
-                                "coverage_a": 0.0, "coverage_b": 0.0}}
+    comp = {"clone_key.exact": {"a": None, "b": None, "n_paired": 0, "mean_a_paired": None, "mean_b_paired": None,
+                                "delta": None, "ci95": None, "verdict": None, "coverage_a": 0.0, "coverage_b": 0.0}}
     md = to_markdown(build_comparison_report("A", "B", comp, {}, {}, {}))
-    assert "| — | — | 0% | 0% |" in md
+    assert "| clone_key.exact | — | — | 0 | — | — | — | — | — |" in md

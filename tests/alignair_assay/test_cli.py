@@ -167,6 +167,10 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
                  "--b", str(b_tsv), "--b-name", "broken", "--out-dir", str(out_dir)]) == 0
     printed = capsys.readouterr().out
     assert "missing 2" in printed and "extra 1" in printed
+    # The headline table is printed, not a tally of verdicts.
+    assert "| Metric | oracle | broken | n paired | oracle (paired) | broken (paired) |" in printed
+    assert "| v.top1_in_set |" in printed and "| v.seq_start_exact |" not in printed
+    assert "better" not in printed.replace("a_better", "").replace("b_better", "")
 
     rep = json.loads((out_dir / "comparison.json").read_text())
     assert rep["kind"] == "alignair_assay.comparison_report" and (rep["a"], rep["b"]) == ("oracle", "broken")
@@ -203,7 +207,7 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
 
     md = (out_dir / "comparison.md").read_text()
     assert "# AlignAIR assay: oracle vs broken" in md
-    assert "| Metric | oracle | broken | Δ (b−a) |" in md
+    assert "| Metric | oracle | broken | n paired | oracle (paired) | broken (paired) | Δ (b−a) |" in md
 
 
 def _igblast_cigar(seg, read_len):
