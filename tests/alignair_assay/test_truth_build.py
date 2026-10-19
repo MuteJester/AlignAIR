@@ -160,17 +160,20 @@ def test_stop_codon_scans_v_frame_beyond_junction():
 
 
 def test_simulator_alignment_past_allele_end_is_unscorable():
-    # GenAIRR defect: this record's V CIGAR (105D148M1I43M, germline end 296) claims a germline base past the
-    # end of the 295-nt allele IGHVF6-G21*14; the read's extra base is attributed to V instead of NP1.
-    recs = _exp(mutate=0.08, indels=(0, 4), e5=(0, 120), e3=(0, 30)).run_records(n=500, seed=11)
-    rec = recs[319]
-    assert (rec["v_call"], rec["v_cigar"]) == ("IGHVF6-G21*14", "105D148M1I43M")
-    t = truth_from_genairr_record(rec, REF, case_id="x", stratum="test")
+    # A GenAIRR defect seen after an insertion near the V end (e.g. 105D148M1I43M ending at germline 296 on the
+    # 295-nt IGHVF6-G21*14): the alignment claims a germline base past the allele end, attributing an NP1 base to
+    # V. Reproduced on a 10-nt toy V whose 9M1I2M alignment ends at germline 11.
+    ref = Reference(alleles={"v": {"X*01": "ACGTACGTAC"}, "j": {"J*01": "TTTT"}}, anchors={})
+    rec = {"sequence": "ACGTACGTAGCG" + "TTTT", "rev_comp": False,
+           "v_call": "X*01", "v_sequence_start": 0, "v_germline_start": 0, "v_cigar": "9M1I2M",
+           "d_call": "",
+           "j_call": "J*01", "j_sequence_start": 12, "j_germline_start": 0, "j_cigar": "4M"}
+    t = truth_from_genairr_record(rec, ref, case_id="x", stratum="test")
     assert "v" not in t.segments
     assert t.unscorable == frozenset({"v"})
-    assert ("v: simulator alignment 105D148M1I43M from germline 0 ends at 296, past the end of "
-            "IGHVF6-G21*14 (295 nt); segment dropped") in t.warnings
-    assert {"d", "j"} <= set(t.segments)
+    assert t.warnings == ("v: simulator alignment 9M1I2M from germline 0 ends at 11, past the end of X*01 (10 nt); "
+                          "segment dropped",)
+    assert set(t.segments) == {"j"} and t.segments["j"].observed.n_mismatch == 0
 
 
 @pytest.mark.parametrize("shift_germline,shift_read,message", [
