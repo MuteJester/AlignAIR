@@ -1,4 +1,8 @@
-"""JSON Lines (de)serialisation of observable truth records; ``.gz`` paths are gzip-compressed."""
+"""JSON Lines (de)serialisation of observable truth records; ``.gz`` paths are gzip-compressed.
+
+A truth file may start with a header line ``{"header": {...}}`` describing how it was built (the reference and
+its digest); ``read_truth_jsonl`` skips it and ``read_truth_header`` returns it.
+"""
 from __future__ import annotations
 
 import gzip
@@ -59,15 +63,27 @@ def truth_from_dict(d: dict) -> ObservableTruth:
     )
 
 
-def write_truth_jsonl(truths: Iterable[ObservableTruth], path: str | Path) -> None:
+def write_truth_jsonl(truths: Iterable[ObservableTruth], path: str | Path, header: dict | None = None) -> None:
     with _open(path, "wt") as fh:
+        if header is not None:
+            fh.write(json.dumps({"header": header}, separators=(",", ":")) + "\n")
         for t in truths:
             fh.write(json.dumps(truth_to_dict(t), separators=(",", ":")) + "\n")
 
 
 def read_truth_jsonl(path: str | Path) -> list[ObservableTruth]:
     with _open(path, "rt") as fh:
-        return [truth_from_dict(json.loads(line)) for line in fh if line.strip()]
+        rows = (json.loads(line) for line in fh if line.strip())
+        return [truth_from_dict(row) for row in rows if "header" not in row]
+
+
+def read_truth_header(path: str | Path) -> dict | None:
+    """The header of a truth file, or None when it has none."""
+    with _open(path, "rt") as fh:
+        for line in fh:
+            if line.strip():
+                return json.loads(line).get("header")
+    return None
 
 
 def _open(path: str | Path, mode: str):

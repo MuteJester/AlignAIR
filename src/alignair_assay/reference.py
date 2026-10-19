@@ -1,6 +1,7 @@
 """Germline reference used by the assay: allele sequences per gene plus conserved anchors."""
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 
@@ -27,6 +28,14 @@ class Reference:
 
     def has(self, name: str) -> bool:
         return any(name in table for table in self.alleles.values())
+
+    def digest(self) -> str:
+        """SHA-256 over every allele's gene letter, name and sequence, in sorted order (anchors excluded)."""
+        h = hashlib.sha256()
+        for letter in sorted(self.alleles):
+            for name in sorted(self.alleles[letter]):
+                h.update(f"{letter}\t{name}\t{self.alleles[letter][name]}\n".encode())
+        return h.hexdigest()
 
     @classmethod
     def from_reference_set(cls, rs) -> "Reference":

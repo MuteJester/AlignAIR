@@ -12,9 +12,11 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import importlib.metadata
 import json
 import math
 import subprocess
+import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,9 +28,11 @@ from alignair_assay.reference import Reference
 from alignair_assay.report import build_comparison_report, build_score_report, headline_table, to_markdown
 from alignair_assay.stats import by_slice, compare, summarize
 from alignair_assay.truth.build import ObservableTruth, truth_from_bench_case
-from alignair_assay.truth.io import read_truth_jsonl, write_truth_jsonl
+from alignair_assay.truth.io import read_truth_header, read_truth_jsonl, write_truth_jsonl
 
 DEFAULT_REFERENCE = "HUMAN_IGH_OGRDB"
+TRUTH_KIND = "alignair_assay.truth"
+TRUTH_VERSION = "1"
 SLICE_DIMENSIONS = ("stratum", "orientation", "d_len_bin", "d_inverted")
 _D_BINS = ((5, "<5"), (8, "5-7"), (10, "8-9"), (12, "10-11"), (15, "12-14"))
 _MAX_LISTED_WARNINGS = 20
@@ -58,11 +62,16 @@ def simulator_disagreements(truths: list[ObservableTruth]) -> dict[str, int]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run a command; a missing file or invalid input prints ``error: ...`` and returns 2."""
     parser = _parser()
     args = parser.parse_args(argv)
     if args.command == "compare" and args.a_name == args.b_name:
         parser.error("--a-name and --b-name must differ")
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -109,7 +118,9 @@ def _cmd_truth(args) -> int:
     _check_unique(truths, args.bench_cases)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    write_truth_jsonl(truths, out)
+    header = {"kind": TRUTH_KIND, "version": TRUTH_VERSION, "reference": args.reference,
+              "reference_digest": reference.digest(), "genairr_version": _genairr_version()}
+    write_truth_jsonl(truths, out, header=header)
 
     excluded = Counter(t.excluded for t in truths if t.excluded is not None)
     with_warnings = [t for t in truths if t.warnings]
@@ -132,12 +143,13 @@ def _cmd_truth(args) -> int:
 
 
 def _cmd_score(args) -> int:
-    truths = _load_truth(args.truth)
     reference = Reference.from_dataconfig(args.reference)
+    header, truths = _load_truth(args.truth, args.reference, reference)
     scores, matching = _score_tool(truths, args.predictions, reference)
     _print_matching(args.tool, matching)
     provenance = _provenance("score", {"truth": args.truth, "predictions": args.predictions},
-                             tool=args.tool, reference=args.reference, matching=matching,
+                             tool=args.tool, reference=args.reference, reference_digest=header["reference_digest"],
+                             truth_header=header, matching=matching,
                              simulator_disagreements=simulator_disagreements(truths))
     report = build_score_report(args.tool, summarize(scores, list(scores)), _slices(scores, truths), provenance)
     out = Path(args.out_dir)
@@ -150,8 +162,8 @@ def _cmd_score(args) -> int:
 
 
 def _cmd_compare(args) -> int:
-    truths = _load_truth(args.truth)
     reference = Reference.from_dataconfig(args.reference)
+    header, truths = _load_truth(args.truth, args.reference, reference)
     a, match_a = _score_tool(truths, args.a, reference)
     b, match_b = _score_tool(truths, args.b, reference)
     _print_matching(args.a_name, match_a)
@@ -161,7 +173,8 @@ def _cmd_compare(args) -> int:
     comparison = compare(a, b, family, alpha=args.alpha,
                          lower_is_better={name for name in family if lower_is_better(name)})
     provenance = _provenance("compare", {"truth": args.truth, "a": args.a, "b": args.b},
-                             a=args.a_name, b=args.b_name, reference=args.reference, alpha=args.alpha,
+                             a=args.a_name, b=args.b_name, reference=args.reference,
+                             reference_digest=header["reference_digest"], truth_header=header, alpha=args.alpha,
                              tests=STATISTICAL_TESTS, family_size=len(family),
                              matching={"a": match_a, "b": match_b},
                              simulator_disagreements=simulator_disagreements(truths))
@@ -205,10 +218,19 @@ def _slices(scores: dict[str, CaseScores], truths: list[ObservableTruth]) -> dic
     return {dim: by_slice(scores, {cid: lab[dim] for cid, lab in labels.items()}) for dim in SLICE_DIMENSIONS}
 
 
-def _load_truth(path) -> list[ObservableTruth]:
+def _load_truth(path, reference_name: str, reference: Reference) -> tuple[dict, list[ObservableTruth]]:
+    """Truth header and records; the header's reference digest must match ``reference``."""
+    header = read_truth_header(path)
+    if header is None or "reference_digest" not in header:
+        raise ValueError(f"{path} records no reference digest; rebuild it with the truth command")
+    digest = reference.digest()
+    if header["reference_digest"] != digest:
+        raise ValueError(f"{path} was built against reference {header.get('reference')!r} (reference digest "
+                         f"{header['reference_digest'][:12]}), but --reference {reference_name} has reference digest "
+                         f"{digest[:12]}; score with the reference the truth was built from")
     truths = read_truth_jsonl(path)
     _check_unique(truths, path)
-    return truths
+    return header, truths
 
 
 def _check_unique(truths: list[ObservableTruth], source) -> None:
@@ -253,6 +275,13 @@ def _sha256(path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _genairr_version() -> str | None:
+    try:
+        return importlib.metadata.version("GenAIRR")
+    except importlib.metadata.PackageNotFoundError:
+        return None
 
 
 def _git_commit() -> str | None:

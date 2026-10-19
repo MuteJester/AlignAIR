@@ -29,3 +29,14 @@ def test_reference_from_dataconfig():
     assert ref.seq(name) == ref.alleles["v"][name]
     assert not ref.has("NOPE*01")
     assert gene_name("IGHVF1-G2*01") == "IGHVF1-G2"
+
+
+def test_reference_digest():
+    ref = Reference(alleles={"v": {"A*01": "ACGT", "A*02": "ACGA"}, "j": {"J*01": "TTT"}}, anchors={"A*01": 1})
+    shuffled = Reference(alleles={"j": {"J*01": "TTT"}, "v": {"A*02": "ACGA", "A*01": "ACGT"}}, anchors={})
+    assert ref.digest() == shuffled.digest()  # order and anchors do not matter
+    assert len(ref.digest()) == 64
+    changed = Reference(alleles={"v": {"A*01": "ACGT", "A*02": "ACGG"}, "j": {"J*01": "TTT"}}, anchors={})
+    renamed = Reference(alleles={"v": {"A*01": "ACGT", "A*03": "ACGA"}, "j": {"J*01": "TTT"}}, anchors={})
+    moved = Reference(alleles={"v": {"A*01": "ACGT"}, "j": {"J*01": "TTT", "A*02": "ACGA"}}, anchors={})
+    assert len({ref.digest(), changed.digest(), renamed.digest(), moved.digest()}) == 4

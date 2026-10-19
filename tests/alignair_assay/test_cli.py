@@ -1,5 +1,6 @@
 import gzip
 import hashlib
+import importlib.metadata
 import json
 import math
 from dataclasses import replace
@@ -15,7 +16,7 @@ from alignair_assay.metrics.case import score_case
 from alignair_assay.reference import Reference, gene_name
 from alignair_assay.testing import oracle_prediction, write_airr_tsv
 from alignair_assay.truth.build import truth_from_bench_case
-from alignair_assay.truth.io import read_truth_jsonl
+from alignair_assay.truth.io import read_truth_header, read_truth_jsonl, write_truth_jsonl
 
 ga = pytest.importorskip("GenAIRR")
 
@@ -268,6 +269,40 @@ def test_rev_comp_row_scores_like_forward(tmp_path):
 ])
 def test_d_len_bin(length, label):
     assert d_len_bin(length) == label
+
+
+def test_truth_records_reference_and_scoring_checks_it(tmp_path, capsys):
+    cases = [_fixture(name) for name in FIXTURE_NAMES]
+    truth_path, truths = _build_truth(tmp_path, cases, name="cases.jsonl")
+    assert len(truths) == 3  # the header line is not a truth record
+    header = read_truth_header(truth_path)
+    assert header == {"kind": "alignair_assay.truth", "version": "1", "reference": "HUMAN_IGH_OGRDB",
+                      "reference_digest": REF.digest(), "genairr_version": importlib.metadata.version("GenAIRR")}
+    tsv = tmp_path / "oracle.tsv"
+    write_airr_tsv([oracle_prediction(t) for t in truths if t.excluded is None], tsv)
+    capsys.readouterr()
+
+    out_dir = tmp_path / "out"
+    assert main(["score", "--truth", str(truth_path), "--predictions", str(tsv), "--tool", "oracle",
+                 "--out-dir", str(out_dir)]) == 0
+    prov = json.loads((out_dir / "oracle.report.json").read_text())["provenance"]
+    assert prov["reference_digest"] == REF.digest() and prov["truth_header"] == header
+
+    # Scoring against another reference fails loudly instead of scoring calls against the wrong alleles.
+    for command in (["score", "--truth", str(truth_path), "--predictions", str(tsv), "--tool", "oracle"],
+                    ["compare", "--truth", str(truth_path), "--a", str(tsv), "--a-name", "x", "--b", str(tsv),
+                     "--b-name", "y"]):
+        assert main(command + ["--reference", "HUMAN_IGH_IMGT", "--out-dir", str(tmp_path / "bad")]) == 2
+        err = capsys.readouterr().err
+        assert err.startswith("error: ") and "reference digest" in err and "HUMAN_IGH_IMGT" in err
+    assert not (tmp_path / "bad").exists()
+
+    # A truth file without a header (an older build) cannot be checked, so it is refused too.
+    bare = tmp_path / "bare.jsonl"
+    write_truth_jsonl(truths, bare)
+    assert main(["score", "--truth", str(bare), "--predictions", str(tsv), "--tool", "oracle",
+                 "--out-dir", str(out_dir)]) == 2
+    assert "records no reference digest" in capsys.readouterr().err
 
 
 def test_d_inverted_slice():
