@@ -178,12 +178,17 @@ def _clonal_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: in
 
 def _cohort_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: int) -> tuple[list[dict], dict]:
     """The first ``ctx.n`` records, in record order, of one cohort run giving each of the suite's donors
-    ``ceil(ctx.n / donors)`` records; the last donors may get fewer cases, or none."""
+    ``ceil(ctx.n / donors)`` records; the last donors may get fewer cases, or none.
+
+    Only the donors whose records are kept are simulated. GenAIRR draws each subject's seed from the cohort seed
+    in subject order, so leaving out trailing donors does not change the kept records; it saves compiling a
+    simulator for each of them, which dominates small-scale builds.
+    """
     if not ctx.donors:
         raise ValueError(f"{suite.name}/{stratum.name}: a cohort stratum needs donors (Suite.donors)")
-    genotypes = [donor.genotype(ctx.config) for donor in ctx.donors]
-    records = list(stratum.recipe(ctx).run_cohort(genotypes, n_per_subject=math.ceil(ctx.n / len(genotypes)),
-                                                  seed=seed).records)
+    per_subject = math.ceil(ctx.n / len(ctx.donors))
+    genotypes = [donor.genotype(ctx.config) for donor in ctx.donors[:math.ceil(ctx.n / per_subject)]]
+    records = list(stratum.recipe(ctx).run_cohort(genotypes, n_per_subject=per_subject, seed=seed).records)
     if len(records) < ctx.n:
         raise RuntimeError(f"{suite.name}/{stratum.name}: generated {len(records)} of {ctx.n} cohort records")
     stats = {"requested": ctx.n, "accepted": len(records), "generated": len(records), "rounds": 1}

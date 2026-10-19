@@ -214,10 +214,15 @@ def test_cohort_strata(reference):
                             seed=derive_seed(7, "dev", "S0_COHORT", "cohort", 0)).records)
     assert [c["record"] for c in cohort] == expected[:10]
 
-    # Fewer cases than donors: one record each, so the last donor has no case.
+    # Fewer cases than donors: one record each, so the last donor has no case and is not simulated; the kept
+    # records are those of a run over every donor.
     few = strata["few"]
     assert [c["groups"]["subject"] for c in few] == ["donor00", "donor01"]
-    assert generated.stats["few"] == {"requested": 2, "accepted": 3, "generated": 3, "rounds": 1, "cases": 2}
+    assert generated.stats["few"] == {"requested": 2, "accepted": 2, "generated": 2, "rounds": 1, "cases": 2}
+    every = (Experiment.on(cfg).recombine().mutate(rate=0.03)
+             .run_cohort([d.genotype(cfg) for d in donors], n_per_subject=1,
+                         seed=derive_seed(7, "dev", "S0_COHORT", "few", 0)).records)
+    assert [c["record"] for c in few] == every[:2]
 
 
 def test_cohort_workers_do_not_change_output():

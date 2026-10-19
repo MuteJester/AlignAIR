@@ -24,11 +24,11 @@ Each subpackage is a layer and may import only the layers in its row.
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
 | `report` | JSON reports and markdown summaries | core, stats, report |
 | `scoring` | `pipeline` (score one tool against a truth file) and `slices` | core, truth, airr, metrics, stats, scoring |
-| `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), the deterministic generator (`engine`) and the catalog (`catalog/`, one module per suite) | core, suites |
+| `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (from P2 Task 6) | core, airr, truth, suites, runners |
 | `workflow` | build → run → score → report orchestration over a run directory: `build` (one suite) | everything except cli |
 | `cli` | the `python -m alignair_assay` commands | everything |
-| `testing.py` | test-only helpers: `assert_oracle_perfect` | everything |
+| `testing.py` | test-only helpers: `assert_oracle_perfect` (returns the oracle's per-case scores) | everything |
 
 Further rules:
 
@@ -181,7 +181,8 @@ A suite is a declarative GenAIRR recipe per stratum; `suites.engine` turns it in
    module-level function (or `functools.partial` of one) `recipe(ctx) -> Experiment` that returns a fresh
    `Experiment.on(ctx.config)` chain. `ctx.config` is the GenAIRR DataConfig the truth reference
    (`ctx.reference`) is built from; never build from a short alias. `ctx.n` is the stratum's requested count at
-   the current scale (a clonal recipe passes it as `n_clones`), and `ctx.donors` the suite's donors.
+   the current scale (a clonal recipe passes it as `n_clones`), and `ctx.donors` the suite's donors. A
+   repertoire-style stratum uses `functools.partial(suites.recipes.repertoire, ...)` (see Suite catalog).
 3. Choose the stratum options:
    - `labels` (slice dimensions on every case) and `case_labels(record, ctx)` (per-record labels, merged over
      them);
@@ -209,12 +210,52 @@ Engine rules (`suites.engine.generate_suite`):
   scale. A cohort stratum runs `recipe(ctx).run_cohort([d.genotype(ctx.config) for d in donors],
   n_per_subject=ceil(n / len(donors)), seed=<round-0 seed>)` and keeps the first `n` records in record order
   (subject order), so the last donors may get fewer cases, or none; each case gets `groups["subject"]` =
-  the record's `subject_id`.
+  the record's `subject_id`. Only the first `ceil(n / n_per_subject)` donors, whose records are kept, are
+  simulated: GenAIRR draws each subject's seed from the cohort seed in subject order, so the kept records are
+  those of a run over every donor, without compiling a simulator for the others.
 - Case ids are `<suite>:<stratum>:<index:06d>` (`:fwd`/`:rc` appended for pairs). Orientations are drawn per case,
   in order, from the stratum's orientation seed.
 - One spawned process per stratum (`--workers` caps them); a worker receives only names and numbers, resolves
   the suite from the registry and re-draws its donors from the same seed. The output does not depend on the
   worker count.
+
+## Suite catalog
+
+| Suite | Slug | Strata (cases at scale 1.0) | Presentation | Donors | Labels | Primary |
+|---|---|---|---|---|---|---|
+| `S0` | `toy` | `plain` 30, `with_d` 20 (accepts records with a D call) | rc 0.5 / 0 | none | — | `v.top1_in_set`, `j.top1_in_set`, `junction.nt_exact` |
+| `S0_EXHAUST` | `exhaust` | `never` 5 (accepts nothing; raises) | — | none | — | — |
+| `S0_COHORT` | `cohort` | `cohort` 10, `few` 2; cohort | rc 0.5 / 0 | `DonorSpec(3, "S0")` | — | `v.top1_in_set`, `j.top1_in_set` |
+| `S1` | `core` | `{design}_{shm}` for the 4 read designs × `igm` 500, `igg` 500, `high` 250 = 5000; cohort | rc 0.5 | `DonorSpec(20, "S1")` | `design`, `shm` | `HEADLINE` |
+| `S10` | `heldout` | `uniform` (uniform SHM model), `hkl_s5f` (S5F kernel `hkl_s5f`), `np_shift` (NP lengths +4), `trim_shift` (trims +3); each 600, full, rate 0.075; cohort | rc 0.5 | `DonorSpec(20, "S10")` | `heldout` | `HEADLINE` |
+| `S11` | `orientation` | `full_igg` 500, `fr3_igg` 500 | both orientations (pairs) | none | `design` | `orientation.correct` + `HEADLINE` |
+| `S12` | `noise` | `seq_err_0.005`, `seq_err_0.01` (`sequencing_errors` rate), `pcr_0.002` (`pcr_amplify` rate), `n_bases_3`, `n_bases_8` (`ambiguous_base_calls` count), `pol_indel_1`, `pol_indel_2` (`polymerase_indels` count); each 300, full, rate 0.075 | rc 0.5 | none | `noise` (the stratum name) | `HEADLINE` |
+
+`HEADLINE` is `report.markdown.HEADLINE` (clone key, junction, V, J, V mutation count, D, productive). Suites may
+not import `report`, so `suites.recipes.HEADLINE` repeats it and the suite tests pin the two equal.
+
+The repertoire suites share `suites.recipes.repertoire(ctx, *, design, rate, model, s5f_model, np_shift,
+trim_shift, noise)`, which chains, in this order:
+
+1. `recombine()`, with every NP1 and NP2 length of `ctx.config.NP_lengths` shifted by `np_shift` when it is set;
+2. `trim(...)` when `trim_shift` is set (GenAIRR requires it immediately after `recombine`): every length of the
+   pooled trim marginals shifted by `trim_shift` and clamped to GenAIRR's cap for its side;
+3. `mutate(model, rate, s5f_model)`, skipped at rate 0;
+4. the `noise` step, a `(step name, keyword arguments)` pair applied verbatim;
+5. `end_loss_5prime` and `end_loss_3prime` with the read design's ranges.
+
+Read designs (`READ_DESIGNS`, end loss in nucleotides, inclusive; `(0, 0)` skips the step) are realistic
+FRx → J products that keep the junction: `full` none; `fr1` 5′ 0–25; `fr2` 5′ 105–135; `fr3` 5′ 225–255
+(J-anchored); every amplicon design also loses 0–5 at the 3′ end. SHM classes (`SHM_CLASSES`, Poisson per-base
+rates of the S5F `hh_s5f` kernel) are `igm` 0.03, `igg` 0.075 and `high` 0.20.
+
+`pooled_trim_marginals(config)` gives, per `trim()` keyword (`v_3`, `d_5`, `d_3`, `j_5`), the distribution
+GenAIRR's `recombine()` samples by default: the mean over genes of `config.trim_dicts`, restricted to GenAIRR's
+cap (the segment's shortest allele minus a 3-base anchor margin, halved for the two D sides) and normalised, so
+`trim(**pooled_trim_marginals(config))` reproduces the default records exactly. GenAIRR aborts the whole run
+when a sampled D trim pair exceeds the D allele, and the shortest human IGH D allele is 11 nt, so the cap is 4
+per D side: S10's `trim_shift` moves V 3′ and J 5′ trims by a full +3 but D trims only to 3 or 4.
+GenAIRR's record `np1_length` / `np2_length` can be a base shorter than the sampled NP length.
 
 ## Donors
 
