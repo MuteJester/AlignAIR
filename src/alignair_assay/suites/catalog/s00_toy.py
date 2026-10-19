@@ -1,9 +1,11 @@
-"""S0 ``toy``: a small two-stratum suite for tests and smoke runs; S0_EXHAUST: a stratum that can never fill."""
+"""S0 ``toy``: a small two-stratum suite for tests and smoke runs; S0_EXHAUST: a stratum that can never fill;
+S0_COHORT: cohort strata over three simulated donors."""
 from __future__ import annotations
 
 from GenAIRR import Experiment
 
 from alignair_assay.suites.base import RecipeContext, Stratum, Suite
+from alignair_assay.suites.donors import DonorSpec
 
 
 def toy_repertoire(ctx: RecipeContext) -> Experiment:
@@ -40,4 +42,17 @@ S0_EXHAUST = Suite(
     purpose="Shows that a stratum which can never fill raises instead of short-filling.",
     primary=(),
     strata=(Stratum("never", 5, toy_repertoire, accept=never),),
+)
+
+S0_COHORT = Suite(
+    name="S0_COHORT",
+    slug="cohort",
+    title="Toy cohort",
+    purpose="Exercises cohort generation over simulated donors: per-donor shares, truncation and subject groups.",
+    primary=("v.top1_in_set", "j.top1_in_set"),
+    strata=(
+        Stratum("cohort", 10, toy_repertoire, cohort=True, rc_fraction=0.5),
+        Stratum("few", 2, toy_repertoire, cohort=True),
+    ),
+    donors=DonorSpec(n=3, tag="S0"),
 )

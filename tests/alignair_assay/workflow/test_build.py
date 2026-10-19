@@ -9,6 +9,13 @@ pytest.importorskip("GenAIRR")
 from alignair_assay.core.cases import read_cases  # noqa: E402
 from alignair_assay.core.layout import RunLayout  # noqa: E402
 from alignair_assay.core.provenance import genairr_provenance  # noqa: E402
+from alignair_assay.suites.donors import (  # noqa: E402
+    donors_from_json,
+    donors_summary,
+    donors_to_json,
+    sample_donors,
+)
+from alignair_assay.suites.engine import derive_seed  # noqa: E402
 from alignair_assay.testing import assert_oracle_perfect  # noqa: E402
 from alignair_assay.truth.io import read_truth_header, read_truth_jsonl  # noqa: E402
 from alignair_assay.workflow import build as build_module  # noqa: E402
@@ -97,3 +104,20 @@ def test_failed_rebuild_leaves_no_build_record(tmp_path, monkeypatch):
 def test_toy_suite_oracle_perfect(tmp_path, reference):
     layout, _ = _build(tmp_path)
     assert_oracle_perfect(read_truth_jsonl(layout.truth("S0")), reference)
+
+
+def test_build_writes_donors(tmp_path, reference):
+    layout, build = _build(tmp_path, suite="S0_COHORT")
+    donors = sample_donors(reference, 3, derive_seed(11, "dev", "S0_COHORT", "donors", "S0"))
+    data = json.loads(layout.donors("S0_COHORT").read_text())
+    assert data == donors_to_json(donors) and donors_from_json(data) == donors
+    assert build["donors_summary"] == donors_summary(donors, reference)
+    assert json.loads(layout.build_json("S0_COHORT").read_text()) == build
+    assert build["n_cases"] == 12 and {s["cases"] for s in build["strata"].values()} == {10, 2}
+
+    truths = read_truth_jsonl(layout.truth("S0_COHORT"))
+    assert {t.groups["subject"] for t in truths} == {"donor00", "donor01", "donor02"}
+    assert_oracle_perfect(truths, reference)
+
+    _, plain = _build(tmp_path)
+    assert "donors_summary" not in plain and not layout.donors("S0").exists()

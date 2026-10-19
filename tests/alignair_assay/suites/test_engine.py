@@ -12,6 +12,7 @@ from alignair_assay.core.reference import dataconfig  # noqa: E402
 from alignair_assay.core.seqops import revcomp  # noqa: E402
 from alignair_assay.suites import SUITES, get_suite  # noqa: E402
 from alignair_assay.suites.base import Stratum, Suite  # noqa: E402
+from alignair_assay.suites.donors import DonorSpec, sample_donors  # noqa: E402
 from alignair_assay.suites.engine import SPLITS, derive_seed, generate_suite, requested_count  # noqa: E402
 
 REFERENCE = "HUMAN_IGH_OGRDB"
@@ -68,9 +69,9 @@ def test_unknown_split_raises():
 
 
 def test_unknown_suite_lists_known():
-    assert {"S0", "S0_EXHAUST"} <= set(SUITES)
+    assert {"S0", "S0_EXHAUST", "S0_COHORT"} <= set(SUITES)
     assert all(suite.name == name for name, suite in SUITES.items())
-    with pytest.raises(ValueError, match=r"unknown suite 'S99'; known suites: S0, S0_EXHAUST"):
+    with pytest.raises(ValueError, match=r"unknown suite 'S99'; known suites: S0, S0_EXHAUST, S0_COHORT"):
         get_suite("S99")
 
 
@@ -189,6 +190,43 @@ def test_cohort_stratum_needs_donors():
     suite = _suite(Stratum("cohort", 4, _igh, cohort=True))
     with pytest.raises(ValueError, match="T/cohort: a cohort stratum needs donors"):
         _generate(suite)
+
+
+def test_cohort_strata(reference):
+    generated = _generate("S0_COHORT")
+    spec = get_suite("S0_COHORT").donors
+    assert spec == DonorSpec(n=3, tag="S0")
+    donors = sample_donors(reference, 3, derive_seed(7, "dev", "S0_COHORT", "donors", "S0"))
+    assert generated.donors == tuple(donors)
+    strata = _by_stratum(generated.cases)
+
+    # 10 cases over 3 donors: ceil(10 / 3) = 4 records per donor, truncated to the first 10 in record order.
+    cohort = strata["cohort"]
+    assert [c["case_id"] for c in cohort] == [f"S0_COHORT:cohort:{i:06d}" for i in range(10)]
+    subjects = ["donor00"] * 4 + ["donor01"] * 4 + ["donor02"] * 2
+    assert [c["groups"] for c in cohort] == [{"subject": s} for s in subjects]
+    assert all(c["record"]["subject_id"] == c["groups"]["subject"] for c in cohort)
+    stats = generated.stats["cohort"]
+    assert stats == {"requested": 10, "accepted": 12, "generated": 12, "rounds": 1, "cases": 10}
+    cfg = dataconfig(REFERENCE)
+    expected = (Experiment.on(cfg).recombine().mutate(rate=0.03)
+                .run_cohort([d.genotype(cfg) for d in donors], n_per_subject=4,
+                            seed=derive_seed(7, "dev", "S0_COHORT", "cohort", 0)).records)
+    assert [c["record"] for c in cohort] == expected[:10]
+
+    # Fewer cases than donors: one record each, so the last donor has no case.
+    few = strata["few"]
+    assert [c["groups"]["subject"] for c in few] == ["donor00", "donor01"]
+    assert generated.stats["few"] == {"requested": 2, "accepted": 3, "generated": 3, "rounds": 1, "cases": 2}
+
+
+def test_cohort_workers_do_not_change_output():
+    one = _generate("S0_COHORT", workers=1)
+    two = _generate("S0_COHORT", workers=2)
+    assert one.cases == two.cases and one.stats == two.stats and one.donors == two.donors
+    assert len(one.donors) == 3
+    test = _generate("S0_COHORT", split="test")
+    assert test.donors != one.donors
 
 
 @pytest.mark.parametrize("options, message", [

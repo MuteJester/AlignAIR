@@ -2,8 +2,10 @@
 
 Every seed derives from ``(seed, split, suite, stratum, ...)``, so the ``dev`` and ``test`` splits share no
 generation seed. Each stratum requests ``max(1, round(n * scale))`` cases; rejection sampling, clonal and cohort
-strata never short-fill silently, they raise naming the suite, stratum and counts. Strata run in parallel, one
-spawned process per stratum; a worker receives only names and numbers and resolves the suite from the registry.
+strata never short-fill silently, they raise naming the suite, stratum and counts. A suite's donors are drawn
+once from ``(seed, split, suite, "donors", tag)`` and do not scale. Strata run in parallel, one spawned process
+per stratum; a worker receives only names and numbers, resolves the suite from the registry and re-draws the
+donors from the same seed.
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ from alignair_assay.core.cases import make_case
 from alignair_assay.core.reference import Reference, dataconfig
 from alignair_assay.suites import SUITES, get_suite
 from alignair_assay.suites.base import RecipeContext, Stratum, Suite
+from alignair_assay.suites.donors import Donor, sample_donors
 
 SPLITS = ("dev", "test")
 DEFAULT_SEED = 20261019
@@ -54,7 +57,7 @@ class GeneratedSuite:
     clonal stratum)."""
 
     cases: list[dict]
-    donors: tuple
+    donors: tuple[Donor, ...]
     stats: dict
 
 
@@ -174,7 +177,8 @@ def _clonal_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: in
 
 
 def _cohort_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: int) -> tuple[list[dict], dict]:
-    """The first ``ctx.n`` records of one cohort run over the suite's donors, equal shares per donor."""
+    """The first ``ctx.n`` records, in record order, of one cohort run giving each of the suite's donors
+    ``ceil(ctx.n / donors)`` records; the last donors may get fewer cases, or none."""
     if not ctx.donors:
         raise ValueError(f"{suite.name}/{stratum.name}: a cohort stratum needs donors (Suite.donors)")
     genotypes = [donor.genotype(ctx.config) for donor in ctx.donors]
@@ -186,9 +190,11 @@ def _cohort_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: in
     return records[:ctx.n], stats
 
 
-def _donors(suite: Suite, reference: Reference, *, split: str, seed: int) -> tuple:
+def _donors(suite: Suite, reference: Reference, *, split: str, seed: int) -> tuple[Donor, ...]:
     """The suite's donors, sampled with ``derive_seed(seed, split, suite.name, "donors", spec.tag)``; empty for a
-    suite without donors. The donor sampler arrives with ``suites.donors`` (P2 Task 4)."""
-    if suite.donors is None:
+    suite without donors."""
+    spec = suite.donors
+    if spec is None:
         return ()
-    raise NotImplementedError(f"suite {suite.name}: donor sampling is not implemented yet")
+    donor_seed = derive_seed(seed, split, suite.name, "donors", spec.tag)
+    return tuple(sample_donors(reference, spec.n, donor_seed, spec.params))

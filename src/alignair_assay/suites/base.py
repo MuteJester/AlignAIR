@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from alignair_assay.core.reference import Reference
+from alignair_assay.suites.donors import Donor, DonorSpec
 
 if TYPE_CHECKING:
     from GenAIRR import Experiment
@@ -23,7 +24,7 @@ class RecipeContext:
 
     config: object
     reference: Reference
-    donors: tuple = ()
+    donors: tuple[Donor, ...] = ()
     n: int = 0
 
 
@@ -74,7 +75,7 @@ class Suite:
     purpose: str
     primary: tuple[str, ...]
     strata: tuple[Stratum, ...]
-    donors: "DonorSpec | None" = None  # noqa: F821 (suites.donors, from P2 Task 4)
+    donors: DonorSpec | None = None
     arms: tuple[str, ...] = ("shared",)
 
     def __post_init__(self) -> None:

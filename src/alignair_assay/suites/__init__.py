@@ -8,7 +8,7 @@ from __future__ import annotations
 from alignair_assay.suites.base import Suite
 from alignair_assay.suites.catalog import s00_toy
 
-_CATALOG = (s00_toy.S0, s00_toy.S0_EXHAUST)
+_CATALOG = (s00_toy.S0, s00_toy.S0_EXHAUST, s00_toy.S0_COHORT)
 
 
 def _registry(suites: tuple[Suite, ...]) -> dict[str, Suite]:
