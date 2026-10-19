@@ -2,16 +2,22 @@
 
 Thin wrappers that run AlignAIR inside common bioinformatics workflow managers. They are
 **drafts kept here to surface the integration rough edges** (manifests, path resolution,
-exit codes, logs, containers, multi-sample output) before AlignAIR is published. They are
-**not** advertised entry points and will change.
+exit codes, logs, containers, multi-sample output). They are **not** advertised entry points
+and will change.
 
 Prerequisites:
 
-- a **model** — a published id (`alignair models list`, e.g. `alignair-igh-human`) or a locally
-  trained bundle (`alignair train ... -o my_model`), and
+- a **model** — for container runs, prefer a local model file or bundle (`alignair models get
+  <id>`, or `alignair train ... -o my_model`). A catalog id such as `alignair-igh-human` also
+  works but needs network access inside the container, and without a mounted cache it is
+  downloaded again for every task.
 - the **container** — the wrappers pin `alignair/alignair:3.0.0` (also mirrored at
   `ghcr.io/mutejester/alignair:3.0.0`), or run them against a local `alignair` already on `PATH`
   (Nextflow `-profile local`).
+
+The image's `ENTRYPOINT` is `alignair`. Workflow engines that launch a shell inside the container
+must clear it: the Nextflow `docker` profile does (`--entrypoint ""`); Snakemake's
+`--use-singularity` is unaffected (`singularity exec` ignores the entrypoint).
 
 ## One samplesheet, several runners
 
@@ -42,8 +48,10 @@ snakemake -j4 --use-singularity    # or drop --use-singularity to use a local al
 ### Galaxy ([`galaxy/alignair_predict.xml`](galaxy/alignair_predict.xml))
 
 A single-sample `predict` tool. `detect_errors="exit_code"` maps AlignAIR's non-zero exits
-to Galaxy job failures. Load it into a local Galaxy `tool_conf.xml` to try it; Tool Shed
-submission waits on a published container/conda package.
+to Galaxy job failures. Load it into a local Galaxy `tool_conf.xml` to try it. Galaxy runs its
+job script as the container command and disables container networking by default, so the
+destination needs `docker_run_extra_arguments: --entrypoint ""` and the model must be a local
+file. Tool Shed submission waits on a conda package (BioContainers images have no entrypoint).
 
 ## Known rough edges (the point of these drafts)
 
@@ -51,5 +59,8 @@ submission waits on a published container/conda package.
   samples; per-row staging of `genotype`/`metadata` files needs proper Nextflow `path()` inputs.
 - **Path resolution** — Nextflow/Snakemake resolve relative paths against the launch dir. Prefer
   absolute paths in the samplesheet when mixing runners.
-- **Containers/model** — pinned to an unpublished image/model; substitute your own until release.
+- **Model download in containers** — catalog ids are fetched inside each task; mount a cache at
+  `/home/appuser/.cache/alignair` or pass a local model file.
+- **Galaxy entrypoint** — needs the job-config override above until a conda/BioContainers
+  package exists.
 - **Resources** — `cpus`/`memory` hints are placeholders; tune for your reads and reference size.

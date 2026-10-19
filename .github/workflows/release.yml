@@ -164,6 +164,18 @@ jobs:
       - name: Image version (strip leading v)
         id: v
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      # Log in before the build so the base-image pulls are authenticated, not anonymous-rate-limited.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME || 'alignair' }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@v3
       - name: Build image (load locally for smoke)
         uses: docker/build-push-action@v6
@@ -181,27 +193,23 @@ jobs:
             -v "$PWD/scripts:/scripts:ro" \
             -v "$RUNNER_TEMP/rel_docker_smoke:/out" \
             ${{ env.IMAGE }}:${{ steps.v.outputs.version }} /scripts/release_smoke.sh /out
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: alignair
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Tag :version and :latest on both registries and push
+      # Push every :version first, then move :latest, so a failed push never leaves :latest on a
+      # version that has no PyPI release. Pre-releases (e.g. 3.1.0rc1) never move :latest.
+      - name: Push :version to Docker Hub and GHCR, then :latest (stable releases only)
         env:
           VERSION: ${{ steps.v.outputs.version }}
         run: |
-          for repo in "$IMAGE" "$IMAGE_MIRROR"; do
-            for tag in "$VERSION" latest; do
-              [ "$repo:$tag" = "$IMAGE:$VERSION" ] || docker tag "$IMAGE:$VERSION" "$repo:$tag"
-              docker push "$repo:$tag"
+          docker tag "$IMAGE:$VERSION" "$IMAGE_MIRROR:$VERSION"
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE_MIRROR:$VERSION"
+          if echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            for repo in "$IMAGE" "$IMAGE_MIRROR"; do
+              docker tag "$IMAGE:$VERSION" "$repo:latest"
+              docker push "$repo:latest"
             done
-          done
+          else
+            echo "pre-release $VERSION: leaving :latest unchanged"
+          fi
 
   # 5. PyPI (OIDC, protected environment) — the irreversible step, LAST. Same artifacts, never rebuilt.
   pypi:

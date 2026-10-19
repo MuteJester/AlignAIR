@@ -2,7 +2,9 @@
     <description>align IG/TCR reads into an AIRR rearrangement table</description>
     <!-- DRAFT Galaxy wrapper (not yet submitted to the Tool Shed; see ../README.md). -->
     <requirements>
-        <!-- Once published: a bioconda package or the container. Container shown for now. -->
+        <!-- The image's ENTRYPOINT is `alignair`: the Galaxy destination needs
+             docker_run_extra_arguments: '--entrypoint ""' (see ../README.md). A bioconda package
+             (BioContainers image, no entrypoint) will replace this. -->
         <container type="docker">alignair/alignair:3.0.0</container>
     </requirements>
     <!-- detect_errors="exit_code" surfaces AlignAIR's non-zero exits as Galaxy job failures. -->
