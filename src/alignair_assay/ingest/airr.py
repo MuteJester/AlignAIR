@@ -2,7 +2,9 @@
 
 Turns any tool's AIRR output into normalized ``Prediction`` records: 0-based half-open
 coordinates, CIGARs stripped of leading/trailing ``S``/``N``/``H``, and malformed values
-mapped to ``None`` with a message in ``Prediction.invalid`` (never an exception).
+mapped to ``None`` with a message in ``Prediction.invalid`` (never an exception). Junction
+coordinates a tool does not report are derived from its CDR3 coordinates (the junction is the
+CDR3 plus the two anchor codons).
 """
 from __future__ import annotations
 
@@ -72,9 +74,8 @@ def _coord(row: dict, key: str, shift: int, limit: int | None, invalid: list[str
     val = _text(row, key)
     if val is None:
         return None
-    try:
-        num = int(val)
-    except ValueError:
+    num = _integer(val)
+    if num is None:
         invalid.append(f"{key}: unparseable coordinate {val!r}")
         return None
     num -= shift
@@ -85,6 +86,37 @@ def _coord(row: dict, key: str, shift: int, limit: int | None, invalid: list[str
         invalid.append(f"{key}: coordinate {num} exceeds sequence length {limit}")
         return None
     return num
+
+
+def _integer(val: str) -> int | None:
+    """An integer, also written as an integral float (``"12.0"``), else None."""
+    try:
+        return int(val)
+    except ValueError:
+        pass
+    try:
+        num = float(val)
+    except ValueError:
+        return None
+    return int(num) if num.is_integer() else None
+
+
+def _junction_span(row: dict, seq_len: int | None, invalid: list[str]) -> tuple[int | None, int | None]:
+    """Junction start/end; a coordinate the row leaves empty is taken from the CDR3 one (start - 3, end + 3) when
+    that stays inside the read."""
+    span = []
+    for key, cdr3_key, shift, pad in (("junction_start", "cdr3_start", 1, -3), ("junction_end", "cdr3_end", 0, 3)):
+        pos = _coord(row, key, shift, seq_len, invalid)
+        if _text(row, key) is None:
+            cdr3 = _coord(row, cdr3_key, shift, seq_len, invalid)
+            if cdr3 is not None and 0 <= cdr3 + pad and (seq_len is None or cdr3 + pad <= seq_len):
+                pos = cdr3 + pad
+        span.append(pos)
+    start, end = span
+    if start is not None and end is not None and end < start:
+        invalid.append("junction: end before start")
+        return None, None
+    return start, end
 
 
 def _entries(val: str | None) -> tuple[str, ...]:
@@ -145,6 +177,7 @@ def _parse_row(row: dict, sequence_id: str) -> Prediction:
     seq_len = len(sequence) if sequence else None
     segments = {g: _segment(row, g, seq_len, invalid) for g in GENES}
     junction = _text(row, "junction")
+    junction_start, junction_end = _junction_span(row, seq_len, invalid)
     return Prediction(
         sequence_id=sequence_id,
         sequence=sequence,
@@ -152,8 +185,8 @@ def _parse_row(row: dict, sequence_id: str) -> Prediction:
         segments=segments,
         junction_nt=junction.upper() if junction else None,
         junction_aa=_text(row, "junction_aa"),
-        junction_start=_coord(row, "junction_start", 1, seq_len, invalid),
-        junction_end=_coord(row, "junction_end", 0, seq_len, invalid),
+        junction_start=junction_start,
+        junction_end=junction_end,
         productive=_bool(row, "productive", invalid),
         vj_in_frame=_bool(row, "vj_in_frame", invalid),
         stop_codon=_bool(row, "stop_codon", invalid),
@@ -170,7 +203,7 @@ def load_airr_tsv(path) -> tuple[dict[str, Prediction], dict]:
     csv.field_size_limit(sys.maxsize)
     preds: dict[str, Prediction] = {}
     stats = {"rows": 0, "duplicates": 0, "invalid_rows": 0}
-    with open(path, newline="") as fh:
+    with open(path, newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh, delimiter="\t"):
             stats["rows"] += 1
             sid = (row.get("sequence_id") or "").strip()

@@ -1,3 +1,6 @@
+import builtins
+
+from alignair_assay.ingest import airr
 from alignair_assay.ingest.airr import load_airr_tsv
 
 SID = "human_igh_ogrdb_broad:amplicon_janchor:000000"
@@ -6,7 +9,7 @@ SEQ = "ACGT" * 30
 
 def _write(path, header, rows):
     lines = ["\t".join(header)] + ["\t".join(r) for r in rows]
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 
@@ -60,9 +63,64 @@ def test_malformed_row(tmp_path):
     assert v.seq_end is None
     assert v.cigar is None
     assert v.germ_start == 9
-    assert p.segments["j"].cigar is None  # 3M disagrees with 15 / 15
+    # J has read coordinates but no germline coordinates, so its CIGAR cannot be validated and is dropped.
+    assert p.segments["j"].cigar is None
+    assert "j_cigar: dropped, coordinates unavailable to validate '3M'" in p.invalid
     assert p.invalid
     assert stats["invalid_rows"] == 1
+
+
+def test_cigar_disagreeing_with_coordinates_is_dropped(tmp_path):
+    header = ["sequence_id", "sequence", "v_call", "v_sequence_start", "v_sequence_end", "v_germline_start",
+              "v_germline_end", "v_cigar"]
+    # 44 read and 45 germline bases: 26M1D18M fits, 40M does not.
+    good = [SID, SEQ, "IGHV1*01", "1", "44", "256", "300", "26M1D18M"]
+    bad = ["other", SEQ, "IGHV1*01", "1", "44", "256", "300", "40M"]
+    preds, stats = load_airr_tsv(_write(tmp_path / "c.tsv", header, [good, bad]))
+    assert preds[SID].segments["v"].cigar == "26M1D18M" and preds[SID].invalid == ()
+    v = preds["other"].segments["v"]
+    assert v.cigar is None and (v.seq_start, v.seq_end, v.germ_start, v.germ_end) == (0, 44, 255, 300)
+    assert preds["other"].invalid == ("v_cigar: '40M' disagrees with coordinates",)
+    assert stats["invalid_rows"] == 1
+
+
+def test_integral_float_coordinates(tmp_path):
+    header = ["sequence_id", "sequence", "v_sequence_start", "v_sequence_end", "junction_start", "junction_end"]
+    row = [SID, SEQ, "12.0", "40.0", "11.5", "17"]
+    p = load_airr_tsv(_write(tmp_path / "f.tsv", header, [row]))[0][SID]
+    assert (p.segments["v"].seq_start, p.segments["v"].seq_end) == (11, 40)
+    assert p.junction_start is None and p.invalid == ("junction_start: unparseable coordinate '11.5'",)
+
+
+def test_tsv_read_as_utf8(tmp_path, monkeypatch):
+    path = _write(tmp_path / "u.tsv", ["sequence_id", "sequence", "note"], [[SID, SEQ, "naïve β cell"]])
+    encodings = []
+
+    def spy(file, *args, **kwargs):
+        encodings.append(kwargs.get("encoding"))
+        return builtins.open(file, *args, **kwargs)
+
+    monkeypatch.setattr(airr, "open", spy, raising=False)
+    preds, _ = load_airr_tsv(path)
+    assert encodings == ["utf-8"] and preds[SID].sequence == SEQ
+
+
+def test_junction_coordinates(tmp_path):
+    header = ["sequence_id", "sequence", "junction_start", "junction_end", "cdr3_start", "cdr3_end"]
+    rows = [
+        ["reversed", SEQ, "20", "10", "", ""],  # end before start
+        ["cdr3", SEQ, "", "", "14", "20"],  # junction = CDR3 plus the anchor codons
+        ["both", SEQ, "11", "23", "50", "60"],  # reported junction coordinates win
+        ["edge", SEQ, "", "", "2", "119"],  # the derived junction would leave the read
+    ]
+    preds, _ = load_airr_tsv(_write(tmp_path / "j.tsv", header, rows))
+    p = preds["reversed"]
+    assert (p.junction_start, p.junction_end) == (None, None)
+    assert p.invalid == ("junction: end before start",)
+    assert (preds["cdr3"].junction_start, preds["cdr3"].junction_end) == (10, 23)
+    assert (preds["both"].junction_start, preds["both"].junction_end) == (10, 23)
+    assert (preds["edge"].junction_start, preds["edge"].junction_end) == (None, None)
+    assert preds["cdr3"].invalid == preds["both"].invalid == preds["edge"].invalid == ()
 
 
 def test_duplicates(tmp_path):
