@@ -9,7 +9,7 @@ import pytest
 
 from alignair_assay.cli import main
 from alignair_assay.core.jsonl import read_header, write_jsonl
-from alignair_assay.core.provenance import genairr_provenance, sha256_file
+from alignair_assay.core.provenance import genairr_provenance, git_state, sha256_file
 
 GENAIRR_FIELDS = {"genairr_version", "genairr_source", "genairr_git_commit", "genairr_git_dirty"}
 
@@ -64,3 +64,18 @@ def test_sha256_file(tmp_path):
     path = tmp_path / "x.txt"
     path.write_bytes(b"abc")
     assert sha256_file(path) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+
+def test_git_state_reports_dirty_tree(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(git + ["init", "-q"], check=True)
+    (repo / "f.txt").write_text("a\n")
+    subprocess.run(git + ["add", "f.txt"], check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "init"], check=True)
+    state = git_state(repo)
+    assert len(state["git_commit"]) == 40 and state["git_dirty"] is False
+    (repo / "f.txt").write_text("b\n")
+    assert git_state(repo)["git_dirty"] is True
+    assert git_state(tmp_path / "missing") == {"git_commit": None, "git_dirty": None}

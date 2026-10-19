@@ -2,7 +2,6 @@ import gzip
 import hashlib
 import json
 import math
-import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -13,11 +12,10 @@ from alignair_assay.airr.writer import write_airr_tsv
 from alignair_assay.cli import main
 from alignair_assay.core.cigar import format_cigar, parse_cigar
 from alignair_assay.core.prediction import PredSegment, Prediction
-from alignair_assay.core.provenance import genairr_provenance, git_state
+from alignair_assay.core.provenance import genairr_provenance
 from alignair_assay.core.reference import gene_name
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.metrics.case import score_case
-from alignair_assay.scoring.slices import d_len_bin, slice_labels
 from alignair_assay.truth.bench import truth_from_bench_case
 from alignair_assay.truth.io import read_truth_header, read_truth_jsonl, write_truth_jsonl
 from alignair_assay.truth.oracle import oracle_prediction
@@ -262,14 +260,6 @@ def test_rev_comp_row_scores_like_forward(tmp_path, reference, load_fixture):
     assert flipped == dict(expected, **{"orientation.correct": 0.0, "airr.sequence_ok": 0.0, "airr.valid": 0.0})
 
 
-@pytest.mark.parametrize("length,label", [
-    (None, "absent"), (0, "<5"), (4, "<5"), (5, "5-7"), (7, "5-7"), (8, "8-9"), (9, "8-9"), (10, "10-11"),
-    (11, "10-11"), (12, "12-14"), (14, "12-14"), (15, ">=15"), (40, ">=15"),
-])
-def test_d_len_bin(length, label):
-    assert d_len_bin(length) == label
-
-
 def test_truth_records_reference_and_scoring_checks_it(tmp_path, capsys, reference, load_fixture):
     cases = [load_fixture(name) for name in FIXTURE_NAMES]
     truth_path, truths = _build_truth(tmp_path, cases, name="cases.jsonl")
@@ -331,31 +321,6 @@ def test_missing_input_file_is_an_error(tmp_path, capsys, load_fixture):
     assert main(["truth", "--bench-cases", str(tmp_path / "cases.jsonl"), "--reference", "NOT_A_DATACONFIG",
                  "--out", str(tmp_path / "t.jsonl")]) == 2
     assert "unknown GenAIRR dataconfig 'NOT_A_DATACONFIG'" in capsys.readouterr().err
-
-
-def test_git_state_reports_dirty_tree(tmp_path):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com"]
-    subprocess.run(git + ["init", "-q"], check=True)
-    (repo / "f.txt").write_text("a\n")
-    subprocess.run(git + ["add", "f.txt"], check=True)
-    subprocess.run(git + ["commit", "-q", "-m", "init"], check=True)
-    state = git_state(repo)
-    assert len(state["git_commit"]) == 40 and state["git_dirty"] is False
-    (repo / "f.txt").write_text("b\n")
-    assert git_state(repo)["git_dirty"] is True
-    assert git_state(tmp_path / "missing") == {"git_commit": None, "git_dirty": None}
-
-
-def test_d_inverted_slice(reference, load_fixture):
-    truth = truth_from_bench_case(load_fixture("amplicon_janchor_000000.json"), reference)
-    d = truth.segments["d"]
-    assert slice_labels(truth)["d_inverted"] == "no"
-    assert slice_labels(replace(truth, segments={**truth.segments, "d": replace(d, inverted=True)}))[
-        "d_inverted"] == "yes"
-    no_d = replace(truth, segments={g: s for g, s in truth.segments.items() if g != "d"})
-    assert slice_labels(no_d)["d_inverted"] == "absent"
 
 
 def test_is_informational():

@@ -41,11 +41,15 @@ def truth_to_dict(t: ObservableTruth) -> dict:
         "j_frameshift": t.j_frameshift,
         "excluded": t.excluded,
         "warnings": list(t.warnings),
+        "suite": t.suite,
+        "labels": dict(t.labels),
+        "groups": dict(t.groups),
+        "v_novel_snps": None if t.v_novel_snps is None else list(t.v_novel_snps),
     }
 
 
 def truth_from_dict(d: dict) -> ObservableTruth:
-    """Inverse of ``truth_to_dict``."""
+    """Inverse of ``truth_to_dict``; the suite, labels, groups and novel SNPs default when absent (older files)."""
     clone_key = d["clone_key"]
     return ObservableTruth(
         case_id=d["case_id"],
@@ -65,6 +69,10 @@ def truth_from_dict(d: dict) -> ObservableTruth:
         j_frameshift=d["j_frameshift"],
         excluded=d["excluded"],
         warnings=tuple(d["warnings"]),
+        suite=d.get("suite", ""),
+        labels=dict(d.get("labels") or {}),
+        groups=dict(d.get("groups") or {}),
+        v_novel_snps=None if d.get("v_novel_snps") is None else tuple(d["v_novel_snps"]),
     )
 
 

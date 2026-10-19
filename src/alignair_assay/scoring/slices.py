@@ -17,14 +17,22 @@ def d_len_bin(length: int | None) -> str:
 
 
 def slice_labels(truth: ObservableTruth) -> dict[str, str]:
-    """The case's label in every slice dimension, derived from its truth."""
+    """The case's label in every slice dimension: the fixed dimensions derived from its truth plus every key of
+    ``truth.labels``. A label key equal to a fixed dimension raises ValueError."""
+    clash = sorted(set(truth.labels) & set(SLICE_DIMENSIONS))
+    if clash:
+        raise ValueError(f"{truth.case_id}: label {clash} collides with a fixed slice dimension")
     d = truth.segments.get("d")
-    return {"stratum": truth.stratum, "orientation": str(truth.orientation),
-            "d_len_bin": d_len_bin(d.observed_length if d is not None else None),
-            "d_inverted": "absent" if d is None else "yes" if d.inverted else "no"}
+    fixed = {"stratum": truth.stratum, "orientation": str(truth.orientation),
+             "d_len_bin": d_len_bin(d.observed_length if d is not None else None),
+             "d_inverted": "absent" if d is None else "yes" if d.inverted else "no"}
+    return {**truth.labels, **fixed}
 
 
 def slices(scores: dict[str, CaseScores], truths: list[ObservableTruth]) -> dict:
-    """``{dimension: {label: {metric: MetricSummary}}}`` over the scored cases, for every slice dimension."""
+    """``{dimension: {label: {metric: MetricSummary}}}`` over the scored cases, for the fixed dimensions and every
+    label key of the truths; a case without a label key is in the ``absent`` slice of that dimension."""
     labels = {t.case_id: slice_labels(t) for t in truths if t.case_id in scores}
-    return {dim: by_slice(scores, {cid: lab[dim] for cid, lab in labels.items()}) for dim in SLICE_DIMENSIONS}
+    dimensions = SLICE_DIMENSIONS + tuple(sorted({k for lab in labels.values() for k in lab} - set(SLICE_DIMENSIONS)))
+    return {dim: by_slice(scores, {cid: lab.get(dim, "absent") for cid, lab in labels.items()})
+            for dim in dimensions}

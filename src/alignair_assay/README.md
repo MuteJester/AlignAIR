@@ -17,8 +17,8 @@ Each subpackage is a layer and may import only the layers in its row.
 
 | Layer | Holds | May import from `alignair_assay.` |
 |---|---|---|
-| `core` | shared primitives: `reference` (the germline reference), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `provenance`; the run-directory path schema `core/layout.py` (from P2 Task 3) | core |
-| `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `io`, `oracle` | core, truth |
+| `core` | shared primitives: `reference` (the germline reference), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`; the run-directory path schema `core/layout.py` (from P2 Task 3) | core |
+| `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle` | core, truth |
 | `airr` | AIRR TSV `reader` and `writer` | core, airr |
 | `metrics` | per-case scorers (pure) and the metric registries | core, truth, metrics |
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
@@ -44,6 +44,14 @@ provides the `genairr` guard, the session `reference` (`HUMAN_IGH_OGRDB`) and `l
 committed bench cases in `tests/alignair_assay/fixtures/`.
 
 ## Truth conventions
+
+**Cases.** A case (`core.cases.make_case`) is one JSON object per line: `case_id`, `suite`, `stratum`, `orientation`
+(0 forward, 1 reverse complement), `sequence` (the presented read, uppercase; the reverse complement of the record
+sequence when the orientation is 1), `record` (the forward GenAIRR record, verbatim), `labels` (`{str: str}` slice
+dimensions) and `groups` (`{str: str}` grouping keys that are not sliced: `subject`, `clone`, `pair`).
+`truth.case.truth_from_case` builds the truth and copies `suite`, `labels` and `groups` onto it; it raises when the
+sequence does not match the record and orientation. `scoring.slices` slices by the fixed dimensions plus every label
+key; a label named like a fixed dimension is an error.
 
 **Observable truth.** Each simulated record is projected onto what the read shows (`truth.build`):
 

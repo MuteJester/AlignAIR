@@ -1,7 +1,7 @@
 """Observable-truth records: what a perfect aligner can recover from one read."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from alignair_assay.truth.alleles import AlleleTruth
 from alignair_assay.truth.boundaries import BoundaryTruth
@@ -59,6 +59,12 @@ class ObservableTruth:
     j_frameshift: bool | None
     excluded: str | None
     warnings: tuple[str, ...]
+    # Set by the suite engine: the suite id, the slice dimensions (``labels``) and the grouping keys
+    # (``groups``: subject, clone, pair, ...); ``v_novel_snps`` are the read positions of a novel V allele's SNPs.
+    suite: str = ""
+    labels: dict[str, str] = field(default_factory=dict)
+    groups: dict[str, str] = field(default_factory=dict)
+    v_novel_snps: tuple[int, ...] | None = None
 
     @property
     def frame_unambiguous(self) -> bool:
