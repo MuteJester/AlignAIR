@@ -307,4 +307,5 @@ def test_metric_direction():
         assert lower_is_better(name), name
     for name in ("v.top1_in_set", "v.seq_start_exact", "d_short.abstain_ok", "v.set_precision"):
         assert not lower_is_better(name), name
-    assert INFORMATIONAL == frozenset({".set_size", "junction.start_err", "junction.end_err"})
+    assert INFORMATIONAL == frozenset({".set_size", "junction.start_err", "junction.end_err",
+                                       "v_indel.mutation_count_err", "v_indel.germline_errors"})

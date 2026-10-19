@@ -3,6 +3,10 @@
 These drive SHM and selection analyses, which count mutations against the germline the tool reconstructed.
 A prediction's alignment is its normalized CIGAR walked from ``seq_start``/``germ_start`` over the canonical
 read and the called allele's reference sequence; read ``N`` bases are never mismatches.
+
+Mutation and germline metrics are reachable by a perfect aligner: any segment edge inside the truth equivalence
+interval is accepted. For a segment whose truth alignment has an indel they are reported under ``{g}_indel.*``
+and are informational only, because indel placement is not unique.
 """
 from __future__ import annotations
 
@@ -19,22 +23,45 @@ def germline_metrics(g: str, truth: SegmentTruth, read: str, pred: PredSegment,
                      reference: Reference) -> CaseScores:
     """Mutation-count and germline-reconstruction errors for one observed segment.
 
-    ``mutation_count_err`` is |predicted mismatches - truth mismatches|. ``germline_errors`` counts the
-    truth-aligned read positions whose predicted germline base is wrong or missing (the position is not
-    aligned by the prediction), so a wrong sibling allele or a shifted coordinate shows up. Both are ``nan``
-    when the prediction has no usable alignment (no call, a call not in the reference, missing coordinates
-    or CIGAR, or a walk outside the read or the allele).
+    Names are ``{g}.*`` when the truth alignment has no indel and ``{g}_indel.*`` (informational) otherwise.
+
+    ``mutation_count_err`` is |predicted mismatches - truth mismatches|. Truth mismatches are counted over the
+    truth columns whose read position lies between the predicted edges, each edge taken as predicted when it is
+    inside its truth interval and as the truth edge otherwise: columns a prediction legitimately leaves out (the
+    mismatching shrink zone) are not counted, and columns it legitimately adds (the extension zone) match.
+
+    ``germline_errors`` counts the truth columns of the mandatory region (read positions between the inner ends of
+    the start and end intervals) whose predicted germline base is missing or wrong, plus the remaining truth
+    columns the prediction aligns to a wrong germline base; a wrong sibling allele or a shifted germline
+    coordinate shows up.
+
+    Both are ``nan`` when the prediction has no usable alignment (no call, a call not in the reference, missing
+    coordinates or CIGAR, or a walk outside the read or the allele).
     """
-    predicted = _predicted_germline(g, read, pred, reference)
-    if predicted is None:
-        return {f"{g}.mutation_count_err": NAN, f"{g}.germline_errors": NAN}
-    mismatches = sum(read[r] != "N" and read[r] != base for r, base in predicted.items())
     obs = truth.observed
-    errors = sum(predicted.get(c.read_pos) != obs.observed_germline[c.germ_pos - obs.germ_start]
-                 for c in walk(parse_cigar(obs.cigar), obs.seq_start, obs.germ_start)
-                 if c.read_pos is not None and c.germ_pos is not None)
-    return {f"{g}.mutation_count_err": float(abs(mismatches - obs.n_mismatch)),
-            f"{g}.germline_errors": float(errors)}
+    prefix = f"{g}_indel" if _indel_bases(parse_cigar(obs.cigar)) else g
+    names = (f"{prefix}.mutation_count_err", f"{prefix}.germline_errors")
+    aligned = _predicted_germline(g, read, pred, reference)
+    if aligned is None:
+        return dict.fromkeys(names, NAN)
+    predicted, pred_start, pred_end = aligned
+    b = truth.boundaries
+    start = pred_start if _inside(pred_start, b.seq_start) else obs.seq_start
+    end = pred_end if _inside(pred_end, b.seq_end) else obs.seq_end
+    mandatory_start, mandatory_end = b.seq_start[1], b.seq_end[0]
+
+    pred_mismatches = sum(read[r] != "N" and read[r] != base for r, base in predicted.items())
+    truth_mismatches = errors = 0
+    for c in walk(parse_cigar(obs.cigar), obs.seq_start, obs.germ_start):
+        if c.read_pos is None or c.germ_pos is None:
+            continue
+        r, germline = c.read_pos, obs.observed_germline[c.germ_pos - obs.germ_start]
+        if start <= r < end and read[r] != "N" and read[r] != germline:
+            truth_mismatches += 1
+        got = predicted.get(r)
+        if mandatory_start <= r < mandatory_end or got is not None:
+            errors += got != germline
+    return {names[0]: float(abs(pred_mismatches - truth_mismatches)), names[1]: float(errors)}
 
 
 def indel_metric(g: str, truth: SegmentTruth, pred: PredSegment) -> CaseScores:
@@ -50,8 +77,14 @@ def indel_metric(g: str, truth: SegmentTruth, pred: PredSegment) -> CaseScores:
     return {f"{g}.indel_exact": float(got == want)}
 
 
-def _predicted_germline(g: str, read: str, pred: PredSegment, reference: Reference) -> dict[int, str] | None:
-    """Read position -> germline base for every aligned column of the prediction, or None if unusable."""
+def _inside(x: int, interval: tuple[int, int]) -> bool:
+    return interval[0] <= x <= interval[1]
+
+
+def _predicted_germline(g: str, read: str, pred: PredSegment,
+                        reference: Reference) -> tuple[dict[int, str], int, int] | None:
+    """Read position -> germline base for every aligned column of the prediction, with the predicted read span
+    (start, end), or None if unusable."""
     germline = reference.alleles.get(g, {}).get(pred.call) if pred.call is not None else None
     ops = _ops(pred.cigar)
     if germline is None or ops is None or pred.seq_start is None or pred.germ_start is None:
@@ -67,7 +100,7 @@ def _predicted_germline(g: str, read: str, pred: PredSegment, reference: Referen
         if not (0 <= c.read_pos < len(read) and 0 <= c.germ_pos < len(germline)):
             return None
         out[c.read_pos] = germline[c.germ_pos]
-    return out
+    return out, pred.seq_start, pred.seq_start + sum(n for n, op in ops if op in "MI=X")
 
 
 def _ops(cigar: str | None) -> list[Op] | None:

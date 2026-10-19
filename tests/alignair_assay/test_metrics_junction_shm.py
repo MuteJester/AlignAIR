@@ -8,7 +8,7 @@ import pytest
 
 from alignair_assay.cigar import parse_cigar, walk
 from alignair_assay.ingest.airr import Prediction
-from alignair_assay.metrics import INFORMATIONAL, lower_is_better
+from alignair_assay.metrics import INFORMATIONAL, is_informational, lower_is_better
 from alignair_assay.metrics.case import score_case
 from alignair_assay.metrics.junction import junction_metrics
 from alignair_assay.reference import Reference, gene_name
@@ -25,7 +25,7 @@ _ACCURACY = ("junction.nt_exact", "junction.aa_exact", "junction.length_exact", 
              "productive.correct", "vj_in_frame.correct", "stop_codon.correct", "orientation.correct",
              "airr.valid", "v.indel_exact", "j.indel_exact")
 _ERRORS = ("junction.start_err", "junction.end_err", "junction.start_abs_err", "junction.end_abs_err",
-           "v.mutation_count_err", "v.germline_errors")
+           "v.mutation_count_err", "v.germline_errors", "v_indel.mutation_count_err", "v_indel.germline_errors")
 _FAMILIES = {
     "junction": ("junction.nt_exact", "junction.aa_exact", "junction.length_exact", "junction.start_err",
                  "junction.end_err", "junction.start_abs_err", "junction.end_abs_err"),
@@ -87,6 +87,60 @@ def _with_segment(pred, g, **changes):
     return replace(pred, segments={**pred.segments, g: replace(pred.segments[g], **changes)})
 
 
+def _has_indel(seg):
+    return any(op in "ID" for _, op in parse_cigar(seg.observed.cigar))
+
+
+def test_shm_metrics_accept_every_edge_in_the_equivalence_interval():
+    # A perfect aligner may put each V edge anywhere in its interval: shrinking over mismatching edge columns
+    # or extending over read bases equal to the next germline base. Both SHM metrics must stay 0.
+    moved = 0
+    for truth in _genairr_truths():
+        v = truth.segments.get("v")
+        if v is None or _has_indel(v):
+            continue
+        o, b = v.observed, v.boundaries
+        oracle = oracle_prediction(truth)
+        for s in b.seq_start:
+            for e in b.seq_end:
+                pred = _with_segment(oracle, "v", seq_start=s, seq_end=e, germ_start=o.germ_start + s - o.seq_start,
+                                     germ_end=o.germ_end + e - o.seq_end, cigar=f"{e - s}M")
+                scores = score_case(truth, pred, REF)
+                assert scores["v.mutation_count_err"] == 0.0, (truth.case_id, s, e)
+                assert scores["v.germline_errors"] == 0.0, (truth.case_id, s, e)
+                moved += (s, e) != (o.seq_start, o.seq_end)
+    assert moved >= 50
+
+
+def test_shm_metrics_for_indel_v_are_informational():
+    truths = [t for t in _genairr_truths() if "v" in t.segments and _has_indel(t.segments["v"])]
+    assert len(truths) >= 20
+    for truth in truths:
+        scores = score_case(truth, oracle_prediction(truth), REF)
+        assert scores["v_indel.mutation_count_err"] == scores["v_indel.germline_errors"] == 0.0
+        assert "v.mutation_count_err" not in scores and "v.germline_errors" not in scores
+    for name in ("v_indel.mutation_count_err", "v_indel.germline_errors"):
+        assert is_informational(name), name
+
+
+def test_shm_edge_outside_interval_uses_full_truth_span():
+    # A V end moved one column past the end of its interval: the left-out columns count against the tool.
+    for truth in _genairr_truths():
+        v = truth.segments.get("v")
+        if v is None or _has_indel(v) or v.boundaries.seq_end[0] == v.observed.seq_end:
+            continue
+        o, b = v.observed, v.boundaries
+        e = b.seq_end[0] - 1  # one matching column short of the interval
+        pred = _with_segment(oracle_prediction(truth), "v", seq_end=e, germ_end=o.germ_end + e - o.seq_end,
+                             cigar=f"{e - o.seq_start}M")
+        scores = score_case(truth, pred, REF)
+        shrunk = o.seq_end - b.seq_end[0]  # mismatching columns of the shrink zone, now penalised
+        assert scores["v.mutation_count_err"] == shrunk, truth.case_id
+        assert scores["v.germline_errors"] == 1.0, truth.case_id  # the one mandatory column left out
+        return
+    raise AssertionError("no V with a shrinkable end")
+
+
 def test_oracle_perfect_extended():
     seen: Counter = Counter()
     located = 0
@@ -106,7 +160,9 @@ def test_oracle_perfect_extended():
                 seen[name] += 1
         assert ("junction.nt_exact" in scores) == (truth.junction is not None)
         assert ("clone_key.exact" in scores) == (truth.clone_key is not None)
-        assert ("v.mutation_count_err" in scores) == ("v" in truth.segments)
+        v_indel = "v" in truth.segments and _has_indel(truth.segments["v"])
+        assert ("v.mutation_count_err" in scores) == ("v" in truth.segments and not v_indel)
+        assert ("v_indel.mutation_count_err" in scores) == v_indel
 
         # A tool that reports only the junction string: aa from translation, coordinates by location.
         if truth.junction is not None:
@@ -316,8 +372,11 @@ def test_missing_prediction_new_metrics():
             assert scores[name] == 0.0, name
         # The truth junction is out of frame (and V has a frameshift): no translation or stop-codon metric.
         assert "junction.aa_exact" not in scores and "stop_codon.correct" not in scores
+        # V has an indel (26M1D18M): its SHM metrics are the informational v_indel twins.
+        assert not any(k.startswith("v.") and k.endswith(("mutation_count_err", "germline_errors")) for k in scores)
         for name in _ERRORS:
-            assert math.isnan(scores[name]), name
+            if not name.startswith("v."):
+                assert math.isnan(scores[name]), name
 
 
 def _toy_junction():

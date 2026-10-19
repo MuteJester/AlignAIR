@@ -9,8 +9,10 @@ from __future__ import annotations
 CaseScores = dict[str, float]
 
 # Metric-name suffixes (a full name is its own suffix) that are reported but excluded from tool comparisons.
-# The signed junction edge errors are compared through their ``*_abs_err`` twins.
-INFORMATIONAL: frozenset[str] = frozenset({".set_size", "junction.start_err", "junction.end_err"})
+# The signed junction edge errors are compared through their ``*_abs_err`` twins; SHM metrics of a V with an
+# indel are not compared because indel placement is not unique.
+INFORMATIONAL: frozenset[str] = frozenset({".set_size", "junction.start_err", "junction.end_err",
+                                           "v_indel.mutation_count_err", "v_indel.germline_errors"})
 
 _LOWER_IS_BETTER = ("_err", ".no_call", ".spurious_call", ".germline_errors", ".mutation_count_err")
 
