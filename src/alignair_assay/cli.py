@@ -29,7 +29,7 @@ from alignair_assay.truth.build import ObservableTruth, truth_from_bench_case
 from alignair_assay.truth.io import read_truth_jsonl, write_truth_jsonl
 
 DEFAULT_REFERENCE = "HUMAN_IGH_OGRDB"
-SLICE_DIMENSIONS = ("stratum", "orientation", "d_len_bin")
+SLICE_DIMENSIONS = ("stratum", "orientation", "d_len_bin", "d_inverted")
 _D_BINS = ((5, "<5"), (8, "5-7"), (10, "8-9"), (12, "10-11"), (15, "12-14"))
 _MAX_LISTED_WARNINGS = 20
 STATISTICAL_TESTS = ("exact McNemar for 0/1 metrics, paired z-test otherwise, p = 1 below 10 pairs; "
@@ -47,7 +47,14 @@ def slice_labels(truth: ObservableTruth) -> dict[str, str]:
     """The case's label in every slice dimension, derived from its truth."""
     d = truth.segments.get("d")
     return {"stratum": truth.stratum, "orientation": str(truth.orientation),
-            "d_len_bin": d_len_bin(d.observed_length if d is not None else None)}
+            "d_len_bin": d_len_bin(d.observed_length if d is not None else None),
+            "d_inverted": "absent" if d is None else "yes" if d.inverted else "no"}
+
+
+def simulator_disagreements(truths: list[ObservableTruth]) -> dict[str, int]:
+    """Per gene, the non-excluded cases whose observable allele set differs from the simulator's tie list."""
+    return {g: sum(t.segments[g].alleles.disagrees_with_simulator for t in truths
+                   if t.excluded is None and g in t.segments) for g in GENES}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -112,6 +119,9 @@ def _cmd_truth(args) -> int:
     print(f"excluded: {sum(excluded.values())}" + (f" ({reasons})" if reasons else ""))
     print(f"cases with warnings: {len(with_warnings)}")
     print("unscorable genes: " + " ".join(f"{g}={unscorable[g]}" for g in GENES))
+    disagreements = simulator_disagreements(truths)
+    print("simulator allele-set disagreements (non-excluded cases): "
+          + " ".join(f"{g}={disagreements[g]}" for g in GENES))
     for t in with_warnings[:_MAX_LISTED_WARNINGS]:
         for w in t.warnings:
             print(f"  {t.case_id}: {w}")
@@ -127,7 +137,8 @@ def _cmd_score(args) -> int:
     scores, matching = _score_tool(truths, args.predictions, reference)
     _print_matching(args.tool, matching)
     provenance = _provenance("score", {"truth": args.truth, "predictions": args.predictions},
-                             tool=args.tool, reference=args.reference, matching=matching)
+                             tool=args.tool, reference=args.reference, matching=matching,
+                             simulator_disagreements=simulator_disagreements(truths))
     report = build_score_report(args.tool, summarize(scores, list(scores)), _slices(scores, truths), provenance)
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -152,7 +163,8 @@ def _cmd_compare(args) -> int:
     provenance = _provenance("compare", {"truth": args.truth, "a": args.a, "b": args.b},
                              a=args.a_name, b=args.b_name, reference=args.reference, alpha=args.alpha,
                              tests=STATISTICAL_TESTS, family_size=len(family),
-                             matching={"a": match_a, "b": match_b})
+                             matching={"a": match_a, "b": match_b},
+                             simulator_disagreements=simulator_disagreements(truths))
     report = build_comparison_report(args.a_name, args.b_name, comparison, _slices(a, truths), _slices(b, truths),
                                      provenance)
     out = Path(args.out_dir)

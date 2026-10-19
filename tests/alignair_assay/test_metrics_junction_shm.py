@@ -12,6 +12,7 @@ from alignair_assay.metrics import INFORMATIONAL, is_informational, lower_is_bet
 from alignair_assay.metrics.case import MIN_OBSERVED, score_case
 from alignair_assay.metrics.junction import junction_metrics
 from alignair_assay.reference import Reference, gene_name
+from alignair_assay.seqops import revcomp
 from alignair_assay.testing import oracle_prediction
 from alignair_assay.truth.build import JunctionTruth, truth_from_bench_case, truth_from_genairr_record
 
@@ -23,7 +24,7 @@ FIXTURE_NAMES = ("amplicon_janchor_000000.json", "orientation_000001.json", "ori
 
 _ACCURACY = ("junction.nt_exact", "junction.aa_exact", "junction.length_exact", "clone_key.exact",
              "productive.correct", "vj_in_frame.correct", "stop_codon.correct", "orientation.correct",
-             "airr.valid", "v.indel_found", "j.indel_found")
+             "airr.valid", "airr.sequence_ok", "v.indel_found", "j.indel_found")
 _ERRORS = ("junction.start_err", "junction.end_err", "junction.start_abs_err", "junction.end_abs_err",
            "v.mutation_count_err", "v.germline_errors", "v_indel.mutation_count_err", "v_indel.germline_errors",
            "v.indel_false", "j.indel_false")
@@ -36,7 +37,7 @@ _FAMILIES = {
     "indel": ("v.indel_found", "j.indel_found", "v.indel_false", "j.indel_false"),
     "productivity": ("productive.correct", "vj_in_frame.correct", "stop_codon.correct"),
     "orientation": ("orientation.correct",),
-    "validity": ("airr.valid",),
+    "validity": ("airr.valid", "airr.sequence_ok"),
 }
 
 
@@ -375,11 +376,43 @@ def test_aa_and_stop_codon_scored_only_on_frame_unambiguous_reads():
     assert "junction.aa_exact" not in scores and "stop_codon.correct" not in scores
 
 
+def test_airr_sequence_must_be_the_read():
+    for name in ("amplicon_janchor_000000.json", "orientation_000001.json"):
+        truth = _fixture_truth(name)
+        oracle = oracle_prediction(truth)
+        presented = oracle.sequence
+        assert presented == (revcomp(truth.sequence) if truth.orientation == 1 else truth.sequence)
+        ok = score_case(truth, replace(oracle, sequence=presented.lower()), REF)
+        assert ok["airr.sequence_ok"] == ok["airr.valid"] == 1.0
+        # The complement (not the reverse complement) of the read, with rev_comp=F.
+        complement = revcomp(presented)[::-1]
+        for bad in (replace(oracle, sequence=complement, rev_comp=False), replace(oracle, sequence=None),
+                    replace(oracle, sequence=presented[:-1])):
+            scores = score_case(truth, bad, REF)
+            assert scores["airr.sequence_ok"] == scores["airr.valid"] == 0.0, name
+        assert score_case(truth, None, REF)["airr.sequence_ok"] == 0.0
+
+    # rev_comp=T rows may carry the reverse-complemented read (IgBLAST does), whose frame the coordinates use.
+    truth = _fixture_truth("orientation_000001.json")
+    oracle = oracle_prediction(truth)
+    as_igblast = replace(oracle, sequence=truth.sequence)
+    assert score_case(truth, as_igblast, REF)["airr.sequence_ok"] == 1.0
+    assert score_case(truth, replace(as_igblast, rev_comp=False), REF)["airr.sequence_ok"] == 0.0
+
+    # Junction coordinates must reproduce the reported junction string in the canonical read.
+    j = truth.junction
+    shifted = replace(oracle, junction_start=j.start - 1, junction_end=j.end - 1)
+    scores = score_case(truth, shifted, REF)
+    assert scores["airr.sequence_ok"] == scores["airr.valid"] == 0.0
+    consistent = replace(shifted, junction_nt=truth.sequence[j.start - 1:j.end - 1])
+    assert score_case(truth, consistent, REF)["airr.sequence_ok"] == 1.0
+
+
 def test_missing_prediction_new_metrics():
     truth = _fixture_truth("amplicon_janchor_000000.json")
-    for pred, valid in ((None, 0.0), (Prediction(sequence_id=truth.case_id), 1.0)):
+    for pred, valid in ((None, 0.0), (Prediction(sequence_id=truth.case_id, sequence=truth.sequence), 1.0)):
         scores = score_case(truth, pred, REF)
-        assert scores["airr.valid"] == valid
+        assert scores["airr.valid"] == scores["airr.sequence_ok"] == valid
         for name in ("junction.nt_exact", "junction.length_exact", "clone_key.exact", "productive.correct",
                      "vj_in_frame.correct", "orientation.correct", "v.indel_found"):
             assert scores[name] == 0.0, name

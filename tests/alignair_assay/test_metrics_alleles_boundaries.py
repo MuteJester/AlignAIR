@@ -121,8 +121,9 @@ def test_missing_prediction_counts_as_wrong():
     germ = [k for k in scores if ".germ_" in k]
     assert len(germ) == 12 and all(math.isnan(scores[k]) for k in germ)
     # A prediction row without segments scores the same as no prediction at all, except that the row exists.
-    empty = score_case(truth, Prediction(sequence_id=truth.case_id), REF)
-    assert (empty.pop("airr.valid"), scores.pop("airr.valid")) == (1.0, 0.0)
+    empty = score_case(truth, Prediction(sequence_id=truth.case_id, sequence=truth.sequence), REF)
+    for name in ("airr.valid", "airr.sequence_ok"):
+        assert (empty.pop(name), scores.pop(name)) == (1.0, 0.0)
     assert _same(empty, scores)
 
 

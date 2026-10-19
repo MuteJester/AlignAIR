@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from alignair_assay.cigar import format_cigar, parse_cigar
-from alignair_assay.cli import d_len_bin, main
+from alignair_assay.cli import d_len_bin, main, slice_labels
 from alignair_assay.ingest.airr import PredSegment, Prediction, load_airr_tsv
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.metrics.case import score_case
@@ -83,6 +83,11 @@ def test_cli_end_to_end_small(tmp_path, capsys):
     assert f"cases with warnings: {sum(bool(t.warnings) for t in truths)}\n" in printed
     assert f"unscorable genes: v={unscorable['v']} d={unscorable['d']} j={unscorable['j']}\n" in printed
     assert "IGHJ99*01 not in reference" in printed
+    disagreements = {g: sum(t.segments[g].alleles.disagrees_with_simulator for t in truths
+                            if t.excluded is None and g in t.segments) for g in "vdj"}
+    assert sum(disagreements.values()) > 0
+    assert (f"simulator allele-set disagreements (non-excluded cases): v={disagreements['v']} "
+            f"d={disagreements['d']} j={disagreements['j']}\n") in printed
 
     scored = [t for t in truths if t.excluded is None]
     assert [t.case_id for t in truths] == [c["case_id"] for c in _bench_cases()]
@@ -121,13 +126,16 @@ def test_cli_end_to_end_small(tmp_path, capsys):
     clone_key = report["overall"]["clone_key.exact"]
     assert clone_key["mean"] == 1.0 and clone_key["coverage"] == 1.0 and clone_key["n"] >= 30
     slices = report["by_slice"]
-    assert set(slices) == {"stratum", "orientation", "d_len_bin"}
+    assert set(slices) == {"stratum", "orientation", "d_len_bin", "d_inverted"}
+    assert set(slices["d_inverted"]) == {"yes", "no"}
+    assert slices["d_inverted"]["yes"]["clone_key.exact"]["n"] >= 5
     assert set(slices["stratum"]) == {"sim", "inverted_d", "amplicon_janchor", "orientation"}
     assert set(slices["orientation"]) == {"0", "1"}
     assert set(slices["d_len_bin"]) <= D_BINS and len(slices["d_len_bin"]) >= 3
     prov = report["provenance"]
     assert prov["command"] == "score" and prov["tool"] == "oracle" and prov["reference"] == "HUMAN_IGH_OGRDB"
     assert prov["min_observed"] == {"v": 20, "d": 8, "j": 10}
+    assert prov["simulator_disagreements"] == disagreements
     assert prov["inputs"]["truth"] == {"path": str(truth_path), "sha256": _sha256(truth_path)}
     assert prov["inputs"]["predictions"] == {"path": str(tsv), "sha256": _sha256(tsv)}
     assert "git_commit" in prov and prov["timestamp_utc"].endswith("+00:00")
@@ -150,14 +158,15 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
     # b: the first two cases missing, every V call a wrong gene, every junction placed 3 bases early (late could
     # run past a 3'-trimmed read), plus a row for an unknown id and one for the excluded case.
     broken = []
-    for p in oracles[2:]:
+    for t, p in zip(scored[2:], oracles[2:]):
         segments = dict(p.segments)
         if "v" in segments:
             v = segments["v"]
             other = next(a for a in sorted(REF.alleles["v"]) if gene_name(a) != gene_name(v.call))
             segments["v"] = replace(v, call=other, call_set=(other,))
         if p.junction_start is not None:
-            p = replace(p, junction_start=p.junction_start - 3, junction_end=p.junction_end - 3)
+            start, end = p.junction_start - 3, p.junction_end - 3
+            p = replace(p, junction_start=start, junction_end=end, junction_nt=t.sequence[start:end])
         broken.append(replace(p, segments=segments))
     b_tsv = tmp_path / "b.tsv"
     write_airr_tsv(broken + [Prediction(sequence_id="ghost"), Prediction(sequence_id=excluded.case_id)], b_tsv)
@@ -178,6 +187,7 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
     assert prov["command"] == "compare"
     assert prov["min_observed"] == {"v": 20, "d": 8, "j": 10}
     assert prov["alpha"] == 0.05 and "McNemar" in prov["tests"]
+    assert set(prov["simulator_disagreements"]) == {"v", "d", "j"}
     assert "n_boot" not in prov and "seed" not in prov  # analytic tests: nothing random
     assert set(prov["inputs"]) == {"truth", "a", "b"}
     assert prov["inputs"]["b"]["sha256"] == _sha256(b_tsv)
@@ -248,7 +258,8 @@ def test_rev_comp_row_scores_like_forward(tmp_path):
     assert main(["score", "--truth", str(truth_path), "--predictions", str(tsv), "--tool", "igblast",
                  "--out-dir", str(out_dir)]) == 0
     flipped = _read_scores(out_dir / "igblast.scores.jsonl.gz")[truth.case_id]
-    assert flipped == dict(expected, **{"orientation.correct": 0.0})
+    # rev_comp=F with the reverse-complemented read in `sequence`: wrong orientation and an invalid row.
+    assert flipped == dict(expected, **{"orientation.correct": 0.0, "airr.sequence_ok": 0.0, "airr.valid": 0.0})
 
 
 @pytest.mark.parametrize("length,label", [
@@ -257,6 +268,16 @@ def test_rev_comp_row_scores_like_forward(tmp_path):
 ])
 def test_d_len_bin(length, label):
     assert d_len_bin(length) == label
+
+
+def test_d_inverted_slice():
+    truth = truth_from_bench_case(_fixture("amplicon_janchor_000000.json"), REF)
+    d = truth.segments["d"]
+    assert slice_labels(truth)["d_inverted"] == "no"
+    assert slice_labels(replace(truth, segments={**truth.segments, "d": replace(d, inverted=True)}))[
+        "d_inverted"] == "yes"
+    no_d = replace(truth, segments={g: s for g, s in truth.segments.items() if g != "d"})
+    assert slice_labels(no_d)["d_inverted"] == "absent"
 
 
 def test_is_informational():

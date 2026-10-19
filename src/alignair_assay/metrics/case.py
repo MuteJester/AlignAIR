@@ -30,7 +30,7 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
     A missing row fails every accuracy metric (abstention included) and leaves error and presence metrics
     uncovered.
     Junction, clone-key and productivity metrics apply when the truth defines them; orientation and AIRR validity
-    are scored for every read.
+    (the row's sequence is the read and its junction coordinates reproduce its junction) are scored for every read.
     """
     if truth.excluded is not None:
         return {}
