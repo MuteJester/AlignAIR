@@ -164,8 +164,7 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
 
     out_dir = tmp_path / "cmp"
     assert main(["compare", "--truth", str(truth_path), "--a", str(a_tsv), "--a-name", "oracle",
-                 "--b", str(b_tsv), "--b-name", "broken", "--out-dir", str(out_dir),
-                 "--n-boot", "200", "--seed", "7"]) == 0
+                 "--b", str(b_tsv), "--b-name", "broken", "--out-dir", str(out_dir)]) == 0
     printed = capsys.readouterr().out
     assert "missing 2" in printed and "extra 1" in printed
 
@@ -174,7 +173,8 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys):
     prov = rep["provenance"]
     assert prov["command"] == "compare"
     assert prov["min_observed"] == {"v": 20, "d": 8, "j": 10}
-    assert (prov["n_boot"], prov["seed"], prov["alpha"]) == (200, 7, 0.05)
+    assert prov["alpha"] == 0.05 and "McNemar" in prov["tests"]
+    assert "n_boot" not in prov and "seed" not in prov  # analytic tests: nothing random
     assert set(prov["inputs"]) == {"truth", "a", "b"}
     assert prov["inputs"]["b"]["sha256"] == _sha256(b_tsv)
     match_a, match_b = prov["matching"]["a"], prov["matching"]["b"]

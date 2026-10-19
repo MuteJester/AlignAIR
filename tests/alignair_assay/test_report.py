@@ -49,8 +49,7 @@ def test_markdown_shows_coverage_and_formats():
 def test_comparison_report_and_markdown():
     a = {f"c{i}": {"clone_key.exact": float(i % 2), "v.mutation_count_err": 2.0} for i in range(20)}
     b = {f"c{i}": {"clone_key.exact": 1.0, "v.mutation_count_err": 1.0} for i in range(20)}
-    comp = compare(a, b, ["clone_key.exact", "v.mutation_count_err"], n_boot=200,
-                   lower_is_better={"v.mutation_count_err"})
+    comp = compare(a, b, ["clone_key.exact", "v.mutation_count_err"], lower_is_better={"v.mutation_count_err"})
     sl = {"stratum": {"s1": {"clone_key.exact": _ms(0.5)}}}
     rep = build_comparison_report("A", "B", comp, sl, sl, {"x": 1})
     assert rep["kind"] == "alignair_assay.comparison_report"
@@ -58,7 +57,7 @@ def test_comparison_report_and_markdown():
     json.dumps(rep, allow_nan=False)
     md = to_markdown(rep)
     assert "| Metric | A | B | Δ (b−a) | 95% CI | Verdict | Coverage A | Coverage B |" in md
-    assert "Verdicts: Holm-corrected paired bootstrap; Δ and CI are raw (b − a)." in md
+    assert "Verdicts: Holm-corrected paired tests (exact McNemar for 0/1 metrics, paired z otherwise)" in md
     assert "| clone_key.exact | 50.0% | 100.0% |" in md
 
 
@@ -72,7 +71,7 @@ def test_slice_cells_show_coverage():
 def test_comparison_keeps_b_only_dimension_and_coverage():
     a = {"c0": {"clone_key.exact": 1.0}, "c1": {"clone_key.exact": 0.0}}
     b = {"c0": {"clone_key.exact": 1.0}, "c1": {"clone_key.exact": 1.0}}
-    comp = compare(a, b, ["clone_key.exact"], n_boot=50, lower_is_better=set())
+    comp = compare(a, b, ["clone_key.exact"], lower_is_better=set())
     rep = build_comparison_report("A", "B", comp, {"stratum": {"s1": {"clone_key.exact": _ms(0.5, cov=0.7)}}},
                                   {"d_len_bin": {"long": {"clone_key.exact": _ms(0.9)}}}, {})
     md = to_markdown(rep)

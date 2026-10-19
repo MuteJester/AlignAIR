@@ -32,6 +32,8 @@ DEFAULT_REFERENCE = "HUMAN_IGH_OGRDB"
 SLICE_DIMENSIONS = ("stratum", "orientation", "d_len_bin")
 _D_BINS = ((5, "<5"), (8, "5-7"), (10, "8-9"), (12, "10-11"), (15, "12-14"))
 _MAX_LISTED_WARNINGS = 20
+STATISTICAL_TESTS = ("exact McNemar for 0/1 metrics, paired z-test otherwise, p = 1 below 10 pairs; "
+                     "Holm across the family; normal-theory CIs (95% and simultaneous Bonferroni)")
 
 
 def d_len_bin(length: int | None) -> str:
@@ -83,9 +85,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--b-name", required=True, type=_name)
     p.add_argument("--reference", default=DEFAULT_REFERENCE, help="GenAIRR dataconfig name")
     p.add_argument("--out-dir", required=True)
-    p.add_argument("--n-boot", type=int, default=1000)
-    p.add_argument("--seed", type=int, default=123)
-    p.add_argument("--alpha", type=float, default=0.05)
+    p.add_argument("--alpha", type=float, default=0.05, help="family-wise error rate of the Holm verdicts")
     p.set_defaults(func=_cmd_compare)
     return parser
 
@@ -147,11 +147,11 @@ def _cmd_compare(args) -> int:
     _print_matching(args.b_name, match_b)
     seen = {name for scores in (a, b) for case in scores.values() for name in case}
     family = sorted(name for name in seen if not is_informational(name))
-    comparison = compare(a, b, family, n_boot=args.n_boot, seed=args.seed, alpha=args.alpha,
+    comparison = compare(a, b, family, alpha=args.alpha,
                          lower_is_better={name for name in family if lower_is_better(name)})
     provenance = _provenance("compare", {"truth": args.truth, "a": args.a, "b": args.b},
-                             a=args.a_name, b=args.b_name, reference=args.reference, n_boot=args.n_boot,
-                             seed=args.seed, alpha=args.alpha, family_size=len(family),
+                             a=args.a_name, b=args.b_name, reference=args.reference, alpha=args.alpha,
+                             tests=STATISTICAL_TESTS, family_size=len(family),
                              matching={"a": match_a, "b": match_b})
     report = build_comparison_report(args.a_name, args.b_name, comparison, _slices(a, truths), _slices(b, truths),
                                      provenance)

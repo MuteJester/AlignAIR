@@ -5,7 +5,8 @@ from alignair_assay.report.build import COMPARISON_KIND, SCORE_KIND
 
 HEADLINE = ("clone_key.exact", "junction.nt_exact", "v.top1_in_set", "j.top1_in_set", "v.mutation_count_err",
             "d.top1_in_set", "productive.correct")
-NOTE = "Verdicts: Holm-corrected paired bootstrap; Δ and CI are raw (b − a)."
+NOTE = ("Verdicts: Holm-corrected paired tests (exact McNemar for 0/1 metrics, paired z otherwise); "
+        "Δ and CI are raw (b − a).")
 MISSING = "—"
 
 
