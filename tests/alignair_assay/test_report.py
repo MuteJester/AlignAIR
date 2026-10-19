@@ -60,3 +60,33 @@ def test_comparison_report_and_markdown():
     assert "| Metric | A | B | Δ (b−a) | 95% CI | Verdict | Coverage A | Coverage B |" in md
     assert "Verdicts: Holm-corrected paired bootstrap; Δ and CI are raw (b − a)." in md
     assert "| clone_key.exact | 50.0% | 100.0% |" in md
+
+
+def test_slice_cells_show_coverage():
+    sl = {"stratum": {"s1": {"clone_key.exact": _ms(0.973, cov=0.7), "junction.nt_exact": _ms(None, n=0, cov=0.0)}}}
+    md = to_markdown(build_score_report("tool", _summary(), sl, {}))
+    assert "| clone_key.exact | 97.3% (70%) |" in md
+    assert "| junction.nt_exact | — |" in md
+
+
+def test_comparison_keeps_b_only_dimension_and_coverage():
+    a = {"c0": {"clone_key.exact": 1.0}, "c1": {"clone_key.exact": 0.0}}
+    b = {"c0": {"clone_key.exact": 1.0}, "c1": {"clone_key.exact": 1.0}}
+    comp = compare(a, b, ["clone_key.exact"], n_boot=50, lower_is_better=set())
+    rep = build_comparison_report("A", "B", comp, {"stratum": {"s1": {"clone_key.exact": _ms(0.5, cov=0.7)}}},
+                                  {"d_len_bin": {"long": {"clone_key.exact": _ms(0.9)}}}, {})
+    md = to_markdown(rep)
+    assert "## By d_len_bin (A / B)" in md
+    assert "— / 90.0% (100%)" in md
+    assert "50.0% (70%) / —" in md
+
+
+def test_pipes_escaped_and_missing_verdict():
+    rep = build_score_report("t|x", {"a|b": _ms(0.5)}, {"dim": {"l|1": {"clone_key.exact": _ms(0.5)}}}, {})
+    md = to_markdown(rep)
+    assert "| a\\|b | 50.0% |" in md
+    assert "l\\|1" in md
+    comp = {"clone_key.exact": {"a": None, "b": None, "delta": None, "ci95": None, "verdict": None,
+                                "coverage_a": 0.0, "coverage_b": 0.0}}
+    md = to_markdown(build_comparison_report("A", "B", comp, {}, {}, {}))
+    assert "| — | — | 0% | 0% |" in md

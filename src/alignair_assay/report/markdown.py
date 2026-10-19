@@ -30,14 +30,26 @@ def _order(names) -> list[str]:
     return [n for n in HEADLINE if n in names] + sorted(names - set(HEADLINE))
 
 
+def _esc(text: str) -> str:
+    return str(text).replace("|", "\\|")
+
+
 def _table(header: list[str], rows: list[list[str]]) -> list[str]:
-    out = ["| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
-    out += ["| " + " | ".join(r) + " |" for r in rows]
+    out = ["| " + " | ".join(_esc(h) for h in header) + " |", "|" + "|".join("---" for _ in header) + "|"]
+    out += ["| " + " | ".join(_esc(c) for c in r) + " |" for r in rows]
     return out
 
 
 def _mean(entry) -> float | None:
     return entry.get("mean") if entry else None
+
+
+def _cell(name: str, entry) -> str:
+    """``value (coverage%)``; a missing mean or zero coverage shows a dash."""
+    mean = _mean(entry)
+    if mean is None or not entry.get("coverage"):
+        return MISSING
+    return f"{_val(name, mean)} ({_cov(entry['coverage'])})"
 
 
 def _score_md(report: dict) -> list[str]:
@@ -49,7 +61,7 @@ def _score_md(report: dict) -> list[str]:
     for dim, labels in report["by_slice"].items():
         lines += ["", f"## By {dim}", ""]
         names = [n for n in HEADLINE if any(n in m for m in labels.values())]
-        rows = [[n] + [_val(n, _mean(labels[lab].get(n))) for lab in labels] for n in names]
+        rows = [[n] + [_cell(n, labels[lab].get(n)) for lab in labels] for n in names]
         lines += _table(["Metric"] + list(labels), rows)
     return lines
 
@@ -69,16 +81,16 @@ def _comparison_md(report: dict) -> list[str]:
     for n in _order(comp):
         e = comp[n]
         rows.append([n, _val(n, _mean(e["a"])), _val(n, _mean(e["b"])), _val(n, e["delta"], delta=True), _ci(n, e),
-                     e["verdict"], _cov(e["coverage_a"]), _cov(e["coverage_b"])])
+                     e.get("verdict") or MISSING, _cov(e["coverage_a"]), _cov(e["coverage_b"])])
     lines += _table(["Metric", a, b, "Δ (b−a)", "95% CI", "Verdict", f"Coverage {a}", f"Coverage {b}"], rows)
     lines += ["", NOTE]
     sa, sb = report["by_slice"]["a"], report["by_slice"]["b"]
-    for dim in sa:
-        la, lb = sa[dim], sb.get(dim, {})
+    for dim in sorted(set(sa) | set(sb)):
+        la, lb = sa.get(dim, {}), sb.get(dim, {})
         labels = sorted(set(la) | set(lb))
         lines += ["", f"## By {dim} ({a} / {b})", ""]
         names = [n for n in HEADLINE if any(n in m for m in list(la.values()) + list(lb.values()))]
-        rows = [[n] + [f"{_val(n, _mean(la.get(lab, {}).get(n)))} / {_val(n, _mean(lb.get(lab, {}).get(n)))}"
+        rows = [[n] + [f"{_cell(n, la.get(lab, {}).get(n))} / {_cell(n, lb.get(lab, {}).get(n))}"
                        for lab in labels] for n in names]
         lines += _table(["Metric"] + labels, rows)
     return lines
