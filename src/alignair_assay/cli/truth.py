@@ -1,17 +1,15 @@
 """``truth``: build observable truth from bench cases and print a summary of what could not be scored."""
 from __future__ import annotations
 
-from collections import Counter
 from pathlib import Path
 
-from alignair_assay.cli.common import DEFAULT_REFERENCE
 from alignair_assay.core.jsonl import read_jsonl
-from alignair_assay.core.prediction import GENES
 from alignair_assay.core.provenance import genairr_provenance
-from alignair_assay.core.reference import Reference
-from alignair_assay.scoring.pipeline import check_unique, simulator_disagreements
+from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
+from alignair_assay.scoring.pipeline import check_unique
 from alignair_assay.truth.bench import truth_from_bench_case
 from alignair_assay.truth.io import TRUTH_KIND, TRUTH_VERSION, write_truth_jsonl
+from alignair_assay.truth.summary import truth_summary
 
 _MAX_LISTED_WARNINGS = 20
 
@@ -36,22 +34,24 @@ def run(args) -> int:
     header = {"kind": TRUTH_KIND, "version": TRUTH_VERSION, "reference": args.reference,
               "reference_digest": reference.digest(), **genairr_provenance()}
     write_truth_jsonl(truths, out, header=header)
-
-    excluded = Counter(t.excluded for t in truths if t.excluded is not None)
-    with_warnings = [t for t in truths if t.warnings]
-    unscorable = Counter(g for t in truths for g in t.unscorable)
-    reasons = ", ".join(f"{k}: {v}" for k, v in sorted(excluded.items()))
-    print(f"cases: {len(truths)}")
-    print(f"excluded: {sum(excluded.values())}" + (f" ({reasons})" if reasons else ""))
-    print(f"cases with warnings: {len(with_warnings)}")
-    print("unscorable genes: " + " ".join(f"{g}={unscorable[g]}" for g in GENES))
-    disagreements = simulator_disagreements(truths)
-    print("simulator allele-set disagreements (non-excluded cases): "
-          + " ".join(f"{g}={disagreements[g]}" for g in GENES))
-    for t in with_warnings[:_MAX_LISTED_WARNINGS]:
-        for w in t.warnings:
-            print(f"  {t.case_id}: {w}")
-    if len(with_warnings) > _MAX_LISTED_WARNINGS:
-        print(f"  ... and {len(with_warnings) - _MAX_LISTED_WARNINGS} more cases with warnings")
+    _print_truth_summary(truth_summary(truths))
     print(f"wrote {out}")
     return 0
+
+
+def _print_truth_summary(summary: dict) -> None:
+    """Print a ``truth.summary.truth_summary``: the counts, then the warnings of the first cases that have any."""
+    excluded = summary["excluded"]
+    reasons = ", ".join(f"{k}: {v}" for k, v in excluded.items())
+    warnings = summary["warnings"]
+    print(f"cases: {summary['cases']}")
+    print(f"excluded: {sum(excluded.values())}" + (f" ({reasons})" if reasons else ""))
+    print(f"cases with warnings: {len(warnings)}")
+    print("unscorable genes: " + " ".join(f"{g}={n}" for g, n in summary["unscorable"].items()))
+    print("simulator allele-set disagreements (non-excluded cases): "
+          + " ".join(f"{g}={n}" for g, n in summary["simulator_disagreements"].items()))
+    for case_id, case_warnings in list(warnings.items())[:_MAX_LISTED_WARNINGS]:
+        for w in case_warnings:
+            print(f"  {case_id}: {w}")
+    if len(warnings) > _MAX_LISTED_WARNINGS:
+        print(f"  ... and {len(warnings) - _MAX_LISTED_WARNINGS} more cases with warnings")

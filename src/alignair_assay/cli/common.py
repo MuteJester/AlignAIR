@@ -10,8 +10,6 @@ from alignair_assay.core.provenance import git_state, sha256_file
 from alignair_assay.metrics.case import MIN_OBSERVED
 from alignair_assay.report import to_markdown
 
-DEFAULT_REFERENCE = "HUMAN_IGH_OGRDB"
-
 
 def file_name(value: str) -> str:
     """Argument type for a name used as a file-name component (a tool name): no directory part."""

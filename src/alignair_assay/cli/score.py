@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from alignair_assay.cli.common import DEFAULT_REFERENCE, file_name, print_matching, provenance, write_report
-from alignair_assay.core.reference import Reference
+from alignair_assay.cli.common import file_name, print_matching, provenance, write_report
+from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.report import build_score_report
-from alignair_assay.scoring.pipeline import load_truth, score_tool, simulator_disagreements, write_scores
+from alignair_assay.scoring.pipeline import load_truth, score_tool, write_scores
 from alignair_assay.scoring.slices import slices
 from alignair_assay.stats import summarize
+from alignair_assay.truth.summary import simulator_disagreements
 
 
 def register(sub) -> None:

@@ -3,20 +3,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from alignair_assay.cli.common import DEFAULT_REFERENCE, file_name, print_matching, provenance, write_report
-from alignair_assay.core.reference import Reference
+from alignair_assay.cli.common import file_name, print_matching, provenance, write_report
+from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.report import build_comparison_report, headline_table
-from alignair_assay.scoring.pipeline import load_truth, score_tool, simulator_disagreements
+from alignair_assay.scoring.pipeline import load_truth, score_tool
 from alignair_assay.scoring.slices import slices
 from alignair_assay.stats import compare
+from alignair_assay.truth.summary import simulator_disagreements
 
 STATISTICAL_TESTS = ("exact McNemar for 0/1 metrics, paired z-test otherwise, p = 1 below 10 pairs; "
                      "Holm across the family; normal-theory CIs (95% and simultaneous Bonferroni)")
 
 
 def register(sub) -> None:
-    """Add the ``compare`` subcommand (``main`` checks that the two names differ)."""
+    """Add the ``compare`` subcommand."""
     p = sub.add_parser("compare", help="paired comparison of two tools' AIRR TSVs")
     p.add_argument("--truth", required=True)
     p.add_argument("--a", required=True, help="AIRR TSV of tool a")
@@ -31,7 +32,10 @@ def register(sub) -> None:
 
 def run(args) -> int:
     """Compare every non-informational metric either tool produced (Holm across that family), write
-    ``comparison.json`` and ``comparison.md`` into ``--out-dir`` and print the headline table."""
+    ``comparison.json`` and ``comparison.md`` into ``--out-dir`` and print the headline table. Two tools with the
+    same name are an input error (their output files would collide)."""
+    if args.a_name == args.b_name:
+        raise ValueError("--a-name and --b-name must differ")
     reference = Reference.from_dataconfig(args.reference)
     header, truths = load_truth(args.truth, args.reference, reference)
     a, match_a = score_tool(truths, args.a, reference)

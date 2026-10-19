@@ -12,7 +12,7 @@ from pathlib import Path
 
 from alignair_assay.airr.reader import load_airr_tsv
 from alignair_assay.core.jsonl import read_jsonl, write_jsonl
-from alignair_assay.core.prediction import GENES, Prediction
+from alignair_assay.core.prediction import Prediction
 from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import CaseScores
 from alignair_assay.metrics.case import score_case
@@ -77,12 +77,6 @@ def check_unique(truths: list[ObservableTruth], source) -> None:
     dup = [cid for cid, n in Counter(t.case_id for t in truths).items() if n > 1]
     if dup:
         raise ValueError(f"{source}: duplicate case ids, e.g. {dup[0]!r} ({len(dup)} in total)")
-
-
-def simulator_disagreements(truths: list[ObservableTruth]) -> dict[str, int]:
-    """Per gene, the non-excluded cases whose observable allele set differs from the simulator's tie list."""
-    return {g: sum(t.segments[g].alleles.disagrees_with_simulator for t in truths
-                   if t.excluded is None and g in t.segments) for g in GENES}
 
 
 def write_scores(scores: dict[str, CaseScores], path: str | Path) -> None:

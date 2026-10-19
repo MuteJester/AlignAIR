@@ -7,6 +7,20 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
+# The GenAIRR dataconfig every command uses unless ``--reference`` names another.
+DEFAULT_REFERENCE = "HUMAN_IGH_OGRDB"
+
+
+def dataconfig(name: str):
+    """The GenAIRR DataConfig ``name`` (an attribute of ``GenAIRR.data``, e.g. ``HUMAN_IGH_OGRDB``); ValueError for
+    an unknown name. Suites simulate from this object and the truth reference is built from it."""
+    import GenAIRR.data as gdata
+
+    config = getattr(gdata, name, None)
+    if config is None:
+        raise ValueError(f"unknown GenAIRR dataconfig {name!r}")
+    return config
+
 
 def gene_name(allele: str) -> str:
     """Gene part of an allele name (text before ``*``)."""
@@ -63,13 +77,7 @@ class Reference:
 
     @classmethod
     def from_dataconfig(cls, name: str) -> "Reference":
-        """The reference of GenAIRR dataconfig ``name`` (an attribute of ``GenAIRR.data``, e.g. ``HUMAN_IGH_OGRDB``);
-        ValueError for an unknown name."""
-        import GenAIRR.data as gdata
-
+        """The reference of GenAIRR dataconfig ``name`` (see ``dataconfig``); ValueError for an unknown name."""
         from alignair.reference.reference_set import ReferenceSet
 
-        config = getattr(gdata, name, None)
-        if config is None:
-            raise ValueError(f"unknown GenAIRR dataconfig {name!r}")
-        return cls.from_reference_set(ReferenceSet.from_dataconfigs(config))
+        return cls.from_reference_set(ReferenceSet.from_dataconfigs(dataconfig(name)))

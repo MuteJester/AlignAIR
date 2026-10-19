@@ -329,3 +329,10 @@ def test_is_informational():
     for name in ("junction.start_abs_err", "junction.end_abs_err", "xjunction.start_err", "v.top1_in_set",
                  "v.seq_start_err"):
         assert not is_informational(name), name
+
+
+def test_compare_names_must_differ(tmp_path, capsys):
+    assert main(["compare", "--truth", str(tmp_path / "t.jsonl"), "--a", "a.tsv", "--a-name", "x", "--b", "b.tsv",
+                 "--b-name", "x", "--out-dir", str(tmp_path / "out")]) == 2
+    assert "--a-name and --b-name must differ" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()

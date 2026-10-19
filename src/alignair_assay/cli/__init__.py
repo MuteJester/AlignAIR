@@ -1,5 +1,7 @@
-"""Command-line entry point: build observable truth, score one tool, compare two tools.
+"""Command-line entry point: build suites, build observable truth, score one tool, compare two tools.
 
+  python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB]
+      [--seed 20261019] [--scale 1.0] [--workers 8]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR
@@ -17,17 +19,15 @@ from __future__ import annotations
 import argparse
 import sys
 
-from alignair_assay.cli import compare, score, truth
+from alignair_assay.cli import build, compare, score, truth
 
-COMMANDS = (truth, score, compare)
+COMMANDS = (build, truth, score, compare)
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run a command; a missing file or invalid input prints ``error: ...`` and returns 2."""
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "compare" and args.a_name == args.b_name:
-        parser.error("--a-name and --b-name must differ")
     try:
         return args.func(args)
     except (FileNotFoundError, ValueError) as exc:

@@ -6,8 +6,8 @@
 perfect aligner could recover from each simulated read. It is a development package, excluded from the wheel, and
 the instrument for improving AlignAIR's architecture, wiring and loss. GenAIRR is the only simulator.
 
-The flow is: simulated cases → observable truth → each tool's AIRR rearrangement TSV → per-case scores →
-coverage-aware summaries and paired, Holm-corrected comparisons.
+The flow is: suites (declarative GenAIRR recipes) → simulated cases → observable truth → each tool's AIRR
+rearrangement TSV → per-case scores → coverage-aware summaries and paired, Holm-corrected comparisons.
 
 Units everywhere: coordinates are 0-based and half-open, rates run from 0 to 1, and wall times are in seconds.
 
@@ -17,18 +17,18 @@ Each subpackage is a layer and may import only the layers in its row.
 
 | Layer | Holds | May import from `alignair_assay.` |
 |---|---|---|
-| `core` | shared primitives: `reference` (the germline reference), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`; the run-directory path schema `core/layout.py` (from P2 Task 3) | core |
-| `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle` | core, truth |
+| `core` | shared primitives: `reference` (the germline reference, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`, `layout` (`RunLayout`, the run-directory path schema) | core |
+| `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle`, `summary` (what a truth set could not score) | core, truth |
 | `airr` | AIRR TSV `reader` and `writer` | core, airr |
 | `metrics` | per-case scorers (pure) and the metric registries | core, truth, metrics |
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
 | `report` | JSON reports and markdown summaries | core, stats, report |
 | `scoring` | `pipeline` (score one tool against a truth file) and `slices` | core, truth, airr, metrics, stats, scoring |
-| `suites` | the GenAIRR suite catalog (from P2 Task 3) | core, suites |
+| `suites` | the suite registry (`__init__`), suite types (`base`), the deterministic generator (`engine`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (from P2 Task 6) | core, airr, truth, suites, runners |
-| `workflow` | build → run → score → report orchestration (from P2 Task 3) | everything except cli |
+| `workflow` | build → run → score → report orchestration over a run directory: `build` (one suite) | everything except cli |
 | `cli` | the `python -m alignair_assay` commands | everything |
-| `testing.py` | test-only helpers | everything |
+| `testing.py` | test-only helpers: `assert_oracle_perfect` | everything |
 
 Further rules:
 
@@ -87,16 +87,60 @@ key; a label named like a fixed dimension is an error.
 Below its minimum a segment gets only `{g}_short.top1_in_set` and `{g}_short.abstain_ok`, for which abstaining is
 as correct as a right call. A missing row is a failure, not an abstention.
 
+## Run directory layout
+
+Every path inside a run directory comes from `core.layout.RunLayout`; no other module joins run-directory paths.
+`RunLayout` only builds paths (no IO), and suite, tool and arm names must each be one path component.
+
+```
+RUN/
+  manifest.json                       config + config_hash + split + host + git + genairr provenance
+  reference/germline.fasta            shared reference given to every tool (+ reference.json: digest, counts, source)
+  suites/<S>/cases.jsonl.gz           one case per line
+  suites/<S>/truth.jsonl.gz           header + observable truth per case
+  suites/<S>/reads.fasta              presented reads, id = case_id
+  suites/<S>/donors.json              suites with donors only
+  suites/<S>/build.json               counts, warnings, timing, config hash; written last
+  runs/<tool>/<S>/<arm>/predictions.tsv + run.json + logs/
+  scores/<S>/<arm>/<tool>.* and comparison.{json,md}
+  speed/speed.json
+  report.json, report.md
+```
+
+| Path | `RunLayout` |
+|---|---|
+| `manifest.json` | `manifest` |
+| `reference/`, `germline.fasta`, `reference.json` | `reference_dir`, `reference_fasta`, `reference_json` |
+| `suites/<S>/` and its files | `suite_dir(s)`, `cases(s)`, `truth(s)`, `reads(s)`, `donors(s)`, `build_json(s)` |
+| `runs/<tool>/<S>/<arm>/` and its files | `run_dir(tool, s, arm)`, `predictions(...)`, `run_json(...)`, `logs_dir(...)` |
+| `scores/<S>/<arm>/` | `scores_dir(s, arm)` |
+| `speed/`, `speed.json` | `speed_dir`, `speed_json` |
+| `report.json`, `report.md` | `report_json`, `report_md` |
+
+Suites are `S0` (toy: tests and smoke runs), `S0_EXHAUST` (tests only) and `S1`–`S12`; arms are `shared` and
+`genotype`; splits are `dev` (the default, for model iteration) and `test` (locked, used only for claims).
+
 ## Commands
 
 Run from the repository root with `PYTHONPATH=src`:
 
 ```
+python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB] \
+    [--seed 20261019] [--scale 1.0] [--workers 8]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05]
 ```
 
+- `build` generates each named suite into `RUN` (`workflow.build.build_suite`): `cases.jsonl.gz`,
+  `truth.jsonl.gz`, `reads.fasta` and `build.json`. Every name is checked before anything is built; an unknown
+  suite or split, or a scale that is not positive, exits with status 2. The truth header records `kind`,
+  `version`, `reference`, `reference_digest`, the GenAIRR provenance, `suite`, `split`, `seed`, `scale` and
+  `n_cases`. `build.json` records the same configuration, its `config_hash` (SHA-256 of the canonical JSON of
+  `{suite, split, reference_digest, seed, scale}`), the per-stratum generation stats, the truth summary
+  (`truth.summary.truth_summary`: excluded cases, warnings, unscorable genes, simulator disagreements), the
+  worker count and the wall time in `seconds`. It is removed first and written last, so it marks a complete
+  build. The command prints one line per suite.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit` and `genairr_git_dirty`. The
   command then prints the excluded cases, warnings, unscorable genes and simulator disagreements.
@@ -105,11 +149,12 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   CIs of 0/1 metrics are clipped to [-1, 1].
 - Predictions are matched to truth by AIRR `sequence_id` == truth `case_id`. A truth case without a prediction is
   scored as missing, never dropped.
-- A missing file, an unknown reference, a truth file built against another reference, or a prediction file
-  matching no case exits with status 2.
+- A missing file, an unknown reference, a truth file built against another reference, a prediction file
+  matching no case, or `compare` given the same name for both tools exits with status 2.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
-`cli.COMMANDS`.
+`cli.COMMANDS`. The module owns its own input checks: `run` raises ValueError (or FileNotFoundError) for invalid
+input, which `cli.main` prints as `error: ...` with exit status 2.
 
 ## Adding a metric
 
@@ -123,9 +168,44 @@ To add a command, write one module in `cli/` with `register(subparsers)` and `ru
    for a wrong prediction.
 5. For a headline metric, add it to `report.markdown.HEADLINE`.
 
-## Adding a suite (from P2 Task 3)
+## Adding a suite
 
-To be written with the suite engine.
+A suite is a declarative GenAIRR recipe per stratum; `suites.engine` turns it into cases deterministically.
+
+1. Write one module `suites/catalog/sNN_<slug>.py` defining a `suites.base.Suite`: `name` (`"S13"`), `slug`,
+   `title`, `purpose` (one sentence: the mechanism it isolates), `primary` (the metrics its verdict rests on),
+   `strata`, and optionally `donors` and `arms`. Names may not contain `:`.
+2. Give each `Stratum` a `name`, `n` (cases at scale 1.0; clones for a clonal stratum) and a `recipe`: a
+   module-level function (or `functools.partial` of one) `recipe(ctx) -> Experiment` that returns a fresh
+   `Experiment.on(ctx.config)` chain. `ctx.config` is the GenAIRR DataConfig the truth reference
+   (`ctx.reference`) is built from; never build from a short alias. `ctx.n` is the stratum's requested count at
+   the current scale (a clonal recipe passes it as `n_clones`), and `ctx.donors` the suite's donors.
+3. Choose the stratum options:
+   - `labels` (slice dimensions on every case) and `case_labels(record, ctx)` (per-record labels, merged over
+     them);
+   - `rc_fraction`, the probability a case is presented reverse-complemented, or `both_orientations`, which
+     presents every record as `:fwd` and `:rc` cases grouped by `groups["pair"]`;
+   - `accept(record)` for rejection sampling (plain strata only);
+   - `cohort` (run over the suite's donors with `run_cohort`; cases get `groups["subject"]`) or `clonal` (the
+     recipe ends in `clonal_lineage`; every record is kept; cases get `groups["clone"]`).
+4. Register the suite in `_CATALOG` in `suites/__init__.py`.
+5. Test it in `tests/alignair_assay/suites/` at a small scale: counts, labels and groups, and the oracle check
+   `testing.assert_oracle_perfect` on its truth. A suite that fails the oracle check has a truth defect.
+
+Engine rules (`suites.engine.generate_suite`):
+
+- Every seed derives from `(seed, split, suite, stratum, ...)` with `derive_seed` (SHA-256): round `r` uses
+  `(seed, split, suite, stratum, r)` and orientation `(seed, split, suite, stratum, "orientation")`, so the `dev`
+  and `test` splits share no generation seed.
+- A stratum requests `max(1, round(n * scale))` cases. Without `accept` each round asks for the remainder; with
+  it the first round asks for twice the remainder and later rounds for the remainder over the acceptance so far
+  (at most 20 times). The first accepted records are kept in generation order. A stratum still short after 50
+  rounds raises `RuntimeError("<suite>/<stratum>: accepted k of n after 50 rounds")`; a clonal run with fewer
+  clones, or a cohort run with fewer records, than requested raises too. Nothing is short-filled.
+- Case ids are `<suite>:<stratum>:<index:06d>` (`:fwd`/`:rc` appended for pairs). Orientations are drawn per case,
+  in order, from the stratum's orientation seed.
+- One spawned process per stratum (`--workers` caps them); a worker receives only names and numbers and resolves
+  the suite from the registry. The output does not depend on the worker count.
 
 ## Adding a runner (from P2 Task 6)
 
