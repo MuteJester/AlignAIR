@@ -304,7 +304,7 @@ def _speed_record(**overrides) -> dict:
                                 "median_tiny_s": 9.5, "median_full_s": 9.4, "peak_rss_kb": None,
                                 "walls": {"tiny": [9.5], "full": [9.4]}},
     }
-    return {"kind": "alignair_assay.speed", "version": "1", "host": host, "n_tiny": 50, "n_full": 4000,
+    return {"kind": "alignair_assay.speed", "version": "2", "host": host, "n_tiny": 50, "n_full": 4000,
             "repeats": 3, "reads": {"suite": "S1", "sha256": "0" * 64}, "config_hash": "c" * 64, "results": results,
             "failed": [{"name": "alignair_1t", "error": results["alignair_1t"]["error"]}]} | overrides
 
@@ -349,8 +349,12 @@ def test_all_measures_speed_and_resumes(built, tmp_path, small_protocol, capsys)
     record = json.loads(layout.speed_json.read_text())
     manifest = json.loads(layout.manifest.read_text())
     assert record["kind"] == "alignair_assay.speed" and record["config_hash"] == manifest["config_hash"]
+    assert record["version"] == speed.SPEED_VERSION == "2"
     assert (record["n_tiny"], record["n_full"], record["repeats"]) == (10, 60, 2)
     assert record["reads"] == {"suite": "S1", "sha256": sha256_file(layout.reads("S1"))}
+    # The timed read sets themselves, and every configuration planned, are recorded.
+    assert record["sets"] == {"tiny": sha256_file(layout.speed_reads(10)), "full": sha256_file(layout.speed_reads(60))}
+    assert record["planned"] == ["quick_1t", "quick_2t"]
     assert set(record["host"]) == HOST_KEYS
     assert list(record["results"]) == ["quick_1t", "quick_2t"]
     result = record["results"]["quick_2t"]
@@ -389,6 +393,50 @@ def test_all_measures_speed_and_resumes(built, tmp_path, small_protocol, capsys)
     assert speed_report["stale"] and "reads" in speed_report["reason"]
     section = layout.report_md.read_text().split("## Speed")[1]
     assert "other S1 reads" in section and "| quick_1t |" not in section
+
+
+def test_speed_reused_only_on_the_same_protocol_and_read_sets(built, tmp_path, small_protocol, capsys):
+    layout = RunLayout(_copy(built, tmp_path))
+    cfg = RunConfig(suites=("S1",), tools=("oracle", "quick"), scale=0.02, workers=2, threads=2, speed=True)
+    assert run_all(cfg, layout) == 0
+    record = json.loads(layout.speed_json.read_text())
+    for changed in ({"version": "1"}, {"sets": {**record["sets"], "tiny": "0" * 64}},
+                    {"sets": {**record["sets"], "full": "0" * 64}}):
+        # Another protocol version, or measured on other read sets (another sampling of the same S1): not kept.
+        layout.speed_json.write_text(json.dumps({**record, **changed}))
+        capsys.readouterr()
+        assert run_all(cfg, layout) == 0
+        printed = capsys.readouterr().out
+        assert "speed quick_1t: cold start" in printed and "up to date" not in printed.split("speed quick_1t")[1]
+        record = json.loads(layout.speed_json.read_text())
+        assert record["version"] == "2" and record["sets"]["tiny"] == sha256_file(layout.speed_reads(10))
+
+    # The report does not show a file of another protocol version either.
+    layout.speed_json.write_text(json.dumps({**record, "version": "1"}))
+    assert main(["report", "--run-dir", str(layout.root)]) == 0
+    speed_report = json.loads(layout.report_json.read_text())["speed"]
+    assert speed_report["stale"] and "protocol version 1" in speed_report["reason"]
+
+
+def test_interrupted_speed_lists_missing_configurations(built, tmp_path, small_protocol, capsys):
+    layout = RunLayout(_copy(built, tmp_path))
+    cfg = RunConfig(suites=("S1",), tools=("oracle", "quick"), scale=0.02, workers=2, threads=2, speed=True)
+    assert run_all(cfg, layout) == 0
+    record = json.loads(layout.speed_json.read_text())
+    # all --speed stopped after its first configuration: speed.json holds it and the plan.
+    layout.speed_json.write_text(json.dumps({**record, "results": {"quick_1t": record["results"]["quick_1t"]}}))
+    capsys.readouterr()
+    assert main(["report", "--run-dir", str(layout.root)]) == 0
+    speed_report = json.loads(layout.report_json.read_text())["speed"]
+    assert list(speed_report["results"]) == ["quick_1t"] and speed_report["missing"] == ["quick_2t"]
+    section = layout.report_md.read_text().split("## Speed")[1]
+    assert "| quick_1t |" in section and "- quick_2t: not measured" in section
+    assert "speed quick_2t was planned but not measured" in capsys.readouterr().err
+    # Resumed, only the missing configuration is measured.
+    assert run_all(cfg, layout) == 0
+    printed = capsys.readouterr().out
+    assert "speed quick_1t: up to date, skipped" in printed and "speed quick_2t: cold start" in printed
+    assert json.loads(layout.report_json.read_text())["speed"]["missing"] == []
 
 
 class Local(Quick):

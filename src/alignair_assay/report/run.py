@@ -269,6 +269,8 @@ def speed_lines(speed: dict) -> list[str]:
     failures = [f"- {name} failed: {result['error']}" for name, result in results.items() if "error" in result]
     failures += [f"- {row['name']}: not shown, {row['reason']}; run all --speed to measure it again"
                  for row in speed.get("stale_results") or []]
+    failures += [f"- {name}: not measured (planned, but the measurement stopped before it); run all --speed to "
+                 "measure it" for name in speed.get("missing") or []]
     return ["", "## Speed", "",
             f"Host: {_host(speed.get('host') or {}) or MISSING}.", "",
             f"Each configuration annotated {n_tiny} and {n_full} reads evenly spaced across S1, "

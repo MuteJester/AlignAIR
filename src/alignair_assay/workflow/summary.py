@@ -160,19 +160,28 @@ def speed_summary(layout: RunLayout, cfg: RunConfig) -> dict | None:
     """The run's speed measurements (``speed/speed.json``, see ``workflow.speed.run_speed``) for the run report,
     showing only what was measured for ``cfg``; None without the file.
 
-    The whole file is stale, and not shown, when its ``config_hash`` is not the manifest's (measured for another
-    configuration, or by the ``speed`` command) or its reads' SHA-256 is not that of the timed suite's current
-    ``reads.fasta``: ``{"stale": True, "config_hash": the file's, "reason": why}``. Otherwise the result is the
-    file's content with ``results`` restricted to the current configurations, ``stale_results`` (``name``,
-    ``reason``) naming the others, and ``failed`` (``name``, ``error``) the current ones whose measurement failed.
+    The whole file is stale, and not shown, when its ``version`` is not the protocol's (``workflow.speed
+    .SPEED_VERSION``), its ``config_hash`` is not the manifest's (measured for another configuration, or by the
+    ``speed`` command) or its reads' SHA-256 is not that of the timed suite's current ``reads.fasta``:
+    ``{"stale": True, "config_hash": the file's, "reason": why}``. Otherwise the result is the file's content with
+    ``results`` restricted to the current configurations, ``stale_results`` (``name``, ``reason``) naming the
+    others, ``failed`` (``name``, ``error``) the current ones whose measurement failed, and ``missing`` the planned
+    configurations with no result (an interrupted ``all --speed``).
     An alignair-local configuration is stale when its ``checkpoint_sha256`` is not the SHA-256 of
     ``cfg.alignair_checkpoint`` now (the checkpoint was retrained in place or replaced), or when the code its CLI
     ran (``runners.alignair.LOCAL_CODE_IDENTITY``) is not this checkout's now (``local_code_identity``): the config
     hash does not show either when alignair-local is not a compared tool."""
+    # workflow.speed imports this module, so its protocol version is imported here.
+    from alignair_assay.workflow.speed import SPEED_VERSION
+
     speed = read_json(layout.speed_json)
     if speed is None:
         return None
     digest = speed.get("config_hash")
+    if speed.get("version") != SPEED_VERSION:
+        return {"stale": True, "config_hash": digest,
+                "reason": f"measured with speed protocol version {speed.get('version')}, not the current "
+                          f"{SPEED_VERSION}"}
     if digest is None or digest != (read_json(layout.manifest) or {}).get("config_hash"):
         reason = ("measured for another configuration" if digest else
                   "measured by the speed command, outside this configuration")
@@ -203,7 +212,9 @@ def speed_summary(layout: RunLayout, cfg: RunConfig) -> dict | None:
         else:
             results[name] = result
     failed = [{"name": name, "error": result["error"]} for name, result in results.items() if "error" in result]
-    return {**speed, "results": results, "stale_results": stale, "failed": failed}
+    measured = speed.get("results") or {}
+    missing = [name for name in speed.get("planned") or [] if name not in measured]
+    return {**speed, "results": results, "stale_results": stale, "failed": failed, "missing": missing}
 
 
 def truth_counts(build: dict) -> dict | None:

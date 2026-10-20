@@ -415,7 +415,8 @@ oracle is not perfect on a suite, or a speed measurement failed. The report name
 **Resume.** Rerunning `all` with the same configuration skips each suite whose build is current and each run whose
 `run.json` shows return code 0 with predictions, the same `settings` (the tool's current fingerprint) and
 unchanged input files. A failed run is redone. With `--speed`, a configuration's measurement is kept when
-`speed.json` was measured on the same host (`host_info`), with the same protocol, S1 reads and config hash, and the
+`speed.json` was measured on the same host (`host_info`), with the same protocol version and settings, S1 reads,
+timed read sets (their SHA-256) and config hash, and the
 configuration succeeded with the same tool, threads, CPUs, device and, for alignair-local, checkpoint digest and
 code (`local_code_identity`); a failed or changed one is measured again. Scores, comparisons and the report are always recomputed from the current runs,
 so a change to the scoring code takes effect on the next `all`. It never mixes in stale outputs.
@@ -481,9 +482,10 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
     protocol measures, and per configuration its cold start, steady reads/s, median full run and peak RSS, then its
     threads, CPU list and device; a failed configuration shows dashes and its error is listed under the table. Only
     measurements of the current configuration are shown; the others are named, with why, under the table or in place
-    of it (and in a warning). A `speed.json` whose config hash is not the manifest's (measured for another
-    configuration, or by the `speed` command), or whose reads' SHA-256 is not that of S1's current `reads.fasta`, is
-    stale as a whole. An alignair-local configuration whose `checkpoint_sha256` is not the SHA-256 of the
+    of it (and in a warning). A `speed.json` of another protocol version, whose config hash is not the manifest's
+    (measured for another configuration, or by the `speed` command), or whose reads' SHA-256 is not that of S1's
+    current `reads.fasta`, is stale as a whole. A planned configuration the file has no result for (an interrupted
+    `all --speed`) is listed as not measured, so a partial file never looks complete. An alignair-local configuration whose `checkpoint_sha256` is not the SHA-256 of the
     configuration's `--alignair-checkpoint` now (retrained in place or replaced), or whose code
     (`code_sha256`, `git_commit`, `git_dirty`, `torch`) is not this checkout's now, is stale alone: the config hash
     does not cover either when alignair-local is not a compared tool. `all --speed` measures stale ones again.
@@ -520,9 +522,12 @@ directory's tools are run (the same runners, through `Runner.run`):
   code, no predictions) fails the configuration with its error line; the other configurations go on.
 - **Host** (`host_info()`): CPU model, logical CPUs, RAM in GiB, GPU name (nvidia-smi), docker daemon version and
   kernel release. Nothing else should run on the host, and on the GPU, while it is timed.
-- **`speed.json`**: `kind`, `version`, `host`, `n_tiny`, `n_full`, `repeats`, `reads` (suite and SHA-256 of its
-  `reads.fasta`), `config_hash` (the `all` configuration it belongs to; None from the `speed` command) and
-  `results`: per configuration its `tool`, `threads`, `cpus`, `device` (and, for alignair-local,
+- **`speed.json`**: `kind`, `version` (`SPEED_VERSION`, bumped whenever the sampling, the measurement or the
+  file's meaning changes), `host`, `n_tiny`, `n_full`, `repeats`, `reads` (suite and SHA-256 of its
+  `reads.fasta`), `sets` (the SHA-256 of the timed `tiny` and `full` read sets), `config_hash` (the `all`
+  configuration it belongs to; None from the `speed` command), `planned` (every configuration to time, in order;
+  written before the first is measured, so an interrupted run's file lists what it did not reach) and
+  `results`: per configuration measured so far its `tool`, `threads`, `cpus`, `device` (and, for alignair-local,
   `checkpoint_sha256`, `code_sha256`, `git_commit`, `git_dirty` and `torch`), `measured_utc` and either its
   `settings` (the tool's fingerprint), `cold_start_s`,
   `steady_reads_per_s`, `median_tiny_s`, `median_full_s`, `peak_rss_kb`, `walls` (every run's wall time, by set)

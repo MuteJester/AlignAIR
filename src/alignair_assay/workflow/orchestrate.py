@@ -244,6 +244,9 @@ def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference 
     for row in speed.get("stale_results") or []:
         print(f"warning: speed {row['name']} was {row['reason']} and is not reported; run all --speed to measure "
               "it again", file=sys.stderr)
+    for name in speed.get("missing") or []:
+        print(f"warning: speed {name} was planned but not measured (the measurement stopped before it); run all "
+              "--speed to measure it", file=sys.stderr)
     return 2 if summary["failed_runs"] or summary["oracle_failures"] or speed.get("failed") else 0
 
 

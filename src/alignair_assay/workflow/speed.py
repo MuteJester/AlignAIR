@@ -41,7 +41,9 @@ if TYPE_CHECKING:
     from alignair_assay.workflow.orchestrate import RunConfig
 
 SPEED_KIND = "alignair_assay.speed"
-SPEED_VERSION = "1"
+# The protocol's version: bump it when the sampling, the measurement or the file's meaning changes. 2: read sets
+# evenly spaced across S1 (not its first reads), their digests and the planned configurations recorded.
+SPEED_VERSION = "2"
 # The suite whose reads are timed, and the arm name the timed runs record.
 SPEED_SUITE = "S1"
 SPEED_ARM = "speed"
@@ -240,13 +242,15 @@ def run_speed(cfg: RunConfig, layout: RunLayout, reference: Reference, *, n_tiny
     ``speed.json`` is rewritten after each one. A configuration that fails (to prepare or to run) is recorded with
     its ``error``, and the others go on.
 
-    ``speed.json`` holds ``kind``, ``version``, the ``host`` (``host_info``), ``n_tiny``, ``n_full``, ``repeats``,
-    the timed ``reads`` (suite and SHA-256 of its ``reads.fasta``), the ``config_hash`` of the ``all``
-    configuration it belongs to (None outside ``all``) and ``results``: per configuration, its identity
-    (``SpeedConfig.identity``), ``measured_utc`` and either its ``settings`` (``Runner.fingerprint``) and
-    ``measure``'s values, or its ``error``. With ``reuse``, a result of the existing ``speed.json`` is kept, not
-    measured again, when the file has the same host, protocol, reads and config hash and the result succeeded with
-    the same identity.
+    ``speed.json`` holds ``kind``, ``version`` (``SPEED_VERSION``), the ``host`` (``host_info``), ``n_tiny``,
+    ``n_full``, ``repeats``, the timed ``reads`` (suite and SHA-256 of its ``reads.fasta``), the SHA-256 of the
+    timed read ``sets`` (``tiny`` and ``full``), the ``config_hash`` of the ``all`` configuration it belongs to
+    (None outside ``all``), the ``planned`` configuration names in order, and ``results``: per configuration
+    measured so far, its identity (``SpeedConfig.identity``), ``measured_utc`` and either its ``settings``
+    (``Runner.fingerprint``) and ``measure``'s values, or its ``error``. A planned configuration without a result
+    was not measured (an interrupted run). With ``reuse``, a result of the existing ``speed.json`` is kept, not
+    measured again, when the file has the same version, host, protocol, reads, read sets and config hash and the
+    result succeeded with the same identity.
     """
     n_tiny, n_full = N_TINY if n_tiny is None else n_tiny, N_FULL if n_full is None else n_full
     repeats = REPEATS if repeats is None else repeats
@@ -266,13 +270,13 @@ def run_speed(cfg: RunConfig, layout: RunLayout, reference: Reference, *, n_tiny
     for _, config in configs:
         config()
     tiny, full = speed_set(layout, n_tiny), speed_set(layout, n_full)
-    protocol = {"host": host_info(), "n_tiny": n_tiny, "n_full": n_full, "repeats": repeats,
-                "reads": {"suite": SPEED_SUITE, "sha256": sha256_file(layout.reads(SPEED_SUITE))},
-                "config_hash": config_hash}
+    protocol = {"version": SPEED_VERSION, "host": host_info(), "n_tiny": n_tiny, "n_full": n_full,
+                "repeats": repeats, "reads": {"suite": SPEED_SUITE, "sha256": sha256_file(layout.reads(SPEED_SUITE))},
+                "sets": {"tiny": sha256_file(tiny), "full": sha256_file(full)}, "config_hash": config_hash}
     previous = (read_json(layout.speed_json) or {}) if reuse else {}
     same = all(previous.get(key) == value for key, value in protocol.items())
     kept = (previous.get("results") or {}) if same else {}
-    record = {"kind": SPEED_KIND, "version": SPEED_VERSION, **protocol, "results": {}}
+    record = {"kind": SPEED_KIND, **protocol, "planned": [name for name, _ in configs], "results": {}}
     for name, config in configs:
         identity = config.identity()
         old = kept.get(name)
