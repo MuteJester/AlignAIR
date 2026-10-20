@@ -18,11 +18,11 @@ class AlleleTruth:
     observable set: every reference allele whose sequence contains the observed germline. ``alleles``, the scored
     set, adds the simulator's call list (``simulator_ties``, GenAIRR's post-SHM best-match re-call: ``{g}_call``, or
     ``recalled_{g}_call`` in the generating-reference encoding), restricted to reference alleles, and the as-near
-    alleles of a forward segment
-    (``truth.build``: the primary's gene, as near to the read over the observed span): all are defensible calls
-    for a sequence-only aligner. ``disagrees_with_simulator`` is True when the simulator's call list is not
-    exactly ``generative`` (including an empty list or names not in the reference); most such lists are ties that
-    hold the generative allele. ``recalled`` is the narrower case where the simulator called another allele first.
+    alleles of a forward segment (``truth.build``: the primary's gene, as near to the read over the observed span):
+    all are defensible calls for a sequence-only aligner. ``disagrees_with_simulator`` is True when the simulator's
+    call list is not exactly ``generative`` (including an empty list or names not in the reference); most such lists
+    are ties that hold the generative allele. ``recalled`` is the narrower case where the simulator called another
+    allele first.
     """
 
     primary: str
