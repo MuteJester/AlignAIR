@@ -32,9 +32,11 @@ and the genotype arm run the same code and model:
 the CLI, no rate of failed assemblies fails the run; the counts are recorded instead.
 
 Exit status: 0 once the TSV and the record are written; 1 when no read is valid (an empty TSV is written, as the CLI
-writes it); 3 (``GENOTYPE_FAILED``) when a genotype was given and reading it or predicting with it raised, after the
-traceback and a last line ``genotype API path failed: <type>: <message>`` on stderr. Any other error propagates
-(Python's traceback, exit status 1). A run that raises writes no TSV and no record.
+writes it); 3 (``GENOTYPE_FAILED``) when a genotype was given and reading it or predicting with it raised one of
+``GENOTYPE_ERRORS`` (AlignAIR's ``NovelAlleleUnsupportedError``, or the ``AttributeError``, ``TypeError`` or
+``KeyError`` a genotype of another type raises where it is applied), after the traceback and a last line ``genotype
+API path failed: <type>: <message>`` on stderr. Any other error propagates, with or without a genotype (Python's
+traceback, exit status 1, no note). A run that raises writes no TSV and no record.
 """
 from __future__ import annotations
 
@@ -46,7 +48,7 @@ from pathlib import Path
 
 import torch
 from alignair import AirrWriter, iter_sequences, predict_sequences, resolve_device
-from alignair.genotype.constraint import load_genotype
+from alignair.genotype.constraint import NovelAlleleUnsupportedError, load_genotype
 
 from alignair_assay.core.reference import Reference
 from alignair_assay.diagnostics.replay import load_model_checked
@@ -58,6 +60,10 @@ GENOTYPE_METHOD = "mask"
 # The exit status, and the last line's prefix, of a failure on the genotype path.
 GENOTYPE_FAILED = 3
 GENOTYPE_NOTE = "genotype API path failed"
+# The errors that are the genotype path's: AlignAIR's refusal of a genotype the model cannot take, and what a
+# genotype of another type than ``predict_sequences`` expects raises where it is applied. Any other error is the
+# tool's, with or without a genotype.
+GENOTYPE_ERRORS = (NovelAlleleUnsupportedError, AttributeError, TypeError, KeyError)
 API = "alignair.predict_sequences"
 COUNTS = ("input_records", "accepted_records", "rejected_records", "written_records", "complete_assemblies",
           "partial_assemblies", "failed_assemblies")
@@ -99,7 +105,7 @@ def main(argv=None) -> int:
             genotype, _ = load_genotype(args.genotype, reference=reference, drop_unknown=False)
             counts = predict_file(model, reference, args.input, out, device=device, batch_size=args.batch_size,
                                   locus=locus, genotype=genotype)
-        except Exception as error:  # noqa: BLE001 (every failure on this path is recorded as the genotype path's)
+        except GENOTYPE_ERRORS as error:
             traceback.print_exc()
             print(f"{GENOTYPE_NOTE}: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
             return GENOTYPE_FAILED

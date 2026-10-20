@@ -22,7 +22,7 @@ def register(sub) -> None:
     p.add_argument("--run-dir", required=True, help="a run directory with S1 built (build --suites S1); one made "
                                                     "by all is timed with all --speed instead")
     p.add_argument("--tools", type=comma_list, default=DEFAULT_TOOLS,
-                   help=f"tools to time ({', '.join(name for name in RUNNERS if name != 'oracle')}; default "
+                   help=f"tools to time ({', '.join(n for n in RUNNERS if n not in ('oracle', speed.API))}; default "
                         f"{','.join(DEFAULT_TOOLS)}); alignair-local is timed as well when --alignair-checkpoint is "
                         "given")
     p.add_argument("--threads", type=int, default=8, help="N of the N-thread configurations, pinned to CPUs 0 to N-1")

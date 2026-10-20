@@ -208,9 +208,9 @@ def _truth(read_id: str, *, known: tuple[str, ...] = (), shared: tuple[str, ...]
 
 def test_wrong_allele_of_a_carried_gene_is_unsupported_allele():
     assert classify_v_call(_pred(v="IGHVF1-G1*02"), GENOTYPE, IUIS, MERGED, reference=REFERENCE,
-                           support=SUPPORT) == UNSUPPORTED_ALLELE
+                           support=SUPPORT, truth=None) == UNSUPPORTED_ALLELE
     assert classify_v_call(_pred(v="IGHVF1-G1*01"), GENOTYPE, IUIS, MERGED, reference=REFERENCE,
-                           support=SUPPORT) == SUPPORTED
+                           support=SUPPORT, truth=None) == SUPPORTED
 
 
 def test_call_to_a_captured_gene_the_donor_lacks_is_unsupported_gene():
@@ -270,11 +270,22 @@ def test_a_gene_carried_only_as_nonfunctional_alleles_excludes_every_call_to_it(
 
 
 def test_no_call_is_no_call():
-    assert INDEX.classify_v(_pred(v=None)) == NO_CALL
-    assert INDEX.classify_v(None) == NO_CALL  # the tool emitted no row
+    assert INDEX.classify_v(_pred(v=None), truth=None) == NO_CALL
+    assert INDEX.classify_v(None, truth=None) == NO_CALL  # the tool emitted no row
     assert INDEX.classify("", "v") == NO_CALL
     with pytest.raises(ValueError, match="IGHV1-2\\*02"):
         INDEX.classify("IGHV1-2*02")  # an IUIS name: not an allele of the shared reference
+
+
+def test_the_reads_truth_is_required_by_keyword():
+    # every tool is classified with the read's truth, so no caller can classify one tool with it and the other
+    # without: leaving it out, or passing it by position, is an error
+    pred = _pred(v="IGHVF4-G1*02")
+    for call in (lambda: INDEX.classify_v(pred), lambda: INDEX.read_calls(pred),
+                 lambda: INDEX.classify_v(pred, _truth("r")), lambda: INDEX.read_calls(pred, _truth("r")),
+                 lambda: classify_v_call(pred, GENOTYPE, IUIS, MERGED, reference=REFERENCE, support=SUPPORT)):
+        with pytest.raises(TypeError, match="'truth'|positional argument"):
+            call()
 
 
 def test_the_other_exclusions():
@@ -298,9 +309,9 @@ def test_novel_gene_is_not_excluded_on_a_documented_known_answer():
     # the read's V is exactly a documented donor allele (in the shared reference), so no novel allele can hide
     # behind a call there: a call to the gene with a novel allele is judged like any other
     documented = _truth("x", known=("IGHV3-30*01",), shared=("IGHVF4-G1*01",), gene="IGHV3-30")
-    assert INDEX.classify_v(_pred("x", "IGHVF4-G1*01"), documented) == SUPPORTED
-    assert INDEX.classify_v(_pred("x", "IGHVF4-G1*02"), documented) == UNSUPPORTED_ALLELE
-    assert INDEX.read_calls(_pred("x", "IGHVF4-G1*02"), documented).v == UNSUPPORTED_ALLELE
+    assert INDEX.classify_v(_pred("x", "IGHVF4-G1*01"), truth=documented) == SUPPORTED
+    assert INDEX.classify_v(_pred("x", "IGHVF4-G1*02"), truth=documented) == UNSUPPORTED_ALLELE
+    assert INDEX.read_calls(_pred("x", "IGHVF4-G1*02"), truth=documented).v == UNSUPPORTED_ALLELE
     assert classify_v_call(_pred("x", "IGHVF4-G1*02"), GENOTYPE, IUIS, MERGED, reference=REFERENCE, support=SUPPORT,
                            truth=documented) == UNSUPPORTED_ALLELE
     assert INDEX.classify("IGHVF4-G1*02", documented=True) == UNSUPPORTED_ALLELE
@@ -308,14 +319,14 @@ def test_novel_gene_is_not_excluded_on_a_documented_known_answer():
     for truth in (_truth("u"), _truth("n", known=("IGHV3-30*18_t189c",), gene="IGHV3-30"), None):
         read_id = truth.read_id if truth else "r"
         for call in ("IGHVF4-G1*01", "IGHVF4-G1*02"):
-            assert INDEX.classify_v(_pred(read_id, call), truth) == "excluded:novel_gene", (truth, call)
+            assert INDEX.classify_v(_pred(read_id, call), truth=truth) == "excluded:novel_gene", (truth, call)
     # the flag is the read's, so both tools get it: the wrong call is scored, not excluded, for both
-    classes = [INDEX.classify_v(_pred("x", call), documented) for call in ("IGHVF4-G1*01", "IGHVF4-G1*02")]
+    classes = [INDEX.classify_v(_pred("x", call), truth=documented) for call in ("IGHVF4-G1*01", "IGHVF4-G1*02")]
     assert shared_exclusions({"x": classes[0]}, {"x": classes[1]}) == set()
     # it is V's only: a D gene with an allele absent from the shared reference stays excluded
     assert INDEX.classify("IGHD2-15*01", "d") == INDEX.classify("IGHD2-15*01", "d", documented=True) == (
         "excluded:novel_gene")
-    calls = INDEX.read_calls(_pred("x", "IGHVF4-G1*02", d="IGHD2-15*01"), documented)
+    calls = INDEX.read_calls(_pred("x", "IGHVF4-G1*02", d="IGHD2-15*01"), truth=documented)
     assert calls.v == UNSUPPORTED_ALLELE and calls.d == "excluded:novel_gene"
 
 
@@ -339,11 +350,13 @@ def test_exclusion_never_depends_on_whether_the_call_is_right():
     assert sum(len(classes) > 1 for classes in by_genes.values()) >= 2  # right and wrong calls do occur
     # two tools on one read of a half-resolved gene: the right call and the wrong one take the read out for both
     right, wrong = _pred("h", "IGHVF9-G1*01"), _pred("h", "IGHVF9-G1*02")
-    classes = {"right": {"h": INDEX.classify_v(right)}, "wrong": {"h": INDEX.classify_v(wrong)}}
+    classes = {"right": {"h": INDEX.classify_v(right, truth=_truth("h"))},
+               "wrong": {"h": INDEX.classify_v(wrong, truth=_truth("h"))}}
     assert classes["right"]["h"] == classes["wrong"]["h"] == "excluded:half_resolved"
     assert shared_exclusions(classes["right"], classes["wrong"]) == {"h"}
     for pred in (right, wrong):
-        assert real_case_scores(pred, _truth("h"), INDEX.classify_v(pred), excluded=True, index=INDEX) == {}
+        cls = INDEX.classify_v(pred, truth=_truth("h"))
+        assert real_case_scores(pred, _truth("h"), cls, excluded=True, index=INDEX) == {}
 
 
 def test_d_and_j_calls_where_the_donor_has_their_truth():
@@ -352,14 +365,14 @@ def test_d_and_j_calls_where_the_donor_has_their_truth():
     assert INDEX.classify("IGHD2-2*01", "d") == UNSUPPORTED_GENE
     assert INDEX.classify("IGHD4-11*01", "d") == "excluded:not_captured"
     assert INDEX.classify("IGHJ4*02", "j") == SUPPORTED and INDEX.classify("IGHJ6*02", "j") == UNSUPPORTED_GENE
-    calls = INDEX.read_calls(_pred(v="IGHVF1-G1*02", d="IGHD3-10*01", j="IGHJ6*02"))
+    calls = INDEX.read_calls(_pred(v="IGHVF1-G1*02", d="IGHD3-10*01", j="IGHJ6*02"), truth=None)
     assert calls == ReadCalls(v=UNSUPPORTED_ALLELE, d=SUPPORTED, j=UNSUPPORTED_GENE, v_any_listed_supported=False)
     scores = real_case_scores(_pred(v="IGHVF1-G1*02", d="IGHD3-10*01", j="IGHJ6*02"), _truth("r"), calls,
                               excluded=False, index=INDEX)
     assert scores["real.d.unsupported"] == 0.0 and scores["real.j.unsupported"] == 1.0
     # applicability is the read's: where the donor has D and J truth and the read is not excluded for them, a tool
     # without a D or J call has not covered the metric (nan), not made it inapplicable (an absent key)
-    no_dj = INDEX.read_calls(_pred(v="IGHVF1-G1*01"))
+    no_dj = INDEX.read_calls(_pred(v="IGHVF1-G1*01"), truth=None)
     assert no_dj.d == no_dj.j == NO_CALL
     scores = real_case_scores(_pred(v="IGHVF1-G1*01"), _truth("r"), no_dj, excluded=False, index=INDEX)
     assert math.isnan(scores["real.d.unsupported"]) and math.isnan(scores["real.j.unsupported"])
@@ -369,7 +382,7 @@ def test_d_and_j_calls_where_the_donor_has_their_truth():
     # a donor without D and J truth gets neither metric
     v_only = SupportIndex(RealGenotype(donor=DONOR, alleles=V_ALLELES, captured=CAPTURED, resolved=CAPTURED),
                           IUIS, MERGED, REFERENCE, support=SUPPORT)
-    calls = v_only.read_calls(_pred(v="IGHVF1-G1*01", d="IGHD3-10*01", j="IGHJ4*02"))
+    calls = v_only.read_calls(_pred(v="IGHVF1-G1*01", d="IGHD3-10*01", j="IGHJ4*02"), truth=None)
     assert calls.d is None and calls.j is None
     scores = real_case_scores(_pred(v="IGHVF1-G1*01", d="IGHD3-10*01", j="IGHJ4*02"), _truth("r"), calls,
                               excluded=False, index=v_only)
@@ -379,13 +392,13 @@ def test_d_and_j_calls_where_the_donor_has_their_truth():
 def test_any_listed_v_allele_supported():
     # IgBLAST lists ties: the top-1 is the first, and the informational metric asks whether the list hides a
     # supported allele
-    calls = INDEX.read_calls(_pred("r", "IGHVF1-G1*02", "IGHVF1-G1*01"))
+    calls = INDEX.read_calls(_pred("r", "IGHVF1-G1*02", "IGHVF1-G1*01"), truth=None)
     assert calls.v == UNSUPPORTED_ALLELE and calls.v_any_listed_supported
     scores = real_case_scores(_pred("r", "IGHVF1-G1*02", "IGHVF1-G1*01"), _truth("r"), calls, excluded=False,
                               index=INDEX)
     assert scores["real.v.unsupported"] == 1.0 and scores["real.v.any_listed_supported"] == 1.0
-    assert not INDEX.read_calls(_pred("r", "IGHVF1-G1*02", "IGHVF7-G1*01")).v_any_listed_supported
-    assert not INDEX.read_calls(None).v_any_listed_supported
+    assert not INDEX.read_calls(_pred("r", "IGHVF1-G1*02", "IGHVF7-G1*01"), truth=None).v_any_listed_supported
+    assert not INDEX.read_calls(None, truth=None).v_any_listed_supported
 
 
 # --- per-read scores ----------------------------------------------------------------------------------------------
@@ -397,7 +410,7 @@ def test_real_case_scores_headline_and_components():
     for call, cls in (("IGHVF1-G1*01", SUPPORTED), ("IGHVF1-G1*02", UNSUPPORTED_ALLELE),
                       ("IGHVF7-G1*01", UNSUPPORTED_GENE), (None, NO_CALL)):
         pred = _pred(v=call)
-        assert INDEX.classify_v(pred) == cls
+        assert INDEX.classify_v(pred, truth=known) == cls
         scores = real_case_scores(pred, known, cls, excluded=False, index=INDEX)
         assert tuple(scores[f"real.v.{name}"] for name in ("unsupported", "unsupported_allele",
                                                            "unsupported_gene", "no_call")) == expected[cls]
@@ -420,7 +433,7 @@ def test_known_answer_metrics_follow_the_318_rule_and_paralog_genes():
     # a novel known answer scores only where its calls go: to its gene or not
     novel = _truth("n", known=("IGHV3-30*18_t189c",), gene="IGHV3-30")
     for call, value in (("IGHVF4-G1*02", 1.0), ("IGHVF7-G1*01", 0.0), (None, 0.0)):
-        scores = real_case_scores(_pred("n", call), novel, INDEX.classify_v(_pred("n", call)),
+        scores = real_case_scores(_pred("n", call), novel, INDEX.classify_v(_pred("n", call), truth=novel),
                                   excluded=True, index=INDEX)
         assert scores == {"real.v.novel_known_call": value}, call
 
@@ -527,7 +540,7 @@ def test_oracle_scores_perfect():
     assert check["passed"]
     for truth in truths[:7]:
         pred = oracle_prediction(truth)
-        cls = INDEX.classify_v(pred, truth)
+        cls = INDEX.classify_v(pred, truth=truth)
         scores = real_case_scores(pred, truth, cls, excluded=cls.startswith("excluded:"), index=INDEX)
         assert scores.get("real.v.unsupported", 0.0) == 0.0 and scores["real.v.known_top1"] == 1.0
 
@@ -661,7 +674,7 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
     for truth in known:
         oracle = oracle_prediction(truth)
         name = oracle.segments["v"].call
-        cls = index.classify_v(oracle, truth)
+        cls = index.classify_v(oracle, truth=truth)
         genes = set(index.genes(name))
         carried = {gene for gene in genes if genotype.carried(gene)}
         functional = {allele.gene for allele in v if allele.functional}

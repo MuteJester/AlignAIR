@@ -30,10 +30,12 @@ genes is, by the first reason that applies, in this order:
 - ``novel_gene``: the gene has a donor allele absent from the shared reference, of any functionality
   (``RealGenotype.absent_genes``, per segment: a D gene's absent allele touches only D calls). Over-excluding is
   safe; scoring the gene is not, since a tool may call a read of the novel allele as the carried shared one. Not
-  for a V call on a documented known answer (``is_documented``: a known answer that is not novel): that read's V
-  is exactly a donor allele in the shared reference, so no novel allele hides behind the call, and a wrong call to
-  the gene is ``unsupported_allele``. The flag is the read's, the same for both tools (``classify_v(pred, truth)``,
-  ``read_calls(pred, truth)``).
+  for a V call on a documented known answer (``is_documented``: a known answer whose allele set is not entirely
+  absent from the shared reference): that read's observed V is exactly a donor allele in the shared reference, so
+  no novel allele hides behind the call, and a wrong call to the gene is ``unsupported_allele``. A set can mix a
+  documented and an absent allele whose windows the read cannot tell apart (W-97 has 2 such reads, SC-23 10); it
+  is documented. The flag is the read's, the same for both tools (``classify_v(pred, truth=truth)``,
+  ``read_calls(pred, truth=truth)``; ``truth`` is required by keyword, so no tool is classified without it).
 - ``nonfunctional``: the gene is carried only as nonfunctional alleles (each has a V-REGION defect note), so its
   truth is in doubt (Mikelov et al. 2024 leave such alleles out): every call to it is excluded, whether it equals
   one of them or not.
@@ -55,7 +57,9 @@ ungapped (``through_318``). R1 asks whether the donor's genome carries the call,
 genome. Two V alleles that differ only past 318 cannot be told apart from rearranged reads (Peres et al. 2023,
 PIgLET), so the shared reference's ``IGHVF3-G9*04_A319G`` is supported for a donor carrying ``IGHVF3-G9*04``
 (IGHV4-28*03 and *01). Matching by sequence means a call is supported through any of its labels: ``IGHVF6-G21*06``
-supports a donor that carries the sequence at IGHV1-69D only. Otherwise the call is:
+supports a donor that carries the sequence at IGHV1-69D only. A donor allele without a usable IMGT-gapped form
+(``through_318`` None) supports a call only by exact match. A functional one excludes its gene (``beyond_318``), so
+this concerns nonfunctional alleles alone, and it changes no class on the pilot donors. Otherwise the call is:
 
 - ``unsupported_allele``: a gene of the call is carried, but not this allele.
 - ``unsupported_gene``: no gene of the call is carried, and their regions are captured: a call to a gene the donor's
@@ -186,7 +190,7 @@ class SupportIndex:
             raise ValueError(f"{len(unusable)} V alleles of the shared reference have no usable IMGT-gapped form, so "
                              f"no call could be compared to them through IMGT 318: {', '.join(unusable)}; use the "
                              "reference built from the dataconfig")
-        self._classes: dict[tuple[str, str], str] = {}
+        self._classes: dict[tuple[str, str, bool], str] = {}  # (name, segment, documented) -> class
 
     @property
     def donor(self) -> str:
@@ -224,18 +228,20 @@ class SupportIndex:
             self._classes[key] = self._classify(name, segment, documented)
         return self._classes[key]
 
-    def classify_v(self, pred: Prediction | None, truth: RealTruth | None = None) -> str:
-        """The class of ``pred``'s top-1 V call on the read of ``truth`` (``is_documented``; the same truth for every
-        tool); ``no_call`` without a row, a V segment or a call."""
+    def classify_v(self, pred: Prediction | None, *, truth: RealTruth | None) -> str:
+        """The class of ``pred``'s top-1 V call on the read of ``truth`` (``is_documented``); ``no_call`` without a
+        row, a V segment or a call. ``truth`` is required, by keyword, so every tool is classified with the same
+        truth: None is a read without one, said explicitly."""
         return self.classify(_top1(pred, "v"), "v", documented=is_documented(truth))
 
-    def read_calls(self, pred: Prediction | None, truth: RealTruth | None = None) -> ReadCalls:
-        """``pred``'s classes on the read of ``truth`` (as ``classify_v``): its top-1 V, D and J calls (D and J only
-        where the donor has their truth) and whether any V allele it lists, top-1 first, is supported."""
+    def read_calls(self, pred: Prediction | None, *, truth: RealTruth | None) -> ReadCalls:
+        """``pred``'s classes on the read of ``truth`` (as ``classify_v``, ``truth`` required by keyword): its top-1
+        V, D and J calls (D and J only where the donor has their truth) and whether any V allele it lists, top-1
+        first, is supported."""
         segment = _segment(pred, "v")
         listed = dict.fromkeys(name for name in (segment.call, *segment.call_set) if name) if segment else {}
         known = is_documented(truth)
-        return ReadCalls(v=self.classify_v(pred, truth),
+        return ReadCalls(v=self.classify_v(pred, truth=truth),
                          d=self.classify(_top1(pred, "d"), "d") if self.has_truth("d") else None,
                          j=self.classify(_top1(pred, "j"), "j") if self.has_truth("j") else None,
                          v_any_listed_supported=any(self.classify(name, "v", documented=known) == SUPPORTED
@@ -309,16 +315,17 @@ class SupportIndex:
 
 def classify_v_call(pred: Prediction | None, genotype: RealGenotype, iuis: IuisMap,
                     merged: Mapping[str, frozenset[str]], *, reference: Reference,
-                    support: Mapping[str, tuple[int, int]], truth: RealTruth | None = None) -> str:
-    """The class of ``pred``'s top-1 V call against ``genotype`` on the read of ``truth``
-    (``SupportIndex.classify_v``). Build a ``SupportIndex`` once to classify many reads."""
-    return SupportIndex(genotype, iuis, merged, reference, support=support).classify_v(pred, truth)
+                    support: Mapping[str, tuple[int, int]], truth: RealTruth | None) -> str:
+    """The class of ``pred``'s top-1 V call against ``genotype`` on the read of ``truth`` (required, as in
+    ``SupportIndex.classify_v``). Build a ``SupportIndex`` once to classify many reads."""
+    return SupportIndex(genotype, iuis, merged, reference, support=support).classify_v(pred, truth=truth)
 
 
 def is_documented(truth: RealTruth | None) -> bool:
-    """True for the truth of a documented known answer: a known answer whose alleles are in the shared reference
-    (not ``novel_known``). Its V is exactly a documented donor allele, so no novel allele hides behind a call on it.
-    False without a truth."""
+    """True for the truth of a documented known answer: a known answer whose allele set is not entirely absent from
+    the shared reference (not ``novel_known``). A set may mix documented and absent alleles, whose windows the read
+    cannot tell apart (W-97 has 2 such reads, SC-23 10): its observed V is still exactly a documented donor allele's
+    window, so no novel allele hides behind a call on it. False without a truth or a known answer."""
     return truth is not None and truth.known is not None and not truth.novel_known
 
 
@@ -434,7 +441,7 @@ def oracle_self_check(truths: Iterable[RealTruth], index: SupportIndex) -> dict:
         if pred is None:
             continue
         reads += 1
-        cls = index.classify_v(pred, truth)
+        cls = index.classify_v(pred, truth=truth)
         classes[cls] += 1
         if _excluded(cls):
             genes[cls].update(truth.known_gene.split("|"))

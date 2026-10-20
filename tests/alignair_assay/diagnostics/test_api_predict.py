@@ -102,6 +102,44 @@ def test_a_failure_on_the_genotype_path_is_told_apart(checkpoint, inputs, refere
     assert list(tmp_path.glob("refused.tsv*")) == []
 
 
+@pytest.mark.parametrize("raised", [TypeError("unhashable type: 'set'"),
+                                    AttributeError("'tuple' object has no attribute 'items'"), KeyError("v")])
+def test_a_genotype_of_the_wrong_type_is_a_genotype_failure(checkpoint, inputs, reference, tmp_path, capsys,
+                                                            monkeypatch, raised):
+    # The errors a genotype of another type raises where it is applied are the genotype path's.
+    import alignair_assay.diagnostics.api_predict as api_predict
+
+    def predict(*args, genotype=None, **kwargs):
+        raise raised
+
+    fasta, truth = inputs
+    genotype = tmp_path / "genotype.json"
+    genotype.write_text(json.dumps({"v": sorted(reference.alleles["v"])[:3], "d": sorted(reference.alleles["d"]),
+                                    "j": sorted(reference.alleles["j"])}))
+    monkeypatch.setattr(api_predict, "predict_file", predict)
+    assert main(_args(checkpoint, truth, fasta, tmp_path / "out.tsv", "--genotype", str(genotype))) == GENOTYPE_FAILED
+    assert capsys.readouterr().err.strip().splitlines()[-1].startswith(f"{GENOTYPE_NOTE}: {type(raised).__name__}")
+
+
+def test_any_other_failure_with_a_genotype_is_not_a_genotype_failure(checkpoint, inputs, reference, tmp_path,
+                                                                     capsys, monkeypatch):
+    # Anything else (a model, device or I/O error) propagates as it would without a genotype: Python's traceback
+    # and exit status 1, with no note.
+    import alignair_assay.diagnostics.api_predict as api_predict
+
+    def predict(*args, genotype=None, **kwargs):
+        raise RuntimeError("CUDA out of memory")
+
+    fasta, truth = inputs
+    genotype = tmp_path / "genotype.json"
+    genotype.write_text(json.dumps({"v": sorted(reference.alleles["v"])[:3], "d": sorted(reference.alleles["d"]),
+                                    "j": sorted(reference.alleles["j"])}))
+    monkeypatch.setattr(api_predict, "predict_file", predict)
+    with pytest.raises(RuntimeError, match="CUDA out of memory"):
+        main(_args(checkpoint, truth, fasta, tmp_path / "out.tsv", "--genotype", str(genotype)))
+    assert GENOTYPE_NOTE not in capsys.readouterr().err
+
+
 def test_the_traceback_precedes_the_note(checkpoint, inputs, reference, tmp_path, capsys):
     fasta, truth = inputs
     genotype = tmp_path / "genotype.json"

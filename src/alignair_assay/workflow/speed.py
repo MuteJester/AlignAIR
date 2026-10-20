@@ -53,6 +53,8 @@ N_FULL = 4000
 REPEATS = 3
 # The tool timed on CUDA as well as on CPU.
 LOCAL = "alignair-local"
+# The tool the protocol refuses: its checkpoint identity is not among what a timed result records (``IDENTITY``).
+API = "alignair-api"
 # What each result records about its configuration; a kept result must match on all of them. alignair-local also
 # records the checkpoint's digest and the code its CLI runs (``runners.alignair.local_code_identity``).
 IDENTITY = ("tool", "threads", "cpus", "device", "checkpoint_sha256", *LOCAL_CODE_IDENTITY)
@@ -84,6 +86,16 @@ class SpeedConfig:
         return record
 
 
+def refuse_api(tools) -> None:
+    """ValueError when ``tools`` holds alignair-api (``API``): a timed result records its tool's identity
+    (``IDENTITY``), which has none for alignair-api's checkpoint; alignair-local times the same checkpoint and
+    product code."""
+    if API in tools:
+        raise ValueError(f"the speed protocol does not time {API}: a timed result records its tool's identity, and "
+                         f"it has none for {API}'s checkpoint; time {LOCAL} instead (--alignair-checkpoint), which "
+                         "runs the same checkpoint and product code")
+
+
 def cpu_list(threads: int) -> str:
     """The CPU list of a ``threads``-thread configuration: CPUs 0 to threads - 1 (``"0"``, ``"0-7"``)."""
     return "0" if threads == 1 else f"0-{threads - 1}"
@@ -96,7 +108,8 @@ def speed_configs(cfg: RunConfig, *, cuda: bool | None = None) -> list[tuple[str
     ``cfg.alignair_checkpoint`` is set, runs instead on ``cuda`` with N threads (``alignair-local_cuda``) when
     its interpreter sees a CUDA device (``cuda``; probed by ``runners.alignair.local_cuda_available`` when None),
     and on ``cpu`` at N threads. The tools' other options are ``cfg``'s. ValueError when N is below 1 or above the
-    host's logical CPUs."""
+    host's logical CPUs, or for alignair-api among the tools (``API``: alignair-local times its checkpoint)."""
+    refuse_api(cfg.tools)
     n = cfg.threads
     logical = os.cpu_count() or 1
     if n < 1 or n > logical:
@@ -125,7 +138,9 @@ def speed_configs(cfg: RunConfig, *, cuda: bool | None = None) -> list[tuple[str
 def check_speed(cfg: RunConfig) -> None:
     """ValueError when ``all`` cannot time ``cfg``: S1 not among its suites, S1 at ``cfg.scale`` with fewer than
     ``N_FULL`` reads, a thread count ``speed_configs`` refuses, or a configuration whose runner cannot be built
-    (its tool's options); FileNotFoundError for an ``alignair_checkpoint`` that is not a file. Nothing is run."""
+    (its tool's options) or alignair-api (``refuse_api``); FileNotFoundError for an ``alignair_checkpoint`` that is
+    not a file. Nothing is run."""
+    refuse_api(cfg.tools)
     if cfg.alignair_checkpoint and not Path(cfg.alignair_checkpoint).expanduser().is_file():
         raise FileNotFoundError(f"no AlignAIR checkpoint {cfg.alignair_checkpoint} to time")
     if SPEED_SUITE not in cfg.suites:

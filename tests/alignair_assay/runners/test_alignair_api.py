@@ -296,6 +296,9 @@ def test_api_rows_equal_the_cli_rows(s1_run, reference, tmp_path, device):
     assert len(api) == 100
     differing = _differences(cli_header, cli, api)
     assert not differing, {field: (len(ids), ids[:3]) for field, ids in differing.items()}
+    # and the files are the same bytes, line endings and column order included
+    assert (layout.predictions("alignair-api", "S1", "shared").read_bytes()
+            == layout.predictions("alignair-local", "S1", "shared").read_bytes())
 
     result = require_successful_run(layout.run_json("alignair-api", "S1", "shared"))
     local = require_successful_run(layout.run_json("alignair-local", "S1", "shared"))

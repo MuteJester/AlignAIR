@@ -1024,9 +1024,12 @@ and passes its genotype, `{gene letter: set of allele names}`, to `alignair.pred
 method. Everything else is the CLI's path: the loader, the reader's chunks and the writer. On the same reads and
 checkpoint its shared-arm TSV is byte for byte alignair-local's (S1 at scale 0.02, on the CPU and on CUDA). So both
 arms run one code path and one model, and the arm delta is the genotype's alone. When loading the genotype or
-predicting with it raises, the subprocess prints the traceback and then `genotype API path failed: <type>:
-<message>`, and exits with status 3. The run is recorded as failed, with that line as its `error` and the `note`
-`genotype API path failed`.
+predicting with it raises AlignAIR's `NovelAlleleUnsupportedError`, or the `AttributeError`, `TypeError` or
+`KeyError` a genotype of another type raises where it is applied, the subprocess prints the traceback and then
+`genotype API path failed: <type>: <message>`, and exits with status 3. The run is recorded as failed, with that line
+as its `error` and the `note` `genotype API path failed`. Any other error is the tool's: exit status 1, no note. The
+speed protocol does not time `alignair-api` (it has no record of its checkpoint's identity); time `alignair-local`,
+which runs the same checkpoint and product code.
 
 ## Diagnostics
 
@@ -1603,8 +1606,10 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   excluded when any of its genes is. The reasons: `dropped_truth` (the gene's only calls were dropped by
   `filter_d`), `not_captured`, `unmapped` (a guard: no gene at all; none on HUMAN_IGH_OGRDB), `novel_gene` (the
   gene has a donor allele absent from the shared reference, of any functionality; not for a V call on a documented
-  known answer, whose V is a donor allele in the shared reference: pass the read's truth, the same for both tools,
-  to `classify_v` or `read_calls`), `nonfunctional` (the gene is carried only as nonfunctional alleles),
+  known answer, one whose allele set is not entirely absent from the shared reference (a set may mix the two),
+  whose V is a donor allele in the shared reference: `classify_v`, `read_calls` and `classify_v_call` require the
+  read's truth by keyword, the same for both tools), `nonfunctional` (the gene is carried only as nonfunctional
+  alleles),
   `beyond_318` (a functional donor allele of the gene has no usable IMGT-gapped form; none on the pilot donors),
   `half_resolved` (the gene is carried but not resolved, so its unknown allele could be any call) and
   `low_support` (the V gene has fewer than 10 clonotypes or 3 naive clonotypes among the known answers; a known

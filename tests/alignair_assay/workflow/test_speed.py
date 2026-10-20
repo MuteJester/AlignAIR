@@ -276,6 +276,22 @@ def test_speed_configs():
             speed_configs(dataclasses.replace(cfg, threads=threads), cuda=False)
 
 
+def test_speed_refuses_alignair_api(built, tmp_path, capsys):
+    # The speed protocol does not know alignair-api's checkpoint identity: alignair-local times the same checkpoint
+    # and product code. Refused by the configurations, by all --speed and by the speed command, before any timing.
+    cfg = RunConfig(suites=("S1",), tools=("igblast", "alignair-api"), threads=2, igblast_dir="/opt/igblast",
+                    alignair_checkpoint="/models/m.alignair", scale=0.8, speed=True)
+    with pytest.raises(ValueError, match="alignair-api.*alignair-local"):
+        speed_configs(cfg, cuda=False)
+    with pytest.raises(ValueError, match="alignair-api"):
+        check_config(cfg)
+    root = _copy(built, tmp_path)
+    assert main(["speed", "--run-dir", str(root), "--tools", "alignair-api", "--alignair-checkpoint",
+                 "/models/m.alignair", "--threads", "2"]) == 2
+    assert "alignair-api" in capsys.readouterr().err
+    assert not RunLayout(root).speed_json.exists()
+
+
 def test_speed_checked_with_the_config():
     base = dict(suites=("S0", "S1"), tools=("oracle", "quick"), scale=0.8, speed=True)
     check_config(RunConfig(**base))
