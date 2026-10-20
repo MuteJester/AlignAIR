@@ -136,6 +136,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory), `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) and `diagnose` (`evaluate`, the evaluator behind `diagnose`: the diagnostics layer orchestrated over a run directory, cached per suite, with its report) | everything except cli |
 | `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed) and `identity` (the model key: `weights_sha256` and the AlignAIR code identity) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318) and the paper's novel alleles (`sd3_novel`, `sd3_only`) | core, real.genotype |
+| `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the pilot pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -1348,13 +1349,48 @@ record whose key was edited is recomputed.
 
 P3 scores the tools on real human IGH repertoires (BioProject PRJNA555323; Rodriguez et al. 2023, Nat Commun
 14:4419) against each donor's own alleles from genomic long-read sequencing, published by VDJbase (genomic study
-P25, CC0). This section grows with P3a; so far it covers the donor genotypes.
+P25, CC0). This section grows with P3a; so far it covers the downloads and the donor genotypes.
 
 **Data root.** Downloads live under a data root given to the commands, never in a run directory or the repository.
-The genotype files are `genotypes/vdjbase_genomic_samples/<sample>.csv` (one VDJbase sample per donor, e.g.
-`P25_I58_S1` for SC-23), `genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json` (OGRDB's IGH_VDJ germline
-set, CC0) and `genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx` (the paper's supplementary data).
-Tests that read it run only when `ALIGNAIR_ASSAY_DATA` names it.
+Each source has its own directory there, with an `MD5SUMS.txt`:
+
+- `airrseq/<donor>/<run>/<run>_{1,2}.fastq.gz`: ENA's FASTQs;
+- `airrseq_odp/<donor>/<run>/`: the run's SRA object from NCBI's AWS Open Data mirror and the pair converted from
+  it;
+- `genotypes/vdjbase_genomic_samples/<sample>.csv` and `.bam` (one VDJbase sample per donor, e.g. `P25_I58_S1` for
+  SC-23: its alleles and its contigs on IGenotyper's `igh` reference);
+- `genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json` (OGRDB's IGH_VDJ germline set G00060, CC0);
+- `genotypes/igenotyper/gene_coords.bed` (IGenotyper's gene coordinates on `igh`, at commit `40a00015`);
+- `genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx` (the paper's supplementary data).
+
+Tests that read it run only when `ALIGNAIR_ASSAY_DATA` names it; those that download need `ALIGNAIR_ASSAY_NETWORK=1`
+too, and those that run the sra-tools container `ALIGNAIR_ASSAY_DOCKER=1`.
+
+**Fetch (`real.fetch`).** Every file is pinned in the module (size, md5 or S3 ETag, read count, commit, image
+digest), so a fresh data root gets the same bytes or a refusal. A file already there is reused only when it is the
+pinned file (and its `MD5SUMS.txt` agrees); a download goes to `<name>.part` and is renamed once verified. Downloads
+are https only, with a 60 s timeout and at most two retries; nothing downloaded is executed.
+
+- `fetch_reads(run, data_root)` returns a pilot run's pair and its `FetchRecord` (`path`, the pair's directory;
+  `md5`, of the pair's `MD5SUMS.txt` lines; `bytes`, `source_url`, `kind` `"reads"`, and `quality`, `"full"` or
+  `"lite"`; `detail` says what was checked). It prefers ODP: the object is checked against its pinned size and S3
+  ETag, then in `SRA_TOOLS_IMAGE` (ncbi/sra-tools 3.4.1, pinned by digest; as the current user, with no network,
+  on the run's directory only) by `vdb-validate` and converted by `fasterq-dump --split-files` with ENA's read
+  names. The mates must hold ENA's read count and, where ENA's FASTQs are present, their first 2,000 records must
+  be ENA's names and bases. When the object is missing or its qualities are SRA-Lite, the ENA FASTQs (ENA's md5s)
+  are used and the record says why. All eight pilot runs convert at full quality, while ENA serves SRA-Lite
+  qualities (`?` and `$` only) on every pilot run but SC-23's; on W-97 all 103,049 pairs have ENA's names and
+  bases, with 27 quality symbols.
+- `quality_kind(fastq_gz, n=2000)` is `"lite"` when every quality symbol of the first `n` records is `?` or `$`,
+  else `"full"`.
+- `fetch_genotype_files(donor, data_root)` returns `vdjbase_csv`, `vdjbase_bam`, `ogrdb` and `gene_coords` records.
+- A run's record is `fetch/reads/<run>.json` and a donor's `fetch/genotypes/<donor>.json`; a reads record is
+  reused while its files are unchanged, and a changed file stops the run with its name. `fetch_manifest(data_root)`
+  gathers them into `fetch_manifest.json`, with the pins, the module's code digest, each run's `quality` and what
+  is `pending`.
+- It stops with `FetchError` before any download when Docker or the pinned image (by digest) is not available, and
+  on a download that is not the pinned file, a conversion that is not the run's reads, or a file already there
+  that is not the pinned one, which it leaves as it is.
 
 **Sub-layers.** Each module of `real/` is a layer of its own (see Layers and dependency rule). The rows, some ahead
 of their modules:
