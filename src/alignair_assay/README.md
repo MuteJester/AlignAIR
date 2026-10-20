@@ -429,9 +429,13 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
    avoidable share, each with its n.
 9. **Speed.** Present when `speed/speed.json` exists (`workflow.summary.speed_summary`). The host, how the
    protocol measures, and per configuration its cold start, steady reads/s, median full run and peak RSS, then its
-   threads, CPU list and device; a failed configuration shows dashes and its error is listed under the table. A
-   `speed.json` whose config hash is not the manifest's (measured for another configuration, or by the `speed`
-   command) is named, not shown.
+   threads, CPU list and device; a failed configuration shows dashes and its error is listed under the table. Only
+   measurements of the current configuration are shown; the others are named, with why, under the table or in place
+   of it (and in a warning). A `speed.json` whose config hash is not the manifest's (measured for another
+   configuration, or by the `speed` command), or whose reads' SHA-256 is not that of S1's current `reads.fasta`, is
+   stale as a whole. An alignair-local configuration whose `checkpoint_sha256` is not the SHA-256 of the
+   configuration's `--alignair-checkpoint` now (retrained in place or replaced; the config hash does not cover the
+   checkpoint when alignair-local is not a compared tool) is stale alone. `all --speed` measures stale ones again.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
 `cli.COMMANDS`. The module owns its own input checks: `run` raises ValueError (or FileNotFoundError) for invalid

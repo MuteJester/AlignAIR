@@ -15,7 +15,7 @@ from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.report.run import RUN_REPORT_KIND, RUN_REPORT_VERSION
-from alignair_assay.runners.base import read_run_json, require_successful_run
+from alignair_assay.runners.base import absolute_path, read_run_json, require_successful_run
 from alignair_assay.scoring.oracle import oracle_problems
 from alignair_assay.scoring.pipeline import read_scores
 from alignair_assay.stats import compare
@@ -145,25 +145,47 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
         "s11_parity": s11_parity(layout, cfg),
         "genotype_arms": genotype_arms(layout, cfg),
         "excess_alleles": excess_alleles_tables(layout, cfg),
-        "speed": speed_summary(layout),
+        "speed": speed_summary(layout, cfg),
     }
 
 
-def speed_summary(layout: RunLayout) -> dict | None:
-    """The run's speed measurements (``speed/speed.json``, see ``workflow.speed.run_speed``) for the run report:
-    None without the file. When the file belongs to the run directory's configuration (its ``config_hash`` is the
-    manifest's), its content plus ``failed``, the configurations whose measurement failed (``name``, ``error``).
-    Otherwise it was measured for another configuration, or by the ``speed`` command, and is not shown:
-    ``{"stale": True, "config_hash": the file's}``."""
+def speed_summary(layout: RunLayout, cfg: RunConfig) -> dict | None:
+    """The run's speed measurements (``speed/speed.json``, see ``workflow.speed.run_speed``) for the run report,
+    showing only what was measured for ``cfg``; None without the file.
+
+    The whole file is stale, and not shown, when its ``config_hash`` is not the manifest's (measured for another
+    configuration, or by the ``speed`` command) or its reads' SHA-256 is not that of the timed suite's current
+    ``reads.fasta``: ``{"stale": True, "config_hash": the file's, "reason": why}``. Otherwise the result is the
+    file's content with ``results`` restricted to the current configurations, ``stale_results`` (``name``,
+    ``reason``) naming the others, and ``failed`` (``name``, ``error``) the current ones whose measurement failed.
+    A configuration is stale when it records a ``checkpoint_sha256`` (alignair-local) that is not the SHA-256 of
+    ``cfg.alignair_checkpoint`` now: the checkpoint was retrained in place or replaced, which the config hash does
+    not show when alignair-local is not a compared tool."""
     speed = read_json(layout.speed_json)
     if speed is None:
         return None
-    if speed.get("config_hash") is None or speed.get("config_hash") != (read_json(layout.manifest) or {}).get(
-            "config_hash"):
-        return {"stale": True, "config_hash": speed.get("config_hash")}
-    failed = [{"name": name, "error": result["error"]} for name, result in (speed.get("results") or {}).items()
-              if "error" in result]
-    return {**speed, "failed": failed}
+    digest = speed.get("config_hash")
+    if digest is None or digest != (read_json(layout.manifest) or {}).get("config_hash"):
+        reason = ("measured for another configuration" if digest else
+                  "measured by the speed command, outside this configuration")
+        return {"stale": True, "config_hash": digest, "reason": reason}
+    reads = speed.get("reads") or {}
+    timed = layout.reads(reads["suite"]) if reads.get("suite") else None
+    if timed is None or not timed.is_file() or sha256_file(timed) != reads.get("sha256"):
+        return {"stale": True, "config_hash": digest,
+                "reason": f"measured on other {reads.get('suite')} reads than the suite's current ones (it was "
+                          "rebuilt since)"}
+    checkpoint = absolute_path(cfg.alignair_checkpoint) if cfg.alignair_checkpoint else None
+    current_checkpoint = sha256_file(checkpoint) if checkpoint and Path(checkpoint).is_file() else None
+    results, stale = {}, []
+    for name, result in (speed.get("results") or {}).items():
+        if "checkpoint_sha256" in result and result["checkpoint_sha256"] != current_checkpoint:
+            stale.append({"name": name, "reason": "measured on another checkpoint than the configuration's "
+                                                  f"{cfg.alignair_checkpoint or '(none)'}"})
+        else:
+            results[name] = result
+    failed = [{"name": name, "error": result["error"]} for name, result in results.items() if "error" in result]
+    return {**speed, "results": results, "stale_results": stale, "failed": failed}
 
 
 def oracle_check(layout: RunLayout, suite: str) -> dict:

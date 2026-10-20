@@ -219,15 +219,16 @@ def _host(host: dict) -> str:
 def speed_lines(speed: dict) -> list[str]:
     """The ``## Speed`` section of a run's speed measurements (``workflow.summary.speed_summary``, or a
     ``speed.json``): the host, how the protocol measures, one row per configuration (its measurements, then its
-    threads, CPU list and device; a failed one shows dashes) and the failures with their errors. A measurement of
-    another configuration (``stale``) is named instead, with its config hash."""
+    threads, CPU list and device; a failed one shows dashes), the failures with their errors and the stale
+    configurations (``stale_results``), named with why instead of shown. A stale file (``stale``) is named instead,
+    with its config hash and the reason."""
     if speed.get("stale"):
         digest = speed.get("config_hash")
-        source = (f"for another configuration (config hash {digest[:12]})" if digest
-                  else "by the speed command, outside this configuration")
+        reason = speed.get("reason") or ("measured for another configuration" if digest else
+                                         "measured by the speed command, outside this configuration")
         return ["", "## Speed", "",
-                f"speed/speed.json was measured {source}, so it is not shown. Run all --speed with this "
-                "configuration to measure it."]
+                f"speed/speed.json was {reason} (config hash {digest[:12] if digest else 'none'}), so it is not "
+                "shown. Run all --speed with this configuration to measure it."]
     n_tiny, n_full = _text(speed.get("n_tiny")), _text(speed.get("n_full"))
     results = speed.get("results") or {}
     rows = [[name, _number(result.get("cold_start_s"), ".2f"), _number(result.get("steady_reads_per_s"), ".1f"),
@@ -236,6 +237,8 @@ def speed_lines(speed: dict) -> list[str]:
              _text(result.get("threads")), _text(result.get("cpus")), _text(result.get("device"))]
             for name, result in results.items()]
     failures = [f"- {name} failed: {result['error']}" for name, result in results.items() if "error" in result]
+    failures += [f"- {row['name']}: not shown, {row['reason']}; run all --speed to measure it again"
+                 for row in speed.get("stale_results") or []]
     return ["", "## Speed", "",
             f"Host: {_host(speed.get('host') or {}) or MISSING}.", "",
             f"Each configuration annotated {n_tiny} and {n_full} reads evenly spaced across S1, "

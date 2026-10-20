@@ -230,8 +230,11 @@ def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference 
     for failure in speed.get("failed") or []:
         print(f"error: speed {failure['name']} failed: {failure['error']}", file=sys.stderr)
     if speed.get("stale"):
-        print(f"warning: {relative(layout, layout.speed_json)} was measured for another configuration and is not "
-              "reported; run all --speed to measure this one", file=sys.stderr)
+        print(f"warning: {relative(layout, layout.speed_json)} was {speed['reason']} and is not reported; run all "
+              "--speed to measure this configuration", file=sys.stderr)
+    for row in speed.get("stale_results") or []:
+        print(f"warning: speed {row['name']} was {row['reason']} and is not reported; run all --speed to measure "
+              "it again", file=sys.stderr)
     return 2 if summary["failed_runs"] or summary["oracle_failures"] or speed.get("failed") else 0
 
 

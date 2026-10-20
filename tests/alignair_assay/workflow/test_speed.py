@@ -375,8 +375,67 @@ def test_all_measures_speed_and_resumes(built, tmp_path, small_protocol, capsys)
     # A speed.json of another configuration is named in the report, not shown.
     layout.speed_json.write_text(json.dumps({**record, "config_hash": "d" * 64}))
     assert main(["report", "--run-dir", str(layout.root)]) == 0
-    assert json.loads(layout.report_json.read_text())["speed"] == {"stale": True, "config_hash": "d" * 64}
+    speed_report = json.loads(layout.report_json.read_text())["speed"]
+    assert speed_report["stale"] and speed_report["config_hash"] == "d" * 64
+    assert "another configuration" in speed_report["reason"]
     assert "another configuration" in layout.report_md.read_text().split("## Speed")[1]
+    # So is one measured on other S1 reads.
+    layout.speed_json.write_text(json.dumps({**record, "reads": {"suite": "S1", "sha256": "0" * 64}}))
+    assert main(["report", "--run-dir", str(layout.root)]) == 0
+    speed_report = json.loads(layout.report_json.read_text())["speed"]
+    assert speed_report["stale"] and "reads" in speed_report["reason"]
+    section = layout.report_md.read_text().split("## Speed")[1]
+    assert "other S1 reads" in section and "| quick_1t |" not in section
+
+
+class Local(Quick):
+    """``quick`` registered as alignair-local: timed on its checkpoint without running AlignAIR."""
+
+    name = "alignair-local"
+
+
+def test_rows_of_another_checkpoint_are_stale(built, tmp_path, small_protocol, monkeypatch, capsys):
+    monkeypatch.setitem(RUNNERS, "alignair-local", Local)
+    monkeypatch.setattr(speed, "local_cuda_available", lambda: True)
+    checkpoint, other = tmp_path / "a.alignair", tmp_path / "b.alignair"
+    checkpoint.write_bytes(b"weights 1")
+    other.write_bytes(b"weights 2")
+    layout = RunLayout(_copy(built, tmp_path))
+    # alignair-local is timed for its checkpoint but is not one of the compared tools, so the checkpoint is not part
+    # of the configuration hash.
+    cfg = RunConfig(suites=("S1",), tools=("oracle", "quick"), scale=0.02, workers=2, threads=2, speed=True,
+                    alignair_checkpoint=str(checkpoint))
+    assert run_all(cfg, layout) == 0
+    results = json.loads(layout.speed_json.read_text())["results"]
+    local = ["alignair-local_cuda", "alignair-local_2t"]
+    assert list(results) == ["quick_1t", "quick_2t", *local]
+    assert {results[name]["checkpoint_sha256"] for name in local} == {sha256_file(checkpoint)}
+    assert list(json.loads(layout.report_json.read_text())["speed"]["results"]) == list(results)
+
+    def shown_and_stale():
+        speed_report = json.loads(layout.report_json.read_text())["speed"]
+        return list(speed_report["results"]), [row["name"] for row in speed_report["stale_results"]]
+
+    # The checkpoint retrained in place: its rows are named as stale, not shown; the others still are.
+    checkpoint.write_bytes(b"weights 1, retrained")
+    capsys.readouterr()
+    assert main(["report", "--run-dir", str(layout.root)]) == 0
+    assert shown_and_stale() == (["quick_1t", "quick_2t"], local)
+    section = layout.report_md.read_text().split("## Speed")[1]
+    assert "| alignair-local_cuda |" not in section and "| quick_1t |" in section
+    assert "- alignair-local_cuda: not shown, measured on another checkpoint" in section
+    assert "alignair-local_cuda was measured on another checkpoint" in capsys.readouterr().err
+
+    # Another checkpoint, without --speed: the same configuration hash, and the same stale rows.
+    assert run_all(dataclasses.replace(cfg, alignair_checkpoint=str(other), speed=False), layout) == 0
+    assert shown_and_stale() == (["quick_1t", "quick_2t"], local)
+
+    # all --speed with it measures those rows again and keeps the others.
+    capsys.readouterr()
+    assert run_all(dataclasses.replace(cfg, alignair_checkpoint=str(other)), layout) == 0
+    printed = capsys.readouterr().out
+    assert "speed quick_1t: up to date, skipped" in printed and "speed alignair-local_2t: cold start" in printed
+    assert shown_and_stale() == (["quick_1t", "quick_2t", *local], [])
 
 
 def test_failed_speed_measurement(built, tmp_path, small_protocol, capsys):
