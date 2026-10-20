@@ -1487,8 +1487,13 @@ directory. No V(D)J tool and no germline reference is used; the only sequences g
   otherwise, or when both hold, `"unknown"`, and the run is refused with the fractions in its record.
   All eight pilot runs classify as their group: the SC runs `race` (linker in 94.4-96.1% of pairs), the W runs
   `multiplex` (VH primer in 94.7-95.8%, C primer in 90.3-93.5%).
-- Full-quality reads are first trimmed at Q20 and kept from 125 nt (the paper); SRA-Lite reads skip that, and the
-  record says so. 5'RACE: UMI (R2's first 12 nt) and the `GTAC` + `GGG` cut; the isotype from Immcantation's IGH
+- Full-quality reads first go through Immcantation's and airrflow's mean-quality filter (`FilterSeq quality -q 20`
+  on each mate): a read of mean quality below 20 is dropped whole, and none is shortened, since reference-free
+  assembly needs the mates' overlap. The paper's Q20 trimming and 125-nt minimum is `paper_quality_trim`, for
+  reproduction. SRA-Lite reads skip both, and the record says which ran. At most 35% of the pairs entering the
+  assembly may fail to (`assembly_acceptance`); those that fail are inserts the mates cannot span, dropped and
+  counted, and the record gives the insert-length deciles of the pairs that pass and fail.
+  5'RACE: UMI (R2's first 12 nt) and the `GTAC` + `GGG` cut; the isotype from Immcantation's IGH
   C-region primers on R1 (`MaskPrimers align`, within 70 nt, error 0.2); UMI consensus as the paper
   (`ClusterSets` within each UMI, `AlignSets muscle`, `BuildConsensus`); `AssemblePairs align`; `CollapseSeq`;
   consensus count of at least 2. Multiplex: `MaskPrimers score` masks the VH primer on R1 and the C primer on R2;
@@ -1502,10 +1507,12 @@ directory. No V(D)J tool and no germline reference is used; the only sequences g
   evidence), each step's pRESTO output in `preprocess_logs/` and, last, `preprocess.json`: the counts and pass rate
   of every step, the classifier's evidence, the image, the length distribution, the isotype split, the wall time
   and a fingerprint of the inputs' md5s, the module, the image and the parameters. A current record is reused.
-- On the pilot, W-97 (103,049 pairs) gives 41,161 unique sequences in 174 s, 66% of its primer-matched pairs
-  assembling; SC-23 (164,664 pairs) gives 6,601 in 317 s, 51% of its consensus pairs assembling. The pairs lost
-  are those whose mates, shortened by the Q20 trimming, no longer overlap; without the quality steps 83% and 71%
-  assemble.
+- On the pilot, W-97 (103,049 pairs) gives 70,327 unique sequences (capped to 50,000) in 205 s, 84% of its
+  primer-matched pairs assembling; SC-23 (164,664 pairs) gives 10,875 in 324 s, 74% of its consensus pairs
+  assembling. SC-23's failed pairs are mates too short to meet (half of them, from short raw reads) or inserts
+  longer than the mates span (over about 500 nt; the assembled inserts' deciles run from 435 to 506 nt); W-97's are
+  mostly overlaps with too many mismatches. With the paper's trimming only 66% and 51% assemble, the trimmed mates
+  no longer overlapping.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims.

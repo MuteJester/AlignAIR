@@ -263,10 +263,23 @@ ASSEMBLY> ACGTACGTACNGGGGGGGG
     assert evidence["pass"]["overlap"]["median"] == 2 and evidence["fail"]["overlap"]["median"] == 8
     assert evidence["fail"]["error"]["max"] == 0.5
     assert evidence["fail"]["head_length"]["min"] == 10 and evidence["fail"]["tail_length"]["min"] == 8
-    assert preprocess.assembly_evidence([], set()) == {"pass": {"n": 0, "overlap": {"n": 0}, "error": {"n": 0},
-                                                                "head_length": {"n": 0}, "tail_length": {"n": 0}},
-                                                       "fail": {"n": 0, "overlap": {"n": 0}, "error": {"n": 0},
-                                                                "head_length": {"n": 0}, "tail_length": {"n": 0}}}
+    # the insert-length estimates: the mates' combined length for both groups (a lower bound on a failed pair's
+    # insert when its mates do not meet), and the assembled length for the pairs that passed; median and deciles
+    assert evidence["pass"]["mates_length"] == {"n": 1, "min": 16, **{f"p{d}": 16 for d in range(10, 100, 10)},
+                                                "median": 16, "max": 16}
+    assert evidence["fail"]["mates_length"]["median"] == 18 and "insert_length" not in evidence["fail"]
+    assert evidence["pass"]["insert_length"]["median"] == 14 and evidence["pass"]["insert_length"]["p90"] == 14
+    empty = preprocess.assembly_evidence([], set())
+    assert empty["pass"]["n"] == empty["fail"]["n"] == 0
+    assert empty["pass"]["insert_length"] == empty["fail"]["mates_length"] == {"n": 0}
+
+
+def test_deciles_are_the_nearest_rank_quantiles():
+    found = preprocess.deciles(list(range(1, 101)))
+    assert found["n"] == 100 and found["min"] == 1 and found["max"] == 100
+    assert [found[f"p{d}"] for d in range(10, 100, 10)] == [11, 21, 31, 41, 51, 61, 71, 81, 91]
+    assert found["median"] == found["p50"] == 51
+    assert preprocess.deciles([]) == {"n": 0}
 
 
 # --- the recipes ---------------------------------------------------------------------------------------------------
@@ -277,12 +290,13 @@ def _names(steps) -> list[str]:
 
 def test_the_race_recipe_follows_the_paper():
     steps = recipe("race", quality="full", r1="/in1/a_1.fastq.gz", r2="/in2/a_2.fastq.gz", nproc=8)
-    assert _names(steps) == ["trimqual-r1", "trimqual-r2", "length-r1", "length-r2", "umi", "linker", "c-primer",
-                             "pair", "cluster", "molecule", "pair-molecule", "align-r1", "align-r2",
-                             "consensus-r1", "consensus-r2", "pair-consensus", "assemble", "conscount", "collapse",
-                             "conscount-2"]
+    assert _names(steps) == ["quality-r1", "quality-r2", "umi", "linker", "c-primer", "pair", "cluster", "molecule",
+                             "pair-molecule", "align-r1", "align-r2", "consensus-r1", "consensus-r2",
+                             "pair-consensus", "assemble", "conscount", "collapse", "conscount-2"]
     by_name = {step.name: step.argv for step in steps}
-    assert by_name["trimqual-r1"][:2] == ("FilterSeq.py", "trimqual") and "/in1/a_1.fastq.gz" in by_name["trimqual-r1"]
+    assert "/in1/a_1.fastq.gz" in by_name["quality-r1"] and "/in2/a_2.fastq.gz" in by_name["quality-r2"]
+    assert _flags(by_name["umi"], "-s") == ["R2-quality_quality-pass.fastq"]
+    assert _flags(by_name["c-primer"], "-s") == ["R1-quality_quality-pass.fastq"]
     assert _flags(by_name["umi"], "--start", "--len", "--pf", "--mode") == ["0", "12", "UMI", "cut"]
     assert _flags(by_name["linker"], "--start", "--len", "--mode") == ["0", "7", "cut"]
     assert by_name["c-primer"][:2] == ("MaskPrimers.py", "align")
@@ -299,8 +313,8 @@ def test_the_race_recipe_follows_the_paper():
 
 def test_the_multiplex_recipe_masks_both_primers_and_filters_the_length():
     steps = recipe("multiplex", quality="full", r1="/in1/a_1.fastq.gz", r2="/in2/a_2.fastq.gz", nproc=8)
-    assert _names(steps) == ["trimqual-r1", "trimqual-r2", "length-r1", "length-r2", "v-primer", "c-primer",
-                             "both-primers", "assemble", "length", "collapse"]
+    assert _names(steps) == ["quality-r1", "quality-r2", "v-primer", "c-primer", "both-primers", "assemble",
+                             "length", "collapse"]
     by_name = {step.name: step.argv for step in steps}
     assert by_name["v-primer"][:2] == ("MaskPrimers.py", "score")
     assert _flags(by_name["v-primer"], "--start", "--mode", "--pf") == ["0", "mask", "VPRIMER"]
@@ -312,16 +326,39 @@ def test_the_multiplex_recipe_masks_both_primers_and_filters_the_length():
     assert _flags(paper["length"], "-n") == ["400"] and "--inner" not in paper["length"]
 
 
+def test_the_default_quality_step_is_the_mean_quality_filter_and_the_option_trims():
+    """Full-quality reads get Immcantation's mean-quality filter by default: whole reads below Q20 on average are
+    dropped and none is shortened, which keeps the mates' overlap. ``paper_quality_trim`` switches to the paper's
+    Q20 trimming and 125-nt minimum."""
+    for protocol in ("race", "multiplex"):
+        default = recipe(protocol, quality="full", r1="/in1/a", r2="/in2/b", nproc=2)
+        assert _names(default)[:2] == ["quality-r1", "quality-r2"]
+        for step, mate in zip(default[:2], ("/in1/a", "/in2/b")):
+            assert step.argv[:2] == ("FilterSeq.py", "quality") and _flags(step.argv, "-s", "-q") == [mate, "20"]
+        assert not any(part in ("trimqual", "length") for step in default[:2] for part in step.argv)
+        trimmed = recipe(protocol, quality="full", r1="/in1/a", r2="/in2/b", nproc=2, paper_quality_trim=True)
+        assert _names(trimmed)[:4] == ["trimqual-r1", "trimqual-r2", "length-r1", "length-r2"]
+        assert _names(trimmed)[4:] == _names(default)[2:]
+        by_name = {step.name: step.argv for step in trimmed}
+        assert by_name["trimqual-r1"][:2] == ("FilterSeq.py", "trimqual")
+        assert _flags(by_name["trimqual-r1"], "-s", "-q") == ["/in1/a", "20"]
+        assert _flags(by_name["length-r2"], "-n") == ["125"]
+        # the primer steps read the trimmed mates
+        assert any("R1-quality_length-pass.fastq" in step.argv for step in trimmed[4:])
+        assert any("R2-quality_length-pass.fastq" in step.argv for step in trimmed[4:])
+
+
 def test_lite_reads_skip_the_quality_steps():
     for protocol in ("race", "multiplex"):
         full = recipe(protocol, quality="full", r1="/in1/a", r2="/in2/b", nproc=2)
-        lite = recipe(protocol, quality="lite", r1="/in1/a", r2="/in2/b", nproc=2)
-        assert _names(full)[:4] == ["trimqual-r1", "trimqual-r2", "length-r1", "length-r2"]
-        assert _names(lite) == _names(full)[4:]
-        # the raw mates go straight to the primer steps
-        assert any("/in1/a" in step.argv for step in lite) and any("/in2/b" in step.argv for step in lite)
-        assert not any("-quality_" in part for step in lite for part in step.argv)
-        assert any("-quality_length-pass" in part for step in full[4:] for part in step.argv)
+        for paper_quality_trim in (False, True):
+            lite = recipe(protocol, quality="lite", r1="/in1/a", r2="/in2/b", nproc=2,
+                          paper_quality_trim=paper_quality_trim)
+            assert _names(lite) == _names(full)[2:]
+            # the raw mates go straight to the primer steps
+            assert any("/in1/a" in step.argv for step in lite) and any("/in2/b" in step.argv for step in lite)
+            assert not any("-quality_" in part for step in lite for part in step.argv)
+        assert any("-quality_quality-pass" in part for step in full[2:] for part in step.argv)
     with pytest.raises(ValueError, match="quality"):
         recipe("race", quality="medium", r1="/in1/a", r2="/in2/b", nproc=2)
     with pytest.raises(ValueError, match="protocol"):
@@ -393,9 +430,12 @@ def test_the_fingerprint_follows_inputs_code_image_and_parameters(tmp_path):
     assert base["inputs"]["r1"]["md5"] == "f97c5d29941bfb1b2fdab0874906ab82"
     assert base["image"] == IMMCANTATION_IMAGE and base["code_sha256"] == preprocess._CODE_SHA256
     assert base == preprocess.run_fingerprint(r1, r2, quality="full", cap=10, paper_length_filter=False)
-    for changed in ({"quality": "lite"}, {"cap": 11}, {"paper_length_filter": True}):
+    assert base["parameters"]["paper_quality_trim"] is False
+    for changed in ({"quality": "lite"}, {"cap": 11}, {"paper_length_filter": True}, {"paper_quality_trim": True}):
         kwargs = {"quality": "full", "cap": 10, "paper_length_filter": False, **changed}
         assert preprocess.run_fingerprint(r1, r2, **kwargs)["fingerprint"] != base["fingerprint"]
+    assert preprocess.run_fingerprint(r1, r2, quality="full", cap=10, paper_length_filter=False,
+                                      paper_quality_trim=True)["parameters"]["paper_quality_trim"] is True
     r2.write_bytes(b"three")
     assert preprocess.run_fingerprint(r1, r2, quality="full", cap=10,
                                       paper_length_filter=False)["fingerprint"] != base["fingerprint"]
@@ -439,7 +479,9 @@ def test_both_recipes_end_to_end_in_the_container(reference, tmp_path):
     race_dir = tmp_path / "race"
     race_dir.mkdir()
     record = preprocess_run("SC-T", *_write_pairs(race_dir, r1 + s1, r2 + s2), layout, quality="full", nproc=2)
-    assert record["protocol"] == "race" and record["status"] == "done" and record["quality_steps"] == "applied"
+    assert record["protocol"] == "race" and record["status"] == "done"
+    assert record["quality_steps"] == preprocess.QUALITY_FILTER and record["parameters"]["paper_quality_trim"] is False
+    assert [step["name"] for step in record["steps"]][:2] == ["quality-r1", "quality-r2"]
     rows = _rows(layout, "SC-T")
     expected = {UTR + molecule["vdj"]: molecule for molecule in molecules + collision}
     assert {row["sequence"] for row in rows} == set(expected)
@@ -449,6 +491,12 @@ def test_both_recipes_end_to_end_in_the_container(reference, tmp_path):
     counts = record["counts"]
     assert counts["raw_pairs"] == 3 * 26 + 4 and counts["unique"] == 26 and counts["capped"] == 26
     assert record["pass_rates"]["assembly"] == 1.0
+    # the 30 consensus pairs (the single-read molecules' too, dropped later) all assemble; their inserts are the
+    # 10-nt UTR and the V(D)J, 386 or 391 nt
+    assert record["assembly_acceptance"] == {"pairs": 30, "failed": 0, "failure_rate": 0.0, "max_failure_rate": 0.35,
+                                             "accepted": True}
+    assert record["assembly"]["fail"]["n"] == 0 and record["assembly"]["pass"]["n"] == 30
+    assert {record["assembly"]["pass"]["insert_length"][key] for key in ("min", "max")} == {386, 391}
     assert record["isotypes"] == {"IGHG": 13, "IGHM": 13}
 
     # multiplex: 20 molecules of 2 copies, one too short after primer removal, one pair without a C primer
@@ -474,6 +522,7 @@ def test_both_recipes_end_to_end_in_the_container(reference, tmp_path):
     counts = record["counts"]
     assert counts["raw_pairs"] == 42 and counts["both-primers"] == 41 and counts["assemble"] == 41
     assert counts["length"] == 40 and counts["unique"] == 20
+    assert record["assembly_acceptance"]["pairs"] == 41 and record["assembly_acceptance"]["accepted"] is True
     assert record["image"]["repo_digests"] and record["classifier"]["evidence"]["vh_primers"] == {"VH4": 42}
 
     # a current record is reused; the logs are kept and the work directory is gone

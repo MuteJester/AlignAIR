@@ -15,11 +15,23 @@ pairs), since the paper's per-donor label is wrong for at least one run:
 
 **The recipes** (``recipe``; each step one pRESTO 0.7.9 command in its own container):
 
-- Quality, full-quality reads only (the paper: "All R1 and R2 reads were trimmed to Q = 20, and reads <125 bp
-  were excluded"): ``FilterSeq trimqual -q 20`` then ``FilterSeq length -n 125``, on each mate. SRA-Lite qualities
-  (every base ``?`` or ``$``) carry no per-base information, so with ``quality="lite"`` these steps are skipped and
-  the record says so (``quality_steps``). Reads said to be full quality are refused when their first records have
-  only SRA-Lite symbols.
+- Quality, full-quality reads only, on each mate before pairing and consensus:
+  - by default the Immcantation and nf-core/airrflow standard, ``FilterSeq quality -q 20``: a read whose mean
+    quality is below 20 is dropped whole, and no read is shortened (the image's ``presto-clontech-umi`` and
+    ``presto-abseq``, and airrflow's ``filterseq_q`` of 20). Reference-free assembly needs the mates' overlap, which
+    trimming destroys; ``BuildConsensus`` and ``AssemblePairs`` use the per-base qualities to resolve errors;
+  - with ``paper_quality_trim``, the paper's trimming (Rodriguez et al. 2023, Methods: "All R1 and R2 reads were
+    trimmed to Q = 20, and reads <125 bp were excluded"): ``FilterSeq trimqual -q 20`` then ``FilterSeq length -n
+    125``, kept to reproduce it. On the pilot it costs the assembly a fifth to a half of its pairs, whose trimmed
+    mates no longer overlap (the README has the numbers).
+
+  SRA-Lite qualities (every base ``?`` or ``$``) carry no per-base information, so with ``quality="lite"`` neither
+  runs, and the record says which ran (``quality_steps``). Reads said to be full quality are refused when their
+  first records have only SRA-Lite symbols.
+- **The assembly's acceptance line.** At most ``MAX_ASSEMBLY_FAILURE`` (35%) of the pairs entering the assembly
+  may fail to assemble (``assembly_acceptance`` in the record; a run over it is recorded as not accepted, not
+  stopped). The pairs that fail are inserts too long for the mates to overlap: lost reads, not wrong ones, and both
+  tools see the same set. They are dropped and counted, never joined or assembled against a reference.
 - 5'RACE:
   1. ``MaskPrimers extract`` on R2: the UMI (start 0, length 12) to the header as ``UMI``, cut;
   2. ``MaskPrimers extract`` on R2: the ``GTAC`` + ``GGG`` that follow (7 nt), cut;
@@ -53,8 +65,7 @@ pairs), since the paper's per-donor label is wrong for at least one run:
 **Differences from the image's ``presto-clontech-umi``** (``/usr/local/sbin/presto-clontech-umi``, 2021-09-11),
 the Immcantation pipeline for this kit:
 
-- quality: it removes reads whose mean quality is below 20 (``FilterSeq quality``); this follows the paper
-  (``trimqual`` Q20, then reads of at least 125 nt);
+- quality: the same by default (``FilterSeq quality -q 20``); the paper's trimming is ``paper_quality_trim``;
 - UMI: it extracts UMI and linker in one call (``extract --start 12 --len 7 --barcode``: the 12 nt before the 7-nt
   ``GTACGGG`` are the barcode); here two calls take the same 12 + 7 nt;
 - UMI collisions: it has no ``ClusterSets``, and its ``AlignSets`` is off unless asked for (``-a``); here both run,
@@ -80,10 +91,12 @@ primer at its end, from the primers' lengths, so a primer base that the assembly
 still excluded; 5'RACE reads have none, their primers being cut. Those bases were never read from the template:
 they carry no germline evidence.
 
-**The record** holds the counts at every step and each step's pass rate, the quality and whether its steps ran,
-the image found (``check_image``), the classifier's evidence, the length distribution of the assembled reads, the
-isotype split, the wall time and a ``fingerprint``: SHA-256 over the inputs' md5s, this module's SHA-256, the
-pinned image and the parameters (``run_fingerprint``). A record is reused only while it is current: its fingerprint
+**The record** holds the counts at every step and each step's pass rate, the quality and which quality steps ran,
+the image found (``check_image``), the classifier's evidence, the assembly's acceptance and its evidence
+(``assembly_evidence``: overlap, error, mate lengths and the insert-length estimates of the pairs that passed and
+failed, as deciles), the length distribution of the assembled reads, the isotype split, the wall time and a
+``fingerprint``: SHA-256 over the inputs' md5s, this module's SHA-256, the pinned image and the parameters
+(``run_fingerprint``; ``paper_quality_trim`` among them). A record is reused only while it is current: its fingerprint
 is the current one and its FASTA and TSV are the ones it recorded. Otherwise the run is redone from the reads: the
 old record and outputs are removed first, the work directory (``real_preprocess_work``, the container's only
 writable mount; the reads are mounted read-only) is removed once the outputs are written, and the record comes
@@ -154,8 +167,12 @@ LINKER_AND_TSO = 7  # GTAC + GGG, cut after the UMI
 CLASSIFIER_PAIRS = 2000
 CLASSIFIER_THRESHOLD = 0.8
 PRIMER_MISMATCHES = 2
-TRIM_QUALITY = 20
-MIN_READ_LENGTH = 125
+MIN_QUALITY = 20  # the mean-quality filter's threshold, and the paper's trimming threshold
+MIN_READ_LENGTH = 125  # the paper's minimum after trimming
+QUALITY_FILTER = "FilterSeq quality -q 20 on each mate: reads of mean quality below 20 dropped, none shortened"
+QUALITY_TRIM = "FilterSeq trimqual -q 20 then length -n 125 on each mate: the paper's trimming"
+QUALITY_SKIPPED = "skipped: SRA-Lite qualities carry no per-base quality"
+MAX_ASSEMBLY_FAILURE = 0.35  # the share of pairs entering the assembly that may fail to assemble
 C_PRIMER_MAXLEN = 70
 PRIMER_MAXERROR = 0.2
 CLUSTER_IDENTITY = 0.9
@@ -314,10 +331,11 @@ def cap_sequences(records: Sequence[dict], cap: int) -> list[dict]:
 
 # --- the recipes ---------------------------------------------------------------------------------------------------
 
-def recipe(protocol: str, *, quality: str, r1: str, r2: str, nproc: int,
-           paper_length_filter: bool = False) -> list[Step]:
+def recipe(protocol: str, *, quality: str, r1: str, r2: str, nproc: int, paper_length_filter: bool = False,
+           paper_quality_trim: bool = False) -> list[Step]:
     """The pRESTO steps of ``protocol`` on raw mates ``r1`` and ``r2`` (their paths in the container), in order (the
-    module docstring). ValueError for another protocol or quality."""
+    module docstring). Full-quality reads first get the mean-quality filter, or the paper's trimming with
+    ``paper_quality_trim``; Lite reads get neither. ValueError for another protocol or quality."""
     if protocol not in PROTOCOLS:
         raise ValueError(f"no recipe for protocol {protocol!r}: one of {', '.join(PROTOCOLS)}")
     if quality not in QUALITIES:
@@ -326,10 +344,16 @@ def recipe(protocol: str, *, quality: str, r1: str, r2: str, nproc: int,
     # gzip its output, and every later step's.
     n = ("--nproc", str(nproc))
     steps: list[Step] = []
-    if quality == "full":
+    if quality == "full" and not paper_quality_trim:
+        for mate, raw in (("1", r1), ("2", r2)):
+            kept = f"R{mate}-quality_quality-pass.fastq"
+            steps.append(Step(f"quality-r{mate}", ("FilterSeq.py", "quality", "-s", raw, "-q", str(MIN_QUALITY), *n,
+                                                   "-o", kept), raw, (kept,)))
+        r1, r2 = "R1-quality_quality-pass.fastq", "R2-quality_quality-pass.fastq"
+    elif quality == "full":
         for mate, raw in (("1", r1), ("2", r2)):
             trimmed = f"R{mate}-quality_trimqual-pass.fastq"
-            steps.append(Step(f"trimqual-r{mate}", ("FilterSeq.py", "trimqual", "-s", raw, "-q", str(TRIM_QUALITY),
+            steps.append(Step(f"trimqual-r{mate}", ("FilterSeq.py", "trimqual", "-s", raw, "-q", str(MIN_QUALITY),
                                                     *n, "-o", trimmed), raw, (trimmed,)))
         for mate in ("1", "2"):
             trimmed = f"R{mate}-quality_trimqual-pass.fastq"
@@ -430,7 +454,8 @@ def step_command(args: Sequence[str], *, donor: str, step: str, work, r1, r2, np
 
 # --- the run -------------------------------------------------------------------------------------------------------
 
-def run_fingerprint(r1, r2, *, quality: str, cap: int, paper_length_filter: bool) -> dict:
+def run_fingerprint(r1, r2, *, quality: str, cap: int, paper_length_filter: bool,
+                    paper_quality_trim: bool = False) -> dict:
     """What a record must match to be current: ``inputs`` (each mate's path, md5 and size), ``image`` (the pinned
     reference), ``code_sha256`` (this module), ``parameters`` and ``fingerprint``, the SHA-256 over the inputs' md5s,
     the image, the code and the parameters."""
@@ -438,7 +463,8 @@ def run_fingerprint(r1, r2, *, quality: str, cap: int, paper_length_filter: bool
               for mate, path in (("r1", r1), ("r2", r2))}
     parameters = {"quality": quality, "cap": cap, "paper_length_filter": paper_length_filter,
                   "min_length": PAPER_MIN_LENGTH if paper_length_filter else MIN_LENGTH,
-                  "length_after_primer_removal": not paper_length_filter}
+                  "length_after_primer_removal": not paper_length_filter, "paper_quality_trim": paper_quality_trim,
+                  "max_assembly_failure": MAX_ASSEMBLY_FAILURE}
     digest = hashlib.sha256(json.dumps({"inputs": [inputs["r1"]["md5"], inputs["r2"]["md5"]],
                                         "image": IMMCANTATION_IMAGE, "code": _CODE_SHA256,
                                         "parameters": parameters}, sort_keys=True).encode()).hexdigest()
@@ -447,13 +473,15 @@ def run_fingerprint(r1, r2, *, quality: str, cap: int, paper_length_filter: bool
 
 
 def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: int = CAP,
-                   paper_length_filter: bool = False, nproc: int = NPROC, timeout: float = STEP_TIMEOUT) -> dict:
+                   paper_length_filter: bool = False, paper_quality_trim: bool = False, nproc: int = NPROC,
+                   timeout: float = STEP_TIMEOUT) -> dict:
     """Preprocess donor ``donor``'s run from its gzipped mates ``r1`` and ``r2`` into ``layout`` (the module
     docstring) and return its record; a current record is returned as it is, with ``reused`` True.
 
     ``quality`` is the reads' quality alphabet (``"full"`` or ``"lite"``, as fetched); ``cap`` the most sequences
-    kept; ``paper_length_filter`` the paper's multiplex length filter; ``nproc`` the CPUs given to the container and
-    to each pRESTO step; ``timeout`` the seconds one step may take. ValueError for another quality or cap;
+    kept; ``paper_length_filter`` the paper's multiplex length filter; ``paper_quality_trim`` the paper's Q20
+    trimming in place of the mean-quality filter; ``nproc`` the CPUs given to the container and to each pRESTO step;
+    ``timeout`` the seconds one step may take. ValueError for another quality or cap;
     PreprocessError for a run the classifier refuses (its record written, with the evidence), reads said to be full
     quality that have SRA-Lite qualities, mates that are not the same pairs, or a step that lets no read through;
     ContainerError when Docker or the pinned image is missing (before anything is written) or a step fails."""
@@ -463,7 +491,8 @@ def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: 
         raise ValueError(f"the cap must be a positive number of sequences, got {cap!r}")
     r1, r2 = Path(r1).absolute(), Path(r2).absolute()
     record_path = layout.real_preprocess_json(donor)
-    pinned = run_fingerprint(r1, r2, quality=quality, cap=cap, paper_length_filter=paper_length_filter)
+    pinned = run_fingerprint(r1, r2, quality=quality, cap=cap, paper_length_filter=paper_length_filter,
+                             paper_quality_trim=paper_quality_trim)
     current = _current(layout, donor, pinned["fingerprint"])
     if current is not None:
         return {**current, "reused": True}
@@ -490,7 +519,7 @@ def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: 
         directory.mkdir(parents=True)
     _write_primers(work)
     steps = recipe(protocol, quality=quality, r1=f"{IN1}/{r1.name}", r2=f"{IN2}/{r2.name}", nproc=nproc,
-                   paper_length_filter=paper_length_filter)
+                   paper_length_filter=paper_length_filter, paper_quality_trim=paper_quality_trim)
     raw = _count_gz(r1)
     if _count_gz(r2) != raw:
         raise PreprocessError(f"{donor}: {r1.name} and {r2.name} hold different numbers of reads")
@@ -512,9 +541,13 @@ def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: 
     _archive_log(work / ASSEMBLE_LOG, logs / f"{ASSEMBLE_LOG}.gz")
     shutil.rmtree(work)
     pairs_in = counts["pair-consensus" if protocol == "race" else "both-primers"]
+    failure = _rate(pairs_in - counts["assemble"], pairs_in)
     record.update(
         status="done", reused=False, image=image, nproc=nproc,
-        quality_steps="applied" if quality == "full" else "skipped: SRA-Lite qualities carry no per-base quality",
+        quality_steps=QUALITY_SKIPPED if quality == "lite" else QUALITY_TRIM if paper_quality_trim else QUALITY_FILTER,
+        assembly_acceptance={"pairs": pairs_in, "failed": pairs_in - counts["assemble"], "failure_rate": failure,
+                             "max_failure_rate": MAX_ASSEMBLY_FAILURE,
+                             "accepted": failure is not None and failure <= MAX_ASSEMBLY_FAILURE},
         container=step_command([], donor=donor, step="<step>", work=work, r1=r1, r2=r2, nproc=nproc),
         steps=ran, counts=counts,
         pass_rates={"assembly": _rate(counts["assemble"], pairs_in), "yield": _rate(len(rows), raw),
@@ -639,20 +672,30 @@ def _write_primers(work: Path) -> None:
 
 def assembly_evidence(log_lines, passed: set[str]) -> dict:
     """What ``AssemblePairs align`` found per pair, from its ``--log`` lines: for the pairs whose id is in
-    ``passed`` (``pass``) and the others (``fail``), the count and the distributions of the overlap and error of the
-    best alignment it tried and of each mate's length (``SEQ1`` the head, ``SEQ2`` the tail, as it logs them)."""
+    ``passed`` (``pass``) and the others (``fail``), the count and the distributions (``deciles``) of the overlap
+    and error of the best alignment it tried, of each mate's length (``SEQ1`` the head, ``SEQ2`` the tail, as it
+    logs them) and of the insert-length estimates: ``mates_length``, the mates' combined length (for a failed pair
+    whose mates do not meet, a lower bound on its insert), and for the passed pairs ``insert_length``, the
+    assembled length."""
     groups: dict[str, dict[str, list]] = {
-        kind: {"overlap": [], "error": [], "head_length": [], "tail_length": []} for kind in ("pass", "fail")}
+        kind: {"overlap": [], "error": [], "head_length": [], "tail_length": [], "mates_length": []}
+        for kind in ("pass", "fail")}
+    groups["pass"]["insert_length"] = []
 
     def close(entry: dict) -> None:
         if "ID" not in entry:
             return
-        group = groups["pass" if entry["ID"].split("|")[0].split()[0] in passed else "fail"]
+        kind = "pass" if entry["ID"].split("|")[0].split()[0] in passed else "fail"
+        group = groups[kind]
         for key, field in (("overlap", "OVERLAP"), ("error", "ERROR")):
             if entry.get(field) not in (None, "", "None"):
                 group[key].append(float(entry[field]) if key == "error" else int(entry[field]))
-        group["head_length"].append(len(entry.get("SEQ1", "").strip()))
-        group["tail_length"].append(len(entry.get("SEQ2", "").strip()))
+        head, tail = len(entry.get("SEQ1", "").strip()), len(entry.get("SEQ2", "").strip())
+        group["head_length"].append(head)
+        group["tail_length"].append(tail)
+        group["mates_length"].append(head + tail)
+        if kind == "pass" and entry.get("LENGTH") not in (None, "", "None"):
+            group["insert_length"].append(int(entry["LENGTH"]))
 
     entry: dict = {}
     for line in log_lines:
@@ -663,8 +706,20 @@ def assembly_evidence(log_lines, passed: set[str]) -> dict:
         else:
             entry[key.strip()] = value
     close(entry)
-    return {kind: {"n": len(values["head_length"]), **{key: _summary(found) for key, found in values.items()}}
+    return {kind: {"n": len(values["head_length"]), **{key: deciles(found) for key, found in values.items()}}
             for kind, values in groups.items()}
+
+
+def deciles(values: Sequence[float]) -> dict:
+    """``n``, ``min``, the nine deciles ``p10``..``p90`` (nearest rank: the value at position ``floor(q * n)`` of
+    the sorted values), ``median`` (``p50``) and ``max``; ``{"n": 0}`` for no values."""
+    if not values:
+        return {"n": 0}
+    ordered = sorted(values)
+    found = {"n": len(ordered), "min": ordered[0]}
+    found.update({f"p{decile}": ordered[min(len(ordered) - 1, decile * len(ordered) // 100)]
+                  for decile in range(10, 100, 10)})
+    return {**found, "median": found["p50"], "max": ordered[-1]}
 
 
 def _assembled_lengths(path: Path) -> dict:
