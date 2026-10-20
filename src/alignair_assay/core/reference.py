@@ -1,6 +1,6 @@
 """Germline reference used by the assay: allele sequences per gene plus conserved anchors.
 
-This is the only assay module that imports ``alignair`` (``Reference.from_dataconfig``).
+With the ``diagnostics`` layer, this is the only assay code that imports ``alignair`` (``Reference.from_dataconfig``).
 """
 from __future__ import annotations
 
@@ -61,6 +61,31 @@ class Reference:
             for name in sorted(self.alleles[letter]):
                 h.update(f"{letter}\t{name}\t{self.alleles[letter][name]}\n".encode())
         return h.hexdigest()
+
+    def sequences(self) -> dict[str, str]:
+        """Every allele's sequence by name, across the gene letters."""
+        return {name: seq for table in self.alleles.values() for name, seq in table.items()}
+
+    def counts(self) -> dict[str, int]:
+        """Allele count per gene letter, in v, d, j order; a letter the reference lacks is left out."""
+        return {g: len(self.alleles[g]) for g in ("v", "d", "j") if g in self.alleles}
+
+    def counts_text(self) -> str:
+        """The allele counts as text, e.g. ``V=198 D=33 J=7``."""
+        return " ".join(f"{g.upper()}={n}" for g, n in self.counts().items())
+
+    def first_difference(self, truth: "Reference", label: str) -> str:
+        """The first allele, in name order, that this reference (called ``label``, e.g. ``"tool"``) lacks, adds or
+        holds with another sequence than ``truth``, as text naming the allele."""
+        mine, theirs = self.sequences(), truth.sequences()
+        for name in sorted(mine.keys() | theirs.keys()):
+            if name not in mine:
+                return f"{name} is missing from the {label} reference"
+            if name not in theirs:
+                return f"{name} is extra in the {label} reference"
+            if mine[name] != theirs[name]:
+                return f"{name} has a different sequence in the {label} reference"
+        return "the same alleles under other gene letters"
 
     @classmethod
     def from_reference_set(cls, rs) -> "Reference":

@@ -39,8 +39,8 @@ PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter --suit
   - Scores, comparisons and the report are always recomputed from the current runs, so a scoring change takes
     effect on the next `all` without rebuilding or rerunning anything.
 - **In-process evaluation.** alignair-local runs the AlignAIR CLI in a subprocess and scores its AIRR output. The
-  `diagnostics` layer (empty so far) is where in-process code (stage replay, head-level scoring, ablations) lives;
-  it and `core/reference.py` are the only code that imports `alignair`.
+  `diagnostics` layer is where in-process code lives (so far the stage replay, see Diagnostics; head-level scoring
+  and ablations follow); it and `core/reference.py` are the only code that imports `alignair`.
 
 ## Layers and dependency rule
 
@@ -58,7 +58,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
 | `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, `read_genotypes`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
-| `diagnostics` | model diagnostics for AlignAIR, run in process (empty so far) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
+| `diagnostics` | model diagnostics for AlignAIR, run in process: `replay` (the predict pipeline replayed stage by stage, see Diagnostics) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -885,3 +885,31 @@ then recorded with that return code, the `failed_donor` and its `error` line, an
 AlignAIR 3.0.0's `predict --genotype` crashes (`AttributeError: 'tuple' object has no attribute 'items'`):
 `alignair/cli/predict.py` passes `load_genotype`'s `(genotype, unknown)` tuple on as the genotype. Until a fixed
 AlignAIR is released, every AlignAIR genotype-arm run is recorded as failed with that error line.
+
+## Diagnostics
+
+### Replay
+
+`diagnostics.replay.replay(model, reference_set, sequences, ids, *, device, batch_size)` runs AlignAIR's predict
+pipeline one stage at a time and returns `StageOutputs`: the raw forward outputs (logits included, concatenated
+over batches), the cleaned and calibrated `Predictions`, the forward-frame reads, the corrected `Segments`, the
+allele calls, the germline alignments, the light records, the AIRR rows and the wall time per stage (`STAGES`).
+Each stage is AlignAIR's own function, called in the order `alignair.predict.pipeline.predict` calls it, with the
+`PredictConfig` that `alignair.api.predict_sequences` builds (`predict_config`); the forward pass builds each batch
+dict itself, so a later substitution can teacher-force orientation. `Substitutions` names what can be fed in
+between stages (orientation, spans, the classifier's spans, calls, germline alignments, the argmax decoder); the
+default substitutes nothing, and no substitution is implemented yet.
+
+The replay is proven equal to the product: `tests/alignair_assay/diagnostics/test_replay.py` requires its AIRR
+rows and light records to equal `predict_sequences`' on S0 reads (plus an over-length, a lower-case and an N-bearing
+read) with small random-init models shaped to cover every orientation, indels and two loci, and on 200 S1 reads
+with the released checkpoint (`ALIGNAIR_ASSAY_MODEL`). It also pins a digest of the code of the product functions
+the replay mirrors (`pipeline.predict`, `predict_sequences`, `run_model`): any edit to them fails the test until the
+replay is re-checked and the digest updated. `tests/alignair_assay/diagnostics/conftest.py` provides the small
+random-init models (`make_small_model`, `small_model`) and a built S0 (`s0_layout`, `s0_reads`) to the diagnostics
+tests.
+
+`load_model_checked(checkpoint_or_model, truth_reference, *, device)` loads a `.alignair` file with
+`alignair.api.load_model`, or passes a `(model, reference_set)` pair through (moving the model to `device`), and
+refuses a model whose reference is not the truth reference (unequal digests), naming both references' allele counts
+and the first allele that is missing from the model's reference, extra in it, or has a different sequence there.

@@ -51,8 +51,8 @@ def verify_reference(tool_fasta, truth: Reference) -> Reference:
     tool = Reference.from_fasta(tool_fasta)
     if tool.digest() == truth.digest():
         return tool
-    raise ValueError(f"{tool_fasta} is not the truth reference: it has {_counts_text(tool)}, the truth reference "
-                     f"has {_counts_text(truth)}; first difference: {_first_difference(tool, truth)}")
+    raise ValueError(f"{tool_fasta} is not the truth reference: it has {tool.counts_text()}, the truth reference "
+                     f"has {truth.counts_text()}; first difference: {tool.first_difference(truth, 'tool')}")
 
 
 def ensure_shared_reference(layout: RunLayout, truth: Reference) -> Path:
@@ -73,7 +73,7 @@ def ensure_shared_reference(layout: RunLayout, truth: Reference) -> Path:
         layout.reference_dir.mkdir(parents=True, exist_ok=True)
         write_reference_fasta(truth, path)
         source = "truth"
-    record = {"digest": truth.digest(), "counts": _counts(truth), "source": source, "sha256": sha256_file(path)}
+    record = {"digest": truth.digest(), "counts": truth.counts(), "source": source, "sha256": sha256_file(path)}
     layout.reference_json.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     return path
 
@@ -81,34 +81,10 @@ def ensure_shared_reference(layout: RunLayout, truth: Reference) -> Path:
 def _selected(reference: Reference, alleles: Iterable[str] | None) -> list[str]:
     """Sorted allele names: every allele of the reference, or the given ones (ValueError for an unknown name)."""
     if alleles is None:
-        return sorted(_sequences(reference))
+        return sorted(reference.sequences())
     names = sorted(set(alleles))
     unknown = [name for name in names if not reference.has(name)]
     if unknown:
         raise ValueError(f"allele {unknown[0]!r} is not in the reference ({len(unknown)} unknown in total)")
     return names
 
-
-def _first_difference(tool: Reference, truth: Reference) -> str:
-    """The first allele, in name order, that the tool's reference lacks, adds or holds with another sequence."""
-    tool_seqs, truth_seqs = _sequences(tool), _sequences(truth)
-    for name in sorted(tool_seqs.keys() | truth_seqs.keys()):
-        if name not in tool_seqs:
-            return f"{name} is missing from the tool reference"
-        if name not in truth_seqs:
-            return f"{name} is extra in the tool reference"
-        if tool_seqs[name] != truth_seqs[name]:
-            return f"{name} has a different sequence in the tool reference"
-    return "the same alleles under other gene letters"
-
-
-def _sequences(reference: Reference) -> dict[str, str]:
-    return {name: seq for table in reference.alleles.values() for name, seq in table.items()}
-
-
-def _counts(reference: Reference) -> dict[str, int]:
-    return {g: len(reference.alleles[g]) for g in _SEGMENTS if g in reference.alleles}
-
-
-def _counts_text(reference: Reference) -> str:
-    return " ".join(f"{g.upper()}={n}" for g, n in _counts(reference).items())
