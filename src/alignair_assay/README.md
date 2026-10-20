@@ -1490,29 +1490,36 @@ directory. No V(D)J tool and no germline reference is used; the only sequences g
 - Full-quality reads first go through Immcantation's and airrflow's mean-quality filter (`FilterSeq quality -q 20`
   on each mate): a read of mean quality below 20 is dropped whole, and none is shortened, since reference-free
   assembly needs the mates' overlap. The paper's Q20 trimming and 125-nt minimum is `paper_quality_trim`, for
-  reproduction. SRA-Lite reads skip both, and the record says which ran. At most 35% of the pairs entering the
-  assembly may fail to (`assembly_acceptance`); those that fail are inserts the mates cannot span, dropped and
-  counted, and the record gives the insert-length deciles of the pairs that pass and fail.
-  5'RACE: UMI (R2's first 12 nt) and the `GTAC` + `GGG` cut; the isotype from Immcantation's IGH
-  C-region primers on R1 (`MaskPrimers align`, within 70 nt, error 0.2); UMI consensus as the paper
-  (`ClusterSets` within each UMI, `AlignSets muscle`, `BuildConsensus`); `AssemblePairs align`; `CollapseSeq`;
-  consensus count of at least 2. Multiplex: `MaskPrimers score` masks the VH primer on R1 and the C primer on R2;
-  both must be found; `AssemblePairs align`; at least 250 nt after primer removal (the paper's 400 nt before it is
-  `paper_length_filter`); `CollapseSeq`. Reference-guided assembly (`AssemblePairs sequential`, which the image's
-  `presto-clontech-umi` uses) is ruled out; pairs that do not overlap are dropped and counted. The module docstring
-  lists every difference from `presto-clontech-umi`.
+  reproduction. SRA-Lite reads skip both, and the record says which ran.
+- 5'RACE: UMI (R2's first 12 nt) and the `GTAC` + `GGG` cut; the isotype from Immcantation's IGH C-region primers
+  on R1 (`MaskPrimers align`, within 70 nt, error 0.2); UMI consensus as the paper (`ClusterSets` within each UMI,
+  `AlignSets muscle`, `BuildConsensus`); `AssemblePairs align` with `--scanrev`, as `presto-clontech-umi`; at least
+  250 nt; `CollapseSeq`; consensus count of at least 2. Multiplex: `MaskPrimers score` masks the VH primer on R1
+  and the C primer on R2; both must be found; `AssemblePairs align`; at least 250 nt after primer removal (the
+  paper's 400 nt before it is `paper_length_filter`); `CollapseSeq`. Reference-guided assembly (`AssemblePairs
+  sequential`, which `presto-clontech-umi` uses) is ruled out. The module docstring lists every difference from
+  `presto-clontech-umi`.
+- At most 35% of the pairs entering the assembly may fail to assemble: pairs whose mates do not overlap
+  acceptably, that is inserts longer than the mates span, or overlaps with too many mismatches. They are dropped and
+  counted, and the record gives the insert-length deciles of the pairs that pass and fail and the failures by
+  AssemblePairs' reason. A run over the line is rejected like a refused one: its record says `status: "rejected"`
+  and `accepted: false`, with that evidence, nothing else is kept, and `PreprocessError` is raised;
+  `accept_assembly_loss` lets it through deliberately.
 - `preprocess_run(donor, r1, r2, layout, quality=...)` writes `real/<donor>/reads.fasta` (at most `cap`, 50,000,
-  sequences, ordered by sequence id and chosen evenly spaced), `reads.tsv` (`sequence_id`, `isotype`, `protocol`,
-  `consensus_count`, `dupcount`, `primer_masked`: the `[start, end)` spans of primer bases, which carry no germline
-  evidence), each step's pRESTO output in `preprocess_logs/` and, last, `preprocess.json`: the counts and pass rate
-  of every step, the classifier's evidence, the image, the length distribution, the isotype split, the wall time
-  and a fingerprint of the inputs' md5s, the module, the image and the parameters. A current record is reused.
-- On the pilot, W-97 (103,049 pairs) gives 70,327 unique sequences (capped to 50,000) in 205 s, 84% of its
-  primer-matched pairs assembling; SC-23 (164,664 pairs) gives 10,875 in 324 s, 74% of its consensus pairs
-  assembling. SC-23's failed pairs are mates too short to meet (half of them, from short raw reads) or inserts
-  longer than the mates span (over about 500 nt; the assembled inserts' deciles run from 435 to 506 nt); W-97's are
-  mostly overlaps with too many mismatches. With the paper's trimming only 66% and 51% assemble, the trimmed mates
-  no longer overlapping.
+  sequences, ordered by the SHA-256 of their content and chosen evenly spaced), `reads.tsv` (`sequence_id`,
+  `isotype`, `protocol`, `consensus_count`, `dupcount`, `primer_masked`: the `[start, end)` spans of primer bases,
+  which carry no germline evidence), each step's pRESTO output in `preprocess_logs/` and, last, `preprocess.json`:
+  the counts and pass rate of every step, the classifier's evidence, `accepted` and the assembly evidence, the
+  image, the length distribution, the isotype split, the wall time and a fingerprint of the inputs' md5s, the
+  module, the image and the parameters (`nproc` among them). A current record is reused; a refused or rejected one
+  never is. pRESTO's workers write in the order they finish, so the steps whose output depends on their input's
+  order (`ClusterSets`, `AlignSets`, `CollapseSeq`) read it sorted by read id, and a rerun gives the same files.
+- On the pilot, W-97 (103,049 pairs) gives 70,327 unique sequences (capped to 50,000) in 210 s, 84% of its
+  primer-matched pairs assembling; SC-23 (164,664 pairs) gives 10,733 in 352 s, 88% of its consensus pairs
+  assembling, after which the 250-nt floor drops 4,083 short read-through inserts. Nearly all failed pairs have
+  full-length mates whose best overlap has too many mismatches (W-97 14,698 of 14,807; SC-23 2,922 of 3,514, with
+  588 overlaps too short to be significant). Two runs of each give byte-identical outputs. With the paper's trimming
+  (and before `--scanrev`) only 66% and 51% assembled, the trimmed mates no longer overlapping.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims.
