@@ -178,10 +178,35 @@ def test_speed_set_deterministic(tmp_path):
     records = _s1_reads(layout, 10)
     path = speed_set(layout, 4)
     assert path == layout.speed_reads(4) == tmp_path / "speed" / "reads_4.fasta"
-    assert read_fasta(path) == records[:4]
+    # Evenly spaced over the 10 reads, in file order: reads floor(i * 10 / 4) for i in 0..3.
+    assert read_fasta(path) == [records[0], records[2], records[5], records[7]]
     first = path.read_bytes()
     assert speed_set(layout, 4).read_bytes() == first
     assert read_fasta(speed_set(layout, 10)) == records
+    # Every second read when N / n is whole.
+    assert read_fasta(speed_set(layout, 5)) == records[::2]
+
+
+def test_speed_set_reflects_the_design_mix(tmp_path):
+    # S1's composition at scale 1.0, stratum by stratum as its reads.fasta lists them: 4 designs x (igm 500,
+    # igg 500, high 250).
+    layout = RunLayout(tmp_path)
+    layout.suite_dir("S1").mkdir(parents=True)
+    strata = [(f"{design}_{shm}", count) for design in ("full", "fr1", "fr2", "fr3")
+              for shm, count in (("igm", 500), ("igg", 500), ("high", 250))]
+    layout.reads("S1").write_text("".join(f">S1:{stratum}:{index:06d}\nACGT\n" for stratum, count in strata
+                                          for index in range(count)))
+    total = sum(count for _, count in strata)
+    for n in (50, 1000, 4000):
+        names = [name for name, _ in read_fasta(speed_set(layout, n))]
+        assert len(names) == len(set(names)) == n
+        shares = {stratum: sum(name.split(":")[1] == stratum for name in names) / n for stratum, _ in strata}
+        for stratum, count in strata:
+            assert abs(shares[stratum] - count / total) <= 0.05, (n, stratum, shares[stratum])
+        # Each design is a quarter of the set, within 5 points (the first 4000 reads would hold 6% FR3).
+        for design in ("full", "fr1", "fr2", "fr3"):
+            share = sum(value for stratum, value in shares.items() if stratum.startswith(design))
+            assert abs(share - 0.25) <= 0.05, (n, design, share)
 
 
 def test_speed_set_too_small_raises(tmp_path):
@@ -291,7 +316,7 @@ def test_speed_section_rendered():
     section = md[md.index("## Speed"):]
     assert ("Host: Test CPU, 16 logical CPUs, 125.7 GB RAM, GPU Test GPU, Docker 29.9.1, kernel 7.0.0-test."
             in section)
-    assert "the first 50 and the first 4000 reads of S1, 3 times each" in section
+    assert "50 and 4000 reads evenly spaced across S1, 3 times each" in section
     assert "container start" in section and "memory.peak" in section and "GNU time" in section
     assert ("| Configuration | Cold start (s) | Steady reads/s | Median full run (s) | Peak RSS (MB) | Threads | CPUs "
             "| Device |") in section
@@ -331,7 +356,8 @@ def test_all_measures_speed_and_resumes(built, tmp_path, small_protocol, capsys)
     assert result["settings"] == {"version": "1"} and result["peak_rss_kb"] == 2048
     assert len(result["walls"]["tiny"]) == len(result["walls"]["full"]) == 2
     assert result["command"] == ["quick", str(layout.speed_reads(60))]
-    assert read_fasta(layout.speed_reads(60)) == read_fasta(layout.reads("S1"))[:60]
+    s1 = read_fasta(layout.reads("S1"))
+    assert read_fasta(layout.speed_reads(60)) == [s1[index * len(s1) // 60] for index in range(60)]
     assert (layout.speed_work_dir("quick_2t") / "full" / "predictions.tsv").is_file()
 
     report = json.loads(layout.report_json.read_text())

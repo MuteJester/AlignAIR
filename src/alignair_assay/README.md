@@ -221,7 +221,7 @@ RUN/
                                       cache and the model's exported reference)
   scores/<S>/<arm>/                   <tool>.scores.jsonl.gz, <tool>.report.{json,md}, comparison.{json,md}
   speed/speed.json                    the speed measurements (`all --speed`, `speed`)
-  speed/reads_<n>.fasta               the first n reads of S1, timed
+  speed/reads_<n>.fasta               n reads evenly spaced across S1, timed
   speed/runs/<config>/                each timed configuration's last tiny/ and full/ run (predictions, logs)
   report.json, report.md              the run summary and the run report (`all`, `report`)
 ```
@@ -448,10 +448,13 @@ directory's tools are run (the same runners, through `Runner.run`):
   the interpreter's torch sees a CUDA device, and on CPU at N threads. Pinning is `taskset` for IgBLAST and the
   local CLI and `--cpuset-cpus` for the AlignAIR image; the threads are IgBLAST's `-num_threads` and AlignAIR's
   `OMP_NUM_THREADS`/`MKL_NUM_THREADS`.
-- **Read sets** (`speed_set(layout, n)`). `speed/reads_<n>.fasta` holds the first n reads of S1's `reads.fasta`:
-  a tiny set (`n_tiny`, default 50) and a full set (`n_full`, default 4000). S1 lists its reads stratum by
-  stratum, so at scale 1.0 the default full set is S1's full-length, FR1 and FR2 reads and 250 FR3 reads (at scale
-  0.8 it is all of S1), and the tiny set is full-length reads.
+- **Read sets** (`speed_set(layout, n)`). `speed/reads_<n>.fasta` holds n reads evenly spaced across S1's N
+  `reads.fasta` reads: those at positions floor(i · N / n) for i = 0 … n−1, in file order (every (N/n)-th read when
+  that is whole). There is a tiny set (`n_tiny`, default 50) and a full set (`n_full`, default 4000). S1 lists its
+  reads stratum by stratum, so its first n reads would be mostly its first read designs (the first 4000 at scale
+  1.0 hold only 250 FR3 reads, the first 50 only full-length IgM reads); the evenly spaced sets hold every stratum in
+  about its share of S1, so both reflect S1's mix of read designs and SHM levels. S1 with fewer than n reads is an
+  error.
 - **Measurement** (`measure`). Each configuration is prepared once (not timed), then runs the tiny and the full set
   alternately, `repeats` times each (default 3). Every run is a fresh process, or a fresh container for the
   AlignAIR image, whose wall time includes the container's start. **Cold start** is the median tiny-run wall time:

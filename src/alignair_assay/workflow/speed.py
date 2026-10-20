@@ -1,7 +1,8 @@
 """The speed protocol: each tool's cold start, steady throughput and peak memory, on one host and the same reads.
 
 A configuration is a tool at a thread count, a CPU list and a device (``speed_configs``). It annotates two read
-sets cut from S1 (``speed_set``): a tiny one of ``n_tiny`` reads and a full one of ``n_full`` reads, ``repeats``
+sets sampled evenly across S1 (``speed_set``), so both have S1's mix of read designs and SHM levels: a tiny one of
+``n_tiny`` reads and a full one of ``n_full`` reads, ``repeats``
 times each, alternating (``measure``). Every run is a fresh process (a fresh container for the AlignAIR image), so
 a tiny run's wall time is the cold start: starting, loading the model or the germline databases, and ``n_tiny``
 reads. The full median minus the tiny median is the time of ``n_full - n_tiny`` more reads, which gives the steady
@@ -128,16 +129,21 @@ def check_speed(cfg: RunConfig) -> None:
     reads = sum(requested_count(stratum, cfg.scale) for stratum in strata)
     if reads < N_FULL:
         minimum = N_FULL / sum(stratum.n for stratum in strata)
-        raise ValueError(f"--speed times the first {N_FULL} reads of {SPEED_SUITE}, which has {reads} at scale "
+        raise ValueError(f"--speed times {N_FULL} reads of {SPEED_SUITE}, which has {reads} at scale "
                          f"{cfg.scale}; use a scale of at least {minimum:g}")
     for _, config in speed_configs(cfg, cuda=False):
         config()
 
 
 def speed_set(layout: RunLayout, n: int) -> Path:
-    """Write ``layout.speed_reads(n)``, the first ``n`` reads of S1's ``reads.fasta`` in file order, and return its
-    path; the same S1 gives the same file. FileNotFoundError when S1 is not built; ValueError when ``n`` is below 1
-    or S1 has fewer than ``n`` reads."""
+    """Write ``layout.speed_reads(n)``, ``n`` reads evenly spaced across S1's ``reads.fasta``, and return its path.
+
+    Of S1's N reads, the set holds the reads at positions ``floor(i * N / n)`` for i from 0 to n - 1, in file order
+    (every (N / n)-th read when that is whole). S1 lists its reads stratum by stratum, so the first n reads would
+    over-represent its first read designs; an evenly spaced sample holds every stratum in about its share of S1. The
+    same S1 gives the same file. FileNotFoundError when S1 is not built; ValueError when ``n`` is below 1 or S1 has
+    fewer than ``n`` reads."""
+    path = layout.speed_reads(n)
     source = layout.reads(SPEED_SUITE)
     if not source.is_file():
         raise FileNotFoundError(f"no {source}: build {SPEED_SUITE} first, the speed protocol times its reads")
@@ -145,9 +151,9 @@ def speed_set(layout: RunLayout, n: int) -> Path:
     if len(records) < n:
         raise ValueError(f"the speed protocol needs {n} reads of {SPEED_SUITE}, but {source} has {len(records)}; "
                          "build it at a larger scale or time fewer reads")
-    path = layout.speed_reads(n)
+    sample = [records[index * len(records) // n] for index in range(n)]
     path.parent.mkdir(parents=True, exist_ok=True)
-    write_fasta(({"case_id": name, "sequence": sequence} for name, sequence in records[:n]), path)
+    write_fasta(({"case_id": name, "sequence": sequence} for name, sequence in sample), path)
     return path
 
 

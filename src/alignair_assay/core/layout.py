@@ -14,7 +14,7 @@ RUN/
   runs/<tool>/_work/                  the tool's one-time setup (e.g. IgBLAST's germline databases)
   scores/<S>/<arm>/                   <tool>.scores.jsonl.gz, <tool>.report.{json,md}, comparison.{json,md}
   speed/speed.json                    the speed measurements
-  speed/reads_<n>.fasta               the first n reads of S1, timed
+  speed/reads_<n>.fasta               n reads evenly spaced across S1, timed
   speed/runs/<config>/                each timed configuration's last tiny and full run (predictions, logs)
   report.json, report.md
 ```
@@ -149,7 +149,7 @@ class RunLayout:
         return self.speed_dir / "speed.json"
 
     def speed_reads(self, n: int) -> Path:
-        """The speed protocol's set of the first ``n`` reads of S1; ValueError unless ``n`` is a positive
+        """The speed protocol's set of ``n`` reads sampled evenly across S1; ValueError unless ``n`` is a positive
         integer."""
         if isinstance(n, bool) or not isinstance(n, int) or n < 1:
             raise ValueError(f"a speed read set needs a positive number of reads, got {n!r}")

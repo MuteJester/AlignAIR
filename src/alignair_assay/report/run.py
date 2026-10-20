@@ -238,7 +238,7 @@ def speed_lines(speed: dict) -> list[str]:
     failures = [f"- {name} failed: {result['error']}" for name, result in results.items() if "error" in result]
     return ["", "## Speed", "",
             f"Host: {_host(speed.get('host') or {}) or MISSING}.", "",
-            f"Each configuration annotated the first {n_tiny} and the first {n_full} reads of S1, "
+            f"Each configuration annotated {n_tiny} and {n_full} reads evenly spaced across S1, "
             f"{_text(speed.get('repeats'))} times each, alternating, every run a fresh process. Cold start is the "
             f"median wall time of the {n_tiny}-read runs: starting, loading the model or databases and {n_tiny} "
             f"reads. Steady reads/s is ({n_full} − {n_tiny}) / (median {n_full}-read run − median {n_tiny}-read run), "
