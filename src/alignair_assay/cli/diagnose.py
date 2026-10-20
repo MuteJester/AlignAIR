@@ -1,5 +1,5 @@
 """``diagnose``: AlignAIR's head metrics, stage contributions, calibration and speed profile on built dev suites, run
-in process (``diagnostics.evaluate``) and cached per suite under the model key."""
+in process (``workflow.diagnose``) and cached per suite under the model key."""
 from __future__ import annotations
 
 import json
@@ -32,14 +32,14 @@ def register(sub) -> None:
 
 
 def run(args) -> int:
-    """Diagnose the checkpoint on every named suite (``diagnostics.evaluate.evaluate``), print one line per suite
+    """Diagnose the checkpoint on every named suite (``workflow.diagnose.evaluate``), print one line per suite
     and the profile, and name the report it wrote (``diagnostics.md`` and ``diagnostics.json`` under the model
     key). A suite whose build is not current for this checkout (``workflow.build.build_changes``) is diagnosed as
     built, with a warning. Input errors (an unbuilt or test-split suite, an unknown variant, a missing checkpoint,
     a model on another reference) exit with status 2 before anything is written."""
     # Imported here so the other commands never load torch and alignair.
     from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS
-    from alignair_assay.diagnostics.evaluate import evaluate
+    from alignair_assay.workflow.diagnose import evaluate
 
     names = list(comma_list(args.suites))
     if not names:

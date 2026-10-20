@@ -1,4 +1,6 @@
-"""Shared fixtures for the assay tests: the GenAIRR guard, the truth reference and the committed bench cases."""
+"""Shared fixtures for the assay tests: the GenAIRR guard, the truth reference, the committed bench cases and the
+small random-init AlignAIR models of the diagnostics and the evaluator (torch and alignair are imported only by a
+test that asks for one)."""
 from __future__ import annotations
 
 import json
@@ -6,10 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from alignair_assay.core.reference import Reference
+from alignair_assay.core.reference import Reference, dataconfig
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REFERENCE_NAME = "HUMAN_IGH_OGRDB"
+# Allele temperatures as a released checkpoint carries them, so the replay's calibration step runs.
+TEMPERATURES = {"v": 0.5, "d": 0.5, "j": 0.4}
 
 
 @pytest.fixture(scope="session")
@@ -31,3 +35,30 @@ def load_fixture():
         return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
     return load
+
+
+@pytest.fixture(scope="session")
+def make_small_model(genairr):
+    """``make(*dataconfig_names, seed=0) -> (model, reference_set)``: a random-init AlignAIR with narrow towers
+    (embedding 8, 8 filters, 32 tower outputs; about 0.3 M parameters) on the dataconfigs' reference, in eval
+    mode on the CPU, with ``TEMPERATURES`` as its allele temperatures."""
+    import torch
+    from alignair.core import AlignAIR
+    from alignair.core.config import AlignAIRConfig
+    from alignair.reference.reference_set import ReferenceSet
+
+    def make(*names: str, seed: int = 0):
+        configs = [dataconfig(name) for name in names]
+        cfg = AlignAIRConfig.from_dataconfigs(*configs, embed_dim=8, filters=8, block_out=32,
+                                              allele_temperatures=dict(TEMPERATURES))
+        torch.manual_seed(seed)
+        return AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(*configs)
+
+    return make
+
+
+@pytest.fixture(scope="session")
+def small_model(make_small_model):
+    """The small random-init AlignAIR on ``HUMAN_IGH_OGRDB`` (the truth reference) and its ReferenceSet. Tests
+    that change its mode, weights or device must restore them."""
+    return make_small_model(REFERENCE_NAME)

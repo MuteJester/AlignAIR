@@ -17,7 +17,7 @@ RUN/
   speed/reads_<n>.fasta               n reads evenly spaced across S1, timed
   speed/runs/<config>/                each timed configuration's last tiny and full run (predictions, logs)
   report.json, report.md
-  diagnostics/<model_key>/            one model's diagnostics (``diagnose``, ``diagnostics.evaluate``)
+  diagnostics/<model_key>/            one model's diagnostics (``diagnose``, ``workflow.diagnose``)
   diagnostics/<model_key>/<S>/suite.json   one suite's cached diagnostics, with the key they were computed for
   diagnostics/<model_key>/profile.json     the cached speed profile, with its key
   diagnostics/<model_key>/diagnostics.json, diagnostics.md   the last diagnostics report of the model
@@ -179,7 +179,7 @@ class RunLayout:
         return self.root / "diagnostics"
 
     def diagnostics_dir(self, model_key: str) -> Path:
-        """The diagnostics of one model, named by ``diagnostics.evaluate``'s model key (its weights and the AlignAIR
+        """The diagnostics of one model, named by ``workflow.diagnose``'s model key (its weights and the AlignAIR
         code it runs)."""
         return self.diagnostics_root / _component(model_key)
 

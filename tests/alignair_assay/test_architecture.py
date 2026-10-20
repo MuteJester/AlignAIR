@@ -1,8 +1,8 @@
 """The package's dependency rule, read from every module's syntax tree.
 
 Each subpackage may import only the layers listed for it in ``ALLOWED``; a new subpackage needs a row before it
-passes. ``alignair`` is imported only by ``core/reference.py`` and ``diagnostics/``, ``alignair_benchmark`` never, and the pure layers
-(truth, metrics, stats) do no file, process or network IO.
+passes. ``alignair`` is imported only by ``core/reference.py`` and ``diagnostics/``, ``alignair_benchmark`` never,
+and the pure layers (truth, metrics, stats) do no file, process or network IO.
 """
 import ast
 from pathlib import Path
@@ -10,14 +10,14 @@ from pathlib import Path
 import alignair_assay
 
 PACKAGE = Path(alignair_assay.__file__).resolve().parent
-LAYERS = ("core", "truth", "airr", "metrics", "stats", "report", "scoring", "suites", "runners", "diagnostics", "workflow",
-          "cli")
+LAYERS = ("core", "truth", "airr", "metrics", "stats", "report", "scoring", "suites", "runners", "diagnostics",
+          "workflow", "cli")
 ALL = set(LAYERS)
 ALLOWED = {"core": {"core"}, "truth": {"core", "truth"}, "airr": {"core", "airr"},
            "metrics": {"core", "truth", "metrics"}, "stats": {"core", "metrics", "stats"},
            "report": {"core", "stats", "report"}, "scoring": {"core", "truth", "airr", "metrics", "stats", "scoring"},
            "suites": {"core", "suites"}, "runners": {"core", "airr", "truth", "suites", "runners"},
-           "diagnostics": {"core", "truth", "airr", "metrics", "stats", "scoring", "suites", "report", "diagnostics"},
+           "diagnostics": {"core", "truth", "airr", "metrics", "stats", "scoring", "suites", "diagnostics"},
            "workflow": ALL - {"cli"}, "cli": ALL, "testing": ALL}
 # Top-level modules that are not layers: the package marker and the ``python -m`` entry point.
 ENTRY_POINTS = {"__init__": set(), "__main__": {"cli"}}

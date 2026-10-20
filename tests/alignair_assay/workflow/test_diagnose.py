@@ -1,5 +1,5 @@
-"""The in-process evaluator and the ``diagnose`` command: diagnostics of a model on built dev suites, cached per
-suite and never served stale.
+"""The in-process evaluator (``workflow.diagnose``) and the ``diagnose`` command: diagnostics of a model on built
+dev suites, cached per suite and never served stale.
 
 Everything runs on the CPU with small random-init models (``conftest.make_small_model``) on S0 and S1 built at
 scale 0.02 (2 and 100 reads). The test of the released checkpoint runs only when ``ALIGNAIR_ASSAY_MODEL`` names a
@@ -22,18 +22,13 @@ from alignair_assay.cli import main  # noqa: E402
 from alignair_assay.core.cases import read_cases  # noqa: E402
 from alignair_assay.core.layout import RunLayout  # noqa: E402
 from alignair_assay.core.provenance import sha256_file  # noqa: E402
-from alignair_assay.diagnostics import evaluate as evaluate_module  # noqa: E402
 from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS, SINGLE_SWAPS, VARIANTS  # noqa: E402
-from alignair_assay.diagnostics.evaluate import (  # noqa: E402
-    DiagnosticsResult,
-    alignair_code,
-    evaluate,
-    select_cases,
-    weights_sha256,
-)
+from alignair_assay.diagnostics.identity import alignair_code, weights_sha256  # noqa: E402
 from alignair_assay.report.diagnostics import SECTIONS  # noqa: E402
 from alignair_assay.runners.alignair import local_code_identity  # noqa: E402
+from alignair_assay.workflow import diagnose as diagnose_module  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
+from alignair_assay.workflow.diagnose import DiagnosticsResult, evaluate, select_cases  # noqa: E402
 
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
 REFERENCE = "HUMAN_IGH_OGRDB"
@@ -73,13 +68,13 @@ def save_checkpoint(make_small_model):
 def replays(monkeypatch):
     """The read ids of every baseline replay ``evaluate`` runs (one per suite it computes), in call order."""
     seen = []
-    original = evaluate_module.replay
+    original = diagnose_module.replay
 
     def spy(model, reference_set, sequences, ids, **kwargs):
         seen.append(list(ids))
         return original(model, reference_set, sequences, ids, **kwargs)
 
-    monkeypatch.setattr(evaluate_module, "replay", spy)
+    monkeypatch.setattr(diagnose_module, "replay", spy)
     return seen
 
 
@@ -211,19 +206,19 @@ def test_cached_diagnostics_are_never_served_stale(built, tmp_path, save_checkpo
 
     # A changed AlignAIR code digest: another model key.
     code = alignair_code()
-    monkeypatch.setattr(evaluate_module, "alignair_code", lambda: {**code, "code_sha256": "0" * 64})
+    monkeypatch.setattr(diagnose_module, "alignair_code", lambda: {**code, "code_sha256": "0" * 64})
     assert computed()
     assert evaluate(checkpoint, layout, ["S0"], **FAST, max_cases=5).model_key == (
         base.model_key.split("-")[0] + "-" + "0" * 12)
     # Another torch, or another assay scoring code: the same model key, computed again.
-    monkeypatch.setattr(evaluate_module, "alignair_code", lambda: {**code, "torch_version": "0.0"})
+    monkeypatch.setattr(diagnose_module, "alignair_code", lambda: {**code, "torch_version": "0.0"})
     assert computed() and not computed()
-    monkeypatch.setattr(evaluate_module, "alignair_code", lambda: dict(code))
+    monkeypatch.setattr(diagnose_module, "alignair_code", lambda: dict(code))
     assert computed() and not computed()
-    monkeypatch.setattr(evaluate_module, "assay_code_sha256", lambda: "1" * 64)
+    monkeypatch.setattr(diagnose_module, "assay_code_sha256", lambda: "1" * 64)
     assert computed() and not computed()
     monkeypatch.undo()
-    monkeypatch.setattr(evaluate_module, "replay", _counting(replays))
+    monkeypatch.setattr(diagnose_module, "replay", _counting(replays))
     assert computed() and not computed()
 
     # A changed suite build (S0 rebuilt with another seed): computed again under the same model key; S1 is kept.
@@ -251,7 +246,7 @@ def test_cached_diagnostics_are_never_served_stale(built, tmp_path, save_checkpo
 
 def _counting(replays):
     """A replay that records its read ids in ``replays`` (``monkeypatch.undo`` removed the fixture's)."""
-    original = evaluate_module.replay
+    original = diagnose_module.replay
 
     def spy(model, reference_set, sequences, ids, **kwargs):
         replays.append(list(ids))
@@ -265,14 +260,14 @@ def test_a_checkpoint_rewritten_while_it_loads_is_refused(built, tmp_path, save_
     # ones, so nothing may be computed or cached under that key.
     layout = _copy(built, tmp_path)
     checkpoint = save_checkpoint(tmp_path / "model.alignair")
-    original = evaluate_module.load_model_checked
+    original = diagnose_module.load_model_checked
 
     def load_while_training_saves(path, reference, *, device):
         loaded = original(path, reference, device=device)
         save_checkpoint(checkpoint, seed=1)
         return loaded
 
-    monkeypatch.setattr(evaluate_module, "load_model_checked", load_while_training_saves)
+    monkeypatch.setattr(diagnose_module, "load_model_checked", load_while_training_saves)
     with pytest.raises(ValueError, match="changed while it was being loaded"):
         evaluate(checkpoint, layout, ["S0"], **FAST)
     assert not layout.diagnostics_root.exists()
@@ -282,13 +277,13 @@ def test_the_profile_is_cached_with_its_own_key(built, tmp_path, save_checkpoint
     layout = _copy(built, tmp_path)
     checkpoint = save_checkpoint(tmp_path / "model.alignair")
     profiles = []
-    original = evaluate_module.profile_model
+    original = diagnose_module.profile_model
 
     def spy(*args, **kwargs):
         profiles.append(kwargs["batch_size"])
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(evaluate_module, "profile_model", spy)
+    monkeypatch.setattr(diagnose_module, "profile_model", spy)
     options = {**FAST, "profile": True, "max_cases": 2}
     first = evaluate(checkpoint, layout, ["S0"], **options)
     assert profiles == [BATCH] and first.profile["reads"] == 2 and first.profile["reused"] is False
@@ -299,7 +294,7 @@ def test_the_profile_is_cached_with_its_own_key(built, tmp_path, save_checkpoint
     evaluate(checkpoint, layout, ["S0"], **{**options, "batch_size": 4})
     assert profiles == [BATCH, 4]
     # The replay it times is assay code: another assay code digest measures again.
-    monkeypatch.setattr(evaluate_module, "assay_code_sha256", lambda: "1" * 64)
+    monkeypatch.setattr(diagnose_module, "assay_code_sha256", lambda: "1" * 64)
     evaluate(checkpoint, layout, ["S0"], **{**options, "batch_size": 4})
     assert profiles == [BATCH, 4, 4]
 

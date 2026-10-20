@@ -1,9 +1,9 @@
 """The in-process evaluator: AlignAIR's diagnostics on built ``dev`` suites, cached per suite, for model iteration.
 
 ``evaluate(model_or_checkpoint, layout, suites, ...)`` is what a training loop calls, with an in-memory
-``(model, reference_set)`` pair, and what the ``diagnose`` command runs on a ``.alignair`` model file. For each
-suite it replays AlignAIR's predict pipeline on the suite's reads (all of them, or ``max_cases`` evenly spaced:
-``select_cases``, the speed protocol's rule) and:
+``(model, reference_set)`` pair, and what the ``diagnose`` command runs on a ``.alignair`` model file. It
+orchestrates the ``diagnostics`` layer over a run directory: for each suite it replays AlignAIR's predict pipeline on
+the suite's reads (all of them, or ``max_cases`` evenly spaced: ``select_cases``, the speed protocol's rule) and:
 
 1. scores the raw heads against the truth (``heads.head_scores``, with the cases' GenAIRR records) and the
    reliability of each gene's top-1 allele probability (``heads.calibration_table``);
@@ -23,10 +23,11 @@ model file is a FileNotFoundError. A model whose germline reference is not the t
 ``replay.load_model_checked`` (ValueError naming the first differing allele), an in-memory one included, and so is
 a model file whose bytes changed while it was loaded.
 
-**Model key.** ``<weights>-<code>``: the first ``KEY_DIGITS`` hex digits of ``weights_sha256`` (the SHA-256 of a
-model file's bytes, or of an in-memory model's weights, configuration, module tree and allele order) and of the
-AlignAIR code digest (``alignair_code``). Everything is written under ``layout.diagnostics_dir(model_key)``, so a
-new checkpoint or an AlignAIR code edit never meets another model's results.
+**Model key.** ``diagnostics.identity.model_key``: ``<weights>-<code>``, the first ``KEY_DIGITS`` hex digits of
+``weights_sha256`` (the SHA-256 of a model file's bytes, or of an in-memory model's weights, configuration, module
+tree and allele order) and of the AlignAIR code digest (``alignair_code``). Everything is written under
+``layout.diagnostics_dir(model_key)``, so a new checkpoint or an AlignAIR code edit never meets another model's
+results.
 
 **Cache.** A suite's result is written to ``layout.diagnostics_suite_json(model_key, suite)`` with its ``key``,
 everything the result depends on (``suite_key``): the full weights and code digests and the torch version, the
@@ -39,7 +40,6 @@ threads), the batch size and the profiled reads. The report is rendered afresh f
 """
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import os
@@ -50,14 +50,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
-import alignair
-import alignair.model_file  # noqa: F401 (see _ALIGNAIR_CODE)
-import alignair.predict.heuristic_matcher  # noqa: F401 (see _ALIGNAIR_CODE)
 import torch
 
 from alignair_assay.core.cases import evenly_spaced, read_cases, read_fasta
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.core.provenance import code_identity, files_digest, sha256_file
+from alignair_assay.core.provenance import files_digest, sha256_file
 from alignair_assay.core.reference import Reference
 from alignair_assay.diagnostics.ablation import (
     CONTRIBUTION_METRICS,
@@ -68,6 +65,7 @@ from alignair_assay.diagnostics.ablation import (
     swap_effects,
 )
 from alignair_assay.diagnostics.heads import calibration_table, head_scores
+from alignair_assay.diagnostics.identity import ALIGNAIR_DIR, alignair_code, model_key, weights_sha256
 from alignair_assay.diagnostics.profile import profile_model
 from alignair_assay.diagnostics.replay import load_model_checked, replay
 from alignair_assay.metrics import is_informational
@@ -88,20 +86,14 @@ CACHE_VERSION = "1"
 SPLIT = "dev"
 # At most this many diagnosed reads, evenly spaced, are profiled.
 PROFILE_READS = 1000
-# The model key holds this many hex digits of the weights digest and of the code digest.
-KEY_DIGITS = 12
-# The alignair package this process imported, and this package's directory with the layers a cached result depends
-# on (the report is rendered afresh from the results, so it is not among them).
-ALIGNAIR_DIR = Path(alignair.__file__).resolve().parent
+# This package's directory and the layers a cached result depends on; this module, which computes the results, is
+# digested with them (the report is rendered afresh from the results, so it is not among them).
 ASSAY_DIR = Path(__file__).resolve().parents[1]
 ASSAY_LAYERS = ("core", "truth", "airr", "metrics", "stats", "scoring", "suites", "diagnostics")
 
-# Taken once, when this module is imported: the code this process runs, whatever happens to the files later. The
-# modules the replay's stages import lazily (``load_model``'s ``alignair.model_file``, ``align_germline``'s matcher)
-# are imported above first, so every module the evaluator runs is loaded before its files are digested.
-_ALIGNAIR_CODE = code_identity(ALIGNAIR_DIR)
-_ASSAY_CODE = files_digest(ASSAY_DIR, [path for layer in ASSAY_LAYERS for path in (ASSAY_DIR / layer).rglob("*.py")
-                                       if "__pycache__" not in path.parts])
+# Taken once, when this module is imported: the assay code this process runs, whatever happens to the files later.
+_ASSAY_CODE = files_digest(ASSAY_DIR, [*(path for layer in ASSAY_LAYERS for path in (ASSAY_DIR / layer).rglob("*.py")
+                                         if "__pycache__" not in path.parts), Path(__file__).resolve()])
 
 
 @dataclass(frozen=True)
@@ -154,14 +146,14 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
         raise ValueError(f"{Path(model_or_checkpoint).expanduser()} changed while it was being loaded; diagnose it "
                          "again once it is completely written")
     code = alignair_code()
-    model_key = f"{weights[:KEY_DIGITS]}-{code['code_sha256'][:KEY_DIGITS]}"
+    key_name = model_key(weights, code["code_sha256"])
     identity = {"weights_sha256": weights, "code_sha256": code["code_sha256"], "torch_version": code["torch_version"]}
     config = {"variants": list(variants), "max_cases": max_cases, "device": device, "batch_size": batch_size}
 
     results: dict[str, dict] = {}
     for name in names:
         key = suite_key(layout, name, identity, config)
-        path = layout.diagnostics_suite_json(model_key, name)
+        path = layout.diagnostics_suite_json(key_name, name)
         cached = _cached(path, key)
         if cached is None:
             path.unlink(missing_ok=True)
@@ -172,61 +164,25 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
         else:
             results[name] = {**cached, "reused": True}
 
-    measured = (_profile(model, reference_set, layout, model_key, identity, names, max_cases=max_cases, device=device,
+    measured = (_profile(model, reference_set, layout, key_name, identity, names, max_cases=max_cases, device=device,
                          batch_size=batch_size) if profile else None)
     source = str(Path(model_or_checkpoint).expanduser()) if from_file else "in-memory model"
     report = build_diagnostics_report(
-        model={"model_key": model_key, "source": source, **identity, "alignair_source": str(ALIGNAIR_DIR),
+        model={"model_key": key_name, "source": source, **identity, "alignair_source": str(ALIGNAIR_DIR),
                "assay_code_sha256": assay_code_sha256()},
         config={"run_dir": str(layout.root), "suites": names, **config, "profile": bool(profile)},
         suites=results, profile=measured)
     markdown = diagnostics_markdown(report)
-    _write_json(layout.diagnostics_json(model_key), report)
-    layout.diagnostics_md(model_key).write_text(markdown, encoding="utf-8")
-    return DiagnosticsResult(model_key=model_key, suites=results, profile=measured, report_md=markdown)
-
-
-def alignair_code() -> dict:
-    """``core.provenance.code_identity`` of the alignair package this process imported (``ALIGNAIR_DIR``):
-    ``code_sha256`` and ``torch_version``, taken when this module was imported, so it describes the code the
-    process runs whatever happens to the files later. When the import is this checkout's ``src/alignair``, it is
-    the alignair-local runner's ``local_code_identity()``."""
-    return dict(_ALIGNAIR_CODE)
+    _write_json(layout.diagnostics_json(key_name), report)
+    layout.diagnostics_md(key_name).write_text(markdown, encoding="utf-8")
+    return DiagnosticsResult(model_key=key_name, suites=results, profile=measured, report_md=markdown)
 
 
 def assay_code_sha256() -> str:
-    """``core.provenance.files_digest`` of the Python files of this package's ``ASSAY_LAYERS`` (the truth, metrics,
-    scoring and diagnostics code a cached result was computed by), taken when this module was imported."""
+    """``core.provenance.files_digest`` of the Python files of this package's ``ASSAY_LAYERS`` and of this module
+    (the truth, metrics, scoring and diagnostics code a cached result was computed by), taken when this module was
+    imported."""
     return _ASSAY_CODE
-
-
-def weights_sha256(model_or_checkpoint) -> str:
-    """The model's identity by content: the SHA-256 of a model file's bytes, or for an in-memory
-    ``(model, reference_set)`` pair the SHA-256 of the model's class and module tree, its configuration, the allele
-    names of each gene in head order and every state tensor's name, dtype, shape and bytes. FileNotFoundError for a
-    path that is not a file."""
-    if isinstance(model_or_checkpoint, (str, os.PathLike)):
-        path = Path(model_or_checkpoint).expanduser()
-        if not path.is_file():
-            raise FileNotFoundError(f"no AlignAIR model file {path}")
-        return sha256_file(path)
-    model, reference_set = model_or_checkpoint
-    digest = hashlib.sha256()
-    digest.update(f"{type(model).__module__}.{type(model).__qualname__}\0{model!r}\0".encode())
-    cfg = model.cfg
-    fields = dataclasses.asdict(cfg) if dataclasses.is_dataclass(cfg) else vars(cfg)
-    digest.update(json.dumps(fields, sort_keys=True, default=repr).encode())
-    for letter in ("V", "D", "J"):
-        if letter != "D" or getattr(reference_set, "has_d", True):
-            digest.update(("\0" + letter + "\0" + "\0".join(reference_set.gene(letter).names)).encode())
-    for name, value in sorted(model.state_dict().items()):
-        if not isinstance(value, torch.Tensor):
-            digest.update(f"\0{name}\0{value!r}".encode())
-            continue
-        tensor = value.detach().to("cpu").contiguous()
-        digest.update(f"\0{name}\0{tensor.dtype}\0{tuple(tensor.shape)}\0".encode())
-        digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
-    return digest.hexdigest()
 
 
 def variant_set(variants: Sequence[str]) -> tuple[str, ...]:
@@ -327,7 +283,7 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
     return json.loads(json.dumps(result, allow_nan=False))
 
 
-def _profile(model, reference_set, layout: RunLayout, model_key: str, identity: dict, names: list[str], *,
+def _profile(model, reference_set, layout: RunLayout, key_name: str, identity: dict, names: list[str], *,
              max_cases: int | None, device: str, batch_size: int) -> dict:
     """The model's speed profile on up to ``PROFILE_READS`` of the diagnosed reads of ``names`` (each suite's
     ``select_cases`` of its reads, in suite order, then evenly spaced), reused from its cache when the key matches,
@@ -341,7 +297,7 @@ def _profile(model, reference_set, layout: RunLayout, model_key: str, identity: 
         "device_name": _device_name(device), "host": platform.node(), "threads": torch.get_num_threads(),
         "batch_size": batch_size, "reads": len(reads),
         "reads_sha256": hashlib.sha256("\n".join(reads).encode()).hexdigest()}))
-    path = layout.diagnostics_profile_json(model_key)
+    path = layout.diagnostics_profile_json(key_name)
     cached = _cached(path, key)
     if cached is not None:
         return {**cached["profile"], "reused": True}

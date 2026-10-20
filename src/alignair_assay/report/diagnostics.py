@@ -1,4 +1,4 @@
-"""The diagnostics report of one model: the plain dict ``diagnostics.evaluate`` builds, and its markdown.
+"""The diagnostics report of one model: the plain dict ``workflow.diagnose`` builds, and its markdown.
 
 ``build_diagnostics_report`` assembles the dict (strict JSON: NaN and infinity become None) and
 ``diagnostics_markdown`` renders it: the model and the suites overview, then ``SECTIONS`` in order, each always

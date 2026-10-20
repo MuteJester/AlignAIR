@@ -1,4 +1,4 @@
-"""The diagnostics report: markdown rendered from the plain dict ``diagnostics.evaluate`` builds."""
+"""The diagnostics report: markdown rendered from the plain dict ``workflow.diagnose`` builds."""
 import copy
 import math
 
