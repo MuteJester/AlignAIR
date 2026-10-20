@@ -1,6 +1,8 @@
 """Tests for the assay Reference and CIGAR utilities."""
 from __future__ import annotations
 
+import pytest
+
 from alignair_assay.core.cigar import format_cigar, parse_cigar, walk
 from alignair_assay.core.reference import Reference, gene_name
 
@@ -28,6 +30,23 @@ def test_reference_from_dataconfig(reference):
     assert reference.seq(name) == reference.alleles["v"][name]
     assert not reference.has("NOPE*01")
     assert gene_name("IGHVF1-G2*01") == "IGHVF1-G2"
+
+
+def test_reference_gapped_v_from_dataconfig(reference, tmp_path):
+    # The dataconfig's IMGT-gapped V sequences, uppercase, each the allele's sequence once the gaps are removed.
+    for name, sequence in reference.alleles["v"].items():
+        gapped = reference.gapped(name)
+        assert gapped == gapped.upper() and gapped.replace(".", "") == sequence and len(gapped) >= 318
+    assert reference.gapped("IGHVF1-G1*01").startswith("CAGGTCACCTTGAAGGAGTCTGGTCCT...")
+    assert reference.gapped(next(iter(reference.alleles["d"]))) is None
+    with pytest.raises(KeyError):
+        reference.gapped("NOPE*01")
+    # Equality and the digest are the alleles' alone; a FASTA holds no gapped sequence.
+    plain = Reference(alleles=reference.alleles, anchors=reference.anchors)
+    assert plain == reference and plain.digest() == reference.digest()
+    path = tmp_path / "germline.fasta"
+    path.write_text(">IGHV1-2*02\nACGT\n", encoding="utf-8")
+    assert Reference.from_fasta(path).gapped("IGHV1-2*02") is None
 
 
 def test_reference_digest():

@@ -124,7 +124,7 @@ Each subpackage is a layer and may import only the layers in its row.
 
 | Layer | Holds | May import from `alignair_assay.` |
 |---|---|---|
-| `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files, `evenly_spaced` samples), `provenance` (git state, file and source digests, `code_identity` of a torch model package), `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports) | core |
+| `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, with a dataconfig's IMGT-gapped V sequences as `gapped(name)`, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files, `evenly_spaced` samples), `provenance` (git state, file and source digests, `code_identity` of a torch model package), `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports) | core |
 | `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle`, `summary` (what a truth set could not score) | core, truth |
 | `airr` | AIRR TSV `reader` (`load_airr_tsv`, and `rows_to_predictions` for rows already in memory) and `writer` | core, airr |
 | `metrics` | per-case scorers (pure), the group scorers that read a case's whole clone (`groups`), the scorers against a read's donor genotype (`genotype`), and the metric registries | core, truth, metrics |
@@ -135,6 +135,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
 | `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory), `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) and `diagnose` (`evaluate`, the evaluator behind `diagnose`: the diagnostics layer orchestrated over a run directory, cached per suite, with its report) | everything except cli |
 | `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed) and `identity` (the model key: `weights_sha256` and the AlignAIR code identity) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
+| `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318) and the paper's novel alleles (`sd3_novel`, `sd3_only`) | core, real.genotype |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -142,12 +143,15 @@ Further rules:
 
 - `alignair` is imported only by `core/reference.py` and `diagnostics/`, and `alignair_benchmark` is never imported.
 - `truth`, `metrics` and `stats` are pure: no file IO, no subprocess, no CLI, no network. `truth/io.py` reads and
-  writes truth files through `core.jsonl`.
+  writes truth files through `core.jsonl`. So are `real.truth` and `real.metrics`.
+- `real` is the one nested package: each module `real/<sub>.py` is a layer of its own, `real.<sub>`, with its own
+  row (Real data lists them). `workflow` and `cli` may import any of them; `report` none, as it renders plain
+  dicts.
 - GenAIRR is imported only from `core`, `truth` (record decoding), `suites` and `workflow`.
 
-`tests/alignair_assay/test_architecture.py` enforces the table and the first two rules by reading every module's
-imports, function-level ones included. A new subpackage fails that test until it has a row in the test's `ALLOWED`
-map. Tests live in `tests/alignair_assay/<layer>/`, mirroring the package; `tests/alignair_assay/conftest.py`
+`tests/alignair_assay/test_architecture.py` enforces the table and the first three rules by reading every module's
+imports, function-level ones included. A new subpackage, or a new module of `real/`, fails that test until it has a
+row in the test's `ALLOWED` map. Tests live in `tests/alignair_assay/<layer>/`, mirroring the package; `tests/alignair_assay/conftest.py`
 provides the `genairr` guard, the session `reference` (`HUMAN_IGH_OGRDB`) and `load_fixture(name)` for the
 committed bench cases in `tests/alignair_assay/fixtures/`.
 
@@ -1339,3 +1343,61 @@ The tests (`tests/alignair_assay/workflow/test_diagnose.py`) run end to end on S
 small random-init model, and pin the cache: a second call reuses every suite, and a new checkpoint, another code
 digest, another torch or assay code, a rebuilt suite, another variant set, case count, batch size or device, or a
 record whose key was edited is recomputed.
+
+## Real data
+
+P3 scores the tools on real human IGH repertoires (BioProject PRJNA555323; Rodriguez et al. 2023, Nat Commun
+14:4419) against each donor's own alleles from genomic long-read sequencing, published by VDJbase (genomic study
+P25, CC0). This section grows with P3a; so far it covers the donor genotypes.
+
+**Data root.** Downloads live under a data root given to the commands, never in a run directory or the repository.
+The genotype files are `genotypes/vdjbase_genomic_samples/<sample>.csv` (one VDJbase sample per donor, e.g.
+`P25_I58_S1` for SC-23), `genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json` (OGRDB's IGH_VDJ germline
+set, CC0) and `genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx` (the paper's supplementary data).
+Tests that read it run only when `ALIGNAIR_ASSAY_DATA` names it.
+
+**Sub-layers.** Each module of `real/` is a layer of its own (see Layers and dependency rule). The rows, some ahead
+of their modules:
+
+| Layer | May import from `alignair_assay.` |
+|---|---|
+| `real.genotype` | core, real.genotype |
+| `real.truth` (pure) | core, real.genotype, real.truth |
+| `real.metrics` (pure) | core, metrics, real.genotype, real.truth, real.metrics |
+| `real.fetch` | core, real.fetch |
+| `real.locus` | core, real.genotype, real.locus |
+| `real.preprocess` | core, real.preprocess |
+
+**Donor genotypes (`real.genotype`).** Identity is the ungapped sequence, compared exactly; names are never matched
+across sources. The shared reference's V names are OGRDB F/G labels (`IGHVF6-G21*06`) without IUIS names, so:
+
+- `IuisMap.from_ogrdb(json_path, reference)` maps each shared allele to the OGRDB IUIS labels with its exact
+  sequence (`labels`, `genes`; `shared_for_sequence` and `labels_for_sequence` go the other way). On
+  `HUMAN_IGH_OGRDB` against rev 8, 236 of 238 shared alleles map; `unmapped()` is `IGHVF10-G33*01` and
+  `IGHVF10-G42*01`, each one base shorter than OGRDB's IGHV3-13*06 and IGHV3-43D*05. Eleven carry two labels:
+  identical-sequence paralogs such as `IGHVF6-G21*06` = IGHV1-69*01 / IGHV1-69D*01, and the identical D pairs.
+- `load_vdjbase_csv(path, donor, reference, iuis_map)` gives a `RealGenotype` (`donor`, `alleles`, `captured`,
+  `source`) of `RealAllele` records (`allele_id`, `gene`, `segment`, `sequence`, `gapped`, `haplotype`,
+  `functional`, `shared`, `iuis`, `imgt_identity`), one per haplotype per gene. Haplotype 0 is unphased, not
+  homozygous. `gapped` is VDJbase's V-REGION-GAPPED, whose gaps are `.` columns and `-` for a deleted base.
+  `RealGenotype.carried(gene)`, `genes(segment)` (every carried gene, functional or not) and `absent_genes()`
+  (genes with an allele absent from the shared reference) read it; `captured` stays None until the contig spans
+  are known. The shared reference's own gapped V sequences are `Reference.gapped(name)`, from the dataconfig.
+- `functional` is False when VDJbase's `notes` flag a V-REGION defect: a stop codon, a first or second cysteine or
+  the conserved tryptophan not found, or a V-REGION length mismatch. On the eight pilot donors this reproduces
+  VDJbase's genotype API allele for allele. Their functional V genes are the API's counts (SC-23 47, SC-4 49,
+  SC-11 50, SC-6 49, W-97 39, W-89 53, W-133 40, W-131 48), out of 51, 53, 54, 52, 42, 57, 44 and 52 V genes in
+  their CSVs.
+- `filter_d` drops a D call whose id has a gap-indel token (`g8-`, `8---a11`, an `i15ac` insertion) or whose
+  identity to its closest IMGT allele is under 90%; the loader applies it and lists what it dropped in `source`.
+  `merge_identical(reference)` maps each shared allele to those with its sequence (D4-4*01 / D4-11*01,
+  D5-5*01 / D5-18*01). `upto(gapped, 318)` is an allele through IMGT position 318, past which rearranged reads
+  cannot tell alleles apart (Peres et al. 2023).
+- `sd3_novel(path)` reads the paper's 137 novel alleles (Supplementary Data 3; the workbook or a tab-separated
+  export of its sheet), reverse-complementing each sequence, which the sheet gives reversed, as
+  `Sd3Allele(closest, sequence, gene, closest_all)`. `sd3_only(genotypes, sd3)` is the genes touched by those in
+  no given donor's alleles: the sheet's gene and every closest allele's gene. Only the donors given count, so pass
+  the cohort: the eight pilot donors alone leave 45 genes touched.
+
+**Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
+locked for claims.

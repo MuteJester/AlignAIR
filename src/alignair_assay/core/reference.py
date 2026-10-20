@@ -5,7 +5,7 @@ With the ``diagnostics`` layer, this is the only assay code that imports ``align
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 from alignair_assay.core.cases import read_fasta
 
@@ -38,6 +38,9 @@ class Reference:
     alleles: dict[str, dict[str, str]]
     # allele name -> 0-based germline anchor (V Cys codon start, J Trp/Phe codon start)
     anchors: dict[str, int]
+    # V allele name -> uppercase IMGT-gapped sequence ("." for a gap column), where the source has one (a GenAIRR
+    # dataconfig does; a FASTA file and a ReferenceSet do not). Not part of equality or of the digest.
+    gapped_v: dict[str, str] = field(default_factory=dict, compare=False)
 
     def seq(self, name: str) -> str:
         """Germline sequence of allele ``name`` (KeyError when it is not in the reference)."""
@@ -49,6 +52,13 @@ class Reference:
             if name in table:
                 return letter
         raise KeyError(name)
+
+    def gapped(self, name: str) -> str | None:
+        """IMGT-gapped sequence of allele ``name`` (uppercase, ``.`` for a gap column, so IMGT position ``p`` is
+        column ``p - 1``), or None when the reference holds none for it (D and J alleles, and a reference read from a
+        FASTA file). KeyError when the allele is not in the reference."""
+        self.gene_letter(name)
+        return self.gapped_v.get(name)
 
     def has(self, name: str) -> bool:
         """True when allele ``name`` is in the reference."""
@@ -120,7 +130,15 @@ class Reference:
 
     @classmethod
     def from_dataconfig(cls, name: str) -> "Reference":
-        """The reference of GenAIRR dataconfig ``name`` (see ``dataconfig``); ValueError for an unknown name."""
+        """The reference of GenAIRR dataconfig ``name`` (see ``dataconfig``), with the dataconfig's IMGT-gapped V
+        sequences (``gapped``; one whose gaps removed is not the allele's sequence is left out); ValueError for an
+        unknown name."""
         from alignair.reference.reference_set import ReferenceSet
 
-        return cls.from_reference_set(ReferenceSet.from_dataconfigs(dataconfig(name)))
+        config = dataconfig(name)
+        reference = cls.from_reference_set(ReferenceSet.from_dataconfigs(config))
+        v = reference.alleles.get("v", {})
+        gapped = {allele.name: allele.gapped_seq.upper() for alleles in (config.v_alleles or {}).values()
+                  for allele in alleles if allele.gapped_seq}
+        return replace(reference, gapped_v={allele: seq for allele, seq in gapped.items()
+                                            if v.get(allele) == seq.replace(".", "")})
