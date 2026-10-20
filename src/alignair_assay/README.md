@@ -124,7 +124,7 @@ Each subpackage is a layer and may import only the layers in its row.
 
 | Layer | Holds | May import from `alignair_assay.` |
 |---|---|---|
-| `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, with a dataconfig's IMGT-gapped V sequences as `gapped(name)`, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files, `evenly_spaced` samples), `provenance` (git state, file and source digests, `code_identity` of a torch model package), `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports) | core |
+| `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, with a dataconfig's IMGT-gapped V sequences as `gapped(name)`, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files, `evenly_spaced` samples), `provenance` (git state, file and source digests, `code_identity` of a torch model package), `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports), `container` (pinned, hardened container runs: `check_image`, `hardened_run`, `run_container`, `ContainerError`) | core |
 | `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle`, `summary` (what a truth set could not score) | core, truth |
 | `airr` | AIRR TSV `reader` (`load_airr_tsv`, and `rows_to_predictions` for rows already in memory) and `writer` | core, airr |
 | `metrics` | per-case scorers (pure), the group scorers that read a case's whole clone (`groups`), the scorers against a read's donor genotype (`genotype`), and the metric registries | core, truth, metrics |
@@ -137,6 +137,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed) and `identity` (the model key: `weights_sha256` and the AlignAIR code identity) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318) and the paper's novel alleles (`sd3_novel`, `sd3_only`) | core, real.genotype |
 | `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the pilot pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
+| `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), the capture rule (`captured_genes`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -385,6 +386,7 @@ RUN/
   speed/reads_<n>.fasta               n reads evenly spaced across S1, timed
   speed/runs/<config>/                each timed configuration's last tiny/ and full/ run (predictions, logs)
   report.json, report.md              the run summary and the run report (`all`, `report`)
+  real/<donor>/genotype.json          a real donor's genotype, with the genes its genomic contigs capture
   diagnostics/<model_key>/            one model's diagnostics (`diagnose`, `workflow.diagnose`)
     <S>/suite.json                    one suite's cached result, with the key it was computed for
     <S>/report.md                     one suite's detail of the last report
@@ -411,6 +413,7 @@ RUN/
 | `diagnostics/<model_key>/<S>/suite.json`, `profile.json` | `diagnostics_suite_json(key, s)`, `diagnostics_profile_json(key)` |
 | `diagnostics/<model_key>/<S>/report.md`, `profile.md` | `diagnostics_suite_md(key, s)`, `diagnostics_profile_md(key)` |
 | `diagnostics/<model_key>/diagnostics.json`, `diagnostics.md` | `diagnostics_json(key)`, `diagnostics_md(key)` |
+| `real/`, `real/<donor>/`, `real/<donor>/genotype.json` | `real_root`, `real_donor_dir(donor)`, `real_genotype_json(donor)` |
 
 Suites are `S0` (toy: tests and smoke runs), `S0_EXHAUST` and `S0_COHORT` (tests only) and `S1`–`S12`; arms are
 `shared` and `genotype`; splits are `dev` (the default, for model iteration) and `test` (locked, used only for
@@ -1364,7 +1367,7 @@ Each source has its own directory there, with an `MD5SUMS.txt`:
 - `genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx` (the paper's supplementary data).
 
 Tests that read it run only when `ALIGNAIR_ASSAY_DATA` names it; those that download need `ALIGNAIR_ASSAY_NETWORK=1`
-too, and those that run the sra-tools container `ALIGNAIR_ASSAY_DOCKER=1`.
+too, and those that run a container (sra-tools, samtools) `ALIGNAIR_ASSAY_DOCKER=1`.
 
 **Fetch (`real.fetch`).** Every file is pinned in the module (size, md5 or S3 ETag, read count, commit, image
 digest), so a fresh data root gets the same bytes or a refusal. A file already there is reused only when it is the
@@ -1434,6 +1437,36 @@ across sources. The shared reference's V names are OGRDB F/G labels (`IGHVF6-G21
   `Sd3Allele(closest, sequence, gene, closest_all)`. `sd3_only(genotypes, sd3)` is the genes touched by those in
   no given donor's alleles: the sheet's gene and every closest allele's gene. Only the donors given count, so pass
   the cohort: the eight pilot donors alone leave 45 genes touched.
+
+**Captured genes (`real.locus`).** R1 counts a call to a gene the donor lacks as `unsupported_gene` only where the
+donor's long reads resolve that gene's region; a call to a gene in a region they do not resolve is excluded. A gene
+is captured when the donor carries an allele of it (any segment, any haplotype), or when its interval on
+IGenotyper's `igh` reference (`gene_coords.bed`) lies wholly inside one contig of haplotype 0 (unphased), or inside
+a contig of haplotype 1 and a contig of haplotype 2. Two contigs that cover a gene only together, or a partial
+overlap, do not capture it.
+
+- The haplotype is the contig name's `h=` (`c=igh:<start>-<end>_h=<0|1|2>_...`), the block haplotype IGenotyper
+  assembled it from. The `RG` tag is per-alignment SNV phasing (RG 0: no phased SNV under the alignment), not the
+  contig's haplotype. IGenotyper's allele extraction uses `h=`, and the VDJbase CSVs' haplotype equals it on all 840
+  pilot rows, while RG differs on 60. A contig name without an `h=` of 0, 1 or 2 stops the donor.
+- Only the alignments IGenotyper uses count (its `skip_read`): unmapped, secondary and supplementary records are
+  skipped, with no MAPQ filter. Most records are secondary (571 of SC-23's 674), and counting them would add
+  genes the contigs do not span.
+- A span is `[POS - 1, POS - 1 + L)`, L the CIGAR's reference-consuming length (`M`, `D`, `N`, `=`, `X`). A long
+  `D` therefore spans the genes a haplotype deletes (W-89: 9.4 kb over IGHD1-7 to IGHD3-3).
+- The BED's 92 `igh` genes (59 IGHV, 27 IGHD, 6 IGHJ) carry IUIS gene names: OGRDB rev 8's, plus IGHV1-38-4,
+  which VDJbase uses too. It has no IGHV3-25, IGHV3-62 or IGHV8-51-1; a donor that carries them has them captured
+  all the same.
+- `contig_spans(bam)` runs `samtools view` in `SAMTOOLS_IMAGE` (biocontainers samtools 1.23.1, pinned by digest)
+  as the current user, with no network and no capabilities, on the BAM's directory alone mounted read-only, and
+  kills the container by name on a timeout; only its SAM text is parsed (`parse_sam_spans`).
+  `donor_capture(genotype, bam, bed)` returns the genotype with `captured` set and, in `source["capture"]`, the
+  image, the whole command, the inputs' SHA-256s, the module's, a `fingerprint` of those, the spans per haplotype,
+  and the gene lists `spanned`, `carried_not_spanned` and `spanned_not_carried` (candidate deletions or assembly
+  gaps). Its BAM must be the genotype's VDJbase sample.
+- On the pilot donors the contigs span 40 to 52 V genes. Calls to V genes the donor lacks can be `unsupported_gene`
+  only for 0 to 3 genes per donor (IGHV4-30-2 on SC-23; IGHV3-11, IGHV3-15 and IGHV4-30-2 on W-97; IGHV4-31 on
+  SC-4); calls to the donor's other missing genes are excluded.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims.

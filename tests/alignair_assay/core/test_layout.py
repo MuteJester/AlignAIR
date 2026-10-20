@@ -49,6 +49,9 @@ def test_layout_paths(tmp_path):
         (layout.diagnostics_md("k"), "diagnostics/k/diagnostics.md"),
         (layout.diagnostics_suite_md("k", "S1"), "diagnostics/k/S1/report.md"),
         (layout.diagnostics_profile_md("k"), "diagnostics/k/profile.md"),
+        (layout.real_root, "real"),
+        (layout.real_donor_dir("SC-23"), "real/SC-23"),
+        (layout.real_genotype_json("W-97"), "real/W-97/genotype.json"),
     ]
     for path, relative in expected:
         assert path == tmp_path / relative, relative
@@ -81,3 +84,7 @@ def test_layout_rejects_names_that_are_not_one_component(tmp_path, name):
         layout.diagnostics_dir(name)
     with pytest.raises(ValueError, match="path component"):
         layout.diagnostics_suite_json("k", name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.real_donor_dir(name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.real_genotype_json(name)

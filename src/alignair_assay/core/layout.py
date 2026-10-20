@@ -23,6 +23,7 @@ RUN/
   diagnostics/<model_key>/profile.json     the cached speed profile, with its key
   diagnostics/<model_key>/profile.md       the speed profile of the last diagnostics report
   diagnostics/<model_key>/diagnostics.json, diagnostics.md   the last diagnostics report and its one-page summary
+  real/<donor>/genotype.json          a real donor's genotype, with the genes its genomic contigs capture
 ```
 
 ``RunLayout`` only joins paths: it never reads, writes or creates anything.
@@ -212,6 +213,20 @@ class RunLayout:
     def diagnostics_profile_md(self, model_key: str) -> Path:
         """The speed profile of the model's last diagnostics report, as markdown (linked from the summary)."""
         return self.diagnostics_dir(model_key) / "profile.md"
+
+    @property
+    def real_root(self) -> Path:
+        """Directory of the real-data run, one subdirectory per donor."""
+        return self.root / "real"
+
+    def real_donor_dir(self, donor: str) -> Path:
+        """One real donor's records."""
+        return self.real_root / _component(donor)
+
+    def real_genotype_json(self, donor: str) -> Path:
+        """The donor's genotype from genomic sequencing, with the genes its contigs capture and how that was
+        computed."""
+        return self.real_donor_dir(donor) / "genotype.json"
 
 
 def _component(name: str) -> str:
