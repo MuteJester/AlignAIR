@@ -11,45 +11,48 @@ it, whose names are shared names, so both arms are classified against the whole 
 sequence (``real.genotype``): the IUIS labels of a shared allele are those with its exact sequence (``IuisMap``),
 and alleles with the same sequence are one call (``merge_identical``).
 
-**Support** (``SupportIndex.classify``). A call is ``supported`` when its sequence equals a functional donor allele's
-exactly, or through IMGT position 318: the IMGT-gapped forms' first 318 columns, ungapped (``through_318``). Two V
-alleles that differ only past 318 cannot be told apart from rearranged reads (Peres et al. 2023, PIgLET), so the
-shared reference's ``IGHVF3-G9*04_A319G`` is supported for a donor carrying ``IGHVF3-G9*04`` (IGHV4-28*03 and *01).
-Matching by sequence means a call is supported through any of its IUIS labels: ``IGHVF6-G21*06`` is IGHV1-69*01 and
-IGHV1-69D*01, and supports a donor that carries the sequence at IGHV1-69D only. A call matching no functional donor
-allele is classified by its IUIS genes, the genes of its labels:
+**The call's genes** (``SupportIndex.genes``) are the IUIS genes of its labels, or for an allele without a label of
+the labels it equals through IMGT 318 (``IuisMap.inferred``): ``IGHVF6-G21*06`` is IGHV1-69*01 and IGHV1-69D*01,
+``IGHVF10-G33*01`` is inferred IGHV3-13*06.
+
+**Exclusions** (``EXCLUSIONS``) are decided first, from the call's genes and tool-neutral truth alone, never from
+whether the call is right: a right call and a wrong call to the same genes are excluded alike, so a tool cannot
+take its errors out of R1 by making them in an excluded gene. A call is excluded when any of its genes is, by the
+first reason that applies, in this order:
+
+- ``dropped_truth``: the gene's only calls were dropped by ``filter_d`` (D only): its truth is dropped, not absent.
+- ``not_captured``: the gene's region is not captured (``RealGenotype.captured``, ``real.locus``): the call may be
+  an allele the donor's long reads did not resolve.
+- ``unmapped``: a guard for a call with no gene at all, labelled or inferred; none on HUMAN_IGH_OGRDB.
+- ``novel_gene``: the gene has a donor allele absent from the shared reference, of any functionality
+  (``RealGenotype.absent_genes``, per segment: a D gene's absent allele touches only D calls). Over-excluding is
+  safe; scoring the gene is not, since a tool may call a read of the novel allele as the carried shared one.
+- ``nonfunctional``: none of the gene's donor alleles is functional (each has a V-REGION defect note); such alleles
+  are not truth (Mikelov et al. 2024).
+- ``beyond_318``: a functional donor allele of the gene has no usable IMGT-gapped form (none, under 318 columns, or
+  codon 104 off columns 309-311 as on VDJbase's insertion-gapped calls), so no call to the gene can be compared to
+  it through 318. On the pilot donors none has. The shared reference must give every V allele a usable one
+  (``SupportIndex`` refuses it otherwise; the dataconfig's does).
+- ``half_resolved``: the gene is carried but not resolved (``RealGenotype.resolved``): one haplotype is known and
+  the other's region is not spanned, so its unknown second allele could be any call.
+- ``low_support``: the V gene has fewer than ``MIN_CLONOTYPES`` (10) clonotypes or ``MIN_NAIVE_CLONOTYPES`` (3)
+  naive clonotypes among the known answers (Mikelov et al. 2024's thresholds, per gene; ``gene_support``).
+
+Each tool's exclusions are counted per reason (``exclusion_counts``), so steering reads into excluded genes stays
+visible.
+
+**Support.** A call not excluded is ``supported`` when its sequence equals a functional donor allele's exactly or
+through IMGT position 318, the two matches taken together: the IMGT-gapped forms' first 318 columns, ungapped
+(``through_318``). Two V alleles that differ only past 318 cannot be told apart from rearranged reads (Peres et al.
+2023, PIgLET), so the shared reference's ``IGHVF3-G9*04_A319G`` is supported for a donor carrying ``IGHVF3-G9*04``
+(IGHV4-28*03 and *01), even where it is exactly a nonfunctional allele of the donor's. Matching by sequence means a
+call is supported through any of its labels: ``IGHVF6-G21*06`` supports a donor that carries the sequence at
+IGHV1-69D only. A nonfunctional donor allele supports no call. Otherwise the call is:
 
 - ``unsupported_allele``: a gene of the call is carried, but not this allele.
 - ``unsupported_gene``: no gene of the call is carried, and their regions are captured: a call to a gene the donor's
   long reads show it lacks.
 - ``no_call``: no top-1 V call.
-- ``excluded:<reason>``: the call cannot be judged against the donor's truth. Each tool's exclusions are counted per
-  reason (``exclusion_counts``), so steering reads into excluded genes stays visible.
-
-**Exclusions** (``EXCLUSIONS``, checked in that order).
-
-- ``dropped_truth``: the gene's only calls were dropped by ``filter_d`` (D only): its truth is dropped, not absent.
-- ``not_captured``: the gene's region is not captured (``RealGenotype.captured``, ``real.locus``).
-- ``unmapped``: no IUIS label has the call's sequence (``IGHVF10-G33*01``, ``IGHVF10-G42*01``), so its gene is
-  unknown.
-- ``novel_gene``: the gene has a donor allele absent from the shared reference, of any functionality
-  (``RealGenotype.absent_genes``, per segment: a D gene's absent allele touches only D calls). Over-excluding is
-  safe; scoring the gene is not, since a tool may call a read of the novel allele as the carried shared one.
-- ``nonfunctional``: the call matches only nonfunctional donor alleles (a V-REGION defect note), or the gene has no
-  functional allele. Such alleles are not truth (Mikelov et al. 2024).
-- ``beyond_318``: the call is not an exact-sequence match, and the comparison through 318 cannot be made because
-  the call or a functional donor allele of its gene has no usable IMGT-gapped form (none, under 318 columns, or
-  codon 104 off columns 309-311 as on VDJbase's insertion-gapped calls). On the pilot donors none does.
-- ``half_resolved``: the gene is carried but not resolved (``RealGenotype.resolved``): one haplotype is known and
-  the other's region is not spanned, so the unknown second allele could be the call.
-- ``low_support``: the V gene has fewer than ``MIN_CLONOTYPES`` (10) clonotypes or ``MIN_NAIVE_CLONOTYPES`` (3)
-  naive clonotypes among the known answers (Mikelov et al. 2024's thresholds, per gene; ``gene_support``).
-
-``novel_gene``, ``nonfunctional`` and ``low_support`` are gene-level: they exclude supported calls too, taking the
-genes of the functional donor alleles the call matches, so whether a read is excluded does not depend on whether
-the tool was right. ``half_resolved`` and ``beyond_318`` exclude only a call that is not supported: a supported call
-is supported whatever the unknown allele or a missing gapped form. A call with several genes (a paralog pair) is
-excluded when any of its genes is, then ``unsupported_allele`` when any is carried.
 
 **Shared exclusions** (``shared_exclusions``). A read enters the paired comparison only when neither tool's call
 is excluded; ``real_case_scores`` then leaves R1 out for both tools.
@@ -107,6 +110,8 @@ CLASSES = (SUPPORTED, *UNSUPPORTED, *EXCLUSIONS)
 MIN_CLONOTYPES = 10
 MIN_NAIVE_CLONOTYPES = 3
 SEGMENTS = ("v", "d", "j")
+# What a gene of an unexcluded call is: carried by the donor, or captured and not carried.
+_CARRIED, _ABSENT = "carried", "absent"
 
 
 class ReadCalls(NamedTuple):
@@ -131,7 +136,9 @@ class SupportIndex:
     """What one donor's calls are classified against, built once per donor: its genotype with the captured and
     resolved genes, the IUIS map and identical alleles of the shared reference the tools ran on, and the gene
     support from its known answers (``gene_support``). ValueError for a genotype without its capture
-    (``real.locus.donor_capture``), or an IUIS map or genotype mapped to another shared reference."""
+    (``real.locus.donor_capture``), an IUIS map or genotype mapped to another shared reference, or a shared
+    reference with a V allele without a usable IMGT-gapped form (``through_318``; one read from a FASTA file has
+    none), against which a call could not be compared through 318."""
 
     def __init__(self, genotype: RealGenotype, iuis: IuisMap, merged: Mapping[str, frozenset[str]],
                  reference: Reference, *, support: Mapping[str, tuple[int, int]]):
@@ -164,6 +171,10 @@ class SupportIndex:
         self._dropped = frozenset(genotype.dropped_genes())
         self._truth = frozenset(allele.segment for allele in (*genotype.alleles, *genotype.dropped))
         self._shared_318 = {name: through_318(reference.gapped_v.get(name)) for name in reference.alleles.get("v", {})}
+        unusable = sorted(name for name, through in self._shared_318.items() if through is None)
+        if unusable:
+            raise ValueError(f"{len(unusable)} V alleles of the shared reference have no usable IMGT-gapped form "
+                             f"(e.g. {unusable[0]}): use the reference built from the dataconfig")
         self._classes: dict[tuple[str, str], str] = {}
 
     @property
@@ -237,54 +248,47 @@ class SupportIndex:
         table = self.reference.alleles.get(segment, {})
         if name not in table:
             raise ValueError(f"{name!r} is not a {segment.upper()} allele of the shared reference")
-        matches = self._by_sequence[segment].get(table[name].upper(), [])
-        through = self._shared_318.get(name) if segment == "v" else None
-        if not matches and through is not None:
-            matches = self._by_318.get(through, [])
-        functional = {allele.gene for allele in matches if allele.functional}
-        if functional:
-            return self._gene_level(functional, segment) or SUPPORTED
-        if matches:
-            return "excluded:nonfunctional"
         genes = self.genes(name)
         if not genes:
-            return "excluded:unmapped"
-        found = [self._unsupported(gene, segment, usable=segment != "v" or through is not None) for gene in genes]
+            return "excluded:unmapped"  # a guard: no gene, labelled or inferred (none on HUMAN_IGH_OGRDB)
+        # the exclusions are the genes', never the call's: a right and a wrong call to them are excluded alike
+        found = [self._gene_class(gene, segment) for gene in genes]
         for reason in EXCLUSIONS:
             if reason in found:
                 return reason
-        return UNSUPPORTED_ALLELE if UNSUPPORTED_ALLELE in found else UNSUPPORTED_GENE
+        if any(allele.functional for allele in self._matches(name, segment)):
+            return SUPPORTED
+        return UNSUPPORTED_ALLELE if _CARRIED in found else UNSUPPORTED_GENE
 
-    def _gene_level(self, genes: set[str], segment: str) -> str | None:
-        """The gene-level exclusion of a supported call whose matching functional donor alleles are of ``genes``."""
-        if genes & self._absent[segment]:
-            return "excluded:novel_gene"
-        if segment == "v" and not all(self.passes(gene) for gene in genes):
-            return "excluded:low_support"
-        return None
+    def _matches(self, name: str, segment: str) -> list[RealAllele]:
+        """The donor alleles shared allele ``name`` equals: exactly, and for V through IMGT 318 too (the union)."""
+        matches = list(self._by_sequence[segment].get(self.reference.alleles[segment][name].upper(), ()))
+        if segment == "v":
+            matches += self._by_318.get(self._shared_318[name], ())
+        return matches
 
-    def _unsupported(self, gene: str, segment: str, *, usable: bool) -> str:
-        """The class of an unsupported call as a call to ``gene``; ``usable`` is False for a V call without a usable
-        IMGT-gapped form."""
+    def _gene_class(self, gene: str, segment: str) -> str:
+        """The exclusion of every call to ``gene`` (the module docstring), else ``_CARRIED`` or ``_ABSENT`` (captured,
+        not carried)."""
         if gene in self._dropped:
             return "excluded:dropped_truth"
         if gene not in self.genotype.captured:
             return "excluded:not_captured"
         alleles = self._carried[segment].get(gene)
         if not alleles:
-            return UNSUPPORTED_GENE
+            return _ABSENT
         if gene in self._absent[segment]:
             return "excluded:novel_gene"
         functional = [allele for allele in alleles if allele.functional]
         if not functional:
             return "excluded:nonfunctional"
-        if segment == "v" and (not usable or any(through_318(allele.gapped) is None for allele in functional)):
+        if segment == "v" and any(through_318(allele.gapped) is None for allele in functional):
             return "excluded:beyond_318"
         if gene not in self.genotype.resolved:
             return "excluded:half_resolved"
         if segment == "v" and not self.passes(gene):
             return "excluded:low_support"
-        return UNSUPPORTED_ALLELE
+        return _CARRIED
 
 
 def classify_v_call(pred: Prediction | None, genotype: RealGenotype, iuis: IuisMap,

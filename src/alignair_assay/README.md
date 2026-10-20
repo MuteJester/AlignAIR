@@ -1573,22 +1573,24 @@ another shared reference:
 once per donor from its captured genotype and the gene support of its known answers (`gene_support`), classifies a
 call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one prediction.
 
-- The top-1 V call is the first allele the tool lists in `v_call`. It is `supported` when its sequence equals a
-  functional donor allele's exactly or through IMGT position 318 (`through_318`; alleles that differ only past it
-  cannot be told apart from rearranged reads, Peres et al. 2023), so through any of its IUIS labels: a call of
-  `IGHVF3-G9*04_A319G` is supported for a donor carrying `IGHVF3-G9*04`. Otherwise it is `unsupported_allele` (a
-  gene of the call is carried, not this allele), `unsupported_gene` (none is carried and their regions are
-  captured), `no_call` (no top-1 call; every read is an IGH amplicon), or excluded.
-- The exclusions (`EXCLUSIONS`): `dropped_truth` (the gene's only calls were dropped by `filter_d`),
-  `not_captured`, `unmapped` (no IUIS label has the call's sequence), `novel_gene` (the gene has a donor allele
-  absent from the shared reference, of any functionality), `nonfunctional` (the call matches only nonfunctional
-  donor alleles, or the gene has no functional one), `beyond_318` (the comparison through 318 cannot be made: a
-  functional donor allele of the gene, or the call, has no usable IMGT-gapped form; none on the pilot donors),
-  `half_resolved` (the gene is not resolved, so its unknown allele could be the call) and `low_support` (the V gene
-  has fewer than 10 clonotypes or 3 naive clonotypes among the known answers; a known answer of several genes counts
-  toward each). `novel_gene`, `nonfunctional` and `low_support` exclude supported calls too, by the genes of the
-  donor alleles the call matches, so exclusion does not depend on whether the tool was right; `half_resolved` and
-  `beyond_318` only unsupported calls.
+- The top-1 V call is the first allele the tool lists in `v_call`; its genes are the IUIS genes of its labels (or
+  of those `IuisMap.inferred` gives an unlabelled allele).
+- Exclusions (`EXCLUSIONS`) are decided from the call's genes and tool-neutral truth alone, never from whether the
+  call is right: a right and a wrong call to the same genes are excluded alike, and a call is excluded when any of
+  its genes is. The reasons: `dropped_truth` (the gene's only calls were dropped by `filter_d`), `not_captured`,
+  `unmapped` (a guard: no gene at all; none on HUMAN_IGH_OGRDB), `novel_gene` (the gene has a donor allele absent
+  from the shared reference, of any functionality), `nonfunctional` (none of the gene's donor alleles is
+  functional), `beyond_318` (a functional donor allele of the gene has no usable IMGT-gapped form; none on the
+  pilot donors), `half_resolved` (the gene is carried but not resolved, so its unknown allele could be any call)
+  and `low_support` (the V gene has fewer than 10 clonotypes or 3 naive clonotypes among the known answers; a known
+  answer of several genes counts toward each).
+- A call not excluded is `supported` when its sequence equals a functional donor allele's exactly or through IMGT
+  position 318, the two taken together (`through_318`; alleles that differ only past it cannot be told apart from
+  rearranged reads, Peres et al. 2023): a call of `IGHVF3-G9*04_A319G` is supported for a donor carrying
+  `IGHVF3-G9*04`. A nonfunctional donor allele supports no call. Otherwise it is `unsupported_allele` (a gene of
+  the call is carried, not this allele), `unsupported_gene` (none is carried and their regions are captured) or
+  `no_call` (no top-1 call; every read is an IGH amplicon). The shared reference must give every V allele a usable
+  IMGT-gapped form (the dataconfig's does).
 - A read enters R1 only when neither tool's call is excluded (`shared_exclusions`); each tool's exclusions are
   counted per reason (`exclusion_counts`).
 - `real_case_scores(pred, truth, calls, excluded=..., index=...)` gives `real.v.unsupported` (1 for
@@ -1598,11 +1600,13 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   `real.v.novel_known_call` (a novel known answer's call is of its gene) and `real.d.unsupported` /
   `real.j.unsupported` where the donor has D or J truth (no D call has no metric).
 - The oracle (`oracle_prediction`, `oracle_self_check`), each known answer's own shared allele, checks the truth
-  against itself. On W-97 its 2,595 known answers that are not novel give 1,797 supported, 790 `novel_gene`
+  against itself. On W-97 its 2,595 known answers that are not novel give 1,663 supported, 790 `novel_gene`
   (IGHV3-23D, IGHV1-69, IGHV1-69D, IGHV1-2, IGHV1-24, IGHV1-46, IGHV3-30-3 and IGHV3-43 carry a novel allele, and
-  IGHV3-23's answers are one with IGHV3-23D's, their alleles being identical) and 8 `low_support`; on SC-23, 2,700
-  give 2,530, 130 and 40. Both are 100% supported among the scored and 100% `known_top1`. W-97's known answers
-  clear the thresholds for 25 of their 29 genes, SC-23's for 30 of 42.
+  IGHV3-23's answers are one with IGHV3-23D's, their alleles being identical), 134 `not_captured` (IGHV3-30-5
+  answers whose shared allele is labelled with a paralog whose region W-97's contigs do not capture) and 8
+  `low_support`; on SC-23, 2,700 give 2,530 supported, 130 `novel_gene` and 40 `low_support`. Both are 100%
+  supported among the scored and 100% `known_top1`. W-97's known answers clear the thresholds for 25 of their 29
+  genes, SC-23's for 30 of 42.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims.

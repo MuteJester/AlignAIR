@@ -41,6 +41,7 @@ from alignair_assay.real.metrics import (
     passing_genes,
     real_case_scores,
     shared_exclusions,
+    through_318,
 )
 from alignair_assay.real.truth import RealTruth
 
@@ -82,12 +83,21 @@ SHARED_V = {
     "IGHVF8-G1*02": (_gapped(8, 150), ("IGHV3-62*01",)),
     "IGHVF9-G1*01": (_gapped(9), ("IGHV3-15*01",)),
     "IGHVF9-G1*02": (_gapped(9, 150), ("IGHV3-15*02",)),
-    "IGHVF10-G33*01": (_gapped(10), ()),  # no IUIS label has its sequence
+    "IGHVF10-G33*01": (_gapped(10), ()),  # no label has its sequence; IGHV3-13*06 is inferred (INFERRED)
+    "IGHVF10-G99*01": (_gapped(17), ()),  # no label and none inferred: unmapped
     "IGHVF2-G1*01": (_gapped(11), ("IGHV1-46*01",)),
     "IGHVF2-G1*02": (_gapped(11, 150), ("IGHV1-46*03",)),
     "IGHVF11-G1*01": (_gapped(12), ("IGHV5-51*01",)),
     "IGHVF11-G1*02": (_gapped(12, 150), ("IGHV5-51*02",)),
+    "IGHVF12-G1*01": (_gapped(13), ("IGHV4-4*02",)),
+    "IGHVF12-G1*02": (_gapped(13, 318), ("IGHV4-4*07",)),  # IGHV4-4*02 through 318; a nonfunctional donor allele
+    "IGHVF13-G1*01": (_gapped(14), ("IGHV4-59*01",)),
+    "IGHVF13-G1*02": (_gapped(14, 150), ("IGHV4-59*02",)),  # a nonfunctional donor allele, before 318
+    "IGHVF14-G1*01": (_gapped(15), ("IGHV2-70*01", "IGHV2-70D*01")),  # both genes captured, neither carried
+    "IGHVF15-G1*01": (_gapped(16), ("IGHV3-64*01", "IGHV3-64D*01")),  # IGHV3-64D not captured
 }
+# Shared V allele without a label -> the OGRDB labels it equals through IMGT 318 (``IuisMap.inferred``).
+INFERRED = {"IGHVF10-G33*01": ("IGHV3-13*06",)}
 D_SEQ = {"IGHD3-10*01": _random(31, 20), "IGHD3-3*01": _random(31, 21), "IGHD2-2*01": _random(31, 22),
          "IGHD4-4*01": _random(20, 23)}
 J_SEQ = {"IGHJ4*02": _random(48, 30), "IGHJ6*02": _random(63, 31)}
@@ -99,8 +109,10 @@ LABELS = {**{name: labels for name, (_, labels) in SHARED_V.items()}, **{name: (
           "IGHD4-11*01": ("IGHD4-11*01",), **{name: (name,) for name in J_SEQ}}
 
 
-def _iuis_map(reference: Reference, labels: dict[str, tuple[str, ...]]) -> IuisMap:
-    """The ``IuisMap`` that ``IuisMap.from_ogrdb`` gives for OGRDB labels ``labels`` (shared name -> labels)."""
+def _iuis_map(reference: Reference, labels: dict[str, tuple[str, ...]],
+              inferred: dict[str, tuple[str, ...]]) -> IuisMap:
+    """The ``IuisMap`` that ``IuisMap.from_ogrdb`` gives for OGRDB labels ``labels`` (shared name -> labels) and the
+    labels ``inferred`` for unlabelled shared alleles."""
     by_sequence, shared = defaultdict(set), defaultdict(list)
     for name, sequence in reference.sequences().items():
         by_sequence[sequence].update(labels.get(name, ()))
@@ -109,10 +121,11 @@ def _iuis_map(reference: Reference, labels: dict[str, tuple[str, ...]]) -> IuisM
     return IuisMap(labels_by_shared={name: labels_by_sequence.get(sequence, ())
                                      for name, sequence in reference.sequences().items()},
                    shared_by_sequence={sequence: tuple(sorted(names)) for sequence, names in shared.items()},
-                   labels_by_sequence=labels_by_sequence, reference_digest=reference.digest())
+                   labels_by_sequence=labels_by_sequence, reference_digest=reference.digest(),
+                   inferred_by_shared=dict(inferred))
 
 
-IUIS = _iuis_map(REFERENCE, LABELS)
+IUIS = _iuis_map(REFERENCE, LABELS, INFERRED)
 MERGED = merge_identical(REFERENCE)
 
 
@@ -146,14 +159,21 @@ ALLELES = (
     _allele("IGHV1-46*01", 1, shared_as="IGHVF2-G1*01"),
     _allele("IGHV1-46*01", 2, shared_as="IGHVF2-G1*01"),
     _allele("IGHV5-51*01", 0, shared_as="IGHVF11-G1*01", keep_gapped=False),  # no usable gapped form
+    _allele("IGHV4-4*02", 1, shared_as="IGHVF12-G1*01"),
+    _allele("IGHV4-4*07", 2, shared_as="IGHVF12-G1*02", functional=False),
+    _allele("IGHV4-59*01", 1, shared_as="IGHVF13-G1*01"),
+    _allele("IGHV4-59*02", 2, shared_as="IGHVF13-G1*02", functional=False),
     _allele("IGHD3-10*01", 1, shared_as="IGHD3-10*01", segment="d"),
     _allele("IGHJ4*02", 0, shared_as="IGHJ4*02", segment="j"),
 )
+V_ALLELES = tuple(allele for allele in ALLELES if allele.segment == "v")
 DROPPED = (RealAllele(allele_id="IGHD3-3*01_g8-", gene="IGHD3-3", segment="d", sequence=_random(30, 40),
                       gapped=None, haplotype=1, functional=True, shared=(), iuis=()),)
 CARRIED = {allele.gene for allele in ALLELES}
-# IGHV3-11, IGHV1-69, IGHD2-2 and IGHJ6 are spanned and not carried; IGHV3-23 and IGHD4-4 / IGHD4-11 are not spanned.
-CAPTURED = frozenset(CARRIED | {"IGHV3-11", "IGHV1-69", "IGHD2-2", "IGHJ6"})
+# IGHV3-11, IGHV1-69, IGHV2-70, IGHV2-70D, IGHV3-64, IGHV3-13, IGHD2-2 and IGHJ6 are spanned and not carried;
+# IGHV3-23, IGHV3-64D and IGHD4-4 / IGHD4-11 are not spanned.
+CAPTURED = frozenset(CARRIED | {"IGHV3-11", "IGHV1-69", "IGHV2-70", "IGHV2-70D", "IGHV3-64", "IGHV3-13", "IGHD2-2",
+                                "IGHJ6"})
 GENOTYPE = RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED, resolved=CAPTURED - {"IGHV3-15"},
                         dropped=DROPPED)
 # Clonotypes and naive clonotypes per gene, from the known answers: IGHV1-46 has too few naive clonotypes.
@@ -216,6 +236,23 @@ def test_multi_iuis_shared_allele_is_supported_through_its_second_label():
     assert INDEX.classify("IGHVF6-G21*07") == UNSUPPORTED_ALLELE
 
 
+def test_paralog_calls_by_both_genes():
+    # IGHVF14-G1*01 is IGHV2-70*01 and IGHV2-70D*01: both regions captured, neither gene carried
+    assert {"IGHV2-70", "IGHV2-70D"} <= CAPTURED and not {"IGHV2-70", "IGHV2-70D"} & CARRIED
+    assert INDEX.classify("IGHVF14-G1*01") == UNSUPPORTED_GENE
+    # IGHVF15-G1*01 is IGHV3-64*01 and IGHV3-64D*01: IGHV3-64D's region is not captured, so the call may be an
+    # allele of it the donor's long reads did not resolve
+    assert "IGHV3-64" in CAPTURED and "IGHV3-64D" not in CAPTURED
+    assert INDEX.classify("IGHVF15-G1*01") == "excluded:not_captured"
+
+
+def test_a_match_through_318_to_a_functional_allele_is_supported_even_if_exactly_a_nonfunctional_one():
+    # IGHVF12-G1*02 is exactly the donor's nonfunctional IGHV4-4*07 and equals its functional IGHV4-4*02 through 318
+    assert INDEX.classify("IGHVF12-G1*02") == SUPPORTED and INDEX.classify("IGHVF12-G1*01") == SUPPORTED
+    # a call equal to a nonfunctional donor allele alone, in a gene with a functional one: no truth supports it
+    assert INDEX.classify("IGHVF13-G1*02") == UNSUPPORTED_ALLELE and INDEX.classify("IGHVF13-G1*01") == SUPPORTED
+
+
 def test_no_call_is_no_call():
     assert INDEX.classify_v(_pred(v=None)) == NO_CALL
     assert INDEX.classify_v(None) == NO_CALL  # the tool emitted no row
@@ -225,23 +262,47 @@ def test_no_call_is_no_call():
 
 
 def test_the_other_exclusions():
-    # a gene with an allele absent from the shared reference: its calls are excluded, supported ones included
+    # each is a property of the call's genes, so a right and a wrong call to the gene are excluded alike
+    # a gene with an allele absent from the shared reference
     assert INDEX.classify("IGHVF4-G1*01") == INDEX.classify("IGHVF4-G1*02") == "excluded:novel_gene"
-    # a donor allele with a V-REGION defect is no truth: a call matching it, or to a gene with no other allele
+    # a gene whose donor alleles all have a V-REGION defect
     assert INDEX.classify("IGHVF8-G1*01") == INDEX.classify("IGHVF8-G1*02") == "excluded:nonfunctional"
-    # a gene known on one haplotype only: an unsupported allele call there may be the unknown second allele
-    assert INDEX.classify("IGHVF9-G1*02") == "excluded:half_resolved"
-    assert INDEX.classify("IGHVF9-G1*01") == SUPPORTED
-    # a gene with too few naive clonotypes among the known answers, supported calls included
+    # a gene known on one haplotype only: its unknown second allele could be any call
+    assert INDEX.classify("IGHVF9-G1*01") == INDEX.classify("IGHVF9-G1*02") == "excluded:half_resolved"
+    # a gene with too few naive clonotypes among the known answers
     assert INDEX.classify("IGHVF2-G1*01") == INDEX.classify("IGHVF2-G1*02") == "excluded:low_support"
-    # a functional donor allele without a usable IMGT-gapped form: the comparison through 318 cannot be made
-    assert INDEX.classify("IGHVF11-G1*02") == "excluded:beyond_318"
-    assert INDEX.classify("IGHVF11-G1*01") == SUPPORTED  # an exact sequence needs no IMGT numbering
-    # a shared allele no IUIS label has the sequence of: its gene is unknown
-    assert INDEX.classify("IGHVF10-G33*01") == "excluded:unmapped"
+    # a gene with a functional donor allele without a usable IMGT-gapped form: no call can be compared through 318
+    assert INDEX.classify("IGHVF11-G1*01") == INDEX.classify("IGHVF11-G1*02") == "excluded:beyond_318"
     assert set(EXCLUSIONS) == {"excluded:not_captured", "excluded:dropped_truth", "excluded:unmapped",
                                "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318",
                                "excluded:half_resolved", "excluded:low_support"}
+
+
+def test_an_unlabelled_shared_allele_is_classified_by_its_inferred_gene():
+    # IGHVF10-G33*01 has no label of its own; IuisMap infers IGHV3-13*06 through IMGT 318, a gene the donor lacks
+    assert IUIS.labels("IGHVF10-G33*01") == () and IUIS.genes("IGHVF10-G33*01") == ("IGHV3-13",)
+    assert INDEX.classify("IGHVF10-G33*01") == UNSUPPORTED_GENE
+    # unmapped is a guard for an allele with no gene at all; HUMAN_IGH_OGRDB has none (the gated test)
+    assert IUIS.unmapped() == ("IGHVF10-G99*01",) and INDEX.classify("IGHVF10-G99*01") == "excluded:unmapped"
+
+
+def test_exclusion_never_depends_on_whether_the_call_is_right():
+    # every pair of calls to the same genes, one right and one wrong, is excluded alike: the class of an excluded
+    # call is a function of its IUIS genes alone
+    by_genes = defaultdict(set)
+    for name in SHARED_V:
+        by_genes[IUIS.genes(name)].add(INDEX.classify(name))
+    for genes, classes in by_genes.items():
+        excluded = {cls for cls in classes if cls.startswith("excluded:")}
+        assert not excluded or classes == excluded and len(excluded) == 1, (genes, classes)
+    assert sum(len(classes) > 1 for classes in by_genes.values()) >= 3  # right and wrong calls do occur
+    # two tools on one read of a half-resolved gene: the right call and the wrong one take the read out for both
+    right, wrong = _pred("h", "IGHVF9-G1*01"), _pred("h", "IGHVF9-G1*02")
+    classes = {"right": {"h": INDEX.classify_v(right)}, "wrong": {"h": INDEX.classify_v(wrong)}}
+    assert classes["right"]["h"] == classes["wrong"]["h"] == "excluded:half_resolved"
+    assert shared_exclusions(classes["right"], classes["wrong"]) == {"h"}
+    for pred in (right, wrong):
+        assert real_case_scores(pred, _truth("h"), INDEX.classify_v(pred), excluded=True, index=INDEX) == {}
 
 
 def test_d_and_j_calls_where_the_donor_has_their_truth():
@@ -260,7 +321,7 @@ def test_d_and_j_calls_where_the_donor_has_their_truth():
     scores = real_case_scores(_pred(v="IGHVF1-G1*01"), _truth("r"), no_dj, excluded=False, index=INDEX)
     assert "real.d.unsupported" not in scores and scores["real.j.unsupported"] == 1.0
     # a donor without D and J truth gets neither metric
-    v_only = SupportIndex(RealGenotype(donor=DONOR, alleles=ALLELES[:13], captured=CAPTURED, resolved=CAPTURED),
+    v_only = SupportIndex(RealGenotype(donor=DONOR, alleles=V_ALLELES, captured=CAPTURED, resolved=CAPTURED),
                           IUIS, MERGED, REFERENCE, support=SUPPORT)
     calls = v_only.read_calls(_pred(v="IGHVF1-G1*01", d="IGHD3-10*01", j="IGHJ4*02"))
     assert calls.d is None and calls.j is None
@@ -382,7 +443,7 @@ def test_low_support_gene_from_known_answers_only():
     index = SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE, support=support)
     assert index.classify("IGHVF1-G1*01") == SUPPORTED and index.classify("IGHVF6-G21*06") == SUPPORTED
     assert index.classify("IGHVF3-G9*04") == "excluded:low_support"  # 9 clonotypes
-    assert index.classify("IGHVF9-G1*01") == "excluded:low_support"  # carried, no known answer at all
+    assert index.classify("IGHVF2-G1*01") == "excluded:low_support"  # carried, no known answer at all
     with pytest.raises(ValueError, match="donor"):
         gene_support([*truths, _truth("w", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2",
                                       donor="W-97")])
@@ -395,9 +456,10 @@ def test_oracle_scores_perfect():
         _truth("a", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2", naive=True),
         _truth("p", known=("IGHV1-69D*01",), shared=("IGHVF6-G21*06",), gene="IGHV1-69D"),
         _truth("t", known=("IGHV4-28*01",), shared=("IGHVF3-G9*04",), gene="IGHV4-28"),
+        # excluded by a rule of the gene, whatever the call: half resolved, an allele without a usable gapped
+        # form, a novel allele, too few clonotypes
         _truth("h", known=("IGHV3-15*01",), shared=("IGHVF9-G1*01",), gene="IGHV3-15"),
         _truth("m", known=("IGHV5-51*01",), shared=("IGHVF11-G1*01",), gene="IGHV5-51"),
-        # excluded by rule: a gene with a novel allele, a gene below the thresholds
         _truth("x", known=("IGHV3-30*01",), shared=("IGHVF4-G1*01",), gene="IGHV3-30"),
         _truth("l", known=("IGHV1-46*01",), shared=("IGHVF2-G1*01",), gene="IGHV1-46"),
         # not scored by the oracle: a novel known answer, a read without one
@@ -409,9 +471,11 @@ def test_oracle_scores_perfect():
     assert oracle.sequence_id == "a" and oracle.segments["v"].call == "IGHVF1-G1*01"
     check = oracle_self_check(truths, INDEX)
     assert check["reads"] == 7
-    assert check["classes"] == {SUPPORTED: 5, "excluded:novel_gene": 1, "excluded:low_support": 1}
-    assert check["excluded_genes"] == {"excluded:low_support": ["IGHV1-46"], "excluded:novel_gene": ["IGHV3-30"]}
-    assert check["scored"] == 5 and check["supported"] == 1.0 and check["unsupported"] == 0.0
+    assert check["classes"] == {SUPPORTED: 3, "excluded:half_resolved": 1, "excluded:beyond_318": 1,
+                                "excluded:novel_gene": 1, "excluded:low_support": 1}
+    assert check["excluded_genes"] == {"excluded:beyond_318": ["IGHV5-51"], "excluded:half_resolved": ["IGHV3-15"],
+                                       "excluded:low_support": ["IGHV1-46"], "excluded:novel_gene": ["IGHV3-30"]}
+    assert check["scored"] == 3 and check["supported"] == 1.0 and check["unsupported"] == 0.0
     assert check["known_top1"] == check["known_gene_top1"] == 1.0
     assert check["passed"]
     for truth in truths[:7]:
@@ -431,6 +495,13 @@ def test_support_index_refuses_a_genotype_it_cannot_score():
                           source={"reference_digest": other.digest()})
     with pytest.raises(ValueError, match="reference"):
         SupportIndex(mapped, IUIS, MERGED, REFERENCE, support=SUPPORT)
+    # the same alleles (and digest) without one V allele's gapped form: a call of it could not be compared through
+    # 318, so the reference is refused rather than a call misclassified
+    partly = Reference(alleles=REFERENCE.alleles, anchors={},
+                       gapped_v={name: gapped for name, gapped in REFERENCE.gapped_v.items() if name != "IGHVF1-G1*02"})
+    assert partly.digest() == REFERENCE.digest()
+    with pytest.raises(ValueError, match="IGHVF1-G1\\*02"):
+        SupportIndex(GENOTYPE, IUIS, MERGED, partly, support=SUPPORT)
 
 
 # --- registration -------------------------------------------------------------------------------------------------
@@ -530,28 +601,34 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
     assert check["reads"] == len(known) > 0
     assert check["passed"] and check["supported"] == 1.0 and check["unsupported"] == 0.0
     assert check["known_top1"] == check["known_gene_top1"] == 1.0
-    # only gene-level rules exclude an oracle call: a novel allele in the gene, too few clonotypes, or a match to
-    # nonfunctional alleles only
-    assert set(check["classes"]) <= {SUPPORTED, "excluded:novel_gene", "excluded:low_support",
-                                     "excluded:nonfunctional"}
-    # each class is explained by the genes of the donor alleles the oracle's call matches, all of them among the
-    # known answer's genes
+    # only the rules of the call's genes exclude an oracle call; the guard never fires on this reference
+    assert set(check["classes"]) <= {SUPPORTED, "excluded:not_captured", "excluded:novel_gene",
+                                     "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved",
+                                     "excluded:low_support"}
+    for segment in ("v", "d", "j"):
+        assert all(index.classify(name, segment) != "excluded:unmapped" for name in reference.alleles[segment])
+    # each class is explained by the call's own genes, read off the genotype
     passing = passing_genes(support)
     v = [allele for allele in genotype.alleles if allele.segment == "v"]
     absent = {allele.gene for allele in v if not allele.shared}
     for truth in known:
         oracle = oracle_prediction(truth)
+        name = oracle.segments["v"].call
         cls = index.classify_v(oracle)
-        matched = [allele for allele in v if allele.sequence == reference.seq(oracle.segments["v"].call)]
-        genes = {allele.gene for allele in matched if allele.functional}
-        assert matched and genes <= set(truth.known_gene.split("|")), truth.read_id
+        genes = set(index.genes(name))
+        carried = {gene for gene in genes if genotype.carried(gene)}
+        functional = {allele.gene for allele in v if allele.functional}
+        reasons = {"excluded:not_captured": bool(genes - genotype.captured),
+                   "excluded:novel_gene": bool(carried & absent),
+                   "excluded:nonfunctional": bool(carried - functional),
+                   "excluded:beyond_318": any(allele.functional and through_318(allele.gapped) is None
+                                              for allele in v if allele.gene in carried),
+                   "excluded:half_resolved": bool(carried - genotype.resolved),
+                   "excluded:low_support": bool(carried - passing)}
         if cls == SUPPORTED:
-            assert genes <= passing and not genes & absent, truth.read_id
-        elif cls == "excluded:novel_gene":
-            assert genes & absent, truth.read_id
-        elif cls == "excluded:low_support":
-            assert not genes & absent and not genes <= passing, truth.read_id
+            assert carried and not any(reasons.values()), truth.read_id
+            assert any(allele.functional and allele.sequence == reference.seq(name) for allele in v), truth.read_id
         else:
-            assert not genes, truth.read_id  # nonfunctional: no functional allele matches
+            assert reasons[cls], (truth.read_id, cls)
     assert sum(check["classes"].values()) == len(known)
     json.dumps(check)  # plain data, for the report
