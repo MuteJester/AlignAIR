@@ -126,8 +126,9 @@ def test_true_germline_substitutions_in_the_model_frame():
 
     assert subs.active() == ("orientation", "spans", "calls", "germline", "classifier_spans")
     assert subs.segment_spans and subs.decoder == "soft"
-    # every scored read gets its truth orientation; the excluded case and the read without truth keep the model's
-    assert subs.orientation == [0, 1, 0, 0, 0, 0, None, None]
+    # every scored read gets its truth orientation; the excluded case and the read without truth get the model's own
+    # (so the replay needs no second forward pass for them)
+    assert subs.orientation == [0, 1, 0, 0, 0, 0, 2, 0]
     # r0: the observed coordinates, as they are (a forward read the model saw whole)
     assert [subs.spans[g][0][0] for g in GENES] == [0, 205, 220]
     assert [subs.spans[g][1][0] for g in GENES] == [200, 215, 260]
@@ -226,11 +227,11 @@ def test_baseline_rows_are_the_replay_and_score_like_the_product_tsv(make_shaped
 
 # The fields the AIRR assembly builds from the germline alignment, the calls and the orientation.
 FED = re.compile(r"(junction|clone_key)\.|[vdj]\.(seq|germ)_(start|end)_|[vdj]\.top1_in_set$|orientation\.")
-# AlignAIR's AIRR assembly re-encodes these whatever germline alignment it is given (an assembly finding, not a
-# substitution error): it writes the V germline coordinates in IMGT-gapped numbering (and the reader then drops the V
-# CIGAR, which no longer matches them), and the CDR3 coordinates, from which the junction coordinates are read, as
-# columns of the gapped sequence alignment. When the assembly writes them in read and ungapped germline coordinates,
-# move them into the equal set.
+# Excluded from the equality check: the V germline coordinates and the junction coordinates. AlignAIR's AIRR assembly
+# (compute_alignment_positions) writes the V germline coordinates in IMGT-gapped numbering and the CDR3/junction
+# coordinates as columns of the gapped sequence alignment, whatever germline alignment it is given. That is tracked on
+# the AlignAIR fix-list; this test neither asserts nor depends on it. When the assembly writes them in read and
+# ungapped germline coordinates, drop this exclusion.
 REENCODED = re.compile(r"v\.germ_(start|end)_|junction\.(start|end)_")
 
 
@@ -246,20 +247,16 @@ def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped
     assert {row["airr_assembly_status"] for row in results["true_germline"].rows} == {"complete"}
     oracle = score_predictions(s0_truths, {t.case_id: oracle_prediction(t) for t in s0_truths}, reference)
     final = results["true_germline"].scores
-    equal = reencoded = 0
+    equal = 0
     for case_id, case in oracle.items():
         for name, value in case.items():
             if not FED.match(name):
                 continue
             if REENCODED.match(name):
-                reencoded += final[case_id][name] != value
-            else:
-                assert final[case_id][name] == value, (case_id, name)
-                equal += 1
+                continue
+            assert final[case_id][name] == value, (case_id, name)
+            equal += 1
     assert equal > 50 * 20
-    # every read shows the re-encoded V germline end and junction coordinates
-    assert all(final[case_id]["v.germ_end_exact"] == 0.0 and final[case_id]["junction.start_abs_err"] > 0
-               for case_id in oracle) and reencoded >= 50 * 3
     # The model's own germline alignment (true calls, its matcher) is not oracle quality.
     own = results["true_calls"].scores
     assert any(own[c][name] != final[c][name] for c in oracle for name in oracle[c]
@@ -381,3 +378,21 @@ def test_variants_on_the_released_checkpoint(reference, s1_layout):
         assert values and all(v == 1.0 for v in values)
     out = stage_contributions(results, ["junction.nt_exact", "v.top1_in_set"])
     assert [e["to"] for e in out] == list(VARIANTS[1:])
+
+
+def test_variants_with_excluded_cases_run_one_forward_pass_per_batch(make_shaped_model, s0_cases, s0_truths):
+    model, reference_set = make_shaped_model("igh")
+    ids, seqs = _ids_seqs(s0_cases)
+    truths = [replace(t, excluded="non_biological_orientation") if k % 3 == 0 else t for k, t in enumerate(s0_truths)]
+    baseline = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    calls = []
+    handle = model.orientation_head.register_forward_hook(lambda *_: calls.append(1))  # once per forward pass
+    try:
+        for name in ("true_orientation", "true_germline"):
+            substitutions, _ = substitutions_for(name, truths, baseline)
+            assert None not in substitutions.orientation
+            calls.clear()
+            replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH, substitutions=substitutions)
+            assert len(calls) == math.ceil(len(ids) / BATCH), name
+    finally:
+        handle.remove()

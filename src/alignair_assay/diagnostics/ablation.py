@@ -161,6 +161,11 @@ def substitutions_for(variant: str, truths: Sequence[ObservableTruth], outputs_b
                     target[g][i] = GermlineAlignment(o.allele, o.seq_start - lo, o.seq_end - lo, o.germ_start,
                                                      o.germ_end, o.cigar)
 
+    if orientation is not None:
+        # The model's own orientation fills the entries without truth: the same value the replay would use, and it
+        # keeps the replay from running a second forward pass for those reads.
+        own = out.predictions.orientation
+        orientation = [int(own[i]) if o is None else o for i, o in enumerate(orientation)]
     substitutions = Substitutions(orientation=orientation, spans=spans, segment_spans="spans" in fields,
                                   classifier_spans="classifier" in fields, calls=calls, germline=germline,
                                   decoder=decoder)
