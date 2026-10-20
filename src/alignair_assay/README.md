@@ -140,6 +140,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), the capture and resolved rules (`captured_genes`, `spanned_by_haplotype`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
 | `real.preprocess` | annotation-free preprocessing of a real run (see Real data): the protocol classifier (`classify_protocol`), the pRESTO recipes (`recipe`) run in the pinned Immcantation container (`IMMCANTATION_IMAGE`), the primers (`VH_PRIMERS`, `C_PRIMERS_MULTIPLEX`, `CREGION_RC`), the cap (`cap_sequences`), the primer spans (`primer_spans`) and `preprocess_run` | core, real.preprocess |
 | `real.truth` | each real read's tool-neutral truth (see Real data): `RealTruth` and `real_truths`, the observed span (`observed_span`, `mask_primers`), IMGT codon 104 (`cys104_end`), the known answer (`known_match`, `known_answer`), the Cys104 anchor (`cys104_in_read`), the junction (`junction_by_motif`) and `clonotype_clusters` | core, real.genotype, real.truth |
+| `real.metrics` | R1 per read (see Real data): `SupportIndex` and `classify_v_call` (each call's class), the gene thresholds (`gene_support`, `passing_genes`), `shared_exclusions`, `exclusion_counts`, `real_case_scores` and the oracle self-check (`oracle_prediction`, `oracle_self_check`) | core, metrics, real.genotype, real.truth, real.metrics |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -1360,7 +1361,7 @@ record whose key was edited is recomputed.
 P3 scores the tools on real human IGH repertoires (BioProject PRJNA555323; Rodriguez et al. 2023, Nat Commun
 14:4419) against each donor's own alleles from genomic long-read sequencing, published by VDJbase (genomic study
 P25, CC0). This section grows with P3a; so far it covers the downloads, the donor genotypes, the preprocessing of
-the reads and each read's truth.
+the reads, each read's truth and R1, the support of each tool's V call by the donor's alleles.
 
 **Data root.** Downloads live under a data root given to the commands, never in a run directory or the repository.
 Each source has its own directory there, with an `MD5SUMS.txt`:
@@ -1564,6 +1565,41 @@ another shared reference:
   genotype holds no IGHV4 gene while about a quarter of its reads are IGHV4, which the shared anchors place. Every
   known answer's Cys104 is where the donor's Hamming anchor puts it, and of the reads with no anchor the reverse
   complement has one on 3 of SC-23's 10,733 and none of W-97's 50,000.
+
+**R1 per read (`real.metrics`).** Pure. A `SupportIndex(genotype, iuis, merged, reference, support=...)`, built
+once per donor from its captured genotype and the gene support of its known answers (`gene_support`), classifies a
+call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one prediction.
+
+- The top-1 V call is the first allele the tool lists in `v_call`. It is `supported` when its sequence equals a
+  functional donor allele's exactly or through IMGT position 318 (`through_318`; alleles that differ only past it
+  cannot be told apart from rearranged reads, Peres et al. 2023), so through any of its IUIS labels: a call of
+  `IGHVF3-G9*04_A319G` is supported for a donor carrying `IGHVF3-G9*04`. Otherwise it is `unsupported_allele` (a
+  gene of the call is carried, not this allele), `unsupported_gene` (none is carried and their regions are
+  captured), `no_call` (no top-1 call; every read is an IGH amplicon), or excluded.
+- The exclusions (`EXCLUSIONS`): `dropped_truth` (the gene's only calls were dropped by `filter_d`),
+  `not_captured`, `unmapped` (no IUIS label has the call's sequence), `novel_gene` (the gene has a donor allele
+  absent from the shared reference, of any functionality), `nonfunctional` (the call matches only nonfunctional
+  donor alleles, or the gene has no functional one), `beyond_318` (the comparison through 318 cannot be made: a
+  functional donor allele of the gene, or the call, has no usable IMGT-gapped form; none on the pilot donors),
+  `half_resolved` (the gene is not resolved, so its unknown allele could be the call) and `low_support` (the V gene
+  has fewer than 10 clonotypes or 3 naive clonotypes among the known answers; a known answer of several genes counts
+  toward each). `novel_gene`, `nonfunctional` and `low_support` exclude supported calls too, by the genes of the
+  donor alleles the call matches, so exclusion does not depend on whether the tool was right; `half_resolved` and
+  `beyond_318` only unsupported calls.
+- A read enters R1 only when neither tool's call is excluded (`shared_exclusions`); each tool's exclusions are
+  counted per reason (`exclusion_counts`).
+- `real_case_scores(pred, truth, calls, excluded=..., index=...)` gives `real.v.unsupported` (1 for
+  `unsupported_allele`, `unsupported_gene` or `no_call`) and those three components, absent for an excluded read;
+  `real.v.known_top1` and `real.v.known_gene_top1` on every known answer that is not novel, excluded or not (their
+  truth is tool-neutral); and, informational, `real.v.any_listed_supported` (a tie list hides a supported allele),
+  `real.v.novel_known_call` (a novel known answer's call is of its gene) and `real.d.unsupported` /
+  `real.j.unsupported` where the donor has D or J truth (no D call has no metric).
+- The oracle (`oracle_prediction`, `oracle_self_check`), each known answer's own shared allele, checks the truth
+  against itself. On W-97 its 2,595 known answers that are not novel give 1,797 supported, 790 `novel_gene`
+  (IGHV3-23D, IGHV1-69, IGHV1-69D, IGHV1-2, IGHV1-24, IGHV1-46, IGHV3-30-3 and IGHV3-43 carry a novel allele, and
+  IGHV3-23's answers are one with IGHV3-23D's, their alleles being identical) and 8 `low_support`; on SC-23, 2,700
+  give 2,530, 130 and 40. Both are 100% supported among the scored and 100% `known_top1`. W-97's known answers
+  clear the thresholds for 25 of their 29 genes, SC-23's for 30 of 42.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims.

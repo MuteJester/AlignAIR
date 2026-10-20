@@ -368,7 +368,8 @@ def test_metric_direction():
                                        "v_novel.snp_mutations", ".start_err.soft", ".start_err.argmax",
                                        ".end_err.soft", ".end_err.argmax", ".allele_top1_generative",
                                        ".n_above_threshold", "head.mutation_rate_abs_err.record", "head.cropped",
-                                       "head.misoriented"})
+                                       "head.misoriented", "real.v.novel_known_call", "real.v.any_listed_supported",
+                                       "real.d.unsupported", "real.j.unsupported"})
 
 
 def test_interval_distances():

@@ -1,0 +1,557 @@
+"""R1 for real reads (``real.metrics``): each tool's top-1 V call against the donor's genomic alleles.
+
+The offline tests build a tiny shared reference (IMGT-gapped V alleles named like OGRDB's F/G labels), its IUIS map,
+a donor genotype with one gene per class and the reads' truths in the test. The gated test scores an oracle (each
+known answer's own shared allele) on the pilot donors W-97 and SC-23 when ``ALIGNAIR_ASSAY_DATA`` names the data
+root, ``ALIGNAIR_ASSAY_DOCKER=1`` lets the contig BAMs be read, and Task 4's preprocessed outputs are in
+``.private/assay/p3a_task4_run``.
+"""
+from __future__ import annotations
+
+import ast
+import json
+import os
+import random
+from collections import defaultdict
+from pathlib import Path
+
+import pytest
+
+import alignair_assay
+from alignair_assay import metrics as registry
+from alignair_assay.core.prediction import PredSegment, Prediction
+from alignair_assay.core.reference import Reference
+from alignair_assay.metrics import is_informational, lower_is_better
+from alignair_assay.real.genotype import IuisMap, RealAllele, RealGenotype, merge_identical
+from alignair_assay.real.metrics import (
+    EXCLUSIONS,
+    MIN_CLONOTYPES,
+    MIN_NAIVE_CLONOTYPES,
+    NO_CALL,
+    SUPPORTED,
+    UNSUPPORTED_ALLELE,
+    UNSUPPORTED_GENE,
+    ReadCalls,
+    SupportIndex,
+    classify_v_call,
+    exclusion_counts,
+    gene_support,
+    oracle_prediction,
+    oracle_self_check,
+    passing_genes,
+    real_case_scores,
+    shared_exclusions,
+)
+from alignair_assay.real.truth import RealTruth
+
+DONOR = "SC-23"
+# IMGT gap columns (0-based, half-open) of the synthetic V alleles: codon 104 (columns 309-311) is TGT.
+GAPS = ((27, 30), (72, 84), (165, 171), (195, 198))
+
+
+def _random(n: int, seed: int) -> str:
+    return "".join(random.Random(seed).choices("ACGT", k=n))
+
+
+def _gapped(seed: int, *mutated: int) -> str:
+    """A 320-column IMGT-gapped V-REGION with Cys104 at columns 309-311, a base changed at each ``mutated`` column
+    (0-based; column 318 is IMGT position 319)."""
+    bases = list(_random(320, seed))
+    bases[309:312] = "TGT"
+    for column in mutated:
+        bases[column] = "A" if bases[column] != "A" else "C"
+    for start, end in GAPS:
+        bases[start:end] = "." * (end - start)
+    return "".join(bases)
+
+
+# Shared V allele -> (IMGT-gapped sequence, IUIS labels with its sequence).
+SHARED_V = {
+    "IGHVF1-G1*01": (_gapped(1), ("IGHV1-2*02",)),
+    "IGHVF1-G1*02": (_gapped(1, 150), ("IGHV1-2*04",)),
+    "IGHVF6-G21*06": (_gapped(2), ("IGHV1-69*01", "IGHV1-69D*01")),  # an identical-sequence paralog pair
+    "IGHVF6-G21*07": (_gapped(2, 150), ("IGHV1-69*02", "IGHV1-69D*02")),
+    "IGHVF6-G21*08": (_gapped(2, 160), ("IGHV1-69*04",)),
+    "IGHVF3-G9*04": (_gapped(3), ("IGHV4-28*01",)),
+    "IGHVF3-G9*04_A319G": (_gapped(3, 318), ("IGHV4-28*03",)),  # differs only beyond IMGT 318
+    "IGHVF4-G1*01": (_gapped(4), ("IGHV3-30*01",)),
+    "IGHVF4-G1*02": (_gapped(4, 150), ("IGHV3-30*02",)),
+    "IGHVF5-G1*01": (_gapped(5), ("IGHV3-23*01",)),
+    "IGHVF7-G1*01": (_gapped(7), ("IGHV3-11*01",)),
+    "IGHVF8-G1*01": (_gapped(8), ("IGHV3-62*03",)),
+    "IGHVF8-G1*02": (_gapped(8, 150), ("IGHV3-62*01",)),
+    "IGHVF9-G1*01": (_gapped(9), ("IGHV3-15*01",)),
+    "IGHVF9-G1*02": (_gapped(9, 150), ("IGHV3-15*02",)),
+    "IGHVF10-G33*01": (_gapped(10), ()),  # no IUIS label has its sequence
+    "IGHVF2-G1*01": (_gapped(11), ("IGHV1-46*01",)),
+    "IGHVF2-G1*02": (_gapped(11, 150), ("IGHV1-46*03",)),
+    "IGHVF11-G1*01": (_gapped(12), ("IGHV5-51*01",)),
+    "IGHVF11-G1*02": (_gapped(12, 150), ("IGHV5-51*02",)),
+}
+D_SEQ = {"IGHD3-10*01": _random(31, 20), "IGHD3-3*01": _random(31, 21), "IGHD2-2*01": _random(31, 22),
+         "IGHD4-4*01": _random(20, 23)}
+J_SEQ = {"IGHJ4*02": _random(48, 30), "IGHJ6*02": _random(63, 31)}
+REFERENCE = Reference(
+    alleles={"v": {name: gapped.replace(".", "") for name, (gapped, _) in SHARED_V.items()},
+             "d": {**D_SEQ, "IGHD4-11*01": D_SEQ["IGHD4-4*01"]}, "j": dict(J_SEQ)},
+    anchors={}, gapped_v={name: gapped for name, (gapped, _) in SHARED_V.items()})
+LABELS = {**{name: labels for name, (_, labels) in SHARED_V.items()}, **{name: (name,) for name in D_SEQ},
+          "IGHD4-11*01": ("IGHD4-11*01",), **{name: (name,) for name in J_SEQ}}
+
+
+def _iuis_map(reference: Reference, labels: dict[str, tuple[str, ...]]) -> IuisMap:
+    """The ``IuisMap`` that ``IuisMap.from_ogrdb`` gives for OGRDB labels ``labels`` (shared name -> labels)."""
+    by_sequence, shared = defaultdict(set), defaultdict(list)
+    for name, sequence in reference.sequences().items():
+        by_sequence[sequence].update(labels.get(name, ()))
+        shared[sequence].append(name)
+    labels_by_sequence = {sequence: tuple(sorted(names)) for sequence, names in by_sequence.items() if names}
+    return IuisMap(labels_by_shared={name: labels_by_sequence.get(sequence, ())
+                                     for name, sequence in reference.sequences().items()},
+                   shared_by_sequence={sequence: tuple(sorted(names)) for sequence, names in shared.items()},
+                   labels_by_sequence=labels_by_sequence, reference_digest=reference.digest())
+
+
+IUIS = _iuis_map(REFERENCE, LABELS)
+MERGED = merge_identical(REFERENCE)
+
+
+def _allele(allele_id: str, haplotype: int, *, shared_as: str | None = None, gapped: str | None = None,
+            gene: str | None = None, segment: str = "v", functional: bool = True,
+            keep_gapped: bool = True) -> RealAllele:
+    """A donor allele: by default the sequence of the shared allele ``shared_as`` (or the gapped V ``gapped``),
+    with its ``shared`` and ``iuis`` names by exact sequence, as the VDJbase loader maps them."""
+    if segment == "v":
+        gapped = gapped or SHARED_V[shared_as][0]
+        sequence = gapped.replace(".", "")
+    else:
+        sequence = REFERENCE.seq(shared_as)
+    return RealAllele(allele_id=allele_id, gene=gene or allele_id.split("*")[0], segment=segment, sequence=sequence,
+                      gapped=gapped if segment == "v" and keep_gapped else None, haplotype=haplotype,
+                      functional=functional, shared=IUIS.shared_for_sequence(sequence),
+                      iuis=IUIS.labels_for_sequence(sequence))
+
+
+ALLELES = (
+    _allele("IGHV1-2*02", 1, shared_as="IGHVF1-G1*01"),
+    _allele("IGHV1-2*02", 2, shared_as="IGHVF1-G1*01"),
+    _allele("IGHV1-69D*01", 0, shared_as="IGHVF6-G21*06"),  # found at IGHV1-69D: the shared allele's second label
+    _allele("IGHV4-28*01", 1, shared_as="IGHVF3-G9*04"),
+    _allele("IGHV4-28*01", 2, shared_as="IGHVF3-G9*04"),
+    _allele("IGHV3-30*01", 1, shared_as="IGHVF4-G1*01"),
+    _allele("IGHV3-30*18_t189c", 2, gapped=_gapped(4, 188)),  # novel: absent from the shared reference
+    _allele("IGHV3-62*03", 1, shared_as="IGHVF8-G1*01", functional=False),
+    _allele("IGHV3-62*03", 2, shared_as="IGHVF8-G1*01", functional=False),
+    _allele("IGHV3-15*01", 1, shared_as="IGHVF9-G1*01"),  # haplotype 2 not spanned: half resolved
+    _allele("IGHV1-46*01", 1, shared_as="IGHVF2-G1*01"),
+    _allele("IGHV1-46*01", 2, shared_as="IGHVF2-G1*01"),
+    _allele("IGHV5-51*01", 0, shared_as="IGHVF11-G1*01", keep_gapped=False),  # no usable gapped form
+    _allele("IGHD3-10*01", 1, shared_as="IGHD3-10*01", segment="d"),
+    _allele("IGHJ4*02", 0, shared_as="IGHJ4*02", segment="j"),
+)
+DROPPED = (RealAllele(allele_id="IGHD3-3*01_g8-", gene="IGHD3-3", segment="d", sequence=_random(30, 40),
+                      gapped=None, haplotype=1, functional=True, shared=(), iuis=()),)
+CARRIED = {allele.gene for allele in ALLELES}
+# IGHV3-11, IGHV1-69, IGHD2-2 and IGHJ6 are spanned and not carried; IGHV3-23 and IGHD4-4 / IGHD4-11 are not spanned.
+CAPTURED = frozenset(CARRIED | {"IGHV3-11", "IGHV1-69", "IGHD2-2", "IGHJ6"})
+GENOTYPE = RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED, resolved=CAPTURED - {"IGHV3-15"},
+                        dropped=DROPPED)
+# Clonotypes and naive clonotypes per gene, from the known answers: IGHV1-46 has too few naive clonotypes.
+SUPPORT = {**{gene: (MIN_CLONOTYPES, MIN_NAIVE_CLONOTYPES) for gene in CARRIED},
+           "IGHV1-46": (MIN_CLONOTYPES + 5, MIN_NAIVE_CLONOTYPES - 1)}
+INDEX = SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE, support=SUPPORT)
+
+
+def _pred(read_id: str = "r", v: str | None = None, *listed: str, d: str | None = None,
+          j: str | None = None) -> Prediction:
+    """A tool's row with top-1 V ``v`` (then ``listed``, as a ``v_call`` list), D ``d`` and J ``j``."""
+    calls = [name for name in (v, *listed) if name]
+    return Prediction(sequence_id=read_id, segments={
+        "v": PredSegment(call=v, call_set=tuple(calls)), "d": PredSegment(call=d, call_set=(d,) if d else ()),
+        "j": PredSegment(call=j, call_set=(j,) if j else ())})
+
+
+def _truth(read_id: str, *, known: tuple[str, ...] = (), shared: tuple[str, ...] = (), gene: str | None = None,
+           naive: bool = False, clonotype: str | None = None, donor: str = DONOR) -> RealTruth:
+    """A read's truth: a known answer when ``known`` names donor alleles (novel when ``shared`` is empty)."""
+    return RealTruth(read_id=read_id, donor=donor, isotype="IGHM" if naive else "IGHG", protocol="race",
+                     observed=(0, 400), known=frozenset(known) if known else None,
+                     known_shared=frozenset(shared) if known else None, known_gene=gene if known else None,
+                     novel_known=bool(known) and not shared, naive=naive and bool(known),
+                     clonotype=clonotype or f"{donor}/single:{read_id}", anchor="donor")
+
+
+# --- one class per call -------------------------------------------------------------------------------------------
+
+def test_wrong_allele_of_a_carried_gene_is_unsupported_allele():
+    assert classify_v_call(_pred(v="IGHVF1-G1*02"), GENOTYPE, IUIS, MERGED, reference=REFERENCE,
+                           support=SUPPORT) == UNSUPPORTED_ALLELE
+    assert classify_v_call(_pred(v="IGHVF1-G1*01"), GENOTYPE, IUIS, MERGED, reference=REFERENCE,
+                           support=SUPPORT) == SUPPORTED
+
+
+def test_call_to_a_captured_gene_the_donor_lacks_is_unsupported_gene():
+    assert INDEX.classify("IGHVF7-G1*01") == UNSUPPORTED_GENE  # IGHV3-11: spanned on both haplotypes, no allele
+    assert INDEX.classify("IGHVF6-G21*08") == UNSUPPORTED_GENE  # IGHV1-69*04: IGHV1-69 is spanned, not carried
+
+
+def test_call_to_an_uncaptured_gene_is_excluded():
+    assert INDEX.classify("IGHVF5-G1*01") == "excluded:not_captured"  # IGHV3-23: its region is not spanned
+
+
+def test_call_differing_from_the_donor_allele_only_beyond_318_is_supported():
+    # Peres et al. 2023: alleles that differ only past IMGT 318 cannot be told apart from rearranged reads. The
+    # donor carries IGHV4-28*01 (IGHVF3-G9*04); IGHVF3-G9*04_A319G differs from it at IMGT 319 alone.
+    a319g = REFERENCE.gapped("IGHVF3-G9*04_A319G")
+    assert a319g[:318] == REFERENCE.gapped("IGHVF3-G9*04")[:318] and a319g != REFERENCE.gapped("IGHVF3-G9*04")
+    assert INDEX.classify("IGHVF3-G9*04_A319G") == SUPPORTED
+    assert INDEX.classify("IGHVF3-G9*04") == SUPPORTED
+
+
+def test_multi_iuis_shared_allele_is_supported_through_its_second_label():
+    # IGHVF6-G21*06 is IGHV1-69*01 and IGHV1-69D*01; the donor carries the sequence at IGHV1-69D only
+    assert IUIS.genes("IGHVF6-G21*06") == ("IGHV1-69", "IGHV1-69D") and "IGHV1-69" not in CARRIED
+    assert INDEX.classify("IGHVF6-G21*06") == SUPPORTED
+    # an unsupported paralog call is allele-level when either of its genes is carried
+    assert INDEX.classify("IGHVF6-G21*07") == UNSUPPORTED_ALLELE
+
+
+def test_no_call_is_no_call():
+    assert INDEX.classify_v(_pred(v=None)) == NO_CALL
+    assert INDEX.classify_v(None) == NO_CALL  # the tool emitted no row
+    assert INDEX.classify("", "v") == NO_CALL
+    with pytest.raises(ValueError, match="IGHV1-2\\*02"):
+        INDEX.classify("IGHV1-2*02")  # an IUIS name: not an allele of the shared reference
+
+
+def test_the_other_exclusions():
+    # a gene with an allele absent from the shared reference: its calls are excluded, supported ones included
+    assert INDEX.classify("IGHVF4-G1*01") == INDEX.classify("IGHVF4-G1*02") == "excluded:novel_gene"
+    # a donor allele with a V-REGION defect is no truth: a call matching it, or to a gene with no other allele
+    assert INDEX.classify("IGHVF8-G1*01") == INDEX.classify("IGHVF8-G1*02") == "excluded:nonfunctional"
+    # a gene known on one haplotype only: an unsupported allele call there may be the unknown second allele
+    assert INDEX.classify("IGHVF9-G1*02") == "excluded:half_resolved"
+    assert INDEX.classify("IGHVF9-G1*01") == SUPPORTED
+    # a gene with too few naive clonotypes among the known answers, supported calls included
+    assert INDEX.classify("IGHVF2-G1*01") == INDEX.classify("IGHVF2-G1*02") == "excluded:low_support"
+    # a functional donor allele without a usable IMGT-gapped form: the comparison through 318 cannot be made
+    assert INDEX.classify("IGHVF11-G1*02") == "excluded:beyond_318"
+    assert INDEX.classify("IGHVF11-G1*01") == SUPPORTED  # an exact sequence needs no IMGT numbering
+    # a shared allele no IUIS label has the sequence of: its gene is unknown
+    assert INDEX.classify("IGHVF10-G33*01") == "excluded:unmapped"
+    assert set(EXCLUSIONS) == {"excluded:not_captured", "excluded:dropped_truth", "excluded:unmapped",
+                               "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318",
+                               "excluded:half_resolved", "excluded:low_support"}
+
+
+def test_d_and_j_calls_where_the_donor_has_their_truth():
+    assert INDEX.classify("IGHD3-10*01", "d") == SUPPORTED
+    assert INDEX.classify("IGHD3-3*01", "d") == "excluded:dropped_truth"  # its only call was dropped
+    assert INDEX.classify("IGHD2-2*01", "d") == UNSUPPORTED_GENE
+    assert INDEX.classify("IGHD4-11*01", "d") == "excluded:not_captured"
+    assert INDEX.classify("IGHJ4*02", "j") == SUPPORTED and INDEX.classify("IGHJ6*02", "j") == UNSUPPORTED_GENE
+    calls = INDEX.read_calls(_pred(v="IGHVF1-G1*02", d="IGHD3-10*01", j="IGHJ6*02"))
+    assert calls == ReadCalls(v=UNSUPPORTED_ALLELE, d=SUPPORTED, j=UNSUPPORTED_GENE, v_any_listed_supported=False)
+    scores = real_case_scores(_pred(v="IGHVF1-G1*02", d="IGHD3-10*01", j="IGHJ6*02"), _truth("r"), calls,
+                              excluded=False, index=INDEX)
+    assert scores["real.d.unsupported"] == 0.0 and scores["real.j.unsupported"] == 1.0
+    # a D may be unassignable: no D call is no D metric; every read has a J, so no J call counts
+    no_dj = INDEX.read_calls(_pred(v="IGHVF1-G1*01"))
+    scores = real_case_scores(_pred(v="IGHVF1-G1*01"), _truth("r"), no_dj, excluded=False, index=INDEX)
+    assert "real.d.unsupported" not in scores and scores["real.j.unsupported"] == 1.0
+    # a donor without D and J truth gets neither metric
+    v_only = SupportIndex(RealGenotype(donor=DONOR, alleles=ALLELES[:13], captured=CAPTURED, resolved=CAPTURED),
+                          IUIS, MERGED, REFERENCE, support=SUPPORT)
+    calls = v_only.read_calls(_pred(v="IGHVF1-G1*01", d="IGHD3-10*01", j="IGHJ4*02"))
+    assert calls.d is None and calls.j is None
+    scores = real_case_scores(_pred(v="IGHVF1-G1*01", d="IGHD3-10*01", j="IGHJ4*02"), _truth("r"), calls,
+                              excluded=False, index=v_only)
+    assert not {"real.d.unsupported", "real.j.unsupported"} & set(scores)
+
+
+def test_any_listed_v_allele_supported():
+    # IgBLAST lists ties: the top-1 is the first, and the informational metric asks whether the list hides a
+    # supported allele
+    calls = INDEX.read_calls(_pred("r", "IGHVF1-G1*02", "IGHVF1-G1*01"))
+    assert calls.v == UNSUPPORTED_ALLELE and calls.v_any_listed_supported
+    scores = real_case_scores(_pred("r", "IGHVF1-G1*02", "IGHVF1-G1*01"), _truth("r"), calls, excluded=False,
+                              index=INDEX)
+    assert scores["real.v.unsupported"] == 1.0 and scores["real.v.any_listed_supported"] == 1.0
+    assert not INDEX.read_calls(_pred("r", "IGHVF1-G1*02", "IGHVF7-G1*01")).v_any_listed_supported
+    assert not INDEX.read_calls(None).v_any_listed_supported
+
+
+# --- per-read scores ----------------------------------------------------------------------------------------------
+
+def test_real_case_scores_headline_and_components():
+    known = _truth("r", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2")
+    expected = {SUPPORTED: (0.0, 0.0, 0.0, 0.0), UNSUPPORTED_ALLELE: (1.0, 1.0, 0.0, 0.0),
+                UNSUPPORTED_GENE: (1.0, 0.0, 1.0, 0.0), NO_CALL: (1.0, 0.0, 0.0, 1.0)}
+    for call, cls in (("IGHVF1-G1*01", SUPPORTED), ("IGHVF1-G1*02", UNSUPPORTED_ALLELE),
+                      ("IGHVF7-G1*01", UNSUPPORTED_GENE), (None, NO_CALL)):
+        pred = _pred(v=call)
+        assert INDEX.classify_v(pred) == cls
+        scores = real_case_scores(pred, known, cls, excluded=False, index=INDEX)
+        assert tuple(scores[f"real.v.{name}"] for name in ("unsupported", "unsupported_allele",
+                                                           "unsupported_gene", "no_call")) == expected[cls]
+        # the wrong allele of the known gene is still the known gene
+        assert scores["real.v.known_top1"] == float(cls == SUPPORTED)
+        assert scores["real.v.known_gene_top1"] == float(cls in (SUPPORTED, UNSUPPORTED_ALLELE))
+    # a read without a known answer has no known-answer metric
+    scores = real_case_scores(_pred("u", "IGHVF1-G1*01"), _truth("u"), SUPPORTED, excluded=False, index=INDEX)
+    assert set(scores) == {"real.v.unsupported", "real.v.unsupported_allele", "real.v.unsupported_gene",
+                           "real.v.no_call"}
+
+
+def test_known_answer_metrics_follow_the_318_rule_and_paralog_genes():
+    known = _truth("r", known=("IGHV4-28*01",), shared=("IGHVF3-G9*04",), gene="IGHV4-28")
+    scores = real_case_scores(_pred(v="IGHVF3-G9*04_A319G"), known, SUPPORTED, excluded=False, index=INDEX)
+    assert scores["real.v.known_top1"] == scores["real.v.known_gene_top1"] == 1.0
+    paralog = _truth("p", known=("IGHV1-69D*01",), shared=("IGHVF6-G21*06",), gene="IGHV1-69D")
+    scores = real_case_scores(_pred("p", "IGHVF6-G21*07"), paralog, UNSUPPORTED_ALLELE, excluded=False, index=INDEX)
+    assert scores["real.v.known_top1"] == 0.0 and scores["real.v.known_gene_top1"] == 1.0
+    # a novel known answer scores only where its calls go: to its gene or not
+    novel = _truth("n", known=("IGHV3-30*18_t189c",), gene="IGHV3-30")
+    for call, value in (("IGHVF4-G1*02", 1.0), ("IGHVF7-G1*01", 0.0), (None, 0.0)):
+        scores = real_case_scores(_pred("n", call), novel, INDEX.classify_v(_pred("n", call)),
+                                  excluded=True, index=INDEX)
+        assert scores == {"real.v.novel_known_call": value}, call
+
+
+def test_shared_exclusion_removes_read_for_both_tools():
+    a = {"r1": SUPPORTED, "r2": "excluded:not_captured", "r3": UNSUPPORTED_ALLELE, "r4": NO_CALL}
+    b = {"r1": "excluded:low_support", "r2": SUPPORTED, "r3": NO_CALL, "r4": SUPPORTED}
+    excluded = shared_exclusions(a, b)
+    assert excluded == {"r1", "r2"} == shared_exclusions(b, a)
+    known = _truth("r1", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2")
+    for classes in (a, b):
+        scores = real_case_scores(_pred("r1", "IGHVF1-G1*01"), known, classes["r1"], excluded="r1" in excluded,
+                                  index=INDEX)
+        # out of R1 for both tools; the known answer is still scored, its truth being tool-neutral
+        assert not any(name.startswith("real.v.unsupported") or name == "real.v.no_call" for name in scores)
+        assert scores["real.v.known_top1"] == 1.0
+    # a read excluded for a tool cannot be scored as not excluded, and both tools are classified on the same reads
+    with pytest.raises(ValueError, match="r2"):
+        real_case_scores(_pred("r2", "IGHVF5-G1*01"), _truth("r2"), a["r2"], excluded=False, index=INDEX)
+    with pytest.raises(ValueError, match="r5"):
+        shared_exclusions(a, {**b, "r5": SUPPORTED})
+    with pytest.raises(ValueError, match="read"):
+        real_case_scores(_pred("other", "IGHVF1-G1*01"), known, SUPPORTED, excluded=False, index=INDEX)
+    with pytest.raises(ValueError, match="W-97"):
+        real_case_scores(_pred("w", "IGHVF1-G1*01"), _truth("w", donor="W-97"), SUPPORTED, excluded=False,
+                         index=INDEX)
+    # D and J classes are excluded the same way, segment by segment; a donor without their truth has None
+    assert shared_exclusions({"r1": None, "r2": "excluded:dropped_truth"}, {"r1": SUPPORTED, "r2": None}) == {"r2"}
+
+
+def test_exclusion_counts_per_tool():
+    classes = {"r1": SUPPORTED, "r2": "excluded:not_captured", "r3": "excluded:not_captured",
+               "r4": "excluded:low_support", "r5": NO_CALL}
+    counts = exclusion_counts(classes)
+    assert list(counts) == list(EXCLUSIONS)
+    assert counts["excluded:not_captured"] == 2 and counts["excluded:low_support"] == 1
+    assert sum(counts.values()) == 3
+    assert exclusion_counts(list(classes.values())) == counts
+
+
+# --- gene thresholds ----------------------------------------------------------------------------------------------
+
+def test_low_support_gene_from_known_answers_only():
+    truths = []
+    # IGHV1-2: 10 clonotypes, 3 of them naive (a naive clonotype of two reads counts once)
+    for k in range(10):
+        truths.append(_truth(f"a{k}", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2",
+                             naive=k < 3, clonotype=f"{DONOR}/A{k}"))
+    truths.append(_truth("a-dup", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2", naive=True,
+                         clonotype=f"{DONOR}/A0"))
+    # IGHV4-28: 12 known reads in 9 clonotypes, with a read that is a clonotype of its own; 5 naive
+    for k in range(11):
+        truths.append(_truth(f"b{k}", known=("IGHV4-28*01",), shared=("IGHVF3-G9*04",), gene="IGHV4-28",
+                             naive=k < 5, clonotype=f"{DONOR}/B{k % 8}"))
+    truths.append(_truth("b-single", known=("IGHV4-28*01",), shared=("IGHVF3-G9*04",), gene="IGHV4-28"))
+    # a paralog set counts toward each gene of it
+    for k in range(10):
+        truths.append(_truth(f"c{k}", known=("IGHV1-69*01", "IGHV1-69D*01"), shared=("IGHVF6-G21*06",),
+                             gene="IGHV1-69|IGHV1-69D", naive=True, clonotype=f"{DONOR}/C{k}"))
+    # reads without a known answer never count, whatever a tool would call them
+    for k in range(30):
+        truths.append(_truth(f"u{k}", clonotype=f"{DONOR}/U{k}"))
+    support = gene_support(truths)
+    assert support == {"IGHV1-2": (10, 3), "IGHV4-28": (9, 5), "IGHV1-69": (10, 10), "IGHV1-69D": (10, 10)}
+    assert passing_genes(support) == {"IGHV1-2", "IGHV1-69", "IGHV1-69D"}
+    index = SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE, support=support)
+    assert index.classify("IGHVF1-G1*01") == SUPPORTED and index.classify("IGHVF6-G21*06") == SUPPORTED
+    assert index.classify("IGHVF3-G9*04") == "excluded:low_support"  # 9 clonotypes
+    assert index.classify("IGHVF9-G1*01") == "excluded:low_support"  # carried, no known answer at all
+    with pytest.raises(ValueError, match="donor"):
+        gene_support([*truths, _truth("w", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2",
+                                      donor="W-97")])
+
+
+# --- the oracle -----------------------------------------------------------------------------------------------------
+
+def test_oracle_scores_perfect():
+    truths = [
+        _truth("a", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2", naive=True),
+        _truth("p", known=("IGHV1-69D*01",), shared=("IGHVF6-G21*06",), gene="IGHV1-69D"),
+        _truth("t", known=("IGHV4-28*01",), shared=("IGHVF3-G9*04",), gene="IGHV4-28"),
+        _truth("h", known=("IGHV3-15*01",), shared=("IGHVF9-G1*01",), gene="IGHV3-15"),
+        _truth("m", known=("IGHV5-51*01",), shared=("IGHVF11-G1*01",), gene="IGHV5-51"),
+        # excluded by rule: a gene with a novel allele, a gene below the thresholds
+        _truth("x", known=("IGHV3-30*01",), shared=("IGHVF4-G1*01",), gene="IGHV3-30"),
+        _truth("l", known=("IGHV1-46*01",), shared=("IGHVF2-G1*01",), gene="IGHV1-46"),
+        # not scored by the oracle: a novel known answer, a read without one
+        _truth("n", known=("IGHV3-30*18_t189c",), gene="IGHV3-30"),
+        _truth("u"),
+    ]
+    assert oracle_prediction(truths[-1]) is None and oracle_prediction(truths[-2]) is None
+    oracle = oracle_prediction(truths[0])
+    assert oracle.sequence_id == "a" and oracle.segments["v"].call == "IGHVF1-G1*01"
+    check = oracle_self_check(truths, INDEX)
+    assert check["reads"] == 7
+    assert check["classes"] == {SUPPORTED: 5, "excluded:novel_gene": 1, "excluded:low_support": 1}
+    assert check["excluded_genes"] == {"excluded:low_support": ["IGHV1-46"], "excluded:novel_gene": ["IGHV3-30"]}
+    assert check["scored"] == 5 and check["supported"] == 1.0 and check["unsupported"] == 0.0
+    assert check["known_top1"] == check["known_gene_top1"] == 1.0
+    assert check["passed"]
+    for truth in truths[:7]:
+        pred = oracle_prediction(truth)
+        cls = INDEX.classify_v(pred)
+        scores = real_case_scores(pred, truth, cls, excluded=cls.startswith("excluded:"), index=INDEX)
+        assert scores.get("real.v.unsupported", 0.0) == 0.0 and scores["real.v.known_top1"] == 1.0
+
+
+def test_support_index_refuses_a_genotype_it_cannot_score():
+    with pytest.raises(ValueError, match="capture"):
+        SupportIndex(RealGenotype(donor=DONOR, alleles=ALLELES), IUIS, MERGED, REFERENCE, support=SUPPORT)
+    other = Reference(alleles={"v": dict(REFERENCE.alleles["v"])}, anchors={})
+    with pytest.raises(ValueError, match="reference"):
+        SupportIndex(GENOTYPE, IUIS, MERGED, other, support=SUPPORT)
+    mapped = RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED, resolved=CAPTURED,
+                          source={"reference_digest": other.digest()})
+    with pytest.raises(ValueError, match="reference"):
+        SupportIndex(mapped, IUIS, MERGED, REFERENCE, support=SUPPORT)
+
+
+# --- registration -------------------------------------------------------------------------------------------------
+
+REAL_METRICS = {"real.v.unsupported": (False, True), "real.v.unsupported_allele": (False, True),
+                "real.v.unsupported_gene": (False, True), "real.v.no_call": (False, True),
+                "real.v.known_top1": (False, False), "real.v.known_gene_top1": (False, False),
+                "real.v.novel_known_call": (True, False), "real.v.any_listed_supported": (True, False),
+                "real.d.unsupported": (True, True), "real.j.unsupported": (True, True)}
+NEW_INFORMATIONAL = {"real.v.novel_known_call", "real.v.any_listed_supported", "real.d.unsupported",
+                     "real.j.unsupported"}
+NEW_LOWER = (".unsupported", ".unsupported_allele", ".unsupported_gene")
+
+
+def _package_strings() -> set[str]:
+    """Every string constant of the package outside ``real/metrics.py`` and the registry itself (f-string pieces
+    included): the metric names and name suffixes the other layers write."""
+    package = Path(alignair_assay.__file__).resolve().parent
+    found = set()
+    for path in package.rglob("*.py"):
+        if path.relative_to(package) in (Path("real", "metrics.py"), Path("metrics", "__init__.py")):
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and len(node.value) < 80:
+                found.add(node.value)
+    return found
+
+
+def test_informational_names_registered():
+    for name, (informational, lower) in REAL_METRICS.items():
+        assert is_informational(name) is informational, name
+        assert lower_is_better(name) is lower, name
+    assert NEW_INFORMATIONAL <= registry.INFORMATIONAL and set(NEW_LOWER) <= set(registry._LOWER_IS_BETTER)
+    # the registry as it was: the new names and suffixes change no other metric's classification
+    old_informational = registry.INFORMATIONAL - NEW_INFORMATIONAL
+    old_lower = tuple(suffix for suffix in registry._LOWER_IS_BETTER if suffix not in NEW_LOWER)
+
+    def was_informational(name: str) -> bool:
+        return name in old_informational or any(s.startswith(".") and name.endswith(s) for s in old_informational)
+
+    names = {name for name in _package_strings() if not name.startswith("real.")}
+    assert len(names) > 500
+    changed = [name for name in names if is_informational(name) != was_informational(name)
+               or lower_is_better(name) != name.endswith(old_lower)]
+    assert changed == []
+    # and a name ending with a new suffix outside real.* would have been caught
+    assert lower_is_better("v.unsupported") and not "v.unsupported".endswith(old_lower)
+
+
+# --- the pilot donors' oracle (gated) -------------------------------------------------------------------------------
+
+DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
+DOCKER = os.environ.get("ALIGNAIR_ASSAY_DOCKER") == "1"
+RUN = Path(__file__).resolve().parents[3] / ".private" / "assay" / "p3a_task4_run"
+PILOT_SAMPLES = {"W-97": "P25_I151_S1", "SC-23": "P25_I58_S1"}
+
+
+def _read_fasta(path: Path) -> dict[str, str]:
+    reads, name = {}, None
+    for line in path.read_text(encoding="ascii").splitlines():
+        if line.startswith(">"):
+            name = line[1:].split()[0]
+        elif name is not None:
+            reads[name] = reads.get(name, "") + line.strip()
+    return reads
+
+
+def _read_tsv(path: Path) -> list[dict]:
+    header, *rows = path.read_text(encoding="utf-8").splitlines()
+    columns = header.split("\t")
+    return [dict(zip(columns, row.split("\t"))) for row in rows]
+
+
+@pytest.mark.skipif(not DATA or not DOCKER or not RUN.is_dir(),
+                    reason="set ALIGNAIR_ASSAY_DATA to the PRJNA555323 data root and ALIGNAIR_ASSAY_DOCKER=1, with "
+                           "Task 4's run in .private/assay/p3a_task4_run")
+@pytest.mark.parametrize("donor", sorted(PILOT_SAMPLES))
+def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
+    from alignair_assay.core.layout import RunLayout
+    from alignair_assay.real.genotype import load_vdjbase_csv
+    from alignair_assay.real.locus import donor_capture
+    from alignair_assay.real.truth import real_truths
+
+    root = Path(DATA)
+    samples = root / "genotypes/vdjbase_genomic_samples"
+    iuis = IuisMap.from_ogrdb(root / "genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json", reference)
+    genotype = load_vdjbase_csv(samples / f"{PILOT_SAMPLES[donor]}.csv", donor, reference, iuis)
+    genotype = donor_capture(genotype, samples / f"{PILOT_SAMPLES[donor]}.bam",
+                             root / "genotypes/igenotyper/gene_coords.bed")
+    layout = RunLayout(RUN)
+    truths = real_truths(_read_fasta(layout.real_reads(donor)), _read_tsv(layout.real_reads_meta(donor)), genotype,
+                         reference)
+    support = gene_support(truths)
+    index = SupportIndex(genotype, iuis, merge_identical(reference), reference, support=support)
+    check = oracle_self_check(truths, index)
+    known = [t for t in truths if t.known is not None and not t.novel_known]
+    assert check["reads"] == len(known) > 0
+    assert check["passed"] and check["supported"] == 1.0 and check["unsupported"] == 0.0
+    assert check["known_top1"] == check["known_gene_top1"] == 1.0
+    # only gene-level rules exclude an oracle call: a novel allele in the gene, too few clonotypes, or a match to
+    # nonfunctional alleles only
+    assert set(check["classes"]) <= {SUPPORTED, "excluded:novel_gene", "excluded:low_support",
+                                     "excluded:nonfunctional"}
+    # each class is explained by the genes of the donor alleles the oracle's call matches, all of them among the
+    # known answer's genes
+    passing = passing_genes(support)
+    v = [allele for allele in genotype.alleles if allele.segment == "v"]
+    absent = {allele.gene for allele in v if not allele.shared}
+    for truth in known:
+        oracle = oracle_prediction(truth)
+        cls = index.classify_v(oracle)
+        matched = [allele for allele in v if allele.sequence == reference.seq(oracle.segments["v"].call)]
+        genes = {allele.gene for allele in matched if allele.functional}
+        assert matched and genes <= set(truth.known_gene.split("|")), truth.read_id
+        if cls == SUPPORTED:
+            assert genes <= passing and not genes & absent, truth.read_id
+        elif cls == "excluded:novel_gene":
+            assert genes & absent, truth.read_id
+        elif cls == "excluded:low_support":
+            assert not genes & absent and not genes <= passing, truth.read_id
+        else:
+            assert not genes, truth.read_id  # nonfunctional: no functional allele matches
+    assert sum(check["classes"].values()) == len(known)
+    json.dumps(check)  # plain data, for the report
