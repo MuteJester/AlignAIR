@@ -14,9 +14,14 @@ from alignair_assay.truth.model import SegmentTruth
 NAN = float("nan")
 
 
-def interval_distance(x: int, interval: Interval) -> int:
+def signed_interval_distance(x: int, interval: Interval) -> int:
+    """Signed distance from ``x`` to the inclusive ``interval``: negative before it, positive after it, 0 inside."""
     lo, hi = interval
-    return max(lo - x, x - hi, 0)
+    return x - lo if x < lo else x - hi if x > hi else 0
+
+
+def interval_distance(x: int, interval: Interval) -> int:
+    return abs(signed_interval_distance(x, interval))
 
 
 def _edge(prefix: str, edge: str, value: int | None, interval: Interval) -> CaseScores:

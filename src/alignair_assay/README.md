@@ -893,7 +893,9 @@ AlignAIR is released, every AlignAIR genotype-arm run is recorded as failed with
 `diagnostics.replay.replay(model, reference_set, sequences, ids, *, device, batch_size)` runs AlignAIR's predict
 pipeline one stage at a time and returns `StageOutputs`: the raw forward outputs (logits included, concatenated
 over batches), the cleaned and calibrated `Predictions`, the forward-frame reads, the corrected `Segments`, the
-allele calls, the germline alignments, the light records, the AIRR rows and the wall time per stage (`STAGES`).
+allele calls, the germline alignments, the light records, the AIRR rows, the wall time per stage (`STAGES`), each
+allele head's allele names (`allele_names`) and the per-read allowed-allele masks the selector applied (`allowed`:
+a multi-locus model's locus masks, None for a one-locus model).
 Each stage is AlignAIR's own function, called in the order `alignair.predict.pipeline.predict` calls it, with the
 `PredictConfig` that `alignair.api.predict_sequences` builds (`predict_config`); the forward pass builds each batch
 dict itself, so a later substitution can teacher-force orientation. `Substitutions` names what can be fed in
@@ -913,3 +915,63 @@ tests.
 `alignair.api.load_model`, or passes a `(model, reference_set)` pair through (moving the model to `device`), and
 refuses a model whose reference is not the truth reference (unequal digests), naming both references' allele counts
 and the first allele that is missing from the model's reference, extra in it, or has a different sequence there.
+
+### Head metrics
+
+`diagnostics.heads.head_scores(outputs, truths, cases=None)` scores the raw head outputs of a replay against the
+observable truth: one `CaseScores` per non-excluded truth, keyed by case id, with the NaN rules above (an absent key
+does not apply). Cases are matched to replayed reads by id. A scored case without a replayed read, or with a
+replayed read of the wrong length, is a ValueError; so is a `cases` list that lacks a scored case.
+`diagnostics.heads.METRIC_NAMES` lists every name, and `metrics/__init__.py` classifies them.
+
+**Frame.** The segment heads predict positions in the model's forward frame, on the read padded on the right to the
+logits width (576). AlignAIR crops a longer read to the first 576 bases of the presented read: the canonical prefix
+of a forward read, and the canonical suffix of a reverse-complemented one. Positions are moved into the truth's
+canonical frame by that window's start. A wrong predicted orientation leaves the boundaries in the wrong frame, so
+they score as wrong, as the product would place them.
+
+**Boundaries** (`head.{g}.{start,end}_{exact,abs_err,err}.{soft,argmax}`). Coordinates are 0-based and end-exclusive,
+like `correct_segments`.
+
+- `soft`: the floor of the head's soft-argmax expectation, clipped to the read. This is `correct_segments`'
+  per-segment step, without its min-span and ordering repair.
+- `argmax`: the argmax of the position logits over the read's coordinates. A start lies on a read base (`0..n-1`).
+  An end-exclusive end lies on `0..n`; position `n` exists when the read is shorter than the window. A segment that
+  runs to the read end has end `n`. The model's soft-argmax is masked to `0..n-1`, so it can never reach that end.
+- `exact`: the decoded edge is inside the truth equivalence interval. `abs_err` (lower is better): the distance to
+  the interval. `err` (informational): the signed distance, negative before the interval.
+
+Edges are scored for observed segments with at least `MIN_OBSERVED` germline bases, the end-to-end metrics' rule.
+On a cropped read, an edge is scored only when its whole interval lies inside the window and does not touch the cut.
+
+**Alleles.** Alleles are ranked by the calibrated probabilities the selector sees, over the read's `allowed` alleles,
+with ties going to the lower index. They apply to the same segments as the boundaries.
+
+- `head.{g}.allele_top{1,3,5}`: the top k meet the scored truth set.
+- `head.{g}.allele_top1_generative` (informational): the top-1 is in the generative set.
+- `head.{g}.n_above_threshold` (informational): the number of allowed alleles at probability >= 0.5.
+- `head.d.short_d_prob_ok`: P(Short-D) >= 0.5 exactly when the D is absent or shorter than `MIN_OBSERVED["d"]`. It
+  applies only to a model whose D head has a `Short-D` output. The released IGH model has none: its 33 D outputs are
+  the 33 reference D alleles.
+
+**Metadata heads.**
+
+- `head.mutation_rate_abs_err.read`: against the truth V mismatches over the observed V germline bases. It applies
+  when V is observed with at least `MIN_OBSERVED["v"]` bases.
+- `head.mutation_rate_abs_err.record` (informational): against the GenAIRR record's `mutation_rate`, the training
+  target. It applies only when `cases` are given.
+- `head.indel_count_abs_err`: against the inserted plus deleted bases of the truth's observed V, D and J CIGARs
+  (GenAIRR's indels are single bases). It applies when every gene's truth was built.
+- `head.productive.correct`: the head's probability >= 0.5 matches the truth, where the truth defines it.
+- `head.orientation.correct`: the orientation logits' argmax is the truth orientation (0 or 1).
+- `head.cropped` (informational): 1.0 for a read longer than the window. Its sum counts the crops.
+
+`decode_boundaries(outputs, gene, decoder)` and `allele_ranking(outputs, gene)` expose the decoders and the ranking.
+The tests check them against the product: the soft decoder gives `correct_segments`' coordinates wherever its repair
+does nothing, and the ranking's first allele is the selector's top-1 call.
+
+`calibration_table(outputs, truths, gene, bins=10)` measures the reliability of the top-1 calibrated probability
+against the top-1 being in the scored set, over the cases the allele metrics apply to. It has equal-width bins,
+closed on the right, as in AlignAIR's `calibrate.ece`. Each bin gives `lo`, `hi`, `n`, the mean `confidence` and the
+`accuracy`, None when empty. The table also gives `n`, the overall `confidence` and `accuracy`, and the expected
+calibration error `ece`.

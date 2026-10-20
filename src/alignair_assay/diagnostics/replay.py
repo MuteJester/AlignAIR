@@ -70,6 +70,11 @@ class StageOutputs:
     airr_rows: list[dict]
     # wall time per stage, keyed by STAGES in order
     seconds: dict[str, float]
+    # gene -> allele names, index-aligned to the model's allele head ({g}_allele columns)
+    allele_names: dict[str, list[str]]
+    # gene -> (reads, alleles) bool: the alleles each read may be called with (the per-read locus masks of a
+    # multi-locus model, which select_alleles applied); None when the selector ran unmasked
+    allowed: dict[str, np.ndarray] | None = None
 
 
 @dataclass(frozen=True)
@@ -182,7 +187,8 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
 
     raw = {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
     return StageOutputs(ids=list(ids), raw=raw, predictions=preds, canonical=canonical, segments=segments,
-                        calls=calls, germline=germline, records=records, airr_rows=airr_rows, seconds=seconds)
+                        calls=calls, germline=germline, records=records, airr_rows=airr_rows, seconds=seconds,
+                        allele_names=names, allowed=allowed)
 
 
 @contextmanager

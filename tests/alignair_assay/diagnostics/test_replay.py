@@ -25,7 +25,6 @@ from alignair.predict import forward, pipeline  # noqa: E402
 from alignair.predict.calibrate import apply_temperature  # noqa: E402
 
 from alignair_assay.core.cases import read_fasta  # noqa: E402
-from alignair_assay.core.layout import RunLayout  # noqa: E402
 from alignair_assay.core.reference import Reference  # noqa: E402
 from alignair_assay.diagnostics.replay import (  # noqa: E402
     STAGES,
@@ -35,15 +34,12 @@ from alignair_assay.diagnostics.replay import (  # noqa: E402
     predict_config,
     replay,
 )
-from alignair_assay.workflow.build import build_suite  # noqa: E402
 
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
 needs_model = pytest.mark.skipif(not MODEL, reason="set ALIGNAIR_ASSAY_MODEL to a .alignair model file")
 # Batches of 16 over the 53 inputs: three full batches and a partial one.
 BATCH = 16
 GENES = ("v", "d", "j")
-# Heavy-chain segment positions (forward frame, 0-based) the equivalence models predict for every read.
-SPANS = {"v": (0, 290), "d": (300, 316), "j": (322, 360)}
 
 # The product functions whose orchestration replay.py mirrors (the stage order, the masks, the configuration and
 # the batched forward pass), by a digest of their code tokens (comments and blank lines excluded). Any edit to one
@@ -57,21 +53,6 @@ PINNED = {
 MIRRORED = {"alignair.predict.pipeline.predict": pipeline.predict,
             "alignair.api.predict_sequences": api.predict_sequences,
             "alignair.predict.forward.run_model": forward.run_model}
-
-
-class LengthOrientation(torch.nn.Module):
-    """An orientation head whose logits pick id (read length mod 4), so reads of varied lengths cover every
-    orientation the pipeline canonicalizes."""
-
-    def forward(self, emb, mask):
-        return torch.nn.functional.one_hot(mask.sum(1) % 4, 4).float()
-
-
-class SplitChainType(torch.nn.Module):
-    """A chain-type head that puts each batch's reads on two loci, split at the median of one meta-tower feature."""
-
-    def forward(self, meta):
-        return torch.nn.functional.one_hot((meta[:, 0] > meta[:, 0].median()).long(), 2).float()
 
 
 def _code_digest(function) -> str:
@@ -95,35 +76,11 @@ def _inputs(s0_reads) -> tuple[list[str], list[str]]:
     return ids + list(extra), seqs + list(extra.values())
 
 
-def _model(variant, make_small_model):
-    """A small model whose segment heads put every read's V, D and J at the positions of ``SPANS``, so the germline
-    reader and the AIRR assembly work on spans of real size:
-
-    - ``igh``: one locus, no indel predicted;
-    - ``igh_varied_orientation``: every orientation id (``LengthOrientation``) and about 4 indels per read;
-    - ``igh_igk``: two loci, with the reads of each batch split over them (``SplitChainType``), and about 4 indels.
-    """
-    names = ("HUMAN_IGH_OGRDB", "HUMAN_IGK_OGRDB") if variant == "igh_igk" else ("HUMAN_IGH_OGRDB",)
-    model, reference_set = make_small_model(*names, seed=1)
-    with torch.no_grad():
-        for g, (start, end) in SPANS.items():
-            for head, position in ((model.branches[g].start_head, start), (model.branches[g].end_head, end)):
-                head.bias.zero_()
-                head.bias[position] = 30.0
-        if variant != "igh":
-            model.meta_heads["indel_count"].head.bias.fill_(4.0)
-    if variant == "igh_varied_orientation":
-        model.orientation_head = LengthOrientation()
-    if variant == "igh_igk":
-        model.meta_heads["chain_type_logits"] = SplitChainType()
-    return model, reference_set
-
-
 # --- equivalence with the product -----------------------------------------------------------------------------
 
 @pytest.mark.parametrize("variant", ["igh", "igh_varied_orientation", "igh_igk"])
-def test_replay_equals_product_pipeline_untrained_model(variant, make_small_model, s0_reads):
-    model, reference_set = _model(variant, make_small_model)
+def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_model, s0_reads):
+    model, reference_set = make_shaped_model(variant)
     ids, seqs = _inputs(s0_reads)
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
 
@@ -146,10 +103,8 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_small_mode
 
 
 @needs_model
-def test_replay_equals_product_pipeline_real_checkpoint(reference, tmp_path_factory):
-    layout = RunLayout(tmp_path_factory.mktemp("replay_s1"))
-    build_suite("S1", layout, reference_name="HUMAN_IGH_OGRDB", split="dev", seed=5, scale=0.04, workers=4)
-    reads = read_fasta(layout.reads("S1"))[:200]
+def test_replay_equals_product_pipeline_real_checkpoint(reference, s1_layout):
+    reads = read_fasta(s1_layout.reads("S1"))[:200]
     ids, seqs = [name for name, _ in reads], [seq for _, seq in reads]
     model, reference_set = load_model_checked(Path(MODEL).expanduser(), reference, device="cpu")
     assert model.cfg.allele_temperatures  # the released checkpoint is calibrated: the masks stage does work
@@ -213,6 +168,27 @@ def test_stage_outputs_shapes_and_ids(small_model, s0_reads):
     assert len(out.segments.low_quality) == n
     assert len(out.records) == len(out.airr_rows) == n
     assert list(out.seconds) == list(STAGES) and all(seconds >= 0 for seconds in out.seconds.values())
+
+
+@pytest.mark.parametrize("variant", ["igh", "igh_igk"])
+def test_allele_names_and_locus_masks_are_captured(variant, make_shaped_model, s0_reads):
+    model, reference_set = make_shaped_model(variant)
+    ids, seqs = _inputs(s0_reads)
+    out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    assert out.allele_names == {g: list(reference_set.gene(g.upper()).names) for g in GENES}
+    if variant == "igh":
+        assert out.allowed is None  # one locus: the selector runs unmasked
+        return
+    # Two loci: the per-read masks the selector used, one (reads, alleles) row per read and gene.
+    expected = pipeline._locus_allowed(out.predictions.chain_type, reference_set, GENES)
+    assert set(out.allowed) == set(GENES)
+    for g in GENES:
+        assert out.allowed[g].shape == out.predictions.allele[g].shape
+        assert np.array_equal(out.allowed[g], expected[g])
+        names = out.allele_names[g]
+        assert all(set(call.names) <= {names[k] for k in np.flatnonzero(out.allowed[g][i])}
+                   for i, call in enumerate(out.calls[g]))
+    assert {bool(row.any()) for row in out.allowed["d"]} == {True, False}  # IGK reads may call no D
 
 
 def test_replay_input_checks(small_model, s0_reads):

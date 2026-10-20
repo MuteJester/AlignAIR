@@ -9,7 +9,11 @@ from alignair_assay.core.prediction import PredSegment, Prediction
 from alignair_assay.core.reference import Reference
 from alignair_assay.core.seqops import revcomp
 from alignair_assay.metrics import INFORMATIONAL, lower_is_better
-from alignair_assay.metrics.boundaries import germline_boundary_metrics
+from alignair_assay.metrics.boundaries import (
+    germline_boundary_metrics,
+    interval_distance,
+    signed_interval_distance,
+)
 from alignair_assay.metrics.case import MIN_OBSERVED, score_case
 from alignair_assay.truth.alleles import AlleleTruth
 from alignair_assay.truth.bench import truth_from_bench_case
@@ -361,4 +365,14 @@ def test_metric_direction():
         assert not lower_is_better(name), name
     assert INFORMATIONAL == frozenset({".set_size", ".top1_generative", "junction.start_err", "junction.end_err",
                                        "v_indel.mutation_count_err", "v_indel.germline_errors",
-                                       "v_novel.snp_mutations"})
+                                       "v_novel.snp_mutations", ".start_err.soft", ".start_err.argmax",
+                                       ".end_err.soft", ".end_err.argmax", ".allele_top1_generative",
+                                       ".n_above_threshold", "head.mutation_rate_abs_err.record", "head.cropped"})
+
+
+def test_interval_distances():
+    # Inclusive interval (4, 6): 0 inside, negative before it, positive after it; the unsigned one is its size.
+    for x, signed in ((1, -3), (3, -1), (4, 0), (5, 0), (6, 0), (7, 1), (9, 3)):
+        assert signed_interval_distance(x, (4, 6)) == signed, x
+        assert interval_distance(x, (4, 6)) == abs(signed), x
+    assert signed_interval_distance(5, (5, 5)) == 0 and signed_interval_distance(4, (5, 5)) == -1

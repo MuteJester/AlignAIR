@@ -15,14 +15,23 @@ CaseScores = dict[str, float]
 # not unique; the novel SNPs a tool reports as mutations describe how it handles an allele missing from its
 # reference, which no fixed-reference tool can avoid; and true-allele accuracy (``top1_generative``) cannot reach
 # 1.0 for a perfect sequence-only aligner when SHM has made the read a sibling allele's (``top1_in_set`` is compared).
+# Of the head-level metrics (``head.*``, ``diagnostics.heads``), the signed boundary errors are compared through their
+# ``*_abs_err`` twins; true-allele accuracy is informational for the same reason as above; the number of alleles over
+# the selection threshold describes the head; GenAIRR's record mutation rate is the training target, not observable
+# truth; and the crop flag describes the read.
 INFORMATIONAL: frozenset[str] = frozenset({".set_size", ".top1_generative", "junction.start_err", "junction.end_err",
                                            "v_indel.mutation_count_err", "v_indel.germline_errors",
-                                           "v_novel.snp_mutations"})
+                                           "v_novel.snp_mutations",
+                                           ".start_err.soft", ".start_err.argmax", ".end_err.soft", ".end_err.argmax",
+                                           ".allele_top1_generative", ".n_above_threshold",
+                                           "head.mutation_rate_abs_err.record", "head.cropped"})
 
 # Errors, failure rates and counts; the genotype metrics (``metrics.genotype``) are rates of calls outside the donor's
-# genotype and of calls of its deleted genes.
+# genotype and of calls of its deleted genes. A head-level error names its decoder or its truth source after the
+# ``_err`` (``head.v.start_abs_err.soft``, ``head.mutation_rate_abs_err.read``).
 _LOWER_IS_BETTER = ("_err", ".no_call", ".spurious_call", ".germline_errors", ".mutation_count_err",
-                    ".indel_false", ".outside_genotype", ".deleted_gene_call")
+                    ".indel_false", ".outside_genotype", ".deleted_gene_call",
+                    "_err.soft", "_err.argmax", "_err.read", "_err.record")
 
 
 def is_informational(name: str) -> bool:
