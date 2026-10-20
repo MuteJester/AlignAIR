@@ -79,11 +79,13 @@ the Immcantation pipeline for this kit:
   consensus sequences of fewer than 2 reads before it);
 - its ``ParseHeaders rename``, ``ParseLog``, report and archive steps are not run.
 
-**Outputs** (``RunLayout``, per donor): the unique sequences as FASTA (``real_reads``), ordered by sequence id and
-capped at ``cap`` chosen evenly spaced (``core.cases.evenly_spaced``); a TSV with one row per sequence, in the same
-order (``real_reads_meta``: ``TSV_COLUMNS``); each step's pRESTO output in ``real_preprocess_logs``; and the record
-(``real_preprocess_json``, written last). The sequence id is pRESTO's: the first read's name for a multiplex
-sequence, the UMI and cluster for a 5'RACE consensus. The isotype is the C primer's gene (``IGHM``, ``IGHG``, ...).
+**Outputs** (``RunLayout``, per donor): the unique sequences as FASTA (``real_reads``), ordered by their content
+(``content_key``: the SHA-256 of sequence, isotype and primer names, then the id) and capped at ``cap`` chosen
+evenly spaced in that order (``core.cases.evenly_spaced``); a TSV with one row per sequence, in the same order
+(``real_reads_meta``: ``TSV_COLUMNS``); each step's pRESTO output in ``real_preprocess_logs``; and the record
+(``real_preprocess_json``, written last). The sequence id is pRESTO's: for a multiplex sequence the name of the
+first of its reads the collapse saw, for 5'RACE the cluster and UMI of the first consensus. The isotype is the C
+primer's gene (``IGHM``, ``IGHG``, ...).
 ``consensus_count`` is the reads behind the sequence: the summed UMI consensus count for 5'RACE, the duplicate
 count for multiplex, where each read pair is one read. ``primer_masked`` is a JSON list of the ``[start, end)``
 spans of primer bases in the read (``primer_spans``): the VH primer at the start of a multiplex read and the C
@@ -91,13 +93,22 @@ primer at its end, from the primers' lengths, so a primer base that the assembly
 still excluded; 5'RACE reads have none, their primers being cut. Those bases were never read from the template:
 they carry no germline evidence.
 
+**Reruns give the same outputs.** pRESTO's workers write their records in the order they finish, so with
+``nproc`` above 1 a step's output order varies between runs. Three steps depend on their input's order: within a
+UMI, ``ClusterSets`` (vsearch) numbers and builds its clusters, and ``AlignSets`` (muscle) aligns, in the order the
+reads come; and ``CollapseSeq`` keeps, of identical sequences, the first it sees, whose id the output carries.
+Their inputs are therefore sorted by read id first (``sort_fastq``), and the cap is keyed on content, not on
+pRESTO's id. ``nproc`` (with ``cpus``, the container's limit: at most the host's CPUs) is in the record and the
+fingerprint all the same.
+
 **The record** holds the counts at every step and each step's pass rate, the quality and which quality steps ran,
 the image found (``check_image``), the classifier's evidence, the assembly's acceptance and its evidence
 (``assembly_evidence``: overlap, error, mate lengths and the insert-length estimates of the pairs that passed and
 failed, as deciles), the length distribution of the assembled reads, the isotype split, the wall time and a
 ``fingerprint``: SHA-256 over the inputs' md5s, this module's SHA-256, the pinned image and the parameters
-(``run_fingerprint``; ``paper_quality_trim`` among them). A record is reused only while it is current: its fingerprint
-is the current one and its FASTA and TSV are the ones it recorded. Otherwise the run is redone from the reads: the
+(``run_fingerprint``). The code digest covers this module alone, the assay's convention for its steps' records:
+the ``core`` helpers it uses are not in it. A record is reused only while it is current: its fingerprint is the
+current one and its FASTA and TSV are the ones it recorded. Otherwise the run is redone from the reads: the
 old record and outputs are removed first, the work directory (``real_preprocess_work``, the container's only
 writable mount; the reads are mounted read-only) is removed once the outputs are written, and the record comes
 last, so an interrupted run is never mistaken for a finished one. Docker or the pinned image missing stops the run
@@ -208,13 +219,15 @@ class PreprocessError(RuntimeError):
 class Step:
     """One pRESTO command: its name, its argv (paths relative to the work directory, or the read-only reads), the
     file whose records are its input and the files it writes (the first counted). A step that ``merges`` records
-    (a consensus, a collapse) has no pass rate: its output counts groups, not records that passed."""
+    (a consensus, a collapse) has no pass rate: its output counts groups, not records that passed. A step whose
+    output depends on the order of its input (``sort_input``) reads it sorted by read id (``sort_fastq``)."""
 
     name: str
     argv: tuple[str, ...]
     input: str
     outputs: tuple[str, ...]
     merges: bool = False
+    sort_input: bool = False
 
 
 # --- the classifier ----------------------------------------------------------------------------------------------
@@ -317,16 +330,51 @@ def primer_spans(length: int, head: int, tail: int) -> list[list[int]]:
     return [span for span in ([0, head], [length - tail, length]) if span[1] > span[0]]
 
 
+def content_key(record: dict) -> tuple[str, str]:
+    """The cap's sort key of a sequence: the SHA-256 of its content (``sequence``, ``isotype`` and ``primers``, the
+    primer names it was found with), then its id, which only orders identical contents."""
+    content = "\t".join((record["sequence"], record["isotype"], record.get("primers", "")))
+    return hashlib.sha256(content.encode()).hexdigest(), record["sequence_id"]
+
+
 def cap_sequences(records: Sequence[dict], cap: int) -> list[dict]:
-    """``records`` ordered by ``sequence_id``, then at most ``cap`` of them evenly spaced
-    (``core.cases.evenly_spaced``). ValueError for a cap below 1 or a sequence id given twice."""
+    """``records`` ordered by their content (``content_key``), then at most ``cap`` of them evenly spaced
+    (``core.cases.evenly_spaced``). The order is the content's, not pRESTO's id: which duplicate's id a collapse
+    keeps can depend on its workers' order, while the contents do not. ValueError for a cap below 1 or a sequence
+    id given twice."""
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
         raise ValueError(f"the cap must be a positive number of sequences, got {cap!r}")
-    ordered = sorted(records, key=lambda record: record["sequence_id"])
-    for previous, record in zip(ordered, ordered[1:]):
-        if previous["sequence_id"] == record["sequence_id"]:
+    seen: set[str] = set()
+    for record in records:
+        if record["sequence_id"] in seen:
             raise ValueError(f"sequence id {record['sequence_id']} is given twice")
+        seen.add(record["sequence_id"])
+    ordered = sorted(records, key=content_key)
     return ordered if len(ordered) <= cap else evenly_spaced(ordered, cap)
+
+
+def sort_fastq(path) -> None:
+    """Rewrite FASTQ ``path`` with its records ordered by read id (pRESTO's, the header's text before the first
+    ``|``; ties keep their order). Only the headers and their offsets are held in memory."""
+    path = Path(path)
+    index: list[tuple[str, int, int]] = []
+    with open(path, "rb") as handle:
+        while True:
+            offset = handle.tell()
+            header = handle.readline()
+            if not header:
+                break
+            for _ in range(3):
+                handle.readline()
+            index.append((header[1:].split(b"|", 1)[0].rstrip(b"\r\n").decode("ascii"), offset,
+                          handle.tell() - offset))
+    index.sort(key=lambda entry: entry[0])
+    part = path.with_name(path.name + ".sorted")
+    with open(path, "rb") as source, open(part, "wb") as sorted_file:
+        for _, offset, size in index:
+            source.seek(offset)
+            sorted_file.write(source.read(size))
+    os.replace(part, path)
 
 
 # --- the recipes ---------------------------------------------------------------------------------------------------
@@ -385,7 +433,7 @@ def _race(r1: str, r2: str, n: tuple[str, str]) -> list[Step]:
              "R1-cprimer_primers-pass.fastq", pair),
         Step("cluster", ("ClusterSets.py", "set", "-s", pair[0], "-f", "UMI", "-k", "CLUSTER", "--cluster", "vsearch",
                          "--ident", str(CLUSTER_IDENTITY), *n, "--outname", "R1-cluster"),
-             pair[0], ("R1-cluster_cluster-pass.fastq",)),
+             pair[0], ("R1-cluster_cluster-pass.fastq",), sort_input=True),
         Step("molecule", ("ParseHeaders.py", "copy", "-s", "R1-cluster_cluster-pass.fastq", "-f", "UMI", "-k",
                           "CLUSTER", "--act", "cat", "--outname", "R1-molecule"),
              "R1-cluster_cluster-pass.fastq", ("R1-molecule_reheader.fastq",)),
@@ -393,7 +441,8 @@ def _race(r1: str, r2: str, n: tuple[str, str]) -> list[Step]:
                                "--coord", "sra", "--outname", "molecule"),
              "R1-molecule_reheader.fastq", molecule),
         *(Step(f"align-r{mate}", ("AlignSets.py", "muscle", "-s", source, "--bf", "CLUSTER", "--exec", "muscle", *n,
-                                  "--outname", f"R{mate}-align"), source, (f"R{mate}-align_align-pass.fastq",))
+                                  "--outname", f"R{mate}-align"), source, (f"R{mate}-align_align-pass.fastq",),
+               sort_input=True)
           for mate, source in (("1", molecule[0]), ("2", molecule[1]))),
         *(Step(f"consensus-r{mate}", ("BuildConsensus.py", "-s", f"R{mate}-align_align-pass.fastq", "--bf",
                                       "CLUSTER", "--pf", "CPRIMER", *CONSENSUS_ARGS, *n, "--outname",
@@ -411,7 +460,7 @@ def _race(r1: str, r2: str, n: tuple[str, str]) -> list[Step]:
              "assembled_assemble-pass.fastq", ("conscount_reheader.fastq",)),
         Step("collapse", ("CollapseSeq.py", "-s", "conscount_reheader.fastq", "-n", "0", "--uf", "PRCONS", "--cf",
                           "CONSCOUNT", "--act", "sum", "--inner", "--keepmiss", "--outname", "collapsed"),
-             "conscount_reheader.fastq", ("collapsed_collapse-unique.fastq",), merges=True),
+             "conscount_reheader.fastq", ("collapsed_collapse-unique.fastq",), merges=True, sort_input=True),
         Step(f"conscount-{MIN_CONSCOUNT}", ("SplitSeq.py", "group", "-s", "collapsed_collapse-unique.fastq", "-f",
                                             "CONSCOUNT", "--num", str(MIN_CONSCOUNT), "--outname", "final"),
              "collapsed_collapse-unique.fastq", (f"final_atleast-{MIN_CONSCOUNT}.fastq",)),
@@ -438,7 +487,7 @@ def _multiplex(r1: str, r2: str, n: tuple[str, str], paper_length_filter: bool) 
                         "filtered"), "assembled_assemble-pass.fastq", ("filtered_length-pass.fastq",)),
         Step("collapse", ("CollapseSeq.py", "-s", "filtered_length-pass.fastq", "-n", "0", "--uf", "VPRIMER",
                           "CPRIMER", "--inner", "--keepmiss", "--outname", "collapsed"),
-             "filtered_length-pass.fastq", ("collapsed_collapse-unique.fastq",), merges=True),
+             "filtered_length-pass.fastq", ("collapsed_collapse-unique.fastq",), merges=True, sort_input=True),
     ]
 
 
@@ -449,22 +498,27 @@ def step_command(args: Sequence[str], *, donor: str, step: str, work, r1, r2, np
     return hardened_run(IMMCANTATION_IMAGE, list(args), name=container_name("preprocess", donor, step),
                         mounts=[Mount(Path(r1).absolute().parent, IN1), Mount(Path(r2).absolute().parent, IN2),
                                 Mount(Path(work).absolute(), WORK, read_only=False)],
-                        workdir=WORK, env={"HOME": "/tmp"}, cpus=nproc)
+                        workdir=WORK, env={"HOME": "/tmp"}, cpus=container_cpus(nproc))
+
+
+def container_cpus(nproc: int) -> int:
+    """The container's CPU limit: ``nproc``, or the host's CPU count when it has fewer (Docker refuses more)."""
+    return min(nproc, os.cpu_count() or nproc)
 
 
 # --- the run -------------------------------------------------------------------------------------------------------
 
-def run_fingerprint(r1, r2, *, quality: str, cap: int, paper_length_filter: bool,
-                    paper_quality_trim: bool = False) -> dict:
+def run_fingerprint(r1, r2, *, quality: str, cap: int, paper_length_filter: bool, paper_quality_trim: bool = False,
+                    nproc: int = NPROC) -> dict:
     """What a record must match to be current: ``inputs`` (each mate's path, md5 and size), ``image`` (the pinned
-    reference), ``code_sha256`` (this module), ``parameters`` and ``fingerprint``, the SHA-256 over the inputs' md5s,
-    the image, the code and the parameters."""
+    reference), ``code_sha256`` (this module's alone, as in the rest of the assay), ``parameters`` and
+    ``fingerprint``, the SHA-256 over the inputs' md5s, the image, the code and the parameters."""
     inputs = {mate: {"path": str(Path(path)), "md5": _md5(Path(path)), "bytes": Path(path).stat().st_size}
               for mate, path in (("r1", r1), ("r2", r2))}
     parameters = {"quality": quality, "cap": cap, "paper_length_filter": paper_length_filter,
                   "min_length": PAPER_MIN_LENGTH if paper_length_filter else MIN_LENGTH,
                   "length_after_primer_removal": not paper_length_filter, "paper_quality_trim": paper_quality_trim,
-                  "max_assembly_failure": MAX_ASSEMBLY_FAILURE}
+                  "max_assembly_failure": MAX_ASSEMBLY_FAILURE, "nproc": nproc}
     digest = hashlib.sha256(json.dumps({"inputs": [inputs["r1"]["md5"], inputs["r2"]["md5"]],
                                         "image": IMMCANTATION_IMAGE, "code": _CODE_SHA256,
                                         "parameters": parameters}, sort_keys=True).encode()).hexdigest()
@@ -492,7 +546,7 @@ def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: 
     r1, r2 = Path(r1).absolute(), Path(r2).absolute()
     record_path = layout.real_preprocess_json(donor)
     pinned = run_fingerprint(r1, r2, quality=quality, cap=cap, paper_length_filter=paper_length_filter,
-                             paper_quality_trim=paper_quality_trim)
+                             paper_quality_trim=paper_quality_trim, nproc=nproc)
     current = _current(layout, donor, pinned["fingerprint"])
     if current is not None:
         return {**current, "reused": True}
@@ -543,7 +597,7 @@ def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: 
     pairs_in = counts["pair-consensus" if protocol == "race" else "both-primers"]
     failure = _rate(pairs_in - counts["assemble"], pairs_in)
     record.update(
-        status="done", reused=False, image=image, nproc=nproc,
+        status="done", reused=False, image=image, nproc=nproc, cpus=container_cpus(nproc),
         quality_steps=QUALITY_SKIPPED if quality == "lite" else QUALITY_TRIM if paper_quality_trim else QUALITY_FILTER,
         assembly_acceptance={"pairs": pairs_in, "failed": pairs_in - counts["assemble"], "failure_rate": failure,
                              "max_failure_rate": MAX_ASSEMBLY_FAILURE,
@@ -564,10 +618,13 @@ def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: 
 
 def _run_step(step: Step, *, donor: str, work: Path, logs: Path, r1: Path, r2: Path, nproc: int, timeout: float,
               file_counts: dict[str, int]) -> dict:
-    """Run one step in the container, keep its output as ``<step>.log`` and count its records."""
+    """Run one step in the container (its input sorted by read id first when the step says so), keep its output as
+    ``<step>.log`` and count its records."""
     argv = step_command(step.argv, donor=donor, step=step.name, work=work, r1=r1, r2=r2, nproc=nproc)
     name = argv[argv.index("--name") + 1]
     started = time.monotonic()
+    if step.sort_input:
+        sort_fastq(work / step.input)
     try:
         completed = run_container(argv, name=name, timeout=timeout, what=f"{donor}'s pRESTO step {step.name}")
     except ContainerError as error:
@@ -579,33 +636,36 @@ def _run_step(step: Step, *, donor: str, work: Path, logs: Path, r1: Path, r2: P
     records = file_counts[step.outputs[0]]
     if records == 0:
         raise PreprocessError(f"{donor}: pRESTO step {step.name} let no read through (see {logs / step.name}.log)")
-    return {"name": step.name, "argv": list(step.argv), "seconds": round(time.monotonic() - started, 1),
-            "records": records, "pass_rate": None if step.merges else _rate(records, file_counts.get(step.input, 0))}
+    return {"name": step.name, "argv": list(step.argv), "sorted_input": step.sort_input,
+            "seconds": round(time.monotonic() - started, 1), "records": records,
+            "pass_rate": None if step.merges else _rate(records, file_counts.get(step.input, 0))}
 
 
 def _rows(path: Path, protocol: str, paper_length_filter: bool) -> tuple[list[dict], dict]:
-    """The final unique sequences as TSV rows (plus ``sequence`` and ``observed``, the bases outside the primers),
-    and the checks: multiplex sequences shorter than the length filter once the primers' spans are removed are
-    dropped and counted (pRESTO's ``--inner`` counts ``N`` runs, and the assembly may fill a masked primer base
-    from the other mate), and primer spans holding a base other than ``N`` are counted."""
+    """The final unique sequences as TSV rows (plus ``sequence``, ``primers``, the primer names it was found with,
+    and ``observed``, the bases outside the primers), and the checks: multiplex sequences shorter than the length
+    filter once the primers' spans are removed are dropped and counted (pRESTO's ``--inner`` counts ``N`` runs,
+    and the assembly may fill a masked primer base from the other mate), and primer spans holding a base other
+    than ``N`` are counted."""
     rows, too_short, unmasked = [], 0, 0
     for identifier, annotations, sequence in _read_presto_fastq(path):
         if protocol == "race":
-            isotype, spans = annotations["PRCONS"], []
+            isotype, spans, primers = annotations["PRCONS"], [], annotations["PRCONS"]
             consensus = int(annotations["CONSCOUNT"])
         else:
             isotype = MULTIPLEX_ISOTYPE[annotations["CPRIMER"]]
             spans = primer_spans(len(sequence), len(VH_PRIMERS[annotations["VPRIMER"]]),
                                  len(C_PRIMERS_MULTIPLEX[annotations["CPRIMER"]]))
+            primers = f"{annotations['VPRIMER']},{annotations['CPRIMER']}"
             consensus = int(annotations["DUPCOUNT"])
         observed = len(sequence) - sum(end - start for start, end in spans)
         if protocol == "multiplex" and not paper_length_filter and observed < MIN_LENGTH:
             too_short += 1
             continue
         unmasked += any(set(sequence[start:end]) != {"N"} for start, end in spans)
-        rows.append({"sequence_id": identifier, "sequence": sequence, "isotype": isotype, "protocol": protocol,
-                     "consensus_count": consensus, "dupcount": int(annotations["DUPCOUNT"]), "primer_masked": spans,
-                     "observed": observed})
+        rows.append({"sequence_id": identifier, "sequence": sequence, "isotype": isotype, "primers": primers,
+                     "protocol": protocol, "consensus_count": consensus, "dupcount": int(annotations["DUPCOUNT"]),
+                     "primer_masked": spans, "observed": observed})
     return rows, {"shorter_than_filter_after_primers": too_short, "primer_spans_not_masked": unmasked}
 
 

@@ -208,18 +208,50 @@ def test_both_layouts_at_once_is_unknown(monkeypatch):
 
 # --- the cap and the masked spans ------------------------------------------------------------------------------------
 
-def test_cap_is_evenly_spaced():
-    records = [{"sequence_id": f"r{index:03d}"} for index in range(100)]
-    shuffled = records[::-1]
-    capped = cap_sequences(shuffled, 10)
-    assert capped == evenly_spaced(records, 10)  # ordered by sequence id before the evenly spaced pick
-    assert [record["sequence_id"] for record in capped][:3] == ["r000", "r010", "r020"]
-    assert cap_sequences(shuffled, 1000) == records  # fewer than the cap: all of them, in id order
+def _unique_rows(n: int, rng: random.Random) -> list[dict]:
+    """``n`` rows of distinct content, as ``_rows`` makes them: sequence, isotype, primers and a pRESTO id."""
+    return [{"sequence_id": f"SYN.{index}", "sequence": _random_dna(rng, 40), "isotype": ("IGHM", "IGHG")[index % 2],
+             "primers": "VH4,IgM"} for index in range(n)]
+
+
+def test_cap_is_evenly_spaced_over_the_content_order():
+    """The cap orders the sequences by the SHA-256 of their content (sequence, isotype, primers), not by pRESTO's
+    id, then takes them evenly spaced: which ids survive pRESTO's collapse depends on its workers' order."""
+    rng = random.Random(3)
+    rows = _unique_rows(100, rng)
+    ordered = sorted(rows, key=preprocess.content_key)
+    capped = cap_sequences(rows, 10)
+    assert capped == evenly_spaced(ordered, 10)
+    assert cap_sequences(rows, 1000) == ordered  # fewer than the cap: all of them, in content order
     assert cap_sequences([], 10) == []
+    # the same contents in another order, and under other ids, give the same capped contents
+    shuffled = rows[:]
+    rng.shuffle(shuffled)
+    assert cap_sequences(shuffled, 10) == capped
+    ids = [row["sequence_id"] for row in rows]
+    rng.shuffle(ids)
+    renamed = [{**row, "sequence_id": f"OTHER.{identifier}"} for row, identifier in zip(rows, ids)]
+    assert [(row["sequence"], row["isotype"]) for row in cap_sequences(renamed, 10)] == [
+        (row["sequence"], row["isotype"]) for row in capped]
+    # identical contents (Collapse's --keepmiss keeps them apart) fall back on the id
+    twins = [{**rows[0], "sequence_id": "SYN.b"}, {**rows[0], "sequence_id": "SYN.a"}]
+    assert [row["sequence_id"] for row in cap_sequences(twins, 2)] == ["SYN.a", "SYN.b"]
     with pytest.raises(ValueError, match="cap"):
-        cap_sequences(records, 0)
+        cap_sequences(rows, 0)
     with pytest.raises(ValueError, match="twice"):
-        cap_sequences(records + records[:1], 10)
+        cap_sequences(rows + rows[:1], 10)
+
+
+def test_sorting_a_fastq_by_read_id_keeps_every_record(tmp_path):
+    """The inputs of the steps whose output depends on their read order (ClusterSets, AlignSets, CollapseSeq) are
+    sorted by read id first, so a rerun does not depend on the workers' order of the step before."""
+    records = [f"@SYN.{spot} {spot}/1|UMI=AAA\nACGT{spot}\n+\nIIII{spot}\n" for spot in (3, 1, 20, 2)]
+    path = tmp_path / "reads.fastq"
+    path.write_text("".join(records))
+    preprocess.sort_fastq(path)
+    assert path.read_text() == "".join(records[i] for i in (1, 3, 2, 0))  # SYN.1, SYN.2, SYN.20, SYN.3
+    preprocess.sort_fastq(path)
+    assert path.read_text() == "".join(records[i] for i in (1, 3, 2, 0))
 
 
 def test_primer_spans_recorded():
@@ -309,6 +341,8 @@ def test_the_race_recipe_follows_the_paper():
     assert all(_flags(step.argv, "--nproc") == ["8"] for step in steps if "--nproc" in step.argv)
     # a consensus or a collapse counts groups, so it has no pass rate
     assert {step.name for step in steps if step.merges} == {"consensus-r1", "consensus-r2", "collapse"}
+    # the steps whose output depends on their input's order read it sorted by read id
+    assert {step.name for step in steps if step.sort_input} == {"cluster", "align-r1", "align-r2", "collapse"}
 
 
 def test_the_multiplex_recipe_masks_both_primers_and_filters_the_length():
@@ -321,6 +355,7 @@ def test_the_multiplex_recipe_masks_both_primers_and_filters_the_length():
     assert _flags(by_name["c-primer"], "--start", "--mode", "--pf") == ["0", "mask", "CPRIMER"]
     assert _flags(by_name["length"], "-n") == ["250"] and "--inner" in by_name["length"]
     assert {step.name for step in steps if step.merges} == {"collapse"}
+    assert {step.name for step in steps if step.sort_input} == {"collapse"}
     paper = {step.name: step.argv for step in recipe("multiplex", quality="full", r1="/in1/a", r2="/in2/b",
                                                      nproc=8, paper_length_filter=True)}
     assert _flags(paper["length"], "-n") == ["400"] and "--inner" not in paper["length"]
@@ -430,8 +465,9 @@ def test_the_fingerprint_follows_inputs_code_image_and_parameters(tmp_path):
     assert base["inputs"]["r1"]["md5"] == "f97c5d29941bfb1b2fdab0874906ab82"
     assert base["image"] == IMMCANTATION_IMAGE and base["code_sha256"] == preprocess._CODE_SHA256
     assert base == preprocess.run_fingerprint(r1, r2, quality="full", cap=10, paper_length_filter=False)
-    assert base["parameters"]["paper_quality_trim"] is False
-    for changed in ({"quality": "lite"}, {"cap": 11}, {"paper_length_filter": True}, {"paper_quality_trim": True}):
+    assert base["parameters"]["paper_quality_trim"] is False and base["parameters"]["nproc"] == preprocess.NPROC
+    for changed in ({"quality": "lite"}, {"cap": 11}, {"paper_length_filter": True}, {"paper_quality_trim": True},
+                    {"nproc": 2}):
         kwargs = {"quality": "full", "cap": 10, "paper_length_filter": False, **changed}
         assert preprocess.run_fingerprint(r1, r2, **kwargs)["fingerprint"] != base["fingerprint"]
     assert preprocess.run_fingerprint(r1, r2, quality="full", cap=10, paper_length_filter=False,
@@ -441,10 +477,16 @@ def test_the_fingerprint_follows_inputs_code_image_and_parameters(tmp_path):
                                       paper_length_filter=False)["fingerprint"] != base["fingerprint"]
 
 
-def test_the_container_runs_offline_on_read_only_inputs(tmp_path):
+def test_the_container_runs_offline_on_read_only_inputs(tmp_path, monkeypatch):
     work, r1, r2 = tmp_path / "work", tmp_path / "in1" / "a_1.fastq.gz", tmp_path / "in2" / "a_2.fastq.gz"
+    monkeypatch.setattr(preprocess.os, "cpu_count", lambda: 16)
     argv = preprocess.step_command(("FilterSeq.py", "length"), donor="SC-23", step="length", work=work, r1=r1,
                                    r2=r2, nproc=8)
+    # never more CPUs than the host has (Docker refuses --cpus above it)
+    for host, expected in ((4, "4"), (None, "8")):
+        monkeypatch.setattr(preprocess.os, "cpu_count", lambda host=host: host)
+        limited = preprocess.step_command(("true",), donor="SC-23", step="x", work=work, r1=r1, r2=r2, nproc=8)
+        assert limited[limited.index("--cpus") + 1] == expected
     assert argv[argv.index("--network") + 1] == "none" and argv[argv.index("--cap-drop") + 1] == "ALL"
     assert argv[argv.index("--security-opt") + 1] == "no-new-privileges"
     assert argv[argv.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
