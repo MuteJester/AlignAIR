@@ -86,11 +86,18 @@ def test_cli_end_to_end_small(tmp_path, capsys, reference, load_fixture):
     assert sum(differs.values()) > 0
     assert (f"simulator call list differs from the generative set (non-excluded cases): v={differs['v']} "
             f"d={differs['d']} j={differs['j']}\n") in printed
-    # Bench primaries are the simulator's first call, so nothing counts as re-called.
-    assert "simulator first call is not the generative allele (non-excluded cases): v=0 d=0 j=0\n" in printed
-    simulator_calls = {g: {"call_list_differs": differs[g], "recalled": 0} for g in "vdj"}
-    # Bench records carry no generative allele: every scored segment falls back to the simulator's first call.
-    fallbacks = {g: sum(g in t.segments for t in truths if t.excluded is None) for g in "vdj"}
+    # A primary taken from the simulator's first call is never re-called. The records simulated above have no truth
+    # columns: up to the assembled encoding each segment falls back to the first call; the generating-reference
+    # encoding names the generative allele in {g}_call, so only the committed bench cases fall back.
+    scored_segments = [(g, s) for t in truths if t.excluded is None for g, s in t.segments.items()]
+    recalled = {g: sum(s.alleles.recalled for h, s in scored_segments if h == g) for g in "vdj"}
+    assert all(not s.alleles.recalled for _, s in scored_segments if s.alleles.primary_fallback)
+    assert (f"simulator first call is not the generative allele (non-excluded cases): v={recalled['v']} "
+            f"d={recalled['d']} j={recalled['j']}\n") in printed
+    simulator_calls = {g: {"call_list_differs": differs[g], "recalled": recalled[g]} for g in "vdj"}
+    fallbacks = {g: sum(s.alleles.primary_fallback for h, s in scored_segments if h == g) for g in "vdj"}
+    bench = [t for t in truths if t.case_id.startswith("human_igh_ogrdb_broad:") and t.excluded is None]
+    assert bench and all(s.alleles.primary_fallback for t in bench for s in t.segments.values())
     assert (f"primary from the simulator's call, no generative allele (non-excluded cases): v={fallbacks['v']} "
             f"d={fallbacks['d']} j={fallbacks['j']}\n") in printed
 
