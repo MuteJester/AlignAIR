@@ -7,7 +7,8 @@ from alignair_assay.cli.common import file_name, print_matching
 from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.report import headline_table
 from alignair_assay.scoring.pipeline import load_truth
-from alignair_assay.workflow.scoring import comparison_report, read_genotypes, score_file, write_report
+from alignair_assay.suites.donors import read_genotypes
+from alignair_assay.workflow.scoring import comparison_report, score_file, write_report
 
 
 def register(sub) -> None:

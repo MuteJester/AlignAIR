@@ -34,15 +34,10 @@ from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolu
 from alignair_assay.runners.reference import ensure_shared_reference
 from alignair_assay.scoring.pipeline import load_truth, write_scores
 from alignair_assay.suites import get_suite
+from alignair_assay.suites.donors import read_genotypes
 from alignair_assay.suites.engine import DEFAULT_SEED, check_split
 from alignair_assay.workflow.build import build_changes, build_suite
-from alignair_assay.workflow.scoring import (
-    comparison_report,
-    read_genotypes,
-    score_file,
-    score_report,
-    write_report,
-)
+from alignair_assay.workflow.scoring import comparison_report, score_file, score_report, write_report
 from alignair_assay.workflow.speed import check_speed, run_speed
 from alignair_assay.workflow.summary import (
     ALPHA,

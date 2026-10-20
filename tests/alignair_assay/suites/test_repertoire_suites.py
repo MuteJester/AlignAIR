@@ -25,7 +25,7 @@ from alignair_assay.suites.recipes import (  # noqa: E402
 from alignair_assay.testing import assert_oracle_perfect  # noqa: E402
 from alignair_assay.truth.io import read_truth_jsonl  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
-from alignair_assay.workflow.scoring import read_genotypes  # noqa: E402
+from alignair_assay.suites.donors import read_genotypes  # noqa: E402
 
 REFERENCE = "HUMAN_IGH_OGRDB"
 SEED = 31

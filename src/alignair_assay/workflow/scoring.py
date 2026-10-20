@@ -23,7 +23,6 @@ from alignair_assay.scoring.clusters import CLUSTER_KEYS, cluster_ids
 from alignair_assay.scoring.pipeline import load_predictions, score_predictions
 from alignair_assay.scoring.slices import slices
 from alignair_assay.stats import compare, summarize
-from alignair_assay.suites.donors import read_genotypes  # noqa: F401 (the score, compare and all commands' name)
 from alignair_assay.truth.model import ObservableTruth
 from alignair_assay.truth.summary import simulator_calls
 

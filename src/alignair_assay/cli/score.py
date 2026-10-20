@@ -6,7 +6,8 @@ from pathlib import Path
 from alignair_assay.cli.common import file_name, print_matching
 from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.scoring.pipeline import load_truth, write_scores
-from alignair_assay.workflow.scoring import read_genotypes, score_file, score_report, write_report
+from alignair_assay.suites.donors import read_genotypes
+from alignair_assay.workflow.scoring import score_file, score_report, write_report
 
 
 def register(sub) -> None:

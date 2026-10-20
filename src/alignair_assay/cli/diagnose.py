@@ -36,8 +36,9 @@ def run(args) -> int:
     """Diagnose the checkpoint on every named suite (``workflow.diagnose.evaluate``), print one line per suite
     and the profile, and name the report it wrote (the one-page ``diagnostics.md``, with ``diagnostics.json`` and
     each suite's ``<S>/report.md``, under the model key). A suite whose build is not current for this checkout
-    (``workflow.diagnose.stale_builds``) is diagnosed as built, with a warning. Input errors (an unbuilt or test-split suite, an unknown variant, a missing checkpoint,
-    a model on another reference, a CUDA device torch does not see) exit with status 2 before anything is written,
+    (``workflow.diagnose.stale_builds``) is diagnosed as built, with a warning. Input errors (an unbuilt or
+    test-split suite, an unknown variant, a missing checkpoint, a model on another reference, a CUDA device torch
+    does not see) exit with status 2 before anything is written,
     and so does AlignAIR code the replay is not pinned to, unless ``--allow-unverified-replay`` (then the results
     are marked unverified, with a warning)."""
     # Imported here so the other commands never load torch and alignair.

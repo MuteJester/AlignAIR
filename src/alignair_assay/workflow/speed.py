@@ -238,8 +238,8 @@ def run_speed(cfg: RunConfig, layout: RunLayout, reference: Reference, *, n_tiny
     runner is built before anything is measured, so a missing tool option, an unknown name or an empty selection
     raises ValueError first. The read sets are written (``speed_set``), then each configuration is prepared
     against ``reference``, fingerprinted and measured (``measure``, in ``layout.speed_work_dir(name)``), and
-    ``speed.json`` is written with the plan before the first measurement and rewritten after each one. A configuration that fails (to prepare or to run) is recorded with
-    its ``error``, and the others go on.
+    ``speed.json`` is written with the plan before the first measurement and rewritten after each one. A
+    configuration that fails (to prepare or to run) is recorded with its ``error``, and the others go on.
 
     ``speed.json`` holds ``kind``, ``version`` (``SPEED_VERSION``), the ``host`` (``host_info``), ``n_tiny``,
     ``n_full``, ``repeats``, the timed ``reads`` (suite and SHA-256 of its ``reads.fasta``), the SHA-256 of the
