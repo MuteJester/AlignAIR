@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,6 +25,8 @@ from alignair_assay.core.cases import read_cases  # noqa: E402
 from alignair_assay.core.layout import RunLayout  # noqa: E402
 from alignair_assay.core.provenance import sha256_file  # noqa: E402
 from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS, SINGLE_SWAPS, VARIANTS  # noqa: E402
+from alignair_assay.diagnostics import identity as identity_module  # noqa: E402
+from alignair_assay.diagnostics import pin as pin_module  # noqa: E402
 from alignair_assay.diagnostics.identity import alignair_code, weights_sha256  # noqa: E402
 from alignair_assay.report.diagnostics import SUITE_SECTIONS, SUMMARY_SECTIONS  # noqa: E402
 from alignair_assay.runners.alignair import local_code_identity  # noqa: E402
@@ -32,6 +35,7 @@ from alignair_assay.workflow.build import build_suite  # noqa: E402
 from alignair_assay.workflow.diagnose import (  # noqa: E402
     DiagnosticsResult,
     UnverifiedReplayWarning,
+    cluster_counts,
     evaluate,
     select_cases,
 )
@@ -500,18 +504,22 @@ def test_an_unverified_replay_is_refused_unless_allowed(built, tmp_path, small_m
     assert "**Unverified replay.**" in detail
 
 
-def test_the_replay_pin_is_checked_once_per_process(built, tmp_path, small_model, monkeypatch):
+def test_the_replay_pin_is_taken_at_import_beside_the_code_digest(built, tmp_path, small_model, monkeypatch):
+    # The pin and the model key's code digest both describe the code this process imported: the pin is never taken
+    # again, so a product edit after the import cannot make the two describe different code.
     layout = _copy(built, tmp_path)
-    calls = []
-    original = diagnose_module.pin_changes
-    monkeypatch.setattr(diagnose_module, "pin_changes", lambda *args: calls.append(1) or original(*args))
-    diagnose_module.replay_pin.cache_clear()
-    try:
-        for _ in range(2):
-            evaluate(small_model, layout, ["S0"], **FAST)
-        assert len(calls) == 1
-    finally:
-        diagnose_module.replay_pin.cache_clear()
+    pinned = identity_module.replay_pin()
+    assert pinned == (pin_module.replay_digest(), pin_module.pin_changes())
+    assert diagnose_module.replay_pin is identity_module.replay_pin
+
+    def taken_again(function):
+        raise AssertionError("the replay pin was taken after the import")
+
+    monkeypatch.setattr(pin_module, "code_digest", taken_again)
+    for _ in range(2):
+        result = evaluate(small_model, layout, ["S0"], **FAST)
+        assert result.suites["S0"]["key"]["replay"] == {"verified": not pinned[1], "sha256": pinned[0]}
+    assert identity_module.replay_pin() == pinned
 
 
 def test_diagnose_command_refuses_an_unverified_replay_unless_allowed(built, tmp_path, save_checkpoint, monkeypatch,
@@ -618,6 +626,31 @@ def test_comparisons_are_clustered_by_the_suites_groups(built, tmp_path, small_m
         for entry in comparison["metrics"].values():
             assert entry["n_clusters"] <= donors < entry["n_paired"] or entry["n_paired"] == 0
             assert entry["test"] in ("too_few_clusters", "too_few_pairs", "clustered_mcnemar", "clustered_z")
+
+
+def test_a_suite_of_singleton_clusters_is_not_cluster_aware(built, tmp_path, small_model, monkeypatch):
+    # S11 with ``max_cases`` keeping only its ``:fwd`` reads: every read has a pair id, but no pair has two reads.
+    monkeypatch.setattr(diagnose_module, "cluster_ids", lambda truths: {t.case_id: f"pair:{t.case_id}" for t in truths})
+    monkeypatch.setattr(diagnose_module, "CLUSTER_KEYS", ("subject",))
+    layout = _copy(built, tmp_path)
+    result = evaluate(small_model, layout, ["S1"], **{**FAST, "variants": ("argmax_decoder",)})
+    assert result.suites["S1"]["clusters"] == {"keys": [], "clusters": 0, "cases": 0}
+    assert result.summary["clustered"] == {}
+    assert "- Cluster-aware comparisons: none" in result.report_md
+    detail = layout.diagnostics_suite_md(result.model_key, "S1").read_text(encoding="utf-8")
+    assert re.search(r"^\| 100 \| 100 \|.*\| none \|$", detail, re.MULTILINE), detail
+
+
+def test_only_clusters_of_two_or_more_reads_count():
+    def truth(case_id, **groups):
+        return SimpleNamespace(case_id=case_id, groups=groups)
+
+    truths = [truth("a:fwd", pair="a"), truth("a:rev", pair="a"), truth("b:fwd", pair="b"), truth("c", clone="7"),
+              truth("d", clone="7", pair="d"), truth("e")]
+    clusters = {"a:fwd": "S/pair:a", "a:rev": "S/pair:a", "b:fwd": "S/pair:b", "c": "S/clone:7", "d": "S/clone:7"}
+    assert cluster_counts(truths, clusters) == {"keys": ["clone", "pair"], "clusters": 2, "cases": 4}
+    assert cluster_counts(truths[2:3], {"b:fwd": "S/pair:b"}) == {"keys": [], "clusters": 0, "cases": 0}
+    assert cluster_counts([], {}) == {"keys": [], "clusters": 0, "cases": 0}
 
 
 # --- the diagnose command ---------------------------------------------------------------------------------------

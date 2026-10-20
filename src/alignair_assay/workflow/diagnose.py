@@ -20,10 +20,11 @@ data (``summary``, flattened by ``scalars()``).
 
 **Refused** before the model is loaded or anything is written (ValueError): no suite, an unknown suite or variant,
 a batch size or ``max_cases`` below 1, a suite not built in ``layout``, a suite built on another split than ``dev``
-(``test`` is locked for claims), suites built against different references, a device torch cannot use. A missing
-model file is a FileNotFoundError. A model whose germline reference is not the truth reference is refused by
-``replay.load_model_checked`` (ValueError naming the first differing allele), an in-memory one included, and so is
-a model file whose bytes changed while it was loaded.
+(``test`` is locked for claims), suites built against different references, a device torch cannot use, and an
+unverified replay: AlignAIR product code the replay no longer matches (``diagnostics.pin``, naming each changed
+function), unless ``allow_unverified_replay``. A missing model file is a FileNotFoundError. A model whose germline
+reference is not the truth reference is refused by ``replay.load_model_checked`` (ValueError naming the first
+differing allele), an in-memory one included, and so is a model file whose bytes changed while it was loaded.
 
 **Model key.** ``diagnostics.identity.model_key``: ``<weights>-<code>``, the first ``KEY_DIGITS`` hex digits of
 ``weights_sha256`` (the SHA-256 of a model file's bytes, or of an in-memory model's weights, configuration, module
@@ -34,7 +35,8 @@ results.
 **Cache.** A suite's result is written to ``layout.diagnostics_suite_json(model_key, suite)`` with its ``key``,
 everything the result depends on (``suite_key``): the full weights and code digests and the torch version, the
 assay's own scoring code (``assay_code_sha256``), the suite's build (its recorded identity and config hash and the
-SHA-256 of its cases, truth and donors files), the variants, ``max_cases``, the device and the batch size. It is
+SHA-256 of its cases, truth and donors files), the variants, ``max_cases``, the device, the batch size and the
+``replay`` (whether it is verified, and the ``diagnostics.pin.replay_digest`` of the product code it mirrors). It is
 reused only when that key matches in full; otherwise it is removed and computed again, so a suite's record holds
 its latest configuration. The profile is cached the same way (``layout.diagnostics_profile_json``), keyed by the
 model, the assay code (the replay it times is assay code), the device (with its name, the host and torch's CPU
@@ -42,7 +44,6 @@ threads), the batch size and the profiled reads. The report is rendered afresh f
 """
 from __future__ import annotations
 
-import functools
 import hashlib
 import json
 import os
@@ -50,7 +51,8 @@ import platform
 import tempfile
 import time
 import warnings
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
@@ -70,8 +72,8 @@ from alignair_assay.diagnostics.ablation import (
     swap_effects,
 )
 from alignair_assay.diagnostics.heads import calibration_table, head_scores
-from alignair_assay.diagnostics.identity import ALIGNAIR_DIR, alignair_code, model_key, weights_sha256
-from alignair_assay.diagnostics.pin import current_digests, pin_changes, replay_digest, unverified_message
+from alignair_assay.diagnostics.identity import ALIGNAIR_DIR, alignair_code, model_key, replay_pin, weights_sha256
+from alignair_assay.diagnostics.pin import unverified_message
 from alignair_assay.diagnostics.profile import profile_model
 from alignair_assay.diagnostics.replay import load_model_checked, model_device, replay, unwrap_model
 from alignair_assay.metrics import is_informational
@@ -95,7 +97,7 @@ T = TypeVar("T")
 # What a cached suite result and a cached profile are; bump the version when their content or meaning changes.
 SUITE_KIND = "alignair_assay.diagnostics_suite"
 PROFILE_KIND = "alignair_assay.diagnostics_profile"
-CACHE_VERSION = "1"
+CACHE_VERSION = "2"
 # The split diagnostics run on: test is locked for claims.
 SPLIT = "dev"
 # The device a model file is diagnosed on unless another is asked for (an in-memory model's default is its own).
@@ -143,14 +145,6 @@ class DiagnosticsResult:
         return diagnostics_scalars(self.summary)
 
 
-@functools.lru_cache(maxsize=1)
-def replay_pin() -> tuple[str, dict[str, str]]:
-    """``(replay_digest, pin_changes)`` of the AlignAIR code the replay mirrors (``diagnostics.pin``), checked once per
-    process, the first time it is asked for: the code this process runs."""
-    digests = current_digests()
-    return replay_digest(digests), pin_changes(digests)
-
-
 def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, device: str | None = None,
              batch_size: int = 256, variants: Sequence[str] = DEFAULT_VARIANTS, profile: bool | None = None,
              max_cases: int | None = None, allow_unverified_replay: bool = False) -> DiagnosticsResult:
@@ -165,17 +159,19 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     training loop's optimizer carries on. ``profile`` (default: True for a model file, False for a pair, which a
     training loop would otherwise profile and cache again on every call) adds the speed profile.
 
-    **Replay pin.** The replay mirrors AlignAIR product code pinned by digest (``diagnostics.pin``), checked once per
-    process (``replay_pin``). When it has changed, ``evaluate`` refuses to run (ValueError naming each changed
-    function, its new digest and how to re-pin), unless ``allow_unverified_replay``: then it warns
-    (``UnverifiedReplayWarning``) and stamps ``replay_verified`` False and the ``replay_changes`` into the result,
-    every suite's result and the report. Whether the replay is verified, and the digest of the product code, are in
-    every suite's cache key, so verified and unverified results never mix.
+    **Replay pin.** The replay mirrors AlignAIR product code pinned by digest (``diagnostics.pin``), checked when
+    ``diagnostics.identity`` is imported, with the model key's code digest (``replay_pin``). When it has changed,
+    ``evaluate`` refuses to run (ValueError naming each changed function, its new digest and how to re-pin),
+    unless ``allow_unverified_replay``: then it warns (``UnverifiedReplayWarning``) and stamps ``replay_verified``
+    False and the ``replay_changes`` into the result, every suite's result and the report. Whether the replay is
+    verified, and the digest of the product code, are in every suite's cache key, so verified and unverified results
+    never mix.
 
     Each suite's result holds ``suite``; its cache ``key``; ``reads`` (``built``, ``diagnosed``, ``scored``,
     ``excluded``, ``cropped``: reads longer than the model's window, and ``misoriented``: scored reads the model put
-    in another frame than the truth's, whose boundaries are not scored); ``clusters`` (the ``keys`` of
-    ``scoring.clusters.CLUSTER_KEYS`` the diagnosed reads have, and their ``clusters`` and ``cases``);
+    in another frame than the truth's, whose boundaries are not scored); ``clusters`` (``cluster_counts``: the
+    clusters of two or more diagnosed reads, their ``keys`` of ``scoring.clusters.CLUSTER_KEYS``, and how many
+    ``clusters`` and ``cases``);
     ``heads`` and each variant's ``scores`` (metric -> ``mean``, ``n``, ``n_applicable``, ``coverage``);
     ``calibration`` (gene -> ``heads.calibration_table``); ``metrics`` (the compared family, ``compared_metrics``);
     ``variants`` (name -> ``scores``, ``fallbacks``, per-stage ``seconds``, ``substituted``); ``contributions``
@@ -364,6 +360,19 @@ def compared_metrics(primary: Sequence[str], results: dict[str, VariantResult]) 
             if name in scored and not is_informational(name)]
 
 
+def cluster_counts(truths: Iterable, clusters: dict[str, str]) -> dict:
+    """The clusters that make a suite's comparisons cluster-aware, those of two or more of the diagnosed reads
+    (``clusters`` is ``scoring.clusters.cluster_ids`` of ``truths``): ``keys`` (the ``CLUSTER_KEYS`` their reads'
+    ``groups`` have), ``clusters`` (how many) and ``cases`` (the reads in them). A cluster of one read is a read on
+    its own, as ``stats.compare`` treats it: S11 with ``max_cases`` keeping only its ``:fwd`` reads has pair ids but
+    no pair, and is compared read by read."""
+    sizes = Counter(clusters.values())
+    members = {case for case, cluster in clusters.items() if sizes[cluster] > 1}
+    grouped = [truth.groups for truth in truths if truth.case_id in members]
+    return {"keys": [key for key in CLUSTER_KEYS if any(key in groups for groups in grouped)],
+            "clusters": len({clusters[case] for case in members}), "cases": len(members)}
+
+
 def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Reference, layout: RunLayout, *,
                     variants: tuple[str, ...], max_cases: int | None, device: str, batch_size: int) -> dict:
     """One suite's result (see ``evaluate``), as JSON reads it back. ValueError naming the suite when its cases
@@ -394,8 +403,7 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
         "reads": {"built": len(built), "diagnosed": len(cases), "scored": scored, "excluded": len(truths) - scored,
                   "cropped": sum(bool(record.get("length_cropped")) for record in baseline.records),
                   "misoriented": int(sum(case.get("head.misoriented", 0.0) for case in heads.values()))},
-        "clusters": {"keys": [key for key in CLUSTER_KEYS if any(key in truth.groups for truth in truths)],
-                     "clusters": len(set(clusters.values())), "cases": len(clusters)},
+        "clusters": cluster_counts(truths, clusters),
         "heads": _summary(heads), "calibration": calibration, "metrics": family,
         "variants": {variant: {"scores": _summary(found.scores), "fallbacks": found.fallbacks,
                                "seconds": found.seconds, "substituted": list(found.substituted)}

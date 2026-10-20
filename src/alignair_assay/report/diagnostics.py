@@ -125,7 +125,8 @@ def diagnostics_summary(report: dict) -> dict:
 
     ``model_key``, ``source``, ``device``, ``batch_size``, ``split``, ``reads`` (suite -> diagnosed reads),
     ``computed`` and ``reused`` (suite names), ``seconds``, ``replay_verified`` and ``replay_changes`` (names);
-    ``clustered`` (suite -> ``keys`` and ``clusters``, for the suites whose comparisons are cluster-aware);
+    ``clustered`` (suite -> ``keys`` and ``clusters``, for the suites whose comparisons are cluster-aware: those
+    with a cluster of two or more reads, as the suite's ``clusters`` record counts them);
     ``errors`` (metric of ``SUMMARY_METRICS`` -> suite -> ``baseline`` summary entry, ``steps`` (stage of
     ``STAGES`` -> the step's ``delta``, ``verdict``, ``test``, ``n_paired``, ``n_clusters`` and the ``stages`` it
     spans), ``true_germline`` (mean), ``gap`` (1 - that mean), ``argmax_decoder`` (the swap's comparison entry, the
@@ -509,6 +510,8 @@ def suite_markdown(report: dict, name: str) -> str:
 
 
 def _clusters_text(clusters: dict) -> str:
+    """A suite's ``clusters`` record as its detail table shows it: ``none`` without a cluster of two or more reads
+    (``workflow.diagnose.cluster_counts`` counts only those), else the count with its keys and reads."""
     if not clusters.get("clusters"):
         return "none"
     return f"{clusters['clusters']} ({'/'.join(clusters['keys'])}; {clusters['cases']} reads)"

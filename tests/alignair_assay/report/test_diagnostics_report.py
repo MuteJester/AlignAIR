@@ -319,5 +319,3 @@ def test_rendering_does_not_change_the_report():
     profile_markdown(report)
     diagnostics_scalars(report["summary"])
     assert report == before
-
-

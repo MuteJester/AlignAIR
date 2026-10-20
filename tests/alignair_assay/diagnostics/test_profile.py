@@ -114,7 +114,8 @@ def test_the_profile_puts_the_model_back_on_its_device(make_small_model, s0_read
         assert moves == [cpu, cpu]
     finally:
         del model.to
-        del model.meta_tower.forward
+        # Set only once the test gets that far: a failure before it must not be masked by an AttributeError.
+        vars(model.meta_tower).pop("forward", None)
 
 
 @pytest.mark.skipif(os.environ.get("ALIGNAIR_ASSAY_GPU") != "1", reason="set ALIGNAIR_ASSAY_GPU=1")

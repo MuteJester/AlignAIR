@@ -541,9 +541,10 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    JSON of the identity), the split, the host, the checkout's git state, the GenAIRR provenance and `warnings` (an
    AlignAIR image not pinned by digest, or a model not pinned to a version). The identity is what the outputs
    depend on: suites, tools, split, reference, seed, scale and the tools' fingerprints (`settings`). Workers, threads
-   and `--speed` are not part of it, so an upgrade in place, a moved image tag, a retrained checkpoint or an edit of
-   the AlignAIR code alignair-local runs (a commit, or uncommitted changes anywhere in the checkout, included) is a
-   new configuration even when every path and name is the same.
+   and `--speed` are not part of it, so an upgrade in place, a moved image tag, a retrained checkpoint, an edit of
+   the AlignAIR code alignair-local runs (any change to a `.py` or `.pyx` file under `src/alignair`, committed or
+   not) or another torch version is a new configuration even when every path and name is the same. A commit, or an
+   uncommitted change elsewhere in the checkout, leaves the fingerprint as it is.
 2. **Build.** Each suite is built, unless its `build.json` already has the suite's identity (see What invalidates a
    build) and its truth file the current truth version. A rebuilt suite prints which identity fields changed.
 3. **Shared reference.** With `alignair` among the tools and no `reference/germline.fasta` yet, the image exports
@@ -1009,9 +1010,9 @@ raw forward outputs (logits included, concatenated over batches), the cleaned an
 forward-frame reads, the corrected `Segments`, the allele calls, the germline alignments, the light records, the
 AIRR rows, the wall time per stage (`STAGES`), each allele head's allele names (`allele_names`) and the per-read
 allowed-allele masks the selector applied (`allowed`: a multi-locus model's locus masks, None for a one-locus
-model). Each stage is AlignAIR's own function, called in the order `alignair.predict.pipeline.predict` calls it, with the
-`PredictConfig` that `alignair.api.predict_sequences` builds (`predict_config`); the forward pass builds each batch
-dict itself, so orientation can be teacher-forced.
+model). Each stage is AlignAIR's own function, called in the order `alignair.predict.pipeline.predict` calls it,
+with the `PredictConfig` that `alignair.api.predict_sequences` builds (`predict_config`); the forward pass builds
+each batch dict itself, so orientation can be teacher-forced.
 
 `replay(..., substitutions=Substitutions(...))` feeds values in between the stages, never inside one; the default
 substitutes nothing. Each per-read list has one entry per read, and a None entry keeps the model's value for that
@@ -1050,11 +1051,13 @@ with the released checkpoint (`ALIGNAIR_ASSAY_MODEL`).
 (`pipeline.predict`, `predict_sequences`, `run_model`; `pin.code_digest`), and `predict_sequences` must still run
 `pipeline.predict` (`api._predict`). `pin.pin_changes()` names what no longer holds, with the new digests:
 - the equivalence test fails on any change, and stays the place that re-pins;
-- `workflow.diagnose.evaluate` checks it once per process and refuses to run, naming the changed functions and
-  their new digests, unless `allow_unverified_replay=True` (`diagnose --allow-unverified-replay`). Then it warns
-  (`UnverifiedReplayWarning`) and stamps `replay_verified: false` and `replay_changes` into the result, every
-  `suite.json` and the report. Whether the replay is verified, and the digest of the product code, are part of each
-  suite's cache key, so verified and unverified results never mix.
+- `diagnostics.identity.replay_pin()` takes it once, when `diagnostics.identity` is imported, beside the model
+  key's code digest, so the two describe the same code. `workflow.diagnose.evaluate` refuses to run on a changed
+  pin, naming the changed functions and their new digests, unless `allow_unverified_replay=True`
+  (`diagnose --allow-unverified-replay`). Then it warns (`UnverifiedReplayWarning`) and stamps
+  `replay_verified: false` and `replay_changes` into the result, every `suite.json` and the report. Whether the
+  replay is verified, and the digest of the product code, are part of each suite's cache key, so verified and
+  unverified results never mix.
 
 To re-pin after an AlignAIR change: update `diagnostics/replay.py` to the new code, run the equivalence tests
 (`tests/alignair_assay/diagnostics/test_replay.py`, with `ALIGNAIR_ASSAY_MODEL` set), then put the new digests in
@@ -1296,9 +1299,10 @@ training dashboard: `{"S1/baseline/junction.nt_exact": 0.77, "S1/delta/segmentat
 (`report.diagnostics.diagnostics_scalars`; a missing value is left out).
 
 A suite's result holds `suite`, its cache `key`, `reads` (`built`, `diagnosed`, `scored`, `excluded`, `cropped`,
-`misoriented`: scored reads the model put in another frame than the truth's, see Head metrics), `clusters` (the
-`CLUSTER_KEYS` its diagnosed reads have, and their `clusters` and `cases`), `heads`
-and each variant's `scores` (per metric: `mean`, `n`, `n_applicable`, `coverage`),
+`misoriented`: scored reads the model put in another frame than the truth's, see Head metrics), `clusters`
+(`cluster_counts`: the clusters of two or more diagnosed reads, their `CLUSTER_KEYS`, and how many `clusters` and
+`cases`; a cluster of one read is compared as a read on its own, so S11 with only its `:fwd` reads diagnosed is not
+cluster-aware), `heads` and each variant's `scores` (per metric: `mean`, `n`, `n_applicable`, `coverage`),
 `calibration` (per gene), `metrics` (the compared family), `variants` (`scores`, `fallbacks`, per-stage `seconds`,
 `substituted`), `contributions` (`stage_contributions`), `swaps` (`swap_effects`), the `seconds` it took,
 `replay_verified` and `replay_changes` and, in the result only, `reused`.
