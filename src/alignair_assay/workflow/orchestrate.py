@@ -35,7 +35,7 @@ from alignair_assay.runners.reference import ensure_shared_reference
 from alignair_assay.scoring.pipeline import load_truth, write_scores
 from alignair_assay.suites import get_suite
 from alignair_assay.suites.engine import DEFAULT_SEED, check_split
-from alignair_assay.workflow.build import build_is_current, build_suite
+from alignair_assay.workflow.build import build_changes, build_suite
 from alignair_assay.workflow.scoring import (
     comparison_report,
     read_genotypes,
@@ -162,7 +162,11 @@ def run_all(cfg: RunConfig, layout: RunLayout, *, force: bool = False) -> int:
        manifest is replaced (``replaced`` records the old hash and the changed fields) and the steps below redo
        what the change affects. ``warnings`` notes an AlignAIR image not pinned by digest or a model not pinned to
        a version.
-    2. Build each suite (``workflow.build.build_suite``), skipped when ``build_is_current``.
+    2. Build each suite (``workflow.build.build_suite``), skipped when its build is current
+       (``workflow.build.build_changes`` is empty: the same identity, which covers the suite's and the truth's
+       source and the GenAIRR in use). A rebuilt suite with byte-identical reads keeps the tools' runs on it, whose
+       predictions depend only on the reads; the oracle's run, which records the truth file's digest, is redone
+       when that file changed.
     3. Shared reference: with ``alignair`` among the tools and no shared reference yet, the image exports its
        model's reference there; then ``ensure_shared_reference`` verifies it (or writes it from the truth), so a
        model with another reference stops the run before any tool runs.
@@ -315,14 +319,18 @@ def _pinning_warnings(cfg: RunConfig) -> list[str]:
 
 
 def _build(cfg: RunConfig, layout: RunLayout, reference: Reference) -> None:
+    """Build every suite whose build is not current, saying what changed (``workflow.build.build_changes``)."""
     digest = reference.digest()
     for name in cfg.suites:
-        if build_is_current(layout, name, split=cfg.split, reference_digest=digest, seed=cfg.seed, scale=cfg.scale):
+        changes = build_changes(layout, name, split=cfg.split, reference_digest=digest, seed=cfg.seed,
+                                scale=cfg.scale)
+        if not changes:
             print(f"build {name}: up to date, skipped", flush=True)
             continue
         build = build_suite(name, layout, reference_name=cfg.reference, split=cfg.split, seed=cfg.seed,
                             scale=cfg.scale, workers=cfg.workers)
-        print(f"build {name}: {build['n_cases']} cases in {build['seconds']:.1f} s", flush=True)
+        why = "" if changes == ["no build record"] else f" (rebuilt; changed: {', '.join(changes)})"
+        print(f"build {name}: {build['n_cases']} cases in {build['seconds']:.1f} s{why}", flush=True)
 
 
 def _shared_reference(cfg: RunConfig, layout: RunLayout, reference: Reference, runners: dict[str, Runner]) -> None:

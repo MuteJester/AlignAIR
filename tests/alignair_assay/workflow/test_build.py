@@ -68,8 +68,13 @@ def test_build_writes_layout(tmp_path, reference):
     assert build["n_cases"] == 50 and build["seconds"] > 0
     assert {name: s["requested"] for name, s in build["strata"].items()} == {"plain": 30, "with_d": 20}
     assert {name: s["cases"] for name, s in build["strata"].items()} == {"plain": 30, "with_d": 20}
-    canonical = json.dumps({"suite": "S0", "split": "dev", "reference_digest": reference.digest(), "seed": 11,
-                            "scale": 1.0}, sort_keys=True, separators=(",", ":"))
+    genairr = genairr_provenance()
+    assert build["identity"] == {
+        "suite": "S0", "split": "dev", "reference_digest": reference.digest(), "seed": 11, "scale": 1.0,
+        "suite_source": build_module.suite_source_digest("S0"), "truth_source": build_module.truth_source_digest(),
+        "truth_version": "3", **{key: genairr[key] for key in ("genairr_version", "genairr_git_commit",
+                                                                "genairr_git_dirty", "genairr_source_sha256")}}
+    canonical = json.dumps(build["identity"], sort_keys=True, separators=(",", ":"))
     assert build["config_hash"] == hashlib.sha256(canonical.encode()).hexdigest()
 
     summary = build["truth"]
@@ -86,6 +91,51 @@ def test_config_hash_follows_split_and_scale(tmp_path):
     _, test = _build(tmp_path / "test", scale=0.2, split="test")
     _, larger = _build(tmp_path / "larger", scale=0.4)
     assert len({dev["config_hash"], test["config_hash"], larger["config_hash"]}) == 3
+
+
+def test_source_and_simulator_changes_make_a_build_stale(tmp_path, monkeypatch, reference):
+    layout, _ = _build(tmp_path, scale=0.2)
+    options = dict(split="dev", reference_digest=reference.digest(), seed=11, scale=0.2)
+    assert build_module.build_changes(layout, "S0", **options) == []
+    assert build_module.build_is_current(layout, "S0", **options)
+    real_suite, real_truth = build_module.suite_source_digest, build_module.truth_source_digest
+    real_genairr = build_module.genairr_provenance
+    changes = {
+        # An edited catalog module (or shared suite module) of this suite only.
+        "suite_source": lambda: monkeypatch.setattr(
+            build_module, "suite_source_digest", lambda name: "edited" if name == "S0" else real_suite(name)),
+        "truth_source": lambda: monkeypatch.setattr(build_module, "truth_source_digest", lambda: "edited"),
+        # A GenAIRR checkout moved to another commit, or rebuilt in place while dirty.
+        "genairr_git_commit": lambda: monkeypatch.setattr(
+            build_module, "genairr_provenance", lambda: {**real_genairr(), "genairr_git_commit": "0" * 40}),
+        "genairr_source_sha256": lambda: monkeypatch.setattr(
+            build_module, "genairr_provenance", lambda: {**real_genairr(), "genairr_source_sha256": "0" * 64}),
+    }
+    for field, change in changes.items():
+        change()
+        assert build_module.build_changes(layout, "S0", **options) == [field]
+        assert not build_module.build_is_current(layout, "S0", **options)
+        monkeypatch.setattr(build_module, "suite_source_digest", real_suite)
+        monkeypatch.setattr(build_module, "truth_source_digest", real_truth)
+        monkeypatch.setattr(build_module, "genairr_provenance", real_genairr)
+    assert build_module.build_is_current(layout, "S0", **options)
+    assert build_module.build_changes(layout, "S0", **{**options, "seed": 12}) == ["seed"]
+    # A build record written before the identity was recorded is redone.
+    record = json.loads(layout.build_json("S0").read_text())
+    del record["identity"]
+    layout.build_json("S0").write_text(json.dumps(record))
+    assert build_module.build_changes(layout, "S0", **options) == ["identity (not recorded)"]
+
+
+def test_suite_source_digest_covers_its_catalog_module(monkeypatch):
+    # Each suite's digest covers its own catalog module and the shared suite code, not the other suites' modules.
+    assert build_module.suite_source_digest("S1") != build_module.suite_source_digest("S2")
+    assert build_module.suite_source_digest("S0") == build_module.suite_source_digest("S0_EXHAUST")
+    files = build_module.suite_source_files("S6")
+    names = {path.relative_to(build_module.PACKAGE_DIR).as_posix() for path in files}
+    assert names == {"suites/catalog/s06_d_observability.py", *build_module.SUITE_SOURCES}
+    assert "truth/genairr.py" in {path.relative_to(build_module.PACKAGE_DIR).as_posix()
+                                  for path in build_module.truth_source_files()}
 
 
 def test_failed_rebuild_leaves_no_build_record(tmp_path, monkeypatch):

@@ -302,8 +302,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   `reads.fasta`, `donors.json` (suites with donors only) and `build.json`. Every name is checked before anything is
   built; an unknown suite or split, or a scale that is not positive, exits with status 2. The truth header records
   `kind`, `version`, `reference`, `reference_digest`, the GenAIRR provenance, `suite`, `split`, `seed`, `scale` and
-  `n_cases`. `build.json` records the same configuration, its `config_hash` (SHA-256 of the canonical JSON of
-  `{suite, split, reference_digest, seed, scale}`), the per-stratum generation stats (`requested` in
+  `n_cases`. `build.json` records the same configuration, its `identity` and `config_hash` (SHA-256 of the
+  canonical JSON of the identity; see What invalidates a build), the per-stratum generation stats (`requested` in
   `requested_unit`: `clones` for a clonal stratum, `records` otherwise; `accepted`, `generated` and `cases` count
   records; `rounds`; `clones` for a clonal stratum), the truth summary
   (`truth.summary.truth_summary`: excluded cases, warnings, unscorable genes, `simulator_calls`, primary
@@ -335,7 +335,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   before anything is timed; a configuration that fails is recorded with its error, the others are still timed,
   and the command exits with status 2.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
-  GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit` and `genairr_git_dirty`. The
+  GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit`, `genairr_git_dirty` and
+  `genairr_source_sha256` (the package directory's content: sources, compiled engine and data). The
   command then prints the excluded cases, warnings, unscorable genes, the two simulator-call counts ("simulator
   call list differs from the generative set" and "simulator first call is not the generative allele", see Truth
   conventions) and primary fallbacks.
@@ -378,8 +379,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    split, reference, seed, scale and the tools' fingerprints (`settings`). Workers, threads and `--speed` are not
    part of it, so an upgrade in place, a moved image tag or a retrained checkpoint is a new configuration even
    when every path and name is the same.
-2. **Build.** Each suite is built, unless its `build.json` already has the suite's config hash and its truth file
-   the current truth version.
+2. **Build.** Each suite is built, unless its `build.json` already has the suite's identity (see What invalidates a
+   build) and its truth file the current truth version. A rebuilt suite prints which identity fields changed.
 3. **Shared reference.** With `alignair` among the tools and no `reference/germline.fasta` yet, the image exports
    its model's reference there. `ensure_shared_reference` then verifies the file against the truth reference, or
    writes it from the truth. A model with another reference stops the run before any tool runs, and its export is
@@ -414,6 +415,26 @@ unchanged input files. A failed run is redone. With `--speed`, a configuration's
 configuration succeeded with the same tool, threads, CPUs, device and (alignair-local) checkpoint digest; a failed
 or changed one is measured again. Scores, comparisons and the report are always recomputed from the current runs,
 so a change to the scoring code takes effect on the next `all`. It never mixes in stale outputs.
+
+**What invalidates a build.** A suite's build is redone by the next `all` (no `--force` needed: the manifest does not
+change) whenever a field of its identity (`workflow.build.build_identity`) differs from the one its `build.json`
+records:
+
+- the configuration: `suite`, `split`, `reference_digest`, `seed` and `scale`;
+- `suite_source`: the SHA-256 (`core.provenance.files_digest`) of the suite's catalog module and the code every
+  suite's cases come from (`suites/base.py`, `engine.py`, `donors.py`, `recipes.py`, `novel.py`, `core/cases.py`,
+  `core/seqops.py`), so an edited recipe, stratum count, rate, label, `accept` or donor parameter rebuilds that
+  suite (and an edit of the shared modules every suite);
+- `truth_source`: the SHA-256 of every `truth/*.py` and the core modules truth uses (`core/cigar.py`,
+  `genotype.py`, `reference.py`, `seqops.py`), so a truth rule changed in place rebuilds every suite without a
+  version bump; and `truth_version` (`truth.io.TRUTH_VERSION`, kept for a changed file format);
+- the GenAIRR in use: its version, git commit and dirty flag, and `genairr_source_sha256`, the content of its
+  package directory, so a checkout rebuilt in place while dirty is a new simulator too.
+
+Any byte counts, a comment or whitespace edit included: a few needless rebuilds (a full build takes about 36 s) are
+the price of never reusing a stale one. A rebuild rewrites the suite's files; a tool's run on it is kept when the
+suite's reads are byte-identical (its predictions depend on nothing else), and redone otherwise, while a run that
+recorded the truth or donors file (the oracle, the genotype arm) is redone when that file changed.
 
 **Another configuration.** In a run directory whose manifest has another config hash, `all` stops before changing
 anything. The error names every field that differs, as `field old -> new`, for example `seed 20261019 -> 7`.
@@ -540,7 +561,8 @@ A suite is a declarative GenAIRR recipe per stratum; `suites.engine` turns it in
    - `cohort` (run over the suite's donors with `run_cohort`, which needs `Suite.donors`; cases get
      `groups["subject"]`) or `clonal` (the recipe ends in `clonal_lineage`; every record is kept; cases get
      `groups["clone"]`).
-4. Register the suite in `_CATALOG` in `suites/__init__.py`.
+4. Register the suite in `_CATALOG` in `suites/__init__.py`, and its module in `_MODULES` (`suites.catalog_module`
+   finds the module whose source is part of the suite's build identity).
 5. Test it in `tests/alignair_assay/suites/` at a small scale: counts, labels and groups, and the oracle check
    `testing.assert_oracle_perfect` on its truth (with `genotypes=workflow.scoring.read_genotypes(donors.json)` for
    a suite with donors, as `all` scores it). A suite that fails the oracle check has a truth defect.

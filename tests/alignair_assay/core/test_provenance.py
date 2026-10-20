@@ -9,9 +9,10 @@ import pytest
 
 from alignair_assay.cli import main
 from alignair_assay.core.jsonl import read_header, write_jsonl
-from alignair_assay.core.provenance import genairr_provenance, git_state, sha256_file
+from alignair_assay.core.provenance import files_digest, genairr_provenance, git_state, sha256_file, tree_digest
 
-GENAIRR_FIELDS = {"genairr_version", "genairr_source", "genairr_git_commit", "genairr_git_dirty"}
+GENAIRR_FIELDS = {"genairr_version", "genairr_source", "genairr_git_commit", "genairr_git_dirty",
+                  "genairr_source_sha256"}
 
 
 def test_genairr_provenance_fields(genairr):
@@ -23,6 +24,39 @@ def test_genairr_provenance_fields(genairr):
     commit = prov["genairr_git_commit"]
     assert commit is None or re.fullmatch(r"[0-9a-f]{40}", commit)
     assert prov["genairr_git_dirty"] in ((None,) if commit is None else (True, False))
+    # The package's content, compiled engine included: a dirty checkout rebuilt in place is another simulator.
+    assert prov["genairr_source_sha256"] == tree_digest(prov["genairr_source"])
+
+
+def test_files_digest_tracks_names_and_bytes(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    a, b = tmp_path / "pkg" / "a.py", tmp_path / "b.py"
+    a.write_text("x = 1\n")
+    b.write_text("y = 2\n")
+    digest = files_digest(tmp_path, [b, a])
+    assert digest == files_digest(tmp_path, [a, b])  # order-free
+    a.write_text("x = 2\n")
+    assert files_digest(tmp_path, [a, b]) != digest  # an edit
+    a.write_text("x = 1\n")
+    assert files_digest(tmp_path, [a, b]) == digest
+    renamed = tmp_path / "pkg" / "c.py"
+    a.rename(renamed)
+    assert files_digest(tmp_path, [renamed, b]) != digest  # a rename
+    assert files_digest(tmp_path, [b]) != files_digest(tmp_path, [renamed, b])  # a removal
+
+
+def test_tree_digest_skips_bytecode(tmp_path):
+    (tmp_path / "sub" / "__pycache__").mkdir(parents=True)
+    (tmp_path / "sub" / "m.py").write_text("x = 1\n")
+    (tmp_path / "ext.pyx").write_text("cdef int x\n")
+    (tmp_path / "notes.txt").write_text("n\n")
+    digest = tree_digest(tmp_path, suffixes=(".py", ".pyx"))
+    assert digest == files_digest(tmp_path, [tmp_path / "sub" / "m.py", tmp_path / "ext.pyx"])
+    (tmp_path / "sub" / "__pycache__" / "m.cpython-312.pyc").write_bytes(b"\0")
+    (tmp_path / "notes.txt").write_text("changed\n")
+    assert tree_digest(tmp_path, suffixes=(".py", ".pyx")) == digest
+    assert tree_digest(tmp_path) == files_digest(tmp_path, [tmp_path / "sub" / "m.py", tmp_path / "ext.pyx",
+                                                            tmp_path / "notes.txt"])
 
 
 @pytest.mark.parametrize("ignored", [True, False])
@@ -44,6 +78,7 @@ def test_genairr_git_state_only_from_a_checkout_that_tracks_it(tmp_path, monkeyp
 
     prov = genairr_provenance()
     assert prov["genairr_source"] == str(package.resolve())
+    assert prov["genairr_source_sha256"] == tree_digest(package)
     if ignored:
         assert (prov["genairr_git_commit"], prov["genairr_git_dirty"]) == (None, None)
     else:

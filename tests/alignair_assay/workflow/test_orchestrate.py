@@ -16,6 +16,7 @@ from alignair_assay.runners import RUNNERS  # noqa: E402
 from alignair_assay.runners.base import RunResult, fasta_ids, read_run_json  # noqa: E402
 from alignair_assay.runners.oracle import OracleRunner  # noqa: E402
 from alignair_assay.suites import SUITES, get_suite  # noqa: E402
+from alignair_assay.workflow import build as build_module  # noqa: E402
 from alignair_assay.workflow.orchestrate import RunConfig, check_config, config_hash, run_all  # noqa: E402
 
 JUNCTION_COLUMNS = ("junction", "junction_aa", "junction_start", "junction_end")
@@ -219,6 +220,39 @@ def test_resume_skips_completed_steps(half_run, tmp_path, capsys):
     assert "run half S0/shared: return code 0" in capsys.readouterr().out
     assert read_run_json(layout.run_json("half", "S0", "shared")).provenance["reads"]["sha256"] == sha256_file(
         layout.reads("S0"))
+
+
+def test_suite_source_change_rebuilds_only_that_suite(half_run, tmp_path, monkeypatch, capsys):
+    root = _copy(half_run[0], tmp_path)
+    cfg = half_run[1]
+    layout = RunLayout(root)
+    before = _outputs(layout, cfg)
+    reads = layout.reads("S1").read_bytes()
+    real = build_module.suite_source_digest
+    # A no-op edit of S1's catalog module: its source digest changes, S0's does not.
+    monkeypatch.setattr(build_module, "suite_source_digest", lambda name: "edited" if name == "S1" else real(name))
+    capsys.readouterr()
+    _, status = _all(root)
+    assert status == 0
+    printed = capsys.readouterr().out
+    assert "build S0: up to date, skipped" in printed
+    assert "build S1: 100 cases in" in printed and "(rebuilt; changed: suite_source)" in printed
+    after = _outputs(layout, cfg)
+    changed = {path.relative_to(root).as_posix() for path in before if after[path] != before[path]}
+    assert {"suites/S1/cases.jsonl.gz", "suites/S1/truth.jsonl.gz", "suites/S1/build.json"} <= changed
+    assert not any(path.startswith("suites/S0/") or "/S0/" in path for path in changed)
+    # The reads are byte-identical, so a tool's run that records only them would be kept; both runs here read the
+    # suite's truth (oracle rows), whose new file they record, so both are redone.
+    assert "runs/half/S1/shared/run.json" in changed and "runs/oracle/S1/shared/run.json" in changed
+    assert layout.reads("S1").read_bytes() == reads
+    for tool in ("oracle", "half"):
+        provenance = read_run_json(layout.run_json(tool, "S1", "shared")).provenance
+        assert provenance["truth"]["sha256"] == sha256_file(layout.truth("S1"))
+    assert json.loads(layout.build_json("S1").read_text())["identity"]["suite_source"] == "edited"
+    assert _report(root)["failed_runs"] == []
+    # Resumed with the edit in place, nothing is rebuilt or rerun.
+    _, status = _all(root)
+    assert status == 0 and "build S1: up to date, skipped" in capsys.readouterr().out
 
 
 def test_stale_config_refused(toy_run, tmp_path):
