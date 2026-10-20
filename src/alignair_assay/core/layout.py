@@ -24,6 +24,9 @@ RUN/
   diagnostics/<model_key>/profile.md       the speed profile of the last diagnostics report
   diagnostics/<model_key>/diagnostics.json, diagnostics.md   the last diagnostics report and its one-page summary
   real/<donor>/genotype.json          a real donor's genotype, with the genes its genomic contigs capture
+  real/<donor>/reads.fasta            the donor's preprocessed unique sequences (+ reads.tsv, one row each)
+  real/<donor>/preprocess.json        the preprocessing record, written last (+ preprocess_logs/; preprocess_work/
+                                      while it runs)
 ```
 
 ``RunLayout`` only joins paths: it never reads, writes or creates anything.
@@ -227,6 +230,26 @@ class RunLayout:
         """The donor's genotype from genomic sequencing, with the genes its contigs capture and how that was
         computed."""
         return self.real_donor_dir(donor) / "genotype.json"
+
+    def real_reads(self, donor: str) -> Path:
+        """The donor's preprocessed unique sequences as FASTA, the reads every tool is given."""
+        return self.real_donor_dir(donor) / "reads.fasta"
+
+    def real_reads_meta(self, donor: str) -> Path:
+        """One row per sequence of ``real_reads``, in its order: isotype, protocol, counts and primer-masked spans."""
+        return self.real_donor_dir(donor) / "reads.tsv"
+
+    def real_preprocess_json(self, donor: str) -> Path:
+        """The donor's preprocessing record (written last): counts per step, classifier evidence, fingerprint."""
+        return self.real_donor_dir(donor) / "preprocess.json"
+
+    def real_preprocess_logs(self, donor: str) -> Path:
+        """The pRESTO output of each preprocessing step."""
+        return self.real_donor_dir(donor) / "preprocess_logs"
+
+    def real_preprocess_work(self, donor: str) -> Path:
+        """The preprocessing container's one writable directory, removed once the outputs are written."""
+        return self.real_donor_dir(donor) / "preprocess_work"
 
 
 def _component(name: str) -> str:

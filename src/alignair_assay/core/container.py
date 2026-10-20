@@ -87,12 +87,15 @@ def container_name(*parts: str) -> str:
 
 
 def hardened_run(image: str, args: list[str], *, name: str, mounts: list[Mount], workdir: str | None = None,
-                 env: dict[str, str] | None = None) -> list[str]:
-    """The ``docker run`` argv that runs ``args`` in pinned image ``image`` as the module docstring describes.
-    ValueError for an image that is not pinned by digest or a mount whose container path is not absolute."""
+                 env: dict[str, str] | None = None, cpus: int | None = None) -> list[str]:
+    """The ``docker run`` argv that runs ``args`` in pinned image ``image`` as the module docstring describes, on at
+    most ``cpus`` CPUs when given. ValueError for an image that is not pinned by digest or a mount whose container
+    path is not absolute."""
     pinned_repo_digest(image)
     argv = ["docker", "run", "--rm", "--name", name, "--network", "none", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--user", f"{os.getuid()}:{os.getgid()}"]
+    if cpus is not None:
+        argv += ["--cpus", str(cpus)]
     for key, value in (env or {}).items():
         argv += ["-e", f"{key}={value}"]
     for mount in mounts:

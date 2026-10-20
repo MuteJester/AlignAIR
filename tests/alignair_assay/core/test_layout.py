@@ -52,6 +52,11 @@ def test_layout_paths(tmp_path):
         (layout.real_root, "real"),
         (layout.real_donor_dir("SC-23"), "real/SC-23"),
         (layout.real_genotype_json("W-97"), "real/W-97/genotype.json"),
+        (layout.real_reads("SC-23"), "real/SC-23/reads.fasta"),
+        (layout.real_reads_meta("SC-23"), "real/SC-23/reads.tsv"),
+        (layout.real_preprocess_json("SC-23"), "real/SC-23/preprocess.json"),
+        (layout.real_preprocess_logs("SC-23"), "real/SC-23/preprocess_logs"),
+        (layout.real_preprocess_work("SC-23"), "real/SC-23/preprocess_work"),
     ]
     for path, relative in expected:
         assert path == tmp_path / relative, relative
@@ -88,3 +93,7 @@ def test_layout_rejects_names_that_are_not_one_component(tmp_path, name):
         layout.real_donor_dir(name)
     with pytest.raises(ValueError, match="path component"):
         layout.real_genotype_json(name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.real_reads(name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.real_preprocess_work(name)

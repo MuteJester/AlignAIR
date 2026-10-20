@@ -138,6 +138,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318) and the paper's novel alleles (`sd3_novel`, `sd3_only`) | core, real.genotype |
 | `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the pilot pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
 | `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), the capture rule (`captured_genes`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
+| `real.preprocess` | annotation-free preprocessing of a real run (see Real data): the protocol classifier (`classify_protocol`), the pRESTO recipes (`recipe`) run in the pinned Immcantation container (`IMMCANTATION_IMAGE`), the primers (`VH_PRIMERS`, `C_PRIMERS_MULTIPLEX`, `CREGION_RC`), the cap (`cap_sequences`), the primer spans (`primer_spans`) and `preprocess_run` | core, real.preprocess |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -387,6 +388,9 @@ RUN/
   speed/runs/<config>/                each timed configuration's last tiny/ and full/ run (predictions, logs)
   report.json, report.md              the run summary and the run report (`all`, `report`)
   real/<donor>/genotype.json          a real donor's genotype, with the genes its genomic contigs capture
+  real/<donor>/reads.fasta            the donor's preprocessed unique sequences (+ reads.tsv, one row each)
+  real/<donor>/preprocess.json        the preprocessing record, written last (+ preprocess_logs/; preprocess_work/
+                                      while it runs)
   diagnostics/<model_key>/            one model's diagnostics (`diagnose`, `workflow.diagnose`)
     <S>/suite.json                    one suite's cached result, with the key it was computed for
     <S>/report.md                     one suite's detail of the last report
@@ -414,6 +418,8 @@ RUN/
 | `diagnostics/<model_key>/<S>/report.md`, `profile.md` | `diagnostics_suite_md(key, s)`, `diagnostics_profile_md(key)` |
 | `diagnostics/<model_key>/diagnostics.json`, `diagnostics.md` | `diagnostics_json(key)`, `diagnostics_md(key)` |
 | `real/`, `real/<donor>/`, `real/<donor>/genotype.json` | `real_root`, `real_donor_dir(donor)`, `real_genotype_json(donor)` |
+| `real/<donor>/reads.fasta`, `reads.tsv`, `preprocess.json` | `real_reads(donor)`, `real_reads_meta(donor)`, `real_preprocess_json(donor)` |
+| `real/<donor>/preprocess_logs/`, `preprocess_work/` | `real_preprocess_logs(donor)`, `real_preprocess_work(donor)` |
 
 Suites are `S0` (toy: tests and smoke runs), `S0_EXHAUST` and `S0_COHORT` (tests only) and `S1`–`S12`; arms are
 `shared` and `genotype`; splits are `dev` (the default, for model iteration) and `test` (locked, used only for
@@ -1352,7 +1358,8 @@ record whose key was edited is recomputed.
 
 P3 scores the tools on real human IGH repertoires (BioProject PRJNA555323; Rodriguez et al. 2023, Nat Commun
 14:4419) against each donor's own alleles from genomic long-read sequencing, published by VDJbase (genomic study
-P25, CC0). This section grows with P3a; so far it covers the downloads and the donor genotypes.
+P25, CC0). This section grows with P3a; so far it covers the downloads, the donor genotypes and the preprocessing of
+the reads.
 
 **Data root.** Downloads live under a data root given to the commands, never in a run directory or the repository.
 Each source has its own directory there, with an `MD5SUMS.txt`:
@@ -1367,7 +1374,7 @@ Each source has its own directory there, with an `MD5SUMS.txt`:
 - `genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx` (the paper's supplementary data).
 
 Tests that read it run only when `ALIGNAIR_ASSAY_DATA` names it; those that download need `ALIGNAIR_ASSAY_NETWORK=1`
-too, and those that run a container (sra-tools, samtools) `ALIGNAIR_ASSAY_DOCKER=1`.
+too, and those that run a container (sra-tools, samtools, Immcantation) `ALIGNAIR_ASSAY_DOCKER=1`.
 
 **Fetch (`real.fetch`).** Every file is pinned in the module (size, md5 or S3 ETag, read count, commit, image
 digest), so a fresh data root gets the same bytes or a refusal. A file already there is reused only when it is the
@@ -1461,12 +1468,44 @@ overlap, do not capture it.
   as the current user, with no network and no capabilities, on the BAM's directory alone mounted read-only, and
   kills the container by name on a timeout; only its SAM text is parsed (`parse_sam_spans`).
   `donor_capture(genotype, bam, bed)` returns the genotype with `captured` set and, in `source["capture"]`, the
-  image, the whole command, the inputs' SHA-256s, the module's, a `fingerprint` of those, the spans per haplotype,
+  image, the whole command, the SHA-256s of the inputs (the genotype's CSV among them, since every carried gene is
+  captured) and of the module, a `fingerprint` of those, the spans per haplotype,
   and the gene lists `spanned`, `carried_not_spanned` and `spanned_not_carried` (candidate deletions or assembly
   gaps). Its BAM must be the genotype's VDJbase sample.
 - On the pilot donors the contigs span 40 to 52 V genes. Calls to V genes the donor lacks can be `unsupported_gene`
   only for 0 to 3 genes per donor (IGHV4-30-2 on SC-23; IGHV3-11, IGHV3-15 and IGHV4-30-2 on W-97; IGHV4-31 on
   SC-4); calls to the donor's other missing genes are excluded.
+
+**Preprocessing (`real.preprocess`).** Each run's pairs become the unique sequences the tools are given, with pRESTO
+0.7.9 in `IMMCANTATION_IMAGE` (immcantation/suite 4.8.0, pinned by digest), one container per step: as the current
+user, with no network and no capabilities, on at most 8 CPUs, the reads mounted read-only and one writable work
+directory. No V(D)J tool and no germline reference is used; the only sequences given are the primers.
+
+- The protocol is read from the first 2,000 pairs (`classify_protocol`): `"race"` when R2[12:16] is the `GTAC`
+  linker in at least 80% of them, `"multiplex"` when at least 80% of R1 start with one of the paper's VH primers
+  (`VH_PRIMERS`) and 80% of R2 with an IgM/IgG/IgA primer (`C_PRIMERS_MULTIPLEX`), each within 2 mismatches;
+  otherwise, or when both hold, `"unknown"`, and the run is refused with the fractions in its record.
+  All eight pilot runs classify as their group: the SC runs `race` (linker in 94.4-96.1% of pairs), the W runs
+  `multiplex` (VH primer in 94.7-95.8%, C primer in 90.3-93.5%).
+- Full-quality reads are first trimmed at Q20 and kept from 125 nt (the paper); SRA-Lite reads skip that, and the
+  record says so. 5'RACE: UMI (R2's first 12 nt) and the `GTAC` + `GGG` cut; the isotype from Immcantation's IGH
+  C-region primers on R1 (`MaskPrimers align`, within 70 nt, error 0.2); UMI consensus as the paper
+  (`ClusterSets` within each UMI, `AlignSets muscle`, `BuildConsensus`); `AssemblePairs align`; `CollapseSeq`;
+  consensus count of at least 2. Multiplex: `MaskPrimers score` masks the VH primer on R1 and the C primer on R2;
+  both must be found; `AssemblePairs align`; at least 250 nt after primer removal (the paper's 400 nt before it is
+  `paper_length_filter`); `CollapseSeq`. Reference-guided assembly (`AssemblePairs sequential`, which the image's
+  `presto-clontech-umi` uses) is ruled out; pairs that do not overlap are dropped and counted. The module docstring
+  lists every difference from `presto-clontech-umi`.
+- `preprocess_run(donor, r1, r2, layout, quality=...)` writes `real/<donor>/reads.fasta` (at most `cap`, 50,000,
+  sequences, ordered by sequence id and chosen evenly spaced), `reads.tsv` (`sequence_id`, `isotype`, `protocol`,
+  `consensus_count`, `dupcount`, `primer_masked`: the `[start, end)` spans of primer bases, which carry no germline
+  evidence), each step's pRESTO output in `preprocess_logs/` and, last, `preprocess.json`: the counts and pass rate
+  of every step, the classifier's evidence, the image, the length distribution, the isotype split, the wall time
+  and a fingerprint of the inputs' md5s, the module, the image and the parameters. A current record is reused.
+- On the pilot, W-97 (103,049 pairs) gives 41,161 unique sequences in 174 s, 66% of its primer-matched pairs
+  assembling; SC-23 (164,664 pairs) gives 6,601 in 317 s, 51% of its consensus pairs assembling. The pairs lost
+  are those whose mates, shortened by the Q20 trimming, no longer overlap; without the quality steps 83% and 71%
+  assemble.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims.

@@ -104,6 +104,7 @@ def test_hardened_run_is_offline_unprivileged_and_mounts_only_what_it_is_given(t
     assert argv[argv.index("--cap-drop") + 1] == "ALL"
     assert argv[argv.index("--security-opt") + 1] == "no-new-privileges"
     assert argv[argv.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
+    assert "--cpus" not in argv
     assert "-v" not in argv and "--volume" not in argv
     assert _mounts(argv) == [f"type=bind,source={tmp_path},target=/data,readonly"]
     assert argv[argv.index(IMAGE) + 1:] == ["samtools", "view", "/data/x.bam"]
@@ -111,6 +112,8 @@ def test_hardened_run_is_offline_unprivileged_and_mounts_only_what_it_is_given(t
                             workdir="/data")
     assert _mounts(writable) == [f"type=bind,source={tmp_path},target=/data"]
     assert writable[writable.index("-w") + 1] == "/data"
+    limited = hardened_run(IMAGE, ["true"], name="n", mounts=[], cpus=8)
+    assert limited[limited.index("--cpus") + 1] == "8" and limited.index("--cpus") < limited.index(IMAGE)
     with pytest.raises(ValueError, match="digest"):
         hardened_run("samtools:latest", ["true"], name="n", mounts=[])
 
