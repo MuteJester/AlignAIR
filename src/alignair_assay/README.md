@@ -133,7 +133,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `scoring` | `pipeline` (score one tool against a truth file; `truth_reference`, the reference built suites' truth was built against), `slices`, `oracle` (the oracle rule on per-case scores) and `clusters` (`cluster_ids`: the clone or orientation pair a comparison clusters a case by) | core, truth, airr, metrics, stats, scoring |
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`, with `read_genotypes` for a `donors.json`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
-| `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, `read_genotypes`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory), `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) and `diagnose` (`evaluate`, the evaluator behind `diagnose`: the diagnostics layer orchestrated over a run directory, cached per suite, with its report) | everything except cli |
+| `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory), `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) and `diagnose` (`evaluate`, the evaluator behind `diagnose`: the diagnostics layer orchestrated over a run directory, cached per suite, with its report) | everything except cli |
 | `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed) and `identity` (the model key: `weights_sha256` and the AlignAIR code identity) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
@@ -536,14 +536,14 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    and the model spec and the SHA-256 of the model file it resolves to (installing it into the run's model cache);
    the local checkpoint's path, SHA-256 and device, and the code the local CLI runs
    (`runners.alignair.local_code_identity`: `code_sha256`, the SHA-256 of the relative paths and bytes of this
-   checkout's `src/alignair/**/*.py` and `*.pyx`, and the `torch_version`); nothing for the oracle. Then `manifest.json` is written,
-   holding the `config`, its `identity`, the `config_hash` (SHA-256 of the canonical JSON of the identity), the
-   split, the host, the checkout's git state, the GenAIRR provenance and `warnings` (an AlignAIR image not pinned
-   by digest, or a model not pinned to a version). The identity is what the outputs depend on: suites, tools,
-   split, reference, seed, scale and the tools' fingerprints (`settings`). Workers, threads and `--speed` are not
-   part of it, so an upgrade in place, a moved image tag, a retrained checkpoint or an edit of the AlignAIR code
-   alignair-local runs (a commit, or uncommitted changes anywhere in the checkout, included) is a new
-   configuration even when every path and name is the same.
+   checkout's `src/alignair/**/*.py` and `*.pyx`, and the `torch_version`); nothing for the oracle. Then
+   `manifest.json` is written, holding the `config`, its `identity`, the `config_hash` (SHA-256 of the canonical
+   JSON of the identity), the split, the host, the checkout's git state, the GenAIRR provenance and `warnings` (an
+   AlignAIR image not pinned by digest, or a model not pinned to a version). The identity is what the outputs
+   depend on: suites, tools, split, reference, seed, scale and the tools' fingerprints (`settings`). Workers, threads
+   and `--speed` are not part of it, so an upgrade in place, a moved image tag, a retrained checkpoint or an edit of
+   the AlignAIR code alignair-local runs (a commit, or uncommitted changes anywhere in the checkout, included) is a
+   new configuration even when every path and name is the same.
 2. **Build.** Each suite is built, unless its `build.json` already has the suite's identity (see What invalidates a
    build) and its truth file the current truth version. A rebuilt suite prints which identity fields changed.
 3. **Shared reference.** With `alignair` among the tools and no `reference/germline.fasta` yet, the image exports
@@ -577,10 +577,10 @@ oracle is not perfect on a suite, or a speed measurement failed. The report name
 `run.json` shows return code 0 with predictions, the same `settings` (the tool's current fingerprint) and
 unchanged input files. A failed run is redone. With `--speed`, a configuration's measurement is kept when
 `speed.json` was measured on the same host (`host_info`), with the same protocol version and settings, S1 reads,
-timed read sets (their SHA-256) and config hash, and the
-configuration succeeded with the same tool, threads, CPUs, device and, for alignair-local, checkpoint digest and
-code (`local_code_identity`); a failed or changed one is measured again. Scores, comparisons and the report are always recomputed from the current runs,
-so a change to the scoring code takes effect on the next `all`. It never mixes in stale outputs.
+timed read sets (their SHA-256) and config hash, and the configuration succeeded with the same tool, threads, CPUs,
+device and, for alignair-local, checkpoint digest and code (`local_code_identity`); a failed or changed one is
+measured again. Scores, comparisons and the report are always recomputed from the current runs, so a change to the
+scoring code takes effect on the next `all`. It never mixes in stale outputs.
 
 **What invalidates a build.** A suite's build is redone by the next `all` (no `--force` needed: the manifest does not
 change) whenever a field of its identity (`workflow.build.build_identity`) differs from the one its `build.json`
@@ -606,9 +606,9 @@ recorded the truth or donors file (the oracle, the genotype arm) is redone when 
 anything. The error names every field that differs, as `field old -> new`, for example `seed 20261019 -> 7`.
 `--force` replaces the manifest; its `replaced` records the old hash and the changed fields. The steps then redo
 what the change affects. A new seed, split, scale or reference rebuilds the suites, which changes their reads, so
-every run is redone. A changed tool fingerprint (`<tool>.<key>` in the error) redoes that tool's runs only. Outputs of suites or tools no longer in the
-configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 then has 100 cases); an explicit
-`--scale` wins over it.
+every run is redone. A changed tool fingerprint (`<tool>.<key>` in the error) redoes that tool's runs only.
+Outputs of suites or tools no longer in the configuration stay on disk but are not reported. `--quick` is scale
+0.02 (S1 then has 100 cases); an explicit `--scale` wins over it.
 
 **The run report** (`report.md`) has these sections; a section without data is left out.
 
@@ -649,8 +649,9 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
     of it (and in a warning). A `speed.json` of another protocol version, whose config hash is not the manifest's
     (measured for another configuration, or by the `speed` command), or whose reads' SHA-256 is not that of S1's
     current `reads.fasta`, is stale as a whole. A planned configuration the file has no result for (an interrupted
-    `all --speed`) is listed as not measured, so a partial file never looks complete. An alignair-local configuration whose `checkpoint_sha256` is not the SHA-256 of the
-    configuration's `--alignair-checkpoint` now (retrained in place or replaced), or whose code
+    `all --speed`) is listed as not measured, so a partial file never looks complete. An alignair-local
+    configuration whose `checkpoint_sha256` is not the SHA-256 of the configuration's `--alignair-checkpoint` now
+    (retrained in place or replaced), or whose code
     (`code_sha256`, `torch_version`) is not this checkout's now, is stale alone: the config hash
     does not cover either when alignair-local is not a compared tool. `all --speed` measures stale ones again.
 
@@ -741,7 +742,7 @@ A suite is a declarative GenAIRR recipe per stratum; `suites.engine` turns it in
 4. Register the suite in `_CATALOG` in `suites/__init__.py`, and its module in `_MODULES` (`suites.catalog_module`
    finds the module whose source is part of the suite's build identity).
 5. Test it in `tests/alignair_assay/suites/` at a small scale: counts, labels and groups, and the oracle check
-   `testing.assert_oracle_perfect` on its truth (with `genotypes=workflow.scoring.read_genotypes(donors.json)` for
+   `testing.assert_oracle_perfect` on its truth (with `genotypes=suites.donors.read_genotypes(donors.json)` for
    a suite with donors, as `all` scores it). A suite that fails the oracle check has a truth defect.
 
 Engine rules (`suites.engine.generate_suite`):
@@ -949,9 +950,9 @@ tool's settings (`igblast_dir`, `threads`, `cpus`, the AlignAIR image, model, ch
 cache directory); a factory reads the fields it needs and raises ValueError naming a missing one, without running,
 pulling or downloading anything (`all` builds every runner to check its options before it writes anything). Expose
 new options as `run` flags. The speed protocol times a registered tool at 1 and N threads through its `threads`
-and `cpus` options, so honour both, and report `n_reads` and `wall_seconds` truthfully. Test the runner in `tests/alignair_assay/runners/`; a test that needs the tool installed
-skips unless its environment variable is set (`ALIGNAIR_ASSAY_IGBLAST_DIR`, `ALIGNAIR_ASSAY_DOCKER`,
-`ALIGNAIR_ASSAY_MODEL`).
+and `cpus` options, so honour both, and report `n_reads` and `wall_seconds` truthfully. Test the runner in
+`tests/alignair_assay/runners/`; a test that needs the tool installed skips unless its environment variable is
+set (`ALIGNAIR_ASSAY_IGBLAST_DIR`, `ALIGNAIR_ASSAY_DOCKER`, `ALIGNAIR_ASSAY_MODEL`).
 
 Registered runners:
 
@@ -1002,13 +1003,13 @@ AlignAIR is released, every AlignAIR genotype-arm run is recorded as failed with
 
 ### Replay
 
-`diagnostics.replay.replay(model, reference_set, sequences, ids, *, device, batch_size)` runs AlignAIR's predict
-pipeline one stage at a time and returns `StageOutputs`: the raw forward outputs (logits included, concatenated
-over batches), the cleaned and calibrated `Predictions`, the forward-frame reads, the corrected `Segments`, the
-allele calls, the germline alignments, the light records, the AIRR rows, the wall time per stage (`STAGES`), each
-allele head's allele names (`allele_names`) and the per-read allowed-allele masks the selector applied (`allowed`:
-a multi-locus model's locus masks, None for a one-locus model).
-Each stage is AlignAIR's own function, called in the order `alignair.predict.pipeline.predict` calls it, with the
+`diagnostics.replay.replay(model, reference_set, sequences, ids, *, device, batch_size,
+substitutions=Substitutions())` runs AlignAIR's predict pipeline one stage at a time and returns `StageOutputs`: the
+raw forward outputs (logits included, concatenated over batches), the cleaned and calibrated `Predictions`, the
+forward-frame reads, the corrected `Segments`, the allele calls, the germline alignments, the light records, the
+AIRR rows, the wall time per stage (`STAGES`), each allele head's allele names (`allele_names`) and the per-read
+allowed-allele masks the selector applied (`allowed`: a multi-locus model's locus masks, None for a one-locus
+model). Each stage is AlignAIR's own function, called in the order `alignair.predict.pipeline.predict` calls it, with the
 `PredictConfig` that `alignair.api.predict_sequences` builds (`predict_config`); the forward pass builds each batch
 dict itself, so orientation can be teacher-forced.
 
@@ -1082,8 +1083,15 @@ replayed read of the wrong length, is a ValueError; so is a `cases` list that la
 **Frame.** The segment heads predict positions in the model's forward frame, on the read padded on the right to the
 logits width (576). AlignAIR crops a longer read to the first 576 bases of the presented read: the canonical prefix
 of a forward read, and the canonical suffix of a reverse-complemented one. Positions are moved into the truth's
-canonical frame by that window's start. A wrong predicted orientation leaves the boundaries in the wrong frame, so
-they score as wrong, as the product would place them.
+canonical frame by that window's start.
+
+**Misoriented reads.** When the model's orientation (the frame the replay canonicalized the read in) is not the
+truth's, its positions are on another strand or in another direction, so none of the read's boundaries is scored:
+comparing them would count a frame mismatch, which can also land on the truth by chance, as a boundary error. The
+read is counted instead: `head.misoriented` (informational) is 1.0 for it, and the evaluator's `reads` count
+`misoriented` reads beside the cropped ones. The orientation head's own error is `head.orientation.correct`, and the
+end-to-end cost of a wrong orientation is the `true_orientation` step. The read's allele and metadata heads are
+still scored.
 
 **Boundaries** (`head.{g}.{start,end}_{exact,abs_err,err}.{soft,argmax}`). Coordinates are 0-based and end-exclusive,
 like `correct_segments`.
@@ -1098,6 +1106,10 @@ like `correct_segments`.
 
 Edges are scored for observed segments with at least `MIN_OBSERVED` germline bases, the end-to-end metrics' rule.
 On a cropped read, an edge is scored only when its whole interval lies inside the window and does not touch the cut.
+The allele and metadata heads of a cropped read are scored against the truth of the whole read, although the model
+saw only its window. An end-exclusive edge at the window's last position, 576 (a read of exactly 576 bases, or a
+cropped reverse-complemented read whose segment runs to the canonical end), cannot be decoded by either decoder but
+is still scored, so it is always at least one base off; it is rare and left in.
 
 **Alleles.** Alleles are ranked by the calibrated probabilities the selector sees, over the read's `allowed` alleles,
 with ties going to the lower index. They apply to the same segments as the boundaries.
@@ -1120,6 +1132,8 @@ with ties going to the lower index. They apply to the same segments as the bound
 - `head.productive.correct`: the head's probability >= 0.5 matches the truth, where the truth defines it.
 - `head.orientation.correct`: the orientation logits' argmax is the truth orientation (0 or 1).
 - `head.cropped` (informational): 1.0 for a read longer than the window. Its sum counts the crops.
+- `head.misoriented` (informational): 1.0 for a read in another frame than the truth's, whose boundaries are not
+  scored (see Misoriented reads). Its sum counts them.
 
 `decode_boundaries(outputs, gene, decoder)` and `allele_ranking(outputs, gene)` expose the decoders and the ranking.
 The tests check them against the product: the soft decoder gives `correct_segments`' coordinates wherever its repair
@@ -1179,14 +1193,14 @@ variant counts it as `{field}.{gene}.{reason}`, for example `germline.d.inverted
 Excluded cases and reads without a truth keep every model value and are not counted.
 
 **Running and scoring.** `run_variants(model, reference_set, cases, truths, *, reference, device, batch_size,
-variants=DEFAULT_VARIANTS, genotypes=None, baseline=None)` gives one `VariantResult` per variant: `rows`, `scores`,
-`fallbacks`, `seconds` (the replay's per-stage wall time) and `substituted`.
+variants=DEFAULT_VARIANTS, genotypes=None)` gives one `VariantResult` per variant: `rows`, `scores`, `fallbacks`,
+`seconds` (the replay's per-stage wall time) and `substituted`.
 - `reference` is the truth reference the rows are scored against. A model whose own reference is not that one is
   refused before anything is replayed (`replay.check_reference`, naming the first differing allele), so an
   in-memory model never reaches scoring unchecked.
-- A pure replay comes first. It gives the substitutions their reads and the model's own values. `baseline`, when
-  given, is that replay already run on the cases' reads (the evaluator reuses the one its head metrics read); it is
-  refused when its reads are not the cases'.
+- A pure replay comes first. It gives the substitutions their reads and the model's own values. The evaluator
+  passes the replay its head metrics read as the private `_baseline`, which must be this model's pure replay of the
+  same reads (only its reads are checked), so it is not run twice.
 - The rows become the text rows AlignAIR's AIRR writer would put in a TSV (`airr_text_rows`). The assay's reader
   parses them (`airr.reader.rows_to_predictions`, the parser `load_airr_tsv` uses). They are scored with
   `scoring.pipeline.score_predictions`, with the donor genotypes when given, against the truths of the replayed
@@ -1279,9 +1293,12 @@ markdown (`report_md`) and as data (`summary`: `report.diagnostics.diagnostics_s
 `replay_changes` (see The pin), and `stale_builds` (suite -> what changed). `scalars()` flattens the summary for a
 training dashboard: `{"S1/baseline/junction.nt_exact": 0.77, "S1/delta/segmentation/junction.nt_exact": 0.21,
 "S1/heads/head.j.end_exact.soft": 0.003, "S1/calibration/v.ece": 0.05, "speed/reads_per_second": 1103.4, ...}`
-(`report.diagnostics.diagnostics_scalars`; a missing value is left out). A suite's result holds `suite`, its cache `key`, `reads` (`built`, `diagnosed`, `scored`, `excluded`,
-`cropped`), `clusters` (the `keys` its comparisons cluster by, and the `clusters` and `cases` of the diagnosed reads
-that have one), `heads` and each variant's `scores` (per metric: `mean`, `n`, `n_applicable`, `coverage`),
+(`report.diagnostics.diagnostics_scalars`; a missing value is left out).
+
+A suite's result holds `suite`, its cache `key`, `reads` (`built`, `diagnosed`, `scored`, `excluded`, `cropped`,
+`misoriented`: scored reads the model put in another frame than the truth's, see Head metrics), `clusters` (the
+`keys` its comparisons cluster by, and the `clusters` and `cases` of the diagnosed reads that have one), `heads`
+and each variant's `scores` (per metric: `mean`, `n`, `n_applicable`, `coverage`),
 `calibration` (per gene), `metrics` (the compared family), `variants` (`scores`, `fallbacks`, per-stage `seconds`,
 `substituted`), `contributions` (`stage_contributions`), `swaps` (`swap_effects`), the `seconds` it took,
 `replay_verified` and `replay_changes` and, in the result only, `reused`.
