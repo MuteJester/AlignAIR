@@ -139,6 +139,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the pilot pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
 | `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), the capture rule (`captured_genes`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
 | `real.preprocess` | annotation-free preprocessing of a real run (see Real data): the protocol classifier (`classify_protocol`), the pRESTO recipes (`recipe`) run in the pinned Immcantation container (`IMMCANTATION_IMAGE`), the primers (`VH_PRIMERS`, `C_PRIMERS_MULTIPLEX`, `CREGION_RC`), the cap (`cap_sequences`), the primer spans (`primer_spans`) and `preprocess_run` | core, real.preprocess |
+| `real.truth` | each real read's tool-neutral truth (see Real data): `RealTruth` and `real_truths`, the observed span (`observed_span`, `mask_primers`), IMGT codon 104 (`cys104_end`), the known answer (`known_match`, `known_answer`), the Cys104 anchor (`cys104_in_read`), the junction (`junction_by_motif`) and `clonotype_clusters` | core, real.genotype, real.truth |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -1358,8 +1359,8 @@ record whose key was edited is recomputed.
 
 P3 scores the tools on real human IGH repertoires (BioProject PRJNA555323; Rodriguez et al. 2023, Nat Commun
 14:4419) against each donor's own alleles from genomic long-read sequencing, published by VDJbase (genomic study
-P25, CC0). This section grows with P3a; so far it covers the downloads, the donor genotypes and the preprocessing of
-the reads.
+P25, CC0). This section grows with P3a; so far it covers the downloads, the donor genotypes, the preprocessing of
+the reads and each read's truth.
 
 **Data root.** Downloads live under a data root given to the commands, never in a run directory or the repository.
 Each source has its own directory there, with an `MD5SUMS.txt`:
@@ -1520,6 +1521,32 @@ directory. No V(D)J tool and no germline reference is used; the only sequences g
   full-length mates whose best overlap has too many mismatches (W-97 14,698 of 14,807; SC-23 2,922 of 3,514, with
   588 overlaps too short to be significant). Two runs of each give byte-identical outputs. With the paper's trimming
   (and before `--scanrev`) only 66% and 51% assembled, the trimmed mates no longer overlapping.
+
+**Truth per read (`real.truth`).** Pure, and from the reads and the donor's genomic V alleles only, never from a
+tool's output. `real_truths(reads, meta, genotype)` gives one `RealTruth` per row of `reads.tsv`, in its order:
+
+- `observed`: the read's `[start, end)` outside its primer spans, whose bases are made `N` whatever the assembly
+  put there, and its leading and trailing `N`s. pRESTO orients every read V to C, so no reverse complement is read.
+- `known`: the known answer. Each donor V allele's region through codon 104 (`cys104_end`, the ungapped index past
+  IMGT nt 312: gapped columns 309-311 must hold `TGT` or `TGC`; on OGRDB's IGHV3-23*01 it is OGRDB's `fwr3_end`,
+  288) is found by its last 30 nt and extended to the first observed base: the whole region on a 5'RACE read, from
+  after the VH primer on a multiplex one. The read is a known answer when exactly one window sequence occurs
+  exactly, and it is at least 200 nt. Alleles with the same window are one answer: their ids, their shared names
+  (`known_shared`), their IUIS gene (`known_gene`; several, such as identical paralogs, sorted and joined by `|`),
+  and `novel_known` when none is in the shared reference. Two windows, or a window inside a donor allele that
+  cannot be windowed, give none. An allele whose codon 104 is off columns 309-311 takes that of a donor allele with
+  its exact sequence: VDJbase's `IGHV4-38-2*02_..._i93agt_...` call is IGHV4-39*01 gapped with a spurious insertion.
+- `naive`: IgM and a known answer, so the observed V is the allele through Cys104.
+- `clonotype`: `<donor>/<junction>` for every read, known or not. Cys104 is the best Hamming match (at most 3
+  mismatches, then the leftmost) of any donor anchor, W118 the first `TGG GG. CA. GG.` after it, and the junction
+  runs from the Cys codon through the Trp codon, `N`s included; a read without both anchors is
+  `<donor>/single:<id>`. `clonotype_clusters` gives `stats.compare` its clusters. The motif misses IGHJ2 (`TGG GGC
+  CGT GGC`), whose reads are singletons.
+- On the pilot, W-97 has 5.7% known answers (5.6% naive), 60.5% of its reads with both anchors and 3,964 clusters
+  of two or more reads (the largest 97); SC-23 has 25.9% (24.1%), 85.7% and 1,016 (33). W-97's genotype holds no
+  IGHV4 gene while about a quarter of its reads are IGHV4, which therefore have no donor anchor. Every known
+  answer's Cys104 is where the Hamming anchor puts it, and of the reads without a forward anchor the reverse
+  complement has one on 3 of SC-23's 10,733 and none of W-97's 50,000.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims.
