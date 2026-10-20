@@ -30,13 +30,19 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
     from the call list makes the segment re-called, decoded as ``truth.genairr`` describes. A primary allele that
     is not in ``reference`` makes its segment unscorable.
 
+    The scored allele set of a forward segment (V, J, forward D) also holds the as-near alleles
+    (``as_near_alleles``): the primary's gene, covering the observed span, with no more mismatches against the read
+    than the primary. A sequence-only aligner cannot tell them from the primary, and GenAIRR's re-call list,
+    restricted to the donor's genotype in a cohort, does not always show them; relying on it would reward
+    GenAIRR's conventions. An inverted D keeps GenAIRR's list only. Alleles of another gene that come as near are
+    scored only when GenAIRR lists them.
+
     **Novel V alleles.** ``novel`` maps the novel alleles of the read's donor by name. A primary V allele found
     there (and not in ``reference``) is observed against the novel sequence, then re-based onto its base allele,
     which is what a perfect aligner restricted to ``reference`` reports: the same coordinates and CIGAR, the base's
     germline and mismatches counted against it (so every SNP shown is one), boundaries and the allele set built
-    against the base. GenAIRR's call list is projected onto ``reference``: the novel name becomes the base, and
-    the other alleles of the base's gene that cover the observed span and mismatch the read at no more aligned
-    columns than the base join it, since GenAIRR's re-call, made against the novel allele, cannot show them.
+    against the base, and the novel name replaced by the base in GenAIRR's call list. The as-near alleles are
+    those of the base: GenAIRR's re-call compares the read with the novel sequence, so it cannot show them.
     ``ObservableTruth.v_novel_snps`` holds the read positions (canonical frame, ascending) aligned to the novel
     allele's SNPs inside the observed germline span ``[germ_start, germ_end)``. ValueError, naming the allele, when
     its base is not in ``reference`` or its sequence does not differ from the base's exactly at its SNPs.
@@ -88,10 +94,8 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
         if seg is not None and novel_allele is not None:
             frame_seq = base_sequence
             seg, v_novel_snps = _rebased(read, seg, novel_allele, base_sequence)
-            # GenAIRR's call list, projected onto the reference: the base for the novel allele, plus the alleles
-            # its re-call against the novel sequence cannot show, those of the gene as near to the read as the base.
-            calls = list(dict.fromkeys([*(novel_allele.base if call == primary else call for call in calls),
-                                        *_as_near_as_base(read, seg, reference, g)]))
+            # GenAIRR calls the novel allele; on the reference, that call is its base.
+            calls = list(dict.fromkeys(novel_allele.base if call == primary else call for call in calls))
         if seg is not None:
             problems += check_invariants(read, frame_seq, seg)
             observed[g] = (seg, frame_seq, calls, inverted, generative is None)
@@ -112,7 +116,8 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
             observed=seg,
             boundaries=boundary_intervals(read, frame_seq, seg, left, right),
             alleles=observable_alleles(seg, d_reference if inverted else reference, g, calls,
-                                       primary_fallback=fallback),
+                                       primary_fallback=fallback,
+                                       as_near=() if inverted else as_near_alleles(read, seg, reference, g)),
             observed_length=seg.germ_end - seg.germ_start,
             inverted=inverted,
         )
@@ -159,22 +164,27 @@ def _rebased(read: str, seg: ObservedSegment, novel: NovelAllele,
     return rebased, positions
 
 
-def _as_near_as_base(read: str, seg: ObservedSegment, reference: Reference, letter: str) -> list[str]:
-    """The other alleles of the gene of ``seg.allele`` (a re-based novel V's base), in name order, that cover the
-    observed germline span and, read through ``seg``'s aligned columns, mismatch the read at no more columns than
-    the base (``seg.n_mismatch``; a read ``N`` never mismatches). SHM can bring a read this near to a sibling of
-    the base, which an aligner restricted to the reference may then call as defensibly as the base."""
+def as_near_alleles(read: str, seg: ObservedSegment, reference: Reference, letter: str) -> list[str]:
+    """The other alleles of the gene of ``seg.allele`` (the primary of a forward segment, or a re-based novel V's
+    base), in name order, that cover the observed germline span (at least ``seg.germ_end`` long) and, compared
+    position by position through ``seg``'s aligned columns, mismatch the read at no more columns than the primary
+    (``seg.n_mismatch``; a read ``N`` never mismatches).
+
+    A sequence-only aligner cannot tell these alleles from the primary on this read, so they are defensible calls.
+    GenAIRR's re-call list does not always show them: it leaves out some ties, it is restricted to the donor's
+    genotype in a cohort, and for a novel allele it compares the read with the novel sequence, not the base.
+    """
     gene = gene_name(seg.allele)
     columns = [(column.read_pos, column.germ_pos)
                for column in walk(parse_cigar(seg.cigar), seg.seq_start, seg.germ_start)
                if column.read_pos is not None and column.germ_pos is not None]
     near = []
-    for name, sequence in sorted(reference.alleles[letter].items()):
+    for name, sequence in reference.alleles[letter].items():
         if name == seg.allele or gene_name(name) != gene or len(sequence) < seg.germ_end:
             continue
         if sum(read[r] != "N" and read[r] != sequence[p] for r, p in columns) <= seg.n_mismatch:
             near.append(name)
-    return near
+    return sorted(near)
 
 
 def _reverse_complemented(reference: Reference, letter: str) -> Reference:

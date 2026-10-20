@@ -196,7 +196,8 @@ def test_sibling_as_near_as_the_base_is_scored(unmutated, reference):
     v = mutated.segments["v"]
     assert v.alleles.primary == novel.base and v.observed.n_mismatch == len(truth.v_novel_snps) + len(differing)
     assert sibling in v.alleles.alleles and sibling not in v.alleles.generative
-    assert sibling in v.alleles.simulator_ties and novel.base in v.alleles.simulator_ties
+    # Scored only: GenAIRR's projected call list is still just the base.
+    assert sibling not in v.alleles.simulator_ties and novel.base in v.alleles.simulator_ties
     assert_oracle_perfect([mutated], reference)
 
 

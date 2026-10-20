@@ -24,8 +24,8 @@ def call_metrics(prefix: str, truth: AlleleTruth, pred: PredSegment) -> CaseScor
     """Allele metrics for an observed segment; a missing call is wrong, and its set statistics are ``nan``.
 
     ``top1_in_set`` scores the top-1 against the scored set (the generative allele's observable set plus the
-    simulator's re-call); ``top1_generative`` against the generative allele's observable set alone, the true-allele
-    accuracy.
+    simulator's re-call and the as-near alleles); ``top1_generative`` against the generative allele's observable set
+    alone, the true-allele accuracy.
     """
     called = predicted_set(pred)
     hit = called & truth.alleles

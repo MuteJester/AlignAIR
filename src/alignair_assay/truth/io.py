@@ -6,7 +6,8 @@ A truth file may start with a header line ``{"header": {...}}`` describing how i
 
 Version 2 added each allele truth's ``generative`` set and ``primary_fallback`` flag. A version 1 file, whose
 primary was always the simulator's first call, loads with ``generative`` equal to the scored set ``alleles`` and
-``primary_fallback`` True.
+``primary_fallback`` True. Version 3 changed no field: the scored set of a forward segment also holds the as-near
+alleles (``truth.build.as_near_alleles``), so builds of an older version are redone rather than reused.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from alignair_assay.truth.segment import ObservedSegment
 
 # Header ``kind`` and ``version`` of a truth file.
 TRUTH_KIND = "alignair_assay.truth"
-TRUTH_VERSION = "2"
+TRUTH_VERSION = "3"
 
 
 def truth_to_dict(t: ObservableTruth) -> dict:

@@ -272,7 +272,7 @@ def test_truth_records_reference_and_scoring_checks_it(tmp_path, capsys, referen
     truth_path, truths = _build_truth(tmp_path, cases, name="cases.jsonl")
     assert len(truths) == 3  # the header line is not a truth record
     header = read_truth_header(truth_path)
-    assert header == {"kind": "alignair_assay.truth", "version": "2", "reference": "HUMAN_IGH_OGRDB",
+    assert header == {"kind": "alignair_assay.truth", "version": "3", "reference": "HUMAN_IGH_OGRDB",
                       "reference_digest": reference.digest(), **genairr_provenance()}
     tsv = tmp_path / "oracle.tsv"
     write_airr_tsv([oracle_prediction(t) for t in truths if t.excluded is None], tsv)

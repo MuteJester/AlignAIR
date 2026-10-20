@@ -87,23 +87,34 @@ key; a label named like a fixed dimension is an error. The fixed dimensions are 
   allele first whenever it lists it, so a re-call is a non-empty call list without it; a fallback primary is never
   re-called. Truth files written before the generative primary (version 1) load with `generative` equal to
   `alleles` and `primary_fallback` True.
+- The scored set of a forward segment (V, J and forward D) also holds its as-near alleles
+  (`truth.build.as_near_alleles`): the other alleles of the primary's gene that cover the observed germline span
+  and, compared position by position through the truth alignment's aligned columns, mismatch the read at no more
+  columns than the primary (a read `N` never mismatches). A sequence-only aligner cannot tell them from the
+  primary on that read. GenAIRR's re-call list does not always show them: it leaves out some ties, and in a cohort
+  it is restricted to the donor's genotype. Scoring only what it lists would reward GenAIRR's conventions, which
+  the assay must not do. They join `alleles` only: `generative` (so `top1_generative`), the primary and
+  `simulator_ties` are unchanged. At the default seed (dev, scale 1.0) the rule grows the scored set of V on 55
+  of 5000 S1 reads and D on 2 (J none), and V on 128 of 3000 S7 reads (107 of them novel). An inverted D keeps
+  GenAIRR's list only. Remaining limitation: alleles of another gene that come as near are scored only when
+  GenAIRR lists them, and in cohort suites that list is genotype-restricted. Truth version 3 marks this rule
+  (no field changed), so older builds are redone rather than reused.
 - A primary allele that is not in the reference makes its segment unscorable, except a novel V allele of the
   read's donor (`truth_from_case(case, reference, novel=donor.novel)`; `workflow.build` passes each case its own
   donor's, since novel names are per donor). Its truth is what a perfect aligner restricted to the reference
   reports. The segment is observed against the novel sequence and then re-based onto the novel allele's base:
   the same coordinates and CIGAR, the base's germline, and mismatches counted against the base, so every SNP the
   read shows is one. Boundaries, the allele set (the base's observable set) and the junction anchors come from
-  the base. GenAIRR's call list is projected onto the reference: the novel name (GenAIRR calls the novel allele)
-  becomes the base, and every other allele of the base's gene that covers the observed span and mismatches the
-  read at no more aligned columns than the base joins it. GenAIRR's re-call compares the read with the novel
-  allele, so it cannot show that SHM brought the read as near to a sibling as to the base; on S7 at the default
-  seed that is 107 of 1568 novel reads (22 strictly nearer), and no allele of another gene comes as near.
+  the base. In GenAIRR's call list the novel name (GenAIRR calls the novel allele) becomes the base. The as-near
+  alleles are the base's, and they matter most here: GenAIRR's re-call compares the read with the novel allele,
+  so it can never show that SHM brought the read as near to a sibling as to the base. On S7 at the default seed
+  that is 107 of 1568 novel reads (22 strictly nearer); no allele of another gene comes as near.
   `ObservableTruth.v_novel_snps` holds the read positions (canonical frame, ascending) aligned to the
   novel allele's SNPs inside the observed germline span `[germ_start, germ_end)`; it is None for every other
   read. A novel allele whose base is not in the reference, or whose sequence does not differ from the base's
   exactly at its SNPs, raises ValueError naming it. SNPs sit only where every allele of the base's gene agrees
   with the base (`suites.novel`), so over any germline span the base is strictly the nearest allele of its gene
-  to the novel allele; only SHM can bring a read nearer to a sibling, which is what the projection above adds.
+  to the novel allele; only SHM can bring a read nearer to a sibling, which the as-near alleles cover.
 - Each segment edge is an inclusive interval of equally defensible positions. An edge is exact when the prediction
   lies inside its interval, and its error is the distance to the interval.
 - The junction exists only when both conserved anchors (V Cys, J Trp/Phe) are aligned read bases. Productivity
@@ -128,7 +139,8 @@ key; a label named like a fixed dimension is an error. The fixed dimensions are 
 
 **Allele metrics** (`metrics.alleles`, per observed segment `g`):
 
-- `{g}.top1_in_set`: the top-1 call is in the scored set (generative set plus the simulator's re-call).
+- `{g}.top1_in_set`: the top-1 call is in the scored set (generative set plus the simulator's re-call and
+  the as-near alleles).
 - `{g}.top1_generative`: the top-1 call is in the generative set, i.e. true-allele accuracy.
 - `{g}.gene_top1`: the top-1 call's gene is a gene of the scored set.
 - `{g}.any_overlap` and `{g}.set_precision`: the overlap of the tool's call set with the scored set.
