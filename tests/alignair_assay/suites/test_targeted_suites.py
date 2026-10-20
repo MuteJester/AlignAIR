@@ -150,9 +150,9 @@ def test_s3_sweep_values(cases):
             elif sweep == "d_both":
                 assert record["d_trim_5"] == value == record["d_trim_3"]
             else:
-                # GenAIRR's record can annotate an NP a base shorter than sampled (see test_s3_np_lengths).
+                # GenAIRR's record can annotate an NP a base shorter than sampled (see test_s3_np_lengths, which
+                # holds the requested length on at least 95% of records).
                 assert record[f"{sweep}_length"] in (value, max(value - 1, 0))
-    assert all(c["record"]["np1_length"] == 6 for c in strata["np1_6"])
     assert all(c["record"]["v_trim_3"] == 5 for c in strata["v3_5"])
 
 
