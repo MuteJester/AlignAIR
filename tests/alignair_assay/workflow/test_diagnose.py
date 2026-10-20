@@ -596,7 +596,7 @@ def test_comparisons_are_clustered_by_the_suites_groups(built, tmp_path, small_m
     # clusters from the suite's truth once and pass them to every comparison.
     layout = _copy(built, tmp_path)
     plain = evaluate(small_model, layout, ["S1"], **{**FAST, "variants": ("argmax_decoder",)})
-    assert plain.suites["S1"]["clusters"] == {"keys": ["clone", "pair"], "clusters": 0, "cases": 0}
+    assert plain.suites["S1"]["clusters"] == {"keys": [], "clusters": 0, "cases": 0}
     entry = plain.suites["S1"]["swaps"][0]["metrics"]["v.top1_in_set"]
     assert entry["n_clusters"] == entry["n_paired"]
 

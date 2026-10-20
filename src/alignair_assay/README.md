@@ -1297,7 +1297,7 @@ training dashboard: `{"S1/baseline/junction.nt_exact": 0.77, "S1/delta/segmentat
 
 A suite's result holds `suite`, its cache `key`, `reads` (`built`, `diagnosed`, `scored`, `excluded`, `cropped`,
 `misoriented`: scored reads the model put in another frame than the truth's, see Head metrics), `clusters` (the
-`keys` its comparisons cluster by, and the `clusters` and `cases` of the diagnosed reads that have one), `heads`
+`CLUSTER_KEYS` its diagnosed reads have, and their `clusters` and `cases`), `heads`
 and each variant's `scores` (per metric: `mean`, `n`, `n_applicable`, `coverage`),
 `calibration` (per gene), `metrics` (the compared family), `variants` (`scores`, `fallbacks`, per-stage `seconds`,
 `substituted`), `contributions` (`stage_contributions`), `swaps` (`swap_effects`), the `seconds` it took,

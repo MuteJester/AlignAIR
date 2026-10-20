@@ -152,8 +152,11 @@ def test_where_the_error_comes_from():
     swap = suite["swaps"][0]["metrics"]["junction.nt_exact"]
     swap.update(verdict="from_better", delta=-0.05, n_paired=1130, n_clusters=60)
     suite["contributions"][0]["metrics"]["junction.nt_exact"].update(n_paired=1130, n_clusters=60)
-    section = _section(diagnostics_markdown(_report({"S9": suite})), "Where the end-to-end error comes from")
+    suite["clusters"] = {"keys": ["clone"], "clusters": 60, "cases": 1130}
+    md = diagnostics_markdown(_report({"S9": suite}))
+    section = _section(md, "Where the end-to-end error comes from")
     assert "| 95.0% (gap 5.0 pp) | **-5.0 pp** (worse) | 1130 (60 clusters) |" in section
+    assert "- Cluster-aware comparisons: S9 (60 clone clusters); every other suite is compared read by read." in md
 
 
 def test_calls_boundaries_metadata_and_speed():

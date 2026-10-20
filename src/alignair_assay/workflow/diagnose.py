@@ -175,7 +175,7 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     Each suite's result holds ``suite``; its cache ``key``; ``reads`` (``built``, ``diagnosed``, ``scored``,
     ``excluded``, ``cropped``: reads longer than the model's window, and ``misoriented``: scored reads the model put
     in another frame than the truth's, whose boundaries are not scored); ``clusters`` (the ``keys`` of
-    ``scoring.clusters.CLUSTER_KEYS``, and the ``clusters`` and ``cases`` of the diagnosed reads that have one);
+    ``scoring.clusters.CLUSTER_KEYS`` the diagnosed reads have, and their ``clusters`` and ``cases``);
     ``heads`` and each variant's ``scores`` (metric -> ``mean``, ``n``, ``n_applicable``, ``coverage``);
     ``calibration`` (gene -> ``heads.calibration_table``); ``metrics`` (the compared family, ``compared_metrics``);
     ``variants`` (name -> ``scores``, ``fallbacks``, per-stage ``seconds``, ``substituted``); ``contributions``
@@ -394,7 +394,8 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
         "reads": {"built": len(built), "diagnosed": len(cases), "scored": scored, "excluded": len(truths) - scored,
                   "cropped": sum(bool(record.get("length_cropped")) for record in baseline.records),
                   "misoriented": int(sum(case.get("head.misoriented", 0.0) for case in heads.values()))},
-        "clusters": {"keys": list(CLUSTER_KEYS), "clusters": len(set(clusters.values())), "cases": len(clusters)},
+        "clusters": {"keys": [key for key in CLUSTER_KEYS if any(key in truth.groups for truth in truths)],
+                     "clusters": len(set(clusters.values())), "cases": len(clusters)},
         "heads": _summary(heads), "calibration": calibration, "metrics": family,
         "variants": {variant: {"scores": _summary(found.scores), "fallbacks": found.fallbacks,
                                "seconds": found.seconds, "substituted": list(found.substituted)}
