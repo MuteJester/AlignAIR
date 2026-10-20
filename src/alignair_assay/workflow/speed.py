@@ -74,8 +74,7 @@ class SpeedConfig:
     def identity(self) -> dict:
         """The ``tool``, ``threads``, ``cpus`` (the CPU list it is pinned to) and torch ``device`` (``cpu`` for every
         tool but alignair-local), and for alignair-local the ``checkpoint_sha256`` (None for a missing file) and the
-        code its CLI runs (``runners.alignair.local_code_identity``: ``code_sha256``, ``git_commit``,
-        ``git_dirty``, ``torch``)."""
+        code its CLI runs (``runners.alignair.local_code_identity``: ``code_sha256``, ``torch_version``)."""
         record = {"tool": self.tool, "threads": self.options.threads, "cpus": self.options.cpus,
                   "device": self.options.device if self.tool == LOCAL else "cpu"}
         if self.tool == LOCAL:
@@ -239,7 +238,7 @@ def run_speed(cfg: RunConfig, layout: RunLayout, reference: Reference, *, n_tiny
     runner is built before anything is measured, so a missing tool option, an unknown name or an empty selection
     raises ValueError first. The read sets are written (``speed_set``), then each configuration is prepared
     against ``reference``, fingerprinted and measured (``measure``, in ``layout.speed_work_dir(name)``), and
-    ``speed.json`` is rewritten after each one. A configuration that fails (to prepare or to run) is recorded with
+    ``speed.json`` is written with the plan before the first measurement and rewritten after each one. A configuration that fails (to prepare or to run) is recorded with
     its ``error``, and the others go on.
 
     ``speed.json`` holds ``kind``, ``version`` (``SPEED_VERSION``), the ``host`` (``host_info``), ``n_tiny``,
@@ -277,11 +276,17 @@ def run_speed(cfg: RunConfig, layout: RunLayout, reference: Reference, *, n_tiny
     same = all(previous.get(key) == value for key, value in protocol.items())
     kept = (previous.get("results") or {}) if same else {}
     record = {"kind": SPEED_KIND, **protocol, "planned": [name for name, _ in configs], "results": {}}
-    for name, config in configs:
-        identity = config.identity()
+    identities = {name: config.identity() for name, config in configs}
+    for name, _ in configs:
         old = kept.get(name)
-        if old and "error" not in old and all(old.get(key) == identity.get(key) for key in IDENTITY):
+        if old and "error" not in old and all(old.get(key) == identities[name].get(key) for key in IDENTITY):
             record["results"][name] = old
+    # Written before anything is measured, with the plan and the kept results, so an interrupted protocol lists
+    # every configuration it did not reach as missing.
+    _write(layout, record)
+    for name, config in configs:
+        identity = identities[name]
+        if name in record["results"]:
             print(f"speed {name}: up to date, skipped", flush=True)
             continue
         entry = {**identity, "measured_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}

@@ -31,16 +31,16 @@ PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter --suit
     module or the shared suite code, the truth code, or the GenAIRR in use. No `--force` is needed.
   - An IgBLAST run is kept while IgBLAST's binaries and the suite's reads are unchanged. An alignair-local run is
     kept while the checkpoint's SHA-256, the code the CLI runs (the digest of `src/alignair`'s `.py` and `.pyx`
-    files, the checkout's git commit and dirty flag, the torch version) and the reads are unchanged. A new
-    checkpoint or a code edit is a new configuration: `all` stops and names what changed
-    (`alignair-local.checkpoint_sha256`, `alignair-local.code_sha256`, `.git_commit`, `.git_dirty`, `.torch`), and
-    `all --force` then redoes the alignair-local runs only, keeping IgBLAST's. Any commit, and uncommitted changes
-    anywhere in the checkout, count as well: a run is never reused across them.
+    files, the torch version) and the reads are unchanged. A new checkpoint or a code edit is a new
+    configuration: `all` stops and names what changed (`alignair-local.checkpoint_sha256`,
+    `alignair-local.code_sha256`, `.torch_version`), and `all --force` then redoes the alignair-local runs only,
+    keeping IgBLAST's. A commit, or uncommitted changes, that leave `src/alignair`'s sources alone do not count:
+    the checkout's commit and dirty flag are provenance only.
   - Scores, comparisons and the report are always recomputed from the current runs, so a scoring change takes
     effect on the next `all` without rebuilding or rerunning anything.
-- **In-process evaluation.** alignair-local runs the AlignAIR CLI in a subprocess and scores its AIRR output; only
-  `core/reference.py` imports `alignair`. P2b's in-process evaluator (head-level scoring, ablations) will need its
-  own layer allowed to import `alignair`; which layer, and its row in the dependency table, is decided in P2b.
+- **In-process evaluation.** alignair-local runs the AlignAIR CLI in a subprocess and scores its AIRR output. The
+  `diagnostics` layer (empty so far) is where in-process code (stage replay, head-level scoring, ablations) lives;
+  it and `core/reference.py` are the only code that imports `alignair`.
 
 ## Layers and dependency rule
 
@@ -58,12 +58,13 @@ Each subpackage is a layer and may import only the layers in its row.
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
 | `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, `read_genotypes`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
+| `diagnostics` | model diagnostics for AlignAIR, run in process (empty so far) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
 Further rules:
 
-- `alignair` is imported only by `core/reference.py`, and `alignair_benchmark` is never imported.
+- `alignair` is imported only by `core/reference.py` and `diagnostics/`, and `alignair_benchmark` is never imported.
 - `truth`, `metrics` and `stats` are pure: no file IO, no subprocess, no CLI, no network. `truth/io.py` reads and
   writes truth files through `core.jsonl`.
 - GenAIRR is imported only from `core`, `truth` (record decoding), `suites` and `workflow`.
@@ -424,8 +425,7 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    and the model spec and the SHA-256 of the model file it resolves to (installing it into the run's model cache);
    the local checkpoint's path, SHA-256 and device, and the code the local CLI runs
    (`runners.alignair.local_code_identity`: `code_sha256`, the SHA-256 of the relative paths and bytes of this
-   checkout's `src/alignair/**/*.py` and `*.pyx`, the checkout's `git_commit` and `git_dirty`, and the `torch`
-   version); nothing for the oracle. Then `manifest.json` is written,
+   checkout's `src/alignair/**/*.py` and `*.pyx`, and the `torch_version`); nothing for the oracle. Then `manifest.json` is written,
    holding the `config`, its `identity`, the `config_hash` (SHA-256 of the canonical JSON of the identity), the
    split, the host, the checkout's git state, the GenAIRR provenance and `warnings` (an AlignAIR image not pinned
    by digest, or a model not pinned to a version). The identity is what the outputs depend on: suites, tools,
@@ -539,7 +539,7 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
     current `reads.fasta`, is stale as a whole. A planned configuration the file has no result for (an interrupted
     `all --speed`) is listed as not measured, so a partial file never looks complete. An alignair-local configuration whose `checkpoint_sha256` is not the SHA-256 of the
     configuration's `--alignair-checkpoint` now (retrained in place or replaced), or whose code
-    (`code_sha256`, `git_commit`, `git_dirty`, `torch`) is not this checkout's now, is stale alone: the config hash
+    (`code_sha256`, `torch_version`) is not this checkout's now, is stale alone: the config hash
     does not cover either when alignair-local is not a compared tool. `all --speed` measures stale ones again.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
@@ -582,7 +582,7 @@ directory's tools are run (the same runners, through `Runner.run`):
   configuration it belongs to; None from the `speed` command), `planned` (every configuration to time, in order;
   written before the first is measured, so an interrupted run's file lists what it did not reach) and
   `results`: per configuration measured so far its `tool`, `threads`, `cpus`, `device` (and, for alignair-local,
-  `checkpoint_sha256`, `code_sha256`, `git_commit`, `git_dirty` and `torch`), `measured_utc` and either its
+  `checkpoint_sha256`, `code_sha256` and `torch_version`), `measured_utc` and either its
   `settings` (the tool's fingerprint), `cold_start_s`,
   `steady_reads_per_s`, `median_tiny_s`, `median_full_s`, `peak_rss_kb`, `walls` (every run's wall time, by set)
   and `command` (the last full run's), or its `error`. `speed/runs/<config>/` keeps each set's last run

@@ -247,7 +247,7 @@ def test_local_fingerprint_covers_the_code_it_runs(tmp_path, monkeypatch):
     # The subprocess runs this checkout's src/alignair: its sources are part of what the runner predicts with.
     identity = local_code_identity()
     assert identity == {"code_sha256": tree_digest(SOURCE_DIR / "alignair", suffixes=(".py", ".pyx")),
-                        **git_state(SOURCE_DIR.parent), "torch": importlib.metadata.version("torch")}
+                        "torch_version": importlib.metadata.version("torch")}
     source = tmp_path / "checkout" / "src"
     shutil.copytree(SOURCE_DIR / "alignair", source / "alignair", ignore=shutil.ignore_patterns("__pycache__"))
     monkeypatch.setattr(alignair_module, "SOURCE_DIR", source)
@@ -256,7 +256,7 @@ def test_local_fingerprint_covers_the_code_it_runs(tmp_path, monkeypatch):
     runner = AlignAIRLocal(checkpoint)
     before = runner.fingerprint()
     assert before["code_sha256"] == identity["code_sha256"]  # the same files, wherever they are
-    assert (before["git_commit"], before["git_dirty"]) == (None, None)  # the copy is not a git checkout
+    assert "git_commit" not in before and "git_dirty" not in before  # the checkout's state is provenance only
     # A decoder or post-processing edit, the checkpoint unchanged: another tool.
     predict = source / "alignair" / "cli" / "predict.py"
     predict.write_text(predict.read_text() + "\n# decoder change\n")
@@ -269,6 +269,20 @@ def test_local_fingerprint_covers_the_code_it_runs(tmp_path, monkeypatch):
     (source / "alignair" / "cli" / "__pycache__" / "predict.cpython-312.pyc").write_bytes(b"\0")
     (source / "alignair" / "notes.md").write_text("n\n")
     assert runner.fingerprint() == after
+
+
+def test_unrelated_commit_keeps_local_fingerprint(tmp_path, monkeypatch):
+    # The same sources at another commit (and a dirty tree elsewhere in the repository): the same fingerprint.
+    source = tmp_path / "checkout" / "src"
+    shutil.copytree(SOURCE_DIR / "alignair", source / "alignair", ignore=shutil.ignore_patterns("__pycache__"))
+    monkeypatch.setattr(alignair_module, "SOURCE_DIR", source)
+    checkpoint = tmp_path / "model.alignair"
+    checkpoint.write_bytes(b"weights")
+    runner = AlignAIRLocal(checkpoint)
+    states = iter([{"git_commit": "a" * 40, "git_dirty": False}, {"git_commit": "b" * 40, "git_dirty": True}])
+    monkeypatch.setattr(alignair_module, "git_state", lambda directory: next(states), raising=False)
+    first, second = runner.fingerprint(), runner.fingerprint()
+    assert first == second and set(local_code_identity()) == {"code_sha256", "torch_version"}
 
 
 def test_tool_genotype_written(cohort_layout, reference, tmp_path):

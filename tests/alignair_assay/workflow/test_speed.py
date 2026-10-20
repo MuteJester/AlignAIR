@@ -18,7 +18,7 @@ from alignair_assay.cli import main  # noqa: E402
 from alignair_assay.core.cases import read_fasta  # noqa: E402
 from alignair_assay.core.layout import RunLayout  # noqa: E402
 from alignair_assay.core.provenance import sha256_file, tree_digest  # noqa: E402
-from alignair_assay.core.reference import DEFAULT_REFERENCE  # noqa: E402
+from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference  # noqa: E402
 from alignair_assay.report.run import run_report_markdown  # noqa: E402
 from alignair_assay.runners import RUNNERS  # noqa: E402
 from alignair_assay.runners import alignair as alignair_module  # noqa: E402
@@ -249,7 +249,8 @@ def test_speed_configs():
     assert identities["alignair-local_cuda"] == {"tool": "alignair-local", "threads": 8, "cpus": "0-7",
                                                  "device": "cuda", "checkpoint_sha256": None,
                                                  **local_code_identity()}
-    assert set(speed.IDENTITY) >= {"checkpoint_sha256", "code_sha256", "git_commit", "git_dirty", "torch"}
+    assert set(speed.IDENTITY) >= {"checkpoint_sha256", "code_sha256", "torch_version"}
+    assert not {"git_commit", "git_dirty"} & set(speed.IDENTITY)
     assert identities["alignair-local_8t"]["device"] == "cpu"
     # Each builds its tool's runner with the configuration's threads, CPUs and device, and the run's options.
     igblast = configs["igblast_1t"]()
@@ -443,6 +444,26 @@ class Local(Quick):
     """``quick`` registered as alignair-local: timed on its checkpoint without running AlignAIR."""
 
     name = "alignair-local"
+
+
+def test_speed_json_written_before_first_measurement(built, tmp_path, small_protocol, monkeypatch):
+    layout = RunLayout(_copy(built, tmp_path))
+    cfg = RunConfig(suites=("S1",), tools=("oracle", "quick"), scale=0.02, workers=2, threads=2, speed=True)
+    seen = []
+
+    def interrupted(*args, **kwargs):
+        seen.append(json.loads(layout.speed_json.read_text()))
+        raise KeyboardInterrupt
+
+    with monkeypatch.context() as patched:
+        patched.setattr(speed, "measure", interrupted)
+        with pytest.raises(KeyboardInterrupt):
+            speed.run_speed(cfg, layout, Reference.from_dataconfig(cfg.reference))
+    # Already on disk when the first measurement began: the plan and no result.
+    assert seen[0]["planned"] == ["quick_1t", "quick_2t"] and seen[0]["results"] == {}
+    # What the file holds after the interruption: every configuration planned, none measured (so all are missing).
+    record = json.loads(layout.speed_json.read_text())
+    assert [name for name in record["planned"] if name not in record["results"]] == ["quick_1t", "quick_2t"]
 
 
 def test_rows_of_another_checkpoint_are_stale(built, tmp_path, small_protocol, monkeypatch, capsys):

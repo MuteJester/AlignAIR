@@ -1,7 +1,7 @@
 """The package's dependency rule, read from every module's syntax tree.
 
 Each subpackage may import only the layers listed for it in ``ALLOWED``; a new subpackage needs a row before it
-passes. ``alignair`` is imported only by ``core/reference.py``, ``alignair_benchmark`` never, and the pure layers
+passes. ``alignair`` is imported only by ``core/reference.py`` and ``diagnostics/``, ``alignair_benchmark`` never, and the pure layers
 (truth, metrics, stats) do no file, process or network IO.
 """
 import ast
@@ -10,12 +10,14 @@ from pathlib import Path
 import alignair_assay
 
 PACKAGE = Path(alignair_assay.__file__).resolve().parent
-LAYERS = ("core", "truth", "airr", "metrics", "stats", "report", "scoring", "suites", "runners", "workflow", "cli")
+LAYERS = ("core", "truth", "airr", "metrics", "stats", "report", "scoring", "suites", "runners", "diagnostics", "workflow",
+          "cli")
 ALL = set(LAYERS)
 ALLOWED = {"core": {"core"}, "truth": {"core", "truth"}, "airr": {"core", "airr"},
            "metrics": {"core", "truth", "metrics"}, "stats": {"core", "metrics", "stats"},
            "report": {"core", "stats", "report"}, "scoring": {"core", "truth", "airr", "metrics", "stats", "scoring"},
            "suites": {"core", "suites"}, "runners": {"core", "airr", "truth", "suites", "runners"},
+           "diagnostics": {"core", "truth", "airr", "metrics", "stats", "scoring", "suites", "diagnostics"},
            "workflow": ALL - {"cli"}, "cli": ALL, "testing": ALL}
 # Top-level modules that are not layers: the package marker and the ``python -m`` entry point.
 ENTRY_POINTS = {"__init__": set(), "__main__": {"cli"}}
@@ -72,11 +74,32 @@ def test_no_benchmark_import():
     assert not found, found
 
 
-def test_alignair_imported_only_by_core_reference():
-    importers = {str(rel) for _, rel, tree in _modules() for _, name in _imports(rel, tree)
-                 if name.split(".")[0] == "alignair"}
-    # The one import is inside a method, so this also shows function-level imports are seen.
-    assert importers == {str(Path("core", "reference.py"))}
+def _alignair_importers(modules):
+    return {str(rel) for _, rel, tree in modules for _, name in _imports(rel, tree)
+            if name.split(".")[0] == "alignair"}
+
+
+def _may_import_alignair(rel: Path) -> bool:
+    return rel == Path("core", "reference.py") or rel.parts[0] == "diagnostics"
+
+
+def test_alignair_imported_only_by_core_reference_and_diagnostics():
+    importers = _alignair_importers(_modules())
+    assert all(_may_import_alignair(Path(name)) for name in importers), sorted(importers)
+    # The core import is inside a method, so this also shows function-level imports are seen.
+    assert str(Path("core", "reference.py")) in importers
+
+
+def test_diagnostics_may_import_alignair():
+    def module(owner, name, source):
+        return owner, Path(owner, name), ast.parse(source)
+
+    for source in ("import alignair", "from alignair.core import model", "def f():\n    import alignair.cli"):
+        allowed = _alignair_importers([module("diagnostics", "replay.py", source)])
+        assert allowed == {str(Path("diagnostics", "replay.py"))}
+        assert all(_may_import_alignair(Path(name)) for name in allowed)
+        refused = _alignair_importers([module("runners", "alignair.py", source)])
+        assert refused and not any(_may_import_alignair(Path(name)) for name in refused)
 
 
 def test_pure_layers_do_no_io():

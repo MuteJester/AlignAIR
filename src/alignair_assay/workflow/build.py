@@ -156,10 +156,5 @@ def build_is_current(layout: RunLayout, suite: str, *, split: str, reference_dig
     return not build_changes(layout, suite, split=split, reference_digest=reference_digest, seed=seed, scale=scale)
 
 
-def config_hash(suite: str, *, split: str, reference_digest: str, seed: int, scale: float) -> str:
-    """Hex SHA-256 of the canonical JSON (sorted keys, no spaces) of the suite's ``build_identity``."""
-    return _digest(build_identity(suite, split=split, reference_digest=reference_digest, seed=seed, scale=scale))
-
-
 def _digest(fields: dict) -> str:
     return hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
