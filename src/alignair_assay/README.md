@@ -11,6 +11,37 @@ rearrangement TSV → per-case scores → coverage-aware summaries and paired, H
 
 Units everywhere: coordinates are 0-based and half-open, rates run from 0 to 1, and wall times are in seconds.
 
+## Model iteration quick start
+
+Iterate on the `dev` split (the default); `test` is locked and used only for claims. From the repository root,
+compare a checkpoint of this checkout against IgBLAST:
+
+```
+PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter --suites S1,S3,S4,S6 \
+    --tools igblast,alignair-local --igblast-dir IGBLAST_RELEASE_DIR \
+    --alignair-checkpoint MODEL.alignair --device cuda [--quick]
+```
+
+- **Results** land in the run directory: `report.md` (with `report.json`) first, then per suite and arm
+  `scores/<S>/<arm>/comparison.md` (IgBLAST against the checkpoint, paired and Holm-corrected) and each tool's
+  `<tool>.report.md`; `runs/<tool>/<S>/<arm>/` holds the predictions, `run.json` and logs. `--quick` is a smoke run
+  at scale 0.02.
+- **Rerun the same command after a change.** Resume keeps what is still current and redoes the rest:
+  - A suite is rebuilt when its identity changes (see What invalidates a build): the configuration, its catalog
+    module or the shared suite code, the truth code, or the GenAIRR in use. No `--force` is needed.
+  - An IgBLAST run is kept while IgBLAST's binaries and the suite's reads are unchanged. An alignair-local run is
+    kept while the checkpoint's SHA-256, the code the CLI runs (the digest of `src/alignair`'s `.py` and `.pyx`
+    files, the checkout's git commit and dirty flag, the torch version) and the reads are unchanged. A new
+    checkpoint or a code edit is a new configuration: `all` stops and names what changed
+    (`alignair-local.checkpoint_sha256`, `alignair-local.code_sha256`, `.git_commit`, `.git_dirty`, `.torch`), and
+    `all --force` then redoes the alignair-local runs only, keeping IgBLAST's. Any commit, and uncommitted changes
+    anywhere in the checkout, count as well: a run is never reused across them.
+  - Scores, comparisons and the report are always recomputed from the current runs, so a scoring change takes
+    effect on the next `all` without rebuilding or rerunning anything.
+- **In-process evaluation.** alignair-local runs the AlignAIR CLI in a subprocess and scores its AIRR output; only
+  `core/reference.py` imports `alignair`. P2b's in-process evaluator (head-level scoring, ablations) will need its
+  own layer allowed to import `alignair`; which layer, and its row in the dependency table, is decided in P2b.
+
 ## Layers and dependency rule
 
 Each subpackage is a layer and may import only the layers in its row.
@@ -228,8 +259,12 @@ donors, and both reports tabulate both fractions with n next to each. The oracle
 
 ## Run directory layout
 
-Every path inside a run directory comes from `core.layout.RunLayout`; no other module joins run-directory paths.
-`RunLayout` only builds paths (no IO), and suite, tool and arm names must each be one path component.
+`core.layout.RunLayout` names every run-directory path the workflow and the commands use. Runners and the speed
+protocol write inside the directories it gives them, under names of their own: a run's `logs/` (the tool's log,
+IgBLAST's restricted `db/`, the AlignAIR image's staged `input/`, the genotype JSON), a tool's `_work/`
+(databases, the model cache, the exported reference) and a speed configuration's `speed/runs/<config>/` (`tiny/`
+and `full/`, each with its predictions and logs). `RunLayout` only builds paths (no IO), and suite, tool and arm
+names must each be one path component.
 
 ```
 RUN/
@@ -612,7 +647,9 @@ Engine rules (`suites.engine.generate_suite`):
   in order, from the stratum's orientation seed.
 - One spawned process per stratum (`--workers` caps them); a worker receives only names and numbers, resolves
   the suite from the registry and re-draws its donors from the same seed. The output does not depend on the
-  worker count.
+  worker count. The workers use the `spawn` start method, which re-imports the calling script: a script that
+  calls `generate_suite`, `build_suite` or `run_all` with workers > 1 needs an `if __name__ == "__main__":` guard
+  around the call (`python -m alignair_assay` needs none).
 
 ## Suite catalog
 
