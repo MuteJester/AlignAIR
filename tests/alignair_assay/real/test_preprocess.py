@@ -358,7 +358,7 @@ def test_the_race_recipe_follows_the_paper():
     steps = recipe("race", quality="full", r1="/in1/a_1.fastq.gz", r2="/in2/a_2.fastq.gz", nproc=8)
     assert _names(steps) == ["quality-r1", "quality-r2", "umi", "linker", "c-primer", "pair", "cluster", "molecule",
                              "pair-molecule", "align-r1", "align-r2", "consensus-r1", "consensus-r2",
-                             "pair-consensus", "assemble", "conscount", "collapse", "conscount-2"]
+                             "pair-consensus", "assemble", "length", "conscount", "collapse", "conscount-2"]
     by_name = {step.name: step.argv for step in steps}
     assert "/in1/a_1.fastq.gz" in by_name["quality-r1"] and "/in2/a_2.fastq.gz" in by_name["quality-r2"]
     assert _flags(by_name["umi"], "-s") == ["R2-quality_quality-pass.fastq"]
@@ -370,7 +370,13 @@ def test_the_race_recipe_follows_the_paper():
     assert by_name["cluster"][:2] == ("ClusterSets.py", "set") and "vsearch" in by_name["cluster"]
     assert by_name["align-r1"][:2] == ("AlignSets.py", "muscle")
     assert by_name["assemble"][:2] == ("AssemblePairs.py", "align")
+    # --scanrev as in presto-clontech-umi: a read-through pair, whose head overhangs its tail, can assemble
+    assert "--scanrev" in by_name["assemble"]
+    assert _flags(by_name["assemble"], "--maxerror", "--alpha") == ["0.3", "1e-05"]
     assert not any("sequential" in step.argv or "-r" in step.argv for step in steps)  # no reference-guided assembly
+    # the same floor as multiplex: at least 250 nt once primers, UMI and linker are cut
+    assert by_name["length"][:2] == ("FilterSeq.py", "length") and _flags(by_name["length"], "-n") == ["250"]
+    assert "--inner" in by_name["length"] and _flags(by_name["conscount"], "-s") == ["filtered_length-pass.fastq"]
     assert _flags(by_name["conscount-2"], "-f", "--num") == ["CONSCOUNT", "2"]
     assert all(_flags(step.argv, "--nproc") == ["8"] for step in steps if "--nproc" in step.argv)
     # a consensus or a collapse counts groups, so it has no pass rate
@@ -390,6 +396,7 @@ def test_the_multiplex_recipe_masks_both_primers_and_filters_the_length():
     assert _flags(by_name["length"], "-n") == ["250"] and "--inner" in by_name["length"]
     assert {step.name for step in steps if step.merges} == {"collapse"}
     assert {step.name for step in steps if step.sort_input} == {"collapse"}
+    assert "--scanrev" not in by_name["assemble"]
     paper = {step.name: step.argv for step in recipe("multiplex", quality="full", r1="/in1/a", r2="/in2/b",
                                                      nproc=8, paper_length_filter=True)}
     assert _flags(paper["length"], "-n") == ["400"] and "--inner" not in paper["length"]
@@ -576,6 +583,7 @@ def test_both_recipes_end_to_end_in_the_container(reference, tmp_path):
         assert int(row["consensus_count"]) == 3 and int(row["dupcount"]) == 1 and row["primer_masked"] == "[]"
     counts = record["counts"]
     assert counts["raw_pairs"] == 3 * 26 + 4 and counts["unique"] == 26 and counts["capped"] == 26
+    assert counts["length"] == counts["assemble"] == 30  # every insert passes the 250-nt floor
     assert record["pass_rates"]["assembly"] == 1.0 and record["accepted"] is True
     # the 30 consensus pairs (the single-read molecules' too, dropped later) all assemble; their inserts are the
     # 10-nt UTR and the V(D)J, 386 or 391 nt

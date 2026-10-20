@@ -47,17 +47,21 @@ pairs), since the paper's per-donor label is wrong for at least one run:
      to the UMI (``CLUSTER``), which ``PairSeq`` copies to R2; ``AlignSets muscle`` aligns each group's reads, on
      each mate; ``BuildConsensus`` (``--prcons 0.6 -n 1 -q 0 --maxerror 0.1 --maxgap 0.5``) builds each group's
      consensus, on each mate, with its isotype as ``PRCONS``;
-  6. ``PairSeq`` of the consensus mates, then ``AssemblePairs align`` (R2 the head, R1 reverse-complemented):
-     reference-free, so pairs that do not overlap acceptably are dropped and counted;
-  7. ``ParseHeaders collapse``: the pair's consensus count is the smaller of its mates';
-  8. ``CollapseSeq`` (exact, ``--inner``, within an isotype), summing the consensus counts;
-  9. ``SplitSeq group``: the sequences with a summed consensus count of at least 2.
+  6. ``PairSeq`` of the consensus mates, then ``AssemblePairs align`` (R2 the head, R1 reverse-complemented;
+     ``--maxerror 0.3 --alpha 1e-5``, pRESTO's defaults, and ``--scanrev`` as ``presto-clontech-umi`` has it, so a
+     read-through pair, whose head overhangs its tail, can assemble): reference-free, so pairs that do not overlap
+     acceptably are dropped and counted;
+  7. ``FilterSeq length``: at least 250 nt (``-n 250 --inner``), the multiplex floor; UMI, linker and primers are
+     already cut, and the unique sequences are checked again as for multiplex;
+  8. ``ParseHeaders collapse``: the pair's consensus count is the smaller of its mates';
+  9. ``CollapseSeq`` (exact, ``--inner``, within an isotype), summing the consensus counts;
+  10. ``SplitSeq group``: the sequences with a summed consensus count of at least 2.
 - Multiplex:
   1. ``MaskPrimers score`` (start 0, ``--maxerror 0.2``, mode mask): R1 with ``VH_PRIMERS`` (``VPRIMER``), R2 with
      ``C_PRIMERS_MULTIPLEX`` (``CPRIMER``);
   2. ``PairSeq``: the pairs with both primers found (pRESTO's ``AssemblePairs`` needs paired mates, so this comes
      before the assembly);
-  3. ``AssemblePairs align`` (R1 the head, R2 reverse-complemented);
+  3. ``AssemblePairs align`` (R1 the head, R2 reverse-complemented; ``--maxerror 0.3 --alpha 1e-5``);
   4. ``FilterSeq length``: at least 250 nt after primer removal (``-n 250 --inner``: the masked primers are the
      ``N`` runs at the ends). Where the mates overlap a primer, the assembly can fill a masked base from the other
      mate, which ``--inner`` then counts, so the unique sequences are checked again here against the primers'
@@ -78,7 +82,9 @@ the Immcantation pipeline for this kit:
   ``CPRIMER``, not ``C_CALL``; its read coordinates are Illumina's, these are SRA's;
 - assembly: it uses ``AssemblePairs sequential``, which aligns unassembled pairs to IMGT's human V germlines with
   blastn: a reference-guided assembly, annotation before the tools under test, so it is not used; only
-  ``AssemblePairs align`` runs, and the pairs it cannot assemble are dropped and counted;
+  ``AssemblePairs align`` runs, with the script's ``--scanrev``, and the pairs it cannot assemble are dropped and
+  counted;
+- the 250-nt floor on the assembled sequences is not the script's;
 - the consensus count of 2: as in the script, applied after the collapse, on the summed count (the paper drops
   consensus sequences of fewer than 2 reads before it);
 - its ``ParseHeaders rename``, ``ParseLog``, report and archive steps are not run.
@@ -191,6 +197,7 @@ QUALITY_SKIPPED = "skipped: SRA-Lite qualities carry no per-base quality"
 MAX_ASSEMBLY_FAILURE = 0.35  # the share of pairs entering the assembly that may fail to assemble
 ASSEMBLY_MAXERROR = 0.3  # AssemblePairs align: the most mismatches an overlap may have (pRESTO's default)
 ASSEMBLY_ALPHA = 1e-5  # and the p-value it must reach (pRESTO's default)
+ASSEMBLY_ARGS = ("--maxerror", str(ASSEMBLY_MAXERROR), "--alpha", str(ASSEMBLY_ALPHA))
 C_PRIMER_MAXLEN = 70
 PRIMER_MAXERROR = 0.2
 CLUSTER_IDENTITY = 0.9
@@ -462,12 +469,15 @@ def _race(r1: str, r2: str, n: tuple[str, str]) -> list[Step]:
                                 "R1-consensus_consensus-pass.fastq", "--coord", "presto", "--outname", "consensus"),
              "R2-consensus_consensus-pass.fastq", consensus),
         Step("assemble", ("AssemblePairs.py", "align", "-1", consensus[0], "-2", consensus[1], "--coord", "presto",
-                          "--rc", "tail", "--1f", "CONSCOUNT", "--2f", "CONSCOUNT", "PRCONS", *n, "--outname",
-                          "assembled", "--log", ASSEMBLE_LOG),
+                          "--rc", "tail", "--1f", "CONSCOUNT", "--2f", "CONSCOUNT", "PRCONS", *ASSEMBLY_ARGS,
+                          "--scanrev", *n, "--outname", "assembled", "--log", ASSEMBLE_LOG),
              consensus[0], ("assembled_assemble-pass.fastq",), assembles=True),
-        Step("conscount", ("ParseHeaders.py", "collapse", "-s", "assembled_assemble-pass.fastq", "-f", "CONSCOUNT",
+        Step("length", ("FilterSeq.py", "length", "-s", "assembled_assemble-pass.fastq", "-n", str(MIN_LENGTH),
+                        "--inner", *n, "--outname", "filtered"),
+             "assembled_assemble-pass.fastq", ("filtered_length-pass.fastq",)),
+        Step("conscount", ("ParseHeaders.py", "collapse", "-s", "filtered_length-pass.fastq", "-f", "CONSCOUNT",
                            "--act", "min", "--outname", "conscount"),
-             "assembled_assemble-pass.fastq", ("conscount_reheader.fastq",)),
+             "filtered_length-pass.fastq", ("conscount_reheader.fastq",)),
         Step("collapse", ("CollapseSeq.py", "-s", "conscount_reheader.fastq", "-n", "0", "--uf", "PRCONS", "--cf",
                           "CONSCOUNT", "--act", "sum", "--inner", "--keepmiss", "--outname", "collapsed"),
              "conscount_reheader.fastq", ("collapsed_collapse-unique.fastq",), merges=True, sort_input=True),
@@ -491,8 +501,8 @@ def _multiplex(r1: str, r2: str, n: tuple[str, str], paper_length_filter: bool) 
                               "R2-cprimer_primers-pass.fastq", "--coord", "sra", "--outname", "primers"),
              "R1-vprimer_primers-pass.fastq", primers),
         Step("assemble", ("AssemblePairs.py", "align", "-1", primers[0], "-2", primers[1], "--coord", "sra", "--rc",
-                          "tail", "--1f", "VPRIMER", "--2f", "CPRIMER", *n, "--outname", "assembled", "--log",
-                          ASSEMBLE_LOG), primers[0], ("assembled_assemble-pass.fastq",), assembles=True),
+                          "tail", "--1f", "VPRIMER", "--2f", "CPRIMER", *ASSEMBLY_ARGS, *n, "--outname", "assembled",
+                          "--log", ASSEMBLE_LOG), primers[0], ("assembled_assemble-pass.fastq",), assembles=True),
         Step("length", ("FilterSeq.py", "length", "-s", "assembled_assemble-pass.fastq", *length, *n, "--outname",
                         "filtered"), "assembled_assemble-pass.fastq", ("filtered_length-pass.fastq",)),
         Step("collapse", ("CollapseSeq.py", "-s", "filtered_length-pass.fastq", "-n", "0", "--uf", "VPRIMER",
@@ -678,10 +688,10 @@ def _run_step(step: Step, *, donor: str, work: Path, logs: Path, r1: Path, r2: P
 
 def _rows(path: Path, protocol: str, paper_length_filter: bool) -> tuple[list[dict], dict]:
     """The final unique sequences as TSV rows (plus ``sequence``, ``primers``, the primer names it was found with,
-    and ``observed``, the bases outside the primers), and the checks: multiplex sequences shorter than the length
-    filter once the primers' spans are removed are dropped and counted (pRESTO's ``--inner`` counts ``N`` runs,
-    and the assembly may fill a masked primer base from the other mate), and primer spans holding a base other
-    than ``N`` are counted."""
+    and ``observed``, the bases outside the primers), and the checks: sequences shorter than ``MIN_LENGTH`` once
+    the primers' spans are removed are dropped and counted, for 5'RACE and, unless the paper's filter is used,
+    multiplex (pRESTO's ``--inner`` counts ``N`` runs, and the assembly may fill a masked primer base from the
+    other mate); and primer spans holding a base other than ``N`` are counted."""
     rows, too_short, unmasked = [], 0, 0
     for identifier, annotations, sequence in _read_presto_fastq(path):
         if protocol == "race":
@@ -694,7 +704,7 @@ def _rows(path: Path, protocol: str, paper_length_filter: bool) -> tuple[list[di
             primers = f"{annotations['VPRIMER']},{annotations['CPRIMER']}"
             consensus = int(annotations["DUPCOUNT"])
         observed = len(sequence) - sum(end - start for start, end in spans)
-        if protocol == "multiplex" and not paper_length_filter and observed < MIN_LENGTH:
+        if (protocol == "race" or not paper_length_filter) and observed < MIN_LENGTH:
             too_short += 1
             continue
         unmasked += any(set(sequence[start:end]) != {"N"} for start, end in spans)
