@@ -360,11 +360,12 @@ def test_cli_run_records_failed_run(run_layout, monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "failing on S0/shared failed with return code 5" in err
 
-    # A run that dies without a result leaves no run record, so an earlier one cannot be mistaken for it.
+    # A run that dies without a result leaves no run record, so an earlier one cannot be mistaken for it; the
+    # command reports the error (no traceback) and exits with status 2.
     write_run_json(dataclasses.replace(read_run_json(run_json), returncode=0), run_json)
     monkeypatch.setitem(RUNNERS, "failing", lambda options: _CrashingRunner())
-    with pytest.raises(RuntimeError, match="runner crashed"):
-        _run(run_layout, "failing")
+    assert _run(run_layout, "failing") == 2
+    assert capsys.readouterr().err == "error: runner crashed\n"
     assert not run_json.exists()
 
 
