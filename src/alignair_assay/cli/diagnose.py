@@ -2,13 +2,11 @@
 in process (``workflow.diagnose``) and cached per suite under the model key."""
 from __future__ import annotations
 
-import json
 import sys
 
 from alignair_assay.cli.common import comma_list, tool_path
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.runners.base import absolute_path
-from alignair_assay.workflow.build import build_changes
 
 DEFAULT_DEVICE = "cuda"
 DEFAULT_BATCH_SIZE = 256
@@ -36,9 +34,9 @@ def register(sub) -> None:
 
 def run(args) -> int:
     """Diagnose the checkpoint on every named suite (``workflow.diagnose.evaluate``), print one line per suite
-    and the profile, and name the report it wrote (``diagnostics.md`` and ``diagnostics.json`` under the model
-    key). A suite whose build is not current for this checkout (``workflow.build.build_changes``) is diagnosed as
-    built, with a warning. Input errors (an unbuilt or test-split suite, an unknown variant, a missing checkpoint,
+    and the profile, and name the report it wrote (the one-page ``diagnostics.md``, with ``diagnostics.json`` and
+    each suite's ``<S>/report.md``, under the model key). A suite whose build is not current for this checkout
+    (``workflow.diagnose.stale_builds``) is diagnosed as built, with a warning. Input errors (an unbuilt or test-split suite, an unknown variant, a missing checkpoint,
     a model on another reference, a CUDA device torch does not see) exit with status 2 before anything is written,
     and so does AlignAIR code the replay is not pinned to, unless ``--allow-unverified-replay`` (then the results
     are marked unverified, with a warning)."""
@@ -51,7 +49,6 @@ def run(args) -> int:
         raise ValueError("--suites names no suite")
     device = parse_device(args.device, fix="--device cpu")
     layout = RunLayout(absolute_path(args.run_dir))
-    _warn_stale_builds(layout, names)
     result = evaluate(tool_path(args.checkpoint), layout, names, device=device, batch_size=args.batch_size,
                       variants=DEFAULT_VARIANTS if args.variants is None else args.variants,
                       profile=not args.no_profile, max_cases=args.max_cases,
@@ -59,6 +56,9 @@ def run(args) -> int:
     if not result.replay_verified:
         print(f"warning: diagnosed with an unverified replay (changed: {', '.join(result.replay_changes)}); the "
               "results are marked unverified", file=sys.stderr)
+    for name, changes in result.stale_builds.items():
+        print(f"warning: {name}'s build is not current (changed: {', '.join(changes)}); it was diagnosed as "
+              f"built. Rebuild it to diagnose against this checkout's suite and truth code", file=sys.stderr)
     for name, suite in result.suites.items():
         reads = suite["reads"]
         if suite["reused"]:
@@ -72,23 +72,6 @@ def run(args) -> int:
         print(f"profile: {profile['reads_per_second']:.1f} reads/s on {profile['device']} at batch size "
               f"{profile['batch_size']} over {profile['reads']} reads"
               + (" (reused)" if profile["reused"] else ""))
-    print(f"report: {layout.diagnostics_md(result.model_key)}")
+    print(f"report: {layout.diagnostics_md(result.model_key)} (one page; each suite's detail in "
+          f"{layout.diagnostics_dir(result.model_key)}/<S>/report.md)")
     return 0
-
-
-def _warn_stale_builds(layout: RunLayout, names: list[str]) -> None:
-    """Warn about each dev build whose identity is not this checkout's (``workflow.build.build_changes`` with its
-    recorded configuration): its cases and truth come from other suite, truth or GenAIRR code. A suite that is not
-    built, or not on the dev split, is left to ``evaluate``, which refuses it."""
-    for name in names:
-        try:
-            build = json.loads(layout.build_json(name).read_text(encoding="utf-8"))
-            if build.get("split") != "dev":
-                continue
-            changes = build_changes(layout, name, split=build["split"], reference_digest=build["reference_digest"],
-                                    seed=build["seed"], scale=build["scale"])
-        except (OSError, ValueError, KeyError, TypeError):
-            continue
-        if changes:
-            print(f"warning: {name}'s build is not current (changed: {', '.join(changes)}); it is diagnosed as "
-                  f"built. Rebuild it to diagnose against this checkout's suite and truth code", file=sys.stderr)

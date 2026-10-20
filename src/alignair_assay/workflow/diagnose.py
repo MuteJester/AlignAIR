@@ -14,7 +14,9 @@ the suite's reads (all of them, or ``max_cases`` evenly spaced: ``select_cases``
 
 With ``profile``, the model is then profiled (``profile.profile_model``) on up to ``PROFILE_READS`` of the
 diagnosed reads, evenly spaced, after every accuracy replay. The report (``report.diagnostics``) is written as
-``diagnostics.json`` and ``diagnostics.md`` and returned in a ``DiagnosticsResult``.
+``diagnostics.json``, the one-page summary ``diagnostics.md``, each suite's ``<S>/report.md`` and, with a profile,
+``profile.md``, every file atomically (``_write_text``), and returned in a ``DiagnosticsResult`` with the summary as
+data (``summary``, flattened by ``scalars()``).
 
 **Refused** before the model is loaded or anything is written (ValueError): no suite, an unknown suite or variant,
 a batch size or ``max_cases`` below 1, a suite not built in ``layout``, a suite built on another split than ``dev``
@@ -45,6 +47,7 @@ import hashlib
 import json
 import os
 import platform
+import tempfile
 import time
 import warnings
 from collections.abc import Sequence
@@ -72,13 +75,20 @@ from alignair_assay.diagnostics.pin import current_digests, pin_changes, replay_
 from alignair_assay.diagnostics.profile import profile_model
 from alignair_assay.diagnostics.replay import load_model_checked, model_device, replay, unwrap_model
 from alignair_assay.metrics import is_informational
-from alignair_assay.report.diagnostics import build_diagnostics_report, diagnostics_markdown
+from alignair_assay.report.diagnostics import (
+    build_diagnostics_report,
+    diagnostics_markdown,
+    diagnostics_scalars,
+    profile_markdown,
+    suite_markdown,
+)
 from alignair_assay.scoring.clusters import CLUSTER_KEYS, cluster_ids
 from alignair_assay.scoring.pipeline import load_truth, truth_reference
 from alignair_assay.stats import summarize, to_dict
 from alignair_assay.suites import get_suite
 from alignair_assay.suites.donors import read_genotypes
 from alignair_assay.truth.io import read_truth_header
+from alignair_assay.workflow.build import build_changes
 
 T = TypeVar("T")
 
@@ -115,12 +125,22 @@ class DiagnosticsResult:
     suites: dict[str, dict]
     # ``profile.profile_model``'s result and ``reused``; None when the model was not profiled
     profile: dict | None
-    # the report as markdown, as written to ``diagnostics.md``
+    # the one-page summary as markdown, as written to ``diagnostics.md``
     report_md: str
+    # the same summary as data (``report.diagnostics.diagnostics_summary``); ``scalars()`` flattens it
+    summary: dict = field(default_factory=dict)
     # False when the replay ran on AlignAIR code it is not pinned to (``allow_unverified_replay``), with
     # ``replay_changes`` (``diagnostics.pin.pin_changes``: name -> new digest)
     replay_verified: bool = True
     replay_changes: dict[str, str] = field(default_factory=dict)
+    # suite -> what changed, for each suite whose build is not current for this checkout (diagnosed as built)
+    stale_builds: dict[str, list[str]] = field(default_factory=dict)
+
+    def scalars(self) -> dict[str, float]:
+        """The summary's numbers flattened for a training dashboard (TensorBoard, W&B), e.g.
+        ``{"S1/baseline/junction.nt_exact": 0.77, "S1/delta/segmentation/junction.nt_exact": 0.21, ...}``
+        (``report.diagnostics.diagnostics_scalars``)."""
+        return diagnostics_scalars(self.summary)
 
 
 @functools.lru_cache(maxsize=1)
@@ -162,6 +182,7 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     ``scoring.clusters.cluster_ids`` of the suite's truths; and the ``seconds`` it took.
     ``variants`` are run in ``ablation.DEFAULT_VARIANTS`` order (``variant_set``: the baseline is added to any
     other); none runs the heads, the calibration and the profile only. Raises as the module docstring says."""
+    start = time.perf_counter()
     names = list(dict.fromkeys(suites))
     if not names:
         raise ValueError("no suite to diagnose")
@@ -174,6 +195,7 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     for name in names:
         check_dev_build(layout, name)
     reference = truth_reference(layout, names)
+    stale = stale_builds(layout, names)
     from_file = isinstance(model_or_checkpoint, (str, os.PathLike))
     if from_file:
         own, own_device = None, None
@@ -202,17 +224,36 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
         return _evaluate(model, reference_set, reference, layout, names, weights=weights, variants=variants,
                          device=device, batch_size=batch_size, profile=profile, max_cases=max_cases,
                          source=str(Path(model_or_checkpoint).expanduser()) if from_file else "in-memory model",
-                         replay_state=replay_state, replay_changes=changes)
+                         replay_state=replay_state, replay_changes=changes, stale=stale, start=start)
     finally:
         if own is not None:
             own.to(own_device)
 
 
+def stale_builds(layout: RunLayout, names: Sequence[str]) -> dict[str, list[str]]:
+    """Suite -> what changed (``workflow.build.build_changes`` with its recorded configuration), for each of
+    ``names`` whose dev build is not current for this checkout: its cases and truth come from other suite, truth or
+    GenAIRR code. A suite whose build record cannot be read is left out (``check_dev_build`` refuses it)."""
+    stale = {}
+    for name in names:
+        try:
+            build = json.loads(layout.build_json(name).read_text(encoding="utf-8"))
+            changes = build_changes(layout, name, split=build["split"], reference_digest=build["reference_digest"],
+                                    seed=build["seed"], scale=build["scale"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if changes:
+            stale[name] = changes
+    return stale
+
+
 def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, names: list[str], *, weights: str,
               variants: tuple[str, ...], device: str, batch_size: int, profile: bool, max_cases: int | None,
-              source: str, replay_state: dict, replay_changes: dict[str, str]) -> DiagnosticsResult:
+              source: str, replay_state: dict, replay_changes: dict[str, str], stale: dict[str, list[str]],
+              start: float) -> DiagnosticsResult:
     """``evaluate`` on a checked model already on ``device``; ``replay_state`` (``verified`` and the product code's
-    ``sha256``) goes into every suite's cache key."""
+    ``sha256``) goes into every suite's cache key, ``stale`` (``stale_builds``) and the wall time since ``start``
+    into the report."""
     code = alignair_code()
     key_name = model_key(weights, code["code_sha256"])
     identity = {"weights_sha256": weights, "code_sha256": code["code_sha256"], "torch_version": code["torch_version"]}
@@ -239,13 +280,19 @@ def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, nam
     report = build_diagnostics_report(
         model={"model_key": key_name, "source": source, **identity, "alignair_source": str(ALIGNAIR_DIR),
                "assay_code_sha256": assay_code_sha256()},
-        config={"run_dir": str(layout.root), "suites": names, **config, "profile": bool(profile), **stamp},
+        config={"run_dir": str(layout.root), "suites": names, **config, "profile": bool(profile), **stamp,
+                "stale_builds": stale, "seconds": round(time.perf_counter() - start, 3)},
         suites=results, profile=measured)
     markdown = diagnostics_markdown(report)
+    for name in names:
+        _write_text(layout.diagnostics_suite_md(key_name, name), suite_markdown(report, name))
+    if measured is not None:
+        _write_text(layout.diagnostics_profile_md(key_name), profile_markdown(report))
     _write_json(layout.diagnostics_json(key_name), report)
-    layout.diagnostics_md(key_name).write_text(markdown, encoding="utf-8")
+    _write_text(layout.diagnostics_md(key_name), markdown)
     return DiagnosticsResult(model_key=key_name, suites=results, profile=measured, report_md=markdown,
-                             replay_verified=verified, replay_changes=dict(replay_changes))
+                             summary=report["summary"], replay_verified=verified,
+                             replay_changes=dict(replay_changes), stale_builds=stale)
 
 
 def assay_code_sha256() -> str:
@@ -397,12 +444,26 @@ def _cached(path: Path, key: dict) -> dict | None:
 
 
 def _write_json(path: Path, data) -> None:
-    """Write ``data`` as strict JSON, through a temporary file of this process's own, so the file is never seen
-    half written, even with two writers."""
+    """Write ``data`` as strict JSON, atomically (``_write_text``)."""
+    _write_text(path, json.dumps(data, indent=2, allow_nan=False) + "\n")
+
+
+def _write_text(path: Path, text: str) -> None:
+    """Write ``text`` through a temporary file of its own in the same directory (``tempfile.NamedTemporaryFile``),
+    then rename it over ``path``, so the file is never seen half written, even with two writers (or two threads of
+    one process). The temporary file is removed when the write fails."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(data, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.",
+                                         suffix=".tmp", delete=False)
+    temporary = Path(handle.name)
+    try:
+        with handle:
+            handle.write(text)
+        os.chmod(temporary, 0o644)  # a temporary file is private; the report is not
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _check_count(name: str, value) -> None:

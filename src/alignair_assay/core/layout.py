@@ -19,8 +19,10 @@ RUN/
   report.json, report.md
   diagnostics/<model_key>/            one model's diagnostics (``diagnose``, ``workflow.diagnose``)
   diagnostics/<model_key>/<S>/suite.json   one suite's cached diagnostics, with the key they were computed for
+  diagnostics/<model_key>/<S>/report.md    one suite's detail of the last diagnostics report
   diagnostics/<model_key>/profile.json     the cached speed profile, with its key
-  diagnostics/<model_key>/diagnostics.json, diagnostics.md   the last diagnostics report of the model
+  diagnostics/<model_key>/profile.md       the speed profile of the last diagnostics report
+  diagnostics/<model_key>/diagnostics.json, diagnostics.md   the last diagnostics report and its one-page summary
 ```
 
 ``RunLayout`` only joins paths: it never reads, writes or creates anything.
@@ -200,8 +202,16 @@ class RunLayout:
         return self.diagnostics_dir(model_key) / "diagnostics.json"
 
     def diagnostics_md(self, model_key: str) -> Path:
-        """The model's last diagnostics report as markdown."""
+        """The one-page summary of the model's last diagnostics report, as markdown."""
         return self.diagnostics_dir(model_key) / "diagnostics.md"
+
+    def diagnostics_suite_md(self, model_key: str, suite: str) -> Path:
+        """One suite's detail of the model's last diagnostics report, as markdown (linked from the summary)."""
+        return self.diagnostics_suite_dir(model_key, suite) / "report.md"
+
+    def diagnostics_profile_md(self, model_key: str) -> Path:
+        """The speed profile of the model's last diagnostics report, as markdown (linked from the summary)."""
+        return self.diagnostics_dir(model_key) / "profile.md"
 
 
 def _component(name: str) -> str:

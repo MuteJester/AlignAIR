@@ -47,6 +47,8 @@ def test_layout_paths(tmp_path):
         (layout.diagnostics_profile_json("k"), "diagnostics/k/profile.json"),
         (layout.diagnostics_json("k"), "diagnostics/k/diagnostics.json"),
         (layout.diagnostics_md("k"), "diagnostics/k/diagnostics.md"),
+        (layout.diagnostics_suite_md("k", "S1"), "diagnostics/k/S1/report.md"),
+        (layout.diagnostics_profile_md("k"), "diagnostics/k/profile.md"),
     ]
     for path, relative in expected:
         assert path == tmp_path / relative, relative

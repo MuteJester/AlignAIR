@@ -7,6 +7,7 @@ scale 0.02 (2 and 100 reads). The test of the released checkpoint runs only when
 """
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -24,7 +25,7 @@ from alignair_assay.core.layout import RunLayout  # noqa: E402
 from alignair_assay.core.provenance import sha256_file  # noqa: E402
 from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS, SINGLE_SWAPS, VARIANTS  # noqa: E402
 from alignair_assay.diagnostics.identity import alignair_code, weights_sha256  # noqa: E402
-from alignair_assay.report.diagnostics import SECTIONS  # noqa: E402
+from alignair_assay.report.diagnostics import SUITE_SECTIONS, SUMMARY_SECTIONS  # noqa: E402
 from alignair_assay.runners.alignair import local_code_identity  # noqa: E402
 from alignair_assay.workflow import diagnose as diagnose_module  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
@@ -121,19 +122,42 @@ def test_end_to_end_report_renders_every_section(built, small_model):
     assert "v.outside_genotype" in s1["variants"]["baseline"]["scores"]
 
     assert result.profile is not None and result.profile["device"] == "cpu" and result.profile["reads"] == 102
-    md = result.report_md
-    positions = [md.index(f"\n## {title}\n") for title in SECTIONS]
-    assert positions == sorted(positions)
-    assert md.count("\n### S0\n") == 4 and md.count("\n### S1\n") == 4
 
-    # Written beside the per-suite caches, under the model key.
+    # diagnostics.md is the one-page summary: its sections in order, with real rows per suite.
+    md = result.report_md
+    positions = [md.index(f"\n## {title}\n") for title in SUMMARY_SECTIONS]
+    assert positions == sorted(positions)
+    assert len(md.splitlines()) < 120
+    boundaries = md[md.index("\n## Boundaries: decoder vs network\n"):md.index("\n## Metadata heads\n")]
+    for name in ("S0", "S1"):
+        # The head table's rows exist under the names heads.py gives them: a soft→argmax cell for an edge.
+        assert re.search(rf"^\| {name} \| \d+→\d+ \|", boundaries, re.MULTILINE), name
+        assert f"[{name}]({name}/report.md)" in md
+    errors = md[md.index("\n### junction.nt_exact\n"):md.index("\n## Calls\n")]
+    assert re.search(r"^\| S1 \| \d+\.\d% \(n=\d+, \d+%\) \|", errors, re.MULTILINE)
+    assert "[profile.md](profile.md)" in md and "reads/s on cpu" in md
+    assert result.summary["flags"][-1].startswith("Holm is per comparison")
+    scalars = result.scalars()
+    assert isinstance(scalars["S1/baseline/junction.nt_exact"], float)
+    assert scalars["S1/baseline/junction.nt_exact"] == s1["variants"]["baseline"]["scores"]["junction.nt_exact"][
+        "mean"]
+    assert scalars["S0/heads/head.v.start_exact.soft"] == result.suites["S0"]["heads"]["head.v.start_exact.soft"][
+        "mean"]
+    assert "speed/reads_per_second" in scalars and all(isinstance(value, float) for value in scalars.values())
+
+    # Written beside the per-suite caches, under the model key: the summary, each suite's detail and the profile.
     assert built.diagnostics_md(result.model_key).read_text(encoding="utf-8") == md
     report = json.loads(built.diagnostics_json(result.model_key).read_text(encoding="utf-8"))
     assert report["model"]["model_key"] == result.model_key and report["model"]["source"] == "in-memory model"
-    assert report["suites"]["S1"]["variants"] == s1["variants"]
+    assert report["suites"]["S1"]["variants"] == s1["variants"] and report["summary"] == result.summary
     for name in ("S0", "S1"):
         assert json.loads(built.diagnostics_suite_json(result.model_key, name).read_text())["suite"] == name
+        detail = built.diagnostics_suite_md(result.model_key, name).read_text(encoding="utf-8")
+        positions = [detail.index(f"\n## {title}\n") for title in SUITE_SECTIONS]
+        assert positions == sorted(positions) and "(../diagnostics.md)" in detail
     assert built.diagnostics_profile_json(result.model_key).is_file()
+    assert "| Module |" in built.diagnostics_profile_md(result.model_key).read_text(encoding="utf-8")
+    assert not list(built.diagnostics_dir(result.model_key).rglob("*.tmp"))
 
 
 def test_the_model_key_is_its_weights_and_the_alignair_code(built, tmp_path, save_checkpoint):
@@ -435,7 +459,11 @@ def test_an_unverified_replay_is_refused_unless_allowed(built, tmp_path, small_m
     assert suite["key"]["replay"] == {"verified": False, "sha256": "1" * 64}
     record = json.loads(layout.diagnostics_suite_json(unverified.model_key, "S0").read_text())
     assert record["replay_verified"] is False and record["replay_changes"] == CHANGED
-    assert "unverified" in unverified.report_md and "alignair.predict.pipeline.predict" in unverified.report_md
+    flags = unverified.summary["flags"]
+    assert flags[0].startswith("Unverified replay") and "alignair.predict.pipeline.predict" in flags[0]
+    assert f"- {flags[0]}" in unverified.report_md
+    detail = layout.diagnostics_suite_md(unverified.model_key, "S0").read_text(encoding="utf-8")
+    assert "**Unverified replay.**" in detail
 
 
 def test_the_replay_pin_is_checked_once_per_process(built, tmp_path, small_model, monkeypatch):
@@ -605,6 +633,9 @@ def test_diagnose_command_warns_about_a_stale_build(built, tmp_path, save_checkp
                  "--device", "cpu", "--variants", "baseline", "--no-profile"]) == 0
     err = capsys.readouterr().err
     assert "warning: S0's build is not current (changed: truth_source)" in err
+    (key,) = [path.name for path in layout.diagnostics_root.iterdir()]
+    summary = layout.diagnostics_md(key).read_text(encoding="utf-8")
+    assert "Stale builds" in summary and "S0 (truth_source)" in summary
 
 
 # --- the released checkpoint ------------------------------------------------------------------------------------

@@ -10,14 +10,16 @@ COMPARISON_KIND = "alignair_assay.comparison_report"
 VERSION = "1"
 
 
-def _clean(obj):
+def clean(obj):
+    """A strictly JSON-serializable copy of ``obj`` (``stats.to_dict``; NaN and infinity become None, keys become
+    strings)."""
     obj = to_dict(obj)
     if isinstance(obj, float):
         return obj if math.isfinite(obj) else None
     if isinstance(obj, dict):
-        return {str(k): _clean(v) for k, v in obj.items()}
+        return {str(k): clean(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
-        return [_clean(v) for v in obj]
+        return [clean(v) for v in obj]
     return obj
 
 
@@ -25,10 +27,10 @@ def build_score_report(tool: str, summary, slices, provenance: dict, *, excess_a
                        ) -> dict:
     """Report for one tool: overall summaries plus per-dimension slice summaries, and the donor-level
     ``excess_alleles`` table (``metrics.genotype.excess_alleles``) when one is given."""
-    report = {"kind": SCORE_KIND, "version": VERSION, "tool": tool, "overall": _clean(summary),
-              "by_slice": _clean(slices), "provenance": _clean(provenance)}
+    report = {"kind": SCORE_KIND, "version": VERSION, "tool": tool, "overall": clean(summary),
+              "by_slice": clean(slices), "provenance": clean(provenance)}
     if excess_alleles is not None:
-        report["excess_alleles"] = _clean(excess_alleles)
+        report["excess_alleles"] = clean(excess_alleles)
     return report
 
 
@@ -38,5 +40,5 @@ def build_comparison_report(a_name: str, b_name: str, comparison, slices_a, slic
     ``informational``, the metrics reported but not compared (name -> ``{"a": summary, "b": summary}``, each tool's
     own mean with n and coverage, None when it has none)."""
     return {"kind": COMPARISON_KIND, "version": VERSION, "a": a_name, "b": b_name,
-            "comparison": _clean(comparison), "informational": _clean(informational or {}),
-            "by_slice": {"a": _clean(slices_a), "b": _clean(slices_b)}, "provenance": _clean(provenance)}
+            "comparison": clean(comparison), "informational": clean(informational or {}),
+            "by_slice": {"a": clean(slices_a), "b": clean(slices_b)}, "provenance": clean(provenance)}
