@@ -129,8 +129,9 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
     ``verdicts`` counts. ``oracle_failures`` repeats the suites whose oracle is not perfect (with the ``reason`` when
     it was not scored, from the oracle's failed run: an unchecked truth, not a defect), and ``truth_warnings``
     (``suite``, ``unscorable`` per gene, cases with ``warnings``, the ``build_json`` path) the suites with unscorable
-    segments, which are not scored. ``s10_vs_s1``, ``s11_parity`` and ``speed`` (``speed_summary``) are None without their data, and
-    ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see the functions below).
+    segments, which are not scored. ``s10_vs_s1``, ``s11_parity`` and ``speed`` (``speed_summary``) are None
+    without their data, and ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see
+    the functions below).
     """
     a, b = cfg.tools
     failed = [status for status in run_statuses(layout, cfg).values() if status["status"] != "ok"]
