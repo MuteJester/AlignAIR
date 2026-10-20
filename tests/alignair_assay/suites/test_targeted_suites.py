@@ -70,7 +70,7 @@ def test_targeted_suite_definitions():
     assert s3.primary == ("junction.nt_exact", "junction.length_exact", "clone_key.exact", "junction.start_abs_err",
                           "junction.end_abs_err", "v.seq_end_exact", "j.seq_start_exact")
     assert s4.primary == ("v.top1_in_set", "v_short.abstain_ok", "v.germ_start_err", "j.top1_in_set",
-                          "j.germ_end_err", "d.spurious_call", "junction.nt_exact")
+                          "j.germ_end_err", "v.spurious_call", "junction.nt_exact")
     assert s6.primary == ("d.top1_in_set", "d_short.abstain_ok", "d.seq_start_exact", "d.seq_end_exact")
     assert {s.name: s.n for s in s2.strata} == {f"shm_{rate}": 600 for rate in ("0", "0.03", "0.08", "0.15", "0.25")}
     sweeps = {"np1": (0, 3, 6, 12, 20), "np2": (0, 3, 6, 12, 20), "v3": (0, 2, 5, 10), "j5": (0, 4, 8, 14),
@@ -246,8 +246,4 @@ def test_oracle_perfect_on_targeted_suites(built, truths, reference):
         scores = assert_oracle_perfect(truths[name], reference)
         emitted = {metric for case in scores.values() for metric in case}
         primary = set(get_suite(name).primary)
-        if name == "S4":
-            # A spurious D call needs a read whose D is lost too, which only a 300-base 5' loss reaches, and rarely
-            # (3 of the 2700 S4 cases at scale 1.0).
-            primary.discard("d.spurious_call")
         assert primary <= emitted, (name, primary - emitted)

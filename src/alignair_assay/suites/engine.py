@@ -54,8 +54,9 @@ def requested_count(stratum: Stratum, scale: float) -> int:
 @dataclass(frozen=True)
 class GeneratedSuite:
     """A generated suite: its cases in stratum order, its donors (empty without them), and per stratum name the
-    generation stats ``requested``, ``accepted``, ``generated``, ``rounds`` and ``cases`` (plus ``clones`` for a
-    clonal stratum)."""
+    generation stats ``requested`` (in ``requested_unit``), ``accepted``, ``generated``, ``rounds`` and ``cases``
+    (plus ``clones`` for a clonal stratum). ``requested_unit`` is ``"clones"`` for a clonal stratum, which requests
+    clones, and ``"records"`` otherwise; ``accepted``, ``generated`` and ``cases`` always count records (cases)."""
 
     cases: list[dict]
     donors: tuple[Donor, ...]
@@ -162,7 +163,8 @@ def _sampled_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, round_s
         generated += len(batch)
         rounds += 1
         accepted.extend(r for r in batch if stratum.accept is None or stratum.accept(r))
-    stats = {"requested": n, "accepted": len(accepted), "generated": generated, "rounds": rounds}
+    stats = {"requested": n, "requested_unit": "records", "accepted": len(accepted), "generated": generated,
+             "rounds": rounds}
     return accepted[:n], stats
 
 
@@ -172,8 +174,8 @@ def _clonal_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: in
     clones = len({r["clone_id"] for r in records})
     if clones < ctx.n:
         raise RuntimeError(f"{suite.name}/{stratum.name}: generated {clones} of {ctx.n} clones")
-    stats = {"requested": ctx.n, "accepted": len(records), "generated": len(records), "rounds": 1,
-             "clones": clones}
+    stats = {"requested": ctx.n, "requested_unit": "clones", "accepted": len(records), "generated": len(records),
+             "rounds": 1, "clones": clones}
     return records, stats
 
 
@@ -193,7 +195,8 @@ def _cohort_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: in
                                                   expose_provenance=True).records)
     if len(records) < ctx.n:
         raise RuntimeError(f"{suite.name}/{stratum.name}: generated {len(records)} of {ctx.n} cohort records")
-    stats = {"requested": ctx.n, "accepted": len(records), "generated": len(records), "rounds": 1}
+    stats = {"requested": ctx.n, "requested_unit": "records", "accepted": len(records), "generated": len(records),
+             "rounds": 1}
     return records[:ctx.n], stats
 
 

@@ -104,6 +104,7 @@ def test_accept_filter_applied():
     assert len(with_d) == 20 and all(c["record"]["d_call"] for c in with_d)
     stats = generated.stats["with_d"]
     assert stats["requested"] == 20 and stats["rounds"] >= 1 and stats["generated"] >= 40  # factor 2 first
+    assert stats["requested_unit"] == "records"
 
     # A selective filter keeps the first accepted records in generation order, round 0 first.
     suite = _suite(Stratum("j6", 40, _igh, accept=_uses_j6))
@@ -175,7 +176,11 @@ def test_pairs_labels_and_clones():
     assert [c["case_id"] for c in lineages] == [f"T:lineages:{i:06d}" for i in range(len(lineages))]
     assert {c["groups"]["clone"] for c in lineages} == {"0", "1"}
     assert all(c["groups"] == {"clone": str(c["record"]["clone_id"])} for c in lineages)
+    # Clonal records name their generative alleles too (the run uses expose_provenance=True).
+    assert all(c["record"]["truth_v_call"] and c["record"]["truth_j_call"] for c in lineages)
     stats = generated.stats["lineages"]
+    # A clonal stratum requests clones; accepted, generated and cases count records.
+    assert stats["requested_unit"] == "clones"
     assert stats["requested"] == 2 and stats["clones"] == 2 and stats["rounds"] == 1
     assert stats["cases"] == stats["generated"] == len(lineages)
 
@@ -207,7 +212,8 @@ def test_cohort_strata(reference):
     assert [c["groups"] for c in cohort] == [{"subject": s} for s in subjects]
     assert all(c["record"]["subject_id"] == c["groups"]["subject"] for c in cohort)
     stats = generated.stats["cohort"]
-    assert stats == {"requested": 10, "accepted": 12, "generated": 12, "rounds": 1, "cases": 10}
+    assert stats == {"requested": 10, "requested_unit": "records", "accepted": 12, "generated": 12, "rounds": 1,
+                     "cases": 10}
     cfg = dataconfig(REFERENCE)
     expected = (Experiment.on(cfg).recombine().mutate(rate=0.03)
                 .run_cohort([d.genotype(cfg) for d in donors], n_per_subject=4,
@@ -218,7 +224,8 @@ def test_cohort_strata(reference):
     # records are those of a run over every donor.
     few = strata["few"]
     assert [c["groups"]["subject"] for c in few] == ["donor00", "donor01"]
-    assert generated.stats["few"] == {"requested": 2, "accepted": 2, "generated": 2, "rounds": 1, "cases": 2}
+    assert generated.stats["few"] == {"requested": 2, "requested_unit": "records", "accepted": 2, "generated": 2,
+                                      "rounds": 1, "cases": 2}
     every = (Experiment.on(cfg).recombine().mutate(rate=0.03)
              .run_cohort([d.genotype(cfg) for d in donors], n_per_subject=1,
                          seed=derive_seed(7, "dev", "S0_COHORT", "few", 0), expose_provenance=True).records)

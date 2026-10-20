@@ -16,6 +16,7 @@ from alignair_assay.core.prediction import Prediction
 from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import CaseScores
 from alignair_assay.metrics.case import score_case
+from alignair_assay.metrics.groups import clone_agreement
 from alignair_assay.truth.io import read_truth_header, read_truth_jsonl
 from alignair_assay.truth.model import ObservableTruth
 
@@ -25,10 +26,15 @@ def score_predictions(truths: list[ObservableTruth], preds: Mapping[str, Predict
     """Per-case scores of one tool over the non-excluded truths, in truth order, keyed by case id.
 
     ``preds`` maps case ids to the tool's predictions; a case id that is absent, or mapped to None, is scored as a
-    missing prediction. Entries for unknown or excluded case ids are ignored. Every metric the assay reports for
-    a single tool comes from here, so the oracle check holds it to the same rule as the pipeline.
+    missing prediction. Entries for unknown or excluded case ids are ignored. Each case gets its own metrics
+    (``metrics.case.score_case``) merged with its group metrics (``metrics.groups.clone_agreement``), which
+    depend on the predictions for the rest of its clone. Every metric the assay reports for a single tool comes
+    from here, so the oracle check holds it to the same rule as the pipeline.
     """
-    return {t.case_id: score_case(t, preds.get(t.case_id), reference) for t in truths if t.excluded is None}
+    scores = {t.case_id: score_case(t, preds.get(t.case_id), reference) for t in truths if t.excluded is None}
+    for case_id, group_scores in clone_agreement(truths, preds).items():
+        scores[case_id].update(group_scores)
+    return scores
 
 
 def score_tool(truths: list[ObservableTruth], predictions_path, reference: Reference

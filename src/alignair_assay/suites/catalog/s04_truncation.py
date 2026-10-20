@@ -33,7 +33,7 @@ S4 = Suite(
     purpose="Measures how calls, germline edges and abstention hold as reads lose a fixed number of bases at one "
             "end.",
     primary=("v.top1_in_set", "v_short.abstain_ok", "v.germ_start_err", "j.top1_in_set", "j.germ_end_err",
-             "d.spurious_call", "junction.nt_exact"),
+             "v.spurious_call", "junction.nt_exact"),
     strata=tuple(
         Stratum(f"{end}_{loss}", 150,
                 partial(truncated_repertoire, **{"five_prime" if end == "5p" else "three_prime": loss}),

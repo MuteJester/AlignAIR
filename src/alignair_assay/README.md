@@ -20,7 +20,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`, `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports) | core |
 | `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle`, `summary` (what a truth set could not score) | core, truth |
 | `airr` | AIRR TSV `reader` and `writer` | core, airr |
-| `metrics` | per-case scorers (pure) and the metric registries | core, truth, metrics |
+| `metrics` | per-case scorers (pure), the group scorers that read a case's whole clone (`groups`), and the metric registries | core, truth, metrics |
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
 | `report` | JSON reports and markdown summaries (`build`, `markdown`), and the run report rendered from a run summary (`run`) | core, stats, report |
 | `scoring` | `pipeline` (score one tool against a truth file), `slices` and `oracle` (the oracle rule on per-case scores) | core, truth, airr, metrics, stats, scoring |
@@ -122,6 +122,17 @@ key; a label named like a fixed dimension is an error. The fixed dimensions are 
 Below its minimum a segment gets only `{g}_short.top1_in_set` and `{g}_short.abstain_ok`, for which abstaining is
 as correct as a right call. A missing row is a failure, not an abstention.
 
+**Group metrics** (`metrics.groups`, merged into each case's scores by `scoring.pipeline.score_predictions`):
+
+- `clone.agree_modal`: the tool gives the case the same clone assignment as the rest of its clone, by the "first
+  call" grouping convention. A case's predicted key is (gene of its top-1 V call, gene of its top-1 J call,
+  junction length); it is None when any part is missing, including a missing row. The clone's modal key is its
+  most common non-None key, ties going to the key with the smallest `repr`. The case scores 1.0 when its key is
+  the modal key and 0.0 otherwise (a None key included). It applies to cases with `groups["clone"]` and a truth
+  clone key, in clones with at least two such cases. Set-overlap clone keys are scored per read by
+  `clone_key.exact`. Members of a clone share their recombination, so the oracle's key (the generative alleles'
+  genes and the truth junction length) is the same across a clone and the oracle always agrees.
+
 ## Run directory layout
 
 Every path inside a run directory comes from `core.layout.RunLayout`; no other module joins run-directory paths.
@@ -198,7 +209,9 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   built; an unknown suite or split, or a scale that is not positive, exits with status 2. The truth header records
   `kind`, `version`, `reference`, `reference_digest`, the GenAIRR provenance, `suite`, `split`, `seed`, `scale` and
   `n_cases`. `build.json` records the same configuration, its `config_hash` (SHA-256 of the canonical JSON of
-  `{suite, split, reference_digest, seed, scale}`), the per-stratum generation stats, the truth summary
+  `{suite, split, reference_digest, seed, scale}`), the per-stratum generation stats (`requested` in
+  `requested_unit`: `clones` for a clonal stratum, `records` otherwise; `accepted`, `generated` and `cases` count
+  records; `rounds`; `clones` for a clonal stratum), the truth summary
   (`truth.summary.truth_summary`: excluded cases, warnings, unscorable genes, `simulator_calls`, primary
   fallbacks), the worker count and the wall time in `seconds`; a suite with donors adds `donors_summary`
   (see Donors). It is removed first and written last, so it marks a complete build. The command prints one line per
@@ -319,10 +332,12 @@ input, which `cli.main` prints as `error: ...` with exit status 2.
 
 ## Adding a metric
 
-1. Write the scorer in the `metrics/` module of its kind (`alleles`, `boundaries`, `junction`, `shm`, `flags`). It
-   returns `CaseScores` named `<scope>.<metric>` and follows the NaN rules above.
-2. Call it from `metrics.case.score_case`. `scoring.pipeline.score_predictions` scores every case through it, so the
-   pipeline and the oracle check see the same metrics.
+1. Write the scorer in the `metrics/` module of its kind (`alleles`, `boundaries`, `junction`, `shm`, `flags`, or
+   `groups` for a metric that reads the predictions for a case's whole group). It returns `CaseScores` named
+   `<scope>.<metric>` and follows the NaN rules above.
+2. Call it from `metrics.case.score_case`; a group scorer is merged instead by
+   `scoring.pipeline.score_predictions`. Every case is scored through `score_predictions`, so the pipeline and the
+   oracle check see the same metrics.
 3. Declare its status in `metrics/__init__.py`. A name ending in one of the `_LOWER_IS_BETTER` suffixes is
    lower-is-better. A metric that is reported but not compared goes into `INFORMATIONAL`.
 4. Extend the oracle tests in `tests/alignair_assay/metrics/` so the oracle scores perfectly on it, and add a test
@@ -389,8 +404,10 @@ Engine rules (`suites.engine.generate_suite`):
 | `S1` | `core` | `{design}_{shm}` for the 4 read designs × `igm` 500, `igg` 500, `high` 250 = 5000; cohort | rc 0.5 | `DonorSpec(20, "S1")` | `design`, `shm` | `HEADLINE` |
 | `S2` | `siblings` | `shm_0`, `shm_0.03`, `shm_0.08`, `shm_0.15`, `shm_0.25` (SHM rate); each 600, full; V restricted to `sibling_alleles(reference, "v", 5)` | rc 0 | none | `sibling_distance` (per case: `1`, `2`, `3`, `4-5`) | `v.top1_in_set`, `v.set_precision`, `v.gene_top1`, `j.top1_in_set` |
 | `S3` | `junction` | `{sweep}_{value}`: `np1`, `np2` ∈ {0, 3, 6, 12, 20}, `v3` ∈ {0, 2, 5, 10}, `j5` ∈ {0, 4, 8, 14}, `d_both` ∈ {0, 4, 8} (nt); each 150, full, rate 0.02 | rc 0 | none | `sweep`, `value`, `p_nt` (per case: `yes`/`no`) | `junction.nt_exact`, `junction.length_exact`, `clone_key.exact`, `junction.start_abs_err`, `junction.end_abs_err`, `v.seq_end_exact`, `j.seq_start_exact` |
-| `S4` | `truncation` | `5p_{k}` (exact 5′ loss, k = 0, 25, …, 300), `3p_{k}` (exact 3′ loss, k = 0, 10, 20, 30, 40); each 150, rate 0.05 | rc 0 | none | `sweep` (`5p`/`3p`), `loss` | `v.top1_in_set`, `v_short.abstain_ok`, `v.germ_start_err`, `j.top1_in_set`, `j.germ_end_err`, `d.spurious_call`, `junction.nt_exact` |
+| `S4` | `truncation` | `5p_{k}` (exact 5′ loss, k = 0, 25, …, 300), `3p_{k}` (exact 3′ loss, k = 0, 10, 20, 30, 40); each 150, rate 0.05 | rc 0 | none | `sweep` (`5p`/`3p`), `loss` | `v.top1_in_set`, `v_short.abstain_ok`, `v.germ_start_err`, `j.top1_in_set`, `j.germ_end_err`, `v.spurious_call`, `junction.nt_exact` |
+| `S5` | `indels` | `v_{k}` (exactly k polymerase indels, all in V; k = 1, …, 6), `j_1` (exactly one, in J); each 300, full, rate 0.03; rejection sampling on `n_v_indels` / `n_j_indels` and `n_indels` | rc 0 | none | `indels` (the stratum name) | `v.indel_found`, `v.indel_false`, `v.seq_end_exact`, `junction.nt_exact`, `v.top1_in_set` |
 | `S6` | `d_observability` | `trim_{k}` (k nt at both D ends, k = 0, 3, 6, 9, 12) 400 each; `inverted` (every D inverted, default trims) 500; full, rate 0.02 | rc 0 | none | `d_trim` (k or `default`), `inverted` (`yes`/`no`) | `d.top1_in_set`, `d_short.abstain_ok`, `d.seq_start_exact`, `d.seq_end_exact` |
+| `S9` | `clonal` | `lineages` 60 clones (`clonal_lineage`: up to 25 sampled cells per clone, per-base SHM rate 0.008 per generation; median V mutation rate 0.075); full; clonal | rc 0.5 | none | — | `clone_key.exact`, `clone.agree_modal`, `junction.nt_exact`, `v.top1_in_set` |
 | `S10` | `heldout` | `uniform` (uniform SHM model), `hkl_s5f` (S5F kernel `hkl_s5f`), `np_shift` (NP lengths +4), `trim_shift` (trims +3); each 600, full, rate 0.075; cohort | rc 0.5 | `DonorSpec(20, "S10")` | `heldout` | `HEADLINE` |
 | `S11` | `orientation` | `full_igg` 500, `fr3_igg` 500 | both orientations (pairs) | none | `design` | `orientation.correct` + `HEADLINE` |
 | `S12` | `noise` | `seq_err_0.005`, `seq_err_0.01` (`sequencing_errors` rate), `pcr_0.002` (`pcr_amplify` rate), `n_bases_3`, `n_bases_8` (`ambiguous_base_calls` count), `pol_indel_1`, `pol_indel_2` (`polymerase_indels` count); each 300, full, rate 0.075 | rc 0.5 | none | `noise` (the stratum name) | `HEADLINE` |
@@ -444,6 +461,27 @@ read forward (rc 0) and mutate with the S5F `hh_s5f` kernel; S2, S3 and S6 reads
   (`recipes.d_alleles_for_trim`): on human IGH, all 33 D alleles for k ≤ 4, 32 for k = 6, 25 for k = 8, 22 for
   k = 9 and 14 for k = 12. Every record is then trimmed exactly k at both ends and keeps at least 2 D bases, so a
   stratum's label is always its records' real trim; the D allele pool narrows with k.
+
+S5 builds on `repertoire(ctx, rate=0.03, noise=("polymerase_indels", {"count": (k, k)}))`, and S9 on its own
+`clonal_lineage` chain:
+
+- **S5.** GenAIRR's `polymerase_indels(count=(k, k))` puts exactly k indels in a read but places them anywhere
+  (V, D, J or NP; record fields `n_v_indels`, `n_d_indels`, `n_j_indels` and the total `n_indels`), so each stratum
+  keeps, by rejection sampling, the records whose indels all fell in its segment. At the default seed (dev, scale
+  1.0) acceptance falls from 0.73 (`v_1`) to 0.23 (`v_6`) and is 0.15 for `j_1`, in 1 to 3 rounds. An indel at a
+  segment edge cannot be told from trimming, and adjacent indels can merge or cancel, so a read can show fewer
+  indels than GenAIRR placed. At that seed every `v_k` read still shows an indel in V (`v.indel_found` applies to
+  all 1800), while a few `j_1` reads show none in J and are scored by `j.indel_false` instead.
+- **S9.** `recombine().clonal_lineage(n_clones=ctx.n, n_sample=25, rate=0.008)`. Each clone is one lineage tree
+  grown from a recombined founder. Up to 25 of its cells are sampled, and identical genotypes are collapsed, so a
+  clone yields at most 25 records. Members share their alleles, trims and NP regions, and differ only by the
+  mutations of their branch. Every case gets `groups["clone"]` (the record's `clone_id`); `build.json` counts the
+  stratum's `requested` in `clones`. SHM is internal to `clonal_lineage`, and GenAIRR rejects `mutate()` before
+  or after it. Its `rate` is per base and per generation (default `max_generations` 10), not per read: 0.05
+  leaves reads about 40% mutated, and 0.008 puts them at IgG level. At the default seed (dev, scale 1.0), the 60
+  clones give 1130 cases with clone sizes 4 to 25 (median 21). The per-read V mutation rate (truth V mismatches
+  over observed V germline bases) has median 0.075 and IQR 0.065 to 0.088. One clone (23 cases), whose J 5′
+  trim cuts the J anchor codon, has no junction, so neither a clone key nor `clone.agree_modal`.
 
 ## Donors
 

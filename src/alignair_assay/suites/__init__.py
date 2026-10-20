@@ -12,14 +12,17 @@ from alignair_assay.suites.catalog import (
     s02_siblings,
     s03_junction,
     s04_truncation,
+    s05_indels,
     s06_d_observability,
+    s09_clonal,
     s10_heldout,
     s11_orientation,
     s12_noise,
 )
 
 _CATALOG = (s00_toy.S0, s00_toy.S0_EXHAUST, s00_toy.S0_COHORT, s01_core.S1, s02_siblings.S2, s03_junction.S3,
-            s04_truncation.S4, s06_d_observability.S6, s10_heldout.S10, s11_orientation.S11, s12_noise.S12)
+            s04_truncation.S4, s05_indels.S5, s06_d_observability.S6, s09_clonal.S9, s10_heldout.S10,
+            s11_orientation.S11, s12_noise.S12)
 
 
 def _registry(suites: tuple[Suite, ...]) -> dict[str, Suite]:

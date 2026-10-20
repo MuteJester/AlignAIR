@@ -27,7 +27,7 @@ def junction_metrics(truth: JunctionTruth, sequence: str, pred: Prediction | Non
     The translation is scored only for an in-frame truth junction on a frame-unambiguous read (no V/J
     frameshift; see ``ObservableTruth.frame_unambiguous``).
     """
-    nt = _pred_nt(pred)
+    nt = predicted_junction_nt(pred)
     scores: CaseScores = {
         "junction.nt_exact": float(nt == truth.nt),
         "junction.length_exact": float(nt is not None and len(nt) == truth.length),
@@ -43,7 +43,7 @@ def junction_metrics(truth: JunctionTruth, sequence: str, pred: Prediction | Non
 def clone_key_metric(truth: tuple[frozenset[str], frozenset[str], int], pred: Prediction | None) -> CaseScores:
     """1.0 when the predicted V and J call sets each name a truth gene and the junction length is right."""
     v_genes, j_genes, length = truth
-    nt = _pred_nt(pred)  # None whenever pred is None
+    nt = predicted_junction_nt(pred)  # None whenever pred is None
     ok = (nt is not None and len(nt) == length
           and bool(_genes(pred, "v") & v_genes) and bool(_genes(pred, "j") & j_genes))
     return {"clone_key.exact": float(ok)}
@@ -53,7 +53,9 @@ def _genes(pred: Prediction, g: str) -> frozenset[str]:
     return frozenset(gene_name(a) for a in predicted_set(pred.segments.get(g, _NO_CALL)))
 
 
-def _pred_nt(pred: Prediction | None) -> str | None:
+def predicted_junction_nt(pred: Prediction | None) -> str | None:
+    """The tool's junction string, uppercase; None without a row or a junction string. Every predicted junction
+    length the metrics compare is this string's length."""
     if pred is None or not pred.junction_nt:
         return None
     return pred.junction_nt.upper()
