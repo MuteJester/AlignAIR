@@ -37,7 +37,22 @@ def _truths(records, reference):
 
 
 def _calls(record, g):
-    return [c for c in (record.get(f"{g}_call") or "").split(",") if c]
+    """GenAIRR's post-SHM call list: ``recalled_{g}_call`` in its generating-reference encoding, ``{g}_call``
+    before it."""
+    field = f"recalled_{g}_call" if f"recalled_{g}_call" in record else f"{g}_call"
+    return [c for c in (record.get(field) or "").split(",") if c]
+
+
+def _projecting(record) -> bool:
+    """True for a record of an encoding that projects a re-called segment's alignment onto the re-call."""
+    return "recalled_v_call" not in record
+
+
+def _calls_in_v_call(records):
+    """``records`` with GenAIRR's post-SHM call list in ``{g}_call`` and no truth or re-call columns: how an encoding
+    before the generating-reference one presents a record simulated without provenance."""
+    return [{**{k: v for k, v in r.items() if not k.startswith(("truth_", "recalled_"))},
+             **{f"{g}_call": ",".join(_calls(r, g)) for g in "vdj"}} for r in records]
 
 
 def _without_provenance(records):
@@ -143,7 +158,9 @@ def test_invariants_hold_against_generative_allele(reference):
 
 def test_fallback_without_provenance(reference):
     records = _run(0.15, 200, 4).records
-    bare = _without_provenance(records)
+    # A record naming only GenAIRR's post-SHM calls (an encoding before the generating-reference one, simulated
+    # without provenance) falls back to the first call.
+    bare = _calls_in_v_call(records)
     truths = _truths(bare, reference)
     for record, truth in zip(bare, truths):
         for g, segment in truth.segments.items():
@@ -153,6 +170,13 @@ def test_fallback_without_provenance(reference):
     assert summary["primary_fallbacks"] == {g: sum(g in t.segments for t in truths) for g in "vdj"}
     assert summary["primary_fallbacks"]["v"] > 0
     assert truth_summary(_truths(records, reference))["primary_fallbacks"] == {"v": 0, "d": 0, "j": 0}
+    # The generating-reference encoding names the generative allele in {g}_call even without provenance.
+    if not _projecting(records[0]):
+        plain = _truths(_without_provenance(records), reference)
+        assert truth_summary(plain)["primary_fallbacks"] == {"v": 0, "d": 0, "j": 0}
+        for record, truth in zip(records, plain):
+            for g, segment in truth.segments.items():
+                assert segment.alleles.primary == record[f"truth_{g}_call"] == record[f"{g}_call"]
 
 
 def test_provenance_does_not_change_sequences(reference):
@@ -218,11 +242,12 @@ def test_engine_records_carry_provenance(tmp_path):
 
 
 def test_recall_alignment_clipped_to_generative_structural_range(reference):
-    """GenAIRR projects a re-called segment's CIGAR edges onto the re-called allele (NP claims scored against it;
-    GenAIRR 2.3.1 also filled D to its length, later engines report read bases past a shorter re-call's end as
+    """Every re-called segment decodes to its generative alignment. Encodings before the generating-reference one
+    project a re-called segment's CIGAR edges onto the re-called allele (NP claims scored against it; GenAIRR 2.3.1
+    also filled D to its length, the assembled encoding reports read bases past a shorter re-call's end as
     insertions) while the core alignment is the generative one: decoded unclipped, some segments score extra
-    mismatches (and, on 2.3.1, some are dropped: pinned by test_record_encodings' old-engine fixture); decoded,
-    every one is the generative alignment."""
+    mismatches (and, on 2.3.1, some are dropped: pinned by test_record_encodings' old-engine fixture). The
+    generating-reference encoding aligns against the generative allele, so it has nothing to undo."""
     result = _run(0.15, 1500, 9)
     misscored = recalls = 0
     for record, outcome, truth in zip(result.records, result.outcomes, _truths(result.records, reference)):
@@ -244,7 +269,11 @@ def test_recall_alignment_clipped_to_generative_structural_range(reference):
                 unclipped = None
             if unclipped is not None and unclipped.n_mismatch > expected.n_mismatch:
                 misscored += 1
-    assert recalls > 0 and misscored > 0
+    assert recalls > 0
+    if _projecting(result.records[0]):
+        assert misscored > 0
+    else:
+        assert misscored == 0
 
 
 def test_inverted_d_recall_decoded_against_generative_allele(reference):

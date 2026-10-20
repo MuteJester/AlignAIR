@@ -94,10 +94,12 @@ key; a label named like a fixed dimension is an error. The fixed dimensions are 
 - The observed alignment drops edge gaps: a clipped or edge-deleted germline base cannot be told apart from extra
   trimming.
 - The primary allele is the generative one, the allele GenAIRR sampled (`truth_{g}_call`; the suite engine
-  simulates with `expose_provenance=True`). GenAIRR's `{g}_call` is a best-match re-call made after SHM, which
-  differs from the generative allele in a few percent of mutated reads. A record without `truth_{g}_call` (bench
-  cases, records simulated without provenance) falls back to the first entry of `{g}_call`, and the truth summary
-  counts those fallbacks per gene (`primary_fallbacks`).
+  simulates with `expose_provenance=True`). GenAIRR also re-calls each segment after SHM (its best match to the
+  read, which differs from the generative allele in a few percent of mutated reads): that call list is `{g}_call`
+  up to the assembled encoding, and `recalled_{g}_call` in the generating-reference encoding, where `{g}_call` names
+  the generative allele (`truth.genairr.record_calls` reads either). A record that does not name the generative
+  allele (bench cases, records of the earlier encodings simulated without provenance) falls back to the first
+  entry of the call list, and the truth summary counts those fallbacks per gene (`primary_fallbacks`).
 - Coordinates, CIGAR and SHM truth are observed against the generative allele. When it is not in the call list,
   GenAIRR projects the CIGAR edges onto the re-called allele (fills to that allele's ends, NP bases it matches
   claimed as germline) while the core alignment stays generative. `truth.genairr` undoes this: read bases past the
@@ -126,7 +128,11 @@ key; a label named like a fixed dimension is an error. The fixed dimensions are 
   positions, the assembled encoding records them as insertions. And a segment removed completely by end loss: the
   assembled encoding gives it an empty CIGAR and no germline coordinates, which the builder treats as not observed.
   The committed fixtures `tests/alignair_assay/fixtures/old_engine_*.json` (bench_v2 inverted Ds and dev-split
-  re-calls simulated by `1ededa6`) keep the walker decoding tested whichever GenAIRR is installed.
+  re-calls simulated by `1ededa6`) keep the walker decoding tested whichever GenAIRR is installed. The newest
+  engines use the *generating-reference* encoding, told apart by its `recalled_{g}_call` fields: `{g}_call` is the
+  generative allele and `recalled_{g}_call` the post-SHM call list; every alignment is against the generative
+  allele (nothing to undo for a re-called segment), no NP base is claimed for a segment, end loss is missing
+  coverage instead of `D` columns, and the inverted D is assembled.
 - The allele truth is a set. `AlleleTruth.generative` holds every reference allele whose sequence contains the
   observed germline of the generative allele. The scored set `AlleleTruth.alleles` adds the simulator's calls that
   are in the reference, since a sequence-only aligner can defend either. The truth summary
@@ -709,9 +715,10 @@ read forward (rc 0) and mutate with the S5F `hh_s5f` kernel; S2, S3 and S6 reads
 - **S3.** One variable per stratum, the others at GenAIRR's defaults: `recombine(np1_lengths=[(v, 1.0)])` (or
   `np2_lengths`), `trim(v_3=[(v, 1.0)])` (or `j_5`; `trim()` keeps the default distribution of every side it is
   not given), or `symmetric_d_trim` for `d_both`. Trims are exact on every record. The record's NP length is
-  GenAIRR's annotation, which is one base shorter than requested on about 1% (NP1) and 2.5% (NP2) of records,
-  without SHM or end loss as well: GenAIRR claims an NP base for the neighbouring V, D or J when it matches that
-  segment's trimmed germline (or, for a segment GenAIRR re-called, the re-called allele's). Strata are labelled
+  GenAIRR's annotation. Up to the assembled encoding it is one base shorter than requested on about 1% (NP1) and
+  2% to 2.5% (NP2) of records, without SHM or end loss as well: GenAIRR claims an NP base for the neighbouring V, D
+  or J when it matches that segment's trimmed germline (or, for a segment GenAIRR re-called, the re-called
+  allele's). The generating-reference encoding claims none, so it is the sampled length. Strata are labelled
   with the requested value. GenAIRR 2.3.1 cannot set P-nucleotide lengths and human IGH OGRDB has no P-nucleotide
   model, so `p_nt` is `no` on every case of that reference.
 - **D trims beyond GenAIRR's cap (S3 `d_both`, S6 `trim_{k}`).** `trim()` applies an explicit length as given, and

@@ -14,7 +14,7 @@ from alignair_assay.core.reference import Reference, gene_name
 from alignair_assay.core.seqops import revcomp, translate
 from alignair_assay.truth.alleles import observable_alleles
 from alignair_assay.truth.boundaries import boundary_intervals
-from alignair_assay.truth.genairr import observe_forward, observe_inverted_d
+from alignair_assay.truth.genairr import observe_forward, observe_inverted_d, record_calls
 from alignair_assay.truth.model import JunctionTruth, ObservableTruth, SegmentTruth
 from alignair_assay.truth.segment import ObservedSegment, check_invariants, observe_segment
 
@@ -24,11 +24,14 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
                               novel: Mapping[str, NovelAllele] | None = None) -> ObservableTruth:
     """Observable truth for a forward GenAIRR record (``rev_comp`` records are not supported yet).
 
-    Each segment's primary allele is the generative one, ``truth_{g}_call`` (records simulated with
-    ``expose_provenance=True``); a record without it falls back to the first entry of ``{g}_call``, GenAIRR's
-    post-SHM re-call, and the allele truth says so (``AlleleTruth.primary_fallback``). A generative allele missing
-    from the call list makes the segment re-called, decoded as ``truth.genairr`` describes. A primary allele that
-    is not in ``reference`` makes its segment unscorable.
+    Each segment's primary allele is the generative one (``truth.genairr.record_calls``): ``truth_{g}_call``
+    (records simulated with ``expose_provenance=True``) or, in GenAIRR's generating-reference encoding, ``{g}_call``.
+    A record that does not name it falls back to the first entry of GenAIRR's post-SHM call list, and the allele
+    truth says so (``AlleleTruth.primary_fallback``). That call list (``recalled_{g}_call`` in the
+    generating-reference encoding, ``{g}_call`` before it) joins the scored set. In the encodings before it, a
+    generative allele missing from the call list makes the segment re-called, decoded as ``truth.genairr``
+    describes. A segment with no alignment column (an empty CIGAR) is not observed. A primary allele that is not in
+    ``reference`` makes its segment unscorable.
 
     The scored allele set of a forward segment (V, J, forward D) also holds the as-near alleles
     (``as_near_alleles``): the primary's gene, covering the observed span, with no more mismatches against the read
@@ -56,8 +59,7 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
     unscorable: set[str] = set()
     v_novel_snps = None
     for g in "vdj":
-        calls = [c for c in (record.get(f"{g}_call") or "").split(",") if c]
-        generative = record.get(f"truth_{g}_call") or None
+        generative, calls, projecting = record_calls(record, g)
         primary = generative or (calls[0] if calls else None)
         if primary is None or not record.get(f"{g}_cigar"):
             # No call, or no alignment column: the read shows none of the segment. GenAIRR's assembled encoding
@@ -68,8 +70,9 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
             warnings.append(f"{g}: primary allele {primary} not in reference; segment dropped")
             unscorable.add(g)
             continue
-        # GenAIRR projects the alignment onto its first call, which is the generative allele whenever it is listed.
-        recalled = bool(calls) and generative is not None and generative not in calls
+        # Before the generating-reference encoding, GenAIRR projects the alignment onto its first call, which is the
+        # generative allele whenever it is listed.
+        recalled = projecting and bool(calls) and generative is not None and generative not in calls
         if novel_allele is not None:
             base_sequence = _base_sequence(novel_allele, reference)
             allele_seq = novel_allele.sequence

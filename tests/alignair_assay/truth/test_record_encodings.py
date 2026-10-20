@@ -204,6 +204,40 @@ def test_old_engine_recall_projection_is_undone(load_fixture, reference):
             assert unclipped.n_mismatch > observed.n_mismatch
 
 
+def _encodings(record, generative, inferred):
+    """The same V of ``record`` in the projecting encoding (``v_call`` the post-SHM inference, ``truth_v_call`` the
+    generative allele) and in the generating-reference encoding (``v_call`` the generative allele,
+    ``recalled_v_call`` the inference)."""
+    plain = {k: v for k, v in record.items() if not k.startswith(("truth_", "recalled_"))}
+    calls = {g: plain[f"{g}_call"] for g in "dj"}
+    projecting = dict(plain, v_call=inferred, truth_v_call=generative, **{f"truth_{g}_call": calls[g] for g in "dj"})
+    generating = dict(plain, v_call=generative, recalled_v_call=inferred,
+                      **{f"recalled_{g}_call": calls[g] for g in "dj"})
+    return projecting, generating
+
+
+def test_generating_reference_encoding_keeps_the_inference_apart(reference, genairr):
+    record = genairr.Experiment.on("human_igh").recombine().run_records(n=1, seed=3)[0]
+    generative = record["v_call"].split(",")[0]
+    inferred = next(name for name in sorted(reference.alleles["v"]) if name.split("*")[0] != generative.split("*")[0])
+    projecting, generating = _encodings(record, generative, inferred)
+    old = truth_from_genairr_record(projecting, reference, case_id="x", stratum="t").segments["v"]
+    new = truth_from_genairr_record(generating, reference, case_id="x", stratum="t").segments["v"]
+    # Either way the primary is the generative allele and the inference joins the scored set as a re-call.
+    for segment in (old, new):
+        assert segment.alleles.primary == generative and not segment.alleles.primary_fallback
+        assert inferred in segment.alleles.alleles and inferred not in segment.alleles.generative
+        assert segment.alleles.recalled
+    # The generating-reference encoding aligns against the generative allele: decoded as recorded, unprojected.
+    assert new.observed == observe_forward(record["sequence"].upper(), reference.seq(generative), generative,
+                                           generating, "v", [])
+    # The generating-reference record above has no truth columns: its v_call names the generative allele, so there is
+    # no fallback. Without them the projecting encoding falls back to its first call (the inference).
+    bare_old = {k: v for k, v in projecting.items() if not k.startswith("truth_")}
+    fallback = truth_from_genairr_record(bare_old, reference, case_id="x", stratum="t").segments["v"]
+    assert fallback.alleles.primary == inferred and fallback.alleles.primary_fallback
+
+
 def test_segment_without_alignment_columns_is_unobserved(reference, genairr):
     # The assembled encoding records a segment that end loss removed completely with an empty CIGAR and no germline
     # coordinates: the read shows none of it, so it is unobserved, not unscorable.

@@ -6,6 +6,7 @@ from alignair_assay.core.cigar import parse_cigar, walk
 from alignair_assay.core.reference import Reference, gene_name
 from alignair_assay.testing import assert_oracle_perfect
 from alignair_assay.truth.build import truth_from_genairr_record
+from alignair_assay.truth.genairr import record_calls
 
 ga = pytest.importorskip("GenAIRR")
 
@@ -73,7 +74,7 @@ def test_cohort_scored_set_keeps_simulator_calls_and_primary(reference):
         for g, segment in truth.segments.items():
             a = segment.alleles
             assert a.primary in a.alleles and a.primary in a.generative
-            calls = {c for c in (record.get(f"{g}_call") or "").split(",") if c}
+            calls = set(record_calls(record, g)[1])  # GenAIRR's post-SHM calls, in either encoding
             assert {c for c in calls if reference.has(c)} <= a.alleles
             extra = a.alleles - a.generative - calls
             if extra:

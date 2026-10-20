@@ -36,10 +36,13 @@ def test_five_prime_end_loss_unmutated(reference):
 
 
 def test_three_prime_end_loss_j(reference):
+    # Exactly 20 bases lost at the 3' end. GenAIRR up to the assembled encoding records them as trailing D columns
+    # (j_germline_end still the J's end); the generating-reference encoding as missing coverage. Either way a read
+    # ending inside J observes it up to 20 bases before its end, without a gap at the alignment's end.
     recs = _records(50, 7, e3=(20, 20))
     for rec in recs:
         seg = _observe(rec, "j", reference)
-        if seg is not None and seg.germ_end == rec["j_germline_end"] - 20:
+        if seg is not None and seg.seq_end == len(rec["sequence"]) and rec["j_trim_3"] == 0:
             break
     else:
         pytest.fail("no record with the read ending inside J")

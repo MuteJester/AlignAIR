@@ -4,8 +4,12 @@ A GenAIRR record reports each segment's alignment as a read start, a germline st
 check that alignment against the read and the allele and project it onto the observed read; an alignment that
 cannot be projected gives None and a message in ``problems``.
 
-**Two encodings.** GenAIRR up to 2.3.1 (the *walker* encoding, commit ``1ededa6``) and later engines (the
-*assembled* encoding) report two things differently:
+**Encodings.** GenAIRR up to 2.3.1 (the *walker* encoding, commit ``1ededa6``) and later engines (the *assembled*
+encoding) report two things differently, listed below. The newest engines also use the *generating-reference*
+encoding (``record_calls``): ``{g}_call`` names the generative allele, the post-SHM call list moves to
+``recalled_{g}_call``, every alignment is against the generative allele (nothing projected onto a re-call, no NP
+base claimed for a segment), and end loss is missing coverage rather than ``D`` columns; its inverted D is
+assembled.
 
 - An inverted D. The walker encoding gives forward-allele coordinates walked with a forward-only CIGAR walker: its
   ``D`` ops are fills, deletions inside the D are not recorded, and NP claims are scored against the forward allele.
@@ -19,9 +23,10 @@ cannot be projected gives None and a message in ``problems``.
   bases past the re-called allele's end to the generative allele's positions there; the assembled encoding reports
   them as insertions. The decoders turn them back into those positions (below).
 
-**Re-called segments.** GenAIRR re-calls every segment after SHM (``{g}_call``, its best match to the mutated read);
-the allele it sampled, the generative allele, is ``truth_{g}_call``. When the generative allele is not in the call
-list, GenAIRR projects the record's alignment onto the re-called allele (its first call), but only at the edges: the
+**Re-called segments.** GenAIRR re-calls every segment after SHM (its best match to the mutated read: ``{g}_call``,
+or ``recalled_{g}_call`` in the generating-reference encoding); the allele it sampled, the generative allele, is
+``truth_{g}_call``. Before the generating-reference encoding, when the generative allele is not in the call list,
+GenAIRR projects the record's alignment onto the re-called allele (its first call), but only at the edges: the
 core columns keep the generative allele's germline positions, while fills run to the re-called allele's ends and NP
 bases matching the re-called allele are claimed as germline. This is a projection artefact, not an alignment of
 either allele. The decoders undo it: the read bases past the end of a shorter re-called allele become the generative
@@ -53,6 +58,28 @@ INVERTED_RECALL_UNDETERMINED = ("inverted D: re-called by the simulator, and its
                                 "re-called allele, does not determine the observed span; segment dropped")
 # Returned by the assembled inverted-D decoder for a record that is not in the assembled encoding.
 NOT_ASSEMBLED = object()
+
+
+def record_calls(record: dict, g: str) -> tuple[str | None, list[str], bool]:
+    """How a GenAIRR record names segment ``g``'s alleles: ``(generative, calls, projecting)``.
+
+    ``generative`` is the allele GenAIRR sampled: ``truth_{g}_call`` (records simulated with
+    ``expose_provenance=True``) or, in the generating-reference encoding, ``{g}_call`` itself; None when the record
+    does not name it. ``calls`` is GenAIRR's post-SHM call list (comma-separated ties, the generative allele first
+    when it is among them): ``recalled_{g}_call`` in the generating-reference encoding, ``{g}_call`` before it.
+    ``projecting`` is True for the encodings before it, whose alignment of a re-called segment is projected onto the
+    first call and must be undone (see the module docstring); the generating-reference encoding, told apart by its
+    ``recalled_{g}_call`` field, always aligns against the generative allele.
+    """
+    generating = f"recalled_{g}_call" in record
+    calls = _call_list(record.get(f"recalled_{g}_call" if generating else f"{g}_call"))
+    named = _call_list(record.get(f"{g}_call"))[:1] if generating else []
+    generative = record.get(f"truth_{g}_call") or (named[0] if named else None)
+    return generative, calls, not generating
+
+
+def _call_list(value) -> list[str]:
+    return [call for call in (value or "").split(",") if call]
 
 
 def _overhang_problem(what: str, n_read: int, projected_length: int, n_positions: int) -> str:
