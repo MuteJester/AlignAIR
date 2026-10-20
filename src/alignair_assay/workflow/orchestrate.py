@@ -228,8 +228,12 @@ def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference 
         print(f"error: {run['tool']} on {run['suite']}/{run['arm']} {run['status']}{donor}: {run.get('error')}",
               file=sys.stderr)
     for failure in summary["oracle_failures"]:
-        print(f"error: the oracle is {failure['status']} on {failure['suite']} ({failure['problems']} problems): "
-              "the suite's truth has a defect", file=sys.stderr)
+        if failure["status"] == "imperfect":
+            print(f"error: the oracle is imperfect on {failure['suite']} ({failure['problems']} problems): the "
+                  "suite's truth has a defect", file=sys.stderr)
+        else:
+            print(f"error: the oracle was not scored on {failure['suite']} ({failure.get('reason')}), so its truth "
+                  "is unchecked; see Failed runs", file=sys.stderr)
     for warning in summary["truth_warnings"]:
         counts = warning["unscorable"]
         print(f"warning: {warning['suite']}: the truth of {sum(counts.values())} segments "

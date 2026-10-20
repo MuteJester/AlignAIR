@@ -471,6 +471,22 @@ def test_oracle_failure_flagged(toy_run, tmp_path, monkeypatch):
     assert case_id.startswith("S0:") and (metric.startswith("junction.") or metric == "clone_key.exact")
     md = layout.report_md.read_text()
     assert "## Oracle check failures" in md and "| S0 | imperfect |" in md
+    assert "reason" not in failure
+
+
+def test_oracle_not_scored_is_not_a_truth_defect(toy_run, tmp_path, capsys):
+    root = _copy(toy_run[0], tmp_path)
+    layout = RunLayout(root)
+    layout.run_json("oracle", "S0", "shared").unlink()  # the oracle's run never finished
+    capsys.readouterr()
+    assert main(["report", "--run-dir", str(root)]) == 2
+    report = _report(root)
+    (failure,) = report["oracle_failures"]
+    assert (failure["status"], failure["reason"]) == (
+        "not scored", "the oracle run is missing: no run record: the run never finished")
+    err = capsys.readouterr().err
+    assert "error: the oracle was not scored on S0 (the oracle run is missing" in err
+    assert "see Failed runs" in err and "truth has a defect" not in err
 
 
 def test_unscorable_truth_flagged(toy_run, tmp_path, capsys):
@@ -526,7 +542,15 @@ def test_malformed_donors_not_scored(half_run, tmp_path, capsys):
     assert not layout.tool_scores("S1", "shared", "half").exists()
     assert _suite(report, "S0")["arms"]["shared"]["compared"]
     assert "| half | S1 | shared | not scored |" in layout.report_md.read_text()
-    assert "donors.json" in capsys.readouterr().err
+    # The oracle was not scored: its truth is unchecked, which is not a truth defect.
+    (failure,) = report["oracle_failures"]
+    assert failure["suite"] == "S1" and failure["status"] == "not scored"
+    assert failure["reason"].startswith("the oracle run is not scored: suites/S1/donors.json cannot be read")
+    err = capsys.readouterr().err
+    assert "donors.json" in err and "truth has a defect" not in err
+    assert "error: the oracle was not scored on S1 (the oracle run is not scored: suites/S1/donors.json" in err
+    section = layout.report_md.read_text().split("## Oracle check failures")[1].split("##")[0]
+    assert "| S1 | not scored | 0 | the oracle run is not scored: suites/S1/donors.json cannot be read" in section
 
 
 def test_report_command_rescores(half_run, tmp_path, capsys):

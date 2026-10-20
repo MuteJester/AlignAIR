@@ -454,8 +454,10 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
 1. **Failed runs.** Every run that failed, is missing, stale or could not be scored: tool, suite, arm, status,
    return code, failed donor, the tool's error line and the run record. These runs are not scored, and the
    comparisons that need them are left out.
-2. **Oracle check failures.** Suites where the oracle breaks the oracle rule, with the first offending cases. Such
-   a suite has a truth defect.
+2. **Oracle check failures.** Suites where the oracle is `imperfect` (it breaks the oracle rule; listed with the
+   first offending cases), which have a truth defect, and suites where it was `not scored`, listed with the reason
+   from the oracle's failed run (failed, missing, stale, or not scored, e.g. an unreadable `donors.json`): their
+   truth is unchecked, not known to be wrong. Both make `all` and `report` exit with status 2.
 3. **Truth warnings.** Suites with unscorable segments (truth that could not be built, `ObservableTruth.unscorable`):
    per gene the count, the cases with warnings and the build record whose `truth.warnings` give each case's
    reasons. Those segments are not scored, so the suite's metrics cover fewer reads than it simulated; `all` and

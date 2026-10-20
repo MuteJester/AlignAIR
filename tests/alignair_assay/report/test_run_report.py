@@ -44,7 +44,9 @@ def _summary() -> dict:
                          "failed_donor": "donor00", "error": "AttributeError: 'tuple' object has no attribute 'items'",
                          "run_json": "runs/alignair/S8/genotype/run.json"}],
         "oracle_failures": [{"suite": "S8", "status": "imperfect", "problems": 4,
-                             "examples": [["S8:cohort:000001", "v.top1_in_set", 0.0]]}],
+                             "examples": [["S8:cohort:000001", "v.top1_in_set", 0.0]]},
+                            {"suite": "S10", "status": "not scored", "cases": 0, "problems": 0, "examples": [],
+                             "reason": "the oracle run is missing: no run record: the run never finished"}],
         "truth_warnings": [{"suite": "S8", "unscorable": {"v": 0, "d": 2, "j": 0}, "warnings": 3,
                             "build_json": "suites/S8/build.json"}],
         "suites": [s1, s8],
@@ -97,6 +99,10 @@ def test_report_renders_sections_from_summary():
             "'items' | runs/alignair/S8/genotype/run.json |") in failed
     assert "not scored" in failed
     assert "| S8 | imperfect | 4 | S8:cohort:000001 v.top1_in_set = 0.0 |" in md
+    # An oracle that was not scored leaves the truth unchecked: it is named with its reason, not as a defect.
+    oracle = md[md.index("## Oracle check failures"):md.index("## Truth warnings")]
+    assert "| S10 | not scored | 0 | the oracle run is missing: no run record: the run never finished |" in oracle
+    assert "imperfect" in oracle and "truth defect" in oracle and "unchecked" in oracle
 
     # A suite with unscorable segments is flagged: they are not scored.
     flagged = md[md.index("## Truth warnings"):md.index("## Summary")]

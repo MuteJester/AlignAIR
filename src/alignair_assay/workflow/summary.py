@@ -126,13 +126,15 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
     ``problems`` and the first ``examples`` as ``[case id, metric, value]``), the ``truth`` summary
     (``truth_counts``) and per arm whether the two tools were ``compared``, the ``link`` to the arm's
     ``comparison.md`` (relative to the run directory), the primary-metric ``rows`` of ``comparison.json`` and their
-    ``verdicts`` counts. ``oracle_failures`` repeats the suites whose oracle is not perfect, and ``truth_warnings``
+    ``verdicts`` counts. ``oracle_failures`` repeats the suites whose oracle is not perfect (with the ``reason`` when
+    it was not scored, from the oracle's failed run: an unchecked truth, not a defect), and ``truth_warnings``
     (``suite``, ``unscorable`` per gene, cases with ``warnings``, the ``build_json`` path) the suites with unscorable
     segments, which are not scored. ``s10_vs_s1``, ``s11_parity`` and ``speed`` (``speed_summary``) are None without their data, and
     ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see the functions below).
     """
     a, b = cfg.tools
     failed = [status for status in run_statuses(layout, cfg).values() if status["status"] != "ok"]
+    failed += list(scoring_errors or [])
     suites = [_suite_summary(layout, cfg, name) for name in cfg.suites]
     manifest = read_json(layout.manifest) or {}
     return {
@@ -140,8 +142,8 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
         "config": {"suites": list(cfg.suites), "tools": list(cfg.tools), "split": cfg.split,
                    "reference": cfg.reference, "seed": cfg.seed, "scale": cfg.scale},
         "config_hash": manifest.get("config_hash"),
-        "failed_runs": failed + list(scoring_errors or []),
-        "oracle_failures": [{"suite": suite["name"], **suite["oracle"]} for suite in suites
+        "failed_runs": failed,
+        "oracle_failures": [_oracle_failure(suite, failed) for suite in suites
                             if suite["oracle"]["status"] != "perfect"],
         "truth_warnings": [{"suite": suite["name"], "unscorable": suite["truth"]["unscorable"],
                             "warnings": suite["truth"]["warnings"],
@@ -362,6 +364,19 @@ def read_json(path: Path) -> dict | None:
 def relative(layout: RunLayout, path: Path) -> str:
     """``path`` relative to the run directory, with forward slashes (as a markdown link)."""
     return Path(path).relative_to(layout.root).as_posix()
+
+
+def _oracle_failure(suite: dict, failed_runs: list[dict]) -> dict:
+    """A suite's oracle check that is not perfect. One that was not scored (its oracle run failed, is missing or
+    stale, or could not be scored) gets the ``reason`` from the oracle's entry in ``failed_runs``: its truth is
+    unchecked, which is not a truth defect."""
+    failure = {"suite": suite["name"], **suite["oracle"]}
+    if suite["oracle"]["status"] == "not scored":
+        run = next((run for run in failed_runs if (run["tool"], run["suite"], run["arm"]) ==
+                    (ORACLE, suite["name"], "shared")), None)
+        failure["reason"] = ("the oracle has no scores" if run is None else
+                             f"the oracle run is {run['status']}: {run.get('error')}")
+    return failure
 
 
 def _suite_summary(layout: RunLayout, cfg: RunConfig, name: str) -> dict:

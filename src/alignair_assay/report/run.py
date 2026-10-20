@@ -69,13 +69,15 @@ def _oracle_failures(summary: dict) -> list[str]:
     if not failures:
         return []
     rows = [[failure["suite"], failure["status"], str(failure.get("problems", 0)),
-             "; ".join(f"{case} {metric} = {'nan' if value is None else value}"
-                       for case, metric, value in failure.get("examples", [])[:3]) or MISSING]
+             failure.get("reason") or "; ".join(f"{case} {metric} = {'nan' if value is None else value}"
+                                                for case, metric, value in failure.get("examples", [])[:3]) or MISSING]
             for failure in failures]
     return ["", "## Oracle check failures", "",
             "On every suite the oracle must score 1.0 on each compared metric, 0.0 on each lower-is-better one and "
-            "never nan. A suite that fails has a truth defect: do not trust its scores.",
-            "", *markdown_table(["Suite", "Status", "Problems", "First problems"], rows)]
+            "never nan. A suite where it is imperfect has a truth defect: do not trust its scores. A suite where it "
+            "was not scored has an unchecked truth: its oracle run failed, is missing or stale, or could not be "
+            "scored (the reason; see Failed runs).",
+            "", *markdown_table(["Suite", "Status", "Problems", "First problems or reason"], rows)]
 
 
 def _truth_warnings(summary: dict) -> list[str]:
