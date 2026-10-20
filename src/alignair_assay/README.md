@@ -140,7 +140,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), the capture and resolved rules (`captured_genes`, `spanned_by_haplotype`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
 | `real.preprocess` | annotation-free preprocessing of a real run (see Real data): the protocol classifier (`classify_protocol`), the pRESTO recipes (`recipe`) run in the pinned Immcantation container (`IMMCANTATION_IMAGE`), the primers (`VH_PRIMERS`, `C_PRIMERS_MULTIPLEX`, `CREGION_RC`), the cap (`cap_sequences`), the primer spans (`primer_spans`) and `preprocess_run` | core, real.preprocess |
 | `real.truth` | each real read's tool-neutral truth (see Real data): `RealTruth` and `real_truths`, the observed span (`observed_span`, `mask_primers`), IMGT codon 104 (`cys104_end`), the known answer (`known_match`, `known_answer`), the Cys104 anchor (`cys104_in_read`), the junction (`junction_by_motif`) and `clonotype_clusters` | core, real.genotype, real.truth |
-| `real.metrics` | R1 per read (see Real data): `SupportIndex` and `classify_v_call` (each call's class), the gene thresholds (`gene_support`, `passing_genes`), `shared_exclusions`, `exclusion_counts`, `real_case_scores` and the oracle self-check (`oracle_prediction`, `oracle_self_check`) | core, metrics, real.genotype, real.truth, real.metrics |
+| `real.metrics` | R1 per read (see Real data): `SupportIndex` and `classify_v_call` (each call's class, on a read whose truth `is_documented` or not), the gene thresholds (`gene_support`, `passing_genes`), `shared_exclusions`, `exclusion_counts`, `real_case_scores` and the oracle self-check (`oracle_prediction`, `oracle_self_check`) | core, metrics, real.genotype, real.truth, real.metrics |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -1579,7 +1579,9 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   call is right: a right and a wrong call to the same genes are excluded alike, and a call is excluded when any of
   its genes is. The reasons: `dropped_truth` (the gene's only calls were dropped by `filter_d`), `not_captured`,
   `unmapped` (a guard: no gene at all; none on HUMAN_IGH_OGRDB), `novel_gene` (the gene has a donor allele absent
-  from the shared reference, of any functionality), `nonfunctional` (none of the gene's donor alleles is
+  from the shared reference, of any functionality; not for a V call on a documented known answer, whose V is a
+  donor allele in the shared reference: pass the read's truth, the same for both tools, to `classify_v` or
+  `read_calls`), `nonfunctional` (none of the gene's donor alleles is
   functional), `beyond_318` (a functional donor allele of the gene has no usable IMGT-gapped form; none on the
   pilot donors), `half_resolved` (the gene is carried but not resolved, so its unknown allele could be any call)
   and `low_support` (the V gene has fewer than 10 clonotypes or 3 naive clonotypes among the known answers; a known
@@ -1600,13 +1602,11 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   `real.v.novel_known_call` (a novel known answer's call is of its gene) and `real.d.unsupported` /
   `real.j.unsupported` where the donor has D or J truth (no D call has no metric).
 - The oracle (`oracle_prediction`, `oracle_self_check`), each known answer's own shared allele, checks the truth
-  against itself. On W-97 its 2,595 known answers that are not novel give 1,663 supported, 790 `novel_gene`
-  (IGHV3-23D, IGHV1-69, IGHV1-69D, IGHV1-2, IGHV1-24, IGHV1-46, IGHV3-30-3 and IGHV3-43 carry a novel allele, and
-  IGHV3-23's answers are one with IGHV3-23D's, their alleles being identical), 134 `not_captured` (IGHV3-30-5
-  answers whose shared allele is labelled with a paralog whose region W-97's contigs do not capture) and 8
-  `low_support`; on SC-23, 2,700 give 2,530 supported, 130 `novel_gene` and 40 `low_support`. Both are 100%
-  supported among the scored and 100% `known_top1`. W-97's known answers clear the thresholds for 25 of their 29
-  genes, SC-23's for 30 of 42.
+  against itself, with no `novel_gene` exclusion: its reads are documented known answers. On W-97 its 2,595 known
+  answers that are not novel give 2,451 supported, 134 `not_captured` (IGHV3-30-5 answers whose shared allele,
+  `IGHVF10-G37*07`, is also IGHV3-30*18, a gene W-97's contigs do not capture) and 10 `low_support`; on SC-23,
+  2,700 give 2,652 supported and 48 `low_support`. Both are 100% supported among the scored and 100% `known_top1`.
+  W-97's known answers clear the thresholds for 25 of their 29 genes, SC-23's for 30 of 42.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims.

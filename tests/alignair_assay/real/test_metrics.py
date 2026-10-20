@@ -99,7 +99,7 @@ SHARED_V = {
 # Shared V allele without a label -> the OGRDB labels it equals through IMGT 318 (``IuisMap.inferred``).
 INFERRED = {"IGHVF10-G33*01": ("IGHV3-13*06",)}
 D_SEQ = {"IGHD3-10*01": _random(31, 20), "IGHD3-3*01": _random(31, 21), "IGHD2-2*01": _random(31, 22),
-         "IGHD4-4*01": _random(20, 23)}
+         "IGHD4-4*01": _random(20, 23), "IGHD2-15*01": _random(31, 24)}
 J_SEQ = {"IGHJ4*02": _random(48, 30), "IGHJ6*02": _random(63, 31)}
 REFERENCE = Reference(
     alleles={"v": {name: gapped.replace(".", "") for name, (gapped, _) in SHARED_V.items()},
@@ -164,6 +164,8 @@ ALLELES = (
     _allele("IGHV4-59*01", 1, shared_as="IGHVF13-G1*01"),
     _allele("IGHV4-59*02", 2, shared_as="IGHVF13-G1*02", functional=False),
     _allele("IGHD3-10*01", 1, shared_as="IGHD3-10*01", segment="d"),
+    RealAllele(allele_id="IGHD2-15*01_a5c", gene="IGHD2-15", segment="d", sequence=_random(31, 25), gapped=None,
+               haplotype=0, functional=True, shared=(), iuis=()),  # a D allele absent from the shared reference
     _allele("IGHJ4*02", 0, shared_as="IGHJ4*02", segment="j"),
 )
 V_ALLELES = tuple(allele for allele in ALLELES if allele.segment == "v")
@@ -276,6 +278,31 @@ def test_the_other_exclusions():
     assert set(EXCLUSIONS) == {"excluded:not_captured", "excluded:dropped_truth", "excluded:unmapped",
                                "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318",
                                "excluded:half_resolved", "excluded:low_support"}
+
+
+def test_novel_gene_is_not_excluded_on_a_documented_known_answer():
+    # the read's V is exactly a documented donor allele (in the shared reference), so no novel allele can hide
+    # behind a call there: a call to the gene with a novel allele is judged like any other
+    documented = _truth("x", known=("IGHV3-30*01",), shared=("IGHVF4-G1*01",), gene="IGHV3-30")
+    assert INDEX.classify_v(_pred("x", "IGHVF4-G1*01"), documented) == SUPPORTED
+    assert INDEX.classify_v(_pred("x", "IGHVF4-G1*02"), documented) == UNSUPPORTED_ALLELE
+    assert INDEX.read_calls(_pred("x", "IGHVF4-G1*02"), documented).v == UNSUPPORTED_ALLELE
+    assert classify_v_call(_pred("x", "IGHVF4-G1*02"), GENOTYPE, IUIS, MERGED, reference=REFERENCE, support=SUPPORT,
+                           truth=documented) == UNSUPPORTED_ALLELE
+    assert INDEX.classify("IGHVF4-G1*02", documented=True) == UNSUPPORTED_ALLELE
+    # the same call on a read without a known answer, or with a novel one, stays excluded, right or wrong
+    for truth in (_truth("u"), _truth("n", known=("IGHV3-30*18_t189c",), gene="IGHV3-30"), None):
+        read_id = truth.read_id if truth else "r"
+        for call in ("IGHVF4-G1*01", "IGHVF4-G1*02"):
+            assert INDEX.classify_v(_pred(read_id, call), truth) == "excluded:novel_gene", (truth, call)
+    # the flag is the read's, so both tools get it: the wrong call is scored, not excluded, for both
+    classes = [INDEX.classify_v(_pred("x", call), documented) for call in ("IGHVF4-G1*01", "IGHVF4-G1*02")]
+    assert shared_exclusions({"x": classes[0]}, {"x": classes[1]}) == set()
+    # it is V's only: a D gene with an allele absent from the shared reference stays excluded
+    assert INDEX.classify("IGHD2-15*01", "d") == INDEX.classify("IGHD2-15*01", "d", documented=True) == (
+        "excluded:novel_gene")
+    calls = INDEX.read_calls(_pred("x", "IGHVF4-G1*02", d="IGHD2-15*01"), documented)
+    assert calls.v == UNSUPPORTED_ALLELE and calls.d == "excluded:novel_gene"
 
 
 def test_an_unlabelled_shared_allele_is_classified_by_its_inferred_gene():
@@ -456,11 +483,12 @@ def test_oracle_scores_perfect():
         _truth("a", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2", naive=True),
         _truth("p", known=("IGHV1-69D*01",), shared=("IGHVF6-G21*06",), gene="IGHV1-69D"),
         _truth("t", known=("IGHV4-28*01",), shared=("IGHVF3-G9*04",), gene="IGHV4-28"),
+        # a gene with a novel allele: a documented known answer is not excluded for it
+        _truth("x", known=("IGHV3-30*01",), shared=("IGHVF4-G1*01",), gene="IGHV3-30"),
         # excluded by a rule of the gene, whatever the call: half resolved, an allele without a usable gapped
-        # form, a novel allele, too few clonotypes
+        # form, too few clonotypes
         _truth("h", known=("IGHV3-15*01",), shared=("IGHVF9-G1*01",), gene="IGHV3-15"),
         _truth("m", known=("IGHV5-51*01",), shared=("IGHVF11-G1*01",), gene="IGHV5-51"),
-        _truth("x", known=("IGHV3-30*01",), shared=("IGHVF4-G1*01",), gene="IGHV3-30"),
         _truth("l", known=("IGHV1-46*01",), shared=("IGHVF2-G1*01",), gene="IGHV1-46"),
         # not scored by the oracle: a novel known answer, a read without one
         _truth("n", known=("IGHV3-30*18_t189c",), gene="IGHV3-30"),
@@ -471,16 +499,16 @@ def test_oracle_scores_perfect():
     assert oracle.sequence_id == "a" and oracle.segments["v"].call == "IGHVF1-G1*01"
     check = oracle_self_check(truths, INDEX)
     assert check["reads"] == 7
-    assert check["classes"] == {SUPPORTED: 3, "excluded:half_resolved": 1, "excluded:beyond_318": 1,
-                                "excluded:novel_gene": 1, "excluded:low_support": 1}
+    assert check["classes"] == {SUPPORTED: 4, "excluded:half_resolved": 1, "excluded:beyond_318": 1,
+                                "excluded:low_support": 1}
     assert check["excluded_genes"] == {"excluded:beyond_318": ["IGHV5-51"], "excluded:half_resolved": ["IGHV3-15"],
-                                       "excluded:low_support": ["IGHV1-46"], "excluded:novel_gene": ["IGHV3-30"]}
-    assert check["scored"] == 3 and check["supported"] == 1.0 and check["unsupported"] == 0.0
+                                       "excluded:low_support": ["IGHV1-46"]}
+    assert check["scored"] == 4 and check["supported"] == 1.0 and check["unsupported"] == 0.0
     assert check["known_top1"] == check["known_gene_top1"] == 1.0
     assert check["passed"]
     for truth in truths[:7]:
         pred = oracle_prediction(truth)
-        cls = INDEX.classify_v(pred)
+        cls = INDEX.classify_v(pred, truth)
         scores = real_case_scores(pred, truth, cls, excluded=cls.startswith("excluded:"), index=INDEX)
         assert scores.get("real.v.unsupported", 0.0) == 0.0 and scores["real.v.known_top1"] == 1.0
 
@@ -601,25 +629,23 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
     assert check["reads"] == len(known) > 0
     assert check["passed"] and check["supported"] == 1.0 and check["unsupported"] == 0.0
     assert check["known_top1"] == check["known_gene_top1"] == 1.0
-    # only the rules of the call's genes exclude an oracle call; the guard never fires on this reference
-    assert set(check["classes"]) <= {SUPPORTED, "excluded:not_captured", "excluded:novel_gene",
-                                     "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved",
-                                     "excluded:low_support"}
+    # only the rules of the call's genes exclude an oracle call, and never novel_gene: every oracle read is a
+    # documented known answer. The guard never fires on this reference.
+    assert set(check["classes"]) <= {SUPPORTED, "excluded:not_captured", "excluded:nonfunctional",
+                                     "excluded:beyond_318", "excluded:half_resolved", "excluded:low_support"}
     for segment in ("v", "d", "j"):
         assert all(index.classify(name, segment) != "excluded:unmapped" for name in reference.alleles[segment])
     # each class is explained by the call's own genes, read off the genotype
     passing = passing_genes(support)
     v = [allele for allele in genotype.alleles if allele.segment == "v"]
-    absent = {allele.gene for allele in v if not allele.shared}
     for truth in known:
         oracle = oracle_prediction(truth)
         name = oracle.segments["v"].call
-        cls = index.classify_v(oracle)
+        cls = index.classify_v(oracle, truth)
         genes = set(index.genes(name))
         carried = {gene for gene in genes if genotype.carried(gene)}
         functional = {allele.gene for allele in v if allele.functional}
         reasons = {"excluded:not_captured": bool(genes - genotype.captured),
-                   "excluded:novel_gene": bool(carried & absent),
                    "excluded:nonfunctional": bool(carried - functional),
                    "excluded:beyond_318": any(allele.functional and through_318(allele.gapped) is None
                                               for allele in v if allele.gene in carried),
