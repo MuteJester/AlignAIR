@@ -17,18 +17,18 @@ Each subpackage is a layer and may import only the layers in its row.
 
 | Layer | Holds | May import from `alignair_assay.` |
 |---|---|---|
-| `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`, `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data) | core |
+| `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`, `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports) | core |
 | `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle`, `summary` (what a truth set could not score) | core, truth |
 | `airr` | AIRR TSV `reader` and `writer` | core, airr |
 | `metrics` | per-case scorers (pure) and the metric registries | core, truth, metrics |
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
-| `report` | JSON reports and markdown summaries | core, stats, report |
-| `scoring` | `pipeline` (score one tool against a truth file) and `slices` | core, truth, airr, metrics, stats, scoring |
+| `report` | JSON reports and markdown summaries (`build`, `markdown`), and the run report rendered from a run summary (`run`) | core, stats, report |
+| `scoring` | `pipeline` (score one tool against a truth file), `slices` and `oracle` (the oracle rule on per-case scores) | core, truth, airr, metrics, stats, scoring |
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
-| `workflow` | build → run → score → report orchestration over a run directory: `build` (one suite) | everything except cli |
+| `workflow` | build → run → score → report orchestration over a run directory: `build` (one suite), `scoring` (score and comparison reports and their files, shared by `score`, `compare` and `all`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
 | `cli` | the `python -m alignair_assay` commands | everything |
-| `testing.py` | test-only helpers: `assert_oracle_perfect` (returns the oracle's per-case scores) | everything |
+| `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`; returns the oracle's per-case scores) | everything |
 
 Further rules:
 
@@ -72,9 +72,14 @@ key; a label named like a fixed dimension is an error.
   determine its span). Both reproduce GenAIRR's own generative alignment.
 - The allele truth is a set. `AlleleTruth.generative` holds every reference allele whose sequence contains the
   observed germline of the generative allele. The scored set `AlleleTruth.alleles` adds the simulator's calls that
-  are in the reference, since a sequence-only aligner can defend either. The truth summary counts the cases where
-  the simulator re-call differs from the generative set (`simulator_disagreements`). Truth files written before the
-  generative primary (version 1) load with `generative` equal to `alleles`.
+  are in the reference, since a sequence-only aligner can defend either. The truth summary
+  (`truth.summary.simulator_calls`) counts two things per gene. `call_list_differs` counts the cases whose
+  simulator call list is not exactly the generative set (`AlleleTruth.disagrees_with_simulator`); most of these
+  are tie lists that include the generative allele. `recalled` counts the cases whose first simulator call is
+  another allele (`AlleleTruth.recalled`): the reads GenAIRR re-called after SHM. GenAIRR lists the generative
+  allele first whenever it lists it, so a re-call is a non-empty call list without it; a fallback primary is never
+  re-called. Truth files written before the generative primary (version 1) load with `generative` equal to
+  `alleles` and `primary_fallback` True.
 - Each segment edge is an inclusive interval of equally defensible positions. An edge is exact when the prediction
   lies inside its interval, and its error is the distance to the interval.
 - The junction exists only when both conserved anchors (V Cys, J Trp/Phe) are aligned read bases. Productivity
@@ -128,9 +133,9 @@ RUN/
   runs/<tool>/<S>/genotype/donors/    per donor: reads.<subject>.fasta, predictions.<subject>.tsv (+ logs/<subject>/)
   runs/<tool>/_work/                  the tool's one-time setup (IgBLAST: the germline databases; AlignAIR: the model
                                       cache and the model's exported reference)
-  scores/<S>/<arm>/<tool>.* and comparison.{json,md}
+  scores/<S>/<arm>/                   <tool>.scores.jsonl.gz, <tool>.report.{json,md}, comparison.{json,md}
   speed/speed.json
-  report.json, report.md
+  report.json, report.md              the run summary and the run report (`all`, `report`)
 ```
 
 | Path | `RunLayout` |
@@ -142,6 +147,8 @@ RUN/
 | `runs/<tool>/<S>/genotype/donors/` files, `logs/<subject>/` | `donor_reads(tool, s, arm, subject)`, `donor_predictions(...)`, `donor_logs_dir(...)` |
 | `runs/<tool>/_work/` | `work_dir(tool)` |
 | `scores/<S>/<arm>/` | `scores_dir(s, arm)` |
+| `scores/<S>/<arm>/<tool>.scores.jsonl.gz`, `.report.json`, `.report.md` | `tool_scores(s, arm, tool)`, `tool_report_json(...)`, `tool_report_md(...)` |
+| `scores/<S>/<arm>/comparison.json`, `comparison.md` | `comparison_json(s, arm)`, `comparison_md(s, arm)` |
 | `speed/`, `speed.json` | `speed_dir`, `speed_json` |
 | `report.json`, `report.md` | `report_json`, `report_md` |
 
@@ -154,6 +161,11 @@ claims).
 Run from the repository root with `PYTHONPATH=src`:
 
 ```
+python -m alignair_assay all --run-dir RUN --suites S1,S10,S11,S12 --tools igblast,alignair [--quick] \
+    [--split dev] [--reference HUMAN_IGH_OGRDB] [--seed 20261019] [--scale 1.0] [--workers 8] [--threads 8] \
+    [--igblast-dir DIR] [--alignair-image IMAGE] [--alignair-model alignair-igh-human@1.0.0] \
+    [--alignair-checkpoint MODEL.alignair] [--device cpu] [--speed] [--force]
+python -m alignair_assay report --run-dir RUN [--a igblast --b alignair]
 python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB] \
     [--seed 20261019] [--scale 1.0] [--workers 8]
 python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-local|oracle --suites S0,S1 \
@@ -165,14 +177,20 @@ python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME 
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05]
 ```
 
+- `all` (`workflow.orchestrate.run_all`) does everything over one run directory, and can be rerun to resume. See
+  The all command below.
+- `report` (`workflow.orchestrate.score_and_report`) re-scores, re-compares and rewrites the run report of a run
+  directory made by `all`, from its existing runs and with the configuration in its `manifest.json`; nothing is
+  built or run. `--a`/`--b` compare two other tools that have runs there (default: the run's two tools). It exits
+  with status 2 under the same conditions as `all`, and when the directory has no manifest.
 - `build` generates each named suite into `RUN` (`workflow.build.build_suite`): `cases.jsonl.gz`, `truth.jsonl.gz`,
   `reads.fasta`, `donors.json` (suites with donors only) and `build.json`. Every name is checked before anything is
   built; an unknown suite or split, or a scale that is not positive, exits with status 2. The truth header records
   `kind`, `version`, `reference`, `reference_digest`, the GenAIRR provenance, `suite`, `split`, `seed`, `scale` and
   `n_cases`. `build.json` records the same configuration, its `config_hash` (SHA-256 of the canonical JSON of
   `{suite, split, reference_digest, seed, scale}`), the per-stratum generation stats, the truth summary
-  (`truth.summary.truth_summary`: excluded cases, warnings, unscorable genes, simulator re-calls that differ,
-  primary fallbacks), the worker count and the wall time in `seconds`; a suite with donors adds `donors_summary`
+  (`truth.summary.truth_summary`: excluded cases, warnings, unscorable genes, `simulator_calls`, primary
+  fallbacks), the worker count and the wall time in `seconds`; a suite with donors adds `donors_summary`
   (see Donors). It is removed first and written last, so it marks a complete build. The command prints one line per
   suite.
 - `run` runs one registered tool on built suites of `RUN`. It first checks every input: the tool and its options,
@@ -192,16 +210,88 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   failed donor and the tool's error line.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit` and `genairr_git_dirty`. The
-  command then prints the excluded cases, warnings, unscorable genes, simulator re-calls that differ ("simulator
-  re-call differs") and primary fallbacks.
+  command then prints the excluded cases, warnings, unscorable genes, the two simulator-call counts ("simulator
+  call list differs from the generative set" and "simulator first call is not the generative allele", see Truth
+  conventions) and primary fallbacks.
 - `score` writes `<tool>.scores.jsonl.gz`, `<tool>.report.json` and `<tool>.report.md`.
 - `compare` writes `comparison.json` and `comparison.md`, and prints the headline table. Its 95% and simultaneous
   CIs of 0/1 metrics are clipped to [-1, 1].
+- `score`, `compare` and `all` build these reports with the same functions (`workflow.scoring`). Their provenance
+  records the `command`, each input's path and SHA-256, the checkout's git state, the matching counts and the
+  truth's `simulator_calls`. The markdown leads with the headline metrics (`core.headline.HEADLINE`; under `all`,
+  the suite's primary metrics), which are also the rows of its slice tables.
 - Predictions are matched to truth by AIRR `sequence_id` == truth `case_id`. A truth case without a prediction is
   scored as missing, never dropped.
 - A missing file, an unknown reference, a truth file built against another reference, a prediction file
   matching no case, `compare` given the same name for both tools, an unknown tool, an unbuilt suite, a shared
   reference that is not the truth reference, or a failed tool run exits with status 2.
+
+### The all command
+
+`all` runs these steps in order (`workflow.orchestrate.run_all`). It prints one line per step.
+
+1. **Manifest.** The configuration is checked before anything is written. It needs known suites, a known split,
+   exactly two different registered tools, a positive scale and at least one worker and thread; `--speed` is not
+   available yet. Then `manifest.json` is written, holding the `config`, its `identity`, the `config_hash` (SHA-256
+   of the canonical JSON of the identity), the split, the host, the checkout's git state and the GenAIRR
+   provenance. The identity is what the outputs depend on: suites, tools, split, reference, seed, scale and each
+   tool's prediction settings (`orchestrate.PREDICTION_SETTINGS`). Those are `igblast_dir` for IgBLAST, the image
+   (default filled in) and model for `alignair`, and the checkpoint path, its SHA-256 and the device for
+   `alignair-local`. Workers, threads and `--speed` are not part of it.
+2. **Build.** Each suite is built, unless its `build.json` already has the suite's config hash and its truth file
+   the current truth version.
+3. **Shared reference.** With `alignair` among the tools and no `reference/germline.fasta` yet, the image exports
+   its model's reference there. `ensure_shared_reference` then verifies the file against the truth reference, or
+   writes it from the truth. A model with another reference stops the run before any tool runs, and its export is
+   removed.
+4. **Runs.** The oracle runs on every suite's shared arm. Then each tool runs on each suite and each of the
+   suite's arms, the shared arm through `run_suite` and the genotype arm through `run_genotype_arm`. Every tool
+   with a run to make is prepared before the first run. Each run records its tool's prediction settings as the
+   provenance's `settings`.
+5. **Scoring.** Every suite and arm is scored afresh (`score_and_report`), after its old `scores/<S>/<arm>/` is
+   removed. A run is scored only when `workflow.summary.run_status` says `ok`. That status applies
+   `require_successful_run` and checks that the reads (and the truth and donors, when the run recorded them) still
+   have their recorded SHA-256. Each scored run gets the `score` command's three files, the oracle on the shared
+   arm. When both tools are scored, the arm gets the `compare` command's `comparison.json` and `comparison.md` (a
+   against b, Holm at 0.05).
+6. **Report.** `report.json` holds the run summary (`workflow.summary.collect_run_summary`) and `report.md` its
+   rendering (`report.run.run_report_markdown`).
+
+`all` exits with status 0, or with status 2 when any run failed, is missing, stale or could not be scored, or the
+oracle is not perfect on a suite. The report names which.
+
+**Resume.** Rerunning `all` with the same configuration skips each suite whose build is current and each run whose
+`run.json` shows return code 0 with predictions, the same `settings` and unchanged input files. A failed run is
+redone. Scores, comparisons and the report are always recomputed from the current runs, so a change to the scoring
+code takes effect on the next `all`. It never mixes in stale outputs.
+
+**Another configuration.** In a run directory whose manifest has another config hash, `all` stops before changing
+anything. The error names every field that differs, as `field old -> new`, for example `seed 20261019 -> 7`.
+`--force` replaces the manifest; its `replaced` records the old hash and the changed fields. The steps then redo
+what the change affects. A new seed, split, scale or reference rebuilds the suites, which changes their reads, so
+every run is redone. A new tool setting redoes that tool's runs. Outputs of suites or tools no longer in the
+configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 then has 100 cases); an explicit
+`--scale` wins over it.
+
+**The run report** (`report.md`) has these sections; a section without data is left out.
+
+1. **Failed runs.** Every run that failed, is missing, stale or could not be scored: tool, suite, arm, status,
+   return code, failed donor, the tool's error line and the run record. These runs are not scored, and the
+   comparisons that need them are left out.
+2. **Oracle check failures.** Suites where the oracle breaks the oracle rule, with the first offending cases. Such
+   a suite has a truth defect.
+3. **Summary.** Per suite and arm: cases, excluded cases, the oracle check, and how many of the suite's primary
+   metrics each tool wins and how many are tied or inconclusive.
+4. **Suites.** Per suite: title, purpose, and per arm the primary-metric rows of its comparison, linked to its
+   `comparison.md`.
+5. **S10 vs S1 (held-out settings).** Per tool, S10's primary-metric means against those of S1's `full_igg`
+   stratum, which has S10's read design and SHM rate under the default distributions. The table shows the
+   difference and the mean per held-out setting. These are unpaired and informational: no test is made.
+6. **S11 orientation parity.** Per tool, the forward reads against their reverse-complemented twins, paired by
+   `groups["pair"]` and compared with `stats.compare` (Holm at 0.05 across the tool's metrics). The section lists
+   the metrics that differ and the primary-metric rows.
+7. **Genotype arms.** For suites with a genotype arm, each tool's primary-metric means in each arm.
+8. **Speed.** Present when `speed/speed.json` exists.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
 `cli.COMMANDS`. The module owns its own input checks: `run` raises ValueError (or FileNotFoundError) for invalid
@@ -217,7 +307,7 @@ input, which `cli.main` prints as `error: ...` with exit status 2.
    lower-is-better. A metric that is reported but not compared goes into `INFORMATIONAL`.
 4. Extend the oracle tests in `tests/alignair_assay/metrics/` so the oracle scores perfectly on it, and add a test
    for a wrong prediction.
-5. For a headline metric, add it to `report.markdown.HEADLINE`.
+5. For a headline metric, add it to `core.headline.HEADLINE`.
 
 ## Adding a suite
 
@@ -281,8 +371,8 @@ Engine rules (`suites.engine.generate_suite`):
 | `S11` | `orientation` | `full_igg` 500, `fr3_igg` 500 | both orientations (pairs) | none | `design` | `orientation.correct` + `HEADLINE` |
 | `S12` | `noise` | `seq_err_0.005`, `seq_err_0.01` (`sequencing_errors` rate), `pcr_0.002` (`pcr_amplify` rate), `n_bases_3`, `n_bases_8` (`ambiguous_base_calls` count), `pol_indel_1`, `pol_indel_2` (`polymerase_indels` count); each 300, full, rate 0.075 | rc 0.5 | none | `noise` (the stratum name) | `HEADLINE` |
 
-`HEADLINE` is `report.markdown.HEADLINE` (clone key, junction, V, J, V mutation count, D, productive). Suites may
-not import `report`, so `suites.recipes.HEADLINE` repeats it and the suite tests pin the two equal.
+`HEADLINE` is `core.headline.HEADLINE` (clone key, junction, V, J, V mutation count, D, productive), the one list
+the suites and the reports share.
 
 The repertoire suites share `suites.recipes.repertoire(ctx, *, design, rate, model, s5f_model, np_shift,
 trim_shift, noise)`, which chains, in this order:
@@ -379,7 +469,7 @@ Registered runners:
 |---|---|---|---|
 | `oracle` | `runners.oracle.OracleRunner` | binds the run directory | writes `truth.oracle.oracle_prediction` rows for the reads of the FASTA, in its order, from the suite's truth (in-process: no command, no RSS) |
 | `igblast` | `runners.igblast.IgBlastRunner` (`--igblast-dir`, `--threads`, `--cpus`) | checks the release; writes `germline_{v,d,j}.fasta` and builds the BLAST databases (`makeblastdb -parse_seqids -dbtype nucl`) in `runs/igblast/_work/` | `IGDATA=<dir> igblastn -germline_db_V/D/J <db>/V,D,J -auxiliary_data optional_file/human_gl.aux -organism human -ig_seqtype Ig -num_threads <threads> -outfmt 19 -query <fasta> -out <tsv>`; provenance: version text, SHA-256 of `igblastn`, `makeblastdb`, the auxiliary file and every database file, threads and CPUs |
-| `alignair` | `runners.alignair.AlignAIRImage` (`--image`, `--model`, `--cache-dir`, `--threads`, `--cpus`) | inspects the image (pulling it when it is not local); installs the model into the cache (see AlignAIR model cache) with `models get`, then `models verify` and `models path`; records `models info` and `doctor --json`; exports the model's reference with `reference export <model file> --fasta` (3.0.0 crashes on a registry id there) into `runs/alignair/_work/` and refuses it unless it is the truth reference | `docker run --rm -u <uid>:<gid> -v <cache>:/home/appuser/.cache/alignair -v <fasta dir>:/in:ro -v <tsv dir>:/out [--cpuset-cpus <cpus>] [-e OMP_NUM_THREADS=<t> -e MKL_NUM_THREADS=<t>] --entrypoint sh <image> -c 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak; exit $rc' sh predict --model <model> --input /in/<fasta> --out /out/<tsv> --device cpu --quiet [--genotype /in/genotype.json]`; the wall time includes the container's start; the peak RSS is the container's cgroup v2 `memory.peak` (resident memory plus page cache; None with an `rss_note` when unreadable); provenance: image reference, ID and RepoDigests, the cache record, model spec, path and SHA-256, the model card, the doctor output, the exported reference, the moved `predict` sidecar (`logs/alignair.run.json`), the genotype file, threads and CPUs |
+| `alignair` | `runners.alignair.AlignAIRImage` (`--image`, `--model`, `--cache-dir`, `--threads`, `--cpus`) | inspects the image (pulling it when it is not local); installs the model into the cache (see AlignAIR model cache) with `models get`, then `models verify` and `models path`; records `models info` and `doctor --json`; exports the model's reference with `reference export <model file> --fasta` (3.0.0 crashes on a registry id there) into `runs/alignair/_work/` and refuses it unless it is the truth reference | `docker run --rm -u <uid>:<gid> -v <cache>:/home/appuser/.cache/alignair -v <log dir>/input:/in:ro -v <tsv dir>:/out [--cpuset-cpus <cpus>] [-e OMP_NUM_THREADS=<t> -e MKL_NUM_THREADS=<t>] --entrypoint sh <image> -c 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak 2>/dev/null; exit $rc' sh predict --model <model> --input /in/<fasta> --out /out/<tsv> --device cpu --quiet [--genotype /in/genotype.json]`; `<log dir>/input` is emptied and holds only a copy of the reads FASTA (and the genotype JSON), so the container never sees the suite's cases or truth; the wall time includes the container's start; the peak RSS is the container's cgroup v2 `memory.peak` (resident memory plus page cache; None with an `rss_note` when unreadable); provenance: image reference, ID and RepoDigests, the cache record, model spec, path and SHA-256, the model card, the doctor output, the exported reference, the moved `predict` sidecar (`logs/alignair.run.json`), the genotype file, threads and CPUs |
 | `alignair-local` | `runners.alignair.AlignAIRLocal` (`--checkpoint`, `--device`, `--batch-size`, `--threads`, `--cpus`) | checks the checkpoint; probes the torch version and CUDA device the subprocess sees; exports the checkpoint's reference into `runs/alignair-local/_work/` with this checkout's CLI and refuses it unless it is the truth reference | `PYTHONPATH=<checkout>/src [OMP_NUM_THREADS=<t> MKL_NUM_THREADS=<t>] <python> -c "import sys; from alignair.cli.main import main; sys.exit(main())" predict --model <checkpoint> --input <fasta> --out <tsv> --device <device> --batch-size <n> --quiet [--genotype <log_dir>/genotype.json]` under `timed_command` (peak RSS of the CLI process); provenance: checkpoint path and SHA-256, the checkout's path and commit state, interpreter, torch version, CUDA device name, device, batch size, the exported reference, the moved sidecar, the genotype file, threads and CPUs |
 
 ### AlignAIR model cache
@@ -405,7 +495,8 @@ the flattened `donor.tool_genotype(reference)`, where a novel allele is given as
 `mask` method. The image reads it with a copy of the donor's FASTA from `logs/<subject>/input/`, the local runner
 from `logs/<subject>/genotype.json`. Donors without cases are skipped and listed as `skipped_donors`.
 
-The donors' TSVs are then concatenated into the arm's `predictions.tsv` under one header. A donor whose header
+The donors' TSVs are then concatenated into the arm's `predictions.tsv` under one header, each case once: a
+later row for a read already written is dropped (the first row wins, as the AIRR reader keeps it). A donor whose header
 differs from the first donor's, or whose TSV has a row for a read that is not its own, stops the arm with a
 ValueError naming the donor, and no run record is written. The arm's `run.json` sums the donors' wall times,
 takes their largest peak RSS and lists their commands in order. Its provenance holds per donor the reads, wall

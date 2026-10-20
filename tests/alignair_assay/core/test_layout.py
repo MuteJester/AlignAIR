@@ -29,6 +29,11 @@ def test_layout_paths(tmp_path):
          "runs/alignair/S1/genotype/donors/predictions.donor03.tsv"),
         (layout.donor_logs_dir("alignair", "S1", "genotype", "donor03"), "runs/alignair/S1/genotype/logs/donor03"),
         (layout.scores_dir("S1", "genotype"), "scores/S1/genotype"),
+        (layout.tool_scores("S1", "shared", "igblast"), "scores/S1/shared/igblast.scores.jsonl.gz"),
+        (layout.tool_report_json("S1", "shared", "igblast"), "scores/S1/shared/igblast.report.json"),
+        (layout.tool_report_md("S1", "shared", "igblast"), "scores/S1/shared/igblast.report.md"),
+        (layout.comparison_json("S1", "genotype"), "scores/S1/genotype/comparison.json"),
+        (layout.comparison_md("S1", "genotype"), "scores/S1/genotype/comparison.md"),
         (layout.speed_dir, "speed"),
         (layout.speed_json, "speed/speed.json"),
         (layout.report_json, "report.json"),
@@ -57,3 +62,5 @@ def test_layout_rejects_names_that_are_not_one_component(tmp_path, name):
         layout.work_dir(name)
     with pytest.raises(ValueError, match="path component"):
         layout.donor_reads("alignair", "S1", "genotype", name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.tool_scores("S1", "shared", name)

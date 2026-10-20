@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from functools import partial
 
+from alignair_assay.core.headline import HEADLINE
 from alignair_assay.suites.base import Stratum, Suite
-from alignair_assay.suites.recipes import HEADLINE, SHM_CLASSES, repertoire
+from alignair_assay.suites.recipes import SHM_CLASSES, repertoire
 
 # Stratum -> the GenAIRR noise step and its arguments: per-base error rates (0 to 1) or per-read counts.
 _NOISE = {

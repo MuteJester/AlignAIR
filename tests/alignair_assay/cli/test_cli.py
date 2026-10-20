@@ -80,11 +80,14 @@ def test_cli_end_to_end_small(tmp_path, capsys, reference, load_fixture):
     assert f"cases with warnings: {sum(bool(t.warnings) for t in truths)}\n" in printed
     assert f"unscorable genes: v={unscorable['v']} d={unscorable['d']} j={unscorable['j']}\n" in printed
     assert "IGHJ99*01 not in reference" in printed
-    disagreements = {g: sum(t.segments[g].alleles.disagrees_with_simulator for t in truths
-                            if t.excluded is None and g in t.segments) for g in "vdj"}
-    assert sum(disagreements.values()) > 0
-    assert (f"simulator re-call differs (non-excluded cases): v={disagreements['v']} "
-            f"d={disagreements['d']} j={disagreements['j']}\n") in printed
+    differs = {g: sum(t.segments[g].alleles.disagrees_with_simulator for t in truths
+                      if t.excluded is None and g in t.segments) for g in "vdj"}
+    assert sum(differs.values()) > 0
+    assert (f"simulator call list differs from the generative set (non-excluded cases): v={differs['v']} "
+            f"d={differs['d']} j={differs['j']}\n") in printed
+    # Bench primaries are the simulator's first call, so nothing counts as re-called.
+    assert "simulator first call is not the generative allele (non-excluded cases): v=0 d=0 j=0\n" in printed
+    simulator_calls = {g: {"call_list_differs": differs[g], "recalled": 0} for g in "vdj"}
     # Bench records carry no generative allele: every scored segment falls back to the simulator's first call.
     fallbacks = {g: sum(g in t.segments for t in truths if t.excluded is None) for g in "vdj"}
     assert (f"primary from the simulator's call, no generative allele (non-excluded cases): v={fallbacks['v']} "
@@ -136,7 +139,7 @@ def test_cli_end_to_end_small(tmp_path, capsys, reference, load_fixture):
     prov = report["provenance"]
     assert prov["command"] == "score" and prov["tool"] == "oracle" and prov["reference"] == "HUMAN_IGH_OGRDB"
     assert prov["min_observed"] == {"v": 20, "d": 8, "j": 10}
-    assert prov["simulator_disagreements"] == disagreements
+    assert prov["simulator_calls"] == simulator_calls
     assert prov["inputs"]["truth"] == {"path": str(truth_path), "sha256": _sha256(truth_path)}
     assert prov["inputs"]["predictions"] == {"path": str(tsv), "sha256": _sha256(tsv)}
     assert "git_commit" in prov and prov["timestamp_utc"].endswith("+00:00")
@@ -189,7 +192,7 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys, 
     assert prov["command"] == "compare"
     assert prov["min_observed"] == {"v": 20, "d": 8, "j": 10}
     assert prov["alpha"] == 0.05 and "McNemar" in prov["tests"]
-    assert set(prov["simulator_disagreements"]) == {"v", "d", "j"}
+    assert set(prov["simulator_calls"]) == {"v", "d", "j"}
     assert "n_boot" not in prov and "seed" not in prov  # analytic tests: nothing random
     assert set(prov["inputs"]) == {"truth", "a", "b"}
     assert prov["inputs"]["b"]["sha256"] == _sha256(b_tsv)

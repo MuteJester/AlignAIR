@@ -21,7 +21,7 @@ ARM = "genotype"
 
 
 def run_genotype_arm(runner: Runner, layout: RunLayout, suite: str, reference: Reference, *,
-                     tool: str | None = None) -> RunResult:
+                     tool: str | None = None, settings: dict | None = None) -> RunResult:
     """Run a prepared ``runner`` on ``suite`` donor by donor, and record the arm in the layout. Donors run in
     ``donors.json`` order, and those without cases are skipped. Donor ``<subject>``'s reads go to
     ``layout.donor_reads(tool, suite, "genotype", subject)`` in suite order, its predictions to
@@ -33,9 +33,10 @@ def run_genotype_arm(runner: Runner, layout: RunLayout, suite: str, reference: R
     sums the donors' wall seconds and takes their largest peak RSS (None when none was measured), and its
     commands are the donors' in order. Its provenance holds, per donor, the ``reads`` count,
     wall seconds, peak RSS, return code, ``alleles`` per gene letter and the run's provenance. It also holds the
-    ``skipped_donors``, ``donors_json`` (path and SHA-256) and ``reads`` (the suite's reads, as ``run_suite``
-    records them). ``run.json`` and the old predictions are removed first and ``run.json`` is written last, so an
-    arm that raises leaves no record. ``tool`` names the run directory (default ``runner.name``).
+    ``skipped_donors``, ``donors_json`` (path and SHA-256), ``reads`` (the suite's reads, as ``run_suite``
+    records them) and, when given, ``settings`` (as ``run_suite`` records them). ``run.json`` and the old
+    predictions are removed first and ``run.json`` is written last, so an arm that raises leaves no record.
+    ``tool`` names the run directory (default ``runner.name``).
     FileNotFoundError when the suite has no ``donors.json``; ValueError when a read has no case, a case has no
     ``subject``, or a subject is not a donor.
     """
@@ -80,6 +81,8 @@ def run_genotype_arm(runner: Runner, layout: RunLayout, suite: str, reference: R
     provenance = {"donors": record, "skipped_donors": skipped,
                   "donors_json": {"path": str(layout.donors(suite)), "sha256": sha256_file(layout.donors(suite))},
                   "reads": {"path": str(layout.reads(suite)), "sha256": sha256_file(layout.reads(suite))}}
+    if settings is not None:
+        provenance["settings"] = settings
     if failed is None:
         merge_tsvs([(subject, Path(result.predictions), [read_id for read_id, _ in reads[subject]])
                     for subject, result in results], predictions)
@@ -119,13 +122,14 @@ def reads_by_donor(layout: RunLayout, suite: str, subjects: list[str]) -> dict[s
 
 def merge_tsvs(parts: list[tuple[str, Path, list[str]]], out_tsv: Path) -> int:
     """Concatenate the donors' AIRR TSVs into ``out_tsv`` under their shared header; return the rows written.
-    ``parts`` are ``(subject, tsv, read ids)``. Rows are copied verbatim, in order. ValueError naming the donor
-    when its TSV is empty, its header differs from the first donor's, or a row's ``sequence_id`` is not one of its
-    reads. Since the donors' reads are disjoint, no case is then written by two donors. ``out_tsv`` is removed
-    when the merge fails.
+    ``parts`` are ``(subject, tsv, read ids)``. Rows are copied verbatim, in order, and each case once: a later row
+    for a read already written is dropped, so the first row wins, as ``airr.reader.load_airr_tsv`` keeps it.
+    ValueError naming the donor when its TSV is empty, its header differs from the first donor's, or a row's
+    ``sequence_id`` is not one of its reads. ``out_tsv`` is removed when the merge fails.
     """
     out_tsv = Path(out_tsv)
     header, column, rows = None, None, 0
+    written: set[str] = set()
     try:
         with open(out_tsv, "w", encoding="utf-8") as out:
             for subject, path, read_ids in parts:
@@ -152,6 +156,9 @@ def merge_tsvs(parts: list[tuple[str, Path, list[str]]], out_tsv: Path) -> int:
                         if read_id not in allowed:
                             raise ValueError(f"donor {subject}: {path} has a row for {read_id!r}, which is not one "
                                              "of its reads")
+                        if read_id in written:
+                            continue
+                        written.add(read_id)
                         out.write(line if line.endswith("\n") else line + "\n")
                         rows += 1
     except BaseException:

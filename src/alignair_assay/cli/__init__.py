@@ -1,5 +1,10 @@
-"""Command-line entry point: build suites, run a tool, build observable truth, score one tool, compare two tools.
+"""Command-line entry point: build suites, run tools, score and compare them, and do it all in one resumable run.
 
+  python -m alignair_assay all --run-dir RUN --suites S1,S10,S11,S12 --tools igblast,alignair [--quick]
+      [--split dev] [--reference HUMAN_IGH_OGRDB] [--seed 20261019] [--scale 1.0] [--workers 8] [--threads 8]
+      [--igblast-dir DIR] [--alignair-image IMAGE] [--alignair-model alignair-igh-human@1.0.0]
+      [--alignair-checkpoint MODEL.alignair] [--device cpu] [--speed] [--force]
+  python -m alignair_assay report --run-dir RUN [--a igblast --b alignair]
   python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB]
       [--seed 20261019] [--scale 1.0] [--workers 8]
   python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-local|oracle --suites S0,S1
@@ -23,9 +28,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from alignair_assay.cli import build, compare, run, score, truth
+from alignair_assay.cli import all as all_command
+from alignair_assay.cli import build, compare, report, run, score, truth
 
-COMMANDS = (build, run, truth, score, compare)
+COMMANDS = (all_command, report, build, run, truth, score, compare)
 
 
 def main(argv: list[str] | None = None) -> int:

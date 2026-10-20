@@ -39,8 +39,8 @@ DEFAULT_MODEL = "alignair-igh-human@1.0.0"
 CONTAINER_CACHE = "/home/appuser/.cache/alignair"
 # The container's shell script for a measured run. It runs alignair on the arguments, prints the container's peak
 # memory (cgroup v2, bytes) as the last line of output, and exits with alignair's status. alignair's stderr joins
-# its stdout, so the peak stays last.
-MEASURED_SCRIPT = 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak; exit $rc'
+# its stdout, so the peak stays last; cat's own error is discarded, so it can never become the run's error line.
+MEASURED_SCRIPT = 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak 2>/dev/null; exit $rc'
 # The checkout's CLI, run by the interpreter running the assay.
 CLI_ENTRY = "import sys; from alignair.cli.main import main; sys.exit(main())"
 # Prints the torch version and the name of the CUDA device ``sys.argv[1]`` (None for a CPU device) as JSON.
@@ -52,6 +52,8 @@ SOURCE_DIR = Path(__file__).resolve().parents[2]
 LOG = "alignair.log"
 SIDECAR = "alignair.run.json"
 GENOTYPE = "genotype.json"
+# The image runner's staging directory in a run's log directory: the only host directory mounted at /in.
+STAGE = "input"
 PEAK_RSS = "the container's cgroup v2 memory.peak (resident memory plus page cache)"
 
 
@@ -76,7 +78,8 @@ def write_genotype_json(reference: Reference, alleles: Iterable[str], path) -> d
 
 def memory_peak_kb(log_path) -> int | None:
     """The container's peak memory in KB, read from the last non-empty line of a ``MEASURED_SCRIPT`` log, which is
-    cgroup v2 ``memory.peak`` in bytes. None when that line is not a number (the file was unreadable)."""
+    cgroup v2 ``memory.peak`` in bytes. None when that line is not a number (the file was unreadable, so alignair's
+    own output ends the log)."""
     try:
         lines = [line.strip() for line in Path(log_path).read_text(encoding="utf-8", errors="replace").splitlines()]
     except OSError:
@@ -236,9 +239,10 @@ class AlignAIRImage:
 
     def run(self, fasta: Path, out_tsv: Path, *, suite: str, arm: str, log_dir: Path,
             alleles: Iterable[str] | None = None) -> RunResult:
-        """Annotate ``fasta`` into ``out_tsv`` with ``predict_command``; the log is ``log_dir/alignair.log``. With
-        ``alleles``, the genotype JSON (``write_genotype_json``) and a copy of the FASTA go to
-        ``log_dir/input``, which becomes ``/in``. Alleles the JSON cannot hold make a failed run
+        """Annotate ``fasta`` into ``out_tsv`` with ``predict_command``; the log is ``log_dir/alignair.log``. A copy
+        of the FASTA goes to the emptied ``log_dir/input``, which alone becomes ``/in``, so the container never
+        sees the directory the reads came from (a suite's cases and truth). With ``alleles``, the genotype JSON
+        (``write_genotype_json``) goes there too; alleles the JSON cannot hold make a failed run
         (``base.failed_run``). The wall time includes the container's start. The peak RSS is the container's
         ``memory.peak``; when it is unreadable it is None and ``rss_note`` says why. The provenance is
         ``prepare``'s plus ``threads``, ``cpus``, ``peak_rss`` (what the RSS measures), ``genotype`` (its path,
@@ -254,16 +258,18 @@ class AlignAIRImage:
         log = log_dir / LOG
         provenance = {**self._setup, "threads": self.threads, "cpus": self.cpus, "peak_rss": PEAK_RSS,
                       "genotype": None}
-        given, genotype = fasta, None
+        staged = log_dir / STAGE
+        shutil.rmtree(staged, ignore_errors=True)
+        staged.mkdir()
+        given, genotype = staged / fasta.name, None
+        shutil.copyfile(fasta, given)
         if alleles is not None:
-            staged = log_dir / "input"
             try:
                 written = write_genotype_json(self._reference, alleles, staged / GENOTYPE)
             except ValueError as error:
                 return failed_run(self.name, suite=suite, arm=arm, fasta=fasta, out_tsv=out_tsv, log_path=log,
                                   message=f"the genotype could not be written: {error}", provenance=provenance)
-            given, genotype = staged / fasta.name, staged / GENOTYPE
-            shutil.copyfile(fasta, given)
+            genotype = staged / GENOTYPE
             provenance["genotype"] = _genotype_record(genotype, written)
         argv = self.predict_command(given, out_tsv, genotype)
         _sidecar(out_tsv).unlink(missing_ok=True)

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from functools import partial
 
+from alignair_assay.core.headline import HEADLINE
 from alignair_assay.suites.base import Stratum, Suite
 from alignair_assay.suites.donors import DonorSpec
-from alignair_assay.suites.recipes import HEADLINE, SHM_CLASSES, repertoire
+from alignair_assay.suites.recipes import SHM_CLASSES, repertoire
 
 _RATE = SHM_CLASSES["igg"]
 # Held-out setting -> its recipe: another SHM kernel, NP lengths 4 nt longer, or trims 3 nt longer.

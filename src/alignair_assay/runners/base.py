@@ -175,14 +175,15 @@ def require_successful_run(run_json: Path) -> RunResult:
 
 
 def run_suite(runner: Runner, layout: RunLayout, suite: str, *, arm: str = "shared",
-              alleles: Iterable[str] | None = None) -> RunResult:
+              alleles: Iterable[str] | None = None, settings: dict | None = None) -> RunResult:
     """Run a prepared ``runner`` on every read of ``suite`` and record the run in the layout.
 
     The reads are ``layout.reads(suite)``; the predictions, logs and run record are the layout's
     ``predictions``, ``logs_dir`` and ``run_json`` of ``(runner.name, suite, arm)``. The provenance gains the
-    reads' path and SHA-256 (``reads``). ``run.json`` and the old predictions are removed first and ``run.json``
-    is written last, so a run that raises leaves no record behind; a run that returns a failure is recorded with
-    its return code.
+    reads' path and SHA-256 (``reads``) and, when given, ``settings``: the tool settings the run was made with,
+    which an orchestrator compares before it reuses the run. ``run.json`` and the old predictions are removed
+    first and ``run.json`` is written last, so a run that raises leaves no record behind; a run that returns a
+    failure is recorded with its return code.
     """
     run_json = layout.run_json(runner.name, suite, arm)
     run_json.unlink(missing_ok=True)
@@ -192,8 +193,10 @@ def run_suite(runner: Runner, layout: RunLayout, suite: str, *, arm: str = "shar
     reads = layout.reads(suite)
     result = runner.run(reads, predictions, suite=suite, arm=arm, log_dir=layout.logs_dir(runner.name, suite, arm),
                         alleles=alleles)
-    reads_record = {"path": str(reads), "sha256": sha256_file(reads)}
-    result = dataclasses.replace(result, provenance={**result.provenance, "reads": reads_record})
+    provenance = {**result.provenance, "reads": {"path": str(reads), "sha256": sha256_file(reads)}}
+    if settings is not None:
+        provenance["settings"] = settings
+    result = dataclasses.replace(result, provenance=provenance)
     write_run_json(result, run_json)
     return result
 

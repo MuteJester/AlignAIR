@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from functools import partial
 
+from alignair_assay.core.headline import HEADLINE
 from alignair_assay.suites.base import Stratum, Suite
 from alignair_assay.suites.donors import DonorSpec
-from alignair_assay.suites.recipes import HEADLINE, READ_DESIGNS, SHM_CLASSES, repertoire
+from alignair_assay.suites.recipes import READ_DESIGNS, SHM_CLASSES, repertoire
 
 # Cases per SHM class at scale 1.0, in each read design.
 _COUNTS = {"igm": 500, "igg": 500, "high": 250}

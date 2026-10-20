@@ -76,8 +76,9 @@ def test_build_writes_layout(tmp_path, reference):
     assert summary["cases"] == 50 and summary["excluded"] == {}
     assert summary["warnings"] == {t.case_id: list(t.warnings) for t in truths if t.warnings}
     assert summary["unscorable"] == {g: sum(g in t.unscorable for t in truths) for g in "vdj"}
-    assert summary["simulator_disagreements"] == {
-        g: sum(t.segments[g].alleles.disagrees_with_simulator for t in truths if g in t.segments) for g in "vdj"}
+    assert summary["simulator_calls"] == {
+        g: {"call_list_differs": sum(t.segments[g].alleles.disagrees_with_simulator for t in truths if g in t.segments),
+            "recalled": sum(t.segments[g].alleles.recalled for t in truths if g in t.segments)} for g in "vdj"}
 
 
 def test_config_hash_follows_split_and_scale(tmp_path):

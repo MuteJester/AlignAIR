@@ -8,10 +8,10 @@ pytest.importorskip("GenAIRR")
 from GenAIRR import Experiment  # noqa: E402
 
 from alignair_assay.core.cases import read_cases  # noqa: E402
+from alignair_assay.core.headline import HEADLINE  # noqa: E402
 from alignair_assay.core.layout import RunLayout  # noqa: E402
 from alignair_assay.core.reference import dataconfig  # noqa: E402
 from alignair_assay.core.seqops import revcomp  # noqa: E402
-from alignair_assay.report.markdown import HEADLINE  # noqa: E402
 from alignair_assay.suites import get_suite  # noqa: E402
 from alignair_assay.suites.base import RecipeContext  # noqa: E402
 from alignair_assay.suites.donors import DonorSpec, donors_from_json  # noqa: E402

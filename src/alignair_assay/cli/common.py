@@ -1,14 +1,9 @@
-"""Pieces shared by the commands: argument types, run provenance, matching summaries and report files."""
+"""Pieces shared by the commands: argument types and matching summaries. Report provenance and report files are
+``workflow.scoring``'s, shared with ``all``."""
 from __future__ import annotations
 
 import argparse
-import json
-from datetime import datetime, timezone
 from pathlib import Path
-
-from alignair_assay.core.provenance import git_state, sha256_file
-from alignair_assay.metrics.case import MIN_OBSERVED
-from alignair_assay.report import to_markdown
 
 
 def file_name(value: str) -> str:
@@ -18,17 +13,9 @@ def file_name(value: str) -> str:
     return value
 
 
-def provenance(command: str, inputs: dict[str, str], **extra) -> dict:
-    """Provenance of a command run: the command, each input's path and SHA-256, the assay checkout's git state, a
-    UTC timestamp, the minimum observed lengths in force, and ``extra``."""
-    return {
-        "command": command,
-        "inputs": {k: {"path": str(p), "sha256": sha256_file(p)} for k, p in inputs.items()},
-        **git_state(Path(__file__).resolve().parent),
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "min_observed": dict(MIN_OBSERVED),
-        **extra,
-    }
+def comma_list(value: str) -> tuple[str, ...]:
+    """The non-empty, stripped items of a comma-separated list, in order and without repeats."""
+    return tuple(dict.fromkeys(item.strip() for item in value.split(",") if item.strip()))
 
 
 def print_matching(tool: str, m: dict) -> None:
@@ -36,9 +23,3 @@ def print_matching(tool: str, m: dict) -> None:
     print(f"{tool}: {m['scored']} cases scored ({m['excluded']} excluded of {m['truth_cases']}); "
           f"{m['rows']} rows, {m['duplicates']} duplicates, {m['invalid_rows']} invalid rows; "
           f"missing {m['missing']}, extra {m['extra']}, ignored for excluded cases {m['excluded_ignored']}")
-
-
-def write_report(report: dict, json_path: Path, md_path: Path) -> None:
-    """Write a report as strict JSON and as its markdown summary."""
-    json_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    md_path.write_text(to_markdown(report), encoding="utf-8")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 
+from alignair_assay.cli.common import comma_list
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.reference import Reference
 from alignair_assay.runners import RUNNERS, make_runner
@@ -47,7 +48,7 @@ def run(args) -> int:
     prepared once, then run per suite: on all reads (``run_suite``) or donor by donor (``run_genotype_arm``). Each
     run is recorded in its ``run.json``, failed ones included.
     """
-    names = list(dict.fromkeys(name.strip() for name in args.suites.split(",") if name.strip()))
+    names = list(comma_list(args.suites))
     if not names:
         raise ValueError("--suites names no suite")
     if args.threads < 1:

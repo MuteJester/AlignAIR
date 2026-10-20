@@ -34,7 +34,8 @@ from alignair_assay.runners.alignair import (  # noqa: E402
     memory_peak_kb,
     write_genotype_json,
 )
-from alignair_assay.runners.arms import run_genotype_arm  # noqa: E402
+from alignair_assay.runners import alignair as alignair_module  # noqa: E402
+from alignair_assay.runners.arms import merge_tsvs, run_genotype_arm  # noqa: E402
 from alignair_assay.runners.base import (  # noqa: E402
     RunnerOptions,
     fasta_ids,
@@ -131,7 +132,8 @@ def test_image_command_line(tmp_path):
         "-v", f"{fasta.parent}:/in:ro", "-v", f"{out.parent}:/out", "--cpuset-cpus", "0-1",
         "-e", "OMP_NUM_THREADS=2", "-e", "MKL_NUM_THREADS=2",
         "--entrypoint", "sh", "alignair/alignair:9.9@sha256:abc", "-c", MEASURED_SCRIPT, "sh", *predict]
-    assert MEASURED_SCRIPT == 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak; exit $rc'
+    # cat's own error never reaches the log, so it cannot become the recorded error line.
+    assert MEASURED_SCRIPT == 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak 2>/dev/null; exit $rc'
 
     # The genotype file is read from the FASTA's directory, mounted at /in.
     with_genotype = runner.predict_command(fasta, out, genotype=fasta.parent / "genotype.json")
@@ -164,6 +166,49 @@ def test_memory_peak_parsing(tmp_path):
     log.write_text("")
     assert memory_peak_kb(log) is None
     assert memory_peak_kb(tmp_path / "missing.log") is None
+
+
+def test_image_run_mounts_only_the_reads(cohort_layout, reference, tmp_path, monkeypatch):
+    """The container's /in holds the reads FASTA alone (and the genotype JSON in the genotype arm), never the
+    suite directory with its cases and truth."""
+    seen = []
+
+    def fake_timed_command(argv, *, log_path, env=None, cpus=None):
+        mounted = Path(next(arg for arg in argv if arg.endswith(":/in:ro")).removesuffix(":/in:ro"))
+        seen.append((mounted, sorted(path.name for path in mounted.iterdir())))
+        Path(log_path).write_text("aligned\n358596608\n")
+        return 0, 0.5, None
+
+    monkeypatch.setattr(alignair_module, "timed_command", fake_timed_command)
+    runner = AlignAIRImage("img", cache_dir=tmp_path / "cache")
+    runner._setup, runner._reference = {}, reference  # what prepare would record
+    log_dir = cohort_layout.logs_dir("alignair", "S1", "shared")
+    (log_dir / "input").mkdir(parents=True)
+    (log_dir / "input" / "stale.json").write_text("{}")
+    result = runner.run(cohort_layout.reads("S1"), cohort_layout.predictions("alignair", "S1", "shared"), suite="S1",
+                        arm="shared", log_dir=log_dir)
+    assert result.returncode == 0 and result.peak_rss_kb == 358596608 // 1024
+    assert seen == [(log_dir / "input", ["reads.fasta"])]
+    assert (log_dir / "input" / "reads.fasta").read_bytes() == cohort_layout.reads("S1").read_bytes()
+    assert result.commands == [runner.predict_command(log_dir / "input" / "reads.fasta",
+                                                      cohort_layout.predictions("alignair", "S1", "shared"))]
+
+    genotype_logs = tmp_path / "genotype_logs"
+    alleles = [sorted(reference.alleles[g])[0] for g in "vdj"]
+    runner.run(cohort_layout.reads("S1"), tmp_path / "out" / "predictions.tsv", suite="S1", arm="genotype",
+               log_dir=genotype_logs, alleles=alleles)
+    assert seen[-1] == (genotype_logs / "input", ["genotype.json", "reads.fasta"])
+
+
+def test_merge_writes_each_case_once(tmp_path):
+    header = "sequence_id\tv_call\n"
+    first, second = tmp_path / "donor00.tsv", tmp_path / "donor01.tsv"
+    first.write_text(header + "S1:a\tIGHV1-2*02\nS1:b\tIGHV3-23*01\nS1:a\tIGHV1-69*01\n\n")
+    second.write_text(header + "S1:c\tIGHV4-34*01\nS1:c\tIGHV4-34*02")
+    out = tmp_path / "merged.tsv"
+    # A read the tool reports twice is written once: its first row, as the AIRR reader keeps it.
+    assert merge_tsvs([("donor00", first, ["S1:a", "S1:b"]), ("donor01", second, ["S1:c"])], out) == 3
+    assert out.read_text() == header + "S1:a\tIGHV1-2*02\nS1:b\tIGHV3-23*01\nS1:c\tIGHV4-34*01\n"
 
 
 def test_local_command_line(tmp_path):
@@ -401,9 +446,10 @@ def test_image_on_toy_suite(toy_layout, reference, tmp_path):
     run_dir = toy_layout.run_dir("alignair", "S0", "shared")
     assert not (run_dir / "predictions.tsv.run.json").exists()
     assert (toy_layout.logs_dir("alignair", "S0", "shared") / "alignair.run.json").is_file()
+    # The container sees a staged copy of the reads, not the suite directory.
+    staged = toy_layout.logs_dir("alignair", "S0", "shared") / "input" / "reads.fasta"
     assert result.commands == [AlignAIRImage(DEFAULT_IMAGE, cache_dir=prov["cache"]["dir"], threads=2)
-                               .predict_command(toy_layout.reads("S0"), toy_layout.predictions("alignair", "S0",
-                                                                                                "shared"))]
+                               .predict_command(staged, toy_layout.predictions("alignair", "S0", "shared"))]
     _check_scores(toy_layout, "alignair", reference)
 
     # A second preparation finds the model in the run's cache.

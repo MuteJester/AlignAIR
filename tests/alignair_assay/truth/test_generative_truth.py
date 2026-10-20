@@ -93,6 +93,22 @@ def test_primary_is_generative_allele(reference):
     assert recalls > 0  # the sample has post-SHM re-calls, so the test exercises them
 
 
+def test_recalled_means_first_call_is_not_generative(reference):
+    records = _run(0.2, 600, 3).records
+    truths = _truths(records, reference)
+    recalled = {g: 0 for g in "vdj"}
+    for record, truth in zip(records, truths):
+        for g, segment in truth.segments.items():
+            calls = _calls(record, g)
+            assert segment.alleles.recalled == (bool(calls) and calls[0] != record[f"truth_{g}_call"])
+            recalled[g] += segment.alleles.recalled
+    counts = truth_summary(truths)["simulator_calls"]
+    assert {g: counts[g]["recalled"] for g in "vdj"} == recalled and recalled["v"] > 0
+    # Most call lists that differ from the generative set are ties, not re-calls.
+    assert all(counts[g]["recalled"] <= counts[g]["call_list_differs"] for g in "vdj")
+    assert counts["v"]["call_list_differs"] > recalled["v"]
+
+
 def test_recall_in_scored_set_and_generative_in_generative_set(reference):
     records = _run(0.2, 600, 3).records
     outside = 0

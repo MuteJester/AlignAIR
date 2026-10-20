@@ -1,6 +1,7 @@
 """``build``: generate suites into a run directory (cases, truth, reads and a build record per suite)."""
 from __future__ import annotations
 
+from alignair_assay.cli.common import comma_list
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.reference import DEFAULT_REFERENCE
 from alignair_assay.suites import get_suite
@@ -24,7 +25,7 @@ def register(sub) -> None:
 
 def run(args) -> int:
     """Build every named suite (each name checked before anything is built) and print one line per suite."""
-    names = list(dict.fromkeys(name.strip() for name in args.suites.split(",") if name.strip()))
+    names = list(comma_list(args.suites))
     if not names:
         raise ValueError("--suites names no suite")
     for name in names:

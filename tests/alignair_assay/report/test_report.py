@@ -80,6 +80,24 @@ def test_headline_table_has_only_headline_rows():
     assert [ln.split("|")[1].strip() for ln in lines[2:]] == ["clone_key.exact", "v.mutation_count_err"]
 
 
+def test_headline_rows_are_a_parameter():
+    from alignair_assay.core.headline import HEADLINE
+    from alignair_assay.report import markdown
+
+    # One headline list, owned by core; the markdown default is that list.
+    assert markdown.HEADLINE is HEADLINE
+    rep = _comparison()
+    table = headline_table(rep, headline=("v.mutation_count_err", "zzz.other_err", "not.compared"))
+    assert [ln.split("|")[1].strip() for ln in table.splitlines()[2:]] == ["v.mutation_count_err", "zzz.other_err"]
+    # The overall table leads with the given rows; slice tables show only them.
+    sl = {"stratum": {"s1": {"clone_key.exact": _ms(0.5), "v.mutation_count_err": _ms(1.0)}}}
+    md = to_markdown(build_score_report("tool", _summary(), sl, {}), headline=("v.mutation_count_err",))
+    names = [ln.split("|")[1].strip() for ln in md.split("## By stratum")[0].splitlines() if ln.startswith("| ")]
+    assert names[1] == "v.mutation_count_err"
+    by_stratum = md.split("## By stratum")[1]
+    assert "| v.mutation_count_err |" in by_stratum and "| clone_key.exact |" not in by_stratum
+
+
 def test_slice_cells_show_coverage():
     sl = {"stratum": {"s1": {"clone_key.exact": _ms(0.973, cov=0.7), "junction.nt_exact": _ms(None, n=0, cov=0.0)}}}
     md = to_markdown(build_score_report("tool", _summary(), sl, {}))

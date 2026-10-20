@@ -12,7 +12,7 @@ RUN/
   runs/<tool>/<S>/<arm>/predictions.tsv + run.json + logs/
   runs/<tool>/<S>/genotype/donors/    per donor: reads.<subject>.fasta, predictions.<subject>.tsv (+ logs/<subject>/)
   runs/<tool>/_work/                  the tool's one-time setup (e.g. IgBLAST's germline databases)
-  scores/<S>/<arm>/
+  scores/<S>/<arm>/                   <tool>.scores.jsonl.gz, <tool>.report.{json,md}, comparison.{json,md}
   speed/speed.json
   report.json, report.md
 ```
@@ -115,6 +115,26 @@ class RunLayout:
     def scores_dir(self, suite: str, arm: str) -> Path:
         """Scores of every tool on one suite and arm, and their comparison."""
         return self.root / "scores" / _component(suite) / _component(arm)
+
+    def tool_scores(self, suite: str, arm: str, tool: str) -> Path:
+        """The tool's per-case scores on one suite and arm (gzip-compressed JSON lines)."""
+        return self.scores_dir(suite, arm) / f"{_component(tool)}.scores.jsonl.gz"
+
+    def tool_report_json(self, suite: str, arm: str, tool: str) -> Path:
+        """The tool's score report on one suite and arm."""
+        return self.scores_dir(suite, arm) / f"{_component(tool)}.report.json"
+
+    def tool_report_md(self, suite: str, arm: str, tool: str) -> Path:
+        """The tool's score report on one suite and arm, as markdown."""
+        return self.scores_dir(suite, arm) / f"{_component(tool)}.report.md"
+
+    def comparison_json(self, suite: str, arm: str) -> Path:
+        """The paired comparison of the two tools on one suite and arm."""
+        return self.scores_dir(suite, arm) / "comparison.json"
+
+    def comparison_md(self, suite: str, arm: str) -> Path:
+        """The paired comparison of the two tools on one suite and arm, as markdown."""
+        return self.scores_dir(suite, arm) / "comparison.md"
 
     @property
     def speed_dir(self) -> Path:

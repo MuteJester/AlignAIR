@@ -25,7 +25,8 @@ def register(sub) -> None:
 
 def run(args) -> int:
     """Write the truth file (header: kind, version, reference, its digest, GenAIRR provenance) and print counts of
-    excluded cases, warnings, unscorable genes, simulator re-calls that differ and primary fallbacks."""
+    excluded cases, warnings, unscorable genes, simulator call lists that differ from the generative allele,
+    simulator re-calls and primary fallbacks."""
     reference = Reference.from_dataconfig(args.reference)
     truths = [truth_from_bench_case(case, reference) for case in read_jsonl(args.bench_cases)]
     check_unique(truths, args.bench_cases)
@@ -48,8 +49,11 @@ def _print_truth_summary(summary: dict) -> None:
     print(f"excluded: {sum(excluded.values())}" + (f" ({reasons})" if reasons else ""))
     print(f"cases with warnings: {len(warnings)}")
     print("unscorable genes: " + " ".join(f"{g}={n}" for g, n in summary["unscorable"].items()))
-    print("simulator re-call differs (non-excluded cases): "
-          + " ".join(f"{g}={n}" for g, n in summary["simulator_disagreements"].items()))
+    calls = summary["simulator_calls"]
+    print("simulator call list differs from the generative set (non-excluded cases): "
+          + " ".join(f"{g}={n['call_list_differs']}" for g, n in calls.items()))
+    print("simulator first call is not the generative allele (non-excluded cases): "
+          + " ".join(f"{g}={n['recalled']}" for g, n in calls.items()))
     print("primary from the simulator's call, no generative allele (non-excluded cases): "
           + " ".join(f"{g}={n}" for g, n in summary["primary_fallbacks"].items()))
     for case_id, case_warnings in list(warnings.items())[:_MAX_LISTED_WARNINGS]:

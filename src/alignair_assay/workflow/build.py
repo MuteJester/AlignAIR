@@ -29,7 +29,7 @@ def build_suite(name: str, layout: RunLayout, *, reference_name: str, split: str
     The truth header holds ``kind``, ``version``, ``reference``, ``reference_digest``, the GenAIRR provenance,
     ``suite``, ``split``, ``seed``, ``scale`` and ``n_cases``. The build record (``build.json``) holds the same
     configuration, its ``config_hash``, the per-stratum generation stats (``strata``), the truth summary
-    (``truth``: excluded cases, warnings, unscorable genes, simulator re-calls that differ, primary fallbacks),
+    (``truth``: excluded cases, warnings, unscorable genes, simulator calls, primary fallbacks),
     ``workers`` and the wall time in ``seconds``. A suite with donors also gets ``donors.json``
     (``suites.donors.donors_to_json``) and a ``donors_summary`` (``suites.donors.donors_summary``: realised alleles
     per gene, deleted genes per donor, heterozygous share) in its build record. Cases, truth and donors do not

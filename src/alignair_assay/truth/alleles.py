@@ -16,8 +16,9 @@ class AlleleTruth:
     ``generative`` is the primary's observable set: every reference allele whose sequence contains the observed
     germline. ``alleles``, the scored set, adds the simulator's call list (``simulator_ties``, GenAIRR's
     post-SHM best-match re-call), restricted to reference alleles: both are defensible calls for a sequence-only
-    aligner. ``disagrees_with_simulator`` is True when the simulator re-call differs, i.e. its call list is not
-    exactly ``generative`` (including an empty list or names not in the reference).
+    aligner. ``disagrees_with_simulator`` is True when the simulator's call list is not exactly ``generative``
+    (including an empty list or names not in the reference); most such lists are ties that hold the generative
+    allele. ``recalled`` is the narrower case where the simulator called another allele first.
     """
 
     primary: str
@@ -27,6 +28,13 @@ class AlleleTruth:
     disagrees_with_simulator: bool
     generative: frozenset[str]
     primary_fallback: bool = False
+
+    @property
+    def recalled(self) -> bool:
+        """True when the simulator's first call is not the generative allele: GenAIRR re-called the read as
+        another allele after SHM. GenAIRR lists the generative allele first whenever it lists it, so this is a
+        non-empty call list without the primary. Never true for a fallback primary, which is the first call."""
+        return not self.primary_fallback and bool(self.simulator_ties) and self.primary not in self.simulator_ties
 
 
 def observable_alleles(seg: ObservedSegment, reference: Reference, gene_letter: str,

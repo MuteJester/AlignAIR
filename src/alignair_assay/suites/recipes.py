@@ -24,10 +24,6 @@ READ_DESIGNS: dict[str, tuple[tuple[int, int], tuple[int, int]]] = {
 }
 # SHM class -> Poisson per-base mutation rate (0 to 1) of the S5F ``hh_s5f`` kernel.
 SHM_CLASSES: dict[str, float] = {"igm": 0.03, "igg": 0.075, "high": 0.20}
-# The headline metrics (``report.markdown.HEADLINE``): the primary metrics of the repertoire suites. Suites may
-# not import ``report``, so the suite tests pin the two equal.
-HEADLINE = ("clone_key.exact", "junction.nt_exact", "v.top1_in_set", "j.top1_in_set", "v.mutation_count_err",
-            "d.top1_in_set", "productive.correct")
 
 # ``trim()`` keyword -> (``DataConfig.trim_dicts`` key, segment, trimmed at both ends of the segment).
 _TRIM_SIDES = {"v_3": ("V_3", "v", False), "d_5": ("D_5", "d", True), "d_3": ("D_3", "d", True),

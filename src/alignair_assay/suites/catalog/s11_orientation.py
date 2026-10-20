@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from functools import partial
 
+from alignair_assay.core.headline import HEADLINE
 from alignair_assay.suites.base import Stratum, Suite
-from alignair_assay.suites.recipes import HEADLINE, SHM_CLASSES, repertoire
+from alignair_assay.suites.recipes import SHM_CLASSES, repertoire
 
 S11 = Suite(
     name="S11",
