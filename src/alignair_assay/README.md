@@ -1575,24 +1575,26 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
 
 - The top-1 V call is the first allele the tool lists in `v_call`; its genes are the IUIS genes of its labels (or
   of those `IuisMap.inferred` gives an unlabelled allele).
-- Exclusions (`EXCLUSIONS`) are decided from the call's genes and tool-neutral truth alone, never from whether the
-  call is right: a right and a wrong call to the same genes are excluded alike, and a call is excluded when any of
-  its genes is. The reasons: `dropped_truth` (the gene's only calls were dropped by `filter_d`), `not_captured`,
-  `unmapped` (a guard: no gene at all; none on HUMAN_IGH_OGRDB), `novel_gene` (the gene has a donor allele absent
-  from the shared reference, of any functionality; not for a V call on a documented known answer, whose V is a
-  donor allele in the shared reference: pass the read's truth, the same for both tools, to `classify_v` or
-  `read_calls`), `nonfunctional` (none of the gene's donor alleles is
-  functional), `beyond_318` (a functional donor allele of the gene has no usable IMGT-gapped form; none on the
-  pilot donors), `half_resolved` (the gene is carried but not resolved, so its unknown allele could be any call)
-  and `low_support` (the V gene has fewer than 10 clonotypes or 3 naive clonotypes among the known answers; a known
+- Exclusions (`EXCLUSIONS`) are decided from the call's own IUIS label genes and tool-neutral truth alone, never
+  from whether the call is right: a right and a wrong call to the same genes are excluded alike, and a call is
+  excluded when any of its genes is. The reasons: `dropped_truth` (the gene's only calls were dropped by
+  `filter_d`), `not_captured`, `unmapped` (a guard: no gene at all; none on HUMAN_IGH_OGRDB), `novel_gene` (the
+  gene has a donor allele absent from the shared reference, of any functionality; not for a V call on a documented
+  known answer, whose V is a donor allele in the shared reference: pass the read's truth, the same for both tools,
+  to `classify_v` or `read_calls`), `nonfunctional` (the gene is carried only as nonfunctional alleles),
+  `beyond_318` (a functional donor allele of the gene has no usable IMGT-gapped form; none on the pilot donors),
+  `half_resolved` (the gene is carried but not resolved, so its unknown allele could be any call) and
+  `low_support` (the V gene has fewer than 10 clonotypes or 3 naive clonotypes among the known answers; a known
   answer of several genes counts toward each).
-- A call not excluded is `supported` when its sequence equals a functional donor allele's exactly or through IMGT
-  position 318, the two taken together (`through_318`; alleles that differ only past it cannot be told apart from
-  rearranged reads, Peres et al. 2023): a call of `IGHVF3-G9*04_A319G` is supported for a donor carrying
-  `IGHVF3-G9*04`. A nonfunctional donor allele supports no call. Otherwise it is `unsupported_allele` (a gene of
-  the call is carried, not this allele), `unsupported_gene` (none is carried and their regions are captured) or
-  `no_call` (no top-1 call; every read is an IGH amplicon). The shared reference must give every V allele a usable
-  IMGT-gapped form (the dataconfig's does).
+- A call not excluded is `supported` when its sequence equals any donor allele's, functional or not (the genome
+  carries it), exactly or through IMGT position 318, the two taken together (`through_318`; alleles that differ only
+  past it cannot be told apart from rearranged reads, Peres et al. 2023): a call of `IGHVF3-G9*04_A319G` is
+  supported for a donor carrying `IGHVF3-G9*04`. Otherwise it is `unsupported_allele` (a gene of the call is
+  carried, not this allele), `unsupported_gene` (none is carried and their regions are captured) or `no_call` (no
+  top-1 call; every read is an IGH amplicon).
+- `SupportIndex` refuses a shared reference with a V allele without a usable IMGT-gapped form (it names them), so
+  every call can be compared through 318; HUMAN_IGH_OGRDB's dataconfig gives all 198 one. Light-chain or other loci
+  (P3c, P4) will need this guard revisited.
 - A read enters R1 only when neither tool's call is excluded (`shared_exclusions`); each tool's exclusions are
   counted per reason (`exclusion_counts`).
 - `real_case_scores(pred, truth, calls, excluded=..., index=...)` gives `real.v.unsupported` (1 for

@@ -252,8 +252,21 @@ def test_paralog_calls_by_both_genes():
 def test_a_match_through_318_to_a_functional_allele_is_supported_even_if_exactly_a_nonfunctional_one():
     # IGHVF12-G1*02 is exactly the donor's nonfunctional IGHV4-4*07 and equals its functional IGHV4-4*02 through 318
     assert INDEX.classify("IGHVF12-G1*02") == SUPPORTED and INDEX.classify("IGHVF12-G1*01") == SUPPORTED
-    # a call equal to a nonfunctional donor allele alone, in a gene with a functional one: no truth supports it
-    assert INDEX.classify("IGHVF13-G1*02") == UNSUPPORTED_ALLELE and INDEX.classify("IGHVF13-G1*01") == SUPPORTED
+
+
+def test_a_call_equal_to_a_nonfunctional_allele_of_a_gene_with_a_functional_one_is_supported():
+    # the donor's genome carries IGHV4-59*02 (a V-REGION defect note) beside the functional IGHV4-59*01: a call of it
+    # is supported, as R1 asks whether the genome carries the call
+    assert INDEX.classify("IGHVF13-G1*02") == SUPPORTED and INDEX.classify("IGHVF13-G1*01") == SUPPORTED
+
+
+def test_a_gene_carried_only_as_nonfunctional_alleles_excludes_every_call_to_it():
+    # IGHV3-62's donor alleles are all nonfunctional: a call equal to one and a call equal to none are excluded alike
+    assert all(not allele.functional for allele in GENOTYPE.carried("IGHV3-62"))
+    assert IUIS.genes("IGHVF8-G1*01") == IUIS.genes("IGHVF8-G1*02") == ("IGHV3-62",)
+    assert IUIS.shared_for_sequence(GENOTYPE.carried("IGHV3-62")[0].sequence) == ("IGHVF8-G1*01",)
+    assert INDEX.classify("IGHVF8-G1*01") == "excluded:nonfunctional"  # matches the donor's IGHV3-62*03
+    assert INDEX.classify("IGHVF8-G1*02") == "excluded:nonfunctional"  # matches no donor allele
 
 
 def test_no_call_is_no_call():
@@ -323,7 +336,7 @@ def test_exclusion_never_depends_on_whether_the_call_is_right():
     for genes, classes in by_genes.items():
         excluded = {cls for cls in classes if cls.startswith("excluded:")}
         assert not excluded or classes == excluded and len(excluded) == 1, (genes, classes)
-    assert sum(len(classes) > 1 for classes in by_genes.values()) >= 3  # right and wrong calls do occur
+    assert sum(len(classes) > 1 for classes in by_genes.values()) >= 2  # right and wrong calls do occur
     # two tools on one read of a half-resolved gene: the right call and the wrong one take the read out for both
     right, wrong = _pred("h", "IGHVF9-G1*01"), _pred("h", "IGHVF9-G1*02")
     classes = {"right": {"h": INDEX.classify_v(right)}, "wrong": {"h": INDEX.classify_v(wrong)}}
@@ -531,10 +544,11 @@ def test_support_index_refuses_a_genotype_it_cannot_score():
         SupportIndex(mapped, IUIS, MERGED, REFERENCE, support=SUPPORT)
     # the same alleles (and digest) without one V allele's gapped form: a call of it could not be compared through
     # 318, so the reference is refused rather than a call misclassified
+    missing = {"IGHVF1-G1*02", "IGHVF7-G1*01"}
     partly = Reference(alleles=REFERENCE.alleles, anchors={},
-                       gapped_v={name: gapped for name, gapped in REFERENCE.gapped_v.items() if name != "IGHVF1-G1*02"})
+                       gapped_v={name: gapped for name, gapped in REFERENCE.gapped_v.items() if name not in missing})
     assert partly.digest() == REFERENCE.digest()
-    with pytest.raises(ValueError, match="IGHVF1-G1\\*02"):
+    with pytest.raises(ValueError, match="IGHVF1-G1\\*02, IGHVF7-G1\\*01"):  # every offending allele, named
         SupportIndex(GENOTYPE, IUIS, MERGED, partly, support=SUPPORT)
 
 
@@ -659,7 +673,7 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
                    "excluded:low_support": bool(carried - passing)}
         if cls == SUPPORTED:
             assert carried and not any(reasons.values()), truth.read_id
-            assert any(allele.functional and allele.sequence == reference.seq(name) for allele in v), truth.read_id
+            assert any(allele.sequence == reference.seq(name) for allele in v), truth.read_id
         else:
             assert reasons[cls], (truth.read_id, cls)
     assert sum(check["classes"].values()) == len(known)

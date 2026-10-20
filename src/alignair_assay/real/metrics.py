@@ -18,8 +18,10 @@ the labels it equals through IMGT 318 (``IuisMap.inferred``): ``IGHVF6-G21*06`` 
 **Exclusions** (``EXCLUSIONS``) are decided first, from the call's genes and tool-neutral truth alone (the donor's
 genotype, and whether the read is a documented known answer), never from whether the call is right: a right call
 and a wrong call to the same genes on the same read are excluded alike, so a tool cannot take its errors out of R1
-by making them in an excluded gene. A call is excluded when any of its genes is, by the first reason that applies,
-in this order:
+by making them in an excluded gene. The genes are the call's own IUIS label genes, not those of the donor alleles
+it matches: a call matches donor alleles only when it is right, so their genes would make exclusion depend on it.
+This supersedes the earlier ruling (b), "genes of the matching donor alleles". A call is excluded when any of its
+genes is, by the first reason that applies, in this order:
 
 - ``dropped_truth``: the gene's only calls were dropped by ``filter_d`` (D only): its truth is dropped, not absent.
 - ``not_captured``: the gene's region is not captured (``RealGenotype.captured``, ``real.locus``): the call may be
@@ -32,8 +34,9 @@ in this order:
   is exactly a donor allele in the shared reference, so no novel allele hides behind the call, and a wrong call to
   the gene is ``unsupported_allele``. The flag is the read's, the same for both tools (``classify_v(pred, truth)``,
   ``read_calls(pred, truth)``).
-- ``nonfunctional``: none of the gene's donor alleles is functional (each has a V-REGION defect note); such alleles
-  are not truth (Mikelov et al. 2024).
+- ``nonfunctional``: the gene is carried only as nonfunctional alleles (each has a V-REGION defect note), so its
+  truth is in doubt (Mikelov et al. 2024 leave such alleles out): every call to it is excluded, whether it equals
+  one of them or not.
 - ``beyond_318``: a functional donor allele of the gene has no usable IMGT-gapped form (none, under 318 columns, or
   codon 104 off columns 309-311 as on VDJbase's insertion-gapped calls), so no call to the gene can be compared to
   it through 318. On the pilot donors none has. The shared reference must give every V allele a usable one
@@ -46,13 +49,13 @@ in this order:
 Each tool's exclusions are counted per reason (``exclusion_counts``), so steering reads into excluded genes stays
 visible.
 
-**Support.** A call not excluded is ``supported`` when its sequence equals a functional donor allele's exactly or
-through IMGT position 318, the two matches taken together: the IMGT-gapped forms' first 318 columns, ungapped
-(``through_318``). Two V alleles that differ only past 318 cannot be told apart from rearranged reads (Peres et al.
-2023, PIgLET), so the shared reference's ``IGHVF3-G9*04_A319G`` is supported for a donor carrying ``IGHVF3-G9*04``
-(IGHV4-28*03 and *01), even where it is exactly a nonfunctional allele of the donor's. Matching by sequence means a
-call is supported through any of its labels: ``IGHVF6-G21*06`` supports a donor that carries the sequence at
-IGHV1-69D only. A nonfunctional donor allele supports no call. Otherwise the call is:
+**Support.** A call not excluded is ``supported`` when its sequence equals any donor allele's, functional or not,
+exactly or through IMGT position 318, the two matches taken together: the IMGT-gapped forms' first 318 columns,
+ungapped (``through_318``). R1 asks whether the donor's genome carries the call, and a nonfunctional allele is in the
+genome. Two V alleles that differ only past 318 cannot be told apart from rearranged reads (Peres et al. 2023,
+PIgLET), so the shared reference's ``IGHVF3-G9*04_A319G`` is supported for a donor carrying ``IGHVF3-G9*04``
+(IGHV4-28*03 and *01). Matching by sequence means a call is supported through any of its labels: ``IGHVF6-G21*06``
+supports a donor that carries the sequence at IGHV1-69D only. Otherwise the call is:
 
 - ``unsupported_allele``: a gene of the call is carried, but not this allele.
 - ``unsupported_gene``: no gene of the call is carried, and their regions are captured: a call to a gene the donor's
@@ -180,8 +183,9 @@ class SupportIndex:
         self._shared_318 = {name: through_318(reference.gapped_v.get(name)) for name in reference.alleles.get("v", {})}
         unusable = sorted(name for name, through in self._shared_318.items() if through is None)
         if unusable:
-            raise ValueError(f"{len(unusable)} V alleles of the shared reference have no usable IMGT-gapped form "
-                             f"(e.g. {unusable[0]}): use the reference built from the dataconfig")
+            raise ValueError(f"{len(unusable)} V alleles of the shared reference have no usable IMGT-gapped form, so "
+                             f"no call could be compared to them through IMGT 318: {', '.join(unusable)}; use the "
+                             "reference built from the dataconfig")
         self._classes: dict[tuple[str, str], str] = {}
 
     @property
@@ -268,7 +272,7 @@ class SupportIndex:
         for reason in EXCLUSIONS:
             if reason in found:
                 return reason
-        if any(allele.functional for allele in self._matches(name, segment)):
+        if self._matches(name, segment):  # any donor allele, functional or not: the donor's genome carries it
             return SUPPORTED
         return UNSUPPORTED_ALLELE if _CARRIED in found else UNSUPPORTED_GENE
 
