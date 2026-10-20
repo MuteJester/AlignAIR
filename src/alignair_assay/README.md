@@ -191,12 +191,15 @@ set), so it scores 0.0 on both. Every suite with donors (S1, S7, S8, S10) gets t
 per-case metric). Per gene letter (V, J), the reads that count are those the genotype metrics apply to with a
 top-1 call, grouped into (donor, gene of the top-1 call) pairs. A pair with at least `min_reads` reads is
 considered, and it is an excess when its distinct top-1 alleles called on at least `min_reads` reads each
-outnumber the alleles of that gene the donor carries (none for a deleted gene). The table holds `min_reads` and
-per letter `n` (pairs considered), `excess` and `fraction` (None when `n` is 0). A tool's score report holds it
-as `excess_alleles` when it was scored with donors, and the run report tabulates it with n next to every
-fraction. The oracle never has an excess. Unlike the per-read metrics, a called allele that is in the read's truth
-set but not carried (one identical to a carried allele over the read, say) counts towards an excess, so a perfect
-sequence-only tool can have one where the oracle has none.
+outnumber the alleles of that gene the donor carries (none for a deleted gene). Counting all calls, a called
+allele that is in the read's truth set but not carried (one identical to a carried allele over the read, say)
+counts towards an excess, so a perfect sequence-only tool can have one where the oracle has none. The avoidable
+count therefore leaves those defensible calls out, the same calls the per-read metrics excuse; calls of carried
+alleles and calls outside the truth set count as before, so an avoidable excess is always an excess, and a
+perfect sequence-only tool never has one. The table holds `min_reads` and per letter `n` (pairs considered, the
+same for both counts), `excess` and `fraction` (all calls), and `avoidable_excess` and `avoidable_fraction`
+(fractions None when `n` is 0). A tool's score report holds it as `excess_alleles` when it was scored with
+donors, and both reports tabulate both fractions with n next to each. The oracle never has an excess.
 
 ## Run directory layout
 
@@ -400,7 +403,8 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
 7. **Genotype arms.** For suites with a genotype arm, each tool's primary-metric means in each arm, with n and
    coverage.
 8. **Excess alleles.** For suites with donors, the excess-alleles table (see Genotype metrics) of each run: the
-   oracle's shared arm (always 0%), then each tool in each arm, V and J, each fraction with its n.
+   oracle's shared arm (always 0%), then each tool in each arm: for V and J, the share counting all calls and the
+   avoidable share, each with its n.
 9. **Speed.** Present when `speed/speed.json` exists.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to

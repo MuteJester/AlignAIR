@@ -16,6 +16,7 @@ from alignair_assay.core.provenance import genairr_provenance
 from alignair_assay.core.reference import gene_name
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.metrics.case import score_case
+from alignair_assay.report.markdown import format_excess
 from alignair_assay.truth.bench import truth_from_bench_case
 from alignair_assay.truth.io import read_truth_header, read_truth_jsonl, write_truth_jsonl
 from alignair_assay.truth.oracle import oracle_prediction
@@ -365,10 +366,13 @@ def test_score_and_compare_with_donors(tmp_path, capsys):
     for name in ("v.outside_genotype", "v.deleted_gene_call", "j.outside_genotype"):
         entry = report["overall"][name]
         assert (entry["mean"], entry["coverage"], entry["n"]) == (0.0, 1.0, len(truths)), name
-    assert report["excess_alleles"]["min_reads"] == 3 and report["excess_alleles"]["v"]["excess"] == 0
+    excess = report["excess_alleles"]
+    assert excess["min_reads"] == 3 and excess["v"]["excess"] == excess["v"]["avoidable_excess"] == 0
     assert report["provenance"]["inputs"]["donors"] == {"path": str(donors), "sha256": _sha256(donors)}
     md = (tmp_path / "donors" / "oracle.report.md").read_text()
-    assert "## Excess alleles" in md and f"(n={report['excess_alleles']['v']['n']})" in md
+    assert "## Excess alleles" in md and "| Calls | V | J |" in md
+    assert f"| All calls | {format_excess(excess['v'])} |" in md and f"(n={excess['v']['n']})" in md
+    assert f"| Avoidable | {format_excess(excess['v'], avoidable=True)} |" in md
 
     compare = ["compare", "--truth", str(truth_path), "--a", str(tsv), "--a-name", "x", "--b", str(tsv),
                "--b-name", "y"]

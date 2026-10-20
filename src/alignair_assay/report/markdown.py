@@ -65,19 +65,23 @@ def format_cell(name: str, entry) -> str:
 
 
 def excess_note(min_reads) -> str:
-    """The sentence explaining an excess-alleles table (``metrics.genotype.excess_alleles``) counted with
-    ``min_reads``."""
+    """The sentences explaining an excess-alleles table (``metrics.genotype.excess_alleles``) counted with
+    ``min_reads``: what all calls and the avoidable calls count."""
     return (f"Excess alleles: of the donor genes with at least {min_reads} reads whose top-1 call is of that gene, "
             f"the share whose distinct top-1 alleles, each called on at least {min_reads} reads, outnumber the "
-            "alleles the donor carries (none for a deleted gene); n is the number of those donor genes.")
+            "alleles the donor carries (none for a deleted gene); n is the number of those donor genes. All calls "
+            "counts every top-1 call. Avoidable leaves out the defensible ones, a call in the read's truth set of "
+            "an allele the donor does not carry (identical to a carried allele over the read, say): a "
+            "sequence-only tool cannot avoid those, so only the avoidable share is a tool error.")
 
 
-def format_excess(entry) -> str:
-    """An excess-alleles entry (``n``, ``excess``, ``fraction``) as ``fraction% (n=…)``; a missing entry shows a
-    dash, and an entry over no donor gene a dash with ``n=0``."""
+def format_excess(entry, *, avoidable: bool = False) -> str:
+    """An excess-alleles entry (``n``, ``fraction``, ``avoidable_fraction``) as ``fraction% (n=…)``, the avoidable
+    fraction when ``avoidable``; a missing entry shows a dash, and an entry over no donor gene (or without the
+    fraction) a dash with its n."""
     if entry is None:
         return MISSING
-    fraction = entry.get("fraction")
+    fraction = entry.get("avoidable_fraction" if avoidable else "fraction")
     return f"{MISSING if fraction is None else f'{100 * fraction:.1f}%'} (n={entry['n']})"
 
 
@@ -90,8 +94,10 @@ def _score_md(report: dict, headline: Sequence[str]) -> list[str]:
     excess = report.get("excess_alleles")
     if excess is not None:
         genes = [g for g in ("v", "j") if g in excess]
+        rows = [[label, *(format_excess(excess[g], avoidable=avoidable) for g in genes)]
+                for label, avoidable in (("All calls", False), ("Avoidable", True))]
         lines += ["", "## Excess alleles", "", excess_note(excess["min_reads"]), "",
-                  *markdown_table([g.upper() for g in genes], [[format_excess(excess[g]) for g in genes]])]
+                  *markdown_table(["Calls", *(g.upper() for g in genes)], rows)]
     for dim, labels in report["by_slice"].items():
         lines += ["", f"## By {dim}", ""]
         names = [n for n in headline if any(n in m for m in labels.values())]

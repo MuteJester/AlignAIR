@@ -177,15 +177,16 @@ def _excess_alleles(summary: dict) -> list[str]:
     tables = [row["table"] for suite in suites for row in suite["rows"] if row["table"]]
     min_reads = ", ".join(str(k) for k in sorted({table["min_reads"] for table in tables})) or MISSING
     rows = [[suite["suite"], row["tool"], row["arm"],
-             *(format_excess((row["table"] or {}).get(g)) for g in ("v", "j"))]
+             *(format_excess((row["table"] or {}).get(g), avoidable=avoidable)
+               for g in ("v", "j") for avoidable in (False, True))]
             for suite in suites for row in suite["rows"]]
     return ["", "## Excess alleles", "",
-            f"{excess_note(min_reads)} Per suite with donors and per run. The oracle calls each read's generative "
-            "allele, so it never has an excess; a tool's call that is in the read's truth set but not carried (an "
-            "allele identical over the read, say) counts here, unlike in the per-read genotype metrics. A dash with "
-            "n=0: no donor gene had enough reads; a dash alone: no value (the run failed or is missing, see Failed "
-            "runs).",
-            "", *markdown_table(["Suite", "Tool", "Arm", "V", "J"], rows)]
+            f"{excess_note(min_reads)} Per suite with donors and per run, both shares over the same n donor genes. "
+            "The oracle calls each read's generative allele, so it never has an excess; the avoidable share leaves "
+            "out the same calls the per-read genotype metrics excuse. A dash with n=0: no donor gene had enough "
+            "reads; a dash alone: no value (the run failed or is missing, see Failed runs).",
+            "", *markdown_table(["Suite", "Tool", "Arm", "V, all calls", "V, avoidable", "J, all calls",
+                                 "J, avoidable"], rows)]
 
 
 def _number(value, spec: str) -> str:

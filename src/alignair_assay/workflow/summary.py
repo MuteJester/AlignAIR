@@ -252,8 +252,8 @@ def genotype_arms(layout: RunLayout, cfg: RunConfig) -> list[dict]:
 def excess_alleles_tables(layout: RunLayout, cfg: RunConfig) -> list[dict]:
     """Per suite with donors (a ``donors.json``): its ``rows``, one per run, the oracle's shared arm first and then
     each tool in each of the suite's arms, each with ``tool``, ``arm`` and the ``table`` its score report holds
-    (``metrics.genotype.excess_alleles``: ``min_reads`` and per gene letter ``n``, ``excess`` and ``fraction``;
-    None when the run has no score report)."""
+    (``metrics.genotype.excess_alleles``: ``min_reads`` and per gene letter ``n``, ``excess``, ``fraction``,
+    ``avoidable_excess`` and ``avoidable_fraction``; None when the run has no score report)."""
     out = []
     for name in cfg.suites:
         if not layout.donors(name).is_file():

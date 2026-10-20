@@ -139,23 +139,28 @@ def test_score_predictions_applies_genotypes():
 
 
 def test_excess_alleles_hand():
+    # (subject, top-1 V call, the read's V truth); every IGHV3-23 read of donor00 has the non-carried IGHV3-23*04
+    # in its scored set (an allele identical to the carried *01 over the read), so calling it is defensible.
+    as_near = ("IGHV3-23*01", "IGHV3-23*04")
     calls = [
         # donor00 IGHV1-2 (two carried alleles): two alleles called on 3 reads each, one more on 2 reads.
-        *[("donor00", "IGHV1-2*02")] * 3, *[("donor00", "IGHV1-2*04")] * 3, *[("donor00", "IGHV1-2*01")] * 2,
-        # donor00 IGHV3-23 (one carried allele): two alleles called on 3 reads each, an excess.
-        *[("donor00", "IGHV3-23*01")] * 4, *[("donor00", "IGHV3-23*04")] * 3,
-        # donor00 IGHV1-69 is deleted: one allele called on 3 reads is an excess over none.
-        *[("donor00", "IGHV1-69*01")] * 3,
+        *[("donor00", "IGHV1-2*02", None)] * 3, *[("donor00", "IGHV1-2*04", None)] * 3,
+        *[("donor00", "IGHV1-2*01", None)] * 2,
+        # donor00 IGHV3-23 (one carried allele): two alleles called on 3 reads each, an excess; not an avoidable
+        # one, since every IGHV3-23*04 call is in its read's truth set.
+        *[("donor00", "IGHV3-23*01", as_near)] * 4, *[("donor00", "IGHV3-23*04", as_near)] * 3,
+        # donor00 IGHV1-69 is deleted: one allele called on 3 reads is an excess over none, an avoidable one.
+        *[("donor00", "IGHV1-69*01", None)] * 3,
         # donor00 IGHV4-34: 2 called reads, too few to count the gene.
-        *[("donor00", "IGHV4-34*01")] * 2,
+        *[("donor00", "IGHV4-34*01", None)] * 2,
         # donor01 IGHV3-23 (one carried allele): one allele called, as many as carried.
-        *[("donor01", "IGHV3-23*04")] * 5,
+        *[("donor01", "IGHV3-23*04", None)] * 5,
     ]
     truths, preds = [], {}
-    for index, (subject, v_call) in enumerate(calls):
+    for index, (subject, v_call, v_truth) in enumerate(calls):
         case_id = f"c{index}"
         if subject == "donor00":
-            truths.append(_truth(case_id))
+            truths.append(_truth(case_id, v=v_truth or ("IGHV1-2*02",)))
             preds[case_id] = _pred(v_call, "IGHJ4*02", case_id)
         else:
             truths.append(_truth(case_id, v=("IGHV3-23*04",), j=("IGHJ6*02",), subject=subject))
@@ -170,21 +175,32 @@ def test_excess_alleles_hand():
     genotypes = {"donor00": DONOR, "donor01": OTHER}
 
     table = excess_alleles(truths, preds, genotypes)
-    # V: donor genes with >= 3 called reads: donor00 IGHV1-2, IGHV3-23, IGHV1-69 and donor01 IGHV3-23; two exceed.
+    # V: donor genes with >= 3 called reads: donor00 IGHV1-2, IGHV3-23, IGHV1-69 and donor01 IGHV3-23. Two exceed
+    # counting all calls; only IGHV1-69 counting the avoidable ones (the same four genes are considered).
     assert table["min_reads"] == 3
-    assert table["v"] == {"n": 4, "excess": 2, "fraction": 0.5}
+    assert table["v"] == {"n": 4, "excess": 2, "fraction": 0.5, "avoidable_excess": 1, "avoidable_fraction": 0.25}
     # J: donor00 IGHJ4 (carried, one allele) and donor01 IGHJ6 (one allele): none exceeds.
-    assert table["j"] == {"n": 2, "excess": 0, "fraction": 0.0}
+    assert table["j"] == {"n": 2, "excess": 0, "fraction": 0.0, "avoidable_excess": 0, "avoidable_fraction": 0.0}
     assert set(table) == {"min_reads", "v", "j"}
 
-    # min_reads sets both thresholds: at 2, IGHV1-2*01 counts too (3 > 2), and IGHV4-34 is a deleted-gene pair.
-    assert excess_alleles(truths, preds, genotypes, min_reads=2)["v"] == {"n": 5, "excess": 4, "fraction": 0.8}
+    # min_reads sets both thresholds: at 2, IGHV1-2*01 counts too (3 > 2), and IGHV4-34 is a deleted-gene pair;
+    # IGHV3-23 is still not an avoidable excess.
+    assert excess_alleles(truths, preds, genotypes, min_reads=2)["v"] == {
+        "n": 5, "excess": 4, "fraction": 0.8, "avoidable_excess": 3, "avoidable_fraction": 0.6}
     # Nothing to count: no pair, no fraction.
-    assert excess_alleles(truths, {}, genotypes)["v"] == {"n": 0, "excess": 0, "fraction": None}
+    assert excess_alleles(truths, {}, genotypes)["v"] == {"n": 0, "excess": 0, "fraction": None,
+                                                         "avoidable_excess": 0, "avoidable_fraction": None}
     # The oracle calls each read's primary allele, which the donor carries: no excess.
     oracle = {t.case_id: _pred(t.segments["v"].alleles.primary, t.segments["j"].alleles.primary, t.case_id)
               for t in truths if "v" in t.segments}
     assert excess_alleles(truths, oracle, genotypes)["v"]["excess"] == 0
+    # A perfect sequence-only tool: the oracle's calls, but the as-near allele on some IGHV3-23 reads. An excess
+    # counting all calls, never an avoidable one.
+    subjects = {t.case_id: t.groups.get("subject") for t in truths}
+    as_near_calls = {**oracle, **{case_id: pred for case_id, pred in preds.items()
+                                  if pred.segments["v"].call == "IGHV3-23*04" and subjects[case_id] == "donor00"}}
+    shifted = excess_alleles(truths, as_near_calls, genotypes, min_reads=1)["v"]
+    assert shifted["excess"] == 1 and shifted["avoidable_excess"] == 0
     with pytest.raises(ValueError, match="donor01"):
         excess_alleles(truths, preds, {"donor00": DONOR})
     for bad in (0, -1, 1.5, True):

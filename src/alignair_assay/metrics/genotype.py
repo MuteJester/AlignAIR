@@ -4,8 +4,10 @@ A cohort read belongs to a simulated donor (``groups["subject"]``) whose genotyp
 says which alleles it carries and which genes it lacks. A top-1 call in the read's scored truth set is defensible
 whatever the genotype (a simulator re-call or an as-near allele need not be carried), so the per-read metrics count
 only calls outside both. ``excess_alleles`` asks the donor-level question: does the tool, over a donor's reads,
-report more alleles of a gene than the donor carries? The oracle calls each read's generative allele, which its
-donor carries (or, for a novel allele, the base, which is in the truth set), so it scores 0 throughout.
+report more alleles of a gene than the donor carries? It answers counting all calls and counting only the
+avoidable ones, leaving out the defensible calls of non-carried alleles. The oracle calls each read's generative
+allele, which its donor carries (or, for a novel allele, the base, which is in the truth set), so it scores 0
+throughout.
 """
 from __future__ import annotations
 
@@ -55,40 +57,57 @@ def genotype_metrics(truth: ObservableTruth, pred: Prediction | None, genotype: 
 def excess_alleles(truths: Iterable[ObservableTruth], preds: Mapping[str, Prediction | None],
                    genotypes: Mapping[str, DonorGenotype], min_reads: int = 3) -> dict:
     """The donor-level excess-alleles table of one tool: per gene letter in V and J, how often the tool's calls on
-    a donor's reads report more alleles of a gene than the donor carries.
+    a donor's reads report more alleles of a gene than the donor carries, counting all calls and counting only the
+    avoidable ones.
 
     A read counts for letter g when it is scored (not excluded), has ``groups["subject"]``, g is observed with at
     least ``MIN_OBSERVED[g]`` germline bases and scorable, and the tool's row has a top-1 call for g. Reads are
     grouped into (donor, gene of the top-1 call) pairs. A pair with at least ``min_reads`` reads is considered; it
     is an excess when its distinct top-1 alleles called on at least ``min_reads`` reads each outnumber the alleles
-    of that gene the donor carries (none for a deleted gene). Returns ``{"min_reads": min_reads, "v": entry, "j":
-    entry}``, each entry ``{"n": considered pairs, "excess": excess pairs, "fraction": excess / n (0 to 1), or None
-    when n is 0}``. ValueError when ``min_reads`` is not a positive integer or a counted read's subject has no
-    genotype in ``genotypes``.
+    of that gene the donor carries (none for a deleted gene). It is an avoidable excess when they still do once
+    the defensible calls are left out: a call in the read's scored truth set of an allele the donor does not carry
+    (one identical to a carried allele over the read, say), which a sequence-only tool cannot avoid. The other
+    calls, those of carried alleles or outside the truth set, count as before, so an avoidable excess is always an
+    excess; both are counted over the same considered pairs. Returns ``{"min_reads": min_reads, "v": entry, "j":
+    entry}``, each entry ``{"n": considered pairs, "excess": excess pairs, "fraction": excess / n,
+    "avoidable_excess": avoidable excess pairs, "avoidable_fraction": avoidable_excess / n}``, fractions from 0 to
+    1, or None when n is 0. ValueError when ``min_reads`` is not a positive integer or a counted read's subject has
+    no genotype in ``genotypes``.
     """
     if isinstance(min_reads, bool) or not isinstance(min_reads, int) or min_reads < 1:
         raise ValueError(f"min_reads must be a positive integer, got {min_reads!r}")
+    # Per letter and (donor, gene of the call): the calls per allele, all of them and the avoidable ones.
     calls: dict[str, dict[tuple[str, str], Counter[str]]] = {g: {} for g in GENOTYPE_GENES}
+    avoidable: dict[str, dict[tuple[str, str], Counter[str]]] = {g: {} for g in GENOTYPE_GENES}
     donors: dict[str, DonorGenotype] = {}
     for truth in truths:
         subject = truth.groups.get("subject")
         if truth.excluded is not None or subject is None:
             continue
-        donors[subject] = donor_genotype(genotypes, truth)
+        genotype = donors[subject] = donor_genotype(genotypes, truth)
         pred = preds.get(truth.case_id)
         for g in GENOTYPE_GENES:
             call = top1_call(pred, g)
-            if call is not None and _applicable(truth, g):
-                calls[g].setdefault((subject, gene_name(call)), Counter())[call] += 1
+            if call is None or not _applicable(truth, g):
+                continue
+            pair = (subject, gene_name(call))
+            calls[g].setdefault(pair, Counter())[call] += 1
+            if call in genotype.carried or call not in truth.segments[g].alleles.alleles:
+                avoidable[g].setdefault(pair, Counter())[call] += 1
     # Carried alleles per gene, by donor; a deleted gene carries none.
     carried = {subject: Counter(gene_name(name) for name in genotype.carried) for subject, genotype in donors.items()}
+
+    def exceeds(alleles: Counter[str], subject: str, gene: str) -> bool:
+        return sum(count >= min_reads for count in alleles.values()) > carried[subject][gene]
+
     table: dict = {"min_reads": min_reads}
     for g in GENOTYPE_GENES:
-        pairs = [(subject, gene, alleles) for (subject, gene), alleles in calls[g].items()
-                 if sum(alleles.values()) >= min_reads]
-        excess = sum(sum(count >= min_reads for count in alleles.values()) > carried[subject][gene]
-                     for subject, gene, alleles in pairs)
-        table[g] = {"n": len(pairs), "excess": excess, "fraction": excess / len(pairs) if pairs else None}
+        pairs = [pair for pair, alleles in calls[g].items() if sum(alleles.values()) >= min_reads]
+        excess = sum(exceeds(calls[g][pair], *pair) for pair in pairs)
+        avoidable_excess = sum(exceeds(avoidable[g].get(pair, Counter()), *pair) for pair in pairs)
+        table[g] = {"n": len(pairs), "excess": excess, "fraction": excess / len(pairs) if pairs else None,
+                    "avoidable_excess": avoidable_excess,
+                    "avoidable_fraction": avoidable_excess / len(pairs) if pairs else None}
     return table
 
 
