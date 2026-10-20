@@ -361,6 +361,35 @@ def test_the_baseline_is_always_scored_with_another_variant(built, tmp_path, sma
     assert suite["variants"] == {} and suite["contributions"] == [] and suite["heads"]
 
 
+def test_comparisons_are_clustered_by_the_suites_groups(built, tmp_path, small_model, monkeypatch):
+    # No built suite here has clones or pairs, so the S1 reads are clustered by donor: the evaluator must build the
+    # clusters from the suite's truth once and pass them to every comparison.
+    layout = _copy(built, tmp_path)
+    plain = evaluate(small_model, layout, ["S1"], **{**FAST, "variants": ("argmax_decoder",)})
+    assert plain.suites["S1"]["clusters"] == {"keys": ["clone", "pair"], "clusters": 0, "cases": 0}
+    entry = plain.suites["S1"]["swaps"][0]["metrics"]["v.top1_in_set"]
+    assert entry["n_clusters"] == entry["n_paired"]
+
+    seen = []
+
+    def by_donor(truths):
+        seen.append(len(truths))
+        return {t.case_id: t.groups["subject"] for t in truths if "subject" in t.groups}
+
+    monkeypatch.setattr(diagnose_module, "cluster_ids", by_donor)
+    monkeypatch.setattr(diagnose_module, "CLUSTER_KEYS", ("subject",))
+    result = evaluate(small_model, _copy(built, tmp_path / "again"), ["S1"],
+                      **{**FAST, "variants": ("true_orientation", "argmax_decoder")})
+    assert seen == [100]
+    suite = result.suites["S1"]
+    donors = len({case["groups"]["subject"] for case in read_cases(built.cases("S1"))})
+    assert suite["clusters"] == {"keys": ["subject"], "clusters": donors, "cases": 100}
+    for comparison in suite["contributions"] + suite["swaps"]:
+        for entry in comparison["metrics"].values():
+            assert entry["n_clusters"] <= donors < entry["n_paired"] or entry["n_paired"] == 0
+            assert entry["test"] in ("too_few_clusters", "too_few_pairs", "clustered_mcnemar", "clustered_z")
+
+
 # --- the diagnose command ---------------------------------------------------------------------------------------
 
 def test_diagnose_command_writes_the_report_and_reuses_it(built, tmp_path, save_checkpoint, capsys):

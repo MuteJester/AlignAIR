@@ -257,6 +257,19 @@ key; a label named like a fixed dimension is an error. The fixed dimensions are 
   non-informational metric either tool produced; the informational ones are reported beside it (the comparison
   report's `informational` block and its "Informational (not compared)" table: each tool's own mean, n and
   coverage, untested).
+- Holm is per comparison: one pair of tools on one suite and arm, or one step or swap of one suite in the
+  diagnostics, over that comparison's metrics. It is not corrected across steps × suites.
+- **Clustered comparisons.** Reads that are not independent are compared by cluster
+  (`scoring.clusters.cluster_ids`, `CLUSTER_KEYS`): the members of one clone (`groups["clone"]`, S9) and the
+  forward and reverse-complemented presentations of one record (`groups["pair"]`, S11), within their stratum.
+  Donors (`groups["subject"]`) are not clustered by default. When a metric's pairs fall into fewer clusters than
+  pairs, `stats.compare(..., clusters=...)` tests the per-cluster sums `D_k` of the paired differences
+  (`clustered_mcnemar` for 0/1 metrics, `clustered_z` otherwise; z = ΣD_k / √ΣD_k²) with a cluster-robust (CR1)
+  CI, and gives no verdict below 10 clusters (`too_few_clusters`, p = 1). One clone carrying a difference is then
+  never significant on its own. Reports show "n paired (K clusters)". S9 has 60 clones at scale 1.0, so it needs
+  scale ≥ 0.2 (≥ 10 clones) for any verdict. With every cluster a singleton, the comparison is the read-level one
+  (exact McNemar or paired z), unchanged. `all` recomputes every score and comparison on each call, so the
+  clustered tests apply to an existing run directory on its next `all` or `report`.
 
 **Allele metrics** (`metrics.alleles`, per observed segment `g`):
 
@@ -595,7 +608,8 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
 5. **Truth.** Per suite, from its build record's truth summary: cases, excluded cases, cases with warnings, and per
    gene the unscorable segments and the re-called reads (`simulator_calls`' `recalled`).
 6. **Suites.** Per suite: title, purpose, and per arm the primary-metric rows of its comparison, linked to its
-   `comparison.md`.
+   `comparison.md`. A clustered row shows "n paired (K clusters)" (see Clustered comparisons), and the section
+   explains them once.
 7. **S10 vs S1 (held-out settings).** Per tool, S10's primary-metric means against those of S1's `full_igg`
    stratum, which has S10's read design and SHM rate under the default distributions. The table shows the
    difference and the mean per held-out setting, each mean with its n and coverage. These are unpaired and
@@ -1142,18 +1156,21 @@ variants=DEFAULT_VARIANTS, genotypes=None, baseline=None)` gives one `VariantRes
   cases.
 - A test pins this in-memory path to a TSV written by `alignair.io.airr.write_airr`.
 
-**Reading stage contributions.** `stage_contributions(results, metrics)` compares each consecutive pair of the chain
-with `stats.compare`, Holm-corrected over `metrics`. Each entry gives:
+**Reading stage contributions.** `stage_contributions(results, metrics, clusters=None)` compares each consecutive
+pair of the chain with `stats.compare`, Holm-corrected over `metrics` and, given `clusters`, tested by cluster (see
+Clustered comparisons; the evaluator passes `scoring.clusters.cluster_ids` of the suite's truths). Each entry gives:
 - `from`, `to`, and the `stages` the step adds (`orientation`, `segmentation`, `allele_calls`,
   `germline_alignment`; a variant missing from `results` makes its pair span both stages);
 - per metric: each variant's own mean, value count and coverage over its own cases (`mean_from`, `n_from`,
-  `coverage_from` and the `_to` twins); the means over the `n_paired` cases both cover (`mean_from_paired`,
-  `mean_to_paired`) and the paired `delta`, their difference (to minus from), with its `ci95`; the test and p-value;
-  and a `verdict` of `to_better`, `from_better` or `tie_or_inconclusive`. A table shows the paired means beside the
-  delta, so the delta is always the difference of the numbers next to it.
+  `coverage_from` and the `_to` twins); the means over the `n_paired` cases both cover, in `n_clusters` clusters
+  (`mean_from_paired`, `mean_to_paired`) and the paired `delta`, their difference (to minus from), with its `ci95`;
+  the test and p-value; and a `verdict` of `to_better`, `from_better` or `tie_or_inconclusive`. A table shows the
+  paired means beside the delta, so the delta is always the difference of the numbers next to it, and "n paired (K
+  clusters)" beside each Δ.
 
-`swap_effects(results, metrics)` compares each single swap with the baseline the same way. `CONTRIBUTION_METRICS`
-is a default list: the headline metrics, the junction translation, the read coordinates and the orientation.
+`swap_effects(results, metrics, clusters=None)` compares each single swap with the baseline the same way.
+`CONTRIBUTION_METRICS` is a default list: the headline metrics, the junction translation, the read coordinates and
+the orientation.
 
 A step's delta is the error that stage contributes **given perfect upstream stages**. It is not a share of the
 baseline error. Two consequences:
@@ -1217,7 +1234,8 @@ on up to `PROFILE_READS` (1000) of the diagnosed reads, evenly spaced.
 
 `DiagnosticsResult` holds the `model_key`, the per-suite results (`suites`), the `profile` and the markdown report
 (`report_md`). A suite's result holds `suite`, its cache `key`, `reads` (`built`, `diagnosed`, `scored`, `excluded`,
-`cropped`), `heads` and each variant's `scores` (per metric: `mean`, `n`, `n_applicable`, `coverage`),
+`cropped`), `clusters` (the `keys` its comparisons cluster by, and the `clusters` and `cases` of the diagnosed reads
+that have one), `heads` and each variant's `scores` (per metric: `mean`, `n`, `n_applicable`, `coverage`),
 `calibration` (per gene), `metrics` (the compared family), `variants` (`scores`, `fallbacks`, per-stage `seconds`,
 `substituted`), `contributions` (`stage_contributions`), `swaps` (`swap_effects`), the `seconds` it took and, in
 the result only, `reused`.

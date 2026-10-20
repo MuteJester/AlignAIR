@@ -70,6 +70,7 @@ from alignair_assay.diagnostics.profile import profile_model
 from alignair_assay.diagnostics.replay import load_model_checked, replay
 from alignair_assay.metrics import is_informational
 from alignair_assay.report.diagnostics import build_diagnostics_report, diagnostics_markdown
+from alignair_assay.scoring.clusters import CLUSTER_KEYS, cluster_ids
 from alignair_assay.scoring.pipeline import load_truth, truth_reference
 from alignair_assay.stats import summarize, to_dict
 from alignair_assay.suites import get_suite
@@ -117,11 +118,13 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     the module docstring describes; reuses each cached suite result whose key matches in full.
 
     Each suite's result holds ``suite``; its cache ``key``; ``reads`` (``built``, ``diagnosed``, ``scored``,
-    ``excluded`` and ``cropped``: reads longer than the model's window); ``heads`` and each variant's ``scores``
-    (metric -> ``mean``, ``n``, ``n_applicable``, ``coverage``); ``calibration`` (gene ->
-    ``heads.calibration_table``); ``metrics`` (the compared family, ``compared_metrics``); ``variants`` (name ->
-    ``scores``, ``fallbacks``, per-stage ``seconds``, ``substituted``); ``contributions``
-    (``ablation.stage_contributions``) and ``swaps`` (``ablation.swap_effects``); and the ``seconds`` it took.
+    ``excluded`` and ``cropped``: reads longer than the model's window); ``clusters`` (the ``keys`` of
+    ``scoring.clusters.CLUSTER_KEYS``, and the ``clusters`` and ``cases`` of the diagnosed reads that have one);
+    ``heads`` and each variant's ``scores`` (metric -> ``mean``, ``n``, ``n_applicable``, ``coverage``);
+    ``calibration`` (gene -> ``heads.calibration_table``); ``metrics`` (the compared family, ``compared_metrics``);
+    ``variants`` (name -> ``scores``, ``fallbacks``, per-stage ``seconds``, ``substituted``); ``contributions``
+    (``ablation.stage_contributions``) and ``swaps`` (``ablation.swap_effects``), clustered by
+    ``scoring.clusters.cluster_ids`` of the suite's truths; and the ``seconds`` it took.
     ``variants`` are run in ``ablation.DEFAULT_VARIANTS`` order (``variant_set``: the baseline is added to any
     other); none runs the heads, the calibration and the profile only. Raises as the module docstring says."""
     names = list(dict.fromkeys(suites))
@@ -269,15 +272,18 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
         raise ValueError(f"suite {name}: {error}") from error
     family = compared_metrics(get_suite(name).primary, results)
     scored = sum(truth.excluded is None for truth in truths)
+    clusters = cluster_ids(truths)
     result = {
         "suite": name, "key": key,
         "reads": {"built": len(built), "diagnosed": len(cases), "scored": scored, "excluded": len(truths) - scored,
                   "cropped": sum(bool(record.get("length_cropped")) for record in baseline.records)},
+        "clusters": {"keys": list(CLUSTER_KEYS), "clusters": len(set(clusters.values())), "cases": len(clusters)},
         "heads": _summary(heads), "calibration": calibration, "metrics": family,
         "variants": {variant: {"scores": _summary(found.scores), "fallbacks": found.fallbacks,
                                "seconds": found.seconds, "substituted": list(found.substituted)}
                      for variant, found in results.items()},
-        "contributions": stage_contributions(results, family), "swaps": swap_effects(results, family),
+        "contributions": stage_contributions(results, family, clusters=clusters),
+        "swaps": swap_effects(results, family, clusters=clusters),
         "seconds": round(time.perf_counter() - start, 3),
     }
     return json.loads(json.dumps(result, allow_nan=False))

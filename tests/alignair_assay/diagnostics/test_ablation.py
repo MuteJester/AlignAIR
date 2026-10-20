@@ -414,6 +414,24 @@ def test_contributions_show_the_paired_means_beside_the_delta():
     assert (swap["mean_from_paired"], swap["mean_to_paired"]) == (2.0, 1.0)
 
 
+def test_comparisons_are_clustered_by_the_given_clusters():
+    # 4 clones of 10 reads; the truth of one stage fixes the reads of one clone only.
+    ids = [f"c{i}" for i in range(40)]
+    clusters = {c: f"lineages/clone:{i // 10}" for i, c in enumerate(ids)}
+    base = {c: {"m.acc": 0.0} for c in ids}
+    fixed = {c: {"m.acc": float(i < 10)} for i, c in enumerate(ids)}
+    results = {"baseline": _result("baseline", base), "true_orientation": _result("true_orientation", fixed),
+               "argmax_decoder": _result("argmax_decoder", fixed)}
+    reads = stage_contributions(results, ["m.acc"])[0]["metrics"]["m.acc"]
+    assert (reads["n_paired"], reads["n_clusters"], reads["test"], reads["verdict"]) == (40, 40, "mcnemar_exact",
+                                                                                        "to_better")
+    for entry in (stage_contributions(results, ["m.acc"], clusters=clusters)[0]["metrics"]["m.acc"],
+                  swap_effects(results, ["m.acc"], clusters=clusters)[0]["metrics"]["m.acc"]):
+        assert (entry["n_paired"], entry["n_clusters"]) == (40, 4)
+        assert (entry["test"], entry["p_value"], entry["verdict"]) == ("too_few_clusters", 1.0, "tie_or_inconclusive")
+        assert entry["delta"] == reads["delta"] == 0.25
+
+
 # --- the released checkpoint ------------------------------------------------------------------------------------
 
 @needs_model

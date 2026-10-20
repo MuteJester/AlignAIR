@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from alignair_assay.core.prediction import GENES
 from alignair_assay.report.markdown import (
+    CLUSTER_NOTE,
     MISSING,
     excess_note,
     format_cell,
     format_excess,
     format_value,
     headline_table,
+    is_clustered,
     markdown_table,
 )
 
@@ -129,6 +131,10 @@ def _summary(summary: dict) -> list[str]:
 
 def _suites(summary: dict) -> list[str]:
     lines = ["", "## Suites"]
+    clustered = any(is_clustered(row) for suite in summary["suites"] for data in suite["arms"].values()
+                    for row in (data.get("rows") or {}).values())
+    if clustered:
+        lines += ["", CLUSTER_NOTE]
     for suite in summary["suites"]:
         lines += ["", f"### {suite['name']}: {suite['title']}", "",
                   f"{suite['purpose']} {_text(suite['cases'])} cases, {_text(suite['excluded'])} excluded; oracle "

@@ -139,14 +139,26 @@ def test_stage_contributions_show_paired_means_beside_the_delta():
     section = _section(diagnostics_markdown(_report()), "Stage contributions")
     # The cumulative overview: one column per step, Δ and verdict.
     assert "| Metric | Δ orientation, segmentation |" in section
-    assert "| junction.nt_exact | +19.8 pp (better) |" in section
-    assert "| v.top1_in_set | +0.0 pp (tie) |" in section
+    assert "| junction.nt_exact | +19.8 pp (better; n=9) |" in section
+    assert "| v.top1_in_set | +0.0 pp (tie; n=9) |" in section
     # The step: own means with coverage, then the paired means the Δ is their difference of.
     assert "#### baseline → true_spans (orientation, segmentation)" in section
     assert ("| Metric | baseline | true_spans | n paired | baseline (paired) | true_spans (paired) | Δ | 95% CI | p | "
             "Verdict |") in section
     assert ("| junction.nt_exact | 60.0% (n=10, 100%) | 80.0% (n=9, 90%) | 9 | 60.2% | 80.0% | +19.8 pp | "
             "[+14.8 pp, +24.8 pp] | 0.0123 | better |") in section
+
+
+def test_clustered_comparisons_show_their_clusters():
+    suite = _suite()
+    entry = suite["contributions"][0]["metrics"]["junction.nt_exact"]
+    entry.update(n_paired=1130, n_clusters=5, test="too_few_clusters", p_value=1.0, verdict="tie_or_inconclusive")
+    section = _section(diagnostics_markdown(_report({"S9": suite})), "Stage contributions")
+    assert "| junction.nt_exact | +19.8 pp (tie, too few clusters; n=1130 in 5 clusters) |" in section
+    assert "| v.top1_in_set | +0.0 pp (tie; n=9) |" in section
+    assert ("| junction.nt_exact | 60.0% (n=10, 100%) | 80.0% (n=9, 90%) | 1130 (5 clusters) | 60.2% | 80.0% | "
+            "+19.8 pp | [+14.8 pp, +24.8 pp] | 1 | tie (too few clusters) |") in section
+    assert "fewer than 10 clusters" in section
 
 
 def test_calibration_single_swaps_profile_and_fallbacks():

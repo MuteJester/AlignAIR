@@ -14,6 +14,11 @@ NOTE = ("Each tool's value is its mean over every case it covers (n, coverage). 
         "the paired subset (cases both tools cover), whose means are shown; for rates they are differences in "
         "percentage points (pp). Verdicts: Holm-corrected paired tests (exact McNemar for 0/1 metrics, paired z "
         "otherwise).")
+# Shown under a comparison table that has a clustered row (``n_clusters`` below ``n_paired``).
+CLUSTER_NOTE = ("n paired (K clusters): the reads of one clone, or the two strands of one read, are one cluster, "
+                "and a row with clusters is tested on the per-cluster sums of the paired differences (clustered "
+                "McNemar for 0/1 metrics, clustered z otherwise) with a cluster-robust CI, so a few clusters cannot "
+                "carry a verdict. With fewer than 10 clusters there is no test (too few clusters: p = 1, tie).")
 MISSING = "—"
 
 
@@ -62,6 +67,33 @@ def markdown_table(header: list[str], rows: list[list[str]]) -> list[str]:
 
 def _mean(entry) -> float | None:
     return entry.get("mean") if entry else None
+
+
+def is_clustered(entry) -> bool:
+    """True for a comparison entry tested by cluster: fewer clusters than pairs."""
+    n, k = entry.get("n_paired"), entry.get("n_clusters")
+    return n is not None and k is not None and k < n
+
+
+def format_paired(entry, *, inline: bool = False) -> str:
+    """A comparison entry's paired count: ``n``, or ``n (K clusters)`` when it was tested by cluster
+    (``n in K clusters`` with ``inline``); a dash without a count."""
+    n = entry.get("n_paired")
+    if n is None:
+        return MISSING
+    if not is_clustered(entry):
+        return str(n)
+    k = entry["n_clusters"]
+    return f"{n} in {k} clusters" if inline else f"{n} ({k} clusters)"
+
+
+def format_verdict(entry, verdict: str | None = None) -> str:
+    """A comparison entry's verdict (``verdict`` when given, else its own), with ``(too few clusters)`` when it was
+    not tested for lack of clusters; a dash without one."""
+    text = verdict if verdict is not None else entry.get("verdict")
+    if text is None:
+        return MISSING
+    return f"{text} (too few clusters)" if entry.get("test") == "too_few_clusters" else text
 
 
 def format_cell(name: str, entry) -> str:
@@ -128,11 +160,9 @@ def _comparison_table(report: dict, names) -> list[str]:
     rows = []
     for n in names:
         e = comp[n]
-        n_paired = e.get("n_paired")
-        rows.append([n, format_cell(n, e.get("a")), format_cell(n, e.get("b")),
-                     MISSING if n_paired is None else str(n_paired),
+        rows.append([n, format_cell(n, e.get("a")), format_cell(n, e.get("b")), format_paired(e),
                      format_value(n, e.get("mean_a_paired")), format_value(n, e.get("mean_b_paired")),
-                     format_value(n, e.get("delta"), delta=True), _ci(n, e), e.get("verdict") or MISSING])
+                     format_value(n, e.get("delta"), delta=True), _ci(n, e), format_verdict(e)])
     return markdown_table(["Metric", a, b, "n paired", f"{a} (paired)", f"{b} (paired)", "Δ (b−a)", "95% CI",
                            "Verdict"], rows)
 
@@ -148,6 +178,8 @@ def _comparison_md(report: dict, headline: Sequence[str]) -> list[str]:
     lines = [f"# AlignAIR assay: {a} vs {b}", "", "## Overall", ""]
     lines += _comparison_table(report, _order(report["comparison"], headline))
     lines += ["", NOTE]
+    if any(is_clustered(entry) for entry in report["comparison"].values()):
+        lines += ["", CLUSTER_NOTE]
     informational = report.get("informational") or {}
     if informational:
         rows = [[n, format_cell(n, informational[n].get("a")), format_cell(n, informational[n].get("b"))]

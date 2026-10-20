@@ -52,7 +52,8 @@ in-memory model never reaches scoring unchecked.
 over the metrics: ``stats.compare``): the change when the truth of one more stage is fed in is the error that stage
 contributes, given perfect upstream stages. ``swap_effects`` compares each single swap with the baseline. Each
 comparison gives the paired means (over the cases both variants cover) beside its delta, which is their difference,
-and each variant's own mean over its own cases with its coverage.
+and each variant's own mean over its own cases with its coverage. Given ``clusters`` (``scoring.clusters``: the reads
+of one clone or one orientation pair), the comparisons are tested by cluster, not by read.
 """
 from __future__ import annotations
 
@@ -229,46 +230,48 @@ def airr_text_rows(ids: Sequence[str], sequences: Sequence[str], rows: Sequence[
             for row in (_build_row(sid, seq, record, locus) for sid, seq, record in zip(ids, sequences, rows))]
 
 
-def stage_contributions(results: Mapping[str, VariantResult], metrics: Sequence[str], *, alpha: float = 0.05
-                        ) -> list[dict]:
+def stage_contributions(results: Mapping[str, VariantResult], metrics: Sequence[str], *, alpha: float = 0.05,
+                        clusters: Mapping[str, str] | None = None) -> list[dict]:
     """For each consecutive pair of the cumulative chain present in ``results`` (in chain order; a missing variant
     is skipped, so its pair spans its stages too): ``from``, ``to``, the ``stages`` whose truth the step adds and
-    the per-metric comparison (``_comparison``)."""
+    the per-metric comparison (``_comparison``, clustered by ``clusters``)."""
     chain = [name for name in VARIANTS if name in results]
     return [{"from": a, "to": b,
              "stages": [STAGE_OF[name] for name in VARIANTS[VARIANTS.index(a) + 1:VARIANTS.index(b) + 1]],
-             "metrics": _comparison(results[a], results[b], metrics, alpha)}
+             "metrics": _comparison(results[a], results[b], metrics, alpha, clusters)}
             for a, b in zip(chain, chain[1:])]
 
 
-def swap_effects(results: Mapping[str, VariantResult], metrics: Sequence[str], *, alpha: float = 0.05
-                 ) -> list[dict]:
+def swap_effects(results: Mapping[str, VariantResult], metrics: Sequence[str], *, alpha: float = 0.05,
+                 clusters: Mapping[str, str] | None = None) -> list[dict]:
     """Each single swap present in ``results`` against the baseline: ``from`` (``baseline``), ``to`` and the
-    per-metric comparison (``_comparison``); empty without a baseline."""
+    per-metric comparison (``_comparison``, clustered by ``clusters``); empty without a baseline."""
     if "baseline" not in results:
         return []
     return [{"from": "baseline", "to": name,
-             "metrics": _comparison(results["baseline"], results[name], metrics, alpha)}
+             "metrics": _comparison(results["baseline"], results[name], metrics, alpha, clusters)}
             for name in SINGLE_SWAPS if name in results]
 
 
-def _comparison(a: VariantResult, b: VariantResult, metrics: Sequence[str], alpha: float) -> dict[str, dict]:
-    """Per metric, ``stats.compare`` of ``a`` (``from``) against ``b`` (``to``), Holm-corrected over ``metrics``:
-    each variant's own mean, value count and coverage (``mean_from``, ``n_from``, ``coverage_from`` and the ``_to``
-    twins); the means over the ``n_paired`` cases both cover (``mean_from_paired``, ``mean_to_paired``; None
+def _comparison(a: VariantResult, b: VariantResult, metrics: Sequence[str], alpha: float,
+                clusters: Mapping[str, str] | None = None) -> dict[str, dict]:
+    """Per metric, ``stats.compare`` of ``a`` (``from``) against ``b`` (``to``), Holm-corrected over ``metrics``
+    and clustered by ``clusters`` (case id -> cluster, ``scoring.clusters.cluster_ids``): each variant's own mean,
+    value count and coverage (``mean_from``, ``n_from``, ``coverage_from`` and the ``_to`` twins); the means over the
+    ``n_paired`` cases both cover, in ``n_clusters`` clusters (``mean_from_paired``, ``mean_to_paired``; None
     without a pair) and the paired ``delta``, their difference (to - from), with its ``ci95``; the ``test``,
     ``p_value`` and ``verdict`` (``to_better``, ``from_better`` or ``tie_or_inconclusive``, oriented by the metric
     registry's lower-is-better rule)."""
     metrics = list(metrics)
     found = compare(a.scores, b.scores, metrics, alpha=alpha,
-                    lower_is_better={name for name in metrics if lower_is_better(name)})
+                    lower_is_better={name for name in metrics if lower_is_better(name)}, clusters=clusters)
     return {name: {"mean_from": e["a"].mean if e["a"] else None, "n_from": e["a"].n if e["a"] else 0,
                    "coverage_from": e["coverage_a"],
                    "mean_to": e["b"].mean if e["b"] else None, "n_to": e["b"].n if e["b"] else 0,
                    "coverage_to": e["coverage_b"],
                    "mean_from_paired": e["mean_a_paired"], "mean_to_paired": e["mean_b_paired"],
-                   "delta": e["delta"], "n_paired": e["n_paired"], "ci95": e["ci95"], "test": e["test"],
-                   "p_value": e["p_value"], "verdict": _VERDICT[e["verdict"]]}
+                   "delta": e["delta"], "n_paired": e["n_paired"], "n_clusters": e["n_clusters"],
+                   "ci95": e["ci95"], "test": e["test"], "p_value": e["p_value"], "verdict": _VERDICT[e["verdict"]]}
             for name, e in found.items()}
 
 

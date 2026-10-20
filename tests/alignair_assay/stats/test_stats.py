@@ -1,8 +1,11 @@
+import hashlib
 import json
 import math
+import random
 from statistics import NormalDist
 
 import numpy as np
+import pytest
 
 from alignair_assay.stats import MetricSummary, by_slice, compare, holm, summarize, to_dict
 
@@ -176,3 +179,128 @@ def test_no_pairs_inconclusive():
     assert r["n_paired"] == 0 and r["ci"] is None and r["ci95"] is None
     assert r["mean_a_paired"] is None and r["mean_b_paired"] is None and r["delta"] is None
     assert r["p_value"] == 1.0 and r["verdict"] == "tie_or_inconclusive"
+
+
+# --- cluster-aware comparisons ------------------------------------------------------------------------------------
+
+# compare()'s output on _golden_data() before clusters existed (commit 4e3b920), as the SHA-256 of its JSON with
+# sorted keys: with every cluster a singleton, the output must stay byte for byte what it was.
+GOLDEN_SHA256 = "f88a108c58ab7b6689886d39a5be75846e3c251e9e50cceb84cc59a97d03a8d7"
+
+
+def _golden_data():
+    rng = random.Random(20261020)
+    a, b = {}, {}
+    for i in range(60):
+        cid = f"c{i:03d}"
+        a[cid] = {"bin": float(rng.random() < 0.6), "cont": rng.gauss(0.0, 1.0), "x_err": abs(rng.gauss(2, 1)),
+                  "few": 1.0}
+        b[cid] = {"bin": float(rng.random() < 0.75), "cont": rng.gauss(0.3, 1.0), "x_err": abs(rng.gauss(1.5, 1)),
+                  "few": 0.0}
+        if i % 7 == 0:
+            b[cid]["cont"] = float("nan")
+        if i >= 5:
+            del a[cid]["few"]
+    return a, b
+
+
+def _without_clusters(result: dict) -> dict:
+    return {name: {key: value for key, value in entry.items() if key != "n_clusters"}
+            for name, entry in result.items()}
+
+
+def test_singleton_clusters_keep_the_output_byte_for_byte():
+    a, b = _golden_data()
+    metrics = ["bin", "cont", "x_err", "few", "absent"]
+    plain = compare(a, b, metrics, lower_is_better={"x_err"})
+    text = json.dumps(to_dict(_without_clusters(plain)), sort_keys=True)
+    assert hashlib.sha256(text.encode()).hexdigest() == GOLDEN_SHA256
+    # Every case its own cluster, by name, by omission or by an empty mapping: the same output.
+    for clusters in ({}, {cid: f"k{cid}" for cid in a}, {"c000": "only"}):
+        assert compare(a, b, metrics, lower_is_better={"x_err"}, clusters=clusters) == plain
+    assert all(entry["n_clusters"] == entry["n_paired"] for entry in plain.values())
+
+
+def _clustered(diffs_by_cluster: dict[str, list[int]]):
+    """0/1 scores of tools a and b whose paired difference (b - a) per case is given, grouped by cluster: a
+    difference of 1 is (0, 1), -1 is (1, 0) and 0 is (1, 1). Returns a, b and the case -> cluster mapping."""
+    a, b, clusters = {}, {}, {}
+    pair = {1: (0.0, 1.0), -1: (1.0, 0.0), 0: (1.0, 1.0)}
+    for cluster, diffs in diffs_by_cluster.items():
+        for k, diff in enumerate(diffs):
+            cid = f"{cluster}:{k}"
+            a[cid], b[cid] = {"m": pair[diff][0]}, {"m": pair[diff][1]}
+            clusters[cid] = cluster
+    return a, b, clusters
+
+
+def test_one_clone_carrying_the_difference_is_not_significant():
+    # The S9 shape: 20 reads of one clone turn correct, the other clones' reads do not change.
+    five = {"k0": [1] * 20, **{f"k{k}": [0] * 20 for k in range(1, 5)}}
+    a, b, clusters = _clustered(five)
+    reads = compare(a, b, ["m"], lower_is_better=set())["m"]
+    assert reads["test"] == "mcnemar_exact" and reads["p_value"] == pytest.approx(2 / 2 ** 20)
+    assert reads["verdict"] == "b_better"
+    clustered = compare(a, b, ["m"], lower_is_better=set(), clusters=clusters)["m"]
+    assert (clustered["test"], clustered["p_value"]) == ("too_few_clusters", 1.0)
+    assert clustered["verdict"] == "tie_or_inconclusive"
+    assert (clustered["n_paired"], clustered["n_clusters"], clustered["delta"]) == (100, 5, 0.2)
+    # The same shape over 10 clones: enough clusters for a test, which one clone cannot carry (z = 20 / 20 = 1).
+    ten = {"k0": [1] * 20, **{f"k{k}": [0] * 20 for k in range(1, 10)}}
+    a, b, clusters = _clustered(ten)
+    clustered = compare(a, b, ["m"], lower_is_better=set(), clusters=clusters)["m"]
+    assert clustered["test"] == "clustered_mcnemar" and clustered["n_clusters"] == 10
+    assert clustered["p_value"] == pytest.approx(math.erfc(1 / math.sqrt(2))) and clustered["p_value"] >= 0.3
+    assert clustered["verdict"] == "tie_or_inconclusive"
+
+
+def test_a_consistent_effect_across_clusters_is_significant():
+    a, b, clusters = _clustered({f"k{k}": [1, 1, 0, 0] for k in range(30)})
+    r = compare(a, b, ["m"], lower_is_better=set(), clusters=clusters)["m"]
+    assert r["test"] == "clustered_mcnemar" and r["n_clusters"] == 30 and r["n_paired"] == 120
+    assert r["p_value"] == pytest.approx(math.erfc(60 / math.sqrt(120) / math.sqrt(2)))
+    assert r["p_value"] < 1e-6 and r["verdict"] == "b_better"
+
+
+def test_clustered_z_and_cr1_interval_by_hand():
+    # 6 clusters of 2 with D = 2, 3 clusters of 3 with D = 1, 3 single reads with D = -1: N = 24, K = 12,
+    # sum D = 12, delta = 0.5, sum D^2 = 30; sum (D - n delta)^2 = 6 * 1 + 3 * 0.25 + 3 * 2.25 = 13.5.
+    diffs = {**{f"two{k}": [1, 1] for k in range(6)}, **{f"three{k}": [1, 0, 0] for k in range(3)},
+             **{f"one{k}": [-1] for k in range(3)}}
+    a, b, clusters = _clustered(diffs)
+    r = compare(a, b, ["m"], lower_is_better=set(), clusters=clusters)["m"]
+    assert (r["n_paired"], r["n_clusters"], r["delta"]) == (24, 12, 0.5)
+    assert r["test"] == "clustered_mcnemar"
+    assert r["p_value"] == pytest.approx(math.erfc(12 / math.sqrt(30) / math.sqrt(2)))
+    se = math.sqrt(12 / 11 * 13.5) / 24
+    z95 = NormalDist().inv_cdf(0.975)
+    assert np.allclose(r["ci95"], (0.5 - z95 * se, 0.5 + z95 * se)) and np.allclose(r["ci"], r["ci95"])
+    # The paired means and the read-level counts do not depend on the clusters.
+    assert (r["mean_a_paired"], r["mean_b_paired"]) == (9 / 24, 21 / 24)
+    assert (r["wins"], r["losses"], r["ties"]) == (15, 3, 6)
+    # A continuous metric is tested the same way, under its own name.
+    cont_a = {cid: {"m": 0.0} for cid in a}
+    cont_b = {cid: {"m": b[cid]["m"] - a[cid]["m"] + 0.5} for cid in a}
+    cont = compare(cont_a, cont_b, ["m"], lower_is_better=set(), clusters=clusters)["m"]
+    assert cont["test"] == "clustered_z" and cont["delta"] == pytest.approx(1.0)
+    shifted = [d + 0.5 * n for d, n in ((2, 2),) * 6 + ((1, 3),) * 3 + ((-1, 1),) * 3]
+    assert cont["p_value"] == pytest.approx(math.erfc(sum(shifted) / math.sqrt(sum(s * s for s in shifted))
+                                                      / math.sqrt(2)))
+    assert np.allclose(cont["ci95"], (1.0 - z95 * se, 1.0 + z95 * se))  # a shift moves the interval only
+
+
+def test_the_interval_widens_on_positively_correlated_data():
+    # Reads of a cluster move together: 8 of 20 clusters of 5 turn correct, the rest do not change.
+    a, b, clusters = _clustered({f"k{k}": [int(k < 8)] * 5 for k in range(20)})
+    reads = compare(a, b, ["m"], lower_is_better=set())["m"]
+    clustered = compare(a, b, ["m"], lower_is_better=set(), clusters=clusters)["m"]
+    assert reads["delta"] == clustered["delta"] == pytest.approx(0.4)
+    width = {name: r["ci95"][1] - r["ci95"][0] for name, r in (("reads", reads), ("clusters", clustered))}
+    assert width["clusters"] > 2 * width["reads"]
+    assert clustered["p_value"] > reads["p_value"]
+
+
+def test_too_few_pairs_comes_before_too_few_clusters():
+    a, b, clusters = _clustered({"k0": [1] * 5, "k1": [1] * 4})
+    r = compare(a, b, ["m"], lower_is_better=set(), clusters=clusters)["m"]
+    assert (r["n_paired"], r["n_clusters"], r["test"], r["p_value"]) == (9, 2, "too_few_pairs", 1.0)

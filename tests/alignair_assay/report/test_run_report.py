@@ -169,3 +169,15 @@ def test_sections_without_data_are_left_out():
     original = copy.deepcopy(summary)
     run_report_markdown(summary)
     assert summary == original  # rendering does not change the summary
+
+
+def test_clustered_comparisons_show_their_clusters():
+    summary = _summary()
+    rows = summary["suites"][0]["arms"]["shared"]["rows"]
+    rows["junction.nt_exact"].update(n_clusters=4, test="too_few_clusters", verdict="tie_or_inconclusive")
+    md = run_report_markdown(summary)
+    suites = md[md.index("## Suites"):md.index("## S10 vs S1")]
+    assert "| junction.nt_exact | 95.0% (n=20, 100%) | 70.0% (n=20, 100%) | 20 (4 clusters) |" in suites
+    assert "| tie_or_inconclusive (too few clusters) |" in suites
+    assert suites.count("fewer than 10 clusters") == 1
+    assert "clusters" not in run_report_markdown(_summary())

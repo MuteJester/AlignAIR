@@ -16,7 +16,15 @@ present (a section without data says so):
 from __future__ import annotations
 
 from alignair_assay.report.build import _clean
-from alignair_assay.report.markdown import MISSING, format_cell, format_value, markdown_table
+from alignair_assay.report.markdown import (
+    CLUSTER_NOTE,
+    MISSING,
+    format_cell,
+    format_paired,
+    format_value,
+    is_clustered,
+    markdown_table,
+)
 
 DIAGNOSTICS_KIND = "alignair_assay.diagnostics_report"
 DIAGNOSTICS_VERSION = "1"
@@ -145,7 +153,14 @@ def _suite_heads(suite: dict) -> list[str]:
 
 
 def _contributions(report: dict) -> list[str]:
-    return _per_suite(report, _CONTRIBUTIONS_NOTE, _suite_contributions)
+    return _per_suite(report, _with_cluster_note(report, "contributions", _CONTRIBUTIONS_NOTE), _suite_contributions)
+
+
+def _with_cluster_note(report: dict, field: str, note: str) -> str:
+    """``note``, followed by ``CLUSTER_NOTE`` when a comparison under ``field`` of any suite was tested by cluster."""
+    clustered = any(is_clustered(entry) for suite in report["suites"].values() for comparison in suite.get(field) or []
+                    for entry in comparison["metrics"].values())
+    return f"{note}\n\n{CLUSTER_NOTE}" if clustered else note
 
 
 def _suite_contributions(suite: dict) -> list[str]:
@@ -162,7 +177,7 @@ def _suite_contributions(suite: dict) -> list[str]:
 
 
 def _swaps(report: dict) -> list[str]:
-    return _per_suite(report, _SWAPS_NOTE, _suite_swaps)
+    return _per_suite(report, _with_cluster_note(report, "swaps", _SWAPS_NOTE), _suite_swaps)
 
 
 def _suite_swaps(suite: dict) -> list[str]:
@@ -184,10 +199,18 @@ def _metrics(suite: dict, comparisons: list[dict]) -> list[str]:
         name for name in present if name not in (suite.get("metrics") or [])]
 
 
+def _verdict(entry: dict) -> str:
+    """The verdict from the "to" variant's side, noting a comparison not tested for lack of clusters."""
+    verdict = VERDICTS.get(entry["verdict"], entry["verdict"])
+    return f"{verdict}, too few clusters" if entry.get("test") == "too_few_clusters" else verdict
+
+
 def _delta_cell(name: str, entry: dict | None) -> str:
+    """Δ with its verdict and its paired count (``n=1130 in 5 clusters`` when tested by cluster)."""
     if entry is None or entry.get("delta") is None:
         return MISSING
-    return f"{format_value(name, entry['delta'], delta=True)} ({VERDICTS.get(entry['verdict'], entry['verdict'])})"
+    return (f"{format_value(name, entry['delta'], delta=True)} ({_verdict(entry)}; "
+            f"n={format_paired(entry, inline=True)})")
 
 
 def _comparison_table(comparison: dict, metrics: list[str]) -> list[str]:
@@ -200,10 +223,13 @@ def _comparison_table(comparison: dict, metrics: list[str]) -> list[str]:
         own_a = {"mean": e["mean_from"], "n": e["n_from"], "coverage": e["coverage_from"]}
         own_b = {"mean": e["mean_to"], "n": e["n_to"], "coverage": e["coverage_to"]}
         p = e.get("p_value")
-        rows.append([name, format_cell(name, own_a), format_cell(name, own_b), str(e["n_paired"]),
+        verdict = VERDICTS.get(e["verdict"], e["verdict"])
+        if e.get("test") == "too_few_clusters":
+            verdict += " (too few clusters)"
+        rows.append([name, format_cell(name, own_a), format_cell(name, own_b), format_paired(e),
                      format_value(name, e.get("mean_from_paired")), format_value(name, e.get("mean_to_paired")),
                      format_value(name, e.get("delta"), delta=True), _ci(name, e.get("ci95")),
-                     MISSING if p is None else f"{p:.3g}", VERDICTS.get(e["verdict"], e["verdict"])])
+                     MISSING if p is None else f"{p:.3g}", verdict])
     return markdown_table(["Metric", a, b, "n paired", f"{a} (paired)", f"{b} (paired)", "Δ", "95% CI", "p",
                            "Verdict"], rows)
 

@@ -1,7 +1,13 @@
-"""Paired two-tool comparison: analytic paired tests, Holm-corrected verdicts."""
+"""Paired two-tool comparison: analytic paired tests, cluster-aware when cases are grouped, Holm-corrected verdicts.
+
+The reads of one clone, or the two strands of one read, are not independent: a test that treats them as
+independent pairs overstates significance when a few clusters carry the difference. Given ``clusters``, ``compare``
+tests the per-cluster sums of the paired differences instead (see ``compare``).
+"""
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from statistics import NormalDist
 
@@ -10,6 +16,8 @@ from alignair_assay.stats.aggregate import summarize
 
 # Below this many paired cases a metric is never declared different (p = 1).
 MIN_PAIRED = 10
+# Below this many clusters a clustered comparison is never declared different (p = 1).
+MIN_CLUSTERS = 10
 
 
 def holm(pvalues: dict[str, float], alpha: float) -> dict[str, bool]:
@@ -49,13 +57,23 @@ def paired_z(diffs: list[float]) -> float:
     return math.erfc(abs(mean) / math.sqrt(var / n) / math.sqrt(2.0))
 
 
+def cluster_score_z(sums: list[float]) -> float:
+    """Two-sided p-value of the cluster score test on the per-cluster sums ``D_k`` of the paired differences:
+    z = sum(D_k) / sqrt(sum(D_k^2)), p = erfc(|z| / sqrt(2)); 1.0 when every sum is 0. For 0/1 metrics it is the
+    clustered McNemar test of Durkalski et al. (2003)."""
+    squares = math.fsum(s * s for s in sums)
+    if squares == 0.0:
+        return 1.0
+    return math.erfc(abs(math.fsum(sums)) / math.sqrt(squares) / math.sqrt(2.0))
+
+
 def compare(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[str], *, alpha: float = 0.05,
-            lower_is_better: set[str]) -> dict[str, dict]:
+            lower_is_better: set[str], clusters: Mapping[str, str] | None = None) -> dict[str, dict]:
     """Paired comparison of tool ``a`` against tool ``b`` for each metric in ``metrics``.
 
     A metric's paired subset is the cases where both tools have a finite value. ``a``/``b`` summarize each tool
     over all its own cases (with coverage); ``mean_a_paired``/``mean_b_paired`` are the means on the paired subset
-    and ``delta`` is their difference (b - a).
+    and ``delta`` is their difference (b - a). ``wins``, ``losses`` and ``ties`` count the paired cases.
 
     p-values are analytic: an exact two-sided McNemar test when every paired value is 0 or 1, otherwise a
     two-sided paired z-test on the differences, and 1.0 below ``MIN_PAIRED`` pairs. Verdicts are Holm-corrected
@@ -63,6 +81,15 @@ def compare(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[st
     ``ci`` is the simultaneous Bonferroni interval (z at 1 - alpha / (2m)), conservative relative to the Holm
     decisions. Both are None below two pairs. When every paired value is 0 or 1 both are clipped to [-1, 1], the
     range a difference of two rates can take.
+
+    ``clusters`` maps a case id to its cluster (a case it does not name is a cluster of its own); ``n_clusters`` is
+    the number of clusters among a metric's pairs. When every cluster of a metric holds one pair, the metric is
+    compared as above. Otherwise, with ``D_k`` the sum of the paired differences in cluster k, ``n_k`` its pairs,
+    ``K`` the clusters and ``N`` the pairs: the test is the cluster score test (``cluster_score_z``;
+    ``clustered_mcnemar`` for 0/1 metrics, ``clustered_z`` otherwise), with p = 1 below ``MIN_CLUSTERS`` clusters
+    (``too_few_clusters``; ``too_few_pairs`` comes first), and the intervals use the cluster-robust (CR1) standard
+    error sqrt(K / (K - 1) * sum((D_k - n_k * delta)^2)) / N, from two clusters. Holm, ``delta`` and the means are
+    the same either way.
     """
     sum_a = summarize(a, list(a))
     sum_b = summarize(b, list(b))
@@ -74,32 +101,49 @@ def compare(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[st
     pvals: dict[str, float] = {}
     for name in metrics:
         sign = -1.0 if name in lower_is_better else 1.0
-        pairs = [(a[c][name], b[c][name]) for c in a
-                 if c in b and _finite(a[c].get(name)) and _finite(b[c].get(name))]
+        cases = [c for c in a if c in b and _finite(a[c].get(name)) and _finite(b[c].get(name))]
+        pairs = [(a[c][name], b[c][name]) for c in cases]
         n = len(pairs)
         raw = [y - x for x, y in pairs]
         d = [sign * r for r in raw]
         sa, sb = sum_a.get(name), sum_b.get(name)
         binary = n > 0 and all(x in (0.0, 1.0) and y in (0.0, 1.0) for x, y in pairs)
-        entry = {"a": sa, "b": sb, "n_paired": n,
+        sums = _cluster_sums(cases, raw, clusters) if clusters else None
+        k = n if sums is None else len(sums)
+        entry = {"a": sa, "b": sb, "n_paired": n, "n_clusters": k,
                  "coverage_a": sa.coverage if sa else 0.0, "coverage_b": sb.coverage if sb else 0.0,
                  "mean_a_paired": math.fsum(x for x, _ in pairs) / n if n else None,
                  "mean_b_paired": math.fsum(y for _, y in pairs) / n if n else None,
                  "delta": math.fsum(raw) / n if n else None,
                  "wins": sum(v > 0 for v in d), "losses": sum(v < 0 for v in d), "ties": sum(v == 0 for v in d),
                  "ci": None, "ci95": None}
-        if n >= 2:
-            delta = entry["delta"]
-            se = math.sqrt(math.fsum((r - delta) ** 2 for r in raw) / (n - 1) / n)
-            limit = 1.0 if binary else math.inf
-            entry["ci95"] = _interval(delta, z95 * se, limit)
-            entry["ci"] = _interval(delta, z_family * se, limit)
-        if n < MIN_PAIRED:
-            entry["test"], p = "too_few_pairs", 1.0
-        elif binary:
-            entry["test"], p = "mcnemar_exact", mcnemar_exact(sum(r > 0 for r in raw), sum(r < 0 for r in raw))
+        limit = 1.0 if binary else math.inf
+        if k == n:  # every cluster a singleton: the read-level comparison
+            if n >= 2:
+                delta = entry["delta"]
+                se = math.sqrt(math.fsum((r - delta) ** 2 for r in raw) / (n - 1) / n)
+                entry["ci95"] = _interval(delta, z95 * se, limit)
+                entry["ci"] = _interval(delta, z_family * se, limit)
+            if n < MIN_PAIRED:
+                entry["test"], p = "too_few_pairs", 1.0
+            elif binary:
+                entry["test"], p = "mcnemar_exact", mcnemar_exact(sum(r > 0 for r in raw), sum(r < 0 for r in raw))
+            else:
+                entry["test"], p = "paired_z", paired_z(raw)
         else:
-            entry["test"], p = "paired_z", paired_z(raw)
+            delta = entry["delta"]
+            if k >= 2:
+                spread = math.fsum((total - size * delta) ** 2 for total, size in sums)
+                se = math.sqrt(k / (k - 1) * spread) / n
+                entry["ci95"] = _interval(delta, z95 * se, limit)
+                entry["ci"] = _interval(delta, z_family * se, limit)
+            if n < MIN_PAIRED:
+                entry["test"], p = "too_few_pairs", 1.0
+            elif k < MIN_CLUSTERS:
+                entry["test"], p = "too_few_clusters", 1.0
+            else:
+                entry["test"] = "clustered_mcnemar" if binary else "clustered_z"
+                p = cluster_score_z([total for total, _ in sums])
         entry["p_value"] = pvals[name] = p
         res[name] = entry
     reject = holm(pvals, alpha)
@@ -108,6 +152,16 @@ def compare(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[st
         entry["verdict"] = ("b_better" if reject[name] and direction > 0
                             else "a_better" if reject[name] and direction < 0 else "tie_or_inconclusive")
     return res
+
+
+def _cluster_sums(cases: list[str], raw: list[float], clusters: Mapping[str, str]) -> list[tuple[float, int]]:
+    """Per cluster of the paired ``cases`` (a case ``clusters`` does not name is its own), in first-seen order:
+    the sum of its paired differences ``raw`` and its number of pairs."""
+    groups: dict[object, list[float]] = {}
+    for case, diff in zip(cases, raw):
+        cluster = clusters.get(case)
+        groups.setdefault(("case", case) if cluster is None else ("cluster", cluster), []).append(diff)
+    return [(math.fsum(diffs), len(diffs)) for diffs in groups.values()]
 
 
 def _interval(center: float, half_width: float, limit: float) -> tuple[float, float]:

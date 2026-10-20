@@ -19,6 +19,7 @@ from alignair_assay.metrics import CaseScores, is_informational, lower_is_better
 from alignair_assay.metrics.case import MIN_OBSERVED
 from alignair_assay.metrics.genotype import excess_alleles
 from alignair_assay.report import build_comparison_report, build_score_report, to_markdown
+from alignair_assay.scoring.clusters import CLUSTER_KEYS, cluster_ids
 from alignair_assay.scoring.pipeline import load_predictions, score_predictions
 from alignair_assay.scoring.slices import slices
 from alignair_assay.stats import compare, summarize
@@ -26,8 +27,11 @@ from alignair_assay.suites.donors import read_genotypes  # noqa: F401 (the score
 from alignair_assay.truth.model import ObservableTruth
 from alignair_assay.truth.summary import simulator_calls
 
-STATISTICAL_TESTS = ("exact McNemar for 0/1 metrics, paired z-test otherwise, p = 1 below 10 pairs; "
-                     "Holm across the family; normal-theory CIs (95% and simultaneous Bonferroni)")
+STATISTICAL_TESTS = ("exact McNemar for 0/1 metrics, paired z-test otherwise, p = 1 below 10 pairs; reads grouped "
+                     "by clone or pair (cluster_keys) are compared by cluster: the clustered McNemar (0/1 metrics) "
+                     "or clustered z score test on per-cluster sums, p = 1 below 10 clusters (too_few_clusters), "
+                     "with cluster-robust (CR1) CIs; Holm across the family; normal-theory CIs (95% and "
+                     "simultaneous Bonferroni)")
 
 
 @dataclass(frozen=True)
@@ -82,21 +86,23 @@ def comparison_report(a: ToolScores, b: ToolScores, truths: list[ObservableTruth
                       inputs: dict, reference_name: str, alpha: float = 0.05) -> dict:
     """The paired comparison report of tool ``a`` against tool ``b``. The family is every non-informational metric
     either tool produced, Holm-corrected at ``alpha``; every informational one either tool produced is reported
-    beside it, each tool's own summary, untested. The provenance is as in ``score_report``. ValueError when the two
-    tools have the same name (their files would collide)."""
+    beside it, each tool's own summary, untested. Reads of one clone or one orientation pair are compared as a
+    cluster (``scoring.clusters.cluster_ids``, recorded as ``cluster_keys``). The provenance is as in
+    ``score_report``. ValueError when the two tools have the same name (their files would collide)."""
     if a.tool == b.tool:
         raise ValueError(f"the two compared tools must differ, both are {a.tool!r}")
     seen = {name for scores in (a.scores, b.scores) for case in scores.values() for name in case}
     family = sorted(name for name in seen if not is_informational(name))
     comparison = compare(a.scores, b.scores, family, alpha=alpha,
-                         lower_is_better={name for name in family if lower_is_better(name)})
+                         lower_is_better={name for name in family if lower_is_better(name)},
+                         clusters=cluster_ids(truths))
     summary_a, summary_b = summarize(a.scores, list(a.scores)), summarize(b.scores, list(b.scores))
     informational = {name: {"a": summary_a.get(name), "b": summary_b.get(name)}
                      for name in sorted(seen) if is_informational(name)}
     prov = provenance(command, inputs, a=a.tool, b=b.tool, reference=reference_name,
                       reference_digest=header["reference_digest"], truth_header=header, alpha=alpha,
-                      tests=STATISTICAL_TESTS, family_size=len(family), matching={"a": a.matching, "b": b.matching},
-                      simulator_calls=simulator_calls(truths))
+                      tests=STATISTICAL_TESTS, cluster_keys=list(CLUSTER_KEYS), family_size=len(family),
+                      matching={"a": a.matching, "b": b.matching}, simulator_calls=simulator_calls(truths))
     return build_comparison_report(a.tool, b.tool, comparison, slices(a.scores, truths), slices(b.scores, truths),
                                    prov, informational=informational)
 
