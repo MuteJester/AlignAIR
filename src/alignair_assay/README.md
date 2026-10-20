@@ -1421,9 +1421,12 @@ across sources. The shared reference's V names are OGRDB F/G labels (`IGHVF6-G21
 
 - `IuisMap.from_ogrdb(json_path, reference)` maps each shared allele to the OGRDB IUIS labels with its exact
   sequence (`labels`, `genes`; `shared_for_sequence` and `labels_for_sequence` go the other way). On
-  `HUMAN_IGH_OGRDB` against rev 8, 236 of 238 shared alleles map; `unmapped()` is `IGHVF10-G33*01` and
-  `IGHVF10-G42*01`, each one base shorter than OGRDB's IGHV3-13*06 and IGHV3-43D*05. Eleven carry two labels:
-  identical-sequence paralogs such as `IGHVF6-G21*06` = IGHV1-69*01 / IGHV1-69D*01, and the identical D pairs.
+  `HUMAN_IGH_OGRDB` against rev 8, 236 of 238 shared alleles map; `IGHVF10-G33*01` and `IGHVF10-G42*01` are
+  each one base shorter than OGRDB's IGHV3-13*06 and IGHV3-43D*05. Eleven carry two labels: identical-sequence
+  paralogs such as `IGHVF6-G21*06` = IGHV1-69*01 / IGHV1-69D*01, and the identical D pairs. A V allele without a
+  label takes the labels of the OGRDB alleles it equals through IMGT 318 (`inferred`, which `genes` uses): their
+  IMGT-gapped forms agree through 318, or it is a 3' prefix of one that reaches 318. That makes the two
+  IGHV3-13*06 and IGHV3-43D*05, and `unmapped()` empty.
 - `load_vdjbase_csv(path, donor, reference, iuis_map)` gives a `RealGenotype` (`donor`, `alleles`, `captured`,
   `source`, `resolved`, `dropped`) of `RealAllele` records (`allele_id`, `gene`, `segment`, `sequence`,
   `gapped`, `haplotype`, `functional`, `shared`, `iuis`, `imgt_identity`), one per haplotype per gene. Haplotype 0

@@ -85,7 +85,8 @@ OGRDB = {"GermlineSet": [{
         {"label": "IGHV1-2*02", "coding_sequence": V_A, "sequence_type": "V", "functional": True},
         {"label": "IGHV1-69D*01", "coding_sequence": V_B, "sequence_type": "V", "functional": True},
         {"label": "IGHV1-69*01", "coding_sequence": V_B, "sequence_type": "V", "functional": True},
-        # One base longer than the shared IGHVF9-G9*01: another sequence, so that allele stays unmapped.
+        # One base longer than the shared IGHVF9-G9*01: another sequence, and with no IMGT-gapped form to place
+        # position 318 on either, that allele stays unmapped.
         {"label": "IGHV3-13*06", "coding_sequence": V_U + "A", "sequence_type": "V", "functional": True},
         {"label": "IGHD4-4*01", "coding_sequence": D_44, "sequence_type": "D", "functional": True},
         {"label": "IGHD4-11*01", "coding_sequence": D_44, "sequence_type": "D", "functional": True},
@@ -171,6 +172,46 @@ def test_iuis_map_paralogs(iuis, genotype):
     assert paralog.shared == ("IGHVF1-G2*01",) and paralog.iuis == ("IGHV1-69*01", "IGHV1-69D*01")
     assert iuis.source["release_version"] == 8 and iuis.source["germline_set_id"] == "OGRDB:G00060"
     assert iuis.source["reference_digest"] == REFERENCE.digest() and len(iuis.source["sha256"]) == 64
+
+
+def _ogrdb_v(label: str, coding: str, aligned: str | None = None) -> dict:
+    """An OGRDB V allele description, with its IMGT delineation when ``aligned`` is given."""
+    description = {"label": label, "coding_sequence": coding, "sequence_type": "V", "functional": True}
+    if aligned is not None:
+        description["v_gene_delineations"] = [{"delineation_scheme": "IMGT", "aligned_sequence": aligned}]
+    return description
+
+
+def test_an_unlabelled_shared_allele_takes_the_iuis_genes_it_equals_through_318(tmp_path):
+    # 311-nt V alleles gapped to 320 columns: IMGT position 318 is ungapped base 309
+    long_13, long_28, long_15, long_7 = (_random(311, seed) for seed in (11, 12, 13, 14))
+    assert len(_gap(long_13)) == 320 and len(upto(_gap(long_13))) == 309
+    # one base short of OGRDB's allele, as IGHVF10-G33*01 is of IGHV3-13*06: a 3' prefix ending past 318
+    prefix = long_13[:-1]
+    # the last base differs: equal through 318 (the shared allele's own gapped form places it)
+    beyond = long_28[:-1] + ("A" if long_28[-1] != "A" else "C")
+    short = long_15[:250]  # a prefix ending before 318: the bases past it are unknown
+    early = _snp(long_7, 100)  # differs at IMGT ~110
+    reference = Reference(alleles={"v": {"IGHVF10-G33*01": prefix, "IGHVF3-G9*09": beyond, "IGHVF9-G1*01": short,
+                                         "IGHVF7-G1*01": early, "IGHVF1-G1*01": V_A}},
+                          anchors={}, gapped_v={"IGHVF3-G9*09": _gap(beyond), "IGHVF7-G1*01": _gap(early)})
+    ogrdb = {"GermlineSet": [{**OGRDB["GermlineSet"][0], "allele_descriptions": [
+        _ogrdb_v("IGHV3-13*06", long_13, _gap(long_13)), _ogrdb_v("IGHV4-28*01", long_28, _gap(long_28)),
+        _ogrdb_v("IGHV3-15*01", long_15, _gap(long_15)), _ogrdb_v("IGHV3-7*01", long_7, _gap(long_7)),
+        _ogrdb_v("IGHV1-2*02", V_A)]}]}
+    path = tmp_path / "ogrdb.json"
+    path.write_text(json.dumps(ogrdb), encoding="utf-8")
+    iuis = IuisMap.from_ogrdb(path, reference)
+    assert iuis.labels("IGHVF10-G33*01") == () and iuis.inferred("IGHVF10-G33*01") == ("IGHV3-13*06",)
+    assert iuis.genes("IGHVF10-G33*01") == ("IGHV3-13",)
+    assert iuis.inferred("IGHVF3-G9*09") == ("IGHV4-28*01",) and iuis.genes("IGHVF3-G9*09") == ("IGHV4-28",)
+    # a labelled allele keeps its exact labels only
+    assert iuis.labels("IGHVF1-G1*01") == ("IGHV1-2*02",) and iuis.inferred("IGHVF1-G1*01") == ()
+    assert iuis.unmapped() == ("IGHVF7-G1*01", "IGHVF9-G1*01")
+    assert iuis.genes("IGHVF9-G1*01") == () and iuis.genes("IGHVF7-G1*01") == ()
+    assert iuis.source["inferred"] == {"IGHVF10-G33*01": ["IGHV3-13*06"], "IGHVF3-G9*09": ["IGHV4-28*01"]}
+    with pytest.raises(KeyError):
+        iuis.inferred("IGHV3-13*06")
 
 
 def test_absent_genes(genotype):
@@ -411,7 +452,12 @@ CSV_V_GENES = {"SC-23": 51, "SC-4": 53, "SC-11": 54, "SC-6": 52, "W-97": 42, "W-
 def test_the_pilot_donors_vdjbase_genotypes(reference):
     root = Path(DATA)
     iuis = IuisMap.from_ogrdb(root / "genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json", reference)
-    assert iuis.unmapped() == ("IGHVF10-G33*01", "IGHVF10-G42*01")
+    # each of the two unlabelled V alleles is one base short of an OGRDB allele and equal to it through IMGT 318
+    assert iuis.labels("IGHVF10-G33*01") == iuis.labels("IGHVF10-G42*01") == ()
+    assert iuis.inferred("IGHVF10-G33*01") == ("IGHV3-13*06",) and iuis.genes("IGHVF10-G33*01") == ("IGHV3-13",)
+    assert iuis.inferred("IGHVF10-G42*01") == ("IGHV3-43D*05",) and iuis.genes("IGHVF10-G42*01") == ("IGHV3-43D",)
+    assert iuis.unmapped() == ()
+    assert sum(bool(iuis.inferred(name)) for name in reference.sequences()) == 2
     assert sum(len(iuis.labels(name)) > 1 for name in reference.sequences()) == 11
     assert iuis.labels("IGHVF6-G21*06") == ("IGHV1-69*01", "IGHV1-69D*01")
     merged = merge_identical(reference)

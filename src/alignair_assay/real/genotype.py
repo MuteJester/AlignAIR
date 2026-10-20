@@ -13,6 +13,12 @@ carry no IUIS name, and VDJbase names a novel allele after its closest IMGT alle
   ``IGHVF10-G33*01`` and ``IGHVF10-G42*01`` have none, each being one base shorter than OGRDB's IGHV3-13*06 and
   IGHV3-43D*05. Eleven shared alleles carry two labels: identical-sequence paralogs (``IGHVF6-G21*06`` is
   IGHV1-69*01 and IGHV1-69D*01) and the identical D pairs.
+  - A shared V allele without a label is given the labels of the OGRDB V alleles it equals through IMGT position
+    318 (``IuisMap.inferred``; ``genes`` uses them), which rearranged reads cannot tell apart from it (``upto``):
+    their IMGT-gapped forms (the shared reference's, and OGRDB's IMGT ``v_gene_delineations``) agree through
+    318, or it is a 3' prefix of the OGRDB allele that reaches 318. ``IGHVF10-G33*01`` is IGHV3-13*06 and
+    ``IGHVF10-G42*01`` IGHV3-43D*05 by both rules, so ``unmapped()`` is empty on ``HUMAN_IGH_OGRDB``. Exact
+    labels (``labels``) stay exact.
 - ``load_vdjbase_csv``: a VDJbase genomic per-sample CSV, one row per haplotype per gene, as a ``RealGenotype`` of
   ``RealAllele`` records. Haplotype 1 or 2 is phased; 0 is unphased, which is not homozygous, and is kept as 0.
   - The sequence is the row's V-REGION, D-REGION or J-REGION. A V allele's ``gapped`` is its V-REGION-GAPPED, whose
@@ -170,12 +176,16 @@ class IuisMap:
     reference_digest: str
     # provenance: the file, its SHA-256 and the germline set's id, name, reference, release and label count
     source: dict = field(default_factory=dict)
+    # shared V allele without a label -> the OGRDB V labels it equals through IMGT 318 (``from_ogrdb``), sorted
+    inferred_by_shared: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
     def from_ogrdb(cls, json_path, reference: Reference) -> "IuisMap":
         """The map of an OGRDB germline set in AIRR format (one ``GermlineSet`` whose ``allele_descriptions`` hold
-        each ``label`` and its ``coding_sequence``) against ``reference``. ValueError for another file, an allele
-        without a label or sequence, or a label given twice."""
+        each ``label`` and its ``coding_sequence``, and a V allele's IMGT ``v_gene_delineations``) against
+        ``reference``. A shared V allele no label has the exact sequence of takes the labels of the OGRDB V alleles
+        it equals through IMGT position 318 (``inferred``, the module docstring). ValueError for another file, an
+        allele without a label or sequence, or a label given twice."""
         path = Path(json_path)
         try:
             (germline_set,) = json.loads(path.read_text(encoding="utf-8"))["GermlineSet"]
@@ -185,6 +195,7 @@ class IuisMap:
                              f"allele_descriptions): {error!r}") from error
         by_sequence: dict[str, list[str]] = defaultdict(list)
         labels: set[str] = set()
+        ogrdb_v: list[tuple[str, str, str | None]] = []  # (label, coding sequence, IMGT-gapped form or None)
         for description in descriptions:
             label = description.get("label") if isinstance(description, dict) else None
             sequence = (description.get("coding_sequence") or "").strip().upper() if label else ""
@@ -194,30 +205,48 @@ class IuisMap:
                 raise ValueError(f"{path}: label {label} is given twice")
             labels.add(label)
             by_sequence[sequence].append(label)
+            if (description.get("sequence_type") or label[3:4]).upper() == "V":
+                ogrdb_v.append((label, sequence, _imgt_aligned(description)))
         labels_by_sequence = {sequence: tuple(sorted(names)) for sequence, names in by_sequence.items()}
         shared: dict[str, list[str]] = defaultdict(list)
         for name, sequence in reference.sequences().items():
             shared[sequence].append(name)
+        inferred = {}
+        for name, sequence in reference.alleles.get("v", {}).items():
+            if sequence not in labels_by_sequence:
+                found = _labels_through_318(sequence, reference.gapped(name), ogrdb_v)
+                if found:
+                    inferred[name] = found
         source = {"path": str(path), "sha256": sha256_file(path),
                   **{key: germline_set.get(key) for key in ("germline_set_id", "germline_set_name",
                                                             "germline_set_ref", "release_version", "release_date")},
-                  "labels": len(labels), "reference_digest": reference.digest()}
+                  "labels": len(labels), "reference_digest": reference.digest(),
+                  "inferred": {name: list(found) for name, found in sorted(inferred.items())}}
         return cls(labels_by_shared={name: labels_by_sequence.get(sequence, ())
                                      for name, sequence in reference.sequences().items()},
                    shared_by_sequence={sequence: tuple(sorted(names)) for sequence, names in shared.items()},
-                   labels_by_sequence=labels_by_sequence, reference_digest=reference.digest(), source=source)
+                   labels_by_sequence=labels_by_sequence, reference_digest=reference.digest(), source=source,
+                   inferred_by_shared=inferred)
 
     def labels(self, shared_name: str) -> tuple[str, ...]:
-        """The IUIS labels with the sequence of shared allele ``shared_name``, sorted; () for an unmapped one.
-        KeyError for a name that is not in the shared reference."""
+        """The IUIS labels with the sequence of shared allele ``shared_name``, sorted; () for one no label has the
+        exact sequence of. KeyError for a name that is not in the shared reference."""
         try:
             return self.labels_by_shared[shared_name]
         except KeyError:
             raise KeyError(f"{shared_name} is not in the shared reference") from None
 
+    def inferred(self, shared_name: str) -> tuple[str, ...]:
+        """The OGRDB V labels an unlabelled shared allele equals through IMGT 318, sorted; () for a labelled one or
+        one without. KeyError for a name that is not in the shared reference."""
+        self.labels(shared_name)
+        return self.inferred_by_shared.get(shared_name, ())
+
     def genes(self, shared_name: str) -> tuple[str, ...]:
-        """The IUIS genes of ``labels(shared_name)``, each once, in label order (two for a paralog pair)."""
-        return tuple(dict.fromkeys(gene_name(label) for label in self.labels(shared_name)))
+        """The IUIS genes of ``labels(shared_name)``, or of ``inferred(shared_name)`` for an allele without a label,
+        each once, in label order (two for a paralog pair); () for an unmapped allele."""
+        labels = self.labels(shared_name) or self.inferred(shared_name)
+        return tuple(dict.fromkeys(gene_name(label) for label in labels))
 
     def shared_for_sequence(self, sequence: str) -> tuple[str, ...]:
         """The shared alleles whose sequence is exactly ``sequence`` (any case), sorted; () for none."""
@@ -228,8 +257,39 @@ class IuisMap:
         return self.labels_by_sequence.get(sequence.upper(), ())
 
     def unmapped(self) -> tuple[str, ...]:
-        """The shared alleles no IUIS label has the sequence of, sorted."""
-        return tuple(sorted(name for name, labels in self.labels_by_shared.items() if not labels))
+        """The shared alleles with no IUIS gene: no label has their sequence, and none is inferred, sorted."""
+        return tuple(sorted(name for name, labels in self.labels_by_shared.items()
+                            if not labels and not self.inferred_by_shared.get(name)))
+
+
+def _imgt_aligned(description: dict) -> str | None:
+    """The uppercase IMGT-gapped sequence of an OGRDB V allele description (its IMGT ``v_gene_delineations``
+    ``aligned_sequence``), when it gives one that is its coding sequence once ungapped; else None."""
+    for delineation in description.get("v_gene_delineations") or ():
+        if isinstance(delineation, dict) and delineation.get("delineation_scheme") == "IMGT":
+            aligned = (delineation.get("aligned_sequence") or "").strip().upper()
+            coding = (description.get("coding_sequence") or "").strip().upper()
+            if aligned and aligned.translate(_NO_GAPS) == coding:
+                return aligned
+    return None
+
+
+def _labels_through_318(sequence: str, gapped: str | None,
+                        ogrdb_v: Iterable[tuple[str, str, str | None]]) -> tuple[str, ...]:
+    """The labels of ``ogrdb_v`` (label, coding sequence, IMGT-gapped form) that V ``sequence`` (IMGT-gapped as
+    ``gapped``, when known) equals through IMGT position 318: both gapped forms reach it and agree through it, or
+    ``sequence`` is a 3' prefix of the label's that reaches it (on the label's gapped form, else its own)."""
+    found = []
+    through = upto(gapped) if gapped and len(gapped) >= POSITION_318 else None
+    for label, coding, aligned in ogrdb_v:
+        usable = aligned if aligned and len(aligned) >= POSITION_318 else None
+        if through is not None and usable is not None and upto(usable) == through:
+            found.append(label)
+            continue
+        ruler = usable or (gapped if through is not None else None)
+        if ruler is not None and coding.startswith(sequence) and len(sequence) >= len(upto(ruler)):
+            found.append(label)
+    return tuple(sorted(found))
 
 
 def load_vdjbase_csv(path, donor: str, reference: Reference, iuis_map: IuisMap) -> RealGenotype:
