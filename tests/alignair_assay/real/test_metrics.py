@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 import os
 import random
 from collections import defaultdict
@@ -343,10 +344,15 @@ def test_d_and_j_calls_where_the_donor_has_their_truth():
     scores = real_case_scores(_pred(v="IGHVF1-G1*02", d="IGHD3-10*01", j="IGHJ6*02"), _truth("r"), calls,
                               excluded=False, index=INDEX)
     assert scores["real.d.unsupported"] == 0.0 and scores["real.j.unsupported"] == 1.0
-    # a D may be unassignable: no D call is no D metric; every read has a J, so no J call counts
+    # applicability is the read's: where the donor has D and J truth and the read is not excluded for them, a tool
+    # without a D or J call has not covered the metric (nan), not made it inapplicable (an absent key)
     no_dj = INDEX.read_calls(_pred(v="IGHVF1-G1*01"))
+    assert no_dj.d == no_dj.j == NO_CALL
     scores = real_case_scores(_pred(v="IGHVF1-G1*01"), _truth("r"), no_dj, excluded=False, index=INDEX)
-    assert "real.d.unsupported" not in scores and scores["real.j.unsupported"] == 1.0
+    assert math.isnan(scores["real.d.unsupported"]) and math.isnan(scores["real.j.unsupported"])
+    # excluded for D (the other tool's D call is), the read has no D metric
+    scores = real_case_scores(_pred(v="IGHVF1-G1*01"), _truth("r"), no_dj, excluded={"d"}, index=INDEX)
+    assert "real.d.unsupported" not in scores and math.isnan(scores["real.j.unsupported"])
     # a donor without D and J truth gets neither metric
     v_only = SupportIndex(RealGenotype(donor=DONOR, alleles=V_ALLELES, captured=CAPTURED, resolved=CAPTURED),
                           IUIS, MERGED, REFERENCE, support=SUPPORT)

@@ -1600,7 +1600,7 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   `real.v.known_top1` and `real.v.known_gene_top1` on every known answer that is not novel, excluded or not (their
   truth is tool-neutral); and, informational, `real.v.any_listed_supported` (a tie list hides a supported allele),
   `real.v.novel_known_call` (a novel known answer's call is of its gene) and `real.d.unsupported` /
-  `real.j.unsupported` where the donor has D or J truth (no D call has no metric).
+  `real.j.unsupported` where the donor has D or J truth (a missing D or J call there is `nan`, not covered).
 - The oracle (`oracle_prediction`, `oracle_self_check`), each known answer's own shared allele, checks the truth
   against itself, with no `novel_gene` exclusion: its reads are documented known answers. On W-97 its 2,595 known
   answers that are not novel give 2,451 supported, 134 `not_captured` (IGHV3-30-5 answers whose shared allele,

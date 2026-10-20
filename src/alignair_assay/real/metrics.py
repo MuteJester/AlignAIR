@@ -81,8 +81,9 @@ answer of several genes (``IGHV3-23|IGHV3-23D``) counts toward each.
 - ``real.v.novel_known_call`` (informational): on a novel known answer, whether the call's IUIS gene is the known
   gene: where calls go when the true allele is not in the tool's reference.
 - ``real.d.unsupported`` and ``real.j.unsupported`` (informational), where the donor has D or J truth: the same
-  rule by exact sequence, with the same exclusions per segment (no 318 rule, no thresholds). A missing D call has no
-  metric (a D can be unassignable); a missing J call counts, as for V.
+  rule by exact sequence, with the same exclusions per segment (no 318 rule, no thresholds). Applicability is the
+  read's: where the donor has the segment's truth and the read is not excluded for it, a missing D or J call is
+  ``nan`` (not covered), never an absent key.
 
 **The oracle** (``oracle_prediction``, ``oracle_self_check``): each known answer's own shared allele, as a tool
 would call it, is supported or excluded by a rule of its genes (never ``novel_gene``: its reads are documented known
@@ -115,6 +116,7 @@ CLASSES = (SUPPORTED, *UNSUPPORTED, *EXCLUSIONS)
 MIN_CLONOTYPES = 10
 MIN_NAIVE_CLONOTYPES = 3
 SEGMENTS = ("v", "d", "j")
+NAN = float("nan")  # a metric that applies to the read and that the tool did not cover
 # What a gene of an unexcluded call is: carried by the donor, or captured and not carried.
 _CARRIED, _ABSENT = "carried", "absent"
 
@@ -398,10 +400,10 @@ def real_case_scores(pred: Prediction | None, truth: RealTruth, calls: str | Rea
             scores["real.v.known_gene_top1"] = float(index.known_gene_top1(top, truth))
     if isinstance(calls, ReadCalls):
         for segment, cls in (("d", calls.d), ("j", calls.j)):
-            if cls is None or segment in skip or (segment == "d" and cls == NO_CALL):
-                continue
+            if cls is None or segment in skip:
+                continue  # no truth for the segment, or the read is out for it: not applicable
             _check(cls, truth.read_id, segment)
-            scores[f"real.{segment}.unsupported"] = float(cls != SUPPORTED)
+            scores[f"real.{segment}.unsupported"] = NAN if cls == NO_CALL else float(cls != SUPPORTED)
     return scores
 
 
