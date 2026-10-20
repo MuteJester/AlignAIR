@@ -215,11 +215,13 @@ def test_engine_records_carry_provenance(tmp_path):
 
 
 def test_recall_alignment_clipped_to_generative_structural_range(reference):
-    """GenAIRR projects a re-called segment's CIGAR edges onto the re-called allele (a D fill to its length, NP
-    claims scored against it) while the core alignment is the generative one: decoded unclipped, some segments are
-    dropped or score extra mismatches; clipped, every one is the generative alignment."""
+    """GenAIRR projects a re-called segment's CIGAR edges onto the re-called allele (NP claims scored against it;
+    GenAIRR 2.3.1 also filled D to its length, later engines report read bases past a shorter re-call's end as
+    insertions) while the core alignment is the generative one: decoded unclipped, some segments score extra
+    mismatches (and, on 2.3.1, some are dropped: pinned by test_record_encodings' old-engine fixture); decoded,
+    every one is the generative alignment."""
     result = _run(0.15, 1500, 9)
-    dropped = misscored = recalls = 0
+    misscored = recalls = 0
     for record, outcome, truth in zip(result.records, result.outcomes, _truths(result.records, reference)):
         read = record["sequence"].upper()
         for g in "vdj":
@@ -237,11 +239,9 @@ def test_recall_alignment_clipped_to_generative_structural_range(reference):
                 unclipped = observe_forward(read, allele, generative, record, g, problems)
             except IndexError:
                 unclipped = None
-            if unclipped is None:
-                dropped += 1
-            elif unclipped.n_mismatch > expected.n_mismatch:
+            if unclipped is not None and unclipped.n_mismatch > expected.n_mismatch:
                 misscored += 1
-    assert recalls > 0 and dropped > 0 and misscored > 0
+    assert recalls > 0 and misscored > 0
 
 
 def test_inverted_d_recall_decoded_against_generative_allele(reference):

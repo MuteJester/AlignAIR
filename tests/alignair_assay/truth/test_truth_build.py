@@ -216,17 +216,17 @@ def test_property_records_build_cleanly(reference):
     assert with_junction > 100
 
 
-@pytest.mark.parametrize("recipe,min_placed", [
+@pytest.mark.parametrize("recipe,min_internal_deletions", [
     ({}, 0),
     ({"e5": (0, 330), "e3": (0, 40)}, 0),
-    # GenAIRR does not record deletions inside an inverted D; the builder places them.
+    # Deletions inside an inverted D: GenAIRR 2.3.1 does not record them and the builder places them by minimum
+    # mismatch (pinned by test_record_encodings' old-engine fixtures); later engines record them.
     ({"indels": (2, 8)}, 5),
 ])
-def test_inverted_d_unmutated_zero_mismatch(recipe, min_placed, reference):
+def test_inverted_d_unmutated_zero_mismatch(recipe, min_internal_deletions, reference):
     recs = _exp(invert_d=True, **recipe).run_records(n=200, seed=13)
-    checked = placed = 0
+    checked = internal_deletions = 0
     for rec, t in zip(recs, _truths(recs, reference)):
-        placed += any("placed by minimum mismatch" in w for w in t.warnings)
         assert not any("dropped" in w for w in t.warnings), t.warnings
         assert rec["d_inverted"]
         if "d" not in t.segments:
@@ -239,9 +239,10 @@ def test_inverted_d_unmutated_zero_mismatch(recipe, min_placed, reference):
         assert d.observed.observed_germline == rc_allele[d.observed.germ_start:d.observed.germ_end]
         for name in d.alleles.alleles:
             assert d.observed.observed_germline in revcomp(reference.seq(name))
+        internal_deletions += "D" in d.observed.cigar
         checked += 1
     assert checked >= 50
-    assert placed >= min_placed
+    assert internal_deletions >= min_internal_deletions
 
 
 def test_bench_case_orientations(reference, load_fixture):

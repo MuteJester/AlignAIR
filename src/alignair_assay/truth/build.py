@@ -59,7 +59,9 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
         calls = [c for c in (record.get(f"{g}_call") or "").split(",") if c]
         generative = record.get(f"truth_{g}_call") or None
         primary = generative or (calls[0] if calls else None)
-        if primary is None:
+        if primary is None or not record.get(f"{g}_cigar"):
+            # No call, or no alignment column: the read shows none of the segment. GenAIRR's assembled encoding
+            # records a segment that end loss removed completely with an empty CIGAR and no germline coordinates.
             continue
         novel_allele = (novel or {}).get(primary) if g == "v" and not reference.has(primary) else None
         if novel_allele is None and not reference.has(primary):
@@ -76,14 +78,16 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
         inverted = g == "d" and bool(record.get("d_inverted"))
         frame_seq = revcomp(allele_seq) if inverted else allele_seq
         problems: list[str] = []
+        # The length of the re-called allele GenAIRR projected the alignment onto (see truth.genairr).
+        projected = len(reference.seq(calls[0])) if recalled and reference.has(calls[0]) else None
         try:
             if not inverted:
-                seg = observe_forward(read, allele_seq, primary, record, g, problems, recalled=recalled)
+                seg = observe_forward(read, allele_seq, primary, record, g, problems, recalled=recalled,
+                                      projected_length=projected)
             elif recalled and not reference.has(calls[0]):
                 seg = None
                 problems.append(f"inverted D re-called as {calls[0]}, which is not in the reference; segment dropped")
             else:
-                projected = len(reference.seq(calls[0])) if recalled else None
                 seg = observe_inverted_d(read, allele_seq, primary, record, problems, projected_length=projected)
         except (IndexError, TypeError, ValueError) as exc:
             seg = None
