@@ -16,6 +16,7 @@ from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.report.run import RUN_REPORT_KIND, RUN_REPORT_VERSION
+from alignair_assay.runners.alignair import LOCAL_CODE_IDENTITY, AlignAIRLocal, local_code_identity
 from alignair_assay.runners.base import absolute_path, read_run_json, require_successful_run
 from alignair_assay.scoring.oracle import oracle_problems
 from alignair_assay.scoring.pipeline import read_scores
@@ -164,9 +165,10 @@ def speed_summary(layout: RunLayout, cfg: RunConfig) -> dict | None:
     ``reads.fasta``: ``{"stale": True, "config_hash": the file's, "reason": why}``. Otherwise the result is the
     file's content with ``results`` restricted to the current configurations, ``stale_results`` (``name``,
     ``reason``) naming the others, and ``failed`` (``name``, ``error``) the current ones whose measurement failed.
-    A configuration is stale when it records a ``checkpoint_sha256`` (alignair-local) that is not the SHA-256 of
-    ``cfg.alignair_checkpoint`` now: the checkpoint was retrained in place or replaced, which the config hash does
-    not show when alignair-local is not a compared tool."""
+    An alignair-local configuration is stale when its ``checkpoint_sha256`` is not the SHA-256 of
+    ``cfg.alignair_checkpoint`` now (the checkpoint was retrained in place or replaced), or when the code its CLI
+    ran (``runners.alignair.LOCAL_CODE_IDENTITY``) is not this checkout's now (``local_code_identity``): the config
+    hash does not show either when alignair-local is not a compared tool."""
     speed = read_json(layout.speed_json)
     if speed is None:
         return None
@@ -183,11 +185,21 @@ def speed_summary(layout: RunLayout, cfg: RunConfig) -> dict | None:
                           "rebuilt since)"}
     checkpoint = absolute_path(cfg.alignair_checkpoint) if cfg.alignair_checkpoint else None
     current_checkpoint = sha256_file(checkpoint) if checkpoint and Path(checkpoint).is_file() else None
+    current_code = None
     results, stale = {}, []
     for name, result in (speed.get("results") or {}).items():
-        if "checkpoint_sha256" in result and result["checkpoint_sha256"] != current_checkpoint:
+        if result.get("tool") != AlignAIRLocal.name and "checkpoint_sha256" not in result:
+            results[name] = result
+            continue
+        if result.get("checkpoint_sha256") != current_checkpoint:
             stale.append({"name": name, "reason": "measured on another checkpoint than the configuration's "
                                                   f"{cfg.alignair_checkpoint or '(none)'}"})
+            continue
+        current_code = current_code or local_code_identity()
+        changed = [key for key in LOCAL_CODE_IDENTITY if result.get(key) != current_code[key]]
+        if changed:
+            stale.append({"name": name, "reason": "measured with other AlignAIR code than this checkout's "
+                                                  f"({', '.join(changed)})"})
         else:
             results[name] = result
     failed = [{"name": name, "error": result["error"]} for name, result in results.items() if "error" in result]

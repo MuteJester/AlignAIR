@@ -31,7 +31,7 @@ from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.reference import Reference
 from alignair_assay.runners import make_runner
-from alignair_assay.runners.alignair import local_cuda_available
+from alignair_assay.runners.alignair import LOCAL_CODE_IDENTITY, local_code_identity, local_cuda_available
 from alignair_assay.runners.base import Runner, RunnerOptions
 from alignair_assay.suites import get_suite
 from alignair_assay.suites.engine import requested_count
@@ -51,8 +51,9 @@ N_FULL = 4000
 REPEATS = 3
 # The tool timed on CUDA as well as on CPU.
 LOCAL = "alignair-local"
-# What each result records about its configuration; a kept result must match on all of them.
-IDENTITY = ("tool", "threads", "cpus", "device", "checkpoint_sha256")
+# What each result records about its configuration; a kept result must match on all of them. alignair-local also
+# records the checkpoint's digest and the code its CLI runs (``runners.alignair.local_code_identity``).
+IDENTITY = ("tool", "threads", "cpus", "device", "checkpoint_sha256", *LOCAL_CODE_IDENTITY)
 # Seconds to wait for nvidia-smi or the docker daemon before recording them as unavailable.
 _PROBE_TIMEOUT = 20
 
@@ -70,12 +71,15 @@ class SpeedConfig:
 
     def identity(self) -> dict:
         """The ``tool``, ``threads``, ``cpus`` (the CPU list it is pinned to) and torch ``device`` (``cpu`` for every
-        tool but alignair-local), and for alignair-local the ``checkpoint_sha256`` (None for a missing file)."""
+        tool but alignair-local), and for alignair-local the ``checkpoint_sha256`` (None for a missing file) and the
+        code its CLI runs (``runners.alignair.local_code_identity``: ``code_sha256``, ``git_commit``,
+        ``git_dirty``, ``torch``)."""
         record = {"tool": self.tool, "threads": self.options.threads, "cpus": self.options.cpus,
                   "device": self.options.device if self.tool == LOCAL else "cpu"}
         if self.tool == LOCAL:
             checkpoint = self.options.alignair_checkpoint
             record["checkpoint_sha256"] = sha256_file(checkpoint) if checkpoint and Path(checkpoint).is_file() else None
+            record.update(local_code_identity())
         return record
 
 

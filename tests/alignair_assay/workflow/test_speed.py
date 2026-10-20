@@ -17,11 +17,12 @@ pytest.importorskip("GenAIRR")
 from alignair_assay.cli import main  # noqa: E402
 from alignair_assay.core.cases import read_fasta  # noqa: E402
 from alignair_assay.core.layout import RunLayout  # noqa: E402
-from alignair_assay.core.provenance import sha256_file  # noqa: E402
+from alignair_assay.core.provenance import sha256_file, tree_digest  # noqa: E402
 from alignair_assay.core.reference import DEFAULT_REFERENCE  # noqa: E402
 from alignair_assay.report.run import run_report_markdown  # noqa: E402
 from alignair_assay.runners import RUNNERS  # noqa: E402
-from alignair_assay.runners.alignair import AlignAIRImage, AlignAIRLocal  # noqa: E402
+from alignair_assay.runners import alignair as alignair_module  # noqa: E402
+from alignair_assay.runners.alignair import AlignAIRImage, AlignAIRLocal, local_code_identity  # noqa: E402
 from alignair_assay.runners.base import RunResult, fasta_ids  # noqa: E402
 from alignair_assay.runners.igblast import IgBlastRunner  # noqa: E402
 from alignair_assay.runners.oracle import OracleRunner  # noqa: E402
@@ -244,9 +245,11 @@ def test_speed_configs():
     identities = {name: config.identity() for name, config in configs.items()}
     assert identities["igblast_1t"] == {"tool": "igblast", "threads": 1, "cpus": "0", "device": "cpu"}
     assert identities["alignair_8t"] == {"tool": "alignair", "threads": 8, "cpus": "0-7", "device": "cpu"}
-    # A missing checkpoint has no digest.
+    # A missing checkpoint has no digest; the code the local CLI runs is part of its identity.
     assert identities["alignair-local_cuda"] == {"tool": "alignair-local", "threads": 8, "cpus": "0-7",
-                                                 "device": "cuda", "checkpoint_sha256": None}
+                                                 "device": "cuda", "checkpoint_sha256": None,
+                                                 **local_code_identity()}
+    assert set(speed.IDENTITY) >= {"checkpoint_sha256", "code_sha256", "git_commit", "git_dirty", "torch"}
     assert identities["alignair-local_8t"]["device"] == "cpu"
     # Each builds its tool's runner with the configuration's threads, CPUs and device, and the run's options.
     igblast = configs["igblast_1t"]()
@@ -436,6 +439,41 @@ def test_rows_of_another_checkpoint_are_stale(built, tmp_path, small_protocol, m
     printed = capsys.readouterr().out
     assert "speed quick_1t: up to date, skipped" in printed and "speed alignair-local_2t: cold start" in printed
     assert shown_and_stale() == (["quick_1t", "quick_2t", *local], [])
+
+
+def test_rows_of_other_local_code_are_stale(built, tmp_path, small_protocol, monkeypatch, capsys):
+    # A copy of this checkout's src/alignair stands in for the code the alignair-local CLI runs.
+    source = tmp_path / "checkout" / "src"
+    shutil.copytree(alignair_module.SOURCE_DIR / "alignair", source / "alignair",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    monkeypatch.setattr(alignair_module, "SOURCE_DIR", source)
+    monkeypatch.setitem(RUNNERS, "alignair-local", Local)
+    monkeypatch.setattr(speed, "local_cuda_available", lambda: False)
+    checkpoint = tmp_path / "a.alignair"
+    checkpoint.write_bytes(b"weights 1")
+    layout = RunLayout(_copy(built, tmp_path))
+    cfg = RunConfig(suites=("S1",), tools=("oracle", "quick"), scale=0.02, workers=2, threads=2, speed=True,
+                    alignair_checkpoint=str(checkpoint))
+    assert run_all(cfg, layout) == 0
+    row = json.loads(layout.speed_json.read_text())["results"]["alignair-local_2t"]
+    assert row["code_sha256"] == tree_digest(source / "alignair", suffixes=(".py", ".pyx"))
+
+    # The decoder edited, the checkpoint unchanged: the local row is stale, the others are still shown.
+    predict = source / "alignair" / "cli" / "predict.py"
+    predict.write_text(predict.read_text() + "\n# decoder change\n")
+    capsys.readouterr()
+    assert main(["report", "--run-dir", str(layout.root)]) == 0
+    speed_report = json.loads(layout.report_json.read_text())["speed"]
+    assert list(speed_report["results"]) == ["quick_1t", "quick_2t"]
+    assert speed_report["stale_results"] == [
+        {"name": "alignair-local_2t", "reason": "measured with other AlignAIR code than this checkout's (code_sha256)"}]
+    assert "alignair-local_2t was measured with other AlignAIR code" in capsys.readouterr().err
+    # all --speed measures it again and keeps the others.
+    assert run_all(cfg, layout) == 0
+    printed = capsys.readouterr().out
+    assert "speed quick_1t: up to date, skipped" in printed and "speed alignair-local_2t: cold start" in printed
+    row = json.loads(layout.speed_json.read_text())["results"]["alignair-local_2t"]
+    assert row["code_sha256"] == tree_digest(source / "alignair", suffixes=(".py", ".pyx"))
 
 
 def test_failed_speed_measurement(built, tmp_path, small_protocol, capsys):

@@ -372,13 +372,17 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    identifies the tool by content: IgBLAST's directory and the SHA-256 of `igblastn`, `makeblastdb` and the
    auxiliary file; the AlignAIR image reference and the image ID it resolves to (pulling it when it is not local),
    and the model spec and the SHA-256 of the model file it resolves to (installing it into the run's model cache);
-   the local checkpoint's path, SHA-256 and device; nothing for the oracle. Then `manifest.json` is written,
+   the local checkpoint's path, SHA-256 and device, and the code the local CLI runs
+   (`runners.alignair.local_code_identity`: `code_sha256`, the SHA-256 of the relative paths and bytes of this
+   checkout's `src/alignair/**/*.py` and `*.pyx`, the checkout's `git_commit` and `git_dirty`, and the `torch`
+   version); nothing for the oracle. Then `manifest.json` is written,
    holding the `config`, its `identity`, the `config_hash` (SHA-256 of the canonical JSON of the identity), the
    split, the host, the checkout's git state, the GenAIRR provenance and `warnings` (an AlignAIR image not pinned
    by digest, or a model not pinned to a version). The identity is what the outputs depend on: suites, tools,
    split, reference, seed, scale and the tools' fingerprints (`settings`). Workers, threads and `--speed` are not
-   part of it, so an upgrade in place, a moved image tag or a retrained checkpoint is a new configuration even
-   when every path and name is the same.
+   part of it, so an upgrade in place, a moved image tag, a retrained checkpoint or an edit of the AlignAIR code
+   alignair-local runs (a commit, or uncommitted changes anywhere in the checkout, included) is a new
+   configuration even when every path and name is the same.
 2. **Build.** Each suite is built, unless its `build.json` already has the suite's identity (see What invalidates a
    build) and its truth file the current truth version. A rebuilt suite prints which identity fields changed.
 3. **Shared reference.** With `alignair` among the tools and no `reference/germline.fasta` yet, the image exports
@@ -412,8 +416,8 @@ oracle is not perfect on a suite, or a speed measurement failed. The report name
 `run.json` shows return code 0 with predictions, the same `settings` (the tool's current fingerprint) and
 unchanged input files. A failed run is redone. With `--speed`, a configuration's measurement is kept when
 `speed.json` was measured on the same host (`host_info`), with the same protocol, S1 reads and config hash, and the
-configuration succeeded with the same tool, threads, CPUs, device and (alignair-local) checkpoint digest; a failed
-or changed one is measured again. Scores, comparisons and the report are always recomputed from the current runs,
+configuration succeeded with the same tool, threads, CPUs, device and, for alignair-local, checkpoint digest and
+code (`local_code_identity`); a failed or changed one is measured again. Scores, comparisons and the report are always recomputed from the current runs,
 so a change to the scoring code takes effect on the next `all`. It never mixes in stale outputs.
 
 **What invalidates a build.** A suite's build is redone by the next `all` (no `--force` needed: the manifest does not
@@ -480,8 +484,9 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
     of it (and in a warning). A `speed.json` whose config hash is not the manifest's (measured for another
     configuration, or by the `speed` command), or whose reads' SHA-256 is not that of S1's current `reads.fasta`, is
     stale as a whole. An alignair-local configuration whose `checkpoint_sha256` is not the SHA-256 of the
-    configuration's `--alignair-checkpoint` now (retrained in place or replaced; the config hash does not cover the
-    checkpoint when alignair-local is not a compared tool) is stale alone. `all --speed` measures stale ones again.
+    configuration's `--alignair-checkpoint` now (retrained in place or replaced), or whose code
+    (`code_sha256`, `git_commit`, `git_dirty`, `torch`) is not this checkout's now, is stale alone: the config hash
+    does not cover either when alignair-local is not a compared tool. `all --speed` measures stale ones again.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
 `cli.COMMANDS`. The module owns its own input checks: `run` raises ValueError (or FileNotFoundError) for invalid
@@ -517,8 +522,9 @@ directory's tools are run (the same runners, through `Runner.run`):
   kernel release. Nothing else should run on the host, and on the GPU, while it is timed.
 - **`speed.json`**: `kind`, `version`, `host`, `n_tiny`, `n_full`, `repeats`, `reads` (suite and SHA-256 of its
   `reads.fasta`), `config_hash` (the `all` configuration it belongs to; None from the `speed` command) and
-  `results`: per configuration its `tool`, `threads`, `cpus`, `device` (and `checkpoint_sha256` for
-  alignair-local), `measured_utc` and either its `settings` (the tool's fingerprint), `cold_start_s`,
+  `results`: per configuration its `tool`, `threads`, `cpus`, `device` (and, for alignair-local,
+  `checkpoint_sha256`, `code_sha256`, `git_commit`, `git_dirty` and `torch`), `measured_utc` and either its
+  `settings` (the tool's fingerprint), `cold_start_s`,
   `steady_reads_per_s`, `median_tiny_s`, `median_full_s`, `peak_rss_kb`, `walls` (every run's wall time, by set)
   and `command` (the last full run's), or its `error`. `speed/runs/<config>/` keeps each set's last run
   (predictions and logs).
@@ -780,7 +786,7 @@ Registered runners:
 | `oracle` | `runners.oracle.OracleRunner` (fingerprint: none; each run records the truth's SHA-256) | binds the run directory | writes `truth.oracle.oracle_prediction` rows for the reads of the FASTA, in its order, from the suite's truth (in-process: no command, no RSS) |
 | `igblast` | `runners.igblast.IgBlastRunner` (`--igblast-dir`, `--threads`, `--cpus`; fingerprint: the directory and the SHA-256 of `igblastn`, `makeblastdb` and the auxiliary file) | checks the release; writes `germline_{v,d,j}.fasta` and builds the BLAST databases (`makeblastdb -parse_seqids -dbtype nucl`) in `runs/igblast/_work/` | `IGDATA=<dir> igblastn -germline_db_V/D/J <db>/V,D,J -auxiliary_data optional_file/human_gl.aux -organism human -ig_seqtype Ig -num_threads <threads> -outfmt 19 -query <fasta> -out <tsv>`; provenance: version text, SHA-256 of `igblastn`, `makeblastdb`, the auxiliary file and every database file, threads and CPUs |
 | `alignair` | `runners.alignair.AlignAIRImage` (`--image`, `--model`, `--cache-dir`, `--threads`, `--cpus`; fingerprint: the image reference and resolved image ID, the model spec and the installed model file's SHA-256) | inspects the image (pulling it when it is not local); installs the model into the cache (see AlignAIR model cache) with `models get`, then `models verify` and `models path`; records `models info` and `doctor --json`; exports the model's reference with `reference export <model file> --fasta` (3.0.0 crashes on a registry id there) into `runs/alignair/_work/` and refuses it unless it is the truth reference | `docker run --rm -u <uid>:<gid> -v <cache>:/home/appuser/.cache/alignair -v <log dir>/input:/in:ro -v <tsv dir>:/out [--cpuset-cpus <cpus>] [-e OMP_NUM_THREADS=<t> -e MKL_NUM_THREADS=<t>] --entrypoint sh <image> -c 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak 2>/dev/null; exit $rc' sh predict --model <model> --input /in/<fasta> --out /out/<tsv> --device cpu --quiet [--genotype /in/genotype.json]`; `<log dir>/input` is emptied and holds only a copy of the reads FASTA (and the genotype JSON), so the container never sees the suite's cases or truth; the wall time includes the container's start; the peak RSS is the container's cgroup v2 `memory.peak` (resident memory plus page cache; None with an `rss_note` when unreadable); provenance: image reference, ID and RepoDigests, the cache record, model spec, path and SHA-256, the model card, the doctor output, the exported reference, the moved `predict` sidecar (`logs/alignair.run.json`), the genotype file, threads and CPUs |
-| `alignair-local` | `runners.alignair.AlignAIRLocal` (`--checkpoint`, `--device`, `--batch-size`, `--threads`, `--cpus`; fingerprint: the checkpoint path and SHA-256, the device) | checks the checkpoint; probes the torch version and CUDA device the subprocess sees; exports the checkpoint's reference into `runs/alignair-local/_work/` with this checkout's CLI and refuses it unless it is the truth reference | `PYTHONPATH=<checkout>/src [OMP_NUM_THREADS=<t> MKL_NUM_THREADS=<t>] <python> -c "import sys; from alignair.cli.main import main; sys.exit(main())" predict --model <checkpoint> --input <fasta> --out <tsv> --device <device> --batch-size <n> --quiet [--genotype <log_dir>/genotype.json]` under `timed_command` (peak RSS of the CLI process); provenance: checkpoint path and SHA-256, the checkout's path and commit state, interpreter, torch version, CUDA device name, device, batch size, the exported reference, the moved sidecar, the genotype file, threads and CPUs |
+| `alignair-local` | `runners.alignair.AlignAIRLocal` (`--checkpoint`, `--device`, `--batch-size`, `--threads`, `--cpus`; fingerprint: the checkpoint path and SHA-256, the device, and the code the CLI runs: the SHA-256 of `src/alignair`'s `.py` and `.pyx` files, the checkout's git commit and dirty flag, the torch version) | checks the checkpoint; probes the torch version and CUDA device the subprocess sees; exports the checkpoint's reference into `runs/alignair-local/_work/` with this checkout's CLI and refuses it unless it is the truth reference | `PYTHONPATH=<checkout>/src [OMP_NUM_THREADS=<t> MKL_NUM_THREADS=<t>] <python> -c "import sys; from alignair.cli.main import main; sys.exit(main())" predict --model <checkpoint> --input <fasta> --out <tsv> --device <device> --batch-size <n> --quiet [--genotype <log_dir>/genotype.json]` under `timed_command` (peak RSS of the CLI process); provenance: checkpoint path and SHA-256, the checkout's path and commit state, interpreter, torch version, CUDA device name, device, batch size, the exported reference, the moved sidecar, the genotype file, threads and CPUs |
 
 ### AlignAIR model cache
 

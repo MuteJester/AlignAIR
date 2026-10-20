@@ -11,8 +11,10 @@ pytest.importorskip("GenAIRR")
 
 from alignair_assay.cli import main  # noqa: E402
 from alignair_assay.core.layout import RunLayout  # noqa: E402
-from alignair_assay.core.provenance import sha256_file  # noqa: E402
+from alignair_assay.core.provenance import sha256_file, tree_digest  # noqa: E402
 from alignair_assay.runners import RUNNERS  # noqa: E402
+from alignair_assay.runners import alignair as alignair_module  # noqa: E402
+from alignair_assay.runners.alignair import AlignAIRLocal  # noqa: E402
 from alignair_assay.runners.base import RunResult, fasta_ids, read_run_json  # noqa: E402
 from alignair_assay.runners.oracle import OracleRunner  # noqa: E402
 from alignair_assay.suites import SUITES, get_suite  # noqa: E402
@@ -64,6 +66,19 @@ class GenotypeCrash(OracleRunner):
         return RunResult(tool=self.name, suite=suite, arm=arm, predictions=str(out_tsv), n_reads=len(fasta_ids(fasta)),
                          wall_seconds=0.1, peak_rss_kb=None, returncode=1, commands=[["picky", str(fasta)]],
                          provenance={"error": "AttributeError: 'tuple' object has no attribute 'items'"})
+
+
+class OracleLocal(AlignAIRLocal):
+    """The alignair-local runner with its real fingerprint (the checkpoint's and the checkout's code digests), whose
+    runs write oracle rows instead of running the CLI and record only their reads, as a real tool's do."""
+
+    def prepare(self, layout, reference):
+        self._oracle = OracleRunner(layout)
+        return {}
+
+    def run(self, fasta, out_tsv, **kwargs):
+        result = self._oracle.run(fasta, out_tsv, **kwargs)
+        return dataclasses.replace(result, tool=self.name, provenance={})
 
 
 @pytest.fixture(autouse=True)
@@ -253,6 +268,42 @@ def test_suite_source_change_rebuilds_only_that_suite(half_run, tmp_path, monkey
     # Resumed with the edit in place, nothing is rebuilt or rerun.
     _, status = _all(root)
     assert status == 0 and "build S1: up to date, skipped" in capsys.readouterr().out
+
+
+def test_local_code_change_redoes_local_runs(tmp_path, monkeypatch, capsys):
+    # A copy of this checkout's src/alignair stands in for the code the alignair-local subprocess runs.
+    source = tmp_path / "checkout" / "src"
+    shutil.copytree(alignair_module.SOURCE_DIR / "alignair", source / "alignair",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    monkeypatch.setattr(alignair_module, "SOURCE_DIR", source)
+    monkeypatch.setitem(RUNNERS, "alignair-local", OracleLocal.from_options)
+    checkpoint = tmp_path / "model.alignair"
+    checkpoint.write_bytes(b"weights")
+    root = tmp_path / "run"
+    options = dict(suites=("S0",), tools=("oracle", "alignair-local"), scale=0.2, workers=1,
+                   alignair_checkpoint=str(checkpoint))
+    assert _all(root, **options)[1] == 0
+    layout = RunLayout(root)
+    settings = read_run_json(layout.run_json("alignair-local", "S0", "shared")).provenance["settings"]
+    assert settings["code_sha256"] == tree_digest(source / "alignair", suffixes=(".py", ".pyx"))
+    capsys.readouterr()
+    assert _all(root, **options)[1] == 0
+    assert "run alignair-local S0/shared: up to date, skipped" in capsys.readouterr().out
+
+    # The decoder or post-processing edited, the checkpoint unchanged: another configuration, not reused.
+    predict = source / "alignair" / "cli" / "predict.py"
+    predict.write_text(predict.read_text() + "\n# decoder change\n")
+    with pytest.raises(ValueError, match=r"alignair-local\.code_sha256"):
+        _all(root, **options)
+    # Forced, only the alignair-local runs are redone, with the new code's fingerprint.
+    assert _all(root, **options, force=True)[1] == 0
+    printed = capsys.readouterr().out
+    assert "run oracle S0/shared: up to date, skipped" in printed
+    assert "run alignair-local S0/shared: return code 0" in printed
+    redone = read_run_json(layout.run_json("alignair-local", "S0", "shared")).provenance["settings"]
+    assert redone["code_sha256"] == tree_digest(source / "alignair", suffixes=(".py", ".pyx")) != settings[
+        "code_sha256"]
+    assert json.loads(layout.manifest.read_text())["replaced"]["changed"] == ["alignair-local.code_sha256"]
 
 
 def test_stale_config_refused(toy_run, tmp_path):

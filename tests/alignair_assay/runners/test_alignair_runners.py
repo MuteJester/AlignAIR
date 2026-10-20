@@ -4,6 +4,7 @@ The image tests run only with ``ALIGNAIR_ASSAY_DOCKER=1`` (Docker and the AlignA
 checkpoint tests only when ``ALIGNAIR_ASSAY_MODEL`` names a ``.alignair`` model file.
 """
 import dataclasses
+import importlib.metadata
 import json
 import os
 import re
@@ -21,7 +22,7 @@ from alignair_assay.airr.reader import load_airr_tsv  # noqa: E402
 from alignair_assay.cli import main  # noqa: E402
 from alignair_assay.core.cases import read_cases, write_cases  # noqa: E402
 from alignair_assay.core.layout import RunLayout  # noqa: E402
-from alignair_assay.core.provenance import sha256_file  # noqa: E402
+from alignair_assay.core.provenance import git_state, sha256_file, tree_digest  # noqa: E402
 from alignair_assay.core.reference import Reference  # noqa: E402
 from alignair_assay.runners import RUNNERS, make_runner  # noqa: E402
 from alignair_assay.runners.alignair import (  # noqa: E402
@@ -31,6 +32,7 @@ from alignair_assay.runners.alignair import (  # noqa: E402
     MEASURED_SCRIPT,
     AlignAIRImage,
     AlignAIRLocal,
+    local_code_identity,
     memory_peak_kb,
     write_genotype_json,
 )
@@ -237,8 +239,36 @@ def test_local_command_line(tmp_path):
         runner.fingerprint()
     checkpoint.write_bytes(b"weights")
     assert runner.fingerprint() == {"checkpoint": str(checkpoint), "checkpoint_sha256": sha256_file(checkpoint),
-                                    "device": "cuda"}
+                                    "device": "cuda", **local_code_identity()}
     assert {"alignair", "alignair-local", "igblast", "oracle"} <= set(RUNNERS)
+
+
+def test_local_fingerprint_covers_the_code_it_runs(tmp_path, monkeypatch):
+    # The subprocess runs this checkout's src/alignair: its sources are part of what the runner predicts with.
+    identity = local_code_identity()
+    assert identity == {"code_sha256": tree_digest(SOURCE_DIR / "alignair", suffixes=(".py", ".pyx")),
+                        **git_state(SOURCE_DIR.parent), "torch": importlib.metadata.version("torch")}
+    source = tmp_path / "checkout" / "src"
+    shutil.copytree(SOURCE_DIR / "alignair", source / "alignair", ignore=shutil.ignore_patterns("__pycache__"))
+    monkeypatch.setattr(alignair_module, "SOURCE_DIR", source)
+    checkpoint = tmp_path / "model.alignair"
+    checkpoint.write_bytes(b"weights")
+    runner = AlignAIRLocal(checkpoint)
+    before = runner.fingerprint()
+    assert before["code_sha256"] == identity["code_sha256"]  # the same files, wherever they are
+    assert (before["git_commit"], before["git_dirty"]) == (None, None)  # the copy is not a git checkout
+    # A decoder or post-processing edit, the checkpoint unchanged: another tool.
+    predict = source / "alignair" / "cli" / "predict.py"
+    predict.write_text(predict.read_text() + "\n# decoder change\n")
+    after = runner.fingerprint()
+    assert after["code_sha256"] != before["code_sha256"]
+    assert {key: value for key, value in after.items() if key != "code_sha256"} == {
+        key: value for key, value in before.items() if key != "code_sha256"}
+    # Byte-code caches and other files are not code.
+    (source / "alignair" / "cli" / "__pycache__").mkdir(exist_ok=True)
+    (source / "alignair" / "cli" / "__pycache__" / "predict.cpython-312.pyc").write_bytes(b"\0")
+    (source / "alignair" / "notes.md").write_text("n\n")
+    assert runner.fingerprint() == after
 
 
 def test_tool_genotype_written(cohort_layout, reference, tmp_path):
