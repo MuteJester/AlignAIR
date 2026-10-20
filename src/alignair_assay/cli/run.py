@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import sys
 
-from alignair_assay.cli.common import comma_list, truth_reference
+from alignair_assay.cli.common import comma_list
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.runners import RUNNERS, make_runner
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL
 from alignair_assay.runners.arms import run_genotype_arm
 from alignair_assay.runners.base import RunnerOptions, RunResult, absolute_path, run_suite
 from alignair_assay.runners.reference import ensure_shared_reference
+from alignair_assay.scoring.pipeline import truth_reference
 
 ARMS = ("shared", "genotype")
 

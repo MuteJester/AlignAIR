@@ -17,7 +17,7 @@ ALLOWED = {"core": {"core"}, "truth": {"core", "truth"}, "airr": {"core", "airr"
            "metrics": {"core", "truth", "metrics"}, "stats": {"core", "metrics", "stats"},
            "report": {"core", "stats", "report"}, "scoring": {"core", "truth", "airr", "metrics", "stats", "scoring"},
            "suites": {"core", "suites"}, "runners": {"core", "airr", "truth", "suites", "runners"},
-           "diagnostics": {"core", "truth", "airr", "metrics", "stats", "scoring", "suites", "diagnostics"},
+           "diagnostics": {"core", "truth", "airr", "metrics", "stats", "scoring", "suites", "report", "diagnostics"},
            "workflow": ALL - {"cli"}, "cli": ALL, "testing": ALL}
 # Top-level modules that are not layers: the package marker and the ``python -m`` entry point.
 ENTRY_POINTS = {"__init__": set(), "__main__": {"cli"}}

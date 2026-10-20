@@ -22,7 +22,7 @@ from alignair_assay.report import build_comparison_report, build_score_report, t
 from alignair_assay.scoring.pipeline import load_predictions, score_predictions
 from alignair_assay.scoring.slices import slices
 from alignair_assay.stats import compare, summarize
-from alignair_assay.suites.donors import donors_from_json
+from alignair_assay.suites.donors import read_genotypes  # noqa: F401 (the score, compare and all commands' name)
 from alignair_assay.truth.model import ObservableTruth
 from alignair_assay.truth.summary import simulator_calls
 
@@ -40,17 +40,6 @@ class ToolScores:
     scores: dict[str, CaseScores]
     matching: dict
     excess_alleles: dict | None = None
-
-
-def read_genotypes(path: str | Path) -> dict[str, DonorGenotype]:
-    """The donor genotypes of a ``donors.json`` file (``suites.donors.donors_to_json``) by subject id: each donor's
-    ``Donor.view()``. ValueError naming the file for one that is not JSON, not a donors object or a malformed
-    one; OSError when it cannot be read."""
-    try:
-        donors = donors_from_json(json.loads(Path(path).read_text(encoding="utf-8")))
-    except (ValueError, KeyError, TypeError, AttributeError) as error:
-        raise ValueError(f"{path} is not a valid donors file: {type(error).__name__}: {error}") from error
-    return {donor.subject_id: donor.view() for donor in donors}
 
 
 def score_file(tool: str, truths: list[ObservableTruth], predictions_path: str | Path, reference: Reference, *,

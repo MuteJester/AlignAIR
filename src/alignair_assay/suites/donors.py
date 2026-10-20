@@ -10,12 +10,14 @@ within a gene; optionally, some carried V genes are then made homozygous for a n
 """
 from __future__ import annotations
 
+import json
 import math
 import random
 import statistics
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from alignair_assay.core.genotype import DonorGenotype, NovelAllele
@@ -262,6 +264,17 @@ def donors_from_json(data: dict) -> list[Donor]:
                                                     sequence=novel["sequence"], snps=tuple(novel["snps"]))
                          for novel in item["novel"]})
             for item in data["donors"]]
+
+
+def read_genotypes(path: str | Path) -> dict[str, DonorGenotype]:
+    """The donor genotypes of a ``donors.json`` file (``donors_to_json``) by subject id: each donor's
+    ``Donor.view()``. ValueError naming the file for one that is not JSON, not a donors object or a malformed
+    one; OSError when it cannot be read."""
+    try:
+        donors = donors_from_json(json.loads(Path(path).read_text(encoding="utf-8")))
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        raise ValueError(f"{path} is not a valid donors file: {type(error).__name__}: {error}") from error
+    return {donor.subject_id: donor.view() for donor in donors}
 
 
 def donors_summary(donors: Sequence[Donor], reference: Reference) -> dict:

@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import sys
 
-from alignair_assay.cli.common import comma_list, tool_path, truth_reference
+from alignair_assay.cli.common import comma_list, tool_path
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.report import speed_lines
 from alignair_assay.runners import RUNNERS
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL
 from alignair_assay.runners.base import absolute_path
+from alignair_assay.scoring.pipeline import truth_reference
 from alignair_assay.workflow import speed
 from alignair_assay.workflow.orchestrate import RunConfig
 

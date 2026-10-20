@@ -40,6 +40,13 @@ def test_layout_paths(tmp_path):
         (layout.speed_work_dir("alignair-local_cuda"), "speed/runs/alignair-local_cuda"),
         (layout.report_json, "report.json"),
         (layout.report_md, "report.md"),
+        (layout.diagnostics_root, "diagnostics"),
+        (layout.diagnostics_dir("0a1b2c3d4e5f-6a7b8c9d0e1f"), "diagnostics/0a1b2c3d4e5f-6a7b8c9d0e1f"),
+        (layout.diagnostics_suite_dir("k", "S1"), "diagnostics/k/S1"),
+        (layout.diagnostics_suite_json("k", "S1"), "diagnostics/k/S1/suite.json"),
+        (layout.diagnostics_profile_json("k"), "diagnostics/k/profile.json"),
+        (layout.diagnostics_json("k"), "diagnostics/k/diagnostics.json"),
+        (layout.diagnostics_md("k"), "diagnostics/k/diagnostics.md"),
     ]
     for path, relative in expected:
         assert path == tmp_path / relative, relative
@@ -68,3 +75,7 @@ def test_layout_rejects_names_that_are_not_one_component(tmp_path, name):
         layout.donor_reads("alignair", "S1", "genotype", name)
     with pytest.raises(ValueError, match="path component"):
         layout.tool_scores("S1", "shared", name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.diagnostics_dir(name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.diagnostics_suite_json("k", name)

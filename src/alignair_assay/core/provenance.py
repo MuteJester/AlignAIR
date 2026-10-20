@@ -1,5 +1,5 @@
-"""Provenance: the git state of a checkout, file and source-tree digests and the GenAIRR build that simulated the
-reads."""
+"""Provenance: the git state of a checkout, file and source-tree digests, the code identity of a Python package and
+the GenAIRR build that simulated the reads."""
 from __future__ import annotations
 
 import functools
@@ -8,6 +8,11 @@ import importlib.metadata
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
+
+# The files of a Python package that are its code: Python and Cython sources.
+CODE_SUFFIXES = (".py", ".pyx")
+# What ``code_identity`` records, in order.
+CODE_IDENTITY = ("code_sha256", "torch_version")
 
 
 def git_state(directory) -> dict:
@@ -49,6 +54,18 @@ def tree_digest(root, suffixes: tuple[str, ...] | None = None) -> str:
     files = [path for path in root.rglob("*") if path.is_file() and "__pycache__" not in path.relative_to(root).parts
              and path.suffix != ".pyc" and (suffixes is None or path.name.endswith(suffixes))]
     return files_digest(root, files)
+
+
+def code_identity(package_dir) -> dict:
+    """The code of the Python package in ``package_dir``, by content, and the torch it runs on: ``code_sha256``
+    (``tree_digest`` of its ``CODE_SUFFIXES`` files, their relative paths and bytes, so any source edit changes it
+    while byte code and other files do not) and the ``torch_version`` installed for this interpreter (None without
+    torch). Read from the files each time it is called."""
+    try:
+        torch = importlib.metadata.version("torch")
+    except importlib.metadata.PackageNotFoundError:
+        torch = None
+    return {"code_sha256": tree_digest(package_dir, suffixes=CODE_SUFFIXES), "torch_version": torch}
 
 
 @functools.lru_cache(maxsize=None)

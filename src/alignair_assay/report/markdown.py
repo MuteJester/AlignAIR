@@ -18,12 +18,13 @@ MISSING = "—"
 
 
 def _is_error(name: str) -> bool:
-    return "_err" in name or "_errors" in name or "set_size" in name
+    """True for a metric shown as a raw number: errors and counts (not rates)."""
+    return "_err" in name or "_errors" in name or "set_size" in name or "n_above_threshold" in name
 
 
 def format_value(name: str, v, *, delta: bool = False) -> str:
     """A value of metric ``name``, or a difference (``delta``): rates as percentages and differences in percentage
-    points, error-type metrics as raw numbers; None shows a dash."""
+    points, error-type metrics and counts as raw numbers; None shows a dash."""
     if v is None:
         return MISSING
     if _is_error(name):

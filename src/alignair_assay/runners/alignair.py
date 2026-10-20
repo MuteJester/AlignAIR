@@ -11,7 +11,6 @@ refuses a model whose reference is not the truth reference. AlignAIR has no thre
 """
 from __future__ import annotations
 
-import importlib.metadata
 import json
 import os
 import shutil
@@ -21,7 +20,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.core.provenance import git_state, sha256_file, tree_digest
+from alignair_assay.core.provenance import CODE_IDENTITY, code_identity, git_state, sha256_file
 from alignair_assay.core.reference import Reference
 from alignair_assay.runners.base import (
     RunnerOptions,
@@ -52,10 +51,8 @@ TORCH_PROBE = ("import json, sys, torch; d = torch.device(sys.argv[1]); "
 CUDA_PROBE = "import torch; print(torch.cuda.is_available())"
 # The src directory holding alignair_assay, and with it this checkout's alignair package.
 SOURCE_DIR = Path(__file__).resolve().parents[2]
-# The files of the alignair package that are its code: Python and Cython sources.
-CODE_SUFFIXES = (".py", ".pyx")
 # What ``local_code_identity`` records: a local run is current only while all of them are unchanged.
-LOCAL_CODE_IDENTITY = ("code_sha256", "torch_version")
+LOCAL_CODE_IDENTITY = CODE_IDENTITY
 LOG = "alignair.log"
 SIDECAR = "alignair.run.json"
 GENOTYPE = "genotype.json"
@@ -65,17 +62,13 @@ PEAK_RSS = "the container's cgroup v2 memory.peak (resident memory plus page cac
 
 
 def local_code_identity() -> dict:
-    """What the alignair-local subprocess runs besides the checkpoint, by content: ``code_sha256``
-    (``core.provenance.tree_digest`` of ``SOURCE_DIR/alignair``'s ``.py`` and ``.pyx`` files, their relative paths
-    and bytes, so a decoder or post-processing edit is another tool) and the ``torch_version`` installed for this
-    interpreter (None without torch). The checkout's commit and dirty flag are not part of it, so a commit that
-    leaves the sources alone keeps the fingerprint; ``prepare`` records them as provenance. Read from the files
-    each time it is called."""
-    try:
-        torch = importlib.metadata.version("torch")
-    except importlib.metadata.PackageNotFoundError:
-        torch = None
-    return {"code_sha256": tree_digest(SOURCE_DIR / "alignair", suffixes=CODE_SUFFIXES), "torch_version": torch}
+    """What the alignair-local subprocess runs besides the checkpoint, by content: ``core.provenance.code_identity``
+    of ``SOURCE_DIR/alignair``, i.e. ``code_sha256`` (the digest of its ``.py`` and ``.pyx`` files, their relative
+    paths and bytes, so a decoder or post-processing edit is another tool) and the ``torch_version`` installed for
+    this interpreter (None without torch). The checkout's commit and dirty flag are not part of it, so a commit
+    that leaves the sources alone keeps the fingerprint; ``prepare`` records them as provenance. Read from the
+    files each time it is called."""
+    return code_identity(SOURCE_DIR / "alignair")
 
 
 def write_genotype_json(reference: Reference, alleles: Iterable[str], path) -> dict[str, list[str]]:

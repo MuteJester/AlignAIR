@@ -9,7 +9,15 @@ import pytest
 
 from alignair_assay.cli import main
 from alignair_assay.core.jsonl import read_header, write_jsonl
-from alignair_assay.core.provenance import files_digest, genairr_provenance, git_state, sha256_file, tree_digest
+from alignair_assay.core.provenance import (
+    CODE_IDENTITY,
+    code_identity,
+    files_digest,
+    genairr_provenance,
+    git_state,
+    sha256_file,
+    tree_digest,
+)
 
 GENAIRR_FIELDS = {"genairr_version", "genairr_source", "genairr_git_commit", "genairr_git_dirty",
                   "genairr_source_sha256"}
@@ -114,3 +122,22 @@ def test_git_state_reports_dirty_tree(tmp_path):
     (repo / "f.txt").write_text("b\n")
     assert git_state(repo)["git_dirty"] is True
     assert git_state(tmp_path / "missing") == {"git_commit": None, "git_dirty": None}
+
+
+def test_code_identity_is_the_python_and_cython_sources(tmp_path):
+    # One implementation for the alignair-local runner and the in-process evaluator.
+    package = tmp_path / "pkg"
+    (package / "sub").mkdir(parents=True)
+    (package / "a.py").write_text("x = 1\n")
+    (package / "sub" / "b.pyx").write_text("cdef int y\n")
+    identity = code_identity(package)
+    assert tuple(identity) == CODE_IDENTITY == ("code_sha256", "torch_version")
+    assert identity == {"code_sha256": tree_digest(package, suffixes=(".py", ".pyx")),
+                        "torch_version": importlib.metadata.version("torch")}
+    # Notes and byte code are not code; an edited source is.
+    (package / "notes.md").write_text("n\n")
+    (package / "sub" / "__pycache__").mkdir()
+    (package / "sub" / "__pycache__" / "b.cpython-312.pyc").write_bytes(b"\0")
+    assert code_identity(package) == identity
+    (package / "a.py").write_text("x = 2\n")
+    assert code_identity(package)["code_sha256"] != identity["code_sha256"]

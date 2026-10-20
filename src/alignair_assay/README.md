@@ -42,23 +42,85 @@ PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter --suit
   `diagnostics` layer is where in-process code lives (the stage replay, head-level scoring, truth-substitution
   ablations and speed profile, see Diagnostics); it and `core/reference.py` are the only code that imports `alignair`.
 
+### Model diagnostics
+
+`all` tells you how a checkpoint compares with IgBLAST. `diagnose` tells you where its errors and its time come
+from: each head's raw output against the truth, how much error each pipeline stage adds, the allele calibration and
+a speed profile. It runs in process (no subprocess, no AIRR files) on suites already built on the `dev` split:
+
+```
+PYTHONPATH=src python -m alignair_assay build --run-dir .private/assay/dev --suites S1,S3 --scale 0.1
+PYTHONPATH=src python -m alignair_assay diagnose --run-dir .private/assay/dev --checkpoint MODEL.alignair \
+    --suites S1,S3 [--device cuda] [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] \
+    [--max-cases 500]
+```
+
+It writes `diagnostics/<model_key>/diagnostics.md` (and `diagnostics.json`) in the run directory and prints one
+line per suite. A suite built on the `test` split is refused: `test` stays locked for claims.
+
+**From a training loop.** Call the evaluator with the in-memory model and its `ReferenceSet` (for example every few
+thousand steps); `max_cases` takes that many reads per suite, evenly spaced. On a GPU, 500 S1 reads with every
+variant take about 5 s:
+
+```python
+from alignair_assay.core.layout import RunLayout
+from alignair_assay.diagnostics.evaluate import evaluate
+
+result = evaluate((model, reference_set), RunLayout(".private/assay/dev"), ["S1", "S3"], device="cuda",
+                  max_cases=500, profile=False)
+s1 = result.suites["S1"]
+s1["heads"]["head.j.end_exact.soft"]["mean"]                          # a raw head, against the truth
+s1["variants"]["baseline"]["scores"]["junction.nt_exact"]["mean"]     # the product pipeline, end to end
+[step["metrics"]["junction.nt_exact"]["delta"] for step in s1["contributions"]]  # error added per stage
+```
+
+The model's reference must be the truth reference (`HUMAN_IGH_OGRDB` for the built-in suites); another is refused,
+naming the first differing allele. The model is put back in its training mode afterwards.
+
+**What is cached, and when it is recomputed.** Results live under `diagnostics/<model_key>/`, where the model key is
+the first 12 hex digits of the checkpoint's SHA-256 (an in-memory model: of its weights, configuration, module tree
+and allele order) and of the AlignAIR code digest (the `.py`/`.pyx` sources of the `alignair` package the process
+imported). Each suite's result (`<S>/suite.json`) records everything it depends on and is reused only when all of
+it matches: the full weights and code digests, the torch version, the assay's own truth, metrics and scoring code,
+the suite's build (its identity and the SHA-256 of its cases, truth and donors files), the variants, `max_cases`,
+the device and the batch size. Anything else is recomputed, never served stale: a new checkpoint or an AlignAIR code
+edit gets a new model key, and a rebuilt suite or another setting replaces that suite's record. The profile is
+cached the same way, keyed by the model, the assay code, the device, the host, the batch size and the profiled
+reads. `diagnose`
+warns when a suite's build is not current for this checkout (rebuild it to diagnose against the current truth
+code).
+
+**Reading the report.** It opens with the model key and one line per suite (computed or reused), then:
+
+1. *Head metrics*: each segment edge under the soft-argmax decoder the product uses and under the logits' argmax,
+   side by side (exact rate, absolute and signed error in nucleotides); the allele ranks (top-1/3/5 in the truth
+   set); the metadata heads. A large soft-vs-argmax gap points at the decoder, not the network.
+2. *Stage contributions*: the truth fed in one stage at a time (orientation, segmentation, allele calls, germline
+   alignment). Each step's Δ, with its Holm-corrected verdict, is the error that stage adds given perfect upstream
+   stages; the step tables show the paired means whose difference is Δ, and each variant's own mean with its
+   coverage.
+3. *Calibration*: whether the top-1 allele probability means what it says (ECE and the reliability bins).
+4. *Single-swap variants*: one change on the baseline (the argmax decoder; truth spans into the classifier only).
+5. *Profile*: milliseconds per read and share per stage and per network module.
+6. *Fallbacks and crops*: reads AlignAIR cropped, and the segments whose truth could not be substituted.
+
 ## Layers and dependency rule
 
 Each subpackage is a layer and may import only the layers in its row.
 
 | Layer | Holds | May import from `alignair_assay.` |
 |---|---|---|
-| `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`, `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports) | core |
+| `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files, `evenly_spaced` samples), `provenance` (git state, file and source digests, `code_identity` of a torch model package), `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports) | core |
 | `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle`, `summary` (what a truth set could not score) | core, truth |
 | `airr` | AIRR TSV `reader` (`load_airr_tsv`, and `rows_to_predictions` for rows already in memory) and `writer` | core, airr |
 | `metrics` | per-case scorers (pure), the group scorers that read a case's whole clone (`groups`), the scorers against a read's donor genotype (`genotype`), and the metric registries | core, truth, metrics |
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
-| `report` | JSON reports and markdown summaries (`build`, `markdown`), and the run report rendered from a run summary (`run`) | core, stats, report |
-| `scoring` | `pipeline` (score one tool against a truth file), `slices` and `oracle` (the oracle rule on per-case scores) | core, truth, airr, metrics, stats, scoring |
-| `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
+| `report` | JSON reports and markdown summaries (`build`, `markdown`), the run report rendered from a run summary (`run`) and the diagnostics report (`diagnostics`) | core, stats, report |
+| `scoring` | `pipeline` (score one tool against a truth file; `truth_reference`, the reference built suites' truth was built against), `slices` and `oracle` (the oracle rule on per-case scores) | core, truth, airr, metrics, stats, scoring |
+| `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`, with `read_genotypes` for a `donors.json`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
 | `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, `read_genotypes`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
-| `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics) and `ablation` (truth-substitution variants and stage contributions) and `profile` (per-module and per-stage speed) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
+| `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed) and `evaluate` (the evaluator behind `diagnose`, cached per suite) | core, truth, airr, metrics, stats, scoring, suites, report, diagnostics |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -291,6 +353,10 @@ RUN/
   speed/reads_<n>.fasta               n reads evenly spaced across S1, timed
   speed/runs/<config>/                each timed configuration's last tiny/ and full/ run (predictions, logs)
   report.json, report.md              the run summary and the run report (`all`, `report`)
+  diagnostics/<model_key>/            one model's diagnostics (`diagnose`, `diagnostics.evaluate`)
+    <S>/suite.json                    one suite's cached result, with the key it was computed for
+    profile.json                      the cached speed profile, with its key
+    diagnostics.json, diagnostics.md  the model's last diagnostics report
 ```
 
 | Path | `RunLayout` |
@@ -307,6 +373,9 @@ RUN/
 | `speed/`, `speed.json` | `speed_dir`, `speed_json` |
 | `speed/reads_<n>.fasta`, `speed/runs/<config>/` | `speed_reads(n)`, `speed_work_dir(config)` |
 | `report.json`, `report.md` | `report_json`, `report_md` |
+| `diagnostics/`, `diagnostics/<model_key>/`, `<S>/` | `diagnostics_root`, `diagnostics_dir(key)`, `diagnostics_suite_dir(key, s)` |
+| `diagnostics/<model_key>/<S>/suite.json`, `profile.json` | `diagnostics_suite_json(key, s)`, `diagnostics_profile_json(key)` |
+| `diagnostics/<model_key>/diagnostics.json`, `diagnostics.md` | `diagnostics_json(key)`, `diagnostics_md(key)` |
 
 Suites are `S0` (toy: tests and smoke runs), `S0_EXHAUST` and `S0_COHORT` (tests only) and `S1`–`S12`; arms are
 `shared` and `genotype`; splits are `dev` (the default, for model iteration) and `test` (locked, used only for
@@ -331,6 +400,8 @@ python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-loca
 python -m alignair_assay speed --run-dir RUN [--tools igblast,alignair] [--threads 8] [--configs NAME,...] \
     [--n-tiny 50] [--n-full 4000] [--repeats 3] [--igblast-dir DIR] [--alignair-image IMAGE] \
     [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
+python -m alignair_assay diagnose --run-dir RUN --checkpoint MODEL.alignair --suites S1,S3 [--device cuda] \
+    [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] [--max-cases N]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR [--donors DONORS.json]
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05] \
@@ -384,6 +455,13 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   manifest. S1 not built, an unknown configuration and a tool without its options are input errors (status 2)
   before anything is timed; a configuration that fails is recorded with its error, the others are still timed,
   and the command exits with status 2.
+- `diagnose` runs `diagnostics.evaluate.evaluate` on a checkpoint and suites built on the dev split of `RUN` (see
+  Model diagnostics and The evaluator below). The checkpoint path is made absolute. It prints one line per suite
+  (computed, or reused from the cache) and the profile, and names `diagnostics/<model_key>/diagnostics.md`. A suite
+  whose build is not current for this checkout (`workflow.build.build_changes`) is diagnosed as built, with a
+  warning. An unbuilt suite, a suite on the `test` split, an unknown variant, a missing checkpoint, a model on
+  another reference or a CUDA device torch does not see exits with status 2 before anything is written. The other
+  commands never import torch: `diagnose` imports the diagnostics layer when it runs.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit`, `genairr_git_dirty` and
   `genairr_source_sha256` (the package directory's content: sources, compiled engine and data). The
@@ -1113,3 +1191,59 @@ which slows the run), and the stage timings and `reads_per_second` from unhooked
 `repeats`. A warm-up replay of `warmup_batches` batches comes first, so CUDA start-up and first-call costs are
 excluded. The hooks are removed in a `finally`, and a profile never runs inside an accuracy replay: rows replayed
 after a profile equal rows replayed before it (a test pins this).
+
+### The evaluator
+
+`diagnostics.evaluate.evaluate(model_or_checkpoint, layout, suites, *, device="cuda", batch_size=256,
+variants=DEFAULT_VARIANTS, profile=True, max_cases=None) -> DiagnosticsResult` composes the pieces above; it is the
+`diagnose` command and the training-loop entry point (see Model diagnostics). `model_or_checkpoint` is a
+`.alignair` file or an in-memory `(model, reference_set)` pair; either goes through `load_model_checked`.
+
+For each suite, it:
+1. loads the suite's cases and truth (`scoring.pipeline.load_truth`, against `scoring.pipeline.truth_reference`)
+   and takes all cases, or `max_cases` evenly spaced (`select_cases`: positions `floor(i * N / n)`, the speed
+   protocol's rule, `core.cases.evenly_spaced`);
+2. replays the product pipeline once and scores the heads (`head_scores`, with the cases' records) and the
+   calibration of each gene (`calibration_table`);
+3. runs the variants on the same reads with that replay as the baseline (`run_variants`, with the donors'
+   genotypes for a suite with `donors.json`, as `all` scores it) and compares them over `compared_metrics`: the
+   suite's primary metrics, then `CONTRIBUTION_METRICS`, leaving out informational ones and those no variant scored.
+
+`variants` run in `DEFAULT_VARIANTS` order; the baseline is added to any other (`variant_set`), and none runs the
+heads, the calibration and the profile only. The profile (`profile_model`) runs last, after every accuracy replay,
+on up to `PROFILE_READS` (1000) of the diagnosed reads, evenly spaced.
+
+`DiagnosticsResult` holds the `model_key`, the per-suite results (`suites`), the `profile` and the markdown report
+(`report_md`). A suite's result holds `suite`, its cache `key`, `reads` (`built`, `diagnosed`, `scored`, `excluded`,
+`cropped`), `heads` and each variant's `scores` (per metric: `mean`, `n`, `n_applicable`, `coverage`),
+`calibration` (per gene), `metrics` (the compared family), `variants` (`scores`, `fallbacks`, per-stage `seconds`,
+`substituted`), `contributions` (`stage_contributions`), `swaps` (`swap_effects`), the `seconds` it took and, in
+the result only, `reused`.
+
+**Refusals.** Before the model is loaded or anything is written: no suite, an unknown suite or variant, a batch size
+or `max_cases` below 1, a suite without `build.json`, a suite whose build record or truth header names another
+split than `dev` (`check_dev_build`), suites built against different references, a device torch cannot use
+(ValueError); a missing model file (FileNotFoundError). A model whose reference is not the truth reference is
+refused by `load_model_checked`, naming the first differing allele. A suite whose diagnosed cases have no scored
+truth is a ValueError naming the suite.
+
+**Model key and cache.** The model key is `<weights>-<code>`: 12 hex digits of `weights_sha256` (a model file's
+bytes; an in-memory model's class, module tree, configuration, allele order and state tensors) and of
+`alignair_code()["code_sha256"]` (`core.provenance.code_identity` of the imported `alignair` package, taken when the
+evaluator is imported, after it has loaded the modules AlignAIR imports lazily (the germline matcher, the model-file
+loader), so it describes the code the process runs; in this checkout it equals the alignair-local runner's
+`local_code_identity()`, one implementation). A suite's `suite.json` holds its result and its `key`
+(`suite_key`): `kind` and `version`, the full `weights_sha256`, `code_sha256` and `torch_version`,
+`assay_code_sha256` (the Python files of the core, truth, airr, metrics, stats, scoring, suites and diagnostics
+layers), the suite build (`name`, the build record's `identity` and `config_hash`, the SHA-256 of `cases.jsonl.gz`,
+`truth.jsonl.gz` and `donors.json`), `variants`, `max_cases`, `device` and `batch_size`. A record is reused only
+when its key equals the current one; an unreadable record or any difference removes it and recomputes the suite.
+Records are written through a temporary file, so a half-written one is never read. `profile.json` holds the profile
+and its key: the model identity, `assay_code_sha256` (the replay it times is assay code), the device with its
+name, the host and torch's CPU threads, the batch size and the SHA-256 of the profiled reads. `diagnostics.json` (`report.diagnostics.build_diagnostics_report`: `model`, `config`,
+`suites`, `profile`) and `diagnostics.md` (`diagnostics_markdown`) are rewritten on every call.
+
+The tests (`tests/alignair_assay/diagnostics/test_evaluate.py`) run end to end on S0 and S1 at scale 0.02 with the
+small random-init model, and pin the cache: a second call reuses every suite, and a new checkpoint, another code
+digest, another torch or assay code, a rebuilt suite, another variant set, case count, batch size or device, or a
+record whose key was edited is recomputed.

@@ -7,11 +7,14 @@ orientation is 1), ``record`` (the forward GenAIRR record, verbatim), ``labels``
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import TypeVar
 
 from alignair_assay.core.jsonl import read_jsonl, write_jsonl
 from alignair_assay.core.seqops import revcomp
+
+T = TypeVar("T")
 
 
 def make_case(record: dict, *, case_id: str, suite: str, stratum: str, orientation: int,
@@ -40,6 +43,16 @@ def write_cases(cases: Iterable[dict], path: str | Path) -> None:
 def read_cases(path: str | Path) -> list[dict]:
     """Every case of the file, in file order."""
     return read_jsonl(path)
+
+
+def evenly_spaced(items: Sequence[T], n: int) -> list[T]:
+    """``n`` of the N ``items``, evenly spaced: those at positions ``floor(i * N / n)`` for i from 0 to n - 1, in
+    order (every (N / n)-th item when that is whole). A suite lists its cases stratum by stratum, so its first n
+    cases would over-represent its first strata; an evenly spaced sample holds every stratum in about its share.
+    ValueError unless n is from 1 to N."""
+    if not 1 <= n <= len(items):
+        raise ValueError(f"an evenly spaced sample takes 1 to {len(items)} of the {len(items)} items, got {n}")
+    return [items[index * len(items) // n] for index in range(n)]
 
 
 def write_fasta(cases: Iterable[dict], path: str | Path) -> None:

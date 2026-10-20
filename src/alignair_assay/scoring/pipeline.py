@@ -1,7 +1,8 @@
 """Score one tool against observable truth: load and check the truth, match predictions to cases, score every case.
 
 Predictions are matched to truth by AIRR ``sequence_id`` == truth ``case_id``. Excluded truths are not scored and
-their predictions are ignored; a truth case without a prediction is scored as missing (never dropped).
+their predictions are ignored; a truth case without a prediction is scored as missing (never dropped). The truth
+reference of suites built in a run directory is ``truth_reference``.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from pathlib import Path
 from alignair_assay.airr.reader import load_airr_tsv
 from alignair_assay.core.genotype import DonorGenotype
 from alignair_assay.core.jsonl import read_jsonl, write_jsonl
+from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.prediction import Prediction
 from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import CaseScores
@@ -96,6 +98,30 @@ def load_truth(path, reference_name: str, reference: Reference) -> tuple[dict, l
     truths = read_truth_jsonl(path)
     check_unique(truths, path)
     return header, truths
+
+
+def truth_reference(layout: RunLayout, suites: list[str]) -> Reference:
+    """The reference the named suites' truth was built against, from its truth headers. ValueError when a suite
+    is not built (no ``build.json``), the suites name different references, or the reference's dataconfig no
+    longer has the recorded digest."""
+    recorded = {}
+    for suite in suites:
+        if not layout.build_json(suite).is_file():
+            raise ValueError(f"suite {suite} is not built in {layout.root} (no {layout.build_json(suite).name}); "
+                             f"build it first")
+        header = read_truth_header(layout.truth(suite)) or {}
+        recorded[suite] = (header.get("reference"), header.get("reference_digest"))
+    if len(set(recorded.values())) > 1:
+        listed = ", ".join(f"{suite}: {name} ({digest and digest[:12]})" for suite, (name, digest) in recorded.items())
+        raise ValueError(f"the suites were built against different references: {listed}")
+    name, digest = next(iter(recorded.values()))
+    if name is None or digest is None:
+        raise ValueError(f"{layout.truth(suites[0])} records no reference digest; rebuild the suite")
+    reference = Reference.from_dataconfig(name)
+    if reference.digest() != digest:
+        raise ValueError(f"the truth was built against {name} with digest {digest[:12]}, but {name} now has digest "
+                         f"{reference.digest()[:12]}; rebuild the suites")
+    return reference
 
 
 def check_unique(truths: list[ObservableTruth], source) -> None:

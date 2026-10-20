@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from alignair_assay.core.cases import make_case, read_cases, write_cases, write_fasta
+from alignair_assay.core.cases import evenly_spaced, make_case, read_cases, write_cases, write_fasta
 from alignair_assay.core.jsonl import write_jsonl
 from alignair_assay.core.seqops import revcomp
 from alignair_assay.truth.build import truth_from_genairr_record
@@ -78,3 +78,15 @@ def test_fasta_ids_and_sequences(tmp_path, records):
     lines = (tmp_path / "reads.fasta").read_text().splitlines()
     assert lines[0::2] == [f">{c['case_id']}" for c in cases]
     assert lines[1::2] == [c["sequence"] for c in cases]
+
+
+def test_evenly_spaced_takes_positions_i_times_n_over_k():
+    items = list(range(10))
+    assert evenly_spaced(items, 5) == [0, 2, 4, 6, 8]  # every (N / k)-th when that is whole
+    assert evenly_spaced(items, 3) == [0, 3, 6]          # floor(i * N / k)
+    assert evenly_spaced(items, 1) == [0]
+    assert evenly_spaced(items, 10) == items
+    assert evenly_spaced(tuple("abcd"), 2) == ["a", "c"]
+    for k in (0, 11):
+        with pytest.raises(ValueError, match="1 to 10"):
+            evenly_spaced(items, k)

@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from alignair_assay.core.cases import read_fasta, write_fasta
+from alignair_assay.core.cases import evenly_spaced, read_fasta, write_fasta
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.reference import Reference
@@ -144,10 +144,10 @@ def speed_set(layout: RunLayout, n: int) -> Path:
     """Write ``layout.speed_reads(n)``, ``n`` reads evenly spaced across S1's ``reads.fasta``, and return its path.
 
     Of S1's N reads, the set holds the reads at positions ``floor(i * N / n)`` for i from 0 to n - 1, in file order
-    (every (N / n)-th read when that is whole). S1 lists its reads stratum by stratum, so the first n reads would
-    over-represent its first read designs; an evenly spaced sample holds every stratum in about its share of S1. The
-    same S1 gives the same file. FileNotFoundError when S1 is not built; ValueError when ``n`` is below 1 or S1 has
-    fewer than ``n`` reads."""
+    (``core.cases.evenly_spaced``; every (N / n)-th read when that is whole). S1 lists its reads stratum by stratum,
+    so the first n reads would over-represent its first read designs; an evenly spaced sample holds every stratum
+    in about its share of S1. The same S1 gives the same file. FileNotFoundError when S1 is not built; ValueError
+    when ``n`` is below 1 or S1 has fewer than ``n`` reads."""
     path = layout.speed_reads(n)
     source = layout.reads(SPEED_SUITE)
     if not source.is_file():
@@ -156,7 +156,7 @@ def speed_set(layout: RunLayout, n: int) -> Path:
     if len(records) < n:
         raise ValueError(f"the speed protocol needs {n} reads of {SPEED_SUITE}, but {source} has {len(records)}; "
                          "build it at a larger scale or time fewer reads")
-    sample = [records[index * len(records) // n] for index in range(n)]
+    sample = evenly_spaced(records, n)
     path.parent.mkdir(parents=True, exist_ok=True)
     write_fasta(({"case_id": name, "sequence": sequence} for name, sequence in sample), path)
     return path

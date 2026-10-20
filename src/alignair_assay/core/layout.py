@@ -17,6 +17,10 @@ RUN/
   speed/reads_<n>.fasta               n reads evenly spaced across S1, timed
   speed/runs/<config>/                each timed configuration's last tiny and full run (predictions, logs)
   report.json, report.md
+  diagnostics/<model_key>/            one model's diagnostics (``diagnose``, ``diagnostics.evaluate``)
+  diagnostics/<model_key>/<S>/suite.json   one suite's cached diagnostics, with the key they were computed for
+  diagnostics/<model_key>/profile.json     the cached speed profile, with its key
+  diagnostics/<model_key>/diagnostics.json, diagnostics.md   the last diagnostics report of the model
 ```
 
 ``RunLayout`` only joins paths: it never reads, writes or creates anything.
@@ -168,6 +172,36 @@ class RunLayout:
     def report_md(self) -> Path:
         """The run report as markdown."""
         return self.root / "report.md"
+
+    @property
+    def diagnostics_root(self) -> Path:
+        """Directory of the model diagnostics, one subdirectory per model key."""
+        return self.root / "diagnostics"
+
+    def diagnostics_dir(self, model_key: str) -> Path:
+        """The diagnostics of one model, named by ``diagnostics.evaluate``'s model key (its weights and the AlignAIR
+        code it runs)."""
+        return self.diagnostics_root / _component(model_key)
+
+    def diagnostics_suite_dir(self, model_key: str, suite: str) -> Path:
+        """One suite's diagnostics of the model."""
+        return self.diagnostics_dir(model_key) / _component(suite)
+
+    def diagnostics_suite_json(self, model_key: str, suite: str) -> Path:
+        """One suite's cached diagnostics of the model, with the key they were computed for."""
+        return self.diagnostics_suite_dir(model_key, suite) / "suite.json"
+
+    def diagnostics_profile_json(self, model_key: str) -> Path:
+        """The model's cached speed profile, with the key it was measured for."""
+        return self.diagnostics_dir(model_key) / "profile.json"
+
+    def diagnostics_json(self, model_key: str) -> Path:
+        """The model's last diagnostics report as JSON."""
+        return self.diagnostics_dir(model_key) / "diagnostics.json"
+
+    def diagnostics_md(self, model_key: str) -> Path:
+        """The model's last diagnostics report as markdown."""
+        return self.diagnostics_dir(model_key) / "diagnostics.md"
 
 
 def _component(name: str) -> str:
