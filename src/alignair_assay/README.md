@@ -39,8 +39,8 @@ PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter --suit
   - Scores, comparisons and the report are always recomputed from the current runs, so a scoring change takes
     effect on the next `all` without rebuilding or rerunning anything.
 - **In-process evaluation.** alignair-local runs the AlignAIR CLI in a subprocess and scores its AIRR output. The
-  `diagnostics` layer is where in-process code lives (so far the stage replay, see Diagnostics; head-level scoring
-  and ablations follow); it and `core/reference.py` are the only code that imports `alignair`.
+  `diagnostics` layer is where in-process code lives (the stage replay, head-level scoring and truth-substitution
+  ablations, see Diagnostics); it and `core/reference.py` are the only code that imports `alignair`.
 
 ## Layers and dependency rule
 
@@ -50,7 +50,7 @@ Each subpackage is a layer and may import only the layers in its row.
 |---|---|---|
 | `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`, `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports) | core |
 | `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle`, `summary` (what a truth set could not score) | core, truth |
-| `airr` | AIRR TSV `reader` and `writer` | core, airr |
+| `airr` | AIRR TSV `reader` (`load_airr_tsv`, and `rows_to_predictions` for rows already in memory) and `writer` | core, airr |
 | `metrics` | per-case scorers (pure), the group scorers that read a case's whole clone (`groups`), the scorers against a read's donor genotype (`genotype`), and the metric registries | core, truth, metrics |
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
 | `report` | JSON reports and markdown summaries (`build`, `markdown`), and the run report rendered from a run summary (`run`) | core, stats, report |
@@ -58,7 +58,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
 | `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, `read_genotypes`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
-| `diagnostics` | model diagnostics for AlignAIR, run in process: `replay` (the predict pipeline replayed stage by stage, see Diagnostics) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
+| `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics) and `ablation` (truth-substitution variants and stage contributions) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -898,9 +898,35 @@ allele head's allele names (`allele_names`) and the per-read allowed-allele mask
 a multi-locus model's locus masks, None for a one-locus model).
 Each stage is AlignAIR's own function, called in the order `alignair.predict.pipeline.predict` calls it, with the
 `PredictConfig` that `alignair.api.predict_sequences` builds (`predict_config`); the forward pass builds each batch
-dict itself, so a later substitution can teacher-force orientation. `Substitutions` names what can be fed in
-between stages (orientation, spans, the classifier's spans, calls, germline alignments, the argmax decoder); the
-default substitutes nothing, and no substitution is implemented yet.
+dict itself, so orientation can be teacher-forced.
+
+`replay(..., substitutions=Substitutions(...))` feeds values in between the stages, never inside one; the default
+substitutes nothing. Each per-read list has one entry per read, and a None entry keeps the model's value for that
+read.
+
+- `orientation`: the ids are teacher-forced in the forward pass (`batch["orientation"]`) and replace the predicted
+  orientation before `canonicalize`. The orientation head's own logits are unchanged.
+- `decoder="argmax"`: `correct_segments` receives `argmax_boundaries` of the position logits instead of the
+  soft-argmax expectations. This is the same decoder as the head metrics' `argmax`, with ends on `0..n`. The
+  classifier still reads the expectations.
+- `spans` (gene -> starts and ends, in the model's forward frame, 0-based and end-exclusive):
+  - With `segment_spans` (the default), they replace the corrected `Segments`. `low_quality` keeps
+    `correct_segments`' meaning (a V or J of zero length). A given span is never re-ordered against the model's
+    span of another gene.
+  - With `classifier_spans`, they go into each gene's classifier (`model.branches[g].classify` on the read
+    re-embedded in the forward pass's frame) in place of the expectations. The new probabilities then go through
+    the calibration, the masks and the selector.
+- `calls` (`GeneCall`s) replace the selector's calls before the germline alignment.
+- `germline` (`GermlineAlignment`s on the read's call) replace the matcher's alignments. The matcher runs only for
+  reads that still have a gene left to it.
+
+Bad values are a ValueError: a list of the wrong length, a gene the model lacks, an orientation id outside 0–3, an
+empty span or one outside its read, a call to an allele the model cannot call, or an alignment on another allele
+than the call. Tests pin each substitution against the product:
+- forcing the model's own orientation gives the product's rows and forward outputs;
+- the classifier seam fed the model's own spans gives the product bit for bit, on the small models and on the
+  released checkpoint;
+- the argmax decoder equals `heads.decode_boundaries`' argmax.
 
 The replay is proven equal to the product: `tests/alignair_assay/diagnostics/test_replay.py` requires its AIRR
 rows and light records to equal `predict_sequences`' on S0 reads (plus an over-length, a lower-case and an N-bearing
@@ -975,3 +1001,81 @@ against the top-1 being in the scored set, over the cases the allele metrics app
 closed on the right, as in AlignAIR's `calibrate.ece`. Each bin gives `lo`, `hi`, `n`, the mean `confidence` and the
 `accuracy`, None when empty. The table also gives `n`, the overall `confidence` and `accuracy`, and the expected
 calibration error `ece`.
+
+### Truth-substitution ablations
+
+`diagnostics.ablation` measures how much of AlignAIR's end-to-end error each stage contributes. Each variant
+replays the pipeline with observable truth fed in place of some stages' output. Its AIRR rows are then scored
+exactly as a tool's are.
+
+**Variants.** The cumulative chain (`VARIANTS`) adds the truth of one more stage at each step:
+
+| Variant | Adds |
+|---|---|
+| `baseline` | nothing: the product pipeline |
+| `true_orientation` | the truth orientation, teacher-forced and used to canonicalize the read |
+| `true_spans` | the truth read spans of the observed segments, as the segments and as the classifier's input |
+| `true_calls` | the truth primary allele as each observed segment's call |
+| `true_germline` | the truth germline alignment of each observed segment (allele, read and germline coordinates, CIGAR) in place of the matcher |
+
+The single swaps (`SINGLE_SWAPS`) each change one thing on the baseline:
+- `argmax_decoder`: segments from the argmax of the position logits; the classifier is unchanged.
+- `true_classifier_spans`: truth spans into the classifier only; the segments stay the model's.
+
+`DEFAULT_VARIANTS` is both lists.
+
+**Truth in AlignAIR's terms** (`substitutions_for(variant, truths, outputs_baseline)`, which returns the
+`Substitutions` and the fallback counts):
+- AlignAIR works on the read it saw: the first 576 bases of the presented read, in its forward frame, 0-based and
+  end-exclusive, with ungapped germline coordinates.
+- A segment's observed read span is moved into that window: the canonical prefix of a forward read, the canonical
+  suffix of a reverse-complemented one.
+- A call is `GeneCall((primary,), (1.0,))`.
+- An alignment is `GermlineAlignment(allele, seq_start, seq_end, germ_start, germ_end, cigar)` from the observed
+  segment.
+
+**Fallbacks.** Truth the read does not have is never invented. The segment keeps the model's value, and the
+variant counts it as `{field}.{gene}.{reason}`, for example `germline.d.inverted`. The field is `spans`, `calls` or
+`germline`. The reason is the first that applies:
+
+| Reason | When |
+|---|---|
+| `unscorable` | the segment's truth could not be built |
+| `unobserved` | the read shows no base of the segment |
+| `orientation` | spans and germline only: the variant keeps the model's orientation and it is wrong, so the truth coordinates are not in the model's frame |
+| `cropped` | the segment is not wholly inside the window AlignAIR saw of an over-length read |
+| `not_in_model` | calls and germline only: the model cannot call the primary allele |
+| `inverted` | germline only: an inverted D, whose reverse-complemented germline frame AlignAIR's alignments and assembly cannot represent; its span and call are still substituted |
+
+Excluded cases and reads without a truth keep every model value and are not counted.
+
+**Running and scoring.** `run_variants(model, reference_set, cases, truths, *, device, batch_size,
+variants=DEFAULT_VARIANTS, genotypes=None)` gives one `VariantResult` per variant: `rows`, `scores`, `fallbacks`,
+`seconds` (the replay's per-stage wall time) and `substituted`.
+- A pure replay always runs first. It gives the substitutions their reads and the model's own values.
+- The rows become the text rows AlignAIR's AIRR writer would put in a TSV (`airr_text_rows`). The assay's reader
+  parses them (`airr.reader.rows_to_predictions`, the parser `load_airr_tsv` uses). They are scored with
+  `scoring.pipeline.score_predictions`, with the donor genotypes when given, against the truths of the replayed
+  cases.
+- A test pins this in-memory path to a TSV written by `alignair.io.airr.write_airr`.
+
+**Reading stage contributions.** `stage_contributions(results, metrics)` compares each consecutive pair of the chain
+with `stats.compare`, Holm-corrected over `metrics`. Each entry gives:
+- `from`, `to`, and the `stages` the step adds (`orientation`, `segmentation`, `allele_calls`,
+  `germline_alignment`; a variant missing from `results` makes its pair span both stages);
+- per metric: each variant's mean, value count and coverage; the paired `delta` (to minus from) with `n_paired`
+  and `ci95`; the test and p-value; and a `verdict` of `to_better`, `from_better` or `tie_or_inconclusive`.
+
+`swap_effects(results, metrics)` compares each single swap with the baseline the same way. `CONTRIBUTION_METRICS`
+is a default list: the headline metrics, the junction translation, the read coordinates and the orientation.
+
+A step's delta is the error that stage contributes **given perfect upstream stages**. It is not a share of the
+baseline error. Two consequences:
+- The chain can go down. On S1, `true_calls → true_germline` lowers `junction.nt_exact`. The assembly drops the
+  junction of a read predicted non-productive with more than one indel unless one of its CIGARs has an indel. The
+  matcher's spurious D deletions happen to route those reads through the CIGAR junction path. The clean true
+  alignment does not.
+- What still differs from the oracle after `true_germline` belongs to the metadata heads (the productive and indel
+  predictions that gate the assembly) and to the AIRR assembly itself. The tests show that, given the true germline
+  alignment, the assembly writes the V germline coordinates in IMGT-gapped numbering. It also writes the CDR3
+  coordinates, from which the junction coordinates are read, as columns of the gapped sequence alignment.

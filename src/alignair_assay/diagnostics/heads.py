@@ -47,7 +47,7 @@ import numpy as np
 from alignair.predict.airr.constants import SHORT_D_SENTINEL
 
 from alignair_assay.core.cigar import parse_cigar
-from alignair_assay.diagnostics.replay import DECODERS, StageOutputs
+from alignair_assay.diagnostics.replay import DECODERS, StageOutputs, argmax_boundaries
 from alignair_assay.metrics import CaseScores
 from alignair_assay.metrics.boundaries import signed_interval_distance
 from alignair_assay.metrics.case import MIN_OBSERVED
@@ -82,8 +82,7 @@ def decode_boundaries(outputs: StageOutputs, gene: str, decoder: str) -> tuple[n
         starts, ends = (np.clip(np.floor(_flat(outputs.raw[f"{gene}_{edge}"])).astype(int), 0, lengths)
                         for edge in EDGES)
         return starts, ends
-    return (_masked_argmax(outputs.raw[f"{gene}_start_logits"], lengths),
-            _masked_argmax(outputs.raw[f"{gene}_end_logits"], lengths + 1))
+    return argmax_boundaries(outputs.raw[f"{gene}_start_logits"], outputs.raw[f"{gene}_end_logits"], lengths)
 
 
 def allele_ranking(outputs: StageOutputs, gene: str) -> list[np.ndarray]:
@@ -123,7 +122,7 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
     scores: dict[str, CaseScores] = {}
     for truth, i in pairs:
         case: CaseScores = {"head.cropped": float(len(truth.sequence) > width)}
-        window = _window(truth, width)
+        window = read_window(truth, width)
         for g in genes:
             seg = _scored_segment(truth, g)
             if seg is None:
@@ -207,13 +206,6 @@ def _width(outputs: StageOutputs) -> int:
     return int(np.asarray(outputs.raw["v_start_logits"]).shape[1])
 
 
-def _masked_argmax(logits, limits: np.ndarray) -> np.ndarray:
-    """Per row, the argmax over positions ``0..limit-1``."""
-    logits = np.asarray(logits)
-    positions = np.arange(logits.shape[1])
-    return np.where(positions[None, :] < limits[:, None], logits, -np.inf).argmax(axis=1)
-
-
 def _pairs(outputs: StageOutputs, truths: list[ObservableTruth]) -> list[tuple[ObservableTruth, int]]:
     """``(truth, read index)`` per non-excluded truth, in truth order, checked against the replayed reads."""
     position = {case_id: i for i, case_id in enumerate(outputs.ids)}
@@ -243,7 +235,7 @@ def _records(cases: Iterable[dict] | None, pairs: list[tuple[ObservableTruth, in
     return records
 
 
-def _window(truth: ObservableTruth, width: int) -> tuple[int, int, int | None]:
+def read_window(truth: ObservableTruth, width: int) -> tuple[int, int, int | None]:
     """``(start, end, cut)`` of the canonical read bases the model saw; ``cut`` is the canonical position where a
     cropped read was cut (None for a read that fits)."""
     n = len(truth.sequence)

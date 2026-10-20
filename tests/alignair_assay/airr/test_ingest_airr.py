@@ -144,3 +144,22 @@ def test_junction_and_bool_parsing(tmp_path):
     assert p.vj_in_frame is True
     assert p.stop_codon is False
     assert p.rev_comp is None
+
+
+def test_rows_already_read_parse_like_the_file(tmp_path, monkeypatch):
+    header = ["sequence_id", "sequence", "rev_comp", "v_call", "v_sequence_start", "v_sequence_end"]
+    rows = [[SID, SEQ, "T", "A*01", "1", "44"], ["", SEQ, "F", "", "", ""], [SID, SEQ, "F", "B*01", "", ""],
+            ["other", SEQ, "x", "C*01", "1", "999"]]
+    path = _write(tmp_path / "r.tsv", header, rows)
+    in_memory = [dict(zip(header, row)) for row in rows]
+    in_memory[2]["note"] = None  # a cell that is not text is ignored, as the file reader ignores a short row's None
+    assert reader.rows_to_predictions(in_memory) == load_airr_tsv(path)
+    preds, stats = reader.rows_to_predictions(in_memory)
+    assert stats == {"rows": 4, "duplicates": 1, "invalid_rows": 2}
+    assert preds[SID].segments["v"].call == "A*01" and preds["other"].invalid
+
+    # The file reader is that function over the TSV's rows: one parser for both sources.
+    seen = []
+    monkeypatch.setattr(reader, "rows_to_predictions", lambda rows: seen.append(list(rows)) or ({}, {}))
+    load_airr_tsv(path)
+    assert seen == [[dict(zip(header, row)) for row in rows]]

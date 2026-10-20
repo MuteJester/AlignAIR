@@ -4,12 +4,14 @@ Turns any tool's AIRR output into normalized ``Prediction`` records: 0-based hal
 coordinates, CIGARs stripped of leading/trailing ``S``/``N``/``H``, and malformed values
 mapped to ``None`` with a message in ``Prediction.invalid`` (never an exception). Junction
 coordinates a tool does not report are derived from its CDR3 coordinates (the junction is the
-CDR3 plus the two anchor codons).
+CDR3 plus the two anchor codons). ``load_airr_tsv`` reads a file; ``rows_to_predictions`` reads rows
+already in memory with the same parser.
 """
 from __future__ import annotations
 
 import csv
 import sys
+from collections.abc import Iterable, Mapping
 
 from alignair_assay.core.cigar import format_cigar, parse_cigar
 from alignair_assay.core.prediction import GENES, PredSegment, Prediction
@@ -166,27 +168,34 @@ def _parse_row(row: dict, sequence_id: str) -> Prediction:
     )
 
 
-def load_airr_tsv(path) -> tuple[dict[str, Prediction], dict]:
-    """Read an AIRR TSV into ``{sequence_id: Prediction}`` plus ``{"rows", "duplicates", "invalid_rows"}``.
+def rows_to_predictions(rows: Iterable[Mapping[str, object]]) -> tuple[dict[str, Prediction], dict]:
+    """AIRR rows already read (column name -> cell text, as a TSV reader gives them) as ``{sequence_id:
+    Prediction}`` plus ``{"rows", "duplicates", "invalid_rows"}``: what ``load_airr_tsv`` gives for a file holding
+    them. A cell that is not text is ignored.
 
-    The first row wins on duplicate ``sequence_id``; rows without an id are skipped and counted
-    as invalid.
+    The first row wins on duplicate ``sequence_id``; rows without an id are skipped and counted as invalid.
     """
-    csv.field_size_limit(sys.maxsize)
     preds: dict[str, Prediction] = {}
     stats = {"rows": 0, "duplicates": 0, "invalid_rows": 0}
-    with open(path, newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh, delimiter="\t"):
-            stats["rows"] += 1
-            sid = (row.get("sequence_id") or "").strip()
-            if not sid:
-                stats["invalid_rows"] += 1
-                continue
-            if sid in preds:
-                stats["duplicates"] += 1
-                continue
-            pred = _parse_row({k: v for k, v in row.items() if k and isinstance(v, str)}, sid)
-            if pred.invalid:
-                stats["invalid_rows"] += 1
-            preds[sid] = pred
+    for row in rows:
+        stats["rows"] += 1
+        sid = (row.get("sequence_id") or "").strip()
+        if not sid:
+            stats["invalid_rows"] += 1
+            continue
+        if sid in preds:
+            stats["duplicates"] += 1
+            continue
+        pred = _parse_row({k: v for k, v in row.items() if k and isinstance(v, str)}, sid)
+        if pred.invalid:
+            stats["invalid_rows"] += 1
+        preds[sid] = pred
     return preds, stats
+
+
+def load_airr_tsv(path) -> tuple[dict[str, Prediction], dict]:
+    """Read an AIRR TSV into ``{sequence_id: Prediction}`` plus ``{"rows", "duplicates", "invalid_rows"}``
+    (``rows_to_predictions`` over the file's rows)."""
+    csv.field_size_limit(sys.maxsize)
+    with open(path, newline="", encoding="utf-8") as fh:
+        return rows_to_predictions(csv.DictReader(fh, delimiter="\t"))

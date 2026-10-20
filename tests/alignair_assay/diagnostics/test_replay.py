@@ -1,5 +1,5 @@
 """The stage replay of AlignAIR's predict pipeline: equal to the product, every stage captured, the model's reference
-checked against the truth reference.
+checked against the truth reference, and each substitution fed in between the stages.
 
 The test against the released checkpoint runs only when ``ALIGNAIR_ASSAY_MODEL`` names a ``.alignair`` model file.
 """
@@ -23,13 +23,16 @@ from alignair import api  # noqa: E402
 from alignair.model_file import save_model  # noqa: E402
 from alignair.predict import forward, pipeline  # noqa: E402
 from alignair.predict.calibrate import apply_temperature  # noqa: E402
+from alignair.predict.state import GeneCall, GermlineAlignment  # noqa: E402
 
 from alignair_assay.core.cases import read_fasta  # noqa: E402
 from alignair_assay.core.reference import Reference  # noqa: E402
+from alignair_assay.diagnostics.heads import decode_boundaries  # noqa: E402
 from alignair_assay.diagnostics.replay import (  # noqa: E402
     STAGES,
     StageOutputs,
     Substitutions,
+    argmax_boundaries,
     load_model_checked,
     predict_config,
     replay,
@@ -212,20 +215,228 @@ def test_replay_restores_the_training_mode(small_model, s0_reads):
         model.eval()
 
 
-@pytest.mark.parametrize("field", ["orientation", "spans", "classifier_spans", "calls", "germline", "decoder"])
-def test_substitutions_are_not_implemented_yet(field, small_model, s0_reads):
-    model, reference_set = small_model
-    ids, seqs = _inputs(s0_reads)
-    value = {"orientation": [0, 0], "spans": {"v": ([0, 0], [10, 10])}, "classifier_spans": True,
-             "calls": {"v": [None, None]}, "germline": {"v": [None, None]}, "decoder": "argmax"}[field]
-    with pytest.raises(NotImplementedError, match=field):
-        replay(model, reference_set, seqs[:2], ids[:2], device="cpu", batch_size=BATCH,
-               substitutions=Substitutions(**{field: value}))
-
-
 def test_unknown_decoder_refused():
     with pytest.raises(ValueError, match="decoder 'mean'"):
         Substitutions(decoder="mean")
+
+
+# --- substitutions ----------------------------------------------------------------------------------------------
+
+def _sub(model, reference_set, seqs, ids, **fields) -> StageOutputs:
+    return replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH,
+                  substitutions=Substitutions(**fields))
+
+
+def _same_raw(a: StageOutputs, b: StageOutputs) -> bool:
+    return set(a.raw) == set(b.raw) and all(np.array_equal(a.raw[k], b.raw[k]) for k in a.raw)
+
+
+def test_substitutions_name_what_they_substitute():
+    spans = {"v": ([0], [10])}
+    assert Substitutions().active() == ()
+    assert Substitutions(orientation=[0], spans=spans, classifier_spans=True, calls={"v": [None]},
+                         germline={"v": [None]}, decoder="argmax").active() == (
+        "orientation", "spans", "calls", "germline", "classifier_spans", "decoder")
+    # spans fed into the classifier only: the segments keep the model's
+    assert Substitutions(spans=spans, classifier_spans=True, segment_spans=False).active() == ("classifier_spans",)
+    with pytest.raises(ValueError, match="classifier_spans needs spans"):
+        Substitutions(classifier_spans=True)
+    with pytest.raises(ValueError, match="fed nowhere"):
+        Substitutions(spans=spans, segment_spans=False)
+
+
+def test_orientation_forced_to_the_models_own_ids_is_the_product(make_shaped_model, s0_reads):
+    model, reference_set = make_shaped_model("igh_varied_orientation")
+    ids, seqs = _inputs(s0_reads)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    # None keeps the model's own orientation for that read
+    own = [int(o) if i % 2 else None for i, o in enumerate(base.predictions.orientation)]
+    out = _sub(model, reference_set, seqs, ids, orientation=own)
+    assert out.airr_rows == base.airr_rows and _same_raw(out, base)
+
+
+def test_orientation_is_teacher_forced_and_canonicalizes_the_read(make_shaped_model, s0_reads, s0_truths):
+    model, reference_set = make_shaped_model("igh_varied_orientation")
+    truth = {t.case_id: t for t in s0_truths}
+    ids, seqs = [name for name, _ in s0_reads], [seq for _, seq in s0_reads]
+    forced = [truth[name].orientation for name in ids]
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    out = _sub(model, reference_set, seqs, ids, orientation=forced)
+
+    assert list(out.predictions.orientation) == forced
+    assert out.canonical == [truth[name].sequence for name in ids]
+    assert [row["orientation_id"] for row in out.airr_rows] == forced
+    # the orientation head itself is not forced; the rest of the network runs in the forced frame
+    assert np.array_equal(out.raw["orientation_logits"], base.raw["orientation_logits"])
+    changed = [i for i, o in enumerate(forced) if o != base.predictions.orientation[i]]
+    kept = [i for i, o in enumerate(forced) if o == base.predictions.orientation[i]]
+    assert changed and kept
+    assert not np.allclose(out.raw["v_allele"][changed], base.raw["v_allele"][changed])
+    assert np.allclose(out.raw["v_allele"][kept], base.raw["v_allele"][kept])
+
+    with pytest.raises(ValueError, match="orientation id 4"):
+        _sub(model, reference_set, seqs, ids, orientation=[4] * len(ids))
+    with pytest.raises(ValueError, match="orientation: 2 entries for 50 reads"):
+        _sub(model, reference_set, seqs, ids, orientation=[0, 0])
+
+
+def test_spans_replace_the_corrected_segments(make_shaped_model, s0_reads):
+    model, reference_set = make_shaped_model("igh")
+    ids, seqs = _inputs(s0_reads)
+    n = len(seqs)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    given = [i for i in range(n) if i % 3 == 0]
+    starts = [5 if i in given else None for i in range(n)]
+    ends = [200 if i in given else None for i in range(n)]
+    out = _sub(model, reference_set, seqs, ids, spans={"v": (starts, ends)})
+
+    seg = out.segments
+    assert all(seg.start["v"][i] == 5 and seg.end["v"][i] == 200 for i in given)
+    others = [i for i in range(n) if i not in given]
+    assert np.array_equal(seg.start["v"][others], base.segments.start["v"][others])
+    assert np.array_equal(seg.end["v"][others], base.segments.end["v"][others])
+    for g in ("d", "j"):
+        assert np.array_equal(seg.start[g], base.segments.start[g])
+        assert np.array_equal(seg.end[g], base.segments.end[g])
+    # low_quality keeps correct_segments' meaning: a collapsed V or J
+    collapsed = ((seg.end["v"] - seg.start["v"]) <= 0) | ((seg.end["j"] - seg.start["j"]) <= 0)
+    assert np.array_equal(seg.low_quality, collapsed)
+    # the classifier kept its own spans; the germline reader read the substituted ones
+    assert _same_raw(out, base)
+    assert all(out.germline["v"][i].seq_start >= 5 and out.germline["v"][i].seq_end <= 200 for i in given)
+    assert [out.calls[g] for g in GENES] == [base.calls[g] for g in GENES]
+
+
+@pytest.mark.parametrize("spans, message", [
+    ({"v": ([0] * 53, [0] * 53)}, "v span 0..0 of read 0 is empty"),
+    ({"v": ([0] * 53, [10_000] * 53)}, "outside read 0"),
+    ({"v": ([0] * 52, [10] * 52)}, "spans of v: 52 entries for 53 reads"),
+    ({"x": ([0] * 53, [10] * 53)}, "gene 'x'"),
+    ({"v": ([0] * 53, [None] * 53)}, "start and end"),
+])
+def test_bad_spans_refused(spans, message, make_shaped_model, s0_reads):
+    model, reference_set = make_shaped_model("igh")
+    ids, seqs = _inputs(s0_reads)
+    with pytest.raises(ValueError, match=re.escape(message)):
+        _sub(model, reference_set, seqs, ids, spans=spans)
+
+
+def test_classifier_spans_without_truth_reproduce_the_product(make_shaped_model, s0_reads):
+    # Every read falls back to the model's own soft-argmax spans: the classifier recomputed on the re-embedded read
+    # must give exactly what the forward pass gave (this pins the classifier seam against AlignAIR.forward).
+    model, reference_set = make_shaped_model("igh_varied_orientation")
+    ids, seqs = _inputs(s0_reads)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    none = [None] * len(seqs)
+    out = _sub(model, reference_set, seqs, ids, spans={g: (none, none) for g in GENES}, classifier_spans=True)
+    assert out.airr_rows == base.airr_rows and _same_raw(out, base)
+
+
+def test_classifier_spans_change_only_the_allele_probabilities(make_shaped_model, s0_reads):
+    model, reference_set = make_shaped_model("igh")
+    ids, seqs = _inputs(s0_reads)
+    n = len(seqs)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    given = [i for i in range(n) if i % 2 == 0]
+    others = [i for i in range(n) if i % 2]
+    spans = {"v": ([100 if i in given else None for i in range(n)], [250 if i in given else None for i in range(n)])}
+    out = _sub(model, reference_set, seqs, ids, spans=spans, classifier_spans=True, segment_spans=False)
+
+    for g in GENES:
+        assert np.array_equal(out.segments.start[g], base.segments.start[g])
+        assert np.array_equal(out.segments.end[g], base.segments.end[g])
+    assert not np.allclose(out.raw["v_allele"][given], base.raw["v_allele"][given])
+    assert np.array_equal(out.raw["v_allele"][others], base.raw["v_allele"][others])
+    for key in set(base.raw) - {"v_allele"}:
+        assert np.array_equal(out.raw[key], base.raw[key]), key
+    # the substituted probabilities go through the calibration and the selector
+    assert np.array_equal(out.predictions.allele["v"], apply_temperature(out.raw["v_allele"],
+                                                                          model.cfg.allele_temperatures["v"]))
+
+
+def test_calls_replace_the_selected_alleles(make_shaped_model, s0_reads):
+    model, reference_set = make_shaped_model("igh")
+    ids, seqs = _inputs(s0_reads)
+    n = len(seqs)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    pick = reference_set.gene("V").names[7]
+    calls = {"v": [GeneCall((pick,), (1.0,)) if i % 2 == 0 else None for i in range(n)]}
+    out = _sub(model, reference_set, seqs, ids, calls=calls)
+    for i in range(n):
+        if i % 2 == 0:
+            assert out.calls["v"][i] == calls["v"][i]
+            assert out.records[i]["v_call"] == pick and out.germline["v"][i].allele == pick
+        else:
+            assert out.calls["v"][i] == base.calls["v"][i] and out.germline["v"][i] == base.germline["v"][i]
+    assert out.calls["j"] == base.calls["j"]
+
+    with pytest.raises(ValueError, match=re.escape("IGHVX9*01 of read 0 is not a v allele of the model")):
+        _sub(model, reference_set, seqs, ids, calls={"v": [GeneCall(("IGHVX9*01",), (1.0,))] * n})
+    with pytest.raises(ValueError, match="v call of read 0 names no allele"):
+        _sub(model, reference_set, seqs, ids, calls={"v": [GeneCall((), ())] * n})
+
+
+def test_germline_alignments_replace_the_matcher(make_shaped_model, s0_reads, monkeypatch):
+    model, reference_set = make_shaped_model("igh")
+    ids, seqs = _inputs(s0_reads)
+    n = len(seqs)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    matched = []
+    product = pipeline.align_germline
+    monkeypatch.setattr(pipeline, "align_germline",
+                        lambda sequences, *args, **kwargs: matched.append(len(sequences)) or product(sequences, *args,
+                                                                                                    **kwargs))
+    # The first ten reads get every gene substituted (with the matcher's own alignments): the matcher skips them.
+    own = {g: [base.germline[g][i] if i < 10 else None for i in range(n)] for g in GENES}
+    out = _sub(model, reference_set, seqs, ids, germline=own)
+    assert out.airr_rows == base.airr_rows and matched == [n - 10]
+
+    # A substituted alignment reaches the records and the AIRR assembly.
+    v0 = base.calls["v"][0].names[0]
+    given = {"v": [GermlineAlignment(v0, 10, 100, 5, 95, "90M")] + [None] * (n - 1)}
+    out = _sub(model, reference_set, seqs, ids, germline=given)
+    record = out.records[0]
+    assert (record["v_sequence_start"], record["v_sequence_end"], record["v_germline_start"],
+            record["v_germline_end"], record["v_cigar"]) == (10, 100, 5, 95, "90M")
+    assert out.records[1:] == base.records[1:]
+
+    other = {"v": [GermlineAlignment("IGHV1-2*02" if v0 != "IGHV1-2*02" else "IGHV1-3*01", 10, 100, 5, 95, "90M")]
+             + [None] * (n - 1)}
+    with pytest.raises(ValueError, match="is not the read's v call"):
+        _sub(model, reference_set, seqs, ids, germline=other)
+    outside = {"v": [GermlineAlignment(v0, 10, 10_000, 5, 95, "90M")] + [None] * (n - 1)}
+    with pytest.raises(ValueError, match="outside read 0"):
+        _sub(model, reference_set, seqs, ids, germline=outside)
+
+
+def test_argmax_decoder_segments_the_logits_argmax(small_model, s0_reads):
+    model, reference_set = small_model
+    ids, seqs = _inputs(s0_reads)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    out = _sub(model, reference_set, seqs, ids, decoder="argmax")
+    lengths = np.array([len(read) for read in base.canonical])
+    decoded = {g: argmax_boundaries(base.raw[f"{g}_start_logits"], base.raw[f"{g}_end_logits"], lengths)
+               for g in GENES}
+    # the heads' argmax decoder is the same implementation
+    for g in GENES:
+        assert all(np.array_equal(a, b) for a, b in zip(decoded[g], decode_boundaries(base, g, "argmax")))
+    expected = pipeline.correct_segments({g: decoded[g][0] for g in GENES}, {g: decoded[g][1] for g in GENES},
+                                         lengths, 576, "right")
+    for g in GENES:
+        assert np.array_equal(out.segments.start[g], expected.start[g])
+        assert np.array_equal(out.segments.end[g], expected.end[g])
+    assert np.array_equal(out.segments.low_quality, expected.low_quality)
+    assert any(not np.array_equal(out.segments.start[g], base.segments.start[g]) for g in GENES)
+    assert out.calls == base.calls and _same_raw(out, base)
+
+
+def test_argmax_boundaries_range():
+    logits = np.zeros((2, 8))
+    logits[:, 7] = 5.0  # a peak past both reads
+    logits[0, 4] = 3.0
+    starts, ends = argmax_boundaries(logits, logits, np.array([5, 7]))
+    # starts on a read base (0..n-1), end-exclusive ends on 0..n
+    assert list(starts) == [4, 0] and list(ends) == [4, 7]
 
 
 # --- the reference check --------------------------------------------------------------------------------------
