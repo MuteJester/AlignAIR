@@ -19,12 +19,17 @@ def register(sub) -> None:
 
 
 def run(args) -> int:
-    """Score and compare the existing runs of the run directory's configuration (``manifest.json``), with tools
-    ``--a`` and ``--b`` in place of the run's when given, and rewrite ``report.json`` and ``report.md``; nothing
-    is built or run. 2 when a run failed, is missing or stale, or the oracle is not perfect."""
+    """Score and compare the existing runs of the run directory's configuration (``manifest.json``) and rewrite
+    ``report.json`` and ``report.md``; nothing is built or run. ``--a`` and ``--b`` may swap the run's two tools;
+    another tool is refused, since the manifest records no settings to check its runs against. 2 when a run failed,
+    is missing or stale (made with other tool settings, on changed files or on a suite whose build no longer
+    matches), or the oracle is not perfect."""
     layout = RunLayout(absolute_path(args.run_dir))
     cfg = read_run_config(layout)
     tools = (args.a or cfg.tools[0], args.b or cfg.tools[1])
     if tools[0] == tools[1]:
         raise ValueError(f"--a and --b must differ, both are {tools[0]!r}")
+    if set(tools) != set(cfg.tools):
+        raise ValueError(f"{layout.root} compares {' and '.join(cfg.tools)}; report can only swap them, got "
+                         f"{' and '.join(tools)} (run all with the other tools)")
     return score_and_report(dataclasses.replace(cfg, tools=tools), layout, command="report")

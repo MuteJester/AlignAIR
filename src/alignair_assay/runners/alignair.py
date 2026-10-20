@@ -160,6 +160,18 @@ class AlignAIRImage:
             args += ["--genotype", f"/in/{genotype.name}"]
         return self.docker_command(args, inputs=fasta.parent, outputs=out_tsv.parent, measured=True)
 
+    def fingerprint(self) -> dict:
+        """The ``image`` reference and the ``image_id`` it resolves to (pulled when not local), the ``model`` spec
+        and the SHA-256 of the model file it resolves to (``model_sha256``, after ``install_model``), so a moved
+        tag or an unpinned model is another tool. Needs a cache directory (RuntimeError otherwise, or when a docker
+        command fails)."""
+        if self.cache_dir is None:
+            raise RuntimeError("the alignair runner has no model cache directory: give cache_dir or call prepare")
+        image = self._inspect_image()
+        installed = self.install_model()
+        return {"image": self.image, "image_id": image["id"], "model": self.model,
+                "model_sha256": installed["model"]["sha256"]}
+
     def prepare(self, layout: RunLayout, reference: Reference) -> dict:
         """Install the model and record what will run; returns the provenance every run then records. The cache
         directory defaults to ``layout.work_dir("alignair") / "cache"``. The provenance holds the
@@ -361,6 +373,14 @@ class AlignAIRLocal:
         argv = [sys.executable, "-c", CLI_ENTRY, "predict", "--model", str(self.checkpoint), "--input", str(fasta),
                 "--out", str(out_tsv), "--device", self.device, "--batch-size", str(self.batch_size), "--quiet"]
         return argv if genotype is None else [*argv, "--genotype", str(genotype)]
+
+    def fingerprint(self) -> dict:
+        """The ``checkpoint`` path, its SHA-256 (so a model retrained in place is another tool) and the torch
+        ``device``. FileNotFoundError for a missing checkpoint."""
+        if not self.checkpoint.is_file():
+            raise FileNotFoundError(f"no AlignAIR checkpoint {self.checkpoint}")
+        return {"checkpoint": str(self.checkpoint), "checkpoint_sha256": sha256_file(self.checkpoint),
+                "device": self.device}
 
     def prepare(self, layout: RunLayout, reference: Reference) -> dict:
         """Record what will run; returns the provenance every run then records. The provenance holds the

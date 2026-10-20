@@ -233,6 +233,11 @@ def test_local_command_line(tmp_path):
         make_runner("alignair-local", RunnerOptions())
     with pytest.raises(FileNotFoundError, match=re.escape(str(checkpoint))):
         runner.prepare(RunLayout(tmp_path / "run"), None)
+    with pytest.raises(FileNotFoundError, match=re.escape(str(checkpoint))):
+        runner.fingerprint()
+    checkpoint.write_bytes(b"weights")
+    assert runner.fingerprint() == {"checkpoint": str(checkpoint), "checkpoint_sha256": sha256_file(checkpoint),
+                                    "device": "cuda"}
     assert {"alignair", "alignair-local", "igblast", "oracle"} <= set(RUNNERS)
 
 
@@ -455,6 +460,9 @@ def test_image_on_toy_suite(toy_layout, reference, tmp_path):
     # A second preparation finds the model in the run's cache.
     runner = make_runner("alignair", RunnerOptions(threads=2))
     assert runner.prepare(toy_layout, reference)["cache"]["model_source"] == "cache_dir"
+    # The fingerprint resolves what the image and model references point at.
+    assert runner.fingerprint() == {"image": DEFAULT_IMAGE, "image_id": prov["image"]["id"], "model": DEFAULT_MODEL,
+                                    "model_sha256": prov["model"]["sha256"]}
 
 
 @needs_docker

@@ -77,15 +77,27 @@ class IgBlastRunner:
                                f"{completed.stderr.strip()}")
         return completed.stdout.strip()
 
+    def fingerprint(self) -> dict:
+        """The release directory and the SHA-256 of ``igblastn``, ``makeblastdb`` and the auxiliary file, so a
+        release upgraded in place (or a ``current`` symlink moved) is another tool. FileNotFoundError for a missing
+        release file."""
+        self._check_release()
+        return {"igblast_dir": str(self.igblast_dir), "igblastn_sha256": sha256_file(self.igblastn),
+                "makeblastdb_sha256": sha256_file(self.makeblastdb),
+                "auxiliary_data_sha256": sha256_file(self.auxiliary_data)}
+
+    def _check_release(self) -> None:
+        for path in (self.igblastn, self.makeblastdb, self.auxiliary_data):
+            if not path.is_file():
+                raise FileNotFoundError(f"IgBLAST release {self.igblast_dir} has no "
+                                        f"{path.relative_to(self.igblast_dir)}")
+
     def prepare(self, layout: RunLayout, reference: Reference) -> dict:
         """Check the release, then build the full germline database from the shared ``reference`` in
         ``layout.work_dir("igblast")``. Returns the provenance every run then records: the release directory,
         the ``version`` text, the SHA-256 of ``igblastn``, ``makeblastdb`` and the auxiliary file, and the
         ``database`` (see ``run``). A missing release file raises FileNotFoundError."""
-        for path in (self.igblastn, self.makeblastdb, self.auxiliary_data):
-            if not path.is_file():
-                raise FileNotFoundError(f"IgBLAST release {self.igblast_dir} has no "
-                                        f"{path.relative_to(self.igblast_dir)}")
+        self._check_release()
         setup = {
             "igblast_dir": str(self.igblast_dir),
             "version": self.version(),

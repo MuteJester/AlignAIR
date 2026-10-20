@@ -32,6 +32,10 @@ class OracleRunner:
         """The registry factory: the oracle has no options, and ``prepare`` binds the run directory."""
         return cls()
 
+    def fingerprint(self) -> dict:
+        """Nothing: the oracle answers from the suite's truth, whose SHA-256 each of its runs records."""
+        return {}
+
     def prepare(self, layout: RunLayout, reference: Reference) -> dict:
         """Bind the run directory whose truth files the oracle reads; nothing to set up, so no provenance."""
         self.layout = layout

@@ -390,6 +390,21 @@ def _fake_release(directory: Path) -> Path:
     return directory
 
 
+def test_igblast_fingerprint(tmp_path):
+    release = _fake_release(tmp_path / "release")
+    runner = IgBlastRunner(release)
+    fingerprint = runner.fingerprint()
+    assert fingerprint == {"igblast_dir": str(release), "igblastn_sha256": sha256_file(release / "bin" / "igblastn"),
+                           "makeblastdb_sha256": sha256_file(release / "bin" / "makeblastdb"),
+                           "auxiliary_data_sha256": sha256_file(release / "optional_file" / "human_gl.aux")}
+    # An upgrade in place keeps the directory but changes the fingerprint.
+    (release / "bin" / "igblastn").write_text('#!/bin/sh\necho "igblastn: 1.23.0"\n')
+    assert runner.fingerprint()["igblastn_sha256"] != fingerprint["igblastn_sha256"]
+    with pytest.raises(FileNotFoundError, match="igblastn"):
+        IgBlastRunner(tmp_path / "no_igblast").fingerprint()
+    assert OracleRunner().fingerprint() == {}
+
+
 def test_igblast_restricted_database_failure_is_recorded(run_layout, reference, tmp_path):
     runner = IgBlastRunner(_fake_release(tmp_path / "release"), threads=1)
     runner.prepare(run_layout, reference)

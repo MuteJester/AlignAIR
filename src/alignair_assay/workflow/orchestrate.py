@@ -1,11 +1,13 @@
 """``all``: build the suites, run the oracle and two tools, score, compare and write the run report, resumably.
 
-A run directory belongs to one configuration (``RunConfig``), recorded in ``manifest.json`` with its
-``config_hash``. ``run_all`` refuses a directory made for another configuration, naming the fields that differ,
-unless it is forced; then it redoes only what the change affects, because every step is skipped only when its own
-record shows it is current: a suite whose ``build.json`` has the suite's config hash, a run whose ``run.json``
-records success on the suite's current files with the tool's current settings. Scores, comparisons and the report
-are always recomputed from the current runs, so they never mix in stale outputs.
+A run directory belongs to one configuration, recorded in ``manifest.json`` with its ``config_hash``: the
+``RunConfig`` fields the outputs depend on plus each tool's fingerprint (``Runner.fingerprint``: binary digests,
+the resolved image ID, the model file's digest), so a tool changed in place is a new configuration too.
+``run_all`` refuses a directory made for another configuration, naming the fields that differ, unless it is
+forced; then it redoes only what the change affects, because every step is skipped only when its own record shows
+it is current: a suite whose ``build.json`` has the suite's config hash, a run whose ``run.json`` records success
+on the suite's current files with the tool's current fingerprint. Scores, comparisons and the report are always
+recomputed from the current runs, and a run that does not match the manifest is never scored.
 """
 from __future__ import annotations
 
@@ -21,38 +23,32 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.core.provenance import genairr_provenance, git_state, sha256_file
+from alignair_assay.core.provenance import genairr_provenance, git_state
 from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.report import run_report_markdown
 from alignair_assay.runners import RUNNERS, make_runner
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL
 from alignair_assay.runners.arms import run_genotype_arm
-from alignair_assay.runners.base import RunnerOptions, RunResult, absolute_path, read_run_json, run_suite
+from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path, run_suite
 from alignair_assay.runners.reference import ensure_shared_reference
 from alignair_assay.scoring.pipeline import load_truth, score_tool, write_scores
 from alignair_assay.suites import get_suite
 from alignair_assay.suites.engine import DEFAULT_SEED, check_split
-from alignair_assay.truth.io import TRUTH_VERSION, read_truth_header
-from alignair_assay.workflow.build import build_suite
-from alignair_assay.workflow.build import config_hash as suite_config_hash
+from alignair_assay.workflow.build import build_is_current, build_suite
 from alignair_assay.workflow.scoring import ToolScores, comparison_report, score_report, write_report
 from alignair_assay.workflow.summary import (
     ALPHA,
     ORACLE,
     collect_run_summary,
     expected_runs,
-    inputs_unchanged,
     read_json,
     relative,
     run_status,
+    run_statuses,
 )
 
 MANIFEST_KIND = "alignair_assay.manifest"
 MANIFEST_VERSION = "1"
-# Per tool, the settings that change what it predicts. They are part of the run directory's configuration, and a
-# completed run made with other values is redone. A tool not listed (the oracle, test fakes) has none.
-PREDICTION_SETTINGS = {"igblast": ("igblast_dir",), "alignair": ("alignair_image", "alignair_model"),
-                       "alignair-local": ("alignair_checkpoint", "alignair_checkpoint_sha256", "device")}
 
 
 @dataclass(frozen=True)
@@ -78,36 +74,47 @@ class RunConfig:
     speed: bool = False
 
 
-def tool_settings(cfg: RunConfig, tool: str) -> dict:
-    """The settings ``tool`` predicts with under ``cfg`` (its ``PREDICTION_SETTINGS``): paths made absolute, the
-    default image filled in, and for a local checkpoint its SHA-256 (None for a missing file), so a model retrained
-    in place is a new configuration."""
-    names = PREDICTION_SETTINGS.get(tool, ())
-    paths = RunnerOptions(igblast_dir=cfg.igblast_dir, alignair_checkpoint=cfg.alignair_checkpoint)
-    values = {"igblast_dir": paths.igblast_dir, "alignair_image": cfg.alignair_image or DEFAULT_IMAGE,
-              "alignair_model": cfg.alignair_model, "alignair_checkpoint": paths.alignair_checkpoint,
-              "device": cfg.device}
-    if "alignair_checkpoint_sha256" in names:
-        checkpoint = paths.alignair_checkpoint
-        values["alignair_checkpoint_sha256"] = (sha256_file(checkpoint) if checkpoint and Path(checkpoint).is_file()
-                                                else None)
-    return {name: values[name] for name in names}
+def runner_options(cfg: RunConfig, layout: RunLayout) -> RunnerOptions:
+    """The tool options of ``cfg``; the AlignAIR model cache is the run directory's
+    ``runs/alignair/_work/cache``."""
+    return RunnerOptions(igblast_dir=cfg.igblast_dir, threads=cfg.threads, alignair_image=cfg.alignair_image,
+                         alignair_model=cfg.alignair_model, alignair_checkpoint=cfg.alignair_checkpoint,
+                         device=cfg.device, cache_dir=str(layout.work_dir("alignair") / "cache"))
 
 
-def identity(cfg: RunConfig) -> dict:
+def make_runners(cfg: RunConfig, layout: RunLayout) -> dict[str, Runner]:
+    """The oracle's and the two tools' runners, unprepared, by tool name. ValueError when a tool's options are
+    missing, or a registered runner's ``name`` is not the name it is registered under (its runs would be recorded
+    elsewhere)."""
+    options = runner_options(cfg, layout)
+    runners = {}
+    for tool in dict.fromkeys((ORACLE, *cfg.tools)):
+        runner = make_runner(tool, options)
+        if runner.name != tool:
+            raise ValueError(f"the runner registered as {tool!r} is named {runner.name!r}")
+        runners[tool] = runner
+    return runners
+
+
+def tool_settings(runners: dict[str, Runner]) -> dict[str, dict]:
+    """Per tool, its ``Runner.fingerprint()``: what it predicts with, by content (the IgBLAST binaries' digests,
+    the AlignAIR image ID and model digest, the local checkpoint's digest). Each run records its tool's
+    settings."""
+    return {tool: runner.fingerprint() for tool, runner in runners.items()}
+
+
+def identity(cfg: RunConfig, settings: dict[str, dict]) -> dict:
     """The configuration a run directory's outputs depend on: ``suites``, ``tools``, ``split``, ``reference``,
-    ``seed``, ``scale`` and each tool's ``tool_settings``. Execution settings (``workers``, ``threads``,
-    ``speed``) are left out: they change neither the cases nor the predictions."""
-    fields = {"suites": list(cfg.suites), "tools": list(cfg.tools), "split": cfg.split, "reference": cfg.reference,
-              "seed": int(cfg.seed), "scale": float(cfg.scale)}
-    for tool in cfg.tools:
-        fields.update(tool_settings(cfg, tool))
-    return fields
+    ``seed``, ``scale`` and the tools' ``settings`` (``tool_settings``). Execution settings (``workers``,
+    ``threads``, ``speed``) are left out: they change neither the cases nor the predictions."""
+    return {"suites": list(cfg.suites), "tools": list(cfg.tools), "split": cfg.split, "reference": cfg.reference,
+            "seed": int(cfg.seed), "scale": float(cfg.scale), "settings": settings}
 
 
-def config_hash(cfg: RunConfig) -> str:
-    """Hex SHA-256 of the canonical JSON (sorted keys, no spaces) of ``identity(cfg)``."""
-    return _digest(identity(cfg))
+def config_hash(cfg: RunConfig, layout: RunLayout) -> str:
+    """Hex SHA-256 of the canonical JSON (sorted keys, no spaces) of ``identity`` of ``cfg`` with the tools'
+    current fingerprints (the AlignAIR model is resolved in ``layout``'s model cache)."""
+    return _digest(identity(cfg, tool_settings(make_runners(cfg, layout))))
 
 
 def check_config(cfg: RunConfig) -> None:
@@ -136,47 +143,40 @@ def run_all(cfg: RunConfig, layout: RunLayout, *, force: bool = False) -> int:
     """Build, run, score, compare and report ``cfg`` in the run directory ``layout``; returns 0, or 2 when any run
     failed or the oracle is not perfect on a suite (the report names which).
 
-    1. Manifest: ``check_config``, then write ``manifest.json``, or check the existing one. One made for another
-       configuration (``config_hash``) raises ValueError naming the fields that differ, before anything changes,
-       unless ``force``; forced, the manifest is replaced (``replaced`` records the old hash and the changed
-       fields) and the steps below redo what the change affects.
-    2. Build each suite (``workflow.build.build_suite``), skipped when its ``build.json`` has the suite's config
-       hash and its truth file the current truth version.
+    1. Manifest: ``check_config``, the runners and their fingerprints (``tool_settings``; this may pull the
+       AlignAIR image and install its model into the run's model cache), then write ``manifest.json``, or check the
+       existing one. One made for another configuration (``config_hash``) raises ValueError naming the fields that
+       differ (a tool's setting as ``<tool>.<key>``) before any output changes, unless ``force``; forced, the
+       manifest is replaced (``replaced`` records the old hash and the changed fields) and the steps below redo
+       what the change affects. ``warnings`` notes an AlignAIR image not pinned by digest or a model not pinned to
+       a version.
+    2. Build each suite (``workflow.build.build_suite``), skipped when ``build_is_current``.
     3. Shared reference: with ``alignair`` among the tools and no shared reference yet, the image exports its
        model's reference there; then ``ensure_shared_reference`` verifies it (or writes it from the truth), so a
        model with another reference stops the run before any tool runs.
     4. Runs (``summary.expected_runs``): the oracle once per suite, then each tool on each suite and arm, through
-       ``run_suite`` or ``run_genotype_arm``. A run is skipped when ``run_is_current``. Every tool with a run to
-       make is prepared before the first run.
+       ``run_suite`` or ``run_genotype_arm``, recording the tool's fingerprint as the run's ``settings``. A run is
+       skipped when ``run_is_current``. Every tool with a run to make is prepared before the first run.
     5. Scoring, comparison and the report: ``score_and_report``.
     """
     check_config(cfg)
     reference = Reference.from_dataconfig(cfg.reference)
     layout = RunLayout(absolute_path(layout.root))
-    _manifest(cfg, layout, force=force)
+    runners = make_runners(cfg, layout)
+    settings = tool_settings(runners)
+    _manifest(cfg, identity(cfg, settings), layout, force=force)
     layout.report_json.unlink(missing_ok=True)
     layout.report_md.unlink(missing_ok=True)
     _build(cfg, layout, reference)
-    options = RunnerOptions(igblast_dir=cfg.igblast_dir, threads=cfg.threads, alignair_image=cfg.alignair_image,
-                            alignair_model=cfg.alignair_model, alignair_checkpoint=cfg.alignair_checkpoint,
-                            device=cfg.device, cache_dir=str(layout.work_dir("alignair") / "cache"))
-    _shared_reference(cfg, layout, reference, options)
-    _run(cfg, layout, reference, options)
+    _shared_reference(cfg, layout, reference, runners)
+    _run(cfg, layout, reference, runners, settings)
     return score_and_report(cfg, layout, reference=reference)
 
 
 def run_is_current(layout: RunLayout, tool: str, suite: str, arm: str, settings: dict) -> bool:
-    """True when the run's ``run.json`` and predictions exist, the record's return code is 0, its recorded
-    ``settings`` are ``settings`` and its input files are unchanged (``summary.inputs_unchanged``)."""
-    path = layout.run_json(tool, suite, arm)
-    if not path.is_file() or not layout.predictions(tool, suite, arm).is_file():
-        return False
-    try:
-        record = read_run_json(path)
-    except (OSError, ValueError, TypeError):
-        return False
-    return (record.returncode == 0 and record.provenance.get("settings") == settings
-            and inputs_unchanged(layout, suite, record.provenance))
+    """True when the run may be reused: its ``summary.run_status`` against ``settings`` is ``ok`` (return code 0,
+    predictions present, the same settings, unchanged input files)."""
+    return run_status(layout, tool, suite, arm, settings)["status"] == "ok"
 
 
 def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference | None = None,
@@ -184,13 +184,14 @@ def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference 
     """Score, compare and report the runs of ``cfg`` in ``layout``; returns 0, or 2 when a run failed, is
     missing, stale or unscorable, or the oracle is not perfect on a suite.
 
-    For every suite and arm the old ``scores/<S>/<arm>/`` is removed. Each run that passes ``summary.run_status``
-    (which applies ``require_successful_run`` and checks the inputs are unchanged) is scored as the ``score``
-    command scores it: ``<tool>.scores.jsonl.gz``, ``<tool>.report.json`` and ``<tool>.report.md``, with the
-    suite's primary metrics leading the markdown. The oracle is scored on the shared arm. When both tools are
-    scored, ``comparison.json`` and ``comparison.md`` are written as the ``compare`` command writes them (Holm at
-    ``summary.ALPHA``). Then ``report.json`` (``summary.collect_run_summary``) and ``report.md``
-    (``report.run.run_report_markdown``) are written. ``command`` is recorded in the reports' provenance.
+    For every suite and arm the old ``scores/<S>/<arm>/`` is removed. Each run whose ``summary.run_statuses``
+    entry is ``ok`` (``require_successful_run`` passes, the run was made with the manifest's settings for its tool,
+    on unchanged files of a suite whose build matches ``cfg``) is scored as the ``score`` command scores it:
+    ``<tool>.scores.jsonl.gz``, ``<tool>.report.json`` and ``<tool>.report.md``, with the suite's primary metrics
+    leading the markdown. The oracle is scored on the shared arm. When both tools are scored, ``comparison.json``
+    and ``comparison.md`` are written as the ``compare`` command writes them (Holm at ``summary.ALPHA``). Then
+    ``report.json`` (``summary.collect_run_summary``) and ``report.md`` (``report.run.run_report_markdown``) are
+    written. ``command`` is recorded in the reports' provenance.
     """
     reference = reference or Reference.from_dataconfig(cfg.reference)
     errors = _score(cfg, layout, reference, command=command)
@@ -223,23 +224,33 @@ def _digest(fields: dict) -> str:
     return hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def _manifest(cfg: RunConfig, layout: RunLayout, *, force: bool) -> None:
+def _flat(fields: dict) -> dict:
+    """An identity with each tool's setting as its own ``<tool>.<key>`` field, for naming what differs."""
+    flat = {name: value for name, value in fields.items() if name != "settings"}
+    for tool, values in (fields.get("settings") or {}).items():
+        flat.update({f"{tool}.{key}": value for key, value in values.items()})
+    return flat
+
+
+def _manifest(cfg: RunConfig, current: dict, layout: RunLayout, *, force: bool) -> None:
     """Write the manifest, keep an identical one, or refuse (ValueError) one made for another configuration."""
-    current = identity(cfg)
     digest = _digest(current)
     replaced = None
     if layout.manifest.is_file():
         old = read_json(layout.manifest) or {}
         if old.get("config_hash") == digest:
             return
-        previous = old.get("identity") or {}
-        changed = [name for name in sorted(previous.keys() | current.keys()) if previous.get(name) != current.get(name)]
+        previous, now = _flat(old.get("identity") or {}), _flat(current)
+        changed = [name for name in sorted(previous.keys() | now.keys()) if previous.get(name) != now.get(name)]
         if not force:
-            differences = "; ".join(f"{name} {previous.get(name)} -> {current.get(name)}" for name in changed)
+            differences = "; ".join(f"{name} {previous.get(name)} -> {now.get(name)}" for name in changed)
             raise ValueError(f"{layout.manifest} was written for another configuration ({differences}). Rerun with "
                              "that configuration, choose another --run-dir, or pass --force to rebuild and re-run "
                              "what the change affects")
         replaced = {"config_hash": old.get("config_hash"), "changed": changed}
+    warnings = _pinning_warnings(cfg)
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
     manifest = {
         "kind": MANIFEST_KIND, "version": MANIFEST_VERSION, "config": dataclasses.asdict(cfg), "identity": current,
         "config_hash": digest, "split": cfg.split,
@@ -247,18 +258,32 @@ def _manifest(cfg: RunConfig, layout: RunLayout, *, force: bool) -> None:
                  "logical_cpus": os.cpu_count()},
         "git": git_state(Path(__file__).resolve().parent), "genairr": genairr_provenance(),
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "replaced": replaced,
+        "warnings": warnings,
     }
     layout.root.mkdir(parents=True, exist_ok=True)
     layout.manifest.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
+def _pinning_warnings(cfg: RunConfig) -> list[str]:
+    """Notes for an AlignAIR image not pinned by digest and a registry model not pinned to a version: their
+    resolved image ID and model digest are in the configuration, but the references alone do not say what ran."""
+    if "alignair" not in cfg.tools:
+        return []
+    warnings = []
+    image = cfg.alignair_image or DEFAULT_IMAGE
+    if "@sha256:" not in image:
+        warnings.append(f"the AlignAIR image {image} is not pinned by digest; the image ID it resolved to is "
+                        "recorded as alignair.image_id")
+    if "@" not in cfg.alignair_model:
+        warnings.append(f"the AlignAIR model {cfg.alignair_model} is not pinned to a version; the model file's "
+                        "SHA-256 is recorded as alignair.model_sha256")
+    return warnings
+
+
 def _build(cfg: RunConfig, layout: RunLayout, reference: Reference) -> None:
     digest = reference.digest()
     for name in cfg.suites:
-        wanted = suite_config_hash(name, split=cfg.split, reference_digest=digest, seed=int(cfg.seed),
-                                   scale=float(cfg.scale))
-        record = read_json(layout.build_json(name)) or {}
-        if record.get("config_hash") == wanted and _truth_version(layout, name) == TRUTH_VERSION:
+        if build_is_current(layout, name, split=cfg.split, reference_digest=digest, seed=cfg.seed, scale=cfg.scale):
             print(f"build {name}: up to date, skipped", flush=True)
             continue
         build = build_suite(name, layout, reference_name=cfg.reference, split=cfg.split, seed=cfg.seed,
@@ -266,21 +291,14 @@ def _build(cfg: RunConfig, layout: RunLayout, reference: Reference) -> None:
         print(f"build {name}: {build['n_cases']} cases in {build['seconds']:.1f} s", flush=True)
 
 
-def _truth_version(layout: RunLayout, suite: str) -> str | None:
-    try:
-        return (read_truth_header(layout.truth(suite)) or {}).get("version")
-    except (OSError, ValueError):
-        return None
-
-
-def _shared_reference(cfg: RunConfig, layout: RunLayout, reference: Reference, options: RunnerOptions) -> None:
+def _shared_reference(cfg: RunConfig, layout: RunLayout, reference: Reference, runners: dict[str, Runner]) -> None:
     """Export AlignAIR's reference as the shared one when it is a tool and there is none yet, then verify the
     shared reference (or write it from the truth). An exported reference that fails verification is removed, so a
     later run with another model exports again."""
     exported = False
     if "alignair" in cfg.tools and not layout.reference_fasta.is_file():
         layout.reference_dir.mkdir(parents=True, exist_ok=True)
-        make_runner("alignair", options).export_reference(layout.reference_fasta)
+        runners["alignair"].export_reference(layout.reference_fasta)
         exported = True
     try:
         ensure_shared_reference(layout, reference)
@@ -293,23 +311,17 @@ def _shared_reference(cfg: RunConfig, layout: RunLayout, reference: Reference, o
           flush=True)
 
 
-def _run(cfg: RunConfig, layout: RunLayout, reference: Reference, options: RunnerOptions) -> None:
+def _run(cfg: RunConfig, layout: RunLayout, reference: Reference, runners: dict[str, Runner],
+         settings: dict[str, dict]) -> None:
     """Make every expected run that is not current; every tool with a run to make is prepared first."""
-    jobs = expected_runs(cfg)
-    settings = {tool: tool_settings(cfg, tool) for tool in dict.fromkeys(tool for tool, _, _ in jobs)}
     pending = []
-    for tool, suite, arm in jobs:
+    for tool, suite, arm in expected_runs(cfg):
         if run_is_current(layout, tool, suite, arm, settings[tool]):
             print(f"run {tool} {suite}/{arm}: up to date, skipped", flush=True)
         else:
             pending.append((tool, suite, arm))
-    runners = {}
     for tool in dict.fromkeys(tool for tool, _, _ in pending):
-        runner = make_runner(tool, options)
-        if runner.name != tool:
-            raise ValueError(f"the runner registered as {tool!r} is named {runner.name!r}")
-        runner.prepare(layout, reference)
-        runners[tool] = runner
+        runners[tool].prepare(layout, reference)
     for tool, suite, arm in pending:
         if arm == "genotype":
             result = run_genotype_arm(runners[tool], layout, suite, reference, tool=tool, settings=settings[tool])
@@ -329,9 +341,10 @@ def _run_line(result: RunResult) -> str:
 
 
 def _score(cfg: RunConfig, layout: RunLayout, reference: Reference, *, command: str) -> list[dict]:
-    """Write every suite and arm's scores and comparison; returns the runs that passed ``run_status`` but could
-    not be scored (``run_status``-shaped, status ``not scored``)."""
+    """Write every suite and arm's scores and comparison; returns the runs that are ``ok`` but could not be scored
+    (``run_status``-shaped, status ``not scored``)."""
     a, b = cfg.tools
+    statuses = run_statuses(layout, cfg)
     errors = []
     for name in cfg.suites:
         suite = get_suite(name)
@@ -341,7 +354,7 @@ def _score(cfg: RunConfig, layout: RunLayout, reference: Reference, *, command: 
             layout.scores_dir(name, arm).mkdir(parents=True)
             scored = {}
             for tool in dict.fromkeys(([ORACLE] if arm == "shared" else []) + [a, b]):
-                status = run_status(layout, tool, name, arm)
+                status = statuses[tool, name, arm]
                 if status["status"] != "ok":
                     continue  # the summary lists it as a failed run
                 predictions = layout.predictions(tool, name, arm)

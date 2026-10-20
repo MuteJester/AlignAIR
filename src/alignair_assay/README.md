@@ -181,8 +181,11 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   The all command below.
 - `report` (`workflow.orchestrate.score_and_report`) re-scores, re-compares and rewrites the run report of a run
   directory made by `all`, from its existing runs and with the configuration in its `manifest.json`; nothing is
-  built or run. `--a`/`--b` compare two other tools that have runs there (default: the run's two tools). It exits
-  with status 2 under the same conditions as `all`, and when the directory has no manifest.
+  built or run. `--a`/`--b` may swap the run's two tools; any other tool is refused, since the manifest records no
+  settings to check its runs against. A run is scored only when it matches the manifest (see step 5 below):
+  one made with other tool settings (a manual `run`, or an `all --force` that stopped before redoing it), on
+  changed files, or on a suite whose build no longer matches is listed as `stale` and not scored. It exits with
+  status 2 under the same conditions as `all`, and when the directory has no manifest.
 - `build` generates each named suite into `RUN` (`workflow.build.build_suite`): `cases.jsonl.gz`, `truth.jsonl.gz`,
   `reads.fasta`, `donors.json` (suites with donors only) and `build.json`. Every name is checked before anything is
   built; an unknown suite or split, or a scale that is not positive, exits with status 2. The truth header records
@@ -232,12 +235,17 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
 
 1. **Manifest.** The configuration is checked before anything is written. It needs known suites, a known split,
    exactly two different registered tools, a positive scale and at least one worker and thread; `--speed` is not
-   available yet. Then `manifest.json` is written, holding the `config`, its `identity`, the `config_hash` (SHA-256
-   of the canonical JSON of the identity), the split, the host, the checkout's git state and the GenAIRR
-   provenance. The identity is what the outputs depend on: suites, tools, split, reference, seed, scale and each
-   tool's prediction settings (`orchestrate.PREDICTION_SETTINGS`). Those are `igblast_dir` for IgBLAST, the image
-   (default filled in) and model for `alignair`, and the checkpoint path, its SHA-256 and the device for
-   `alignair-local`. Workers, threads and `--speed` are not part of it.
+   available yet. Each tool's runner is built and fingerprinted (`Runner.fingerprint`, see Adding a runner), which
+   identifies the tool by content: IgBLAST's directory and the SHA-256 of `igblastn`, `makeblastdb` and the
+   auxiliary file; the AlignAIR image reference and the image ID it resolves to (pulling it when it is not local),
+   and the model spec and the SHA-256 of the model file it resolves to (installing it into the run's model cache);
+   the local checkpoint's path, SHA-256 and device; nothing for the oracle. Then `manifest.json` is written,
+   holding the `config`, its `identity`, the `config_hash` (SHA-256 of the canonical JSON of the identity), the
+   split, the host, the checkout's git state, the GenAIRR provenance and `warnings` (an AlignAIR image not pinned
+   by digest, or a model not pinned to a version). The identity is what the outputs depend on: suites, tools,
+   split, reference, seed, scale and the tools' fingerprints (`settings`). Workers, threads and `--speed` are not
+   part of it, so an upgrade in place, a moved image tag or a retrained checkpoint is a new configuration even
+   when every path and name is the same.
 2. **Build.** Each suite is built, unless its `build.json` already has the suite's config hash and its truth file
    the current truth version.
 3. **Shared reference.** With `alignair` among the tools and no `reference/germline.fasta` yet, the image exports
@@ -246,12 +254,14 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    removed.
 4. **Runs.** The oracle runs on every suite's shared arm. Then each tool runs on each suite and each of the
    suite's arms, the shared arm through `run_suite` and the genotype arm through `run_genotype_arm`. Every tool
-   with a run to make is prepared before the first run. Each run records its tool's prediction settings as the
+   with a run to make is prepared before the first run. Each run records its tool's fingerprint as the
    provenance's `settings`.
 5. **Scoring.** Every suite and arm is scored afresh (`score_and_report`), after its old `scores/<S>/<arm>/` is
-   removed. A run is scored only when `workflow.summary.run_status` says `ok`. That status applies
-   `require_successful_run` and checks that the reads (and the truth and donors, when the run recorded them) still
-   have their recorded SHA-256. Each scored run gets the `score` command's three files, the oracle on the shared
+   removed. A run is scored only when its `workflow.summary.run_statuses` entry is `ok`: `require_successful_run`
+   passes, its predictions exist, its recorded `settings` equal the manifest's fingerprint of its tool, the reads
+   (and the truth and donors, when the run recorded them) still have their recorded SHA-256, and its suite's build
+   matches the configuration (`workflow.build.build_is_current`). Anything else is `missing`, `failed` or
+   `stale`, and is listed, never scored. Each scored run gets the `score` command's three files, the oracle on the shared
    arm. When both tools are scored, the arm gets the `compare` command's `comparison.json` and `comparison.md` (a
    against b, Holm at 0.05).
 6. **Report.** `report.json` holds the run summary (`workflow.summary.collect_run_summary`) and `report.md` its
@@ -261,7 +271,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
 oracle is not perfect on a suite. The report names which.
 
 **Resume.** Rerunning `all` with the same configuration skips each suite whose build is current and each run whose
-`run.json` shows return code 0 with predictions, the same `settings` and unchanged input files. A failed run is
+`run.json` shows return code 0 with predictions, the same `settings` (the tool's current fingerprint) and
+unchanged input files. A failed run is
 redone. Scores, comparisons and the report are always recomputed from the current runs, so a change to the scoring
 code takes effect on the next `all`. It never mixes in stale outputs.
 
@@ -269,7 +280,7 @@ code takes effect on the next `all`. It never mixes in stale outputs.
 anything. The error names every field that differs, as `field old -> new`, for example `seed 20261019 -> 7`.
 `--force` replaces the manifest; its `replaced` records the old hash and the changed fields. The steps then redo
 what the change affects. A new seed, split, scale or reference rebuilds the suites, which changes their reads, so
-every run is redone. A new tool setting redoes that tool's runs. Outputs of suites or tools no longer in the
+every run is redone. A changed tool fingerprint (`<tool>.<key>` in the error) redoes that tool's runs only. Outputs of suites or tools no longer in the
 configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 then has 100 cases); an explicit
 `--scale` wins over it.
 
@@ -286,11 +297,13 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
    `comparison.md`.
 5. **S10 vs S1 (held-out settings).** Per tool, S10's primary-metric means against those of S1's `full_igg`
    stratum, which has S10's read design and SHM rate under the default distributions. The table shows the
-   difference and the mean per held-out setting. These are unpaired and informational: no test is made.
+   difference and the mean per held-out setting, each mean with its n and coverage. These are unpaired and
+   informational: no test is made.
 6. **S11 orientation parity.** Per tool, the forward reads against their reverse-complemented twins, paired by
    `groups["pair"]` and compared with `stats.compare` (Holm at 0.05 across the tool's metrics). The section lists
    the metrics that differ and the primary-metric rows.
-7. **Genotype arms.** For suites with a genotype arm, each tool's primary-metric means in each arm.
+7. **Genotype arms.** For suites with a genotype arm, each tool's primary-metric means in each arm, with n and
+   coverage.
 8. **Speed.** Present when `speed/speed.json` exists.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
@@ -431,6 +444,11 @@ human IGH donors, across seeds, the defaults realise 6.5 to 6.9 deleted genes pe
 A runner turns a FASTA of reads into an AIRR rearrangement TSV. It implements `runners.base.Runner`:
 
 - `name`: the tool name, used as `runs/<tool>/` (one path component).
+- `fingerprint() -> dict`: what identifies the tool's predictions by content as well as by name, without preparing
+  a run directory: its settings plus the digests of what it runs (binaries, the resolved image ID, the model
+  file). `all` puts it in the run directory's configuration and in every run's `settings`, so a tool changed in
+  place is never mistaken for the one that made earlier runs. Raise (FileNotFoundError, RuntimeError) when the
+  tool cannot be identified.
 - `prepare(layout, reference) -> dict`: the tool's one-time setup for run directory `layout`, against the shared
   reference (already verified equal to the truth reference). Put setup files in `layout.work_dir(name)`. Return
   the setup's provenance, and raise (FileNotFoundError, ValueError, RuntimeError) when the tool cannot be set up.
@@ -467,10 +485,10 @@ Registered runners:
 
 | Tool | Runner | Setup (`prepare`) | Run |
 |---|---|---|---|
-| `oracle` | `runners.oracle.OracleRunner` | binds the run directory | writes `truth.oracle.oracle_prediction` rows for the reads of the FASTA, in its order, from the suite's truth (in-process: no command, no RSS) |
-| `igblast` | `runners.igblast.IgBlastRunner` (`--igblast-dir`, `--threads`, `--cpus`) | checks the release; writes `germline_{v,d,j}.fasta` and builds the BLAST databases (`makeblastdb -parse_seqids -dbtype nucl`) in `runs/igblast/_work/` | `IGDATA=<dir> igblastn -germline_db_V/D/J <db>/V,D,J -auxiliary_data optional_file/human_gl.aux -organism human -ig_seqtype Ig -num_threads <threads> -outfmt 19 -query <fasta> -out <tsv>`; provenance: version text, SHA-256 of `igblastn`, `makeblastdb`, the auxiliary file and every database file, threads and CPUs |
-| `alignair` | `runners.alignair.AlignAIRImage` (`--image`, `--model`, `--cache-dir`, `--threads`, `--cpus`) | inspects the image (pulling it when it is not local); installs the model into the cache (see AlignAIR model cache) with `models get`, then `models verify` and `models path`; records `models info` and `doctor --json`; exports the model's reference with `reference export <model file> --fasta` (3.0.0 crashes on a registry id there) into `runs/alignair/_work/` and refuses it unless it is the truth reference | `docker run --rm -u <uid>:<gid> -v <cache>:/home/appuser/.cache/alignair -v <log dir>/input:/in:ro -v <tsv dir>:/out [--cpuset-cpus <cpus>] [-e OMP_NUM_THREADS=<t> -e MKL_NUM_THREADS=<t>] --entrypoint sh <image> -c 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak 2>/dev/null; exit $rc' sh predict --model <model> --input /in/<fasta> --out /out/<tsv> --device cpu --quiet [--genotype /in/genotype.json]`; `<log dir>/input` is emptied and holds only a copy of the reads FASTA (and the genotype JSON), so the container never sees the suite's cases or truth; the wall time includes the container's start; the peak RSS is the container's cgroup v2 `memory.peak` (resident memory plus page cache; None with an `rss_note` when unreadable); provenance: image reference, ID and RepoDigests, the cache record, model spec, path and SHA-256, the model card, the doctor output, the exported reference, the moved `predict` sidecar (`logs/alignair.run.json`), the genotype file, threads and CPUs |
-| `alignair-local` | `runners.alignair.AlignAIRLocal` (`--checkpoint`, `--device`, `--batch-size`, `--threads`, `--cpus`) | checks the checkpoint; probes the torch version and CUDA device the subprocess sees; exports the checkpoint's reference into `runs/alignair-local/_work/` with this checkout's CLI and refuses it unless it is the truth reference | `PYTHONPATH=<checkout>/src [OMP_NUM_THREADS=<t> MKL_NUM_THREADS=<t>] <python> -c "import sys; from alignair.cli.main import main; sys.exit(main())" predict --model <checkpoint> --input <fasta> --out <tsv> --device <device> --batch-size <n> --quiet [--genotype <log_dir>/genotype.json]` under `timed_command` (peak RSS of the CLI process); provenance: checkpoint path and SHA-256, the checkout's path and commit state, interpreter, torch version, CUDA device name, device, batch size, the exported reference, the moved sidecar, the genotype file, threads and CPUs |
+| `oracle` | `runners.oracle.OracleRunner` (fingerprint: none; each run records the truth's SHA-256) | binds the run directory | writes `truth.oracle.oracle_prediction` rows for the reads of the FASTA, in its order, from the suite's truth (in-process: no command, no RSS) |
+| `igblast` | `runners.igblast.IgBlastRunner` (`--igblast-dir`, `--threads`, `--cpus`; fingerprint: the directory and the SHA-256 of `igblastn`, `makeblastdb` and the auxiliary file) | checks the release; writes `germline_{v,d,j}.fasta` and builds the BLAST databases (`makeblastdb -parse_seqids -dbtype nucl`) in `runs/igblast/_work/` | `IGDATA=<dir> igblastn -germline_db_V/D/J <db>/V,D,J -auxiliary_data optional_file/human_gl.aux -organism human -ig_seqtype Ig -num_threads <threads> -outfmt 19 -query <fasta> -out <tsv>`; provenance: version text, SHA-256 of `igblastn`, `makeblastdb`, the auxiliary file and every database file, threads and CPUs |
+| `alignair` | `runners.alignair.AlignAIRImage` (`--image`, `--model`, `--cache-dir`, `--threads`, `--cpus`; fingerprint: the image reference and resolved image ID, the model spec and the installed model file's SHA-256) | inspects the image (pulling it when it is not local); installs the model into the cache (see AlignAIR model cache) with `models get`, then `models verify` and `models path`; records `models info` and `doctor --json`; exports the model's reference with `reference export <model file> --fasta` (3.0.0 crashes on a registry id there) into `runs/alignair/_work/` and refuses it unless it is the truth reference | `docker run --rm -u <uid>:<gid> -v <cache>:/home/appuser/.cache/alignair -v <log dir>/input:/in:ro -v <tsv dir>:/out [--cpuset-cpus <cpus>] [-e OMP_NUM_THREADS=<t> -e MKL_NUM_THREADS=<t>] --entrypoint sh <image> -c 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak 2>/dev/null; exit $rc' sh predict --model <model> --input /in/<fasta> --out /out/<tsv> --device cpu --quiet [--genotype /in/genotype.json]`; `<log dir>/input` is emptied and holds only a copy of the reads FASTA (and the genotype JSON), so the container never sees the suite's cases or truth; the wall time includes the container's start; the peak RSS is the container's cgroup v2 `memory.peak` (resident memory plus page cache; None with an `rss_note` when unreadable); provenance: image reference, ID and RepoDigests, the cache record, model spec, path and SHA-256, the model card, the doctor output, the exported reference, the moved `predict` sidecar (`logs/alignair.run.json`), the genotype file, threads and CPUs |
+| `alignair-local` | `runners.alignair.AlignAIRLocal` (`--checkpoint`, `--device`, `--batch-size`, `--threads`, `--cpus`; fingerprint: the checkpoint path and SHA-256, the device) | checks the checkpoint; probes the torch version and CUDA device the subprocess sees; exports the checkpoint's reference into `runs/alignair-local/_work/` with this checkout's CLI and refuses it unless it is the truth reference | `PYTHONPATH=<checkout>/src [OMP_NUM_THREADS=<t> MKL_NUM_THREADS=<t>] <python> -c "import sys; from alignair.cli.main import main; sys.exit(main())" predict --model <checkpoint> --input <fasta> --out <tsv> --device <device> --batch-size <n> --quiet [--genotype <log_dir>/genotype.json]` under `timed_command` (peak RSS of the CLI process); provenance: checkpoint path and SHA-256, the checkout's path and commit state, interpreter, torch version, CUDA device name, device, batch size, the exported reference, the moved sidecar, the genotype file, threads and CPUs |
 
 ### AlignAIR model cache
 

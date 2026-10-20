@@ -22,9 +22,14 @@ JUNCTION_COLUMNS = ("junction", "junction_aa", "junction_start", "junction_end")
 
 
 class HalfOracle(OracleRunner):
-    """Oracle rows with the junction blanked on every other read (the second, fourth, ... in FASTA order)."""
+    """Oracle rows with the junction blanked on every other read (the second, fourth, ... in FASTA order). Its
+    ``version`` is its fingerprint, standing in for a tool's binary or model digest."""
 
     name = "half"
+    version = "1"
+
+    def fingerprint(self):
+        return {"version": self.version}
 
     def run(self, fasta, out_tsv, **kwargs):
         result = super().run(fasta, out_tsv, **kwargs)
@@ -38,9 +43,12 @@ class HalfOracle(OracleRunner):
 
 
 class BlankingOracle(HalfOracle):
-    """A broken oracle: the half-blanked rows under the oracle's name."""
+    """A broken oracle: the half-blanked rows under the oracle's name and fingerprint."""
 
     name = "oracle"
+
+    def fingerprint(self):
+        return OracleRunner.fingerprint(self)
 
 
 class GenotypeCrash(OracleRunner):
@@ -121,7 +129,8 @@ def test_all_end_to_end_with_oracle_and_fake(half_run, tmp_path):
     assert status == 0
 
     manifest = json.loads(layout.manifest.read_text())
-    assert manifest["config_hash"] == config_hash(cfg) and manifest["split"] == "dev"
+    assert manifest["config_hash"] == config_hash(cfg, layout) and manifest["split"] == "dev"
+    assert manifest["identity"]["settings"] == {"oracle": {}, "half": {"version": "1"}}
     assert manifest["config"]["suites"] == ["S0", "S1"] and manifest["config"]["scale"] == 0.02
     assert {"host", "git", "genairr"} <= set(manifest)
     assert json.loads(layout.reference_json.read_text())["source"] == "truth"
@@ -217,6 +226,58 @@ def test_stale_config_refused(toy_run, tmp_path):
     assert _report(root)["config"]["seed"] == 7
 
 
+def test_tool_fingerprint_change_refused_and_forced(toy_run, tmp_path, monkeypatch, capsys):
+    root = _copy(toy_run[0], tmp_path)
+    layout = RunLayout(root)
+    oracle_record = layout.run_json("oracle", "S0", "shared").stat().st_mtime_ns
+
+    class NewHalf(HalfOracle):
+        version = "2"
+
+    # Same configuration strings, new tool content (an upgraded binary or retrained model): refused.
+    monkeypatch.setitem(RUNNERS, "half", lambda options: NewHalf())
+    with pytest.raises(ValueError, match=r"half\.version 1 -> 2"):
+        _all(root, suites=("S0",), scale=0.2, workers=1)
+    capsys.readouterr()
+
+    # --force redoes only that tool's runs.
+    assert _all(root, suites=("S0",), scale=0.2, workers=1, force=True)[1] == 0
+    printed = capsys.readouterr().out
+    assert "run oracle S0/shared: up to date, skipped" in printed and "run half S0/shared: return code 0" in printed
+    assert layout.run_json("oracle", "S0", "shared").stat().st_mtime_ns == oracle_record
+    assert read_run_json(layout.run_json("half", "S0", "shared")).provenance["settings"] == {"version": "2"}
+    assert json.loads(layout.manifest.read_text())["replaced"]["changed"] == ["half.version"]
+
+
+def test_report_lists_stale_runs(half_run, tmp_path, capsys):
+    root = _copy(half_run[0], tmp_path)
+    layout = RunLayout(root)
+    # A run recorded with other tool settings than the run directory's configuration (a manual `run`, or an
+    # `all --force` that stopped before redoing it) is not scored.
+    path = layout.run_json("half", "S1", "shared")
+    record = read_run_json(path)
+    path.write_text(json.dumps(dataclasses.asdict(dataclasses.replace(
+        record, provenance={**record.provenance, "settings": {"version": "0"}}))))
+    # A suite whose build no longer matches the configuration: every run on it is stale.
+    build = json.loads(layout.build_json("S0").read_text())
+    layout.build_json("S0").write_text(json.dumps({**build, "config_hash": "0" * 64}))
+
+    assert main(["report", "--run-dir", str(root)]) == 2
+    report = _report(root)
+    stale = {(run["tool"], run["suite"], run["arm"]): run for run in report["failed_runs"]}
+    assert set(stale) == {("half", "S1", "shared"), ("oracle", "S0", "shared"), ("half", "S0", "shared")}
+    assert all(run["status"] == "stale" for run in stale.values())
+    assert "settings" in stale["half", "S1", "shared"]["error"]
+    assert "build" in stale["oracle", "S0", "shared"]["error"]
+    assert not _suite(report, "S1")["arms"]["shared"]["compared"]
+    assert not layout.tool_scores("S1", "shared", "half").exists()
+    assert "| half | S1 | shared | stale |" in layout.report_md.read_text()
+    capsys.readouterr()
+    # report compares the run directory's own tools only.
+    assert main(["report", "--run-dir", str(root), "--b", "igblast"]) == 2
+    assert "igblast" in capsys.readouterr().err
+
+
 def test_split_change_refused(toy_run, tmp_path):
     root = _copy(toy_run[0], tmp_path)
     with pytest.raises(ValueError, match=r"split dev -> test"):
@@ -259,13 +320,17 @@ def test_failed_run_returns_2_and_is_reported(tmp_path, monkeypatch):
 
     (genotype,) = report["genotype_arms"]
     row = next(row for row in genotype["rows"] if row["metric"] == "v.top1_in_set")
-    assert row["values"] == {"oracle": {"shared": 1.0, "genotype": 1.0}, "picky": {"shared": 1.0, "genotype": None}}
+    # Each value is the score report's summary entry, so its coverage travels with its mean.
+    values = {tool: {arm: entry and (entry["mean"], entry["n"], entry["coverage"]) for arm, entry in arms.items()}
+              for tool, arms in row["values"].items()}
+    assert values == {"oracle": {"shared": (1.0, 12, 1.0), "genotype": (1.0, 12, 1.0)},
+                      "picky": {"shared": (1.0, 12, 1.0), "genotype": None}}
 
     md = layout.report_md.read_text()
     section = md[md.index("## Failed runs"):md.index("## Summary")]
     assert "| picky | S0_COHORT | genotype | failed | 1 | donor00 |" in section
     assert "AttributeError: 'tuple' object has no attribute 'items'" in section
-    assert "## Genotype arms" in md
+    assert "| v.top1_in_set | 100.0% (n=12, 100%) | 100.0% (n=12, 100%) | 100.0% (n=12, 100%) | — |" in md
 
     # The failed run is retried on resume (and fails again); the completed ones are not.
     assert _all(root, suites=("S0_COHORT",), tools=("oracle", "picky"), scale=1.0, workers=1)[1] == 2

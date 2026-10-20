@@ -11,6 +11,10 @@ def _entry(a, b, verdict):
             "verdict": verdict}
 
 
+def _cell(mean, n=10, coverage=1.0):
+    return None if mean is None else {"mean": mean, "n": n, "n_applicable": n, "coverage": coverage}
+
+
 def _summary() -> dict:
     rows = {"junction.nt_exact": _entry(0.95, 0.70, "a_better"), "v.top1_in_set": _entry(0.90, 0.95, "b_better"),
             "j.top1_in_set": _entry(0.99, 0.99, "tie_or_inconclusive")}
@@ -39,9 +43,9 @@ def _summary() -> dict:
                              "examples": [["S8:cohort:000001", "v.top1_in_set", 0.0]]}],
         "suites": [s1, s8],
         "s10_vs_s1": {"baseline": "S1 full_igg", "settings": ["uniform", "np_shift"], "tools": {
-            "igblast": [{"metric": "junction.nt_exact", "s1": 0.98, "s10": 0.93, "delta": -0.05,
-                         "by_setting": {"uniform": 0.95, "np_shift": 0.91}}],
-            "alignair": [{"metric": "junction.nt_exact", "s1": 0.80, "s10": None, "delta": None,
+            "igblast": [{"metric": "junction.nt_exact", "s1": _cell(0.98), "s10": _cell(0.93, 40), "delta": -0.05,
+                         "by_setting": {"uniform": _cell(0.95), "np_shift": _cell(0.91, 10, 0.5)}}],
+            "alignair": [{"metric": "junction.nt_exact", "s1": _cell(0.80), "s10": None, "delta": None,
                           "by_setting": {"uniform": None, "np_shift": None}}]}},
         "s11_parity": {"alpha": 0.05, "tools": {
             "igblast": {"pairs": 1000, "family_size": 60, "differ": [], "rows": [
@@ -51,8 +55,8 @@ def _summary() -> dict:
                 {"metric": "junction.nt_exact", "forward": 0.8, "reverse": 0.7, "delta": -0.1, "n_paired": 1000,
                  "verdict": "a_better"}]}}},
         "genotype_arms": [{"suite": "S8", "arms": ["shared", "genotype"], "rows": [
-            {"metric": "v.top1_in_set", "values": {"igblast": {"shared": 0.9, "genotype": 0.95},
-                                                   "alignair": {"shared": 0.8, "genotype": None}}}]}],
+            {"metric": "v.top1_in_set", "values": {"igblast": {"shared": _cell(0.9), "genotype": _cell(0.95)},
+                                                   "alignair": {"shared": _cell(0.8, 1, 0.1), "genotype": None}}}]}],
         "speed": {"host": {"cpu": "Test CPU", "logical_cpus": 8}, "n_tiny": 50, "n_full": 4000, "repeats": 3,
                   "results": {"igblast_8t": {"cold_start_s": 0.5, "steady_reads_per_s": 250.0,
                                              "median_full_s": 16.5, "peak_rss_kb": 126000}}},
@@ -94,8 +98,10 @@ def test_report_renders_sections_from_summary():
 
     s10 = md[md.index("## S10 vs S1"):md.index("## S11")]
     assert "unpaired" in s10 and "informational" in s10 and "S1 full_igg" in s10
-    assert "| junction.nt_exact | 98.0% | 93.0% | -5.0 pp | 95.0% | 91.0% |" in s10
-    assert "| junction.nt_exact | 80.0% | — | — | — | — |" in s10
+    # Every mean carries its n and coverage.
+    assert ("| junction.nt_exact | 98.0% (n=10, 100%) | 93.0% (n=40, 100%) | -5.0 pp | 95.0% (n=10, 100%) "
+            "| 91.0% (n=10, 50%) |") in s10
+    assert "| junction.nt_exact | 80.0% (n=10, 100%) | — | — | — | — |" in s10
 
     s11 = md[md.index("## S11"):md.index("## Genotype arms")]
     assert "**igblast** (1000 pairs): no metric differs" in s11
@@ -104,7 +110,7 @@ def test_report_renders_sections_from_summary():
 
     genotype = md[md.index("## Genotype arms"):md.index("## Speed")]
     assert "| Metric | igblast shared | igblast genotype | alignair shared | alignair genotype |" in genotype
-    assert "| v.top1_in_set | 90.0% | 95.0% | 80.0% | — |" in genotype
+    assert "| v.top1_in_set | 90.0% (n=10, 100%) | 95.0% (n=10, 100%) | 80.0% (n=1, 10%) | — |" in genotype
 
     speed = md[md.index("## Speed"):]
     assert "| igblast_8t | 0.50 | 250.0 | 16.50 | 123.0 |" in speed and "container start" in speed

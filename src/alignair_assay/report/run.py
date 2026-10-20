@@ -6,7 +6,7 @@ and speed. A section without data is left out.
 """
 from __future__ import annotations
 
-from alignair_assay.report.markdown import MISSING, format_value, headline_table, markdown_table
+from alignair_assay.report.markdown import MISSING, format_cell, format_value, headline_table, markdown_table
 
 RUN_REPORT_KIND = "alignair_assay.run_report"
 RUN_REPORT_VERSION = "1"
@@ -111,11 +111,12 @@ def _s10_vs_s1(summary: dict) -> list[str]:
     settings, baseline = data["settings"], data["baseline"]
     lines = ["", "## S10 vs S1 (held-out settings)", "",
              f"These means are unpaired and informational (no test): S10's held-out settings against {baseline}, "
-             "the same read design and SHM rate under the default distributions. Δ = S10 − S1."]
+             "the same read design and SHM rate under the default distributions. Each mean shows its n and "
+             "coverage; Δ = S10 − S1 is the difference of the means."]
     for tool, rows in data["tools"].items():
-        table = [[row["metric"], format_value(row["metric"], row["s1"]), format_value(row["metric"], row["s10"]),
+        table = [[row["metric"], format_cell(row["metric"], row["s1"]), format_cell(row["metric"], row["s10"]),
                   format_value(row["metric"], row["delta"], delta=True),
-                  *(format_value(row["metric"], row["by_setting"].get(setting)) for setting in settings)]
+                  *(format_cell(row["metric"], row["by_setting"].get(setting)) for setting in settings)]
                  for row in rows]
         lines += ["", f"**{tool}**", "",
                   *markdown_table(["Metric", baseline, "S10", "Δ (S10 − S1)", *settings], table)]
@@ -149,11 +150,12 @@ def _genotype_arms(summary: dict) -> list[str]:
         return []
     tools = (summary["a"], summary["b"])
     lines = ["", "## Genotype arms", "",
-             "Means over each arm's cases: the shared arm gives every tool the full reference, the genotype arm "
-             "restricts it to each donor's alleles. A dash: the run failed or is missing (see Failed runs)."]
+             "Means over each arm's cases, with n and coverage: the shared arm gives every tool the full "
+             "reference, the genotype arm restricts it to each donor's alleles. A dash: no value (the run failed or "
+             "is missing, see Failed runs, or the tool covered no case)."]
     for suite in suites:
         arms = suite["arms"]
-        rows = [[row["metric"], *(format_value(row["metric"], row["values"].get(tool, {}).get(arm))
+        rows = [[row["metric"], *(format_cell(row["metric"], row["values"].get(tool, {}).get(arm))
                                   for tool in tools for arm in arms)] for row in suite["rows"]]
         lines += ["", f"### {suite['suite']}", "",
                   *markdown_table(["Metric", *(f"{tool} {arm}" for tool in tools for arm in arms)], rows)]

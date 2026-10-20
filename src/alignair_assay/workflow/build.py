@@ -18,7 +18,7 @@ from alignair_assay.suites import get_suite
 from alignair_assay.suites.donors import donors_summary, donors_to_json
 from alignair_assay.suites.engine import check_split, generate_suite
 from alignair_assay.truth.case import truth_from_case
-from alignair_assay.truth.io import TRUTH_KIND, TRUTH_VERSION, write_truth_jsonl
+from alignair_assay.truth.io import TRUTH_KIND, TRUTH_VERSION, read_truth_header, write_truth_jsonl
 from alignair_assay.truth.summary import truth_summary
 
 
@@ -71,6 +71,19 @@ def build_suite(name: str, layout: RunLayout, *, reference_name: str, split: str
     build["seconds"] = round(time.perf_counter() - start, 3)
     layout.build_json(name).write_text(json.dumps(build, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     return build
+
+
+def build_is_current(layout: RunLayout, suite: str, *, split: str, reference_digest: str, seed: int,
+                     scale: float) -> bool:
+    """True when the suite's ``build.json`` has the ``config_hash`` of this configuration and its truth file the
+    current truth version (``TRUTH_VERSION``): the build need not be redone, and runs on it may be reused."""
+    try:
+        record = json.loads(layout.build_json(suite).read_text(encoding="utf-8"))
+        version = (read_truth_header(layout.truth(suite)) or {}).get("version")
+    except (OSError, ValueError):
+        return False
+    wanted = config_hash(suite, split=split, reference_digest=reference_digest, seed=int(seed), scale=float(scale))
+    return record.get("config_hash") == wanted and version == TRUTH_VERSION
 
 
 def config_hash(suite: str, *, split: str, reference_digest: str, seed: int, scale: float) -> str:

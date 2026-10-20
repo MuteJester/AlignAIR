@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import sha256_file
+from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.report.run import RUN_REPORT_KIND, RUN_REPORT_VERSION
 from alignair_assay.runners.base import read_run_json, require_successful_run
@@ -20,6 +21,7 @@ from alignair_assay.scoring.pipeline import read_scores
 from alignair_assay.stats import compare
 from alignair_assay.suites import get_suite
 from alignair_assay.truth.io import read_truth_jsonl
+from alignair_assay.workflow.build import build_is_current
 
 if TYPE_CHECKING:
     from alignair_assay.workflow.orchestrate import RunConfig
@@ -55,12 +57,14 @@ def inputs_unchanged(layout: RunLayout, suite: str, provenance: dict) -> bool:
     return True
 
 
-def run_status(layout: RunLayout, tool: str, suite: str, arm: str) -> dict:
-    """Whether a run may be scored: ``status`` is ``ok`` (``runners.base.require_successful_run`` passes and the
-    inputs are unchanged), ``missing`` (no run record), ``failed`` (a non-zero return code, or an unreadable
-    record) or ``stale`` (the suite's files changed after the run). The dict also holds ``tool``, ``suite``,
-    ``arm``, the ``returncode``, the ``failed_donor`` and ``error`` the record names (None otherwise) and the
-    ``run_json`` path relative to the run directory."""
+def run_status(layout: RunLayout, tool: str, suite: str, arm: str, settings: dict | None) -> dict:
+    """Whether a run may be reused and scored. ``status`` is ``ok`` when ``runners.base.require_successful_run``
+    passes, the predictions exist, the record's ``settings`` (the tool's fingerprint when it ran) equal
+    ``settings`` (the run directory's configuration for the tool) and its inputs are unchanged
+    (``inputs_unchanged``). Otherwise it is ``missing`` (no run record or no predictions), ``failed`` (a non-zero
+    return code, or an unreadable record) or ``stale`` (made with other tool settings, or on files that changed
+    since). The dict also holds ``tool``, ``suite``, ``arm``, the ``returncode``, the ``failed_donor`` and
+    ``error`` the record names (None otherwise) and the ``run_json`` path relative to the run directory."""
     path = layout.run_json(tool, suite, arm)
     status = {"tool": tool, "suite": suite, "arm": arm, "status": "ok", "returncode": None, "failed_donor": None,
               "error": None, "run_json": relative(layout, path)}
@@ -76,18 +80,46 @@ def run_status(layout: RunLayout, tool: str, suite: str, arm: str) -> dict:
         return {**status, "status": "failed", "returncode": record.returncode,
                 "failed_donor": record.provenance.get("failed_donor"), "error": record.provenance.get("error")}
     status["returncode"] = record.returncode
+    if not layout.predictions(tool, suite, arm).is_file():
+        return {**status, "status": "missing", "error": "the run's predictions are missing"}
+    if record.provenance.get("settings") != settings:
+        return {**status, "status": "stale",
+                "error": "made with other tool settings than the run directory's configuration; run all again"}
     if not inputs_unchanged(layout, suite, record.provenance):
-        return {**status, "status": "stale", "error": "the suite's files changed after this run; run it again"}
+        return {**status, "status": "stale", "error": "the suite's files changed after this run; run all again"}
     return status
+
+
+def configured_settings(layout: RunLayout) -> dict[str, dict]:
+    """Per tool, the settings (fingerprint) the run directory's ``manifest.json`` records; empty without one."""
+    return ((read_json(layout.manifest) or {}).get("identity") or {}).get("settings") or {}
+
+
+def run_statuses(layout: RunLayout, cfg: RunConfig) -> dict[tuple[str, str, str], dict]:
+    """``run_status`` of every expected run (``expected_runs``) against the manifest's tool settings
+    (``configured_settings``). A run that would be ``ok`` on a suite whose build does not match ``cfg``
+    (``workflow.build.build_is_current``) is ``stale`` too."""
+    settings = configured_settings(layout)
+    digest = Reference.from_dataconfig(cfg.reference).digest()
+    current = {suite: build_is_current(layout, suite, split=cfg.split, reference_digest=digest, seed=cfg.seed,
+                                       scale=cfg.scale) for suite in cfg.suites}
+    statuses = {}
+    for tool, suite, arm in expected_runs(cfg):
+        status = run_status(layout, tool, suite, arm, settings.get(tool))
+        if status["status"] == "ok" and not current[suite]:
+            status = {**status, "status": "stale",
+                      "error": "the suite's build does not match the run directory's configuration; run all again"}
+        statuses[tool, suite, arm] = status
+    return statuses
 
 
 def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: list[dict] | None = None) -> dict:
     """The run report's data for ``cfg`` over ``layout``, as strict JSON.
 
     It holds ``kind``, ``version``, the compared tools ``a`` and ``b``, the ``config`` (suites, tools, split,
-    reference, seed, scale) and the manifest's ``config_hash``. ``failed_runs`` lists every expected run
-    (``expected_runs``) whose ``run_status`` is not ``ok``, then ``scoring_errors`` (runs that succeeded but could
-    not be scored). ``suites`` has, per suite: ``name``, ``title``, ``purpose``, ``primary``, ``cases``, ``excluded``
+    reference, seed, scale) and the manifest's ``config_hash``. ``failed_runs`` lists every expected run whose
+    status (``run_statuses``) is not ``ok``, then ``scoring_errors`` (runs that succeeded but could not be
+    scored). ``suites`` has, per suite: ``name``, ``title``, ``purpose``, ``primary``, ``cases``, ``excluded``
     (from ``build.json``), the ``oracle`` check (``status`` perfect, imperfect or not scored; ``cases``,
     ``problems`` and the first ``examples`` as ``[case id, metric, value]``) and per arm whether the two tools were
     ``compared``, the ``link`` to the arm's ``comparison.md`` (relative to the run directory), the primary-metric
@@ -96,7 +128,7 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
     ``genotype_arms`` is empty without a genotype arm (see the functions below).
     """
     a, b = cfg.tools
-    failed = [status for status in (run_status(layout, *job) for job in expected_runs(cfg)) if status["status"] != "ok"]
+    failed = [status for status in run_statuses(layout, cfg).values() if status["status"] != "ok"]
     suites = [_suite_summary(layout, cfg, name) for name in cfg.suites]
     manifest = read_json(layout.manifest) or {}
     return {
@@ -136,8 +168,9 @@ def oracle_check(layout: RunLayout, suite: str) -> dict:
 def s10_vs_s1(layout: RunLayout, cfg: RunConfig) -> dict | None:
     """S10's primary-metric means against S1's per tool, when both suites are in the run: unpaired and
     informational (no test). The baseline is S1's ``S10_BASELINE`` stratum, whose read design and SHM rate are
-    S10's. Per tool, rows hold the ``metric``, the means ``s1`` and ``s10``, their ``delta`` (S10 - S1) and the
-    means per held-out setting (``by_setting``). None when neither tool has both score reports."""
+    S10's. Per tool, rows hold the ``metric``, the summary entries (``mean``, ``n``, ``n_applicable``,
+    ``coverage``; None when absent) ``s1`` and ``s10``, the ``delta`` of their means (S10 - S1) and the entries per
+    held-out setting (``by_setting``). None when neither tool has both score reports."""
     if not {"S1", "S10"} <= set(cfg.suites):
         return None
     s10 = get_suite("S10")
@@ -152,10 +185,11 @@ def s10_vs_s1(layout: RunLayout, cfg: RunConfig) -> dict | None:
         heldout = s10_report["by_slice"].get("heldout", {})
         rows = []
         for metric in s10.primary:
-            before, after = _mean(baseline, metric), _mean(s10_report["overall"], metric)
+            before, after = _entry(baseline, metric), _entry(s10_report["overall"], metric)
+            means = [None if entry is None else entry.get("mean") for entry in (before, after)]
             rows.append({"metric": metric, "s1": before, "s10": after,
-                         "delta": None if before is None or after is None else after - before,
-                         "by_setting": {setting: _mean(heldout.get(setting), metric) for setting in settings}})
+                         "delta": None if None in means else means[1] - means[0],
+                         "by_setting": {setting: _entry(heldout.get(setting), metric) for setting in settings}})
         tools[tool] = rows
     return {"baseline": f"S1 {S10_BASELINE}", "settings": settings, "tools": tools} if tools else None
 
@@ -198,8 +232,9 @@ def s11_parity(layout: RunLayout, cfg: RunConfig) -> dict | None:
 
 
 def genotype_arms(layout: RunLayout, cfg: RunConfig) -> list[dict]:
-    """Per suite with a genotype arm: its ``arms`` and, per primary metric, each tool's mean in each arm
-    (``values[tool][arm]``; None when the tool has no score report for that arm)."""
+    """Per suite with a genotype arm: its ``arms`` and, per primary metric, each tool's summary entry in each arm
+    (``values[tool][arm]``: ``mean``, ``n``, ``n_applicable``, ``coverage``; None when the tool has no score report
+    for that arm or no value of the metric)."""
     out = []
     for name in cfg.suites:
         suite = get_suite(name)
@@ -207,7 +242,7 @@ def genotype_arms(layout: RunLayout, cfg: RunConfig) -> list[dict]:
             continue
         overall = {(tool, arm): (read_json(layout.tool_report_json(name, arm, tool)) or {}).get("overall")
                    for tool in cfg.tools for arm in suite.arms}
-        rows = [{"metric": metric, "values": {tool: {arm: _mean(overall[tool, arm], metric) for arm in suite.arms}
+        rows = [{"metric": metric, "values": {tool: {arm: _entry(overall[tool, arm], metric) for arm in suite.arms}
                                               for tool in cfg.tools}} for metric in suite.primary]
         out.append({"suite": name, "arms": list(suite.arms), "rows": rows})
     return out
@@ -248,6 +283,7 @@ def _arm_summary(layout: RunLayout, cfg: RunConfig, name: str, arm: str, primary
             "verdicts": verdicts}
 
 
-def _mean(entries: dict | None, metric: str) -> float | None:
-    """The mean of ``metric`` in a ``{metric: summary}`` mapping of a report; None when absent."""
-    return ((entries or {}).get(metric) or {}).get("mean")
+def _entry(entries: dict | None, metric: str) -> dict | None:
+    """The summary entry (``mean``, ``n``, ``n_applicable``, ``coverage``) of ``metric`` in a ``{metric:
+    summary}`` mapping of a report; None when absent."""
+    return (entries or {}).get(metric)

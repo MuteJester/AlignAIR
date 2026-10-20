@@ -76,10 +76,14 @@ class Runner(Protocol):
     ``out_tsv``, keeping logs and scratch files in ``log_dir``; ``alleles``, when given, restricts the tool to
     those reference alleles (the genotype arm). A tool that fails, or a restriction it cannot take, returns a
     ``RunResult`` with a non-zero return code and the reason as the provenance's ``error`` rather than raising, so
-    the failure is recorded.
+    the failure is recorded. ``fingerprint()`` identifies what the tool predicts with, by content as well as by
+    name (binary digests, the resolved image ID, the model file's digest), without preparing a run directory; a
+    run made with another fingerprint is another tool's run.
     """
 
     name: str
+
+    def fingerprint(self) -> dict: ...
 
     def prepare(self, layout: RunLayout, reference: Reference) -> dict: ...
 
