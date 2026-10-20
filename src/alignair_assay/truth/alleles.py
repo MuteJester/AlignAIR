@@ -12,11 +12,13 @@ from alignair_assay.truth.segment import ObservedSegment
 class AlleleTruth:
     """Truth for one allele call.
 
-    ``primary`` is the generative allele, the one the simulator sampled (GenAIRR's ``truth_{g}_call``). A record
-    that does not name it falls back to the first entry of the simulator's call list (``primary_fallback``).
-    ``generative`` is the primary's observable set: every reference allele whose sequence contains the observed
-    germline. ``alleles``, the scored set, adds the simulator's call list (``simulator_ties``, GenAIRR's
-    post-SHM best-match re-call), restricted to reference alleles, and the as-near alleles of a forward segment
+    ``primary`` is the generative allele, the one the simulator sampled (``truth.genairr.record_calls``: GenAIRR's
+    ``truth_{g}_call``, or ``{g}_call`` in its generating-reference encoding). A record that does not name it falls
+    back to the first entry of the simulator's call list (``primary_fallback``). ``generative`` is the primary's
+    observable set: every reference allele whose sequence contains the observed germline. ``alleles``, the scored
+    set, adds the simulator's call list (``simulator_ties``, GenAIRR's post-SHM best-match re-call: ``{g}_call``, or
+    ``recalled_{g}_call`` in the generating-reference encoding), restricted to reference alleles, and the as-near
+    alleles of a forward segment
     (``truth.build``: the primary's gene, as near to the read over the observed span): all are defensible calls
     for a sequence-only aligner. ``disagrees_with_simulator`` is True when the simulator's call list is not
     exactly ``generative`` (including an empty list or names not in the reference); most such lists are ties that

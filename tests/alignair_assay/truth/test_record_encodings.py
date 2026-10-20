@@ -10,7 +10,7 @@ import pytest
 from alignair_assay.core.seqops import revcomp
 from alignair_assay.truth.bench import truth_from_bench_case
 from alignair_assay.truth.build import truth_from_genairr_record
-from alignair_assay.truth.genairr import observe_forward, observe_inverted_d
+from alignair_assay.truth.genairr import observe_forward, observe_inverted_d, record_calls
 from alignair_assay.truth.segment import check_invariants
 
 # A 16-nt toy D allele. The read holds NP bases, revcomp(D[2:13]) (trims 2 and 3) and more NP bases.
@@ -236,6 +236,52 @@ def test_generating_reference_encoding_keeps_the_inference_apart(reference, gena
     bare_old = {k: v for k, v in projecting.items() if not k.startswith("truth_")}
     fallback = truth_from_genairr_record(bare_old, reference, case_id="x", stratum="t").segments["v"]
     assert fallback.alleles.primary == inferred and fallback.alleles.primary_fallback
+
+
+# Records simulated by the generating-reference GenAIRR (branch fix/biological-metadata-correctness, 2026-10-20),
+# with every segment's decoding checked against GenAIRR's own IR alignment when captured (the end-loss and removed
+# reads, whose IR pool is not the read, against the invariants): per gene, (allele, read start, read end, germline
+# start, germline end, CIGAR, mismatches, recalled, GenAIRR's first post-SHM call).
+NEW_ENGINE_RECORDS = {
+    "v_recalled": {"v": ("IGHVF6-G26*04", 0, 295, 0, 295, "295M", 36, True, "IGHVF6-G26*03"),
+                   "d": ("IGHD5-18*02", 307, 326, 0, 19, "19M", 7, False, "IGHD5-18*02"),
+                   "j": ("IGHJ4*02", 331, 372, 7, 48, "41M", 1, False, "IGHJ4*02")},
+    "d_recalled": {"v": ("IGHVF1-G3*01", 0, 297, 0, 297, "297M", 41, False, "IGHVF1-G3*01"),
+                   "d": ("IGHD6-25*01", 298, 313, 0, 15, "15M", 4, True, "IGHD6-19*01"),
+                   "j": ("IGHJ4*02", 323, 363, 8, 48, "40M", 3, False, "IGHJ4*02")},
+    "inverted_d_deletion": {"v": ("IGHVF3-G5*01", 0, 292, 0, 292, "63M1I214M1D14M", 36, False, "IGHVF3-G5*01"),
+                            "d": ("IGHD5-12*01", 294, 312, 4, 23, "8M1D10M", 2, False, "IGHD5-12*01"),
+                            "j": ("IGHJ4*02", 327, 358, 16, 48, "14M1D17M", 3, False, "IGHJ4*02")},
+    "inverted_d_recalled": {"v": ("IGHVF10-G40*05", 0, 290, 0, 291, "100M1D190M", 41, False, "IGHVF10-G40*05"),
+                            "d": ("IGHD6-25*01", 299, 309, 4, 14, "10M", 6, True, "IGHD6-19*01"),
+                            "j": ("IGHJ1*01", 324, 374, 2, 52, "50M", 10, False, "IGHJ1*01")},
+    "end_loss": {"v": ("IGHVF10-G37*04", 0, 44, 250, 294, "44M", 1, False, "IGHVF10-G37*04"),
+                 "d": ("IGHD5-18*01", 71, 89, 1, 19, "18M", 1, False, "IGHD5-18*01"),
+                 "j": ("IGHJ2*01", 106, 144, 5, 43, "38M", 2, False, "IGHJ2*01")},
+    "read_removed": {},
+}
+
+
+def test_new_engine_records_decode_as_captured(load_fixture, reference):
+    cases = load_fixture("new_engine_records.json")
+    assert [case["name"] for case in cases] == list(NEW_ENGINE_RECORDS)
+    for case in cases:
+        record, expected = case["record"], NEW_ENGINE_RECORDS[case["name"]]
+        # The generating-reference encoding: {g}_call is the generative allele, recalled_{g}_call the inference.
+        assert all(f"recalled_{g}_call" in record and record[f"{g}_call"] == record[f"truth_{g}_call"] for g in "vdj")
+        truth = truth_from_genairr_record(record, reference, case_id=case["name"], stratum="fixture")
+        assert truth.warnings == () and not truth.unscorable, case["name"]
+        assert set(truth.segments) == set(expected)
+        for g, segment in truth.segments.items():
+            first_call = record_calls(record, g)[1][0]
+            got = (segment.observed.allele, *_key(segment.observed), segment.alleles.recalled, first_call)
+            assert got == expected[g], (case["name"], g)
+            # The primary is the generative allele, the re-call is in the scored set, and a read is re-called when
+            # GenAIRR's first post-SHM call is another allele.
+            assert segment.alleles.primary == record[f"{g}_call"] and first_call in segment.alleles.alleles
+            assert segment.alleles.recalled == (first_call != segment.alleles.primary)
+        assert all(segment.inverted == (g == "d") for g, segment in truth.segments.items()
+                   if case["name"].startswith("inverted"))
 
 
 def test_segment_without_alignment_columns_is_unobserved(reference, genairr):
