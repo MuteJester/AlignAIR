@@ -362,15 +362,16 @@ def compared_metrics(primary: Sequence[str], results: dict[str, VariantResult]) 
 
 def cluster_counts(truths: Iterable, clusters: dict[str, str]) -> dict:
     """The clusters that make a suite's comparisons cluster-aware, those of two or more of the diagnosed reads
-    (``clusters`` is ``scoring.clusters.cluster_ids`` of ``truths``): ``keys`` (the ``CLUSTER_KEYS`` their reads'
-    ``groups`` have), ``clusters`` (how many) and ``cases`` (the reads in them). A cluster of one read is a read on
-    its own, as ``stats.compare`` treats it: S11 with ``max_cases`` keeping only its ``:fwd`` reads has pair ids but
-    no pair, and is compared read by read."""
+    (``clusters`` is ``scoring.clusters.cluster_ids`` of ``truths``): ``keys`` (the ``CLUSTER_KEYS`` they are
+    clustered by, the ``<key>`` of their ids ``"<stratum>/<key>:<value>"``, in ``CLUSTER_KEYS`` order; a read with a
+    clone and a pair id is clustered by its clone only), ``clusters`` (how many) and ``cases`` (the reads in them). A
+    cluster of one read is a read on its own, as ``stats.compare`` treats it: S11 with ``max_cases`` keeping only its
+    ``:fwd`` reads has pair ids but no pair, and is compared read by read. ``truths`` is not read: the ids say it."""
     sizes = Counter(clusters.values())
     members = {case for case, cluster in clusters.items() if sizes[cluster] > 1}
-    grouped = [truth.groups for truth in truths if truth.case_id in members]
-    return {"keys": [key for key in CLUSTER_KEYS if any(key in groups for groups in grouped)],
-            "clusters": len({clusters[case] for case in members}), "cases": len(members)}
+    shared = {clusters[case] for case in members}
+    return {"keys": [key for key in CLUSTER_KEYS if any(f"/{key}:" in cluster for cluster in shared)],
+            "clusters": len(shared), "cases": len(members)}
 
 
 def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Reference, layout: RunLayout, *,

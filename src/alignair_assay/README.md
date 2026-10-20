@@ -151,9 +151,9 @@ Further rules:
 
 `tests/alignair_assay/test_architecture.py` enforces the table and the first three rules by reading every module's
 imports, function-level ones included. A new subpackage, or a new module of `real/`, fails that test until it has a
-row in the test's `ALLOWED` map. Tests live in `tests/alignair_assay/<layer>/`, mirroring the package; `tests/alignair_assay/conftest.py`
-provides the `genairr` guard, the session `reference` (`HUMAN_IGH_OGRDB`) and `load_fixture(name)` for the
-committed bench cases in `tests/alignair_assay/fixtures/`.
+row in the test's `ALLOWED` map. Tests live in `tests/alignair_assay/<layer>/`, mirroring the package;
+`tests/alignair_assay/conftest.py` provides the `genairr` guard, the session `reference` (`HUMAN_IGH_OGRDB`) and
+`load_fixture(name)` for the committed bench cases in `tests/alignair_assay/fixtures/`.
 
 ## Truth conventions
 
@@ -1304,12 +1304,12 @@ training dashboard: `{"S1/baseline/junction.nt_exact": 0.77, "S1/delta/segmentat
 
 A suite's result holds `suite`, its cache `key`, `reads` (`built`, `diagnosed`, `scored`, `excluded`, `cropped`,
 `misoriented`: scored reads the model put in another frame than the truth's, see Head metrics), `clusters`
-(`cluster_counts`: the clusters of two or more diagnosed reads, their `CLUSTER_KEYS`, and how many `clusters` and
-`cases`; a cluster of one read is compared as a read on its own, so S11 with only its `:fwd` reads diagnosed is not
-cluster-aware), `heads` and each variant's `scores` (per metric: `mean`, `n`, `n_applicable`, `coverage`),
-`calibration` (per gene), `metrics` (the compared family), `variants` (`scores`, `fallbacks`, per-stage `seconds`,
-`substituted`), `contributions` (`stage_contributions`), `swaps` (`swap_effects`), the `seconds` it took,
-`replay_verified` and `replay_changes` and, in the result only, `reused`.
+(`cluster_counts`: the clusters of two or more diagnosed reads, the `CLUSTER_KEYS` their ids cluster by, and how
+many `clusters` and `cases`; a cluster of one read is compared as a read on its own, so S11 with only its `:fwd`
+reads diagnosed is not cluster-aware), `heads` and each variant's `scores` (per metric: `mean`, `n`,
+`n_applicable`, `coverage`), `calibration` (per gene), `metrics` (the compared family), `variants` (`scores`,
+`fallbacks`, per-stage `seconds`, `substituted`), `contributions` (`stage_contributions`), `swaps`
+(`swap_effects`), the `seconds` it took, `replay_verified` and `replay_changes` and, in the result only, `reused`.
 
 **Refusals.** Before the model is loaded or anything is written: no suite, an unknown suite or variant, a batch size
 or `max_cases` below 1, a suite without `build.json`, a suite whose build record or truth header names another

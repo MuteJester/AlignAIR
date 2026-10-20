@@ -412,7 +412,9 @@ def sd3_only(genotypes: Iterable[RealGenotype], sd3: Iterable[Sd3Allele]) -> set
     for allele in sd3:
         if allele.sequence not in carried:
             touched.add(allele.gene)
-            touched.update(gene_name(label) for label in allele.closest_all)
+            # ``closest_all`` defaults to (): a record built with only ``closest`` still names that allele's gene
+            closest = allele.closest_all or ((allele.closest,) if allele.closest else ())
+            touched.update(gene_name(label) for label in closest)
     return touched
 
 

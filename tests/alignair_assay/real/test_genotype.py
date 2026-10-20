@@ -378,6 +378,12 @@ def test_sd3_only_touches_the_gene_and_every_closest_gene(genotype):
     assert sd3_only([genotype], []) == set()
 
 
+def test_sd3_only_falls_back_to_the_closest_allele_without_closest_all():
+    # ``closest_all`` defaults to (): a record built with only ``closest`` still touches the closest allele's gene.
+    assert sd3_only([], [Sd3Allele("IGHV1-69*01", NOVEL_V, "IGHV1-69D")]) == {"IGHV1-69D", "IGHV1-69"}
+    assert sd3_only([], [Sd3Allele("", D_X, "IGHD4-23")]) == {"IGHD4-23"}
+
+
 # --- the pilot donors' real files -------------------------------------------------------------------------------
 
 PILOT = {"SC-23": "P25_I58_S1", "SC-4": "P25_I61_S1", "SC-11": "P25_I48_S1", "SC-6": "P25_I62_S1",

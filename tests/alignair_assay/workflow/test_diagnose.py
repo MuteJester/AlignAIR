@@ -611,8 +611,9 @@ def test_comparisons_are_clustered_by_the_suites_groups(built, tmp_path, small_m
     seen = []
 
     def by_donor(truths):
+        # ids in ``cluster_ids``' form, across strata: each S1 stratum has a donor once, so per stratum none pairs up
         seen.append(len(truths))
-        return {t.case_id: t.groups["subject"] for t in truths if "subject" in t.groups}
+        return {t.case_id: f"all/subject:{t.groups['subject']}" for t in truths if "subject" in t.groups}
 
     monkeypatch.setattr(diagnose_module, "cluster_ids", by_donor)
     monkeypatch.setattr(diagnose_module, "CLUSTER_KEYS", ("subject",))
@@ -649,6 +650,10 @@ def test_only_clusters_of_two_or_more_reads_count():
               truth("d", clone="7", pair="d"), truth("e")]
     clusters = {"a:fwd": "S/pair:a", "a:rev": "S/pair:a", "b:fwd": "S/pair:b", "c": "S/clone:7", "d": "S/clone:7"}
     assert cluster_counts(truths, clusters) == {"keys": ["clone", "pair"], "clusters": 2, "cases": 4}
+    # ``d`` has a pair id but is clustered by its clone (``cluster_ids`` takes the first key a read has): the keys
+    # are those of the cluster ids, not every key a member read has.
+    assert cluster_counts(truths[3:5], {"c": "S/clone:7", "d": "S/clone:7"}) == {
+        "keys": ["clone"], "clusters": 1, "cases": 2}
     assert cluster_counts(truths[2:3], {"b:fwd": "S/pair:b"}) == {"keys": [], "clusters": 0, "cases": 0}
     assert cluster_counts([], {}) == {"keys": [], "clusters": 0, "cases": 0}
 
