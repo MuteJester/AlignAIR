@@ -179,18 +179,22 @@ def substitutions_for(variant: str, truths: Sequence[ObservableTruth], outputs_b
 
 def run_variants(model, reference_set, cases: Sequence[dict], truths: Sequence[ObservableTruth], *,
                  reference: Reference, device: str, batch_size: int, variants: Sequence[str] = DEFAULT_VARIANTS,
-                 genotypes: Mapping[str, DonorGenotype] | None = None, baseline: StageOutputs | None = None
+                 genotypes: Mapping[str, DonorGenotype] | None = None, _baseline: StageOutputs | None = None
                  ) -> dict[str, VariantResult]:
     """Replay and score each of ``variants`` (in the given order) on the reads of ``cases`` (the suite's case dicts:
     ``case_id`` and the presented ``sequence``).
 
     A pure replay (the baseline) comes first: it gives the substitutions their reads and the model's own values.
-    ``baseline``, when given, is that replay, already run on the cases' reads (as ``replay(model, reference_set,
-    sequences, ids, ...)`` without substitutions), and is not run again. Each variant's rows are scored against the
-    truths of the replayed cases (others are ignored), with the donor ``genotypes`` when given, and against
-    ``reference``, the truth reference. ValueError, before anything is replayed, when the model's reference is not
-    ``reference`` (``replay.check_reference``: it names the first differing allele), for an unknown variant, when no
-    truth is scored, or for a ``baseline`` of other reads than the cases'."""
+    Each variant's rows are scored against the truths of the replayed cases (others are ignored), with the donor
+    ``genotypes`` when given, and against ``reference``, the truth reference. ValueError, before anything is
+    replayed, when the model's reference is not ``reference`` (``replay.check_reference``: it names the first
+    differing allele), for an unknown variant, or when no truth is scored.
+
+    ``_baseline`` is private to ``workflow.diagnose``, which has already replayed the cases for the head metrics: it
+    must be that pure replay, of this ``model`` and ``reference_set`` on these cases' reads with this device and batch
+    size (``replay(model, reference_set, sequences, ids, ...)`` without substitutions), and is then not run again.
+    Only its reads are checked (ValueError for other reads than the cases', in their order); a replay of another
+    model would silently become the baseline."""
     check_reference(reference_set, reference)
     unknown = [name for name in variants if name not in _FIELDS]
     if unknown:
@@ -201,12 +205,12 @@ def run_variants(model, reference_set, cases: Sequence[dict], truths: Sequence[O
     truths = [t for t in truths if t.case_id in replayed]
     if not any(t.excluded is None for t in truths):
         raise ValueError("no truth to score: none of the truths is a scored case among the replayed cases")
-    if baseline is not None and list(baseline.ids) != ids:
-        raise ValueError(f"the baseline replay is of other reads: {len(baseline.ids)} reads, not the {len(ids)} "
+    if _baseline is not None and list(_baseline.ids) != ids:
+        raise ValueError(f"the baseline replay is of other reads: {len(_baseline.ids)} reads, not the {len(ids)} "
                          "cases' in their order")
     locus = _locus(reference_set)
-    if baseline is None:
-        baseline = replay(model, reference_set, sequences, ids, device=device, batch_size=batch_size)
+    baseline = (replay(model, reference_set, sequences, ids, device=device, batch_size=batch_size)
+                if _baseline is None else _baseline)
 
     results: dict[str, VariantResult] = {}
     for name in dict.fromkeys(variants):

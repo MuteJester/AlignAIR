@@ -340,7 +340,7 @@ def test_run_variants_reuses_a_given_baseline_replay(small_model, s0_cases, s0_t
     handle = model.orientation_head.register_forward_hook(lambda *_: calls.append(1))  # once per forward pass
     try:
         given = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
-                             batch_size=BATCH, variants=("baseline", "argmax_decoder"), baseline=baseline)
+                             batch_size=BATCH, variants=("baseline", "argmax_decoder"), _baseline=baseline)
         assert len(calls) == math.ceil(len(ids) / BATCH)  # the argmax variant's replay only
     finally:
         handle.remove()
@@ -351,7 +351,7 @@ def test_run_variants_reuses_a_given_baseline_replay(small_model, s0_cases, s0_t
     assert _same_scores(given["argmax_decoder"].scores, own["argmax_decoder"].scores)
     with pytest.raises(ValueError, match="baseline replay is of other reads"):
         run_variants(model, reference_set, s0_cases[:4], s0_truths, reference=reference, device="cpu",
-                     batch_size=BATCH, variants=("baseline",), baseline=baseline)
+                     batch_size=BATCH, variants=("baseline",), _baseline=baseline)
 
 
 # --- stage contributions ----------------------------------------------------------------------------------------

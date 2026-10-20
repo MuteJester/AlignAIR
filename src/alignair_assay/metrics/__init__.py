@@ -18,13 +18,14 @@ CaseScores = dict[str, float]
 # Of the head-level metrics (``head.*``, ``diagnostics.heads``), the signed boundary errors are compared through their
 # ``*_abs_err`` twins; true-allele accuracy is informational for the same reason as above; the number of alleles over
 # the selection threshold describes the head; GenAIRR's record mutation rate is the training target, not observable
-# truth; and the crop flag describes the read.
+# truth; and the crop and misorientation flags describe the read.
 INFORMATIONAL: frozenset[str] = frozenset({".set_size", ".top1_generative", "junction.start_err", "junction.end_err",
                                            "v_indel.mutation_count_err", "v_indel.germline_errors",
                                            "v_novel.snp_mutations",
                                            ".start_err.soft", ".start_err.argmax", ".end_err.soft", ".end_err.argmax",
                                            ".allele_top1_generative", ".n_above_threshold",
-                                           "head.mutation_rate_abs_err.record", "head.cropped"})
+                                           "head.mutation_rate_abs_err.record", "head.cropped",
+                                           "head.misoriented"})
 
 # Errors, failure rates and counts; the genotype metrics (``metrics.genotype``) are rates of calls outside the donor's
 # genotype and of calls of its deleted genes. A head-level error names its decoder or its truth source after the

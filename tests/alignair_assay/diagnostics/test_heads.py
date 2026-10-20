@@ -102,7 +102,8 @@ def _blank(truths, *, width=WIDTH, names=NAMES, allowed=None) -> StageOutputs:
                               start={g: raw[f"{g}_start"].reshape(-1) for g in names},
                               end={g: raw[f"{g}_end"].reshape(-1) for g in names},
                               mutation_rate=raw["mutation_rate"].reshape(-1),
-                              indel_count=raw["indel_count"].reshape(-1), productive=raw["productive"].reshape(-1) > 0.5, orientation=np.zeros(n, int))
+                              indel_count=raw["indel_count"].reshape(-1),
+                              productive=raw["productive"].reshape(-1) > 0.5, orientation=np.zeros(n, int))
     return StageOutputs(ids=[t.case_id for t in truths], raw=raw, predictions=predictions,
                         canonical=[_window(t, width)[1] for t in truths], segments=None, calls={}, germline={},
                         records=[], airr_rows=[], seconds={}, allele_names={g: list(v) for g, v in names.items()},
@@ -142,6 +143,7 @@ def _oracle(truths, names, *, width=WIDTH):
             d = t.segments.get("d")
             out.predictions.allele["d"][i, -1] = float(d is None or d.observed_length < MIN_OBSERVED["d"])
         out.raw["orientation_logits"][i, t.orientation] = 5.0
+        out.predictions.orientation[i] = t.orientation
         if "v" in t.segments:
             out.raw["mutation_rate"][i, 0] = t.v_mismatches / t.segments["v"].observed_length
         out.raw["indel_count"][i, 0] = sum(_indel_bases(seg.observed.cigar) for seg in t.segments.values())
@@ -329,6 +331,7 @@ def test_cropped_reads_score_only_the_edges_the_model_saw():
     _edge(out, 0, "v", "start", soft=0.5, argmax=0)
     _edge(out, 0, "v", "end", soft=31.2, argmax=30)
     _edge(out, 0, "d", "start", soft=40.1, argmax=41)
+    out.predictions.orientation[1] = 1  # the model saw the reverse read in the truth's frame
     _edge(out, 1, "v", "end", soft=20.5, argmax=21)   # canonical 40 and 41
     _edge(out, 1, "j", "start", soft=27.0, argmax=31)  # canonical 47 (two before 49) and 51
     _edge(out, 1, "j", "end", soft=59.25, argmax=59)   # canonical 79
@@ -350,6 +353,30 @@ def test_cropped_reads_score_only_the_edges_the_model_saw():
     assert scores["rev"]["head.j.end_exact.soft"] == scores["rev"]["head.j.end_exact.argmax"] == 1.0
     assert "head.v.allele_top1" in scores["fwd"] and "head.j.allele_top1" in scores["fwd"]  # alleles still scored
     assert [scores[c]["head.cropped"] for c in ("fwd", "rev", "plain")] == [1.0, 1.0, 0.0]
+
+
+# --- misoriented reads ------------------------------------------------------------------------------------------
+
+def test_a_misoriented_read_has_no_boundary_score_and_is_counted():
+    # The model's frame is not the truth's: its positions do not describe the truth read, so the read's boundaries are
+    # left out (not scored as a miss, which a frame mismatch could also hit by chance) and head.misoriented counts it.
+    truths = [_truth("fwd", 50, {"v": _seg(0, 30, "V1*01"), "j": _seg(36, 50, "J1*01")}),
+              _truth("rev", 50, {"v": _seg(0, 30, "V1*01"), "j": _seg(36, 50, "J1*01")}, orientation=1),
+              _truth("rev_seen", 50, {"v": _seg(0, 30, "V1*01")}, orientation=1)]
+    out = _blank(truths)
+    for i in range(3):
+        _edge(out, i, "v", "start", soft=0.2, argmax=0)  # where the truth V starts, in any frame
+    out.predictions.orientation[2] = 1  # the model says reverse-complemented: the truth's frame
+    out.raw["orientation_logits"][2, 1] = 5.0
+    _probs(out, 1, "v", V1_01=0.9)
+    scores = head_scores(out, truths)
+
+    assert [scores[c]["head.misoriented"] for c in ("fwd", "rev", "rev_seen")] == [0.0, 1.0, 0.0]
+    assert scores["fwd"]["head.v.start_exact.soft"] == scores["rev_seen"]["head.v.start_exact.soft"] == 1.0
+    assert not any(name.startswith(("head.v.start", "head.v.end", "head.j.start", "head.j.end")) for name in
+                   scores["rev"])
+    # The read's other heads are still scored: its alleles do not depend on the frame.
+    assert scores["rev"]["head.v.allele_top1"] == 1.0 and scores["rev"]["head.orientation.correct"] == 0.0
 
 
 # --- applicability and input checks -------------------------------------------------------------------------------
@@ -427,9 +454,9 @@ def test_registry_classifies_every_head_metric():
     informational = {name for name in METRIC_NAMES
                      if name.endswith(("_err.soft", "_err.argmax")) and "_abs_err" not in name}
     informational |= {f"head.{g}.{m}" for g in GENES for m in ("allele_top1_generative", "n_above_threshold")}
-    informational |= {"head.mutation_rate_abs_err.record", "head.cropped"}
+    informational |= {"head.mutation_rate_abs_err.record", "head.cropped", "head.misoriented"}
     errors = {name for name in METRIC_NAMES if "_abs_err" in name} - informational
-    assert len(METRIC_NAMES) == len(set(METRIC_NAMES)) == 58 and len(informational) == 20 and len(errors) == 14
+    assert len(METRIC_NAMES) == len(set(METRIC_NAMES)) == 59 and len(informational) == 21 and len(errors) == 14
     for name in METRIC_NAMES:
         assert name.startswith("head."), name
         if name in informational:

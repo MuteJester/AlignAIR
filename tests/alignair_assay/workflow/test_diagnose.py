@@ -94,8 +94,18 @@ def _cached(result: DiagnosticsResult, suite: str) -> dict:
 
 # --- end to end -------------------------------------------------------------------------------------------------
 
-def test_end_to_end_report_renders_every_section(built, small_model):
-    result = evaluate(small_model, built, ["S0", "S1"], device="cpu", batch_size=32, profile=True)
+class Forward(torch.nn.Module):
+    """An orientation head that calls every read forward, so the forward reads (one of S0's two, about half of S1's)
+    are in the truth's frame and their boundaries are scored."""
+
+    def forward(self, emb, mask):
+        return torch.nn.functional.one_hot(torch.zeros_like(mask[:, 0], dtype=torch.long), 4).float()
+
+
+def test_end_to_end_report_renders_every_section(built, make_small_model):
+    model, reference_set = make_small_model(REFERENCE, seed=0)
+    model.orientation_head = Forward()
+    result = evaluate((model, reference_set), built, ["S0", "S1"], device="cpu", batch_size=32, profile=True)
     assert isinstance(result, DiagnosticsResult)
     assert list(result.suites) == ["S0", "S1"]
     for name, suite in result.suites.items():
@@ -115,9 +125,11 @@ def test_end_to_end_report_renders_every_section(built, small_model):
                 assert {"mean_from_paired", "mean_to_paired", "delta", "verdict"} <= set(entry)
     s1 = result.suites["S1"]
     cropped = sum(len(case["sequence"]) > 576 for case in read_cases(built.cases("S1")))
+    wrong = round(s1["reads"]["scored"] * (1 - s1["heads"]["head.orientation.correct"]["mean"]))
     assert s1["reads"] == {"built": 100, "diagnosed": 100, "scored": s1["reads"]["scored"],
-                           "excluded": 100 - s1["reads"]["scored"], "cropped": cropped}
+                           "excluded": 100 - s1["reads"]["scored"], "cropped": cropped, "misoriented": wrong}
     assert s1["heads"]["head.orientation.correct"]["n"] == s1["reads"]["scored"]
+    assert s1["heads"]["head.misoriented"]["n"] == s1["reads"]["scored"]
     # S1 has donors: its variants are scored against each read's donor genotype, as all scores the suite.
     assert "v.outside_genotype" in s1["variants"]["baseline"]["scores"]
 
@@ -427,6 +439,28 @@ def test_the_profile_is_cached_with_its_own_key(built, tmp_path, save_checkpoint
     monkeypatch.setattr(diagnose_module, "assay_code_sha256", lambda: "1" * 64)
     evaluate(checkpoint, layout, ["S0"], **{**options, "batch_size": 4})
     assert profiles == [BATCH, 4, 4]
+
+
+def test_the_profile_times_exactly_the_diagnosed_reads(built, tmp_path, small_model, monkeypatch, replays):
+    layout = _copy(built, tmp_path)
+    # reads.fasta is a copy of the cases' reads for the tools; the profile must not depend on it.
+    layout.reads("S1").write_text(">other\nACGTACGTACGT\n", encoding="utf-8")
+    timed = []
+    monkeypatch.setattr(diagnose_module, "profile_model",
+                        lambda model, reference_set, sequences, **kwargs: timed.append(list(sequences)) or {
+                            "device": "cpu", "batch_size": BATCH, "reads": len(sequences), "repeats": 1,
+                            "reads_per_second": 1.0, "seconds_per_run": 1.0, "modules": {}, "stages": {}})
+    evaluate(small_model, layout, ["S0", "S1"], **{**FAST, "profile": True}, max_cases=7)
+    diagnosed = [case["sequence"] for name in ("S0", "S1")
+                 for case in select_cases(read_cases(layout.cases(name)), 7)]
+    assert timed == [diagnosed]
+    assert [case_id for ids in replays for case_id in ids] == [
+        case["case_id"] for name in ("S0", "S1") for case in select_cases(read_cases(layout.cases(name)), 7)]
+
+
+def test_a_bare_suite_name_is_one_suite(built, tmp_path, small_model):
+    result = evaluate(small_model, _copy(built, tmp_path), "S0", **FAST)
+    assert list(result.suites) == ["S0"]
 
 
 # --- the replay pin ---------------------------------------------------------------------------------------------

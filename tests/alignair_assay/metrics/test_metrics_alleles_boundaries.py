@@ -367,7 +367,8 @@ def test_metric_direction():
                                        "v_indel.mutation_count_err", "v_indel.germline_errors",
                                        "v_novel.snp_mutations", ".start_err.soft", ".start_err.argmax",
                                        ".end_err.soft", ".end_err.argmax", ".allele_top1_generative",
-                                       ".n_above_threshold", "head.mutation_rate_abs_err.record", "head.cropped"})
+                                       ".n_above_threshold", "head.mutation_rate_abs_err.record", "head.cropped",
+                                       "head.misoriented"})
 
 
 def test_interval_distances():

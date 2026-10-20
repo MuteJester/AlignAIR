@@ -57,7 +57,7 @@ from typing import TypeVar
 
 import torch
 
-from alignair_assay.core.cases import evenly_spaced, read_cases, read_fasta
+from alignair_assay.core.cases import evenly_spaced, read_cases
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import files_digest, sha256_file
 from alignair_assay.core.reference import Reference
@@ -154,8 +154,8 @@ def replay_pin() -> tuple[str, dict[str, str]]:
 def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, device: str | None = None,
              batch_size: int = 256, variants: Sequence[str] = DEFAULT_VARIANTS, profile: bool | None = None,
              max_cases: int | None = None, allow_unverified_replay: bool = False) -> DiagnosticsResult:
-    """Diagnose a model on ``suites``, built on the dev split in ``layout``, as the module docstring describes;
-    reuses each cached suite result whose key matches in full.
+    """Diagnose a model on ``suites`` (suite names, or one name), built on the dev split in ``layout``, as the module
+    docstring describes; reuses each cached suite result whose key matches in full.
 
     ``model_or_checkpoint`` is a ``.alignair`` model file, loaded on ``device`` (default ``DEFAULT_DEVICE``,
     ``"cuda"``), or an in-memory ``(model, reference_set)`` pair from a training loop. A pair's model is unwrapped
@@ -173,7 +173,8 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     every suite's cache key, so verified and unverified results never mix.
 
     Each suite's result holds ``suite``; its cache ``key``; ``reads`` (``built``, ``diagnosed``, ``scored``,
-    ``excluded`` and ``cropped``: reads longer than the model's window); ``clusters`` (the ``keys`` of
+    ``excluded``, ``cropped``: reads longer than the model's window, and ``misoriented``: scored reads the model put
+    in another frame than the truth's, whose boundaries are not scored); ``clusters`` (the ``keys`` of
     ``scoring.clusters.CLUSTER_KEYS``, and the ``clusters`` and ``cases`` of the diagnosed reads that have one);
     ``heads`` and each variant's ``scores`` (metric -> ``mean``, ``n``, ``n_applicable``, ``coverage``);
     ``calibration`` (gene -> ``heads.calibration_table``); ``metrics`` (the compared family, ``compared_metrics``);
@@ -183,7 +184,7 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     ``variants`` are run in ``ablation.DEFAULT_VARIANTS`` order (``variant_set``: the baseline is added to any
     other); none runs the heads, the calibration and the profile only. Raises as the module docstring says."""
     start = time.perf_counter()
-    names = list(dict.fromkeys(suites))
+    names = list(dict.fromkeys([suites] if isinstance(suites, str) else suites))
     if not names:
         raise ValueError("no suite to diagnose")
     for name in names:
@@ -381,7 +382,7 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
         heads = head_scores(baseline, truths, cases)
         calibration = {gene: calibration_table(baseline, truths, gene) for gene in baseline.allele_names}
         results = (run_variants(model, reference_set, cases, truths, reference=reference, device=device,
-                                batch_size=batch_size, variants=variants, genotypes=genotypes, baseline=baseline)
+                                batch_size=batch_size, variants=variants, genotypes=genotypes, _baseline=baseline)
                    if variants else {})
     except ValueError as error:
         raise ValueError(f"suite {name}: {error}") from error
@@ -391,7 +392,8 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
     result = {
         "suite": name, "key": key,
         "reads": {"built": len(built), "diagnosed": len(cases), "scored": scored, "excluded": len(truths) - scored,
-                  "cropped": sum(bool(record.get("length_cropped")) for record in baseline.records)},
+                  "cropped": sum(bool(record.get("length_cropped")) for record in baseline.records),
+                  "misoriented": int(sum(case.get("head.misoriented", 0.0) for case in heads.values()))},
         "clusters": {"keys": list(CLUSTER_KEYS), "clusters": len(set(clusters.values())), "cases": len(clusters)},
         "heads": _summary(heads), "calibration": calibration, "metrics": family,
         "variants": {variant: {"scores": _summary(found.scores), "fallbacks": found.fallbacks,
@@ -407,10 +409,9 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
 def _profile(model, reference_set, layout: RunLayout, key_name: str, identity: dict, names: list[str], *,
              max_cases: int | None, device: str, batch_size: int) -> dict:
     """The model's speed profile on up to ``PROFILE_READS`` of the diagnosed reads of ``names`` (each suite's
-    ``select_cases`` of its reads, in suite order, then evenly spaced), reused from its cache when the key matches,
-    with ``reused``."""
-    reads = [sequence for name in names
-             for sequence in select_cases([sequence for _, sequence in read_fasta(layout.reads(name))], max_cases)]
+    ``select_cases`` of its cases, as ``_diagnose_suite`` takes them, in suite order, then evenly spaced), reused from
+    its cache when the key matches, with ``reused``."""
+    reads = [case["sequence"] for name in names for case in select_cases(read_cases(layout.cases(name)), max_cases)]
     reads = select_cases(reads, PROFILE_READS)
     key = json.loads(json.dumps({
         "kind": PROFILE_KIND, "version": CACHE_VERSION, "model": identity,

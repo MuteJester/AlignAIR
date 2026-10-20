@@ -7,8 +7,24 @@ pure functions of a ``StageOutputs`` and the truths; a case is matched to its re
 **Frame.** The segment heads work on the read the model saw, in its forward frame, padded on the right to the logits
 width (576 for the released model). A read longer than that is cropped by AlignAIR to the first ``width`` bases of
 the presented read, which is the canonical prefix of a forward read and the canonical suffix of a reverse-complemented
-one. Model positions are moved into the truth's canonical frame by that window's start. With a wrong orientation the
-model's frame is not the truth's, and its boundaries are scored as wrong, as the product would place them.
+one. Model positions are moved into the truth's canonical frame by that window's start.
+
+**Misoriented reads.** When the model's orientation (``predictions.orientation``, the frame the replay canonicalized
+the read in) is not the truth's, its positions are on another strand or in another direction than the truth's, so
+no boundary of the read is scored: comparing them would score a frame mismatch, which can also land on the truth by
+chance, as a boundary error. ``head.misoriented`` (informational) is 1.0 for such a read, so its sum counts them; the
+orientation head's own error is ``head.orientation.correct``, and the end-to-end cost of a wrong orientation is the
+``true_orientation`` step of the ablations. The read's allele and metadata heads are still scored.
+
+**The window's last position.** The logits have ``width`` positions, ``0..width-1``. An end-exclusive edge at
+``width`` itself (a segment that runs to the end of a read of exactly ``width`` bases, or, on a cropped
+reverse-complemented read, to the canonical end, which is the end of the window) cannot be decoded by either decoder,
+yet it is scored when its interval lies inside the window: such an edge is always at least one base off. It is rare
+(no released-model suite has many reads of exactly 576 bases) and is left in, not excluded.
+
+**Cropped reads.** Only the boundaries a crop hides are left out. The allele and metadata heads of a cropped read
+are scored against the truth of the whole read, although the model saw only its window: a segment cut by the crop is
+still scored on its alleles, and the mutation rate and indel count still count the bases past the cut.
 
 **Boundaries** (``head.{g}.{edge}_{kind}.{decoder}``, ``edge`` ``start`` or ``end``, 0-based, end-exclusive like
 ``correct_segments``):
@@ -37,7 +53,9 @@ with ``cases``): against the GenAIRR record's ``mutation_rate``, the training ta
 against the inserted plus deleted bases of the truth's observed V, D and J CIGARs (GenAIRR's indels are single
 bases), when every gene's truth was built. ``head.productive.correct``: probability >= 0.5 matches the truth, where
 it is defined. ``head.orientation.correct``: the orientation logits' argmax is the truth orientation (0 or 1).
-``head.cropped`` (informational): 1.0 for a read longer than the window, so its sum counts the crops.
+``head.cropped`` (informational): 1.0 for a read longer than the window, so its sum counts the crops;
+``head.misoriented`` (informational): 1.0 for a read in another frame than the truth's, whose boundaries are not
+scored.
 """
 from __future__ import annotations
 
@@ -68,7 +86,7 @@ METRIC_NAMES: tuple[str, ...] = (
     *(f"head.{g}.{name}" for g in GENES for name in ("allele_top1_generative", "n_above_threshold")),
     "head.d.short_d_prob_ok",
     "head.mutation_rate_abs_err.read", "head.mutation_rate_abs_err.record", "head.indel_count_abs_err",
-    "head.productive.correct", "head.orientation.correct", "head.cropped",
+    "head.productive.correct", "head.orientation.correct", "head.cropped", "head.misoriented",
 )
 
 
@@ -118,16 +136,19 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
     ranking = {g: allele_ranking(outputs, g) for g in alleles}
     probs = {g: np.asarray(outputs.predictions.allele[g]) for g in alleles}
     short_d = _short_d_index(outputs)
+    frames = model_frames(outputs)
 
     scores: dict[str, CaseScores] = {}
     for truth, i in pairs:
-        case: CaseScores = {"head.cropped": float(len(truth.sequence) > width)}
+        misoriented = int(frames[i]) != truth.orientation
+        case: CaseScores = {"head.cropped": float(len(truth.sequence) > width), "head.misoriented": float(misoriented)}
         window = read_window(truth, width)
         for g in genes:
             seg = _scored_segment(truth, g)
             if seg is None:
                 continue
-            case.update(_boundary_scores(g, seg, i, decoded[g], window))
+            if not misoriented:
+                case.update(_boundary_scores(g, seg, i, decoded[g], window))
             if g in ranking:
                 case.update(_allele_scores(g, seg, ranking[g][i], probs[g][i], outputs.allele_names[g]))
         if short_d is not None and "d" not in truth.unscorable:
@@ -195,6 +216,15 @@ def calibration_table(outputs: StageOutputs, truths: list[ObservableTruth], gene
     n = len(conf)
     return {"gene": gene, "n": n, "bins": table, "ece": ece if n else None,
             "confidence": float(conf.mean()) if n else None, "accuracy": float(corr.mean()) if n else None}
+
+
+def model_frames(outputs: StageOutputs) -> np.ndarray:
+    """Per read, the orientation id the replay canonicalized it with (``predictions.orientation``; 0 for every read
+    of a model without an orientation head, as ``pipeline._canonicalize`` treats it)."""
+    orientation = getattr(outputs.predictions, "orientation", None)
+    if orientation is None:
+        return np.zeros(len(outputs.ids), dtype=int)
+    return np.asarray(orientation, dtype=int).reshape(-1)
 
 
 def _flat(values) -> np.ndarray:
