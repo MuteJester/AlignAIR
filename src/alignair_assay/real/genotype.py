@@ -27,8 +27,10 @@ carry no IUIS name, and VDJbase names a novel allele after its closest IMGT alle
     ``RealGenotype.genes`` counts every carried gene. OGRDB's own functional flag disagrees on two pilot alleles:
     IGHV3-20*02 is functional in OGRDB but noted "First cysteine not found", and IGHV8-51-1*02 is non-functional
     in OGRDB with no note. The note is the donor's own annotation, so it decides.
-  - The D calls are filtered as they are loaded (``filter_d``); the dropped calls and their reasons are in
-    ``source["d_dropped"]``. Identical rows (one allele on two contigs of a haplotype) are one record.
+  - The D calls are filtered as they are loaded (``filter_d``); the dropped calls are ``RealGenotype.dropped``,
+    and their reasons are in ``source["d_dropped"]``. A gene whose only calls were dropped
+    (``RealGenotype.dropped_genes``) has its truth dropped: it is not a gene the donor lacks. Identical rows (one
+    allele on two contigs of a haplotype) are one record.
 - ``filter_d``: VDJbase's D calls include assembly artefacts. A D call is dropped when its id carries a gap-indel
   token (a ``-`` for a deleted base, an ``i<pos><bases>`` insertion, or a block whose bases do not fill its span),
   or when it is under ``D_MIN_IDENTITY`` (90%) identical to its closest IMGT allele (VDJbase's
@@ -128,6 +130,15 @@ class RealGenotype:
     captured: frozenset[str] | None = None
     # provenance: the file, its SHA-256, the OGRDB release and what the loader left out
     source: dict = field(default_factory=dict)
+    # the captured genes known on both haplotypes (``real.locus.with_capture``); None until that is known
+    resolved: frozenset[str] | None = None
+    # the D calls ``filter_d`` dropped, in file order; not among ``alleles``
+    dropped: tuple[RealAllele, ...] = ()
+
+    def dropped_genes(self) -> set[str]:
+        """The genes whose only calls ``filter_d`` dropped: their truth is dropped, so a gene there is not one the
+        donor lacks."""
+        return {allele.gene for allele in self.dropped} - {allele.gene for allele in self.alleles}
 
     def carried(self, gene: str) -> tuple[RealAllele, ...]:
         """The donor's alleles of IUIS gene ``gene``, in file order; () for a gene it does not carry."""
@@ -227,10 +238,10 @@ def load_vdjbase_csv(path, donor: str, reference: Reference, iuis_map: IuisMap) 
 
     ``source`` holds ``kind``, ``path``, ``sha256``, ``sample`` (the file's stem, VDJbase's sample id), ``donor``,
     ``project``, ``rows``, ``duplicate_rows``, ``gapped_mismatch`` (V alleles whose gapped form is not their
-    sequence), ``d_dropped`` (``[allele_id, reason]`` pairs), ``ogrdb`` (the IUIS map's release and SHA-256) and the
-    ``reference_digest``. ValueError, naming the line, for a map built against another reference, a missing
-    column, a row of another subject, a gene that is not V, D or J, an empty sequence, a haplotype other than 0, 1
-    or 2, an identity that is not a number, or a file without rows."""
+    sequence), ``d_dropped`` (``[allele_id, reason]`` pairs; the dropped calls themselves are ``dropped``), ``ogrdb``
+    (the IUIS map's release and SHA-256) and the ``reference_digest``. ValueError, naming the line, for a map built
+    against another reference, a missing column, a row of another subject, a gene that is not V, D or J, an empty
+    sequence, a haplotype other than 0, 1 or 2, an identity that is not a number, or a file without rows."""
     path = Path(path)
     if iuis_map.reference_digest != reference.digest():
         raise ValueError(f"the IUIS map was built against another reference (digest {iuis_map.reference_digest[:12]}, "
@@ -266,7 +277,9 @@ def load_vdjbase_csv(path, donor: str, reference: Reference, iuis_map: IuisMap) 
                         for key in ("germline_set_id", "germline_set_ref", "release_version", "release_date",
                                     "sha256")},
               "reference_digest": reference.digest()}
-    return RealGenotype(donor=donor, alleles=tuple(kept), source=source)
+    retained = set(kept)  # the alleles are distinct records (identical rows were made one above)
+    return RealGenotype(donor=donor, alleles=tuple(kept), source=source,
+                        dropped=tuple(allele for allele in alleles if allele not in retained))
 
 
 def _row_allele(row: dict, where: str, iuis_map: IuisMap) -> tuple[RealAllele, bool]:

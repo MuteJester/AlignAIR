@@ -30,6 +30,7 @@ from alignair_assay.real.locus import (
     parse_sam_spans,
     read_gene_coords,
     samtools_command,
+    spanned_by_haplotype,
     with_capture,
 )
 
@@ -167,10 +168,41 @@ def test_with_capture_adds_every_carried_gene():
     assert genotype.source["sample"] == "P25_I58_S1" and "capture" not in GENOTYPE.source
     assert genotype.source["capture"] == {"spanned": ["IGHV1-2", "IGHV3-23"],
                                           "carried_not_spanned": ["IGHJ4", "IGHV3-25"],
-                                          "spanned_not_carried": ["IGHV3-23"], "captured": 4}
+                                          "spanned_not_carried": ["IGHV3-23"], "half_resolved": ["IGHV3-25"],
+                                          "captured": 4, "resolved": 3}
     recorded = with_capture(GENOTYPE, {"IGHV1-2"}, {"command": ["docker", "run"], "spanned": "ignored"})
     assert recorded.source["capture"]["command"] == ["docker", "run"]
     assert recorded.source["capture"]["spanned"] == ["IGHV1-2"]
+
+
+def test_spanned_by_haplotype():
+    spans = [(0, 2000, 2100), (1, 900, 1400), (1, 3900, 4400), (2, 950, 1350)]
+    assert spanned_by_haplotype(spans, COORDS) == {0: {"IGHD3-3"}, 1: {"IGHV1-2", "IGHV3-23"}, 2: {"IGHV1-2"}}
+    assert captured_genes(spans, COORDS) == {"IGHD3-3", "IGHV1-2"}
+    assert spanned_by_haplotype([], COORDS) == {0: frozenset(), 1: frozenset(), 2: frozenset()}
+    with pytest.raises(ValueError, match="haplotype 3"):
+        spanned_by_haplotype([(3, 900, 1400)], COORDS)
+
+
+def test_with_capture_resolves_the_genes_known_on_both_haplotypes():
+    """A gene is resolved when both haplotypes are known there: an unphased contig spans it or carries it, or each
+    of haplotypes 1 and 2 spans it or carries an allele of it. IGHV3-25 is carried on haplotype 1 while no
+    haplotype-2 contig spans it: its second allele is unknown."""
+    genotype = replace(GENOTYPE, alleles=(*GENOTYPE.alleles, _allele("IGHV4-34", 1)))
+    haplotypes = {0: {"IGHD3-3"}, 1: {"IGHV3-23"}, 2: {"IGHV3-23", "IGHV4-34"}}
+    resolved = with_capture(genotype, {"IGHD3-3", "IGHV3-23"}, haplotypes=haplotypes)
+    assert resolved.resolved == {"IGHD3-3", "IGHV3-23", "IGHV1-2", "IGHJ4", "IGHV4-34"}
+    assert resolved.captured == {"IGHD3-3", "IGHV3-23", "IGHV1-2", "IGHJ4", "IGHV4-34", "IGHV3-25"}
+    assert resolved.source["capture"]["half_resolved"] == ["IGHV3-25"]
+    assert resolved.source["capture"]["resolved"] == 5
+    # without the spans per haplotype, the captured genes and the alleles' haplotypes alone: IGHV4-34, carried on
+    # haplotype 1 only, is not resolved
+    alone = with_capture(genotype, {"IGHD3-3", "IGHV3-23"})
+    assert alone.resolved == {"IGHD3-3", "IGHV3-23", "IGHV1-2", "IGHJ4"}
+    assert alone.source["capture"]["half_resolved"] == ["IGHV3-25", "IGHV4-34"]
+    assert GENOTYPE.resolved is None
+    with pytest.raises(ValueError, match="haplotype"):
+        with_capture(genotype, set(), haplotypes={3: {"IGHV1-2"}})
 
 
 def test_the_samtools_image_is_pinned_by_digest():
@@ -249,7 +281,10 @@ def test_donor_capture_records_how_it_was_computed(tmp_path, monkeypatch):
     monkeypatch.setattr(container.subprocess, "run", _Docker(sam))
     genotype = donor_capture(GENOTYPE, bam, bed)
     assert genotype.captured == {"IGHV1-2", "IGHV3-25", "IGHJ4"}
+    # IGHV3-23 lies inside the haplotype-1 contig only, and IGHV3-25 is carried on haplotype 1 only
+    assert genotype.resolved == {"IGHV1-2", "IGHJ4"}
     record = genotype.source["capture"]
+    assert record["half_resolved"] == ["IGHV3-25"]
     assert record["command"] == samtools_command(bam)
     assert record["image"]["image"] == SAMTOOLS_IMAGE
     assert record["image"]["repo_digests"] == [container.pinned_repo_digest(SAMTOOLS_IMAGE)]
@@ -296,6 +331,11 @@ PILOT = {"SC-23": "P25_I58_S1", "SC-11": "P25_I48_S1", "W-97": "P25_I151_S1", "W
 SPANNED = {"SC-23": (48, 0, 0), "SC-11": (49, 19, 0), "W-97": (42, 0, 0), "W-133": (40, 3, 1),
            "SC-4": (49, 13, 0), "SC-6": (46, 20, 0), "W-89": (52, 14, 5), "W-131": (48, 23, 0)}
 NO_COORDS = {"IGHV3-25", "IGHV3-62", "IGHV8-51-1"}
+# Per donor: carried V genes whose second haplotype is unknown (carried on one haplotype, the other not spanned).
+HALF_RESOLVED_V = {"SC-23": ["IGHV3-15", "IGHV3-62"], "SC-11": ["IGHV3-15", "IGHV3-25", "IGHV3-74"],
+                   "W-97": ["IGHV3-62"], "W-133": ["IGHV3-21"], "SC-4": ["IGHV3-74", "IGHV4-59", "IGHV4-61"],
+                   "SC-6": ["IGHV3-30-5", "IGHV4-28", "IGHV4-31"], "W-89": ["IGHV3-33", "IGHV4-4"],
+                   "W-131": ["IGHV3-25", "IGHV4-4"]}
 
 
 @pytest.fixture(scope="module")
@@ -328,13 +368,15 @@ def test_sc23_contigs_capture_every_v_gene_in_its_csv(reference, iuis):
     assert set(record["carried_not_spanned"]) == NO_COORDS | {"IGHV3-15"}
     assert record["spanned_not_carried"] == ["IGHV4-30-2"]
     assert len(record["spanned"]) == 48 and len(captured.captured) == 52
+    # so its second IGHV3-15 allele is unknown, as is IGHV3-62's (carried on one haplotype, and not in the BED)
+    assert record["half_resolved"] == ["IGHV3-15", "IGHV3-62"] and len(captured.resolved) == 50
 
 
 @needs_data
 @needs_docker
 def test_the_pilot_donors_capture(reference, iuis):
     root = Path(DATA)
-    found = {}
+    found, half = {}, {}
     for donor, sample in PILOT.items():
         genotype = load_vdjbase_csv(root / SAMPLES / f"{sample}.csv", donor, reference, iuis)
         captured = donor_capture(genotype, root / SAMPLES / f"{sample}.bam", root / GENE_COORDS)
@@ -342,4 +384,7 @@ def test_the_pilot_donors_capture(reference, iuis):
         found[donor] = tuple(sum(gene.startswith(kind) for gene in spanned) for kind in ("IGHV", "IGHD", "IGHJ"))
         assert captured.captured >= {allele.gene for allele in genotype.alleles}
         assert NO_COORDS & genotype.genes("v") <= set(captured.source["capture"]["carried_not_spanned"])
+        assert captured.resolved <= captured.captured
+        half[donor] = [gene for gene in captured.source["capture"]["half_resolved"] if gene.startswith("IGHV")]
     assert found == SPANNED
+    assert half == HALF_RESOLVED_V

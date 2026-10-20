@@ -137,7 +137,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed) and `identity` (the model key: `weights_sha256` and the AlignAIR code identity) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318) and the paper's novel alleles (`sd3_novel`, `sd3_only`) | core, real.genotype |
 | `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the pilot pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
-| `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), the capture rule (`captured_genes`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
+| `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), the capture and resolved rules (`captured_genes`, `spanned_by_haplotype`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
 | `real.preprocess` | annotation-free preprocessing of a real run (see Real data): the protocol classifier (`classify_protocol`), the pRESTO recipes (`recipe`) run in the pinned Immcantation container (`IMMCANTATION_IMAGE`), the primers (`VH_PRIMERS`, `C_PRIMERS_MULTIPLEX`, `CREGION_RC`), the cap (`cap_sequences`), the primer spans (`primer_spans`) and `preprocess_run` | core, real.preprocess |
 | `real.truth` | each real read's tool-neutral truth (see Real data): `RealTruth` and `real_truths`, the observed span (`observed_span`, `mask_primers`), IMGT codon 104 (`cys104_end`), the known answer (`known_match`, `known_answer`), the Cys104 anchor (`cys104_in_read`), the junction (`junction_by_motif`) and `clonotype_clusters` | core, real.genotype, real.truth |
 | `cli` | the `python -m alignair_assay` commands | everything |
@@ -1424,19 +1424,22 @@ across sources. The shared reference's V names are OGRDB F/G labels (`IGHVF6-G21
   `IGHVF10-G42*01`, each one base shorter than OGRDB's IGHV3-13*06 and IGHV3-43D*05. Eleven carry two labels:
   identical-sequence paralogs such as `IGHVF6-G21*06` = IGHV1-69*01 / IGHV1-69D*01, and the identical D pairs.
 - `load_vdjbase_csv(path, donor, reference, iuis_map)` gives a `RealGenotype` (`donor`, `alleles`, `captured`,
-  `source`) of `RealAllele` records (`allele_id`, `gene`, `segment`, `sequence`, `gapped`, `haplotype`,
-  `functional`, `shared`, `iuis`, `imgt_identity`), one per haplotype per gene. Haplotype 0 is unphased, not
-  homozygous. `gapped` is VDJbase's V-REGION-GAPPED, whose gaps are `.` columns and `-` for a deleted base.
-  `RealGenotype.carried(gene)`, `genes(segment)` (every carried gene, functional or not) and `absent_genes()`
-  (genes with an allele absent from the shared reference) read it; `captured` stays None until the contig spans
-  are known. The shared reference's own gapped V sequences are `Reference.gapped(name)`, from the dataconfig.
+  `source`, `resolved`, `dropped`) of `RealAllele` records (`allele_id`, `gene`, `segment`, `sequence`,
+  `gapped`, `haplotype`, `functional`, `shared`, `iuis`, `imgt_identity`), one per haplotype per gene. Haplotype 0
+  is unphased, not homozygous. `gapped` is VDJbase's V-REGION-GAPPED, whose gaps are `.` columns and `-` for a
+  deleted base. `RealGenotype.carried(gene)`, `genes(segment)` (every carried gene, functional or not) and
+  `absent_genes()` (genes with an allele absent from the shared reference) read it; `captured` and `resolved` stay
+  None until the contig spans are known. The shared reference's own gapped V sequences are
+  `Reference.gapped(name)`, from the dataconfig.
 - `functional` is False when VDJbase's `notes` flag a V-REGION defect: a stop codon, a first or second cysteine or
   the conserved tryptophan not found, or a V-REGION length mismatch. On the eight pilot donors this reproduces
   VDJbase's genotype API allele for allele. Their functional V genes are the API's counts (SC-23 47, SC-4 49,
   SC-11 50, SC-6 49, W-97 39, W-89 53, W-133 40, W-131 48), out of 51, 53, 54, 52, 42, 57, 44 and 52 V genes in
   their CSVs.
 - `filter_d` drops a D call whose id has a gap-indel token (`g8-`, `8---a11`, an `i15ac` insertion) or whose
-  identity to its closest IMGT allele is under 90%; the loader applies it and lists what it dropped in `source`.
+  identity to its closest IMGT allele is under 90%; the loader applies it, keeps the dropped calls as
+  `RealGenotype.dropped` and lists them with their reasons in `source`. A gene whose only calls were dropped
+  (`dropped_genes()`) has its truth dropped: it is not a gene the donor lacks.
   `merge_identical(reference)` maps each shared allele to those with its sequence (D4-4*01 / D4-11*01,
   D5-5*01 / D5-18*01). `upto(gapped, 318)` is an allele through IMGT position 318, past which rearranged reads
   cannot tell alleles apart (Peres et al. 2023).
@@ -1476,6 +1479,11 @@ overlap, do not capture it.
 - On the pilot donors the contigs span 40 to 52 V genes. Calls to V genes the donor lacks can be `unsupported_gene`
   only for 0 to 3 genes per donor (IGHV4-30-2 on SC-23; IGHV3-11, IGHV3-15 and IGHV4-30-2 on W-97; IGHV4-31 on
   SC-4); calls to the donor's other missing genes are excluded.
+- A gene is resolved (`RealGenotype.resolved`) when both haplotypes are known there: a haplotype-0 contig spans it
+  or carries an allele of it, or each of haplotypes 1 and 2 does (`spanned_by_haplotype` gives the spans per
+  haplotype). A carried gene that is not resolved has an unknown second allele, so R1 excludes an allele-level
+  unsupported call to it; `source["capture"]["half_resolved"]` lists them: 1 to 3 V genes per pilot donor
+  (IGHV3-15 and IGHV3-62 on SC-23, IGHV3-62 on W-97).
 
 **Preprocessing (`real.preprocess`).** Each run's pairs become the unique sequences the tools are given, with pRESTO
 0.7.9 in `IMMCANTATION_IMAGE` (immcantation/suite 4.8.0, pinned by digest), one container per step: as the current

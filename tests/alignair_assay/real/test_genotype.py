@@ -205,6 +205,19 @@ def test_the_loader_drops_noisy_d_calls_and_records_them(genotype):
     assert genotype.source["ogrdb"]["release_version"] == 8 and len(genotype.source["sha256"]) == 64
 
 
+def test_the_dropped_d_calls_stay_on_the_genotype(genotype):
+    # a gene whose only calls were dropped has its truth dropped: it is not a gene the donor lacks
+    (dropped,) = genotype.dropped
+    assert dropped.allele_id == "IGHD3-3*01_g8-_c18a" and dropped.gene == "IGHD3-3" and dropped.segment == "d"
+    assert genotype.dropped_genes() == {"IGHD3-3"} and "IGHD3-3" not in genotype.genes("d")
+    # a gene with a kept call as well is carried, not dropped
+    kept = RealAllele(allele_id="IGHD3-3*01", gene="IGHD3-3", segment="d", sequence=D_33, gapped=None, haplotype=2,
+                      functional=True, shared=("IGHD3-3*01",), iuis=("IGHD3-3*01",))
+    both = RealGenotype(donor=DONOR, alleles=(*genotype.alleles, kept), dropped=genotype.dropped)
+    assert both.dropped_genes() == set() and "IGHD3-3" in both.genes("d")
+    assert RealGenotype(donor=DONOR, alleles=genotype.alleles).dropped_genes() == set()
+
+
 def test_the_loader_refuses_inconsistent_inputs(tmp_path, iuis):
     path = _write_csv(tmp_path / "other.csv", ROWS[:1], subject="W-97")
     with pytest.raises(ValueError, match="W-97.*not SC-23|subject W-97"):

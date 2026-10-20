@@ -11,6 +11,12 @@ read off a contig, so a carried gene is captured by definition), or when its int
 of haplotype 0 (unphased), or inside a contig of haplotype 1 and a contig of haplotype 2. Two contigs of one
 haplotype that cover a gene only together do not capture it, and neither does a partial overlap.
 
+**Resolved.** A gene is resolved when both of the donor's haplotypes are known there: a haplotype-0 contig spans it
+or carries an allele of it, or each of haplotypes 1 and 2 spans it or carries an allele of it. A carried gene can be
+captured but not resolved: an allele read off a haplotype-1 contig while no haplotype-2 contig spans the gene (SC-23's
+IGHV3-15, whose haplotype-2 contig starts 9 bases inside it). Its second allele is unknown, so R1 excludes an
+allele-level unsupported call there (``real.metrics``).
+
 - **The haplotype is the contig name's ``h=``, not the alignment's read group.** IGenotyper names each contig after
   the phased block and haplotype it was assembled from (``c=igh:<start>-<end>_h=<0|1|2>_i=<n>_t=<n>_/0/0_0``; 0
   is an unphased block, assembled from both haplotypes' reads). The ``RG`` tag means something else:
@@ -51,7 +57,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -184,33 +190,59 @@ def _view(bam_path, timeout: float | None) -> tuple[str, list[str], dict]:
     return completed.stdout, argv, image
 
 
-def captured_genes(spans: Iterable[tuple[int, int, int]], coords: dict[str, tuple[int, int]]) -> frozenset[str]:
-    """The genes of ``coords`` whose interval lies wholly inside one span of haplotype 0, or inside a span of
-    haplotype 1 and a span of haplotype 2 (the rule's span clauses; ``with_capture`` adds the carried genes).
-    ValueError for a haplotype other than 0, 1 or 2."""
+def spanned_by_haplotype(spans: Iterable[tuple[int, int, int]],
+                         coords: dict[str, tuple[int, int]]) -> dict[int, frozenset[str]]:
+    """Haplotype (0, 1 and 2) -> the genes of ``coords`` whose interval lies wholly inside one span of that
+    haplotype. ValueError for a haplotype other than 0, 1 or 2."""
     by_haplotype: dict[int, list[tuple[int, int]]] = {haplotype: [] for haplotype in HAPLOTYPES}
     for haplotype, start, end in spans:
         if haplotype not in by_haplotype:
             raise ValueError(f"haplotype {haplotype} is not 0 (unphased), 1 or 2")
         by_haplotype[haplotype].append((start, end))
-
-    def spanned(haplotype: int, start: int, end: int) -> bool:
-        return any(first <= start and end <= last for first, last in by_haplotype[haplotype])
-
-    return frozenset(gene for gene, (start, end) in coords.items()
-                     if spanned(0, start, end) or (spanned(1, start, end) and spanned(2, start, end)))
+    return {haplotype: frozenset(gene for gene, (start, end) in coords.items()
+                                 if any(first <= start and end <= last for first, last in intervals))
+            for haplotype, intervals in by_haplotype.items()}
 
 
-def with_capture(genotype: RealGenotype, captured: Iterable[str], record: dict | None = None) -> RealGenotype:
+def captured_genes(spans: Iterable[tuple[int, int, int]], coords: dict[str, tuple[int, int]]) -> frozenset[str]:
+    """The genes of ``coords`` whose interval lies wholly inside one span of haplotype 0, or inside a span of
+    haplotype 1 and a span of haplotype 2 (the rule's span clauses; ``with_capture`` adds the carried genes).
+    ValueError for a haplotype other than 0, 1 or 2."""
+    return _span_clauses(spanned_by_haplotype(spans, coords))
+
+
+def _span_clauses(haplotypes: dict[int, frozenset[str]]) -> frozenset[str]:
+    return haplotypes[0] | (haplotypes[1] & haplotypes[2])
+
+
+def with_capture(genotype: RealGenotype, captured: Iterable[str], record: dict | None = None, *,
+                 haplotypes: Mapping[int, Iterable[str]] | None = None) -> RealGenotype:
     """``genotype`` with ``captured`` set to the genes ``captured`` (the span clauses, ``captured_genes``) and every
-    gene the donor carries an allele of. ``source["capture"]`` holds ``record`` (``donor_capture``'s provenance),
-    then ``spanned``, ``carried_not_spanned`` and ``spanned_not_carried`` (sorted gene lists; the last are the
-    candidate deletions or assembly gaps) and the ``captured`` count."""
+    gene the donor carries an allele of, and ``resolved`` set to the genes known on both haplotypes (the module
+    docstring). ``haplotypes`` is ``spanned_by_haplotype`` of the same spans; without it, a gene is resolved by the
+    span clauses or the alleles' haplotypes alone. ``source["capture"]`` holds ``record`` (``donor_capture``'s
+    provenance), then ``spanned``, ``carried_not_spanned``, ``spanned_not_carried`` (the candidate deletions or
+    assembly gaps) and ``half_resolved`` (carried genes not resolved), sorted gene lists, and the ``captured`` and
+    ``resolved`` counts. ValueError for a haplotype other than 0, 1 or 2, or for ``haplotypes`` whose span clauses
+    are not ``captured``."""
     spanned = frozenset(captured)
     carried = {allele.gene for allele in genotype.alleles}
+    known = {haplotype: {allele.gene for allele in genotype.alleles if allele.haplotype == haplotype}
+             for haplotype in HAPLOTYPES}
+    if haplotypes is not None:
+        unknown = set(haplotypes) - set(HAPLOTYPES)
+        if unknown:
+            raise ValueError(f"haplotype {sorted(unknown)[0]} is not 0 (unphased), 1 or 2")
+        by_haplotype = {haplotype: frozenset(haplotypes.get(haplotype, ())) for haplotype in HAPLOTYPES}
+        if _span_clauses(by_haplotype) != spanned:
+            raise ValueError("the spans per haplotype do not give the captured genes")
+        for haplotype in HAPLOTYPES:
+            known[haplotype] |= by_haplotype[haplotype]
+    resolved = frozenset(spanned | known[0] | (known[1] & known[2]))
     summary = {"spanned": sorted(spanned), "carried_not_spanned": sorted(carried - spanned),
-               "spanned_not_carried": sorted(spanned - carried), "captured": len(spanned | carried)}
-    return replace(genotype, captured=spanned | carried,
+               "spanned_not_carried": sorted(spanned - carried), "half_resolved": sorted(carried - resolved),
+               "captured": len(spanned | carried), "resolved": len(resolved)}
+    return replace(genotype, captured=spanned | carried, resolved=resolved,
                    source={**genotype.source, "capture": {**(record or {}), **summary}})
 
 
@@ -245,4 +277,5 @@ def donor_capture(genotype: RealGenotype, bam_path, bed_path, *, timeout: float 
               "genotype": genotype_csv,
               "spans": {f"h{haplotype}": sum(span[0] == haplotype for span in spans) for haplotype in HAPLOTYPES},
               "code_sha256": _CODE_SHA256, "fingerprint": fingerprint}
-    return with_capture(genotype, captured_genes(spans, coords), record)
+    haplotypes = spanned_by_haplotype(spans, coords)
+    return with_capture(genotype, _span_clauses(haplotypes), record, haplotypes=haplotypes)
