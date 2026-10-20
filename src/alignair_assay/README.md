@@ -39,8 +39,8 @@ PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter --suit
   - Scores, comparisons and the report are always recomputed from the current runs, so a scoring change takes
     effect on the next `all` without rebuilding or rerunning anything.
 - **In-process evaluation.** alignair-local runs the AlignAIR CLI in a subprocess and scores its AIRR output. The
-  `diagnostics` layer is where in-process code lives (the stage replay, head-level scoring and truth-substitution
-  ablations, see Diagnostics); it and `core/reference.py` are the only code that imports `alignair`.
+  `diagnostics` layer is where in-process code lives (the stage replay, head-level scoring, truth-substitution
+  ablations and speed profile, see Diagnostics); it and `core/reference.py` are the only code that imports `alignair`.
 
 ## Layers and dependency rule
 
@@ -58,7 +58,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
 | `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, `read_genotypes`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
-| `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics) and `ablation` (truth-substitution variants and stage contributions) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
+| `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics) and `ablation` (truth-substitution variants and stage contributions) and `profile` (per-module and per-stage speed) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -1079,3 +1079,29 @@ baseline error. Two consequences:
   predictions that gate the assembly) and to the AIRR assembly itself. The tests show that, given the true germline
   alignment, the assembly writes the V germline coordinates in IMGT-gapped numbering. It also writes the CDR3
   coordinates, from which the junction coordinates are read, as columns of the gapped sequence alignment.
+
+### Speed profile
+
+`diagnostics.profile.profile_model(model, reference_set, sequences, *, device, batch_size, warmup_batches=1,
+repeats=3)` shows where AlignAIR spends its time. It replays the predict pipeline on the reads and returns the
+`device`, `batch_size`, `reads`, `reads_per_second` and two breakdowns. Each entry of a breakdown gives `ms_per_read`
+and its `share` of that breakdown's total.
+
+- `modules`: the network's leaf submodules, timed with forward hooks: `embedding` (two calls per forward, summed),
+  `orientation_head`, `meta_tower`, `meta_heads.<name>`, and for each gene `<g>.seg_tower`, `start_head`,
+  `end_head`, `cutout`, `cls_tower`, `cls_mid` and `cls_head`. `other` is the rest of the forward stage (orientation
+  transform, soft-argmax, tokenizing, copies to the host). The shares sum to 1 over the forward stage's time, so
+  compare them with the `forward` share of `stages` to get a module's share of the whole run.
+- `stages`: the replay's stages (`replay.STAGES`). `forward` is the network call; `germline`, `airr` and the other
+  stages are the Python post-processing. The shares sum to 1 over the run.
+
+How to read it. Towers that repeat across genes (`v.seg_tower`, `d.seg_tower`, `j.seg_tower`, the three
+`cls_tower`s and `meta_tower`: seven conv towers) cost about the same each, so their combined share is the cost of
+not sharing the convolution. The flatten-to-dense heads (`start_head`, `end_head`, `cls_mid`, `meta_heads`) are the
+cost of the fixed 576-position window. Post-network cost is the `germline` and `airr` stages.
+
+The module timings come from separate, hooked runs (on CUDA the hooks synchronize the device around each module,
+which slows the run), and the stage timings and `reads_per_second` from unhooked runs; each is the median of
+`repeats`. A warm-up replay of `warmup_batches` batches comes first, so CUDA start-up and first-call costs are
+excluded. The hooks are removed in a `finally`, and a profile never runs inside an accuracy replay: rows replayed
+after a profile equal rows replayed before it (a test pins this).
