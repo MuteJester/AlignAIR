@@ -1539,16 +1539,20 @@ another shared reference:
   cannot be windowed, give none. An allele whose codon 104 is off columns 309-311 takes that of a donor allele with
   its exact sequence: VDJbase's `IGHV4-38-2*02_..._i93agt_...` call is IGHV4-39*01 gapped with a spurious insertion.
 - `naive`: IgM and a known answer, so the observed V is the allele through Cys104.
-- `clonotype`: `<donor>/<junction>` for every read, known or not. Cys104 is the best Hamming match (at most 3
-  mismatches, then the leftmost) of any donor anchor; only a read without one is searched, by the same rule,
-  against the shared reference's V anchors (from `Reference.gapped` and `cys104_end`), which place the junction and
-  nothing else. `anchor` records which (`"donor"`, `"shared"` or None). W118 is the first IMGT J motif Trp118
-  Gly X Gly (`TGG GG. ... GG.`, IGHJ2's Arg included) after Cys104, and the junction runs from the Cys codon
-  through the Trp codon, `N`s included; a read without both anchors is `<donor>/single:<id>`.
-  `clonotype_clusters` gives `stats.compare` its clusters.
+- `clonotype`: `<donor>/<junction>` for every read, known or not. A known answer's Cys104 is the end of its exact
+  window; any other read's is the best Hamming match (at most 3 mismatches, then the leftmost) of any donor anchor;
+  only a read without one is searched, by the same rule, against the shared reference's V anchors (from
+  `Reference.gapped` and `cys104_end`), which place the junction and nothing else. A shared reference whose V
+  alleles give no anchor (one read from a FASTA file) is refused. `anchor` records which (`"donor"`, `"shared"` or
+  None). W118 is the first IMGT J motif Trp118 Gly X Gly121 (`TGG GG. ... GG.`, IGHJ2's Arg included) after
+  Cys104 that ends an in-frame junction of 15 to 150 nt, and the junction runs from the Cys codon through the Trp
+  codon, `N`s included; a read without both anchors is `<donor>/single:<id>`. `clonotype_clusters` gives
+  `stats.compare` its clusters.
 - On the pilot, W-97 has 5.7% known answers (5.6% naive); Cys104 is placed on 92.8% of its reads (66.5% by the
-  donor's anchors, 26.3% by the shared reference's), 89.5% have a junction, and 5,900 clusters hold two or more
-  reads (the largest 101). SC-23 has 25.9% (24.1%); 91.5% (90.7% and 0.8%), 90.0%, and 1,076 clusters (33). W-97's
+  donor's anchors, 26.3% by the shared reference's), 88.0% have a junction, and 5,795 clusters hold two or more
+  reads (the largest 101). SC-23 has 25.9% (24.1%); 91.5% (90.7% and 0.8%), 88.9%, and 1,074 clusters (33). The
+  frame and length bounds left 1,075 of W-97's first-motif junctions and 175 of SC-23's out (out of frame or under
+  15 nt); 320 and 56 of those reads end at a later in-frame motif, the rest are clonotypes of their own. W-97's
   genotype holds no IGHV4 gene while about a quarter of its reads are IGHV4, which the shared anchors place. Every
   known answer's Cys104 is where the donor's Hamming anchor puts it, and of the reads with no anchor the reverse
   complement has one on 3 of SC-23's 10,733 and none of W-97's 50,000.

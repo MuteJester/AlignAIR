@@ -52,32 +52,40 @@ Cys104 is the allele without a mismatch. Mutations past Cys104 (CDR3, J) are not
 **Clonotype** (``cys104_in_read``, ``junction_by_motif``). Every read, known or not, is placed by the same rule, so
 mutated members of an expanded clone share an id:
 
-1. Cys104: the best Hamming match, at most ``MAX_ANCHOR_MISMATCHES`` (3), of any of the donor's anchors inside the
-   observed span; the fewest mismatches win, then the leftmost position (which allele's anchor does not matter:
-   only the position is used). ``N`` is a mismatch. The search is exact for this bound: an anchor split into
-   four blocks keeps one block without a mismatch, and every place a block occurs is checked.
-2. Only a read without a donor anchor is then searched, by the same rule, against the anchors of the shared
+1. Cys104 of a known answer is the end of its exact window (``KnownMatch.cys_end``).
+2. Cys104 of any other read: the best Hamming match, at most ``MAX_ANCHOR_MISMATCHES`` (3), of any of the donor's
+   anchors inside the observed span; the fewest mismatches win, then the leftmost position (which allele's anchor
+   does not matter: only the position is used). ``N`` is a mismatch. The search is exact for this bound: an anchor
+   split into four blocks keeps one block without a mismatch, and every place a block occurs is checked. On the
+   pilot reads it puts every known answer's Cys104 at the end of its window too (the gated test checks it); it
+   would not where another anchor occurs exactly further left in the read, which the window rules out.
+3. Only a read without a donor anchor is then searched, by the same rule, against the anchors of the shared
    reference's V alleles: the 30 nt ending at each one's Cys104, from its IMGT-gapped form (``Reference.gapped``)
    and ``cys104_end``. This places the junction of a read from a gene the donor's genomic genotype lacks, and
    nothing else: never a known answer or ``known_gene``. A germline sequence used to find a codon is still
-   tool-neutral; no aligner output is involved. ``RealTruth.anchor`` says which anchors placed Cys104
-   (``"donor"``, ``"shared"`` or None), whether or not a W118 follows.
-3. W118: the first ``W118_MOTIF`` at or past the end of the Cys codon, IMGT's J motif Trp118 Gly119 X Gly121
-   (``TGG GG. ... GG.``; IGHJ2 has Arg where the other IGHJ genes have Gln). The junction (IMGT: Cys104 to Trp118
-   inclusive) is the read from the Cys codon's first base to the end of the Trp codon. ``N`` bases between the two
-   (masked or uncalled) stay in it as ``N``, so a consensus ``N`` puts a read in a cluster of its own.
-4. The clonotype is ``f"{donor}/{junction}"``; a read without both anchors is ``f"{donor}/single:{read_id}"``.
+   tool-neutral; no aligner output is involved. A shared reference with V alleles none of which gives an anchor
+   (one read from a FASTA file has no gapped form) is refused rather than let it switch this step off.
+   ``RealTruth.anchor`` says which anchors placed Cys104 (``"donor"``, ``"shared"`` or None), whether or not a
+   W118 follows.
+4. W118: the first ``W118_MOTIF`` at or past the end of the Cys codon that ends an in-frame junction of
+   ``MIN_JUNCTION`` to ``MAX_JUNCTION`` (15 to 150) nt. The motif is IMGT's J motif Trp118 Gly119 X Gly121
+   (``TGG GG. ... GG.``; IGHJ2 has Arg where the other IGHJ genes have Gln), and the junction (IMGT: Cys104 to
+   Trp118 inclusive) is the read from the Cys codon's first base to the end of the Trp codon. A motif out of frame
+   with the Cys codon, or closer to it than 15 nt, is passed over for the next one; past 150 nt the search stops.
+   Out-of-frame and truncated junctions would merge reads of different clones (on W-97, 1,029 junctions were out
+   of frame and 46 under 15 nt); a nonproductive read without an in-frame motif is a clonotype of its own, which
+   is conservative. ``N`` bases between the two (masked or uncalled) stay in it as ``N``, so a consensus ``N``
+   puts a read in a cluster of its own.
+5. The clonotype is ``f"{donor}/{junction}"``; a read without both anchors is ``f"{donor}/single:{read_id}"``.
 
-A known answer's own Cys104 is the end of its exact window. The donor's Hamming anchor puts it there too unless
-another anchor occurs further left in the read with no mismatch; on the pilot reads the two agree for every known
-answer, which the gated test checks. ``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id
--> clonotype map.
+``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id -> clonotype map.
 
 **On the pilot reads** (Task 4's preprocessed run): W-97 (multiplex, 50,000 sequences) has 5.7% known answers and
 5.6% naive; Cys104 is placed on 92.8% of its reads (66.5% by the donor's anchors, 26.3% by the shared reference's)
-and 89.5% have a junction. SC-23 (5'RACE, 10,733) has 25.9% and 24.1%; 91.5% (90.7% donor, 0.8% shared) and
-90.0%. W-97's genomic genotype holds no IGHV4 gene while about a quarter of its reads are IGHV4: the shared
-anchors place them.
+and 88.0% have an in-frame junction of 15 to 150 nt (the first motif would give 89.5%, 1,075 of them out of frame
+or under 15 nt; 320 of those take a later in-frame motif). SC-23 (5'RACE, 10,733) has 25.9% and 24.1%; 91.5%
+(90.7% donor, 0.8% shared) and 88.9% (90.0%; 175, 56). W-97's genomic genotype holds no IGHV4 gene while about a
+quarter of its reads are IGHV4: the shared anchors place them.
 """
 from __future__ import annotations
 
@@ -100,8 +108,11 @@ MIN_WINDOW = 200
 # IMGT nt 310-312, codon 104, as 0-based columns of an IMGT-gapped V-REGION.
 CYS104_COLUMNS = (309, 312)
 CYS_CODONS = frozenset({"TGT", "TGC"})
-# IMGT's J motif, Trp118 Gly119 X Gly120: TGG GG. ... GG. (IGHJ2 has Arg where the other IGHJ genes have Gln)
+# IMGT's J motif, Trp118 Gly119 X Gly121: TGG GG. ... GG. (IGHJ2 has Arg where the other IGHJ genes have Gln)
 W118_MOTIF = re.compile(r"TGGGG....GG.")
+# The shortest and longest junction (Cys104 through Trp118, in nt) a W118 motif may end.
+MIN_JUNCTION = 15
+MAX_JUNCTION = 150
 # The isotype a naive read must be (``real.preprocess``'s C primer gene).
 NAIVE_ISOTYPE = "IGHM"
 
@@ -191,14 +202,15 @@ def observed_span(read: str, primer_masked) -> tuple[int, int]:
 
 def known_match(read: str, observed: tuple[int, int], alleles: Iterable[RealAllele], *,
                 min_window: int = MIN_WINDOW) -> KnownMatch | None:
-    """The known answer of ``read`` among the V alleles of ``alleles`` (others are skipped), over its ``observed``
-    span (``observed_span``), as the module docstring defines it; None without one."""
+    """The known answer of the primer-masked read ``read`` (``mask_primers``) among the V alleles of ``alleles``
+    (others are skipped), over its ``observed`` span (``observed_span``), as the module docstring defines it; None
+    without one."""
     return _known_match(read.upper(), observed, _index(alleles), min_window)
 
 
 def known_answer(read: str, observed: tuple[int, int], alleles: Iterable[RealAllele], *,
                  min_window: int = MIN_WINDOW) -> frozenset[str] | None:
-    """The allele ids of ``known_match``; None without a known answer."""
+    """The allele ids of ``known_match`` of the primer-masked read ``read``; None without a known answer."""
     match = known_match(read, observed, alleles, min_window=min_window)
     return None if match is None else frozenset(allele.allele_id for allele in match.alleles)
 
@@ -210,14 +222,24 @@ def cys104_in_read(read: str, observed: tuple[int, int], alleles: Iterable[RealA
     return _anchor_end(read.upper(), observed, _index(alleles, max_mismatches).anchors)
 
 
-def junction_by_motif(read: str, cys_end_in_read: int) -> str | None:
+def junction_by_motif(read: str, cys_end_in_read: int, *, min_length: int = MIN_JUNCTION,
+                      max_length: int = MAX_JUNCTION) -> str | None:
     """The junction: from the Cys codon's first base (``cys_end_in_read - 3``) to the end of the Trp codon of the
-    first ``W118_MOTIF`` at or past ``cys_end_in_read``; None without one. ``N`` bases are kept. ValueError for a
-    Cys end that does not leave a whole codon inside the read."""
+    first ``W118_MOTIF`` at or past ``cys_end_in_read`` that makes it a whole number of codons, ``min_length`` to
+    ``max_length`` nt long; None without one. ``N`` bases are kept. ValueError for a Cys end that does not leave a
+    whole codon inside the read."""
     if not 3 <= cys_end_in_read <= len(read):
         raise ValueError(f"Cys104 end {cys_end_in_read} is not inside a read of {len(read)} nt")
-    found = W118_MOTIF.search(read.upper(), cys_end_in_read)
-    return None if found is None else read[cys_end_in_read - 3:found.start() + 3].upper()
+    read, start = read.upper(), cys_end_in_read - 3
+    found = W118_MOTIF.search(read, cys_end_in_read)
+    while found is not None:
+        length = found.start() + 3 - start
+        if length > max_length:
+            return None
+        if length % 3 == 0 and length >= min_length:
+            return read[start:found.start() + 3]
+        found = W118_MOTIF.search(read, found.start() + 1)
+    return None
 
 
 def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: RealGenotype, reference: Reference, *,
@@ -256,7 +278,8 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
             raise ValueError(f"read {read_id}: {error}") from None
         observed = observed_span(read, [])
         match = _known_match(read, observed, index, min_window)
-        anchor, cys_end = "donor", _anchor_end(read, observed, index.anchors)
+        # a known answer's Cys104 is the end of its exact window; any other read's, the best Hamming anchor
+        anchor, cys_end = "donor", match.cys_end if match is not None else _anchor_end(read, observed, index.anchors)
         if cys_end is None:
             anchor, cys_end = "shared", _anchor_end(read, observed, shared_anchors)
         if cys_end is None:
@@ -306,13 +329,19 @@ def _index(alleles: Iterable[RealAllele], max_mismatches: int = MAX_ANCHOR_MISMA
 
 
 def _shared_anchors(reference: Reference, max_mismatches: int) -> _Anchors:
-    """The Cys104 anchors of the shared reference's V alleles that have a gapped form with a Cys104."""
+    """The Cys104 anchors of the shared reference's V alleles that have a gapped form with a Cys104. ValueError for
+    a reference with V alleles none of which gives one (a reference read from a FASTA file has no gapped form)."""
     anchors = set()
-    for name, sequence in reference.alleles.get("v", {}).items():
+    v = reference.alleles.get("v", {})
+    for name, sequence in v.items():
         gapped = reference.gapped(name)
         end = cys104_end(gapped) if gapped else None
         if end is not None and end >= ANCHOR_LENGTH:
             anchors.add(sequence[:end].upper()[-ANCHOR_LENGTH:])
+    if v and not anchors:
+        raise ValueError(f"none of the shared reference's {len(v)} V alleles has an IMGT-gapped form with a Cys104 "
+                         "(a reference read from a FASTA file has no gapped form), so it cannot place the Cys104 of "
+                         "a read without a donor anchor; use the reference built from the dataconfig")
     return _anchors(sorted(anchors), max_mismatches)
 
 

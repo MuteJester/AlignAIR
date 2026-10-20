@@ -20,6 +20,8 @@ from alignair_assay.core.reference import Reference
 from alignair_assay.real.genotype import IuisMap, RealAllele, RealGenotype, load_vdjbase_csv
 from alignair_assay.real.truth import (
     ANCHOR_LENGTH,
+    MAX_JUNCTION,
+    MIN_JUNCTION,
     W118_MOTIF,
     RealTruth,
     clonotype_clusters,
@@ -196,6 +198,17 @@ def test_one_mismatch_is_not_known():
     assert known_answer(read, observed_span(read, []), [A, B]) == frozenset({"IGHV1-2*02"})
 
 
+def test_an_n_inside_the_window_voids_the_known_answer():
+    # N is no wildcard: an uncalled base in the middle of the observed V matches no allele, not even the read's own
+    read = _race(A.sequence)
+    middle = len(LEADER) + 150
+    uncalled = read[:middle] + "N" + read[middle + 1:]
+    assert observed_span(uncalled, []) == (0, len(read))
+    assert known_answer(uncalled, observed_span(uncalled, []), [A, B]) is None
+    truth, = real_truths({"r": uncalled}, [_meta("r")], _genotype(A, B), NO_SHARED)
+    assert truth.known is None and not truth.naive and truth.anchor == "donor"
+
+
 def test_identical_windows_form_one_set():
     # A2 differs from A only at allele position 5, inside a multiplex read's masked VH primer
     a2_gapped = _mutate(A_GAPPED, 5)
@@ -346,6 +359,44 @@ def test_w118_motif_is_the_imgt_w_g_x_g_so_ighj2_has_a_junction():
     assert truth.clonotype == f"{DONOR}/{junction}"
 
 
+def test_the_junction_is_the_first_in_frame_w118_motif_of_15_to_150_nt():
+    cys = len(LEADER) + CYS_END
+    head = LEADER + A.sequence[:CYS_END]
+    # the first motif is out of frame (43 nt): the next one, in frame (93 nt), ends the junction
+    v = A.sequence[:CYS_END + 6]
+    shifted = LEADER + v + N_REGION + "A" + J4 + "CC" + J4 + C_START
+    assert junction_by_motif(shifted, cys) == v[CYS_END - 3:] + N_REGION + "A" + J4 + "CC" + J4[:J4_W118_END]
+    # an out-of-frame motif and no other: no junction, and the read is a clonotype of its own
+    out_of_frame = LEADER + v + N_REGION + "A" + J4 + C_START
+    assert junction_by_motif(out_of_frame, cys) is None
+    truth, = real_truths({"r": out_of_frame}, [_meta("r")], _genotype(A), NO_SHARED)
+    assert truth.anchor == "donor" and truth.clonotype == f"{DONOR}/single:r"
+    # a motif right after the Cys codon (a 6-nt junction) is too short to be W118: the next in-frame one is
+    w118 = J4[J4_W118_END - 3:J4_W118_END + 9]  # TGG GGC CAG GGA
+    early = head + w118 + "A" + J4 + C_START
+    assert junction_by_motif(early, cys) == A.sequence[CYS_END - 3:CYS_END] + w118 + "A" + J4[:J4_W118_END]
+    # the bounds: 15 and 150 nt are junctions, 12 and 153 are not
+    for filler, expected in (("GATAGTTAT", 15), ("GATAGT", None), ("GAT" * 48, 150), ("GAT" * 49, None)):
+        read = head + filler + J4[J4_W118_END - 3:] + C_START
+        junction = junction_by_motif(read, cys)
+        assert (junction if expected is None else len(junction)) == expected, len(filler)
+    assert junction_by_motif(head + "GATAGT" + J4[J4_W118_END - 3:] + C_START, cys, min_length=12) is not None
+
+
+def test_a_known_answer_takes_its_junction_from_its_exact_window():
+    # B's anchor, exactly, in the 5' UTR: the leftmost exact Hamming anchor is there, but A's exact window ends at
+    # A's Cys104, and that is where a known answer's junction starts
+    b_anchor = B.sequence[CYS_END - ANCHOR_LENGTH:CYS_END]
+    read = LEADER + b_anchor + _random(40, 14) + A.sequence[:CYS_END + 6] + N_REGION + J4 + C_START
+    observed = observed_span(read, [])
+    assert cys104_in_read(read, observed, [A, B]) == len(LEADER) + ANCHOR_LENGTH
+    match = known_match(read, observed, [A, B])
+    assert match.alleles == (A,) and match.cys_end == len(LEADER) + ANCHOR_LENGTH + 40 + CYS_END
+    truth, = real_truths({"r": read}, [_meta("r")], _genotype(A, B), NO_SHARED)
+    assert truth.known == frozenset({"IGHV1-2*02"}) and truth.anchor == "donor"
+    assert truth.clonotype == f"{DONOR}/{_junction(A.sequence)}"
+
+
 # --- real_truths ---------------------------------------------------------------------------------------------------
 
 def test_naive_only_igm():
@@ -393,6 +444,20 @@ def test_the_shared_reference_places_cys104_only_without_a_donor_anchor():
     assert alone.anchor is None and alone.clonotype == f"{DONOR}/single:b"
 
 
+def test_a_shared_reference_whose_v_alleles_give_no_anchor_is_refused():
+    # a reference read from a FASTA file has V alleles but no gapped form: it would silently disable the fallback
+    read = _race(A.sequence)
+    from_fasta = Reference(alleles={"v": {B.allele_id: B.sequence}}, anchors={})
+    with pytest.raises(ValueError, match="gapped"):
+        real_truths({"r": read}, [_meta("r")], _genotype(A), from_fasta)
+    no_cys = _allele("IGHV3-23*01", _gapped_v(2, codon="TAT"))
+    with pytest.raises(ValueError, match="gapped"):
+        real_truths({"r": read}, [_meta("r")], _genotype(A), _reference(no_cys))
+    # one allele with an anchor is enough, and a reference without V alleles has none to give
+    assert real_truths({"r": read}, [_meta("r")], _genotype(A), _reference(no_cys, B))[0].anchor == "donor"
+    assert real_truths({"r": read}, [_meta("r")], _genotype(A), NO_SHARED)[0].anchor == "donor"
+
+
 def test_a_donor_anchor_wins_over_a_better_shared_one():
     # the donor's anchor with two mismatches, and a shared allele's exact anchor further left
     b_anchor = B.sequence[CYS_END - ANCHOR_LENGTH:CYS_END]
@@ -406,14 +471,14 @@ def test_a_donor_anchor_wins_over_a_better_shared_one():
 def test_mutated_clone_members_share_a_clonotype():
     genotype = _genotype(A, B)
     reads = {"c1": _race(_mutate(A.sequence, 50, 120)), "c2": _race(_mutate(A.sequence, 80, 200, CYS_END - 12)),
-             "c3": _race(A.sequence), "other": _race(_mutate(A.sequence, 50), n_region="GGGACTAC"),
+             "c3": _race(A.sequence), "other": _race(_mutate(A.sequence, 50), n_region="GGGACTACAG"),
              "b": _race(B.sequence)}
     meta = [_meta(name, "IGHG") for name in reads]
     truths = real_truths(reads, meta, genotype, NO_SHARED)
     clusters = clonotype_clusters(truths)
     assert clusters == {t.read_id: t.clonotype for t in truths}
     assert clusters["c1"] == clusters["c2"] == clusters["c3"] == f"{DONOR}/{_junction(A.sequence)}"
-    assert clusters["other"] == f"{DONOR}/{_junction(A.sequence, n_region='GGGACTAC')}"
+    assert clusters["other"] == f"{DONOR}/{_junction(A.sequence, n_region='GGGACTACAG')}"
     assert clusters["b"] == f"{DONOR}/{_junction(B.sequence)}"
     assert [t.known for t in truths] == [None, None, frozenset({"IGHV1-2*02"}), None, frozenset({"IGHV3-23*01"})]
 
@@ -475,6 +540,8 @@ PILOT_SAMPLES = {"W-97": "P25_I151_S1", "SC-23": "P25_I58_S1"}
 # the shared reference's anchors place them (donor or shared, measured: W-97 92.8%, SC-23 91.5%).
 MIN_DONOR_ANCHORED = {"W-97": 0.6, "SC-23": 0.85}
 MIN_ANCHORED = 0.9
+# The least share of reads with an in-frame junction of 15 to 150 nt (measured: W-97 88.0%, SC-23 88.9%).
+MIN_JUNCTIONS = 0.85
 COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
 
 
@@ -532,6 +599,7 @@ def test_the_pilot_donors_real_truth(donor, reference):
                                     for t in unanchored], genotype, reference)
     assert sum(truth.anchor is not None for truth in reverse) / n < 0.001
     junctions = [t.clonotype.split("/", 1)[1] for t in truths if t.clonotype != f"{donor}/single:{t.read_id}"]
-    assert sum(len(junction) % 3 == 0 for junction in junctions) / len(junctions) > 0.95
+    assert all(len(junction) % 3 == 0 and MIN_JUNCTION <= len(junction) <= MAX_JUNCTION for junction in junctions)
+    assert len(junctions) / n > MIN_JUNCTIONS
     sizes = Counter(clonotype_clusters(truths).values())
     assert max(sizes.values()) > 1
