@@ -68,15 +68,34 @@ key; a label named like a fixed dimension is an error. The fixed dimensions are 
   cases, records simulated without provenance) falls back to the first entry of `{g}_call`, and the truth summary
   counts those fallbacks per gene (`primary_fallbacks`).
 - Coordinates, CIGAR and SHM truth are observed against the generative allele. When it is not in the call list,
-  GenAIRR projects the CIGAR edges onto the re-called allele (a deletion fill to that allele's end, NP bases it
-  matches claimed as germline) while the core alignment stays generative. `truth.genairr` undoes this: a re-called
-  forward segment is clipped to the generative allele's trimmed germline `[trim_5, len - trim_3)`, and a re-called
-  inverted D has its fills decoded with the re-called allele's length (or is dropped as unscorable when they do not
-  determine its span). That both reproduce GenAIRR's own generative alignment is measured, not proven: on 3000
+  GenAIRR projects the CIGAR edges onto the re-called allele (fills to that allele's ends, NP bases it matches
+  claimed as germline) while the core alignment stays generative. `truth.genairr` undoes this: read bases past the
+  end of a shorter re-called allele become the generative allele's positions there, a re-called segment is clipped
+  to the generative allele's trimmed germline `[trim_5, len - trim_3)` (reverse-complemented for an inverted D),
+  and a re-called inverted D in the walker encoding (below) has its fills decoded with the re-called allele's
+  length. A re-called segment whose alignment these do not determine (fills cut short by the re-called allele's
+  end; past-the-end read bases that do not match the generative positions there one for one, from an indel) is
+  dropped as unscorable. That this reproduces GenAIRR's own generative alignment is measured, not proven: on 3000
   records at SHM rate 0.15 every re-called segment matched it (V 187, D 182, J 8; inverted D 190 with every D
-  inverted). Known limitation: GenAIRR's fills stop at the projected allele's length, so when the re-called allele
-  is shorter than the generative one, a generative deletion at or past the re-call's length is not in the CIGAR
-  and cannot be recovered (only records with indel noise can have one; SHM makes no indels).
+  inverted), and `tests/alignair_assay/truth/test_generative_truth.py` measures it on the installed engine. Known
+  limitation: GenAIRR's fills stop at the projected allele's length, so when the re-called allele is shorter than
+  the generative one, a generative deletion at or past the re-call's length is not in the CIGAR and cannot be
+  recovered (only records with indel noise can have one; SHM makes no indels).
+- **GenAIRR record encodings.** GenAIRR up to 2.3.1 (commit `1ededa6`, the *walker* encoding) and later engines
+  (the *assembled* encoding) record two things differently, and `truth.genairr` reads both. An inverted D: the
+  walker encoding gives forward-allele coordinates walked by a forward-only CIGAR walker (its `D` ops are fills,
+  deletions inside the D are not recorded and are placed by minimum mismatch, with a warning, and its NP claims are
+  scored against the forward allele, so they are dropped); the assembled encoding gives the forward-allele bounds
+  `[d_germline_start, d_germline_end)` and a plain CIGAR against the reverse-complemented allele, internal
+  deletions and NP claims included (claims are kept, as for a forward segment). The decoder tells them apart by
+  shape: the assembled CIGAR consumes exactly the recorded germline and read spans (the walker's fills consume
+  more, except when at most one D base is in the read, where both decode alike), and the assembled decoding is kept
+  only when it passes the segment invariants; anything else is decoded as the walker encoding. A re-called segment
+  with a shorter re-called allele: the walker encoding aligns the read bases past its end to the generative
+  positions, the assembled encoding records them as insertions. And a segment removed completely by end loss: the
+  assembled encoding gives it an empty CIGAR and no germline coordinates, which the builder treats as not observed.
+  The committed fixtures `tests/alignair_assay/fixtures/old_engine_*.json` (bench_v2 inverted Ds and dev-split
+  re-calls simulated by `1ededa6`) keep the walker decoding tested whichever GenAIRR is installed.
 - The allele truth is a set. `AlleleTruth.generative` holds every reference allele whose sequence contains the
   observed germline of the generative allele. The scored set `AlleleTruth.alleles` adds the simulator's calls that
   are in the reference, since a sequence-only aligner can defend either. The truth summary
@@ -411,31 +430,37 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
    comparisons that need them are left out.
 2. **Oracle check failures.** Suites where the oracle breaks the oracle rule, with the first offending cases. Such
    a suite has a truth defect.
-3. **Summary.** Per suite and arm: cases, excluded cases, the oracle check, and how many of the suite's primary
+3. **Truth warnings.** Suites with unscorable segments (truth that could not be built, `ObservableTruth.unscorable`):
+   per gene the count, the cases with warnings and the build record whose `truth.warnings` give each case's
+   reasons. Those segments are not scored, so the suite's metrics cover fewer reads than it simulated; `all` and
+   `report` print a warning for each, but it does not change the exit status.
+4. **Summary.** Per suite and arm: cases, excluded cases, the oracle check, and how many of the suite's primary
    metrics each tool wins and how many are tied or inconclusive.
-4. **Suites.** Per suite: title, purpose, and per arm the primary-metric rows of its comparison, linked to its
+5. **Truth.** Per suite, from its build record's truth summary: cases, excluded cases, cases with warnings, and per
+   gene the unscorable segments and the re-called reads (`simulator_calls`' `recalled`).
+6. **Suites.** Per suite: title, purpose, and per arm the primary-metric rows of its comparison, linked to its
    `comparison.md`.
-5. **S10 vs S1 (held-out settings).** Per tool, S10's primary-metric means against those of S1's `full_igg`
+7. **S10 vs S1 (held-out settings).** Per tool, S10's primary-metric means against those of S1's `full_igg`
    stratum, which has S10's read design and SHM rate under the default distributions. The table shows the
    difference and the mean per held-out setting, each mean with its n and coverage. These are unpaired and
    informational: no test is made.
-6. **S11 orientation parity.** Per tool, the forward reads against their reverse-complemented twins, paired by
+8. **S11 orientation parity.** Per tool, the forward reads against their reverse-complemented twins, paired by
    `groups["pair"]` and compared with `stats.compare` (Holm at 0.05 across the tool's metrics). The section lists
    the metrics that differ and the primary-metric rows.
-7. **Genotype arms.** For suites with a genotype arm, each tool's primary-metric means in each arm, with n and
+9. **Genotype arms.** For suites with a genotype arm, each tool's primary-metric means in each arm, with n and
    coverage.
-8. **Excess alleles.** For suites with donors, the excess-alleles table (see Genotype metrics) of each run: the
-   oracle's shared arm (always 0%), then each tool in each arm: for V and J, the share counting all calls and the
-   avoidable share, each with its n.
-9. **Speed.** Present when `speed/speed.json` exists (`workflow.summary.speed_summary`). The host, how the
-   protocol measures, and per configuration its cold start, steady reads/s, median full run and peak RSS, then its
-   threads, CPU list and device; a failed configuration shows dashes and its error is listed under the table. Only
-   measurements of the current configuration are shown; the others are named, with why, under the table or in place
-   of it (and in a warning). A `speed.json` whose config hash is not the manifest's (measured for another
-   configuration, or by the `speed` command), or whose reads' SHA-256 is not that of S1's current `reads.fasta`, is
-   stale as a whole. An alignair-local configuration whose `checkpoint_sha256` is not the SHA-256 of the
-   configuration's `--alignair-checkpoint` now (retrained in place or replaced; the config hash does not cover the
-   checkpoint when alignair-local is not a compared tool) is stale alone. `all --speed` measures stale ones again.
+10. **Excess alleles.** For suites with donors, the excess-alleles table (see Genotype metrics) of each run: the
+    oracle's shared arm (always 0%), then each tool in each arm: for V and J, the share counting all calls and the
+    avoidable share, each with its n.
+11. **Speed.** Present when `speed/speed.json` exists (`workflow.summary.speed_summary`). The host, how the
+    protocol measures, and per configuration its cold start, steady reads/s, median full run and peak RSS, then its
+    threads, CPU list and device; a failed configuration shows dashes and its error is listed under the table. Only
+    measurements of the current configuration are shown; the others are named, with why, under the table or in place
+    of it (and in a warning). A `speed.json` whose config hash is not the manifest's (measured for another
+    configuration, or by the `speed` command), or whose reads' SHA-256 is not that of S1's current `reads.fasta`, is
+    stale as a whole. An alignair-local configuration whose `checkpoint_sha256` is not the SHA-256 of the
+    configuration's `--alignair-checkpoint` now (retrained in place or replaced; the config hash does not cover the
+    checkpoint when alignair-local is not a compared tool) is stale alone. `all --speed` measures stale ones again.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
 `cli.COMMANDS`. The module owns its own input checks: `run` raises ValueError (or FileNotFoundError) for invalid

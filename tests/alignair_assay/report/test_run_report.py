@@ -20,11 +20,15 @@ def _summary() -> dict:
             "j.top1_in_set": _entry(0.99, 0.99, "tie_or_inconclusive")}
     s1 = {"name": "S1", "title": "Core repertoire", "purpose": "Measures annotation accuracy.",
           "primary": ["junction.nt_exact", "v.top1_in_set", "j.top1_in_set"], "cases": 5000, "excluded": 2,
+          "truth": {"excluded": 2, "warnings": 0, "unscorable": {"v": 0, "d": 0, "j": 0},
+                    "recalled": {"v": 160, "d": 179, "j": 2}},
           "oracle": {"status": "perfect", "cases": 4998, "problems": 0, "examples": []},
           "arms": {"shared": {"compared": True, "link": "scores/S1/shared/comparison.md", "rows": rows,
                               "verdicts": {"a_better": 1, "b_better": 1, "tie_or_inconclusive": 1}}}}
     s8 = {"name": "S8", "title": "Genotype", "purpose": "Measures genotype use.", "primary": ["v.top1_in_set"],
           "cases": 3000, "excluded": 0,
+          "truth": {"excluded": 0, "warnings": 3, "unscorable": {"v": 0, "d": 2, "j": 0},
+                    "recalled": {"v": 40, "d": None, "j": 0}},
           "oracle": {"status": "imperfect", "cases": 3000, "problems": 4,
                      "examples": [["S8:cohort:000001", "v.top1_in_set", 0.0]]},
           "arms": {"shared": {"compared": True, "link": "scores/S8/shared/comparison.md",
@@ -32,7 +36,7 @@ def _summary() -> dict:
                               "verdicts": {"a_better": 1, "b_better": 0, "tie_or_inconclusive": 0}},
                    "genotype": {"compared": False, "link": None, "rows": {}, "verdicts": None}}}
     return {
-        "kind": "alignair_assay.run_report", "version": "1", "a": "igblast", "b": "alignair",
+        "kind": "alignair_assay.run_report", "version": "2", "a": "igblast", "b": "alignair",
         "config": {"suites": ["S1", "S8", "S10", "S11"], "tools": ["igblast", "alignair"], "split": "test",
                    "reference": "HUMAN_IGH_OGRDB", "seed": 20261019, "scale": 1.0},
         "config_hash": "0123456789abcdef" * 4,
@@ -41,6 +45,8 @@ def _summary() -> dict:
                          "run_json": "runs/alignair/S8/genotype/run.json"}],
         "oracle_failures": [{"suite": "S8", "status": "imperfect", "problems": 4,
                              "examples": [["S8:cohort:000001", "v.top1_in_set", 0.0]]}],
+        "truth_warnings": [{"suite": "S8", "unscorable": {"v": 0, "d": 2, "j": 0}, "warnings": 3,
+                            "build_json": "suites/S8/build.json"}],
         "suites": [s1, s8],
         "s10_vs_s1": {"baseline": "S1 full_igg", "settings": ["uniform", "np_shift"], "tools": {
             "igblast": [{"metric": "junction.nt_exact", "s1": _cell(0.98), "s10": _cell(0.93, 40), "delta": -0.05,
@@ -82,15 +88,24 @@ def test_report_renders_sections_from_summary():
     md = run_report_markdown(_summary())
     assert md.startswith("# AlignAIR assay run: igblast vs alignair\n")
     assert "split test, seed 20261019, scale 1.0, reference HUMAN_IGH_OGRDB; config hash 0123456789ab" in md
-    assert _sections(md) == ["## Failed runs", "## Oracle check failures", "## Summary", "## Suites",
-                             "## S10 vs S1 (held-out settings)", "## S11 orientation parity", "## Genotype arms",
-                             "## Excess alleles", "## Speed"]
+    assert _sections(md) == ["## Failed runs", "## Oracle check failures", "## Truth warnings", "## Summary",
+                             "## Truth", "## Suites", "## S10 vs S1 (held-out settings)", "## S11 orientation parity",
+                             "## Genotype arms", "## Excess alleles", "## Speed"]
 
     failed = md[md.index("## Failed runs"):md.index("## Oracle check failures")]
     assert ("| alignair | S8 | genotype | failed | 1 | donor00 | AttributeError: 'tuple' object has no attribute "
             "'items' | runs/alignair/S8/genotype/run.json |") in failed
     assert "not scored" in failed
     assert "| S8 | imperfect | 4 | S8:cohort:000001 v.top1_in_set = 0.0 |" in md
+
+    # A suite with unscorable segments is flagged: they are not scored.
+    flagged = md[md.index("## Truth warnings"):md.index("## Summary")]
+    assert "| S8 | 0 | 2 | 0 | 3 |" in flagged and "suites/S8/build.json" in flagged and "S1" not in flagged
+    truth = md[md.index("## Truth\n"):md.index("## Suites")]
+    assert ("| Suite | Cases | Excluded | Cases with warnings | Unscorable V | Unscorable D | Unscorable J | "
+            "Re-called V | Re-called D | Re-called J |") in truth
+    assert "| S1 | 5000 | 2 | 0 | 0 | 0 | 0 | 160 | 179 | 2 |" in truth
+    assert "| S8 | 3000 | 0 | 3 | 0 | 2 | 0 | 40 | — | 0 |" in truth
 
     summary = md[md.index("## Summary"):md.index("## Suites")]
     assert ("| Suite | Arm | Cases | Excluded | Oracle | igblast better | alignair better | Tie or inconclusive |"
@@ -139,7 +154,10 @@ def test_sections_without_data_are_left_out():
     summary = _summary()
     for key in ("s10_vs_s1", "s11_parity", "speed"):
         summary[key] = None
-    summary.update(failed_runs=[], oracle_failures=[], genotype_arms=[], excess_alleles=[])
+    summary.update(failed_runs=[], oracle_failures=[], truth_warnings=[], genotype_arms=[], excess_alleles=[])
+    assert _sections(run_report_markdown(summary)) == ["## Summary", "## Truth", "## Suites"]
+    for suite in summary["suites"]:
+        suite["truth"] = None  # a build record without a truth summary
     assert _sections(run_report_markdown(summary)) == ["## Summary", "## Suites"]
 
     original = copy.deepcopy(summary)

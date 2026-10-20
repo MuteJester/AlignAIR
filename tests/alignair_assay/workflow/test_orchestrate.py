@@ -137,9 +137,13 @@ def test_all_end_to_end_with_oracle_and_fake(half_run, tmp_path):
 
     report = _report(root)
     assert report["kind"] == "alignair_assay.run_report" and (report["a"], report["b"]) == ("oracle", "half")
-    assert report["failed_runs"] == [] and report["oracle_failures"] == []
+    assert report["failed_runs"] == [] and report["oracle_failures"] == [] and report["truth_warnings"] == []
     s1 = _suite(report, "S1")
     assert (s1["title"], s1["cases"], s1["excluded"]) == ("Core repertoire", 100, 0)
+    # The truth summary of the build record: what the suite's truth could not score, and GenAIRR's re-calls.
+    built = json.loads(layout.build_json("S1").read_text())["truth"]
+    assert s1["truth"] == {"excluded": 0, "warnings": len(built["warnings"]), "unscorable": built["unscorable"],
+                           "recalled": {g: built["simulator_calls"][g]["recalled"] for g in "vdj"}}
     assert s1["oracle"]["status"] == "perfect" and s1["oracle"]["cases"] == 100
     shared = s1["arms"]["shared"]
     assert shared["compared"] and shared["link"] == "scores/S1/shared/comparison.md"
@@ -181,8 +185,9 @@ def test_all_end_to_end_with_oracle_and_fake(half_run, tmp_path):
 
     md = layout.report_md.read_text()
     assert md.startswith("# AlignAIR assay run: oracle vs half")
-    assert "## Failed runs" not in md and "## Oracle check failures" not in md
-    assert md.index("## Summary") < md.index("## Suites")
+    assert "## Failed runs" not in md and "## Oracle check failures" not in md and "## Truth warnings" not in md
+    assert md.index("## Summary") < md.index("## Truth\n") < md.index("## Suites")
+    assert "| S1 | 100 | 0 |" in md[md.index("## Truth\n"):md.index("## Suites")]
     assert "(scores/S1/shared/comparison.md)" in md and "### S1: Core repertoire" in md
     # Every excess fraction shows its n.
     line = next(line for line in md[md.index("## Excess alleles"):].splitlines()
@@ -381,6 +386,24 @@ def test_oracle_failure_flagged(toy_run, tmp_path, monkeypatch):
     assert case_id.startswith("S0:") and (metric.startswith("junction.") or metric == "clone_key.exact")
     md = layout.report_md.read_text()
     assert "## Oracle check failures" in md and "| S0 | imperfect |" in md
+
+
+def test_unscorable_truth_flagged(toy_run, tmp_path, capsys):
+    root = _copy(toy_run[0], tmp_path)
+    layout = RunLayout(root)
+    build = json.loads(layout.build_json("S0").read_text())
+    build["truth"] = {**build["truth"], "unscorable": {"v": 0, "d": 2, "j": 0},
+                      "warnings": {"S0:plain:000001": ["d: inverted D CIGAR 9M has an unexpected shape"]}}
+    layout.build_json("S0").write_text(json.dumps(build))
+    capsys.readouterr()
+    # A warning, not a failure: the other segments are scored as usual.
+    assert main(["report", "--run-dir", str(root)]) == 0
+    report = _report(root)
+    assert report["truth_warnings"] == [{"suite": "S0", "unscorable": {"v": 0, "d": 2, "j": 0}, "warnings": 1,
+                                         "build_json": "suites/S0/build.json"}]
+    assert _suite(report, "S0")["truth"]["unscorable"] == {"v": 0, "d": 2, "j": 0}
+    assert "| S0 | 0 | 2 | 0 | 1 |" in layout.report_md.read_text().split("## Truth warnings")[1]
+    assert "warning: S0: the truth of 2 segments (v=0 d=2 j=0) could not be built" in capsys.readouterr().err
 
 
 def test_s11_parity_section(tmp_path):

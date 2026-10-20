@@ -226,6 +226,11 @@ def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference 
     for failure in summary["oracle_failures"]:
         print(f"error: the oracle is {failure['status']} on {failure['suite']} ({failure['problems']} problems): "
               "the suite's truth has a defect", file=sys.stderr)
+    for warning in summary["truth_warnings"]:
+        counts = warning["unscorable"]
+        print(f"warning: {warning['suite']}: the truth of {sum(counts.values())} segments "
+              f"({' '.join(f'{g}={n}' for g, n in counts.items())}) could not be built, so they are not scored; see "
+              f"{relative(layout, layout.build_json(warning['suite']))}", file=sys.stderr)
     speed = summary["speed"] or {}
     for failure in speed.get("failed") or []:
         print(f"error: speed {failure['name']} failed: {failure['error']}", file=sys.stderr)

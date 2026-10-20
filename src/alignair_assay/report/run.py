@@ -1,11 +1,13 @@
 """Markdown rendering of a run report: the plain summary dict ``workflow.summary.collect_run_summary`` builds.
 
-Sections, in order: failed runs and oracle check failures (when there are any, since they qualify everything
-below), the summary of verdicts, the per-suite tables, S10 against S1, S11 orientation parity, the genotype arms,
-the excess alleles of suites with donors and speed. A section without data is left out.
+Sections, in order: failed runs, oracle check failures and truth warnings (when there are any, since they qualify
+everything below), the summary of verdicts, the truth summary, the per-suite tables, S10 against S1, S11
+orientation parity, the genotype arms, the excess alleles of suites with donors and speed. A section without data is
+left out.
 """
 from __future__ import annotations
 
+from alignair_assay.core.prediction import GENES
 from alignair_assay.report.markdown import (
     MISSING,
     excess_note,
@@ -17,7 +19,7 @@ from alignair_assay.report.markdown import (
 )
 
 RUN_REPORT_KIND = "alignair_assay.run_report"
-RUN_REPORT_VERSION = "1"
+RUN_REPORT_VERSION = "2"
 # A forward-against-reverse comparison's verdicts (forward is tool a of the comparison).
 _PARITY_VERDICTS = {"a_better": "forward better", "b_better": "reverse better", "tie_or_inconclusive": "tie"}
 
@@ -25,8 +27,8 @@ _PARITY_VERDICTS = {"a_better": "forward better", "b_better": "reverse better", 
 def run_report_markdown(summary: dict) -> str:
     """The run report of ``summary`` as markdown (see the module docstring for its sections)."""
     lines = [f"# AlignAIR assay run: {summary['a']} vs {summary['b']}", "", _configuration(summary)]
-    for section in (_failed_runs, _oracle_failures, _summary, _suites, _s10_vs_s1, _s11_parity, _genotype_arms,
-                    _excess_alleles, _speed):
+    for section in (_failed_runs, _oracle_failures, _truth_warnings, _summary, _truth, _suites, _s10_vs_s1,
+                    _s11_parity, _genotype_arms, _excess_alleles, _speed):
         lines += section(summary)
     return "\n".join(lines) + "\n"
 
@@ -74,6 +76,34 @@ def _oracle_failures(summary: dict) -> list[str]:
             "On every suite the oracle must score 1.0 on each compared metric, 0.0 on each lower-is-better one and "
             "never nan. A suite that fails has a truth defect: do not trust its scores.",
             "", *markdown_table(["Suite", "Status", "Problems", "First problems"], rows)]
+
+
+def _truth_warnings(summary: dict) -> list[str]:
+    warnings = summary.get("truth_warnings") or []
+    if not warnings:
+        return []
+    rows = [[warning["suite"], *(str(warning["unscorable"][g]) for g in GENES), str(warning["warnings"]),
+             _text(warning.get("build_json"))] for warning in warnings]
+    return ["", "## Truth warnings", "",
+            "These suites have segments whose truth could not be built (unscorable): those segments are not scored, "
+            "so their metrics cover fewer reads than the suite simulated. Each case's reasons are its warnings in "
+            "the suite's build record (`truth.warnings`).",
+            "", *markdown_table(["Suite", "Unscorable V", "Unscorable D", "Unscorable J", "Cases with warnings",
+                                 "Build record"], rows)]
+
+
+def _truth(summary: dict) -> list[str]:
+    rows = [[suite["name"], _text(suite["cases"]), str(truth["excluded"]), str(truth["warnings"]),
+             *(str(truth["unscorable"][g]) for g in GENES), *(_text(truth["recalled"][g]) for g in GENES)]
+            for suite in summary["suites"] if (truth := suite.get("truth"))]
+    if not rows:
+        return []
+    return ["", "## Truth", "",
+            "What each suite's truth could not score, from its build record: excluded cases, cases with warnings and, "
+            "per gene, unscorable segments (not scored). Re-called counts the reads whose simulator call is not the "
+            "generative allele (GenAIRR re-calls after SHM); both alleles are in the scored set.",
+            "", *markdown_table(["Suite", "Cases", "Excluded", "Cases with warnings", "Unscorable V", "Unscorable D",
+                                 "Unscorable J", "Re-called V", "Re-called D", "Re-called J"], rows)]
 
 
 def _summary(summary: dict) -> list[str]:

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from alignair_assay.core.layout import RunLayout
+from alignair_assay.core.prediction import GENES
 from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import is_informational, lower_is_better
@@ -121,12 +122,13 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
     status (``run_statuses``) is not ``ok``, then ``scoring_errors`` (runs that succeeded but could not be
     scored). ``suites`` has, per suite: ``name``, ``title``, ``purpose``, ``primary``, ``cases``, ``excluded``
     (from ``build.json``), the ``oracle`` check (``status`` perfect, imperfect or not scored; ``cases``,
-    ``problems`` and the first ``examples`` as ``[case id, metric, value]``) and per arm whether the two tools were
-    ``compared``, the ``link`` to the arm's ``comparison.md`` (relative to the run directory), the primary-metric
-    ``rows`` of ``comparison.json`` and their ``verdicts`` counts. ``oracle_failures`` repeats the suites whose
-    oracle is not perfect. ``s10_vs_s1``, ``s11_parity`` and ``speed`` (``speed_summary``) are None without their
-    data, and ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see the functions
-    below).
+    ``problems`` and the first ``examples`` as ``[case id, metric, value]``), the ``truth`` summary
+    (``truth_counts``) and per arm whether the two tools were ``compared``, the ``link`` to the arm's
+    ``comparison.md`` (relative to the run directory), the primary-metric ``rows`` of ``comparison.json`` and their
+    ``verdicts`` counts. ``oracle_failures`` repeats the suites whose oracle is not perfect, and ``truth_warnings``
+    (``suite``, ``unscorable`` per gene, cases with ``warnings``, the ``build_json`` path) the suites with unscorable
+    segments, which are not scored. ``s10_vs_s1``, ``s11_parity`` and ``speed`` (``speed_summary``) are None without their data, and
+    ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see the functions below).
     """
     a, b = cfg.tools
     failed = [status for status in run_statuses(layout, cfg).values() if status["status"] != "ok"]
@@ -140,6 +142,10 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
         "failed_runs": failed + list(scoring_errors or []),
         "oracle_failures": [{"suite": suite["name"], **suite["oracle"]} for suite in suites
                             if suite["oracle"]["status"] != "perfect"],
+        "truth_warnings": [{"suite": suite["name"], "unscorable": suite["truth"]["unscorable"],
+                            "warnings": suite["truth"]["warnings"],
+                            "build_json": relative(layout, layout.build_json(suite["name"]))} for suite in suites
+                           if suite["truth"] and any(suite["truth"]["unscorable"].values())],
         "suites": suites,
         "s10_vs_s1": s10_vs_s1(layout, cfg),
         "s11_parity": s11_parity(layout, cfg),
@@ -186,6 +192,22 @@ def speed_summary(layout: RunLayout, cfg: RunConfig) -> dict | None:
             results[name] = result
     failed = [{"name": name, "error": result["error"]} for name, result in results.items() if "error" in result]
     return {**speed, "results": results, "stale_results": stale, "failed": failed}
+
+
+def truth_counts(build: dict) -> dict | None:
+    """The truth summary a suite's build record holds (``build.json``'s ``truth``, see
+    ``truth.summary.truth_summary``), counted for the run report: ``excluded`` cases, cases with ``warnings``, and
+    per gene the ``unscorable`` cases (truth that could not be built, so not scored) and the ``recalled`` reads
+    (GenAIRR's first call is not the generative allele; None when the record does not count them). None without a
+    truth summary."""
+    truth = build.get("truth")
+    if not truth:
+        return None
+    unscorable = truth.get("unscorable") or {}
+    calls = truth.get("simulator_calls") or {}
+    return {"excluded": sum((truth.get("excluded") or {}).values()), "warnings": len(truth.get("warnings") or {}),
+            "unscorable": {g: unscorable.get(g, 0) for g in GENES},
+            "recalled": {g: (calls.get(g) or {}).get("recalled") for g in GENES}}
 
 
 def oracle_check(layout: RunLayout, suite: str) -> dict:
@@ -324,7 +346,7 @@ def _suite_summary(layout: RunLayout, cfg: RunConfig, name: str) -> dict:
     build = read_json(layout.build_json(name)) or {}
     excluded = (build.get("truth") or {}).get("excluded") or {}
     return {"name": name, "title": suite.title, "purpose": suite.purpose, "primary": list(suite.primary),
-            "cases": build.get("n_cases"), "excluded": sum(excluded.values()),
+            "cases": build.get("n_cases"), "excluded": sum(excluded.values()), "truth": truth_counts(build),
             "oracle": oracle_check(layout, name),
             "arms": {arm: _arm_summary(layout, cfg, name, arm, suite.primary) for arm in suite.arms}}
 
