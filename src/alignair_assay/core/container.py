@@ -4,12 +4,15 @@
   digest among its RepoDigests.
 - ``hardened_run``: the ``docker run`` argv of a step. The container is removed when it exits and named, so a run
   that times out can be killed. It has no network and no capabilities, cannot gain privileges, runs as the current
-  user, and sees only the directories it is given, read-only unless a mount says otherwise.
+  user, and sees only the directories it is given (``--mount`` binds, which must exist), read-only unless a mount
+  says otherwise.
 - ``run_container``: runs that argv with a timeout. On a timeout the container is killed by name: killing the
   ``docker`` client does not stop it.
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import re
@@ -65,8 +68,12 @@ def check_image(image: str, *, pull_timeout: float = PULL_TIMEOUT) -> dict:
         raise ContainerError(f"docker did not answer for {image} within {error.timeout:g} s") from error
     if completed.returncode != 0:
         raise ContainerError(f"docker cannot inspect {image}: {completed.stderr.strip()[-500:]}")
-    found = json.loads(completed.stdout)[0]
-    repo_digests = list(found.get("RepoDigests") or [])
+    try:
+        found = json.loads(completed.stdout)[0]
+        repo_digests = list(found.get("RepoDigests") or [])
+    except (ValueError, LookupError, TypeError, AttributeError) as error:  # not JSON, no image, not an object
+        raise ContainerError(f"cannot read docker's inspection of {image} ({type(error).__name__}): "
+                             f"{completed.stdout.strip()[:200]!r}") from error
     if pinned not in repo_digests:
         raise ContainerError(f"image {image}: its RepoDigests {repo_digests} lack the pinned digest "
                              f"{image.partition('@')[2]}")
@@ -82,17 +89,32 @@ def container_name(*parts: str) -> str:
 def hardened_run(image: str, args: list[str], *, name: str, mounts: list[Mount], workdir: str | None = None,
                  env: dict[str, str] | None = None) -> list[str]:
     """The ``docker run`` argv that runs ``args`` in pinned image ``image`` as the module docstring describes.
-    ValueError for an image that is not pinned by digest."""
+    ValueError for an image that is not pinned by digest or a mount whose container path is not absolute."""
     pinned_repo_digest(image)
     argv = ["docker", "run", "--rm", "--name", name, "--network", "none", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--user", f"{os.getuid()}:{os.getgid()}"]
     for key, value in (env or {}).items():
         argv += ["-e", f"{key}={value}"]
     for mount in mounts:
-        argv += ["-v", f"{Path(mount.host).absolute()}:{mount.container}{':ro' if mount.read_only else ''}"]
+        argv += ["--mount", mount_option(mount)]
     if workdir:
         argv += ["-w", workdir]
     return [*argv, image, *args]
+
+
+def mount_option(mount: Mount) -> str:
+    """The ``--mount`` value of ``mount``: a bind of its absolute host path, ``readonly`` unless it says otherwise.
+    Unlike ``-v``, a bind mount whose source does not exist fails the run rather than being created (as root), and
+    a ``:`` in a path is kept; a field holding a comma or a quote is quoted as CSV, which is how Docker splits the
+    value. ValueError for a container path that is not absolute."""
+    if not mount.container.startswith("/"):
+        raise ValueError(f"container path {mount.container!r} is not absolute")
+    fields = ["type=bind", f"source={Path(mount.host).absolute()}", f"target={mount.container}"]
+    if mount.read_only:
+        fields.append("readonly")
+    line = io.StringIO()
+    csv.writer(line, lineterminator="").writerow(fields)
+    return line.getvalue()
 
 
 def run_container(argv: list[str], *, name: str, timeout: float, what: str) -> subprocess.CompletedProcess:

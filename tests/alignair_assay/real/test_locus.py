@@ -154,7 +154,8 @@ def _allele(gene: str, haplotype: int, allele: str = "01") -> RealAllele:
 
 GENOTYPE = RealGenotype(donor="SC-23", alleles=(_allele("IGHV1-2", 1), _allele("IGHV1-2", 2, "02"),
                                                  _allele("IGHV3-25", 1), _allele("IGHJ4", 0)),
-                        source={"kind": "vdjbase_genomic_csv", "sample": "P25_I58_S1"})
+                        source={"kind": "vdjbase_genomic_csv", "path": "/data/P25_I58_S1.csv", "sha256": "c" * 64,
+                                "sample": "P25_I58_S1"})
 
 
 def test_with_capture_adds_every_carried_gene():
@@ -187,7 +188,8 @@ def test_samtools_command_reads_only_the_bams_directory_offline_as_the_user(tmp_
     assert argv[argv.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
     assert argv[argv.index("--cap-drop") + 1] == "ALL"
     assert argv[argv.index("--security-opt") + 1] == "no-new-privileges"
-    assert [argv[i + 1] for i, part in enumerate(argv) if part == "-v"] == [f"{tmp_path}:/data:ro"]
+    assert [argv[i + 1] for i, part in enumerate(argv) if part == "--mount"] == [
+        f"type=bind,source={tmp_path},target=/data,readonly"]
     assert argv[argv.index(SAMTOOLS_IMAGE) + 1:] == ["samtools", "view", "/data/P25_I58_S1.bam"]
 
 
@@ -256,9 +258,13 @@ def test_donor_capture_records_how_it_was_computed(tmp_path, monkeypatch):
     assert record["spans"] == {"h0": 1, "h1": 1, "h2": 0}
     assert record["spanned"] == ["IGHV1-2"] and record["carried_not_spanned"] == ["IGHJ4", "IGHV3-25"]
     assert record["code_sha256"] == sha256_file(locus.__file__)
-    # the fingerprint follows the inputs, the image and the code, and nothing else
-    again = donor_capture(replace(GENOTYPE, source={}), bam, bed).source["capture"]["fingerprint"]
+    assert record["genotype"] == {"path": "/data/P25_I58_S1.csv", "sha256": "c" * 64}
+    # the fingerprint follows the inputs (the genotype CSV among them), the image and the code, and nothing else
+    again = donor_capture(replace(genotype, source={"sha256": "c" * 64}), bam, bed).source["capture"]["fingerprint"]
+    assert again == donor_capture(genotype, bam, bed).source["capture"]["fingerprint"]  # a recorded capture: same
     assert again == record["fingerprint"]
+    other_csv = replace(GENOTYPE, source={**GENOTYPE.source, "sha256": "e" * 64})
+    assert donor_capture(other_csv, bam, bed).source["capture"]["fingerprint"] != record["fingerprint"]
     bed.write_bytes(BED.encode() + b"igh\t6000\t6300\tIGHV1-3\n")
     assert donor_capture(GENOTYPE, bam, bed).source["capture"]["fingerprint"] != record["fingerprint"]
 

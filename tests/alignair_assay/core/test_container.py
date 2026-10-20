@@ -88,6 +88,13 @@ def test_check_image_refuses_another_digest_a_failed_pull_and_no_docker(monkeypa
         check_image("quay.io/biocontainers/samtools:1.0--h0_0")
 
 
+@pytest.mark.parametrize("stdout", ["", "not json", "[]", "{}", '["x"]', "null"])
+def test_check_image_refuses_an_inspect_answer_it_cannot_read(monkeypatch, stdout):
+    monkeypatch.setattr(container.subprocess, "run", lambda argv, **kwargs: _Completed(stdout))
+    with pytest.raises(ContainerError, match="cannot read docker's inspection"):
+        check_image(IMAGE)
+
+
 def test_hardened_run_is_offline_unprivileged_and_mounts_only_what_it_is_given(tmp_path):
     argv = hardened_run(IMAGE, ["samtools", "view", "/data/x.bam"], name="alignair-t-1",
                         mounts=[Mount(tmp_path, "/data")])
@@ -97,14 +104,45 @@ def test_hardened_run_is_offline_unprivileged_and_mounts_only_what_it_is_given(t
     assert argv[argv.index("--cap-drop") + 1] == "ALL"
     assert argv[argv.index("--security-opt") + 1] == "no-new-privileges"
     assert argv[argv.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
-    assert [argv[i + 1] for i, part in enumerate(argv) if part == "-v"] == [f"{tmp_path}:/data:ro"]
+    assert "-v" not in argv and "--volume" not in argv
+    assert _mounts(argv) == [f"type=bind,source={tmp_path},target=/data,readonly"]
     assert argv[argv.index(IMAGE) + 1:] == ["samtools", "view", "/data/x.bam"]
     writable = hardened_run(IMAGE, ["true"], name="n", mounts=[Mount(tmp_path, "/data", read_only=False)],
                             workdir="/data")
-    assert [writable[i + 1] for i, part in enumerate(writable) if part == "-v"] == [f"{tmp_path}:/data"]
+    assert _mounts(writable) == [f"type=bind,source={tmp_path},target=/data"]
     assert writable[writable.index("-w") + 1] == "/data"
     with pytest.raises(ValueError, match="digest"):
         hardened_run("samtools:latest", ["true"], name="n", mounts=[])
+
+
+def _mounts(argv: list[str]) -> list[str]:
+    return [argv[i + 1] for i, part in enumerate(argv) if part == "--mount"]
+
+
+def test_a_mount_keeps_a_path_with_a_colon_or_a_comma_whole(tmp_path):
+    """``-v src:dst:ro`` splits a path at ``:``; ``--mount`` takes comma-separated fields, so a field holding a comma
+    or a quote is quoted as CSV, as Docker parses it."""
+    colon = tmp_path / "run:2026-10-20"
+    comma = tmp_path / 'a,b"c'
+    argv = hardened_run(IMAGE, ["true"], name="n", mounts=[Mount(colon, "/in"), Mount(comma, "/out", False)])
+    assert _mounts(argv) == [f"type=bind,source={colon},target=/in,readonly",
+                             f'type=bind,"source={tmp_path}/a,b""c",target=/out']
+    with pytest.raises(ValueError, match="absolute"):
+        hardened_run(IMAGE, ["true"], name="n", mounts=[Mount(tmp_path, "data")])
+
+
+@pytest.mark.skipif(os.environ.get("ALIGNAIR_ASSAY_DOCKER") != "1", reason="set ALIGNAIR_ASSAY_DOCKER=1")
+def test_docker_refuses_a_missing_mount_source_instead_of_creating_it(tmp_path):
+    """With ``-v`` Docker would create the missing directory, as root; with ``--mount`` the run fails."""
+    from alignair_assay.real.locus import SAMTOOLS_IMAGE
+
+    check_image(SAMTOOLS_IMAGE)
+    missing = tmp_path / "missing"
+    name = container_name("test", "mount")
+    argv = hardened_run(SAMTOOLS_IMAGE, ["true"], name=name, mounts=[Mount(missing, "/data")])
+    with pytest.raises(ContainerError, match="failed"):
+        run_container(argv, name=name, timeout=120, what="a run on a missing mount")
+    assert not missing.exists()
 
 
 def test_container_name_is_a_valid_docker_name_per_process():

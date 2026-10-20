@@ -42,8 +42,9 @@ The IGenotyper sources cited are at the commit ``real.fetch`` pins its BED to (`
 current user with no network and no capabilities, unable to gain privileges, on the BAM's directory alone mounted
 read-only, and named so that a run that times out is killed (``core.container``). Only its SAM text is parsed
 (``parse_sam_spans``). ``donor_capture`` puts it all together and records in the genotype's
-``source["capture"]`` how the set was computed (the image and its digests, the whole command, the inputs'
-SHA-256s, this module's) and a fingerprint of those inputs, so a stored capture is reused only while it is current.
+``source["capture"]`` how the set was computed (the image and its digests, the whole command, the SHA-256s of the
+inputs, the genotype's CSV among them, and of this module) and a fingerprint of those inputs, so a stored capture
+is reused only while it is current.
 """
 from __future__ import annotations
 
@@ -216,11 +217,12 @@ def with_capture(genotype: RealGenotype, captured: Iterable[str], record: dict |
 def donor_capture(genotype: RealGenotype, bam_path, bed_path, *, timeout: float | None = None) -> RealGenotype:
     """``with_capture`` of ``genotype`` from its donor's contig BAM ``bam_path`` and the gene coordinates
     ``bed_path``, with the record of how it was computed: ``kind``, ``image`` (``check_image``), the whole
-    ``command``, ``bam`` and ``gene_coords`` (path and SHA-256; the BED's gene count), ``spans`` per haplotype
-    (``h0``, ``h1``, ``h2``), ``code_sha256`` (this module) and ``fingerprint`` (SHA-256 over the BAM's and the BED's
-    SHA-256s, the pinned image and the code's SHA-256). ValueError for a BAM that is not the genotype's VDJbase
-    sample (``source["sample"]``, when it has one) or a record ``parse_sam_spans`` refuses (the error names the
-    BAM); ContainerError as ``contig_spans``."""
+    ``command``, ``bam`` and ``gene_coords`` (path and SHA-256; the BED's gene count), ``genotype`` (the path and
+    SHA-256 of the genotype's CSV, ``source["path"]`` and ``source["sha256"]``), ``spans`` per haplotype (``h0``,
+    ``h1``, ``h2``), ``code_sha256`` (this module) and ``fingerprint`` (SHA-256 over the BAM's, the BED's and the
+    genotype CSV's SHA-256s, the pinned image and the code's SHA-256). ValueError for a BAM that is not the
+    genotype's VDJbase sample (``source["sample"]``, when it has one) or a record ``parse_sam_spans`` refuses (the
+    error names the BAM); ContainerError as ``contig_spans``."""
     bam, bed = Path(bam_path), Path(bed_path)
     sample = genotype.source.get("sample")
     if sample and bam.stem != sample:
@@ -232,11 +234,15 @@ def donor_capture(genotype: RealGenotype, bam_path, bed_path, *, timeout: float 
         spans = parse_sam_spans(text)
     except ValueError as error:
         raise ValueError(f"{bam} ({genotype.donor}): {error}") from None
+    # the carried genes are captured too (``with_capture``), so the genotype's CSV is an input like the BAM and BED
+    genotype_csv = {"path": genotype.source.get("path"), "sha256": genotype.source.get("sha256")}
     fingerprint = hashlib.sha256(json.dumps({"bam": bam_sha256, "gene_coords": bed_sha256, "image": SAMTOOLS_IMAGE,
-                                             "code": _CODE_SHA256}, sort_keys=True).encode()).hexdigest()
+                                             "genotype": genotype_csv["sha256"], "code": _CODE_SHA256},
+                                            sort_keys=True).encode()).hexdigest()
     record = {"kind": "alignair_assay.real.locus.capture", "image": image, "command": argv,
               "bam": {"path": str(bam), "sha256": bam_sha256},
               "gene_coords": {"path": str(bed), "sha256": bed_sha256, "genes": len(coords)},
+              "genotype": genotype_csv,
               "spans": {f"h{haplotype}": sum(span[0] == haplotype for span in spans) for haplotype in HAPLOTYPES},
               "code_sha256": _CODE_SHA256, "fingerprint": fingerprint}
     return with_capture(genotype, captured_genes(spans, coords), record)
