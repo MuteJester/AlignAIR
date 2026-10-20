@@ -28,6 +28,9 @@ def register(sub) -> None:
                         "scored with another; an empty list runs only the head metrics, calibration and profile)")
     p.add_argument("--no-profile", action="store_true", help="skip the speed profile")
     p.add_argument("--max-cases", type=int, help="diagnose at most this many reads per suite, evenly spaced")
+    p.add_argument("--allow-unverified-replay", action="store_true",
+                   help="diagnose even when the AlignAIR code the replay mirrors has changed since it was pinned "
+                        "(the results are marked unverified)")
     p.set_defaults(func=run)
 
 
@@ -36,7 +39,9 @@ def run(args) -> int:
     and the profile, and name the report it wrote (``diagnostics.md`` and ``diagnostics.json`` under the model
     key). A suite whose build is not current for this checkout (``workflow.build.build_changes``) is diagnosed as
     built, with a warning. Input errors (an unbuilt or test-split suite, an unknown variant, a missing checkpoint,
-    a model on another reference) exit with status 2 before anything is written."""
+    a model on another reference, a CUDA device torch does not see) exit with status 2 before anything is written,
+    and so does AlignAIR code the replay is not pinned to, unless ``--allow-unverified-replay`` (then the results
+    are marked unverified, with a warning)."""
     # Imported here so the other commands never load torch and alignair.
     from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS
     from alignair_assay.workflow.diagnose import evaluate, parse_device
@@ -49,7 +54,11 @@ def run(args) -> int:
     _warn_stale_builds(layout, names)
     result = evaluate(tool_path(args.checkpoint), layout, names, device=device, batch_size=args.batch_size,
                       variants=DEFAULT_VARIANTS if args.variants is None else args.variants,
-                      profile=not args.no_profile, max_cases=args.max_cases)
+                      profile=not args.no_profile, max_cases=args.max_cases,
+                      allow_unverified_replay=args.allow_unverified_replay)
+    if not result.replay_verified:
+        print(f"warning: diagnosed with an unverified replay (changed: {', '.join(result.replay_changes)}); the "
+              "results are marked unverified", file=sys.stderr)
     for name, suite in result.suites.items():
         reads = suite["reads"]
         if suite["reused"]:

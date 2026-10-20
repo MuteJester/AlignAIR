@@ -52,11 +52,13 @@ a speed profile. It runs in process (no subprocess, no AIRR files) on suites alr
 PYTHONPATH=src python -m alignair_assay build --run-dir .private/assay/dev --suites S1,S3 --scale 0.1
 PYTHONPATH=src python -m alignair_assay diagnose --run-dir .private/assay/dev --checkpoint MODEL.alignair \
     --suites S1,S3 [--device cuda] [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] \
-    [--max-cases 500]
+    [--max-cases 500] [--allow-unverified-replay]
 ```
 
 It writes `diagnostics/<model_key>/diagnostics.md` (and `diagnostics.json`) in the run directory and prints one
-line per suite. A suite built on the `test` split is refused: `test` stays locked for claims.
+line per suite. A suite built on the `test` split is refused: `test` stays locked for claims. So is an AlignAIR
+checkout whose predict pipeline has changed since the replay was pinned, unless `--allow-unverified-replay` (see
+The pin under Replay).
 
 **From a training loop.** Call the evaluator with the in-memory model and its `ReferenceSet` (for example every few
 thousand steps); `max_cases` takes that many reads per suite, evenly spaced. On a GPU, 500 S1 reads with every
@@ -420,7 +422,8 @@ python -m alignair_assay speed --run-dir RUN [--tools igblast,alignair] [--threa
     [--n-tiny 50] [--n-full 4000] [--repeats 3] [--igblast-dir DIR] [--alignair-image IMAGE] \
     [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
 python -m alignair_assay diagnose --run-dir RUN --checkpoint MODEL.alignair --suites S1,S3 [--device cuda] \
-    [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] [--max-cases N]
+    [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] [--max-cases N] \
+    [--allow-unverified-replay]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR [--donors DONORS.json]
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05] \
@@ -1029,11 +1032,25 @@ than the call. Tests pin each substitution against the product:
 The replay is proven equal to the product: `tests/alignair_assay/diagnostics/test_replay.py` requires its AIRR
 rows and light records to equal `predict_sequences`' on S0 reads (plus an over-length, a lower-case and an N-bearing
 read) with small random-init models shaped to cover every orientation, indels and two loci, and on 200 S1 reads
-with the released checkpoint (`ALIGNAIR_ASSAY_MODEL`). It also pins a digest of the code of the product functions
-the replay mirrors (`pipeline.predict`, `predict_sequences`, `run_model`): any edit to them fails the test until the
-replay is re-checked and the digest updated. `tests/alignair_assay/diagnostics/conftest.py` provides the small
-random-init models (`make_small_model`, `small_model`) and a built S0 (`s0_layout`, `s0_reads`) to the diagnostics
-tests.
+with the released checkpoint (`ALIGNAIR_ASSAY_MODEL`).
+
+**The pin.** `diagnostics.pin.PINNED` holds a digest of the code of the product functions the replay mirrors
+(`pipeline.predict`, `predict_sequences`, `run_model`; `pin.code_digest`), and `predict_sequences` must still run
+`pipeline.predict` (`api._predict`). `pin.pin_changes()` names what no longer holds, with the new digests:
+- the equivalence test fails on any change, and stays the place that re-pins;
+- `workflow.diagnose.evaluate` checks it once per process and refuses to run, naming the changed functions and
+  their new digests, unless `allow_unverified_replay=True` (`diagnose --allow-unverified-replay`). Then it warns
+  (`UnverifiedReplayWarning`) and stamps `replay_verified: false` and `replay_changes` into the result, every
+  `suite.json` and the report. Whether the replay is verified, and the digest of the product code, are part of each
+  suite's cache key, so verified and unverified results never mix.
+
+To re-pin after an AlignAIR change: update `diagnostics/replay.py` to the new code, run the equivalence tests
+(`tests/alignair_assay/diagnostics/test_replay.py`, with `ALIGNAIR_ASSAY_MODEL` set), then put the new digests in
+`PINNED`.
+
+The small random-init models (`make_small_model`, `small_model`) come from `tests/alignair_assay/conftest.py`;
+`tests/alignair_assay/diagnostics/conftest.py` adds the shaped ones (`make_shaped_model`) and a built S0
+(`s0_layout`, `s0_reads`).
 
 `load_model_checked(checkpoint_or_model, truth_reference, *, device)` loads a `.alignair` file with
 `alignair.api.load_model`, or passes a `(model, reference_set)` pair through, and refuses a model whose reference is

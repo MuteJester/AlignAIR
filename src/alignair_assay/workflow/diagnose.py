@@ -40,13 +40,15 @@ threads), the batch size and the profiled reads. The report is rendered afresh f
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
 import platform
 import time
+import warnings
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
 
@@ -66,6 +68,7 @@ from alignair_assay.diagnostics.ablation import (
 )
 from alignair_assay.diagnostics.heads import calibration_table, head_scores
 from alignair_assay.diagnostics.identity import ALIGNAIR_DIR, alignair_code, model_key, weights_sha256
+from alignair_assay.diagnostics.pin import current_digests, pin_changes, replay_digest, unverified_message
 from alignair_assay.diagnostics.profile import profile_model
 from alignair_assay.diagnostics.replay import load_model_checked, model_device, replay, unwrap_model
 from alignair_assay.metrics import is_informational
@@ -99,6 +102,10 @@ _ASSAY_CODE = files_digest(ASSAY_DIR, [*(path for layer in ASSAY_LAYERS for path
                                          if "__pycache__" not in path.parts), Path(__file__).resolve()])
 
 
+class UnverifiedReplayWarning(UserWarning):
+    """``evaluate`` ran, with ``allow_unverified_replay``, against AlignAIR code the replay is not pinned to."""
+
+
 @dataclass(frozen=True)
 class DiagnosticsResult:
     """What ``evaluate`` found for one model."""
@@ -110,11 +117,23 @@ class DiagnosticsResult:
     profile: dict | None
     # the report as markdown, as written to ``diagnostics.md``
     report_md: str
+    # False when the replay ran on AlignAIR code it is not pinned to (``allow_unverified_replay``), with
+    # ``replay_changes`` (``diagnostics.pin.pin_changes``: name -> new digest)
+    replay_verified: bool = True
+    replay_changes: dict[str, str] = field(default_factory=dict)
+
+
+@functools.lru_cache(maxsize=1)
+def replay_pin() -> tuple[str, dict[str, str]]:
+    """``(replay_digest, pin_changes)`` of the AlignAIR code the replay mirrors (``diagnostics.pin``), checked once per
+    process, the first time it is asked for: the code this process runs."""
+    digests = current_digests()
+    return replay_digest(digests), pin_changes(digests)
 
 
 def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, device: str | None = None,
              batch_size: int = 256, variants: Sequence[str] = DEFAULT_VARIANTS, profile: bool | None = None,
-             max_cases: int | None = None) -> DiagnosticsResult:
+             max_cases: int | None = None, allow_unverified_replay: bool = False) -> DiagnosticsResult:
     """Diagnose a model on ``suites``, built on the dev split in ``layout``, as the module docstring describes;
     reuses each cached suite result whose key matches in full.
 
@@ -125,6 +144,13 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     back to its own afterwards, whatever happens, and every replay puts it back in its training mode, so the
     training loop's optimizer carries on. ``profile`` (default: True for a model file, False for a pair, which a
     training loop would otherwise profile and cache again on every call) adds the speed profile.
+
+    **Replay pin.** The replay mirrors AlignAIR product code pinned by digest (``diagnostics.pin``), checked once per
+    process (``replay_pin``). When it has changed, ``evaluate`` refuses to run (ValueError naming each changed
+    function, its new digest and how to re-pin), unless ``allow_unverified_replay``: then it warns
+    (``UnverifiedReplayWarning``) and stamps ``replay_verified`` False and the ``replay_changes`` into the result,
+    every suite's result and the report. Whether the replay is verified, and the digest of the product code, are in
+    every suite's cache key, so verified and unverified results never mix.
 
     Each suite's result holds ``suite``; its cache ``key``; ``reads`` (``built``, ``diagnosed``, ``scored``,
     ``excluded`` and ``cropped``: reads longer than the model's window); ``clusters`` (the ``keys`` of
@@ -157,6 +183,14 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
         own_device = model_device(own)
         device = parse_device(str(own_device) if device is None else device)
     profile = from_file if profile is None else bool(profile)
+    pin_digest, changes = replay_pin()
+    changes = dict(changes)
+    if changes and not allow_unverified_replay:
+        raise ValueError(unverified_message(changes))
+    if changes:
+        warnings.warn(UnverifiedReplayWarning(f"diagnosing with an unverified replay: {unverified_message(changes)}"),
+                      stacklevel=2)
+    replay_state = {"verified": not changes, "sha256": pin_digest}
     weights = weights_sha256(model_or_checkpoint)
     try:
         model, reference_set = load_model_checked(model_or_checkpoint, reference, device=device)
@@ -167,7 +201,8 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
                              "diagnose it again once it is completely written")
         return _evaluate(model, reference_set, reference, layout, names, weights=weights, variants=variants,
                          device=device, batch_size=batch_size, profile=profile, max_cases=max_cases,
-                         source=str(Path(model_or_checkpoint).expanduser()) if from_file else "in-memory model")
+                         source=str(Path(model_or_checkpoint).expanduser()) if from_file else "in-memory model",
+                         replay_state=replay_state, replay_changes=changes)
     finally:
         if own is not None:
             own.to(own_device)
@@ -175,22 +210,25 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
 
 def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, names: list[str], *, weights: str,
               variants: tuple[str, ...], device: str, batch_size: int, profile: bool, max_cases: int | None,
-              source: str) -> DiagnosticsResult:
-    """``evaluate`` on a checked model already on ``device``."""
+              source: str, replay_state: dict, replay_changes: dict[str, str]) -> DiagnosticsResult:
+    """``evaluate`` on a checked model already on ``device``; ``replay_state`` (``verified`` and the product code's
+    ``sha256``) goes into every suite's cache key."""
     code = alignair_code()
     key_name = model_key(weights, code["code_sha256"])
     identity = {"weights_sha256": weights, "code_sha256": code["code_sha256"], "torch_version": code["torch_version"]}
     config = {"variants": list(variants), "max_cases": max_cases, "device": device, "batch_size": batch_size}
+    verified = bool(replay_state["verified"])
+    stamp = {"replay_verified": verified, "replay_changes": dict(replay_changes)}
 
     results: dict[str, dict] = {}
     for name in names:
-        key = suite_key(layout, name, identity, config)
+        key = suite_key(layout, name, identity, {**config, "replay": replay_state})
         path = layout.diagnostics_suite_json(key_name, name)
         cached = _cached(path, key)
         if cached is None:
             path.unlink(missing_ok=True)
-            cached = _diagnose_suite(name, key, model, reference_set, reference, layout, variants=variants,
-                                     max_cases=max_cases, device=device, batch_size=batch_size)
+            cached = {**_diagnose_suite(name, key, model, reference_set, reference, layout, variants=variants,
+                                        max_cases=max_cases, device=device, batch_size=batch_size), **stamp}
             _write_json(path, cached)
             results[name] = {**cached, "reused": False}
         else:
@@ -201,12 +239,13 @@ def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, nam
     report = build_diagnostics_report(
         model={"model_key": key_name, "source": source, **identity, "alignair_source": str(ALIGNAIR_DIR),
                "assay_code_sha256": assay_code_sha256()},
-        config={"run_dir": str(layout.root), "suites": names, **config, "profile": bool(profile)},
+        config={"run_dir": str(layout.root), "suites": names, **config, "profile": bool(profile), **stamp},
         suites=results, profile=measured)
     markdown = diagnostics_markdown(report)
     _write_json(layout.diagnostics_json(key_name), report)
     layout.diagnostics_md(key_name).write_text(markdown, encoding="utf-8")
-    return DiagnosticsResult(model_key=key_name, suites=results, profile=measured, report_md=markdown)
+    return DiagnosticsResult(model_key=key_name, suites=results, profile=measured, report_md=markdown,
+                             replay_verified=verified, replay_changes=dict(replay_changes))
 
 
 def assay_code_sha256() -> str:
@@ -257,7 +296,8 @@ def suite_key(layout: RunLayout, suite: str, model: dict, config: dict) -> dict:
     """What a suite's result depends on (see the module docstring), as JSON reads it back: ``kind``, ``version``,
     the ``model`` identity, ``assay_code_sha256``, the ``suite`` build (``name``, the build record's ``identity``
     and ``config_hash``, the SHA-256 of its cases, truth and donors files; None for no donors) and ``config``'s
-    ``variants``, ``max_cases``, ``device`` and ``batch_size``."""
+    ``variants``, ``max_cases``, ``device``, ``batch_size`` and ``replay`` (whether the replay is verified, and the
+    ``diagnostics.pin.replay_digest`` of the product code it mirrors)."""
     build = json.loads(layout.build_json(suite).read_text(encoding="utf-8"))
     donors = layout.donors(suite)
     key = {"kind": SUITE_KIND, "version": CACHE_VERSION, "model": model, "assay_code_sha256": assay_code_sha256(),

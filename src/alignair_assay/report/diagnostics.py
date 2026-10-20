@@ -86,8 +86,10 @@ def build_diagnostics_report(*, model: dict, config: dict, suites: dict, profile
 def diagnostics_markdown(report: dict) -> str:
     """The report as markdown (see the module docstring for its sections)."""
     model, config = report["model"], report["config"]
-    lines = [f"# AlignAIR diagnostics: model {model['model_key']}", "", _model_text(model, config), "",
-             _OVERVIEW_NOTE, "", *_overview(report["suites"])]
+    lines = [f"# AlignAIR diagnostics: model {model['model_key']}", "", _model_text(model, config), ""]
+    if config.get("replay_verified") is False:
+        lines += [_unverified_text(config.get("replay_changes") or {}), ""]
+    lines += [_OVERVIEW_NOTE, "", *_overview(report["suites"])]
     for title, render in zip(SECTIONS, (_heads, _contributions, _calibration, _swaps, _profile, _fallbacks)):
         lines += ["", f"## {title}", "", *render(report)]
     return "\n".join(lines) + "\n"
@@ -101,6 +103,13 @@ def _model_text(model: dict, config: dict) -> str:
             f"max cases {max_cases if max_cases else 'all'} per suite, variants "
             f"{', '.join(config['variants']) or 'none'}; run directory {config['run_dir']}. Every suite is on the "
             "dev split.")
+
+
+def _unverified_text(changes: dict) -> str:
+    names = ", ".join(f"`{name}`" for name in changes) or "unknown"
+    return (f"**Unverified replay.** The AlignAIR code the replay mirrors has changed since it was pinned ({names}), "
+            "and these diagnostics were run anyway (`allow_unverified_replay`): the replay may not be the product "
+            "pipeline. Re-pin it (`diagnostics/pin.py`) before trusting them.")
 
 
 def _overview(suites: dict) -> list[str]:

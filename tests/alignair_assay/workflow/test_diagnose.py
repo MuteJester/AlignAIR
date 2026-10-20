@@ -28,7 +28,12 @@ from alignair_assay.report.diagnostics import SECTIONS  # noqa: E402
 from alignair_assay.runners.alignair import local_code_identity  # noqa: E402
 from alignair_assay.workflow import diagnose as diagnose_module  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
-from alignair_assay.workflow.diagnose import DiagnosticsResult, evaluate, select_cases  # noqa: E402
+from alignair_assay.workflow.diagnose import (  # noqa: E402
+    DiagnosticsResult,
+    UnverifiedReplayWarning,
+    evaluate,
+    select_cases,
+)
 
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
 REFERENCE = "HUMAN_IGH_OGRDB"
@@ -398,6 +403,68 @@ def test_the_profile_is_cached_with_its_own_key(built, tmp_path, save_checkpoint
     monkeypatch.setattr(diagnose_module, "assay_code_sha256", lambda: "1" * 64)
     evaluate(checkpoint, layout, ["S0"], **{**options, "batch_size": 4})
     assert profiles == [BATCH, 4, 4]
+
+
+# --- the replay pin ---------------------------------------------------------------------------------------------
+
+CHANGED = {"alignair.predict.pipeline.predict": "f" * 64}
+
+
+def test_an_unverified_replay_is_refused_unless_allowed(built, tmp_path, small_model, monkeypatch, replays):
+    layout = _copy(built, tmp_path)
+    verified = evaluate(small_model, layout, ["S0"], **FAST)
+    assert verified.replay_verified is True and verified.replay_changes == {}
+    assert verified.suites["S0"]["replay_verified"] is True and verified.suites["S0"]["replay_changes"] == {}
+
+    monkeypatch.setattr(diagnose_module, "replay_pin", lambda: ("1" * 64, dict(CHANGED)))
+    before = len(replays)
+    with pytest.raises(ValueError) as error:
+        evaluate(small_model, layout, ["S0"], **FAST)
+    for part in ("alignair.predict.pipeline.predict", "f" * 64, "update diagnostics/replay.py", "test_replay.py",
+                 "PINNED", "allow_unverified_replay=True"):
+        assert part in str(error.value), part
+    assert len(replays) == before
+
+    with pytest.warns(UnverifiedReplayWarning, match="alignair.predict.pipeline.predict"):
+        unverified = evaluate(small_model, layout, ["S0"], **FAST, allow_unverified_replay=True)
+    assert unverified.replay_verified is False and unverified.replay_changes == CHANGED
+    # Never served from the verified record: the verification and the product code digest are in the key.
+    suite = unverified.suites["S0"]
+    assert suite["reused"] is False and len(replays) == before + 1
+    assert suite["replay_verified"] is False and suite["replay_changes"] == CHANGED
+    assert suite["key"]["replay"] == {"verified": False, "sha256": "1" * 64}
+    record = json.loads(layout.diagnostics_suite_json(unverified.model_key, "S0").read_text())
+    assert record["replay_verified"] is False and record["replay_changes"] == CHANGED
+    assert "unverified" in unverified.report_md and "alignair.predict.pipeline.predict" in unverified.report_md
+
+
+def test_the_replay_pin_is_checked_once_per_process(built, tmp_path, small_model, monkeypatch):
+    layout = _copy(built, tmp_path)
+    calls = []
+    original = diagnose_module.pin_changes
+    monkeypatch.setattr(diagnose_module, "pin_changes", lambda *args: calls.append(1) or original(*args))
+    diagnose_module.replay_pin.cache_clear()
+    try:
+        for _ in range(2):
+            evaluate(small_model, layout, ["S0"], **FAST)
+        assert len(calls) == 1
+    finally:
+        diagnose_module.replay_pin.cache_clear()
+
+
+def test_diagnose_command_refuses_an_unverified_replay_unless_allowed(built, tmp_path, save_checkpoint, monkeypatch,
+                                                                       capsys):
+    layout = _copy(built, tmp_path)
+    checkpoint = save_checkpoint(tmp_path / "model.alignair")
+    monkeypatch.setattr(diagnose_module, "replay_pin", lambda: ("1" * 64, dict(CHANGED)))
+    argv = ["diagnose", "--run-dir", str(layout.root), "--checkpoint", str(checkpoint), "--suites", "S0",
+            "--device", "cpu", "--variants", "baseline", "--no-profile", "--max-cases", "2"]
+    assert main(argv) == 2
+    assert "--allow-unverified-replay" in capsys.readouterr().err
+    with pytest.warns(UnverifiedReplayWarning):
+        assert main([*argv, "--allow-unverified-replay"]) == 0
+    captured = capsys.readouterr()
+    assert "unverified" in captured.err and "alignair.predict.pipeline.predict" in captured.err
 
 
 # --- refusals and subsets ---------------------------------------------------------------------------------------

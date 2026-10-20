@@ -16,6 +16,7 @@
       [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
   python -m alignair_assay diagnose --run-dir RUN --checkpoint MODEL.alignair --suites S1,S3 [--device cuda]
       [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] [--max-cases N]
+      [--allow-unverified-replay]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR

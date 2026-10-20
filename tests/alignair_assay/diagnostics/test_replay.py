@@ -3,13 +3,8 @@ checked against the truth reference, and each substitution fed in between the st
 
 The test against the released checkpoint runs only when ``ALIGNAIR_ASSAY_MODEL`` names a ``.alignair`` model file.
 """
-import hashlib
-import inspect
-import io
 import os
 import re
-import textwrap
-import tokenize
 from collections import Counter
 from pathlib import Path
 
@@ -29,6 +24,16 @@ from alignair_assay.core.cases import read_fasta  # noqa: E402
 from alignair_assay.core.reference import Reference  # noqa: E402
 from alignair_assay.diagnostics.heads import decode_boundaries  # noqa: E402
 from alignair_assay.diagnostics.identity import weights_sha256  # noqa: E402
+from alignair_assay.diagnostics.pin import (  # noqa: E402
+    PINNED,
+    PREDICT_ALIAS,
+    code_digest,
+    current_digests,
+    mirrored,
+    pin_changes,
+    replay_digest,
+    unverified_message,
+)
 from alignair_assay.diagnostics.replay import (  # noqa: E402
     STAGES,
     StageOutputs,
@@ -46,32 +51,6 @@ needs_model = pytest.mark.skipif(not MODEL, reason="set ALIGNAIR_ASSAY_MODEL to 
 # Batches of 16 over the 53 inputs: three full batches and a partial one.
 BATCH = 16
 GENES = ("v", "d", "j")
-
-# The product functions whose orchestration replay.py mirrors (the stage order, the masks, the configuration and
-# the batched forward pass), by a digest of their code tokens (comments and blank lines excluded). Any edit to one
-# of them fails test_mirrored_product_code_is_pinned: re-check diagnostics/replay.py against the new code, then
-# update the digest here.
-PINNED = {
-    "alignair.predict.pipeline.predict": "ab52fa514e3422438c02121e7a78c729cb7d5371a777e5c52b6c5808c3e09c0d",
-    "alignair.api.predict_sequences": "f105197a3fd679737ac5e0cc03e2191350cea8c76fc8f36838f7e7f09c102d7f",
-    "alignair.predict.forward.run_model": "5f5a63f21a4224585672f5a7bb8ad2dcc2c3619347b3dbc5bc4d124179a93fc0",
-}
-MIRRORED = {"alignair.predict.pipeline.predict": pipeline.predict,
-            "alignair.api.predict_sequences": api.predict_sequences,
-            "alignair.predict.forward.run_model": forward.run_model}
-
-
-def _code_digest(function) -> str:
-    """SHA-256 of the function's tokens as (type name, text), comments and blank lines left out. Token type numbers
-    differ between Python versions (3.12 added EXCLAMATION, moving OP from 54 to 55), so the name is hashed. Python
-    3.12 also tokenizes f-strings differently (FSTRING_START/MIDDLE/END instead of one STRING), so a pinned function
-    that gains an f-string gets a different digest per version; none of them has one."""
-    source = textwrap.dedent(inspect.getsource(function))
-    tokens = tokenize.generate_tokens(io.StringIO(source).readline)
-    kept = [(tokenize.tok_name[tok.type], tok.string) for tok in tokens
-            if tok.type not in (tokenize.COMMENT, tokenize.NL)]
-    return hashlib.sha256(repr(kept).encode()).hexdigest()
-
 
 def _inputs(s0_reads) -> tuple[list[str], list[str]]:
     """The S0 reads plus three that exercise the input policy: an over-length read (cropped to 576), a lower-case
@@ -121,10 +100,35 @@ def test_replay_equals_product_pipeline_real_checkpoint(reference, s1_layout):
 
 
 def test_mirrored_product_code_is_pinned():
-    changed = {name: _code_digest(function) for name, function in MIRRORED.items()
-               if _code_digest(function) != PINNED[name]}
+    # The place that re-pins: when this fails, update diagnostics/replay.py to the new AlignAIR code, run these
+    # equivalence tests (with ALIGNAIR_ASSAY_MODEL), then put the new digests in diagnostics/pin.py's PINNED.
+    assert api._predict is pipeline.predict  # predict_sequences runs the pipeline the replay mirrors
+    assert set(mirrored()) == set(PINNED)
+    changed = {name: code_digest(function) for name, function in mirrored().items()
+               if code_digest(function) != PINNED[name]}
     assert not changed, (f"AlignAIR code that diagnostics/replay.py mirrors has changed: {sorted(changed)}. Re-check "
-                         f"the replay against it, then pin the new digests: {changed}")
+                         f"the replay against it, then pin the new digests in diagnostics/pin.py: {changed}")
+    assert pin_changes() == {}
+
+
+def test_pin_changes_name_what_changed(monkeypatch):
+    digests = current_digests()
+    assert digests[PREDICT_ALIAS] == "alignair.predict.pipeline.predict"
+    monkeypatch.setitem(PINNED, "alignair.predict.forward.run_model", "0" * 64)
+    assert pin_changes() == {"alignair.predict.forward.run_model": digests["alignair.predict.forward.run_model"]}
+    monkeypatch.undo()
+
+    def elsewhere(*args, **kwargs):
+        return pipeline.predict(*args, **kwargs)
+
+    monkeypatch.setattr(api, "_predict", elsewhere)
+    changes = pin_changes()
+    assert list(changes) == [PREDICT_ALIAS] and changes[PREDICT_ALIAS].endswith("elsewhere")
+    assert replay_digest() != replay_digest(digests)
+    message = unverified_message(changes)
+    for part in (PREDICT_ALIAS, changes[PREDICT_ALIAS], "update diagnostics/replay.py", "test_replay.py",
+                 "update PINNED", "allow_unverified_replay=True", "--allow-unverified-replay"):
+        assert part in message, part
 
 
 def test_predict_config_is_the_one_predict_sequences_builds(small_model, monkeypatch):
