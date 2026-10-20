@@ -6,24 +6,40 @@ defined only when the junction is.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from alignair_assay.core.cigar import parse_cigar, walk
-from alignair_assay.core.reference import Reference
+from alignair_assay.core.genotype import NovelAllele
+from alignair_assay.core.reference import Reference, gene_name
 from alignair_assay.core.seqops import revcomp, translate
 from alignair_assay.truth.alleles import observable_alleles
 from alignair_assay.truth.boundaries import boundary_intervals
 from alignair_assay.truth.genairr import observe_forward, observe_inverted_d
 from alignair_assay.truth.model import JunctionTruth, ObservableTruth, SegmentTruth
-from alignair_assay.truth.segment import ObservedSegment, check_invariants
+from alignair_assay.truth.segment import ObservedSegment, check_invariants, observe_segment
 
 
 def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: str, stratum: str,
-                              orientation: int = 0) -> ObservableTruth:
+                              orientation: int = 0,
+                              novel: Mapping[str, NovelAllele] | None = None) -> ObservableTruth:
     """Observable truth for a forward GenAIRR record (``rev_comp`` records are not supported yet).
 
     Each segment's primary allele is the generative one, ``truth_{g}_call`` (records simulated with
     ``expose_provenance=True``); a record without it falls back to the first entry of ``{g}_call``, GenAIRR's
     post-SHM re-call, and the allele truth says so (``AlleleTruth.primary_fallback``). A generative allele missing
-    from the call list makes the segment re-called, decoded as ``truth.genairr`` describes.
+    from the call list makes the segment re-called, decoded as ``truth.genairr`` describes. A primary allele that
+    is not in ``reference`` makes its segment unscorable.
+
+    **Novel V alleles.** ``novel`` maps the novel alleles of the read's donor by name. A primary V allele found
+    there (and not in ``reference``) is observed against the novel sequence, then re-based onto its base allele,
+    which is what a perfect aligner restricted to ``reference`` reports: the same coordinates and CIGAR, the base's
+    germline and mismatches counted against it (so every SNP shown is one), boundaries and the allele set built
+    against the base. GenAIRR's call list is projected onto ``reference``: the novel name becomes the base, and
+    the other alleles of the base's gene that cover the observed span and mismatch the read at no more aligned
+    columns than the base join it, since GenAIRR's re-call, made against the novel allele, cannot show them.
+    ``ObservableTruth.v_novel_snps`` holds the read positions (canonical frame, ascending) aligned to the novel
+    allele's SNPs inside the observed germline span ``[germ_start, germ_end)``. ValueError, naming the allele, when
+    its base is not in ``reference`` or its sequence does not differ from the base's exactly at its SNPs.
     """
     if record.get("rev_comp"):
         raise ValueError(f"{case_id}: reverse-complemented GenAIRR records are not supported")
@@ -32,19 +48,25 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
 
     observed: dict[str, tuple[ObservedSegment, str, list[str], bool, bool]] = {}
     unscorable: set[str] = set()
+    v_novel_snps = None
     for g in "vdj":
         calls = [c for c in (record.get(f"{g}_call") or "").split(",") if c]
         generative = record.get(f"truth_{g}_call") or None
         primary = generative or (calls[0] if calls else None)
         if primary is None:
             continue
-        if not reference.has(primary):
+        novel_allele = (novel or {}).get(primary) if g == "v" and not reference.has(primary) else None
+        if novel_allele is None and not reference.has(primary):
             warnings.append(f"{g}: primary allele {primary} not in reference; segment dropped")
             unscorable.add(g)
             continue
         # GenAIRR projects the alignment onto its first call, which is the generative allele whenever it is listed.
         recalled = bool(calls) and generative is not None and generative not in calls
-        allele_seq = reference.seq(primary)
+        if novel_allele is not None:
+            base_sequence = _base_sequence(novel_allele, reference)
+            allele_seq = novel_allele.sequence
+        else:
+            allele_seq = reference.seq(primary)
         inverted = g == "d" and bool(record.get("d_inverted"))
         frame_seq = revcomp(allele_seq) if inverted else allele_seq
         problems: list[str] = []
@@ -63,6 +85,13 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
         # A missing segment with a problem was dropped; without one, the read simply does not show it.
         if seg is None and problems:
             unscorable.add(g)
+        if seg is not None and novel_allele is not None:
+            frame_seq = base_sequence
+            seg, v_novel_snps = _rebased(read, seg, novel_allele, base_sequence)
+            # GenAIRR's call list, projected onto the reference: the base for the novel allele, plus the alleles
+            # its re-call against the novel sequence cannot show, those of the gene as near to the read as the base.
+            calls = list(dict.fromkeys([*(novel_allele.base if call == primary else call for call in calls),
+                                        *_as_near_as_base(read, seg, reference, g)]))
         if seg is not None:
             problems += check_invariants(read, frame_seq, seg)
             observed[g] = (seg, frame_seq, calls, inverted, generative is None)
@@ -104,7 +133,48 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
         productive=productive, clone_key=clone_key,
         v_mismatches=segments["v"].observed.n_mismatch if "v" in segments else None,
         v_frameshift=v_frameshift, j_frameshift=j_frameshift, excluded=None, warnings=tuple(warnings),
+        v_novel_snps=v_novel_snps,
     )
+
+
+def _base_sequence(novel: NovelAllele, reference: Reference) -> str:
+    """The reference sequence of ``novel``'s base, checked against the novel sequence (ValueError otherwise)."""
+    if not reference.has(novel.base):
+        raise ValueError(f"novel allele {novel.name}: its base {novel.base} is not in the reference")
+    base_sequence = reference.seq(novel.base)
+    novel.check_base(base_sequence)
+    return base_sequence
+
+
+def _rebased(read: str, seg: ObservedSegment, novel: NovelAllele,
+             base_sequence: str) -> tuple[ObservedSegment, tuple[int, ...]]:
+    """``seg``, observed against ``novel``, re-based onto its base (same coordinates and CIGAR, the base's germline,
+    mismatches recounted against ``base_sequence``), and the read positions aligned to the novel allele's SNPs."""
+    rebased = observe_segment(read, base_sequence, novel.base, seg.seq_start, seg.germ_start, seg.cigar)
+    if rebased is None:  # unreachable: ``seg`` already has an aligned column and no edge gap
+        raise ValueError(f"novel allele {novel.name}: observed alignment {seg.cigar} has no aligned column")
+    snps = set(novel.snps)
+    positions = tuple(column.read_pos for column in walk(parse_cigar(seg.cigar), seg.seq_start, seg.germ_start)
+                      if column.read_pos is not None and column.germ_pos in snps)
+    return rebased, positions
+
+
+def _as_near_as_base(read: str, seg: ObservedSegment, reference: Reference, letter: str) -> list[str]:
+    """The other alleles of the gene of ``seg.allele`` (a re-based novel V's base), in name order, that cover the
+    observed germline span and, read through ``seg``'s aligned columns, mismatch the read at no more columns than
+    the base (``seg.n_mismatch``; a read ``N`` never mismatches). SHM can bring a read this near to a sibling of
+    the base, which an aligner restricted to the reference may then call as defensibly as the base."""
+    gene = gene_name(seg.allele)
+    columns = [(column.read_pos, column.germ_pos)
+               for column in walk(parse_cigar(seg.cigar), seg.seq_start, seg.germ_start)
+               if column.read_pos is not None and column.germ_pos is not None]
+    near = []
+    for name, sequence in sorted(reference.alleles[letter].items()):
+        if name == seg.allele or gene_name(name) != gene or len(sequence) < seg.germ_end:
+            continue
+        if sum(read[r] != "N" and read[r] != sequence[p] for r, p in columns) <= seg.n_mismatch:
+            near.append(name)
+    return near
 
 
 def _reverse_complemented(reference: Reference, letter: str) -> Reference:

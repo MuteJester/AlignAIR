@@ -97,9 +97,9 @@ def generate_suite(suite: Suite, *, reference_name: str, split: str, seed: int, 
 def make_context(suite: Suite, reference_name: str, *, split: str, seed: int) -> RecipeContext:
     """The recipe context of ``suite``: the dataconfig ``reference_name``, its truth reference and the suite's
     donors."""
-    reference = Reference.from_dataconfig(reference_name)
-    return RecipeContext(config=dataconfig(reference_name), reference=reference,
-                         donors=_donors(suite, reference, split=split, seed=seed))
+    reference, config = Reference.from_dataconfig(reference_name), dataconfig(reference_name)
+    return RecipeContext(config=config, reference=reference,
+                         donors=_donors(suite, reference, config, split=split, seed=seed))
 
 
 def generate_stratum(suite: Suite, stratum: Stratum, ctx: RecipeContext, *, split: str, seed: int,
@@ -200,11 +200,11 @@ def _cohort_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: in
     return records[:ctx.n], stats
 
 
-def _donors(suite: Suite, reference: Reference, *, split: str, seed: int) -> tuple[Donor, ...]:
-    """The suite's donors, sampled with ``derive_seed(seed, split, suite.name, "donors", spec.tag)``; empty for a
-    suite without donors."""
+def _donors(suite: Suite, reference: Reference, config, *, split: str, seed: int) -> tuple[Donor, ...]:
+    """The suite's donors, sampled with ``derive_seed(seed, split, suite.name, "donors", spec.tag)`` (``config``,
+    the DataConfig ``reference`` was built from, validates novel alleles); empty for a suite without donors."""
     spec = suite.donors
     if spec is None:
         return ()
     donor_seed = derive_seed(seed, split, suite.name, "donors", spec.tag)
-    return tuple(sample_donors(reference, spec.n, donor_seed, spec.params))
+    return tuple(sample_donors(reference, spec.n, donor_seed, spec.params, config=config))

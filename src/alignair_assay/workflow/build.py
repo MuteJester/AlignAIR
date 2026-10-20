@@ -32,8 +32,9 @@ def build_suite(name: str, layout: RunLayout, *, reference_name: str, split: str
     (``truth``: excluded cases, warnings, unscorable genes, simulator calls, primary fallbacks),
     ``workers`` and the wall time in ``seconds``. A suite with donors also gets ``donors.json``
     (``suites.donors.donors_to_json``) and a ``donors_summary`` (``suites.donors.donors_summary``: realised alleles
-    per gene, deleted genes per donor, heterozygous share) in its build record. Cases, truth and donors do not
-    depend on ``workers``.
+    per gene, deleted genes per donor, heterozygous share) in its build record, and each of its cases is truthed
+    with the novel alleles of its donor (``groups["subject"]``). Cases, truth and donors do not depend on
+    ``workers``.
     """
     start = time.perf_counter()
     suite = get_suite(name)
@@ -45,7 +46,10 @@ def build_suite(name: str, layout: RunLayout, *, reference_name: str, split: str
     digest = reference.digest()
     generated = generate_suite(suite, reference_name=reference_name, split=split, seed=seed, scale=scale,
                                workers=workers)
-    truths = [truth_from_case(case, reference) for case in generated.cases]
+    # Novel alleles are named per donor, so each case is truthed with its own donor's.
+    novel = {donor.subject_id: donor.novel for donor in generated.donors}
+    truths = [truth_from_case(case, reference, novel=novel.get(case["groups"].get("subject")))
+              for case in generated.cases]
 
     layout.suite_dir(name).mkdir(parents=True, exist_ok=True)
     write_cases(generated.cases, layout.cases(name))

@@ -4,8 +4,9 @@ A donor carries one or two alleles of every reference gene except its homozygous
 draws each donor independently: a Poisson(``mean_deleted_genes``) number of V/D genes is deleted, drawn uniformly
 without replacement (J is never deleted, and every deletable segment keeps at least one gene); every remaining
 gene with two or more reference alleles is heterozygous with probability ``het_fraction``; alleles are uniform
-within a gene. ``Donor.genotype`` builds the GenAIRR ``Genotype`` that ``Experiment.run_cohort`` simulates the
-donor from; ``donors_to_json`` is the ``donors.json`` form.
+within a gene; optionally, some carried V genes are then made homozygous for a novel allele (``suites.novel``).
+``Donor.genotype`` builds the GenAIRR ``Genotype`` that ``Experiment.run_cohort`` simulates the donor from;
+``donors_to_json`` is the ``donors.json`` form.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from alignair_assay.core.genotype import DonorGenotype, NovelAllele
 from alignair_assay.core.reference import Reference, gene_name
+from alignair_assay.suites.novel import make_novel_allele
 
 if TYPE_CHECKING:
     from GenAIRR import Genotype
@@ -35,11 +37,15 @@ class DonorParams:
     """How donors are drawn. ``het_fraction`` (0 to 1) is the probability that a gene with two or more reference
     alleles is heterozygous. ``mean_deleted_genes`` is the Poisson mean of homozygously deleted genes per donor,
     drawn from the genes of the ``deletable`` segments (``"v"``, ``"d"``; J is never deleted); the count is capped
-    so every deletable segment keeps at least one gene. ValueError for values outside these ranges."""
+    so every deletable segment keeps at least one gene. ``novel_v_genes`` carried V genes per donor are made
+    homozygous for a novel allele (``suites.novel``), the i-th with ``novel_snp_cycle[i % len(cycle)]`` SNPs.
+    ValueError for values outside these ranges."""
 
     het_fraction: float = 0.40
     mean_deleted_genes: float = 6.7
     deletable: tuple[str, ...] = ("v", "d")
+    novel_v_genes: int = 0
+    novel_snp_cycle: tuple[int, ...] = (1, 2, 3, 4, 5, 6)
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.het_fraction <= 1.0:
@@ -49,14 +55,20 @@ class DonorParams:
         if not set(self.deletable) <= set(_DELETABLE) or len(set(self.deletable)) != len(self.deletable):
             raise ValueError(f"deletable must be distinct segments among {_DELETABLE} (J is never deleted), "
                              f"got {self.deletable!r}")
+        if isinstance(self.novel_v_genes, bool) or not isinstance(self.novel_v_genes, int) or self.novel_v_genes < 0:
+            raise ValueError(f"novel_v_genes must be an integer >= 0, got {self.novel_v_genes!r}")
+        if not self.novel_snp_cycle or not all(isinstance(k, int) and not isinstance(k, bool) and k >= 1
+                                               for k in self.novel_snp_cycle):
+            raise ValueError(f"novel_snp_cycle must be a non-empty sequence of SNP counts >= 1, "
+                             f"got {self.novel_snp_cycle!r}")
 
 
 @dataclass(frozen=True)
 class Donor:
     """A simulated donor. ``alleles`` maps every carried gene to its alleles, sorted: one when homozygous, two when
     heterozygous. Homozygously ``deleted`` genes are absent from it. ``novel`` maps a novel allele's name to its
-    definition; a carried novel allele appears in ``alleles`` under its base's gene. ValueError for a malformed
-    donor."""
+    definition; every novel allele is carried, in ``alleles`` under its base's gene. ValueError for a malformed
+    donor, naming the gene or novel allele."""
 
     subject_id: str
     alleles: dict[str, tuple[str, ...]]
@@ -79,6 +91,9 @@ class Donor:
             if novel.name != name or gene_name(novel.base) != gene_name(name):
                 raise ValueError(f"{self.subject_id}: novel allele {name!r} must be keyed by its own name and "
                                  "belong to its base allele's gene")
+            if name not in self.alleles.get(gene_name(name), ()):
+                raise ValueError(f"{self.subject_id}: novel allele {name} is not carried (gene {gene_name(name)} "
+                                 f"carries {list(self.alleles.get(gene_name(name), ()))})")
 
     def view(self) -> DonorGenotype:
         """The plain-data genotype: every carried allele (novel ones included) and the deleted genes."""
@@ -116,13 +131,16 @@ class Donor:
     def tool_genotype(self, reference: Reference) -> dict[str, list[str]]:
         """The genotype a tool is given: per gene letter of ``reference`` (``"v"``, ``"d"``, ``"j"``), the sorted
         reference alleles the donor carries, each novel allele replaced by its base. ValueError for a carried
-        allele that is neither in ``reference`` nor novel."""
+        allele that is neither in ``reference`` nor novel, and for a novel allele that does not differ from its
+        base's reference sequence exactly at its SNPs (``NovelAllele.check_base``)."""
         tool: dict[str, set[str]] = {letter: set() for letter in reference.alleles}
         for names in self.alleles.values():
             for name in names:
                 allele = self.novel[name].base if name in self.novel else name
                 if not reference.has(allele):
                     raise ValueError(f"{self.subject_id}: carried allele {allele!r} is not in the reference")
+                if name in self.novel:
+                    self.novel[name].check_base(reference.seq(allele))
                 tool[reference.gene_letter(allele)].add(allele)
         return {letter: sorted(names) for letter, names in tool.items()}
 
@@ -144,12 +162,24 @@ class DonorSpec:
             raise ValueError(f"donors: tag must be non-empty and contain no ':', got {self.tag!r}")
 
 
-def sample_donors(reference: Reference, n: int, seed: int, params: DonorParams = DonorParams()) -> list[Donor]:
+def sample_donors(reference: Reference, n: int, seed: int, params: DonorParams = DonorParams(), *,
+                  config=None) -> list[Donor]:
     """``n`` donors ``donor00``, ``donor01``, ... drawn from ``reference`` under ``params`` (see the module
     docstring). Each donor has its own random stream seeded by ``seed`` and its id, so a donor does not depend on
-    ``n``: a smaller cohort is a prefix of a larger one. ValueError when ``n`` is not a positive integer."""
+    ``n``: a smaller cohort is a prefix of a larger one.
+
+    With ``params.novel_v_genes``, each donor's novel alleles come from a second stream of its own, after the rest
+    of its genotype is drawn, so that genotype is the one drawn without novel alleles. The donor's carried
+    (non-deleted) V genes are shuffled and taken in turn: the i-th novel allele, ``{gene}*{900 + i}``, derives
+    from one of the gene's carried alleles (drawn uniformly) by ``novel_snp_cycle[i % len(cycle)]`` SNPs
+    (``suites.novel.make_novel_allele``) and replaces the gene's alleles, homozygously. A gene whose base gives no
+    accepted novel allele is passed over. ``config`` is the GenAIRR DataConfig ``reference`` was built from, which
+    validates the novel alleles; ValueError without it when novel alleles are asked for, and RuntimeError when a
+    donor has fewer eligible V genes than ``novel_v_genes``. ValueError when ``n`` is not a positive integer."""
     if isinstance(n, bool) or not isinstance(n, int) or n < 1:
         raise ValueError(f"donors: n must be a positive integer, got {n!r}")
+    if params.novel_v_genes and config is None:
+        raise ValueError("donors: novel alleles need the GenAIRR DataConfig (config=) that validates them")
     genes = _reference_genes(reference)
     pools = {letter: list(genes[letter]) for letter in params.deletable if letter in genes}
     donors = []
@@ -166,8 +196,40 @@ def sample_donors(reference: Reference, n: int, seed: int, params: DonorParams =
                     alleles[gene] = tuple(sorted(rng.sample(names, 2)))
                 else:
                     alleles[gene] = (rng.choice(names),)
-        donors.append(Donor(subject_id=subject_id, alleles=alleles, deleted=deleted))
+        novel = {}
+        if params.novel_v_genes:
+            novel = _novel_v_alleles(random.Random(f"{seed}:{subject_id}:novel"), reference, alleles,
+                                     list(genes.get("v", {})), params, config, subject_id)
+        donors.append(Donor(subject_id=subject_id, alleles=alleles, deleted=deleted, novel=novel))
     return donors
+
+
+def _novel_v_alleles(rng: random.Random, reference: Reference, alleles: dict[str, tuple[str, ...]],
+                     v_genes: list[str], params: DonorParams, config, subject_id: str) -> dict[str, NovelAllele]:
+    """Give ``params.novel_v_genes`` of the carried ``v_genes`` a homozygous novel allele, in place in ``alleles``
+    (see ``sample_donors``); returns the novel alleles by name."""
+    from GenAIRR import Genotype
+
+    validator = Genotype.from_dataconfig(config)
+    candidates = [gene for gene in v_genes if gene in alleles]
+    rng.shuffle(candidates)
+    novel: dict[str, NovelAllele] = {}
+    for gene in candidates:
+        if len(novel) == params.novel_v_genes:
+            break
+        index = len(novel)
+        k = params.novel_snp_cycle[index % len(params.novel_snp_cycle)]
+        base = rng.choice(alleles[gene])
+        try:
+            allele = make_novel_allele(reference, base, k, rng, f"{gene}*{900 + index}", genotype=validator)
+        except (RuntimeError, ValueError):
+            continue  # no functional variant (a base with a stop codon in its coding frame) or too few positions
+        novel[allele.name] = allele
+        alleles[gene] = (allele.name,)
+    if len(novel) < params.novel_v_genes:
+        raise RuntimeError(f"{subject_id}: only {len(novel)} of {len(candidates)} carried V genes take a novel "
+                           f"allele, {params.novel_v_genes} requested")
+    return novel
 
 
 def donors_to_json(donors: Iterable[Donor]) -> dict:

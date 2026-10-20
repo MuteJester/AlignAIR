@@ -24,7 +24,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
 | `report` | JSON reports and markdown summaries (`build`, `markdown`), and the run report rendered from a run summary (`run`) | core, stats, report |
 | `scoring` | `pipeline` (score one tool against a truth file), `slices` and `oracle` (the oracle rule on per-case scores) | core, truth, airr, metrics, stats, scoring |
-| `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
+| `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
 | `workflow` | build → run → score → report orchestration over a run directory: `build` (one suite), `scoring` (score and comparison reports and their files, shared by `score`, `compare` and `all`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
 | `cli` | the `python -m alignair_assay` commands | everything |
@@ -87,6 +87,23 @@ key; a label named like a fixed dimension is an error. The fixed dimensions are 
   allele first whenever it lists it, so a re-call is a non-empty call list without it; a fallback primary is never
   re-called. Truth files written before the generative primary (version 1) load with `generative` equal to
   `alleles` and `primary_fallback` True.
+- A primary allele that is not in the reference makes its segment unscorable, except a novel V allele of the
+  read's donor (`truth_from_case(case, reference, novel=donor.novel)`; `workflow.build` passes each case its own
+  donor's, since novel names are per donor). Its truth is what a perfect aligner restricted to the reference
+  reports. The segment is observed against the novel sequence and then re-based onto the novel allele's base:
+  the same coordinates and CIGAR, the base's germline, and mismatches counted against the base, so every SNP the
+  read shows is one. Boundaries, the allele set (the base's observable set) and the junction anchors come from
+  the base. GenAIRR's call list is projected onto the reference: the novel name (GenAIRR calls the novel allele)
+  becomes the base, and every other allele of the base's gene that covers the observed span and mismatches the
+  read at no more aligned columns than the base joins it. GenAIRR's re-call compares the read with the novel
+  allele, so it cannot show that SHM brought the read as near to a sibling as to the base; on S7 at the default
+  seed that is 107 of 1568 novel reads (22 strictly nearer), and no allele of another gene comes as near.
+  `ObservableTruth.v_novel_snps` holds the read positions (canonical frame, ascending) aligned to the
+  novel allele's SNPs inside the observed germline span `[germ_start, germ_end)`; it is None for every other
+  read. A novel allele whose base is not in the reference, or whose sequence does not differ from the base's
+  exactly at its SNPs, raises ValueError naming it. SNPs sit only where every allele of the base's gene agrees
+  with the base (`suites.novel`), so over any germline span the base is strictly the nearest allele of its gene
+  to the novel allele; only SHM can bring a read nearer to a sibling, which is what the projection above adds.
 - Each segment edge is an inclusive interval of equally defensible positions. An edge is exact when the prediction
   lies inside its interval, and its error is the distance to the interval.
 - The junction exists only when both conserved anchors (V Cys, J Trp/Phe) are aligned read bases. Productivity
@@ -132,6 +149,15 @@ as correct as a right call. A missing row is a failure, not an abstention.
   clone key, in clones with at least two such cases. Set-overlap clone keys are scored per read by
   `clone_key.exact`. Members of a clone share their recombination, so the oracle's key (the generative alleles'
   genes and the truth junction length) is the same across a clone and the oracle always agrees.
+
+**Novel-allele metric** (`metrics.novel`, informational):
+
+- `v_novel.snp_mutations`: on a read whose V is a novel allele with SNPs in the observed V
+  (`truth.v_novel_snps`), how many of those read positions the tool's V alignment aligns to a germline base
+  that differs from the read base (a read `N` never does; a position the alignment does not cover does not
+  count). `nan` without a usable V alignment. A fixed-reference tool aligning the base reports every SNP the read
+  shows, and so does the oracle; a tool that inferred the novel allele reports none. It is reported but not
+  compared.
 
 ## Run directory layout
 
@@ -407,6 +433,7 @@ Engine rules (`suites.engine.generate_suite`):
 | `S4` | `truncation` | `5p_{k}` (exact 5′ loss, k = 0, 25, …, 300), `3p_{k}` (exact 3′ loss, k = 0, 10, 20, 30, 40); each 150, rate 0.05 | rc 0 | none | `sweep` (`5p`/`3p`), `loss` | `v.top1_in_set`, `v_short.abstain_ok`, `v.germ_start_err`, `j.top1_in_set`, `j.germ_end_err`, `v.spurious_call`, `junction.nt_exact` |
 | `S5` | `indels` | `v_{k}` (exactly k polymerase indels, all in V; k = 1, …, 6), `j_1` (exactly one, in J); each 300, full, rate 0.03; rejection sampling on `n_v_indels` / `n_j_indels` and `n_indels` | rc 0 | none | `indels` (the stratum name) | `v.indel_found`, `v.indel_false`, `v.seq_end_exact`, `junction.nt_exact`, `v.top1_in_set` |
 | `S6` | `d_observability` | `trim_{k}` (k nt at both D ends, k = 0, 3, 6, 9, 12) 400 each; `inverted` (every D inverted, default trims) 500; full, rate 0.02 | rc 0 | none | `d_trim` (k or `default`), `inverted` (`yes`/`no`) | `d.top1_in_set`, `d_short.abstain_ok`, `d.seq_start_exact`, `d.seq_end_exact` |
+| `S7` | `novel` | `cohort` 3000; full, rate 0.075; cohort over donors that each carry 25 V genes as a homozygous novel allele (1–6 SNPs, cycling); arms `shared` and `genotype` | rc 0.5 | `DonorSpec(10, "S7", DonorParams(novel_v_genes=25))` | `novel_snps` (per case: the SNP count of its generative V allele, or `none`) | `v.top1_in_set`, `v.gene_top1`, `v.mutation_count_err`, `clone_key.exact`, `junction.nt_exact` |
 | `S9` | `clonal` | `lineages` 60 clones (`clonal_lineage`: up to 25 sampled cells per clone, per-base SHM rate 0.008 per generation; median V mutation rate 0.075); full; clonal | rc 0.5 | none | — | `clone_key.exact`, `clone.agree_modal`, `junction.nt_exact`, `v.top1_in_set` |
 | `S10` | `heldout` | `uniform` (uniform SHM model), `hkl_s5f` (S5F kernel `hkl_s5f`), `np_shift` (NP lengths +4), `trim_shift` (trims +3); each 600, full, rate 0.075; cohort | rc 0.5 | `DonorSpec(20, "S10")` | `heldout` | `HEADLINE` |
 | `S11` | `orientation` | `full_igg` 500, `fr3_igg` 500 | both orientations (pairs) | none | `design` | `orientation.correct` + `HEADLINE` |
@@ -496,8 +523,27 @@ own stream seeded by the seed and its id, so a smaller cohort is a prefix of a l
 - Every remaining gene with two or more reference alleles is heterozygous with probability `het_fraction` = 0.40;
   the others are homozygous. Alleles are uniform within a gene.
 
+**Novel alleles.** `DonorParams(novel_v_genes=m, novel_snp_cycle=(1, 2, 3, 4, 5, 6))` gives each donor `m` V genes
+carried as a homozygous novel allele (default `m` = 0: none). They are drawn from a second stream of the donor's
+own (seeded by the seed, its id and `novel`) after the rest of its genotype, which is therefore the genotype
+drawn without them. The donor's carried V genes are shuffled and taken in turn: the i-th novel allele,
+`{gene}*{900 + i}`, derives from one of the gene's carried alleles (uniform) by
+`novel_snp_cycle[i % len(novel_snp_cycle)]` SNPs and replaces the gene's alleles.
+`suites.novel.make_novel_allele(reference, base, k, rng, name, *, genotype)` places the SNPs: `k` distinct
+positions from `invariant_positions(reference, base)` (positions where every other allele of the gene that is
+long enough has the base's nucleotide, outside the anchor codon `[anchor, anchor + 3)`), each given a different
+nucleotide uniformly. GenAIRR's `Genotype.add_novel_allele` (on a `Genotype` of the
+DataConfig, passed as `genotype`) is the validity oracle: it rejects a variant whose anchor codon changes residue
+or whose coding frame gains a stop codon, and the draw is repeated up to `MAX_ATTEMPTS` = 50 times before a
+RuntimeError. A gene whose base yields no accepted variant (six human IGH OGRDB V alleles have a stop codon in
+their coding frame) is passed over, and a donor with too few eligible genes raises. `sample_donors(...,
+config=)` takes the DataConfig for this; `suites.engine` passes the one the reference is built from.
+Novel names are per donor: two donors may each have an `IGHV...*900` with different sequences.
+
 A `Donor` holds `alleles` (gene -> its one or two alleles, sorted; deleted genes absent), `deleted` (gene names)
-and `novel` (name -> `core.genotype.NovelAllele`, for novel alleles carried under their base's gene).
+and `novel` (name -> `core.genotype.NovelAllele`, each carried under its base's gene). A `NovelAllele`'s `snps`
+must be distinct sorted positions in its sequence, and `NovelAllele.check_base(base_sequence)` checks that it
+differs from its base exactly there (`tool_genotype` and the truth builder run it).
 `donor.view()` is the plain `core.genotype.DonorGenotype` (carried allele names, deleted genes) that truth,
 metrics and scoring read. `donor.genotype(config)` is the strict GenAIRR `Genotype` the cohort runs (built with
 `from_dataconfig`, then `homozygous` / `heterozygous` with the first sorted allele on haplotype 0, `delete_gene`

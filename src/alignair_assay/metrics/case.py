@@ -8,6 +8,7 @@ from alignair_assay.metrics.alleles import call_metrics, short_call_metrics, spu
 from alignair_assay.metrics.boundaries import germline_boundary_metrics, read_boundary_metrics
 from alignair_assay.metrics.flags import flag_metrics
 from alignair_assay.metrics.junction import clone_key_metric, junction_metrics
+from alignair_assay.metrics.novel import novel_metrics
 from alignair_assay.metrics.shm import germline_metrics, indel_metrics
 from alignair_assay.truth.model import ObservableTruth
 
@@ -26,7 +27,8 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
     ``{g}_min_observed`` gets only the ``{g}_short`` call/abstention metrics instead of every ``{g}.*`` allele,
     boundary, indel and SHM metric. Segments of the locus absent from the read get a
     spurious-call metric. Genes whose truth could not be built (``truth.unscorable``) get no metric at all.
-    Observed V and J also get indel metrics, and observed V mutation-count and germline-reconstruction metrics.
+    Observed V and J also get indel metrics, and observed V mutation-count and germline-reconstruction metrics;
+    an observed V from a novel allele that shows its SNPs also gets ``v_novel.snp_mutations`` (``metrics.novel``).
     A missing row fails every accuracy metric (abstention included) and leaves error and presence metrics
     uncovered.
     Junction, clone-key and productivity metrics apply when the truth defines them; orientation and AIRR validity
@@ -55,6 +57,7 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
                 scores.update(indel_metrics(g, seg, p))
             if g == "v":
                 scores.update(germline_metrics(g, seg, truth.sequence, p, reference))
+                scores.update(novel_metrics(truth, p, reference))
     if truth.junction is not None:
         scores.update(junction_metrics(truth.junction, truth.sequence, pred,
                                        frame_unambiguous=truth.frame_unambiguous))

@@ -41,7 +41,7 @@ def germline_metrics(g: str, truth: SegmentTruth, read: str, pred: PredSegment,
     obs = truth.observed
     prefix = f"{g}_indel" if any(_indel_counts(parse_cigar(obs.cigar))) else g
     names = (f"{prefix}.mutation_count_err", f"{prefix}.germline_errors")
-    aligned = _predicted_germline(g, read, pred, reference)
+    aligned = predicted_germline(g, read, pred, reference)
     if aligned is None:
         return dict.fromkeys(names, NAN)
     predicted, pred_start, pred_end = aligned
@@ -83,10 +83,11 @@ def _inside(x: int, interval: tuple[int, int]) -> bool:
     return interval[0] <= x <= interval[1]
 
 
-def _predicted_germline(g: str, read: str, pred: PredSegment,
-                        reference: Reference) -> tuple[dict[int, str], int, int] | None:
-    """Read position -> germline base for every aligned column of the prediction, with the predicted read span
-    (start, end), or None if unusable."""
+def predicted_germline(g: str, read: str, pred: PredSegment,
+                       reference: Reference) -> tuple[dict[int, str], int, int] | None:
+    """Read position -> germline base for every aligned column of the prediction for gene ``g`` over the canonical
+    ``read``, with the predicted read span (start, end); None when the prediction has no usable alignment (no call,
+    a call not in ``reference``, missing coordinates or CIGAR, or a walk outside the read or the allele)."""
     germline = reference.alleles.get(g, {}).get(pred.call) if pred.call is not None else None
     ops = _ops(pred.cigar)
     if germline is None or ops is None or pred.seq_start is None or pred.germ_start is None:
