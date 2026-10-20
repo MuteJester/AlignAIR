@@ -39,14 +39,15 @@ def run(args) -> int:
     a model on another reference) exit with status 2 before anything is written."""
     # Imported here so the other commands never load torch and alignair.
     from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS
-    from alignair_assay.workflow.diagnose import evaluate
+    from alignair_assay.workflow.diagnose import evaluate, parse_device
 
     names = list(comma_list(args.suites))
     if not names:
         raise ValueError("--suites names no suite")
+    device = parse_device(args.device, fix="--device cpu")
     layout = RunLayout(absolute_path(args.run_dir))
     _warn_stale_builds(layout, names)
-    result = evaluate(tool_path(args.checkpoint), layout, names, device=args.device, batch_size=args.batch_size,
+    result = evaluate(tool_path(args.checkpoint), layout, names, device=device, batch_size=args.batch_size,
                       variants=DEFAULT_VARIANTS if args.variants is None else args.variants,
                       profile=not args.no_profile, max_cases=args.max_cases)
     for name, suite in result.suites.items():

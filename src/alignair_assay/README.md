@@ -66,16 +66,22 @@ variant take about 5 s:
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.workflow.diagnose import evaluate
 
-result = evaluate((model, reference_set), RunLayout(".private/assay/dev"), ["S1", "S3"], device="cuda",
-                  max_cases=500, profile=False)
+result = evaluate((model, reference_set), RunLayout(".private/assay/dev"), ["S1", "S3"], max_cases=500)
 s1 = result.suites["S1"]
 s1["heads"]["head.j.end_exact.soft"]["mean"]                          # a raw head, against the truth
 s1["variants"]["baseline"]["scores"]["junction.nt_exact"]["mean"]     # the product pipeline, end to end
 [step["metrics"]["junction.nt_exact"]["delta"] for step in s1["contributions"]]  # error added per stage
 ```
 
-The model's reference must be the truth reference (`HUMAN_IGH_OGRDB` for the built-in suites); another is refused,
-naming the first differing allele. The model is put back in its training mode afterwards.
+- The model's reference must be the truth reference (`HUMAN_IGH_OGRDB` for the built-in suites); another is
+  refused, naming the first differing allele, before the model is moved.
+- The model runs on its own device unless `device` names another. A model moved to another device is moved back
+  to its own afterwards, even when a suite fails, and every replay puts it back in its training mode, so the
+  optimizer's next step works. A `torch.compile`, `DataParallel` or `DistributedDataParallel` wrapper is
+  diagnosed as the model it wraps.
+- An in-memory model is not profiled unless `profile=True` (a model file is, unless `profile=False`): every call on
+  changed weights writes a new model-key directory, and a profile there would replay the model about seven more
+  times and add a few megabytes each time.
 
 **What is cached, and when it is recomputed.** Results live under `diagnostics/<model_key>/`, where the model key is
 the first 12 hex digits of the checkpoint's SHA-256 (an in-memory model: of its weights, configuration, module tree
@@ -1030,9 +1036,12 @@ random-init models (`make_small_model`, `small_model`) and a built S0 (`s0_layou
 tests.
 
 `load_model_checked(checkpoint_or_model, truth_reference, *, device)` loads a `.alignair` file with
-`alignair.api.load_model`, or passes a `(model, reference_set)` pair through (moving the model to `device`), and
-refuses a model whose reference is not the truth reference (unequal digests), naming both references' allele counts
-and the first allele that is missing from the model's reference, extra in it, or has a different sequence there.
+`alignair.api.load_model`, or passes a `(model, reference_set)` pair through, and refuses a model whose reference is
+not the truth reference (unequal digests), naming both references' allele counts and the first allele that is
+missing from the model's reference, extra in it, or has a different sequence there. A pair's model is unwrapped
+first (`unwrap_model`: `torch.compile`'s `_orig_mod`, `DataParallel`'s and `DistributedDataParallel`'s `module`),
+then checked, and only then moved to `device` in place; moving it back is the caller's (`model_device` gives the
+device it was on; the evaluator restores it).
 
 ### Head metrics
 
@@ -1207,16 +1216,21 @@ The module timings come from separate, hooked runs (on CUDA the hooks synchroniz
 which slows the run), and the stage timings and `reads_per_second` from unhooked runs; each is the median of
 `repeats`. A warm-up replay of `warmup_batches` batches comes first, so CUDA start-up and first-call costs are
 excluded. The hooks are removed in a `finally`, and a profile never runs inside an accuracy replay: rows replayed
-after a profile equal rows replayed before it (a test pins this).
+after a profile equal rows replayed before it (a test pins this). The model is moved to `device` for the runs and
+back to its own device afterwards, also in a `finally`.
 
 ### The evaluator
 
-`workflow.diagnose.evaluate(model_or_checkpoint, layout, suites, *, device="cuda", batch_size=256,
-variants=DEFAULT_VARIANTS, profile=True, max_cases=None) -> DiagnosticsResult` composes the pieces above over a run
+`workflow.diagnose.evaluate(model_or_checkpoint, layout, suites, *, device=None, batch_size=256,
+variants=DEFAULT_VARIANTS, profile=None, max_cases=None) -> DiagnosticsResult` composes the pieces above over a run
 directory; it is the `diagnose` command and the training-loop entry point (see Model diagnostics). It lives in
 `workflow` because it reads and writes the run directory and renders the report; the `diagnostics` layer holds the
 pieces and the model identity (`diagnostics.identity`). `model_or_checkpoint` is a `.alignair` file or an in-memory
 `(model, reference_set)` pair; either goes through `load_model_checked`.
+- `device`: None runs a model file on `DEFAULT_DEVICE` (`"cuda"`) and an in-memory model on its own device. An
+  in-memory model moved to another device is moved back to its own in a `finally` that wraps every suite and the
+  profile. A CUDA device torch does not see is refused, naming `device="cpu"` (the command names `--device cpu`).
+- `profile`: None profiles a model file and not an in-memory model; True or False always wins.
 
 For each suite, it:
 1. loads the suite's cases and truth (`scoring.pipeline.load_truth`, against `scoring.pipeline.truth_reference`)

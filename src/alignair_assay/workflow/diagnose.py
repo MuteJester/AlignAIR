@@ -67,7 +67,7 @@ from alignair_assay.diagnostics.ablation import (
 from alignair_assay.diagnostics.heads import calibration_table, head_scores
 from alignair_assay.diagnostics.identity import ALIGNAIR_DIR, alignair_code, model_key, weights_sha256
 from alignair_assay.diagnostics.profile import profile_model
-from alignair_assay.diagnostics.replay import load_model_checked, replay
+from alignair_assay.diagnostics.replay import load_model_checked, model_device, replay, unwrap_model
 from alignair_assay.metrics import is_informational
 from alignair_assay.report.diagnostics import build_diagnostics_report, diagnostics_markdown
 from alignair_assay.scoring.clusters import CLUSTER_KEYS, cluster_ids
@@ -85,6 +85,8 @@ PROFILE_KIND = "alignair_assay.diagnostics_profile"
 CACHE_VERSION = "1"
 # The split diagnostics run on: test is locked for claims.
 SPLIT = "dev"
+# The device a model file is diagnosed on unless another is asked for (an in-memory model's default is its own).
+DEFAULT_DEVICE = "cuda"
 # At most this many diagnosed reads, evenly spaced, are profiled.
 PROFILE_READS = 1000
 # This package's directory and the layers a cached result depends on; this module, which computes the results, is
@@ -110,12 +112,19 @@ class DiagnosticsResult:
     report_md: str
 
 
-def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, device: str = "cuda",
-             batch_size: int = 256, variants: Sequence[str] = DEFAULT_VARIANTS, profile: bool = True,
+def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, device: str | None = None,
+             batch_size: int = 256, variants: Sequence[str] = DEFAULT_VARIANTS, profile: bool | None = None,
              max_cases: int | None = None) -> DiagnosticsResult:
-    """Diagnose a model (a ``.alignair`` model file, or an in-memory ``(model, reference_set)`` pair, which is
-    moved to ``device`` and put back in its training mode) on ``suites``, built on the dev split in ``layout``, as
-    the module docstring describes; reuses each cached suite result whose key matches in full.
+    """Diagnose a model on ``suites``, built on the dev split in ``layout``, as the module docstring describes;
+    reuses each cached suite result whose key matches in full.
+
+    ``model_or_checkpoint`` is a ``.alignair`` model file, loaded on ``device`` (default ``DEFAULT_DEVICE``,
+    ``"cuda"``), or an in-memory ``(model, reference_set)`` pair from a training loop. A pair's model is unwrapped
+    (``replay.unwrap_model``: ``torch.compile``, ``DataParallel``, ``DistributedDataParallel``), its reference
+    checked, and then run on ``device`` (default: the device it is on); a model moved to another device is moved
+    back to its own afterwards, whatever happens, and every replay puts it back in its training mode, so the
+    training loop's optimizer carries on. ``profile`` (default: True for a model file, False for a pair, which a
+    training loop would otherwise profile and cache again on every call) adds the speed profile.
 
     Each suite's result holds ``suite``; its cache ``key``; ``reads`` (``built``, ``diagnosed``, ``scored``,
     ``excluded`` and ``cropped``: reads longer than the model's window); ``clusters`` (the ``keys`` of
@@ -139,15 +148,35 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     for name in names:
         check_dev_build(layout, name)
     reference = truth_reference(layout, names)
-    device = _device(device)
-    weights = weights_sha256(model_or_checkpoint)
-    model, reference_set = load_model_checked(model_or_checkpoint, reference, device=device)
     from_file = isinstance(model_or_checkpoint, (str, os.PathLike))
-    if from_file and weights_sha256(model_or_checkpoint) != weights:
-        # Rewritten while it was loaded (a training job saving over it): the weights loaded may not be the ones
-        # hashed, and results must never be cached under another model's key.
-        raise ValueError(f"{Path(model_or_checkpoint).expanduser()} changed while it was being loaded; diagnose it "
-                         "again once it is completely written")
+    if from_file:
+        own, own_device = None, None
+        device = parse_device(DEFAULT_DEVICE if device is None else device)
+    else:
+        own = unwrap_model(model_or_checkpoint[0])
+        own_device = model_device(own)
+        device = parse_device(str(own_device) if device is None else device)
+    profile = from_file if profile is None else bool(profile)
+    weights = weights_sha256(model_or_checkpoint)
+    try:
+        model, reference_set = load_model_checked(model_or_checkpoint, reference, device=device)
+        if from_file and weights_sha256(model_or_checkpoint) != weights:
+            # Rewritten while it was loaded (a training job saving over it): the weights loaded may not be the ones
+            # hashed, and results must never be cached under another model's key.
+            raise ValueError(f"{Path(model_or_checkpoint).expanduser()} changed while it was being loaded; "
+                             "diagnose it again once it is completely written")
+        return _evaluate(model, reference_set, reference, layout, names, weights=weights, variants=variants,
+                         device=device, batch_size=batch_size, profile=profile, max_cases=max_cases,
+                         source=str(Path(model_or_checkpoint).expanduser()) if from_file else "in-memory model")
+    finally:
+        if own is not None:
+            own.to(own_device)
+
+
+def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, names: list[str], *, weights: str,
+              variants: tuple[str, ...], device: str, batch_size: int, profile: bool, max_cases: int | None,
+              source: str) -> DiagnosticsResult:
+    """``evaluate`` on a checked model already on ``device``."""
     code = alignair_code()
     key_name = model_key(weights, code["code_sha256"])
     identity = {"weights_sha256": weights, "code_sha256": code["code_sha256"], "torch_version": code["torch_version"]}
@@ -169,7 +198,6 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
 
     measured = (_profile(model, reference_set, layout, key_name, identity, names, max_cases=max_cases, device=device,
                          batch_size=batch_size) if profile else None)
-    source = str(Path(model_or_checkpoint).expanduser()) if from_file else "in-memory model"
     report = build_diagnostics_report(
         model={"model_key": key_name, "source": source, **identity, "alignair_source": str(ALIGNAIR_DIR),
                "assay_code_sha256": assay_code_sha256()},
@@ -342,14 +370,15 @@ def _check_count(name: str, value) -> None:
         raise ValueError(f"{name} must be a positive integer, got {value!r}")
 
 
-def _device(device: str) -> str:
-    """``device`` as torch names it; ValueError for one torch does not know or a CUDA device it does not see."""
+def parse_device(device: str, *, fix: str = 'device="cpu"') -> str:
+    """``device`` as torch names it; ValueError for one torch does not know, or a CUDA device it does not see
+    (suggesting ``fix``: the API keyword by default; the ``diagnose`` command passes its own option)."""
     try:
         parsed = torch.device(device)
     except (RuntimeError, TypeError) as error:
         raise ValueError(f"device {device!r} is not a torch device: {error}") from error
     if parsed.type == "cuda" and not torch.cuda.is_available():
-        raise ValueError(f"device {device!r}: torch sees no CUDA device; use --device cpu")
+        raise ValueError(f"device {device!r}: torch sees no CUDA device; use {fix}")
     return str(parsed)
 
 

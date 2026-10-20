@@ -24,6 +24,7 @@ import alignair.predict.heuristic_matcher  # noqa: F401 (loaded before the code 
 import torch
 
 from alignair_assay.core.provenance import code_identity, sha256_file
+from alignair_assay.diagnostics.replay import unwrap_model
 
 # The alignair package this process imported.
 ALIGNAIR_DIR = Path(alignair.__file__).resolve().parent
@@ -49,14 +50,16 @@ def model_key(weights: str, code_sha256: str) -> str:
 def weights_sha256(model_or_checkpoint) -> str:
     """The model's identity by content: the SHA-256 of a model file's bytes, or for an in-memory
     ``(model, reference_set)`` pair the SHA-256 of the model's class and module tree, its configuration, the allele
-    names of each gene in head order and every state tensor's name, dtype, shape and bytes. FileNotFoundError for a
-    path that is not a file."""
+    names of each gene in head order and every state tensor's name, dtype, shape and bytes. A model wrapped by
+    ``torch.compile``, ``DataParallel`` or ``DistributedDataParallel`` is the model it wraps
+    (``replay.unwrap_model``). FileNotFoundError for a path that is not a file."""
     if isinstance(model_or_checkpoint, (str, os.PathLike)):
         path = Path(model_or_checkpoint).expanduser()
         if not path.is_file():
             raise FileNotFoundError(f"no AlignAIR model file {path}")
         return sha256_file(path)
     model, reference_set = model_or_checkpoint
+    model = unwrap_model(model)
     digest = hashlib.sha256()
     digest.update(f"{type(model).__module__}.{type(model).__qualname__}\0{model!r}\0".encode())
     cfg = model.cfg

@@ -28,14 +28,17 @@ from alignair.predict.state import GeneCall, GermlineAlignment  # noqa: E402
 from alignair_assay.core.cases import read_fasta  # noqa: E402
 from alignair_assay.core.reference import Reference  # noqa: E402
 from alignair_assay.diagnostics.heads import decode_boundaries  # noqa: E402
+from alignair_assay.diagnostics.identity import weights_sha256  # noqa: E402
 from alignair_assay.diagnostics.replay import (  # noqa: E402
     STAGES,
     StageOutputs,
     Substitutions,
     argmax_boundaries,
     load_model_checked,
+    model_device,
     predict_config,
     replay,
+    unwrap_model,
 )
 
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
@@ -471,3 +474,22 @@ def test_reference_mismatch_refused_naming_allele(small_model, reference, tmp_pa
     assert Reference.from_reference_set(loaded_reference_set).digest() == reference.digest()
     with pytest.raises(ValueError, match=re.escape(f"{v[3]} has a different sequence in the model reference")):
         load_model_checked(path, changed, device="cpu")
+
+
+def test_the_reference_is_checked_before_the_model_moves(make_small_model, reference):
+    # Moving to the meta device drops the weights: a model moved before a failed check would be destroyed.
+    model, reference_set = make_small_model("HUMAN_IGK_OGRDB", seed=3)
+    with pytest.raises(ValueError, match="not the truth reference"):
+        load_model_checked((model, reference_set), reference, device="meta")
+    assert {parameter.device.type for parameter in model.parameters()} == {"cpu"}
+    assert model_device(model) == torch.device("cpu")
+
+
+def test_wrapped_models_are_unwrapped(make_small_model, reference):
+    model, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=4)
+    for wrapped in (torch.nn.DataParallel(model), torch.compile(model), torch.nn.DataParallel(torch.compile(model))):
+        assert unwrap_model(wrapped) is model
+        checked, checked_reference_set = load_model_checked((wrapped, reference_set), reference, device="cpu")
+        assert checked is model and checked_reference_set is reference_set
+        assert weights_sha256((wrapped, reference_set)) == weights_sha256((model, reference_set))
+    assert unwrap_model(model) is model

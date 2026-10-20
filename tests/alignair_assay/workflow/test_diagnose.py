@@ -89,7 +89,7 @@ def _cached(result: DiagnosticsResult, suite: str) -> dict:
 # --- end to end -------------------------------------------------------------------------------------------------
 
 def test_end_to_end_report_renders_every_section(built, small_model):
-    result = evaluate(small_model, built, ["S0", "S1"], device="cpu", batch_size=32)
+    result = evaluate(small_model, built, ["S0", "S1"], device="cpu", batch_size=32, profile=True)
     assert isinstance(result, DiagnosticsResult)
     assert list(result.suites) == ["S0", "S1"]
     for name, suite in result.suites.items():
@@ -145,6 +145,107 @@ def test_the_model_key_is_its_weights_and_the_alignair_code(built, tmp_path, sav
     assert report["model"]["weights_sha256"] == weights_sha256(checkpoint) == sha256_file(checkpoint)
     assert report["model"]["code_sha256"] == code["code_sha256"]
     assert report["model"]["source"] == str(checkpoint)
+
+
+# --- an in-memory model from a training loop --------------------------------------------------------------------
+
+def _training_model(make_small_model):
+    """A small model in training mode with an Adam optimizer that has taken one step."""
+    model, reference_set = make_small_model(REFERENCE, seed=7)
+    model.train()
+    optimizer = torch.optim.Adam(model.parameters())
+    _step(model, optimizer)
+    return model, reference_set, optimizer
+
+
+def _step(model, optimizer):
+    device = next(model.parameters()).device
+    tokens = torch.randint(1, 5, (2, model.cfg.max_seq_length), device=device)
+    optimizer.zero_grad()
+    model({"tokenized_sequence": tokens})["v_allele"].sum().backward()
+    optimizer.step()
+
+
+def _spy_moves(model):
+    """Record the device of every ``model.to`` call (the move still happens); undo with ``del model.to``."""
+    moves = []
+    real = type(model).to
+
+    def to(*args, **kwargs):
+        moves.append(torch.device(args[0]) if args else kwargs.get("device"))
+        return real(model, *args, **kwargs)
+
+    model.to = to
+    return moves
+
+
+def test_an_in_memory_model_keeps_its_device_mode_and_optimizer(built, tmp_path, make_small_model):
+    layout = _copy(built, tmp_path)
+    model, reference_set, optimizer = _training_model(make_small_model)
+    # No device: the model's own. No profile for an in-memory model unless asked.
+    result = evaluate((model, reference_set), layout, ["S0"], batch_size=BATCH, variants=("baseline",))
+    report = json.loads(layout.diagnostics_json(result.model_key).read_text())
+    assert report["config"]["device"] == "cpu" and result.profile is None and report["config"]["profile"] is False
+    evaluate((model, reference_set), layout, ["S0"], device="cpu", batch_size=BATCH, variants=("baseline",),
+             profile=True)
+    assert model.training and {p.device.type for p in model.parameters()} == {"cpu"}
+    _step(model, optimizer)  # the training loop carries on
+
+
+def test_the_model_is_put_back_even_when_a_suite_fails(built, tmp_path, make_small_model, monkeypatch):
+    layout = _copy(built, tmp_path)
+    model, reference_set, _ = _training_model(make_small_model)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("replay failed")
+
+    monkeypatch.setattr(diagnose_module, "replay", broken)
+    moves = _spy_moves(model)
+    try:
+        with pytest.raises(RuntimeError, match="replay failed"):
+            evaluate((model, reference_set), layout, ["S0"], **FAST)
+        # Moved to the device asked for, then back to its own after the failure.
+        assert moves == [torch.device("cpu"), torch.device("cpu")]
+    finally:
+        del model.to
+    assert model.training
+
+
+def test_a_wrapped_model_is_diagnosed_as_the_model_it_wraps(built, tmp_path, make_small_model):
+    layout = _copy(built, tmp_path)
+    model, reference_set = make_small_model(REFERENCE, seed=8)
+    plain = evaluate((model, reference_set), layout, ["S0"], **FAST)
+    # torch.compile wraps lazily (nothing is compiled until the wrapper is called, which the replay never does).
+    wrapped = evaluate((torch.compile(model), reference_set), layout, ["S0"], **FAST)
+    assert wrapped.model_key == plain.model_key and wrapped.suites["S0"]["reused"] is True
+
+
+@pytest.mark.skipif(os.environ.get("ALIGNAIR_ASSAY_GPU") != "1", reason="set ALIGNAIR_ASSAY_GPU=1")
+def test_a_cpu_model_diagnosed_on_cuda_is_put_back_on_the_cpu(built, tmp_path, make_small_model):
+    layout = _copy(built, tmp_path)
+    model, reference_set, optimizer = _training_model(make_small_model)
+    result = evaluate((model, reference_set), layout, ["S0"], device="cuda", batch_size=BATCH, profile=True)
+    assert result.profile["device"] == "cuda"
+    assert model.training and {p.device.type for p in model.parameters()} == {"cpu"}
+    _step(model, optimizer)
+
+
+def test_the_device_and_profile_defaults(built, tmp_path, save_checkpoint, monkeypatch, capsys):
+    layout = _copy(built, tmp_path)
+    checkpoint = save_checkpoint(tmp_path / "model.alignair")
+    # A model file is profiled unless told otherwise; an in-memory model is not.
+    profiled = evaluate(checkpoint, layout, ["S0"], device="cpu", batch_size=BATCH, variants=(), max_cases=2)
+    assert profiled.profile is not None and profiled.profile["reads"] == 2
+    # A model file runs on CUDA unless told otherwise; an API caller is told the keyword to change it.
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(ValueError) as error:
+        evaluate(checkpoint, layout, ["S0"], variants=())
+    assert 'device="cpu"' in str(error.value) and "--device" not in str(error.value)
+    # The command names its own option.
+    assert main(["diagnose", "--run-dir", str(layout.root), "--checkpoint", str(checkpoint), "--suites", "S0",
+                 "--no-profile"]) == 2
+    err = capsys.readouterr().err
+    assert "--device cpu" in err and 'device="cpu"' not in err
 
 
 def test_in_memory_model_key_follows_its_weights(small_model):

@@ -29,7 +29,7 @@ from contextlib import contextmanager
 
 import torch
 
-from alignair_assay.diagnostics.replay import STAGES, replay
+from alignair_assay.diagnostics.replay import STAGES, model_device, replay
 
 # The forward time not spent inside a hooked module.
 OTHER = "other"
@@ -41,14 +41,26 @@ def profile_model(model, reference_set, sequences: list[str], *, device: str, ba
 
     ``device``, ``batch_size``, ``reads``, ``repeats``, ``reads_per_second`` (the unhooked replay's overall rate),
     ``seconds_per_run`` (its median wall time), ``modules`` and ``stages`` (name -> ``{"ms_per_read", "share"}``).
-    The warm-up replays the first ``warmup_batches * batch_size`` reads. ValueError for no sequence, a
-    ``batch_size`` or ``repeats`` below 1, or a negative ``warmup_batches``."""
+    The warm-up replays the first ``warmup_batches * batch_size`` reads. The model is moved to ``device`` for the
+    runs and back to its own device afterwards, whatever happens. ValueError for no sequence, a ``batch_size`` or
+    ``repeats`` below 1, or a negative ``warmup_batches``."""
     if not sequences:
         raise ValueError("no sequences to profile")
     if batch_size < 1 or repeats < 1 or warmup_batches < 0:
         raise ValueError(f"batch_size ({batch_size}) and repeats ({repeats}) must be at least 1 and warmup_batches "
                          f"({warmup_batches}) at least 0")
-    model = model.to(device)
+    original = model_device(model)
+    try:
+        model.to(device)
+        return _profile(model, reference_set, sequences, device=device, batch_size=batch_size,
+                        warmup_batches=warmup_batches, repeats=repeats)
+    finally:
+        model.to(original)
+
+
+def _profile(model, reference_set, sequences: list[str], *, device: str, batch_size: int, warmup_batches: int,
+             repeats: int) -> dict:
+    """``profile_model`` on a model already on ``device``."""
     ids = [f"profile{i}" for i in range(len(sequences))]
     n = len(sequences)
 

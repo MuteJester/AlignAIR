@@ -147,17 +147,42 @@ def load_model_checked(checkpoint_or_model, truth_reference: Reference, *, devic
     """``(model, reference_set)`` on ``device`` whose germline reference is the truth reference.
 
     A path (``str`` or path-like) is loaded with ``alignair.api.load_model`` (a ``.alignair`` model file; the model
-    comes back in eval mode). A ``(model, reference_set)`` pair, for example from a training loop, is passed through,
-    with the model moved to ``device`` in place. ValueError when the reference does not hold exactly the truth
-    reference's alleles and sequences (equal digests), naming both references' allele counts and the first allele,
-    in name order, that is missing from the model's reference, extra in it, or has a different sequence there."""
+    comes back in eval mode). A ``(model, reference_set)`` pair, for example from a training loop, is passed through:
+    the model is unwrapped (``unwrap_model``), its reference checked, and only then moved to ``device`` in place;
+    moving it back is the caller's (``workflow.diagnose.evaluate`` does). ValueError when the reference does not
+    hold exactly the truth reference's alleles and sequences (equal digests), naming both references' allele counts
+    and the first allele, in name order, that is missing from the model's reference, extra in it, or has a different
+    sequence there."""
     if isinstance(checkpoint_or_model, (str, os.PathLike)):
         model, reference_set = load_model(str(Path(checkpoint_or_model).expanduser()), device=device)
-    else:
-        model, reference_set = checkpoint_or_model
-        model = model.to(device)
+        check_reference(reference_set, truth_reference)
+        return model, reference_set
+    model, reference_set = checkpoint_or_model
+    model = unwrap_model(model)
     check_reference(reference_set, truth_reference)
+    model.to(device)
     return model, reference_set
+
+
+def unwrap_model(model):
+    """The AlignAIR module a training loop's model wraps: ``torch.compile``'s ``_orig_mod`` and ``DataParallel``'s
+    or ``DistributedDataParallel``'s ``module``, unwrapped repeatedly; the model itself when it wraps nothing. The
+    replay calls the model's own submodules (``embedding``, ``branches``), which a wrapper does not expose. The
+    wrapper shares the module's parameters, so moving the module moves the wrapper's weights too."""
+    parallel = (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)
+    while True:
+        if isinstance(model, torch.nn.Module) and isinstance(getattr(model, "_orig_mod", None), torch.nn.Module):
+            model = model._orig_mod
+        elif isinstance(model, parallel):
+            model = model.module
+        else:
+            return model
+
+
+def model_device(model) -> torch.device:
+    """The device of the model's first parameter (the CPU for a model without parameters)."""
+    parameter = next(iter(model.parameters()), None)
+    return torch.device("cpu") if parameter is None else parameter.device
 
 
 def check_reference(reference_set, truth_reference: Reference) -> None:
