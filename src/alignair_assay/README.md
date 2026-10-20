@@ -132,10 +132,10 @@ Each subpackage is a layer and may import only the layers in its row.
 | `report` | JSON reports and markdown summaries (`build`, `markdown`), the run report rendered from a run summary (`run`) and the diagnostics report (`diagnostics`: its one-page summary, scalars, per-suite detail and profile) | core, stats, report |
 | `scoring` | `pipeline` (score one tool against a truth file; `truth_reference`, the reference built suites' truth was built against), `slices`, `oracle` (the oracle rule on per-case scores) and `clusters` (`cluster_ids`: the clone or orientation pair a comparison clusters a case by) | core, truth, airr, metrics, stats, scoring |
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`, with `read_genotypes` for a `donors.json`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
-| `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
+| `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `alignair_api`: a local checkpoint through AlignAIR's public Python API, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
 | `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory), `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) and `diagnose` (`evaluate`, the evaluator behind `diagnose`: the diagnostics layer orchestrated over a run directory, cached per suite, with its report) | everything except cli |
-| `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed) and `identity` (the model key: `weights_sha256` and the AlignAIR code identity) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
-| `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318) and the paper's novel alleles (`sd3_novel`, `sd3_only`) | core, real.genotype |
+| `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed), `identity` (the model key: `weights_sha256` and the AlignAIR code identity) and `api_predict` (the alignair-api runner's subprocess, run by module name: AlignAIR's public API on a FASTA, written as the CLI writes it) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
+| `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318), the paper's novel alleles (`sd3_novel`, `sd3_only`) and the genotype arm's alleles (`arm_alleles`) | core, real.genotype |
 | `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the pilot pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
 | `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), the capture and resolved rules (`captured_genes`, `spanned_by_haplotype`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
 | `real.preprocess` | annotation-free preprocessing of a real run (see Real data): the protocol classifier (`classify_protocol`), the pRESTO recipes (`recipe`) run in the pinned Immcantation container (`IMMCANTATION_IMAGE`), the primers (`VH_PRIMERS`, `C_PRIMERS_MULTIPLEX`, `CREGION_RC`), the cap (`cap_sequences`), the primer spans (`primer_spans`) and `preprocess_run` | core, real.preprocess |
@@ -439,7 +439,7 @@ python -m alignair_assay all --run-dir RUN --suites S1,S10,S11,S12 --tools igbla
 python -m alignair_assay report --run-dir RUN [--a igblast --b alignair]
 python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB] \
     [--seed 20261019] [--scale 1.0] [--workers 8]
-python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-local|oracle --suites S0,S1 \
+python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-local|alignair-api|oracle --suites S0,S1 \
     [--arm shared|genotype] [--threads 8] [--cpus 0-7] [--igblast-dir DIR] \
     [--image IMAGE] [--model alignair-igh-human@1.0.0] [--cache-dir DIR] \
     [--checkpoint MODEL.alignair] [--device cpu] [--batch-size 64]
@@ -979,6 +979,7 @@ Registered runners:
 | `igblast` | `runners.igblast.IgBlastRunner` (`--igblast-dir`, `--threads`, `--cpus`; fingerprint: the directory and the SHA-256 of `igblastn`, `makeblastdb` and the auxiliary file) | checks the release; writes `germline_{v,d,j}.fasta` and builds the BLAST databases (`makeblastdb -parse_seqids -dbtype nucl`) in `runs/igblast/_work/` | `IGDATA=<dir> igblastn -germline_db_V/D/J <db>/V,D,J -auxiliary_data optional_file/human_gl.aux -organism human -ig_seqtype Ig -num_threads <threads> -outfmt 19 -query <fasta> -out <tsv>`; provenance: version text, SHA-256 of `igblastn`, `makeblastdb`, the auxiliary file and every database file, threads and CPUs |
 | `alignair` | `runners.alignair.AlignAIRImage` (`--image`, `--model`, `--cache-dir`, `--threads`, `--cpus`; fingerprint: the image reference and resolved image ID, the model spec and the installed model file's SHA-256) | inspects the image (pulling it when it is not local); installs the model into the cache (see AlignAIR model cache) with `models get`, then `models verify` and `models path`; records `models info` and `doctor --json`; exports the model's reference with `reference export <model file> --fasta` (3.0.0 crashes on a registry id there) into `runs/alignair/_work/` and refuses it unless it is the truth reference | `docker run --rm -u <uid>:<gid> -v <cache>:/home/appuser/.cache/alignair -v <log dir>/input:/in:ro -v <tsv dir>:/out [--cpuset-cpus <cpus>] [-e OMP_NUM_THREADS=<t> -e MKL_NUM_THREADS=<t>] --entrypoint sh <image> -c 'alignair "$@" 2>&1; rc=$?; cat /sys/fs/cgroup/memory.peak 2>/dev/null; exit $rc' sh predict --model <model> --input /in/<fasta> --out /out/<tsv> --device cpu --quiet [--genotype /in/genotype.json]`; `<log dir>/input` is emptied and holds only a copy of the reads FASTA (and the genotype JSON), so the container never sees the suite's cases or truth; the wall time includes the container's start; the peak RSS is the container's cgroup v2 `memory.peak` (resident memory plus page cache; None with an `rss_note` when unreadable); provenance: image reference, ID and RepoDigests, the cache record, model spec, path and SHA-256, the model card, the doctor output, the exported reference, the moved `predict` sidecar (`logs/alignair.run.json`), the genotype file, threads and CPUs |
 | `alignair-local` | `runners.alignair.AlignAIRLocal` (`--checkpoint`, `--device`, `--batch-size`, `--threads`, `--cpus`; fingerprint: the checkpoint path and SHA-256, the device, and the code the CLI runs: the SHA-256 of `src/alignair`'s `.py` and `.pyx` files, the checkout's git commit and dirty flag, the torch version) | checks the checkpoint; probes the torch version and CUDA device the subprocess sees; exports the checkpoint's reference into `runs/alignair-local/_work/` with this checkout's CLI and refuses it unless it is the truth reference | `PYTHONPATH=<checkout>/src [OMP_NUM_THREADS=<t> MKL_NUM_THREADS=<t>] <python> -c "import sys; from alignair.cli.main import main; sys.exit(main())" predict --model <checkpoint> --input <fasta> --out <tsv> --device <device> --batch-size <n> --quiet [--genotype <log_dir>/genotype.json]` under `timed_command` (peak RSS of the CLI process); provenance: checkpoint path and SHA-256, the checkout's path and commit state, interpreter, torch version, CUDA device name, device, batch size, the exported reference, the moved sidecar, the genotype file, threads and CPUs |
+| `alignair-api` | `runners.alignair_api.AlignAIRApi`, alignair-local's settings (`--checkpoint`, `--device`, `--batch-size`, `--threads`, `--cpus`; fingerprint: alignair-local's, plus `driver_sha256`, the SHA-256 of `diagnostics/api_predict.py`) | alignair-local's, into `runs/alignair-api/_work/`; the provenance adds the `driver` (module, path, SHA-256) | `PYTHONPATH=<checkout>/src [OMP_NUM_THREADS=<t> MKL_NUM_THREADS=<t>] <python> -m alignair_assay.diagnostics.api_predict --checkpoint <checkpoint> --reference <exported reference> --input <fasta> --out <tsv> --device <device> --batch-size <n> [--genotype <log_dir>/genotype.json]` under `timed_command` (peak RSS of the subprocess): the checkpoint loaded with `diagnostics.replay.load_model_checked` and checked against the exported reference, the reads read with `alignair.iter_sequences` in the CLI's 20,000-read chunks, each chunk predicted with `alignair.predict_sequences(..., genotype=...)` and written with `alignair.AirrWriter`, as the CLI does (unlike the CLI, no rate of failed AIRR assemblies fails the run: the record counts them); provenance: alignair-local's, the subprocess's run record moved to `logs/api_predict.run.json` as `sidecar` (counts, resolved device, torch, CUDA device, genotype allele counts), and for a failure on the genotype path (exit status 3) the `note` `genotype API path failed` |
 
 ### AlignAIR model cache
 
@@ -1014,7 +1015,18 @@ then recorded with that return code, the `failed_donor` and its `error` line, an
 
 AlignAIR 3.0.0's `predict --genotype` crashes (`AttributeError: 'tuple' object has no attribute 'items'`):
 `alignair/cli/predict.py` passes `load_genotype`'s `(genotype, unknown)` tuple on as the genotype. Until a fixed
-AlignAIR is released, every AlignAIR genotype-arm run is recorded as failed with that error line.
+AlignAIR is released, every genotype-arm run of `alignair` and `alignair-local` is recorded as failed with that error
+line.
+
+`alignair-api` runs the genotype arm. Its subprocess (`diagnostics.api_predict`, run by module name, since runners
+may not import `alignair`) reads the same genotype JSON with `load_genotype(path, reference=..., drop_unknown=False)`
+and passes its genotype, `{gene letter: set of allele names}`, to `alignair.predict_sequences` with the `mask`
+method. Everything else is the CLI's path: the loader, the reader's chunks and the writer. On the same reads and
+checkpoint its shared-arm TSV is byte for byte alignair-local's (S1 at scale 0.02, on the CPU and on CUDA). So both
+arms run one code path and one model, and the arm delta is the genotype's alone. When loading the genotype or
+predicting with it raises, the subprocess prints the traceback and then `genotype API path failed: <type>:
+<message>`, and exits with status 3. The run is recorded as failed, with that line as its `error` and the `note`
+`genotype API path failed`.
 
 ## Diagnostics
 
@@ -1360,8 +1372,9 @@ record whose key was edited is recomputed.
 
 P3 scores the tools on real human IGH repertoires (BioProject PRJNA555323; Rodriguez et al. 2023, Nat Commun
 14:4419) against each donor's own alleles from genomic long-read sequencing, published by VDJbase (genomic study
-P25, CC0). This section grows with P3a; so far it covers the downloads, the donor genotypes, the preprocessing of
-the reads, each read's truth and R1, the support of each tool's V call by the donor's alleles.
+P25, CC0). This section grows with P3a; so far it covers the downloads, the donor genotypes and their genotype
+arms, the preprocessing of the reads, each read's truth and R1, the support of each tool's V call by the donor's
+alleles. AlignAIR's genotype arm runs through `alignair-api` (see The genotype arm).
 
 **Data root.** Downloads live under a data root given to the commands, never in a run directory or the repository.
 Each source has its own directory there, with an `MD5SUMS.txt`:
@@ -1452,6 +1465,16 @@ across sources. The shared reference's V names are OGRDB F/G labels (`IGHVF6-G21
   `Sd3Allele(closest, sequence, gene, closest_all)`. `sd3_only(genotypes, sd3)` is the genes touched by those in
   no given donor's alleles: the sheet's gene and every closest allele's gene. Only the donors given count, so pass
   the cohort: the eight pilot donors alone leave 45 genes touched.
+- `arm_alleles(genotype, reference, iuis)` is the shared alleles a tool is restricted to in the donor's genotype arm,
+  sorted. Only V is restricted, and only where the truth exists. A shared V allele is kept when it is a donor
+  allele's `shared` name (functional or not), when one of its IUIS genes (two for a paralog pair) is not
+  `captured` or it has none, or when one of its IUIS genes is carried only with alleles absent from the shared
+  reference (nothing to restrict that gene to; R1 excludes it anyway). So a captured gene the donor carries keeps
+  the donor's shared alleles, and a captured gene it lacks keeps none. Every D and J allele is kept: genomic D and J
+  truth is thin and noisy, and the arm targets V. It refuses a genotype whose `captured` is unknown, a map built
+  against another reference, and a gene letter left empty. The pilot donors keep 111 (SC-23), 102 (SC-4),
+  110 (SC-11), 95 (SC-6), 114 (W-97), 92 (W-89), 117 (W-133) and 95 (W-131) of the 198 V alleles, and all 33 D
+  and 7 J.
 
 **Captured genes (`real.locus`).** R1 counts a call to a gene the donor lacks as `unsupported_gene` only where the
 donor's long reads resolve that gene's region; a call to a gene in a region they do not resolve is excluded. A gene

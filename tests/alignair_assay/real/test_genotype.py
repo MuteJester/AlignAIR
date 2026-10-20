@@ -1,8 +1,10 @@
-"""Real donors' genotypes (``real.genotype``): the VDJbase loader, the OGRDB IUIS map and the mapping by sequence.
+"""Real donors' genotypes (``real.genotype``): the VDJbase loader, the OGRDB IUIS map, the mapping by sequence and
+the genotype arm's alleles.
 
 The offline tests build their VDJbase CSV, OGRDB JSON, Supplementary Data 3 sheet and reference in the test; the CSV
 header is the real one, copied from a pilot sample's file. The test of the eight pilot donors' real files runs only
-when ``ALIGNAIR_ASSAY_DATA`` names the data root (``.../PRJNA555323``).
+when ``ALIGNAIR_ASSAY_DATA`` names the data root (``.../PRJNA555323``); their genotype arms also need
+``ALIGNAIR_ASSAY_DOCKER=1`` (the captured genes come from the contig BAMs, read in the samtools container).
 """
 from __future__ import annotations
 
@@ -10,7 +12,9 @@ import csv
 import json
 import os
 import random
+import re
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -21,6 +25,7 @@ from alignair_assay.real.genotype import (
     RealAllele,
     RealGenotype,
     Sd3Allele,
+    arm_alleles,
     filter_d,
     load_vdjbase_csv,
     merge_identical,
@@ -438,6 +443,147 @@ def test_sd3_only_falls_back_to_the_closest_allele_without_closest_all():
     assert sd3_only([], [Sd3Allele("", D_X, "IGHD4-23")]) == {"IGHD4-23"}
 
 
+# --- the genotype arm's alleles -----------------------------------------------------------------------------------
+
+# A shared reference for the genotype arm: shared name -> (sequence, OGRDB labels with that sequence).
+ARM_V = {
+    "IGHVF1-G1*01": (_random(296, 21), ("IGHV1-2*02",)),
+    "IGHVF1-G1*02": (_random(296, 22), ("IGHV1-2*04",)),
+    "IGHVF6-G21*06": (V_B, ("IGHV1-69*01", "IGHV1-69D*01")),     # an identical-sequence paralog pair
+    "IGHVF6-G21*07": (_random(296, 23), ("IGHV1-69*06", "IGHV1-69D*06")),
+    "IGHVF6-G21*02": (_random(296, 24), ("IGHV1-69*02",)),
+    "IGHVF3-G23*01": (_random(296, 25), ("IGHV3-23*01", "IGHV3-23D*01")),
+    "IGHVF3-G23*04": (_random(296, 26), ("IGHV3-23*04",)),
+    "IGHVF3-G23*02": (_random(296, 27), ("IGHV3-23D*02",)),
+    "IGHVF5-G5*01": (_random(296, 28), ("IGHV3-30*18", "IGHV3-30-5*01")),
+    "IGHVF5-G5*02": (_random(296, 29), ("IGHV3-30-5*02",)),
+    "IGHVF5-G5*03": (_random(296, 30), ("IGHV3-30-5*03",)),
+    "IGHVF3-G62*03": (_random(296, 31), ("IGHV3-62*03",)),
+    "IGHVF3-G11*01": (_random(296, 32), ("IGHV3-11*01",)),
+    "IGHVF4-G34*01": (_random(296, 33), ("IGHV4-34*01",)),
+    "IGHVF9-G9*01": (V_U, ()),                                   # no label: no IUIS gene
+}
+ARM_REFERENCE = Reference(
+    alleles={"v": {name: sequence for name, (sequence, _) in ARM_V.items()},
+             "d": {"IGHD4-4*01": D_44, "IGHD4-11*01": D_44, "IGHD3-3*01": D_33},
+             "j": {"IGHJ4*02": J_4, "IGHJ6*02": _random(63, 34)}},
+    anchors={})
+
+
+@pytest.fixture()
+def arm_iuis(tmp_path) -> IuisMap:
+    descriptions = [{"label": label, "coding_sequence": sequence, "sequence_type": "V", "functional": True}
+                    for sequence, labels in ARM_V.values() for label in labels]
+    descriptions += [{"label": name, "coding_sequence": sequence, "sequence_type": letter.upper(), "functional": True}
+                     for letter in ("d", "j") for name, sequence in ARM_REFERENCE.alleles[letter].items()]
+    path = tmp_path / "arm_ogrdb.json"
+    path.write_text(json.dumps({"GermlineSet": [{**OGRDB["GermlineSet"][0], "allele_descriptions": descriptions}]}),
+                    encoding="utf-8")
+    return IuisMap.from_ogrdb(path, ARM_REFERENCE)
+
+
+def _carried(iuis: IuisMap, allele_id: str, sequence: str, *, segment: str = "v", functional: bool = True,
+             haplotype: int = 1) -> RealAllele:
+    """A donor allele as the loader maps it: its shared and IUIS names by exact sequence."""
+    return RealAllele(allele_id=allele_id, gene=allele_id.split("*")[0], segment=segment, sequence=sequence,
+                      gapped=None, haplotype=haplotype, functional=functional,
+                      shared=iuis.shared_for_sequence(sequence), iuis=iuis.labels_for_sequence(sequence))
+
+
+def _arm_donor(iuis: IuisMap, *, d_truth: bool = False) -> RealGenotype:
+    """A donor with every V case the arm rule tells apart; ``d_truth`` adds a D allele."""
+    seq = {name: sequence for name, (sequence, _) in ARM_V.items()}
+    alleles = [
+        _carried(iuis, "IGHV1-2*02", seq["IGHVF1-G1*01"]),
+        _carried(iuis, "IGHV1-2*02_a41c", _snp(seq["IGHVF1-G1*01"], 40), haplotype=2),  # absent: a shared one too
+        _carried(iuis, "IGHV1-69D*01", V_B, haplotype=0),
+        _carried(iuis, "IGHV3-23*01_t100a", _snp(seq["IGHVF3-G23*01"], 99)),            # its gene's only allele
+        _carried(iuis, "IGHV3-30-5*02", seq["IGHVF5-G5*02"]),
+        _carried(iuis, "IGHV3-62*03", seq["IGHVF3-G62*03"], functional=False),
+    ]
+    if d_truth:
+        alleles.append(_carried(iuis, "IGHD4-11*01", D_44, segment="d", haplotype=0))
+    # IGHV3-11 is captured and not carried (a deletion); IGHV3-30 and IGHV4-34 are not captured.
+    captured = frozenset({"IGHV1-2", "IGHV1-69", "IGHV1-69D", "IGHV3-23", "IGHV3-23D", "IGHV3-30-5", "IGHV3-62",
+                          "IGHV3-11", *(("IGHD4-11",) if d_truth else ())})
+    return RealGenotype(donor="W-97", alleles=tuple(alleles), captured=captured)
+
+
+def test_arm_alleles_keeps_shared_for_missing_segments(arm_iuis):
+    # No D or J truth (W-97, SC-23), or D truth for some genes: D and J keep every shared allele either way.
+    for d_truth in (False, True):
+        kept = set(arm_alleles(_arm_donor(arm_iuis, d_truth=d_truth), ARM_REFERENCE, arm_iuis))
+        assert {name for name in kept if ARM_REFERENCE.gene_letter(name) == "d"} == set(ARM_REFERENCE.alleles["d"])
+        assert {name for name in kept if ARM_REFERENCE.gene_letter(name) == "j"} == set(ARM_REFERENCE.alleles["j"])
+
+
+def test_arm_alleles_restricts_captured_v_only(arm_iuis):
+    kept = arm_alleles(_arm_donor(arm_iuis), ARM_REFERENCE, arm_iuis)
+    assert kept == sorted(kept) and len(kept) == len(set(kept))
+    v = {name for name in kept if ARM_REFERENCE.gene_letter(name) == "v"}
+    assert v == {
+        "IGHVF1-G1*01",     # a donor allele's shared name: IGHV1-2 is restricted to it, its absent allele aside
+        "IGHVF6-G21*06",    # the donor's IGHV1-69D*01, the shared allele it shares with IGHV1-69*01
+        "IGHVF5-G5*02",     # the donor's IGHV3-30-5*02
+        "IGHVF3-G62*03",    # the donor's nonfunctional IGHV3-62*03: the genome carries it
+        "IGHVF3-G23*01",    # IGHV3-23 is carried only with an allele absent from the shared reference
+        "IGHVF3-G23*04",    # ... so all its shared alleles stay
+        "IGHVF5-G5*01",     # one of its genes, IGHV3-30, is not captured
+        "IGHVF4-G34*01",    # IGHV4-34 is not captured
+        "IGHVF9-G9*01",     # no IUIS gene: no truth names its gene
+    }
+    # Dropped: another allele of a carried gene (IGHVF1-G1*02, IGHVF5-G5*03), an allele of a captured gene the
+    # donor lacks (IGHV3-11, IGHV1-69*02, IGHV3-23D*02), and a paralog pair allele whose genes are both captured
+    # and neither carried only with absent alleles (IGHVF6-G21*07).
+    assert set(ARM_REFERENCE.alleles["v"]) - v == {"IGHVF1-G1*02", "IGHVF5-G5*03", "IGHVF3-G11*01",
+                                                   "IGHVF6-G21*02", "IGHVF3-G23*02", "IGHVF6-G21*07"}
+
+
+def test_arm_alleles_keeps_a_paralog_allele_by_any_of_its_genes(arm_iuis):
+    donor = _arm_donor(arm_iuis)
+    # IGHVF6-G21*07 (IGHV1-69*06 = IGHV1-69D*06) is kept once either gene is not captured ...
+    for gene in ("IGHV1-69", "IGHV1-69D"):
+        uncaptured = replace(donor, captured=donor.captured - {gene})
+        assert "IGHVF6-G21*07" in arm_alleles(uncaptured, ARM_REFERENCE, arm_iuis)
+    # ... and IGHVF3-G23*01 (IGHV3-23*01 = IGHV3-23D*01) by IGHV3-23 alone, carried only with an absent allele,
+    # while IGHV3-23D is captured and not carried.
+    assert "IGHVF3-G23*01" in arm_alleles(donor, ARM_REFERENCE, arm_iuis)
+    # Once IGHV3-23 carries a shared allele, its other alleles go, paralog pair allele included.
+    documented = replace(donor, alleles=(*donor.alleles, _carried(arm_iuis, "IGHV3-23*04", ARM_V["IGHVF3-G23*04"][0])))
+    kept = arm_alleles(documented, ARM_REFERENCE, arm_iuis)
+    assert "IGHVF3-G23*04" in kept and "IGHVF3-G23*01" not in kept
+
+
+def test_arm_alleles_never_empty_letter(arm_iuis):
+    # A donor with few V genes and no D/J truth (W-97, W-133): every gene letter keeps alleles.
+    few = RealGenotype(donor="W-133", alleles=(_carried(arm_iuis, "IGHV1-2*02", ARM_V["IGHVF1-G1*01"][0]),),
+                       captured=frozenset({"IGHV1-2"}))
+    kept = arm_alleles(few, ARM_REFERENCE, arm_iuis)
+    assert {ARM_REFERENCE.gene_letter(name) for name in kept} == {"v", "d", "j"}
+    assert "IGHVF1-G1*01" in kept and "IGHVF1-G1*02" not in kept
+    # A restriction that would leave a letter with no allele is refused, never passed on.
+    small = Reference(alleles={"v": {"IGHVF1-G1*01": ARM_V["IGHVF1-G1*01"][0]}, "d": {"IGHD3-3*01": D_33},
+                               "j": {"IGHJ4*02": J_4}}, anchors={})
+    path = Path(arm_iuis.source["path"])
+    small_iuis = IuisMap.from_ogrdb(path, small)
+    lacking = RealGenotype(donor="W-97", alleles=(_carried(small_iuis, "IGHV7-81*01", _random(296, 35)),),
+                           captured=frozenset({"IGHV1-2", "IGHV7-81"}))
+    with pytest.raises(ValueError, match="no v allele"):
+        arm_alleles(lacking, small, small_iuis)
+
+
+def test_arm_alleles_refuses_inconsistent_inputs(arm_iuis, iuis):
+    donor = _arm_donor(arm_iuis)
+    with pytest.raises(ValueError, match="captured"):
+        arm_alleles(replace(donor, captured=None), ARM_REFERENCE, arm_iuis)
+    with pytest.raises(ValueError, match="another reference"):
+        arm_alleles(donor, ARM_REFERENCE, iuis)
+    # A donor allele mapped against another reference names a shared allele this one does not hold.
+    foreign = replace(donor.alleles[0], shared=("IGHVF7-G7*01",))
+    with pytest.raises(ValueError, match=re.escape("IGHVF7-G7*01")):
+        arm_alleles(replace(donor, alleles=(foreign, *donor.alleles[1:])), ARM_REFERENCE, arm_iuis)
+
+
 # --- the pilot donors' real files -------------------------------------------------------------------------------
 
 PILOT = {"SC-23": "P25_I58_S1", "SC-4": "P25_I61_S1", "SC-11": "P25_I48_S1", "SC-6": "P25_I62_S1",
@@ -488,3 +634,31 @@ def test_the_pilot_donors_vdjbase_genotypes(reference):
     assert all(set(item.sequence) <= set("ACGT") for item in novel)
     touched = sd3_only(genotypes.values(), novel)
     assert touched and all(gene.startswith(("IGHV", "IGHD")) for gene in touched)
+
+
+# The genotype arm's V alleles per pilot donor (kept of the shared reference's 198), on HUMAN_IGH_OGRDB. W-97 and
+# W-133 keep the most: their contigs capture the fewest V genes (45 and 44), so more genes keep all their alleles.
+ARM_V_KEPT = {"SC-23": 111, "SC-4": 102, "SC-11": 110, "SC-6": 95, "W-97": 114, "W-89": 92, "W-133": 117, "W-131": 95}
+
+
+@pytest.mark.skipif(not DATA or os.environ.get("ALIGNAIR_ASSAY_DOCKER") != "1",
+                    reason="set ALIGNAIR_ASSAY_DATA to the PRJNA555323 data root and ALIGNAIR_ASSAY_DOCKER=1")
+def test_the_pilot_donors_genotype_arms(reference):
+    from alignair_assay.real.locus import donor_capture
+
+    root = Path(DATA)
+    samples = root / "genotypes/vdjbase_genomic_samples"
+    iuis = IuisMap.from_ogrdb(root / "genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json", reference)
+    kept_v = {}
+    for donor, sample in PILOT.items():
+        genotype = donor_capture(load_vdjbase_csv(samples / f"{sample}.csv", donor, reference, iuis),
+                                 samples / f"{sample}.bam", root / "genotypes/igenotyper/gene_coords.bed")
+        kept = arm_alleles(genotype, reference, iuis)
+        by_letter = {letter: {name for name in kept if reference.gene_letter(name) == letter} for letter in "vdj"}
+        # D and J are never restricted; V keeps every donor allele's shared name and is restricted
+        assert by_letter["d"] == set(reference.alleles["d"]) and by_letter["j"] == set(reference.alleles["j"])
+        donor_v = {name for allele in genotype.alleles if allele.segment == "v" for name in allele.shared}
+        assert donor_v <= by_letter["v"]
+        assert 0 < len(by_letter["v"]) < len(reference.alleles["v"])
+        kept_v[donor] = len(by_letter["v"])
+    assert kept_v == ARM_V_KEPT

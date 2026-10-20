@@ -43,6 +43,9 @@ carry no IUIS name, and VDJbase names a novel allele after its closest IMGT alle
   ``imgt_allele_match``).
 - ``merge_identical``: each shared allele and the shared alleles with its exact sequence (D4-4*01 / D4-11*01 and
   D5-5*01 / D5-18*01 on HUMAN_IGH_OGRDB; each V paralog pair is already one shared allele with two labels).
+- ``arm_alleles``: the shared alleles a tool is restricted to in a donor's genotype arm. Only V is restricted, and
+  only where the truth exists: a captured gene keeps the donor's shared alleles, while an uncaptured gene, a gene
+  carried only with alleles absent from the shared reference, and every D and J allele keep all of theirs.
 - ``upto``: an allele through IMGT position 318, ungapped. Two V alleles that differ only beyond it cannot be told
   apart from rearranged reads (Peres et al. 2023, PIgLET); on HUMAN_IGH_OGRDB that is ``IGHVF3-G9*04`` and
   ``IGHVF3-G9*04_A319G``.
@@ -422,6 +425,50 @@ def merge_identical(reference: Reference) -> dict[str, frozenset[str]]:
             groups[sequence].add(name)
         merged.update({name: frozenset(groups[sequence]) for name, sequence in table.items()})
     return merged
+
+
+def arm_alleles(genotype: RealGenotype, reference: Reference, iuis: IuisMap) -> list[str]:
+    """The shared alleles a tool is restricted to in donor ``genotype``'s genotype arm, sorted (design §10.4: restrict
+    only where the truth exists).
+
+    Only V is restricted. A shared V allele is kept when any of these holds:
+
+    - it is the ``shared`` name of one of the donor's alleles, functional or not (the genome carries it);
+    - one of its IUIS genes (``iuis.genes``: two for a paralog pair) is not in ``genotype.captured``, or it has none
+      (no truth names its gene; none on ``HUMAN_IGH_OGRDB``);
+    - one of its IUIS genes is carried only with alleles absent from the shared reference: there is no shared
+      allele to restrict that gene to, and R1 excludes it anyway.
+
+    So a captured gene the donor carries keeps only the donor's shared alleles, and a captured gene it lacks keeps
+    none. Every D and J allele is kept: genomic D and J truth is thin and noisy, and the arm targets V.
+
+    ValueError when the captured genes are unknown (``real.locus.with_capture`` sets them), ``iuis`` was built
+    against another reference, a donor allele's shared name is not in ``reference`` (mapped against another), or a
+    gene letter is left with no allele, which a tool would read as unrestricted."""
+    if genotype.captured is None:
+        raise ValueError(f"{genotype.donor}: the captured genes are unknown; the genotype arm restricts only "
+                         "captured genes (real.locus.with_capture)")
+    if iuis.reference_digest != reference.digest():
+        raise ValueError(f"the IUIS map was built against another reference (digest {iuis.reference_digest[:12]}, "
+                         f"not {reference.digest()[:12]})")
+    donor_shared = {name for allele in genotype.alleles for name in allele.shared}
+    foreign = sorted(name for name in donor_shared if not reference.has(name))
+    if foreign:
+        raise ValueError(f"{genotype.donor}: donor alleles are mapped to {', '.join(foreign)}, which the reference "
+                         "does not hold (mapped against another reference)")
+    carried = {allele.gene for allele in genotype.alleles}
+    only_absent = {gene for gene in carried if not any(allele.shared for allele in genotype.carried(gene))}
+    kept = []
+    for letter, table in reference.alleles.items():
+        for name in table:
+            genes = iuis.genes(name) if letter == "v" else ()
+            if (letter != "v" or name in donor_shared or not genes
+                    or any(gene not in genotype.captured or gene in only_absent for gene in genes)):
+                kept.append(name)
+    for letter in reference.alleles:
+        if not any(reference.gene_letter(name) == letter for name in kept):
+            raise ValueError(f"{genotype.donor}: the genotype arm keeps no {letter} allele")
+    return sorted(kept)
 
 
 def upto(gapped: str, position: int = POSITION_318) -> str:

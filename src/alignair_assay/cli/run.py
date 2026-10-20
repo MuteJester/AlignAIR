@@ -31,9 +31,9 @@ def register(sub) -> None:
     p.add_argument("--model", default=DEFAULT_MODEL, help="AlignAIR registry model id@version (alignair)")
     p.add_argument("--cache-dir", help="AlignAIR model cache mounted into the container (alignair; default "
                                        "runs/alignair/_work/cache, seeded from the user's cache)")
-    p.add_argument("--checkpoint", help="AlignAIR .alignair model file (alignair-local)")
-    p.add_argument("--device", default="cpu", help="torch device, e.g. cpu or cuda (alignair-local)")
-    p.add_argument("--batch-size", type=int, default=64, help="reads per batch (alignair-local)")
+    p.add_argument("--checkpoint", help="AlignAIR .alignair model file (alignair-local, alignair-api)")
+    p.add_argument("--device", default="cpu", help="torch device, e.g. cpu or cuda (alignair-local, alignair-api)")
+    p.add_argument("--batch-size", type=int, default=64, help="reads per batch (alignair-local, alignair-api)")
     p.set_defaults(func=run)
 
 

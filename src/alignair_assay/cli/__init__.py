@@ -7,7 +7,7 @@
   python -m alignair_assay report --run-dir RUN [--a igblast --b alignair]
   python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB]
       [--seed 20261019] [--scale 1.0] [--workers 8]
-  python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-local|oracle --suites S0,S1
+  python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-local|alignair-api|oracle --suites S0,S1
       [--arm shared|genotype] [--threads 8] [--cpus 0-7] [--igblast-dir DIR] [--image IMAGE]
       [--model alignair-igh-human@1.0.0] [--cache-dir DIR] [--checkpoint MODEL.alignair] [--device cpu]
       [--batch-size 64]
