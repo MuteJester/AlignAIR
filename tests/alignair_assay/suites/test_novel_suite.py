@@ -32,6 +32,7 @@ from alignair_assay.truth.case import truth_from_case  # noqa: E402
 from alignair_assay.truth.io import read_truth_jsonl  # noqa: E402
 from alignair_assay.truth.oracle import oracle_prediction  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
+from alignair_assay.workflow.scoring import read_genotypes  # noqa: E402
 
 REFERENCE = "HUMAN_IGH_OGRDB"
 CONFIG = dataconfig(REFERENCE)
@@ -306,10 +307,16 @@ def test_oracle_perfect_on_s7(tmp_path, reference):
         else:
             assert truth.v_novel_snps is not None and truth.segments["v"].alleles.primary == novel.base
     assert labels["none"] < 60 and sum(labels.values()) == 60
-    scores = assert_oracle_perfect(truths, reference)
+    # Scored against each read's donor genotype, as `all` scores S7: a novel read's oracle call (the base, which
+    # the donor does not carry) is in the truth set, so it is not outside the genotype.
+    genotypes = read_genotypes(layout.donors("S7"))
+    scores = assert_oracle_perfect(truths, reference, genotypes=genotypes)
     emitted = {metric for case in scores.values() for metric in case}
     assert set(suite.primary) <= emitted, set(suite.primary) - emitted
     assert METRIC in emitted
+    assert all(case["v.outside_genotype"] == 0.0 for case in scores.values())
+    assert any(truth.segments["v"].alleles.primary not in genotypes[truth.groups["subject"]].carried
+               for truth in truths if truth.v_novel_snps)
     for truth in truths:
         if truth.v_novel_snps:
             assert 0 <= scores[truth.case_id][METRIC] <= len(truth.v_novel_snps)

@@ -21,10 +21,15 @@ def _clean(obj):
     return obj
 
 
-def build_score_report(tool: str, summary, slices, provenance: dict) -> dict:
-    """Report for one tool: overall summaries plus per-dimension slice summaries."""
-    return {"kind": SCORE_KIND, "version": VERSION, "tool": tool, "overall": _clean(summary),
-            "by_slice": _clean(slices), "provenance": _clean(provenance)}
+def build_score_report(tool: str, summary, slices, provenance: dict, *, excess_alleles: dict | None = None
+                       ) -> dict:
+    """Report for one tool: overall summaries plus per-dimension slice summaries, and the donor-level
+    ``excess_alleles`` table (``metrics.genotype.excess_alleles``) when one is given."""
+    report = {"kind": SCORE_KIND, "version": VERSION, "tool": tool, "overall": _clean(summary),
+              "by_slice": _clean(slices), "provenance": _clean(provenance)}
+    if excess_alleles is not None:
+        report["excess_alleles"] = _clean(excess_alleles)
+    return report
 
 
 def build_comparison_report(a_name: str, b_name: str, comparison, slices_a, slices_b, provenance: dict) -> dict:

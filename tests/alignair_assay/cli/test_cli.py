@@ -343,3 +343,45 @@ def test_compare_names_must_differ(tmp_path, capsys):
                  "--b-name", "x", "--out-dir", str(tmp_path / "out")]) == 2
     assert "--a-name and --b-name must differ" in capsys.readouterr().err
     assert not (tmp_path / "out").exists()
+
+
+def test_score_and_compare_with_donors(tmp_path, capsys):
+    run = tmp_path / "run"
+    assert main(["build", "--suites", "S0_COHORT", "--run-dir", str(run), "--workers", "1"]) == 0
+    truth_path, donors = run / "suites" / "S0_COHORT" / "truth.jsonl.gz", run / "suites" / "S0_COHORT" / "donors.json"
+    truths = read_truth_jsonl(truth_path)
+    tsv = tmp_path / "oracle.tsv"
+    write_airr_tsv([oracle_prediction(t) for t in truths if t.excluded is None], tsv)
+    score = ["score", "--truth", str(truth_path), "--predictions", str(tsv), "--tool", "oracle"]
+
+    # Without --donors, as before: no genotype metric and no excess-alleles table.
+    assert main(score + ["--out-dir", str(tmp_path / "plain")]) == 0
+    plain = json.loads((tmp_path / "plain" / "oracle.report.json").read_text())
+    assert not any(name.endswith(("outside_genotype", "deleted_gene_call")) for name in plain["overall"])
+    assert "excess_alleles" not in plain and "donors" not in plain["provenance"]["inputs"]
+
+    assert main(score + ["--donors", str(donors), "--out-dir", str(tmp_path / "donors")]) == 0
+    report = json.loads((tmp_path / "donors" / "oracle.report.json").read_text())
+    for name in ("v.outside_genotype", "v.deleted_gene_call", "j.outside_genotype"):
+        entry = report["overall"][name]
+        assert (entry["mean"], entry["coverage"], entry["n"]) == (0.0, 1.0, len(truths)), name
+    assert report["excess_alleles"]["min_reads"] == 3 and report["excess_alleles"]["v"]["excess"] == 0
+    assert report["provenance"]["inputs"]["donors"] == {"path": str(donors), "sha256": _sha256(donors)}
+    md = (tmp_path / "donors" / "oracle.report.md").read_text()
+    assert "## Excess alleles" in md and f"(n={report['excess_alleles']['v']['n']})" in md
+
+    compare = ["compare", "--truth", str(truth_path), "--a", str(tsv), "--a-name", "x", "--b", str(tsv),
+               "--b-name", "y"]
+    assert main(compare + ["--donors", str(donors), "--out-dir", str(tmp_path / "cmp")]) == 0
+    comparison = json.loads((tmp_path / "cmp" / "comparison.json").read_text())
+    assert comparison["comparison"]["v.deleted_gene_call"]["verdict"] == "tie_or_inconclusive"
+    assert comparison["provenance"]["inputs"]["donors"]["sha256"] == _sha256(donors)
+    capsys.readouterr()
+
+    # Donors that miss a read's subject (another suite's donors.json) are an input error naming the subject.
+    data = json.loads(donors.read_text())
+    data["donors"] = [donor for donor in data["donors"] if donor["subject_id"] != "donor01"]
+    (tmp_path / "other.json").write_text(json.dumps(data))
+    for command in (score, compare):
+        assert main(command + ["--donors", str(tmp_path / "other.json"), "--out-dir", str(tmp_path / "x")]) == 2
+        assert "donor01" in capsys.readouterr().err

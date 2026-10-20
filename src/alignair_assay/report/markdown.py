@@ -64,12 +64,34 @@ def format_cell(name: str, entry) -> str:
     return f"{format_value(name, mean)} (n={entry['n']}, {_cov(entry['coverage'])})"
 
 
+def excess_note(min_reads) -> str:
+    """The sentence explaining an excess-alleles table (``metrics.genotype.excess_alleles``) counted with
+    ``min_reads``."""
+    return (f"Excess alleles: of the donor genes with at least {min_reads} reads whose top-1 call is of that gene, "
+            f"the share whose distinct top-1 alleles, each called on at least {min_reads} reads, outnumber the "
+            "alleles the donor carries (none for a deleted gene); n is the number of those donor genes.")
+
+
+def format_excess(entry) -> str:
+    """An excess-alleles entry (``n``, ``excess``, ``fraction``) as ``fraction% (n=…)``; a missing entry shows a
+    dash, and an entry over no donor gene a dash with ``n=0``."""
+    if entry is None:
+        return MISSING
+    fraction = entry.get("fraction")
+    return f"{MISSING if fraction is None else f'{100 * fraction:.1f}%'} (n={entry['n']})"
+
+
 def _score_md(report: dict, headline: Sequence[str]) -> list[str]:
     overall = report["overall"]
     lines = [f"# AlignAIR assay: {report['tool']}", "", "## Overall", ""]
     rows = [[n, format_value(n, _mean(overall[n])), str(overall[n]["n"]), _cov(overall[n]["coverage"])]
             for n in _order(overall, headline)]
     lines += markdown_table(["Metric", "Value", "n", "Coverage"], rows)
+    excess = report.get("excess_alleles")
+    if excess is not None:
+        genes = [g for g in ("v", "j") if g in excess]
+        lines += ["", "## Excess alleles", "", excess_note(excess["min_reads"]), "",
+                  *markdown_table([g.upper() for g in genes], [[format_excess(excess[g]) for g in genes]])]
     for dim, labels in report["by_slice"].items():
         lines += ["", f"## By {dim}", ""]
         names = [n for n in headline if any(n in m for m in labels.values())]

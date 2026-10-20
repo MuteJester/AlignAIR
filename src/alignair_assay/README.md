@@ -20,15 +20,15 @@ Each subpackage is a layer and may import only the layers in its row.
 | `core` | shared primitives: `reference` (the germline reference from a dataconfig or a FASTA, `DEFAULT_REFERENCE`, `dataconfig`), `cigar`, `seqops`, `prediction` (normalized prediction records), `jsonl`, `cases` (case schema, case and FASTA files), `provenance`, `layout` (`RunLayout`, the run-directory path schema), `genotype` (`NovelAllele`, `DonorGenotype`: donor genotypes as plain data), `headline` (`HEADLINE`, the headline metrics shared by suites and reports) | core |
 | `truth` | observable truth (pure): `model`, `segment`, `boundaries`, `alleles`, `genairr` (record decoding), `build`, `bench`, `case` (truth from a case), `io`, `oracle`, `summary` (what a truth set could not score) | core, truth |
 | `airr` | AIRR TSV `reader` and `writer` | core, airr |
-| `metrics` | per-case scorers (pure), the group scorers that read a case's whole clone (`groups`), and the metric registries | core, truth, metrics |
+| `metrics` | per-case scorers (pure), the group scorers that read a case's whole clone (`groups`), the scorers against a read's donor genotype (`genotype`), and the metric registries | core, truth, metrics |
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
 | `report` | JSON reports and markdown summaries (`build`, `markdown`), and the run report rendered from a run summary (`run`) | core, stats, report |
 | `scoring` | `pipeline` (score one tool against a truth file), `slices` and `oracle` (the oracle rule on per-case scores) | core, truth, airr, metrics, stats, scoring |
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
-| `workflow` | build → run → score → report orchestration over a run directory: `build` (one suite), `scoring` (score and comparison reports and their files, shared by `score`, `compare` and `all`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
+| `workflow` | build → run → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, `read_genotypes`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
 | `cli` | the `python -m alignair_assay` commands | everything |
-| `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`; returns the oracle's per-case scores) | everything |
+| `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
 Further rules:
 
@@ -171,6 +171,33 @@ as correct as a right call. A missing row is a failure, not an abstention.
   shows, and so does the oracle; a tool that inferred the novel allele reports none. It is reported but not
   compared.
 
+**Genotype metrics** (`metrics.genotype`, lower is better). With donor genotypes
+(`scoring.pipeline.score_predictions(..., genotypes=)`: subject id -> `Donor.view()`), every scored case with
+`groups["subject"]` is also scored against its donor's genotype; a subject without a genotype is a ValueError
+naming the case. They apply to V and J when the segment is observed with at least `MIN_OBSERVED` bases and is
+scorable, and are `nan` without a top-1 call or without a row. A call in the scored truth set is defensible
+whatever the genotype (a simulator re-call, an as-near allele, a novel allele's base), so only calls outside it
+count:
+
+- `{g}.outside_genotype` (V, J): the top-1 call is neither carried by the donor nor in the scored truth set.
+- `v.deleted_gene_call`: the top-1 V call's gene is one of the donor's deleted genes, and the call is not in the
+  scored truth set. J genes are never deleted.
+
+The oracle calls each read's generative allele, which its donor carries (a novel allele's base is in the truth
+set), so it scores 0.0 on both. Every suite with donors (S1, S7, S8, S10) gets them under `all`, and `score` and
+`compare` with `--donors`.
+
+**Excess alleles** (`metrics.genotype.excess_alleles(truths, preds, genotypes, min_reads=3)`, donor level, not a
+per-case metric). Per gene letter (V, J), the reads that count are those the genotype metrics apply to with a
+top-1 call, grouped into (donor, gene of the top-1 call) pairs. A pair with at least `min_reads` reads is
+considered, and it is an excess when its distinct top-1 alleles called on at least `min_reads` reads each
+outnumber the alleles of that gene the donor carries (none for a deleted gene). The table holds `min_reads` and
+per letter `n` (pairs considered), `excess` and `fraction` (None when `n` is 0). A tool's score report holds it
+as `excess_alleles` when it was scored with donors, and the run report tabulates it with n next to every
+fraction. The oracle never has an excess. Unlike the per-read metrics, a called allele that is in the read's truth
+set but not carried (one identical to a carried allele over the read, say) counts towards an excess, so a perfect
+sequence-only tool can have one where the oracle has none.
+
 ## Run directory layout
 
 Every path inside a run directory comes from `core.layout.RunLayout`; no other module joins run-directory paths.
@@ -229,8 +256,9 @@ python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-loca
     [--image IMAGE] [--model alignair-igh-human@1.0.0] [--cache-dir DIR] \
     [--checkpoint MODEL.alignair] [--device cpu] [--batch-size 64]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
-python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
-python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05]
+python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR [--donors DONORS.json]
+python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05] \
+    [--donors DONORS.json]
 ```
 
 - `all` (`workflow.orchestrate.run_all`) does everything over one run directory, and can be rerun to resume. See
@@ -277,6 +305,10 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
 - `score` writes `<tool>.scores.jsonl.gz`, `<tool>.report.json` and `<tool>.report.md`.
 - `compare` writes `comparison.json` and `comparison.md`, and prints the headline table. Its 95% and simultaneous
   CIs of 0/1 metrics are clipped to [-1, 1].
+- `--donors` (`score`, `compare`) takes a suite's `donors.json` and scores each read with a subject against its
+  donor's genotype (`workflow.scoring.score_file`): the genotype metrics join the scores and the comparison family,
+  the score report holds the excess-alleles table, and the provenance records the donors file as an input. A read
+  whose subject the file does not have exits with status 2. Without it, nothing changes.
 - `score`, `compare` and `all` build these reports with the same functions (`workflow.scoring`). Their provenance
   records the `command`, each input's path and SHA-256, the checkout's git state, the matching counts and the
   truth's `simulator_calls`. The markdown leads with the headline metrics (`core.headline.HEADLINE`; under `all`,
@@ -319,9 +351,10 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    passes, its predictions exist, its recorded `settings` equal the manifest's fingerprint of its tool, the reads
    (and the truth and donors, when the run recorded them) still have their recorded SHA-256, and its suite's build
    matches the configuration (`workflow.build.build_is_current`). Anything else is `missing`, `failed` or
-   `stale`, and is listed, never scored. Each scored run gets the `score` command's three files, the oracle on the shared
-   arm. When both tools are scored, the arm gets the `compare` command's `comparison.json` and `comparison.md` (a
-   against b, Holm at 0.05).
+   `stale`, and is listed, never scored. Each scored run gets the `score` command's three files, the oracle on the
+   shared arm. A suite with a `donors.json` is scored as `score --donors` scores it: against each read's donor
+   genotype, with the donors file recorded as an input. When both tools are scored, the arm gets the `compare`
+   command's `comparison.json` and `comparison.md` (a against b, Holm at 0.05).
 6. **Report.** `report.json` holds the run summary (`workflow.summary.collect_run_summary`) and `report.md` its
    rendering (`report.run.run_report_markdown`).
 
@@ -362,7 +395,9 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
    the metrics that differ and the primary-metric rows.
 7. **Genotype arms.** For suites with a genotype arm, each tool's primary-metric means in each arm, with n and
    coverage.
-8. **Speed.** Present when `speed/speed.json` exists.
+8. **Excess alleles.** For suites with donors, the excess-alleles table (see Genotype metrics) of each run: the
+   oracle's shared arm (always 0%), then each tool in each arm, V and J, each fraction with its n.
+9. **Speed.** Present when `speed/speed.json` exists.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
 `cli.COMMANDS`. The module owns its own input checks: `run` raises ValueError (or FileNotFoundError) for invalid
@@ -370,10 +405,11 @@ input, which `cli.main` prints as `error: ...` with exit status 2.
 
 ## Adding a metric
 
-1. Write the scorer in the `metrics/` module of its kind (`alleles`, `boundaries`, `junction`, `shm`, `flags`, or
-   `groups` for a metric that reads the predictions for a case's whole group). It returns `CaseScores` named
-   `<scope>.<metric>` and follows the NaN rules above.
-2. Call it from `metrics.case.score_case`; a group scorer is merged instead by
+1. Write the scorer in the `metrics/` module of its kind (`alleles`, `boundaries`, `junction`, `shm`, `flags`,
+   `novel`, `groups` for a metric that reads the predictions for a case's whole group, or `genotype` for one that
+   reads the case's donor genotype). It returns `CaseScores` named `<scope>.<metric>` and follows the NaN rules
+   above.
+2. Call it from `metrics.case.score_case`; a group or genotype scorer is merged instead by
    `scoring.pipeline.score_predictions`. Every case is scored through `score_predictions`, so the pipeline and the
    oracle check see the same metrics.
 3. Declare its status in `metrics/__init__.py`. A name ending in one of the `_LOWER_IS_BETTER` suffixes is
@@ -407,7 +443,8 @@ A suite is a declarative GenAIRR recipe per stratum; `suites.engine` turns it in
      `groups["clone"]`).
 4. Register the suite in `_CATALOG` in `suites/__init__.py`.
 5. Test it in `tests/alignair_assay/suites/` at a small scale: counts, labels and groups, and the oracle check
-   `testing.assert_oracle_perfect` on its truth. A suite that fails the oracle check has a truth defect.
+   `testing.assert_oracle_perfect` on its truth (with `genotypes=workflow.scoring.read_genotypes(donors.json)` for
+   a suite with donors, as `all` scores it). A suite that fails the oracle check has a truth defect.
 
 Engine rules (`suites.engine.generate_suite`):
 
@@ -446,6 +483,7 @@ Engine rules (`suites.engine.generate_suite`):
 | `S5` | `indels` | `v_{k}` (exactly k polymerase indels, all in V; k = 1, …, 6), `j_1` (exactly one, in J); each 300, full, rate 0.03; rejection sampling on `n_v_indels` / `n_j_indels` and `n_indels` | rc 0 | none | `indels` (the stratum name) | `v.indel_found`, `v.indel_false`, `v.seq_end_exact`, `junction.nt_exact`, `v.top1_in_set` |
 | `S6` | `d_observability` | `trim_{k}` (k nt at both D ends, k = 0, 3, 6, 9, 12) 400 each; `inverted` (every D inverted, default trims) 500; full, rate 0.02 | rc 0 | none | `d_trim` (k or `default`), `inverted` (`yes`/`no`) | `d.top1_in_set`, `d_short.abstain_ok`, `d.seq_start_exact`, `d.seq_end_exact` |
 | `S7` | `novel` | `cohort` 3000; full, rate 0.075; cohort over donors that each carry 25 V genes as a homozygous novel allele (1–6 SNPs, cycling); arms `shared` and `genotype` | rc 0.5 | `DonorSpec(10, "S7", DonorParams(novel_v_genes=25))` | `novel_snps` (per case: the SNP count of its generative V allele, or `none`) | `v.top1_in_set`, `v.gene_top1`, `v.mutation_count_err`, `clone_key.exact`, `junction.nt_exact` |
+| `S8` | `genotype` | `cohort` 3000; full, rate 0.075; cohort over donors with heterozygous and deleted genes; arms `shared` and `genotype` | rc 0.5 | `DonorSpec(10, "S8")` | — | `v.outside_genotype`, `v.deleted_gene_call`, `j.outside_genotype`, `v.top1_in_set`, `clone_key.exact` |
 | `S9` | `clonal` | `lineages` 60 clones (`clonal_lineage`: up to 25 sampled cells per clone, per-base SHM rate 0.008 per generation; median V mutation rate 0.075); full; clonal | rc 0.5 | none | — | `clone_key.exact`, `clone.agree_modal`, `junction.nt_exact`, `v.top1_in_set` |
 | `S10` | `heldout` | `uniform` (uniform SHM model), `hkl_s5f` (S5F kernel `hkl_s5f`), `np_shift` (NP lengths +4), `trim_shift` (trims +3); each 600, full, rate 0.075; cohort | rc 0.5 | `DonorSpec(20, "S10")` | `heldout` | `HEADLINE` |
 | `S11` | `orientation` | `full_igg` 500, `fr3_igg` 500 | both orientations (pairs) | none | `design` | `orientation.correct` + `HEADLINE` |

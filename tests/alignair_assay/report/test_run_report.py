@@ -57,6 +57,13 @@ def _summary() -> dict:
         "genotype_arms": [{"suite": "S8", "arms": ["shared", "genotype"], "rows": [
             {"metric": "v.top1_in_set", "values": {"igblast": {"shared": _cell(0.9), "genotype": _cell(0.95)},
                                                    "alignair": {"shared": _cell(0.8, 1, 0.1), "genotype": None}}}]}],
+        "excess_alleles": [{"suite": "S8", "rows": [
+            {"tool": "oracle", "arm": "shared", "table": {"min_reads": 3, "v": {"n": 120, "excess": 0, "fraction": 0.0},
+                                                          "j": {"n": 40, "excess": 0, "fraction": 0.0}}},
+            {"tool": "igblast", "arm": "shared", "table": {"min_reads": 3, "v": {"n": 118, "excess": 9,
+                                                                                   "fraction": 9 / 118},
+                                                           "j": {"n": 0, "excess": 0, "fraction": None}}},
+            {"tool": "alignair", "arm": "genotype", "table": None}]}],
         "speed": {"host": {"cpu": "Test CPU", "logical_cpus": 8}, "n_tiny": 50, "n_full": 4000, "repeats": 3,
                   "results": {"igblast_8t": {"cold_start_s": 0.5, "steady_reads_per_s": 250.0,
                                              "median_full_s": 16.5, "peak_rss_kb": 126000}}},
@@ -73,7 +80,7 @@ def test_report_renders_sections_from_summary():
     assert "split test, seed 20261019, scale 1.0, reference HUMAN_IGH_OGRDB; config hash 0123456789ab" in md
     assert _sections(md) == ["## Failed runs", "## Oracle check failures", "## Summary", "## Suites",
                              "## S10 vs S1 (held-out settings)", "## S11 orientation parity", "## Genotype arms",
-                             "## Speed"]
+                             "## Excess alleles", "## Speed"]
 
     failed = md[md.index("## Failed runs"):md.index("## Oracle check failures")]
     assert ("| alignair | S8 | genotype | failed | 1 | donor00 | AttributeError: 'tuple' object has no attribute "
@@ -112,6 +119,13 @@ def test_report_renders_sections_from_summary():
     assert "| Metric | igblast shared | igblast genotype | alignair shared | alignair genotype |" in genotype
     assert "| v.top1_in_set | 90.0% (n=10, 100%) | 95.0% (n=10, 100%) | 80.0% (n=1, 10%) | — |" in genotype
 
+    excess = md[md.index("## Excess alleles"):md.index("## Speed")]
+    assert "at least 3 reads" in excess and "| Suite | Tool | Arm | V | J |" in excess
+    # Every fraction shows its n; a table over no donor gene shows n=0, a run without a table a dash.
+    assert "| S8 | oracle | shared | 0.0% (n=120) | 0.0% (n=40) |" in excess
+    assert "| S8 | igblast | shared | 7.6% (n=118) | — (n=0) |" in excess
+    assert "| S8 | alignair | genotype | — | — |" in excess
+
     speed = md[md.index("## Speed"):]
     assert "| igblast_8t | 0.50 | 250.0 | 16.50 | 123.0 |" in speed and "container start" in speed
 
@@ -120,7 +134,7 @@ def test_sections_without_data_are_left_out():
     summary = _summary()
     for key in ("s10_vs_s1", "s11_parity", "speed"):
         summary[key] = None
-    summary.update(failed_runs=[], oracle_failures=[], genotype_arms=[])
+    summary.update(failed_runs=[], oracle_failures=[], genotype_arms=[], excess_alleles=[])
     assert _sections(run_report_markdown(summary)) == ["## Summary", "## Suites"]
 
     original = copy.deepcopy(summary)

@@ -6,18 +6,23 @@ writes under ``scores/<S>/<arm>/`` are the ones those commands write.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from alignair_assay.core.genotype import DonorGenotype
 from alignair_assay.core.headline import HEADLINE
 from alignair_assay.core.provenance import git_state, sha256_file
+from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import CaseScores, is_informational, lower_is_better
 from alignair_assay.metrics.case import MIN_OBSERVED
+from alignair_assay.metrics.genotype import excess_alleles
 from alignair_assay.report import build_comparison_report, build_score_report, to_markdown
+from alignair_assay.scoring.pipeline import load_predictions, score_predictions
 from alignair_assay.scoring.slices import slices
 from alignair_assay.stats import compare, summarize
+from alignair_assay.suites.donors import donors_from_json
 from alignair_assay.truth.model import ObservableTruth
 from alignair_assay.truth.summary import simulator_calls
 
@@ -27,12 +32,32 @@ STATISTICAL_TESTS = ("exact McNemar for 0/1 metrics, paired z-test otherwise, p 
 
 @dataclass(frozen=True)
 class ToolScores:
-    """One tool's per-case scores over a truth set's scored cases and its prediction/truth ``matching`` counts, as
-    ``scoring.pipeline.score_tool`` returns them."""
+    """One tool's per-case scores over a truth set's scored cases and its prediction/truth ``matching`` counts
+    (``scoring.pipeline.score_tool``), and, when it was scored against donor genotypes, its ``excess_alleles``
+    table (``metrics.genotype.excess_alleles``; None otherwise). ``score_file`` builds it."""
 
     tool: str
     scores: dict[str, CaseScores]
     matching: dict
+    excess_alleles: dict | None = None
+
+
+def read_genotypes(path: str | Path) -> dict[str, DonorGenotype]:
+    """The donor genotypes of a ``donors.json`` file (``suites.donors.donors_to_json``) by subject id: each donor's
+    ``Donor.view()``. ValueError for a file that is not a donors object."""
+    donors = donors_from_json(json.loads(Path(path).read_text(encoding="utf-8")))
+    return {donor.subject_id: donor.view() for donor in donors}
+
+
+def score_file(tool: str, truths: list[ObservableTruth], predictions_path: str | Path, reference: Reference, *,
+               genotypes: Mapping[str, DonorGenotype] | None = None) -> ToolScores:
+    """Score ``tool``'s AIRR TSV against ``truths`` as ``scoring.pipeline.score_tool`` does (the genotype metrics
+    included when donor ``genotypes`` are given) and, with ``genotypes``, its donor-level ``excess_alleles``
+    table. ValueError for a file matching no scored case, or a case whose subject has no genotype."""
+    preds, matching = load_predictions(truths, predictions_path)
+    scores = score_predictions(truths, preds, reference, genotypes)
+    excess = None if genotypes is None else excess_alleles(truths, preds, genotypes)
+    return ToolScores(tool, scores, matching, excess)
 
 
 def provenance(command: str, inputs: dict, **extra) -> dict:
@@ -51,12 +76,13 @@ def provenance(command: str, inputs: dict, **extra) -> dict:
 def score_report(scored: ToolScores, truths: list[ObservableTruth], header: dict, *, command: str, inputs: dict,
                  reference_name: str) -> dict:
     """The score report of one tool: its overall and per-slice summaries, with the provenance of ``command`` run on
-    ``inputs`` (name -> path) against ``truths`` (whose file header is ``header``)."""
+    ``inputs`` (name -> path) against ``truths`` (whose file header is ``header``), and its ``excess_alleles``
+    table when it was scored against donor genotypes."""
     prov = provenance(command, inputs, tool=scored.tool, reference=reference_name,
                       reference_digest=header["reference_digest"], truth_header=header, matching=scored.matching,
                       simulator_calls=simulator_calls(truths))
     return build_score_report(scored.tool, summarize(scored.scores, list(scored.scores)),
-                              slices(scored.scores, truths), prov)
+                              slices(scored.scores, truths), prov, excess_alleles=scored.excess_alleles)
 
 
 def comparison_report(a: ToolScores, b: ToolScores, truths: list[ObservableTruth], header: dict, *, command: str,

@@ -31,11 +31,17 @@ from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL
 from alignair_assay.runners.arms import run_genotype_arm
 from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path, run_suite
 from alignair_assay.runners.reference import ensure_shared_reference
-from alignair_assay.scoring.pipeline import load_truth, score_tool, write_scores
+from alignair_assay.scoring.pipeline import load_truth, write_scores
 from alignair_assay.suites import get_suite
 from alignair_assay.suites.engine import DEFAULT_SEED, check_split
 from alignair_assay.workflow.build import build_is_current, build_suite
-from alignair_assay.workflow.scoring import ToolScores, comparison_report, score_report, write_report
+from alignair_assay.workflow.scoring import (
+    comparison_report,
+    read_genotypes,
+    score_file,
+    score_report,
+    write_report,
+)
 from alignair_assay.workflow.summary import (
     ALPHA,
     ORACLE,
@@ -188,10 +194,12 @@ def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference 
     entry is ``ok`` (``require_successful_run`` passes, the run was made with the manifest's settings for its tool,
     on unchanged files of a suite whose build matches ``cfg``) is scored as the ``score`` command scores it:
     ``<tool>.scores.jsonl.gz``, ``<tool>.report.json`` and ``<tool>.report.md``, with the suite's primary metrics
-    leading the markdown. The oracle is scored on the shared arm. When both tools are scored, ``comparison.json``
-    and ``comparison.md`` are written as the ``compare`` command writes them (Holm at ``summary.ALPHA``). Then
-    ``report.json`` (``summary.collect_run_summary``) and ``report.md`` (``report.run.run_report_markdown``) are
-    written. ``command`` is recorded in the reports' provenance.
+    leading the markdown. A suite with a ``donors.json`` is scored as ``score --donors`` scores it: against each
+    read's donor genotype, with the genotype metrics and the excess-alleles table. The oracle is scored on the
+    shared arm. When both tools are scored, ``comparison.json`` and ``comparison.md`` are written as the
+    ``compare`` command writes them (Holm at ``summary.ALPHA``). Then ``report.json``
+    (``summary.collect_run_summary``) and ``report.md`` (``report.run.run_report_markdown``) are written.
+    ``command`` is recorded in the reports' provenance.
     """
     reference = reference or Reference.from_dataconfig(cfg.reference)
     errors = _score(cfg, layout, reference, command=command)
@@ -349,6 +357,10 @@ def _score(cfg: RunConfig, layout: RunLayout, reference: Reference, *, command: 
     for name in cfg.suites:
         suite = get_suite(name)
         header, truths = load_truth(layout.truth(name), cfg.reference, reference)
+        # A suite with donors is scored against each read's donor genotype, recorded as an input.
+        donors = layout.donors(name) if layout.donors(name).is_file() else None
+        genotypes = None if donors is None else read_genotypes(donors)
+        extra_inputs = {} if donors is None else {"donors": donors}
         for arm in suite.arms:
             shutil.rmtree(layout.scores_dir(name, arm), ignore_errors=True)
             layout.scores_dir(name, arm).mkdir(parents=True)
@@ -359,13 +371,13 @@ def _score(cfg: RunConfig, layout: RunLayout, reference: Reference, *, command: 
                     continue  # the summary lists it as a failed run
                 predictions = layout.predictions(tool, name, arm)
                 try:
-                    scored[tool] = ToolScores(tool, *score_tool(truths, predictions, reference))
+                    scored[tool] = score_file(tool, truths, predictions, reference, genotypes=genotypes)
                 except (FileNotFoundError, ValueError) as error:
                     errors.append({**status, "status": "not scored", "error": str(error)})
                     continue
                 report = score_report(scored[tool], truths, header, command=command,
                                       inputs={"truth": layout.truth(name), "predictions": predictions,
-                                              "run": layout.run_json(tool, name, arm)},
+                                              "run": layout.run_json(tool, name, arm), **extra_inputs},
                                       reference_name=cfg.reference)
                 write_scores(scored[tool].scores, layout.tool_scores(name, arm, tool))
                 write_report(report, layout.tool_report_json(name, arm, tool), layout.tool_report_md(name, arm, tool),
@@ -374,7 +386,7 @@ def _score(cfg: RunConfig, layout: RunLayout, reference: Reference, *, command: 
             if compared:
                 report = comparison_report(scored[a], scored[b], truths, header, command=command,
                                            inputs={"truth": layout.truth(name), "a": layout.predictions(a, name, arm),
-                                                   "b": layout.predictions(b, name, arm)},
+                                                   "b": layout.predictions(b, name, arm), **extra_inputs},
                                            reference_name=cfg.reference, alpha=ALPHA)
                 write_report(report, layout.comparison_json(name, arm), layout.comparison_md(name, arm),
                              headline=suite.primary)

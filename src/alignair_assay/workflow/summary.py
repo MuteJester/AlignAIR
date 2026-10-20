@@ -125,7 +125,7 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
     ``compared``, the ``link`` to the arm's ``comparison.md`` (relative to the run directory), the primary-metric
     ``rows`` of ``comparison.json`` and their ``verdicts`` counts. ``oracle_failures`` repeats the suites whose
     oracle is not perfect. ``s10_vs_s1``, ``s11_parity`` and ``speed`` are None without their data, and
-    ``genotype_arms`` is empty without a genotype arm (see the functions below).
+    ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see the functions below).
     """
     a, b = cfg.tools
     failed = [status for status in run_statuses(layout, cfg).values() if status["status"] != "ok"]
@@ -143,6 +143,7 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
         "s10_vs_s1": s10_vs_s1(layout, cfg),
         "s11_parity": s11_parity(layout, cfg),
         "genotype_arms": genotype_arms(layout, cfg),
+        "excess_alleles": excess_alleles_tables(layout, cfg),
         "speed": read_json(layout.speed_json),
     }
 
@@ -245,6 +246,23 @@ def genotype_arms(layout: RunLayout, cfg: RunConfig) -> list[dict]:
         rows = [{"metric": metric, "values": {tool: {arm: _entry(overall[tool, arm], metric) for arm in suite.arms}
                                               for tool in cfg.tools}} for metric in suite.primary]
         out.append({"suite": name, "arms": list(suite.arms), "rows": rows})
+    return out
+
+
+def excess_alleles_tables(layout: RunLayout, cfg: RunConfig) -> list[dict]:
+    """Per suite with donors (a ``donors.json``): its ``rows``, one per run, the oracle's shared arm first and then
+    each tool in each of the suite's arms, each with ``tool``, ``arm`` and the ``table`` its score report holds
+    (``metrics.genotype.excess_alleles``: ``min_reads`` and per gene letter ``n``, ``excess`` and ``fraction``;
+    None when the run has no score report)."""
+    out = []
+    for name in cfg.suites:
+        if not layout.donors(name).is_file():
+            continue
+        runs = [(ORACLE, "shared")] + [(tool, arm) for tool in cfg.tools for arm in get_suite(name).arms]
+        rows = [{"tool": tool, "arm": arm,
+                 "table": (read_json(layout.tool_report_json(name, arm, tool)) or {}).get("excess_alleles")}
+                for tool, arm in dict.fromkeys(runs)]
+        out.append({"suite": name, "rows": rows})
     return out
 
 

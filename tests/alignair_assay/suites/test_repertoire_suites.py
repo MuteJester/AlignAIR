@@ -25,6 +25,7 @@ from alignair_assay.suites.recipes import (  # noqa: E402
 from alignair_assay.testing import assert_oracle_perfect  # noqa: E402
 from alignair_assay.truth.io import read_truth_jsonl  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
+from alignair_assay.workflow.scoring import read_genotypes  # noqa: E402
 
 REFERENCE = "HUMAN_IGH_OGRDB"
 SEED = 31
@@ -229,10 +230,19 @@ def test_oracle_perfect_on_repertoire_suites(built, reference):
     for name in SUITES:
         truths = read_truth_jsonl(layout.truth(name))
         assert len(truths) == builds[name]["n_cases"] and builds[name]["truth"]["excluded"] == {}
-        scores = assert_oracle_perfect(truths, reference)
+        # A suite with donors is scored against each read's donor genotype, as `all` scores it.
+        has_donors = layout.donors(name).is_file()
+        assert has_donors == (get_suite(name).donors is not None), name
+        genotypes = read_genotypes(layout.donors(name)) if has_donors else None
+        scores = assert_oracle_perfect(truths, reference, genotypes=genotypes)
         # Every primary metric is one the pipeline actually emits on this suite.
         emitted = {metric for case in scores.values() for metric in case}
         assert set(get_suite(name).primary) <= emitted, name
+        genotype_metrics = {"v.outside_genotype", "v.deleted_gene_call", "j.outside_genotype"}
+        if has_donors:
+            assert genotype_metrics <= emitted, name
+        else:
+            assert not genotype_metrics & emitted, name
 
 
 def test_spawned_workers_match_serial():

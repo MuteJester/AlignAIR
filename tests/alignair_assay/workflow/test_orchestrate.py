@@ -159,11 +159,22 @@ def test_all_end_to_end_with_oracle_and_fake(half_run, tmp_path):
     assert main(["compare", "--truth", str(layout.truth("S1")),
                  "--a", str(layout.predictions("oracle", "S1", "shared")), "--a-name", "oracle",
                  "--b", str(layout.predictions("half", "S1", "shared")), "--b-name", "half",
-                 "--out-dir", str(tmp_path / "cmp")]) == 0
+                 "--donors", str(layout.donors("S1")), "--out-dir", str(tmp_path / "cmp")]) == 0
     by_command = json.loads((tmp_path / "cmp" / "comparison.json").read_text())
     assert by_command["comparison"] == comparison["comparison"]
     assert by_command["by_slice"] == comparison["by_slice"]
     assert comparison["provenance"]["command"] == "all"
+    # S1 has donors: every read is scored against its donor's genotype, which is recorded as an input.
+    assert {"v.outside_genotype", "v.deleted_gene_call", "j.outside_genotype"} <= set(comparison["comparison"])
+    assert comparison["provenance"]["inputs"]["donors"]["sha256"] == sha256_file(layout.donors("S1"))
+    oracle_report = json.loads(layout.tool_report_json("S1", "shared", "oracle").read_text())
+    assert oracle_report["provenance"]["inputs"]["donors"]["path"] == str(layout.donors("S1"))
+    assert oracle_report["excess_alleles"]["v"]["excess"] == 0 and oracle_report["excess_alleles"]["min_reads"] == 3
+    assert "excess_alleles" not in json.loads(layout.tool_report_json("S0", "shared", "oracle").read_text())
+    (excess,) = report["excess_alleles"]
+    assert excess["suite"] == "S1" and [(row["tool"], row["arm"]) for row in excess["rows"]] == [
+        ("oracle", "shared"), ("half", "shared")]
+    assert excess["rows"][0]["table"] == oracle_report["excess_alleles"]
     # A suite's comparison markdown slices its own primary metrics (S0: V, J and the junction only).
     s0_slices = layout.comparison_md("S0", "shared").read_text().split("## By stratum")[1]
     assert "| v.top1_in_set |" in s0_slices and "| clone_key.exact |" not in s0_slices
@@ -173,6 +184,10 @@ def test_all_end_to_end_with_oracle_and_fake(half_run, tmp_path):
     assert "## Failed runs" not in md and "## Oracle check failures" not in md
     assert md.index("## Summary") < md.index("## Suites")
     assert "(scores/S1/shared/comparison.md)" in md and "### S1: Core repertoire" in md
+    # Every excess fraction shows its n.
+    line = next(line for line in md[md.index("## Excess alleles"):].splitlines()
+                if line.startswith("| S1 | oracle | shared |"))
+    assert f"(n={oracle_report['excess_alleles']['v']['n']}) |" in line
 
 
 def test_resume_skips_completed_steps(half_run, tmp_path, capsys):
@@ -326,9 +341,17 @@ def test_failed_run_returns_2_and_is_reported(tmp_path, monkeypatch):
     assert values == {"oracle": {"shared": (1.0, 12, 1.0), "genotype": (1.0, 12, 1.0)},
                       "picky": {"shared": (1.0, 12, 1.0), "genotype": None}}
 
+    # The failed run has no excess-alleles table; the oracle's genotype arm (here a tool) has one.
+    (excess,) = report["excess_alleles"]
+    tables = {(row["tool"], row["arm"]): row["table"] for row in excess["rows"]}
+    assert list(tables) == [("oracle", "shared"), ("oracle", "genotype"), ("picky", "shared"), ("picky", "genotype")]
+    assert tables["picky", "genotype"] is None
+    assert all(tables[run]["v"]["excess"] == 0 for run in tables if run != ("picky", "genotype"))
+
     md = layout.report_md.read_text()
     section = md[md.index("## Failed runs"):md.index("## Summary")]
     assert "| picky | S0_COHORT | genotype | failed | 1 | donor00 |" in section
+    assert "| S0_COHORT | picky | genotype | — | — |" in md[md.index("## Excess alleles"):]
     assert "AttributeError: 'tuple' object has no attribute 'items'" in section
     assert "| v.top1_in_set | 100.0% (n=12, 100%) | 100.0% (n=12, 100%) | 100.0% (n=12, 100%) | — |" in md
 

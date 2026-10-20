@@ -11,35 +11,47 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from alignair_assay.airr.reader import load_airr_tsv
+from alignair_assay.core.genotype import DonorGenotype
 from alignair_assay.core.jsonl import read_jsonl, write_jsonl
 from alignair_assay.core.prediction import Prediction
 from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import CaseScores
 from alignair_assay.metrics.case import score_case
+from alignair_assay.metrics.genotype import donor_genotype, genotype_metrics
 from alignair_assay.metrics.groups import clone_agreement
 from alignair_assay.truth.io import read_truth_header, read_truth_jsonl
 from alignair_assay.truth.model import ObservableTruth
 
 
 def score_predictions(truths: list[ObservableTruth], preds: Mapping[str, Prediction | None],
-                      reference: Reference) -> dict[str, CaseScores]:
+                      reference: Reference, genotypes: Mapping[str, DonorGenotype] | None = None
+                      ) -> dict[str, CaseScores]:
     """Per-case scores of one tool over the non-excluded truths, in truth order, keyed by case id.
 
     ``preds`` maps case ids to the tool's predictions; a case id that is absent, or mapped to None, is scored as a
     missing prediction. Entries for unknown or excluded case ids are ignored. Each case gets its own metrics
     (``metrics.case.score_case``) merged with its group metrics (``metrics.groups.clone_agreement``), which
-    depend on the predictions for the rest of its clone. Every metric the assay reports for a single tool comes
-    from here, so the oracle check holds it to the same rule as the pipeline.
+    depend on the predictions for the rest of its clone. With ``genotypes`` (donor subject id -> genotype, e.g.
+    ``Donor.view()`` of a suite's donors), every case with ``groups["subject"]`` also gets the genotype metrics of
+    its donor (``metrics.genotype.genotype_metrics``); ValueError, naming the case, when its subject has no
+    genotype. Every metric the assay reports for a single tool comes from here, so the oracle check holds it to the
+    same rule as the pipeline.
     """
     scores = {t.case_id: score_case(t, preds.get(t.case_id), reference) for t in truths if t.excluded is None}
     for case_id, group_scores in clone_agreement(truths, preds).items():
         scores[case_id].update(group_scores)
+    if genotypes is not None:
+        for t in truths:
+            if t.excluded is None and "subject" in t.groups:
+                scores[t.case_id].update(genotype_metrics(t, preds.get(t.case_id), donor_genotype(genotypes, t)))
     return scores
 
 
-def score_tool(truths: list[ObservableTruth], predictions_path, reference: Reference
-               ) -> tuple[dict[str, CaseScores], dict]:
-    """Per-case scores of one tool's AIRR TSV over the non-excluded truths, plus prediction/truth matching counts.
+def load_predictions(truths: list[ObservableTruth], predictions_path) -> tuple[dict[str, Prediction], dict]:
+    """One tool's AIRR TSV as predictions by ``sequence_id``, plus its prediction/truth matching counts over
+    ``truths``: ``truth_cases``, ``excluded``, ``scored`` (the non-excluded truths), the file's ``rows``,
+    ``predictions``, ``duplicates`` and ``invalid_rows``, the scored cases without a prediction (``missing``),
+    predictions for no truth case (``extra``) and predictions for excluded cases (``excluded_ignored``).
 
     A file whose ``sequence_id``s match no scored case raises ValueError (a renamed or wrong file, not a tool that
     missed every read).
@@ -49,17 +61,25 @@ def score_tool(truths: list[ObservableTruth], predictions_path, reference: Refer
     if not any(cid in preds for cid in scored_ids):
         example = f" (e.g. {next(iter(preds))!r} vs {scored_ids[0]!r})" if preds and scored_ids else ""
         raise ValueError(f"{predictions_path}: no prediction sequence_id matches a truth case_id{example}")
-    scores = score_predictions(truths, preds, reference)
-    truth_ids = {t.case_id for t in truths}
+    truth_ids, scored = {t.case_id for t in truths}, set(scored_ids)
     matching = {
-        "truth_cases": len(truths), "excluded": len(truths) - len(scores), "scored": len(scores),
+        "truth_cases": len(truths), "excluded": len(truths) - len(scored_ids), "scored": len(scored_ids),
         "rows": stats["rows"], "predictions": len(preds),
         "duplicates": stats["duplicates"], "invalid_rows": stats["invalid_rows"],
-        "missing": sum(cid not in preds for cid in scores),
+        "missing": sum(cid not in preds for cid in scored_ids),
         "extra": sum(pid not in truth_ids for pid in preds),
-        "excluded_ignored": sum(pid in truth_ids and pid not in scores for pid in preds),
+        "excluded_ignored": sum(pid in truth_ids and pid not in scored for pid in preds),
     }
-    return scores, matching
+    return preds, matching
+
+
+def score_tool(truths: list[ObservableTruth], predictions_path, reference: Reference,
+               genotypes: Mapping[str, DonorGenotype] | None = None) -> tuple[dict[str, CaseScores], dict]:
+    """Per-case scores of one tool's AIRR TSV over the non-excluded truths (``score_predictions``, with the donor
+    ``genotypes`` when given), plus the prediction/truth matching counts (``load_predictions``, which raises
+    ValueError for a file matching no scored case)."""
+    preds, matching = load_predictions(truths, predictions_path)
+    return score_predictions(truths, preds, reference, genotypes), matching
 
 
 def load_truth(path, reference_name: str, reference: Reference) -> tuple[dict, list[ObservableTruth]]:

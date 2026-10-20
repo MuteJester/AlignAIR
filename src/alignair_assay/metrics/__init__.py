@@ -17,8 +17,10 @@ INFORMATIONAL: frozenset[str] = frozenset({".set_size", "junction.start_err", "j
                                            "v_indel.mutation_count_err", "v_indel.germline_errors",
                                            "v_novel.snp_mutations"})
 
+# Errors, failure rates and counts; the genotype metrics (``metrics.genotype``) are rates of calls outside the donor's
+# genotype and of calls of its deleted genes.
 _LOWER_IS_BETTER = ("_err", ".no_call", ".spurious_call", ".germline_errors", ".mutation_count_err",
-                    ".indel_false")
+                    ".indel_false", ".outside_genotype", ".deleted_gene_call")
 
 
 def is_informational(name: str) -> bool:

@@ -1,12 +1,20 @@
 """Markdown rendering of a run report: the plain summary dict ``workflow.summary.collect_run_summary`` builds.
 
 Sections, in order: failed runs and oracle check failures (when there are any, since they qualify everything
-below), the summary of verdicts, the per-suite tables, S10 against S1, S11 orientation parity, the genotype arms
-and speed. A section without data is left out.
+below), the summary of verdicts, the per-suite tables, S10 against S1, S11 orientation parity, the genotype arms,
+the excess alleles of suites with donors and speed. A section without data is left out.
 """
 from __future__ import annotations
 
-from alignair_assay.report.markdown import MISSING, format_cell, format_value, headline_table, markdown_table
+from alignair_assay.report.markdown import (
+    MISSING,
+    excess_note,
+    format_cell,
+    format_excess,
+    format_value,
+    headline_table,
+    markdown_table,
+)
 
 RUN_REPORT_KIND = "alignair_assay.run_report"
 RUN_REPORT_VERSION = "1"
@@ -18,7 +26,7 @@ def run_report_markdown(summary: dict) -> str:
     """The run report of ``summary`` as markdown (see the module docstring for its sections)."""
     lines = [f"# AlignAIR assay run: {summary['a']} vs {summary['b']}", "", _configuration(summary)]
     for section in (_failed_runs, _oracle_failures, _summary, _suites, _s10_vs_s1, _s11_parity, _genotype_arms,
-                    _speed):
+                    _excess_alleles, _speed):
         lines += section(summary)
     return "\n".join(lines) + "\n"
 
@@ -160,6 +168,24 @@ def _genotype_arms(summary: dict) -> list[str]:
         lines += ["", f"### {suite['suite']}", "",
                   *markdown_table(["Metric", *(f"{tool} {arm}" for tool in tools for arm in arms)], rows)]
     return lines
+
+
+def _excess_alleles(summary: dict) -> list[str]:
+    suites = summary.get("excess_alleles") or []
+    if not suites:
+        return []
+    tables = [row["table"] for suite in suites for row in suite["rows"] if row["table"]]
+    min_reads = ", ".join(str(k) for k in sorted({table["min_reads"] for table in tables})) or MISSING
+    rows = [[suite["suite"], row["tool"], row["arm"],
+             *(format_excess((row["table"] or {}).get(g)) for g in ("v", "j"))]
+            for suite in suites for row in suite["rows"]]
+    return ["", "## Excess alleles", "",
+            f"{excess_note(min_reads)} Per suite with donors and per run. The oracle calls each read's generative "
+            "allele, so it never has an excess; a tool's call that is in the read's truth set but not carried (an "
+            "allele identical over the read, say) counts here, unlike in the per-read genotype metrics. A dash with "
+            "n=0: no donor gene had enough reads; a dash alone: no value (the run failed or is missing, see Failed "
+            "runs).",
+            "", *markdown_table(["Suite", "Tool", "Arm", "V", "J"], rows)]
 
 
 def _number(value, spec: str) -> str:
