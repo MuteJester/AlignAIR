@@ -296,7 +296,9 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
 ```
 
 - `all` (`workflow.orchestrate.run_all`) does everything over one run directory, and can be rerun to resume. See
-  The all command below.
+  The all command below. The run directory and the tool paths (`--igblast-dir`, `--alignair-checkpoint`) are made
+  absolute, `~` expanded, before the configuration is built (`cli.common.tool_path`), so the manifest never
+  records a path relative to where `all` was started; `speed` does the same.
 - `report` (`workflow.orchestrate.score_and_report`) re-scores, re-compares and rewrites the run report of a run
   directory made by `all`, from its existing runs and with the configuration in its `manifest.json`; nothing is
   built or run. `--a`/`--b` may swap the run's two tools; any other tool is refused, since the manifest records no

@@ -41,7 +41,26 @@ def test_all_flags_map_onto_the_config(monkeypatch):
                            "--scale", "0.1", "--workers", "2", "--threads", "4", "--igblast-dir", "/opt/igblast",
                            "--alignair-image", "img", "--alignair-model", "m@1", "--alignair-checkpoint", "x.alignair",
                            "--device", "cuda", "--force")
+    # Tool paths are made absolute, so the manifest never records one relative to where all was started.
     assert cfg == RunConfig(suites=("S1", "S10"), tools=("igblast", "alignair"), split="test", seed=3, scale=0.1,
                             workers=2, threads=4, igblast_dir="/opt/igblast", alignair_image="img",
-                            alignair_model="m@1", alignair_checkpoint="x.alignair", device="cuda")
+                            alignair_model="m@1", alignair_checkpoint=str(Path.cwd() / "x.alignair"), device="cuda")
     assert force
+    cfg, _, _ = _parse(monkeypatch, "--igblast-dir", "tools/../tools/igblast", "--alignair-checkpoint",
+                       "~/models/m.alignair")
+    assert cfg.igblast_dir == str(Path.cwd() / "tools" / "igblast")
+    assert cfg.alignair_checkpoint == str(Path.home() / "models" / "m.alignair")
+
+
+def test_speed_tool_paths_are_absolute(monkeypatch, capsys):
+    import alignair_assay.cli.speed as speed_command
+
+    calls = []
+    monkeypatch.setattr(speed_command, "truth_reference", lambda layout, suites: None)
+    monkeypatch.setattr(speed_command.speed, "run_speed",
+                        lambda cfg, layout, reference, **kwargs: calls.append(cfg) or {"results": {}})
+    assert main(["speed", "--run-dir", "nowhere-run", "--tools", "igblast", "--igblast-dir", "igblast",
+                 "--alignair-checkpoint", "m.alignair"]) == 0
+    (cfg,) = calls
+    assert (cfg.igblast_dir, cfg.alignair_checkpoint) == (str(Path.cwd() / "igblast"),
+                                                          str(Path.cwd() / "m.alignair"))

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.reference import Reference
+from alignair_assay.runners.base import absolute_path
 from alignair_assay.truth.io import read_truth_header
 
 
@@ -15,6 +16,13 @@ def file_name(value: str) -> str:
     if not value or Path(value).name != value:
         raise argparse.ArgumentTypeError(f"not a plain file-name component: {value!r}")
     return value
+
+
+def tool_path(path: str | None) -> str | None:
+    """A tool path option (``--igblast-dir``, ``--alignair-checkpoint``) made absolute, ``~`` expanded
+    (``runners.base.absolute_path``), so a recorded configuration never depends on where a command was started;
+    None stays None."""
+    return None if path is None else absolute_path(path)
 
 
 def comma_list(value: str) -> tuple[str, ...]:

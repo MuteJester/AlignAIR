@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-from alignair_assay.cli.common import comma_list, truth_reference
+from alignair_assay.cli.common import comma_list, tool_path, truth_reference
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.report import speed_lines
 from alignair_assay.runners import RUNNERS
@@ -50,9 +50,9 @@ def run(args) -> int:
     if not args.tools:
         raise ValueError("--tools names no tool")
     reference = truth_reference(layout, [speed.SPEED_SUITE])
-    cfg = RunConfig(suites=(speed.SPEED_SUITE,), tools=args.tools, threads=args.threads, igblast_dir=args.igblast_dir,
-                    alignair_image=args.alignair_image, alignair_model=args.alignair_model,
-                    alignair_checkpoint=args.alignair_checkpoint)
+    cfg = RunConfig(suites=(speed.SPEED_SUITE,), tools=args.tools, threads=args.threads,
+                    igblast_dir=tool_path(args.igblast_dir), alignair_image=args.alignair_image,
+                    alignair_model=args.alignair_model, alignair_checkpoint=tool_path(args.alignair_checkpoint))
     record = speed.run_speed(cfg, layout, reference, n_tiny=args.n_tiny, n_full=args.n_full, repeats=args.repeats,
                              names=args.configs)
     print("\n".join(speed_lines(record)).lstrip("\n"))

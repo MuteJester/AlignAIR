@@ -1,7 +1,7 @@
 """``all``: build suites, run the oracle and two tools, score, compare and write the run report, resumably."""
 from __future__ import annotations
 
-from alignair_assay.cli.common import comma_list
+from alignair_assay.cli.common import comma_list, tool_path
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.reference import DEFAULT_REFERENCE
 from alignair_assay.runners import RUNNERS
@@ -43,10 +43,12 @@ def register(sub) -> None:
 
 
 def run(args) -> int:
-    """Run ``workflow.orchestrate.run_all``; its return code (2 when a run failed or the oracle is not perfect)."""
+    """Run ``workflow.orchestrate.run_all``; its return code (2 when a run failed or the oracle is not perfect).
+    The run directory and the tool paths (``--igblast-dir``, ``--alignair-checkpoint``) are made absolute first, so
+    the manifest never records a path relative to where the command was started."""
     scale = args.scale if args.scale is not None else QUICK_SCALE if args.quick else 1.0
     cfg = RunConfig(suites=args.suites, tools=args.tools, split=args.split, reference=args.reference, seed=args.seed,
-                    scale=scale, workers=args.workers, threads=args.threads, igblast_dir=args.igblast_dir,
+                    scale=scale, workers=args.workers, threads=args.threads, igblast_dir=tool_path(args.igblast_dir),
                     alignair_image=args.alignair_image, alignair_model=args.alignair_model,
-                    alignair_checkpoint=args.alignair_checkpoint, device=args.device, speed=args.speed)
+                    alignair_checkpoint=tool_path(args.alignair_checkpoint), device=args.device, speed=args.speed)
     return run_all(cfg, RunLayout(absolute_path(args.run_dir)), force=args.force)
