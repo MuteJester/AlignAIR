@@ -255,6 +255,7 @@ def test_inverted_d_recall_decoded_against_generative_allele(reference):
         expected = _generative_alignment(outcome, record["sequence"].upper(), reference.seq(generative), generative,
                                          "D", inverted=True)
         assert "d" in truth.segments, (record["sequence_id"], truth.warnings)
+        assert not truth.warnings and not truth.unscorable, (record["sequence_id"], truth.warnings, truth.unscorable)
         segment = truth.segments["d"]
         assert segment.inverted and segment.alleles.primary == generative
         assert _observed(segment.observed) == _observed(expected)

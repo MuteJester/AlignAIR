@@ -6,10 +6,20 @@ one, write its module and list its suites in ``_CATALOG``.
 from __future__ import annotations
 
 from alignair_assay.suites.base import Suite
-from alignair_assay.suites.catalog import s00_toy, s01_core, s10_heldout, s11_orientation, s12_noise
+from alignair_assay.suites.catalog import (
+    s00_toy,
+    s01_core,
+    s02_siblings,
+    s03_junction,
+    s04_truncation,
+    s06_d_observability,
+    s10_heldout,
+    s11_orientation,
+    s12_noise,
+)
 
-_CATALOG = (s00_toy.S0, s00_toy.S0_EXHAUST, s00_toy.S0_COHORT, s01_core.S1, s10_heldout.S10, s11_orientation.S11,
-            s12_noise.S12)
+_CATALOG = (s00_toy.S0, s00_toy.S0_EXHAUST, s00_toy.S0_COHORT, s01_core.S1, s02_siblings.S2, s03_junction.S3,
+            s04_truncation.S4, s06_d_observability.S6, s10_heldout.S10, s11_orientation.S11, s12_noise.S12)
 
 
 def _registry(suites: tuple[Suite, ...]) -> dict[str, Suite]:

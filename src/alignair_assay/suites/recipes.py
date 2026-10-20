@@ -4,6 +4,9 @@
 marginals optionally shifted; GenAIRR requires it immediately after ``recombine``), ``mutate`` (skipped at rate
 0), one noise step, then 5' and 3' end loss. Every distribution comes from ``ctx.config``, the DataConfig the
 truth reference is built from, so an unshifted recipe samples exactly what GenAIRR samples by default.
+
+The targeted suites build their own chains from ``mutated`` (the SHM step) and ``symmetric_d_trim`` (a fixed trim
+at both D ends that GenAIRR can always apply; see ``d_alleles_for_trim``).
 """
 from __future__ import annotations
 
@@ -30,6 +33,8 @@ _TRIM_SIDES = {"v_3": ("V_3", "v", False), "d_5": ("D_5", "d", True), "d_3": ("D
                "j_5": ("J_5", "j", False)}
 # GenAIRR's trim cap keeps this many bases of the shortest allele of a segment (its anchor codon).
 _TRIM_MARGIN = 3
+# A fixed trim at both D ends keeps at least this many bases of every D allele it is applied to.
+_D_TRIM_KEEP = 2
 
 
 def repertoire(ctx: RecipeContext, *, design: str = "full", rate: float = 0.075, model: str = "s5f",
@@ -59,8 +64,7 @@ def repertoire(ctx: RecipeContext, *, design: str = "full", rate: float = 0.075,
         caps = _trim_caps(config)
         experiment = experiment.trim(**{side: _shift(pairs, trim_shift, cap=caps.get(side))
                                         for side, pairs in pooled_trim_marginals(config).items()})
-    if rate:
-        experiment = experiment.mutate(model=model, rate=rate, s5f_model=s5f_model)
+    experiment = mutated(experiment, rate, model=model, s5f_model=s5f_model)
     if noise is not None:
         step, kwargs = noise
         experiment = getattr(experiment, step)(**kwargs)
@@ -70,6 +74,42 @@ def repertoire(ctx: RecipeContext, *, design: str = "full", rate: float = 0.075,
     if three_prime != (0, 0):
         experiment = experiment.end_loss_3prime(length=three_prime)
     return experiment
+
+
+def mutated(experiment: Experiment, rate: float, *, model: str = "s5f", s5f_model: str = "hh_s5f") -> Experiment:
+    """``experiment`` followed by GenAIRR's SHM step: Poisson per-base ``rate`` (0 to 1) of ``model`` (``"s5f"`` or
+    ``"uniform"``) with S5F kernel ``s5f_model``; ``experiment`` unchanged at rate 0."""
+    if not rate:
+        return experiment
+    return experiment.mutate(model=model, rate=rate, s5f_model=s5f_model)
+
+
+def d_alleles_for_trim(config, per_side: int) -> list[str] | None:
+    """The D alleles of DataConfig ``config`` that a trim of ``per_side`` nucleotides at both ends leaves at least
+    2 bases of (``_D_TRIM_KEEP``): their sorted names when some D allele is shorter than ``2 * per_side + 2`` nt,
+    else None (every allele qualifies and the D pool needs no restriction).
+
+    GenAIRR's engine aborts the whole run (a Rust panic while assembling D) when the two D trims exceed the sampled
+    allele. Its default trims stay under a cap (``pooled_trim_marginals``: 4 per side on human IGH, whose shortest D
+    allele is 11 nt), but ``trim()`` applies an explicit value as given, whatever the allele, so a deeper trim must
+    restrict D to these alleles.
+    """
+    lengths = {allele.name: len(allele.ungapped_seq)
+               for alleles in (config.d_alleles or {}).values() for allele in alleles}
+    fitting = sorted(name for name, length in lengths.items() if length >= 2 * per_side + _D_TRIM_KEEP)
+    return None if len(fitting) == len(lengths) else fitting
+
+
+def symmetric_d_trim(ctx: RecipeContext, per_side: int) -> Experiment:
+    """A fresh ``Experiment.on(ctx.config)`` recombination whose D is trimmed exactly ``per_side`` nucleotides at
+    both ends, every other trim and NP length keeping GenAIRR's defaults. When some D allele is too short for that
+    trim, D is restricted to the alleles that fit (``d_alleles_for_trim``), sampled uniformly; otherwise the D pool
+    is GenAIRR's default. Every record then carries ``d_trim_5 == d_trim_3 == per_side``."""
+    experiment = Experiment.on(ctx.config)
+    fitting = d_alleles_for_trim(ctx.config, per_side)
+    if fitting is not None:
+        experiment = experiment.restrict_alleles(d=fitting)
+    return experiment.recombine().trim(d_5=[(per_side, 1.0)], d_3=[(per_side, 1.0)])
 
 
 def pooled_trim_marginals(config) -> dict[str, list[tuple[int, float]]]:

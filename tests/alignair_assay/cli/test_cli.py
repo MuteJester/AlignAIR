@@ -130,7 +130,7 @@ def test_cli_end_to_end_small(tmp_path, capsys, reference, load_fixture):
     clone_key = report["overall"]["clone_key.exact"]
     assert clone_key["mean"] == 1.0 and clone_key["coverage"] == 1.0 and clone_key["n"] >= 30
     slices = report["by_slice"]
-    assert set(slices) == {"stratum", "orientation", "d_len_bin", "d_inverted"}
+    assert set(slices) == {"stratum", "orientation", "v_len_bin", "d_len_bin", "d_inverted"}
     assert set(slices["d_inverted"]) == {"yes", "no"}
     assert slices["d_inverted"]["yes"]["clone_key.exact"]["n"] >= 5
     assert set(slices["stratum"]) == {"sim", "inverted_d", "amplicon_janchor", "orientation"}

@@ -51,7 +51,10 @@ sequence when the orientation is 1), `record` (the forward GenAIRR record, verba
 dimensions) and `groups` (`{str: str}` grouping keys that are not sliced: `subject`, `clone`, `pair`).
 `truth.case.truth_from_case` builds the truth and copies `suite`, `labels` and `groups` onto it; it raises when the
 sequence does not match the record and orientation. `scoring.slices` slices by the fixed dimensions plus every label
-key; a label named like a fixed dimension is an error.
+key; a label named like a fixed dimension is an error. The fixed dimensions are `stratum`, `orientation`,
+`v_len_bin` (observed V germline bases: `absent`, `<20`, `20-49`, `50-99`, `100-149`, `150-199`, `200-249`,
+`>=250`), `d_len_bin` (observed D germline bases: `absent`, `<5`, `5-7`, `8-9`, `10-11`, `12-14`, `>=15`) and
+`d_inverted` (`yes`, `no`, `absent`).
 
 **Observable truth.** Each simulated record is projected onto what the read shows (`truth.build`):
 
@@ -69,7 +72,11 @@ key; a label named like a fixed dimension is an error.
   matches claimed as germline) while the core alignment stays generative. `truth.genairr` undoes this: a re-called
   forward segment is clipped to the generative allele's trimmed germline `[trim_5, len - trim_3)`, and a re-called
   inverted D has its fills decoded with the re-called allele's length (or is dropped as unscorable when they do not
-  determine its span). Both reproduce GenAIRR's own generative alignment.
+  determine its span). That both reproduce GenAIRR's own generative alignment is measured, not proven: on 3000
+  records at SHM rate 0.15 every re-called segment matched it (V 187, D 182, J 8; inverted D 190 with every D
+  inverted). Known limitation: GenAIRR's fills stop at the projected allele's length, so when the re-called allele
+  is shorter than the generative one, a generative deletion at or past the re-call's length is not in the CIGAR
+  and cannot be recovered (only records with indel noise can have one; SHM makes no indels).
 - The allele truth is a set. `AlleleTruth.generative` holds every reference allele whose sequence contains the
   observed germline of the generative allele. The scored set `AlleleTruth.alleles` adds the simulator's calls that
   are in the reference, since a sequence-only aligner can defend either. The truth summary
@@ -380,6 +387,10 @@ Engine rules (`suites.engine.generate_suite`):
 | `S0_EXHAUST` | `exhaust` | `never` 5 (accepts nothing; raises) | — | none | — | — |
 | `S0_COHORT` | `cohort` | `cohort` 10, `few` 2; cohort | rc 0.5 / 0 | `DonorSpec(3, "S0")` | — | `v.top1_in_set`, `j.top1_in_set` |
 | `S1` | `core` | `{design}_{shm}` for the 4 read designs × `igm` 500, `igg` 500, `high` 250 = 5000; cohort | rc 0.5 | `DonorSpec(20, "S1")` | `design`, `shm` | `HEADLINE` |
+| `S2` | `siblings` | `shm_0`, `shm_0.03`, `shm_0.08`, `shm_0.15`, `shm_0.25` (SHM rate); each 600, full; V restricted to `sibling_alleles(reference, "v", 5)` | rc 0 | none | `sibling_distance` (per case: `1`, `2`, `3`, `4-5`) | `v.top1_in_set`, `v.set_precision`, `v.gene_top1`, `j.top1_in_set` |
+| `S3` | `junction` | `{sweep}_{value}`: `np1`, `np2` ∈ {0, 3, 6, 12, 20}, `v3` ∈ {0, 2, 5, 10}, `j5` ∈ {0, 4, 8, 14}, `d_both` ∈ {0, 4, 8} (nt); each 150, full, rate 0.02 | rc 0 | none | `sweep`, `value`, `p_nt` (per case: `yes`/`no`) | `junction.nt_exact`, `junction.length_exact`, `clone_key.exact`, `junction.start_abs_err`, `junction.end_abs_err`, `v.seq_end_exact`, `j.seq_start_exact` |
+| `S4` | `truncation` | `5p_{k}` (exact 5′ loss, k = 0, 25, …, 300), `3p_{k}` (exact 3′ loss, k = 0, 10, 20, 30, 40); each 150, rate 0.05 | rc 0 | none | `sweep` (`5p`/`3p`), `loss` | `v.top1_in_set`, `v_short.abstain_ok`, `v.germ_start_err`, `j.top1_in_set`, `j.germ_end_err`, `d.spurious_call`, `junction.nt_exact` |
+| `S6` | `d_observability` | `trim_{k}` (k nt at both D ends, k = 0, 3, 6, 9, 12) 400 each; `inverted` (every D inverted, default trims) 500; full, rate 0.02 | rc 0 | none | `d_trim` (k or `default`), `inverted` (`yes`/`no`) | `d.top1_in_set`, `d_short.abstain_ok`, `d.seq_start_exact`, `d.seq_end_exact` |
 | `S10` | `heldout` | `uniform` (uniform SHM model), `hkl_s5f` (S5F kernel `hkl_s5f`), `np_shift` (NP lengths +4), `trim_shift` (trims +3); each 600, full, rate 0.075; cohort | rc 0.5 | `DonorSpec(20, "S10")` | `heldout` | `HEADLINE` |
 | `S11` | `orientation` | `full_igg` 500, `fr3_igg` 500 | both orientations (pairs) | none | `design` | `orientation.correct` + `HEADLINE` |
 | `S12` | `noise` | `seq_err_0.005`, `seq_err_0.01` (`sequencing_errors` rate), `pcr_0.002` (`pcr_amplify` rate), `n_bases_3`, `n_bases_8` (`ambiguous_base_calls` count), `pol_indel_1`, `pol_indel_2` (`polymerase_indels` count); each 300, full, rate 0.075 | rc 0.5 | none | `noise` (the stratum name) | `HEADLINE` |
@@ -408,7 +419,31 @@ cap (the segment's shortest allele minus a 3-base anchor margin, halved for the 
 `trim(**pooled_trim_marginals(config))` reproduces the default records exactly. GenAIRR aborts the whole run
 when a sampled D trim pair exceeds the D allele, and the shortest human IGH D allele is 11 nt, so the cap is 4
 per D side: S10's `trim_shift` moves V 3′ and J 5′ trims by a full +3 but D trims only to 3 or 4.
-GenAIRR's record `np1_length` / `np2_length` can be a base shorter than the sampled NP length.
+GenAIRR's record `np1_length` / `np2_length` can be a base shorter than the sampled NP length (see S3 below).
+
+The targeted suites (S2, S3, S4, S6) build their own chains from `recipes.mutated(experiment, rate, ...)` (the SHM
+step, skipped at rate 0) and `recipes.symmetric_d_trim(ctx, per_side)`; S4 extends `repertoire(ctx, rate=0.05)`
+with an exact `end_loss_5prime(length=(k, k))` or `end_loss_3prime(length=(k, k))`. All of them present every
+read forward (rc 0) and mutate with the S5F `hh_s5f` kernel; S2, S3 and S6 reads have no end loss.
+
+- **S2.** `s02_siblings.sibling_alleles(reference, letter="v", max_distance=5)` gives each allele's minimum Hamming
+  distance to another allele of the same segment and equal length, keeping those within `max_distance` (164 of
+  the 198 human IGH OGRDB V alleles). V is sampled uniformly from them (`restrict_alleles(v=...)`), and each case
+  is labelled with its generative V allele's distance (`0` would mark an identical sequence under another name).
+- **S3.** One variable per stratum, the others at GenAIRR's defaults: `recombine(np1_lengths=[(v, 1.0)])` (or
+  `np2_lengths`), `trim(v_3=[(v, 1.0)])` (or `j_5`; `trim()` keeps the default distribution of every side it is
+  not given), or `symmetric_d_trim` for `d_both`. Trims are exact on every record. The record's NP length is
+  GenAIRR's annotation, which is one base shorter than requested on about 1% (NP1) and 2.5% (NP2) of records,
+  without SHM or end loss as well: GenAIRR claims an NP base for the neighbouring V, D or J when it matches that
+  segment's trimmed germline (or, for a segment GenAIRR re-called, the re-called allele's). Strata are labelled
+  with the requested value. GenAIRR 2.3.1 cannot set P-nucleotide lengths and human IGH OGRDB has no P-nucleotide
+  model, so `p_nt` is `no` on every case of that reference.
+- **D trims beyond GenAIRR's cap (S3 `d_both`, S6 `trim_{k}`).** `trim()` applies an explicit length as given, and
+  GenAIRR's engine aborts the whole run when the two D trims exceed the sampled allele. `symmetric_d_trim` therefore
+  restricts D (`restrict_alleles(d=...)`) to the alleles at least `2k + 2` nt long whenever a shorter one exists
+  (`recipes.d_alleles_for_trim`): on human IGH, all 33 D alleles for k ≤ 4, 32 for k = 6, 25 for k = 8, 22 for
+  k = 9 and 14 for k = 12. Every record is then trimmed exactly k at both ends and keeps at least 2 D bases, so a
+  stratum's label is always its records' real trim; the D allele pool narrows with k.
 
 ## Donors
 

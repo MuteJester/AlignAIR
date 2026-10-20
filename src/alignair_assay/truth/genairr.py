@@ -11,9 +11,18 @@ core columns keep the generative allele's germline positions, while a D fill run
 (past the generative allele's end when that one is shorter) and NP bases matching the re-called allele are claimed
 as germline. This is a projection artefact, not an alignment of either allele. The decoders undo it: a re-called
 forward segment is clipped to the generative allele's structural germline range ``[trim_5, len(allele) - trim_3)``,
-and a re-called inverted D has its fills decoded with the re-called allele's length. Both reproduce GenAIRR's own
-generative alignment; an NP base that happens to match the generative allele still lies in the segment's boundary
-interval.
+and a re-called inverted D has its fills decoded with the re-called allele's length. An NP base that happens to
+match the generative allele still lies in the segment's boundary interval.
+
+That both decoders reproduce GenAIRR's own generative alignment (the IR's ``Simulation.germline_position``) is
+measured, not proven. On 3000 human IGH records at Poisson SHM rate 0.15 (seed 9) every re-called segment decodes
+to it: V 187/187, D 182/182 and J 8/8; with every D inverted, inverted D 190/190, V 170/170 and J 4/4; no case had
+a warning or an unscorable gene.
+
+**Known limitation.** GenAIRR's fills stop at the projected allele's length. When the re-called allele is shorter
+than the generative one, a generative deletion at germline positions at or past the re-call's length is not in the
+CIGAR, so it cannot be recovered. GenAIRR's SHM makes no indels, so only records with indel noise
+(``polymerase_indels``) can be affected.
 """
 from __future__ import annotations
 
