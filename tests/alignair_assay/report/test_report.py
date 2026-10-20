@@ -39,6 +39,30 @@ def test_markdown_headline_order():
                      "aaa.other", "zzz.other"]
 
 
+def test_true_allele_accuracy_sits_beside_top1_in_set():
+    summary = {"v.top1_in_set": _ms(0.9), "v.top1_generative": _ms(0.8), "j.top1_in_set": _ms(0.99),
+               "j.top1_generative": _ms(0.98), "d.top1_generative": _ms(0.7), "v.gene_top1": _ms(0.95)}
+    md = to_markdown(build_score_report("tool", summary, {}, {}))
+    names = [ln.split("|")[1].strip() for ln in md.splitlines() if ln.startswith("| ")][1:]
+    assert names == ["v.top1_in_set", "v.top1_generative", "j.top1_in_set", "j.top1_generative",
+                     "d.top1_generative", "v.gene_top1"]
+
+
+def test_comparison_shows_informational_metrics_untested():
+    rep = build_comparison_report("A", "B", {}, {}, {}, {}, informational={
+        "v.top1_generative": {"a": _ms(0.9, n=20), "b": _ms(0.8, n=16, cov=0.8)}, "v.set_size": {"a": _ms(1.5),
+                                                                                              "b": None}})
+    assert rep["informational"]["v.top1_generative"]["b"] == {"mean": 0.8, "n": 16, "n_applicable": 16,
+                                                              "coverage": 0.8}
+    md = to_markdown(rep)
+    section = md.split("## Informational (not compared)")[1]
+    assert "| Metric | A | B |" in section
+    assert "| v.top1_generative | 90.0% (n=20, 100%) | 80.0% (n=16, 80%) |" in section
+    assert "| v.set_size | 1.500 (n=10, 100%) | — |" in section
+    # Without informational metrics there is no such section.
+    assert "Informational" not in to_markdown(build_comparison_report("A", "B", {}, {}, {}, {}))
+
+
 def test_markdown_shows_coverage_and_formats():
     md = to_markdown(build_score_report("tool", _summary(), {}, {}))
     assert "| clone_key.exact | 97.3% | 20 | 70% |" in md

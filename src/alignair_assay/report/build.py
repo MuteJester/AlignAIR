@@ -32,8 +32,11 @@ def build_score_report(tool: str, summary, slices, provenance: dict, *, excess_a
     return report
 
 
-def build_comparison_report(a_name: str, b_name: str, comparison, slices_a, slices_b, provenance: dict) -> dict:
-    """Report for a paired comparison of tool ``a`` against tool ``b``."""
+def build_comparison_report(a_name: str, b_name: str, comparison, slices_a, slices_b, provenance: dict, *,
+                            informational: dict | None = None) -> dict:
+    """Report for a paired comparison of tool ``a`` against tool ``b``: the tested ``comparison`` and, as
+    ``informational``, the metrics reported but not compared (name -> ``{"a": summary, "b": summary}``, each tool's
+    own mean with n and coverage, None when it has none)."""
     return {"kind": COMPARISON_KIND, "version": VERSION, "a": a_name, "b": b_name,
-            "comparison": _clean(comparison),
+            "comparison": _clean(comparison), "informational": _clean(informational or {}),
             "by_slice": {"a": _clean(slices_a), "b": _clean(slices_b)}, "provenance": _clean(provenance)}

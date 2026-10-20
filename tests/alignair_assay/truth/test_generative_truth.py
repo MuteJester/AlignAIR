@@ -183,7 +183,10 @@ def test_top1_generative_metric():
     generative = call_metrics("v", truth, PredSegment(call="X*01", call_set=("X*01",)))
     assert (generative["v.top1_in_set"], generative["v.top1_generative"]) == (1.0, 1.0)
     assert call_metrics("v", truth, PredSegment(call=None))["v.top1_generative"] == 0.0
-    assert not lower_is_better("v.top1_generative") and not is_informational("v.top1_generative")
+    # Reported, not compared: a perfect sequence-only aligner cannot reach the generative allele when SHM has made
+    # the read a sibling's, so it stays out of the Holm family.
+    assert not lower_is_better("v.top1_generative")
+    assert all(is_informational(f"{g}.top1_generative") for g in "vdj") and not is_informational("v.top1_in_set")
 
 
 def test_old_truth_file_generative_defaults_to_alleles(tmp_path, reference):

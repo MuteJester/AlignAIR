@@ -9,11 +9,13 @@ from __future__ import annotations
 
 CaseScores = dict[str, float]
 
-# Metric-name suffixes (a full name is its own suffix) that are reported but excluded from tool comparisons.
-# The signed junction edge errors are compared through their ``*_abs_err`` twins; SHM metrics of a V with an
-# indel are not compared because indel placement is not unique; the novel SNPs a tool reports as mutations
-# describe how it handles an allele missing from its reference, which no fixed-reference tool can avoid.
-INFORMATIONAL: frozenset[str] = frozenset({".set_size", "junction.start_err", "junction.end_err",
+# Metric-name suffixes (a full name is its own suffix) that are reported but excluded from tool comparisons' Holm
+# family (a comparison report shows them, untested, beside it). The signed junction edge errors are compared
+# through their ``*_abs_err`` twins; SHM metrics of a V with an indel are not compared because indel placement is
+# not unique; the novel SNPs a tool reports as mutations describe how it handles an allele missing from its
+# reference, which no fixed-reference tool can avoid; and true-allele accuracy (``top1_generative``) cannot reach
+# 1.0 for a perfect sequence-only aligner when SHM has made the read a sibling allele's (``top1_in_set`` is compared).
+INFORMATIONAL: frozenset[str] = frozenset({".set_size", ".top1_generative", "junction.start_err", "junction.end_err",
                                            "v_indel.mutation_count_err", "v_indel.germline_errors",
                                            "v_novel.snp_mutations"})
 

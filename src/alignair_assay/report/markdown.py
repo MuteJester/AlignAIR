@@ -36,8 +36,16 @@ def _cov(c) -> str:
 
 
 def _order(names, headline: Sequence[str]) -> list[str]:
+    """The ``headline`` metrics present, in that order, then the others sorted; each ``{g}.top1_generative``
+    (true-allele accuracy) right after its ``{g}.top1_in_set`` when both are there."""
     names = set(names)
-    return [n for n in headline if n in names] + sorted(names - set(headline))
+    order = [n for n in headline if n in names] + sorted(names - set(headline))
+    for name in [n for n in order if n.endswith(".top1_generative")]:
+        twin = name.removesuffix(".top1_generative") + ".top1_in_set"
+        if twin in names:
+            order.remove(name)
+            order.insert(order.index(twin) + 1, name)
+    return order
 
 
 def _esc(text: str) -> str:
@@ -139,6 +147,13 @@ def _comparison_md(report: dict, headline: Sequence[str]) -> list[str]:
     lines = [f"# AlignAIR assay: {a} vs {b}", "", "## Overall", ""]
     lines += _comparison_table(report, _order(report["comparison"], headline))
     lines += ["", NOTE]
+    informational = report.get("informational") or {}
+    if informational:
+        rows = [[n, format_cell(n, informational[n].get("a")), format_cell(n, informational[n].get("b"))]
+                for n in _order(informational, headline)]
+        lines += ["", "## Informational (not compared)", "",
+                  "Reported for each tool over its own cases (n, coverage), but not tested: these metrics are "
+                  "outside the Holm family (`metrics.INFORMATIONAL`).", "", *markdown_table(["Metric", a, b], rows)]
     sa, sb = report["by_slice"]["a"], report["by_slice"]["b"]
     for dim in sorted(set(sa) | set(sb)):
         la, lb = sa.get(dim, {}), sb.get(dim, {})

@@ -212,6 +212,12 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys, 
     assert prov["family_size"] == len(comp)
     assert "v.set_size" in names and "v.set_size" not in comp
     assert "junction.start_err" in names and "junction.start_err" not in comp
+    # The informational metrics are reported beside the family: each tool's mean with n and coverage, untested.
+    info = rep["informational"]
+    assert set(info) == {n for n in names if is_informational(n)}
+    assert "v.top1_generative" in info and "v.top1_generative" not in comp
+    assert (info["v.top1_generative"]["a"]["mean"], info["v.top1_generative"]["a"]["coverage"]) == (1.0, 1.0)
+    assert info["v.top1_generative"]["b"]["mean"] == 0.0  # every V call of b is a wrong gene, or missing
 
     # Missing cases are scored (not dropped): validity is paired over all 42 cases.
     assert comp["airr.valid"]["n_paired"] == 42
@@ -224,6 +230,7 @@ def test_compare_scores_missing_cases_and_drops_informational(tmp_path, capsys, 
     md = (out_dir / "comparison.md").read_text()
     assert "# AlignAIR assay: oracle vs broken" in md
     assert "| Metric | oracle | broken | n paired | oracle (paired) | broken (paired) | Δ (b−a) |" in md
+    assert "| v.top1_generative | 100.0% (n=" in md.split("## Informational (not compared)")[1]
 
 
 def _igblast_cigar(seg, read_len, reference):

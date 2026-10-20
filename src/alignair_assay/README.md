@@ -154,13 +154,19 @@ key; a label named like a fixed dimension is an error. The fixed dimensions are 
   `nan` without a top-1 call in the truth set, because the frames cannot be compared.
 - Summaries report coverage next to every mean.
 - `metrics.lower_is_better` and `metrics.INFORMATIONAL` are the registries. A comparison runs Holm over every
-  non-informational metric either tool produced.
+  non-informational metric either tool produced; the informational ones are reported beside it (the comparison
+  report's `informational` block and its "Informational (not compared)" table: each tool's own mean, n and
+  coverage, untested).
 
 **Allele metrics** (`metrics.alleles`, per observed segment `g`):
 
 - `{g}.top1_in_set`: the top-1 call is in the scored set (generative set plus the simulator's re-call and
   the as-near alleles).
-- `{g}.top1_generative`: the top-1 call is in the generative set, i.e. true-allele accuracy.
+- `{g}.top1_generative` (informational): the top-1 call is in the generative set, i.e. true-allele accuracy. It is
+  reported, with coverage, beside `{g}.top1_in_set` in every score report and in each comparison's informational
+  table, but it is not in the Holm family: when SHM has made a read a sibling allele's, a perfect sequence-only
+  aligner calls the sibling, so this metric cannot reach 1.0 for it and a verdict on it would penalise a defensible
+  call. `{g}.top1_in_set` is the compared allele metric.
 - `{g}.gene_top1`: the top-1 call's gene is a gene of the scored set.
 - `{g}.any_overlap` and `{g}.set_precision`: the overlap of the tool's call set with the scored set.
 - `{g}.set_size` (informational): the size of the tool's call set.
@@ -342,7 +348,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   conventions) and primary fallbacks.
 - `score` writes `<tool>.scores.jsonl.gz`, `<tool>.report.json` and `<tool>.report.md`.
 - `compare` writes `comparison.json` and `comparison.md`, and prints the headline table. Its 95% and simultaneous
-  CIs of 0/1 metrics are clipped to [-1, 1].
+  CIs of 0/1 metrics are clipped to [-1, 1]. The informational metrics (true-allele accuracy among them) follow
+  the tested ones, untested, under `informational`.
 - `--donors` (`score`, `compare`) takes a suite's `donors.json` and scores each read with a subject against its
   donor's genotype (`workflow.scoring.score_file`): the genotype metrics join the scores and the comparison family,
   the score report holds the excess-alleles table, and the provenance records the donors file as an input. A read

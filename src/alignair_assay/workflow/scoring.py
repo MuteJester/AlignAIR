@@ -92,20 +92,24 @@ def score_report(scored: ToolScores, truths: list[ObservableTruth], header: dict
 def comparison_report(a: ToolScores, b: ToolScores, truths: list[ObservableTruth], header: dict, *, command: str,
                       inputs: dict, reference_name: str, alpha: float = 0.05) -> dict:
     """The paired comparison report of tool ``a`` against tool ``b``. The family is every non-informational metric
-    either tool produced, Holm-corrected at ``alpha``; the provenance is as in ``score_report``. ValueError when the
-    two tools have the same name (their files would collide)."""
+    either tool produced, Holm-corrected at ``alpha``; every informational one either tool produced is reported
+    beside it, each tool's own summary, untested. The provenance is as in ``score_report``. ValueError when the two
+    tools have the same name (their files would collide)."""
     if a.tool == b.tool:
         raise ValueError(f"the two compared tools must differ, both are {a.tool!r}")
     seen = {name for scores in (a.scores, b.scores) for case in scores.values() for name in case}
     family = sorted(name for name in seen if not is_informational(name))
     comparison = compare(a.scores, b.scores, family, alpha=alpha,
                          lower_is_better={name for name in family if lower_is_better(name)})
+    summary_a, summary_b = summarize(a.scores, list(a.scores)), summarize(b.scores, list(b.scores))
+    informational = {name: {"a": summary_a.get(name), "b": summary_b.get(name)}
+                     for name in sorted(seen) if is_informational(name)}
     prov = provenance(command, inputs, a=a.tool, b=b.tool, reference=reference_name,
                       reference_digest=header["reference_digest"], truth_header=header, alpha=alpha,
                       tests=STATISTICAL_TESTS, family_size=len(family), matching={"a": a.matching, "b": b.matching},
                       simulator_calls=simulator_calls(truths))
     return build_comparison_report(a.tool, b.tool, comparison, slices(a.scores, truths), slices(b.scores, truths),
-                                   prov)
+                                   prov, informational=informational)
 
 
 def write_report(report: dict, json_path: Path, md_path: Path, *, headline: Sequence[str] = HEADLINE) -> None:
