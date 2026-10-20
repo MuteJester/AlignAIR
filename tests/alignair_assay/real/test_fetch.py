@@ -33,6 +33,7 @@ from alignair_assay.real.fetch import (
     FetchRecord,
     FileSpec,
     NotFound,
+    Refused,
     download,
     ena_fastq_url,
     fetch_file,
@@ -301,7 +302,7 @@ def test_download_retries_at_most_twice_with_a_timeout(tmp_path, monkeypatch):
 
     monkeypatch.setattr(fetch.urllib.request, "urlopen", flaky)
     monkeypatch.setattr(fetch, "RETRY_WAIT", 0)
-    found = download("https://example.org/x", tmp_path / "x", timeout=7)
+    found = download("https://vdjbase.org/x", tmp_path / "x", timeout=7)
     assert calls == [7, 7, 7] and (tmp_path / "x").read_bytes() == b"payload"
     assert found["md5"] == _md5(b"payload") and found["bytes"] == 7 and found["headers"]["ETag"] == '"abc-2"'
 
@@ -313,7 +314,7 @@ def test_download_retries_at_most_twice_with_a_timeout(tmp_path, monkeypatch):
 
     monkeypatch.setattr(fetch.urllib.request, "urlopen", timing_out)
     with pytest.raises(FetchError, match="3 attempts"):
-        download("https://example.org/y", tmp_path / "y", timeout=7)
+        download("https://vdjbase.org/y", tmp_path / "y", timeout=7)
     assert len(calls) == 3
 
 
@@ -326,11 +327,11 @@ def test_download_does_not_retry_a_missing_object(tmp_path, monkeypatch):
 
     monkeypatch.setattr(fetch.urllib.request, "urlopen", missing)
     with pytest.raises(NotFound, match="403"):
-        download("https://example.org/missing", tmp_path / "m")
+        download("https://sra-pub-run-odp.s3.amazonaws.com/sra/x/x", tmp_path / "m")
     assert len(calls) == 1
 
 
-def test_download_refuses_a_short_body_and_plain_http(tmp_path, monkeypatch):
+def test_download_refuses_a_short_body(tmp_path, monkeypatch):
     def short(request, timeout):
         response = _Response(b"abc", request.full_url)
         response.headers["Content-Length"] = "10"
@@ -339,9 +340,33 @@ def test_download_refuses_a_short_body_and_plain_http(tmp_path, monkeypatch):
     monkeypatch.setattr(fetch.urllib.request, "urlopen", short)
     monkeypatch.setattr(fetch, "RETRY_WAIT", 0)
     with pytest.raises(FetchError, match="3 of 10 bytes"):
-        download("https://example.org/short", tmp_path / "s")
-    with pytest.raises(ValueError, match="https"):
-        download("http://example.org/plain", tmp_path / "p")
+        download("https://vdjbase.org/short", tmp_path / "s")
+
+
+def test_download_refuses_plain_http_and_other_hosts_without_retrying(tmp_path, monkeypatch):
+    calls = []
+
+    def redirected(to):
+        def answer(request, timeout):
+            calls.append(request.full_url)
+            return _Response(b"payload", to)
+        return answer
+
+    monkeypatch.setattr(fetch, "RETRY_WAIT", 0)
+    monkeypatch.setattr(fetch.urllib.request, "urlopen", redirected("https://vdjbase.org/x"))
+    for url in ("http://vdjbase.org/plain", "https://example.org/elsewhere"):
+        with pytest.raises(Refused, match="https|host"):
+            download(url, tmp_path / "p")
+    assert calls == []  # refused before any request
+    # A redirect off https, or to a host that is not a pinned source, is refused at once, not retried.
+    for to in ("http://vdjbase.org/x", "https://example.org/x"):
+        calls.clear()
+        monkeypatch.setattr(fetch.urllib.request, "urlopen", redirected(to))
+        with pytest.raises(Refused, match="redirected"):
+            download("https://vdjbase.org/x", tmp_path / "r")
+        assert len(calls) == 1 and not (tmp_path / "r").exists()
+    assert {spec.url.split("/")[2] for spec in genotype_specs("W-97").values()} <= fetch.ALLOWED_HOSTS
+    assert {fetch.ODP_URL.split("/")[2], ena_fastq_url(RUN, "x").split("/")[2]} <= fetch.ALLOWED_HOSTS
 
 
 def test_s3_etag_of_single_and_multipart_objects(tmp_path):
@@ -355,11 +380,15 @@ def test_s3_etag_of_single_and_multipart_objects(tmp_path):
 
 # --- reads: ODP at full quality, else the ENA FASTQs --------------------------------------------------------------
 
-def _pin_run(monkeypatch, root: Path, *, pairs: int, sra: bytes, ena_quality=_lite, ena: bool = True):
-    """Pins for ``RUN`` on a synthetic object and synthetic ENA FASTQs under ``root``."""
+def _pin_run(monkeypatch, root: Path, *, pairs: int, sra: bytes, ena_quality=_lite, ena: bool = True,
+             converted=_full, length: int = 30):
+    """Pins for ``RUN`` on a synthetic object, its conversion (``converted`` qualities) and synthetic ENA FASTQs
+    under ``root``; the pinned image is what ``check_image`` finds."""
     monkeypatch.setitem(fetch.READ_PAIRS, RUN, pairs)
     monkeypatch.setitem(fetch.ODP_OBJECT, RUN, (len(sra), s3_etag_bytes(sra, 16)))
     monkeypatch.setattr(fetch, "S3_PART_SIZE", 16)
+    monkeypatch.setitem(fetch.FASTQ_MD5, RUN, tuple(_md5(_fastq(pairs, converted, mate=m, length=length))
+                                                    for m in (1, 2)))
     names, pins = (f"{RUN}_1.fastq.gz", f"{RUN}_2.fastq.gz"), []
     for mate, name in enumerate(names, start=1):
         path = root / "airrseq" / DONOR / RUN / name
@@ -368,8 +397,14 @@ def _pin_run(monkeypatch, root: Path, *, pairs: int, sra: bytes, ena_quality=_li
             path.unlink()
         pins.append((name, len(data), _md5(data)))
     monkeypatch.setitem(fetch.ENA_FASTQ, RUN, tuple(pins))
-    monkeypatch.setattr(fetch, "check_image", lambda image=None: {"image": SRA_TOOLS_IMAGE, "id": "sha256:" + "1" * 64,
-                                                                  "repo_digests": [SRA_TOOLS_IMAGE.split(":")[0]]})
+    monkeypatch.setattr(fetch, "check_image", _found_image)
+
+
+def _found_image(image=None):
+    """``check_image`` as Docker answers it for the pinned image: its RepoDigests hold the pinned digest."""
+    reference = image or fetch.SRA_TOOLS_IMAGE
+    name, _, digest = reference.partition("@")
+    return {"image": reference, "id": "sha256:" + "1" * 64, "repo_digests": [f"{name.rsplit(':', 1)[0]}@{digest}"]}
 
 
 def s3_etag_bytes(data: bytes, part_size: int) -> str:
@@ -377,14 +412,16 @@ def s3_etag_bytes(data: bytes, part_size: int) -> str:
     return f"{hashlib.md5(b''.join(parts)).hexdigest()}-{len(parts)}"
 
 
-def _converter(pairs: int, quality, calls: list | None = None, *, mates=(1, 2)):
-    """A stand-in for the container step: ``fasterq-dump --split-files`` FASTQs in ``out_dir``."""
+def _converter(pairs: int, quality, calls: list | None = None, *, mates=(1, 2), length: int = 30, edit=None):
+    """A stand-in for the container step: ``fasterq-dump --split-files`` FASTQs in ``out_dir`` (``edit(mate,
+    data)`` changes a mate's bytes)."""
     def fake(sra_path, out_dir, *, threads=None):
         if calls is not None:
             calls.append(Path(sra_path))
         Path(out_dir).mkdir(parents=True, exist_ok=True)
         for mate in mates:
-            (Path(out_dir) / f"{RUN}_{mate}.fastq").write_bytes(_fastq(pairs, quality, mate=mate))
+            data = _fastq(pairs, quality, mate=mate, length=length)
+            (Path(out_dir) / f"{RUN}_{mate}.fastq").write_bytes(edit(mate, data) if edit else data)
         return {"commands": [["docker", "run", "fake"]], "vdb_validate": "Database 'x' is consistent"}
     return fake
 
@@ -407,6 +444,8 @@ def test_odp_at_full_quality_is_used(tmp_path, monkeypatch):
     detail = record.detail
     assert detail["source"] == "odp" and detail["read_pairs"] == 40
     assert detail["files"][r1.name]["records"] == 40 and detail["files"][r1.name]["md5"] == md5_file(r1)
+    assert [detail["files"][p.name]["fastq_md5"] for p in (r1, r2)] == list(fetch.FASTQ_MD5[RUN])
+    assert detail["recipe_sha256"] == fetch.recipe_digest(RUN)
     assert detail["odp"]["etag"] == fetch.ODP_OBJECT[RUN][1] and detail["odp"]["md5"] == _md5(SRA)
     assert detail["ena_agreement"] == {"records": 40, "same": True}
     assert record.bytes == r1.stat().st_size + r2.stat().st_size
@@ -432,6 +471,100 @@ def test_verified_reads_record_is_reused_and_a_changed_file_refused(tmp_path, mo
     _gz(first[0], _fastq(12, _lite))
     with pytest.raises(FetchError, match="changed since"):
         fetch_reads(RUN, tmp_path)
+
+
+def _fetched_once(tmp_path, monkeypatch, pairs: int = 7):
+    """``RUN`` fetched from ODP at full quality, and the downloads and conversions made so far."""
+    _pin_run(monkeypatch, tmp_path, pairs=pairs, sra=SRA)
+    downloads, conversions = [], []
+    monkeypatch.setattr(fetch, "download", _serving({fetch.ODP_URL.format(run=RUN): SRA}, downloads))
+    monkeypatch.setattr(fetch, "convert_sra", _converter(pairs, _full, conversions))
+    first = fetch_reads(RUN, tmp_path)
+    assert len(downloads) == len(conversions) == 1
+    return first, downloads, conversions
+
+
+def test_recipe_digest_follows_what_makes_the_reads_and_nothing_else(monkeypatch):
+    before = fetch.recipe_digest(RUN)
+    assert before == fetch.recipe_digest(RUN) and len(before) == 64
+    assert fetch.recipe_digest("SRR23446586") != before
+    # Not the threads, the user, the container's name or the run directory: the argv's placeholders.
+    monkeypatch.setattr(fetch, "THREADS", 16)
+    monkeypatch.setattr(fetch.os, "getpid", lambda: 1)
+    assert fetch.recipe_digest(RUN) == before
+    for name, value in (("GZIP_LEVEL", 9), ("QUALITY_RECORDS", 10), ("ENA_SEQ_DEFLINE", "@$ac.$si"),
+                        ("SRA_TOOLS_IMAGE", "ncbi/sra-tools:3.4.1@sha256:" + "a" * 64)):
+        with monkeypatch.context() as patch:
+            patch.setattr(fetch, name, value)
+            assert fetch.recipe_digest(RUN) != before, name
+    for table, value in ((fetch.ODP_OBJECT, (1, "x-1")), (fetch.READ_PAIRS, 1), (fetch.FASTQ_MD5, ("a", "b")),
+                         (fetch.ENA_FASTQ, (("a", 1, "0" * 32), ("b", 1, "1" * 32)))):
+        with monkeypatch.context() as patch:
+            patch.setitem(table, RUN, value)
+            assert fetch.recipe_digest(RUN) != before
+
+
+def test_a_changed_pin_forces_reconversion(tmp_path, monkeypatch):
+    first, downloads, conversions = _fetched_once(tmp_path, monkeypatch)
+    (name, size, md5), second = fetch.ENA_FASTQ[RUN]
+    monkeypatch.setitem(fetch.ENA_FASTQ, RUN, ((name, size, "f" * 32), second))
+    again = fetch_reads(RUN, tmp_path)
+    # The object is reused after its ETag check; only the conversion is redone.
+    assert len(downloads) == 1 and len(conversions) == 2
+    assert again[2].detail["recipe_sha256"] == fetch.recipe_digest(RUN) != first[2].detail["recipe_sha256"]
+    assert "recipe" in again[2].detail["replaced"]["reason"]
+    assert again[2].md5 == first[2].md5  # the same reads, deterministically
+    fetch_reads(RUN, tmp_path)
+    assert len(conversions) == 2  # current now: reused
+    monkeypatch.setattr(fetch, "GZIP_LEVEL", 1)
+    fetch_reads(RUN, tmp_path)
+    assert len(conversions) == 3
+
+
+def test_a_changed_image_digest_forces_reconversion(tmp_path, monkeypatch):
+    first, downloads, conversions = _fetched_once(tmp_path, monkeypatch)
+    monkeypatch.setattr(fetch, "SRA_TOOLS_IMAGE", "ncbi/sra-tools:3.4.2@sha256:" + "a" * 64)
+    again = fetch_reads(RUN, tmp_path)
+    assert len(downloads) == 1 and len(conversions) == 2
+    assert again[2].detail["image"]["repo_digests"] == ["ncbi/sra-tools@sha256:" + "a" * 64]
+
+
+def test_a_record_without_the_pinned_image_or_a_recipe_is_stale(tmp_path, monkeypatch):
+    first, downloads, conversions = _fetched_once(tmp_path, monkeypatch)
+    record_path = tmp_path / "fetch" / "reads" / f"{RUN}.json"
+    # The record says another image ran, though its recipe is current.
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["detail"]["image"]["repo_digests"] = ["ncbi/sra-tools@sha256:" + "b" * 64]
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+    again = fetch_reads(RUN, tmp_path)
+    assert len(conversions) == 2 and "image" in again[2].detail["replaced"]["reason"]
+    # A record written before recipes were recorded (the first pilot fetch) is rebuilt once, then reused.
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    del record["detail"]["recipe_sha256"]
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+    fetch_reads(RUN, tmp_path)
+    fetch_reads(RUN, tmp_path)
+    assert len(conversions) == 3 and len(downloads) == 1
+
+
+def test_a_lite_fallback_retries_odp_when_it_is_reused(tmp_path, monkeypatch):
+    _pin_run(monkeypatch, tmp_path, pairs=5, sra=SRA)
+    downloads, conversions = [], []
+    monkeypatch.setattr(fetch, "download", _serving({}, downloads))
+    monkeypatch.setattr(fetch, "convert_sra", _converter(5, _full, conversions))
+    _, _, lite = fetch_reads(RUN, tmp_path)
+    assert lite.quality == "lite" and lite.detail["source"] == "ena" and len(downloads) == 1
+    # Reused while ODP still has no object: ODP is tried once more, and the Lite record is kept.
+    _, _, kept = fetch_reads(RUN, tmp_path)
+    assert len(downloads) == 2 and conversions == [] and kept == lite and kept.detail["reused"] is True
+    assert kept.detail["odp_retry"]["status"] == "not found"
+    # Reused once ODP has it: the record is replaced by the full-quality reads.
+    monkeypatch.setattr(fetch, "download", _serving({fetch.ODP_URL.format(run=RUN): SRA}, downloads))
+    r1, _, full = fetch_reads(RUN, tmp_path)
+    assert full.quality == "full" and full.detail["source"] == "odp" and len(conversions) == 1
+    assert full.detail["replaced"]["md5"] == lite.md5 and r1.parent == tmp_path / "airrseq_odp" / DONOR / RUN
+    fetch_reads(RUN, tmp_path)
+    assert len(downloads) == 3 and len(conversions) == 1  # a full record is reused without trying anything
 
 
 def test_odp_at_lite_quality_falls_back_to_the_ena_fastqs(tmp_path, monkeypatch):
@@ -483,17 +616,54 @@ def test_a_conversion_with_the_wrong_read_count_is_refused(tmp_path, monkeypatch
 
 
 def test_odp_reads_that_are_not_the_ena_reads_are_refused(tmp_path, monkeypatch):
+    # The conversion is its pins' (31 bases a read), but the ENA FASTQs there have 30: not the same reads.
+    _pin_run(monkeypatch, tmp_path, pairs=6, sra=SRA, length=31)
+    monkeypatch.setattr(fetch, "download", _serving({fetch.ODP_URL.format(run=RUN): SRA}))
+    monkeypatch.setattr(fetch, "convert_sra", _converter(6, _full, length=31))
+    with pytest.raises(FetchError, match="ENA"):
+        fetch_reads(RUN, tmp_path)
+
+
+def test_a_conversion_that_is_not_the_pinned_reads_is_refused(tmp_path, monkeypatch):
     _pin_run(monkeypatch, tmp_path, pairs=6, sra=SRA)
     monkeypatch.setattr(fetch, "download", _serving({fetch.ODP_URL.format(run=RUN): SRA}))
+    other = _converter(6, lambda i, n: _full(i + 1, n))  # full quality, other symbols than the pinned bytes
+    monkeypatch.setattr(fetch, "convert_sra", other)
+    with pytest.raises(FetchError, match="pinned"):
+        fetch_reads(RUN, tmp_path)
+    assert not (tmp_path / "fetch" / "reads" / f"{RUN}.json").exists()
 
-    def other_run(sra_path, out_dir, *, threads=None):
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
-        for mate in (1, 2):
-            (Path(out_dir) / f"{RUN}_{mate}.fastq").write_bytes(_fastq(6, _full, mate=mate, length=31))
-        return {"commands": [], "vdb_validate": ""}
 
-    monkeypatch.setattr(fetch, "convert_sra", other_run)
-    with pytest.raises(FetchError, match="ENA"):
+def _swap_records(data: bytes, first: int, second: int) -> bytes:
+    lines = data.decode().splitlines(keepends=True)
+    records = [lines[i:i + 4] for i in range(0, len(lines), 4)]
+    records[first], records[second] = records[second], records[first]
+    return "".join(line for record in records for line in record).encode()
+
+
+def test_mates_that_are_not_paired_record_by_record_are_refused(tmp_path, monkeypatch):
+    # Records 5 and 6 of mate 2 swapped, past the first QUALITY_RECORDS (2 here) that the ENA comparison reads: the
+    # pairing is checked over the whole file.
+    _pin_run(monkeypatch, tmp_path, pairs=8, sra=SRA)
+    monkeypatch.setattr(fetch, "QUALITY_RECORDS", 2)
+    monkeypatch.setattr(fetch, "download", _serving({fetch.ODP_URL.format(run=RUN): SRA}))
+    swapped = _converter(8, _full, edit=lambda mate, data: _swap_records(data, 4, 5) if mate == 2 else data)
+    monkeypatch.setattr(fetch, "convert_sra", swapped)
+    with pytest.raises(FetchError, match=rf"record 5: mate 1 is .*{RUN}\.5.*mate 2 .*{RUN}\.6.*not paired"):
+        fetch_reads(RUN, tmp_path)
+    # A mate with one record more than the other is refused too.
+    longer = _converter(8, _full, edit=lambda mate, data: _fastq(9, _full, mate=2) if mate == 2 else data)
+    monkeypatch.setattr(fetch, "convert_sra", longer)
+    with pytest.raises(FetchError, match="not paired"):
+        fetch_reads(RUN, tmp_path)
+
+
+def test_a_malformed_quality_in_the_conversion_is_a_fetch_error(tmp_path, monkeypatch):
+    _pin_run(monkeypatch, tmp_path, pairs=4, sra=SRA)
+    monkeypatch.setattr(fetch, "download", _serving({fetch.ODP_URL.format(run=RUN): SRA}))
+    short = _converter(4, lambda i, n: _full(i, n - 1))  # a quality string one symbol short of its bases
+    monkeypatch.setattr(fetch, "convert_sra", short)
+    with pytest.raises(FetchError, match="length"):
         fetch_reads(RUN, tmp_path)
 
 
@@ -529,12 +699,8 @@ def test_too_little_free_space_refuses_before_any_download(tmp_path, monkeypatch
 
 
 def test_check_image_refuses_another_digest(monkeypatch):
-    class Completed:
-        def __init__(self, stdout, returncode=0):
-            self.stdout, self.stderr, self.returncode = stdout, "", returncode
-
     inspected = json.dumps([{"Id": "sha256:" + "2" * 64, "RepoDigests": ["ncbi/sra-tools@sha256:" + "f" * 64]}])
-    monkeypatch.setattr(fetch.subprocess, "run", lambda argv, **kwargs: Completed(inspected))
+    monkeypatch.setattr(fetch.subprocess, "run", lambda argv, **kwargs: _Completed(inspected))
     with pytest.raises(FetchError, match="digest"):
         fetch.check_image()
 
@@ -551,13 +717,53 @@ def test_sra_commands_run_offline_as_the_user_on_the_run_directory_only(tmp_path
     assert [command[command.index(SRA_TOOLS_IMAGE) + 1] for command in commands] == ["vdb-validate", "fasterq-dump"]
     for command in commands:
         assert command[:3] == ["docker", "run", "--rm"]
+        assert command[command.index("--name") + 1] == f"alignair-fetch-{RUN}-{os.getpid()}"
         assert command[command.index("--network") + 1] == "none"
+        assert command[command.index("--cap-drop") + 1] == "ALL"
+        assert command[command.index("--security-opt") + 1] == "no-new-privileges"
         assert command[command.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
         mounts = [command[i + 1] for i, part in enumerate(command) if part == "-v"]
         assert mounts == [f"{tmp_path}:/data"]
     dump = commands[1]
     assert "--split-files" in dump and dump[-1] == f"/data/{RUN}" and dump[dump.index("--threads") + 1] == "3"
     assert dump[dump.index("--seq-defline") + 1] == "@$ac.$si $sn/$ri"
+
+
+class _Completed:
+    def __init__(self, stdout="", returncode=0, stderr=""):
+        self.stdout, self.stderr, self.returncode = stdout, stderr, returncode
+
+
+def test_convert_sra_runs_the_hardened_containers(tmp_path, monkeypatch):
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return _Completed(stderr="Database 'x' is consistent" if "vdb-validate" in argv else "spots read : 3")
+
+    monkeypatch.setattr(fetch.subprocess, "run", run)
+    found = fetch.convert_sra(tmp_path / RUN, tmp_path / "convert", threads=2)
+    assert calls == found["commands"] == sra_commands(tmp_path, RUN, threads=2) and len(calls) == 2
+    for argv in calls:
+        assert {"--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--name"} <= set(argv)
+    assert found["vdb_validate"] == "Database 'x' is consistent"
+
+
+def test_a_conversion_timeout_kills_its_container(tmp_path, monkeypatch):
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:2] == ["docker", "run"]:
+            raise fetch.subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+        return _Completed()
+
+    monkeypatch.setattr(fetch.subprocess, "run", run)
+    with pytest.raises(FetchError, match="did not finish.*killed"):
+        fetch.convert_sra(tmp_path / RUN, tmp_path / "convert")
+    name = f"alignair-fetch-{RUN}-{os.getpid()}"
+    assert calls[0][calls[0].index("--name") + 1] == name and calls[1] == ["docker", "kill", name]
+    assert len(calls) == 2  # the second container is not started
 
 
 # --- the manifest ------------------------------------------------------------------------------------------------
@@ -647,15 +853,22 @@ def test_the_igenotyper_gene_coords_at_the_pinned_commit():
 @needs_data
 @needs_network
 @needs_docker
-def test_w97_odp_reads_are_full_quality():
-    """The recon's deferred check: W-97's ODP object, converted in the pinned container, has full qualities (else
-    the record says ODP is Lite and the reads are ENA's)."""
-    r1, r2, record = fetch_reads(PILOT_DONORS["W-97"], DATA)
-    assert record.detail["read_pairs"] == 103_049
+def test_w97_odp_reads_are_full_quality(tmp_path):
+    """The recon's deferred check: W-97's ODP object (34 MB), downloaded and converted in the pinned container into
+    a temporary root, has full qualities (else the record says ODP is Lite and the reads are ENA's). The real root's
+    ENA FASTQs of W-97 are linked in, so the conversion is compared with them."""
+    root = tmp_path / "root"
+    (root / "airrseq").mkdir(parents=True)
+    (root / "airrseq" / "W-97").symlink_to(Path(DATA) / "airrseq" / "W-97")
+    r1, r2, record = fetch_reads(PILOT_DONORS["W-97"], root)
+    assert "reused" not in record.detail and record.detail["read_pairs"] == 103_049
     if record.detail["source"] == "odp":
         assert record.quality == "full" and quality_kind(r1) == quality_kind(r2) == "full"
+        assert r1.parent == root / "airrseq_odp" / "W-97" / PILOT_DONORS["W-97"]
         assert record.detail["odp"]["bytes"] == 34_204_018 and "consistent" in record.detail["odp"]["vdb_validate"]
         assert record.detail["ena_agreement"] == {"records": fetch.QUALITY_RECORDS, "same": True}
+        assert [record.detail["files"][p.name]["fastq_md5"] for p in (r1, r2)] == list(
+            fetch.FASTQ_MD5[PILOT_DONORS["W-97"]])
     else:
         assert record.detail["odp"]["status"] in ("lite", "not found") and record.quality == "lite"
-    fetch_manifest(DATA)
+    assert fetch_manifest(root)["quality"] == {PILOT_DONORS["W-97"]: record.quality}

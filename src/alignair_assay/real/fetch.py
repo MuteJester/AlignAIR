@@ -1,19 +1,23 @@
 """Verified downloads for the real-data pilot: each pilot run's reads, at full quality where AWS ODP has them, and
 the donors' genotype files, all under a data root (``--data-root``), never in a run directory.
 
-Everything fetched is pinned here (size, md5 or S3 ETag, read count, commit, image digest), so a fresh data root
-gets the same bytes or a refusal. A file is verified before it is used: one already there is reused only when it
-is the pinned file, and one downloaded is written to ``<name>.part`` and renamed only once verified. Downloads are
-https only, with a timeout and at most ``RETRIES`` retries; nothing downloaded is ever executed. Each source has
-its own directory under the data root, with an ``MD5SUMS.txt`` this module keeps:
+Everything fetched is pinned here (size, md5 or S3 ETag, read count, commit, image digest, and for the converted
+reads the md5 of each mate's uncompressed FASTQ, which unlike its gzip does not depend on zlib), so a fresh data
+root gets the same files, or the same reads, or a refusal. A file is verified before it is used: one already there
+is reused only when it is the pinned file, and one downloaded is written to ``<name>.part`` and renamed only once
+verified. Downloads are https only, from the pinned sources' hosts (``ALLOWED_HOSTS``; a redirect elsewhere is
+refused at once), with a timeout and at most ``RETRIES`` retries; nothing downloaded is ever executed. Each source
+has its own directory under the data root, with an ``MD5SUMS.txt`` this module keeps:
 
 - ``airrseq/<donor>/<run>/<run>_{1,2}.fastq.gz``: ENA's FASTQs (``ENA_FASTQ``, ENA's md5s). ENA serves them with
   SRA-Lite qualities, every base ``?`` (Q30) or ``$`` (Q3), on 7 of the 8 pilot runs (all but SC-23).
 - ``airrseq_odp/<donor>/<run>/``: the run's SRA object from NCBI's AWS Open Data mirror (``ODP_URL``; its size and
   S3 ETag pinned in ``ODP_OBJECT``) and the pair converted from it in the pinned sra-tools container
   (``SRA_TOOLS_IMAGE``): ``vdb-validate`` checks the object's internal md5s, ``fasterq-dump --split-files`` writes
-  the mates with ENA's read names (``@<run>.<spot> <spot>/<mate>`` and a bare ``+``), and they are gzipped here. The
-  container runs as the current user, with no network, on a mount of the run's directory only.
+  the mates with ENA's read names (``@<run>.<spot> <spot>/<mate>`` and a bare ``+``), and they are gzipped here,
+  checked record by record to be paired. The container runs as the current user, with no network, no capabilities
+  and no privilege escalation, on a mount of the run's directory only, named per run and process so that one that
+  times out is killed.
 - ``genotypes/vdjbase_genomic_samples/<sample>.csv`` and ``.bam`` (VDJbase genomic study P25, CC0),
   ``genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json`` (OGRDB's IGH_VDJ germline set G00060 rev 8,
   CC0) and ``genotypes/igenotyper/gene_coords.bed`` (IGenotyper's gene coordinates on its ``igh`` reference, at
@@ -29,7 +33,10 @@ with ENA's read counts and ENA's first records; on W-97 (SRR23654538) all 103,04
 with 27 quality symbols where ENA has two.
 
 The records live in ``<data root>/fetch/`` (``reads/<run>.json``, ``genotypes/<donor>.json``) and
-``fetch_manifest`` gathers them into ``<data root>/fetch_manifest.json``.
+``fetch_manifest`` gathers them into ``<data root>/fetch_manifest.json``. A reads record is reused only while it is
+current: its ``recipe_sha256`` is ``recipe_digest`` (the pinned image, the container commands, the read names, the
+gzip level, the quality sample and the run's pins) and its image is the pinned one. A stale record is redone, the
+ODP object being reused after its ETag check; a Lite fallback is reused only after ODP is tried once more.
 """
 from __future__ import annotations
 
@@ -42,9 +49,12 @@ import shutil
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+from itertools import zip_longest
 from pathlib import Path
 
 from alignair_assay.core.provenance import sha256_file
@@ -83,6 +93,18 @@ ODP_OBJECT: dict[str, tuple[int, str]] = {
     "SRR23654540": (37_441_494, "210f3afc2bae7e2a4e668a30f288bf48-5"),
     "SRR23654572": (39_949_090, "17d45b70a0621c1474a1c0e50296d541-5"),
     "SRR23654574": (49_003_723, "cd1e33178674dabfa360ca168861ba73-6"),
+}
+# Run -> the md5s of its converted mates' uncompressed FASTQ streams (mate 1, mate 2): what ``sra_commands`` makes
+# of the pinned object, independent of the zlib that gzips it. Checked on every conversion at full quality.
+FASTQ_MD5: dict[str, tuple[str, str]] = {
+    "SRR23446586": ("825acf77d2bf9855fa99d9680bea386e", "900dc2296c93d832c5e79585499127f2"),
+    "SRR23446584": ("1b7c612daefaec6ebe28ed4dbd7b3cff", "481f62ebf1d2e480ad2cacb7b488bc6f"),
+    "SRR23446589": ("ff73496fe0cd0625f87ff33c377f0c5c", "a67c282f38b31407f1325a9dbb279519"),
+    "SRR23446583": ("d89067c9f85d5c0fedc926e6e52a9dcd", "0f2d156ede4181cf53447b4e051cb948"),
+    "SRR23654538": ("f23817602d5755392360a035ea8cc5e1", "7642687f4c1575c513733c4cd9bfe35f"),
+    "SRR23654540": ("40de9891d3c09f2e073306a7baf7935a", "3e01c6f0eca47a2a5b8a7b7061ccbb03"),
+    "SRR23654572": ("035049578eec0c912c2f70276519d47a", "8c8e64cd4f5f69ae9918f79e0291e8a8"),
+    "SRR23654574": ("9230266de4a700043545e737aaed4f26", "fbee1a2eedc70e8df6717fd8e64a3fe6"),
 }
 # The part size the ODP objects were uploaded in (the AWS CLI's default), which their multipart ETags depend on.
 S3_PART_SIZE = 8 * 1024 * 1024
@@ -143,6 +165,9 @@ GENE_COORDS_FILE = (13_006, "2ca651322855248cb053d76b0e981738")
 
 # --- where things go, and how --------------------------------------------------------------------------------------
 
+# The hosts of the pinned sources: a download, or a redirect, anywhere else is refused.
+ALLOWED_HOSTS = frozenset({"sra-pub-run-odp.s3.amazonaws.com", "ftp.sra.ebi.ac.uk", "vdjbase.org",
+                           "ogrdb.airr-community.org", "raw.githubusercontent.com"})
 ENA_DIR = "airrseq"
 ODP_DIR = "airrseq_odp"
 RECORDS_DIR = "fetch"
@@ -173,6 +198,10 @@ class FetchError(RuntimeError):
 
 class NotFound(FetchError):
     """The server has no such object (HTTP 403 or 404; S3 answers 403 for a missing key)."""
+
+
+class Refused(FetchError):
+    """A download the policy forbids: a URL or a redirect that is not https, or not to a pinned source's host."""
 
 
 @dataclass(frozen=True)
@@ -324,10 +353,10 @@ def _verify_object(path: Path, size: int, etag: str, what: str) -> None:
 def download(url: str, dest, *, timeout: float | None = None, retries: int | None = None) -> dict:
     """Stream https ``url`` into ``dest`` (overwritten), waiting at most ``timeout`` seconds (``TIMEOUT``) on the
     server and retrying a failed attempt at most ``retries`` times (``RETRIES``). ``{"url", "bytes", "md5",
-    "headers"}`` (Content-Length, ETag, Last-Modified). NotFound for HTTP 403 or 404, which is not retried;
-    FetchError when every attempt failed, or for another client error; ValueError for a URL that is not https."""
-    if not url.startswith("https://"):
-        raise ValueError(f"{url}: only https downloads are made")
+    "headers"}`` (Content-Length, ETag, Last-Modified). Refused, before any request, for a URL that is not https
+    or not on an ``ALLOWED_HOSTS`` host, and, before anything is written, for a redirect off them; NotFound for
+    HTTP 403 or 404. Neither is retried. FetchError when every attempt failed, or for another client error."""
+    _check_allowed(url, url)
     timeout = TIMEOUT if timeout is None else timeout
     retries = RETRIES if retries is None else retries
     last: Exception | None = None
@@ -336,7 +365,7 @@ def download(url: str, dest, *, timeout: float | None = None, retries: int | Non
             time.sleep(RETRY_WAIT * 2 ** (attempt - 1))
         try:
             return _download_once(url, Path(dest), timeout)
-        except NotFound:
+        except (NotFound, Refused):
             raise
         except urllib.error.HTTPError as error:
             if error.code in (403, 404):
@@ -349,13 +378,22 @@ def download(url: str, dest, *, timeout: float | None = None, retries: int | Non
     raise FetchError(f"{url}: {retries + 1} attempts failed; the last: {last}")
 
 
+def _check_allowed(url: str, requested: str) -> None:
+    """Refused unless ``url`` is https on one of ``ALLOWED_HOSTS``; ``requested`` is the URL asked for, which differs
+    from ``url`` after a redirect."""
+    parts = urllib.parse.urlsplit(url)
+    redirect = f"{requested} was redirected to {url}: " if url != requested else f"{url}: "
+    if parts.scheme != "https":
+        raise Refused(f"{redirect}only https downloads are made")
+    if parts.hostname not in ALLOWED_HOSTS:
+        raise Refused(f"{redirect}host {parts.hostname} is not a pinned source ({', '.join(sorted(ALLOWED_HOSTS))})")
+
+
 def _download_once(url: str, dest: Path, timeout: float) -> dict:
     request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     digest, size = hashlib.md5(), 0
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        final = response.geturl()
-        if not final.startswith("https://"):
-            raise FetchError(f"{url} was redirected to {final}: only https downloads are made")
+        _check_allowed(response.geturl(), url)
         headers = {key: response.headers.get(key) for key in ("Content-Length", "ETag", "Last-Modified")}
         with dest.open("wb") as out:
             for chunk in iter(lambda: response.read(_CHUNK), b""):
@@ -457,8 +495,7 @@ def check_image(image: str | None = None) -> dict:
     reference, ``id`` and ``repo_digests``. FetchError when Docker is not available, the image cannot be pulled,
     or its RepoDigests lack the pinned digest."""
     image = image or SRA_TOOLS_IMAGE
-    name, _, digest = image.partition("@")
-    repository = name.rsplit(":", 1)[0] if ":" in name.rsplit("/", 1)[-1] else name
+    digest = image.partition("@")[2]
     inspect = ["docker", "image", "inspect", image]
     try:
         completed = subprocess.run(inspect, capture_output=True, text=True, timeout=120)
@@ -476,37 +513,84 @@ def check_image(image: str | None = None) -> dict:
         raise FetchError(f"docker cannot inspect {image}: {completed.stderr.strip()[-500:]}")
     found = json.loads(completed.stdout)[0]
     repo_digests = list(found.get("RepoDigests") or [])
-    if digest and f"{repository}@{digest}" not in repo_digests:
+    if _pinned_repo_digest(image) not in repo_digests:
         raise FetchError(f"image {image}: its RepoDigests {repo_digests} lack the pinned digest {digest}")
     return {"image": image, "id": found.get("Id"), "repo_digests": repo_digests}
+
+
+# The placeholders of the container commands' run-specific parts (``_command_templates``).
+_RUN_DIR, _RUN, _USER, _NAME, _THREADS = "<run_dir>", "<run>", "<user>", "<name>", "<threads>"
+
+
+def _command_templates() -> list[list[str]]:
+    """The container commands of a conversion with their run-specific parts as placeholders: what ``sra_commands``
+    fills in, and what ``recipe_digest`` digests."""
+    base = ["docker", "run", "--rm", "--name", _NAME, "--network", "none", "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges", "--user", _USER, "-e", "HOME=/tmp", "-v", f"{_RUN_DIR}:/data",
+            "-w", "/data", SRA_TOOLS_IMAGE]
+    return [[*base, "vdb-validate", f"/data/{_RUN}"],
+            [*base, "fasterq-dump", "--split-files", "--threads", _THREADS,
+             "--temp", f"/data/{CONVERT_DIR}/tmp", "--outdir", f"/data/{CONVERT_DIR}",
+             "--seq-defline", ENA_SEQ_DEFLINE, "--qual-defline", "+", f"/data/{_RUN}"]]
+
+
+def container_name(run: str) -> str:
+    """The name of this process's conversion containers for ``run``, so a timed-out one can be killed."""
+    return f"alignair-fetch-{run}-{os.getpid()}"
 
 
 def sra_commands(run_dir, run: str, *, threads: int | None = None) -> list[list[str]]:
     """The two container runs that turn ``<run_dir>/<run>`` into the pair in ``<run_dir>/convert/``:
     ``vdb-validate`` of the object, then ``fasterq-dump --split-files`` with ENA's read names. Each runs the pinned
-    image as the current user, with no network, on ``run_dir`` alone mounted at ``/data``."""
-    base = ["docker", "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}",
-            "-e", "HOME=/tmp", "-v", f"{Path(run_dir).absolute()}:/data", "-w", "/data", SRA_TOOLS_IMAGE]
-    return [[*base, "vdb-validate", f"/data/{run}"],
-            [*base, "fasterq-dump", "--split-files", "--threads", str(threads or THREADS),
-             "--temp", f"/data/{CONVERT_DIR}/tmp", "--outdir", f"/data/{CONVERT_DIR}",
-             "--seq-defline", ENA_SEQ_DEFLINE, "--qual-defline", "+", f"/data/{run}"]]
+    image as the current user, named ``container_name(run)``, with no network, no capabilities and no privilege
+    escalation, on ``run_dir`` alone mounted at ``/data``."""
+    values = {_RUN_DIR: str(Path(run_dir).absolute()), _RUN: run, _USER: f"{os.getuid()}:{os.getgid()}",
+              _NAME: container_name(run), _THREADS: str(threads or THREADS)}
+    filled = []
+    for template in _command_templates():
+        argv = []
+        for part in template:
+            for placeholder, value in values.items():
+                part = part.replace(placeholder, value)
+            argv.append(part)
+        filled.append(argv)
+    return filled
+
+
+def recipe_digest(run: str) -> str:
+    """SHA-256 of what makes pilot run ``run``'s reads, so a reads record is reused only while it is current: the
+    pinned image (its digest included), the container commands with their run-specific parts as placeholders, the
+    read names, ``GZIP_LEVEL`` and ``QUALITY_RECORDS``, and the run's pins (its ODP object's ETag and size, its read
+    pairs, the ENA md5s and the converted FASTQs' md5s). Not the code's digest: an edit elsewhere in the module does
+    not redo a conversion."""
+    size, etag = ODP_OBJECT[run]
+    recipe = {"image": SRA_TOOLS_IMAGE, "commands": _command_templates(), "seq_defline": ENA_SEQ_DEFLINE,
+              "gzip_level": GZIP_LEVEL, "quality_records": QUALITY_RECORDS, "odp": {"etag": etag, "bytes": size},
+              "read_pairs": READ_PAIRS[run], "ena_md5": [md5 for _, _, md5 in ENA_FASTQ[run]],
+              "fastq_md5": list(FASTQ_MD5[run])}
+    return hashlib.sha256(json.dumps(recipe, sort_keys=True).encode()).hexdigest()
 
 
 def convert_sra(sra_path, out_dir, *, threads: int | None = None) -> dict:
     """Validate SRA object ``sra_path`` and write its mates as FASTQs into ``out_dir``, which must be the
     ``convert`` directory beside it (``sra_commands``). ``{"commands", "vdb_validate", "fasterq_dump"}``: the
-    commands and the tools' last report lines. FetchError when either step fails."""
+    commands and the tools' last report lines. FetchError when either step fails, or does not finish within
+    ``CONVERT_TIMEOUT``: its container is then killed by name."""
     sra_path = Path(sra_path).absolute()
     if Path(out_dir).absolute() != sra_path.parent / CONVERT_DIR:
         raise ValueError(f"{out_dir} is not {sra_path.parent / CONVERT_DIR}, the only directory the container sees")
     commands = sra_commands(sra_path.parent, sra_path.name, threads=threads)
+    name = container_name(sra_path.name)
     reports = []
     for argv in commands:
         tool = argv[argv.index(SRA_TOOLS_IMAGE) + 1]
         try:
             completed = subprocess.run(argv, capture_output=True, text=True, timeout=CONVERT_TIMEOUT)
-        except (FileNotFoundError, subprocess.TimeoutExpired) as error:
+        except subprocess.TimeoutExpired as error:
+            _kill(name)  # the docker client was killed; its container was not
+            raise FetchError(f"{tool} of {sra_path} did not finish within {CONVERT_TIMEOUT:g} s; its container "
+                             f"{name} was killed") from error
+        except FileNotFoundError as error:
             raise FetchError(f"{tool} of {sra_path} did not run: {error}") from error
         report = (completed.stdout + completed.stderr).strip()
         if completed.returncode != 0:
@@ -516,22 +600,80 @@ def convert_sra(sra_path, out_dir, *, threads: int | None = None) -> dict:
             "fasterq_dump": " / ".join(line.strip() for line in reports[1].splitlines())}
 
 
+def _kill(name: str) -> None:
+    """``docker kill`` container ``name``, best effort: it may have stopped by itself."""
+    try:
+        subprocess.run(["docker", "kill", name], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def fetch_reads(run: str, data_root, *, threads: int | None = None) -> tuple[Path, Path, FetchRecord]:
-    """Pilot run ``run``'s pair of gzipped FASTQs (mate 1, mate 2) and their record (see the module docstring):
-    reused when its record (``<data root>/fetch/reads/<run>.json``) exists and its files are unchanged, else from
-    ODP at full quality, else ENA's FASTQs. ValueError for a run outside the pilot; FetchError, before any
-    download, when Docker or the pinned image is not available; FetchError for a file changed since its record, a
-    download that is not the pinned object or file, or a conversion that is not the run's reads."""
+    """Pilot run ``run``'s pair of gzipped FASTQs (mate 1, mate 2) and their record (see the module docstring).
+
+    Its record (``<data root>/fetch/reads/<run>.json``) is reused while it is current, its ``recipe_sha256`` being
+    ``recipe_digest(run)`` and its image's RepoDigests holding the pinned digest, and its files are unchanged; a
+    Lite fallback is reused only after ODP is tried once more, and replaced if ODP now converts at full quality.
+    A stale record is redone (``detail["replaced"]`` says why), the ODP object being reused after its ETag check.
+    Otherwise the reads come from ODP at full quality, else ENA's FASTQs.
+
+    ValueError for a run outside the pilot; FetchError, before any download, when Docker or the pinned image is not
+    available; FetchError for a file changed since its current record, a download that is not the pinned object or
+    file, or a conversion that is not the run's pinned reads."""
     donor = donor_of(run)
     root = Path(data_root)
     record_path = root / RECORDS_DIR / "reads" / f"{run}.json"
+    recipe = recipe_digest(run)
+    replaced = None
     if record_path.is_file():
         record = FetchRecord.from_json(_read_json(record_path), root)
-        _check_unchanged(record, record_path)
-        first, second = (record.path / name for name in record.detail["pair"])
-        return first, second, replace(record, detail={**record.detail, "reused": True})
+        stale = _staleness(record, recipe)
+        if stale is None:
+            _check_unchanged(record, record_path)
+            if record.quality != "lite":
+                return _reused(record)
+            image = check_image()
+            odp = _odp_reads(run, donor, root, image, threads)
+            if odp["status"] != "full":
+                return _reused(record, odp_retry={"status": odp["status"], "reason": odp["reason"]})
+            stale = "it was a Lite fallback, and ODP now converts at full quality"
+            replaced = {"reason": stale, "md5": record.md5, "quality": record.quality,
+                        "source": record.detail.get("source")}
+            return _record_reads(run, donor, root, record_path, recipe, image, odp, replaced)
+        replaced = {"reason": stale, "md5": record.md5, "quality": record.quality,
+                    "source": record.detail.get("source")}
     image = check_image()
     odp = _odp_reads(run, donor, root, image, threads)
+    return _record_reads(run, donor, root, record_path, recipe, image, odp, replaced)
+
+
+def _staleness(record: FetchRecord, recipe: str) -> str | None:
+    """Why a reads record is not current (None when it is): another recipe, or an image without the pinned digest."""
+    found = record.detail.get("recipe_sha256")
+    if found != recipe:
+        return f"its recipe {found[:12] if found else '(none recorded)'} is not the current {recipe[:12]}"
+    pinned = _pinned_repo_digest()
+    digests = (record.detail.get("image") or {}).get("repo_digests") or []
+    if pinned not in digests:
+        return f"its image's RepoDigests {digests} lack the pinned {pinned}"
+    return None
+
+
+def _pinned_repo_digest(image: str | None = None) -> str:
+    """``<repository>@<digest>`` of a pinned image reference, as Docker lists it among the image's RepoDigests."""
+    name, _, digest = (image or SRA_TOOLS_IMAGE).partition("@")
+    repository = name.rsplit(":", 1)[0] if ":" in name.rsplit("/", 1)[-1] else name
+    return f"{repository}@{digest}"
+
+
+def _reused(record: FetchRecord, **extra) -> tuple[Path, Path, FetchRecord]:
+    first, second = (record.path / name for name in record.detail["pair"])
+    return first, second, replace(record, detail={**record.detail, "reused": True, **extra})
+
+
+def _record_reads(run: str, donor: str, root: Path, record_path: Path, recipe: str, image: dict, odp: dict,
+                  replaced: dict | None) -> tuple[Path, Path, FetchRecord]:
+    """The reads record of an ODP attempt ``odp``: ODP's pair at full quality, else ENA's FASTQs; written."""
     if odp["status"] == "full":
         run_dir = root / ODP_DIR / donor / run
         files, pair = odp.pop("files"), odp.pop("pair")
@@ -542,7 +684,7 @@ def fetch_reads(run: str, data_root, *, threads: int | None = None) -> tuple[Pat
         specs = ena_specs(run)
         fetched = [fetch_file(spec, root) for spec in specs]
         pair = [item.path.name for item in fetched]
-        files = {item.path.name: {"md5": item.md5, "bytes": item.bytes, "quality": quality_kind(item.path)}
+        files = {item.path.name: {"md5": item.md5, "bytes": item.bytes, "quality": _quality(item.path)}
                  for item in fetched}
         quality = "full" if all(files[name]["quality"] == "full" for name in pair) else "lite"
         detail = {"source": "ena", "fallback_reason": odp["reason"]}
@@ -550,8 +692,10 @@ def fetch_reads(run: str, data_root, *, threads: int | None = None) -> tuple[Pat
                              bytes=sum(files[n]["bytes"] for n in pair), source_url=ena_fastq_url(run, ""),
                              kind="reads", quality=quality)
     detail.update(run=run, donor=donor, pair=pair, files=files, read_pairs=READ_PAIRS[run], odp=odp,
-                  image=image, fetched_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                  code_sha256=_CODE_SHA256)
+                  image=image, recipe_sha256=recipe, code_sha256=_CODE_SHA256,
+                  fetched_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    if replaced:
+        detail["replaced"] = replaced
     record = replace(record, detail=detail)
     _write_json(record_path, record.to_json(root))
     return record.path / pair[0], record.path / pair[1], record
@@ -597,18 +741,23 @@ def _odp_reads(run: str, donor: str, root: Path, image: dict, threads: int | Non
         if written != [name.removesuffix(".gz") for name in pair]:
             raise FetchError(f"fasterq-dump wrote {written or 'nothing'} for {run}, not the pair "
                              f"{[name.removesuffix('.gz') for name in pair]}")
+        mates = _gzip_pair([staging / name.removesuffix(".gz") for name in pair], [staging / name for name in pair])
         files = {}
-        for name in pair:
-            records = _gzip_fastq(staging / name.removesuffix(".gz"), staging / name)
-            if records != READ_PAIRS[run]:
-                raise FetchError(f"{name} from ODP holds {records} records, not the {READ_PAIRS[run]} read pairs "
-                                 f"ENA lists for {run}")
+        for name, mate in zip(pair, mates):
+            if mate["records"] != READ_PAIRS[run]:
+                raise FetchError(f"{name} from ODP holds {mate['records']} records, not the {READ_PAIRS[run]} read "
+                                 f"pairs ENA lists for {run}")
             files[name] = {"md5": md5_file(staging / name), "bytes": (staging / name).stat().st_size,
-                           "records": records, "quality": quality_kind(staging / name)}
+                           "records": mate["records"], "fastq_md5": mate["fastq_md5"],
+                           "quality": _quality(staging / name)}
         kinds = {name: files[name]["quality"] for name in pair}
         if set(kinds.values()) != {"full"}:
             return {**odp, "status": "lite",
                     "reason": f"the ODP qualities are SRA-Lite ({', '.join(f'{n}: {k}' for n, k in kinds.items())})"}
+        for name, pinned in zip(pair, FASTQ_MD5[run]):
+            if files[name]["fastq_md5"] != pinned:
+                raise FetchError(f"{name} from ODP is not the pinned reads of {run}: its FASTQ has md5 "
+                                 f"{files[name]['fastq_md5']}, not the pinned {pinned}")
         agreement = _ena_agreement(run, donor, root, [staging / name for name in pair])
         for name in pair:
             (staging / name).replace(run_dir / name)
@@ -639,19 +788,63 @@ def _ena_agreement(run: str, donor: str, root: Path, pair: list[Path]) -> dict |
     return {"records": compared, "same": True}
 
 
-def _gzip_fastq(source: Path, dest: Path) -> int:
-    """Gzip FASTQ ``source`` into ``dest`` (no name or time in the header, so the same reads give the same bytes),
-    remove ``source`` and return its records. FetchError for a file that is not whole 4-line records."""
+def _gzip_pair(sources: list[Path], dests: list[Path]) -> list[dict]:
+    """Gzip the two mates' FASTQs ``sources`` into ``dests`` (no name or time in the gzip header), in step, checking
+    over the whole files that record by record they are FASTQ records of the same spot (the same first word of the
+    header line); remove the sources. Per mate, ``{"records", "fastq_md5"}``, the md5 of its uncompressed stream,
+    which unlike the gzip does not depend on zlib. FetchError for mates that are not paired, or not FASTQ."""
+    digests = [hashlib.md5(), hashlib.md5()]
+    buffers: list[list[bytes]] = [[], []]
     lines = 0
-    with source.open("rb") as handle, dest.open("wb") as raw, \
-            gzip.GzipFile(filename="", mode="wb", compresslevel=GZIP_LEVEL, fileobj=raw, mtime=0) as out:
-        for chunk in iter(lambda: handle.read(_CHUNK), b""):
-            out.write(chunk)
-            lines += chunk.count(b"\n")
+    with ExitStack() as stack:
+        inputs = [stack.enter_context(path.open("rb")) for path in sources]
+        outputs = [stack.enter_context(gzip.GzipFile(filename="", mode="wb", compresslevel=GZIP_LEVEL, mtime=0,
+                                                     fileobj=stack.enter_context(path.open("wb"))))
+                   for path in dests]
+
+        def flush():
+            for buffer, output, digest in zip(buffers, outputs, digests):
+                data = b"".join(buffer)
+                output.write(data)
+                digest.update(data)
+                buffer.clear()
+
+        for first, second in zip_longest(*inputs):
+            if first is None or second is None:
+                longer = 2 if first is None else 1
+                raise FetchError(f"{sources[0].name} and {sources[1].name} are not paired: mate {longer} has more "
+                                 f"lines (from line {lines + 1})")
+            phase = lines % 4
+            if phase == 0:
+                if first[:1] != b"@" or second[:1] != b"@":
+                    raise FetchError(f"record {lines // 4 + 1} of {sources[0].name} or {sources[1].name} is not a "
+                                     "FASTQ record (no @ header)")
+                spot, other = first.split(None, 1)[0], second.split(None, 1)[0]
+                if spot != other:
+                    raise FetchError(f"record {lines // 4 + 1}: mate 1 is {spot.decode(errors='replace')!r}, mate 2 "
+                                     f"{other.decode(errors='replace')!r}: the mates are not paired")
+            elif phase == 2 and (first[:1] != b"+" or second[:1] != b"+"):
+                raise FetchError(f"record {lines // 4 + 1} of {sources[0].name} or {sources[1].name} is not a "
+                                 "FASTQ record (no + separator)")
+            buffers[0].append(first)
+            buffers[1].append(second)
+            lines += 1
+            if len(buffers[0]) >= 1 << 16:
+                flush()
+        flush()
     if lines % 4:
-        raise FetchError(f"{source.name} has {lines} lines, not whole 4-line FASTQ records")
-    source.unlink()
-    return lines // 4
+        raise FetchError(f"{sources[0].name} and {sources[1].name} have {lines} lines, not whole 4-line records")
+    for path in sources:
+        path.unlink()
+    return [{"records": lines // 4, "fastq_md5": digest.hexdigest()} for digest in digests]
+
+
+def _quality(path: Path) -> str:
+    """``quality_kind`` of a FASTQ being fetched, its ValueError a FetchError: the fetch stops with the reason."""
+    try:
+        return quality_kind(path)
+    except ValueError as error:
+        raise FetchError(f"the quality check of {path} failed: {error}") from error
 
 
 def _check_free_space(root: Path, size: int) -> None:
