@@ -44,11 +44,15 @@ Excluded cases and reads without a truth keep every model value and are not coun
 **Scoring** (ruling D2). A variant's rows become the text rows AlignAIR's AIRR writer puts in a TSV
 (``airr_text_rows``: ``alignair.io.airr._build_row`` over its full column set) and are read with the assay's AIRR
 reader (``airr.reader.rows_to_predictions``, the parser ``load_airr_tsv`` uses), without a file. The tests pin this
-against a TSV written by ``alignair.io.airr.write_airr``.
+against a TSV written by ``alignair.io.airr.write_airr``. Rows are scored against the truth reference the caller
+gives, and ``run_variants`` refuses a model whose own reference is not that one (``replay.check_reference``), so an
+in-memory model never reaches scoring unchecked.
 
 **Stage contributions.** ``stage_contributions`` compares each consecutive pair of the chain (paired, Holm-corrected
 over the metrics: ``stats.compare``): the change when the truth of one more stage is fed in is the error that stage
-contributes, given perfect upstream stages. ``swap_effects`` compares each single swap with the baseline.
+contributes, given perfect upstream stages. ``swap_effects`` compares each single swap with the baseline. Each
+comparison gives the paired means (over the cases both variants cover) beside its delta, which is their difference,
+and each variant's own mean over its own cases with its coverage.
 """
 from __future__ import annotations
 
@@ -64,7 +68,7 @@ from alignair_assay.core.genotype import DonorGenotype
 from alignair_assay.core.headline import HEADLINE
 from alignair_assay.core.reference import Reference
 from alignair_assay.diagnostics.heads import read_window
-from alignair_assay.diagnostics.replay import StageOutputs, Substitutions, replay
+from alignair_assay.diagnostics.replay import StageOutputs, Substitutions, check_reference, replay
 from alignair_assay.metrics import CaseScores, lower_is_better
 from alignair_assay.scoring.pipeline import score_predictions
 from alignair_assay.stats import compare
@@ -172,17 +176,21 @@ def substitutions_for(variant: str, truths: Sequence[ObservableTruth], outputs_b
     return substitutions, dict(sorted(fallbacks.items()))
 
 
-def run_variants(model, reference_set, cases: Sequence[dict], truths: Sequence[ObservableTruth], *, device: str,
-                 batch_size: int, variants: Sequence[str] = DEFAULT_VARIANTS,
-                 genotypes: Mapping[str, DonorGenotype] | None = None) -> dict[str, VariantResult]:
+def run_variants(model, reference_set, cases: Sequence[dict], truths: Sequence[ObservableTruth], *,
+                 reference: Reference, device: str, batch_size: int, variants: Sequence[str] = DEFAULT_VARIANTS,
+                 genotypes: Mapping[str, DonorGenotype] | None = None, baseline: StageOutputs | None = None
+                 ) -> dict[str, VariantResult]:
     """Replay and score each of ``variants`` (in the given order) on the reads of ``cases`` (the suite's case dicts:
     ``case_id`` and the presented ``sequence``).
 
-    A pure replay (the baseline) always runs first: it gives the substitutions their reads and the model's own
-    values. Each variant's rows are scored against the truths of the replayed cases (others are ignored), with the
-    donor ``genotypes`` when given, and against the model's germline reference, which must be the truth reference
-    (``replay.load_model_checked`` refuses another). ValueError for an unknown variant, or when no truth is
-    scored."""
+    A pure replay (the baseline) comes first: it gives the substitutions their reads and the model's own values.
+    ``baseline``, when given, is that replay, already run on the cases' reads (as ``replay(model, reference_set,
+    sequences, ids, ...)`` without substitutions), and is not run again. Each variant's rows are scored against the
+    truths of the replayed cases (others are ignored), with the donor ``genotypes`` when given, and against
+    ``reference``, the truth reference. ValueError, before anything is replayed, when the model's reference is not
+    ``reference`` (``replay.check_reference``: it names the first differing allele), for an unknown variant, when no
+    truth is scored, or for a ``baseline`` of other reads than the cases'."""
+    check_reference(reference_set, reference)
     unknown = [name for name in variants if name not in _FIELDS]
     if unknown:
         raise ValueError(f"unknown variant {unknown[0]!r}; known: {', '.join(DEFAULT_VARIANTS)}")
@@ -192,9 +200,12 @@ def run_variants(model, reference_set, cases: Sequence[dict], truths: Sequence[O
     truths = [t for t in truths if t.case_id in replayed]
     if not any(t.excluded is None for t in truths):
         raise ValueError("no truth to score: none of the truths is a scored case among the replayed cases")
-    reference = Reference.from_reference_set(reference_set)
+    if baseline is not None and list(baseline.ids) != ids:
+        raise ValueError(f"the baseline replay is of other reads: {len(baseline.ids)} reads, not the {len(ids)} "
+                         "cases' in their order")
     locus = _locus(reference_set)
-    baseline = replay(model, reference_set, sequences, ids, device=device, batch_size=batch_size)
+    if baseline is None:
+        baseline = replay(model, reference_set, sequences, ids, device=device, batch_size=batch_size)
 
     results: dict[str, VariantResult] = {}
     for name in dict.fromkeys(variants):
@@ -243,9 +254,11 @@ def swap_effects(results: Mapping[str, VariantResult], metrics: Sequence[str], *
 
 def _comparison(a: VariantResult, b: VariantResult, metrics: Sequence[str], alpha: float) -> dict[str, dict]:
     """Per metric, ``stats.compare`` of ``a`` (``from``) against ``b`` (``to``), Holm-corrected over ``metrics``:
-    each variant's own mean, value count and coverage, the paired ``delta`` (to - from) over ``n_paired`` cases with
-    its ``ci95``, the ``test``, ``p_value`` and ``verdict`` (``to_better``, ``from_better`` or
-    ``tie_or_inconclusive``, oriented by the metric registry's lower-is-better rule)."""
+    each variant's own mean, value count and coverage (``mean_from``, ``n_from``, ``coverage_from`` and the ``_to``
+    twins); the means over the ``n_paired`` cases both cover (``mean_from_paired``, ``mean_to_paired``; None
+    without a pair) and the paired ``delta``, their difference (to - from), with its ``ci95``; the ``test``,
+    ``p_value`` and ``verdict`` (``to_better``, ``from_better`` or ``tie_or_inconclusive``, oriented by the metric
+    registry's lower-is-better rule)."""
     metrics = list(metrics)
     found = compare(a.scores, b.scores, metrics, alpha=alpha,
                     lower_is_better={name for name in metrics if lower_is_better(name)})
@@ -253,6 +266,7 @@ def _comparison(a: VariantResult, b: VariantResult, metrics: Sequence[str], alph
                    "coverage_from": e["coverage_a"],
                    "mean_to": e["b"].mean if e["b"] else None, "n_to": e["b"].n if e["b"] else 0,
                    "coverage_to": e["coverage_b"],
+                   "mean_from_paired": e["mean_a_paired"], "mean_to_paired": e["mean_b_paired"],
                    "delta": e["delta"], "n_paired": e["n_paired"], "ci95": e["ci95"], "test": e["test"],
                    "p_value": e["p_value"], "verdict": _VERDICT[e["verdict"]]}
             for name, e in found.items()}

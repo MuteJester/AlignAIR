@@ -1049,10 +1049,15 @@ variant counts it as `{field}.{gene}.{reason}`, for example `germline.d.inverted
 
 Excluded cases and reads without a truth keep every model value and are not counted.
 
-**Running and scoring.** `run_variants(model, reference_set, cases, truths, *, device, batch_size,
-variants=DEFAULT_VARIANTS, genotypes=None)` gives one `VariantResult` per variant: `rows`, `scores`, `fallbacks`,
-`seconds` (the replay's per-stage wall time) and `substituted`.
-- A pure replay always runs first. It gives the substitutions their reads and the model's own values.
+**Running and scoring.** `run_variants(model, reference_set, cases, truths, *, reference, device, batch_size,
+variants=DEFAULT_VARIANTS, genotypes=None, baseline=None)` gives one `VariantResult` per variant: `rows`, `scores`,
+`fallbacks`, `seconds` (the replay's per-stage wall time) and `substituted`.
+- `reference` is the truth reference the rows are scored against. A model whose own reference is not that one is
+  refused before anything is replayed (`replay.check_reference`, naming the first differing allele), so an
+  in-memory model never reaches scoring unchecked.
+- A pure replay comes first. It gives the substitutions their reads and the model's own values. `baseline`, when
+  given, is that replay already run on the cases' reads (the evaluator reuses the one its head metrics read); it is
+  refused when its reads are not the cases'.
 - The rows become the text rows AlignAIR's AIRR writer would put in a TSV (`airr_text_rows`). The assay's reader
   parses them (`airr.reader.rows_to_predictions`, the parser `load_airr_tsv` uses). They are scored with
   `scoring.pipeline.score_predictions`, with the donor genotypes when given, against the truths of the replayed
@@ -1063,8 +1068,11 @@ variants=DEFAULT_VARIANTS, genotypes=None)` gives one `VariantResult` per varian
 with `stats.compare`, Holm-corrected over `metrics`. Each entry gives:
 - `from`, `to`, and the `stages` the step adds (`orientation`, `segmentation`, `allele_calls`,
   `germline_alignment`; a variant missing from `results` makes its pair span both stages);
-- per metric: each variant's mean, value count and coverage; the paired `delta` (to minus from) with `n_paired`
-  and `ci95`; the test and p-value; and a `verdict` of `to_better`, `from_better` or `tie_or_inconclusive`.
+- per metric: each variant's own mean, value count and coverage over its own cases (`mean_from`, `n_from`,
+  `coverage_from` and the `_to` twins); the means over the `n_paired` cases both cover (`mean_from_paired`,
+  `mean_to_paired`) and the paired `delta`, their difference (to minus from), with its `ci95`; the test and p-value;
+  and a `verdict` of `to_better`, `from_better` or `tie_or_inconclusive`. A table shows the paired means beside the
+  delta, so the delta is always the difference of the numbers next to it.
 
 `swap_effects(results, metrics)` compares each single swap with the baseline the same way. `CONTRIBUTION_METRICS`
 is a default list: the headline metrics, the junction translation, the read coordinates and the orientation.

@@ -205,8 +205,8 @@ def _ids_seqs(cases):
 def test_baseline_rows_are_the_replay_and_score_like_the_product_tsv(make_shaped_model, s0_cases, s0_truths,
                                                                     reference, tmp_path):
     model, reference_set = make_shaped_model("igh_varied_orientation")
-    results = run_variants(model, reference_set, s0_cases, s0_truths, device="cpu", batch_size=BATCH,
-                           variants=("baseline",))
+    results = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
+                           batch_size=BATCH, variants=("baseline",))
     ids, seqs = _ids_seqs(s0_cases)
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     assert list(results) == ["baseline"]
@@ -240,8 +240,8 @@ def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped
     # The "igh" shaped model predicts no indel, so the assembly's gate on the neural productive and indel
     # predictions (non-productive with more than one indel: no junction) stays open.
     model, reference_set = make_shaped_model("igh")
-    results = run_variants(model, reference_set, s0_cases, s0_truths, device="cpu", batch_size=BATCH,
-                           variants=VARIANTS)
+    results = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
+                           batch_size=BATCH, variants=VARIANTS)
     assert list(results) == list(VARIANTS)
     assert all(result.fallbacks == {} for result in results.values())  # S0 shows every segment of every read
     assert {row["airr_assembly_status"] for row in results["true_germline"].rows} == {"complete"}
@@ -263,13 +263,14 @@ def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped
                if FED.match(name) and not REENCODED.match(name))
 
 
-def test_unobserved_segments_fall_back_to_the_model_and_are_counted(make_shaped_model, s0_cases, s0_truths):
+def test_unobserved_segments_fall_back_to_the_model_and_are_counted(make_shaped_model, s0_cases, s0_truths,
+                                                                    reference):
     model, reference_set = make_shaped_model("igh")
     dropped = {t.case_id for t in s0_truths[:5]}
     truths = [replace(t, segments={g: s for g, s in t.segments.items() if g != "d"}) if t.case_id in dropped else t
               for t in s0_truths]
-    results = run_variants(model, reference_set, s0_cases, truths, device="cpu", batch_size=BATCH,
-                           variants=("true_spans", "true_calls", "true_germline"))
+    results = run_variants(model, reference_set, s0_cases, truths, reference=reference, device="cpu",
+                           batch_size=BATCH, variants=("true_spans", "true_calls", "true_germline"))
     assert results["true_spans"].fallbacks == {"spans.d.unobserved": 5}
     assert results["true_calls"].fallbacks == {"spans.d.unobserved": 5, "calls.d.unobserved": 5}
     assert results["true_germline"].fallbacks == {"spans.d.unobserved": 5, "calls.d.unobserved": 5,
@@ -286,10 +287,10 @@ def test_unobserved_segments_fall_back_to_the_model_and_are_counted(make_shaped_
         assert "d.spurious_call" in results["true_germline"].scores[case_id]
 
 
-def test_argmax_decoder_changes_only_coordinates(small_model, s0_cases, s0_truths):
+def test_argmax_decoder_changes_only_coordinates(small_model, s0_cases, s0_truths, reference):
     model, reference_set = small_model
-    results = run_variants(model, reference_set, s0_cases, s0_truths, device="cpu", batch_size=BATCH,
-                           variants=("baseline", "argmax_decoder"))
+    results = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
+                           batch_size=BATCH, variants=("baseline", "argmax_decoder"))
     base, argmax = results["baseline"].rows, results["argmax_decoder"].rows
     for a, b in zip(base, argmax):
         for g in GENES:
@@ -300,16 +301,57 @@ def test_argmax_decoder_changes_only_coordinates(small_model, s0_cases, s0_truth
     assert any(a.get(key) != b.get(key) for a, b in zip(base, argmax) for key in coordinates)
 
 
-def test_run_variants_checks_its_inputs(small_model, s0_cases, s0_truths):
+def test_run_variants_checks_its_inputs(small_model, s0_cases, s0_truths, reference):
     model, reference_set = small_model
     with pytest.raises(ValueError, match="unknown variant 'oracle'"):
-        run_variants(model, reference_set, s0_cases, s0_truths, device="cpu", batch_size=BATCH, variants=("oracle",))
+        run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu", batch_size=BATCH,
+                     variants=("oracle",))
     with pytest.raises(ValueError, match="no truth"):
-        run_variants(model, reference_set, s0_cases, [], device="cpu", batch_size=BATCH, variants=("baseline",))
+        run_variants(model, reference_set, s0_cases, [], reference=reference, device="cpu", batch_size=BATCH,
+                     variants=("baseline",))
     # Truths are restricted to the replayed cases: a subset of cases is scored on its own truths.
-    results = run_variants(model, reference_set, s0_cases[:4], s0_truths, device="cpu", batch_size=BATCH,
-                           variants=("baseline",))
+    results = run_variants(model, reference_set, s0_cases[:4], s0_truths, reference=reference, device="cpu",
+                           batch_size=BATCH, variants=("baseline",))
     assert list(results["baseline"].scores) == [case["case_id"] for case in s0_cases[:4]]
+
+
+def test_run_variants_scores_only_against_the_models_own_reference(make_small_model, s0_cases, s0_truths,
+                                                                    reference):
+    # An in-memory model never goes through a checkpoint check: run_variants itself refuses one whose reference is
+    # not the truth reference, naming the first differing allele, before anything is replayed.
+    model, reference_set = make_small_model("HUMAN_IGK_OGRDB")
+    calls = []
+    handle = model.orientation_head.register_forward_hook(lambda *_: calls.append(1))
+    try:
+        with pytest.raises(ValueError, match=r"not the truth reference.*first difference: IGHD\S+ is missing from the "
+                                             r"model reference"):
+            run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
+                         batch_size=BATCH, variants=("baseline",))
+    finally:
+        handle.remove()
+    assert calls == []
+
+
+def test_run_variants_reuses_a_given_baseline_replay(small_model, s0_cases, s0_truths, reference):
+    model, reference_set = small_model
+    ids, seqs = _ids_seqs(s0_cases)
+    baseline = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    calls = []
+    handle = model.orientation_head.register_forward_hook(lambda *_: calls.append(1))  # once per forward pass
+    try:
+        given = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
+                             batch_size=BATCH, variants=("baseline", "argmax_decoder"), baseline=baseline)
+        assert len(calls) == math.ceil(len(ids) / BATCH)  # the argmax variant's replay only
+    finally:
+        handle.remove()
+    own = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
+                       batch_size=BATCH, variants=("baseline", "argmax_decoder"))
+    assert given["baseline"].rows == own["baseline"].rows == baseline.airr_rows
+    assert given["argmax_decoder"].rows == own["argmax_decoder"].rows
+    assert _same_scores(given["argmax_decoder"].scores, own["argmax_decoder"].scores)
+    with pytest.raises(ValueError, match="baseline replay is of other reads"):
+        run_variants(model, reference_set, s0_cases[:4], s0_truths, reference=reference, device="cpu",
+                     batch_size=BATCH, variants=("baseline",), baseline=baseline)
 
 
 # --- stage contributions ----------------------------------------------------------------------------------------
@@ -355,6 +397,23 @@ def test_stage_contributions_pair_the_chain_in_order():
     assert swaps[0]["metrics"]["m.acc"]["delta"] == 0.75
 
 
+def test_contributions_show_the_paired_means_beside_the_delta():
+    # The step's delta is computed on the paired cases; its own means cover each variant's own cases. The table
+    # shows the paired means beside the delta, so delta = to (paired) - from (paired) on every row.
+    ids = [f"c{i}" for i in range(20)]
+    base = {c: {"m.abs_err": 10.0 if i == 0 else 2.0} for i, c in enumerate(ids)}
+    orient = {c: {"m.abs_err": 1.0} for c in ids}
+    orient["c0"]["m.abs_err"] = math.nan  # c0 is not covered by the step's "to" variant
+    results = {"baseline": _result("baseline", base), "true_orientation": _result("true_orientation", orient)}
+    entry = stage_contributions(results, ["m.abs_err"])[0]["metrics"]["m.abs_err"]
+    assert entry["mean_from"] == pytest.approx((10.0 + 19 * 2.0) / 20)  # its own mean, over its 20 cases
+    assert (entry["mean_from_paired"], entry["mean_to_paired"], entry["n_paired"]) == (2.0, 1.0, 19)
+    assert entry["delta"] == entry["mean_to_paired"] - entry["mean_from_paired"] == -1.0
+    swap = swap_effects({"baseline": results["baseline"], "argmax_decoder": _result("argmax_decoder", orient)},
+                        ["m.abs_err"])[0]["metrics"]["m.abs_err"]
+    assert (swap["mean_from_paired"], swap["mean_to_paired"]) == (2.0, 1.0)
+
+
 # --- the released checkpoint ------------------------------------------------------------------------------------
 
 @needs_model
@@ -363,7 +422,7 @@ def test_variants_on_the_released_checkpoint(reference, s1_layout):
     wanted = {case["case_id"] for case in cases}
     truths = [t for t in read_truth_jsonl(s1_layout.truth("S1")) if t.case_id in wanted]
     model, reference_set = load_model_checked(Path(MODEL).expanduser(), reference, device="cpu")
-    results = run_variants(model, reference_set, cases, truths, device="cpu", batch_size=64)
+    results = run_variants(model, reference_set, cases, truths, reference=reference, device="cpu", batch_size=64)
     assert list(results) == list(DEFAULT_VARIANTS)
     ids, seqs = _ids_seqs(cases)
     assert results["baseline"].rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=64)

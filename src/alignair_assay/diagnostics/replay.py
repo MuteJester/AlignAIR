@@ -156,12 +156,19 @@ def load_model_checked(checkpoint_or_model, truth_reference: Reference, *, devic
     else:
         model, reference_set = checkpoint_or_model
         model = model.to(device)
+    check_reference(reference_set, truth_reference)
+    return model, reference_set
+
+
+def check_reference(reference_set, truth_reference: Reference) -> None:
+    """ValueError unless the ``alignair`` ReferenceSet ``reference_set`` holds exactly the truth reference's
+    alleles and sequences (equal digests), naming both references' allele counts and the first allele, in name
+    order, that is missing from the model's reference, extra in it, or has a different sequence there."""
     model_reference = Reference.from_reference_set(reference_set)
     if model_reference.digest() != truth_reference.digest():
         raise ValueError(f"the model's reference is not the truth reference: it has {model_reference.counts_text()}, "
                          f"the truth reference has {truth_reference.counts_text()}; first difference: "
                          f"{model_reference.first_difference(truth_reference, 'model')}")
-    return model, reference_set
 
 
 def predict_config(model, reference_set, *, batch_size: int, **overrides) -> PredictConfig:
