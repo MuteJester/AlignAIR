@@ -24,6 +24,18 @@ def test_all_defaults_and_quick(monkeypatch):
     assert _parse(monkeypatch, "--quick", "--scale", "0.5")[0].scale == 0.5
 
 
+def test_environment_failures_exit_with_status_2(monkeypatch, capsys):
+    # A docker pull or inspect, the IgBLAST version check, makeblastdb or models get/verify failing raises
+    # RuntimeError: the command reports it and exits with status 2 instead of a traceback.
+    def fail(cfg, layout, *, force=False):
+        raise RuntimeError("docker pull alignair/alignair:9.9.9 failed with return code 1: manifest unknown")
+
+    monkeypatch.setattr(all_command, "run_all", fail)
+    assert main(["all", "--run-dir", "run", "--suites", "S1", "--tools", "igblast,alignair"]) == 2
+    assert capsys.readouterr().err == ("error: docker pull alignair/alignair:9.9.9 failed with return code 1: "
+                                       "manifest unknown\n")
+
+
 def test_all_flags_map_onto_the_config(monkeypatch):
     cfg, _, force = _parse(monkeypatch, "--split", "test", "--reference", "HUMAN_IGH_OGRDB", "--seed", "3",
                            "--scale", "0.1", "--workers", "2", "--threads", "4", "--igblast-dir", "/opt/igblast",

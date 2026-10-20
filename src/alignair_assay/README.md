@@ -492,7 +492,9 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
 `cli.COMMANDS`. The module owns its own input checks: `run` raises ValueError (or FileNotFoundError) for invalid
-input, which `cli.main` prints as `error: ...` with exit status 2.
+input, which `cli.main` prints as `error: ...` with exit status 2. A failing environment raises RuntimeError (a
+stratum rejection sampling cannot fill, a docker pull or inspect, the IgBLAST version check, `makeblastdb`,
+AlignAIR's `models get`/`verify`), which `cli.main` reports the same way, never as a traceback.
 
 ### The speed protocol
 

@@ -43,3 +43,10 @@ def test_cli_build_split_and_suites(tmp_path, capsys):
         main(["build", "--suites", "S0", "--run-dir", str(bad), "--split", "train"])
     assert main(["build", "--suites", "S0", "--run-dir", str(bad), "--scale", "-1"]) == 2
     assert "scale" in capsys.readouterr().err
+
+
+def test_cli_build_exhausted_stratum_is_an_error_not_a_traceback(tmp_path, capsys):
+    # A stratum that rejection sampling cannot fill raises RuntimeError in the engine.
+    assert main(["build", "--suites", "S0_EXHAUST", "--run-dir", str(tmp_path / "run"), "--workers", "1"]) == 2
+    err = capsys.readouterr().err
+    assert err == "error: S0_EXHAUST/never: accepted 0 of 5 after 50 rounds\n"

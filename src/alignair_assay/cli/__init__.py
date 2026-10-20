@@ -38,12 +38,14 @@ COMMANDS = (all_command, report, build, run, speed, truth, score, compare)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run a command; a missing file or invalid input prints ``error: ...`` and returns 2."""
+    """Run a command; a missing file or invalid input (FileNotFoundError, ValueError) and a failing environment
+    (RuntimeError: a stratum rejection sampling cannot fill, a docker pull or inspect, the IgBLAST version check,
+    ``makeblastdb``, AlignAIR's ``models get``/``verify``) print ``error: ...`` and return 2."""
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
