@@ -63,9 +63,10 @@ def _inputs(s0_reads) -> tuple[list[str], list[str]]:
 
 # --- equivalence with the product -----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("variant", ["igh", "igh_varied_orientation", "igh_igk"])
-def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_model, s0_reads):
-    model, reference_set = make_shaped_model(variant)
+@pytest.mark.parametrize("variant", ["igh", "igh_varied_orientation", "igh_igk", "igk", "unshaped"])
+def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_model, make_small_model, s0_reads):
+    model, reference_set = (make_small_model("HUMAN_IGH_OGRDB", seed=0) if variant == "unshaped"
+                            else make_shaped_model(variant))
     ids, seqs = _inputs(s0_reads)
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
 
@@ -76,6 +77,11 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
     # What the variant exercises.
     cropped = [row.get("length_cropped", False) for row in out.airr_rows]
     assert cropped == [i == len(seqs) - 3 for i in range(len(seqs))]
+    if variant == "unshaped":
+        # Untrained segment heads: collapsed spans, so the low-quality path and partial assemblies are pinned too.
+        assert out.segments.low_quality.any()
+        assert "partial" in Counter(row.get("airr_assembly_status") for row in out.airr_rows)
+        return
     assert all(row["v_sequence_end"] - row["v_sequence_start"] > 200 for row in out.airr_rows)
     if variant == "igh_varied_orientation":
         assert set(Counter(row["orientation_id"] for row in out.airr_rows)) == {0, 1, 2, 3}
@@ -85,18 +91,25 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
         loci = Counter(row["locus"] for row in out.airr_rows)
         assert set(loci) == {"IGH", "IGK"}
         assert sum(row["d_call"] == "" for row in out.airr_rows) == loci["IGK"]  # no D on a light-chain locus
+    if variant == "igk":
+        # A light-chain model: no D head (genes v and j) and the light-chain AIRR assembly.
+        assert not model.cfg.has_d and list(out.segments.start) == ["v", "j"]
+        assert {row["locus"] for row in out.airr_rows} == {"IGK"}
+        assert not any(row.get("d_call") for row in out.airr_rows)
 
 
 @needs_model
-def test_replay_equals_product_pipeline_real_checkpoint(reference, s1_layout):
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
+    os.environ.get("ALIGNAIR_ASSAY_GPU") != "1", reason="set ALIGNAIR_ASSAY_GPU=1"))])
+def test_replay_equals_product_pipeline_real_checkpoint(reference, s1_layout, device):
     reads = read_fasta(s1_layout.reads("S1"))[:200]
     ids, seqs = [name for name, _ in reads], [seq for _, seq in reads]
-    model, reference_set = load_model_checked(Path(MODEL).expanduser(), reference, device="cpu")
+    model, reference_set = load_model_checked(Path(MODEL).expanduser(), reference, device=device)
     assert model.cfg.allele_temperatures  # the released checkpoint is calibrated: the masks stage does work
 
-    out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=64)
+    out = replay(model, reference_set, seqs, ids, device=device, batch_size=64)
     assert len(out.airr_rows) == 200
-    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=64)
+    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device=device, batch_size=64)
 
 
 def test_mirrored_product_code_is_pinned():
