@@ -195,15 +195,57 @@ def _number(value, spec: str) -> str:
 
 def _speed(summary: dict) -> list[str]:
     speed = summary.get("speed")
-    if not speed:
-        return []
-    host = ", ".join(f"{key} {value}" for key, value in (speed.get("host") or {}).items())
+    return speed_lines(speed) if speed else []
+
+
+def _host(host: dict) -> str:
+    """The measuring host (``workflow.speed.host_info``) in words; what it does not record is left out."""
+    words = []
+    if host.get("cpu"):
+        words.append(host["cpu"])
+    if host.get("logical_cpus") is not None:
+        words.append(f"{host['logical_cpus']} logical CPUs")
+    if host.get("ram_gb") is not None:
+        words.append(f"{host['ram_gb']} GB RAM")
+    if "gpu" in host:
+        words.append(f"GPU {host['gpu'] or 'none'}")
+    if "docker" in host:
+        words.append(f"Docker {host['docker'] or 'not available'}")
+    if host.get("kernel"):
+        words.append(f"kernel {host['kernel']}")
+    return ", ".join(words)
+
+
+def speed_lines(speed: dict) -> list[str]:
+    """The ``## Speed`` section of a run's speed measurements (``workflow.summary.speed_summary``, or a
+    ``speed.json``): the host, how the protocol measures, one row per configuration (its measurements, then its
+    threads, CPU list and device; a failed one shows dashes) and the failures with their errors. A measurement of
+    another configuration (``stale``) is named instead, with its config hash."""
+    if speed.get("stale"):
+        digest = speed.get("config_hash")
+        source = (f"for another configuration (config hash {digest[:12]})" if digest
+                  else "by the speed command, outside this configuration")
+        return ["", "## Speed", "",
+                f"speed/speed.json was measured {source}, so it is not shown. Run all --speed with this "
+                "configuration to measure it."]
+    n_tiny, n_full = _text(speed.get("n_tiny")), _text(speed.get("n_full"))
+    results = speed.get("results") or {}
     rows = [[name, _number(result.get("cold_start_s"), ".2f"), _number(result.get("steady_reads_per_s"), ".1f"),
              _number(result.get("median_full_s"), ".2f"),
-             _number(None if result.get("peak_rss_kb") is None else result["peak_rss_kb"] / 1024, ".1f")]
-            for name, result in (speed.get("results") or {}).items()]
+             _number(None if result.get("peak_rss_kb") is None else result["peak_rss_kb"] / 1024, ".1f"),
+             _text(result.get("threads")), _text(result.get("cpus")), _text(result.get("device"))]
+            for name, result in results.items()]
+    failures = [f"- {name} failed: {result['error']}" for name, result in results.items() if "error" in result]
     return ["", "## Speed", "",
-            f"Host: {host or MISSING}. Runs of {_text(speed.get('n_tiny'))} and {_text(speed.get('n_full'))} reads, "
-            f"{_text(speed.get('repeats'))} repeats; the AlignAIR image timings include container start.",
+            f"Host: {_host(speed.get('host') or {}) or MISSING}.", "",
+            f"Each configuration annotated the first {n_tiny} and the first {n_full} reads of S1, "
+            f"{_text(speed.get('repeats'))} times each, alternating, every run a fresh process. Cold start is the "
+            f"median wall time of the {n_tiny}-read runs: starting, loading the model or databases and {n_tiny} "
+            f"reads. Steady reads/s is ({n_full} − {n_tiny}) / (median {n_full}-read run − median {n_tiny}-read run), "
+            "the rate once started (a dash when the full runs were not slower). A configuration runs on its threads, "
+            "pinned to its CPUs. Peak RSS is the largest over the runs: the process's (GNU time) for IgBLAST and the "
+            "local CLI, the container's cgroup memory.peak (resident memory plus page cache) for the AlignAIR "
+            "image. The AlignAIR image timings include container start.",
             "", *markdown_table(["Configuration", "Cold start (s)", "Steady reads/s", "Median full run (s)",
-                                 "Peak RSS (MB)"], rows)]
+                                 "Peak RSS (MB)", "Threads", "CPUs", "Device"], rows),
+            *([""] + failures if failures else [])]

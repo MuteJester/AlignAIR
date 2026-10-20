@@ -26,7 +26,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `scoring` | `pipeline` (score one tool against a truth file), `slices` and `oracle` (the oracle rule on per-case scores) | core, truth, airr, metrics, stats, scoring |
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
-| `workflow` | build → run → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, `read_genotypes`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
+| `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, `read_genotypes`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory) and `orchestrate` (`RunConfig`, `run_all`, `score_and_report`) | everything except cli |
 | `cli` | the `python -m alignair_assay` commands | everything |
 | `testing.py` | test-only helpers: `assert_oracle_perfect` (the oracle rule of `scoring.oracle`, with the donor genotypes when given; returns the oracle's per-case scores) | everything |
 
@@ -220,7 +220,9 @@ RUN/
   runs/<tool>/_work/                  the tool's one-time setup (IgBLAST: the germline databases; AlignAIR: the model
                                       cache and the model's exported reference)
   scores/<S>/<arm>/                   <tool>.scores.jsonl.gz, <tool>.report.{json,md}, comparison.{json,md}
-  speed/speed.json
+  speed/speed.json                    the speed measurements (`all --speed`, `speed`)
+  speed/reads_<n>.fasta               the first n reads of S1, timed
+  speed/runs/<config>/                each timed configuration's last tiny/ and full/ run (predictions, logs)
   report.json, report.md              the run summary and the run report (`all`, `report`)
 ```
 
@@ -236,6 +238,7 @@ RUN/
 | `scores/<S>/<arm>/<tool>.scores.jsonl.gz`, `.report.json`, `.report.md` | `tool_scores(s, arm, tool)`, `tool_report_json(...)`, `tool_report_md(...)` |
 | `scores/<S>/<arm>/comparison.json`, `comparison.md` | `comparison_json(s, arm)`, `comparison_md(s, arm)` |
 | `speed/`, `speed.json` | `speed_dir`, `speed_json` |
+| `speed/reads_<n>.fasta`, `speed/runs/<config>/` | `speed_reads(n)`, `speed_work_dir(config)` |
 | `report.json`, `report.md` | `report_json`, `report_md` |
 
 Suites are `S0` (toy: tests and smoke runs), `S0_EXHAUST` and `S0_COHORT` (tests only) and `S1`–`S12`; arms are
@@ -258,6 +261,9 @@ python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-loca
     [--arm shared|genotype] [--threads 8] [--cpus 0-7] [--igblast-dir DIR] \
     [--image IMAGE] [--model alignair-igh-human@1.0.0] [--cache-dir DIR] \
     [--checkpoint MODEL.alignair] [--device cpu] [--batch-size 64]
+python -m alignair_assay speed --run-dir RUN [--tools igblast,alignair] [--threads 8] [--configs NAME,...] \
+    [--n-tiny 50] [--n-full 4000] [--repeats 3] [--igblast-dir DIR] [--alignair-image IMAGE] \
+    [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR [--donors DONORS.json]
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05] \
@@ -300,6 +306,15 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   and `run.json`. The command prints one line per run (return code, reads, wall time, peak RSS) and exits with
   status 2 when any run's return code is not 0. Failed runs are recorded too, and the error message names the
   failed donor and the tool's error line.
+- `speed` times tools with the speed protocol (see The speed protocol) on the S1 reads of a run directory where
+  S1 is built (`build --suites S1`, at scale 0.8 or more for the default 4000 reads). The tools are `--tools`
+  (default `igblast,alignair`), plus alignair-local when `--alignair-checkpoint` is given, with the tool options
+  of `all`; `--threads` is N, and `--configs` times only the named configurations. It writes `speed/speed.json`
+  with no config hash (it belongs to no `all` configuration, so a run report does not show it) and prints the speed
+  table. A run directory made by `all` is refused: time it with `all --speed`, so the measurement belongs to its
+  manifest. S1 not built, an unknown configuration and a tool without its options are input errors (status 2)
+  before anything is timed; a configuration that fails is recorded with its error, the others are still timed,
+  and the command exits with status 2.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit` and `genairr_git_dirty`. The
   command then prints the excluded cases, warnings, unscorable genes, the two simulator-call counts ("simulator
@@ -329,8 +344,11 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
 1. **Manifest.** The configuration is checked before anything is written (`check_config`). It needs known suites,
    a known split, exactly two different registered tools, a positive scale, at least one worker and thread, and
    the options each tool needs (`--igblast-dir` for igblast, `--alignair-checkpoint` for alignair-local), checked
-   by building its runner, which runs, pulls and downloads nothing; `--speed` is not available yet. Each tool's
-   runner is then built and fingerprinted (`Runner.fingerprint`, see Adding a runner), which
+   by building its runner, which runs, pulls and downloads nothing. With `--speed` (`workflow.speed.check_speed`),
+   S1 must be among the suites with at least 4000 reads at the scale (scale 0.8 or more), the threads must not
+   exceed the host's logical CPUs, every timed configuration's runner must build, and a checkpoint timed as
+   alignair-local must be a file. Each tool's runner is then
+   built and fingerprinted (`Runner.fingerprint`, see Adding a runner), which
    identifies the tool by content: IgBLAST's directory and the SHA-256 of `igblastn`, `makeblastdb` and the
    auxiliary file; the AlignAIR image reference and the image ID it resolves to (pulling it when it is not local),
    and the model spec and the SHA-256 of the model file it resolves to (installing it into the run's model cache);
@@ -351,7 +369,9 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    suite's arms, the shared arm through `run_suite` and the genotype arm through `run_genotype_arm`. Every tool
    with a run to make is prepared before the first run. Each run records its tool's fingerprint as the
    provenance's `settings`.
-5. **Scoring.** Every suite and arm is scored afresh (`score_and_report`), after its old `scores/<S>/<arm>/` is
+5. **Speed** (`--speed` only). `workflow.speed.run_speed` times every configuration of the run on S1 (see The
+   speed protocol) and writes `speed/speed.json` with the manifest's config hash.
+6. **Scoring.** Every suite and arm is scored afresh (`score_and_report`), after its old `scores/<S>/<arm>/` is
    removed. A run is scored only when its `workflow.summary.run_statuses` entry is `ok`: `require_successful_run`
    passes, its predictions exist, its recorded `settings` equal the manifest's fingerprint of its tool, the reads
    (and the truth and donors, when the run recorded them) still have their recorded SHA-256, and its suite's build
@@ -362,17 +382,19 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    suite is listed as `not scored`, with the reason, and the other suites are scored as usual. When both tools are
    scored, the arm gets the `compare`
    command's `comparison.json` and `comparison.md` (a against b, Holm at 0.05).
-6. **Report.** `report.json` holds the run summary (`workflow.summary.collect_run_summary`) and `report.md` its
+7. **Report.** `report.json` holds the run summary (`workflow.summary.collect_run_summary`) and `report.md` its
    rendering (`report.run.run_report_markdown`).
 
-`all` exits with status 0, or with status 2 when any run failed, is missing, stale or could not be scored, or the
-oracle is not perfect on a suite. The report names which.
+`all` exits with status 0, or with status 2 when any run failed, is missing, stale or could not be scored, the
+oracle is not perfect on a suite, or a speed measurement failed. The report names which.
 
 **Resume.** Rerunning `all` with the same configuration skips each suite whose build is current and each run whose
 `run.json` shows return code 0 with predictions, the same `settings` (the tool's current fingerprint) and
-unchanged input files. A failed run is
-redone. Scores, comparisons and the report are always recomputed from the current runs, so a change to the scoring
-code takes effect on the next `all`. It never mixes in stale outputs.
+unchanged input files. A failed run is redone. With `--speed`, a configuration's measurement is kept when
+`speed.json` was measured on the same host (`host_info`), with the same protocol, S1 reads and config hash, and the
+configuration succeeded with the same tool, threads, CPUs, device and (alignair-local) checkpoint digest; a failed
+or changed one is measured again. Scores, comparisons and the report are always recomputed from the current runs,
+so a change to the scoring code takes effect on the next `all`. It never mixes in stale outputs.
 
 **Another configuration.** In a run directory whose manifest has another config hash, `all` stops before changing
 anything. The error names every field that differs, as `field old -> new`, for example `seed 20261019 -> 7`.
@@ -405,11 +427,48 @@ configuration stay on disk but are not reported. `--quick` is scale 0.02 (S1 the
 8. **Excess alleles.** For suites with donors, the excess-alleles table (see Genotype metrics) of each run: the
    oracle's shared arm (always 0%), then each tool in each arm: for V and J, the share counting all calls and the
    avoidable share, each with its n.
-9. **Speed.** Present when `speed/speed.json` exists.
+9. **Speed.** Present when `speed/speed.json` exists (`workflow.summary.speed_summary`). The host, how the
+   protocol measures, and per configuration its cold start, steady reads/s, median full run and peak RSS, then its
+   threads, CPU list and device; a failed configuration shows dashes and its error is listed under the table. A
+   `speed.json` whose config hash is not the manifest's (measured for another configuration, or by the `speed`
+   command) is named, not shown.
 
 To add a command, write one module in `cli/` with `register(subparsers)` and `run(args) -> int`, and add it to
 `cli.COMMANDS`. The module owns its own input checks: `run` raises ValueError (or FileNotFoundError) for invalid
 input, which `cli.main` prints as `error: ...` with exit status 2.
+
+### The speed protocol
+
+`workflow.speed` measures how fast each tool annotates, on one host and on the same reads, the way the run
+directory's tools are run (the same runners, through `Runner.run`):
+
+- **Configurations** (`speed_configs(cfg)`). Each tool of the run but the oracle runs at 1 thread pinned to CPU 0
+  (`<tool>_1t`) and at N threads (`--threads`) pinned to CPUs 0 to N−1 (`<tool>_<N>t`). alignair-local, timed
+  when it is a tool or `--alignair-checkpoint` is set, runs on the GPU with N threads (`alignair-local_cuda`) when
+  the interpreter's torch sees a CUDA device, and on CPU at N threads. Pinning is `taskset` for IgBLAST and the
+  local CLI and `--cpuset-cpus` for the AlignAIR image; the threads are IgBLAST's `-num_threads` and AlignAIR's
+  `OMP_NUM_THREADS`/`MKL_NUM_THREADS`.
+- **Read sets** (`speed_set(layout, n)`). `speed/reads_<n>.fasta` holds the first n reads of S1's `reads.fasta`:
+  a tiny set (`n_tiny`, default 50) and a full set (`n_full`, default 4000). S1 lists its reads stratum by
+  stratum, so at scale 1.0 the default full set is S1's full-length, FR1 and FR2 reads and 250 FR3 reads (at scale
+  0.8 it is all of S1), and the tiny set is full-length reads.
+- **Measurement** (`measure`). Each configuration is prepared once (not timed), then runs the tiny and the full set
+  alternately, `repeats` times each (default 3). Every run is a fresh process, or a fresh container for the
+  AlignAIR image, whose wall time includes the container's start. **Cold start** is the median tiny-run wall time:
+  starting, loading the model or the databases, and n_tiny reads. **Steady reads/s** is (n_full − n_tiny) /
+  (median full − median tiny): the rate once started (None when the full runs were not slower). **Peak RSS** is
+  the largest over the runs: GNU time's maximum resident set size for IgBLAST and the local CLI, the container's
+  cgroup `memory.peak` (resident memory plus page cache) for the AlignAIR image. A run that fails (non-zero return
+  code, no predictions) fails the configuration with its error line; the other configurations go on.
+- **Host** (`host_info()`): CPU model, logical CPUs, RAM in GiB, GPU name (nvidia-smi), docker daemon version and
+  kernel release. Nothing else should run on the host, and on the GPU, while it is timed.
+- **`speed.json`**: `kind`, `version`, `host`, `n_tiny`, `n_full`, `repeats`, `reads` (suite and SHA-256 of its
+  `reads.fasta`), `config_hash` (the `all` configuration it belongs to; None from the `speed` command) and
+  `results`: per configuration its `tool`, `threads`, `cpus`, `device` (and `checkpoint_sha256` for
+  alignair-local), `measured_utc` and either its `settings` (the tool's fingerprint), `cold_start_s`,
+  `steady_reads_per_s`, `median_tiny_s`, `median_full_s`, `peak_rss_kb`, `walls` (every run's wall time, by set)
+  and `command` (the last full run's), or its `error`. `speed/runs/<config>/` keeps each set's last run
+  (predictions and logs).
 
 ## Adding a metric
 
@@ -653,8 +712,10 @@ suite, arm and return code.
 To register a runner, write one module in `runners/` and add a factory `Callable[[RunnerOptions], Runner]` to
 `RUNNERS` in `runners/__init__.py` (by convention a `from_options` classmethod). `RunnerOptions` holds every
 tool's settings (`igblast_dir`, `threads`, `cpus`, the AlignAIR image, model, checkpoint, device, batch size and
-cache directory); a factory reads the fields it needs and raises ValueError naming a missing one. Expose new
-options as `run` flags. Test the runner in `tests/alignair_assay/runners/`; a test that needs the tool installed
+cache directory); a factory reads the fields it needs and raises ValueError naming a missing one, without running,
+pulling or downloading anything (`all` builds every runner to check its options before it writes anything). Expose
+new options as `run` flags. The speed protocol times a registered tool at 1 and N threads through its `threads`
+and `cpus` options, so honour both, and report `n_reads` and `wall_seconds` truthfully. Test the runner in `tests/alignair_assay/runners/`; a test that needs the tool installed
 skips unless its environment variable is set (`ALIGNAIR_ASSAY_IGBLAST_DIR`, `ALIGNAIR_ASSAY_DOCKER`,
 `ALIGNAIR_ASSAY_MODEL`).
 

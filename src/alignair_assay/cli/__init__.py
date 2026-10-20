@@ -11,6 +11,9 @@
       [--arm shared|genotype] [--threads 8] [--cpus 0-7] [--igblast-dir DIR] [--image IMAGE]
       [--model alignair-igh-human@1.0.0] [--cache-dir DIR] [--checkpoint MODEL.alignair] [--device cpu]
       [--batch-size 64]
+  python -m alignair_assay speed --run-dir RUN [--tools igblast,alignair] [--threads 8] [--configs NAME,...]
+      [--n-tiny 50] [--n-full 4000] [--repeats 3] [--igblast-dir DIR] [--alignair-image IMAGE]
+      [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR
@@ -29,9 +32,9 @@ import argparse
 import sys
 
 from alignair_assay.cli import all as all_command
-from alignair_assay.cli import build, compare, report, run, score, truth
+from alignair_assay.cli import build, compare, report, run, score, speed, truth
 
-COMMANDS = (all_command, report, build, run, truth, score, compare)
+COMMANDS = (all_command, report, build, run, speed, truth, score, compare)
 
 
 def main(argv: list[str] | None = None) -> int:

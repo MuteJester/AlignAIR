@@ -124,8 +124,9 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
     ``problems`` and the first ``examples`` as ``[case id, metric, value]``) and per arm whether the two tools were
     ``compared``, the ``link`` to the arm's ``comparison.md`` (relative to the run directory), the primary-metric
     ``rows`` of ``comparison.json`` and their ``verdicts`` counts. ``oracle_failures`` repeats the suites whose
-    oracle is not perfect. ``s10_vs_s1``, ``s11_parity`` and ``speed`` are None without their data, and
-    ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see the functions below).
+    oracle is not perfect. ``s10_vs_s1``, ``s11_parity`` and ``speed`` (``speed_summary``) are None without their
+    data, and ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see the functions
+    below).
     """
     a, b = cfg.tools
     failed = [status for status in run_statuses(layout, cfg).values() if status["status"] != "ok"]
@@ -144,8 +145,25 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
         "s11_parity": s11_parity(layout, cfg),
         "genotype_arms": genotype_arms(layout, cfg),
         "excess_alleles": excess_alleles_tables(layout, cfg),
-        "speed": read_json(layout.speed_json),
+        "speed": speed_summary(layout),
     }
+
+
+def speed_summary(layout: RunLayout) -> dict | None:
+    """The run's speed measurements (``speed/speed.json``, see ``workflow.speed.run_speed``) for the run report:
+    None without the file. When the file belongs to the run directory's configuration (its ``config_hash`` is the
+    manifest's), its content plus ``failed``, the configurations whose measurement failed (``name``, ``error``).
+    Otherwise it was measured for another configuration, or by the ``speed`` command, and is not shown:
+    ``{"stale": True, "config_hash": the file's}``."""
+    speed = read_json(layout.speed_json)
+    if speed is None:
+        return None
+    if speed.get("config_hash") is None or speed.get("config_hash") != (read_json(layout.manifest) or {}).get(
+            "config_hash"):
+        return {"stale": True, "config_hash": speed.get("config_hash")}
+    failed = [{"name": name, "error": result["error"]} for name, result in (speed.get("results") or {}).items()
+              if "error" in result]
+    return {**speed, "failed": failed}
 
 
 def oracle_check(layout: RunLayout, suite: str) -> dict:

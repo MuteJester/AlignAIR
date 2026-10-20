@@ -47,6 +47,8 @@ CLI_ENTRY = "import sys; from alignair.cli.main import main; sys.exit(main())"
 TORCH_PROBE = ("import json, sys, torch; d = torch.device(sys.argv[1]); "
                "name = torch.cuda.get_device_name(d) if d.type == 'cuda' and torch.cuda.is_available() else None; "
                "print(json.dumps({'torch': torch.__version__, 'cuda_device': name}))")
+# Prints whether torch sees a CUDA device.
+CUDA_PROBE = "import torch; print(torch.cuda.is_available())"
 # The src directory holding alignair_assay, and with it this checkout's alignair package.
 SOURCE_DIR = Path(__file__).resolve().parents[2]
 LOG = "alignair.log"
@@ -86,6 +88,17 @@ def memory_peak_kb(log_path) -> int | None:
         return None
     lines = [line for line in lines if line]
     return int(lines[-1]) // 1024 if lines and lines[-1].isdigit() else None
+
+
+def local_cuda_available() -> bool:
+    """True when the interpreter that runs ``alignair-local`` (this one) has a torch that sees a CUDA device. It
+    is asked in a subprocess, so the assay never imports torch; False when torch is missing or the probe fails or
+    takes more than two minutes."""
+    try:
+        completed = subprocess.run([sys.executable, "-c", CUDA_PROBE], capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0 and completed.stdout.strip().endswith("True")
 
 
 def host_cache_dir() -> Path:
@@ -356,7 +369,7 @@ class AlignAIRLocal:
         ``batch_size``, ``threads`` and ``cpus``."""
         if not options.alignair_checkpoint:
             raise ValueError("the alignair-local runner needs the path of a .alignair model file: --checkpoint (run) "
-                             "or --alignair-checkpoint (all)")
+                             "or --alignair-checkpoint (all, speed)")
         return cls(options.alignair_checkpoint, device=options.device, batch_size=options.batch_size,
                    threads=options.threads, cpus=options.cpus)
 

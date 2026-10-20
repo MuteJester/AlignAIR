@@ -3,15 +3,13 @@ from __future__ import annotations
 
 import sys
 
-from alignair_assay.cli.common import comma_list
+from alignair_assay.cli.common import comma_list, truth_reference
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.core.reference import Reference
 from alignair_assay.runners import RUNNERS, make_runner
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL
 from alignair_assay.runners.arms import run_genotype_arm
 from alignair_assay.runners.base import RunnerOptions, RunResult, absolute_path, run_suite
 from alignair_assay.runners.reference import ensure_shared_reference
-from alignair_assay.truth.io import read_truth_header
 
 ARMS = ("shared", "genotype")
 
@@ -60,7 +58,7 @@ def run(args) -> int:
         igblast_dir=args.igblast_dir, threads=args.threads, cpus=args.cpus, alignair_image=args.image,
         alignair_model=args.model, alignair_checkpoint=args.checkpoint, device=args.device,
         batch_size=args.batch_size, cache_dir=args.cache_dir))
-    reference = _truth_reference(layout, names)
+    reference = truth_reference(layout, names)
     if args.arm == "genotype":
         for name in names:
             if not layout.donors(name).is_file():
@@ -86,30 +84,6 @@ def run(args) -> int:
         print(f"error: {result.tool} on {result.suite}/{result.arm} failed{where} with return code "
               f"{result.returncode}{reason}; see {logs}", file=sys.stderr)
     return 2 if failed else 0
-
-
-def _truth_reference(layout: RunLayout, suites: list[str]) -> Reference:
-    """The reference the named suites' truth was built against, from its truth headers. ValueError when a suite
-    is not built (no ``build.json``), the suites name different references, or the reference's dataconfig no
-    longer has the recorded digest."""
-    recorded = {}
-    for suite in suites:
-        if not layout.build_json(suite).is_file():
-            raise ValueError(f"suite {suite} is not built in {layout.root} (no {layout.build_json(suite).name}); "
-                             f"build it first")
-        header = read_truth_header(layout.truth(suite)) or {}
-        recorded[suite] = (header.get("reference"), header.get("reference_digest"))
-    if len(set(recorded.values())) > 1:
-        listed = ", ".join(f"{suite}: {name} ({digest and digest[:12]})" for suite, (name, digest) in recorded.items())
-        raise ValueError(f"the suites were built against different references: {listed}")
-    name, digest = next(iter(recorded.values()))
-    if name is None or digest is None:
-        raise ValueError(f"{layout.truth(suites[0])} records no reference digest; rebuild the suite")
-    reference = Reference.from_dataconfig(name)
-    if reference.digest() != digest:
-        raise ValueError(f"the truth was built against {name} with digest {digest[:12]}, but {name} now has digest "
-                         f"{reference.digest()[:12]}; rebuild the suites")
-    return reference
 
 
 def _summary_line(result: RunResult) -> str:

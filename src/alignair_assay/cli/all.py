@@ -34,7 +34,8 @@ def register(sub) -> None:
     p.add_argument("--alignair-model", default=DEFAULT_MODEL, help="AlignAIR registry model id@version (alignair)")
     p.add_argument("--alignair-checkpoint", help="AlignAIR .alignair model file (alignair-local)")
     p.add_argument("--device", default="cpu", help="torch device, e.g. cpu or cuda (alignair-local)")
-    p.add_argument("--speed", action="store_true", help="also measure speed (not available yet)")
+    p.add_argument("--speed", action="store_true",
+                   help="also time each tool on S1's reads (the speed protocol; needs S1 at scale 0.8 or more)")
     p.add_argument("--quick", action="store_true", help=f"a smoke run at scale {QUICK_SCALE} unless --scale is given")
     p.add_argument("--force", action="store_true",
                    help="proceed in a run directory made for another configuration, redoing what the change affects")

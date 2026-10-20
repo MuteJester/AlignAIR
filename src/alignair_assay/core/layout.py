@@ -13,7 +13,9 @@ RUN/
   runs/<tool>/<S>/genotype/donors/    per donor: reads.<subject>.fasta, predictions.<subject>.tsv (+ logs/<subject>/)
   runs/<tool>/_work/                  the tool's one-time setup (e.g. IgBLAST's germline databases)
   scores/<S>/<arm>/                   <tool>.scores.jsonl.gz, <tool>.report.{json,md}, comparison.{json,md}
-  speed/speed.json
+  speed/speed.json                    the speed measurements
+  speed/reads_<n>.fasta               the first n reads of S1, timed
+  speed/runs/<config>/                each timed configuration's last tiny and full run (predictions, logs)
   report.json, report.md
 ```
 
@@ -145,6 +147,17 @@ class RunLayout:
     def speed_json(self) -> Path:
         """The speed measurements."""
         return self.speed_dir / "speed.json"
+
+    def speed_reads(self, n: int) -> Path:
+        """The speed protocol's set of the first ``n`` reads of S1; ValueError unless ``n`` is a positive
+        integer."""
+        if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+            raise ValueError(f"a speed read set needs a positive number of reads, got {n!r}")
+        return self.speed_dir / f"reads_{n}.fasta"
+
+    def speed_work_dir(self, config: str) -> Path:
+        """The last tiny and full run (predictions and logs) of one timed configuration, e.g. ``igblast_8t``."""
+        return self.speed_dir / "runs" / _component(config)
 
     @property
     def report_json(self) -> Path:

@@ -1,4 +1,5 @@
-"""``all``: build the suites, run the oracle and two tools, score, compare and write the run report, resumably.
+"""``all``: build the suites, run the oracle and two tools, time them (``--speed``), score, compare and write the
+run report, resumably.
 
 A run directory belongs to one configuration, recorded in ``manifest.json`` with its ``config_hash``: the
 ``RunConfig`` fields the outputs depend on plus each tool's fingerprint (``Runner.fingerprint``: binary digests,
@@ -42,6 +43,7 @@ from alignair_assay.workflow.scoring import (
     score_report,
     write_report,
 )
+from alignair_assay.workflow.speed import check_speed, run_speed
 from alignair_assay.workflow.summary import (
     ALPHA,
     ORACLE,
@@ -128,8 +130,9 @@ def check_config(cfg: RunConfig) -> None:
     """ValueError for a configuration ``run_all`` cannot run, before anything is written: an unknown suite, split
     or tool, not exactly two different tools, a scale that is not positive, fewer than one worker or thread, a
     tool without the options it needs (``runners.make_runner`` on ``runner_options``: no ``--igblast-dir`` for
-    igblast, no ``--alignair-checkpoint`` for alignair-local; nothing is run, pulled or downloaded), or ``speed``
-    (the speed protocol is not available yet)."""
+    igblast, no ``--alignair-checkpoint`` for alignair-local; nothing is run, pulled or downloaded), or, with
+    ``speed``, what ``workflow.speed.check_speed`` refuses (S1 missing or too small to time, more threads than
+    logical CPUs, a timed configuration without its tool's options)."""
     if not cfg.suites:
         raise ValueError("no suite to run")
     for name in cfg.suites:
@@ -145,7 +148,7 @@ def check_config(cfg: RunConfig) -> None:
     for tool in cfg.tools:
         make_runner(tool, options)
     if cfg.speed:
-        raise ValueError("speed measurement (--speed) is not available yet")
+        check_speed(cfg)
 
 
 def run_all(cfg: RunConfig, layout: RunLayout, *, force: bool = False) -> int:
@@ -166,19 +169,24 @@ def run_all(cfg: RunConfig, layout: RunLayout, *, force: bool = False) -> int:
     4. Runs (``summary.expected_runs``): the oracle once per suite, then each tool on each suite and arm, through
        ``run_suite`` or ``run_genotype_arm``, recording the tool's fingerprint as the run's ``settings``. A run is
        skipped when ``run_is_current``. Every tool with a run to make is prepared before the first run.
-    5. Scoring, comparison and the report: ``score_and_report``.
+    5. Speed, with ``cfg.speed``: ``workflow.speed.run_speed`` times every configuration of ``cfg`` on S1 and
+       writes ``speed/speed.json`` with the manifest's config hash, keeping each measurement still current.
+    6. Scoring, comparison and the report: ``score_and_report``.
     """
     check_config(cfg)
     reference = Reference.from_dataconfig(cfg.reference)
     layout = RunLayout(absolute_path(layout.root))
     runners = make_runners(cfg, layout)
     settings = tool_settings(runners)
-    _manifest(cfg, identity(cfg, settings), layout, force=force)
+    current = identity(cfg, settings)
+    _manifest(cfg, current, layout, force=force)
     layout.report_json.unlink(missing_ok=True)
     layout.report_md.unlink(missing_ok=True)
     _build(cfg, layout, reference)
     _shared_reference(cfg, layout, reference, runners)
     _run(cfg, layout, reference, runners, settings)
+    if cfg.speed:
+        run_speed(cfg, layout, reference, config_hash=_digest(current), reuse=True)
     return score_and_report(cfg, layout, reference=reference)
 
 
@@ -191,7 +199,8 @@ def run_is_current(layout: RunLayout, tool: str, suite: str, arm: str, settings:
 def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference | None = None,
                      command: str = "all") -> int:
     """Score, compare and report the runs of ``cfg`` in ``layout``; returns 0, or 2 when a run failed, is
-    missing, stale or unscorable, or the oracle is not perfect on a suite.
+    missing, stale or unscorable, the oracle is not perfect on a suite, or a speed measurement of the
+    configuration failed.
 
     For every suite and arm the old ``scores/<S>/<arm>/`` is removed. Each run whose ``summary.run_statuses``
     entry is ``ok`` (``require_successful_run`` passes, the run was made with the manifest's settings for its tool,
@@ -217,7 +226,13 @@ def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference 
     for failure in summary["oracle_failures"]:
         print(f"error: the oracle is {failure['status']} on {failure['suite']} ({failure['problems']} problems): "
               "the suite's truth has a defect", file=sys.stderr)
-    return 2 if summary["failed_runs"] or summary["oracle_failures"] else 0
+    speed = summary["speed"] or {}
+    for failure in speed.get("failed") or []:
+        print(f"error: speed {failure['name']} failed: {failure['error']}", file=sys.stderr)
+    if speed.get("stale"):
+        print(f"warning: {relative(layout, layout.speed_json)} was measured for another configuration and is not "
+              "reported; run all --speed to measure this one", file=sys.stderr)
+    return 2 if summary["failed_runs"] or summary["oracle_failures"] or speed.get("failed") else 0
 
 
 def read_run_config(layout: RunLayout) -> RunConfig:

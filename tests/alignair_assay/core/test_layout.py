@@ -36,6 +36,8 @@ def test_layout_paths(tmp_path):
         (layout.comparison_md("S1", "genotype"), "scores/S1/genotype/comparison.md"),
         (layout.speed_dir, "speed"),
         (layout.speed_json, "speed/speed.json"),
+        (layout.speed_reads(4000), "speed/reads_4000.fasta"),
+        (layout.speed_work_dir("alignair-local_cuda"), "speed/runs/alignair-local_cuda"),
         (layout.report_json, "report.json"),
         (layout.report_md, "report.md"),
     ]
@@ -58,6 +60,8 @@ def test_layout_rejects_names_that_are_not_one_component(tmp_path, name):
         layout.suite_dir(name)
     with pytest.raises(ValueError, match="path component"):
         layout.run_dir(name, "S1", "shared")
+    with pytest.raises(ValueError, match="path component"):
+        layout.speed_work_dir(name)
     with pytest.raises(ValueError, match="path component"):
         layout.work_dir(name)
     with pytest.raises(ValueError, match="path component"):
