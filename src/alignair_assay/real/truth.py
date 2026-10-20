@@ -56,23 +56,28 @@ mutated members of an expanded clone share an id:
    observed span; the fewest mismatches win, then the leftmost position (which allele's anchor does not matter:
    only the position is used). ``N`` is a mismatch. The search is exact for this bound: an anchor split into
    four blocks keeps one block without a mismatch, and every place a block occurs is checked.
-2. W118: the first ``W118_MOTIF`` (``TGG GG. CA. GG.``, Trp118 Gly Gln Gly) at or past the end of the Cys codon.
-   The junction (IMGT: Cys104 to Trp118 inclusive) is the read from the Cys codon's first base to the end of the
-   Trp codon. ``N`` bases between the two (masked or uncalled) stay in it as ``N``, so a consensus ``N`` puts a
-   read in a cluster of its own. IGHJ2's Trp118 is followed by Gly Arg Gly (``TGG GGC CGT GGC``), which the motif
-   does not match: an IGHJ2 read has no junction and is a singleton.
-3. The clonotype is ``f"{donor}/{junction}"``; a read without both anchors is ``f"{donor}/single:{read_id}"``.
+2. Only a read without a donor anchor is then searched, by the same rule, against the anchors of the shared
+   reference's V alleles: the 30 nt ending at each one's Cys104, from its IMGT-gapped form (``Reference.gapped``)
+   and ``cys104_end``. This places the junction of a read from a gene the donor's genomic genotype lacks, and
+   nothing else: never a known answer or ``known_gene``. A germline sequence used to find a codon is still
+   tool-neutral; no aligner output is involved. ``RealTruth.anchor`` says which anchors placed Cys104
+   (``"donor"``, ``"shared"`` or None), whether or not a W118 follows.
+3. W118: the first ``W118_MOTIF`` at or past the end of the Cys codon, IMGT's J motif Trp118 Gly119 X Gly121
+   (``TGG GG. ... GG.``; IGHJ2 has Arg where the other IGHJ genes have Gln). The junction (IMGT: Cys104 to Trp118
+   inclusive) is the read from the Cys codon's first base to the end of the Trp codon. ``N`` bases between the two
+   (masked or uncalled) stay in it as ``N``, so a consensus ``N`` puts a read in a cluster of its own.
+4. The clonotype is ``f"{donor}/{junction}"``; a read without both anchors is ``f"{donor}/single:{read_id}"``.
 
-A known answer's own Cys104 is the end of its exact window. The Hamming anchor puts it there too unless another
-anchor occurs further left in the read with no mismatch; on the pilot reads the two agree for every known answer,
-which the gated test checks. ``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id ->
-clonotype map.
+A known answer's own Cys104 is the end of its exact window. The donor's Hamming anchor puts it there too unless
+another anchor occurs further left in the read with no mismatch; on the pilot reads the two agree for every known
+answer, which the gated test checks. ``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id
+-> clonotype map.
 
-**On the pilot reads** (Task 4's preprocessed run): W-97 (multiplex, 50,000 sequences) has 5.7% known answers,
-5.6% naive, 66.5% with a Cys104 anchor and 60.5% with both anchors; SC-23 (5'RACE, 10,733) has 25.9%, 24.1%,
-90.7% and 85.7%. W-97's genomic genotype holds no IGHV4 gene while about a quarter of its reads are IGHV4, so
-those reads have no donor anchor. Of the reads with a Cys104 anchor but no W118 motif (W-97 2,975, SC-23 533),
-1,729 and 382 have an IGHJ2-like ``TGG GG. ... GG.`` (Trp Gly Xaa Gly) instead.
+**On the pilot reads** (Task 4's preprocessed run): W-97 (multiplex, 50,000 sequences) has 5.7% known answers and
+5.6% naive; Cys104 is placed on 92.8% of its reads (66.5% by the donor's anchors, 26.3% by the shared reference's)
+and 89.5% have a junction. SC-23 (5'RACE, 10,733) has 25.9% and 24.1%; 91.5% (90.7% donor, 0.8% shared) and
+90.0%. W-97's genomic genotype holds no IGHV4 gene while about a quarter of its reads are IGHV4: the shared
+anchors place them.
 """
 from __future__ import annotations
 
@@ -83,6 +88,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import NamedTuple
 
+from alignair_assay.core.reference import Reference
 from alignair_assay.real.genotype import RealAllele, RealGenotype
 
 # The nt ending at Cys104 that place a V allele in a read.
@@ -94,8 +100,8 @@ MIN_WINDOW = 200
 # IMGT nt 310-312, codon 104, as 0-based columns of an IMGT-gapped V-REGION.
 CYS104_COLUMNS = (309, 312)
 CYS_CODONS = frozenset({"TGT", "TGC"})
-# Trp118 Gly119 Gln120 Gly121 of an IGHJ: TGG GG. CA. GG.
-W118_MOTIF = re.compile(r"TGGGG.CA.GG.")
+# IMGT's J motif, Trp118 Gly119 X Gly120: TGG GG. ... GG. (IGHJ2 has Arg where the other IGHJ genes have Gln)
+W118_MOTIF = re.compile(r"TGGGG....GG.")
 # The isotype a naive read must be (``real.preprocess``'s C primer gene).
 NAIVE_ISOTYPE = "IGHM"
 
@@ -124,6 +130,9 @@ class RealTruth:
     naive: bool
     # f"{donor}/{junction}", or f"{donor}/single:{read_id}" without both anchors
     clonotype: str
+    # where Cys104 was found, W118 or not: "donor" (a donor allele's anchor), "shared" (the shared reference's,
+    # only without a donor anchor; it places the junction and nothing else) or None
+    anchor: str | None
 
 
 class KnownMatch(NamedTuple):
@@ -135,6 +144,15 @@ class KnownMatch(NamedTuple):
 
 
 @dataclass(frozen=True)
+class _Anchors:
+    """Cys104 anchors, split for the Hamming search."""
+
+    # a block of an anchor -> (anchor, offset of the block in it): every anchor split into max_mismatches + 1
+    blocks: dict[str, tuple[tuple[str, int], ...]]
+    max_mismatches: int
+
+
+@dataclass(frozen=True)
 class _Index:
     """A genotype's V alleles, ready to place reads."""
 
@@ -142,9 +160,7 @@ class _Index:
     windows: dict[str, tuple[tuple[RealAllele, str], ...]]
     # V alleles without a Cys104: never an answer, but they block one whose window they contain
     unanchored: tuple[RealAllele, ...]
-    # a block of an anchor -> (anchor, offset of the block in it): every anchor split into max_mismatches + 1
-    blocks: dict[str, tuple[tuple[str, int], ...]]
-    max_mismatches: int
+    anchors: _Anchors
 
 
 def cys104_end(gapped: str) -> int | None:
@@ -191,7 +207,7 @@ def cys104_in_read(read: str, observed: tuple[int, int], alleles: Iterable[RealA
                    max_mismatches: int = MAX_ANCHOR_MISMATCHES) -> int | None:
     """The read index just past Cys104: the end of the best Hamming match (at most ``max_mismatches``; fewest,
     then leftmost) of any V allele's anchor inside the ``observed`` span; None without one."""
-    return _anchor_end(read.upper(), observed, _index(alleles, max_mismatches))
+    return _anchor_end(read.upper(), observed, _index(alleles, max_mismatches).anchors)
 
 
 def junction_by_motif(read: str, cys_end_in_read: int) -> str | None:
@@ -204,12 +220,18 @@ def junction_by_motif(read: str, cys_end_in_read: int) -> str | None:
     return None if found is None else read[cys_end_in_read - 3:found.start() + 3].upper()
 
 
-def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: RealGenotype, *,
+def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: RealGenotype, reference: Reference, *,
                 min_window: int = MIN_WINDOW, max_mismatches: int = MAX_ANCHOR_MISMATCHES) -> list[RealTruth]:
     """The truth of every read, in ``meta``'s order. ``reads`` maps a sequence id to its sequence (the FASTA);
     ``meta`` holds one row per read (the TSV: ``sequence_id``, ``isotype``, ``protocol`` and ``primer_masked``,
-    as a list or as JSON). ValueError, naming an id, for an id given twice, a row without a read, a read without
-    a row, or a primer span outside its read."""
+    as a list or as JSON); ``reference`` is the shared reference, whose V anchors place Cys104 for the clonotype
+    of a read without a donor anchor. ValueError, naming an id, for an id given twice, a row without a read, a read
+    without a row, or a primer span outside its read; and for a genotype mapped to another shared reference (its
+    ``source["reference_digest"]``, where it has one)."""
+    mapped_to = (genotype.source or {}).get("reference_digest")
+    if mapped_to and mapped_to != reference.digest():
+        raise ValueError(f"the genotype of {genotype.donor} was mapped to another shared reference (digest "
+                         f"{mapped_to[:12]}, not {reference.digest()[:12]})")
     rows = list(meta)
     ids: set[str] = set()
     for row in rows:
@@ -223,6 +245,7 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
     if extra:
         raise ValueError(f"{len(extra)} reads have no metadata row (e.g. {sorted(extra)[0]})")
     index = _index(genotype.alleles, max_mismatches)
+    shared_anchors = _shared_anchors(reference, max_mismatches)
     donor = genotype.donor
     truths = []
     for row in rows:
@@ -233,7 +256,11 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
             raise ValueError(f"read {read_id}: {error}") from None
         observed = observed_span(read, [])
         match = _known_match(read, observed, index, min_window)
-        cys_end = _anchor_end(read, observed, index)
+        anchor, cys_end = "donor", _anchor_end(read, observed, index.anchors)
+        if cys_end is None:
+            anchor, cys_end = "shared", _anchor_end(read, observed, shared_anchors)
+        if cys_end is None:
+            anchor = None
         junction = None if cys_end is None else junction_by_motif(read, cys_end)
         clonotype = f"{donor}/single:{read_id}" if junction is None else f"{donor}/{junction}"
         known = shared = gene = None
@@ -244,7 +271,8 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
         truths.append(RealTruth(read_id=read_id, donor=donor, isotype=row["isotype"], protocol=row["protocol"],
                                 observed=observed, known=known, known_shared=shared, known_gene=gene,
                                 novel_known=match is not None and not shared,
-                                naive=match is not None and row["isotype"] == NAIVE_ISOTYPE, clonotype=clonotype))
+                                naive=match is not None and row["isotype"] == NAIVE_ISOTYPE, clonotype=clonotype,
+                                anchor=anchor))
     return truths
 
 
@@ -256,8 +284,6 @@ def clonotype_clusters(truths: Iterable[RealTruth]) -> dict[str, str]:
 # --- placing reads -------------------------------------------------------------------------------------------------
 
 def _index(alleles: Iterable[RealAllele], max_mismatches: int = MAX_ANCHOR_MISMATCHES) -> _Index:
-    if max_mismatches < 0 or max_mismatches >= ANCHOR_LENGTH:
-        raise ValueError(f"max_mismatches must be 0 to {ANCHOR_LENGTH - 1}, got {max_mismatches}")
     v = [allele for allele in alleles if allele.segment == "v"]
     own = {id(allele): cys104_end(allele.gapped) if allele.gapped else None for allele in v}
     # identity is the sequence: an allele without a Cys104 of its own takes that of an allele with its sequence
@@ -275,13 +301,30 @@ def _index(alleles: Iterable[RealAllele], max_mismatches: int = MAX_ANCHOR_MISMA
             continue
         region = allele.sequence[:end].upper()
         windows[region[-ANCHOR_LENGTH:]].append((allele, region))
+    return _Index(windows={anchor: tuple(entries) for anchor, entries in windows.items()},
+                  unanchored=tuple(unanchored), anchors=_anchors(windows, max_mismatches))
+
+
+def _shared_anchors(reference: Reference, max_mismatches: int) -> _Anchors:
+    """The Cys104 anchors of the shared reference's V alleles that have a gapped form with a Cys104."""
+    anchors = set()
+    for name, sequence in reference.alleles.get("v", {}).items():
+        gapped = reference.gapped(name)
+        end = cys104_end(gapped) if gapped else None
+        if end is not None and end >= ANCHOR_LENGTH:
+            anchors.add(sequence[:end].upper()[-ANCHOR_LENGTH:])
+    return _anchors(sorted(anchors), max_mismatches)
+
+
+def _anchors(anchors: Iterable[str], max_mismatches: int) -> _Anchors:
+    if max_mismatches < 0 or max_mismatches >= ANCHOR_LENGTH:
+        raise ValueError(f"max_mismatches must be 0 to {ANCHOR_LENGTH - 1}, got {max_mismatches}")
     blocks: dict[str, list[tuple[str, int]]] = defaultdict(list)
-    for anchor in windows:
+    for anchor in anchors:
         for start, end in _block_bounds(ANCHOR_LENGTH, max_mismatches + 1):
             blocks[anchor[start:end]].append((anchor, start))
-    return _Index(windows={anchor: tuple(entries) for anchor, entries in windows.items()},
-                  unanchored=tuple(unanchored), blocks={block: tuple(entries) for block, entries in blocks.items()},
-                  max_mismatches=max_mismatches)
+    return _Anchors(blocks={block: tuple(entries) for block, entries in blocks.items()},
+                    max_mismatches=max_mismatches)
 
 
 def _block_bounds(length: int, parts: int) -> list[tuple[int, int]]:
@@ -316,12 +359,12 @@ def _known_match(read: str, observed: tuple[int, int], index: _Index, min_window
     return KnownMatch(alleles=tuple(alleles), window=window, cys_end=cys_end)
 
 
-def _anchor_end(read: str, observed: tuple[int, int], index: _Index) -> int | None:
+def _anchor_end(read: str, observed: tuple[int, int], anchors: _Anchors) -> int | None:
     start, end = observed
-    limit = index.max_mismatches
+    limit = anchors.max_mismatches
     best: tuple[int, int] | None = None  # (mismatches, position)
     checked: set[tuple[str, int]] = set()
-    for block, entries in index.blocks.items():
+    for block, entries in anchors.blocks.items():
         at = read.find(block, start, end)
         while at != -1:
             for anchor, offset in entries:

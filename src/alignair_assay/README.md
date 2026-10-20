@@ -1522,8 +1522,10 @@ directory. No V(D)J tool and no germline reference is used; the only sequences g
   588 overlaps too short to be significant). Two runs of each give byte-identical outputs. With the paper's trimming
   (and before `--scanrev`) only 66% and 51% assembled, the trimmed mates no longer overlapping.
 
-**Truth per read (`real.truth`).** Pure, and from the reads and the donor's genomic V alleles only, never from a
-tool's output. `real_truths(reads, meta, genotype)` gives one `RealTruth` per row of `reads.tsv`, in its order:
+**Truth per read (`real.truth`).** Pure, and from the reads and germline sequence only (the donor's genomic V
+alleles, and the shared reference's to place a junction), never from a tool's output. `real_truths(reads, meta,
+genotype, reference)` gives one `RealTruth` per row of `reads.tsv`, in its order, and refuses a genotype mapped to
+another shared reference:
 
 - `observed`: the read's `[start, end)` outside its primer spans, whose bases are made `N` whatever the assembly
   put there, and its leading and trailing `N`s. pRESTO orients every read V to C, so no reverse complement is read.
@@ -1538,14 +1540,17 @@ tool's output. `real_truths(reads, meta, genotype)` gives one `RealTruth` per ro
   its exact sequence: VDJbase's `IGHV4-38-2*02_..._i93agt_...` call is IGHV4-39*01 gapped with a spurious insertion.
 - `naive`: IgM and a known answer, so the observed V is the allele through Cys104.
 - `clonotype`: `<donor>/<junction>` for every read, known or not. Cys104 is the best Hamming match (at most 3
-  mismatches, then the leftmost) of any donor anchor, W118 the first `TGG GG. CA. GG.` after it, and the junction
-  runs from the Cys codon through the Trp codon, `N`s included; a read without both anchors is
-  `<donor>/single:<id>`. `clonotype_clusters` gives `stats.compare` its clusters. The motif misses IGHJ2 (`TGG GGC
-  CGT GGC`), whose reads are singletons.
-- On the pilot, W-97 has 5.7% known answers (5.6% naive), 60.5% of its reads with both anchors and 3,964 clusters
-  of two or more reads (the largest 97); SC-23 has 25.9% (24.1%), 85.7% and 1,016 (33). W-97's genotype holds no
-  IGHV4 gene while about a quarter of its reads are IGHV4, which therefore have no donor anchor. Every known
-  answer's Cys104 is where the Hamming anchor puts it, and of the reads without a forward anchor the reverse
+  mismatches, then the leftmost) of any donor anchor; only a read without one is searched, by the same rule,
+  against the shared reference's V anchors (from `Reference.gapped` and `cys104_end`), which place the junction and
+  nothing else. `anchor` records which (`"donor"`, `"shared"` or None). W118 is the first IMGT J motif Trp118
+  Gly X Gly (`TGG GG. ... GG.`, IGHJ2's Arg included) after Cys104, and the junction runs from the Cys codon
+  through the Trp codon, `N`s included; a read without both anchors is `<donor>/single:<id>`.
+  `clonotype_clusters` gives `stats.compare` its clusters.
+- On the pilot, W-97 has 5.7% known answers (5.6% naive); Cys104 is placed on 92.8% of its reads (66.5% by the
+  donor's anchors, 26.3% by the shared reference's), 89.5% have a junction, and 5,900 clusters hold two or more
+  reads (the largest 101). SC-23 has 25.9% (24.1%); 91.5% (90.7% and 0.8%), 90.0%, and 1,076 clusters (33). W-97's
+  genotype holds no IGHV4 gene while about a quarter of its reads are IGHV4, which the shared anchors place. Every
+  known answer's Cys104 is where the donor's Hamming anchor puts it, and of the reads with no anchor the reverse
   complement has one on 3 of SC-23's 10,733 and none of W-97's 50,000.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are

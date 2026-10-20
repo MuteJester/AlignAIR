@@ -16,9 +16,11 @@ from pathlib import Path
 import pytest
 
 from alignair_assay.core.layout import RunLayout
+from alignair_assay.core.reference import Reference
 from alignair_assay.real.genotype import IuisMap, RealAllele, RealGenotype, load_vdjbase_csv
 from alignair_assay.real.truth import (
     ANCHOR_LENGTH,
+    W118_MOTIF,
     RealTruth,
     clonotype_clusters,
     cys104_end,
@@ -52,6 +54,9 @@ CYS_END = 288
 # IGHJ4*02: its W118 codon starts at 14 (TGG GGC CAG GGA is the W118 motif).
 J4 = "ACTACTTTGACTACTGGGGCCAGGGAACCCTGGTCACCGTCTCCTCAG"
 J4_W118_END = 17
+# IGHJ2*01: Trp118 Gly Arg Gly (TGG GGC CGT GGC), the IMGT W-G-X-G motif without IGHJ1/3/4/5/6's Gln120.
+J2 = "CTACTGGTACTTCGATCTCTGGGGCCGTGGCACCCTGGTCACTGTCTCCTCAG"
+J2_W118_END = 22
 N_REGION = "GATAGTTATCGGAACT"  # 16 nt: an in-frame junction of 9 + 16 + 17 nt
 C_START = "GGAGTGCATCCGCCCCAACCC"
 
@@ -116,6 +121,16 @@ def _meta(read_id: str, isotype: str = "IGHM", protocol: str = "race", spans=Non
 
 def _genotype(*alleles: RealAllele, donor: str = DONOR) -> RealGenotype:
     return RealGenotype(donor=donor, alleles=tuple(alleles))
+
+
+def _reference(*alleles: RealAllele) -> Reference:
+    """A shared reference holding ``alleles``' V-REGIONs and their gapped forms."""
+    return Reference(alleles={"v": {allele.allele_id: allele.sequence for allele in alleles}}, anchors={},
+                     gapped_v={allele.allele_id: allele.gapped for allele in alleles if allele.gapped})
+
+
+# A shared reference without a V allele: no fallback anchor.
+NO_SHARED = Reference(alleles={}, anchors={})
 
 
 # --- IMGT numbering ------------------------------------------------------------------------------------------------
@@ -226,7 +241,7 @@ def test_an_allele_without_a_cys104_takes_that_of_its_identical_sequence():
     read = _race(A.sequence)
     assert known_answer(read, observed_span(read, []), [twin, A, B]) == frozenset({"IGHV1-2*02",
                                                                                    "IGHV4-38-2*02_i93agt"})
-    truth, = real_truths({"r": read}, [_meta("r")], _genotype(twin, A, B))
+    truth, = real_truths({"r": read}, [_meta("r")], _genotype(twin, A, B), NO_SHARED)
     assert truth.known_gene == "IGHV1-2|IGHV4-38-2"
     # without its twin it cannot be windowed: no answer, and no anchor of its own
     assert known_answer(read, observed_span(read, []), [twin, B]) is None
@@ -319,13 +334,25 @@ def test_junction_by_motif():
         junction_by_motif(read, len(read) + 1)
 
 
+def test_w118_motif_is_the_imgt_w_g_x_g_so_ighj2_has_a_junction():
+    # Trp118 Gly119 X Gly121: IGHJ2 has Arg at 120, the other IGHJ genes Gln
+    for j, end in ((J4, J4_W118_END), (J2, J2_W118_END)):
+        assert W118_MOTIF.search(j).start() + 3 == end
+    read = _race(A.sequence, n_region=N_REGION + "A", j=J2)
+    junction = junction_by_motif(read, len(LEADER) + CYS_END)
+    assert junction == A.sequence[CYS_END - 3:CYS_END + 6] + N_REGION + "A" + J2[:J2_W118_END]
+    assert junction.endswith("TGG") and len(junction) % 3 == 0
+    truth, = real_truths({"j2": read}, [_meta("j2", "IGHG")], _genotype(A), NO_SHARED)
+    assert truth.clonotype == f"{DONOR}/{junction}"
+
+
 # --- real_truths ---------------------------------------------------------------------------------------------------
 
 def test_naive_only_igm():
     genotype = _genotype(A, B)
     reads = {"m": _race(A.sequence), "g": _race(A.sequence + "C"), "mutated": _race(_mutate(A.sequence, 40))}
     meta = [_meta("m", "IGHM"), _meta("g", "IGHG"), _meta("mutated", "IGHM")]
-    truths = {truth.read_id: truth for truth in real_truths(reads, meta, genotype)}
+    truths = {truth.read_id: truth for truth in real_truths(reads, meta, genotype, NO_SHARED)}
     assert truths["m"].naive and truths["m"].known == frozenset({"IGHV1-2*02"})
     assert not truths["g"].naive and truths["g"].known == frozenset({"IGHV1-2*02"})
     assert not truths["mutated"].naive and truths["mutated"].known is None
@@ -336,12 +363,44 @@ def test_clonotype_singleton_without_anchors():
     no_w118 = LEADER + A.sequence[:CYS_END + 6] + N_REGION + J4.replace("TGGGG", "TAGGG") + C_START
     no_cys = _race(_mutate(A.sequence, *[CYS_END - 4 - 7 * k for k in range(4)]))
     reads = {"both": _race(A.sequence), "no_w118": no_w118, "no_cys": no_cys}
-    truths = {t.read_id: t for t in real_truths(reads, [_meta(name) for name in reads], genotype)}
+    truths = {t.read_id: t for t in real_truths(reads, [_meta(name) for name in reads], genotype, NO_SHARED)}
     assert truths["both"].clonotype == f"{DONOR}/{_junction(A.sequence)}"
     assert truths["no_w118"].clonotype == f"{DONOR}/single:no_w118"
     assert truths["no_cys"].clonotype == f"{DONOR}/single:no_cys"
     # the read with no W118 still has an exact V window: a known answer without a clonotype junction
     assert truths["no_w118"].known == frozenset({"IGHV1-2*02"})
+    # ``anchor`` says where Cys104 was found, W118 or not
+    assert [truths[name].anchor for name in reads] == ["donor", "donor", None]
+
+
+def test_the_shared_reference_places_cys104_only_without_a_donor_anchor():
+    genotype, reference = _genotype(A), _reference(A, B)
+    three = [CYS_END - 4 - 7 * k for k in range(3)]
+    four = [CYS_END - 4 - 7 * k for k in range(4)]
+    reads = {"a": _race(A.sequence), "b": _race(B.sequence), "b3": _race(_mutate(B.sequence, *three)),
+             "b4": _race(_mutate(B.sequence, *four)), "none": _race(_random(296, 12))}
+    truths = {t.read_id: t for t in real_truths(reads, [_meta(name) for name in reads], genotype, reference)}
+    assert truths["a"].anchor == "donor" and truths["a"].known == frozenset({"IGHV1-2*02"})
+    # B is not the donor's: a shared anchor places its junction, under the same Hamming rule, and gives no answer
+    for name in ("b", "b3"):
+        truth = truths[name]
+        assert truth.anchor == "shared" and truth.clonotype == f"{DONOR}/{_junction(B.sequence)}", name
+        assert truth.known is None and truth.known_shared is None and truth.known_gene is None
+        assert not truth.naive and not truth.novel_known
+    for name in ("b4", "none"):
+        assert truths[name].anchor is None and truths[name].clonotype == f"{DONOR}/single:{name}"
+    alone, = real_truths({"b": reads["b"]}, [_meta("b")], genotype, NO_SHARED)
+    assert alone.anchor is None and alone.clonotype == f"{DONOR}/single:b"
+
+
+def test_a_donor_anchor_wins_over_a_better_shared_one():
+    # the donor's anchor with two mismatches, and a shared allele's exact anchor further left
+    b_anchor = B.sequence[CYS_END - ANCHOR_LENGTH:CYS_END]
+    v = _mutate(A.sequence, 100, CYS_END - 5, CYS_END - 20)
+    read = LEADER + b_anchor + _random(40, 13) + v[:CYS_END + 6] + N_REGION + J4 + C_START
+    truth, = real_truths({"r": read}, [_meta("r")], _genotype(A), _reference(A, B))
+    assert truth.anchor == "donor" and truth.clonotype == f"{DONOR}/{_junction(A.sequence)}"
+    assert truth.known is None
 
 
 def test_mutated_clone_members_share_a_clonotype():
@@ -350,7 +409,7 @@ def test_mutated_clone_members_share_a_clonotype():
              "c3": _race(A.sequence), "other": _race(_mutate(A.sequence, 50), n_region="GGGACTAC"),
              "b": _race(B.sequence)}
     meta = [_meta(name, "IGHG") for name in reads]
-    truths = real_truths(reads, meta, genotype)
+    truths = real_truths(reads, meta, genotype, NO_SHARED)
     clusters = clonotype_clusters(truths)
     assert clusters == {t.read_id: t.clonotype for t in truths}
     assert clusters["c1"] == clusters["c2"] == clusters["c3"] == f"{DONOR}/{_junction(A.sequence)}"
@@ -371,7 +430,7 @@ def test_real_truths_fields():
     reads = {"r1": _race(p1.sequence), "r2": _race(novel.sequence), "r3": multiplex, "r4": _race(B.sequence)}
     meta = [_meta("r1"), _meta("r2", "IGHG"), {**_meta("r3", protocol="multiplex"), "primer_masked": spans},
             _meta("r4")]
-    truths = real_truths(reads, meta, genotype)
+    truths = real_truths(reads, meta, genotype, NO_SHARED)
     assert [t.read_id for t in truths] == ["r1", "r2", "r3", "r4"]
     r1, r2, r3, r4 = truths
     assert isinstance(r1, RealTruth) and r1.donor == DONOR and r1.protocol == "race" and r1.isotype == "IGHM"
@@ -387,27 +446,35 @@ def test_real_truths_fields():
     assert r4.known is None and r4.known_shared is None and r4.known_gene is None
     assert not r4.novel_known and not r4.naive and r4.clonotype == f"{DONOR}/single:r4"
     assert r4.observed == (0, len(reads["r4"]))
+    assert [t.anchor for t in truths] == ["donor", "donor", "donor", None]
 
 
 def test_real_truths_refuses_inconsistent_reads_and_metadata():
     genotype = _genotype(A)
     read = _race(A.sequence)
     with pytest.raises(ValueError, match="no read"):
-        real_truths({}, [_meta("x")], genotype)
+        real_truths({}, [_meta("x")], genotype, NO_SHARED)
     with pytest.raises(ValueError, match="no metadata"):
-        real_truths({"x": read, "y": read}, [_meta("x")], genotype)
+        real_truths({"x": read, "y": read}, [_meta("x")], genotype, NO_SHARED)
     with pytest.raises(ValueError, match="twice"):
-        real_truths({"x": read}, [_meta("x"), _meta("x")], genotype)
+        real_truths({"x": read}, [_meta("x"), _meta("x")], genotype, NO_SHARED)
     with pytest.raises(ValueError):
-        real_truths({"x": read}, [_meta("x", spans=[[0, len(read) + 5]])], genotype)
+        real_truths({"x": read}, [_meta("x", spans=[[0, len(read) + 5]])], genotype, NO_SHARED)
+    # a genotype mapped to one shared reference is not read against another
+    mapped = RealGenotype(donor=DONOR, alleles=(A,), source={"reference_digest": _reference(A).digest()})
+    assert real_truths({"x": read}, [_meta("x")], mapped, _reference(A))[0].known == frozenset({"IGHV1-2*02"})
+    with pytest.raises(ValueError, match="reference"):
+        real_truths({"x": read}, [_meta("x")], mapped, _reference(A, B))
 
 
 # --- the pilot donors' real reads ----------------------------------------------------------------------------------
 
 PILOT_SAMPLES = {"W-97": "P25_I151_S1", "SC-23": "P25_I58_S1"}
 # The least share of reads a donor Cys104 anchor places (measured: W-97 66.5%, SC-23 90.7%). W-97's genomic
-# genotype has no IGHV4 gene, while about a quarter of its reads are IGHV4, whose anchors are therefore missing.
-MIN_ANCHORED = {"W-97": 0.6, "SC-23": 0.85}
+# genotype has no IGHV4 gene, while about a quarter of its reads are IGHV4, whose anchors are therefore missing;
+# the shared reference's anchors place them (donor or shared, measured: W-97 92.8%, SC-23 91.5%).
+MIN_DONOR_ANCHORED = {"W-97": 0.6, "SC-23": 0.85}
+MIN_ANCHORED = 0.9
 COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
 
 
@@ -438,7 +505,7 @@ def test_the_pilot_donors_real_truth(donor, reference):
                                 reference, iuis)
     layout = RunLayout(RUN)
     reads, meta = _read_fasta(layout.real_reads(donor)), _read_tsv(layout.real_reads_meta(donor))
-    truths = real_truths(reads, meta, genotype)
+    truths = real_truths(reads, meta, genotype, reference)
     n = len(truths)
     assert n == len(reads) == len(meta)
     known = [t for t in truths if t.known is not None]
@@ -446,25 +513,25 @@ def test_the_pilot_donors_real_truth(donor, reference):
     assert all(t.naive == (t.known is not None and t.isotype == "IGHM") for t in truths)
     assert all(t.novel_known == (t.known is not None and not t.known_shared) for t in truths)
     spans = {row["sequence_id"]: json.loads(row["primer_masked"]) for row in meta}
-    # every known answer's Cys104 (from its exact window) is where the Hamming anchor puts it
+    # every known answer's Cys104 (from its exact window) is where the donor's Hamming anchor puts it
+    assert all(truth.anchor == "donor" for truth in known)
     for truth in known:
         masked = mask_primers(reads[truth.read_id], spans[truth.read_id])
         match = known_match(masked, truth.observed, genotype.alleles)
         assert match.cys_end == cys104_in_read(masked, truth.observed, genotype.alleles), truth.read_id
+    sources = Counter(truth.anchor for truth in truths)
+    assert set(sources) <= {"donor", "shared", None}
+    assert sources["donor"] / n > MIN_DONOR_ANCHORED[donor]
+    assert 1 - sources[None] / n > MIN_ANCHORED
     # pRESTO orients every read V to C: the anchors are found forward, and almost never on the reverse complement
     # of a read without one
-    singles = [t for t in truths if t.clonotype == f"{donor}/single:{t.read_id}"]
-    unanchored = [t for t in singles
-                  if cys104_in_read(mask_primers(reads[t.read_id], spans[t.read_id]), t.observed,
-                                    genotype.alleles) is None]
-    assert 1 - len(unanchored) / n > MIN_ANCHORED[donor]
-    reverse = 0
-    for truth in unanchored:
-        flipped = mask_primers(reads[truth.read_id], spans[truth.read_id]).translate(COMPLEMENT)[::-1]
-        reverse += cys104_in_read(flipped, observed_span(flipped, []), genotype.alleles) is not None
-    assert reverse / n < 0.001
-    single_ids = {t.read_id for t in singles}
-    junctions = [t.clonotype.split("/", 1)[1] for t in truths if t.read_id not in single_ids]
+    unanchored = [truth for truth in truths if truth.anchor is None]
+    flipped = {t.read_id: mask_primers(reads[t.read_id], spans[t.read_id]).translate(COMPLEMENT)[::-1]
+               for t in unanchored}
+    reverse = real_truths(flipped, [{**_meta(t.read_id, t.isotype, t.protocol), "primer_masked": []}
+                                    for t in unanchored], genotype, reference)
+    assert sum(truth.anchor is not None for truth in reverse) / n < 0.001
+    junctions = [t.clonotype.split("/", 1)[1] for t in truths if t.clonotype != f"{donor}/single:{t.read_id}"]
     assert sum(len(junction) % 3 == 0 for junction in junctions) / len(junctions) > 0.95
     sizes = Counter(clonotype_clusters(truths).values())
     assert max(sizes.values()) > 1
