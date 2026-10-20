@@ -53,7 +53,8 @@ D_ALLELE, J_ALLELE = "IGHD1-26*01", "IGHJ4*02"
 READ_LENGTH = 250
 UTR = "ACTGAGCACA"
 KIT_PRIMER = {"IGHM": "CCGACGGGGAATTCTCACAG", "IGHG": "GAAGACCGATGGGCCCTTGG"}  # stand-ins, 20 nt
-IGG_PRIMER = "CGATGGGCCCTTGGTGGAAGC"  # SD7's IgG primer with S=C and R=A
+IGG_PRIMER = "CGATGGGCCCTTGGTGGAAGC"  # SD7's IgG primer with S=C and R=A, 21 nt
+VH3_PRIMER = "AGGTGTCCAGTGTGAAGTGCAG"  # SD7's VH3 primer with R=A, 22 nt
 
 
 def _random_dna(rng: random.Random, n: int) -> str:
@@ -94,8 +95,9 @@ def _race_pairs(molecules: list[dict], reads: int, rng: random.Random) -> tuple[
     return r1, r2
 
 
-def _multiplex_amplicon(vdj: str, c_primer: str = C_PRIMERS_MULTIPLEX["IgM"]) -> str:
-    return VH_PRIMERS["VH4"] + vdj + revcomp(c_primer)
+def _multiplex_amplicon(vdj: str, c_primer: str = C_PRIMERS_MULTIPLEX["IgM"],
+                        v_primer: str = VH_PRIMERS["VH4"]) -> str:
+    return v_primer + vdj + revcomp(c_primer)
 
 
 def _multiplex_pairs(molecules: list[dict], copies: int) -> tuple[list[str], list[str]]:
@@ -593,9 +595,15 @@ def test_both_recipes_end_to_end_in_the_container(reference, tmp_path):
     assert {record["assembly"]["pass"]["insert_length"][key] for key in ("min", "max")} == {386, 391}
     assert record["isotypes"] == {"IGHG": 13, "IGHM": 13}
 
-    # multiplex: 20 molecules of 2 copies, one too short after primer removal, one pair without a C primer
+    # multiplex: 20 molecules (VH4, IgM) and one with primers of other lengths (VH3, 22 nt; IgG, 21 nt), so a
+    # swapped head and tail span would show, each in 2 copies; one too short after primer removal; one pair without
+    # a C primer
     molecules = _molecules(reference, 20, rng, isotypes=("IGHM",))
     r1, r2 = _multiplex_pairs(molecules, 2)
+    igg = _molecules(reference, 1, rng, isotypes=("IGHG",))[0]
+    for _ in range(2):
+        r1.append(_multiplex_amplicon(igg["vdj"], IGG_PRIMER, VH3_PRIMER)[:READ_LENGTH])
+        r2.append(revcomp(_multiplex_amplicon(igg["vdj"], IGG_PRIMER, VH3_PRIMER))[:READ_LENGTH])
     short = reference.seq(V_ALLELES[0])[150:] + reference.seq(J_ALLELE)
     r1.append(_multiplex_amplicon(short)[:READ_LENGTH])
     r2.append(revcomp(_multiplex_amplicon(short))[:READ_LENGTH])
@@ -606,18 +614,20 @@ def test_both_recipes_end_to_end_in_the_container(reference, tmp_path):
     record = preprocess_run("W-T", *_write_pairs(multiplex_dir, r1, r2), layout, quality="full", nproc=2)
     assert record["protocol"] == "multiplex" and record["status"] == "done" and record["accepted"] is True
     rows = _rows(layout, "W-T")
-    v_mask, c_mask = len(VH_PRIMERS["VH4"]), len(C_PRIMERS_MULTIPLEX["IgM"])
-    assert sorted(row["sequence"] for row in rows) == sorted(
-        "N" * v_mask + molecule["vdj"] + "N" * c_mask for molecule in molecules)
+    expected = {"N" * 20 + molecule["vdj"] + "N" * 20: ("IGHM", 20, 20) for molecule in molecules}
+    expected["N" * 22 + igg["vdj"] + "N" * 21] = ("IGHG", 22, 21)
+    assert sorted(row["sequence"] for row in rows) == sorted(expected)
     for row in rows:
+        isotype, v_mask, c_mask = expected[row["sequence"]]
         length = len(row["sequence"])
         assert json.loads(row["primer_masked"]) == [[0, v_mask], [length - c_mask, length]]
-        assert row["isotype"] == "IGHM" and int(row["dupcount"]) == 2 and int(row["consensus_count"]) == 2
+        assert row["isotype"] == isotype and int(row["dupcount"]) == 2 and int(row["consensus_count"]) == 2
     counts = record["counts"]
-    assert counts["raw_pairs"] == 42 and counts["both-primers"] == 41 and counts["assemble"] == 41
-    assert counts["length"] == 40 and counts["unique"] == 20
-    assert record["assembly_acceptance"]["pairs"] == 41 and record["assembly_acceptance"]["accepted"] is True
-    assert record["image"]["repo_digests"] and record["classifier"]["evidence"]["vh_primers"] == {"VH4": 42}
+    assert counts["raw_pairs"] == 44 and counts["both-primers"] == 43 and counts["assemble"] == 43
+    assert counts["length"] == 42 and counts["unique"] == 21
+    assert record["assembly_acceptance"]["pairs"] == 43 and record["assembly_acceptance"]["accepted"] is True
+    assert record["image"]["repo_digests"]
+    assert record["classifier"]["evidence"]["vh_primers"] == {"VH3": 2, "VH4": 42}
 
     # a current record is reused; the logs are kept and the work directory is gone
     assert preprocess_run("W-T", multiplex_dir / "SYN_1.fastq.gz", multiplex_dir / "SYN_2.fastq.gz", layout,
