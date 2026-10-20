@@ -29,9 +29,13 @@ pairs), since the paper's per-donor label is wrong for at least one run:
   runs, and the record says which ran (``quality_steps``). Reads said to be full quality are refused when their
   first records have only SRA-Lite symbols.
 - **The assembly's acceptance line.** At most ``MAX_ASSEMBLY_FAILURE`` (35%) of the pairs entering the assembly
-  may fail to assemble (``assembly_acceptance`` in the record; a run over it is recorded as not accepted, not
-  stopped). The pairs that fail are inserts too long for the mates to overlap: lost reads, not wrong ones, and both
-  tools see the same set. They are dropped and counted, never joined or assembled against a reference.
+  may fail to assemble (``assembly_acceptance``). The pairs that fail are pairs whose mates do not overlap
+  acceptably: inserts longer than the mates span, or overlaps with too many mismatches (the record counts them by
+  AssemblePairs' reason, ``assembly_evidence``). They are lost reads, not wrong ones, and both tools see the same
+  set; they are dropped and counted, never joined or assembled against a reference. A run over the line is
+  rejected, as the classifier refuses a run: its record is written with ``status: "rejected"``, ``accepted``
+  false and the evidence (the deciles and the failures by kind), nothing else is kept, and ``PreprocessError`` is
+  raised. ``accept_assembly_loss`` lets such a run through deliberately; it is in the record and the fingerprint.
 - 5'RACE:
   1. ``MaskPrimers extract`` on R2: the UMI (start 0, length 12) to the header as ``UMI``, cut;
   2. ``MaskPrimers extract`` on R2: the ``GTAC`` + ``GGG`` that follow (7 nt), cut;
@@ -44,7 +48,7 @@ pairs), since the paper's per-donor label is wrong for at least one run:
      each mate; ``BuildConsensus`` (``--prcons 0.6 -n 1 -q 0 --maxerror 0.1 --maxgap 0.5``) builds each group's
      consensus, on each mate, with its isotype as ``PRCONS``;
   6. ``PairSeq`` of the consensus mates, then ``AssemblePairs align`` (R2 the head, R1 reverse-complemented):
-     reference-free, so pairs that do not overlap are dropped and counted;
+     reference-free, so pairs that do not overlap acceptably are dropped and counted;
   7. ``ParseHeaders collapse``: the pair's consensus count is the smaller of its mates';
   8. ``CollapseSeq`` (exact, ``--inner``, within an isotype), summing the consensus counts;
   9. ``SplitSeq group``: the sequences with a summed consensus count of at least 2.
@@ -102,13 +106,14 @@ pRESTO's id. ``nproc`` (with ``cpus``, the container's limit: at most the host's
 fingerprint all the same.
 
 **The record** holds the counts at every step and each step's pass rate, the quality and which quality steps ran,
-the image found (``check_image``), the classifier's evidence, the assembly's acceptance and its evidence
-(``assembly_evidence``: overlap, error, mate lengths and the insert-length estimates of the pairs that passed and
-failed, as deciles), the length distribution of the assembled reads, the isotype split, the wall time and a
-``fingerprint``: SHA-256 over the inputs' md5s, this module's SHA-256, the pinned image and the parameters
-(``run_fingerprint``). The code digest covers this module alone, the assay's convention for its steps' records:
-the ``core`` helpers it uses are not in it. A record is reused only while it is current: its fingerprint is the
-current one and its FASTA and TSV are the ones it recorded. Otherwise the run is redone from the reads: the
+the image found (``check_image``), the classifier's evidence, ``accepted`` and the assembly's acceptance and
+evidence (``assembly_evidence``: overlap, error, mate lengths and the insert-length estimates of the pairs that
+passed and failed, as deciles, and the failures by kind), the length distribution of the assembled reads, the
+isotype split, the wall time and a ``fingerprint``: SHA-256 over the inputs' md5s, this module's SHA-256, the
+pinned image and the parameters (``run_fingerprint``). The code digest covers this module alone, the assay's
+convention for its steps' records: the ``core`` helpers it uses are not in it. A record is reused only while it is
+current: it is ``done`` (never ``refused`` or ``rejected``), its fingerprint is the current one, and its FASTA and
+TSV are the ones it recorded. Otherwise the run is redone from the reads: the
 old record and outputs are removed first, the work directory (``real_preprocess_work``, the container's only
 writable mount; the reads are mounted read-only) is removed once the outputs are written, and the record comes
 last, so an interrupted run is never mistaken for a finished one. Docker or the pinned image missing stops the run
@@ -184,6 +189,8 @@ QUALITY_FILTER = "FilterSeq quality -q 20 on each mate: reads of mean quality be
 QUALITY_TRIM = "FilterSeq trimqual -q 20 then length -n 125 on each mate: the paper's trimming"
 QUALITY_SKIPPED = "skipped: SRA-Lite qualities carry no per-base quality"
 MAX_ASSEMBLY_FAILURE = 0.35  # the share of pairs entering the assembly that may fail to assemble
+ASSEMBLY_MAXERROR = 0.3  # AssemblePairs align: the most mismatches an overlap may have (pRESTO's default)
+ASSEMBLY_ALPHA = 1e-5  # and the p-value it must reach (pRESTO's default)
 C_PRIMER_MAXLEN = 70
 PRIMER_MAXERROR = 0.2
 CLUSTER_IDENTITY = 0.9
@@ -220,7 +227,8 @@ class Step:
     """One pRESTO command: its name, its argv (paths relative to the work directory, or the read-only reads), the
     file whose records are its input and the files it writes (the first counted). A step that ``merges`` records
     (a consensus, a collapse) has no pass rate: its output counts groups, not records that passed. A step whose
-    output depends on the order of its input (``sort_input``) reads it sorted by read id (``sort_fastq``)."""
+    output depends on the order of its input (``sort_input``) reads it sorted by read id (``sort_fastq``). The step
+    that ``assembles`` the pairs is the one the acceptance line is checked after."""
 
     name: str
     argv: tuple[str, ...]
@@ -228,6 +236,7 @@ class Step:
     outputs: tuple[str, ...]
     merges: bool = False
     sort_input: bool = False
+    assembles: bool = False
 
 
 # --- the classifier ----------------------------------------------------------------------------------------------
@@ -454,7 +463,8 @@ def _race(r1: str, r2: str, n: tuple[str, str]) -> list[Step]:
              "R2-consensus_consensus-pass.fastq", consensus),
         Step("assemble", ("AssemblePairs.py", "align", "-1", consensus[0], "-2", consensus[1], "--coord", "presto",
                           "--rc", "tail", "--1f", "CONSCOUNT", "--2f", "CONSCOUNT", "PRCONS", *n, "--outname",
-                          "assembled", "--log", ASSEMBLE_LOG), consensus[0], ("assembled_assemble-pass.fastq",)),
+                          "assembled", "--log", ASSEMBLE_LOG),
+             consensus[0], ("assembled_assemble-pass.fastq",), assembles=True),
         Step("conscount", ("ParseHeaders.py", "collapse", "-s", "assembled_assemble-pass.fastq", "-f", "CONSCOUNT",
                            "--act", "min", "--outname", "conscount"),
              "assembled_assemble-pass.fastq", ("conscount_reheader.fastq",)),
@@ -482,7 +492,7 @@ def _multiplex(r1: str, r2: str, n: tuple[str, str], paper_length_filter: bool) 
              "R1-vprimer_primers-pass.fastq", primers),
         Step("assemble", ("AssemblePairs.py", "align", "-1", primers[0], "-2", primers[1], "--coord", "sra", "--rc",
                           "tail", "--1f", "VPRIMER", "--2f", "CPRIMER", *n, "--outname", "assembled", "--log",
-                          ASSEMBLE_LOG), primers[0], ("assembled_assemble-pass.fastq",)),
+                          ASSEMBLE_LOG), primers[0], ("assembled_assemble-pass.fastq",), assembles=True),
         Step("length", ("FilterSeq.py", "length", "-s", "assembled_assemble-pass.fastq", *length, *n, "--outname",
                         "filtered"), "assembled_assemble-pass.fastq", ("filtered_length-pass.fastq",)),
         Step("collapse", ("CollapseSeq.py", "-s", "filtered_length-pass.fastq", "-n", "0", "--uf", "VPRIMER",
@@ -509,7 +519,7 @@ def container_cpus(nproc: int) -> int:
 # --- the run -------------------------------------------------------------------------------------------------------
 
 def run_fingerprint(r1, r2, *, quality: str, cap: int, paper_length_filter: bool, paper_quality_trim: bool = False,
-                    nproc: int = NPROC) -> dict:
+                    accept_assembly_loss: bool = False, nproc: int = NPROC) -> dict:
     """What a record must match to be current: ``inputs`` (each mate's path, md5 and size), ``image`` (the pinned
     reference), ``code_sha256`` (this module's alone, as in the rest of the assay), ``parameters`` and
     ``fingerprint``, the SHA-256 over the inputs' md5s, the image, the code and the parameters."""
@@ -518,7 +528,8 @@ def run_fingerprint(r1, r2, *, quality: str, cap: int, paper_length_filter: bool
     parameters = {"quality": quality, "cap": cap, "paper_length_filter": paper_length_filter,
                   "min_length": PAPER_MIN_LENGTH if paper_length_filter else MIN_LENGTH,
                   "length_after_primer_removal": not paper_length_filter, "paper_quality_trim": paper_quality_trim,
-                  "max_assembly_failure": MAX_ASSEMBLY_FAILURE, "nproc": nproc}
+                  "max_assembly_failure": MAX_ASSEMBLY_FAILURE, "accept_assembly_loss": accept_assembly_loss,
+                  "nproc": nproc}
     digest = hashlib.sha256(json.dumps({"inputs": [inputs["r1"]["md5"], inputs["r2"]["md5"]],
                                         "image": IMMCANTATION_IMAGE, "code": _CODE_SHA256,
                                         "parameters": parameters}, sort_keys=True).encode()).hexdigest()
@@ -527,18 +538,20 @@ def run_fingerprint(r1, r2, *, quality: str, cap: int, paper_length_filter: bool
 
 
 def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: int = CAP,
-                   paper_length_filter: bool = False, paper_quality_trim: bool = False, nproc: int = NPROC,
-                   timeout: float = STEP_TIMEOUT) -> dict:
+                   paper_length_filter: bool = False, paper_quality_trim: bool = False,
+                   accept_assembly_loss: bool = False, nproc: int = NPROC, timeout: float = STEP_TIMEOUT) -> dict:
     """Preprocess donor ``donor``'s run from its gzipped mates ``r1`` and ``r2`` into ``layout`` (the module
     docstring) and return its record; a current record is returned as it is, with ``reused`` True.
 
     ``quality`` is the reads' quality alphabet (``"full"`` or ``"lite"``, as fetched); ``cap`` the most sequences
     kept; ``paper_length_filter`` the paper's multiplex length filter; ``paper_quality_trim`` the paper's Q20
-    trimming in place of the mean-quality filter; ``nproc`` the CPUs given to the container and to each pRESTO step;
-    ``timeout`` the seconds one step may take. ValueError for another quality or cap;
-    PreprocessError for a run the classifier refuses (its record written, with the evidence), reads said to be full
-    quality that have SRA-Lite qualities, mates that are not the same pairs, or a step that lets no read through;
-    ContainerError when Docker or the pinned image is missing (before anything is written) or a step fails."""
+    trimming in place of the mean-quality filter; ``accept_assembly_loss`` lets a run over the assembly's
+    acceptance line through; ``nproc`` the CPUs given to the container (at most the host's) and to each pRESTO step;
+    ``timeout`` the seconds one step may take. ValueError for another quality or cap; PreprocessError, its
+    ``evidence`` set, for a run the classifier refuses or whose assembly loss is over the line (its record written
+    either way, ``refused`` or ``rejected``), reads said to be full quality that have SRA-Lite qualities, mates
+    that are not the same pairs, or a step that lets no read through; ContainerError when Docker or the pinned
+    image is missing (before anything is written) or a step fails."""
     if quality not in QUALITIES:
         raise ValueError(f"quality must be one of {', '.join(QUALITIES)}, got {quality!r}")
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
@@ -546,7 +559,8 @@ def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: 
     r1, r2 = Path(r1).absolute(), Path(r2).absolute()
     record_path = layout.real_preprocess_json(donor)
     pinned = run_fingerprint(r1, r2, quality=quality, cap=cap, paper_length_filter=paper_length_filter,
-                             paper_quality_trim=paper_quality_trim, nproc=nproc)
+                             paper_quality_trim=paper_quality_trim, accept_assembly_loss=accept_assembly_loss,
+                             nproc=nproc)
     current = _current(layout, donor, pinned["fingerprint"])
     if current is not None:
         return {**current, "reused": True}
@@ -578,36 +592,46 @@ def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: 
     if _count_gz(r2) != raw:
         raise PreprocessError(f"{donor}: {r1.name} and {r2.name} hold different numbers of reads")
     counts, file_counts = {"raw_pairs": raw}, {f"{IN1}/{r1.name}": raw, f"{IN2}/{r2.name}": raw}
+    record.update(image=image, nproc=nproc, cpus=container_cpus(nproc),
+                  quality_steps=(QUALITY_SKIPPED if quality == "lite" else
+                                 QUALITY_TRIM if paper_quality_trim else QUALITY_FILTER),
+                  container=step_command([], donor=donor, step="<step>", work=work, r1=r1, r2=r2, nproc=nproc))
     ran = []
     for step in steps:
         ran.append(_run_step(step, donor=donor, work=work, logs=logs, r1=r1, r2=r2, nproc=nproc, timeout=timeout,
                              file_counts=file_counts))
         counts[step.name] = ran[-1]["records"]
+        if step.assembles:
+            pairs_in, assembled_pairs = file_counts[step.input], ran[-1]["records"]
+            assembled = _assembled_lengths(work / step.outputs[0])
+            passed = ({identifier for identifier, _, _ in _read_presto_fastq(work / step.outputs[0])}
+                      if (work / step.outputs[0]).is_file() else set())
+            with open(work / ASSEMBLE_LOG, encoding="ascii") as handle:
+                assembly = assembly_evidence(handle, passed)
+            _archive_log(work / ASSEMBLE_LOG, logs / f"{ASSEMBLE_LOG}.gz")
+            acceptance = assembly_acceptance(pairs_in, assembled_pairs, accept_assembly_loss=accept_assembly_loss)
+            record.update(accepted=acceptance["accepted"], assembly_acceptance=acceptance, assembly=assembly)
+            if not acceptance["accepted"]:
+                shutil.rmtree(work)
+                _write_json(record_path, {**record, "status": "rejected", "steps": ran, "counts": counts,
+                                          "lengths": {"assembled": assembled},
+                                          "wall_seconds": round(time.monotonic() - started, 1),
+                                          "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+                raise PreprocessError(
+                    f"{donor}: {acceptance['failed']} of {pairs_in} pairs ({acceptance['failure_rate']:.1%}) failed "
+                    f"to assemble, over the {MAX_ASSEMBLY_FAILURE:.0%} line; the run is rejected (see its record; "
+                    "accept_assembly_loss lets it through)", {**acceptance, "kinds": assembly["fail"]["kinds"]})
 
     rows, checks = _rows(work / steps[-1].outputs[0], protocol, paper_length_filter)
     capped = cap_sequences(rows, cap)
     counts.update(unique=len(rows), capped=len(capped))
     _write_outputs(layout, donor, capped)
-    assembled = _assembled_lengths(work / "assembled_assemble-pass.fastq")
-    passed = {identifier for identifier, _, _ in _read_presto_fastq(work / "assembled_assemble-pass.fastq")}
-    with open(work / ASSEMBLE_LOG, encoding="ascii") as handle:
-        assembly = assembly_evidence(handle, passed)
-    _archive_log(work / ASSEMBLE_LOG, logs / f"{ASSEMBLE_LOG}.gz")
     shutil.rmtree(work)
-    pairs_in = counts["pair-consensus" if protocol == "race" else "both-primers"]
-    failure = _rate(pairs_in - counts["assemble"], pairs_in)
     record.update(
-        status="done", reused=False, image=image, nproc=nproc, cpus=container_cpus(nproc),
-        quality_steps=QUALITY_SKIPPED if quality == "lite" else QUALITY_TRIM if paper_quality_trim else QUALITY_FILTER,
-        assembly_acceptance={"pairs": pairs_in, "failed": pairs_in - counts["assemble"], "failure_rate": failure,
-                             "max_failure_rate": MAX_ASSEMBLY_FAILURE,
-                             "accepted": failure is not None and failure <= MAX_ASSEMBLY_FAILURE},
-        container=step_command([], donor=donor, step="<step>", work=work, r1=r1, r2=r2, nproc=nproc),
-        steps=ran, counts=counts,
-        pass_rates={"assembly": _rate(counts["assemble"], pairs_in), "yield": _rate(len(rows), raw),
+        status="done", reused=False, steps=ran, counts=counts,
+        pass_rates={"assembly": _rate(assembled_pairs, pairs_in), "yield": _rate(len(rows), raw),
                     **{entry["name"]: entry["pass_rate"] for entry in ran if entry["pass_rate"] is not None}},
-        checks=checks, assembly=assembly,
-        lengths={"assembled": assembled, "unique": _summary([row["observed"] for row in rows])},
+        checks=checks, lengths={"assembled": assembled, "unique": _summary([row["observed"] for row in rows])},
         isotypes=dict(sorted(Counter(row["isotype"] for row in capped).items())),
         isotypes_unique=dict(sorted(Counter(row["isotype"] for row in rows).items())),
         outputs=_output_digests(layout, donor), wall_seconds=round(time.monotonic() - started, 1),
@@ -616,10 +640,21 @@ def preprocess_run(donor: str, r1, r2, layout: RunLayout, *, quality: str, cap: 
     return record
 
 
+def assembly_acceptance(pairs: int, assembled: int, *, accept_assembly_loss: bool) -> dict:
+    """Whether a run's assembly loss is acceptable: ``failure_rate``, the share of the ``pairs`` entering the
+    assembly that did not assemble, is ``within_line`` at most ``MAX_ASSEMBLY_FAILURE``; a run is ``accepted``
+    when it is, or when ``accept_assembly_loss`` (``override``) lets it through. No pair at all is not accepted."""
+    failure = _rate(pairs - assembled, pairs)
+    within = failure is not None and failure <= MAX_ASSEMBLY_FAILURE
+    return {"pairs": pairs, "failed": pairs - assembled, "failure_rate": failure,
+            "max_failure_rate": MAX_ASSEMBLY_FAILURE, "within_line": within, "override": accept_assembly_loss,
+            "accepted": within or (accept_assembly_loss and pairs > 0)}
+
+
 def _run_step(step: Step, *, donor: str, work: Path, logs: Path, r1: Path, r2: Path, nproc: int, timeout: float,
               file_counts: dict[str, int]) -> dict:
     """Run one step in the container (its input sorted by read id first when the step says so), keep its output as
-    ``<step>.log`` and count its records."""
+    ``<step>.log`` and count its records. An assembly that lets no pair through is left to the acceptance line."""
     argv = step_command(step.argv, donor=donor, step=step.name, work=work, r1=r1, r2=r2, nproc=nproc)
     name = argv[argv.index("--name") + 1]
     started = time.monotonic()
@@ -634,7 +669,7 @@ def _run_step(step: Step, *, donor: str, work: Path, logs: Path, r1: Path, r2: P
     for output in step.outputs:
         file_counts[output] = _count_fastq(work / output) if (work / output).is_file() else 0
     records = file_counts[step.outputs[0]]
-    if records == 0:
+    if records == 0 and not step.assembles:
         raise PreprocessError(f"{donor}: pRESTO step {step.name} let no read through (see {logs / step.name}.log)")
     return {"name": step.name, "argv": list(step.argv), "sorted_input": step.sort_input,
             "seconds": round(time.monotonic() - started, 1), "records": records,
@@ -736,17 +771,28 @@ def assembly_evidence(log_lines, passed: set[str]) -> dict:
     and error of the best alignment it tried, of each mate's length (``SEQ1`` the head, ``SEQ2`` the tail, as it
     logs them) and of the insert-length estimates: ``mates_length``, the mates' combined length (for a failed pair
     whose mates do not meet, a lower bound on its insert), and for the passed pairs ``insert_length``, the
-    assembled length."""
+    assembled length. The failed pairs are also counted by why they failed (``kinds``), by AssemblePairs' own
+    tests: ``mismatches``, the best overlap over ``ASSEMBLY_MAXERROR`` (mates that do overlap, with too many
+    mismatches, or mates that do not, whose best overlap is chance); ``not_significant``, an overlap within the
+    error limit but too short for ``ASSEMBLY_ALPHA``; ``no_overlap``, none tried."""
     groups: dict[str, dict[str, list]] = {
         kind: {"overlap": [], "error": [], "head_length": [], "tail_length": [], "mates_length": []}
         for kind in ("pass", "fail")}
     groups["pass"]["insert_length"] = []
+    kinds = {"mismatches": 0, "not_significant": 0, "no_overlap": 0}
 
     def close(entry: dict) -> None:
         if "ID" not in entry:
             return
         kind = "pass" if entry["ID"].split("|")[0].split()[0] in passed else "fail"
         group = groups[kind]
+        if kind == "fail":
+            if entry.get("OVERLAP") in (None, "", "None"):
+                kinds["no_overlap"] += 1
+            elif float(entry.get("ERROR") or 1) > ASSEMBLY_MAXERROR:
+                kinds["mismatches"] += 1
+            else:
+                kinds["not_significant"] += 1
         for key, field in (("overlap", "OVERLAP"), ("error", "ERROR")):
             if entry.get(field) not in (None, "", "None"):
                 group[key].append(float(entry[field]) if key == "error" else int(entry[field]))
@@ -766,8 +812,10 @@ def assembly_evidence(log_lines, passed: set[str]) -> dict:
         else:
             entry[key.strip()] = value
     close(entry)
-    return {kind: {"n": len(values["head_length"]), **{key: deciles(found) for key, found in values.items()}}
-            for kind, values in groups.items()}
+    evidence = {kind: {"n": len(values["head_length"]), **{key: deciles(found) for key, found in values.items()}}
+                for kind, values in groups.items()}
+    evidence["fail"]["kinds"] = kinds
+    return evidence
 
 
 def deciles(values: Sequence[float]) -> dict:

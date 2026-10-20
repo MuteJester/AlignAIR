@@ -292,6 +292,26 @@ ASSEMBLY> ACGTACGTACNGGGGGGGG
 """
     evidence = preprocess.assembly_evidence(log.splitlines(keepends=True), {"1AAAA"})
     assert evidence["pass"]["n"] == 1 and evidence["fail"]["n"] == 1
+    # why a pair failed, by AssemblePairs' own tests: an overlap over the error limit, one under it that is too
+    # short to be significant, or no overlap tried at all
+    assert evidence["fail"]["kinds"] == {"mismatches": 1, "not_significant": 0, "no_overlap": 0}
+    more = log + """
+      ID> SYN.3 3/1
+    SEQ1> ACGTACGTAC
+    SEQ2>           ACGT
+ASSEMBLY> ACGTACGTACACGT
+  LENGTH> 14
+ OVERLAP> 8
+   ERROR> 0.1000
+  PVALUE> 2.0000e-03
+
+      ID> SYN.4 4/1
+    SEQ1> ACGTACGTAC
+    SEQ2>           TTTT
+ASSEMBLY> None
+"""
+    kinds = preprocess.assembly_evidence(more.splitlines(keepends=True), {"1AAAA"})["fail"]["kinds"]
+    assert kinds == {"mismatches": 1, "not_significant": 1, "no_overlap": 1}
     assert evidence["pass"]["overlap"]["median"] == 2 and evidence["fail"]["overlap"]["median"] == 8
     assert evidence["fail"]["error"]["max"] == 0.5
     assert evidence["fail"]["head_length"]["min"] == 10 and evidence["fail"]["tail_length"]["min"] == 8
@@ -304,6 +324,20 @@ ASSEMBLY> ACGTACGTACNGGGGGGGG
     empty = preprocess.assembly_evidence([], set())
     assert empty["pass"]["n"] == empty["fail"]["n"] == 0
     assert empty["pass"]["insert_length"] == empty["fail"]["mates_length"] == {"n": 0}
+    assert empty["fail"]["kinds"] == {"mismatches": 0, "not_significant": 0, "no_overlap": 0}
+
+
+def test_the_assembly_acceptance_line():
+    """At most 35% of the pairs entering the assembly may fail; ``accept_assembly_loss`` lets a run over the line
+    through deliberately, and says so."""
+    within = preprocess.assembly_acceptance(100, 65, accept_assembly_loss=False)
+    assert within == {"pairs": 100, "failed": 35, "failure_rate": 0.35, "max_failure_rate": 0.35,
+                      "within_line": True, "override": False, "accepted": True}
+    over = preprocess.assembly_acceptance(100, 64, accept_assembly_loss=False)
+    assert over["within_line"] is False and over["accepted"] is False and over["failure_rate"] == 0.36
+    let_through = preprocess.assembly_acceptance(100, 64, accept_assembly_loss=True)
+    assert let_through["within_line"] is False and let_through["override"] is True and let_through["accepted"]
+    assert preprocess.assembly_acceptance(0, 0, accept_assembly_loss=False)["accepted"] is False
 
 
 def test_deciles_are_the_nearest_rank_quantiles():
@@ -455,6 +489,15 @@ def test_a_current_record_is_reused_without_docker(reference, rng, tmp_path, mon
     layout.real_reads_meta("W-97").write_text("changed\n")
     with pytest.raises(preprocess.ContainerError, match="not available"):
         preprocess_run("W-97", r1, r2, layout, quality="full", cap=50)
+    # a run rejected for its assembly loss is never reused as done, whatever its fingerprint and files
+    preprocess._write_outputs(layout, "W-97", [{"sequence_id": "SYN.1", "sequence": "ACGT", "isotype": "IGHM",
+                                                "protocol": "multiplex", "consensus_count": 1, "dupcount": 1,
+                                                "primer_masked": []}])
+    layout.real_preprocess_json("W-97").write_text(json.dumps(
+        {"status": "rejected", "accepted": False, "fingerprint": fingerprint["fingerprint"],
+         "outputs": preprocess._output_digests(layout, "W-97")}))
+    with pytest.raises(preprocess.ContainerError, match="not available"):
+        preprocess_run("W-97", r1, r2, layout, quality="full", cap=50)
 
 
 def test_the_fingerprint_follows_inputs_code_image_and_parameters(tmp_path):
@@ -466,8 +509,9 @@ def test_the_fingerprint_follows_inputs_code_image_and_parameters(tmp_path):
     assert base["image"] == IMMCANTATION_IMAGE and base["code_sha256"] == preprocess._CODE_SHA256
     assert base == preprocess.run_fingerprint(r1, r2, quality="full", cap=10, paper_length_filter=False)
     assert base["parameters"]["paper_quality_trim"] is False and base["parameters"]["nproc"] == preprocess.NPROC
+    assert base["parameters"]["accept_assembly_loss"] is False
     for changed in ({"quality": "lite"}, {"cap": 11}, {"paper_length_filter": True}, {"paper_quality_trim": True},
-                    {"nproc": 2}):
+                    {"nproc": 2}, {"accept_assembly_loss": True}):
         kwargs = {"quality": "full", "cap": 10, "paper_length_filter": False, **changed}
         assert preprocess.run_fingerprint(r1, r2, **kwargs)["fingerprint"] != base["fingerprint"]
     assert preprocess.run_fingerprint(r1, r2, quality="full", cap=10, paper_length_filter=False,
@@ -532,11 +576,11 @@ def test_both_recipes_end_to_end_in_the_container(reference, tmp_path):
         assert int(row["consensus_count"]) == 3 and int(row["dupcount"]) == 1 and row["primer_masked"] == "[]"
     counts = record["counts"]
     assert counts["raw_pairs"] == 3 * 26 + 4 and counts["unique"] == 26 and counts["capped"] == 26
-    assert record["pass_rates"]["assembly"] == 1.0
+    assert record["pass_rates"]["assembly"] == 1.0 and record["accepted"] is True
     # the 30 consensus pairs (the single-read molecules' too, dropped later) all assemble; their inserts are the
     # 10-nt UTR and the V(D)J, 386 or 391 nt
     assert record["assembly_acceptance"] == {"pairs": 30, "failed": 0, "failure_rate": 0.0, "max_failure_rate": 0.35,
-                                             "accepted": True}
+                                             "within_line": True, "override": False, "accepted": True}
     assert record["assembly"]["fail"]["n"] == 0 and record["assembly"]["pass"]["n"] == 30
     assert {record["assembly"]["pass"]["insert_length"][key] for key in ("min", "max")} == {386, 391}
     assert record["isotypes"] == {"IGHG": 13, "IGHM": 13}
@@ -552,7 +596,7 @@ def test_both_recipes_end_to_end_in_the_container(reference, tmp_path):
     multiplex_dir = tmp_path / "multiplex"
     multiplex_dir.mkdir()
     record = preprocess_run("W-T", *_write_pairs(multiplex_dir, r1, r2), layout, quality="full", nproc=2)
-    assert record["protocol"] == "multiplex" and record["status"] == "done"
+    assert record["protocol"] == "multiplex" and record["status"] == "done" and record["accepted"] is True
     rows = _rows(layout, "W-T")
     v_mask, c_mask = len(VH_PRIMERS["VH4"]), len(C_PRIMERS_MULTIPLEX["IgM"])
     assert sorted(row["sequence"] for row in rows) == sorted(
@@ -572,6 +616,28 @@ def test_both_recipes_end_to_end_in_the_container(reference, tmp_path):
                           quality="full", nproc=2)["reused"] is True
     assert (layout.real_preprocess_logs("W-T") / "assemble.log").is_file()
     assert not layout.real_preprocess_work("W-T").exists()
+
+    # over the acceptance line: 6 of 10 inserts are longer than the mates span, so the run is rejected with its
+    # evidence, and nothing is written but the record; accept_assembly_loss lets it through deliberately
+    fits = _molecules(reference, 4, rng, isotypes=("IGHM",))
+    too_long = [{**molecule, "vdj": molecule["vdj"] + _random_dna(rng, 250)}
+                for molecule in _molecules(reference, 6, rng, isotypes=("IGHM",))]
+    loss_dir = tmp_path / "loss"
+    loss_dir.mkdir()
+    pair = _write_pairs(loss_dir, *_multiplex_pairs(fits + too_long, 1))
+    with pytest.raises(PreprocessError, match="assembl") as rejected:
+        preprocess_run("W-L", *pair, layout, quality="full", nproc=2)
+    assert rejected.value.evidence["failure_rate"] == 0.6
+    record = json.loads(layout.real_preprocess_json("W-L").read_text())
+    assert record["status"] == "rejected" and record["accepted"] is False
+    assert record["assembly_acceptance"]["failed"] == 6 and record["assembly_acceptance"]["within_line"] is False
+    assert record["assembly"]["fail"]["n"] == 6 and sum(record["assembly"]["fail"]["kinds"].values()) == 6
+    assert record["assembly"]["fail"]["mates_length"]["median"] == 500
+    assert not layout.real_reads("W-L").exists() and not layout.real_preprocess_work("W-L").exists()
+    record = preprocess_run("W-L", *pair, layout, quality="full", nproc=2, accept_assembly_loss=True)
+    assert record["status"] == "done" and record["accepted"] is True and record["counts"]["unique"] == 4
+    assert record["assembly_acceptance"]["override"] is True and record["assembly_acceptance"]["within_line"] is False
+    assert record["parameters"]["accept_assembly_loss"] is True
     assert time.monotonic() - started < 60
 
 
