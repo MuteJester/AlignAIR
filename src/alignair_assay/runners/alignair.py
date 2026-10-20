@@ -355,7 +355,8 @@ class AlignAIRLocal:
         """The registry factory: ``alignair_checkpoint`` (required, ValueError otherwise), ``device``,
         ``batch_size``, ``threads`` and ``cpus``."""
         if not options.alignair_checkpoint:
-            raise ValueError("the alignair-local runner needs --checkpoint, the path of a .alignair model file")
+            raise ValueError("the alignair-local runner needs the path of a .alignair model file: --checkpoint (run) "
+                             "or --alignair-checkpoint (all)")
         return cls(options.alignair_checkpoint, device=options.device, batch_size=options.batch_size,
                    threads=options.threads, cpus=options.cpus)
 

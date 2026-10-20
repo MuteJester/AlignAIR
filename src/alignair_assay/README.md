@@ -323,9 +323,11 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
 
 `all` runs these steps in order (`workflow.orchestrate.run_all`). It prints one line per step.
 
-1. **Manifest.** The configuration is checked before anything is written. It needs known suites, a known split,
-   exactly two different registered tools, a positive scale and at least one worker and thread; `--speed` is not
-   available yet. Each tool's runner is built and fingerprinted (`Runner.fingerprint`, see Adding a runner), which
+1. **Manifest.** The configuration is checked before anything is written (`check_config`). It needs known suites,
+   a known split, exactly two different registered tools, a positive scale, at least one worker and thread, and
+   the options each tool needs (`--igblast-dir` for igblast, `--alignair-checkpoint` for alignair-local), checked
+   by building its runner, which runs, pulls and downloads nothing; `--speed` is not available yet. Each tool's
+   runner is then built and fingerprinted (`Runner.fingerprint`, see Adding a runner), which
    identifies the tool by content: IgBLAST's directory and the SHA-256 of `igblastn`, `makeblastdb` and the
    auxiliary file; the AlignAIR image reference and the image ID it resolves to (pulling it when it is not local),
    and the model spec and the SHA-256 of the model file it resolves to (installing it into the run's model cache);
@@ -353,7 +355,9 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    matches the configuration (`workflow.build.build_is_current`). Anything else is `missing`, `failed` or
    `stale`, and is listed, never scored. Each scored run gets the `score` command's three files, the oracle on the
    shared arm. A suite with a `donors.json` is scored as `score --donors` scores it: against each read's donor
-   genotype, with the donors file recorded as an input. When both tools are scored, the arm gets the `compare`
+   genotype, with the donors file recorded as an input; when its `donors.json` cannot be read, every run of that
+   suite is listed as `not scored`, with the reason, and the other suites are scored as usual. When both tools are
+   scored, the arm gets the `compare`
    command's `comparison.json` and `comparison.md` (a against b, Holm at 0.05).
 6. **Report.** `report.json` holds the run summary (`workflow.summary.collect_run_summary`) and `report.md` its
    rendering (`report.run.run_report_markdown`).

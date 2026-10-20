@@ -26,7 +26,7 @@ from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import genairr_provenance, git_state
 from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.report import run_report_markdown
-from alignair_assay.runners import RUNNERS, make_runner
+from alignair_assay.runners import make_runner
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL
 from alignair_assay.runners.arms import run_genotype_arm
 from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path, run_suite
@@ -80,12 +80,13 @@ class RunConfig:
     speed: bool = False
 
 
-def runner_options(cfg: RunConfig, layout: RunLayout) -> RunnerOptions:
-    """The tool options of ``cfg``; the AlignAIR model cache is the run directory's
-    ``runs/alignair/_work/cache``."""
+def runner_options(cfg: RunConfig, layout: RunLayout | None = None) -> RunnerOptions:
+    """The tool options of ``cfg``. With ``layout``, the AlignAIR model cache is the run directory's
+    ``runs/alignair/_work/cache``; without, it is left to the runner (the same directory once it is prepared)."""
     return RunnerOptions(igblast_dir=cfg.igblast_dir, threads=cfg.threads, alignair_image=cfg.alignair_image,
                          alignair_model=cfg.alignair_model, alignair_checkpoint=cfg.alignair_checkpoint,
-                         device=cfg.device, cache_dir=str(layout.work_dir("alignair") / "cache"))
+                         device=cfg.device,
+                         cache_dir=None if layout is None else str(layout.work_dir("alignair") / "cache"))
 
 
 def make_runners(cfg: RunConfig, layout: RunLayout) -> dict[str, Runner]:
@@ -125,22 +126,24 @@ def config_hash(cfg: RunConfig, layout: RunLayout) -> str:
 
 def check_config(cfg: RunConfig) -> None:
     """ValueError for a configuration ``run_all`` cannot run, before anything is written: an unknown suite, split
-    or tool, not exactly two different tools, a scale that is not positive, fewer than one worker or thread, or
-    ``speed`` (the speed protocol is not available yet)."""
+    or tool, not exactly two different tools, a scale that is not positive, fewer than one worker or thread, a
+    tool without the options it needs (``runners.make_runner`` on ``runner_options``: no ``--igblast-dir`` for
+    igblast, no ``--alignair-checkpoint`` for alignair-local; nothing is run, pulled or downloaded), or ``speed``
+    (the speed protocol is not available yet)."""
     if not cfg.suites:
         raise ValueError("no suite to run")
     for name in cfg.suites:
         get_suite(name)
     if len(cfg.tools) != 2 or cfg.tools[0] == cfg.tools[1]:
         raise ValueError(f"all compares exactly two tools, a and b; got {list(cfg.tools)}")
-    for tool in cfg.tools:
-        if tool not in RUNNERS:
-            raise ValueError(f"unknown tool {tool!r}; known tools: {', '.join(RUNNERS)}")
     check_split(cfg.split)
     if not cfg.scale > 0:
         raise ValueError(f"scale must be positive, got {cfg.scale}")
     if cfg.workers < 1 or cfg.threads < 1:
         raise ValueError(f"workers and threads must be at least 1, got {cfg.workers} and {cfg.threads}")
+    options = runner_options(cfg)
+    for tool in cfg.tools:
+        make_runner(tool, options)
     if cfg.speed:
         raise ValueError("speed measurement (--speed) is not available yet")
 
@@ -350,7 +353,8 @@ def _run_line(result: RunResult) -> str:
 
 def _score(cfg: RunConfig, layout: RunLayout, reference: Reference, *, command: str) -> list[dict]:
     """Write every suite and arm's scores and comparison; returns the runs that are ``ok`` but could not be scored
-    (``run_status``-shaped, status ``not scored``)."""
+    (``run_status``-shaped, status ``not scored``), every run of a suite whose ``donors.json`` cannot be read
+    among them."""
     a, b = cfg.tools
     statuses = run_statuses(layout, cfg)
     errors = []
@@ -359,7 +363,12 @@ def _score(cfg: RunConfig, layout: RunLayout, reference: Reference, *, command: 
         header, truths = load_truth(layout.truth(name), cfg.reference, reference)
         # A suite with donors is scored against each read's donor genotype, recorded as an input.
         donors = layout.donors(name) if layout.donors(name).is_file() else None
-        genotypes = None if donors is None else read_genotypes(donors)
+        genotypes, donors_error = None, None
+        if donors is not None:
+            try:
+                genotypes = read_genotypes(donors)
+            except (OSError, ValueError) as error:
+                donors_error = f"{relative(layout, donors)} cannot be read, so the suite is not scored: {error}"
         extra_inputs = {} if donors is None else {"donors": donors}
         for arm in suite.arms:
             shutil.rmtree(layout.scores_dir(name, arm), ignore_errors=True)
@@ -369,6 +378,9 @@ def _score(cfg: RunConfig, layout: RunLayout, reference: Reference, *, command: 
                 status = statuses[tool, name, arm]
                 if status["status"] != "ok":
                     continue  # the summary lists it as a failed run
+                if donors_error is not None:
+                    errors.append({**status, "status": "not scored", "error": donors_error})
+                    continue
                 predictions = layout.predictions(tool, name, arm)
                 try:
                     scored[tool] = score_file(tool, truths, predictions, reference, genotypes=genotypes)

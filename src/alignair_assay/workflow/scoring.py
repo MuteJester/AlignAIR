@@ -44,8 +44,12 @@ class ToolScores:
 
 def read_genotypes(path: str | Path) -> dict[str, DonorGenotype]:
     """The donor genotypes of a ``donors.json`` file (``suites.donors.donors_to_json``) by subject id: each donor's
-    ``Donor.view()``. ValueError for a file that is not a donors object."""
-    donors = donors_from_json(json.loads(Path(path).read_text(encoding="utf-8")))
+    ``Donor.view()``. ValueError naming the file for one that is not JSON, not a donors object or a malformed
+    one; OSError when it cannot be read."""
+    try:
+        donors = donors_from_json(json.loads(Path(path).read_text(encoding="utf-8")))
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        raise ValueError(f"{path} is not a valid donors file: {type(error).__name__}: {error}") from error
     return {donor.subject_id: donor.view() for donor in donors}
 
 

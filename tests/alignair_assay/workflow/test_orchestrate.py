@@ -16,7 +16,7 @@ from alignair_assay.runners import RUNNERS  # noqa: E402
 from alignair_assay.runners.base import RunResult, fasta_ids, read_run_json  # noqa: E402
 from alignair_assay.runners.oracle import OracleRunner  # noqa: E402
 from alignair_assay.suites import SUITES, get_suite  # noqa: E402
-from alignair_assay.workflow.orchestrate import RunConfig, config_hash, run_all  # noqa: E402
+from alignair_assay.workflow.orchestrate import RunConfig, check_config, config_hash, run_all  # noqa: E402
 
 JUNCTION_COLUMNS = ("junction", "junction_aa", "junction_start", "junction_end")
 
@@ -307,7 +307,13 @@ def test_config_checked_before_anything_runs(tmp_path):
     for overrides, message in ((dict(tools=("oracle",)), "two tools"), (dict(tools=("half", "half")), "two tools"),
                                (dict(tools=("oracle", "nope")), "unknown tool 'nope'"),
                                (dict(suites=("S99",)), "unknown suite"), (dict(scale=0), "scale"),
-                               (dict(split="other"), "unknown split"), (dict(speed=True), "speed")):
+                               (dict(split="other"), "unknown split"), (dict(speed=True), "speed"),
+                               # A tool without the options it needs fails here, before the manifest or a build.
+                               (dict(tools=("oracle", "igblast")), "--igblast-dir"),
+                               (dict(tools=("alignair-local", "oracle")), "--alignair-checkpoint")):
+        cfg = RunConfig(**(dict(suites=("S0", "S1"), tools=("oracle", "half"), scale=0.02) | overrides))
+        with pytest.raises(ValueError, match=message):
+            check_config(cfg)
         with pytest.raises(ValueError, match=message):
             _all(tmp_path / "run", **overrides)
         assert not (tmp_path / "run").exists()
@@ -396,6 +402,23 @@ def test_s11_parity_section(tmp_path):
     half_line = next(line for line in section.splitlines() if line.startswith("**half**"))
     assert half_line.startswith("**half** (20 pairs): differs on ") and "junction.nt_exact" in half_line
     assert "**oracle** (20 pairs): no metric differs" in section
+
+
+def test_malformed_donors_not_scored(half_run, tmp_path, capsys):
+    root = _copy(half_run[0], tmp_path)
+    layout = RunLayout(root)
+    layout.donors("S1").write_text("{not json")
+    # The report is still written: the suite's runs are listed as not scored, the other suites are scored.
+    assert main(["report", "--run-dir", str(root)]) == 2
+    report = _report(root)
+    failed = {(run["tool"], run["suite"], run["arm"]): run for run in report["failed_runs"]}
+    assert set(failed) == {("oracle", "S1", "shared"), ("half", "S1", "shared")}
+    assert all(run["status"] == "not scored" and "suites/S1/donors.json" in run["error"] for run in failed.values())
+    assert not _suite(report, "S1")["arms"]["shared"]["compared"]
+    assert not layout.tool_scores("S1", "shared", "half").exists()
+    assert _suite(report, "S0")["arms"]["shared"]["compared"]
+    assert "| half | S1 | shared | not scored |" in layout.report_md.read_text()
+    assert "donors.json" in capsys.readouterr().err
 
 
 def test_report_command_rescores(half_run, tmp_path, capsys):
