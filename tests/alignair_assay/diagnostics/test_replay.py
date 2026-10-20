@@ -50,9 +50,9 @@ SPANS = {"v": (0, 290), "d": (300, 316), "j": (322, 360)}
 # of them fails test_mirrored_product_code_is_pinned: re-check diagnostics/replay.py against the new code, then
 # update the digest here.
 PINNED = {
-    "alignair.predict.pipeline.predict": "d266fd2562979b645f9b0657aaa7a5e5da43564e615424e769494982d00eb026",
-    "alignair.api.predict_sequences": "fd823ae7e5c0c9d4cebcd5e0403565831ac7a506ce5ac95cb1192d35335f4df3",
-    "alignair.predict.forward.run_model": "f66c7af5cec870d2f660d4767b2444f39d8a7b26dce30a0e1c5c1d7ad03804d0",
+    "alignair.predict.pipeline.predict": "ab52fa514e3422438c02121e7a78c729cb7d5371a777e5c52b6c5808c3e09c0d",
+    "alignair.api.predict_sequences": "f105197a3fd679737ac5e0cc03e2191350cea8c76fc8f36838f7e7f09c102d7f",
+    "alignair.predict.forward.run_model": "5f5a63f21a4224585672f5a7bb8ad2dcc2c3619347b3dbc5bc4d124179a93fc0",
 }
 MIRRORED = {"alignair.predict.pipeline.predict": pipeline.predict,
             "alignair.api.predict_sequences": api.predict_sequences,
@@ -75,9 +75,14 @@ class SplitChainType(torch.nn.Module):
 
 
 def _code_digest(function) -> str:
+    """SHA-256 of the function's tokens as (type name, text), comments and blank lines left out. Token type numbers
+    differ between Python versions (3.12 added EXCLAMATION, moving OP from 54 to 55), so the name is hashed. Python
+    3.12 also tokenizes f-strings differently (FSTRING_START/MIDDLE/END instead of one STRING), so a pinned function
+    that gains an f-string gets a different digest per version; none of them has one."""
     source = textwrap.dedent(inspect.getsource(function))
     tokens = tokenize.generate_tokens(io.StringIO(source).readline)
-    kept = [(tok.type, tok.string) for tok in tokens if tok.type not in (tokenize.COMMENT, tokenize.NL)]
+    kept = [(tokenize.tok_name[tok.type], tok.string) for tok in tokens
+            if tok.type not in (tokenize.COMMENT, tokenize.NL)]
     return hashlib.sha256(repr(kept).encode()).hexdigest()
 
 
