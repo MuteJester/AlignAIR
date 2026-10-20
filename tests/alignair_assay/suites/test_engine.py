@@ -112,7 +112,7 @@ def test_accept_filter_applied():
     stats = generated.stats["j6"]
     assert stats["accepted"] >= 40 and stats["generated"] > stats["accepted"]
     first_round = (Experiment.on(dataconfig(REFERENCE)).recombine()
-                   .run_records(n=80, seed=derive_seed(7, "dev", "T", "j6", 0)).records)
+                   .run_records(n=80, seed=derive_seed(7, "dev", "T", "j6", 0), expose_provenance=True).records)
     prefix = [r for r in first_round if _uses_j6(r)][:40]
     assert prefix and [c["record"] for c in generated.cases[:len(prefix)]] == prefix
     # Round 0 over-asks by 2; round 1 by 1 / acceptance so far.
@@ -211,7 +211,7 @@ def test_cohort_strata(reference):
     cfg = dataconfig(REFERENCE)
     expected = (Experiment.on(cfg).recombine().mutate(rate=0.03)
                 .run_cohort([d.genotype(cfg) for d in donors], n_per_subject=4,
-                            seed=derive_seed(7, "dev", "S0_COHORT", "cohort", 0)).records)
+                            seed=derive_seed(7, "dev", "S0_COHORT", "cohort", 0), expose_provenance=True).records)
     assert [c["record"] for c in cohort] == expected[:10]
 
     # Fewer cases than donors: one record each, so the last donor has no case and is not simulated; the kept
@@ -221,7 +221,7 @@ def test_cohort_strata(reference):
     assert generated.stats["few"] == {"requested": 2, "accepted": 2, "generated": 2, "rounds": 1, "cases": 2}
     every = (Experiment.on(cfg).recombine().mutate(rate=0.03)
              .run_cohort([d.genotype(cfg) for d in donors], n_per_subject=1,
-                         seed=derive_seed(7, "dev", "S0_COHORT", "few", 0)).records)
+                         seed=derive_seed(7, "dev", "S0_COHORT", "few", 0), expose_provenance=True).records)
     assert [c["record"] for c in few] == every[:2]
 
 

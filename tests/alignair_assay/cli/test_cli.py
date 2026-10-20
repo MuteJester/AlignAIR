@@ -83,8 +83,12 @@ def test_cli_end_to_end_small(tmp_path, capsys, reference, load_fixture):
     disagreements = {g: sum(t.segments[g].alleles.disagrees_with_simulator for t in truths
                             if t.excluded is None and g in t.segments) for g in "vdj"}
     assert sum(disagreements.values()) > 0
-    assert (f"simulator allele-set disagreements (non-excluded cases): v={disagreements['v']} "
+    assert (f"simulator re-call differs (non-excluded cases): v={disagreements['v']} "
             f"d={disagreements['d']} j={disagreements['j']}\n") in printed
+    # Bench records carry no generative allele: every scored segment falls back to the simulator's first call.
+    fallbacks = {g: sum(g in t.segments for t in truths if t.excluded is None) for g in "vdj"}
+    assert (f"primary from the simulator's call, no generative allele (non-excluded cases): v={fallbacks['v']} "
+            f"d={fallbacks['d']} j={fallbacks['j']}\n") in printed
 
     scored = [t for t in truths if t.excluded is None]
     assert [t.case_id for t in truths] == [c["case_id"] for c in _bench_cases(load_fixture)]
@@ -265,7 +269,7 @@ def test_truth_records_reference_and_scoring_checks_it(tmp_path, capsys, referen
     truth_path, truths = _build_truth(tmp_path, cases, name="cases.jsonl")
     assert len(truths) == 3  # the header line is not a truth record
     header = read_truth_header(truth_path)
-    assert header == {"kind": "alignair_assay.truth", "version": "1", "reference": "HUMAN_IGH_OGRDB",
+    assert header == {"kind": "alignair_assay.truth", "version": "2", "reference": "HUMAN_IGH_OGRDB",
                       "reference_digest": reference.digest(), **genairr_provenance()}
     tsv = tmp_path / "oracle.tsv"
     write_airr_tsv([oracle_prediction(t) for t in truths if t.excluded is None], tsv)

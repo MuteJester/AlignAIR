@@ -51,7 +51,7 @@ def test_build_writes_layout(tmp_path, reference):
     assert not layout.donors("S0").exists()  # S0 has no donors
 
     header = read_truth_header(layout.truth("S0"))
-    assert header == {"kind": "alignair_assay.truth", "version": "1", "reference": REFERENCE,
+    assert header == {"kind": "alignair_assay.truth", "version": "2", "reference": REFERENCE,
                       "reference_digest": reference.digest(), **genairr_provenance(),
                       "suite": "S0", "split": "dev", "seed": 11, "scale": 1.0, "n_cases": 50}
 

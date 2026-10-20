@@ -21,11 +21,17 @@ def predicted_set(pred: PredSegment) -> frozenset[str]:
 
 
 def call_metrics(prefix: str, truth: AlleleTruth, pred: PredSegment) -> CaseScores:
-    """Allele metrics for an observed segment; a missing call is wrong, and its set statistics are ``nan``."""
+    """Allele metrics for an observed segment; a missing call is wrong, and its set statistics are ``nan``.
+
+    ``top1_in_set`` scores the top-1 against the scored set (the generative allele's observable set plus the
+    simulator's re-call); ``top1_generative`` against the generative allele's observable set alone, the true-allele
+    accuracy.
+    """
     called = predicted_set(pred)
     hit = called & truth.alleles
     return {
         f"{prefix}.top1_in_set": float(pred.call in truth.alleles),
+        f"{prefix}.top1_generative": float(pred.call in truth.generative),
         f"{prefix}.gene_top1": float(pred.call is not None and gene_name(pred.call) in truth.genes),
         f"{prefix}.any_overlap": float(bool(hit)),
         f"{prefix}.set_precision": len(hit) / len(called) if called else NAN,

@@ -3,6 +3,10 @@
 A truth file may start with a header line ``{"header": {...}}`` describing how it was built (``kind`` and
 ``version``, the reference and its digest, the GenAIRR provenance); ``read_truth_jsonl`` skips it and
 ``read_truth_header`` returns it. File access goes through ``core.jsonl``, so this module stays pure.
+
+Version 2 added each allele truth's ``generative`` set and ``primary_fallback`` flag. A version 1 file, whose
+primary was always the simulator's first call, loads with ``generative`` equal to the scored set ``alleles`` and
+``primary_fallback`` True.
 """
 from __future__ import annotations
 
@@ -18,7 +22,7 @@ from alignair_assay.truth.segment import ObservedSegment
 
 # Header ``kind`` and ``version`` of a truth file.
 TRUTH_KIND = "alignair_assay.truth"
-TRUTH_VERSION = "1"
+TRUTH_VERSION = "2"
 
 
 def truth_to_dict(t: ObservableTruth) -> dict:
@@ -102,6 +106,8 @@ def _segment_to_dict(s: SegmentTruth) -> dict:
             "genes": sorted(a.genes),
             "simulator_ties": sorted(a.simulator_ties),
             "disagrees_with_simulator": a.disagrees_with_simulator,
+            "generative": sorted(a.generative),
+            "primary_fallback": a.primary_fallback,
         },
         "observed_length": s.observed_length,
         "inverted": s.inverted,
@@ -110,15 +116,19 @@ def _segment_to_dict(s: SegmentTruth) -> dict:
 
 def _segment_from_dict(d: dict) -> SegmentTruth:
     a = d["alleles"]
+    alleles = frozenset(a["alleles"])
     return SegmentTruth(
         observed=ObservedSegment(**d["observed"]),
         boundaries=BoundaryTruth(**{k: tuple(v) for k, v in d["boundaries"].items()}),
         alleles=AlleleTruth(
             primary=a["primary"],
-            alleles=frozenset(a["alleles"]),
+            alleles=alleles,
             genes=frozenset(a["genes"]),
             simulator_ties=frozenset(a["simulator_ties"]),
             disagrees_with_simulator=a["disagrees_with_simulator"],
+            # Version 1 files: no generative set, and the primary was always the simulator's first call.
+            generative=frozenset(a["generative"]) if "generative" in a else alleles,
+            primary_fallback=a.get("primary_fallback", True),
         ),
         observed_length=d["observed_length"],
         inverted=d["inverted"],

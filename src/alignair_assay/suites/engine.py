@@ -5,7 +5,8 @@ generation seed. Each stratum requests ``max(1, round(n * scale))`` cases; rejec
 strata never short-fill silently, they raise naming the suite, stratum and counts. A suite's donors are drawn
 once from ``(seed, split, suite, "donors", tag)`` and do not scale. Strata run in parallel, one spawned process
 per stratum; a worker receives only names and numbers, resolves the suite from the registry and re-draws the
-donors from the same seed.
+donors from the same seed. Every simulation runs with ``expose_provenance=True``, so each record names its
+generative alleles (``truth_{v,d,j}_call``); that adds those keys and changes nothing else.
 """
 from __future__ import annotations
 
@@ -157,7 +158,7 @@ def _sampled_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, round_s
         else:
             factor = min(_MAX_FACTOR, 1 / max(len(accepted) / generated, _MIN_ACCEPTANCE))
         batch = stratum.recipe(ctx).run_records(n=math.ceil((n - len(accepted)) * factor),
-                                                seed=round_seed(rounds)).records
+                                                seed=round_seed(rounds), expose_provenance=True).records
         generated += len(batch)
         rounds += 1
         accepted.extend(r for r in batch if stratum.accept is None or stratum.accept(r))
@@ -167,7 +168,7 @@ def _sampled_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, round_s
 
 def _clonal_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: int) -> tuple[list[dict], dict]:
     """Every record of one run growing ``ctx.n`` clones; fewer distinct clones than requested raises."""
-    records = list(stratum.recipe(ctx).run_records(seed=seed).records)
+    records = list(stratum.recipe(ctx).run_records(seed=seed, expose_provenance=True).records)
     clones = len({r["clone_id"] for r in records})
     if clones < ctx.n:
         raise RuntimeError(f"{suite.name}/{stratum.name}: generated {clones} of {ctx.n} clones")
@@ -188,7 +189,8 @@ def _cohort_records(suite: Suite, stratum: Stratum, ctx: RecipeContext, seed: in
         raise ValueError(f"{suite.name}/{stratum.name}: a cohort stratum needs donors (Suite.donors)")
     per_subject = math.ceil(ctx.n / len(ctx.donors))
     genotypes = [donor.genotype(ctx.config) for donor in ctx.donors[:math.ceil(ctx.n / per_subject)]]
-    records = list(stratum.recipe(ctx).run_cohort(genotypes, n_per_subject=per_subject, seed=seed).records)
+    records = list(stratum.recipe(ctx).run_cohort(genotypes, n_per_subject=per_subject, seed=seed,
+                                                  expose_provenance=True).records)
     if len(records) < ctx.n:
         raise RuntimeError(f"{suite.name}/{stratum.name}: generated {len(records)} of {ctx.n} cohort records")
     stats = {"requested": ctx.n, "accepted": len(records), "generated": len(records), "rounds": 1}

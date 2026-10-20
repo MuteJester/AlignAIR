@@ -18,32 +18,45 @@ from alignair_assay.truth.segment import ObservedSegment, check_invariants
 
 def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: str, stratum: str,
                               orientation: int = 0) -> ObservableTruth:
-    """Observable truth for a forward GenAIRR record (``rev_comp`` records are not supported yet)."""
+    """Observable truth for a forward GenAIRR record (``rev_comp`` records are not supported yet).
+
+    Each segment's primary allele is the generative one, ``truth_{g}_call`` (records simulated with
+    ``expose_provenance=True``); a record without it falls back to the first entry of ``{g}_call``, GenAIRR's
+    post-SHM re-call, and the allele truth says so (``AlleleTruth.primary_fallback``). A generative allele missing
+    from the call list makes the segment re-called, decoded as ``truth.genairr`` describes.
+    """
     if record.get("rev_comp"):
         raise ValueError(f"{case_id}: reverse-complemented GenAIRR records are not supported")
     read = record["sequence"].upper()
     warnings: list[str] = []
 
-    observed: dict[str, tuple[ObservedSegment, str, list[str], bool]] = {}
+    observed: dict[str, tuple[ObservedSegment, str, list[str], bool, bool]] = {}
     unscorable: set[str] = set()
     for g in "vdj":
         calls = [c for c in (record.get(f"{g}_call") or "").split(",") if c]
-        if not calls:
+        generative = record.get(f"truth_{g}_call") or None
+        primary = generative or (calls[0] if calls else None)
+        if primary is None:
             continue
-        primary = calls[0]
         if not reference.has(primary):
             warnings.append(f"{g}: primary allele {primary} not in reference; segment dropped")
             unscorable.add(g)
             continue
+        # GenAIRR projects the alignment onto its first call, which is the generative allele whenever it is listed.
+        recalled = bool(calls) and generative is not None and generative not in calls
         allele_seq = reference.seq(primary)
         inverted = g == "d" and bool(record.get("d_inverted"))
         frame_seq = revcomp(allele_seq) if inverted else allele_seq
         problems: list[str] = []
         try:
-            if inverted:
-                seg = observe_inverted_d(read, allele_seq, primary, record, problems)
+            if not inverted:
+                seg = observe_forward(read, allele_seq, primary, record, g, problems, recalled=recalled)
+            elif recalled and not reference.has(calls[0]):
+                seg = None
+                problems.append(f"inverted D re-called as {calls[0]}, which is not in the reference; segment dropped")
             else:
-                seg = observe_forward(read, allele_seq, primary, record, g, problems)
+                projected = len(reference.seq(calls[0])) if recalled else None
+                seg = observe_inverted_d(read, allele_seq, primary, record, problems, projected_length=projected)
         except (IndexError, TypeError, ValueError) as exc:
             seg = None
             problems.append(f"unusable simulator alignment ({exc}); segment dropped")
@@ -52,14 +65,14 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
             unscorable.add(g)
         if seg is not None:
             problems += check_invariants(read, frame_seq, seg)
-            observed[g] = (seg, frame_seq, calls, inverted)
+            observed[g] = (seg, frame_seq, calls, inverted, generative is None)
         warnings.extend(f"{g}: {p}" for p in problems)
 
     order = list(observed)
     segments: dict[str, SegmentTruth] = {}
     d_reference = None
     for k, g in enumerate(order):
-        seg, frame_seq, calls, inverted = observed[g]
+        seg, frame_seq, calls, inverted, fallback = observed[g]
         left = observed[order[k - 1]][0].seq_end if k else 0
         right = observed[order[k + 1]][0].seq_start if k + 1 < len(order) else len(read)
         if left > seg.seq_start:
@@ -69,7 +82,8 @@ def truth_from_genairr_record(record: dict, reference: Reference, *, case_id: st
         segments[g] = SegmentTruth(
             observed=seg,
             boundaries=boundary_intervals(read, frame_seq, seg, left, right),
-            alleles=observable_alleles(seg, d_reference if inverted else reference, g, calls),
+            alleles=observable_alleles(seg, d_reference if inverted else reference, g, calls,
+                                       primary_fallback=fallback),
             observed_length=seg.germ_end - seg.germ_start,
             inverted=inverted,
         )

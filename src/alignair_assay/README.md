@@ -59,8 +59,22 @@ key; a label named like a fixed dimension is an error.
   or coordinate truth; a tool that calls it scores `{g}.spurious_call`.
 - The observed alignment drops edge gaps: a clipped or edge-deleted germline base cannot be told apart from extra
   trimming.
-- The allele truth is a set: every reference allele whose sequence contains the observed germline, plus the
-  simulator's own calls that are in the reference. Disagreements with the simulator's tie list are counted.
+- The primary allele is the generative one, the allele GenAIRR sampled (`truth_{g}_call`; the suite engine
+  simulates with `expose_provenance=True`). GenAIRR's `{g}_call` is a best-match re-call made after SHM, which
+  differs from the generative allele in a few percent of mutated reads. A record without `truth_{g}_call` (bench
+  cases, records simulated without provenance) falls back to the first entry of `{g}_call`, and the truth summary
+  counts those fallbacks per gene (`primary_fallbacks`).
+- Coordinates, CIGAR and SHM truth are observed against the generative allele. When it is not in the call list,
+  GenAIRR projects the CIGAR edges onto the re-called allele (a deletion fill to that allele's end, NP bases it
+  matches claimed as germline) while the core alignment stays generative. `truth.genairr` undoes this: a re-called
+  forward segment is clipped to the generative allele's trimmed germline `[trim_5, len - trim_3)`, and a re-called
+  inverted D has its fills decoded with the re-called allele's length (or is dropped as unscorable when they do not
+  determine its span). Both reproduce GenAIRR's own generative alignment.
+- The allele truth is a set. `AlleleTruth.generative` holds every reference allele whose sequence contains the
+  observed germline of the generative allele. The scored set `AlleleTruth.alleles` adds the simulator's calls that
+  are in the reference, since a sequence-only aligner can defend either. The truth summary counts the cases where
+  the simulator re-call differs from the generative set (`simulator_disagreements`). Truth files written before the
+  generative primary (version 1) load with `generative` equal to `alleles`.
 - Each segment edge is an inclusive interval of equally defensible positions. An edge is exact when the prediction
   lies inside its interval, and its error is the distance to the interval.
 - The junction exists only when both conserved anchors (V Cys, J Trp/Phe) are aligned read bases. Productivity
@@ -82,6 +96,15 @@ key; a label named like a fixed dimension is an error.
 - Summaries report coverage next to every mean.
 - `metrics.lower_is_better` and `metrics.INFORMATIONAL` are the registries. A comparison runs Holm over every
   non-informational metric either tool produced.
+
+**Allele metrics** (`metrics.alleles`, per observed segment `g`):
+
+- `{g}.top1_in_set`: the top-1 call is in the scored set (generative set plus the simulator's re-call).
+- `{g}.top1_generative`: the top-1 call is in the generative set, i.e. true-allele accuracy.
+- `{g}.gene_top1`: the top-1 call's gene is a gene of the scored set.
+- `{g}.any_overlap` and `{g}.set_precision`: the overlap of the tool's call set with the scored set.
+- `{g}.set_size` (informational): the size of the tool's call set.
+- `{g}.no_call` (lower is better): the tool made no top-1 call.
 
 **Minimum observed lengths.** `metrics.case.MIN_OBSERVED = {"v": 20, "d": 8, "j": 10}` observed germline bases.
 Below its minimum a segment gets only `{g}_short.top1_in_set` and `{g}_short.abstain_ok`, for which abstaining is
@@ -148,9 +171,10 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   `kind`, `version`, `reference`, `reference_digest`, the GenAIRR provenance, `suite`, `split`, `seed`, `scale` and
   `n_cases`. `build.json` records the same configuration, its `config_hash` (SHA-256 of the canonical JSON of
   `{suite, split, reference_digest, seed, scale}`), the per-stratum generation stats, the truth summary
-  (`truth.summary.truth_summary`: excluded cases, warnings, unscorable genes, simulator disagreements), the worker
-  count and the wall time in `seconds`; a suite with donors adds `donors_summary` (see Donors). It is removed first
-  and written last, so it marks a complete build. The command prints one line per suite.
+  (`truth.summary.truth_summary`: excluded cases, warnings, unscorable genes, simulator re-calls that differ,
+  primary fallbacks), the worker count and the wall time in `seconds`; a suite with donors adds `donors_summary`
+  (see Donors). It is removed first and written last, so it marks a complete build. The command prints one line per
+  suite.
 - `run` runs one registered tool on built suites of `RUN`. It first checks every input: the tool and its options,
   that each suite is built (`build.json`) against one truth reference, whose dataconfig must still have the
   digest the truth headers record, and, for `--arm genotype`, that each suite has donors (`donors.json`). The run
@@ -168,7 +192,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   failed donor and the tool's error line.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit` and `genairr_git_dirty`. The
-  command then prints the excluded cases, warnings, unscorable genes and simulator disagreements.
+  command then prints the excluded cases, warnings, unscorable genes, simulator re-calls that differ ("simulator
+  re-call differs") and primary fallbacks.
 - `score` writes `<tool>.scores.jsonl.gz`, `<tool>.report.json` and `<tool>.report.md`.
 - `compare` writes `comparison.json` and `comparison.md`, and prints the headline table. Its 95% and simultaneous
   CIs of 0/1 metrics are clipped to [-1, 1].

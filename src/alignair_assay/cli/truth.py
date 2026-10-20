@@ -25,7 +25,7 @@ def register(sub) -> None:
 
 def run(args) -> int:
     """Write the truth file (header: kind, version, reference, its digest, GenAIRR provenance) and print counts of
-    excluded cases, warnings, unscorable genes and simulator allele-set disagreements."""
+    excluded cases, warnings, unscorable genes, simulator re-calls that differ and primary fallbacks."""
     reference = Reference.from_dataconfig(args.reference)
     truths = [truth_from_bench_case(case, reference) for case in read_jsonl(args.bench_cases)]
     check_unique(truths, args.bench_cases)
@@ -48,8 +48,10 @@ def _print_truth_summary(summary: dict) -> None:
     print(f"excluded: {sum(excluded.values())}" + (f" ({reasons})" if reasons else ""))
     print(f"cases with warnings: {len(warnings)}")
     print("unscorable genes: " + " ".join(f"{g}={n}" for g, n in summary["unscorable"].items()))
-    print("simulator allele-set disagreements (non-excluded cases): "
+    print("simulator re-call differs (non-excluded cases): "
           + " ".join(f"{g}={n}" for g, n in summary["simulator_disagreements"].items()))
+    print("primary from the simulator's call, no generative allele (non-excluded cases): "
+          + " ".join(f"{g}={n}" for g, n in summary["primary_fallbacks"].items()))
     for case_id, case_warnings in list(warnings.items())[:_MAX_LISTED_WARNINGS]:
         for w in case_warnings:
             print(f"  {case_id}: {w}")

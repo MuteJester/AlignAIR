@@ -280,7 +280,8 @@ def _toy_segment(allele_set, *, inverted=False, germ_start=3):
     return SegmentTruth(
         observed=obs,
         boundaries=BoundaryTruth((0, 0), (6, 6), (germ_start, germ_start), (germ_start + 6, germ_start + 6)),
-        alleles=AlleleTruth("X*01", frozenset(allele_set), frozenset({"X"}), frozenset(), False),
+        alleles=AlleleTruth("X*01", frozenset(allele_set), frozenset({"X"}), frozenset(), False,
+                            generative=frozenset(allele_set)),
         observed_length=6, inverted=inverted,
     )
 
