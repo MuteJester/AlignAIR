@@ -396,22 +396,10 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
         _say(donor, f"run {tool} {arm}", steps["runs"][f"{arm}/{tool}"])
         results[tool, arm] = result
 
-    support = gene_support(truths)
-    index = SupportIndex(genotype, iuis, ctx.merged, ctx.reference, support=support)
-    thresholded = SupportIndex(genotype, iuis, ctx.merged, ctx.reference, support=support, thresholds=True)
-    weights = {row["sequence_id"]: int(row["consensus_count"])
-               for row in real_steps.read_meta(layout.real_reads_meta(donor))}
-    data = real_score.DonorScoring(donor=donor, truths={truth.read_id: truth for truth in truths}, index=index,
-                                   thresholded=thresholded, weights=weights,
-                                   sd3=frozenset(ctx.sensitivity["genes"]))
+    data = donor_scoring(donor, layout, truths, genotype, iuis, ctx.reference, ctx.merged, ctx.sensitivity["genes"])
     steps["scores"], block["tools"] = {}, {arm: {} for arm in ARMS}
-    common = {"truth_sha256": sha256_file(layout.real_truth(donor)),
-              "genotype_sha256": sha256_file(layout.real_genotype_json(donor)),
-              "iuis_ogrdb_sha256": iuis.source.get("sha256"), "reference_digest": ctx.reference.digest(),
-              "reference_gapped_digest": ctx.reference.gapped_digest()}
-    check = {**oracle_self_check(truths, index), "pipeline": real_score.pipeline_oracle(data, layout, common),
-             "decoys": decoy_calls(index)}
-    block["oracle_self_check"] = {**check, "status": oracle_status(check)}
+    common = scoring_inputs(donor, layout, iuis, ctx.reference)
+    block["oracle_self_check"] = self_check(data, layout, common)
     for (tool, arm), result in results.items():
         if block["runs"][arm][tool]["status"] != "ok":
             continue
@@ -429,6 +417,40 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
         block["tools"][arm][tool] = {**real_score.tool_summary(data, tool, arm), "matching": matching}
     block["comparisons"], block["arm_deltas"] = _comparisons(cfg, data, layout, ctx.sensitivity["genes"])
     return block, data
+
+
+def donor_scoring(donor: str, layout: RunLayout, truths: list[RealTruth], genotype: RealGenotype, iuis: IuisMap,
+                  reference: Reference, merged: dict, sd3_genes: Iterable[str]) -> real_score.DonorScoring:
+    """What the donor's reads are scored with (``real_score.DonorScoring``): their ``truths`` (in read order), the
+    ``SupportIndex`` of the R1 primary and of the gene-support variant over the gene support of the truths' known
+    answers, the reads' consensus counts (``reads.tsv`` in ``layout``) and the SD3 sensitivity analysis's genes.
+    ``merged`` is ``real.genotype.merge_identical(reference)``."""
+    support = gene_support(truths)
+    index = SupportIndex(genotype, iuis, merged, reference, support=support)
+    thresholded = SupportIndex(genotype, iuis, merged, reference, support=support, thresholds=True)
+    weights = {row["sequence_id"]: int(row["consensus_count"])
+               for row in real_steps.read_meta(layout.real_reads_meta(donor))}
+    return real_score.DonorScoring(donor=donor, truths={truth.read_id: truth for truth in truths}, index=index,
+                                   thresholded=thresholded, weights=weights, sd3=frozenset(sd3_genes))
+
+
+def scoring_inputs(donor: str, layout: RunLayout, iuis: IuisMap, reference: Reference) -> dict:
+    """The digests every run's scores of the donor are keyed on (``real_score.step_scores``' ``inputs`` without the
+    run's own ``predictions_sha256``): the truth and genotype files in ``layout``, the IUIS map's OGRDB file and the
+    reference's content and gapped forms."""
+    return {"truth_sha256": sha256_file(layout.real_truth(donor)),
+            "genotype_sha256": sha256_file(layout.real_genotype_json(donor)),
+            "iuis_ogrdb_sha256": iuis.source.get("sha256"), "reference_digest": reference.digest(),
+            "reference_gapped_digest": reference.gapped_digest()}
+
+
+def self_check(data: real_score.DonorScoring, layout: RunLayout, common: dict) -> dict:
+    """The donor's truth self-check: ``real.metrics.oracle_self_check`` of its truths, the oracle through the tools'
+    path (``pipeline``: ``real_score.pipeline_oracle``, whose AIRR TSV and scores it writes in ``layout``, keyed on
+    ``common``) and the ``decoys`` (``real.metrics.decoy_calls``), with its ``status`` (``oracle_status``)."""
+    check = {**oracle_self_check(list(data.truths.values()), data.index),
+             "pipeline": real_score.pipeline_oracle(data, layout, common), "decoys": decoy_calls(data.index)}
+    return {**check, "status": oracle_status(check)}
 
 
 def _drift(matching: dict) -> str:

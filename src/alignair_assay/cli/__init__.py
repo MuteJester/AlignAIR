@@ -22,6 +22,8 @@
       [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE]
       [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
       [--checkpoint LABEL=MODEL.alignair ...] [--stop-after preprocess] [--force]
+  python -m alignair_assay audit --sim-run RUN --real-run RUN --data-root ROOT --checkpoint base=MODEL.alignair
+      --out DIR [--device cuda] [--skip-speed] [--igblast-dir DIR] [--workers 8] [--threads 8]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR
@@ -40,9 +42,9 @@ import argparse
 import sys
 
 from alignair_assay.cli import all as all_command
-from alignair_assay.cli import build, compare, diagnose, real, report, run, score, speed, truth
+from alignair_assay.cli import audit, build, compare, diagnose, real, report, run, score, speed, truth
 
-COMMANDS = (all_command, report, build, run, speed, diagnose, real, truth, score, compare)
+COMMANDS = (all_command, report, build, run, speed, diagnose, real, audit, truth, score, compare)
 
 
 def main(argv: list[str] | None = None) -> int:

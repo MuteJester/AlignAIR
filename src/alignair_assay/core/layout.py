@@ -36,6 +36,8 @@ RUN/
   real/<donor>/truth.jsonl.gz         the per-read truth, its record as the header line
   real/<donor>/runs/<tool>/<arm>/     predictions.tsv + run.json (written last) + logs/
   real/<donor>/scores/<arm>/          <tool>.scores.jsonl.gz (each read's classes), <a>_vs_<b>.json comparisons
+  audit/audit.json, audit/audit.md    the readiness audit's checks and verdict (``audit``, ``workflow.audit``)
+  audit/scratch/<check>/              a check's scratch run directory (a RunLayout root), replaced on each audit
 ```
 
 ``RunLayout`` only joins paths: it never reads, writes or creates anything.
@@ -318,6 +320,26 @@ class RunLayout:
     def real_comparison_json(self, donor: str, arm: str, pair: str) -> Path:
         """One paired comparison of the donor's reads (``<a>_vs_<b>`` on an arm, or a tool's arm delta)."""
         return self.real_donor_dir(donor) / "scores" / _component(arm) / f"{_component(pair)}.json"
+
+    @property
+    def audit_dir(self) -> Path:
+        """Directory of the readiness audit (``workflow.audit``): its record and its scratch run directories."""
+        return self.root / "audit"
+
+    @property
+    def audit_json(self) -> Path:
+        """The audit's checks and verdict as JSON."""
+        return self.audit_dir / "audit.json"
+
+    @property
+    def audit_md(self) -> Path:
+        """The audit's checks and verdict as markdown, its first line the verdict."""
+        return self.audit_dir / "audit.md"
+
+    def audit_scratch(self, check: str) -> Path:
+        """The scratch run directory of one audit check that re-runs anything (a ``RunLayout`` root of its own),
+        replaced each time the audit runs."""
+        return self.audit_dir / "scratch" / _component(check)
 
 
 def _component(name: str) -> str:

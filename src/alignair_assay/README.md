@@ -194,6 +194,38 @@ result.scalars()["S1/against/junction.nt_exact.delta"]                         #
   every metric and no read fixed or broken; a checkpoint file against itself is one model key, one record compared
   with itself.
 
+### The readiness audit
+
+`audit` is the gate for model work: it proves the assay can be trusted to compare two checkpoints. It reads a stored
+`all` run (the test-split claim run: only its computed oracle and IgBLAST numbers, never run or scored again) and a
+stored `real` run, re-runs what it must in scratch, and writes `OUT/audit/audit.md` (its first line the verdict)
+and `audit.json`:
+
+```
+PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_genairr_fix \
+    --real-run .private/assay/p3a_dev --data-root ROOT --checkpoint base=MODEL.alignair --device cuda \
+    --out .private/assay/readiness_audit [--skip-speed]
+```
+
+- **Checks** (`workflow.audit`), each `{name, status, n, evidence, reason}` with `status` pass, fail, warn or
+  skipped and `n` the reads or cases it rests on:
+  - self-checks: the stored run's oracle is perfect on every suite, and so is a fresh dev build's at this code; every
+    dev donor's real self-check passed (pipeline path and decoys); truth-health flags and stale stored builds warn;
+  - reproducibility: S1 built twice at scale 0.02 (dev) gives byte-identical cases, truth and reads (skipped when
+    GenAIRR moved during the builds); one real dev donor's truth and every run's scores, recomputed from the stored
+    reads, genotype and predictions, equal the stored ones in content: every row, and every input (a stored file
+    written before JSON-lines gzip was reproducible carries a time, so its bytes are reported, not required);
+  - null comparisons, the checkpoint under labels `a` and `b`: `diagnose` (the file against itself in memory: two
+    model keys), `all --tools alignair-local@a,alignair-local@b` on S1 at scale 0.05 (dev) and
+    `real --tools alignair-api@a,alignair-api@b --cap 2000` on W-97, each with every Δ 0, no significant verdict, no
+    read fixed or broken and each side's own scores equal;
+  - IgBLAST bands: `known_top1` and `ref_known_top1` at least 99% on every dev donor (shared arm); S1
+    `v.top1_in_set` within 1 pp of 97.9%; its speed, timed now on a fresh dev S1, within 15% of the stored
+    measurement (informational: `warn` outside, `skipped (load)` when the 1-minute load stays above 1.5).
+- **Verdict.** The audit exits 0 only when no check failed and one passed: a check that passes on nothing (n 0), or
+  raises, fails. Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on each audit; `--out` may not
+  overlap a stored run.
+
 ## Layers and dependency rule
 
 Each subpackage is a layer and may import only the layers in its row.
@@ -205,11 +237,11 @@ Each subpackage is a layer and may import only the layers in its row.
 | `airr` | AIRR TSV `reader` (`load_airr_tsv`, and `rows_to_predictions` for rows already in memory) and `writer` | core, airr |
 | `metrics` | per-case scorers (pure), the group scorers that read a case's whole clone (`groups`), the scorers against a read's donor genotype (`genotype`), and the metric registries | core, truth, metrics |
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
-| `report` | JSON reports and markdown summaries (`build`, `markdown`), the run report rendered from a run summary (`run`), the diagnostics report (`diagnostics`: its one-page summary, scalars, per-suite detail and profile) and the real-data report rendered from `real_summary.json` (`real`: the entry point and the summary page; `real_detail`: the detail sections; `real_format`: the formatting and scope helpers both use) | core, stats, report |
+| `report` | JSON reports and markdown summaries (`build`, `markdown`), the run report rendered from a run summary (`run`), the diagnostics report (`diagnostics`: its one-page summary, scalars, per-suite detail and profile) and the real-data report rendered from `real_summary.json` (`real`: the entry point and the summary page; `real_detail`: the detail sections; `real_format`: the formatting and scope helpers both use) and the readiness audit's markdown (`audit`) | core, stats, report |
 | `scoring` | `pipeline` (score one tool against a truth file; `truth_reference`, the reference built suites' truth was built against), `slices`, `oracle` (the oracle rule on per-case scores) and `clusters` (`cluster_ids`: the clone or orientation pair a comparison clusters a case by) | core, truth, airr, metrics, stats, scoring |
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`, with `read_genotypes` for a `donors.json`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `alignair_api`: a local checkpoint through AlignAIR's public Python API, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
-| `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory), `orchestrate` (`RunConfig`, `run_all`, `score_and_report`), `manifest` (the run directory's manifest, shared by `all` and `real`: `manifest_record`, and `changed_fields` and `describe_changes` to name what a refused configuration changes) and `diagnose` (`evaluate`, the evaluator behind `diagnose`: the diagnostics layer orchestrated over a run directory, cached per suite, with its report) | everything except cli |
+| `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory), `orchestrate` (`RunConfig`, `run_all`, `score_and_report`), `manifest` (the run directory's manifest, shared by `all` and `real`: `manifest_record`, and `changed_fields` and `describe_changes` to name what a refused configuration changes) and `diagnose` (`evaluate`, the evaluator behind `diagnose`: the diagnostics layer orchestrated over a run directory, cached per suite, with its report), and `audit` (`run_audit`, the readiness gate behind `audit`: self-checks, reproducibility, null comparisons and IgBLAST's bands over the stored runs) | everything except cli |
 | `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed), `identity` (the model key: `weights_sha256` and the AlignAIR code identity) and `api_predict` (the alignair-api runner's subprocess, run by module name: AlignAIR's public API on a FASTA, written as the CLI writes it) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318), the paper's novel alleles (`sd3_novel`, `sd3_only`) and the genotype arm's alleles (`arm_alleles`) | core, real.genotype |
 | `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the pilot pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
@@ -486,6 +518,8 @@ RUN/
     profile.json                      the cached speed profile, with its key
     profile.md                        the speed profile of the last report
     diagnostics.json, diagnostics.md  the model's last diagnostics report and its one-page summary
+  audit/audit.json, audit/audit.md    the readiness audit's checks and verdict (`audit`, `workflow.audit`)
+  audit/scratch/<check>/              a check's scratch run directory (a RunLayout root), replaced on each audit
 ```
 
 | Path | `RunLayout` |
@@ -514,6 +548,7 @@ RUN/
 | `real/<donor>/fetch.json`, `truth.jsonl.gz` | `real_fetch_json(donor)`, `real_truth(donor)` |
 | `real/<donor>/runs/<tool>/<arm>/` and its files | `real_run_dir(tool, donor, arm)`, `real_predictions(...)`, `real_run_json(...)`, `real_logs_dir(...)` |
 | `real/<donor>/scores/<arm>/<tool>.scores.jsonl.gz`, `<pair>.json` | `real_scores(donor, arm, tool)`, `real_comparison_json(donor, arm, pair)` |
+| `audit/`, `audit.json`, `audit.md`, `scratch/<check>/` | `audit_dir`, `audit_json`, `audit_md`, `audit_scratch(check)` |
 
 Suites are `S0` (toy: tests and smoke runs), `S0_EXHAUST` and `S0_COHORT` (tests only) and `S1`–`S12`; arms are
 `shared` and `genotype`; splits are `dev` (the default, for model iteration) and `test` (locked, used only for
@@ -547,6 +582,8 @@ python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97
     [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE] \
     [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair] \
     [--checkpoint LABEL=MODEL.alignair ...] [--stop-after preprocess] [--force]
+python -m alignair_assay audit --sim-run RUN --real-run RUN --data-root ROOT --checkpoint base=MODEL.alignair \
+    --out DIR [--device cuda] [--skip-speed] [--igblast-dir DIR] [--workers 8] [--threads 8]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR [--donors DONORS.json]
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05] \
@@ -628,6 +665,10 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   verdict included) and scores nothing, so it takes any pilot donor, test donors without `--split test` included
   (each donor's split is recorded), and needs no tool option; scoring donors in the same run directory afterwards is
   another configuration (`--force`), which reuses their preprocessing.
+- `audit` runs `workflow.audit.run_audit` (see The readiness audit), prints each check and the verdict, and exits 0
+  only when the audit passes. Another checkpoint label than `base`, a stored run without its records, a missing data
+  root or checkpoint, an `--out` overlapping a stored run, and a CUDA device torch does not see exit with status 2
+  before any work. `--igblast-dir` defaults to the release `--sim-run` recorded.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit`, `genairr_git_dirty` and
   `genairr_source_sha256` (the package directory's content: sources, compiled engine and data). The

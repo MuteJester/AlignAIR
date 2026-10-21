@@ -128,3 +128,14 @@ def test_layout_rejects_names_that_are_not_one_component(tmp_path, name):
             layout.real_scores(*args)
         with pytest.raises(ValueError, match="path component"):
             layout.real_comparison_json(*args)
+    with pytest.raises(ValueError, match="path component"):
+        layout.audit_scratch(name)
+
+
+def test_audit_paths(tmp_path):
+    # the audit's record and its scratch run directories, one per check that re-runs anything
+    layout = RunLayout(tmp_path)
+    assert layout.audit_dir == tmp_path / "audit"
+    assert layout.audit_json == tmp_path / "audit" / "audit.json"
+    assert layout.audit_md == tmp_path / "audit" / "audit.md"
+    assert layout.audit_scratch("null_all") == tmp_path / "audit" / "scratch" / "null_all"
