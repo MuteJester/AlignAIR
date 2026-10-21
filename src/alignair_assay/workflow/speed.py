@@ -30,7 +30,7 @@ from alignair_assay.core.cases import evenly_spaced, read_fasta, write_fasta
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.reference import Reference
-from alignair_assay.runners import make_runner
+from alignair_assay.runners import make_runner, parse_tool
 from alignair_assay.runners.alignair import LOCAL_CODE_IDENTITY, local_code_identity, local_cuda_available
 from alignair_assay.runners.base import Runner, RunnerOptions
 from alignair_assay.suites import get_suite
@@ -90,7 +90,12 @@ class SpeedConfig:
 def refuse_api(tools) -> None:
     """ValueError when ``tools`` holds alignair-api (``API``): a timed result records its tool's identity
     (``IDENTITY``), which has none for alignair-api's checkpoint; alignair-local times the same checkpoint and
-    product code."""
+    product code. Checkpoint variants (``<tool>@<label>``) are refused as well: the protocol times the configured
+    checkpoint (``--alignair-checkpoint``) only."""
+    variants = [tool for tool in tools if parse_tool(tool)[1] is not None]
+    if variants:
+        raise ValueError(f"the speed protocol does not time checkpoint variants ({', '.join(variants)}); time "
+                         f"{LOCAL} on one checkpoint (--alignair-checkpoint), or run all without --speed")
     if API in tools:
         raise ValueError(f"the speed protocol does not time {API}: a timed result records its tool's identity, and "
                          f"it has none for {API}'s checkpoint; time {LOCAL} instead (--alignair-checkpoint), which "

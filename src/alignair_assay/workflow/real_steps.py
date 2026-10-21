@@ -24,13 +24,15 @@ whose fingerprint differs is redone, with every step after it that reads its out
   ``TRUTH_CODE``.
 - ``runs`` (``run_identity``, ``current_run``, ``make_run``): one tool on one arm, ``Runner.run`` on ``reads.fasta``;
   ``run.json`` (``runners.base.write_run_json``) is written last and records the run's ``identity``: the tool's
-  ``fingerprint()`` (binary, image and model digests), the reads' SHA-256, the shared reference's content digest
-  (a reference changed under its name is another run: a reused run skips ``prepare``, whose model-reference check
-  would otherwise refuse it), ``RUNNER_CODE`` of the tool and, on the genotype arm, the arm's own inputs: the
-  digest of the genotype's content (``genotype_content_digest``: its alleles, captured, resolved, uncalled and
-  dropped genes, without the record's provenance) and the SHA-256 of the arm's allele list. So a changed CSV,
-  capture or IUIS map redoes the genotype arm and leaves the shared arm alone, while a capture redone by changed
-  code to the same content keeps it. A run is current when
+  ``fingerprint()`` (binary, image and model digests; a checkpoint variant's label too), the reads' SHA-256, the
+  shared reference's content digest (a reference changed under its name is another run: a reused run skips
+  ``prepare``, whose model-reference check would otherwise refuse it), the digest of the tool's runner modules
+  (``runner_code``) and, on the genotype arm, the arm's own inputs: the digest of the genotype's content
+  (``genotype_content_digest``: its alleles, captured, resolved, uncalled and dropped genes, without the record's
+  provenance) and the SHA-256 of the arm's allele list. So a changed CSV, capture or IUIS map redoes the genotype
+  arm and leaves the shared arm alone, while a capture redone by changed code to the same content keeps it.
+  Runner code can change how a tool is invoked or how its output is read, so a runner edit redoing its runs is the
+  safe default. A run is current when
   ``require_successful_run`` passes, its identity is the current one and its predictions still have their recorded
   SHA-256; a failed run is made again.
 
@@ -77,6 +79,7 @@ from alignair_assay.real.genotype import (
 from alignair_assay.real.locus import SAMTOOLS_IMAGE, donor_capture
 from alignair_assay.real.preprocess import preprocess_run
 from alignair_assay.real.truth import RealTruth, real_truths, truth_from_json, truth_health, truth_to_json
+from alignair_assay.runners import parse_tool
 from alignair_assay.runners.base import Runner, RunResult, require_successful_run, write_run_json
 
 PACKAGE = Path(__file__).resolve().parents[1]
@@ -91,6 +94,8 @@ RUNNER_CODE = {"igblast": ("runners/base.py", "runners/igblast.py", "runners/ref
 # What a genotype-arm run depends on in ``genotype.json``'s genotype: its content, never its provenance (the
 # ``source``, with the capture's commands and container names; the record's code digest and fingerprint).
 GENOTYPE_CONTENT = ("alleles", "captured", "resolved", "uncalled", "dropped")
+# The module a checkpoint variant (``<tool>@<label>``) runs besides its base's.
+VARIANT_CODE = "runners/variants.py"
 FETCH_KIND = "alignair_assay.real.fetch_inputs"
 GENOTYPE_KIND = "alignair_assay.real.genotype"
 TRUTH_KIND = "alignair_assay.real.truth"
@@ -246,7 +251,7 @@ def run_identity(tool: str, reads: Path, settings: dict, *, reference_digest: st
         arm = {"genotype_content_sha256": genotype_content_digest(genotype_json),
                "alleles_sha256": hashlib.sha256("\n".join(names).encode()).hexdigest(), "alleles": len(names)}
     identity = {"settings": settings, "reads_sha256": sha256_file(reads), "reference_digest": reference_digest,
-                "code_sha256": code_digest(RUNNER_CODE.get(tool, ("runners/base.py",))), "arm": arm}
+                "code_sha256": code_digest(runner_code(tool)), "arm": arm}
     return json.loads(json.dumps(identity))
 
 
@@ -260,6 +265,15 @@ def genotype_content_digest(genotype_json: Path) -> str:
         return digest({key: genotype[key] for key in GENOTYPE_CONTENT})
     except (KeyError, TypeError) as error:
         raise ValueError(f"{genotype_json} holds no genotype record ({error!r})") from None
+
+
+def runner_code(tool: str) -> tuple[str, ...]:
+    """The modules behind tool ``tool``'s runs, relative to the package: ``RUNNER_CODE`` of its base
+    (``runners/base.py`` alone for a tool not listed), and ``VARIANT_CODE`` too for a checkpoint variant
+    (``<base>@<label>``)."""
+    base, label = parse_tool(tool)
+    files = RUNNER_CODE.get(base, ("runners/base.py",))
+    return files if label is None else (*files, VARIANT_CODE)
 
 
 def current_run(layout: RunLayout, tool: str, donor: str, arm: str, identity: dict) -> RunResult | None:

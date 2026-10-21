@@ -42,9 +42,15 @@ def _text(value) -> str:
 def _configuration(summary: dict) -> str:
     config = summary["config"]
     digest = summary.get("config_hash")
-    return (f"Configuration: split {config['split']}, seed {config['seed']}, scale {config['scale']}, reference "
+    text = (f"Configuration: split {config['split']}, seed {config['seed']}, scale {config['scale']}, reference "
             f"{config['reference']}; config hash {digest[:12] if digest else MISSING}. The oracle (the truth itself) "
             f"runs on every suite as the check that truth and scoring agree.")
+    checkpoints = summary.get("checkpoints") or {}
+    if checkpoints:
+        text += " Checkpoints: " + ", ".join(
+            f"{tool} `{(entry.get('sha256') or MISSING)[:12]}` ({entry.get('path') or MISSING})"
+            for tool, entry in checkpoints.items()) + "."
+    return text
 
 
 def _failed_runs(summary: dict) -> list[str]:

@@ -14,10 +14,15 @@ as markdown (``real_report.md``), the page AlignAIR is judged against IgBLAST on
    its 95% CI, the verdict and ``n paired (K clonotypes)``) per protocol, donor and pool; the components (unsupported
    allele, unsupported gene, no call) of the primary pair follow, then the one-line statistics note. Each run's own
    R1, whose denominator differs from tool to tool, is in the detail;
-3. **Genotype arm**: R1 is 0 there by construction, so the arm's headline is known-answer accuracy (``known_top1``,
+3. **Checkpoint comparison**, only when two checkpoints of one AlignAIR tool were compared (``alignair-api@a``
+   with ``alignair-api@b``): per pair, its checkpoints' digests, then per scope and arm the R1, known_top1 and
+   ref_known_top1 Δ, what every metric shows (no variation, or how many differ and which are significant) and the
+   reads the second checkpoint fixes and breaks, with example reads; the headline above compares igblast with each
+   AlignAIR tool only;
+4. **Genotype arm**: R1 is 0 there by construction, so the arm's headline is known-answer accuracy (``known_top1``,
    ``known_gene_top1``), missing calls and the calls that move into uncaptured genes, shared → genotype per tool
    with the paired arm delta (informational), then the tools against each other on that arm;
-4. **Flags**: at most ``MAX_FLAGS`` bullets, the most severe first, on what limits the numbers above.
+5. **Flags**: at most ``MAX_FLAGS`` bullets, the most severe first, on what limits the numbers above.
 
 **The detail** follows, every section of ``DETAIL_SECTIONS`` always present (one without data says so): it is
 ``report.real_detail``. Both read the formatting and scope helpers of ``report.real_format``.
@@ -32,6 +37,7 @@ from alignair_assay.report.build import clean
 from alignair_assay.report.markdown import MISSING
 from alignair_assay.report.real_detail import DETAIL_SECTIONS, detail_markdown  # noqa: F401 (the sections)
 from alignair_assay.report.real_format import (
+    ARMS,
     COMPONENTS,
     HEADLINE,
     IMAGE_LABELS,
@@ -39,6 +45,7 @@ from alignair_assay.report.real_format import (
     KNOWN_YIELD_FLAG,
     NO_CALL,
     NO_TRUTH,
+    NO_VARIATION,
     PRIMARY,
     REF_KNOWN,
     _arm_tools,
@@ -63,11 +70,16 @@ from alignair_assay.report.real_format import (
     _scored_blocks,
     _short,
     _table,
+    _tool_key,
     _tool_block,
     _verdict,
 )
 
 SUMMARY_SECTIONS = ("R1 headline (shared arm)", "Genotype arm", "Flags")
+# The summary page's section on two checkpoints of one tool, after the headline, when there is such a comparison.
+CHECKPOINT_SECTION = "Checkpoint comparison"
+# Example reads named per scope and arm for the reads a checkpoint fixes or breaks.
+CHECKPOINT_EXAMPLES = 5
 MAX_FLAGS = 8
 # A donor where this share of a tool's shared-arm V calls, or more, is in genes without truth (not captured, or
 # uncalled) is flagged.
@@ -94,6 +106,11 @@ STATISTICS_NOTE = ("Statistics: paired tests clustered by clonotype (clustered M
                    "under 10 clonotypes no test: too few clonotypes); Holm within each comparison (one pair on one "
                    "scope, stratum or variant), not across the whole report; no variation: the tools agree on every "
                    "paired read (Δ and interval 0), so there is nothing to test.")
+CHECKPOINT_LEAD = ("Two checkpoints of one AlignAIR tool on the same reads, with the same truth and SupportIndex: "
+                   "each Δ is the second − the first on the paired reads, Holm within each comparison. A read is "
+                   "fixed when the first's call is wrong on a 0/1 metric and the second's right, broken the other way. "
+                   "The same checkpoint under two labels shows no variation on every metric and no read fixed or "
+                   "broken.")
 GENOTYPE_LEAD = ("R1 is 0 on this arm by construction, so the arm is judged on known answers, missing calls and the "
                  "calls that move into genes without truth (not captured, or not called).")
 GENOTYPE_NOTE = ("Each tool may call only the donor's alleles in the genes the truth resolves, so every call R1 does "
@@ -109,8 +126,10 @@ def real_report_markdown(summary: dict) -> str:
     scopes = _scopes(summary)
     lines = [f"# AlignAIR real-data report: {', '.join(_donor_names(summary)) or 'no donor'} ({_splits(summary)})", "",
              *_header(summary)]
-    summary_page = (_headline, _genotype_arm, _flags_section)
-    for title, render in zip(SUMMARY_SECTIONS, summary_page):
+    summary_page = list(zip(SUMMARY_SECTIONS, (_headline, _genotype_arm, _flags_section)))
+    if any(_pairs(scopes, arm, checkpoints=True) for arm in ARMS):
+        summary_page.insert(1, (CHECKPOINT_SECTION, _checkpoint_comparison))
+    for title, render in summary_page:
         lines += ["", f"## {title}", "", *render(summary, scopes)]
     lines += ["", "---"]
     lines += detail_markdown(summary, scopes)
@@ -166,10 +185,11 @@ def _header(summary: dict) -> list[str]:
     binaries = []
     if tools.get("igblast"):
         binaries.append(f"igblastn {_short(tools['igblast'].get('igblastn_sha256'))}")
-    if tools.get("alignair-api"):
-        api = tools["alignair-api"]
-        binaries.append(f"alignair-api checkpoint {_short(api.get('checkpoint_sha256'))} ({api.get('device', '?')}, "
-                        f"torch {api.get('torch_version', '?')})")
+    for tool in sorted(tools, key=_tool_key):
+        api = tools[tool] or {}
+        if tool.partition("@")[0] == "alignair-api" and api:
+            binaries.append(f"{tool} checkpoint {_short(api.get('checkpoint_sha256'))} ({api.get('device', '?')}, "
+                            f"torch {api.get('torch_version', '?')})")
     third = f"- Images, pinned by digest: {', '.join(shown) or MISSING}" + (f"; {'; '.join(binaries)}" if binaries
                                                                           else "") + "."
     return [first, second + ".", third]
@@ -187,7 +207,10 @@ def _image(entry) -> str:
 def _headline(summary: dict, scopes: list[dict]) -> list[str]:
     if not scopes:
         return [_nothing_scored(summary)]
-    pairs, protocols = _pairs(scopes, "shared"), _protocol_scopes(summary)
+    pairs, protocols = _pairs(scopes, "shared", checkpoints=False), _protocol_scopes(summary)
+    if not pairs and _pairs(scopes, "shared", checkpoints=True):
+        return ["No AlignAIR tool was compared with igblast (igblast did not run, or did not succeed): the run "
+                f"compares checkpoints, in {CHECKPOINT_SECTION} below."]
     primary = PRIMARY if PRIMARY in pairs else (pairs[0] if pairs else None)
     lines = [*_bottom_line(scopes, protocols, primary), ""]
     # a protocol of one donor is that donor's row
@@ -267,6 +290,60 @@ def _one_sided(comparison: dict | None) -> str:
     return "; ".join(parts)
 
 
+def _checkpoint_comparison(summary: dict, scopes: list[dict]) -> list[str]:
+    """Per comparison of two checkpoints of one tool: its checkpoints' digests, then per scope (each protocol's pool
+    of two or more donors, each donor, the pool) and arm its R1, known_top1 and ref_known_top1 Δ, what every metric
+    shows and the reads fixed and broken; then example reads of the last scope."""
+    tools = (summary.get("provenance") or {}).get("tools") or {}
+    shown = [*(scope for scope in _protocol_scopes(summary) if len(scope["donors"]) > 1), *scopes]
+    pairs = list(dict.fromkeys(pair for arm in ARMS for pair in _pairs(shown, arm, checkpoints=True)))
+    lines = [CHECKPOINT_LEAD]
+    for a, b in pairs:
+        digests = ", ".join(f"{tool} `{_short((tools.get(tool) or {}).get('checkpoint_sha256'))}`" for tool in (a, b))
+        rows = [[scope["label"], arm, *(_pair_cell(comparison, metric, means=True)
+                                        for metric in (HEADLINE, KNOWN[0], REF_KNOWN)),
+                 _every_metric(comparison), _fixed_broken(comparison)]
+                for scope in shown for arm in ARMS if (comparison := _find(scope, a, b, arm)) is not None]
+        header = ["Scope", "Arm", "R1 Δ", "known_top1 Δ", "ref_known_top1 Δ", "Every metric", "Reads fixed / broken"]
+        lines += ["", f"### {_pair_header(a, b)}", "", f"Checkpoints: {digests}.", "", *_table(header, rows)]
+        lead = scopes[-1]
+        for arm in ARMS:
+            reads = ((_find(lead, a, b, arm) or {}).get("changes") or {}).get("reads") or {}
+            for side, tool_did in (("fixed", "fixed"), ("broken", "broken")):
+                if reads.get(side):
+                    named = ", ".join(reads.get(f"{side}_examples", [])[:CHECKPOINT_EXAMPLES])
+                    lines.append(f"- Reads {tool_did} by {_label(b)} ({lead['words']}, {arm} arm): "
+                                 f"{_int(reads[side])}, e.g. {named}.")
+    return lines
+
+
+def _every_metric(comparison: dict | None) -> str:
+    """What every metric of a comparison shows: no variation on all the metrics with a paired read, or how many
+    differ and which are significant."""
+    if comparison is None:
+        return MISSING
+    if comparison.get("status", "compared") != "compared":
+        return f"not compared: {comparison.get('reason') or 'a run did not succeed'}"
+    overall = comparison.get("overall") or {}
+    paired = {name: entry for name, entry in overall.items() if entry.get("delta") is not None}
+    unpaired = len(overall) - len(paired)
+    differ = [name for name, entry in paired.items() if entry["delta"] != 0]
+    significant = [f"{name.removeprefix('real.')} ({_verdict(entry, comparison['a'], comparison['b'])})"
+                   for name, entry in paired.items() if entry.get("verdict") in ("a_better", "b_better")]
+    if not differ:
+        text = f"{NO_VARIATION} on all {len(paired)} metrics"
+    else:
+        text = (f"{len(differ)} of {len(paired)} metrics differ; "
+                + (f"significant: {', '.join(significant)}" if significant else "none significant"))
+    return text + (f" ({unpaired} without a paired read)" if unpaired else "")
+
+
+def _fixed_broken(comparison: dict | None) -> str:
+    """The reads the second checkpoint fixes and breaks on at least one 0/1 metric, as ``fixed / broken``."""
+    reads = ((comparison or {}).get("changes") or {}).get("reads")
+    return MISSING if not reads else f"{_int(reads.get('fixed'))} / {_int(reads.get('broken'))}"
+
+
 def _genotype_arm(summary: dict, scopes: list[dict]) -> list[str]:
     if not scopes:
         return [_nothing_scored(summary)]
@@ -284,7 +361,7 @@ def _genotype_arm(summary: dict, scopes: list[dict]) -> list[str]:
     header = ["Tool", "known_top1, shared → genotype", "known_gene_top1, shared → genotype",
               "No V call, of all reads", "Calls in genes without truth, of all reads", "R1, shared → genotype"]
     lines = [f"{GENOTYPE_LEAD} Scope: {lead['words']}.", "", *_table(header, rows), "", GENOTYPE_NOTE]
-    for a, b in _pairs([lead], "genotype"):
+    for a, b in _pairs([lead], "genotype", checkpoints=False):
         comparison = _find(lead, a, b, "genotype")
         cells = " · ".join(f"{metric.removeprefix('real.v.')} {_pair_cell(comparison, metric)}" for metric in KNOWN)
         lines += ["", f"{_pair_header(a, b)} on the genotype arm: {cells}."]

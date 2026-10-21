@@ -11,8 +11,8 @@ import json
 import os
 import subprocess
 import time
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -46,9 +46,10 @@ class RunResult:
 @dataclass(frozen=True)
 class RunnerOptions:
     """Tool settings, one set for every runner; each runner reads the fields it needs. ``threads`` is the
-    tool's thread count and ``cpus`` a ``taskset``/cpuset CPU list (``"0-7"``) to pin it to. The path fields
-    (``igblast_dir``, ``alignair_checkpoint``, ``cache_dir``) are made absolute, ``~`` expanded, so the commands
-    a run records can be re-run from anywhere."""
+    tool's thread count and ``cpus`` a ``taskset``/cpuset CPU list (``"0-7"``) to pin it to. ``checkpoints`` maps a
+    checkpoint variant's label to its ``.alignair`` file (``alignair-api@<label>``, ``runners.variants``); a plain
+    tool never reads it. The path fields (``igblast_dir``, ``alignair_checkpoint``, ``cache_dir`` and each of
+    ``checkpoints``) are made absolute, ``~`` expanded, so the commands a run records can be re-run from anywhere."""
 
     igblast_dir: str | None = None
     threads: int = 8
@@ -59,12 +60,16 @@ class RunnerOptions:
     device: str = "cpu"
     batch_size: int = 64
     cache_dir: str | None = None
+    # left out of the hash: a dict is not hashable, and the options stay usable as a key
+    checkpoints: Mapping[str, str] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         for name in ("igblast_dir", "alignair_checkpoint", "cache_dir"):
             value = getattr(self, name)
             if value:
                 object.__setattr__(self, name, absolute_path(value))
+        object.__setattr__(self, "checkpoints", {str(label): absolute_path(path)
+                                                 for label, path in dict(self.checkpoints or {}).items()})
 
 
 class Runner(Protocol):

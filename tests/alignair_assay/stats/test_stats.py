@@ -7,7 +7,7 @@ from statistics import NormalDist
 import numpy as np
 import pytest
 
-from alignair_assay.stats import MetricSummary, by_slice, compare, holm, summarize, to_dict
+from alignair_assay.stats import MetricSummary, by_slice, compare, holm, read_changes, summarize, to_dict
 
 NAN = float("nan")
 
@@ -304,3 +304,24 @@ def test_too_few_pairs_comes_before_too_few_clusters():
     a, b, clusters = _clustered({"k0": [1] * 5, "k1": [1] * 4})
     r = compare(a, b, ["m"], lower_is_better=set(), clusters=clusters)["m"]
     assert (r["n_paired"], r["n_clusters"], r["test"], r["p_value"]) == (9, 2, "too_few_pairs", 1.0)
+
+
+def test_read_changes_counts_the_reads_b_fixes_and_breaks():
+    a = {"r1": {"hit": 0.0, "miss": 1.0, "dist": 2.0}, "r2": {"hit": 1.0, "miss": 0.0, "dist": 0.0},
+         "r3": {"hit": 1.0, "miss": 0.0}, "r4": {"hit": 0.0, "miss": NAN}, "r5": {"hit": 1.0, "miss": 0.0}}
+    b = {"r1": {"hit": 1.0, "miss": 0.0, "dist": 1.0}, "r2": {"hit": 0.0, "miss": 1.0, "dist": 0.0},
+         "r3": {"hit": 1.0, "miss": 0.0}, "r4": {"hit": 0.0, "miss": 1.0}, "r6": {"hit": 1.0, "miss": 0.0}}
+    found = read_changes(a, b, ["hit", "miss", "dist"], lower_is_better={"miss"}, examples=1)
+    # a wrong and b right is fixed (oriented: for a lower-is-better metric, 1 -> 0); the other way is broken
+    assert found["metrics"]["hit"] == {"n_paired": 4, "fixed": 1, "broken": 1, "fixed_examples": ["r1"],
+                                       "broken_examples": ["r2"]}
+    assert found["metrics"]["miss"] == {"n_paired": 3, "fixed": 1, "broken": 1, "fixed_examples": ["r1"],
+                                        "broken_examples": ["r2"]}
+    # a metric that is not 0/1 on its paired reads has no fixed or broken read
+    assert "dist" not in found["metrics"]
+    assert found["reads"] == {"fixed": 1, "broken": 1, "fixed_examples": ["r1"], "broken_examples": ["r2"]}
+    same = read_changes(a, a, ["hit", "miss", "dist"], lower_is_better={"miss"})
+    assert same["reads"] == {"fixed": 0, "broken": 0, "fixed_examples": [], "broken_examples": []}
+    assert {name: (m["fixed"], m["broken"]) for name, m in same["metrics"].items()} == {"hit": (0, 0),
+                                                                                         "miss": (0, 0)}
+    json.dumps(found)

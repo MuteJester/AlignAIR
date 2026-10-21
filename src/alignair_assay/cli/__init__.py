@@ -3,7 +3,7 @@
   python -m alignair_assay all --run-dir RUN --suites S1,S10,S11,S12 --tools igblast,alignair [--quick]
       [--split dev] [--reference HUMAN_IGH_OGRDB] [--seed 20261019] [--scale 1.0] [--workers 8] [--threads 8]
       [--igblast-dir DIR] [--alignair-image IMAGE] [--alignair-model alignair-igh-human@1.0.0]
-      [--alignair-checkpoint MODEL.alignair] [--device cpu] [--speed] [--force]
+      [--alignair-checkpoint MODEL.alignair] [--checkpoint LABEL=MODEL.alignair ...] [--device cpu] [--speed] [--force]
   python -m alignair_assay report --run-dir RUN [--a igblast --b alignair]
   python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB]
       [--seed 20261019] [--scale 1.0] [--workers 8]
@@ -21,7 +21,7 @@
       [--tools igblast,alignair,alignair-api] [--threads 8] [--device cpu] [--batch-size 64]
       [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE]
       [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
-      [--stop-after preprocess] [--force]
+      [--checkpoint LABEL=MODEL.alignair ...] [--stop-after preprocess] [--force]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-from alignair_assay.cli.common import comma_list, tool_path
+from alignair_assay.cli.common import add_checkpoint_option, checkpoint_map, comma_list, tool_path
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.reference import DEFAULT_REFERENCE
 from alignair_assay.real.preprocess import CAP
@@ -21,7 +21,9 @@ def register(sub) -> None:
     p.add_argument("--split", choices=SPLITS, default="dev",
                    help="dev for iteration (default); test donors are locked and run only with --split test")
     p.add_argument("--cap", type=int, default=CAP, help=f"preprocessed sequences kept per donor (default {CAP})")
-    p.add_argument("--tools", type=comma_list, default=TOOLS, help=f"tools to run (default {','.join(TOOLS)})")
+    p.add_argument("--tools", type=comma_list, default=TOOLS,
+                   help=f"tools to run (default {','.join(TOOLS)}); alignair-api@LABEL runs the --checkpoint of "
+                        "LABEL as a tool of its own, compared with igblast and with the other checkpoints")
     p.add_argument("--threads", type=int, default=8, help="tool and pRESTO threads")
     p.add_argument("--device", default="cpu", help="torch device of alignair-api, e.g. cpu or cuda")
     p.add_argument("--batch-size", type=int, default=64, help="alignair-api reads per batch")
@@ -36,6 +38,7 @@ def register(sub) -> None:
     p.add_argument("--alignair-checkpoint",
                    help="AlignAIR .alignair model file of alignair-api (default: the user's cached file of "
                         "--alignair-model, the image's model)")
+    add_checkpoint_option(p, "alignair-api")
     p.add_argument("--stop-after", choices=STOP_AFTER,
                    help="stop after this step: preprocess fetches, genotypes and preprocesses each donor (the "
                         "protocol classifier included) and scores nothing, so it takes any pilot donor, test donors "
@@ -56,7 +59,7 @@ def run(args) -> int:
                      reference=args.reference, igblast_dir=tool_path(args.igblast_dir),
                      alignair_image=args.alignair_image, alignair_model=args.alignair_model,
                      alignair_checkpoint=tool_path(checkpoint), batch_size=args.batch_size,
-                     stop_after=args.stop_after)
+                     stop_after=args.stop_after, checkpoints=checkpoint_map(args.checkpoints))
     layout = RunLayout(absolute_path(args.run_dir))
     summary = run_real(cfg, layout, force=args.force)
     print(f"summary: {layout.real_summary_json()}", flush=True)

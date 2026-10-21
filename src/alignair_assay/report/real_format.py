@@ -35,6 +35,8 @@ NO_CALL = "no_call"
 NOT_SIGNIFICANT = "not significant"
 TOO_FEW_CLONOTYPES = "too few clonotypes"
 NO_VARIATION = "no variation"
+# The ``kind`` of a comparison of two checkpoints of one tool (``workflow.real.CHECKPOINT_PAIR``).
+CHECKPOINT_PAIR = "checkpoint"
 
 
 def _pct(value) -> str:
@@ -70,7 +72,9 @@ def _label(tool: str) -> str:
 
 
 def _tool_key(tool: str) -> tuple:
-    return (TOOL_ORDER.index(tool) if tool in TOOL_ORDER else len(TOOL_ORDER), tool)
+    """Display order: by base tool (``TOOL_ORDER``), a checkpoint variant (``<base>@<label>``) after its base."""
+    base = tool.partition("@")[0]
+    return (TOOL_ORDER.index(base) if base in TOOL_ORDER else len(TOOL_ORDER), base != tool, tool)
 
 
 def _table(header: list[str], rows: list[list[str]]) -> list[str]:
@@ -136,13 +140,22 @@ def _arm_tools(summary: dict, arm: str) -> list[str]:
     return sorted(seen, key=_tool_key)
 
 
-def _pairs(scopes: list[dict], arm: str) -> list[tuple[str, str]]:
+def _pairs(scopes: list[dict], arm: str, *, checkpoints: bool | None = None) -> list[tuple[str, str]]:
+    """The ``(a, b)`` pairs compared on ``arm`` in any scope, in first-seen order: every pair, only the tool pairs
+    (``checkpoints=False``) or only the comparisons of two checkpoints of one tool (``checkpoints=True``)."""
     pairs: list[tuple[str, str]] = []
     for scope in scopes:
         for comparison in scope["comparisons"]:
+            if checkpoints is not None and _is_checkpoint_pair(comparison) != checkpoints:
+                continue
             if comparison.get("arm") == arm and (comparison["a"], comparison["b"]) not in pairs:
                 pairs.append((comparison["a"], comparison["b"]))
     return pairs
+
+
+def _is_checkpoint_pair(comparison: dict) -> bool:
+    """A comparison of two checkpoints of one AlignAIR tool (``kind`` ``checkpoint``), the model comparison."""
+    return comparison.get("kind") == CHECKPOINT_PAIR
 
 
 def _find(scope: dict, a: str, b: str, arm: str) -> dict | None:

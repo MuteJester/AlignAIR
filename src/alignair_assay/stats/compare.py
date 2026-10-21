@@ -154,6 +154,32 @@ def compare(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[st
     return res
 
 
+def read_changes(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[str], *,
+                 lower_is_better: set[str], examples: int = 10) -> dict:
+    """The cases ``b`` fixes and breaks against ``a``, per 0/1 metric of ``metrics``: over a metric's paired cases
+    (both values finite, as ``compare`` pairs them), a case is ``fixed`` when ``a`` is wrong and ``b`` right there
+    (0 -> 1, or 1 -> 0 for a ``lower_is_better`` metric) and ``broken`` the other way. A metric with no paired case,
+    or any paired value other than 0 and 1, has no entry. Per metric: ``n_paired``, the ``fixed`` and ``broken``
+    counts and the first ``examples`` case ids of each (sorted); ``reads``: the cases fixed, and broken, on at least
+    one metric, with their first ``examples``. JSON-ready."""
+    found, fixed_any, broken_any = {}, set(), set()
+    for name in metrics:
+        pairs = [(case, a[case][name], b[case][name]) for case in a
+                 if case in b and _finite(a[case].get(name)) and _finite(b[case].get(name))]
+        if not pairs or not all(x in (0.0, 1.0) and y in (0.0, 1.0) for _, x, y in pairs):
+            continue
+        sign = -1.0 if name in lower_is_better else 1.0
+        fixed = sorted(case for case, x, y in pairs if sign * (y - x) > 0)
+        broken = sorted(case for case, x, y in pairs if sign * (y - x) < 0)
+        found[name] = {"n_paired": len(pairs), "fixed": len(fixed), "broken": len(broken),
+                       "fixed_examples": fixed[:examples], "broken_examples": broken[:examples]}
+        fixed_any.update(fixed)
+        broken_any.update(broken)
+    return {"metrics": found, "reads": {"fixed": len(fixed_any), "broken": len(broken_any),
+                                        "fixed_examples": sorted(fixed_any)[:examples],
+                                        "broken_examples": sorted(broken_any)[:examples]}}
+
+
 def _cluster_sums(cases: list[str], raw: list[float], clusters: Mapping[str, str]) -> list[tuple[float, int]]:
     """Per cluster of the paired ``cases`` (a case ``clusters`` does not name is its own), in first-seen order:
     the sum of its paired differences ``raw`` and its number of pairs."""

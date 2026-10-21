@@ -15,7 +15,8 @@ from __future__ import annotations
 import dataclasses
 import shutil
 import sys
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.records import digest as _digest
@@ -54,7 +55,9 @@ class RunConfig:
     """One ``all`` run: the ``suites`` to build and score, the two compared ``tools`` (a, then b; the oracle always
     runs once per suite as well), the ``split``, truth ``reference``, ``seed`` and ``scale`` the suites are built
     with, the ``workers`` building them, the tool ``threads``, the tool settings (``igblast_dir``, the AlignAIR
-    image, registry model and local checkpoint, the torch ``device``) and whether to measure ``speed``."""
+    image, registry model and local checkpoint, the torch ``device``), whether to measure ``speed`` and the
+    ``checkpoints`` of the checkpoint variants among the tools (label -> path: ``alignair-local@<label>``,
+    ``runners.variants``)."""
 
     suites: tuple[str, ...]
     tools: tuple[str, ...]
@@ -70,6 +73,7 @@ class RunConfig:
     alignair_checkpoint: str | None = None
     device: str = "cpu"
     speed: bool = False
+    checkpoints: Mapping[str, str] = field(default_factory=dict, hash=False)
 
 
 def runner_options(cfg: RunConfig, layout: RunLayout | None = None) -> RunnerOptions:
@@ -77,7 +81,7 @@ def runner_options(cfg: RunConfig, layout: RunLayout | None = None) -> RunnerOpt
     ``runs/alignair/_work/cache``; without, it is left to the runner (the same directory once it is prepared)."""
     return RunnerOptions(igblast_dir=cfg.igblast_dir, threads=cfg.threads, alignair_image=cfg.alignair_image,
                          alignair_model=cfg.alignair_model, alignair_checkpoint=cfg.alignair_checkpoint,
-                         device=cfg.device,
+                         device=cfg.device, checkpoints=cfg.checkpoints,
                          cache_dir=None if layout is None else str(layout.work_dir("alignair") / "cache"))
 
 
@@ -118,9 +122,11 @@ def config_hash(cfg: RunConfig, layout: RunLayout) -> str:
 
 def check_config(cfg: RunConfig) -> None:
     """ValueError for a configuration ``run_all`` cannot run, before anything is written: an unknown suite, split
-    or tool, not exactly two different tools, a scale that is not positive, fewer than one worker or thread, a
-    tool without the options it needs (``runners.make_runner`` on ``runner_options``: no ``--igblast-dir`` for
-    igblast, no ``--alignair-checkpoint`` for alignair-local; nothing is run, pulled or downloaded), or, with
+    or tool, not exactly two different tool ids (two checkpoint variants of one tool are two), a scale that is not
+    positive, fewer than one worker or thread, a tool without the options it needs (``runners.make_runner`` on
+    ``runner_options``: no ``--igblast-dir`` for igblast, no ``--alignair-checkpoint`` for alignair-local, a
+    variant's label without its checkpoint, FileNotFoundError for a variant's missing checkpoint file; nothing is
+    run, pulled or downloaded), or, with
     ``speed``, what ``workflow.speed.check_speed`` refuses (S1 missing or too small to time, more threads than
     logical CPUs, a timed configuration without its tool's options)."""
     if not cfg.suites:

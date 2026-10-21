@@ -24,11 +24,12 @@ from alignair_assay.cli import main
 from alignair_assay.core.cases import read_fasta
 from alignair_assay.core.container import ContainerError
 from alignair_assay.core.layout import RunLayout
+from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.reference import Reference
 from alignair_assay.real.genotype import IuisMap, RealAllele, RealGenotype
 from alignair_assay.real.preprocess import TSV_COLUMNS, PreprocessError
 from alignair_assay.real.truth import cys104_end
-from alignair_assay.runners import RUNNERS
+from alignair_assay.runners import RUNNERS, VARIANTS
 from alignair_assay.runners.base import RunResult
 from alignair_assay.workflow import real_score, real_steps
 from alignair_assay.workflow.real import RealConfig, run_real
@@ -127,6 +128,8 @@ class FakeTool:
     fingerprints: list = []
     # the reads ``alignair`` calls to IGHVF5-G1*01 (IGHV3-23, not captured) on the shared arm: steered out of R1
     steer: set = set()
+    # the tools that call the wrong IGHV1-2 allele on every odd clone's mutated read
+    miscalls: set = {"alignair"}
     version = "1"
 
     def __init__(self, name: str, options=None):
@@ -152,7 +155,7 @@ class FakeTool:
         lines = ["sequence_id\tsequence\tv_call\td_call\tj_call"]
         for read_id, sequence in read_fasta(fasta):
             call = "IGHVF1-G1*01" if read_id.startswith("v1_") else "IGHVF7-G1*01"
-            if self.name == "alignair" and read_id.startswith("v1_") and read_id.endswith("b") \
+            if self.name in FakeTool.miscalls and read_id.startswith("v1_") and read_id.endswith("b") \
                     and int(read_id[3:-1]) % 2:
                 call = "IGHVF1-G1*02"
             if self.name == "alignair" and read_id in FakeTool.steer:
@@ -256,6 +259,7 @@ def fakes(tmp_path, monkeypatch):
     found.data_root.mkdir()
     FakeTool.runs, FakeTool.prepares, FakeTool.fingerprints, FakeTool.version = [], [], [], "1"
     FakeTool.steer = set()
+    FakeTool.miscalls = {"alignair"}
     for tool in ("igblast", "alignair", "alignair-api"):
         monkeypatch.setitem(RUNNERS, tool, lambda options, tool=tool: FakeTool(tool, options))
     monkeypatch.setattr(real_steps, "check_images", lambda images: {
@@ -1032,6 +1036,120 @@ def test_the_cli_runs_and_refuses(tmp_path, fakes, capsys):
     assert f"report: {tmp_path / 'run' / 'real' / 'real_report.md'}" in out
     assert main([*args[:6], "SC-4", *args[7:]]) == 2
     assert "--split test" in capsys.readouterr().err
+
+
+# --- checkpoint variants ------------------------------------------------------------------------------------------
+
+class FakeVariant(FakeTool):
+    """``alignair-api@<label>``: the fake tool under the variant's name, its fingerprint the label and checkpoint
+    digest a variant's holds."""
+
+    def __init__(self, label: str, options):
+        super().__init__(f"alignair-api@{label}", options)
+        self.label = label
+
+    def fingerprint(self) -> dict:
+        checkpoint = self.options.checkpoints[self.label]
+        return {**super().fingerprint(), "checkpoint": checkpoint, "checkpoint_sha256": sha256_file(checkpoint),
+                "label": self.label}
+
+
+def _variants(tmp_path: Path, monkeypatch, *labels: str, tools=None) -> RealConfig:
+    """``igblast`` and ``alignair-api@<label>`` for each label, one fake per variant, every label on one
+    checkpoint."""
+    monkeypatch.setitem(VARIANTS, "alignair-api", FakeVariant)
+    checkpoint = tmp_path / "model.alignair"
+    checkpoint.write_bytes(b"weights")
+    return _config(tmp_path, tools=tools or ("igblast", *(f"alignair-api@{label}" for label in labels)),
+                   checkpoints={label: str(checkpoint) for label in labels})
+
+
+def test_two_labels_of_one_checkpoint_compare_to_zero(tmp_path, fakes, monkeypatch):
+    layout = RunLayout(tmp_path / "run")
+    cfg = _variants(tmp_path, monkeypatch, "a", "b")
+    summary = run_real(cfg, layout)
+    donor = summary["donors"]["W-97"]
+    a, b = "alignair-api@a", "alignair-api@b"
+    assert sorted(FakeTool.runs) == sorted((tool, "W-97", arm) for tool in ("igblast", a, b)
+                                           for arm in ("shared", "genotype"))
+    assert layout.real_run_json(a, "W-97", "genotype").is_file()
+    assert json.loads(layout.real_run_json(b, "W-97", "shared").read_text())["tool"] == b
+    # the run's code is its base's and the variant module
+    record = json.loads(layout.real_run_json(a, "W-97", "shared").read_text())
+    assert record["provenance"]["identity"]["code_sha256"] == real_steps.code_digest(real_steps.runner_code(a))
+    pairs = {(c["a"], c["b"], c["arm"]): c for c in donor["comparisons"]}
+    assert list(pairs) == [("igblast", a, "shared"), ("igblast", a, "genotype"), ("igblast", b, "shared"),
+                           ("igblast", b, "genotype"), (a, b, "shared"), (a, b, "genotype")]
+    assert {key: c.get("kind") for key, c in pairs.items()} == {
+        key: "checkpoint" if key[0] == a else None for key in pairs}
+    for arm in ("shared", "genotype"):
+        pair = pairs[a, b, arm]
+        assert pair["status"] == "compared" and pair["overall"]
+        assert all(entry["delta"] in (0, None) and entry["verdict"] == "tie_or_inconclusive"
+                   for entry in pair["overall"].values())
+        assert pair["overall"]["real.v.unsupported"]["ci95"] == [0, 0]
+        assert pair["changes"]["reads"] == {"fixed": 0, "broken": 0, "fixed_examples": [], "broken_examples": []}
+        assert layout.real_comparison_json("W-97", arm, f"{a}_vs_{b}").is_file()
+    assert {delta["tool"] for delta in donor["arm_deltas"]} == {"igblast", a, b}
+    pooled = {(c["a"], c["b"], c["arm"]): c for c in summary["pooled"]["comparisons"]}
+    assert pooled[a, b, "shared"]["kind"] == "checkpoint" and pooled[a, b, "shared"]["changes"]["reads"]["fixed"] == 0
+    protocol = summary["pooled"]["protocols"]["multiplex"]["comparisons"]
+    assert [(c["a"], c["b"], c.get("kind")) for c in protocol if c["arm"] == "shared"] == [
+        ("igblast", a, None), ("igblast", b, None), (a, b, "checkpoint")]
+    assert summary["provenance"]["tools"][a]["label"] == "a"
+    report = layout.real_report_md().read_text(encoding="utf-8")
+    block = report[report.index("\n## Checkpoint comparison\n"):report.index("\n## Genotype arm\n")]
+    assert f"### {b} − {a}" in block and "no variation" in block and "| 0 / 0 |" in block
+    digest = summary["provenance"]["tools"][a]["checkpoint_sha256"][:12]
+    assert f"{a} `{digest}`" in block and f"{b} `{digest}`" in block
+    # the headline compares igblast with each AlignAIR tool, not the two checkpoints
+    headline = report[report.index("\n## R1 headline (shared arm)\n"):report.index("\n## Checkpoint comparison\n")]
+    assert f"{b} − {a}" not in headline and f"{a} − igblast" in headline
+
+
+def test_a_candidate_checkpoint_counts_the_reads_it_fixes_and_breaks(tmp_path, fakes, monkeypatch):
+    layout = RunLayout(tmp_path / "run")
+    cfg = _variants(tmp_path, monkeypatch, "base", "cand", tools=("alignair-api@base", "alignair-api@cand"))
+    FakeTool.miscalls = {"alignair-api@cand"}
+    summary = run_real(cfg, layout)
+    (pair,) = [c for c in summary["donors"]["W-97"]["comparisons"] if c["arm"] == "shared"]
+    assert (pair["a"], pair["b"], pair["kind"]) == ("alignair-api@base", "alignair-api@cand", "checkpoint")
+    wrong = sorted(f"v1_{k}b" for k in range(1, 12, 2))
+    r1 = pair["changes"]["metrics"]["real.v.unsupported"]
+    assert (r1["fixed"], r1["broken"], r1["broken_examples"]) == (0, 6, wrong)
+    assert pair["changes"]["reads"]["broken"] >= 6 and pair["changes"]["reads"]["fixed"] == 0
+    assert pair["overall"]["real.v.unsupported"]["delta"] == pytest.approx(0.2)
+    report = layout.real_report_md().read_text(encoding="utf-8")
+    assert "Reads broken" in report and wrong[0] in report
+    # without igblast the headline has no pair of its own and points to the checkpoint comparison
+    assert "No AlignAIR tool was compared with igblast" in report and "| Scope |\n" not in report
+
+
+def test_variants_are_refused_before_any_work(tmp_path, fakes, monkeypatch):
+    layout = RunLayout(tmp_path / "run")
+    cfg = _variants(tmp_path, monkeypatch, "a")
+    for overrides, error, message in (
+            (dict(tools=("igblast", "alignair-local@a")), ValueError, "unknown tool 'alignair-local@a'"),
+            (dict(tools=("igblast@a",)), ValueError, "take a checkpoint label"),
+            (dict(tools=("alignair-api@a/b",)), ValueError, "label"),
+            (dict(tools=("alignair-api@c",)), ValueError, r"unknown checkpoint label 'c'.*known labels: a"),
+            (dict(checkpoints={"a": str(tmp_path / "gone.alignair")}), FileNotFoundError,
+             "alignair-api@a: no AlignAIR checkpoint")):
+        with pytest.raises(error, match=message):
+            run_real(dataclasses.replace(cfg, **overrides), layout)
+    assert not layout.root.exists() and FakeTool.runs == [] and fakes.captures == []
+
+
+def test_the_cli_takes_checkpoint_variants(tmp_path, fakes, monkeypatch, capsys):
+    cfg = _variants(tmp_path, monkeypatch, "a", "b")
+    args = ["real", "--run-dir", str(tmp_path / "run"), "--data-root", cfg.data_root, "--donors", "W-97",
+            "--cap", "30", "--threads", "2", "--igblast-dir", cfg.igblast_dir, "--tools",
+            "igblast,alignair-api@a,alignair-api@b", "--checkpoint", f"a={cfg.checkpoints['a']}", "--checkpoint",
+            f"b={cfg.checkpoints['b']}"]
+    assert main(args) == 0
+    summary = json.loads(RunLayout(tmp_path / "run").real_summary_json().read_text())
+    assert summary["config"]["checkpoints"] == cfg.checkpoints
+    assert summary["config"]["tools"] == ["igblast", "alignair-api@a", "alignair-api@b"]
 
 
 # --- the real W-97 reads ------------------------------------------------------------------------------------------

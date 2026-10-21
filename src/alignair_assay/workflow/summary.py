@@ -5,6 +5,7 @@ Everything is read back from the run directory (build records, run records, scor
 """
 from __future__ import annotations
 
+import functools
 import math
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -65,8 +66,9 @@ def run_status(layout: RunLayout, tool: str, suite: str, arm: str, settings: dic
     ``settings`` (the run directory's configuration for the tool) and its inputs are unchanged
     (``inputs_unchanged``). Otherwise it is ``missing`` (no run record or no predictions), ``failed`` (a non-zero
     return code, or an unreadable record) or ``stale`` (made with other tool settings, or on files that changed
-    since). The dict also holds ``tool``, ``suite``, ``arm``, the ``returncode``, the ``failed_donor`` and
-    ``error`` the record names (None otherwise) and the ``run_json`` path relative to the run directory."""
+    since; or, for a checkpoint variant, its checkpoint file missing or changed since: ``checkpoint_changed``). The
+    dict also holds ``tool``, ``suite``, ``arm``, the ``returncode``, the ``failed_donor`` and ``error`` the record
+    names (None otherwise) and the ``run_json`` path relative to the run directory."""
     path = layout.run_json(tool, suite, arm)
     status = {"tool": tool, "suite": suite, "arm": arm, "status": "ok", "returncode": None, "failed_donor": None,
               "error": None, "run_json": relative(layout, path)}
@@ -87,9 +89,33 @@ def run_status(layout: RunLayout, tool: str, suite: str, arm: str, settings: dic
     if record.provenance.get("settings") != settings:
         return {**status, "status": "stale",
                 "error": "made with other tool settings than the run directory's configuration; run all again"}
+    changed = checkpoint_changed(settings)
+    if changed:
+        return {**status, "status": "stale", "error": f"{changed}; run all again"}
     if not inputs_unchanged(layout, suite, record.provenance):
         return {**status, "status": "stale", "error": "the suite's files changed after this run; run all again"}
     return status
+
+
+def checkpoint_changed(settings: dict | None) -> str | None:
+    """Why a checkpoint variant's runs (settings with a ``label``, ``runners.variants``) no longer match its weights:
+    the ``checkpoint`` file is missing, or its SHA-256 is not the recorded ``checkpoint_sha256`` (retrained in
+    place); None when it is unchanged, and for every other tool (``all`` re-fingerprints those before it runs)."""
+    if not settings or "label" not in settings or not settings.get("checkpoint"):
+        return None
+    path = Path(settings["checkpoint"])
+    if not path.is_file():
+        return f"its checkpoint {path} is missing since this run"
+    stat = path.stat()
+    if _sha256(str(path), stat.st_mtime_ns, stat.st_size) != settings.get("checkpoint_sha256"):
+        return f"its checkpoint {path} changed since this run (another SHA-256)"
+    return None
+
+
+@functools.lru_cache(maxsize=16)
+def _sha256(path: str, mtime_ns: int, size: int) -> str:
+    """``sha256_file`` of ``path``, once per version of the file (its modification time and size)."""
+    return sha256_file(path)
 
 
 def configured_settings(layout: RunLayout) -> dict[str, dict]:
@@ -119,10 +145,11 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
     """The run report's data for ``cfg`` over ``layout``, as strict JSON.
 
     It holds ``kind``, ``version``, the compared tools ``a`` and ``b``, the ``config`` (suites, tools, split,
-    reference, seed, scale) and the manifest's ``config_hash``. ``failed_runs`` lists every expected run whose
-    status (``run_statuses``) is not ``ok``, then ``scoring_errors`` (runs that succeeded but could not be
-    scored). ``suites`` has, per suite: ``name``, ``title``, ``purpose``, ``primary``, ``cases``, ``excluded``
-    (from ``build.json``), the ``oracle`` check (``status`` perfect, imperfect or not scored; ``cases``,
+    reference, seed, scale), the manifest's ``config_hash`` and, per checkpoint variant among the tools, its
+    ``checkpoints`` entry (``label``, ``path``, ``sha256``, as the manifest's settings record them).
+    ``failed_runs`` lists every expected run whose status (``run_statuses``) is not ``ok``, then ``scoring_errors``
+    (runs that succeeded but could not be scored). ``suites`` has, per suite: ``name``, ``title``, ``purpose``,
+    ``primary``, ``cases``, ``excluded`` (from ``build.json``), the ``oracle`` check (``status`` perfect, imperfect or not scored; ``cases``,
     ``problems`` and the first ``examples`` as ``[case id, metric, value]``), the ``truth`` summary
     (``truth_counts``) and per arm whether the two tools were ``compared``, the ``link`` to the arm's
     ``comparison.md`` (relative to the run directory), the primary-metric ``rows`` of ``comparison.json`` and their
@@ -138,11 +165,15 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
     failed += list(scoring_errors or [])
     suites = [_suite_summary(layout, cfg, name) for name in cfg.suites]
     manifest = read_json(layout.manifest) or {}
+    settings = configured_settings(layout)
     return {
         "kind": RUN_REPORT_KIND, "version": RUN_REPORT_VERSION, "a": a, "b": b,
         "config": {"suites": list(cfg.suites), "tools": list(cfg.tools), "split": cfg.split,
                    "reference": cfg.reference, "seed": cfg.seed, "scale": cfg.scale},
         "config_hash": manifest.get("config_hash"),
+        "checkpoints": {tool: {"label": settings[tool]["label"], "path": settings[tool].get("checkpoint"),
+                               "sha256": settings[tool].get("checkpoint_sha256")}
+                        for tool in cfg.tools if "label" in (settings.get(tool) or {})},
         "failed_runs": failed,
         "oracle_failures": [_oracle_failure(suite, failed) for suite in suites
                             if suite["oracle"]["status"] != "perfect"],

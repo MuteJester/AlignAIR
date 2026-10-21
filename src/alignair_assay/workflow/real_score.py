@@ -66,7 +66,7 @@ from alignair_assay.real.metrics import (
     shared_exclusions,
 )
 from alignair_assay.real.truth import RealTruth, clonotype_clusters, junction_length_clusters, sl15_clusters
-from alignair_assay.stats import compare, summarize, to_dict
+from alignair_assay.stats import compare, read_changes, summarize, to_dict
 from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.records import digest, write_json, write_text
 from alignair_assay.workflow.real_steps import code_digest, jsonl_header
@@ -281,13 +281,16 @@ def one_sided(data: DonorScoring, mine: Mapping[str, dict], other: Mapping[str, 
 
 
 def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[str] | None = None,
-               gene_support: PairScores | None = None, clusterings: bool = False) -> dict:
+               gene_support: PairScores | None = None, clusterings: bool = False, changes: bool = False) -> dict:
     """The pair's comparison (the module docstring): ``n_reads``, ``n_clusters`` and ``multi_read_clusters`` of its
     reads, the reads ``excluded`` per segment, the ``overall`` comparison, the ``informational`` metrics' summaries,
     and with ``strata`` its ``strata``. ``sensitivity`` holds ``sd3`` with ``sensitivity`` (the SD3-only genes left
     out) and ``gene_support`` with ``gene_support`` (the same pair in the gene-support variant: its thresholds, the
     reads it excludes per segment and the V R1 comparison). With ``clusterings``, ``clusterings`` holds the
-    ``CLUSTERED`` metrics' comparison under each clustering, with its cluster count (the module docstring)."""
+    ``CLUSTERED`` metrics' comparison under each clustering, with its cluster count (the module docstring). With
+    ``changes`` (two checkpoints of one tool), ``changes`` holds the reads ``b`` fixes and breaks against ``a`` on
+    each 0/1 metric of the overall comparison, with examples (``stats.read_changes``; read ids carry the donor in a
+    pool)."""
     members = Counter(pair.clusters.get(read_id, read_id) for read_id in pair.a)
     result = {"n_reads": len(pair.a), "n_clusters": len(members),
               "multi_read_clusters": sum(count > 1 for count in members.values()), "excluded": dict(pair.excluded),
@@ -306,6 +309,10 @@ def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[s
         result["clusterings"] = {name: {"n_clusters": len({clusters.get(read_id, read_id) for read_id in pair.a}),
                                         "comparison": _compare(pair.a, pair.b, clusters, metrics=CLUSTERED)}
                                  for name, clusters in (("exact", pair.clusters), *pair.cluster_sets.items())}
+    if changes:
+        family = sorted(result["overall"])
+        result["changes"] = read_changes(pair.a, pair.b, family,
+                                         lower_is_better={name for name in family if lower_is_better(name)})
     if gene_support is not None:
         result.setdefault("sensitivity", {})["gene_support"] = {
             "thresholds": {"min_clonotypes": MIN_CLONOTYPES, "min_naive_clonotypes": MIN_NAIVE_CLONOTYPES},

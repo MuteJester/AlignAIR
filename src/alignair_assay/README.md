@@ -42,6 +42,41 @@ PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter --suit
   `diagnostics` layer is where in-process code lives (the stage replay, head-level scoring, truth-substitution
   ablations and speed profile, see Diagnostics); it and `core/reference.py` are the only code that imports `alignair`.
 
+### Comparing two checkpoints
+
+A checkpoint tool also runs as a variant under a label, `<tool>@<label>` (`runners.variants`): `alignair-local@<label>`
+and `alignair-api@<label>`, each given its checkpoint with `--checkpoint <label>=<path>` (repeatable, on `all` and
+`real`). Compare a candidate with the base checkpoint on the same simulated reads:
+
+```
+PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/cand --suites S1,S3 \
+    --tools alignair-local@base,alignair-local@cand \
+    --checkpoint base=OLD.alignair --checkpoint cand=NEW.alignair --device cuda
+```
+
+and on real reads, each against IgBLAST and against each other (see Real data):
+
+```
+PYTHONPATH=src python -m alignair_assay real --run-dir .private/assay/cand_real --data-root ROOT --donors W-97 \
+    --tools igblast,alignair-api@base,alignair-api@cand --igblast-dir DIR \
+    --checkpoint base=OLD.alignair --checkpoint cand=NEW.alignair
+```
+
+- **A label** is 1 to 32 of the letters, digits, `_`, `.` and `-`. Anything else, or a label on a tool that runs no
+  checkpoint (`igblast@x`, `alignair@x`), is refused when the tool id is parsed. A label without its
+  `--checkpoint` is refused naming the known labels, and a missing checkpoint file before any work.
+- **Identity.** A variant is its base's runner on the label's checkpoint under the full id. Its runs, scores and
+  comparisons are filed under `alignair-local@cand` (one path component). Its fingerprint is its base's (the
+  checkpoint's path and SHA-256 among it) plus the `label`, and the reports name it with its checkpoint's short
+  digest. A checkpoint changed after its run (retrained in place), or gone, makes that variant's runs stale; in
+  `all` it is a new configuration (`alignair-local@cand.checkpoint_sha256`), and `--force` redoes that variant's
+  runs only.
+- **The null comparison.** The same checkpoint under two labels must compare to zero: Δ 0 on every metric, no
+  significant verdict, no read fixed or broken. Anything else means something in the pipeline is not deterministic,
+  or not paired.
+- The plain names (`alignair-local`, `alignair-api`, with `--alignair-checkpoint`) work as before, with the same
+  fingerprints, records and paths. The speed protocol does not time variants.
+
 ### Model diagnostics
 
 `all` tells you how a checkpoint compares with IgBLAST. `diagnose` tells you where its errors and its time come
@@ -448,7 +483,8 @@ Run from the repository root with `PYTHONPATH=src`:
 python -m alignair_assay all --run-dir RUN --suites S1,S10,S11,S12 --tools igblast,alignair [--quick] \
     [--split dev] [--reference HUMAN_IGH_OGRDB] [--seed 20261019] [--scale 1.0] [--workers 8] [--threads 8] \
     [--igblast-dir DIR] [--alignair-image IMAGE] [--alignair-model alignair-igh-human@1.0.0] \
-    [--alignair-checkpoint MODEL.alignair] [--device cpu] [--speed] [--force]
+    [--alignair-checkpoint MODEL.alignair] [--checkpoint LABEL=MODEL.alignair ...] [--device cpu] [--speed] \
+    [--force]
 python -m alignair_assay report --run-dir RUN [--a igblast --b alignair]
 python -m alignair_assay build --suites S0,S1 --run-dir RUN [--split dev] [--reference HUMAN_IGH_OGRDB] \
     [--seed 20261019] [--scale 1.0] [--workers 8]
@@ -465,8 +501,8 @@ python -m alignair_assay diagnose --run-dir RUN --checkpoint MODEL.alignair --su
 python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97 [--split dev] [--cap 50000] \
     [--tools igblast,alignair,alignair-api] [--threads 8] [--device cpu] [--batch-size 64] \
     [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE] \
-    [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair] [--stop-after preprocess] \
-    [--force]
+    [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair] \
+    [--checkpoint LABEL=MODEL.alignair ...] [--stop-after preprocess] [--force]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR [--donors DONORS.json]
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05] \
@@ -572,12 +608,14 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
 `all` runs these steps in order (`workflow.orchestrate.run_all`). It prints one line per step.
 
 1. **Manifest.** The configuration is checked before anything is written (`check_config`). It needs known suites,
-   a known split, exactly two different registered tools, a positive scale, at least one worker and thread, and
-   the options each tool needs (`--igblast-dir` for igblast, `--alignair-checkpoint` for alignair-local), checked
-   by building its runner, which runs, pulls and downloads nothing. With `--speed` (`workflow.speed.check_speed`),
-   S1 must be among the suites with at least 4000 reads at the scale (scale 0.8 or more), the threads must not
-   exceed the host's logical CPUs, every timed configuration's runner must build, and a checkpoint timed as
-   alignair-local must be a file. Each tool's runner is then
+   a known split, exactly two different tool ids (two checkpoint variants of one tool, `alignair-local@a` and
+   `alignair-local@b`, are two tools), a positive scale, at least one worker and thread, and the options each tool
+   needs (`--igblast-dir` for igblast, `--alignair-checkpoint` for alignair-local, `--checkpoint <label>=PATH` with
+   an existing file for a variant), checked by building its runner, which runs, pulls and downloads nothing. With
+   `--speed` (`workflow.speed.check_speed`), S1 must be among the suites with at least 4000 reads at the scale
+   (scale 0.8 or more), the threads must not exceed the host's logical CPUs, every timed configuration's runner
+   must build, a checkpoint timed as alignair-local must be a file, and no tool may be a checkpoint variant. Each
+   tool's runner is then
    built and fingerprinted (`Runner.fingerprint`, see Adding a runner), which
    identifies the tool by content: IgBLAST's directory and the SHA-256 of `igblastn`, `makeblastdb` and the
    auxiliary file; the AlignAIR image reference and the image ID it resolves to (pulling it when it is not local),
@@ -1013,6 +1051,11 @@ Registered runners:
 | `alignair-local` | `runners.alignair.AlignAIRLocal` (`--checkpoint`, `--device`, `--batch-size`, `--threads`, `--cpus`; fingerprint: the checkpoint path and SHA-256, the device, and the code the CLI runs: the SHA-256 of `src/alignair`'s `.py` and `.pyx` files, the checkout's git commit and dirty flag, the torch version) | checks the checkpoint; probes the torch version and CUDA device the subprocess sees; exports the checkpoint's reference into `runs/alignair-local/_work/` with this checkout's CLI and refuses it unless it is the truth reference | `PYTHONPATH=<checkout>/src [OMP_NUM_THREADS=<t> MKL_NUM_THREADS=<t>] <python> -c "import sys; from alignair.cli.main import main; sys.exit(main())" predict --model <checkpoint> --input <fasta> --out <tsv> --device <device> --batch-size <n> --quiet [--genotype <log_dir>/genotype.json]` under `timed_command` (peak RSS of the CLI process); provenance: checkpoint path and SHA-256, the checkout's path and commit state, interpreter, torch version, CUDA device name, device, batch size, the exported reference, the moved sidecar, the genotype file, threads and CPUs |
 | `alignair-api` | `runners.alignair_api.AlignAIRApi`, alignair-local's settings (`--checkpoint`, `--device`, `--batch-size`, `--threads`, `--cpus`; fingerprint: alignair-local's, plus `driver_sha256`, the SHA-256 of `diagnostics/api_predict.py`) | alignair-local's, into `runs/alignair-api/_work/`; the provenance adds the `driver` (module, path, SHA-256) | `PYTHONPATH=<checkout>/src [OMP_NUM_THREADS=<t> MKL_NUM_THREADS=<t>] <python> -m alignair_assay.diagnostics.api_predict --checkpoint <checkpoint> --reference <exported reference> --input <fasta> --out <tsv> --device <device> --batch-size <n> [--genotype <log_dir>/genotype.json]` under `timed_command` (peak RSS of the subprocess): the checkpoint loaded with `diagnostics.replay.load_model_checked` and checked against the exported reference, the reads read with `alignair.iter_sequences` in the CLI's 20,000-read chunks, each chunk predicted with `alignair.predict_sequences(..., genotype=...)` and written with `alignair.AirrWriter`, as the CLI does (unlike the CLI, no rate of failed AIRR assemblies fails the run: the record counts them); provenance: alignair-local's, the subprocess's run record moved to `logs/api_predict.run.json` as `sidecar` (counts, resolved device, torch, CUDA device, genotype allele counts), and for a failure on the genotype path (exit status 3) the `note` `genotype API path failed` |
 
+**Checkpoint variants** (`runners.variants`) are not registered names: `make_runner("alignair-api@cand", options)`
+parses the id (`parse_tool`), checks the label's checkpoint in `RunnerOptions.checkpoints`, and builds it with the
+base's `VARIANTS` factory. The variant classes subclass the base runners, so the plain runners' code, fingerprints and
+paths are untouched; only the instance's `name` is the full id, and `fingerprint()` adds the `label`.
+
 ### AlignAIR model cache
 
 The image keeps its models in `/home/appuser/.cache/alignair`, where the runner mounts its cache directory:
@@ -1425,6 +1468,10 @@ python -m alignair_assay real --run-dir RUN --data-root ROOT --stop-after prepro
   a run directory made for another configuration needs `--force`.
 - `--cap` (default 50,000) caps each donor's preprocessed sequences. A small cap (500) is a smoke run: its numbers
   are not claims.
+- `--tools` takes checkpoint variants, `alignair-api@<label>` with `--checkpoint <label>=PATH` (see Comparing two
+  checkpoints), each a tool of its own on both arms. The comparisons are igblast with each AlignAIR tool (on the
+  genotype arm too for a genotype-arm tool), then every two tools of one base: two checkpoints on the same reads, the
+  model comparison (`kind` `checkpoint`), which also counts the reads the second fixes and breaks.
 - A tool run is kept while its identity holds: the tool's fingerprint, the reads, the shared reference's digest, the
   digest of its runner modules and, on the genotype arm, the genotype's content (its alleles and its captured,
   resolved, uncalled and dropped genes, not the record's provenance, so a capture redone by changed code to the same
@@ -1821,8 +1868,12 @@ summary does not hold. Its first page is the summary:
    comparison). A table gives each AlignAIR run's paired Δ per protocol, donor and pool, then the components of the
    primary pair and a one-line statistics note; each run's own R1, whose denominator differs from tool to tool, is
    in the detail;
-3. the genotype arm, judged on known answers (below);
-4. at most 8 flags, the most severe first: a failed or unchecked truth self-check, a stopped donor (with its
+3. the checkpoint comparison, when two checkpoints of one tool were compared (the headline then compares igblast
+   with each AlignAIR tool only): per pair, its checkpoints' short digests, then per scope and arm the R1,
+   known_top1 and ref_known_top1 Δ, what every metric shows (no variation, or how many differ and which are
+   significant) and the reads fixed / broken, with example reads;
+4. the genotype arm, judged on known answers (below);
+5. at most 8 flags, the most severe first: a failed or unchecked truth self-check, a stopped donor (with its
    evidence), a failed run (prediction ids that drifted from the reads included), SRA-Lite reads, a known-answer
    yield below 5%, 25% or more of a tool's shared-arm calls in genes without truth (not captured, or uncalled), an
    assembly loss let through over its line, AlignAIR assembly failures, and too few clonotypes for a verdict.

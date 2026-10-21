@@ -1,7 +1,7 @@
 """``all``: build suites, run the oracle and two tools, score, compare and write the run report, resumably."""
 from __future__ import annotations
 
-from alignair_assay.cli.common import comma_list, tool_path
+from alignair_assay.cli.common import add_checkpoint_option, checkpoint_map, comma_list, tool_path
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.reference import DEFAULT_REFERENCE
 from alignair_assay.runners import RUNNERS
@@ -20,7 +20,9 @@ def register(sub) -> None:
     p.add_argument("--run-dir", required=True)
     p.add_argument("--suites", required=True, type=comma_list, help="comma-separated suite names, e.g. S1,S10,S11")
     p.add_argument("--tools", required=True, type=comma_list,
-                   help=f"the two compared tools, a,b ({', '.join(RUNNERS)}); the oracle always runs as well")
+                   help=f"the two compared tools, a,b ({', '.join(RUNNERS)}, or a checkpoint variant "
+                        "alignair-local@LABEL / alignair-api@LABEL with --checkpoint LABEL=PATH); the oracle always "
+                        "runs as well")
     p.add_argument("--split", choices=SPLITS, default="dev",
                    help="dev for model iteration (default); test is locked and used only for claims")
     p.add_argument("--reference", default=DEFAULT_REFERENCE, help="GenAIRR dataconfig name")
@@ -34,6 +36,7 @@ def register(sub) -> None:
     p.add_argument("--alignair-model", default=DEFAULT_MODEL, help="AlignAIR registry model id@version (alignair)")
     p.add_argument("--alignair-checkpoint", help="AlignAIR .alignair model file (alignair-local)")
     p.add_argument("--device", default="cpu", help="torch device, e.g. cpu or cuda (alignair-local)")
+    add_checkpoint_option(p, "alignair-local or alignair-api")
     p.add_argument("--speed", action="store_true",
                    help="also time each tool on S1's reads (the speed protocol; needs S1 at scale 0.8 or more)")
     p.add_argument("--quick", action="store_true", help=f"a smoke run at scale {QUICK_SCALE} unless --scale is given")
@@ -44,11 +47,13 @@ def register(sub) -> None:
 
 def run(args) -> int:
     """Run ``workflow.orchestrate.run_all``; its return code (2 when a run failed or the oracle is not perfect).
-    The run directory and the tool paths (``--igblast-dir``, ``--alignair-checkpoint``) are made absolute first, so
-    the manifest never records a path relative to where the command was started."""
+    The run directory and the tool paths (``--igblast-dir``, ``--alignair-checkpoint``, each ``--checkpoint``) are
+    made absolute first, so the manifest never records a path relative to where the command was started; a
+    ``--checkpoint`` label given twice is refused."""
     scale = args.scale if args.scale is not None else QUICK_SCALE if args.quick else 1.0
     cfg = RunConfig(suites=args.suites, tools=args.tools, split=args.split, reference=args.reference, seed=args.seed,
                     scale=scale, workers=args.workers, threads=args.threads, igblast_dir=tool_path(args.igblast_dir),
                     alignair_image=args.alignair_image, alignair_model=args.alignair_model,
-                    alignair_checkpoint=tool_path(args.alignair_checkpoint), device=args.device, speed=args.speed)
+                    alignair_checkpoint=tool_path(args.alignair_checkpoint), device=args.device, speed=args.speed,
+                    checkpoints=checkpoint_map(args.checkpoints))
     return run_all(cfg, RunLayout(absolute_path(args.run_dir)), force=args.force)

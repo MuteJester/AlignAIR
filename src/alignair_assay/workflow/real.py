@@ -7,9 +7,13 @@ writes ``real_summary.json`` (``RunLayout.real_summary_json``), which it returns
 
 **Tools and arms.** The shared arm runs ``igblast``, ``alignair`` (the released image, 3.0.0) and ``alignair-api``
 (the image's checkpoint through AlignAIR's public API, ``runners.alignair_api``) on the donor's preprocessed reads;
-the genotype arm runs ``igblast`` and ``alignair-api`` restricted to ``real.genotype.arm_alleles``. The comparisons
-(``PAIRS``) are igblast with alignair on the shared arm and igblast with alignair-api on both; each tool's genotype arm
-against its shared arm (the arm delta) is informational. Every tool and arm is classified against the whole shared
+the genotype arm runs ``igblast`` and ``alignair-api`` restricted to ``real.genotype.arm_alleles``. ``alignair-api``
+may also run as checkpoint variants, ``alignair-api@<label>`` with ``checkpoints[label]`` (``runners.variants``),
+each a tool of its own on both arms. The comparisons (``compared_pairs``) are igblast with each AlignAIR tool (on the
+shared arm, and on the genotype arm for a genotype-arm tool), then every two tools of one AlignAIR base: two
+checkpoints on the same reads (``kind`` ``checkpoint``, with the reads the second fixes and breaks), the model
+comparison; with the default tools they are ``PAIRS``. Each tool's genotype arm against its shared arm (the arm
+delta) is informational. Every tool and arm is classified against the whole shared
 reference with one ``SupportIndex`` per donor and the same truth per read. The R1 primary applies no gene-support
 threshold; two sensitivity variants are reported beside it: R1 with Mikelov et al. 2024's gene-support thresholds,
 and R1 without the reads called to the SD3-only genes (``workflow.real_score``).
@@ -17,8 +21,10 @@ and R1 without the reads called to the SD3-only genes (``workflow.real_score``).
 **Refusals**, in this order, each before any work and with nothing written to the run directory:
 
 1. ``check_config``: no donor, an unknown donor, a test donor without ``split="test"`` (or a dev donor in a test
-   run), an unknown tool, a cap or thread count out of range, a missing data root, ``igblast`` without its release
-   directory, ``alignair-api`` without its checkpoint file, an AlignAIR image not pinned by digest;
+   run), an unknown tool (a checkpoint label that is not one, or on a tool other than alignair-api), a cap or
+   thread count out of range, a missing data root, ``igblast`` without its release directory, ``alignair-api``
+   without its checkpoint file, a variant whose label has no checkpoint or whose checkpoint file is missing, an
+   AlignAIR image not pinned by digest;
 2. Docker missing, or a pinned image whose digest is not the pinned one (``real_steps.check_images``: sra-tools,
    samtools, Immcantation and the AlignAIR image);
 3. a run directory made for another configuration, unless ``force``, on every field of the manifest's identity but
@@ -67,6 +73,7 @@ import os
 import sys
 import time
 from collections import Counter
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -90,17 +97,23 @@ from alignair_assay.real.metrics import SupportIndex, decoy_calls, gene_support,
 from alignair_assay.real.preprocess import CAP, IMMCANTATION_IMAGE, PreprocessError
 from alignair_assay.real.truth import RealTruth
 from alignair_assay.report.real import real_report_markdown
-from alignair_assay.runners import make_runner
+from alignair_assay.runners import make_runner, parse_tool
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL, host_cache_dir
 from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path
+from alignair_assay.runners.variants import variant_checkpoint
 from alignair_assay.workflow import real_score, real_steps
 from alignair_assay.workflow.manifest import changed_fields, describe_changes, manifest_record
 
 TOOLS = ("igblast", "alignair", "alignair-api")
 GENOTYPE_TOOLS = ("igblast", "alignair-api")
+# The tools that may run as checkpoint variants here (``<tool>@<label>``).
+VARIANT_TOOLS = ("alignair-api",)
 ARMS = ("shared", "genotype")
+# The comparisons of the default tools (``compared_pairs(TOOLS)``).
 PAIRS = (("igblast", "alignair", "shared"), ("igblast", "alignair-api", "shared"),
          ("igblast", "alignair-api", "genotype"))
+# The ``kind`` of a comparison of two checkpoints of one AlignAIR tool.
+CHECKPOINT_PAIR = "checkpoint"
 SPLITS = ("dev", "test")
 # The steps a run may stop after (``RealConfig.stop_after``).
 STOP_AFTER = ("preprocess",)
@@ -117,8 +130,9 @@ class RealConfig:
     """One ``real`` run: the pilot ``donors`` of one ``split``, the ``data_root`` holding the downloads, the ``cap`` of
     preprocessed sequences per donor, the ``tools`` (of ``TOOLS``), the tool and pRESTO ``threads``, the torch
     ``device`` of alignair-api, the paper's multiplex length filter, whether a run over the assembly's acceptance line
-    is let through, the shared ``reference``, the tool options (``runners.base.RunnerOptions``) and the step to
-    ``stop_after`` (None: every step; ``"preprocess"``: fetch, genotype and preprocess only)."""
+    is let through, the shared ``reference``, the tool options (``runners.base.RunnerOptions``), the step to
+    ``stop_after`` (None: every step; ``"preprocess"``: fetch, genotype and preprocess only) and the
+    ``checkpoints`` of the checkpoint variants among the tools (label -> ``.alignair`` file)."""
 
     donors: tuple[str, ...]
     split: str
@@ -136,6 +150,7 @@ class RealConfig:
     alignair_checkpoint: str | None = None
     batch_size: int = 64
     stop_after: str | None = None
+    checkpoints: Mapping[str, str] = field(default_factory=dict, hash=False)
 
 
 @dataclass
@@ -203,9 +218,13 @@ def check_config(cfg: RealConfig) -> None:
                              f"({', '.join(PILOT_SPLIT['test'])})")
     if len(set(cfg.donors)) != len(cfg.donors):
         raise ValueError(f"a donor is given twice: {', '.join(cfg.donors)}")
-    unknown = [tool for tool in cfg.tools if tool not in TOOLS]
-    if unknown or not cfg.tools:
-        raise ValueError(f"unknown tool {unknown[0] if unknown else '(none)'!r}: real runs {', '.join(TOOLS)}")
+    if not cfg.tools:
+        raise ValueError(f"unknown tool '(none)': real runs {', '.join(TOOLS)}")
+    for tool in cfg.tools:
+        base, label = parse_tool(tool)  # a label that is not one, or on a tool without checkpoints: ValueError
+        if base not in TOOLS or (label is not None and base not in VARIANT_TOOLS):
+            raise ValueError(f"unknown tool {tool!r}: real runs {', '.join(TOOLS)} and the checkpoint variants "
+                             f"{', '.join(f'{name}@<label>' for name in VARIANT_TOOLS)} (--checkpoint <label>=PATH)")
     if isinstance(cfg.cap, bool) or not isinstance(cfg.cap, int) or cfg.cap < 1:
         raise ValueError(f"the cap must be a positive number of sequences, got {cfg.cap!r}")
     if not 1 <= cfg.threads <= (os.cpu_count() or 1) or cfg.batch_size < 1:
@@ -227,6 +246,10 @@ def check_config(cfg: RealConfig) -> None:
         if not Path(cfg.alignair_checkpoint).expanduser().is_file():
             raise FileNotFoundError(f"no AlignAIR checkpoint {cfg.alignair_checkpoint}: alignair-api runs it; fetch it "
                                     f"with `alignair models get {cfg.alignair_model}` or give --alignair-checkpoint")
+    for tool in cfg.tools:
+        base, label = parse_tool(tool)
+        if label is not None:
+            variant_checkpoint(label, cfg.checkpoints, tool=tool)
     if "alignair" in cfg.tools:
         image = cfg.alignair_image or DEFAULT_IMAGE
         try:
@@ -259,7 +282,8 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
     options = RunnerOptions(igblast_dir=cfg.igblast_dir, threads=cfg.threads,
                             alignair_image=cfg.alignair_image or DEFAULT_IMAGE, alignair_model=cfg.alignair_model,
                             alignair_checkpoint=cfg.alignair_checkpoint, device=cfg.device,
-                            batch_size=cfg.batch_size, cache_dir=str(setup.work_dir("alignair") / "cache"))
+                            batch_size=cfg.batch_size, cache_dir=str(setup.work_dir("alignair") / "cache"),
+                            checkpoints=cfg.checkpoints)
     runners = {}
     for tool in cfg.tools if scoring else ():
         runners[tool] = make_runner(tool, options)
@@ -339,7 +363,7 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
     _say(donor, "truth", steps["truth"])
     block["truth"] = _truth_block(truths)
 
-    alleles = (arm_alleles(genotype, ctx.reference, iuis) if set(GENOTYPE_TOOLS) & set(cfg.tools) else None)
+    alleles = arm_alleles(genotype, ctx.reference, iuis) if genotype_tools(cfg.tools) else None
     block["genotype"] = _genotype_block(genotype, alleles, ctx.reference)
     steps["runs"], block["runs"], results = {}, {arm: {} for arm in ARMS}, {}
     for tool, arm in expected_runs(cfg):
@@ -420,21 +444,60 @@ def oracle_status(check: dict) -> str:
     return "unchecked" if known_right and not check.get("scored") else "failed"
 
 
+def ordered_tools(tools: Iterable[str]) -> list[str]:
+    """``tools`` without repeats, by their base's place in ``TOOLS``; one base's tools (the plain tool and its
+    checkpoint variants) in the order given."""
+    return sorted(dict.fromkeys(tools), key=lambda tool: TOOLS.index(parse_tool(tool)[0]))
+
+
+def genotype_tools(tools: Iterable[str]) -> list[str]:
+    """The tools of ``tools`` that run on the genotype arm (their base is in ``GENOTYPE_TOOLS``), in order."""
+    return [tool for tool in ordered_tools(tools) if parse_tool(tool)[0] in GENOTYPE_TOOLS]
+
+
+def is_checkpoint_pair(a: str, b: str) -> bool:
+    """Two tools of one AlignAIR base: one tool on two checkpoints (a plain tool and a variant, or two variants)."""
+    base = parse_tool(a)[0]
+    return a != b and base != "igblast" and parse_tool(b)[0] == base
+
+
+def compared_pairs(tools: Iterable[str]) -> list[tuple[str, str, str]]:
+    """The ``(a, b, arm)`` comparisons of ``tools`` (``ordered_tools``): igblast with each AlignAIR tool, on the shared
+    arm and, for a genotype-arm tool, on the genotype arm; then every two tools of one AlignAIR base
+    (``is_checkpoint_pair``, a first) on each arm they run. With the default ``TOOLS`` they are ``PAIRS``."""
+    tools = ordered_tools(tools)
+    genotype = set(genotype_tools(tools))
+
+    def arms(tool: str) -> list[str]:
+        return ["shared", "genotype"] if tool in genotype else ["shared"]
+
+    found = [("igblast", tool, arm) for tool in tools if "igblast" in tools and tool != "igblast" for arm in arms(tool)]
+    found += [(a, b, arm) for i, a in enumerate(tools) for b in tools[i + 1:] if is_checkpoint_pair(a, b)
+              for arm in arms(a)]
+    return found
+
+
 def expected_runs(cfg: RealConfig) -> list[tuple[str, str]]:
-    """The ``(tool, arm)`` runs of ``cfg``: every tool on the shared arm, then the genotype arm's tools."""
-    return ([(tool, "shared") for tool in TOOLS if tool in cfg.tools]
-            + [(tool, "genotype") for tool in GENOTYPE_TOOLS if tool in cfg.tools])
+    """The ``(tool, arm)`` runs of ``cfg``: every tool on the shared arm, then the genotype arm's tools
+    (``ordered_tools``)."""
+    return ([(tool, "shared") for tool in ordered_tools(cfg.tools)]
+            + [(tool, "genotype") for tool in genotype_tools(cfg.tools)])
+
+
+def _pair_entry(a: str, b: str, arm: str) -> dict:
+    """A comparison's head: ``a``, ``b`` and ``arm``, and ``kind`` ``CHECKPOINT_PAIR`` for two checkpoints of one
+    tool."""
+    return {"a": a, "b": b, "arm": arm, **({"kind": CHECKPOINT_PAIR} if is_checkpoint_pair(a, b) else {})}
 
 
 def _comparisons(cfg: RealConfig, data: real_score.DonorScoring, layout: RunLayout,
                  genes: list[str]) -> tuple[list[dict], list[dict]]:
-    """The donor's comparisons (``PAIRS`` whose tools are in ``cfg``) and arm deltas, each also written to
-    ``real_comparison_json``; a pair with a run not scored is listed as not compared, with the reason."""
+    """The donor's comparisons (``compared_pairs``) and arm deltas, each also written to ``real_comparison_json``; a
+    pair with a run not scored is listed as not compared, with the reason. A comparison of two checkpoints also
+    counts the reads the second fixes and breaks (``real_score.comparison(..., changes=True)``)."""
     comparisons, deltas = [], []
-    for a, b, arm in PAIRS:
-        if a not in cfg.tools or b not in cfg.tools:
-            continue
-        entry = {"a": a, "b": b, "arm": arm}
+    for a, b, arm in compared_pairs(cfg.tools):
+        entry = _pair_entry(a, b, arm)
         missing = [tool for tool in (a, b) if (tool, arm) not in data.calls]
         if missing:
             comparisons.append({**entry, "status": "not compared",
@@ -443,10 +506,10 @@ def _comparisons(cfg: RealConfig, data: real_score.DonorScoring, layout: RunLayo
         entry.update(status="compared", **real_score.comparison(
             real_score.pair_scores(data, (a, arm), (b, arm)), sensitivity=genes,
             gene_support=real_score.pair_scores(data, (a, arm), (b, arm), variant="gene_support"),
-            clusterings=True))
+            clusterings=True, changes=is_checkpoint_pair(a, b)))
         real_score.write_comparison(layout.real_comparison_json(data.donor, arm, f"{a}_vs_{b}"), entry)
         comparisons.append(entry)
-    for tool in GENOTYPE_TOOLS:
+    for tool in genotype_tools(cfg.tools):
         if (tool, "shared") in data.calls and (tool, "genotype") in data.calls:
             pair = real_score.pair_scores(data, (tool, "shared"), (tool, "genotype"))
             entry = {"tool": tool, "a": "shared", "b": "genotype", "informational": True,
@@ -468,29 +531,31 @@ def _pooled(cfg: RealConfig, scored: dict[str, real_score.DonorScoring], blocks:
         by_protocol.setdefault(blocks[donor].get("protocol") or "unknown", []).append(donor)
     for protocol, members in sorted(by_protocol.items()):
         comparisons = []
-        for a, b, arm in PAIRS:
+        for a, b, arm in compared_pairs(cfg.tools):
             donors = [donor for donor in members if (a, arm) in scored[donor].calls and (b, arm) in scored[donor].calls]
-            if a in cfg.tools and b in cfg.tools and donors:
+            if donors:
                 pair = real_score.pool({donor: real_score.pair_scores(scored[donor], (a, arm), (b, arm))
                                         for donor in donors})
-                comparisons.append({"a": a, "b": b, "arm": arm, "donors": donors, "status": "compared",
-                                    **real_score.comparison(pair, clusterings=True)})
+                comparisons.append({**_pair_entry(a, b, arm), "donors": donors, "status": "compared",
+                                    **real_score.comparison(pair, clusterings=True,
+                                                            changes=is_checkpoint_pair(a, b))})
         pooled["protocols"][protocol] = {"donors": members, "comparisons": comparisons}
     for tool, arm in expected_runs(cfg):
         summaries = [blocks[donor]["tools"][arm][tool] for donor in scored if tool in blocks[donor]["tools"][arm]]
         if summaries:
             pooled["tools"][arm][tool] = real_score.pool_tools(summaries)
-    for a, b, arm in PAIRS:
+    for a, b, arm in compared_pairs(cfg.tools):
         donors = [donor for donor, data in scored.items() if (a, arm) in data.calls and (b, arm) in data.calls]
-        if a in cfg.tools and b in cfg.tools and donors:
+        if donors:
             pairs = {variant: real_score.pool({donor: real_score.pair_scores(scored[donor], (a, arm), (b, arm),
                                                                              variant=variant) for donor in donors})
                      for variant in real_score.VARIANTS}
-            pooled["comparisons"].append({"a": a, "b": b, "arm": arm, "donors": donors, "status": "compared",
+            pooled["comparisons"].append({**_pair_entry(a, b, arm), "donors": donors, "status": "compared",
                                           **real_score.comparison(pairs["primary"], sensitivity=sensitivity["genes"],
                                                                   gene_support=pairs["gene_support"],
-                                                                  clusterings=True)})
-    for tool in GENOTYPE_TOOLS:
+                                                                  clusterings=True,
+                                                                  changes=is_checkpoint_pair(a, b))})
+    for tool in genotype_tools(cfg.tools):
         donors = [donor for donor, data in scored.items()
                   if (tool, "shared") in data.calls and (tool, "genotype") in data.calls]
         if donors:

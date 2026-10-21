@@ -1,0 +1,166 @@
+{
+ "all_config_hash": "e892bf9992fc4d53c775d39afb8b5f0a5665dac6d3170e59524d1c76de2c98c9",
+ "all_identity": {
+  "reference": "HUMAN_IGH_OGRDB",
+  "scale": 1.0,
+  "seed": 20261019,
+  "settings": {
+   "alignair-local": {
+    "checkpoint": "<checkpoint>",
+    "checkpoint_sha256": "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c",
+    "code_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "device": "cpu",
+    "torch_version": "2.11.0+cu128"
+   },
+   "igblast": {
+    "igblastn_sha256": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+   },
+   "oracle": {}
+  },
+  "split": "dev",
+  "suites": [
+   "S1"
+  ],
+  "tools": [
+   "igblast",
+   "alignair-local"
+  ]
+ },
+ "all_manifest_identity_keys": [
+  "reference",
+  "scale",
+  "seed",
+  "settings",
+  "split",
+  "suites",
+  "tools"
+ ],
+ "checkpoint_bytes": "weights",
+ "code_identity": {
+  "code_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "torch_version": "2.11.0+cu128"
+ },
+ "comment": "The plain tools' records before checkpoint variants existed (written at 01bd17c): they must not change.",
+ "driver_bytes": "driver",
+ "fingerprints": {
+  "alignair-api": {
+   "checkpoint": "<checkpoint>",
+   "checkpoint_sha256": "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c",
+   "code_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "device": "cpu",
+   "driver_sha256": "b4def8217cadae26d4da633fd2a4e58e326cbb5d570afdc3989484da07af3579",
+   "torch_version": "2.11.0+cu128"
+  },
+  "alignair-local": {
+   "checkpoint": "<checkpoint>",
+   "checkpoint_sha256": "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c",
+   "code_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "device": "cpu",
+   "torch_version": "2.11.0+cu128"
+  }
+ },
+ "paths": {
+  "alignair-api": [
+   "/run/runs/alignair-api/S1/shared",
+   "/run/runs/alignair-api/S1/shared/predictions.tsv",
+   "/run/runs/alignair-api/S1/shared/run.json",
+   "/run/runs/alignair-api/S1/shared/logs",
+   "/run/runs/alignair-api/S5/genotype",
+   "/run/runs/alignair-api/S5/genotype/donors/predictions.d1.tsv",
+   "/run/runs/alignair-api/_work",
+   "/run/scores/S1/shared/alignair-api.scores.jsonl.gz",
+   "/run/scores/S1/shared/alignair-api.report.json",
+   "/run/real/W-97/runs/alignair-api/shared",
+   "/run/real/W-97/runs/alignair-api/genotype/predictions.tsv",
+   "/run/real/W-97/runs/alignair-api/shared/run.json",
+   "/run/real/W-97/scores/shared/alignair-api.scores.jsonl.gz",
+   "/run/real/W-97/scores/shared/igblast_vs_alignair-api.json",
+   "/run/real/W-97/scores/arms/alignair-api.json"
+  ],
+  "alignair-local": [
+   "/run/runs/alignair-local/S1/shared",
+   "/run/runs/alignair-local/S1/shared/predictions.tsv",
+   "/run/runs/alignair-local/S1/shared/run.json",
+   "/run/runs/alignair-local/S1/shared/logs",
+   "/run/runs/alignair-local/S5/genotype",
+   "/run/runs/alignair-local/S5/genotype/donors/predictions.d1.tsv",
+   "/run/runs/alignair-local/_work",
+   "/run/scores/S1/shared/alignair-local.scores.jsonl.gz",
+   "/run/scores/S1/shared/alignair-local.report.json",
+   "/run/real/W-97/runs/alignair-local/shared",
+   "/run/real/W-97/runs/alignair-local/genotype/predictions.tsv",
+   "/run/real/W-97/runs/alignair-local/shared/run.json",
+   "/run/real/W-97/scores/shared/alignair-local.scores.jsonl.gz",
+   "/run/real/W-97/scores/shared/igblast_vs_alignair-local.json",
+   "/run/real/W-97/scores/arms/alignair-local.json"
+  ]
+ },
+ "placeholder": "<checkpoint>",
+ "real_manifest_identity_keys": [
+  "accept_assembly_loss",
+  "cap",
+  "donors",
+  "images",
+  "paper_length_filter",
+  "reference",
+  "reference_digest",
+  "reference_gapped_digest",
+  "settings",
+  "split",
+  "stop_after",
+  "tools"
+ ],
+ "real_manifest_settings_keys": {
+  "alignair": [
+   "image",
+   "image_id",
+   "model",
+   "model_sha256"
+  ],
+  "alignair-api": [
+   "checkpoint",
+   "checkpoint_sha256",
+   "code_sha256",
+   "device",
+   "driver_sha256",
+   "torch_version"
+  ],
+  "igblast": [
+   "auxiliary_data_sha256",
+   "igblast_dir",
+   "igblastn_sha256",
+   "makeblastdb_sha256"
+  ]
+ },
+ "real_run_identity_without_code": {
+  "arm": null,
+  "reads_sha256": "8e235f962d8dad109fc808f4b9c288d39a5c46b0990de5ce5a924980b1e10335",
+  "reference_digest": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+  "settings": {
+   "checkpoint": "<checkpoint>",
+   "checkpoint_sha256": "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c",
+   "code_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "device": "cpu",
+   "driver_sha256": "b4def8217cadae26d4da633fd2a4e58e326cbb5d570afdc3989484da07af3579",
+   "torch_version": "2.11.0+cu128"
+  }
+ },
+ "runner_code": {
+  "alignair": [
+   "runners/base.py",
+   "runners/alignair.py",
+   "runners/reference.py"
+  ],
+  "alignair-api": [
+   "runners/base.py",
+   "runners/alignair.py",
+   "runners/alignair_api.py",
+   "runners/reference.py"
+  ],
+  "igblast": [
+   "runners/base.py",
+   "runners/igblast.py",
+   "runners/reference.py"
+  ]
+ }
+}
