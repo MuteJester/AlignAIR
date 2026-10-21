@@ -313,8 +313,8 @@ def test_cluster_count_beside_each_delta():
     assert [row[0] for row in rows[1:]] == ["W-97", "SC-23", "Pooled (2 donors)"]
     for row in rows[1:]:
         for cell in row[4:]:
-            assert re.search(r"-?\d+\.\d pp \[[-+]\d+\.\d, [-+]\d+\.\d\], (tie|.* better); \d+ paired \(\d+ "
-                             r"clonotypes\)", cell), cell
+            assert re.search(r"-?\d+\.\d pp \[[-+]\d+\.\d, [-+]\d+\.\d\], (not significant|.* better); "
+                             r"\d+ paired \(\d+ clonotypes\)", cell), cell
     assert rows[1][4].endswith("143 paired (139 clonotypes)") and rows[3][5].endswith("286 paired (278 clonotypes)")
     # the components and the detail tables carry the clusters too
     for title in ("R1 per donor", "Sensitivity", "Stratification: protocol × isotype"):
@@ -350,7 +350,7 @@ def test_r1_headline_shows_each_tool_per_donor_and_pooled_then_the_components():
     rows = _table(section)
     w97 = rows[1]
     assert w97[1:4] == ["22.5% (n=151)", "17.9% (n=145)", "17.9% (n=145)"]
-    assert w97[4] == "-2.1 pp [-5.2, +1.0], tie; 143 paired (139 clonotypes)"
+    assert w97[4] == "-2.1 pp [-5.2, +1.0], not significant; 143 paired (139 clonotypes)"
     assert rows[3][4] == "**-2.1 pp** [-5.2, +1.0], **alignair (image) better**; 286 paired (278 clonotypes)"
     # the bottom line names the pooled result first, with the paired means
     assert ("**Bottom line (pooled over 2 donors).** alignair (image) 17.5% vs igblast 19.6% of V calls "
@@ -359,7 +359,7 @@ def test_r1_headline_shows_each_tool_per_donor_and_pooled_then_the_components():
     # the components follow the headline table, on the same scope
     components = _table(section[section.index("Components"):])
     assert [row[0] for row in components[1:]] == ["unsupported allele", "unsupported gene", "no call"]
-    assert components[1][4] == "-1.4 pp [-4.5, +1.7], tie; 286 paired (278 clonotypes)"
+    assert components[1][4] == "-1.4 pp [-4.5, +1.7], not significant; 286 paired (278 clonotypes)"
     # the bottom line, then the table, then what R1 is
     assert section.index("**Bottom line") < section.index("| W-97 |") < section.index("R1 (`real.v.unsupported`")
     assert section.index("R1 (`real.v.unsupported`") < section.index("Components")
@@ -367,6 +367,24 @@ def test_r1_headline_shows_each_tool_per_donor_and_pooled_then_the_components():
     tie = _section(real_report_markdown(_summary()), "R1 headline (shared arm)")
     assert ("alignair (image) 17.5% vs igblast 19.6% of V calls unsupported: -2.1 pp [-5.2, +1.0], not significant "
             "(286 paired reads in 278 clonotypes); alignair-api the same.") in tie
+
+
+def test_cells_say_not_significant_too_few_clonotypes_or_no_variation_never_tie():
+    summary = _summary()
+    overall = summary["pooled"]["comparisons"][0]["overall"]
+    overall["real.v.unsupported"].update(test="too_few_clusters", n_clusters=8)
+    overall["real.v.no_call"].update(delta=0.0, ci95=[0.0, 0.0])  # both tools 0% on every paired read
+    md = real_report_markdown(summary)
+    section = _section(md, "R1 headline (shared arm)")
+    pooled = _table(section)[3]
+    assert pooled[4] == "-2.1 pp [-5.2, +1.0], too few clonotypes; 286 paired (8 clonotypes)"
+    assert pooled[5] == "-2.1 pp [-5.2, +1.0], not significant; 286 paired (278 clonotypes)"
+    no_call = next(row for row in _table(section[section.index("Components"):]) if row[0] == "no call")
+    assert no_call[4] == "+0.0 pp [+0.0, +0.0], no variation; 286 paired (278 clonotypes)"
+    assert no_call[5] == "+0.0 pp [-3.1, +3.1], not significant; 286 paired (278 clonotypes)"
+    # the bottom line uses the tables' words
+    assert "-2.1 pp [-5.2, +1.0], too few clonotypes (286 paired reads in 8 clonotypes)" in section
+    assert ", tie;" not in md and ", tie (" not in md and "**tie" not in md
 
 
 def test_the_statistics_note_is_one_line_under_the_headline():
@@ -391,8 +409,8 @@ def test_the_genotype_arm_leads_with_known_answers_not_r1():
     assert igblast[4] == "61.4% → 65.4% (+4.0 pp)" and api[4] == "61.6% → 63.8% (+2.2 pp)"
     assert igblast[5] == "22.5% → 0.0% (0 by construction)"
     # the tools against each other on the genotype arm
-    assert "alignair-api − igblast on the genotype arm: known_top1 -3.3 pp [-6.4, -0.2], tie; 30 paired (30 " \
-           "clonotypes)" in section
+    assert "alignair-api − igblast on the genotype arm: known_top1 -3.3 pp [-6.4, -0.2], not significant; 30 " \
+           "paired (30 clonotypes)" in section
 
 
 def test_sensitivity_variants_side_by_side_with_the_primary():
@@ -402,7 +420,7 @@ def test_sensitivity_variants_side_by_side_with_the_primary():
     variants = [row[1] for row in rows[1:4]]
     assert variants == ["R1 primary", "Without SD3-only genes (104 reads called to them)",
                         "With Mikelov gene-support thresholds (481 V reads out)"]
-    assert rows[2][2] == "-2.7 pp [-5.8, +0.4], tie; 73 paired (70 clonotypes)"
+    assert rows[2][2] == "-2.7 pp [-5.8, +0.4], not significant; 73 paired (70 clonotypes)"
     assert "21 genes" in section and "33 alleles" in section and ", ".join(SD3_GENES) in section
     assert "≥10 clonotypes" in section and "≥3 naive" in section and "Mikelov et al. 2024" in section
 

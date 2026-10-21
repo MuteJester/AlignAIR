@@ -91,16 +91,20 @@ R1_NOTE = ("R1 (`real.v.unsupported`, lower is better): the share of a tool's to
            "the reads its own call does not exclude (n). Each Δ (AlignAIR − igblast, 95% CI, verdict) is on the "
            "paired reads, those neither call excludes, so it need not equal the difference of the tool columns.")
 STATISTICS_NOTE = ("Statistics: paired tests clustered by clonotype (clustered McNemar with a cluster-robust 95% CI; "
-                   "under 10 clonotypes no test, a tie by rule); Holm within each comparison (one pair on one scope, "
-                   "stratum or variant), not across the whole report.")
+                   "under 10 clonotypes no test: too few clonotypes); Holm within each comparison (one pair on one "
+                   "scope, stratum or variant), not across the whole report; no variation: the tools agree on every "
+                   "paired read (Δ and interval 0), so there is nothing to test.")
 GENOTYPE_LEAD = ("R1 is 0 on this arm by construction, so the arm is judged on known answers, missing calls and the "
                  "calls that move into uncaptured genes.")
 GENOTYPE_NOTE = ("Each tool may call only the donor's alleles in the genes its contigs capture, so every call R1 does "
                  "not exclude is supported, and only a missing call could count against it. Calls in uncaptured "
                  "genes are excluded from R1; both shares are of all reads. Each Δ is the tool's arm delta, genotype "
                  "− shared on the same reads, and is informational.")
-# The bottom line's words for a verdict that is not significant (the tables say "tie").
+# The words for a verdict that is not significant, in the tables and the bottom line alike; a comparison under 10
+# clonotypes is not tested, and one whose paired differences are all 0 has nothing to test.
 NOT_SIGNIFICANT = "not significant"
+TOO_FEW_CLONOTYPES = "too few clonotypes"
+NO_VARIATION = "no variation"
 INVARIANT = ("Whether a read is excluded never depends on whether a call is correct: a call is excluded by its own "
              "IUIS genes and the read's tool-neutral truth alone, so a right and a wrong call to the same genes are "
              "excluded alike, and no tool can take its errors out of R1 by making them in an excluded gene. A read "
@@ -278,9 +282,22 @@ def _nothing_scored(summary: dict) -> str:
 
 # --- comparison cells --------------------------------------------------------------------------------------------
 
+def _no_variation(entry: dict) -> bool:
+    """Every paired difference is 0 (both tools at 0% or 100%, or agreeing read by read): Δ 0 in a [0, 0] interval."""
+    ci = entry.get("ci95") or (None, None)
+    return entry.get("delta") == 0 and ci[0] == 0 and ci[1] == 0
+
+
 def _verdict(entry: dict, a: str, b: str) -> str:
-    text = {"a_better": f"{_label(a)} better", "b_better": f"{_label(b)} better"}.get(entry.get("verdict"), "tie")
-    return f"{text} (too few clonotypes)" if entry.get("test") == "too_few_clusters" else text
+    """``<tool> better`` when significant; otherwise ``no variation`` (nothing to test), ``too few clonotypes`` (under
+    10: no test; the paired reads hold at least the clonotypes, so too few pairs is too few clonotypes) or ``not
+    significant``."""
+    better = {"a_better": f"{_label(a)} better", "b_better": f"{_label(b)} better"}.get(entry.get("verdict"))
+    if better:
+        return better
+    if _no_variation(entry):
+        return NO_VARIATION
+    return TOO_FEW_CLONOTYPES if entry.get("test") in ("too_few_clusters", "too_few_pairs") else NOT_SIGNIFICANT
 
 
 def _paired(entry: dict) -> str:
@@ -414,8 +431,7 @@ def _bottom_line(lead: dict, pairs: list[tuple[str, str]]) -> str:
             parts.append(f"{_label(b)} the same")
             continue
         previous = key
-        verdict = (_verdict(entry, a, b) if entry.get("verdict") in ("a_better", "b_better")
-                   else NOT_SIGNIFICANT + (" (too few clonotypes)" if entry.get("test") == "too_few_clusters" else ""))
+        verdict = _verdict(entry, a, b)
         parts.append(f"{_label(b)} {_pct(entry.get('mean_b_paired'))} vs {_label(a)} "
                      f"{_pct(entry.get('mean_a_paired'))} of V calls unsupported: {_pp(entry['delta'])} "
                      f"{_ci(entry.get('ci95'))}, {verdict} ({entry['n_paired']} paired reads in "
@@ -528,7 +544,7 @@ def _flags(summary: dict, scopes: list[dict]) -> list[str]:
            if c.get("arm") == "shared" and ((c.get("overall") or {}).get(HEADLINE) or {}).get("test")
            == "too_few_clusters"]
     if few:
-        flags.append(_listed("Too few clonotypes for an R1 verdict (under 10: a tie by rule)", few))
+        flags.append(_listed("Too few clonotypes for an R1 verdict (under 10: not tested)", few))
     if len(flags) > MAX_FLAGS:
         left = len(flags) - (MAX_FLAGS - 1)
         flags = [*flags[:MAX_FLAGS - 1], f"And {left} more flags, less severe: see the detail sections."]
