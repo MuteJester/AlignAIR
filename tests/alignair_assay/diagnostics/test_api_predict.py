@@ -106,7 +106,28 @@ def test_a_failure_on_the_genotype_path_is_told_apart(checkpoint, inputs, refere
                                     AttributeError("'tuple' object has no attribute 'items'"), KeyError("v")])
 def test_a_genotype_of_the_wrong_type_is_a_genotype_failure(checkpoint, inputs, reference, tmp_path, capsys,
                                                             monkeypatch, raised):
-    # The errors a genotype of another type raises where it is applied are the genotype path's.
+    # The errors a genotype of another type raises where it is applied, reading it or computing its mask before any
+    # read is predicted, are the genotype path's.
+    import alignair_assay.diagnostics.api_predict as api_predict
+
+    def mask(*args, **kwargs):
+        raise raised
+
+    fasta, truth = inputs
+    genotype = tmp_path / "genotype.json"
+    genotype.write_text(json.dumps({"v": sorted(reference.alleles["v"])[:3], "d": sorted(reference.alleles["d"]),
+                                    "j": sorted(reference.alleles["j"])}))
+    monkeypatch.setattr(api_predict, "genotype_allowed_mask", mask)
+    assert main(_args(checkpoint, truth, fasta, tmp_path / "out.tsv", "--genotype", str(genotype))) == GENOTYPE_FAILED
+    assert capsys.readouterr().err.strip().splitlines()[-1].startswith(f"{GENOTYPE_NOTE}: {type(raised).__name__}")
+
+
+@pytest.mark.parametrize("raised", [TypeError("unsupported operand"), AttributeError("no attribute 'shape'"),
+                                    KeyError("j")])
+def test_the_same_error_types_from_the_prediction_are_the_tools(checkpoint, inputs, reference, tmp_path, capsys,
+                                                                 monkeypatch, raised):
+    # Once the genotype is read and its mask computed, an error of the same types inside the prediction is the
+    # tool's: it propagates as it would without a genotype, with no note.
     import alignair_assay.diagnostics.api_predict as api_predict
 
     def predict(*args, genotype=None, **kwargs):
@@ -117,8 +138,9 @@ def test_a_genotype_of_the_wrong_type_is_a_genotype_failure(checkpoint, inputs, 
     genotype.write_text(json.dumps({"v": sorted(reference.alleles["v"])[:3], "d": sorted(reference.alleles["d"]),
                                     "j": sorted(reference.alleles["j"])}))
     monkeypatch.setattr(api_predict, "predict_file", predict)
-    assert main(_args(checkpoint, truth, fasta, tmp_path / "out.tsv", "--genotype", str(genotype))) == GENOTYPE_FAILED
-    assert capsys.readouterr().err.strip().splitlines()[-1].startswith(f"{GENOTYPE_NOTE}: {type(raised).__name__}")
+    with pytest.raises(type(raised)):
+        main(_args(checkpoint, truth, fasta, tmp_path / "out.tsv", "--genotype", str(genotype)))
+    assert GENOTYPE_NOTE not in capsys.readouterr().err
 
 
 def test_any_other_failure_with_a_genotype_is_not_a_genotype_failure(checkpoint, inputs, reference, tmp_path,

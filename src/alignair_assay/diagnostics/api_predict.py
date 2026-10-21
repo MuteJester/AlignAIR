@@ -32,11 +32,13 @@ and the genotype arm run the same code and model:
 the CLI, no rate of failed assemblies fails the run; the counts are recorded instead.
 
 Exit status: 0 once the TSV and the record are written; 1 when no read is valid (an empty TSV is written, as the CLI
-writes it); 3 (``GENOTYPE_FAILED``) when a genotype was given and reading it or predicting with it raised one of
-``GENOTYPE_ERRORS`` (AlignAIR's ``NovelAlleleUnsupportedError``, or the ``AttributeError``, ``TypeError`` or
-``KeyError`` a genotype of another type raises where it is applied), after the traceback and a last line ``genotype
-API path failed: <type>: <message>`` on stderr. Any other error propagates, with or without a genotype (Python's
-traceback, exit status 1, no note). A run that raises writes no TSV and no record.
+writes it); 3 (``GENOTYPE_FAILED``) when a genotype was given and reading it (``load_genotype``) or computing its mask
+on the model's reference (``genotype_allowed_mask``, which the prediction computes for each chunk; here once, before
+any read) raised one of ``GENOTYPE_ERRORS`` (AlignAIR's ``NovelAlleleUnsupportedError``, or the ``AttributeError``,
+``TypeError`` or ``KeyError`` a genotype of another type raises where it is applied), after the traceback and a last
+line ``genotype API path failed: <type>: <message>`` on stderr. Any other error propagates, with or without a
+genotype (Python's traceback, exit status 1, no note), and so does any error of the prediction itself, of those types
+too. A run that raises writes no TSV and no record.
 """
 from __future__ import annotations
 
@@ -48,7 +50,7 @@ from pathlib import Path
 
 import torch
 from alignair import AirrWriter, iter_sequences, predict_sequences, resolve_device
-from alignair.genotype.constraint import NovelAlleleUnsupportedError, load_genotype
+from alignair.genotype.constraint import NovelAlleleUnsupportedError, genotype_allowed_mask, load_genotype
 
 from alignair_assay.core.reference import Reference
 from alignair_assay.diagnostics.replay import load_model_checked
@@ -101,14 +103,15 @@ def main(argv=None) -> int:
         counts = predict_file(model, reference, args.input, out, device=device, batch_size=args.batch_size,
                               locus=locus)
     else:
-        try:
+        try:  # the genotype path's errors: reading the genotype and computing its mask, before any read
             genotype, _ = load_genotype(args.genotype, reference=reference, drop_unknown=False)
-            counts = predict_file(model, reference, args.input, out, device=device, batch_size=args.batch_size,
-                                  locus=locus, genotype=genotype)
+            genotype_allowed_mask(genotype, reference)
         except GENOTYPE_ERRORS as error:
             traceback.print_exc()
             print(f"{GENOTYPE_NOTE}: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
             return GENOTYPE_FAILED
+        counts = predict_file(model, reference, args.input, out, device=device, batch_size=args.batch_size,
+                              locus=locus, genotype=genotype)
         record["genotype"] = {"path": args.genotype, "method": GENOTYPE_METHOD,
                               "alleles": {letter: len(names) for letter, names in genotype.items()}}
     record["counts"] = counts
