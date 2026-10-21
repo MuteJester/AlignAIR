@@ -1,7 +1,9 @@
 """JSON Lines files with an optional header line; a ``.gz`` path is gzip-compressed.
 
 A file may start with a header line ``{"header": {...}}`` describing how it was built; ``read_jsonl`` skips it and
-``read_header`` returns it. Rows are written compactly and as strict JSON (a NaN or infinity is an error).
+``read_header`` returns it. Rows are written compactly and as strict JSON (a NaN or infinity is an error), by
+``core.records.write_jsonl``: atomically, and gzip-compressed with no time in the header, so the same rows are the
+same bytes whenever they are written.
 """
 from __future__ import annotations
 
@@ -10,14 +12,13 @@ import json
 from collections.abc import Iterable
 from pathlib import Path
 
+from alignair_assay.core import records
+
 
 def write_jsonl(rows: Iterable[dict], path: str | Path, header: dict | None = None) -> None:
-    """Write ``rows`` one JSON object per line, after the header line when ``header`` is given."""
-    with _open(path, "wt") as fh:
-        if header is not None:
-            fh.write(_dumps({"header": header}) + "\n")
-        for row in rows:
-            fh.write(_dumps(row) + "\n")
+    """Write ``rows`` one JSON object per line, after the header line when ``header`` is given
+    (``core.records.write_jsonl``)."""
+    records.write_jsonl(path, rows, header=header)
 
 
 def read_jsonl(path: str | Path) -> list[dict]:
@@ -39,10 +40,6 @@ def read_header(path: str | Path) -> dict | None:
 
 def _is_header(row) -> bool:
     return isinstance(row, dict) and set(row) == {"header"}
-
-
-def _dumps(obj) -> str:
-    return json.dumps(obj, separators=(",", ":"), allow_nan=False)
 
 
 def _open(path: str | Path, mode: str):

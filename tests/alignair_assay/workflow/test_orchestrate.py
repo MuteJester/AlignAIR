@@ -256,9 +256,9 @@ def test_suite_source_change_rebuilds_only_that_suite(half_run, tmp_path, monkey
     changed = {path.relative_to(root).as_posix() for path in before if after[path] != before[path]}
     assert {"suites/S1/cases.jsonl.gz", "suites/S1/truth.jsonl.gz", "suites/S1/build.json"} <= changed
     assert not any(path.startswith("suites/S0/") or "/S0/" in path for path in changed)
-    # The reads are byte-identical, so a tool's run that records only them would be kept; both runs here read the
-    # suite's truth (oracle rows), whose new file they record, so both are redone.
-    assert "runs/half/S1/shared/run.json" in changed and "runs/oracle/S1/shared/run.json" in changed
+    # The rebuilt reads, cases and truth are the same rows, so the same bytes (no time in a gzip header): even the
+    # runs that record the truth's digest (both here read the suite's truth, oracle rows) are kept.
+    assert "runs/half/S1/shared/run.json" not in changed and "runs/oracle/S1/shared/run.json" not in changed
     assert layout.reads("S1").read_bytes() == reads
     for tool in ("oracle", "half"):
         provenance = read_run_json(layout.run_json(tool, "S1", "shared")).provenance
@@ -268,6 +268,16 @@ def test_suite_source_change_rebuilds_only_that_suite(half_run, tmp_path, monkey
     # Resumed with the edit in place, nothing is rebuilt or rerun.
     _, status = _all(root)
     assert status == 0 and "build S1: up to date, skipped" in capsys.readouterr().out
+    # A truth file with other bytes (its rows in another order) redoes the two runs that record its digest.
+    from alignair_assay.core.jsonl import read_header, read_jsonl, write_jsonl
+
+    write_jsonl(read_jsonl(layout.truth("S1"))[::-1], layout.truth("S1"), header=read_header(layout.truth("S1")))
+    before = _outputs(layout, cfg)
+    _, status = _all(root)
+    after = _outputs(layout, cfg)
+    changed = {path.relative_to(root).as_posix() for path in before if after[path] != before[path]}
+    assert status == 0 and {"runs/half/S1/shared/run.json", "runs/oracle/S1/shared/run.json"} <= changed
+    assert not any(path.startswith("suites/") or "/S0/" in path for path in changed)
 
 
 def test_local_code_change_redoes_local_runs(tmp_path, monkeypatch, capsys):

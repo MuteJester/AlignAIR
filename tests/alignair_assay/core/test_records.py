@@ -96,6 +96,32 @@ def test_concurrent_writers_never_share_a_temporary_file(tmp_path):
     assert os.access(path, os.R_OK)
 
 
+def test_core_jsonl_writes_the_same_rows_as_the_same_bytes_at_any_time(tmp_path, monkeypatch):
+    # A suite's cases and truth (``core.jsonl.write_jsonl``) built twice from the same rows must be byte-identical,
+    # whenever they are written: the gzip header holds no time, so a file's SHA-256 is a digest of its content (the
+    # audit's reproducibility check compares two builds' files byte for byte).
+    import gzip
+
+    from alignair_assay.core import jsonl
+
+    rows = [{"case_id": "S1:0", "sequence": "ACGT"}, {"case_id": "S1:1", "sequence": "TTGA"}]
+    written = []
+    for clock in (1_000_000_000.0, 2_000_000_000.0):
+        monkeypatch.setattr(gzip.time, "time", lambda clock=clock: clock)
+        path = tmp_path / str(int(clock)) / "cases.jsonl.gz"
+        path.parent.mkdir()
+        jsonl.write_jsonl(rows, path, header={"kind": "k"})
+        written.append(path.read_bytes())
+        assert jsonl.read_jsonl(path) == rows and jsonl.read_header(path) == {"kind": "k"}
+    assert written[0] == written[1]
+    plain = tmp_path / "rows.jsonl"
+    jsonl.write_jsonl(rows, plain)
+    assert plain.read_text(encoding="utf-8") == ('{"case_id":"S1:0","sequence":"ACGT"}\n'
+                                                 '{"case_id":"S1:1","sequence":"TTGA"}\n')
+    with pytest.raises(ValueError):
+        jsonl.write_jsonl([{"m": float("nan")}], plain)
+
+
 def test_json_lines_are_written_atomically_and_compressed_reproducibly(tmp_path, monkeypatch):
     path = tmp_path / "sub" / "cases.jsonl.gz"
     rows = [{"case_id": "a", "scores": {"m": 1.0, "n": None}}, {"case_id": "b", "scores": {}}]
