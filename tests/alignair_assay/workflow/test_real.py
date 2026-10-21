@@ -569,7 +569,67 @@ def test_a_changed_genotype_redoes_only_the_genotype_arm(tmp_path, fakes):
     # the arm's identity is in its run record
     record = json.loads(layout.real_run_json("igblast", "W-97", "genotype").read_text())
     identity = record["provenance"]["identity"]["arm"]
-    assert set(identity) == {"genotype_sha256", "alleles_sha256", "alleles"}
+    assert set(identity) == {"genotype_content_sha256", "alleles_sha256", "alleles"}
+
+
+def test_a_genotype_rewritten_with_the_same_content_keeps_the_genotype_arm(tmp_path, fakes, monkeypatch):
+    """The genotype arm's identity is the genotype's content (its alleles, captured, resolved, uncalled and dropped
+    genes) and the arm's alleles, never the record's provenance: a capture redone by changed code, whose
+    ``genotype.json`` differs only in its code digest, fingerprint and source, keeps every run."""
+    layout = RunLayout(tmp_path / "run")
+    cfg = _config(tmp_path)
+    run_real(cfg, layout)
+    runs = list(FakeTool.runs)
+    before = json.loads(layout.real_genotype_json("W-97").read_text())
+    monkeypatch.setattr(real_steps, "GENOTYPE_CODE", (*real_steps.GENOTYPE_CODE, "real/truth.py"))
+    original = fakes.capture_genotype
+
+    def another_source(donor, fetched, reference, iuis):
+        genotype = original(donor, fetched, reference, iuis)
+        return dataclasses.replace(genotype, source={**genotype.source, "container": "alignair-locus-W-97-4242"})
+
+    monkeypatch.setattr(real_steps, "capture_genotype", another_source)
+    summary = run_real(cfg, layout)
+    after = json.loads(layout.real_genotype_json("W-97").read_text())
+    assert fakes.captures == ["W-97", "W-97"] and after["code_sha256"] != before["code_sha256"]
+    assert after["genotype"]["source"] != before["genotype"]["source"]
+    assert {key: value for key, value in after["genotype"].items() if key != "source"} == {
+        key: value for key, value in before["genotype"].items() if key != "source"}
+    assert FakeTool.runs == runs  # no run redone
+    steps = summary["donors"]["W-97"]["steps"]
+    assert {step["status"] for step in steps["runs"].values()} == {"reused"}
+    # a content change is another genotype: the genotype arm is redone, and only it
+    fakes.csv_md5 = "another-csv-md5"
+    fakes.captured["W-97"] = frozenset({"IGHV1-2"})
+    run_real(cfg, layout)
+    assert sorted(FakeTool.runs[len(runs):]) == [("alignair-api", "W-97", "genotype"), ("igblast", "W-97", "genotype")]
+
+
+def test_the_genotype_arm_identity_is_the_genotypes_content(tmp_path):
+    reads = tmp_path / "reads.fasta"
+    reads.write_text(">r1\nACGT\n")
+    path = tmp_path / "genotype.json"
+    genotype = {"donor": "W-97", "alleles": [{"allele_id": "IGHV1-2*02"}], "dropped": [], "captured": ["IGHV1-2"],
+                "resolved": ["IGHV1-2"], "uncalled": [], "source": {"capture": {"command": ["--name", "x-1"]}}}
+    record = {"kind": real_steps.GENOTYPE_KIND, "donor": "W-97", "fingerprint": "f1", "inputs": {"a": 1},
+              "image": "samtools", "code_sha256": "c1", "genotype": genotype}
+
+    def identity(value: dict) -> dict:
+        path.write_text(json.dumps(value))
+        return real_steps.run_identity("igblast", reads, {}, reference_digest="r", alleles=["IGHV1-2*02"],
+                                       genotype_json=path)["arm"]
+
+    first = identity(record)
+    assert set(first) == {"genotype_content_sha256", "alleles_sha256", "alleles"} and first["alleles"] == 1
+    # provenance and volatile fields: the code digest, the step's fingerprint and inputs, the container's name
+    volatile = {**record, "fingerprint": "f2", "code_sha256": "c2", "inputs": {"a": 2}, "image": "other",
+                "genotype": {**genotype, "source": {"capture": {"command": ["--name", "x-2"]}}}}
+    assert identity(volatile) == first
+    for key, value in (("alleles", [{"allele_id": "IGHV1-2*04"}]), ("captured", ["IGHV1-2", "IGHV3-11"]),
+                       ("resolved", []), ("uncalled", ["IGHV1-2"]), ("dropped", [{"allele_id": "IGHD3-10*01"}])):
+        changed = identity({**record, "genotype": {**genotype, key: value}})
+        assert changed["genotype_content_sha256"] != first["genotype_content_sha256"], key
+        assert changed["alleles_sha256"] == first["alleles_sha256"]
 
 
 def _snapshot(root: Path) -> dict:
@@ -618,8 +678,8 @@ def test_a_reference_changed_under_its_name_makes_every_run_stale(tmp_path, fake
 def test_a_gapped_form_changed_under_the_same_sequences_redoes_what_reads_it(tmp_path, fakes, monkeypatch):
     # The gapped forms place Cys104 (the truth's windows and anchors) and decide the 318 rule (the scores), and the
     # IUIS map reads them; the tools never do. Another gapped form under the same sequences changes no digest(), so
-    # the manifest names reference_gapped_digest, and forced, the genotype, truth and scores are redone, the shared
-    # arm's runs are reused, and the genotype arm's, keyed on genotype.json as on any change of the capture, redone.
+    # the manifest names reference_gapped_digest, and forced, the genotype, truth and scores are redone, and every
+    # run is reused: the shared arm's, and the genotype arm's, keyed on the genotype's content, which is the same.
     layout = RunLayout(tmp_path / "run")
     first = run_real(_config(tmp_path), layout)
     runs = list(FakeTool.runs)
@@ -638,8 +698,8 @@ def test_a_gapped_form_changed_under_the_same_sequences_redoes_what_reads_it(tmp
     assert {step["status"] for step in steps["scores"].values()} == {"done"}
     assert {name: step["status"] for name, step in steps["runs"].items()} == {
         "shared/igblast": "reused", "shared/alignair": "reused", "shared/alignair-api": "reused",
-        "genotype/igblast": "done", "genotype/alignair-api": "done"}
-    assert sorted(FakeTool.runs[len(runs):]) == [("alignair-api", "W-97", "genotype"), ("igblast", "W-97", "genotype")]
+        "genotype/igblast": "reused", "genotype/alignair-api": "reused"}
+    assert FakeTool.runs == runs
     for summary_ in (first, summary):
         assert summary_["provenance"]["reference"]["gapped_digest"] in (REFERENCE.gapped_digest(),
                                                                          regapped.gapped_digest())

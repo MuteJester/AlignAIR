@@ -1425,6 +1425,11 @@ python -m alignair_assay real --run-dir RUN --data-root ROOT --stop-after prepro
   a run directory made for another configuration needs `--force`.
 - `--cap` (default 50,000) caps each donor's preprocessed sequences. A small cap (500) is a smoke run: its numbers
   are not claims.
+- A tool run is kept while its identity holds: the tool's fingerprint, the reads, the shared reference's digest, the
+  digest of its runner modules and, on the genotype arm, the genotype's content (its alleles and its captured,
+  resolved, uncalled and dropped genes, not the record's provenance, so a capture redone by changed code to the same
+  genotype keeps the arm) and the arm's allele list. Runner code can change how a tool is invoked or how its output
+  is read, so a runner edit reruns that tool's runs.
 - `--stop-after preprocess` fetches, genotypes and preprocesses each donor and scores nothing, so it takes any pilot
   donor, test donors included: it is how every run's protocol classification and yields are checked without
   touching the test split's scores. Scoring the dev donors afterwards in the same run directory is another
