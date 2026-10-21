@@ -13,6 +13,63 @@ Units everywhere: coordinates are 0-based and half-open, rates run from 0 to 1, 
 
 ## Model iteration quick start
 
+A candidate checkpoint `CAND.alignair` against the base `BASE.alignair`, on the `dev` split, from the repository root
+(`ROOT`: the PRJNA555323 data root; `IGBLAST_DIR`: an unpacked IgBLAST release).
+
+**The gate.** Run the readiness audit once before relying on any comparison, and again after any change to the
+assay; it exits 0 only when it passes (see The readiness audit):
+
+```
+PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_genairr_fix \
+    --real-run .private/assay/p3a_dev --data-root ROOT --checkpoint base=BASE.alignair --device cuda \
+    --out .private/assay/audit
+```
+
+**1. Simulated dev suites, per stage and per head** (`diagnose`, in process). Build the dev suites once, then:
+
+```
+PYTHONPATH=src python -m alignair_assay build --run-dir .private/assay/iter_dev --suites S1,S3 --split dev --scale 0.1
+PYTHONPATH=src python -m alignair_assay diagnose --run-dir .private/assay/iter_dev --suites S1,S3 \
+    --checkpoint CAND.alignair --against BASE.alignair --device cuda
+```
+
+**2. Simulated dev suites, end to end** (`all`: the AlignAIR CLI's AIRR output; it builds its own suites):
+
+```
+PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter_sim --split dev --suites S1,S3 \
+    --tools alignair-local@base,alignair-local@cand --checkpoint base=BASE.alignair \
+    --checkpoint cand=CAND.alignair --device cuda
+```
+
+**3. Real dev donors** (`real`, with Docker running; each checkpoint is also compared with IgBLAST):
+
+```
+PYTHONPATH=src python -m alignair_assay real --run-dir .private/assay/iter_real --data-root ROOT \
+    --donors SC-23,SC-11,W-97,W-133 --split dev --tools igblast,alignair-api@base,alignair-api@cand \
+    --igblast-dir IGBLAST_DIR --checkpoint base=BASE.alignair --checkpoint cand=CAND.alignair --device cuda
+```
+
+**Reading the results.** Every Δ is CAND − BASE (`--checkpoint` − `--against`; in `all` and `real`, the second
+tool − the first). A read *fixed* is one BASE gets wrong and CAND right; *broken*, the reverse.
+
+1. `iter_dev/diagnostics/<CAND key>/diagnostics.md` (the command prints it) opens with *Checkpoint comparison*: per
+   suite, the Δ, 95% CI, verdict ("this better" is CAND) and reads fixed / broken of `clone_key.exact`,
+   `junction.nt_exact`, V/D/J top-1 and the orientation head, then each boundary's exact-rate Δ under both
+   decoders. Each suite's full tables are in `<S>/against_<BASE key>.md`.
+2. `iter_sim/report.md`, then `scores/<S>/<arm>/comparison.md`: per metric the Δ (b−a), its CI and its
+   Holm-corrected verdict (`b_better` is CAND).
+3. `iter_real/real/real_report.md`, its *Checkpoint comparison* section. The pre-declared real primary is the R1 Δ
+   (`real.v.unsupported`, lower is better) per protocol (race, multiplex) on the shared arm, read with the
+   `known_top1` and `ref_known_top1` Δ beside it; every other verdict is exploratory.
+
+**The test split is locked for claims.** Never iterate on it. Score it once, at the end (`all --split test`, and
+`real --split test` on the test donors), with GenAIRR frozen: copy GenAIRR's package directory (`src/GenAIRR`:
+sources, built engine and data) while its checkout is at a clean commit, and put the copy first on the path
+(`PYTHONPATH=FROZEN:src`), so edits to the live GenAIRR cannot make the run's builds stale midway. Record that
+commit with the claim: the copy has no git state, so the run records none.
+
+### Against IgBLAST
+
 Iterate on the `dev` split (the default); `test` is locked and used only for claims. From the repository root,
 compare a checkpoint of this checkout against IgBLAST:
 
