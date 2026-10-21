@@ -9,7 +9,9 @@ writes ``real_summary.json`` (``RunLayout.real_summary_json``), which it returns
 the genotype arm runs ``igblast`` and ``alignair-api`` restricted to ``real.genotype.arm_alleles``. The comparisons
 (``PAIRS``) are igblast with alignair on the shared arm and igblast with alignair-api on both; each tool's genotype arm
 against its shared arm (the arm delta) is informational. Every tool and arm is classified against the whole shared
-reference with one ``SupportIndex`` per donor and the same truth per read.
+reference with one ``SupportIndex`` per donor and the same truth per read. The R1 primary applies no gene-support
+threshold; two sensitivity variants are reported beside it: R1 with Mikelov et al. 2024's gene-support thresholds,
+and R1 without the reads called to the SD3-only genes (``workflow.real_score``).
 
 **Refusals**, each before any work, with nothing written (``check_config``, then ``run_real``): no donor, an unknown
 donor, a test donor without ``split="test"`` (or a dev donor in a test run), an unknown tool, a cap or thread count out
@@ -305,11 +307,14 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
         _say(donor, f"run {tool} {arm}", steps["runs"][f"{arm}/{tool}"])
         results[tool, arm] = result
 
-    index = SupportIndex(genotype, iuis, ctx.merged, ctx.reference, support=gene_support(truths))
+    support = gene_support(truths)
+    index = SupportIndex(genotype, iuis, ctx.merged, ctx.reference, support=support)
+    thresholded = SupportIndex(genotype, iuis, ctx.merged, ctx.reference, support=support, thresholds=True)
     weights = {row["sequence_id"]: int(row["consensus_count"])
                for row in real_steps.read_meta(layout.real_reads_meta(donor))}
     data = real_score.DonorScoring(donor=donor, truths={truth.read_id: truth for truth in truths}, index=index,
-                                   weights=weights, sd3=frozenset(ctx.sensitivity["genes"]))
+                                   thresholded=thresholded, weights=weights,
+                                   sd3=frozenset(ctx.sensitivity["genes"]))
     check = oracle_self_check(truths, index)
     block["oracle_self_check"] = {**check, "status": oracle_status(check)}
     steps["scores"], block["tools"] = {}, {arm: {} for arm in ARMS}
@@ -358,8 +363,9 @@ def _comparisons(cfg: RealConfig, data: real_score.DonorScoring, layout: RunLayo
             comparisons.append({**entry, "status": "not compared",
                                 "reason": f"{', '.join(missing)} on the {arm} arm did not run successfully"})
             continue
-        entry.update(status="compared", **real_score.comparison(real_score.pair_scores(data, (a, arm), (b, arm)),
-                                                                sensitivity=genes))
+        entry.update(status="compared", **real_score.comparison(
+            real_score.pair_scores(data, (a, arm), (b, arm)), sensitivity=genes,
+            gene_support=real_score.pair_scores(data, (a, arm), (b, arm), variant="gene_support")))
         real_score.write_comparison(layout.real_comparison_json(data.donor, arm, f"{a}_vs_{b}"), entry)
         comparisons.append(entry)
     for tool in GENOTYPE_TOOLS:
@@ -383,10 +389,12 @@ def _pooled(cfg: RealConfig, scored: dict[str, real_score.DonorScoring], blocks:
     for a, b, arm in PAIRS:
         donors = [donor for donor, data in scored.items() if (a, arm) in data.calls and (b, arm) in data.calls]
         if a in cfg.tools and b in cfg.tools and donors:
-            pair = real_score.pool({donor: real_score.pair_scores(scored[donor], (a, arm), (b, arm))
-                                    for donor in donors})
+            pairs = {variant: real_score.pool({donor: real_score.pair_scores(scored[donor], (a, arm), (b, arm),
+                                                                             variant=variant) for donor in donors})
+                     for variant in real_score.VARIANTS}
             pooled["comparisons"].append({"a": a, "b": b, "arm": arm, "donors": donors, "status": "compared",
-                                          **real_score.comparison(pair, sensitivity=sensitivity["genes"])})
+                                          **real_score.comparison(pairs["primary"], sensitivity=sensitivity["genes"],
+                                                                  gene_support=pairs["gene_support"])})
     for tool in GENOTYPE_TOOLS:
         donors = [donor for donor, data in scored.items()
                   if (tool, "shared") in data.calls and (tool, "genotype") in data.calls]

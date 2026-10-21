@@ -182,7 +182,9 @@ GENOTYPE = RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED, resolve
 # Clonotypes and naive clonotypes per gene, from the known answers: IGHV1-46 has too few naive clonotypes.
 SUPPORT = {**{gene: (MIN_CLONOTYPES, MIN_NAIVE_CLONOTYPES) for gene in CARRIED},
            "IGHV1-46": (MIN_CLONOTYPES + 5, MIN_NAIVE_CLONOTYPES - 1)}
+# The R1 primary: no gene-support thresholds. The sensitivity variant applies Mikelov et al. 2024's thresholds.
 INDEX = SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE, support=SUPPORT)
+THRESHOLDED = SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE, support=SUPPORT, thresholds=True)
 
 
 def _pred(read_id: str = "r", v: str | None = None, *listed: str, d: str | None = None,
@@ -296,14 +298,35 @@ def test_the_other_exclusions():
     assert INDEX.classify("IGHVF8-G1*01") == INDEX.classify("IGHVF8-G1*02") == "excluded:nonfunctional"
     # a gene known on one haplotype only: its unknown second allele could be any call
     assert INDEX.classify("IGHVF9-G1*01") == INDEX.classify("IGHVF9-G1*02") == "excluded:half_resolved"
-    # a gene with too few naive clonotypes among the known answers
-    assert INDEX.classify("IGHVF2-G1*01") == INDEX.classify("IGHVF2-G1*02") == "excluded:low_support"
+    # a gene with too few naive clonotypes among the known answers: excluded only in the gene-support variant; the R1
+    # primary scores it like any carried gene
+    assert THRESHOLDED.classify("IGHVF2-G1*01") == THRESHOLDED.classify("IGHVF2-G1*02") == "excluded:low_support"
+    assert INDEX.classify("IGHVF2-G1*01") == SUPPORTED and INDEX.classify("IGHVF2-G1*02") == UNSUPPORTED_ALLELE
     # a gene with a functional donor allele without a usable IMGT-gapped form: no call can be compared through 318
     assert INDEX.classify("IGHVF11-G1*01") == INDEX.classify("IGHVF11-G1*02") == "excluded:beyond_318"
     assert set(EXCLUSIONS) == {"excluded:not_captured", "excluded:dropped_truth", "excluded:unmapped",
                                "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318",
                                "excluded:half_resolved", "excluded:low_support"}
 
+
+def test_the_gene_support_thresholds_are_a_sensitivity_variant():
+    # the R1 primary never excludes a call for low support: a thin carried gene is scored like any other, so its
+    # supported calls are not dropped while calls to genes the donor lacks (which have no known answers) stay
+    primary = {INDEX.classify(name) for name in SHARED_V}
+    assert "excluded:low_support" not in primary
+    variant = {name: THRESHOLDED.classify(name) for name in SHARED_V}
+    assert {name for name, cls in variant.items() if cls == "excluded:low_support"} == {"IGHVF2-G1*01",
+                                                                                         "IGHVF2-G1*02"}
+    # the variant changes only classes the primary scores, never another exclusion
+    assert all(variant[name] in ("excluded:low_support", INDEX.classify(name)) for name in SHARED_V)
+    assert classify_v_call(_pred(v="IGHVF2-G1*01"), GENOTYPE, IUIS, MERGED, reference=REFERENCE, support=SUPPORT,
+                           thresholds=True, truth=None) == "excluded:low_support"
+    assert classify_v_call(_pred(v="IGHVF2-G1*01"), GENOTYPE, IUIS, MERGED, reference=REFERENCE,
+                           truth=None) == SUPPORTED
+    # the thresholds need the gene support; the primary does not
+    with pytest.raises(ValueError, match="support"):
+        SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE, thresholds=True)
+    assert SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE).classify("IGHVF2-G1*01") == SUPPORTED
 
 def test_novel_gene_is_not_excluded_on_a_documented_known_answer():
     # the read's V is exactly a documented donor allele (in the shared reference), so no novel allele can hide
@@ -499,10 +522,13 @@ def test_low_support_gene_from_known_answers_only():
     support = gene_support(truths)
     assert support == {"IGHV1-2": (10, 3), "IGHV4-28": (9, 5), "IGHV1-69": (10, 10), "IGHV1-69D": (10, 10)}
     assert passing_genes(support) == {"IGHV1-2", "IGHV1-69", "IGHV1-69D"}
-    index = SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE, support=support)
+    index = SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE, support=support, thresholds=True)
     assert index.classify("IGHVF1-G1*01") == SUPPORTED and index.classify("IGHVF6-G21*06") == SUPPORTED
     assert index.classify("IGHVF3-G9*04") == "excluded:low_support"  # 9 clonotypes
     assert index.classify("IGHVF2-G1*01") == "excluded:low_support"  # carried, no known answer at all
+    # the R1 primary applies no threshold
+    primary = SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE, support=support)
+    assert primary.classify("IGHVF3-G9*04") == primary.classify("IGHVF2-G1*01") == SUPPORTED
     with pytest.raises(ValueError, match="donor"):
         gene_support([*truths, _truth("w", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",), gene="IGHV1-2",
                                       donor="W-97")])
@@ -531,13 +557,16 @@ def test_oracle_scores_perfect():
     assert oracle.sequence_id == "a" and oracle.segments["v"].call == "IGHVF1-G1*01"
     check = oracle_self_check(truths, INDEX)
     assert check["reads"] == 7
-    assert check["classes"] == {SUPPORTED: 4, "excluded:half_resolved": 1, "excluded:beyond_318": 1,
-                                "excluded:low_support": 1}
-    assert check["excluded_genes"] == {"excluded:beyond_318": ["IGHV5-51"], "excluded:half_resolved": ["IGHV3-15"],
-                                       "excluded:low_support": ["IGHV1-46"]}
-    assert check["scored"] == 4 and check["supported"] == 1.0 and check["unsupported"] == 0.0
+    assert check["classes"] == {SUPPORTED: 5, "excluded:half_resolved": 1, "excluded:beyond_318": 1}
+    assert check["excluded_genes"] == {"excluded:beyond_318": ["IGHV5-51"], "excluded:half_resolved": ["IGHV3-15"]}
+    assert check["scored"] == 5 and check["supported"] == 1.0 and check["unsupported"] == 0.0
     assert check["known_top1"] == check["known_gene_top1"] == 1.0
     assert check["passed"]
+    # with the gene-support thresholds, IGHV1-46's read is excluded as well
+    thresholded = oracle_self_check(truths, THRESHOLDED)
+    assert thresholded["classes"] == {SUPPORTED: 4, "excluded:half_resolved": 1, "excluded:beyond_318": 1,
+                                      "excluded:low_support": 1}
+    assert thresholded["excluded_genes"]["excluded:low_support"] == ["IGHV1-46"] and thresholded["passed"]
     for truth in truths[:7]:
         pred = oracle_prediction(truth)
         cls = INDEX.classify_v(pred, truth=truth)
@@ -657,6 +686,8 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
                          reference)
     support = gene_support(truths)
     index = SupportIndex(genotype, iuis, merge_identical(reference), reference, support=support)
+    thresholded = SupportIndex(genotype, iuis, merge_identical(reference), reference, support=support,
+                               thresholds=True)
     check = oracle_self_check(truths, index)
     known = [t for t in truths if t.known is not None and not t.novel_known]
     assert check["reads"] == len(known) > 0
@@ -665,7 +696,7 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
     # only the rules of the call's genes exclude an oracle call, and never novel_gene: every oracle read is a
     # documented known answer. The guard never fires on this reference.
     assert set(check["classes"]) <= {SUPPORTED, "excluded:not_captured", "excluded:nonfunctional",
-                                     "excluded:beyond_318", "excluded:half_resolved", "excluded:low_support"}
+                                     "excluded:beyond_318", "excluded:half_resolved"}
     for segment in ("v", "d", "j"):
         assert all(index.classify(name, segment) != "excluded:unmapped" for name in reference.alleles[segment])
     # each class is explained by the call's own genes, read off the genotype
@@ -682,12 +713,15 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
                    "excluded:nonfunctional": bool(carried - functional),
                    "excluded:beyond_318": any(allele.functional and through_318(allele.gapped) is None
                                               for allele in v if allele.gene in carried),
-                   "excluded:half_resolved": bool(carried - genotype.resolved),
-                   "excluded:low_support": bool(carried - passing)}
+                   "excluded:half_resolved": bool(carried - genotype.resolved)}
         if cls == SUPPORTED:
             assert carried and not any(reasons.values()), truth.read_id
             assert any(allele.sequence == reference.seq(name) for allele in v), truth.read_id
+            # the gene-support variant excludes it exactly when one of its carried genes misses the thresholds
+            variant = thresholded.classify_v(oracle, truth=truth)
+            assert variant == ("excluded:low_support" if carried - passing else SUPPORTED), truth.read_id
         else:
             assert reasons[cls], (truth.read_id, cls)
+            assert thresholded.classify_v(oracle, truth=truth) == cls
     assert sum(check["classes"].values()) == len(known)
     json.dumps(check)  # plain data, for the report

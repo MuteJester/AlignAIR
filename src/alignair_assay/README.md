@@ -1637,9 +1637,16 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   read's truth by keyword, the same for both tools), `nonfunctional` (the gene is carried only as nonfunctional
   alleles),
   `beyond_318` (a functional donor allele of the gene has no usable IMGT-gapped form; none on the pilot donors),
-  `half_resolved` (the gene is carried but not resolved, so its unknown allele could be any call) and
-  `low_support` (the V gene has fewer than 10 clonotypes or 3 naive clonotypes among the known answers; a known
-  answer of several genes counts toward each).
+  `half_resolved` (the gene is carried but not resolved, so its unknown allele could be any call) and, in the
+  gene-support sensitivity variant only, `low_support` (the V gene has fewer than 10 clonotypes or 3 naive
+  clonotypes among the known answers; a known answer of several genes counts toward each).
+- The R1 primary applies no gene-support threshold (this supersedes design §6). A gene the donor does not carry has
+  no known answers, so the thresholds could only drop calls to carried genes, supported ones among them, while every
+  `unsupported_gene` call stayed: on few reads that drives R1 to 1, and at full scale it still skews the
+  denominator. The parent design applies Mikelov et al. 2024's thresholds (at least 10 clonotypes and 3 naive ones)
+  to the per-genotype secondary metric (P3b). They are reported as a sensitivity variant, "R1 with Mikelov
+  gene-support thresholds": `SupportIndex(..., support=gene_support(truths), thresholds=True)` (or
+  `classify_v_call(..., thresholds=True)`) adds `excluded:low_support`; the primary is the index without it.
 - A call not excluded is `supported` when its sequence equals any donor allele's, functional or not (the genome
   carries it), exactly or through IMGT position 318, the two taken together (`through_318`; alleles that differ only
   past it cannot be told apart from rearranged reads, Peres et al. 2023): a call of `IGHVF3-G9*04_A319G` is
@@ -1660,9 +1667,10 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
 - The oracle (`oracle_prediction`, `oracle_self_check`), each known answer's own shared allele, checks the truth
   against itself, with no `novel_gene` exclusion: its reads are documented known answers. On W-97 its 2,595 known
   answers that are not novel give 2,451 supported, 134 `not_captured` (IGHV3-30-5 answers whose shared allele,
-  `IGHVF10-G37*07`, is also IGHV3-30*18, a gene W-97's contigs do not capture) and 10 `low_support`; on SC-23,
-  2,700 give 2,652 supported and 48 `low_support`. Both are 100% supported among the scored and 100% `known_top1`.
-  W-97's known answers clear the thresholds for 25 of their 29 genes, SC-23's for 30 of 42.
+  `IGHVF10-G37*07`, is also IGHV3-30*18, a gene W-97's contigs do not capture) and 10 more that the gene-support
+  variant excludes as `low_support`; on SC-23, 2,700 give 2,652 supported and 48 `low_support` in the variant (all
+  supported in the primary). Both are 100% supported among the scored and 100% `known_top1`. W-97's known answers
+  clear the thresholds for 25 of their 29 genes, SC-23's for 30 of 42.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims.

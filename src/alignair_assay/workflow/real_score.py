@@ -1,12 +1,15 @@
 """R1 scoring and the paired comparisons of the real-data workflow (``workflow.real``), per donor and pooled.
 
-**One ``SupportIndex`` per donor**, shared by every tool and arm (``DonorScoring``): the donor's genotype with its
-captured and resolved genes, the shared reference's IUIS map and identical alleles, and the gene support of its known
-answers. Every tool's calls on either arm are classified against the whole shared reference with the same truth per
-read (``SupportIndex.read_calls(pred, truth=truth)``).
+**One ``SupportIndex`` per donor and variant**, shared by every tool and arm (``DonorScoring``): the donor's genotype
+with its captured and resolved genes, the shared reference's IUIS map and identical alleles, and the gene support of
+its known answers. The R1 primary is ``index``, without gene-support thresholds; the sensitivity variant "R1 with
+Mikelov gene-support thresholds" is ``thresholded`` (``SupportIndex(..., thresholds=True)``, which adds
+``excluded:low_support`` for V). Every tool's calls on either arm are classified against the whole shared reference
+with the same truth per read (``SupportIndex.read_calls(pred, truth=truth)``).
 
 **Each tool's classes** (``step_scores``) are cached in ``real_scores(donor, arm, tool)``, one row per read: its top-1
-V call and the classes of its V, D and J calls, with the read's tool-neutral truth applied. The cache's header records
+V call and the classes of its V, D and J calls, with the read's tool-neutral truth applied, and its V class in the
+gene-support variant (``v_support``; low support is V's only). The cache's header records
 what they were computed from (the predictions', truth's and genotype's digests, the IUIS map's OGRDB file, the
 reference and ``SCORE_CODE``); a cache whose record is not current is computed again.
 
@@ -19,9 +22,10 @@ reference and ``SCORE_CODE``); a cache whose record is not current is computed a
 
 **Comparisons** (``comparison``): ``stats.compare`` of the pair over every non-informational metric either tool has
 (Holm at ``ALPHA``), with ``clusters`` the reads' clonotypes (``real.truth.clonotype_clusters``, ids carrying the
-donor), overall, per stratum (protocol x isotype: IGHM, IGHG, other) and for the sensitivity analysis: the V R1
-metrics again without the reads whose top-1 V call, by either tool, is to a gene of the paper's novel alleles the
-cohort lacks (``workflow.real_steps.sensitivity_genes``). The informational metrics are summarized beside it.
+donor), overall, per stratum (protocol x isotype: IGHM, IGHG, other) and for two sensitivity analyses of the V R1
+metrics: ``sd3``, without the reads whose top-1 V call, by either tool, is to a gene of the paper's novel alleles the
+cohort lacks (``workflow.real_steps.sensitivity_genes``), and ``gene_support``, the pair again in the gene-support
+variant (``pair_scores(..., variant="gene_support")``). The informational metrics are summarized beside it.
 Pooled comparisons (``pool``) join the donors' pairs with donor-prefixed read ids (``<donor>/<read id>``) and the union
 of their clusters, whose ids never collide. An arm delta is a tool's genotype arm paired with its shared arm
 (``pair_scores(data, (tool, "shared"), (tool, "genotype"))``), compared the same way without strata, and only
@@ -41,6 +45,8 @@ from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.prediction import PredSegment, Prediction
 from alignair_assay.metrics import CaseScores, is_informational, lower_is_better
 from alignair_assay.real.metrics import (
+    MIN_CLONOTYPES,
+    MIN_NAIVE_CLONOTYPES,
     NO_CALL,
     SEGMENTS,
     ReadCalls,
@@ -60,18 +66,22 @@ SCORE_CODE = ("real/metrics.py", "real/truth.py", "real/genotype.py", "airr/read
 # The V R1 headline and its components: the sensitivity analysis's family.
 V_R1 = ("real.v.unsupported", "real.v.unsupported_allele", "real.v.unsupported_gene", "real.v.no_call")
 ISOTYPES = ("IGHM", "IGHG")
+# The R1 primary and the gene-support sensitivity variant: which row field holds the V class.
+VARIANTS = {"primary": "v", "gene_support": "v_support"}
 _EXCLUDED = "excluded:"
 
 
 @dataclass
 class DonorScoring:
-    """What one donor's reads are scored with: their truths by read id (in read order), the donor's ``SupportIndex``,
-    the reads' clonotypes, strata and consensus counts, the genes the sensitivity analysis leaves out, and each
-    scored ``(tool, arm)``'s rows (read id -> row, ``step_scores``)."""
+    """What one donor's reads are scored with: their truths by read id (in read order), the donor's ``SupportIndex``
+    of the R1 primary (``index``) and of the gene-support variant (``thresholded``), the reads' clonotypes, strata and
+    consensus counts, the genes the SD3 sensitivity analysis leaves out, and each scored ``(tool, arm)``'s rows (read
+    id -> row, ``step_scores``)."""
 
     donor: str
     truths: dict[str, RealTruth]
     index: SupportIndex
+    thresholded: SupportIndex
     weights: dict[str, int]
     sd3: frozenset[str]
     calls: dict[tuple[str, str], dict[str, dict]] = field(default_factory=dict)
@@ -123,7 +133,8 @@ def step_scores(data: DonorScoring, tool: str, arm: str, layout: RunLayout, inpu
         calls = data.index.read_calls(pred, truth=truth)
         segment = None if pred is None else pred.segments.get("v")
         rows[read_id] = {"read_id": read_id, "v_call": None if segment is None else segment.call, "v": calls.v,
-                         "d": calls.d, "j": calls.j, "any": calls.v_any_listed_supported}
+                         "d": calls.d, "j": calls.j, "any": calls.v_any_listed_supported,
+                         "v_support": data.thresholded.classify_v(pred, truth=truth)}
     matching = {**stats, "missing": sum(read_id not in predictions for read_id in data.truths),
                 "extra": sum(read_id not in data.truths for read_id in predictions)}
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,14 +161,12 @@ def scores(data: DonorScoring, rows: Mapping[str, dict], excluded: Mapping[str, 
 def tool_summary(data: DonorScoring, tool: str, arm: str) -> dict:
     """One run's own R1 (the reads its own calls exclude left out): its V, D and J classes, its V exclusions per reason
     (``exclusions``, with D and J's in ``exclusions_dj`` where the donor has their truth), every metric's summary,
-    the V headline weighted by the reads' consensus counts, and where the calls of novel known answers go."""
+    the V headline weighted by the reads' consensus counts, where the calls of novel known answers go, and its V
+    classes, exclusions and summary in the gene-support variant (``gene_support``)."""
     rows = data.calls[tool, arm]
-    own = scores(data, rows, {read_id: _excluded(row) for read_id, row in rows.items()})
-    summary = {"v_classes": _counts(row["v"] for row in rows.values()),
-               "exclusions": exclusion_counts([row["v"] for row in rows.values()]),
-               "summary": to_dict(summarize(own, list(own))),
-               "consensus_weighted": _weighted(own, data.weights),
-               "novel_known": _novel_calls(data, rows)}
+    summary, own = _own(data, rows)
+    summary.update(consensus_weighted=_weighted(own, data.weights), novel_known=_novel_calls(data, rows),
+                   gene_support=_own(data, _variant(rows, "gene_support"))[0])
     for segment in ("d", "j"):
         if data.index.has_truth(segment):
             summary[f"{segment}_classes"] = _counts(row[segment] for row in rows.values())
@@ -165,10 +174,12 @@ def tool_summary(data: DonorScoring, tool: str, arm: str) -> dict:
     return summary
 
 
-def pair_scores(data: DonorScoring, a: tuple[str, str], b: tuple[str, str]) -> PairScores:
-    """Runs ``a`` and ``b`` (each ``(tool, arm)``) paired on the donor's reads: a read is out of R1 for a segment, for
-    both, when either run's call to it is excluded."""
-    rows_a, rows_b = data.calls[a], data.calls[b]
+def pair_scores(data: DonorScoring, a: tuple[str, str], b: tuple[str, str], *,
+                variant: str = "primary") -> PairScores:
+    """Runs ``a`` and ``b`` (each ``(tool, arm)``) paired on the donor's reads, in the R1 ``variant`` (``VARIANTS``:
+    the primary, or the gene-support variant): a read is out of R1 for a segment, for both, when either run's call to
+    it is excluded."""
+    rows_a, rows_b = _variant(data.calls[a], variant), _variant(data.calls[b], variant)
     excluded: dict[str, set[str]] = defaultdict(set)
     counts = {}
     for segment in SEGMENTS:
@@ -183,10 +194,13 @@ def pair_scores(data: DonorScoring, a: tuple[str, str], b: tuple[str, str]) -> P
                       strata=data.strata, excluded=counts, sensitivity_out=touched)
 
 
-def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[str] | None = None) -> dict:
+def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[str] | None = None,
+               gene_support: PairScores | None = None) -> dict:
     """The pair's comparison (the module docstring): ``n_reads``, ``n_clusters`` and ``multi_read_clusters`` of its
     reads, the reads ``excluded`` per segment, the ``overall`` comparison, the ``informational`` metrics' summaries,
-    and with ``strata`` its ``strata``; with ``sensitivity`` (the genes left out) its ``sensitivity``."""
+    and with ``strata`` its ``strata``. ``sensitivity`` holds ``sd3`` with ``sensitivity`` (the SD3-only genes left
+    out) and ``gene_support`` with ``gene_support`` (the same pair in the gene-support variant: its thresholds, the
+    reads it excludes per segment and the V R1 comparison)."""
     members = Counter(pair.clusters.get(read_id, read_id) for read_id in pair.a)
     result = {"n_reads": len(pair.a), "n_clusters": len(members),
               "multi_read_clusters": sum(count > 1 for count in members.values()), "excluded": dict(pair.excluded),
@@ -197,8 +211,14 @@ def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[s
                             for label in sorted(set(pair.strata.values()))}
     if sensitivity is not None:
         kept = _subset(pair, lambda read_id: read_id not in pair.sensitivity_out)
-        result["sensitivity"] = {"genes": sorted(sensitivity), "excluded_reads": len(pair.sensitivity_out),
-                                 "comparison": _compare(*kept, pair.clusters, metrics=V_R1)}
+        result.setdefault("sensitivity", {})["sd3"] = {
+            "genes": sorted(sensitivity), "excluded_reads": len(pair.sensitivity_out),
+            "comparison": _compare(*kept, pair.clusters, metrics=V_R1)}
+    if gene_support is not None:
+        result.setdefault("sensitivity", {})["gene_support"] = {
+            "thresholds": {"min_clonotypes": MIN_CLONOTYPES, "min_naive_clonotypes": MIN_NAIVE_CLONOTYPES},
+            "excluded": dict(gene_support.excluded),
+            "comparison": _compare(gene_support.a, gene_support.b, gene_support.clusters, metrics=V_R1)}
     return result
 
 
@@ -219,7 +239,13 @@ def pool(pairs: Mapping[str, PairScores]) -> PairScores:
 
 def pool_tools(summaries: Iterable[dict]) -> dict:
     """Several donors' ``tool_summary`` of one run as one: the classes and exclusion counts summed, and the reads
-    behind each mean added up (``summary`` keeps each metric's pooled mean and counts)."""
+    behind each mean added up (``summary`` keeps each metric's pooled mean and counts), in the R1 primary and in the
+    gene-support variant (``gene_support``)."""
+    summaries = list(summaries)
+    return {**_pool_block(summaries), "gene_support": _pool_block([summary["gene_support"] for summary in summaries])}
+
+
+def _pool_block(summaries: list[dict]) -> dict:
     pooled: dict = {"v_classes": Counter(), "exclusions": Counter(), "summary": {}}
     sums: dict[str, list[float]] = defaultdict(lambda: [0.0, 0, 0])
     for summary in summaries:
@@ -261,6 +287,23 @@ def _informational(a: dict[str, CaseScores], b: dict[str, CaseScores]) -> dict:
 def _subset(pair: PairScores, keep) -> tuple[dict, dict]:
     ids = [read_id for read_id in pair.a if keep(read_id)]
     return {read_id: pair.a[read_id] for read_id in ids}, {read_id: pair.b[read_id] for read_id in ids}
+
+
+def _own(data: DonorScoring, rows: Mapping[str, dict]) -> tuple[dict, dict[str, CaseScores]]:
+    """A run's own R1 on ``rows`` (its own exclusions left out): its V classes, V exclusion counts and every metric's
+    summary, and the scores themselves."""
+    own = scores(data, rows, {read_id: _excluded(row) for read_id, row in rows.items()})
+    return {"v_classes": _counts(row["v"] for row in rows.values()),
+            "exclusions": exclusion_counts([row["v"] for row in rows.values()]),
+            "summary": to_dict(summarize(own, list(own)))}, own
+
+
+def _variant(rows: Mapping[str, dict], variant: str) -> Mapping[str, dict]:
+    """``rows`` with their V class of R1 ``variant`` (``VARIANTS``) as ``v``. ValueError for another variant."""
+    if variant not in VARIANTS:
+        raise ValueError(f"unknown R1 variant {variant!r}: {', '.join(VARIANTS)}")
+    key = VARIANTS[variant]
+    return rows if key == "v" else {read_id: {**row, "v": row[key]} for read_id, row in rows.items()}
 
 
 def _excluded(row: dict) -> set[str]:

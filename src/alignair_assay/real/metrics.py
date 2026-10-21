@@ -45,8 +45,13 @@ genes is, by the first reason that applies, in this order:
   (``SupportIndex`` refuses it otherwise; the dataconfig's does).
 - ``half_resolved``: the gene is carried but not resolved (``RealGenotype.resolved``): one haplotype is known and
   the other's region is not spanned, so its unknown second allele could be any call.
-- ``low_support``: the V gene has fewer than ``MIN_CLONOTYPES`` (10) clonotypes or ``MIN_NAIVE_CLONOTYPES`` (3)
-  naive clonotypes among the known answers (Mikelov et al. 2024's thresholds, per gene; ``gene_support``).
+- ``low_support``, in the gene-support sensitivity variant only (``SupportIndex(..., thresholds=True)``): the V
+  gene has fewer than ``MIN_CLONOTYPES`` (10) clonotypes or ``MIN_NAIVE_CLONOTYPES`` (3) naive clonotypes among the
+  known answers (Mikelov et al. 2024's thresholds, per gene; ``gene_support``). The R1 primary does not apply it
+  (supersedes design §6): a gene the donor does not carry has no known answers, so the thresholds could only ever
+  drop calls to carried genes, supported ones among them, while every ``unsupported_gene`` call stayed. On few
+  reads that drives R1 to 1, and at full scale it still skews the denominator. The parent design applies these
+  thresholds to the per-genotype secondary metric (P3b), not to the per-read primary.
 
 Each tool's exclusions are counted per reason (``exclusion_counts``), so steering reads into excluded genes stays
 visible.
@@ -71,7 +76,8 @@ is excluded; ``real_case_scores`` then leaves R1 out for both tools.
 
 **Gene thresholds** (``gene_support``) are tool-neutral: per IUIS gene, the distinct clonotypes (``RealTruth
 .clonotype``; a ``single:`` id is one clonotype) and naive clonotypes among the known-answer reads only. A known
-answer of several genes (``IGHV3-23|IGHV3-23D``) counts toward each.
+answer of several genes (``IGHV3-23|IGHV3-23D``) counts toward each. They select the sensitivity variant "R1 with
+Mikelov gene-support thresholds" (``thresholds=True``); the R1 primary is the index without them.
 
 **Per-read scores** (``real_case_scores``), registered in ``metrics`` (INFORMATIONAL, ``_LOWER_IS_BETTER``):
 
@@ -149,13 +155,19 @@ def through_318(gapped: str | None) -> str | None:
 class SupportIndex:
     """What one donor's calls are classified against, built once per donor: its genotype with the captured and
     resolved genes, the IUIS map and identical alleles of the shared reference the tools ran on, and the gene
-    support from its known answers (``gene_support``). ValueError for a genotype without its capture
-    (``real.locus.donor_capture``), an IUIS map or genotype mapped to another shared reference, or a shared
-    reference with a V allele without a usable IMGT-gapped form (``through_318``; one read from a FASTA file has
-    none), against which a call could not be compared through 318."""
+    support from its known answers (``gene_support``). ``thresholds`` selects the variant: False (the R1 primary)
+    never excludes a call for low support; True applies the gene-support thresholds (``excluded:low_support``,
+    the sensitivity variant), and needs ``support``. ValueError for a genotype without its capture
+    (``real.locus.donor_capture``), an IUIS map or genotype mapped to another shared reference, a shared reference
+    with a V allele without a usable IMGT-gapped form (``through_318``; one read from a FASTA file has none),
+    against which a call could not be compared through 318, or ``thresholds`` without ``support``."""
 
     def __init__(self, genotype: RealGenotype, iuis: IuisMap, merged: Mapping[str, frozenset[str]],
-                 reference: Reference, *, support: Mapping[str, tuple[int, int]]):
+                 reference: Reference, *, support: Mapping[str, tuple[int, int]] | None = None,
+                 thresholds: bool = False):
+        if thresholds and support is None:
+            raise ValueError("the gene-support thresholds need the gene support of the donor's known answers "
+                             "(gene_support)")
         if genotype.captured is None or genotype.resolved is None:
             raise ValueError(f"the genotype of {genotype.donor} has no capture (its captured and resolved genes): "
                              "compute it with real.locus.donor_capture")
@@ -167,7 +179,8 @@ class SupportIndex:
             raise ValueError(f"the genotype of {genotype.donor} was mapped to another shared reference (digest "
                              f"{mapped_to[:12]}, not {reference.digest()[:12]})")
         self.genotype, self.iuis, self.merged, self.reference = genotype, iuis, merged, reference
-        self.support = dict(support)
+        self.support = dict(support or {})
+        self.thresholds = thresholds
         self._by_sequence: dict[str, dict[str, list[RealAllele]]] = {s: defaultdict(list) for s in SEGMENTS}
         self._carried: dict[str, dict[str, list[RealAllele]]] = {s: defaultdict(list) for s in SEGMENTS}
         self._by_318: dict[str, list[RealAllele]] = defaultdict(list)
@@ -308,17 +321,20 @@ class SupportIndex:
             return "excluded:beyond_318"
         if gene not in self.genotype.resolved:
             return "excluded:half_resolved"
-        if segment == "v" and not self.passes(gene):
+        if self.thresholds and segment == "v" and not self.passes(gene):
             return "excluded:low_support"
         return _CARRIED
 
 
 def classify_v_call(pred: Prediction | None, genotype: RealGenotype, iuis: IuisMap,
                     merged: Mapping[str, frozenset[str]], *, reference: Reference,
-                    support: Mapping[str, tuple[int, int]], truth: RealTruth | None) -> str:
+                    support: Mapping[str, tuple[int, int]] | None = None, thresholds: bool = False,
+                    truth: RealTruth | None) -> str:
     """The class of ``pred``'s top-1 V call against ``genotype`` on the read of ``truth`` (required, as in
-    ``SupportIndex.classify_v``). Build a ``SupportIndex`` once to classify many reads."""
-    return SupportIndex(genotype, iuis, merged, reference, support=support).classify_v(pred, truth=truth)
+    ``SupportIndex.classify_v``), in the R1 primary or, with ``thresholds``, the gene-support variant. Build a
+    ``SupportIndex`` once to classify many reads."""
+    index = SupportIndex(genotype, iuis, merged, reference, support=support, thresholds=thresholds)
+    return index.classify_v(pred, truth=truth)
 
 
 def is_documented(truth: RealTruth | None) -> bool:

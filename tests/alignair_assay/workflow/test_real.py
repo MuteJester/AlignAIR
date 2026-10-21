@@ -343,10 +343,15 @@ def test_a_run_scores_every_tool_and_arm(tmp_path, fakes):
     assert all(delta["informational"] for delta in donor["arm_deltas"])
     # strata: protocol x isotype
     assert set(pairs["igblast", "alignair", "shared"]["strata"]) == {"multiplex/IGHM", "multiplex/IGHG"}
-    # the sensitivity analysis leaves out the reads of IGHV3-11, an SD3-only gene here
-    sensitivity = pairs["igblast", "alignair", "shared"]["sensitivity"]
+    # the SD3 sensitivity analysis leaves out the reads of IGHV3-11, an SD3-only gene here
+    sensitivity = pairs["igblast", "alignair", "shared"]["sensitivity"]["sd3"]
     assert sensitivity["excluded_reads"] == 6 and sensitivity["genes"] == ["IGHV3-11"]
     assert sensitivity["comparison"]["real.v.unsupported"]["n_paired"] == 24
+    # with Mikelov's gene-support thresholds: IGHV1-2 has 12 clonotypes, 6 naive, so nothing more is excluded
+    variant = pairs["igblast", "alignair", "shared"]["sensitivity"]["gene_support"]
+    assert variant["thresholds"] == {"min_clonotypes": 10, "min_naive_clonotypes": 3}
+    assert variant["excluded"]["v"] == 0 and variant["comparison"]["real.v.unsupported"]["n_paired"] == 30
+    assert shared["igblast"]["gene_support"]["v_classes"] == shared["igblast"]["v_classes"]
     # the truth's self-check passes, and the pooled summary holds the donor
     assert donor["oracle_self_check"]["passed"] and donor["oracle_self_check"]["reads"] == 12
     assert summary["pooled"]["donors"] == ["W-97"]
@@ -482,20 +487,43 @@ def test_a_failed_run_is_recorded_and_left_out(tmp_path, fakes, monkeypatch, cap
     assert len(FakeTool.runs) == count + 3
 
 
+def test_low_support_is_a_sensitivity_variant_not_the_primary(tmp_path, fakes):
+    # capped to 8 reads, IGHV1-2's known answers make 4 clonotypes: under Mikelov's thresholds (10 clonotypes, 3
+    # naive) the gene is low_support. The R1 primary still scores every read, the oracle's among them.
+    summary = run_real(_config(tmp_path, cap=8), RunLayout(tmp_path / "run"))
+    donor = summary["donors"]["W-97"]
+    igblast = donor["tools"]["shared"]["igblast"]
+    assert igblast["v_classes"] == {"supported": 8}
+    assert igblast["summary"]["real.v.unsupported"]["n"] == 8
+    assert igblast["gene_support"]["v_classes"] == {"excluded:low_support": 8}
+    assert igblast["gene_support"]["exclusions"]["excluded:low_support"] == 8
+    assert "real.v.unsupported" not in igblast["gene_support"]["summary"]
+    pair = {(c["a"], c["b"], c["arm"]): c for c in donor["comparisons"]}["igblast", "alignair", "shared"]
+    assert pair["overall"]["real.v.unsupported"]["n_paired"] == 8
+    variant = pair["sensitivity"]["gene_support"]
+    assert variant["excluded"]["v"] == 8 and variant["comparison"] == {}
+    assert donor["oracle_self_check"]["status"] == "passed" and donor["oracle_self_check"]["scored"] == 4
+    pooled = {(c["a"], c["b"], c["arm"]): c for c in summary["pooled"]["comparisons"]}
+    assert pooled["igblast", "alignair", "shared"]["sensitivity"]["gene_support"]["excluded"]["v"] == 8
+    assert summary["pooled"]["tools"]["shared"]["igblast"]["gene_support"]["v_classes"] == {
+        "excluded:low_support": 8}
+
 def test_the_oracle_self_check_is_judged(tmp_path, fakes, monkeypatch, capsys):
     # on 30 reads every oracle read is scored and supported: passed
     layout = RunLayout(tmp_path / "run")
     summary = run_real(_config(tmp_path), layout)
     assert summary["donors"]["W-97"]["oracle_self_check"]["status"] == "passed"
-    # capped to 8 reads, no gene has the known answers' support: every oracle read is excluded, so the check is
-    # unchecked, not failed (the truth is not contradicted), and is listed as such
-    summary = run_real(_config(tmp_path, cap=8), RunLayout(tmp_path / "small"))
+    # IGHV1-2 not captured: every oracle read is excluded, so the check is unchecked, not failed (the truth is not
+    # contradicted), and is listed as such
+    fakes.captured["W-97"] = frozenset({"IGHV3-11"})
+    summary = run_real(_config(tmp_path), RunLayout(tmp_path / "uncaptured"))
     check = summary["donors"]["W-97"]["oracle_self_check"]
     assert check["scored"] == 0 and check["known_top1"] == 1.0 and check["status"] == "unchecked"
     assert summary["oracle_failures"] == [] and summary["oracle_unchecked"] == ["W-97"]
-    cfg = _config(tmp_path, cap=8)
-    args = ["real", "--run-dir", str(tmp_path / "small"), "--data-root", cfg.data_root, "--donors", "W-97", "--cap",
-            "8", "--threads", "2", "--igblast-dir", cfg.igblast_dir, "--alignair-checkpoint", cfg.alignair_checkpoint]
+    cfg = _config(tmp_path)
+    args = ["real", "--run-dir", str(tmp_path / "uncaptured"), "--data-root", cfg.data_root, "--donors", "W-97",
+            "--cap", "30", "--threads", "2", "--igblast-dir", cfg.igblast_dir, "--alignair-checkpoint",
+            cfg.alignair_checkpoint]
     capsys.readouterr()
     assert main(args) == 0
     assert "W-97's truth self-check is unchecked" in capsys.readouterr().err
