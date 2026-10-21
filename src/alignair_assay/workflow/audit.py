@@ -96,6 +96,8 @@ CHECKS = ("self_check.sim_oracle", "self_check.sim_oracle_current", "self_check.
           "self_check.real_oracle", "self_check.real_truth_health", "reproducible.sim_build",
           "reproducible.real_scores", "null.diagnose", "null.all", "null.real", "band.real_known",
           "band.sim_v_top1", "band.speed")
+# The informational checks: a warning at worst, never a failure, even when they raise.
+INFORMATIONAL = ("band.speed",)
 # The audited checkpoint's label (``--checkpoint base=PATH``) and the two labels it runs under in a null comparison.
 CHECKPOINT_LABEL = "base"
 NULL_LABELS = ("a", "b")
@@ -387,9 +389,18 @@ def igblast_speed(cfg: AuditConfig, sim: RunLayout, scratch: RunLayout, *, load:
     ``speed_scale`` in ``scratch``, against the stored run's steady throughput: ``pass`` within ``SPEED_BAND``,
     ``warn`` outside it or when a measurement fails. ``skipped`` with ``--skip-speed``, without a stored measurement
     or IgBLAST release, and ``skipped (load)`` when the 1-minute ``load`` (``os.getloadavg``) stays above
-    ``SPEED_LOAD`` for ``SPEED_SETTLE_SECONDS`` before the build and again before the timing."""
+    ``SPEED_LOAD`` for ``SPEED_SETTLE_SECONDS`` before the build and again before the timing. Anything that raises
+    while it builds or times is a ``warn`` too: speed never fails the audit."""
+    try:
+        return _igblast_speed(cfg, sim, scratch, load=load or (lambda: os.getloadavg()[0]), sleep=sleep)
+    except Exception as error:  # informational: an error timing IgBLAST is worth a look, never a failure
+        return check("band.speed", "warn", 0, {"summary": f"not timed: {type(error).__name__}: {error}"},
+                     f"informational: timing IgBLAST raised {type(error).__name__}: {error}")
+
+
+def _igblast_speed(cfg: AuditConfig, sim: RunLayout, scratch: RunLayout, *, load: Callable[[], float],
+                   sleep: Callable[[float], None]) -> dict:
     name = "band.speed"
-    load = load or (lambda: os.getloadavg()[0])
     if cfg.skip_speed:
         return check(name, "skipped", 0, {"summary": "not timed (--skip-speed)"}, "skipped: --skip-speed")
     speed = (read_json(sim.report_json) or {}).get("speed") or {}
@@ -1003,9 +1014,11 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
         started = time.monotonic()
         try:
             results = step()
-        except Exception as error:  # a check that raises fails, and the audit goes on
-            results = [check(name, "fail", 0, {"summary": "raised before it could check"},
-                             f"{type(error).__name__}: {error}") for name in names]
+        except Exception as error:  # a check that raises fails (an informational one warns); the audit goes on
+            results = [check(name, "warn" if name in INFORMATIONAL else "fail", 0,
+                             {"summary": "raised before it could check"},
+                             ("informational: " if name in INFORMATIONAL else "") + f"{type(error).__name__}: {error}")
+                       for name in names]
         for result in results if isinstance(results, list) else [results]:
             result = settle(result)
             result["evidence"]["seconds"] = round(time.monotonic() - started, 1)

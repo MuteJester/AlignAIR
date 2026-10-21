@@ -953,6 +953,19 @@ def test_a_busy_machine_skips_the_speed_check(tmp_path, monkeypatch):
     assert found["status"] == "pass" and found["evidence"]["load_before"] == 1.4
 
 
+def test_an_error_while_timing_igblast_warns(tmp_path, monkeypatch):
+    _fake_speed(monkeypatch, {})
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("makeblastdb failed")
+
+    monkeypatch.setattr(audit, "run_speed", broken)
+    found = audit.igblast_speed(_config(tmp_path), _speed_run(tmp_path), RunLayout(tmp_path / "speed"),
+                                load=lambda: 0.4, sleep=lambda seconds: None)
+    assert found["status"] == "warn" and "RuntimeError: makeblastdb failed" in found["reason"]
+    assert "informational" in found["reason"]
+
+
 def test_speed_is_skipped_when_asked_or_without_a_stored_measure(tmp_path, monkeypatch):
     seen = _fake_speed(monkeypatch, {})
     found = audit.igblast_speed(_config(tmp_path, skip_speed=True), _speed_run(tmp_path), RunLayout(tmp_path / "s"))
@@ -1035,6 +1048,16 @@ def test_a_check_that_raises_fails_and_the_others_go_on(tmp_path, monkeypatch):
     assert found["null.real"]["status"] == "pass" and len(found) == len(CHECKS)
     assert record["verdict"]["status"] == "fail" and record["verdict"]["failed"] == ["self_check.sim_oracle_current",
                                                                                       "null.all"]
+
+
+def test_an_informational_check_that_raises_warns(tmp_path, monkeypatch):
+    # speed is informational: whatever goes wrong while timing IgBLAST, it never fails the audit
+    cfg = _stored_runs(tmp_path)
+    _fake_checks(monkeypatch, raising="band.speed")
+    record = audit.run_audit(cfg, RunLayout(tmp_path / "out"))
+    speed = next(entry for entry in record["checks"] if entry["name"] == "band.speed")
+    assert speed["status"] == "warn" and "docker is not running" in speed["reason"]
+    assert record["verdict"]["status"] == "pass"
 
 
 def test_the_audit_refuses_inputs_before_any_work(tmp_path, monkeypatch):
