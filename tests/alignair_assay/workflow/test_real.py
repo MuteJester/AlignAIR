@@ -122,12 +122,20 @@ class FakeTool:
 
     runs: list = []
     prepares: list = []
+    fingerprints: list = []
     version = "1"
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, options=None):
         self.name = name
+        self.options = options
 
     def fingerprint(self) -> dict:
+        # as the AlignAIR image's fingerprint installs its model into the run's cache, this one writes there
+        FakeTool.fingerprints.append(self.name)
+        if self.name == "alignair" and self.options is not None and self.options.cache_dir:
+            cache = Path(self.options.cache_dir)
+            cache.mkdir(parents=True, exist_ok=True)
+            (cache / "model.installed").write_text(FakeTool.version)
         return {"tool": self.name, "version": FakeTool.version}
 
     def prepare(self, layout, reference) -> dict:
@@ -231,9 +239,9 @@ ORIGINAL_CHECK_IMAGES = real_steps.check_images
 def fakes(tmp_path, monkeypatch):
     found = Fakes(tmp_path / "data")
     found.data_root.mkdir()
-    FakeTool.runs, FakeTool.prepares, FakeTool.version = [], [], "1"
+    FakeTool.runs, FakeTool.prepares, FakeTool.fingerprints, FakeTool.version = [], [], [], "1"
     for tool in ("igblast", "alignair", "alignair-api"):
-        monkeypatch.setitem(RUNNERS, tool, lambda options, tool=tool: FakeTool(tool))
+        monkeypatch.setitem(RUNNERS, tool, lambda options, tool=tool: FakeTool(tool, options))
     monkeypatch.setattr(real_steps, "check_images", lambda images: {
         name: {"image": image, "id": f"sha256:{name}", "repo_digests": [image]} for name, image in images.items()})
     monkeypatch.setattr(real_steps, "load_reference", lambda name: REFERENCE)
@@ -348,13 +356,17 @@ def test_docker_missing_refuses_before_work(tmp_path, fakes, monkeypatch):
         raise ContainerError(f"docker is not available, and {image} runs in Docker: install Docker or start its "
                              "daemon")
 
+    cohort = []
     monkeypatch.setattr(real_steps, "check_images", ORIGINAL_CHECK_IMAGES)
     monkeypatch.setattr(real_steps, "check_image", no_docker)
+    monkeypatch.setattr(real_steps, "sensitivity_genes", lambda data_root: cohort.append(data_root))
     layout = RunLayout(tmp_path / "run")
     with pytest.raises(ContainerError, match="docker is not available"):
         run_real(_config(tmp_path), layout)
     assert not layout.root.exists()
     assert fakes.captures == fakes.preprocessed == [] and FakeTool.runs == [] and FakeTool.prepares == []
+    # refused before the cohort files are fetched (they may be downloaded) and before any tool's fingerprint
+    assert cohort == [] and FakeTool.fingerprints == []
 
     # an image whose digest is not the pinned one is refused the same way
     def other_digest(image, **kwargs):
@@ -463,6 +475,28 @@ def test_a_changed_genotype_redoes_only_the_genotype_arm(tmp_path, fakes):
     identity = record["provenance"]["identity"]["arm"]
     assert set(identity) == {"genotype_sha256", "alleles_sha256", "alleles"}
 
+
+def _snapshot(root: Path) -> dict:
+    """Every file under ``root``: its size, modification time and bytes."""
+    return {path: (path.stat().st_size, path.stat().st_mtime_ns, path.read_bytes())
+            for path in sorted(root.rglob("*")) if path.is_file()}
+
+
+def test_a_refused_configuration_writes_nothing(tmp_path, fakes, monkeypatch):
+    # the manifest's own fields are checked before the cohort fetch and before any tool's fingerprint, which for
+    # the AlignAIR image installs its model into the run directory (the fake writes there too)
+    layout = RunLayout(tmp_path / "run")
+    run_real(_config(tmp_path), layout)
+    assert (layout.real_setup_dir() / "runs/alignair/_work/cache/model.installed").is_file()
+    before, fingerprints = _snapshot(layout.root), list(FakeTool.fingerprints)
+    cohort = []
+    monkeypatch.setattr(real_steps, "sensitivity_genes", lambda data_root: cohort.append(data_root))
+    for changed in (dict(cap=20), dict(donors=("W-97", "W-133")), dict(paper_length_filter=True)):
+        with pytest.raises(ValueError, match="--force"):
+            run_real(_config(tmp_path, **changed), layout)
+    assert _snapshot(layout.root) == before
+    assert FakeTool.fingerprints == fingerprints and cohort == []
+    assert fakes.captures == fakes.preprocessed == ["W-97"]
 
 def test_a_reference_changed_under_its_name_makes_every_run_stale(tmp_path, fakes, monkeypatch):
     # HUMAN_IGH_OGRDB with other content under the same name: the manifest refusal names the digest, and forced,

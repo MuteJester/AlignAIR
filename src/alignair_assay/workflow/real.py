@@ -13,13 +13,21 @@ reference with one ``SupportIndex`` per donor and the same truth per read. The R
 threshold; two sensitivity variants are reported beside it: R1 with Mikelov et al. 2024's gene-support thresholds,
 and R1 without the reads called to the SD3-only genes (``workflow.real_score``).
 
-**Refusals**, each before any work, with nothing written (``check_config``, then ``run_real``): no donor, an unknown
-donor, a test donor without ``split="test"`` (or a dev donor in a test run), an unknown tool, a cap or thread count out
-of range, a missing data root, ``igblast`` without its release directory, ``alignair-api`` without its checkpoint
-file, an AlignAIR image not pinned by digest; then a cohort file of the sensitivity analysis that cannot be
-fetched from its pinned URL or is not the pinned file (``real.fetch.cohort_files``); then Docker missing, or a pinned
-image whose digest is not the pinned one (``real_steps.check_images``: sra-tools, samtools, Immcantation and the
-AlignAIR image); then a run directory made for another configuration, unless ``force``.
+**Refusals**, in this order, each before any work and with nothing written to the run directory:
+
+1. ``check_config``: no donor, an unknown donor, a test donor without ``split="test"`` (or a dev donor in a test
+   run), an unknown tool, a cap or thread count out of range, a missing data root, ``igblast`` without its release
+   directory, ``alignair-api`` without its checkpoint file, an AlignAIR image not pinned by digest;
+2. Docker missing, or a pinned image whose digest is not the pinned one (``real_steps.check_images``: sra-tools,
+   samtools, Immcantation and the AlignAIR image);
+3. a run directory made for another configuration, unless ``force``, on every field of the manifest's identity but
+   the tools' settings (the reference is loaded for its digest first; nothing else has run);
+4. a cohort file of the sensitivity analysis that cannot be fetched from its pinned URL or is not the pinned file
+   (``real.fetch.cohort_files``; a fetch writes only under the data root);
+5. a tool's settings changed, unless ``force``. **The one exception to "before any work"**: a tool's settings are its
+   ``fingerprint()``, so they are compared only once it has run, and the AlignAIR image's fingerprint inspects the
+   image (pulling it when missing) and installs its model into the run directory's ``real/_setup`` model cache
+   (``AlignAIRImage.install_model``) before this refusal; no other file of the run directory is written.
 
 **The manifest** (``real_manifest``) records the configuration and its ``identity``: the donors, split, cap, tools,
 reference (its name and its content digest, so a dataconfig changed under its name is named in the refusal),
@@ -232,9 +240,15 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
     check_config(cfg)
     layout = RunLayout(absolute_path(layout.root))
     scoring = cfg.stop_after is None
-    sensitivity = real_steps.sensitivity_genes(cfg.data_root) if scoring else None
     images = real_steps.check_images(pinned_images(cfg))
     reference = real_steps.load_reference(cfg.reference)
+    identity = {"donors": list(cfg.donors), "split": cfg.split, "cap": cfg.cap,
+                "tools": list(cfg.tools) if scoring else [], "reference": cfg.reference,
+                "reference_digest": reference.digest(),
+                "paper_length_filter": cfg.paper_length_filter, "accept_assembly_loss": cfg.accept_assembly_loss,
+                "stop_after": cfg.stop_after, "images": pinned_images(cfg)}
+    _check_manifest(identity, layout, force=force, ignore=("settings",))  # before any work: refusal 3
+    sensitivity = real_steps.sensitivity_genes(cfg.data_root) if scoring else None
     setup = RunLayout(layout.real_setup_dir())
     options = RunnerOptions(igblast_dir=cfg.igblast_dir, threads=cfg.threads,
                             alignair_image=cfg.alignair_image or DEFAULT_IMAGE, alignair_model=cfg.alignair_model,
@@ -245,12 +259,8 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
         runners[tool] = make_runner(tool, options)
         if runners[tool].name != tool:
             raise ValueError(f"the runner registered as {tool!r} is named {runners[tool].name!r}")
-    settings = {tool: runner.fingerprint() for tool, runner in runners.items()}
-    identity = {"donors": list(cfg.donors), "split": cfg.split, "cap": cfg.cap,
-                "tools": list(cfg.tools) if scoring else [], "reference": cfg.reference,
-                "reference_digest": reference.digest(),
-                "paper_length_filter": cfg.paper_length_filter, "accept_assembly_loss": cfg.accept_assembly_loss,
-                "stop_after": cfg.stop_after, "images": pinned_images(cfg), "settings": settings}
+    settings = {tool: runner.fingerprint() for tool, runner in runners.items()}  # the image's writes real/_setup
+    identity["settings"] = settings
     config_hash = _manifest(cfg, identity, layout, force=force)
     ctx = _Context(reference=reference, runners=runners, settings=settings, setup=setup, sensitivity=sensitivity,
                    merged=merge_identical(reference))
@@ -438,23 +448,37 @@ def _pooled(cfg: RealConfig, scored: dict[str, real_score.DonorScoring], blocks:
     return pooled
 
 
+def _check_manifest(identity: dict, layout: RunLayout, *, force: bool, ignore: tuple[str, ...] = ()) -> list | None:
+    """The fields of ``identity`` (``_flat``) that differ from the run directory's manifest, leaving out the
+    top-level keys ``ignore`` on both sides; None without a manifest, or when its whole identity's hash is
+    ``identity``'s. ValueError naming them when they differ, unless ``force``. Reads only."""
+    path = layout.real_manifest()
+    if not path.is_file():
+        return None
+    old = real_steps.read_json(path) or {}
+    if not ignore and old.get("config_hash") == real_steps.digest(identity):
+        return None
+    previous = _flat({key: value for key, value in (old.get("identity") or {}).items() if key not in ignore})
+    now = _flat({key: value for key, value in identity.items() if key not in ignore})
+    changed = [name for name in sorted(previous.keys() | now.keys()) if previous.get(name) != now.get(name)]
+    if changed and not force:
+        differences = "; ".join(f"{name} {previous.get(name)} -> {now.get(name)}" for name in changed)
+        raise ValueError(f"{path} was written for another configuration ({differences}). Rerun with that "
+                         "configuration, choose another --run-dir, or pass --force to redo what the change affects")
+    return changed
+
+
 def _manifest(cfg: RealConfig, identity: dict, layout: RunLayout, *, force: bool) -> str:
-    """Write the manifest, keep an identical one, or refuse (ValueError) one made for another configuration; returns
-    the configuration's hash."""
+    """Write the manifest, keep an identical one, or refuse (ValueError, ``_check_manifest``) one made for another
+    configuration; returns the configuration's hash."""
     config_hash = real_steps.digest(identity)
     path = layout.real_manifest()
     replaced = None
-    if path.is_file():
+    changed = _check_manifest(identity, layout, force=force)
+    if changed is None and path.is_file():
+        return config_hash
+    if changed is not None:
         old = real_steps.read_json(path) or {}
-        if old.get("config_hash") == config_hash:
-            return config_hash
-        previous, now = _flat(old.get("identity") or {}), _flat(identity)
-        changed = [name for name in sorted(previous.keys() | now.keys()) if previous.get(name) != now.get(name)]
-        if not force:
-            differences = "; ".join(f"{name} {previous.get(name)} -> {now.get(name)}" for name in changed)
-            raise ValueError(f"{path} was written for another configuration ({differences}). Rerun with that "
-                             "configuration, choose another --run-dir, or pass --force to redo what the change "
-                             "affects")
         replaced = {"config_hash": old.get("config_hash"), "changed": changed}
     real_steps.write_json(path, {
         "kind": MANIFEST_KIND, "version": VERSION, "config": dataclasses.asdict(cfg), "identity": identity,
