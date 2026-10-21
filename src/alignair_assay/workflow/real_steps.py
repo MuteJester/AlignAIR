@@ -17,7 +17,8 @@ whose fingerprint differs is redone, with every step after it that reads its out
   refuses, or whose assembly loss is over the line, raises ``PreprocessError`` with its evidence: the workflow stops
   that donor and goes on.
 - ``truth`` (``step_truth``): ``real.truth.real_truths`` on the capped preprocessed reads, the very reads every tool is
-  given, in their order; ``truth.jsonl.gz`` with its record as the header line. Its fingerprint: the SHA-256s of
+  given, in their order, and the truth's audit (``real.truth.truth_health``); ``truth.jsonl.gz`` with its record,
+  the audit among it (``health``), as the header line. Its fingerprint: the SHA-256s of
   ``reads.fasta``, ``reads.tsv`` and ``genotype.json``, the reference's digest and its gapped forms' (the shared
   anchors place Cys104 through them) and ``TRUTH_CODE``.
 - ``runs`` (``run_identity``, ``current_run``, ``make_run``): one tool on one arm, ``Runner.run`` on ``reads.fasta``;
@@ -71,7 +72,7 @@ from alignair_assay.real.genotype import (
 )
 from alignair_assay.real.locus import SAMTOOLS_IMAGE, donor_capture
 from alignair_assay.real.preprocess import preprocess_run
-from alignair_assay.real.truth import RealTruth, real_truths, truth_from_json, truth_to_json
+from alignair_assay.real.truth import RealTruth, real_truths, truth_from_json, truth_health, truth_to_json
 from alignair_assay.runners.base import Runner, RunResult, require_successful_run, write_run_json
 
 PACKAGE = Path(__file__).resolve().parents[1]
@@ -202,10 +203,11 @@ def step_preprocess(donor: str, fetched: Fetched, layout: RunLayout, *, cap: int
     return record, _step("reused" if record.get("reused") else "done", started)
 
 
-def step_truth(donor: str, layout: RunLayout, genotype: RealGenotype,
-               reference: Reference) -> tuple[list[RealTruth], dict]:
-    """The truth of every preprocessed read, in ``reads.fasta``'s order: read from ``truth.jsonl.gz`` while its
-    fingerprint is current, else ``real_truths`` and written there (atomically, the record as the header)."""
+def step_truth(donor: str, layout: RunLayout, genotype: RealGenotype, reference: Reference,
+               iuis: IuisMap) -> tuple[list[RealTruth], dict, dict]:
+    """The truth of every preprocessed read, in ``reads.fasta``'s order, and its audit (``truth_health``, with the
+    IUIS map's names): read from ``truth.jsonl.gz`` while its fingerprint is current, else ``real_truths`` and
+    ``truth_health`` and written there (atomically, the record and the audit as the header); and the step's."""
     started = time.monotonic()
     reads, meta = layout.real_reads(donor), layout.real_reads_meta(donor)
     inputs = {"reads_sha256": sha256_file(reads), "meta_sha256": sha256_file(meta),
@@ -213,15 +215,18 @@ def step_truth(donor: str, layout: RunLayout, genotype: RealGenotype,
               "reference_gapped_digest": reference.gapped_digest()}
     fingerprint = digest({"inputs": inputs, "code_sha256": code_digest(TRUTH_CODE)})
     path = layout.real_truth(donor)
-    if jsonl_header(path).get("fingerprint") == fingerprint:
-        return [truth_from_json(row) for row in read_jsonl(path)], _step("reused", started)
-    truths = real_truths(dict(read_fasta(reads)), read_meta(meta), genotype, reference)
+    header = jsonl_header(path)
+    if header.get("fingerprint") == fingerprint and isinstance(header.get("health"), dict):
+        return [truth_from_json(row) for row in read_jsonl(path)], header["health"], _step("reused", started)
+    sequences, rows = dict(read_fasta(reads)), read_meta(meta)
+    truths = real_truths(sequences, rows, genotype, reference)
+    health = truth_health(sequences, rows, truths, genotype, reference, iuis)
     temporary = path.with_name(f".{path.name}")
     write_jsonl((truth_to_json(truth) for truth in truths), temporary,
                 header={"kind": TRUTH_KIND, "donor": donor, "fingerprint": fingerprint, "inputs": inputs,
-                        "code_sha256": code_digest(TRUTH_CODE), "reads": len(truths)})
+                        "code_sha256": code_digest(TRUTH_CODE), "reads": len(truths), "health": health})
     temporary.replace(path)
-    return truths, _step("done", started)
+    return truths, health, _step("done", started)
 
 
 def run_identity(tool: str, reads: Path, settings: dict, *, reference_digest: str,

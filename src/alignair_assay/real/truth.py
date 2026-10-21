@@ -97,8 +97,17 @@ distinct junctions, takes about a minute). SL15 is the candidate primary cluster
 ``cys104_regions`` gives each donor V allele's region through Cys104, with the identical-sequence rule above (an
 allele without a Cys104 of its own takes that of an allele with its sequence).
 
-``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id -> clonotype map. ``truth_to_json`` and
-``truth_from_json`` turn a truth into JSON-ready data and back, for the workflow's truth file.
+``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id -> clonotype map.
+
+**Truth health** (``truth_health``), a tool-neutral audit of the truth: the known-answer rule run against the shared
+reference's V alleles instead of the donor's. A read whose V is exactly one shared allele's window (at least
+``MIN_WINDOW`` nt) that the donor does not carry, by sequence, shows an allele the genotype lacks. Such reads are
+counted per gene (the allele's IUIS genes), split by where the gene stands in the truth: ``carried`` (the donor
+carries another allele of it: an allele VDJbase missed, or a haplotype it did not resolve), ``captured`` (spanned,
+and deleted on every capturing contig), ``uncalled`` or ``not_captured``. A carried gene with ``TRUTH_GAP_FLAG``
+(10) clonotypes of such reads or more is flagged, and whether all its alleles are unphased (``h0_only``) is
+noted. ``truth_to_json`` and ``truth_from_json`` turn a truth into JSON-ready data and back, for the workflow's
+truth file.
 
 **On the pilot reads** (Task 4's preprocessed run): W-97 (multiplex, 50,000 sequences) has 5.7% known answers and
 5.6% naive; Cys104 is placed on 92.8% of its reads (66.5% by the donor's anchors, 26.3% by the shared reference's)
@@ -118,7 +127,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from alignair_assay.core.reference import Reference
-from alignair_assay.real.genotype import RealAllele, RealGenotype
+from alignair_assay.real.genotype import IuisMap, RealAllele, RealGenotype
 
 # The nt ending at Cys104 that place a V allele in a read.
 ANCHOR_LENGTH = 30
@@ -138,6 +147,11 @@ MAX_JUNCTION = 150
 NAIVE_ISOTYPE = "IGHM"
 # The SL15 clustering: junctions of one length within this share of nt mismatches are linked.
 SL15_SHARE = 0.15
+# A carried gene with at least this many clonotypes of reads that exactly match an allele the genotype lacks is
+# flagged (``truth_health``).
+TRUTH_GAP_FLAG = 10
+# Where a gene of such reads stands in the truth, in order of precedence.
+GAP_CLASSES = ("carried", "captured", "uncalled", "not_captured")
 
 _GAPS = str.maketrans("", "", ".-")
 
@@ -334,6 +348,56 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
 def clonotype_clusters(truths: Iterable[RealTruth]) -> dict[str, str]:
     """Read id -> clonotype, the ``clusters`` of ``stats.compare``."""
     return {truth.read_id: truth.clonotype for truth in truths}
+
+
+def truth_health(reads: Mapping[str, str], meta: Iterable[Mapping], truths: Iterable[RealTruth],
+                 genotype: RealGenotype, reference: Reference, iuis: IuisMap, *, min_window: int = MIN_WINDOW,
+                 flag: int = TRUTH_GAP_FLAG) -> dict:
+    """The truth audit of the module docstring, over the reads of ``meta`` (as ``real_truths`` reads them) with their
+    ``truths`` (for the clonotypes) and the donor's captured ``genotype``, against ``reference``'s V alleles named by
+    ``iuis``: ``reads``; ``shared_exact`` (reads that are exactly one shared allele's window); ``not_carried`` (of
+    those, the reads whose allele the donor does not carry); ``by_class`` (``GAP_CLASSES`` -> reads); ``genes`` (one
+    entry per gene: ``gene``, ``class``, ``reads``, ``clonotypes``, ``alleles`` (shared allele -> reads) and
+    ``h0_only``; the most reads first); ``flagged`` (carried genes with at least ``flag`` clonotypes) and
+    ``flag_clonotypes``."""
+    shared = [RealAllele(allele_id=name, gene="|".join(iuis.genes(name)) or name, segment="v",
+                         sequence=sequence.upper(), gapped=reference.gapped(name), haplotype=0, functional=True,
+                         shared=(name,), iuis=iuis.labels(name))
+              for name, sequence in reference.alleles.get("v", {}).items()]
+    index = _index(shared)
+    donor_shared = {name for allele in genotype.alleles for name in allele.shared}
+    clonotypes = {truth.read_id: truth.clonotype for truth in truths}
+    carried = {allele.gene for allele in genotype.alleles}
+    unphased = {gene for gene in carried if all(allele.haplotype == 0 for allele in genotype.carried(gene))}
+    captured, uncalled = genotype.captured or frozenset(), genotype.uncalled or frozenset()
+    found: dict[str, dict] = {}
+    count = exact = 0
+    for row in meta:
+        count += 1
+        read = mask_primers(reads[row["sequence_id"]], row.get("primer_masked"))
+        match = _known_match(read, observed_span(read, []), index, min_window)
+        if match is None:
+            continue
+        exact += 1
+        names = {allele.allele_id for allele in match.alleles}
+        if names & donor_shared:
+            continue
+        genes = sorted({gene for allele in match.alleles for gene in allele.gene.split("|")})
+        cls = ("carried" if set(genes) & carried else "uncalled" if set(genes) & uncalled
+               else "captured" if set(genes) <= captured else "not_captured")
+        entry = found.setdefault("|".join(genes), {"gene": "|".join(genes), "class": cls, "reads": 0,
+                                                   "clonotypes": set(), "alleles": defaultdict(int),
+                                                   "h0_only": bool(set(genes) & unphased)})
+        entry["reads"] += 1
+        entry["clonotypes"].add(clonotypes.get(row["sequence_id"], row["sequence_id"]))
+        entry["alleles"]["|".join(sorted(names))] += 1
+    genes = sorted(({**entry, "clonotypes": len(entry["clonotypes"]), "alleles": dict(sorted(entry["alleles"].items()))}
+                    for entry in found.values()), key=lambda entry: (-entry["reads"], entry["gene"]))
+    return {"reads": count, "shared_exact": exact, "not_carried": sum(entry["reads"] for entry in genes),
+            "by_class": {cls: sum(entry["reads"] for entry in genes if entry["class"] == cls) for cls in GAP_CLASSES},
+            "genes": genes, "flag_clonotypes": flag,
+            "flagged": [entry["gene"] for entry in genes
+                        if entry["class"] == "carried" and entry["clonotypes"] >= flag]}
 
 
 def sl15_clusters(truths: Iterable[RealTruth]) -> dict[str, str]:

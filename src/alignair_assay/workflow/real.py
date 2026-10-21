@@ -53,9 +53,10 @@ and left out of the comparisons.
 
 **The summary** holds the configuration and provenance (images, tool fingerprints, reference, the fetch quality per
 run), the sensitivity analysis's genes, per donor (``donors``) its steps' status and seconds, preprocessing record,
-genotype, truth yields, oracle self-check, runs (with AlignAIR's AIRR assembly counts), each run's own R1 (``tools``),
-the comparisons and arm deltas, and the same pooled over the donors scored (``pooled``), with the stopped donors,
-failed runs, and failed and unchecked self-checks listed. The oracle self-check (``real.metrics.oracle_self_check``)
+genotype, truth yields, the truth's audit (``truth_health``), oracle self-check, runs (with AlignAIR's AIRR
+assembly counts), each run's own R1 (``tools``), the comparisons and arm deltas, and the same pooled over the donors
+scored (``pooled``; and per protocol, ``pooled["protocols"]``), with the stopped donors, failed runs, and failed and
+unchecked self-checks listed. The oracle self-check (``real.metrics.oracle_self_check``)
 is ``passed``, ``failed`` (the truth contradicts itself) or ``unchecked`` (no oracle read scored: the donor's reads
 have no documented known answer, or every one is excluded, e.g. ``not_captured``) (``oracle_status``).
 """
@@ -341,7 +342,8 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
     if cfg.stop_after == "preprocess":
         block.update(stopped_after="preprocess", genotype=_genotype_block(genotype, None, ctx.reference))
         return block, None
-    truths, steps["truth"] = real_steps.step_truth(donor, layout, genotype, ctx.reference)
+    truths, block["truth_health"], steps["truth"] = real_steps.step_truth(donor, layout, genotype, ctx.reference,
+                                                                           iuis)
     _say(donor, "truth", steps["truth"])
     block["truth"] = _truth_block(truths)
 

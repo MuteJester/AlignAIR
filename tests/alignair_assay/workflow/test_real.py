@@ -494,6 +494,22 @@ def test_the_primary_comparisons_under_the_sl15_and_junction_length_clusterings(
     assert set(pooled["igblast", "alignair", "shared"]["clusterings"]) == {"exact", "sl15", "junction_length"}
 
 
+def test_the_truth_health_audit_is_in_the_truth_record_and_the_summary(tmp_path, fakes):
+    """The IGHV3-11 reads are exactly the shared IGHVF7-G1*01, an allele the donor does not carry of a gene its
+    contigs show deleted: the audit counts them, and keeps the count with the truth so a resumed run reuses it."""
+    layout = RunLayout(tmp_path / "run")
+    first = run_real(_config(tmp_path), layout)
+    health = first["donors"]["W-97"]["truth_health"]
+    assert health["reads"] == 30 and health["not_carried"] == 6 and health["flagged"] == []
+    assert health["by_class"]["captured"] == 6
+    assert [(entry["gene"], entry["class"], entry["reads"], entry["clonotypes"]) for entry in health["genes"]] == [
+        ("IGHV3-11", "captured", 6, 3)]
+    assert real_steps.jsonl_header(layout.real_truth("W-97"))["health"] == health
+    second = run_real(_config(tmp_path), layout)
+    assert second["donors"]["W-97"]["steps"]["truth"]["status"] == "reused"
+    assert second["donors"]["W-97"]["truth_health"] == health
+
+
 def test_the_report_is_written_beside_the_summary(tmp_path, fakes):
     layout = RunLayout(tmp_path / "run")
     summary = run_real(_config(tmp_path), layout)

@@ -198,6 +198,15 @@ def _donor(name, run, sample, protocol, *, quality="full", known=30, scale=1) ->
                                                       "holds": "another gene's sequence"}]}},
                      "ogrdb": {"release_version": 8, "release_date": "2024-01-11"}},
         "runs": runs,
+        "truth_health": {"reads": 500, "shared_exact": 120, "not_carried": 40, "flag_clonotypes": 10,
+                         "by_class": {"carried": 31, "captured": 0, "uncalled": 6, "not_captured": 3},
+                         "genes": [{"gene": "IGHV3-30-5", "class": "carried", "reads": 31, "clonotypes": 12,
+                                    "alleles": {"IGHVF10-G37*07": 31}, "h0_only": False},
+                                   {"gene": "IGHV4-30-2", "class": "uncalled", "reads": 6, "clonotypes": 5,
+                                    "alleles": {"IGHVF3-G9*04": 6}, "h0_only": False},
+                                   {"gene": "IGHV4-4", "class": "not_captured", "reads": 3, "clonotypes": 3,
+                                    "alleles": {"IGHVF12-G1*01": 3}, "h0_only": False}],
+                         "flagged": ["IGHV3-30-5"]},
         "oracle_self_check": {"reads": known, "classes": {"excluded:not_captured": 1, "supported": known - 1},
                               "excluded_genes": {"excluded:not_captured": ["IGHV3-30-5"]}, "scored": known - 1,
                               "supported": 1.0, "unsupported": 0.0, "known_top1": 1.0, "known_gene_top1": 1.0,
@@ -650,6 +659,20 @@ def test_the_primary_under_the_sl15_and_junction_length_clusterings():
     headline = _section(real_report_markdown(summary), "R1 headline (shared arm)")
     assert ("Clustered by SL15 instead of exact junctions, a verdict changes: race (SC-23) R1 igblast better → not "
             "significant") in headline
+
+
+def test_the_truth_health_audit_and_its_flag():
+    md = real_report_markdown(_summary())
+    section = _section(md, "Truth health")
+    assert "tool-neutral" in section and "shared reference's V alleles" in section
+    counts = _table(section)
+    assert counts[0] == ["Donor", "Reads", "Exactly a shared allele", "Not carried by the donor", "carried",
+                         "captured", "uncalled", "not captured"]
+    assert counts[1] == ["W-97", "500", "120", "40", "31", "0", "6", "3"]
+    genes = _table(section[section.index("| Donor | Gene"):])
+    assert genes[1] == ["W-97", "**IGHV3-30-5**", "carried", "31", "12", "IGHVF10-G37*07 31", "no"]
+    flags = [flag for flag in _bullets(_section(md, "Flags")) if flag.startswith("- Truth health")]
+    assert len(flags) == 1 and "W-97 IGHV3-30-5 (12 clonotypes)" in flags[0] and "SC-23 IGHV3-30-5" in flags[0]
 
 
 def test_the_tie_aware_metrics_are_shown_as_paired_means():

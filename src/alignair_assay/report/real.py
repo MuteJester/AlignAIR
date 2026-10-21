@@ -42,8 +42,12 @@ from alignair_assay.report.markdown import MISSING, markdown_table
 SUMMARY_SECTIONS = ("R1 headline (shared arm)", "Genotype arm", "Flags")
 DETAIL_SECTIONS = ("R1 per donor", "Exclusions", "Known answers", "Novel-allele reads", "Sensitivity",
                    "D and J (informational)", "Stratification: protocol × isotype", "Preprocessing",
-                   "AlignAIR's AIRR output", "Truth self-check", "Failed runs and refusals", "Provenance")
+                   "AlignAIR's AIRR output", "Truth self-check", "Truth health", "Failed runs and refusals",
+                   "Provenance")
 MAX_FLAGS = 8
+# The genes the truth-health section names per donor, the flagged ones always among them.
+HEALTH_GENES = 8
+GAP_CLASSES = ("carried", "captured", "uncalled", "not_captured")
 # Items named per flag before the rest are counted.
 FLAG_ITEMS = 4
 # A donor with fewer documented known answers than this share of its reads is flagged. The summary's own
@@ -165,7 +169,7 @@ def real_report_markdown(summary: dict) -> str:
         lines += ["", f"## {title}", "", *render(summary, scopes)]
     lines += ["", "---"]
     detail = (_r1_detail, _exclusions, _known_answers, _novel_reads, _sensitivity, _d_and_j, _strata,
-              _preprocessing, _airr_output, _self_check, _failures, _provenance)
+              _preprocessing, _airr_output, _self_check, _truth_health, _failures, _provenance)
     for title, render in zip(DETAIL_SECTIONS, detail):
         lines += ["", f"## {title}", "", *render(summary, scopes)]
     return "\n".join(lines) + "\n"
@@ -589,6 +593,13 @@ def _flags(summary: dict, scopes: list[dict]) -> list[str]:
         flags.append(_listed("Failed runs, not scored (their pairs are not compared)",
                              [f"{run['tool']} on {run['donor']} {run['arm']}: {run.get('error') or MISSING}"
                               + (f" ({run['note']})" if run.get("note") else "") for run in failed]))
+    gaps = [f"{name} {gene} ({_int(entry['clonotypes'])} clonotypes)"
+            for name, block in donors.items() for gene in ((block.get("truth_health") or {}).get("flagged") or [])
+            for entry in (block["truth_health"].get("genes") or []) if entry.get("gene") == gene]
+    if gaps:
+        flags.append(_listed("Truth health: carried genes whose reads exactly match, in many clonotypes, an allele the "
+                             "genotype lacks (an allele VDJbase missed, or a haplotype it did not resolve; see Truth "
+                             "health)", gaps))
     if summary.get("oracle_unchecked"):
         flags.append(_listed("Truth self-check unchecked, a warning (no documented known answer is scored: there "
                              "is none, or every one is excluded, e.g. not_captured)",
@@ -1084,6 +1095,40 @@ def _self_check(summary: dict, scopes: list[dict]) -> list[str]:
             "(failed). Unchecked: none is scored (no documented known answer, or every one excluded), a warning.", "",
             *_table(["Donor", "Known answers", "Scored", "Supported", "known_top1", "known_gene_top1", "Excluded",
                      "Status"], rows)]
+
+
+def _truth_health(summary: dict, scopes: list[dict]) -> list[str]:
+    blocks = [(name, block["truth_health"]) for name, block in (summary.get("donors") or {}).items()
+              if block.get("truth_health")]
+    if not blocks:
+        return ["No truth audit in this summary: no donor's truth was computed."]
+    counts = [[name, _int(health.get("reads")), _int(health.get("shared_exact")), _int(health.get("not_carried")),
+               *(_int((health.get("by_class") or {}).get(cls)) for cls in GAP_CLASSES)] for name, health in blocks]
+    genes = []
+    for name, health in blocks:
+        flagged = set(health.get("flagged") or [])
+        entries = health.get("genes") or []
+        shown = [entry for index, entry in enumerate(entries) if index < HEALTH_GENES or entry["gene"] in flagged]
+        for entry in shown:
+            alleles = ", ".join(f"{allele} {_int(count)}" for allele, count in (entry.get("alleles") or {}).items())
+            genes.append([name, f"**{entry['gene']}**" if entry["gene"] in flagged else entry["gene"], entry["class"],
+                          _int(entry.get("reads")), _int(entry.get("clonotypes")), alleles or MISSING,
+                          "yes" if entry.get("h0_only") else "no"])
+    flag = next((health.get("flag_clonotypes") for _, health in blocks if health.get("flag_clonotypes")), 10)
+    lines = ["A tool-neutral audit of the truth: the known-answer rule run against the shared reference's V alleles "
+             "instead of the donor's. A read whose V is exactly a shared allele's window (at least 200 nt) that the "
+             "donor does not carry shows an allele the genotype lacks; its gene is carried (another allele of it: an "
+             "allele VDJbase missed, or a haplotype it did not resolve), captured (deleted on every capturing "
+             f"contig), uncalled or not captured. A carried gene with {flag} clonotypes of such reads or more is in "
+             "bold and flagged.", "",
+             *_table(["Donor", "Reads", "Exactly a shared allele", "Not carried by the donor",
+                      *(cls.replace("_", " ") for cls in GAP_CLASSES)], counts)]
+    if genes:
+        lines += ["", f"The genes with the most such reads per donor (up to {HEALTH_GENES}, and every flagged "
+                      "one):", "",
+                  *_table(["Donor", "Gene", "Class", "Reads", "Clonotypes", "Shared alleles", "Unphased only"],
+                          genes)]
+    return lines
 
 
 def _failures(summary: dict, scopes: list[dict]) -> list[str]:

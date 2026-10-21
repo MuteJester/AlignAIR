@@ -37,6 +37,7 @@ from alignair_assay.real.truth import (
     real_truths,
     single_linkage,
     sl15_clusters,
+    truth_health,
     truth_from_json,
     truth_to_json,
 )
@@ -593,6 +594,42 @@ def test_real_truths_store_the_sl15_clonotype_next_to_the_exact_one():
     assert sl15_clusters(truths) == {truth.read_id: truth.clonotype_sl15 for truth in truths}
     for truth in truths:
         assert truth_from_json(json.loads(json.dumps(truth_to_json(truth)))) == truth
+
+
+def test_truth_health_counts_reads_that_exactly_match_an_allele_the_genotype_lacks():
+    """A tool-neutral audit of the truth: the known-answer rule run against the shared reference's V alleles instead
+    of the donor's. A read whose V is exactly a shared allele the donor does not carry shows an allele the genotype
+    lacks, split by the gene's place in the truth; a carried gene with 10 clonotypes of such reads or more is
+    flagged (an allele VDJbase missed, or a haplotype it did not resolve)."""
+    a2 = _allele("IGHV1-2*04", _gapped_v(1).replace("TG", "TC", 1), shared=("IGHV1-2*04",))
+    shared_b = _allele("IGHV3-23*01", B.gapped, shared=("IGHV3-23*01",))
+    c = _allele("IGHV3-11*01", _gapped_v(6), shared=("IGHV3-11*01",))
+    d = _allele("IGHV4-4*02", _gapped_v(7), shared=("IGHV4-4*02",))
+    on_h0 = _allele("IGHV1-2*02", A.gapped, shared=("IGHV1-2*02",), haplotype=0)
+    reference = _reference(on_h0, a2, shared_b, c, d)
+    iuis = IuisMap(labels_by_shared={name: (name,) for name in reference.alleles["v"]},
+                   shared_by_sequence={seq: (name,) for name, seq in reference.alleles["v"].items()},
+                   labels_by_sequence={seq: (name,) for name, seq in reference.alleles["v"].items()},
+                   reference_digest=reference.digest())
+    genotype = RealGenotype(donor=DONOR, alleles=(on_h0,), captured=frozenset({"IGHV1-2", "IGHV3-23", "IGHV3-11"}),
+                            resolved=frozenset({"IGHV1-2", "IGHV3-23"}), uncalled=frozenset({"IGHV3-11"}))
+    reads = {f"a2_{k}": _race(a2.sequence, n_region=_random(16, 100 + k)) for k in range(10)}
+    reads |= {"a2_mate": _race(a2.sequence, n_region=_random(16, 100)), "b1": _race(shared_b.sequence),
+              "b2": _race(shared_b.sequence, n_region=_random(16, 60)), "c": _race(c.sequence),
+              "d": _race(d.sequence), "own": _race(on_h0.sequence), "none": _race(_random(300, 61))}
+    meta = [_meta(read_id) for read_id in reads]
+    truths = real_truths(reads, meta, genotype, reference)
+    health = truth_health(reads, meta, truths, genotype, reference, iuis)
+    assert health["reads"] == 17 and health["shared_exact"] == 16 and health["not_carried"] == 15
+    assert health["by_class"] == {"carried": 11, "captured": 2, "uncalled": 1, "not_captured": 1}
+    genes = {entry["gene"]: entry for entry in health["genes"]}
+    assert genes["IGHV1-2"] == {"gene": "IGHV1-2", "class": "carried", "reads": 11, "clonotypes": 10,
+                                "alleles": {"IGHV1-2*04": 11}, "h0_only": True}
+    assert (genes["IGHV3-23"]["class"], genes["IGHV3-23"]["clonotypes"]) == ("captured", 2)
+    assert genes["IGHV3-11"]["class"] == "uncalled" and genes["IGHV4-4"]["class"] == "not_captured"
+    assert [entry["gene"] for entry in health["genes"]][0] == "IGHV1-2"  # most reads first
+    assert health["flagged"] == ["IGHV1-2"] and health["flag_clonotypes"] == 10
+    json.dumps(health)
 
 
 def test_real_truths_refuses_inconsistent_reads_and_metadata():

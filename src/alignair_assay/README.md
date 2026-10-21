@@ -1694,6 +1694,13 @@ another shared reference:
   takes about a minute), and names each component after its first junction in sorted order; a read without a
   junction keeps its single clonotype. `sl15_clusters` and `junction_length_clusters` (one cluster per donor and
   junction length, a stress test) give `stats.compare` those clusterings.
+- `truth_health(reads, meta, truths, genotype, reference, iuis)`: a tool-neutral audit of the truth, the
+  known-answer rule run against the shared reference's V alleles instead of the donor's. A read whose V is exactly
+  a shared allele (window of 200 nt or more) the donor does not carry shows an allele the genotype lacks; those reads
+  are counted per gene, split by where it stands in the truth (`carried`, `captured`, `uncalled`, `not_captured`),
+  and a carried gene with 10 clonotypes of them or more is `flagged` (an allele VDJbase missed, or a haplotype it
+  did not resolve; `h0_only` notes a gene carried only unphased). The truth step stores it in the truth file's
+  header; the summary has it per donor (`truth_health`), and the report a section and a flag.
 - `cys_end` (the read index past Cys104, by the same rules; None where nothing places it) and `v_window_n` (the
   offsets of the `N`s inside `[observed[0], cys_end)`, from the first observed base): the observed V window the
   tie-aware metrics compare germline sequences over. `cys104_regions(alleles)` gives each donor V allele's region
@@ -1807,7 +1814,9 @@ alone takes out of each pair, by reason), known answers (`real.v.known_top1_obse
 means), novel-allele reads, the sensitivity variants, D and J, protocol × isotype strata, preprocessing (the
 classifier's evidence, the
 assembly's failure rate against its 35% line, its failures by AssemblePairs' kind and the deciles of the pairs that
-passed and failed), AlignAIR's AIRR output, the truth self-check, failed runs and refusals, and the provenance.
+passed and failed), AlignAIR's AIRR output, the truth self-check, the truth health (the reads that exactly match a
+shared allele the donor does not carry, per gene and where it stands in the truth; a flag on the summary page for a
+carried gene with 10 clonotypes of them or more), failed runs and refusals, and the provenance.
 
 - **R1** (`real.v.unsupported`, lower is better) is the share of a tool's top-1 V calls the donor's genome does not
   carry: `unsupported_allele`, `unsupported_gene` or `no_call`, over the calls not excluded. A call is supported
