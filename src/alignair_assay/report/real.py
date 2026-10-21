@@ -113,6 +113,14 @@ BOTTOM_LEAD = ("The pre-declared primary is the paired shared-arm R1 Δ, {pair},
                "with the documented known answers among them and how many of those it called wrong.")
 POOL_NOTE = ("Pooled over both protocols (secondary: it depends on how many reads each protocol contributes, not on "
              "the tools alone)")
+# The clusterings the pre-declared primary is compared under: the primary clonotypes, the candidate for P3b, a stress.
+CLUSTERINGS = {"exact": "exact junction (primary)", "sl15": "SL15",
+               "junction_length": "donor × junction length (stress)"}
+CLUSTERING_NOTE = ("Clustering: the pre-declared primary pair's R1 and known_top1 compared under three clusterings of "
+                   "the same paired reads, each its own Holm family of those two metrics: exact junctions (the primary "
+                   "clonotypes in P3a), SL15 (single linkage at 15% or less nt Hamming among a donor's junctions of "
+                   "one length; the candidate primary for P3b) and, as a stress test, one cluster per donor and "
+                   "junction length.")
 CONDITIONAL_NOTE = ("Every CI is conditional on these donors: they are fixed, not sampled, so it covers the variation "
                     "between clonotypes only. Verdicts outside the pre-declared primary are exploratory: Holm runs "
                     "within each comparison, not across the report.")
@@ -479,7 +487,29 @@ def _bottom_line(scopes: list[dict], protocols: list[dict], primary: tuple[str, 
         comparison = _find(pooled, a, b, "shared")
         lines += ["", f"{POOL_NOTE}: R1 {_pair_cell(comparison, HEADLINE, means=True)}; known_top1 "
                       f"{_pair_cell(comparison, KNOWN[0], means=True)}."]
+    changed = _sl15_changes(lead, a, b)
+    if changed is not None:
+        lines += ["", "Clustered by SL15 instead of exact junctions, "
+                      + (f"a verdict changes: {'; '.join(changed)} (see Sensitivity)." if changed
+                         else "every verdict above holds (see Sensitivity).")]
     return [*lines, "", CONDITIONAL_NOTE]
+
+
+def _sl15_changes(scopes: list[dict], a: str, b: str) -> list[str] | None:
+    """The scopes and metrics (R1, known_top1) of pair ``a``-``b`` whose verdict differs between the exact and the
+    SL15 clusterings, as ``<scope> <metric> <exact> → <sl15>``; None when no comparison holds both."""
+    changes, seen = [], False
+    for scope in scopes:
+        clusterings = (_find(scope, a, b, "shared") or {}).get("clusterings") or {}
+        exact = (clusterings.get("exact") or {}).get("comparison") or {}
+        sl15 = (clusterings.get("sl15") or {}).get("comparison") or {}
+        for metric, label in ((HEADLINE, "R1"), (KNOWN[0], "known_top1")):
+            if metric in exact and metric in sl15:
+                seen = True
+                before, after = _verdict(exact[metric], a, b), _verdict(sl15[metric], a, b)
+                if before != after:
+                    changes.append(f"{scope['label']} {label} {before} → {after}")
+    return changes if seen else None
 
 
 def _one_sided(comparison: dict | None) -> str:
@@ -833,7 +863,28 @@ def _sensitivity(summary: dict, scopes: list[dict]) -> list[str]:
                  [scope["label"], f"With Mikelov gene-support thresholds "
                                   f"({_int((support.get('excluded') or {}).get('v'))} V reads out)",
                   *(_variant_cell(c, "gene_support") for c in found)]]
-    return [*lines, "", *_table(["Scope", "Variant", *(_pair_header(a, b) for a, b in pairs)], rows)]
+    lines = [*lines, "", *_table(["Scope", "Variant", *(_pair_header(a, b) for a, b in pairs)], rows)]
+    return [*lines, *_clusterings(summary, scopes, pairs)]
+
+
+def _clusterings(summary: dict, scopes: list[dict], pairs: list[tuple[str, str]]) -> list[str]:
+    """The pre-declared primary pair's R1 and known_top1 per protocol (and pooled) under each clustering."""
+    primary = PRIMARY if PRIMARY in pairs else (pairs[0] if pairs else None)
+    lead = _protocol_scopes(summary) + [scope for scope in scopes if scope["block"] is None]
+    rows = []
+    for scope in lead if primary else ():
+        clusterings = (_find(scope, *primary, "shared") or {}).get("clusterings") or {}
+        if not clusterings:
+            continue
+        for metric, label in ((HEADLINE, "R1"), (KNOWN[0], "known_top1")):
+            rows.append([scope["label"], label,
+                         *(_pair_cell(_find(scope, *primary, "shared"), metric,
+                                      entries=((clusterings.get(name) or {}).get("comparison") or {}))
+                           for name in CLUSTERINGS)])
+    if not rows:
+        return []
+    return ["", f"{CLUSTERING_NOTE} Pair: {_pair_header(*primary)}.", "",
+            *_table(["Scope", "Metric", *CLUSTERINGS.values()], rows)]
 
 
 def _variant_cell(comparison: dict | None, key: str) -> str:

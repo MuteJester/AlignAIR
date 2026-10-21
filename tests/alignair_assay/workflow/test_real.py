@@ -472,6 +472,28 @@ def test_a_call_into_an_excluded_gene_takes_its_read_out_for_both_and_is_counted
     assert by_protocol["igblast", "alignair", "shared"]["one_sided"] == shared["one_sided"]
 
 
+def test_the_primary_comparisons_under_the_sl15_and_junction_length_clusterings(tmp_path, fakes):
+    """Exact junctions are the primary clonotypes; the R1 and known_top1 comparisons are also clustered by SL15 (the
+    candidate primary for P3b) and, as a stress test, by donor and junction length, on the same paired reads."""
+    summary = run_real(_config(tmp_path), RunLayout(tmp_path / "run"))
+    pairs = {(c["a"], c["b"], c["arm"]): c for c in summary["donors"]["W-97"]["comparisons"]}
+    clusterings = pairs["igblast", "alignair", "shared"]["clusterings"]
+    assert set(clusterings) == {"exact", "sl15", "junction_length"}
+    for name, entry in clusterings.items():
+        assert set(entry["comparison"]) == {"real.v.unsupported", "real.v.known_top1"}, name
+        assert entry["comparison"]["real.v.unsupported"]["n_paired"] == 30, name
+    exact = clusterings["exact"]["comparison"]["real.v.unsupported"]
+    assert exact["delta"] == pytest.approx(0.2) and exact["n_clusters"] == 15
+    # the fake reads' junctions differ by clone in their CDR3, more than 15%: SL15 joins none of the 15
+    assert clusterings["sl15"]["comparison"]["real.v.unsupported"]["n_clusters"] == 15
+    # every junction is 24 nt long (12 IGHV1-2 clones) or 27 nt (3 IGHV3-11 clones): two clusters
+    assert clusterings["junction_length"]["n_clusters"] == 2
+    protocols = {(c["a"], c["b"], c["arm"]): c for c in summary["pooled"]["protocols"]["multiplex"]["comparisons"]}
+    assert protocols["igblast", "alignair", "shared"]["clusterings"]["sl15"]["n_clusters"] == 15
+    pooled = {(c["a"], c["b"], c["arm"]): c for c in summary["pooled"]["comparisons"]}
+    assert set(pooled["igblast", "alignair", "shared"]["clusterings"]) == {"exact", "sl15", "junction_length"}
+
+
 def test_the_report_is_written_beside_the_summary(tmp_path, fakes):
     layout = RunLayout(tmp_path / "run")
     summary = run_real(_config(tmp_path), layout)

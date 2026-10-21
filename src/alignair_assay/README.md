@@ -1688,6 +1688,12 @@ another shared reference:
   Cys104 that ends an in-frame junction of 15 to 150 nt, and the junction runs from the Cys codon through the Trp
   codon, `N`s included; a read without both anchors is `<donor>/single:<id>`. `clonotype_clusters` gives
   `stats.compare` its clusters.
+- `clonotype_sl15`: the clustering sensitivity. Exact junctions stay the primary clonotype in P3a; SL15 (the
+  candidate primary for P3b) links a donor's junctions of one length at 15% nt Hamming or less, single linkage
+  (`single_linkage`, exact by shared blocks, no cap on a group: the dev donors' largest, 4,261 distinct junctions,
+  takes about a minute), and names each component after its first junction in sorted order; a read without a
+  junction keeps its single clonotype. `sl15_clusters` and `junction_length_clusters` (one cluster per donor and
+  junction length, a stress test) give `stats.compare` those clusterings.
 - `cys_end` (the read index past Cys104, by the same rules; None where nothing places it) and `v_window_n` (the
   offsets of the `N`s inside `[observed[0], cys_end)`, from the first observed base): the observed V window the
   tie-aware metrics compare germline sequences over. `cys104_regions(alleles)` gives each donor V allele's region
@@ -1819,6 +1825,10 @@ passed and failed), AlignAIR's AIRR output, the truth self-check, failed runs an
   gene (21 genes: those of the 33 of the paper's 137 novel alleles that no subject of the VDJbase genomic cohort
   carries), and R1 with Mikelov et al. 2024's gene-support thresholds (at least 10 clonotypes and 3 naive clonotypes
   per V gene among the known answers; `excluded:low_support`). The primary applies no threshold.
+- **Clustering**: the pre-declared primary pair's R1 and known_top1, per protocol and pooled, are compared again on
+  the same paired reads clustered by SL15 and, as a stress test, by donor × junction length, beside the exact
+  junctions (`clusterings` in each comparison; each its own Holm family of the two metrics). The bottom line says
+  whether SL15 changes a verdict.
 - **The genotype arm's R1 is 0 by construction**: each tool may call only the donor's alleles in the genes the truth
   resolves, so every call not excluded is supported. That arm is judged on `known_top1` and `known_gene_top1`,
   missing calls, and the share of calls that move into genes without truth (not captured, or uncalled), where R1

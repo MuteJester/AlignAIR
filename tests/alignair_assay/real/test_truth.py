@@ -22,17 +22,21 @@ from alignair_assay.real.truth import (
     ANCHOR_LENGTH,
     MAX_JUNCTION,
     MIN_JUNCTION,
+    SL15_SHARE,
     W118_MOTIF,
     RealTruth,
     clonotype_clusters,
     cys104_end,
     cys104_in_read,
     junction_by_motif,
+    junction_length_clusters,
     known_answer,
     known_match,
     mask_primers,
     observed_span,
     real_truths,
+    single_linkage,
+    sl15_clusters,
     truth_from_json,
     truth_to_json,
 )
@@ -543,6 +547,52 @@ def test_the_truth_records_where_cys104_is_and_the_ns_before_it():
     for truth in (r, n, m, x):
         assert truth_from_json(json.loads(json.dumps(truth_to_json(truth)))) == truth
     assert truth_to_json(n)["cys_end"] == r.cys_end and truth_to_json(n)["v_window_n"] == [100]
+
+
+def _mutate_at(sequence: str, positions) -> str:
+    bases = list(sequence)
+    for position in positions:
+        bases[position] = "A" if bases[position] != "A" else "C"
+    return "".join(bases)
+
+
+def test_sl15_links_junctions_within_15_percent_hamming_of_one_length():
+    """The clustering sensitivity: single linkage at 15% nt Hamming or less within a donor and a junction length, so
+    mutated members of one clone whose junctions differ join; exact junctions stay the primary clonotype."""
+    a = _random(40, 30)
+    b = _mutate_at(a, range(0, 12, 2))      # 6 of 40 from a: within 15%
+    c = _mutate_at(b, range(20, 32, 2))     # 6 from b, 12 from a: joins a through b
+    d = _mutate_at(a, range(1, 15, 2))      # 7 from a, and further from b and c: its own cluster
+    e = a + "G"                             # another length: never joined
+    junctions = {"a": a, "b": b, "c": c, "d": d, "e": e, "a2": a}
+    first = min(a, b, c)  # a component is named after its first junction in sorted order
+    assert single_linkage(junctions.values(), SL15_SHARE) == {a: first, b: first, c: first, d: d, e: e}
+    truths = [RealTruth(read_id=read_id, donor=DONOR, isotype="IGHM", protocol="race", observed=(0, 400),
+                        known=None, known_shared=None, known_gene=None, novel_known=False, naive=False,
+                        clonotype=f"{DONOR}/{junction}", anchor="donor") for read_id, junction in junctions.items()]
+    truths.append(RealTruth(read_id="s", donor=DONOR, isotype="IGHM", protocol="race", observed=(0, 400), known=None,
+                            known_shared=None, known_gene=None, novel_known=False, naive=False,
+                            clonotype=f"{DONOR}/single:s", anchor=None))
+    clusters = sl15_clusters(truths)
+    assert clusters["a"] == clusters["a2"] == clusters["b"] == clusters["c"] != clusters["d"]
+    assert len({clusters["a"], clusters["d"], clusters["e"], clusters["s"]}) == 4
+    assert clusters["s"] == f"{DONOR}/single:s" and clusters["a"].startswith(f"{DONOR}/")
+    # the stress clustering: every read of one donor and junction length is one cluster
+    lengths = junction_length_clusters(truths)
+    assert lengths["a"] == lengths["d"] == lengths["b"] != lengths["e"] and lengths["s"] == f"{DONOR}/single:s"
+
+
+def test_real_truths_store_the_sl15_clonotype_next_to_the_exact_one():
+    genotype = _genotype(A)
+    one, other = _race(A.sequence), _race(A.sequence, n_region=_mutate_at(N_REGION, (3,)))
+    far = _race(A.sequence, n_region=_mutate_at(N_REGION, range(0, 16, 2)))
+    truths = real_truths({"r1": one, "r2": other, "r3": far}, [_meta("r1"), _meta("r2"), _meta("r3")], genotype,
+                         NO_SHARED)
+    assert len({truth.clonotype for truth in truths}) == 3
+    assert truths[0].clonotype_sl15 == truths[1].clonotype_sl15 != truths[2].clonotype_sl15
+    assert sl15_clusters(truths) == {truth.read_id: truth.clonotype_sl15 for truth in truths}
+    for truth in truths:
+        assert truth_from_json(json.loads(json.dumps(truth_to_json(truth)))) == truth
 
 
 def test_real_truths_refuses_inconsistent_reads_and_metadata():

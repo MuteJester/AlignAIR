@@ -434,7 +434,8 @@ def _comparisons(cfg: RealConfig, data: real_score.DonorScoring, layout: RunLayo
             continue
         entry.update(status="compared", **real_score.comparison(
             real_score.pair_scores(data, (a, arm), (b, arm)), sensitivity=genes,
-            gene_support=real_score.pair_scores(data, (a, arm), (b, arm), variant="gene_support")))
+            gene_support=real_score.pair_scores(data, (a, arm), (b, arm), variant="gene_support"),
+            clusterings=True))
         real_score.write_comparison(layout.real_comparison_json(data.donor, arm, f"{a}_vs_{b}"), entry)
         comparisons.append(entry)
     for tool in GENOTYPE_TOOLS:
@@ -465,7 +466,7 @@ def _pooled(cfg: RealConfig, scored: dict[str, real_score.DonorScoring], blocks:
                 pair = real_score.pool({donor: real_score.pair_scores(scored[donor], (a, arm), (b, arm))
                                         for donor in donors})
                 comparisons.append({"a": a, "b": b, "arm": arm, "donors": donors, "status": "compared",
-                                    **real_score.comparison(pair)})
+                                    **real_score.comparison(pair, clusterings=True)})
         pooled["protocols"][protocol] = {"donors": members, "comparisons": comparisons}
     for tool, arm in expected_runs(cfg):
         summaries = [blocks[donor]["tools"][arm][tool] for donor in scored if tool in blocks[donor]["tools"][arm]]
@@ -479,7 +480,8 @@ def _pooled(cfg: RealConfig, scored: dict[str, real_score.DonorScoring], blocks:
                      for variant in real_score.VARIANTS}
             pooled["comparisons"].append({"a": a, "b": b, "arm": arm, "donors": donors, "status": "compared",
                                           **real_score.comparison(pairs["primary"], sensitivity=sensitivity["genes"],
-                                                                  gene_support=pairs["gene_support"])})
+                                                                  gene_support=pairs["gene_support"],
+                                                                  clusterings=True)})
     for tool in GENOTYPE_TOOLS:
         donors = [donor for donor, data in scored.items()
                   if (tool, "shared") in data.calls and (tool, "genotype") in data.calls]

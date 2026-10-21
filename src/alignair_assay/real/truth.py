@@ -78,6 +78,17 @@ mutated members of an expanded clone share an id:
    puts a read in a cluster of its own.
 5. The clonotype is ``f"{donor}/{junction}"``; a read without both anchors is ``f"{donor}/single:{read_id}"``.
 
+**Clustering sensitivity** (``clonotype_sl15``, ``sl15_clusters``, ``junction_length_clusters``). Exact junctions are
+the primary clonotype in P3a. A mutated member of an expanded clone whose junction differs from its siblings' by a
+few bases is a clonotype of its own there, which can overstate significance where clonality is highest. Each truth
+also records an SL15 clonotype: single linkage at ``SL15_SHARE`` (15%) nt Hamming or less (at most
+``floor(0.15 * L)`` mismatches, ``N`` a mismatch against a base) among the donor's junctions of one length ``L``
+(``single_linkage``), named after the component's first junction in sorted order; a read without a junction keeps
+its single clonotype. The search is exact and has no cap on a group's size: a pair within ``k`` mismatches shares one
+of ``k + 1`` blocks exactly, so only junctions sharing a block are compared (the dev donors' largest group, 4,261
+distinct junctions, takes about a minute). SL15 is the candidate primary clustering for P3b.
+``junction_length_clusters`` is a stress test, one cluster per donor and junction length.
+
 **The observed V window** (``cys_end``, ``v_window_n``). Every truth records the read index just past its Cys104
 (``cys_end``, from the rules above; None where none places it) and the offsets of the ``N`` bases inside
 ``[observed[0], cys_end)``, counted from the first observed base (``v_window_n``). The tie-aware metrics
@@ -98,6 +109,7 @@ quarter of its reads are IGHV4: the shared anchors place them.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from collections import defaultdict
@@ -124,6 +136,8 @@ MIN_JUNCTION = 15
 MAX_JUNCTION = 150
 # The isotype a naive read must be (``real.preprocess``'s C primer gene).
 NAIVE_ISOTYPE = "IGHM"
+# The SL15 clustering: junctions of one length within this share of nt mismatches are linked.
+SL15_SHARE = 0.15
 
 _GAPS = str.maketrans("", "", ".-")
 
@@ -157,6 +171,8 @@ class RealTruth:
     cys_end: int | None = None
     # the offsets, from the first observed base, of the N bases inside [observed[0], cys_end), sorted
     v_window_n: tuple[int, ...] = ()
+    # the SL15 clonotype: f"{donor}/sl15:{first junction of its component}", or the single clonotype; None unset
+    clonotype_sl15: str | None = None
 
 
 class KnownMatch(NamedTuple):
@@ -311,12 +327,73 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
                                 novel_known=match is not None and not shared,
                                 naive=match is not None and row["isotype"] == NAIVE_ISOTYPE, clonotype=clonotype,
                                 anchor=anchor, cys_end=cys_end, v_window_n=gaps))
-    return truths
+    roots = single_linkage((junction for truth in truths if (junction := _junction(truth))), SL15_SHARE)
+    return [dataclasses.replace(truth, clonotype_sl15=_sl15(truth, roots)) for truth in truths]
 
 
 def clonotype_clusters(truths: Iterable[RealTruth]) -> dict[str, str]:
     """Read id -> clonotype, the ``clusters`` of ``stats.compare``."""
     return {truth.read_id: truth.clonotype for truth in truths}
+
+
+def sl15_clusters(truths: Iterable[RealTruth]) -> dict[str, str]:
+    """Read id -> SL15 clonotype (the module docstring): the stored ``clonotype_sl15``, else computed over
+    ``truths`` (one donor's)."""
+    truths = list(truths)
+    if all(truth.clonotype_sl15 is not None for truth in truths):
+        return {truth.read_id: truth.clonotype_sl15 for truth in truths}
+    roots = single_linkage((junction for truth in truths if (junction := _junction(truth))), SL15_SHARE)
+    return {truth.read_id: _sl15(truth, roots) for truth in truths}
+
+
+def junction_length_clusters(truths: Iterable[RealTruth]) -> dict[str, str]:
+    """Read id -> ``f"{donor}/length:{L}"`` for a read with a junction of L nt, else its single clonotype: the
+    clustering stress test."""
+    return {truth.read_id: truth.clonotype if (junction := _junction(truth)) is None
+            else f"{truth.donor}/length:{len(junction)}" for truth in truths}
+
+
+def single_linkage(junctions: Iterable[str], share: float = SL15_SHARE) -> dict[str, str]:
+    """Each distinct junction -> the first junction, in sorted order, of its component when junctions of one length
+    are linked at ``floor(share * L)`` mismatches or fewer (exact: a pair within ``k`` mismatches shares one of
+    ``k + 1`` blocks, so only junctions sharing a block are compared)."""
+    by_length: dict[int, list[str]] = defaultdict(list)
+    for junction in sorted(set(junctions)):
+        by_length[len(junction)].append(junction)
+    roots: dict[str, str] = {}
+    for length, group in by_length.items():
+        limit = int(share * length)
+        parent = list(range(len(group)))
+
+        def find(index: int) -> int:
+            while parent[index] != index:
+                parent[index] = parent[parent[index]]
+                index = parent[index]
+            return index
+
+        buckets: dict[tuple[int, str], list[int]] = defaultdict(list)
+        for index, junction in enumerate(group):
+            for block, (start, end) in enumerate(_block_bounds(length, min(limit + 1, length))):
+                buckets[block, junction[start:end]].append(index)
+        for members in buckets.values():
+            for first, i in enumerate(members):
+                for j in members[first + 1:]:
+                    root_i, root_j = find(i), find(j)
+                    if root_i != root_j and _mismatches(group[i], group[j], 0, limit) <= limit:
+                        parent[max(root_i, root_j)] = min(root_i, root_j)
+        roots.update({junction: group[find(index)] for index, junction in enumerate(group)})
+    return roots
+
+
+def _junction(truth: RealTruth) -> str | None:
+    """The read's junction, from its exact clonotype; None for a single clonotype."""
+    tail = truth.clonotype.split("/", 1)[1]
+    return None if tail.startswith("single:") else tail
+
+
+def _sl15(truth: RealTruth, roots: Mapping[str, str]) -> str:
+    junction = _junction(truth)
+    return truth.clonotype if junction is None else f"{truth.donor}/sl15:{roots[junction]}"
 
 
 def truth_to_json(truth: RealTruth) -> dict:
@@ -327,7 +404,7 @@ def truth_to_json(truth: RealTruth) -> dict:
             "known_shared": None if truth.known_shared is None else sorted(truth.known_shared),
             "known_gene": truth.known_gene, "novel_known": truth.novel_known, "naive": truth.naive,
             "clonotype": truth.clonotype, "anchor": truth.anchor, "cys_end": truth.cys_end,
-            "v_window_n": list(truth.v_window_n)}
+            "v_window_n": list(truth.v_window_n), "clonotype_sl15": truth.clonotype_sl15}
 
 
 def truth_from_json(record: Mapping) -> RealTruth:
@@ -339,7 +416,8 @@ def truth_from_json(record: Mapping) -> RealTruth:
                          known=None if known is None else frozenset(known),
                          known_shared=None if shared is None else frozenset(shared), known_gene=record["known_gene"],
                          novel_known=record["novel_known"], naive=record["naive"], clonotype=record["clonotype"],
-                         anchor=record["anchor"], cys_end=record["cys_end"], v_window_n=tuple(record["v_window_n"]))
+                         anchor=record["anchor"], cys_end=record["cys_end"], v_window_n=tuple(record["v_window_n"]),
+                         clonotype_sl15=record["clonotype_sl15"])
     except (KeyError, TypeError) as error:
         raise ValueError(f"not a read's truth (truth_to_json): {error!r}") from None
 

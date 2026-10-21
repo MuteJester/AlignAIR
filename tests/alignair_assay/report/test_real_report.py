@@ -94,6 +94,14 @@ def _comparison(a, b, arm, n, k, *, verdict="tie_or_inconclusive", strata=("mult
                              "real.v.unsupported_observable": {"a": _cell(0.121, n), "b": _cell(0.098, n)},
                              "real.v.known_top1_observable": {"a": _cell(1.0, 30), "b": _cell(0.9667, 30)}},
            "strata": {label: {"real.v.unsupported": _entry(0.2, 0.18, n // 2, k // 2)} for label in strata},
+           "clusterings": {
+               "exact": {"n_clusters": k, "comparison": {"real.v.unsupported": _entry(0.196, 0.175, n, k),
+                                                         "real.v.known_top1": _entry(1.0, 1.0, 30, 30)}},
+               "sl15": {"n_clusters": k - 20, "comparison": {"real.v.unsupported": _entry(0.196, 0.175, n, k - 20),
+                                                             "real.v.known_top1": _entry(1.0, 1.0, 30, 28)}},
+               "junction_length": {"n_clusters": 31, "comparison": {
+                   "real.v.unsupported": _entry(0.196, 0.175, n, 31),
+                   "real.v.known_top1": _entry(1.0, 1.0, 30, 12)}}},
            "sensitivity": {
                "sd3": {"genes": SD3_GENES, "excluded_reads": 104,
                        "comparison": {"real.v.unsupported": _entry(0.219, 0.192, 73, 70)}},
@@ -620,6 +628,28 @@ def test_stratification_comes_after_the_headline():
     section = _section(md, "Stratification: protocol × isotype")
     labels = {row[1] for row in _table(section)[1:]}
     assert {"multiplex/IGHG", "multiplex/IGHM", "race/IGHG"} <= labels
+
+
+def test_the_primary_under_the_sl15_and_junction_length_clusterings():
+    summary = _summary()
+    md = real_report_markdown(summary)
+    sensitivity = _section(md, "Sensitivity")
+    part = sensitivity[sensitivity.index("Clustering"):]
+    assert "candidate primary for P3b" in part and "stress test" in part
+    rows = _table(part)
+    assert rows[0] == ["Scope", "Metric", "exact junction (primary)", "SL15", "donor × junction length (stress)"]
+    assert [row[:2] for row in rows[1:3]] == [["multiplex (W-97)", "R1"], ["multiplex (W-97)", "known_top1"]]
+    assert rows[1][3] == "-2.1 pp [-5.2, +1.0], not significant; 143 paired (119 clonotypes)"
+    assert rows[1][4].endswith("143 paired (31 clonotypes)")
+    # the bottom line says whether SL15 changes a verdict of the primary or of known_top1
+    headline = _section(md, "R1 headline (shared arm)")
+    assert "Clustered by SL15 instead of exact junctions, every verdict above holds" in headline
+    race = summary["pooled"]["protocols"]["race"]["comparisons"][0]
+    race["overall"]["real.v.unsupported"]["verdict"] = "a_better"
+    race["clusterings"]["exact"]["comparison"]["real.v.unsupported"]["verdict"] = "a_better"
+    headline = _section(real_report_markdown(summary), "R1 headline (shared arm)")
+    assert ("Clustered by SL15 instead of exact junctions, a verdict changes: race (SC-23) R1 igblast better → not "
+            "significant") in headline
 
 
 def test_the_tie_aware_metrics_are_shown_as_paired_means():

@@ -29,10 +29,14 @@ donor), overall, per stratum (protocol x isotype: IGHM, IGHG, other) and for two
 metrics: ``sd3``, without the reads whose top-1 V call, by either tool, is to a gene of the paper's novel alleles the
 cohort lacks (``workflow.real_steps.sensitivity_genes``), and ``gene_support``, the pair again in the gene-support
 variant (``pair_scores(..., variant="gene_support")``). The informational metrics are summarized beside it.
+With ``clusterings``, the pre-declared primary's metrics (``CLUSTERED``: R1 and known_top1) are compared again under
+each clustering (``clusterings``): ``exact`` junctions (the primary clonotypes), ``sl15`` (single linkage at 15%
+junction Hamming, the candidate primary for P3b) and ``junction_length`` (one cluster per donor and junction
+length, a stress test), each its own Holm family of those two metrics, on the same paired reads.
 Pooled comparisons (``pool``) join the donors' pairs with donor-prefixed read ids (``<donor>/<read id>``) and the union
-of their clusters, whose ids never collide, and their one-sided counts summed. An arm delta is a tool's genotype arm paired with its shared arm
-(``pair_scores(data, (tool, "shared"), (tool, "genotype"))``), compared the same way without strata, and only
-informational.
+of their clusters, whose ids never collide, and sum their one-sided counts. An arm delta is a tool's genotype arm
+paired with its shared arm (``pair_scores(data, (tool, "shared"), (tool, "genotype"))``), compared the same way
+without strata, and only informational.
 """
 from __future__ import annotations
 
@@ -59,7 +63,7 @@ from alignair_assay.real.metrics import (
     real_case_scores,
     shared_exclusions,
 )
-from alignair_assay.real.truth import RealTruth, clonotype_clusters
+from alignair_assay.real.truth import RealTruth, clonotype_clusters, junction_length_clusters, sl15_clusters
 from alignair_assay.stats import compare, summarize, to_dict
 from alignair_assay.workflow.real_steps import code_digest, digest, jsonl_header, write_json
 from alignair_assay.workflow.summary import ALPHA
@@ -72,6 +76,8 @@ V_R1 = ("real.v.unsupported", "real.v.unsupported_allele", "real.v.unsupported_g
 ISOTYPES = ("IGHM", "IGHG")
 # The ids of rows matching no read a run's matching names.
 EXTRA_EXAMPLES = 3
+# The pre-declared primary's metrics, compared again under each clustering of the reads.
+CLUSTERED = ("real.v.unsupported", "real.v.known_top1")
 # The R1 primary and the gene-support sensitivity variant: which row field holds the V class.
 VARIANTS = {"primary": "v", "gene_support": "v_support"}
 _EXCLUDED = "excluded:"
@@ -100,6 +106,12 @@ class DonorScoring:
     def strata(self) -> dict[str, str]:
         return {read_id: stratum(truth) for read_id, truth in self.truths.items()}
 
+    @property
+    def cluster_sets(self) -> dict[str, dict[str, str]]:
+        """The other clusterings of the reads (read id -> cluster): ``sl15`` and ``junction_length``."""
+        return {"sl15": sl15_clusters(self.truths.values()),
+                "junction_length": junction_length_clusters(self.truths.values())}
+
 
 @dataclass
 class PairScores:
@@ -114,6 +126,8 @@ class PairScores:
     excluded: dict[str, int]
     sensitivity_out: set[str]
     one_sided: dict[str, dict] = field(default_factory=dict)
+    # the other clusterings of the reads: name -> read id -> cluster
+    cluster_sets: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 def stratum(truth: RealTruth) -> str:
@@ -203,7 +217,8 @@ def pair_scores(data: DonorScoring, a: tuple[str, str], b: tuple[str, str], *,
                if _touches(data, rows_a[read_id]) or _touches(data, rows_b[read_id])}
     return PairScores(a=scores(data, rows_a, excluded), b=scores(data, rows_b, excluded), clusters=data.clusters,
                       strata=data.strata, excluded=counts, sensitivity_out=touched,
-                      one_sided={"a": one_sided(data, rows_a, rows_b), "b": one_sided(data, rows_b, rows_a)})
+                      one_sided={"a": one_sided(data, rows_a, rows_b), "b": one_sided(data, rows_b, rows_a)},
+                      cluster_sets=data.cluster_sets)
 
 
 def one_sided(data: DonorScoring, mine: Mapping[str, dict], other: Mapping[str, dict]) -> dict:
@@ -226,12 +241,13 @@ def one_sided(data: DonorScoring, mine: Mapping[str, dict], other: Mapping[str, 
 
 
 def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[str] | None = None,
-               gene_support: PairScores | None = None) -> dict:
+               gene_support: PairScores | None = None, clusterings: bool = False) -> dict:
     """The pair's comparison (the module docstring): ``n_reads``, ``n_clusters`` and ``multi_read_clusters`` of its
     reads, the reads ``excluded`` per segment, the ``overall`` comparison, the ``informational`` metrics' summaries,
     and with ``strata`` its ``strata``. ``sensitivity`` holds ``sd3`` with ``sensitivity`` (the SD3-only genes left
     out) and ``gene_support`` with ``gene_support`` (the same pair in the gene-support variant: its thresholds, the
-    reads it excludes per segment and the V R1 comparison)."""
+    reads it excludes per segment and the V R1 comparison). With ``clusterings``, ``clusterings`` holds the
+    ``CLUSTERED`` metrics' comparison under each clustering, with its cluster count (the module docstring)."""
     members = Counter(pair.clusters.get(read_id, read_id) for read_id in pair.a)
     result = {"n_reads": len(pair.a), "n_clusters": len(members),
               "multi_read_clusters": sum(count > 1 for count in members.values()), "excluded": dict(pair.excluded),
@@ -246,6 +262,10 @@ def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[s
         result.setdefault("sensitivity", {})["sd3"] = {
             "genes": sorted(sensitivity), "excluded_reads": len(pair.sensitivity_out),
             "comparison": _compare(*kept, pair.clusters, metrics=V_R1)}
+    if clusterings:
+        result["clusterings"] = {name: {"n_clusters": len({clusters.get(read_id, read_id) for read_id in pair.a}),
+                                        "comparison": _compare(pair.a, pair.b, clusters, metrics=CLUSTERED)}
+                                 for name, clusters in (("exact", pair.clusters), *pair.cluster_sets.items())}
     if gene_support is not None:
         result.setdefault("sensitivity", {})["gene_support"] = {
             "thresholds": {"min_clonotypes": MIN_CLONOTYPES, "min_naive_clonotypes": MIN_NAIVE_CLONOTYPES},
@@ -256,11 +276,14 @@ def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[s
 
 def pool(pairs: Mapping[str, PairScores]) -> PairScores:
     """The pairs of several donors (donor -> pair) as one: read ids prefixed ``<donor>/``, clusters joined (their ids
-    carry the donor), exclusions and one-sided counts summed."""
+    carry the donor, as do the other clusterings'), exclusions and one-sided counts summed."""
     joined = PairScores(a={}, b={}, clusters={}, strata={}, excluded=Counter(), sensitivity_out=set(),
                         one_sided={side: {"reads": 0, "reasons": Counter(), "documented": 0, "documented_wrong": 0}
                                    for side in ("a", "b")})
     for donor, pair in pairs.items():
+        for name, clusters in pair.cluster_sets.items():
+            joined.cluster_sets.setdefault(name, {}).update(
+                {f"{donor}/{read_id}": cluster for read_id, cluster in clusters.items()})
         for side, counts in pair.one_sided.items():
             total = joined.one_sided[side]
             for key in ("reads", "documented", "documented_wrong"):
