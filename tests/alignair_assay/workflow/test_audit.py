@@ -248,6 +248,26 @@ def test_two_builds_on_one_genairr_must_be_byte_identical(tmp_path, monkeypatch)
     assert found["status"] == "fail" and "reads" in found["reason"] and "cases" not in found["reason"]
 
 
+@pytest.mark.parametrize("lost, where", [(("reads",), "second"), (("cases", "truth", "reads"), "both")])
+def test_two_builds_without_their_cases_truth_and_reads_fail(tmp_path, monkeypatch, lost, where):
+    # cases, truth and reads are required in both builds (donors stays optional): a build missing one compared less,
+    # and two builds missing all three compared nothing
+    builds = []
+
+    def losing(name, layout, **kwargs):
+        built = build_suite(name, layout, **kwargs)
+        builds.append(name)
+        if where == "both" or len(builds) == 2:
+            for label in lost:
+                getattr(layout, label)(name).unlink()
+        return built
+
+    monkeypatch.setattr(audit, "build_suite", losing)
+    found = audit.sim_reproducible(_config(tmp_path), RunLayout(tmp_path / "one"), RunLayout(tmp_path / "two"))
+    assert found["status"] == "fail" and all(label in found["reason"] for label in lost), found["reason"]
+    assert "missing" in found["reason"]
+
+
 def test_a_genairr_that_moved_during_the_builds_skips_the_comparison(tmp_path, monkeypatch):
     digests = iter(["one", "one", "two"])  # edited between the second build and the last look
     monkeypatch.setattr(audit, "genairr_digest", lambda: next(digests))
@@ -395,9 +415,18 @@ def _rewrite(path: Path, edit) -> None:
     write_jsonl(path, rows, header=header)
 
 
+def _snapshot(root: Path) -> dict[str, str]:
+    """Every file under ``root`` by relative path, with its SHA-256."""
+    from alignair_assay.core.provenance import sha256_file
+
+    return {path.relative_to(root).as_posix(): sha256_file(path) for path in sorted(root.rglob("*")) if path.is_file()}
+
+
 def test_a_real_donors_truth_and_scores_recompute_to_the_stored_ones(tmp_path, stored_real):
     cfg = _config(tmp_path)
+    before = _snapshot(stored_real.root)
     found = audit.real_reproducible(cfg, stored_real, RunLayout(tmp_path / "scratch"))
+    assert _snapshot(stored_real.root) == before  # the stored run is only read: every file as it was, none added
     assert found["status"] == "pass" and found["n"] == 16, found["reason"]
     files = found["evidence"]["files"]
     assert set(files) == {"truth", "shared/oracle", "shared/igblast", "genotype/alignair-api"}
@@ -406,7 +435,7 @@ def test_a_real_donors_truth_and_scores_recompute_to_the_stored_ones(tmp_path, s
     assert all(entry["identical"] and not entry["code_moved"] for entry in files.values())
     assert not any(entry["file_identical"] for entry in files.values())  # the stored files carry a gzip time
     assert found["evidence"]["oracle_tsv_identical"] and found["evidence"]["self_check_identical"]
-    assert not (tmp_path / "real" / "audit").exists()  # the stored run is only read
+    assert found["evidence"]["runs_compared"] == 2
 
 
 def test_scores_recomputed_by_moved_code_compare_by_content(tmp_path, stored_real):
@@ -423,7 +452,8 @@ def test_scores_recomputed_by_moved_code_compare_by_content(tmp_path, stored_rea
     assert found["evidence"]["code_moved"] == ["genotype/alignair-api"]
 
 
-@pytest.mark.parametrize("target", ["scores", "input", "truth", "self_check"])
+@pytest.mark.parametrize("target", ["scores", "input", "truth", "self_check", "oracle_tsv", "missing_scores",
+                                    "no_runs"])
 def test_a_stored_record_that_does_not_recompute_fails(tmp_path, stored_real, target):
     def flip(header, rows):
         rows[0]["v"] = "unsupported_allele" if rows[0]["v"] != "unsupported_allele" else "supported"
@@ -440,11 +470,23 @@ def test_a_stored_record_that_does_not_recompute_fails(tmp_path, stored_real, ta
     elif target == "truth":
         _rewrite(stored_real.real_truth(DONOR), lambda header, rows: rows.reverse())
         named = "truth"
-    else:
+    elif target == "self_check":
         summary = json.loads(stored_real.real_summary_json().read_text())
         summary["donors"][DONOR]["oracle_self_check"]["scored"] += 1
         write_json(stored_real.real_summary_json(), summary)
         named = "self-check"
+    elif target == "oracle_tsv":  # the pipeline oracle's AIRR TSV, which its scores are read from
+        path = stored_real.real_predictions("oracle", DONOR, "shared")
+        path.write_text(path.read_text().replace("IGHVF1-G1*01", "IGHVF1-G1*02", 1))
+        named = "oracle TSV"
+    elif target == "missing_scores":  # an ok run whose stored scores are gone is not skipped
+        stored_real.real_scores(DONOR, "shared", "igblast").unlink()
+        named = "shared/igblast"
+    else:  # no ok run: nothing but the truth and the oracle would be compared
+        summary = json.loads(stored_real.real_summary_json().read_text())
+        summary["donors"][DONOR]["runs"] = {"shared": {"igblast": {"status": "failed"}}}
+        write_json(stored_real.real_summary_json(), summary)
+        named = "no run's scores"
     found = audit.real_reproducible(_config(tmp_path), stored_real, RunLayout(tmp_path / "scratch"))
     assert found["status"] == "fail" and named in found["reason"], found["reason"]
 

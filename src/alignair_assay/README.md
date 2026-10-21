@@ -211,8 +211,9 @@ PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_ge
   skipped and `n` the reads or cases it rests on:
   - self-checks: the stored run's oracle is perfect on every suite, and so is a fresh dev build's at this code; every
     dev donor's real self-check passed (pipeline path and decoys); truth-health flags and stale stored builds warn;
-  - reproducibility: S1 built twice at scale 0.02 (dev) gives byte-identical cases, truth and reads (skipped when
-    GenAIRR moved during the builds); one real dev donor's truth and every run's scores, recomputed from the stored
+  - reproducibility: S1 built twice at scale 0.02 (dev) gives byte-identical cases, truth and reads, each required
+    in both builds (skipped when GenAIRR moved during the builds); one real dev donor's truth, self-check and every
+    ok run's scores (a missing scores file fails, and at least one run must be compared), recomputed from the stored
     reads, genotype and predictions, equal the stored ones in content: every row, and every input (a stored file
     written before JSON-lines gzip was reproducible carries a time, so its bytes are reported, not required);
   - null comparisons, the checkpoint under labels `a` and `b`: `diagnose` (the file against itself in memory: two

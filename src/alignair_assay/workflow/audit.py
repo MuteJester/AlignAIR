@@ -99,8 +99,9 @@ CHECKS = ("self_check.sim_oracle", "self_check.sim_oracle_current", "self_check.
 # The audited checkpoint's label (``--checkpoint base=PATH``) and the two labels it runs under in a null comparison.
 CHECKPOINT_LABEL = "base"
 NULL_LABELS = ("a", "b")
-# Reproducibility: the suite built twice, and its scale.
+# Reproducibility: the suite built twice, its scale, and the files both builds must hold (donors.json only with donors).
 REPRO_SUITE, REPRO_SCALE = "S1", 0.02
+REPRO_FILES = ("cases", "truth", "reads")
 # The null ``all`` comparison's suites and scale; ``diagnose``'s; ``real``'s donor and cap.
 NULL_SUITES, NULL_SCALE = ("S1",), 0.05
 DIAGNOSE_SUITES, DIAGNOSE_SCALE = ("S1", "S3"), 0.05
@@ -451,7 +452,8 @@ def genairr_identity() -> dict:
 
 def sim_reproducible(cfg: AuditConfig, first: RunLayout, second: RunLayout) -> dict:
     """``reproducible.sim_build``: ``cfg.repro_suite`` built twice on the dev split at ``cfg.repro_scale`` (in
-    ``first`` and ``second``); its cases, truth, reads and donors must be byte-identical. ``skipped (GenAIRR
+    ``first`` and ``second``); its cases, truth and reads (``REPRO_FILES``, required in both builds) and donors (when
+    either build has them) must be byte-identical. ``skipped (GenAIRR
     moved)`` when GenAIRR's source changed before, between or after the builds, or the builds record another
     GenAIRR (the user edits it live): then nothing is compared."""
     name, suite = "reproducible.sim_build", cfg.repro_suite
@@ -468,19 +470,25 @@ def sim_reproducible(cfg: AuditConfig, first: RunLayout, second: RunLayout) -> d
         return check(name, "skipped", 0, evidence, "skipped (GenAIRR moved): GenAIRR's source changed during the "
                                                    "builds, so they need not match")
     files = {"cases": RunLayout.cases, "truth": RunLayout.truth, "reads": RunLayout.reads, "donors": RunLayout.donors}
-    compared = {}
+    compared, missing = {}, []
     for label, path in files.items():
         a, b = path(first, suite), path(second, suite)
+        if label in REPRO_FILES:
+            missing += [f"{label} ({which})" for which, found in (("first", a), ("second", b)) if not found.is_file()]
         if not a.is_file() and not b.is_file():
             continue
         compared[label] = {"first": sha256_file(a) if a.is_file() else None,
                            "second": sha256_file(b) if b.is_file() else None}
     differ = [label for label, found in compared.items() if found["first"] != found["second"]]
     n = builds[0]["n_cases"]
-    evidence.update(files=compared, identity_same=builds[0]["identity"] == builds[1]["identity"],
+    evidence.update(files=compared, missing=missing, identity_same=builds[0]["identity"] == builds[1]["identity"],
                     summary=(f"{suite} at scale {cfg.repro_scale} built twice ({n} cases): "
-                             + (f"{', '.join(differ)} differ" if differ else
+                             + (f"{', '.join(missing)} missing" if missing else
+                                f"{', '.join(differ)} differ" if differ else
                                 f"{', '.join(compared)} byte-identical")))
+    if missing:
+        return check(name, "fail", n, evidence, f"the builds of {suite} are missing {', '.join(missing)}: "
+                                                f"{', '.join(REPRO_FILES)} are compared in both builds")
     if differ or n != builds[1]["n_cases"]:
         return check(name, "fail", n, evidence, f"two builds of {suite} on one GenAIRR differ in {', '.join(differ)}: "
                                                 "the suite generator or its truth is not deterministic")
@@ -563,23 +571,31 @@ def real_reproducible(cfg: AuditConfig, real: RunLayout, scratch: RunLayout) -> 
                                                 scratch.real_scores(donor, "shared", ORACLE), aliases=aliases)
     oracle_tsv = [sha256_file(layout.real_predictions(ORACLE, donor, "shared")) for layout in (real, scratch)]
     self_same = _comparable(redone) == _comparable(block.get("oracle_self_check") or {})
+    missing, runs_compared = [], 0
     for arm, runs in (block.get("runs") or {}).items():
         for tool, run in runs.items():
+            if run.get("status") != "ok":
+                continue
             stored = real.real_scores(donor, arm, tool)
-            if run.get("status") != "ok" or not stored.is_file():
+            if not stored.is_file():
+                missing.append(f"{arm}/{tool}")  # an ok run is scored; a stored run without its scores is broken
                 continue
             _copy(real.real_predictions(tool, donor, arm), scratch.real_predictions(tool, donor, arm))
             recorded = ((read_json(real.real_run_json(tool, donor, arm)) or {}).get("provenance") or {}).get(
                 "predictions_sha256")
             real_score.step_scores(data, tool, arm, scratch, {**common, "predictions_sha256": recorded})
             files[f"{arm}/{tool}"] = compare_records(stored, scratch.real_scores(donor, arm, tool), aliases=aliases)
+            runs_compared += 1
     differ = [label for label, found in files.items() if not found["identical"]]
     differ += [] if oracle_tsv[0] == oracle_tsv[1] else ["oracle TSV"]
     differ += [] if self_same else ["self-check"]
+    differ += [f"{label} (its stored scores are missing)" for label in missing]
+    differ += [] if runs_compared else ["no run's scores (no ok run was compared)"]
     moved = [label for label, found in files.items() if found["code_moved"]]
     evidence = {"donor": donor, "files": files, "oracle_tsv_identical": oracle_tsv[0] == oracle_tsv[1],
-                "self_check_identical": self_same, "code_moved": moved,
-                "summary": (f"{donor}: truth of {len(truths)} reads, its self-check and {len(files) - 2} runs' scores "
+                "self_check_identical": self_same, "code_moved": moved, "runs_compared": runs_compared,
+                "missing_scores": missing,
+                "summary": (f"{donor}: truth of {len(truths)} reads, its self-check and {runs_compared} runs' scores "
                             "recomputed: " + (f"{', '.join(differ)} differ" if differ else
                                               "every one identical in content")
                             + (f" (the code computing {', '.join(moved)} moved since: compared without its digest)"
