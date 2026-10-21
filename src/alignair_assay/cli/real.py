@@ -69,6 +69,6 @@ def run(args) -> int:
         print(f"error: {donor}'s truth self-check failed: the oracle's known answers are not all right and "
               "supported", file=sys.stderr)
     for donor in summary["oracle_unchecked"]:
-        print(f"warning: {donor}'s truth self-check is unchecked: no oracle read is scored (every one is excluded, "
-              "as the gene support thresholds do on a small cap)", file=sys.stderr)
+        print(f"warning: {donor}'s truth self-check is unchecked: no oracle read is scored (the reads have no "
+              "documented known answer, or every one is excluded, e.g. not_captured)", file=sys.stderr)
     return 2 if summary["stopped_donors"] or summary["failed_runs"] or summary["oracle_failures"] else 0

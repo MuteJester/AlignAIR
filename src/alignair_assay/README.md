@@ -535,8 +535,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   without its options, a missing cohort file, Docker missing or a pinned image with another digest, and a run
   directory made for another configuration (without `--force`) exit with status 2 before any work; a donor stopped
   by its preprocessing, a failed tool run or a failed truth self-check exit with status 2 once the summary is
-  written; an unchecked self-check (no oracle read scored, as on a small `--cap`, where no gene reaches the support
-  thresholds) is a warning. `--alignair-checkpoint` defaults to the user's cached file of `--alignair-model`, the
+  written; an unchecked self-check (no oracle read scored: no documented known answer among the reads, or every one
+  excluded, e.g. `not_captured`) is a warning. `--alignair-checkpoint` defaults to the user's cached file of `--alignair-model`, the
   image's model. `--stop-after preprocess` fetches, genotypes and preprocesses each donor (the protocol classifier's
   verdict included) and scores nothing, so it takes any pilot donor, test donors without `--split test` included
   (each donor's split is recorded), and needs no tool option; scoring donors in the same run directory afterwards is

@@ -638,7 +638,8 @@ def test_the_oracle_self_check_is_judged(tmp_path, fakes, monkeypatch, capsys):
             cfg.alignair_checkpoint]
     capsys.readouterr()
     assert main(args) == 0
-    assert "W-97's truth self-check is unchecked" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "W-97's truth self-check is unchecked" in err and "not_captured" in err and "threshold" not in err
     # a self-check whose scored oracle reads are not all supported fails, and the command says so
     from alignair_assay.workflow import real as real_module
 

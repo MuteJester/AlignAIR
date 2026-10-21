@@ -53,8 +53,8 @@ run), the sensitivity analysis's genes, per donor (``donors``) its steps' status
 genotype, truth yields, oracle self-check, runs (with AlignAIR's AIRR assembly counts), each run's own R1 (``tools``),
 the comparisons and arm deltas, and the same pooled over the donors scored (``pooled``), with the stopped donors,
 failed runs, and failed and unchecked self-checks listed. The oracle self-check (``real.metrics.oracle_self_check``)
-is ``passed``, ``failed`` (the truth contradicts itself) or ``unchecked`` (no oracle read scored: on a small cap the
-gene support thresholds exclude every known gene) (``oracle_status``).
+is ``passed``, ``failed`` (the truth contradicts itself) or ``unchecked`` (no oracle read scored: the donor's reads
+have no documented known answer, or every one is excluded, e.g. ``not_captured``) (``oracle_status``).
 """
 from __future__ import annotations
 
@@ -378,7 +378,8 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
 def oracle_status(check: dict) -> str:
     """The verdict of a ``real.metrics.oracle_self_check``: ``passed``; ``failed`` when a known answer's top-1 or gene
     is wrong, or a scored oracle read is not supported (the truth contradicts itself); ``unchecked`` when no oracle
-    read is scored (no known answer, or every one excluded, e.g. by the gene support thresholds on a small cap)."""
+    read is scored: no documented known answer, or every one excluded (e.g. ``not_captured``). The R1 primary applies
+    no gene-support threshold, so the thresholds never make it unchecked."""
     if check.get("passed"):
         return "passed"
     known_right = all(check.get(key) in (None, 1.0) for key in ("known_top1", "known_gene_top1"))
