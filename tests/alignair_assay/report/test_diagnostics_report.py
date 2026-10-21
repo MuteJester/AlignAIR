@@ -413,6 +413,38 @@ def test_the_comparison_leads_the_summary_page():
     assert "No end-to-end metric was compared" in _section(heads_only, AGAINST_SECTION)
 
 
+def _unpaired(a, b):
+    """A ``stats.compare`` entry of a metric no read pairs (n_paired 0): no paired mean, no Δ, a tie by default."""
+    return {**_paired(a, b, test="too_few_pairs", n=0, k=0, p=1.0), "mean_a_paired": None, "mean_b_paired": None,
+            "delta": None, "wins": 0, "losses": 0, "ties": 0, "ci": None, "ci95": None}
+
+
+def test_the_summary_shows_paired_n_and_never_calls_an_unpaired_metric_a_tie():
+    # Head boundaries pair only the reads both models orient as the truth: fewer reads than the suite's 100 show their
+    # n, none is "not paired" (never a tie); the orientation head leads the headline beside the end-to-end metrics.
+    against = _against()
+    heads = against["suites"]["S1"]["heads"]
+    heads["metrics"] += ["head.v.end_exact.soft", "head.v.end_exact.argmax", "head.orientation.correct"]
+    heads["comparison"].update({"head.v.start_exact.argmax": _paired(0.97, 0.97, n=80),
+                                "head.v.end_exact.soft": _unpaired(0.9, 0.9),
+                                "head.v.end_exact.argmax": _unpaired(0.9, 0.9),
+                                "head.orientation.correct": _paired(0.99, 0.98, n=100)})
+    against["suites"]["S1"]["baseline"]["comparison"]["clone_key.exact"] = _paired(0.5, 0.5, n=90, k=5)
+    report = _report({"S1": _suite()}, against=against)
+    headline = report["summary"]["against"]["suites"]["S1"]["headline"]
+    assert "head.orientation.correct" in headline and headline["head.orientation.correct"]["family"] == "heads"
+    section = _section(diagnostics_markdown(report), AGAINST_SECTION)
+    assert "| S1 | head.orientation.correct | 99.0% | 98.0% | -1.0 pp |" in section
+    assert "| S1 | clone_key.exact | 50.0% | 50.0% | +0.0 pp (n=90) |" in section
+    assert "| S1 | junction.nt_exact | 60.0% | 55.0% | -5.0 pp |" in section  # all 100 reads paired: no n
+    assert "| S1 | **+5.0** / +0.0 (n=80) | not paired / not paired | — / — |" in section
+    assert "| tie |" not in section.split("not paired")[-1]  # nothing unpaired is called a tie
+    detail = _section(against_markdown(report, "S1"), AGAINST_SECTIONS[1])
+    assert "| head.v.end_exact.soft |" in detail and detail.count("| not paired |") == 2
+    same = _section(diagnostics_markdown(_report({"S1": _suite()}, against=_against(same=True))), AGAINST_SECTION)
+    assert "another file of the same weights (other bytes)" in same and "other weights" not in same
+
+
 def test_the_comparison_detail_of_a_suite():
     report = _report({"S1": _suite()}, against=_against())
     md = against_markdown(report, "S1")

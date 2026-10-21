@@ -13,6 +13,8 @@ from alignair_assay.runners.reference import ensure_shared_reference
 from alignair_assay.scoring.pipeline import truth_reference
 
 ARMS = ("shared", "genotype")
+# Where each checkpoint tool's variants (``<tool>@<label>``, with ``--checkpoint LABEL=PATH``) run instead.
+VARIANT_COMMANDS = {"alignair-local": "all", "alignair-api": "all or real"}
 
 
 def register(sub) -> None:
@@ -41,7 +43,8 @@ def run(args) -> int:
     """Run the tool on every named suite and print one line per run; 2 when any run failed.
 
     Every input is checked first: the tool name (a plain tool: a checkpoint variant ``<tool>@<label>`` needs the
-    ``--checkpoint LABEL=PATH`` that ``all`` and ``real`` take) and options, that each suite is built against one
+    ``--checkpoint LABEL=PATH`` that ``all`` takes, and ``real`` for alignair-api's: ``VARIANT_COMMANDS``) and
+    options, that each suite is built against one
     truth reference, and, for the genotype arm, that each suite has donors. The run directory and the tool's paths are
     made absolute, so the recorded commands can be re-run. The shared reference is then verified against (or
     written from) that truth reference, so a mismatched reference is refused before anything runs. The tool is
@@ -55,8 +58,10 @@ def run(args) -> int:
         raise ValueError(f"--threads must be at least 1, got {args.threads}")
     if args.batch_size < 1:
         raise ValueError(f"--batch-size must be at least 1, got {args.batch_size}")
-    if parse_tool(args.tool)[1] is not None:
-        raise ValueError(f"tool {args.tool!r}: run takes plain tools; use all or real for checkpoint variants")
+    base, label = parse_tool(args.tool)
+    if label is not None:
+        raise ValueError(f"tool {args.tool!r}: run takes plain tools; run {base} checkpoint variants with "
+                         f"{VARIANT_COMMANDS.get(base, 'all')}")
     layout = RunLayout(absolute_path(args.run_dir))
     runner = make_runner(args.tool, RunnerOptions(
         igblast_dir=args.igblast_dir, threads=args.threads, cpus=args.cpus, alignair_image=args.image,

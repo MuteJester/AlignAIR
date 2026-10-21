@@ -254,10 +254,12 @@ def test_checkpoint_option_parses_label_and_path(tmp_path, monkeypatch):
 def test_run_takes_plain_tools_only(tmp_path, capsys):
     # run has no --checkpoint LABEL=PATH, so a variant is refused with where to run one instead
     checkpoint = _checkpoint(tmp_path / "model.alignair")
-    for tool in ("alignair-api@x", "alignair-local@x"):
+    # where each variant runs: alignair-local's in all only, alignair-api's in all or real
+    for tool, where in (("alignair-api@x", "all or real"), ("alignair-local@x", "all")):
         assert main(["run", "--run-dir", str(tmp_path / "run"), "--tool", tool, "--suites", "S0", "--checkpoint",
                      str(checkpoint)]) == 2
         err = capsys.readouterr().err
-        assert f"tool {tool!r}: run takes plain tools; use all or real for checkpoint variants" in err, err
+        base = tool.partition("@")[0]
+        assert f"tool {tool!r}: run takes plain tools; run {base} checkpoint variants with {where}" in err, err
         assert "x=PATH" not in err
     assert not (tmp_path / "run").exists()

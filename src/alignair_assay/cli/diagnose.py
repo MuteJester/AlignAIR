@@ -7,7 +7,7 @@ from pathlib import Path
 
 from alignair_assay.cli.common import comma_list, tool_path
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.report.diagnostics import AGAINST_HEADLINE, FAMILY_LABELS
+from alignair_assay.report.diagnostics import AGAINST_FAMILIES, AGAINST_HEADLINE, AGAINST_VERDICTS, FAMILY_LABELS
 from alignair_assay.report.markdown import format_value
 from alignair_assay.runners.base import absolute_path
 
@@ -99,7 +99,8 @@ def run(args) -> int:
 
 def _print_against(result, layout: RunLayout) -> None:
     """The comparison with the baseline: which model, then per suite the headline deltas (this − baseline), the
-    significant metrics, the reads fixed and broken and the detail file."""
+    significant metrics with their direction (this better, baseline better), the reads fixed and broken and the
+    detail file."""
     summary = result.against["summary"]
     other = summary["baseline"]
     same = " (the same model key: one record compared with itself)" if summary["same_model"] else ""
@@ -111,6 +112,10 @@ def _print_against(result, layout: RunLayout) -> None:
                            for metric in AGAINST_HEADLINE if (entry := suite["headline"].get(metric)))
         reads = ", ".join(f"{FAMILY_LABELS[family]} fixed {counts['fixed']}, broken {counts['broken']}"
                           for family, counts in suite["reads"].items())
-        significant = ", ".join(suite["significant"]) or "none"
+        verdicts = {metric: entry.get("verdict") for family in AGAINST_FAMILIES
+                    for metric, entry in ((result.against["suites"][name].get(family) or {}).get("comparison")
+                                          or {}).items()}
+        significant = ", ".join(f"{metric} ({AGAINST_VERDICTS.get(verdicts.get(metric), verdicts.get(metric))})"
+                                for metric in suite["significant"]) or "none"
         print(f"{name} against {other}: {deltas or 'no end-to-end metric'}; significant: {significant}; reads "
               f"{reads}; {layout.diagnostics_against_md(result.model_key, name, other)}")

@@ -52,12 +52,16 @@ AGAINST_SECTIONS = ("End-to-end metrics", "Head metrics", "Reads fixed and broke
 # The compared families, end-to-end first, and their names in the report.
 AGAINST_FAMILIES = ("baseline", "heads")
 FAMILY_LABELS = {"baseline": "end-to-end", "heads": "heads"}
-# The summary's headline end-to-end metrics and its boundary exact rates (both decoders).
-AGAINST_HEADLINE = ("clone_key.exact", "junction.nt_exact", "v.top1_in_set", "d.top1_in_set", "j.top1_in_set")
+# The summary's headline metrics (the end-to-end ones, then the orientation head) and its boundary exact rates (both
+# decoders).
+AGAINST_HEADLINE = ("clone_key.exact", "junction.nt_exact", "v.top1_in_set", "d.top1_in_set", "j.top1_in_set",
+                    "head.orientation.correct")
 AGAINST_BOUNDARIES = tuple(f"head.{g}.{edge}_exact.{decoder}" for g in ("v", "d", "j") for edge in ("start", "end")
                            for decoder in ("soft", "argmax"))
-# A comparison's verdict (``stats.compare``'s a is the baseline, b this model).
+# A comparison's verdict (``stats.compare``'s a is the baseline, b this model), and a metric no read pairs (the head
+# boundaries pair only the reads both models orient as the truth): never a tie.
 AGAINST_VERDICTS = {"b_better": "this better", "a_better": "baseline better", "tie_or_inconclusive": "tie"}
+NOT_PAIRED = "not paired"
 # The end-to-end metrics the summary traces through the stages.
 SUMMARY_METRICS = ("clone_key.exact", "junction.nt_exact")
 # The cumulative chain's stages, in order, and their summary column names.
@@ -454,7 +458,8 @@ def _against_section(summary: dict) -> list[str]:
     lines = [f"Against the baseline `{key}` ({against['source'] or 'source not recorded'}). {_AGAINST_NOTE}"]
     if against["same_model"]:
         lines += ["", "Both are the same model key, so this compares one record with itself: every Δ is 0. Compare "
-                      "with the model in memory, or another file of other weights, to diagnose it twice."]
+                      "with the model in memory, or another file of the same weights (other bytes), to diagnose it "
+                      "twice."]
     if not against["replay_verified"]:
         lines += ["", "**The baseline was diagnosed with an unverified replay.**"]
     rows = []
@@ -462,14 +467,15 @@ def _against_section(summary: dict) -> list[str]:
         for metric in AGAINST_HEADLINE:
             entry = suite["headline"].get(metric)
             if entry:
+                delta = format_value(metric, entry["delta"], delta=True) + _paired_n(entry, suite.get("cases"))
                 rows.append([name, metric, format_value(metric, entry["mean_baseline"]),
-                             format_value(metric, entry["mean_this"]), format_value(metric, entry["delta"], delta=True),
-                             _ci(metric, entry["ci95"]), _against_verdict(entry), _fixed_broken(entry)])
+                             format_value(metric, entry["mean_this"]), delta, _ci(metric, entry["ci95"]),
+                             _against_verdict(entry), _fixed_broken(entry)])
     header = ["Suite", "Metric", "Baseline", "This model", "Δ (this − baseline)", "95% CI", "Verdict", "Fixed / broken"]
     lines += ["", *(markdown_table(header, rows) if rows else
                     ["No end-to-end metric was compared (no variant was run)."])]
     columns = [(g, edge) for g in _GENES for edge in _EDGES]
-    rows = [[name, *(_boundary_delta(suite["headline"], g, edge) for g, edge in columns)]
+    rows = [[name, *(_boundary_delta(suite["headline"], g, edge, suite.get("cases")) for g, edge in columns)]
             for name, suite in against["suites"].items()]
     lines += ["", _AGAINST_BOUNDARIES_NOTE, "",
               *markdown_table(["Suite", *(f"{g.upper()} {edge}" for g, edge in columns)], rows)]
@@ -485,8 +491,18 @@ def _against_section(summary: dict) -> list[str]:
 
 
 def _against_verdict(entry: dict) -> str:
+    """The verdict from this model's side; ``NOT_PAIRED`` when no read pairs (never a tie)."""
+    if entry.get("n_paired") == 0:
+        return NOT_PAIRED
     verdict = AGAINST_VERDICTS.get(entry.get("verdict"), entry.get("verdict") or MISSING)
     return f"{verdict} (too few clusters)" if entry.get("test") == "too_few_clusters" else verdict
+
+
+def _paired_n(entry: dict, cases) -> str:
+    """`` (n=<paired>)`` when the metric pairs fewer reads than the suite's ``cases`` (none when it pairs them all,
+    or the count is unknown)."""
+    n = entry.get("n_paired")
+    return f" (n={n})" if isinstance(n, int) and isinstance(cases, int) and n < cases else ""
 
 
 def _fixed_broken(entry: dict) -> str:
@@ -495,15 +511,21 @@ def _fixed_broken(entry: dict) -> str:
     return f"{entry['fixed']} / {entry['broken']}"
 
 
-def _boundary_delta(headline: dict, g: str, edge: str) -> str:
+def _boundary_delta(headline: dict, g: str, edge: str, cases) -> str:
+    """One edge's Δ under each decoder, soft / argmax, in pp (bold when significant), with the paired n when below the
+    suite's ``cases``; ``NOT_PAIRED`` when no read pairs."""
     cells = []
     for decoder in ("soft", "argmax"):
         entry = headline.get(f"head.{g}.{edge}_exact.{decoder}")
+        if entry and entry.get("n_paired") == 0:
+            cells.append(NOT_PAIRED)
+            continue
         if not entry or entry.get("delta") is None:
             cells.append(MISSING)
             continue
         text = f"{100 * entry['delta']:+.1f}"
-        cells.append(f"**{text}**" if entry.get("verdict") in ("a_better", "b_better") else text)
+        text = f"**{text}**" if entry.get("verdict") in ("a_better", "b_better") else text
+        cells.append(text + _paired_n(entry, cases))
     return " / ".join(cells)
 
 
