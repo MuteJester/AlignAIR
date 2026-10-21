@@ -43,10 +43,12 @@ and at least one passed (``verdict``): an audit that checked nothing never passe
   - ``band.real_known``: IgBLAST's ``real.v.known_top1`` and ``real.v.ref_known_top1`` on the shared arm at least
     ``KNOWN_FLOOR`` on every dev donor of the stored ``real`` run;
   - ``band.sim_v_top1``: its S1 ``v.top1_in_set`` in the stored ``all`` run within ``V_TOP1_BAND`` of
-    ``V_TOP1_TARGET``;
+    ``V_TOP1_TARGET`` (ruling A1: read as recorded);
+  - ``band.sim_v_top1_current`` (informational): the same metric at this code, IgBLAST run now on a fresh dev S1,
+    within ``V_TOP1_CURRENT_BAND`` of ``V_TOP1_TARGET``; ``warn`` outside it or on an error, never a failure;
   - ``band.speed`` (informational): IgBLAST's steady throughput, timed now on a fresh dev S1 by the speed protocol,
     within ``SPEED_BAND`` of the stored run's measurement; ``skipped (load)`` when the 1-minute load stays above
-    ``SPEED_LOAD``, ``warn`` outside the band, never a failure.
+    ``SPEED_LOAD``, ``warn`` outside the band or on an error, never a failure.
 
 **Read only.** The stored runs are only read: the test-split ``all`` run for its computed oracle and IgBLAST numbers
 (it is never run or scored again), the ``real`` run for its records. Anything re-run goes into a fresh
@@ -58,6 +60,7 @@ import dataclasses
 import gzip
 import hashlib
 import json
+import math
 import os
 import platform
 import shutil
@@ -75,14 +78,19 @@ from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.real.fetch import PILOT_SPLIT
 from alignair_assay.real.genotype import genotype_from_json, merge_identical
 from alignair_assay.report.audit import audit_markdown
-from alignair_assay.runners.base import absolute_path, read_run_json
-from alignair_assay.scoring.pipeline import truth_reference
+from alignair_assay.runners import make_runner
+from alignair_assay.runners.base import RunnerOptions, absolute_path, read_run_json, run_suite
+from alignair_assay.runners.reference import ensure_shared_reference
+from alignair_assay.scoring.pipeline import load_truth, truth_reference
 from alignair_assay.suites import get_suite
+from alignair_assay.suites.donors import read_genotypes
 from alignair_assay.suites.engine import DEFAULT_SEED
+from alignair_assay.truth.io import read_truth_header
 from alignair_assay.workflow import real_score, real_steps
 from alignair_assay.workflow.build import GENAIRR_IDENTITY, build_changes, build_suite
 from alignair_assay.workflow.orchestrate import RunConfig, read_run_config, run_all
 from alignair_assay.workflow.real import RealConfig, donor_scoring, run_real, scoring_inputs, self_check
+from alignair_assay.workflow.scoring import score_file
 from alignair_assay.workflow.speed import run_speed
 from alignair_assay.workflow.summary import ORACLE, oracle_check
 
@@ -95,9 +103,9 @@ GROUPS = {"self_check": "Self-checks", "reproducible": "Reproducibility", "null"
 CHECKS = ("self_check.sim_oracle", "self_check.sim_oracle_current", "self_check.sim_staleness",
           "self_check.real_oracle", "self_check.real_truth_health", "reproducible.sim_build",
           "reproducible.real_scores", "null.diagnose", "null.all", "null.real", "band.real_known",
-          "band.sim_v_top1", "band.speed")
+          "band.sim_v_top1", "band.sim_v_top1_current", "band.speed")
 # The informational checks: a warning at worst, never a failure, even when they raise.
-INFORMATIONAL = ("band.speed",)
+INFORMATIONAL = ("band.speed", "band.sim_v_top1_current")
 # The audited checkpoint's label (``--checkpoint base=PATH``) and the two labels it runs under in a null comparison.
 CHECKPOINT_LABEL = "base"
 NULL_LABELS = ("a", "b")
@@ -113,6 +121,9 @@ KNOWN_METRICS = ("real.v.known_top1", "real.v.ref_known_top1")
 KNOWN_FLOOR = 0.99
 V_TOP1_SUITE, V_TOP1_METRIC = "S1", "v.top1_in_set"
 V_TOP1_TARGET, V_TOP1_BAND = 0.979, 0.01
+# IgBLAST's S1 V top-1 at this code (informational): its band around the same target, and the scale of the dev S1 it
+# is run on when the speed check built none.
+V_TOP1_CURRENT_BAND, V_TOP1_CURRENT_SCALE = 0.015, 0.2
 IGBLAST = "igblast"
 SPEED_BAND = 0.15
 # The 1-minute load above which the machine is too busy to time; how long to wait for it to settle, polled how often.
@@ -141,7 +152,8 @@ class AuditConfig:
     IgBLAST (``skip_speed``), the IgBLAST release to time (None: the one the ``all`` run recorded), the build
     ``workers`` and tool ``threads``, the suites' ``seed`` and ``reference``; then the ruling's sizes, which only a
     test shrinks: the reproducibility build, the null comparisons' suites, scales, donor and cap, the diagnosed
-    ``diagnose_variants`` (None: every one) and the speed protocol's S1 scale."""
+    ``diagnose_variants`` (None: every one), the speed protocol's S1 scale and the scale of the S1 IgBLAST's current
+    V top-1 is measured on when the speed check built none."""
 
     sim_run: str
     real_run: str
@@ -164,6 +176,7 @@ class AuditConfig:
     real_donor: str = REAL_DONOR
     real_cap: int = REAL_CAP
     speed_scale: float = SPEED_SCALE
+    v_top1_scale: float = V_TOP1_CURRENT_SCALE
 
 
 # --- checks -------------------------------------------------------------------------------------------------------
@@ -446,6 +459,62 @@ def _igblast_speed(cfg: AuditConfig, sim: RunLayout, scratch: RunLayout, *, load
                      f"informational: {', '.join(off)} outside ± {100 * SPEED_BAND:.0f}% of the stored measurement "
                      "(or not measured); speed never fails the audit")
     return check(name, "pass", len(rows), evidence)
+
+
+def igblast_v_top1_current(cfg: AuditConfig, sim: RunLayout, speed: RunLayout, scratch: RunLayout) -> dict:
+    """``band.sim_v_top1_current`` (informational): IgBLAST run now, at this checkout's code, on a fresh dev S1 (the
+    one ``band.speed`` built in ``speed`` when it built one, else S1 built at ``cfg.v_top1_scale`` in ``scratch``) and
+    scored as ``all`` scores it (against each read's donor genotype); ``pass`` when its ``v.top1_in_set`` is within
+    ``V_TOP1_CURRENT_BAND`` of ``V_TOP1_TARGET``, ``warn`` outside it, ``skipped`` without an IgBLAST release.
+    ``band.sim_v_top1`` reads the stored test-split run's number, computed by older code; this one is computed now,
+    on the dev split. Anything that raises is a ``warn``: it never fails the audit."""
+    try:
+        return _igblast_v_top1_current(cfg, sim, speed, scratch)
+    except Exception as error:  # informational
+        return check("band.sim_v_top1_current", "warn", 0, {"summary": f"not run: {type(error).__name__}: {error}"},
+                     f"informational: running IgBLAST on S1 raised {type(error).__name__}: {error}")
+
+
+def _igblast_v_top1_current(cfg: AuditConfig, sim: RunLayout, speed: RunLayout, scratch: RunLayout) -> dict:
+    name = "band.sim_v_top1_current"
+    igblast_dir = cfg.igblast_dir or read_run_config(sim).igblast_dir
+    if not igblast_dir or not Path(igblast_dir).is_dir():
+        return check(name, "skipped", 0, {"summary": f"no IgBLAST release ({igblast_dir})"},
+                     f"skipped: no IgBLAST release directory {igblast_dir}")
+    layout = speed if speed.build_json(V_TOP1_SUITE).is_file() else scratch
+    if layout is scratch:
+        build_suite(V_TOP1_SUITE, scratch, reference_name=cfg.reference, split="dev", seed=cfg.seed,
+                    scale=cfg.v_top1_scale, workers=cfg.workers)
+    reference = truth_reference(layout, [V_TOP1_SUITE])
+    ensure_shared_reference(layout, reference)
+    runner = make_runner(IGBLAST, RunnerOptions(igblast_dir=igblast_dir, threads=cfg.threads))
+    runner.prepare(layout, reference)
+    result = run_suite(runner, layout, V_TOP1_SUITE, arm="shared")
+    if result.returncode != 0:
+        raise RuntimeError(f"IgBLAST returned {result.returncode}: {result.provenance.get('error')}")
+    header, truths = load_truth(layout.truth(V_TOP1_SUITE), header_reference(layout), reference)
+    donors = layout.donors(V_TOP1_SUITE)
+    scored = score_file(IGBLAST, truths, result.predictions, reference,
+                        genotypes=read_genotypes(donors) if donors.is_file() else None)
+    values = [scores[V_TOP1_METRIC] for scores in scored.scores.values()
+              if math.isfinite(scores.get(V_TOP1_METRIC, math.nan))]
+    mean = math.fsum(values) / len(values) if values else None
+    evidence = {"summary": f"IgBLAST S1 {V_TOP1_METRIC} {_percent(mean, 2)} (n={len(values)}) on a fresh dev S1 at "
+                           f"scale {header.get('scale')}, this code; band {_percent(V_TOP1_TARGET)} ± "
+                           f"{100 * V_TOP1_CURRENT_BAND:.1f} pp",
+                "mean": mean, "target": V_TOP1_TARGET, "band": V_TOP1_CURRENT_BAND, "split": header.get("split"),
+                "scale": header.get("scale"), "cases": len(truths), "settings": runner.fingerprint(),
+                "reused_speed_build": layout is speed}
+    if mean is None or abs(mean - V_TOP1_TARGET) > V_TOP1_CURRENT_BAND + 1e-12:
+        return check(name, "warn", len(values), evidence,
+                     f"informational: IgBLAST's S1 {V_TOP1_METRIC} {_percent(mean, 2)} at this code is outside "
+                     f"{_percent(V_TOP1_TARGET)} ± {100 * V_TOP1_CURRENT_BAND:.1f} pp")
+    return check(name, "pass", len(values), evidence)
+
+
+def header_reference(layout: RunLayout) -> str | None:
+    """The reference name S1's truth header records."""
+    return (read_truth_header(layout.truth(V_TOP1_SUITE)) or {}).get("reference")
 
 
 def wait_for_idle(load: Callable[[], float], sleep: Callable[[float], None], *, limit: float = SPEED_LOAD,
@@ -996,8 +1065,11 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
         shutil.rmtree(path, ignore_errors=True)
         return RunLayout(path)
 
+    speed = scratch("speed")
     steps: list[tuple[tuple[str, ...], Callable[[], dict | list[dict]]]] = [
-        (("band.speed",), lambda: igblast_speed(cfg, sim, scratch("speed"))),
+        (("band.speed",), lambda: igblast_speed(cfg, sim, speed)),
+        (("band.sim_v_top1_current",),
+         lambda: igblast_v_top1_current(cfg, sim, speed, scratch("sim_v_top1_current"))),
         (("self_check.sim_oracle",), lambda: sim_oracle(sim)),
         (("self_check.sim_staleness",), lambda: sim_staleness(sim)),
         (("self_check.real_oracle",), lambda: real_oracle(real)),

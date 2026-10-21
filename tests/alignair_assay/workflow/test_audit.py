@@ -80,7 +80,7 @@ def test_the_report_opens_with_the_verdict_and_lists_every_check_by_group():
 
 def test_the_check_order_covers_every_group():
     assert {name.split(".")[0] for name in CHECKS} == set(GROUPS)
-    assert len(CHECKS) == len(set(CHECKS)) == 13
+    assert len(CHECKS) == len(set(CHECKS)) == 14
 
 
 # --- the stored runs' self-checks and IgBLAST bands -----------------------------------------------------------------
@@ -978,6 +978,118 @@ def test_speed_is_skipped_when_asked_or_without_a_stored_measure(tmp_path, monke
     assert seen == {}
 
 
+# --- IgBLAST's S1 V top-1 at this code ----------------------------------------------------------------------------
+
+class FakeIgblast(OracleRunner):
+    """IgBLAST as the oracle, with the V call of the first ``wrong`` reads made wrong."""
+
+    name = "igblast"
+    wrong = 0
+    prepared: list = []
+
+    def prepare(self, layout, reference):
+        FakeIgblast.prepared.append(layout.root)
+        return super().prepare(layout, reference)
+
+    def run(self, fasta, out_tsv, **kwargs):
+        result = super().run(fasta, out_tsv, **kwargs)
+        lines = Path(out_tsv).read_text().splitlines()
+        column = lines[0].split("\t").index("v_call")
+        for row in range(1, 1 + FakeIgblast.wrong):
+            cells = lines[row].split("\t")
+            cells[column] = "IGHV1-2*99"
+            lines[row] = "\t".join(cells)
+        Path(out_tsv).write_text("\n".join(lines) + "\n")
+        return dataclasses.replace(result, tool=self.name)
+
+
+@pytest.fixture
+def fake_igblast(monkeypatch):
+    FakeIgblast.wrong, FakeIgblast.prepared = 0, []
+    seen = {}
+
+    def make(tool, options):
+        seen["options"] = (tool, options)
+        return FakeIgblast()
+
+    monkeypatch.setattr(audit, "make_runner", make)
+    return seen
+
+
+@pytest.fixture(scope="module")
+def s1_build(tmp_path_factory):
+    """S1 built once on the dev split at scale 0.02 (100 cases, with donors): copied where a test needs it."""
+    layout = RunLayout(tmp_path_factory.mktemp("s1"))
+    build_suite("S1", layout, reference_name=REFERENCE_NAME, split="dev", seed=7, scale=0.02, workers=4)
+    return layout
+
+
+def _with_s1(s1_build: RunLayout, root: Path) -> RunLayout:
+    """A run directory holding a copy of ``s1_build``'s S1."""
+    import shutil
+
+    shutil.copytree(s1_build.suite_dir("S1"), RunLayout(root).suite_dir("S1"))
+    return RunLayout(root)
+
+
+def test_igblast_s1_v_top1_at_this_code_within_one_and_a_half_points_passes(tmp_path, fake_igblast, s1_build,
+                                                                             monkeypatch):
+    sim = _speed_run(tmp_path)
+    builds = []
+
+    def build(name, layout, **kwargs):  # S1 at the given scale, as the module's build of it
+        builds.append((name, layout.root, kwargs["scale"], kwargs["split"]))
+        _with_s1(s1_build, layout.root)
+
+    monkeypatch.setattr(audit, "build_suite", build)
+    FakeIgblast.wrong = 2  # 98 of 100 right
+    cfg = _config(tmp_path, v_top1_scale=0.02)
+    found = audit.igblast_v_top1_current(cfg, sim, RunLayout(tmp_path / "speed"), RunLayout(tmp_path / "own"))
+    assert found["status"] == "pass" and found["n"] == 100, found["reason"]
+    assert found["evidence"]["mean"] == pytest.approx(0.98) and found["evidence"]["split"] == "dev"
+    assert "S1 v.top1_in_set 98.00% (n=100)" in found["evidence"]["summary"]
+    # no S1 from the speed check: S1 built in its own scratch, on the dev split, at the given scale
+    assert builds == [("S1", tmp_path / "own", 0.02, "dev")] and FakeIgblast.prepared == [tmp_path / "own"]
+    tool, options = fake_igblast["options"]
+    assert tool == "igblast" and options.igblast_dir == str(tmp_path / "sim" / "igblast")
+
+
+def test_igblast_s1_v_top1_at_this_code_outside_the_band_warns(tmp_path, fake_igblast, s1_build):
+    sim = _speed_run(tmp_path)
+    speed = _with_s1(s1_build, tmp_path / "speed")
+    for wrong in (0, 5):  # 100%, 95%: both outside 97.9% ± 1.5 pp
+        FakeIgblast.wrong = wrong
+        found = audit.igblast_v_top1_current(_config(tmp_path), sim, speed, RunLayout(tmp_path / "own"))
+        assert found["status"] == "warn" and "informational" in found["reason"], found
+
+
+def test_igblast_s1_v_top1_at_this_code_reuses_the_speed_checks_s1(tmp_path, fake_igblast, s1_build, monkeypatch):
+    sim = _speed_run(tmp_path)
+    speed = _with_s1(s1_build, tmp_path / "speed")
+    builds = []
+    monkeypatch.setattr(audit, "build_suite", lambda *args, **kwargs: builds.append(args))
+    FakeIgblast.wrong = 2
+    found = audit.igblast_v_top1_current(_config(tmp_path), sim, speed, RunLayout(tmp_path / "own"))
+    assert found["status"] == "pass" and builds == [] and FakeIgblast.prepared == [speed.root]
+    assert found["evidence"]["reused_speed_build"]
+
+
+def test_igblast_s1_v_top1_at_this_code_never_fails(tmp_path, fake_igblast, s1_build, monkeypatch):
+    sim = _speed_run(tmp_path)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("igblastn crashed")
+
+    monkeypatch.setattr(audit, "run_suite", broken)
+    found = audit.igblast_v_top1_current(_config(tmp_path), sim, _with_s1(s1_build, tmp_path / "speed"),
+                                         RunLayout(tmp_path / "own"))
+    assert found["status"] == "warn" and "RuntimeError: igblastn crashed" in found["reason"]
+    bare = _sim_run(tmp_path / "bare", suites=("S1",))  # its recorded IgBLAST release does not exist
+    found = audit.igblast_v_top1_current(_config(tmp_path), bare, RunLayout(tmp_path / "speed"),
+                                         RunLayout(tmp_path / "own"))
+    assert found["status"] == "skipped" and "IgBLAST release" in found["reason"]
+
+
 # --- the audit ----------------------------------------------------------------------------------------------------
 
 def _stored_runs(tmp_path) -> AuditConfig:
@@ -986,16 +1098,15 @@ def _stored_runs(tmp_path) -> AuditConfig:
     return _config(tmp_path)
 
 
-def _fake_checks(monkeypatch, *, raising: str | None = None, statuses: dict | None = None) -> list[str]:
+def _fake_checks(monkeypatch, *, raising: str | None = None, statuses: dict | None = None) -> list[Path]:
     """Every check function replaced by one returning ``statuses[name]`` (default pass, n 10), or raising for the
-    check ``raising``; returns the scratch directories each was given, in call order."""
+    check ``raising``; returns the run directories (``RunLayout`` roots) each was given, in call order."""
     statuses = statuses or {}
-    scratches = []
+    roots = []
 
     def fake(*names):
         def run(*args):
-            scratches.extend(str(arg.root) for arg in args if isinstance(arg, RunLayout) and "scratch" in str(
-                arg.root))
+            roots.extend(Path(arg.root) for arg in args if isinstance(arg, RunLayout))
             if raising in names:
                 raise RuntimeError("docker is not running")
             found = [check(name, statuses.get(name, "pass"), 10, {"summary": f"{name} checked"},
@@ -1003,7 +1114,9 @@ def _fake_checks(monkeypatch, *, raising: str | None = None, statuses: dict | No
             return found if len(found) > 1 else found[0]
         return run
 
-    for function, names in (("igblast_speed", ("band.speed",)), ("sim_oracle", ("self_check.sim_oracle",)),
+    for function, names in (("igblast_speed", ("band.speed",)),
+                            ("igblast_v_top1_current", ("band.sim_v_top1_current",)),
+                            ("sim_oracle", ("self_check.sim_oracle",)),
                             ("sim_staleness", ("self_check.sim_staleness",)),
                             ("real_oracle", ("self_check.real_oracle",)),
                             ("real_truth_health", ("self_check.real_truth_health",)),
@@ -1013,12 +1126,12 @@ def _fake_checks(monkeypatch, *, raising: str | None = None, statuses: dict | No
                             ("all_null", ("null.all", "self_check.sim_oracle_current")),
                             ("diagnose_null", ("null.diagnose",)), ("real_null", ("null.real",))):
         monkeypatch.setattr(audit, function, fake(*names))
-    return scratches
+    return roots
 
 
 def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch):
     cfg = _stored_runs(tmp_path)
-    scratches = _fake_checks(monkeypatch, statuses={"self_check.real_truth_health": "warn"})
+    roots = _fake_checks(monkeypatch, statuses={"self_check.real_truth_health": "warn"})
     layout = RunLayout(tmp_path / "out")
     stale = layout.audit_scratch("null_all") / "old.txt"  # an earlier audit's scratch is replaced
     stale.parent.mkdir(parents=True)
@@ -1032,10 +1145,12 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch)
     assert layout.audit_md.read_text().splitlines()[0] == record["verdict"]["line"]
     assert record["checkpoint"]["path"] == cfg.checkpoint and len(record["checkpoint"]["sha256"]) == 64
     assert not stale.exists()
-    assert scratches[0].endswith("audit/scratch/speed")  # IgBLAST is timed first, on a quiet machine
-    assert all(path.startswith(str(layout.audit_dir)) for path in scratches)
-    assert set(Path(path).name for path in scratches) == {"speed", "sim_build_1", "sim_build_2", "real_scores",
-                                                         "null_all", "null_diagnose", "null_real"}
+    # every run directory a check was given is a scratch directory of the audit's own or a stored run (read only)
+    scratches = [root for root in roots if layout.audit_dir in root.parents]
+    assert set(roots) - set(scratches) == {Path(cfg.sim_run), Path(cfg.real_run)}
+    assert scratches[0] == layout.audit_scratch("speed")  # IgBLAST is timed first, on a quiet machine
+    assert {root.name for root in scratches} == {"speed", "sim_v_top1_current", "sim_build_1", "sim_build_2",
+                                                 "real_scores", "null_all", "null_diagnose", "null_real"}
 
 
 def test_a_check_that_raises_fails_and_the_others_go_on(tmp_path, monkeypatch):
@@ -1062,7 +1177,7 @@ def test_an_informational_check_that_raises_warns(tmp_path, monkeypatch):
 
 def test_the_audit_refuses_inputs_before_any_work(tmp_path, monkeypatch):
     cfg = _stored_runs(tmp_path)
-    scratches = _fake_checks(monkeypatch)
+    roots = _fake_checks(monkeypatch)
     for root in (tmp_path / "sim", tmp_path / "sim" / "inside", tmp_path / "real", tmp_path):
         with pytest.raises(ValueError, match="overlaps the stored run"):
             audit.run_audit(cfg, RunLayout(root))
@@ -1073,7 +1188,7 @@ def test_the_audit_refuses_inputs_before_any_work(tmp_path, monkeypatch):
         audit.run_audit(dataclasses.replace(cfg, real_run=str(tmp_path / "sim")), RunLayout(tmp_path / "out"))
     with pytest.raises(FileNotFoundError, match="made by `all`"):
         audit.run_audit(dataclasses.replace(cfg, sim_run=str(tmp_path / "real")), RunLayout(tmp_path / "out"))
-    assert scratches == [] and not (tmp_path / "out").exists()
+    assert roots == [] and not (tmp_path / "out").exists()
 
 
 def test_the_audit_command(tmp_path, monkeypatch, capsys):

@@ -230,8 +230,11 @@ PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_ge
     metric pairs (per suite, summed; real: the shared arm), since D top-1 and the real known answers apply to fewer
     reads than are offered;
   - IgBLAST bands: `known_top1` and `ref_known_top1` at least 99% on every dev donor (shared arm); S1
-    `v.top1_in_set` within 1 pp of 97.9%; its speed, timed now on a fresh dev S1, within 15% of the stored
-    measurement (informational: `warn` outside, `skipped (load)` when the 1-minute load stays above 1.5).
+    `v.top1_in_set` in the stored run within 1 pp of 97.9%; the same metric at this code (informational,
+    `band.sim_v_top1_current`: IgBLAST run now on the fresh dev S1 the speed check built, or on S1 built at scale 0.2
+    when it built none, `warn` outside 97.9% ± 1.5 pp), since the stored number comes from older code; its speed,
+    timed now on a fresh dev S1, within 15% of the stored measurement (informational: `warn` outside or on an
+    error, `skipped (load)` when the 1-minute load stays above 1.5).
 - **Verdict.** The audit exits 0 only when no check failed and one passed: a check that passes on nothing (n 0), or
   raises, fails. Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on each audit; `--out` may not
   overlap a stored run.
