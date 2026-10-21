@@ -18,6 +18,8 @@ PRIMARY = ("igblast", "alignair")
 COMPONENTS = {"real.v.unsupported_allele": "unsupported allele", "real.v.unsupported_gene": "unsupported gene",
               "real.v.no_call": "no call"}
 KNOWN = ("real.v.known_top1", "real.v.known_gene_top1")
+# The reference-exact known answer: the read against the shared reference alone (compared, higher is better).
+REF_KNOWN = "real.v.ref_known_top1"
 ARMS = ("shared", "genotype")
 TOOL_ORDER = ("igblast", "alignair", "alignair-api")
 TOOL_LABELS = {"alignair": "alignair (image)"}

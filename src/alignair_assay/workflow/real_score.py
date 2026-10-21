@@ -29,10 +29,10 @@ donor), overall, per stratum (protocol x isotype: IGHM, IGHG, other) and for two
 metrics: ``sd3``, without the reads whose top-1 V call, by either tool, is to a gene of the paper's novel alleles the
 cohort lacks (``workflow.real_steps.sensitivity_genes``), and ``gene_support``, the pair again in the gene-support
 variant (``pair_scores(..., variant="gene_support")``). The informational metrics are summarized beside it.
-With ``clusterings``, the pre-declared primary's metrics (``CLUSTERED``: R1 and known_top1) are compared again under
-each clustering (``clusterings``): ``exact`` junctions (the primary clonotypes), ``sl15`` (single linkage at 15%
-junction Hamming, the candidate primary for P3b) and ``junction_length`` (one cluster per donor and junction
-length, a stress test), each its own Holm family of those two metrics, on the same paired reads.
+With ``clusterings``, the pre-declared primary's metrics (``CLUSTERED``: R1, known_top1 and ref_known_top1) are
+compared again under each clustering (``clusterings``): ``exact`` junctions (the primary clonotypes), ``sl15``
+(single linkage at 15% junction Hamming, the candidate primary for P3b) and ``junction_length`` (one cluster per
+donor and junction length, a stress test), each its own Holm family of those metrics, on the same paired reads.
 Pooled comparisons (``pool``) join the donors' pairs with donor-prefixed read ids (``<donor>/<read id>``) and the union
 of their clusters, whose ids never collide, and sum their one-sided counts. An arm delta is a tool's genotype arm
 paired with its shared arm (``pair_scores(data, (tool, "shared"), (tool, "genotype"))``), compared the same way
@@ -85,7 +85,7 @@ TOP_CALLS = 5
 # The pipeline oracle's run name (``pipeline_oracle``): its AIRR TSV and scores sit where a tool's would.
 ORACLE_TOOL = "oracle"
 # The pre-declared primary's metrics, compared again under each clustering of the reads.
-CLUSTERED = ("real.v.unsupported", "real.v.known_top1")
+CLUSTERED = ("real.v.unsupported", "real.v.known_top1", "real.v.ref_known_top1")
 # The R1 primary and the gene-support sensitivity variant: which row field holds the V class.
 VARIANTS = {"primary": "v", "gene_support": "v_support"}
 _EXCLUDED = "excluded:"

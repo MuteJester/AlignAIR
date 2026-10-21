@@ -542,6 +542,49 @@ def test_the_tie_aware_metrics_compare_germline_windows_over_the_reads_observed_
                                                                   index=INDEX)
 
 
+def _ref_truth(read_id: str, ref: tuple[str, ...], ref_gene: str, **known) -> RealTruth:
+    """A read whose observed V is exactly the window of the shared alleles ``ref`` (of IUIS genes ``ref_gene``)."""
+    truth = _truth(read_id, **known)
+    return RealTruth(**{**truth.__dict__, "ref_known": frozenset(ref), "ref_known_gene": ref_gene})
+
+
+def test_the_reference_exact_known_answer_is_scored_on_every_read_that_has_one():
+    """Its truth is the read against the shared reference alone, so it is scored on every read that has one, with
+    no exclusion: a call is right when it, or an allele with its sequence, is in the set, and of the right gene
+    when one of its IUIS genes is the set's."""
+    truth = _ref_truth("r", ("IGHVF5-G1*01",), "IGHV3-23")  # IGHV3-23 is not captured: the call is excluded
+    for call, top1, gene in (("IGHVF5-G1*01", 1.0, 1.0), ("IGHVF1-G1*01", 0.0, 0.0), (None, 0.0, 0.0)):
+        pred = _pred("r", call)
+        cls = INDEX.classify_v(pred, truth=truth)
+        scores = real_case_scores(pred, truth, cls, excluded=cls.startswith("excluded:"), index=INDEX)
+        assert (scores["real.v.ref_known_top1"], scores["real.v.ref_known_gene_top1"]) == (top1, gene), call
+    assert INDEX.classify_v(_pred("r", "IGHVF5-G1*01"), truth=truth) == "excluded:not_captured"
+    # another allele of the set's gene is the right gene, not the right allele
+    paralog = _ref_truth("p", ("IGHVF6-G21*06",), "IGHV1-69|IGHV1-69D")
+    scores = real_case_scores(_pred("p", "IGHVF6-G21*07"), paralog, UNSUPPORTED_ALLELE, excluded=False,
+                              index=INDEX)
+    assert scores["real.v.ref_known_top1"] == 0.0 and scores["real.v.ref_known_gene_top1"] == 1.0
+    # identical alleles are one call (merge_identical)
+    merged = SupportIndex(GENOTYPE, IUIS, {**MERGED, "IGHVF1-G1*02": frozenset({"IGHVF1-G1*02", "IGHVF1-G1*01"})},
+                          REFERENCE)
+    scores = real_case_scores(_pred("m", "IGHVF1-G1*02"), _ref_truth("m", ("IGHVF1-G1*01",), "IGHV1-2"),
+                              UNSUPPORTED_ALLELE, excluded=False, index=merged)
+    assert scores["real.v.ref_known_top1"] == 1.0
+    # a read without one has neither metric
+    assert not {"real.v.ref_known_top1", "real.v.ref_known_gene_top1"} & set(
+        real_case_scores(_pred("u", "IGHVF1-G1*01"), _truth("u"), SUPPORTED, excluded=False, index=INDEX))
+
+
+def test_the_oracle_calls_the_reference_exact_answer_too():
+    truths = [_ref_truth("a", ("IGHVF1-G1*01",), "IGHV1-2", known=("IGHV1-2*02",), shared=("IGHVF1-G1*01",),
+                         gene="IGHV1-2"),
+              _ref_truth("b", ("IGHVF5-G1*01",), "IGHV3-23"),  # no donor known answer: the reference's alone
+              _ref_truth("c", ("IGHVF6-G21*06", "IGHVF6-G21*07"), "IGHV1-69|IGHV1-69D")]
+    check = oracle_self_check(truths, INDEX)
+    assert check["ref_reads"] == 3 and check["ref_known_top1"] == 1.0 and check["passed"]
+    assert check["reads"] == 1  # the donor's known answers, as before
+
+
 def test_shared_exclusion_removes_read_for_both_tools():
     a = {"r1": SUPPORTED, "r2": "excluded:not_captured", "r3": UNSUPPORTED_ALLELE, "r4": NO_CALL}
     b = {"r1": "excluded:low_support", "r2": SUPPORTED, "r3": NO_CALL, "r4": SUPPORTED}
@@ -723,7 +766,8 @@ REAL_METRICS = {"real.v.unsupported": (False, True), "real.v.unsupported_allele"
                 "real.v.known_top1": (False, False), "real.v.known_gene_top1": (False, False),
                 "real.v.novel_known_call": (True, False), "real.v.any_listed_supported": (True, False),
                 "real.d.unsupported": (True, True), "real.j.unsupported": (True, True),
-                "real.v.unsupported_observable": (True, True), "real.v.known_top1_observable": (True, False)}
+                "real.v.unsupported_observable": (True, True), "real.v.known_top1_observable": (True, False),
+                "real.v.ref_known_top1": (False, False), "real.v.ref_known_gene_top1": (False, False)}
 NEW_INFORMATIONAL = {"real.v.novel_known_call", "real.v.any_listed_supported", "real.d.unsupported",
                      "real.j.unsupported", "real.v.unsupported_observable", "real.v.known_top1_observable"}
 NEW_LOWER = (".unsupported", ".unsupported_allele", ".unsupported_gene", "real.v.unsupported_observable")

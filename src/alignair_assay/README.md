@@ -1689,9 +1689,9 @@ another shared reference:
   takes about a minute), and names each component after its first junction in sorted order; a read without a
   junction keeps its single clonotype. `sl15_clusters` and `junction_length_clusters` (one cluster per donor and
   junction length, a stress test) give `stats.compare` those clusterings.
-- `truth_health(reads, meta, truths, genotype, reference, iuis)`: a tool-neutral audit of the truth, the
-  known-answer rule run against the shared reference's V alleles instead of the donor's. A read whose V is exactly
-  a shared allele (window of 200 nt or more) the donor does not carry shows an allele the genotype lacks; those reads
+- `truth_health(truths, genotype, iuis)`: a tool-neutral audit of the truth, over the reference-exact known answers
+  (the known-answer rule run against the shared reference's V alleles instead of the donor's, below). A read whose
+  V is exactly a shared allele the donor does not carry shows an allele the genotype lacks; those reads
   are counted per gene, split by where it stands in the truth (`carried`, `captured`, `uncalled`, `not_captured`),
   and a carried gene with 10 clonotypes of them or more is `flagged` (an allele VDJbase missed, or a haplotype it
   did not resolve; `h0_only` notes a gene carried only unphased). The truth step stores it in the truth file's
@@ -1761,6 +1761,17 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   truth is tool-neutral); and, informational, `real.v.any_listed_supported` (a tie list hides a supported allele),
   `real.v.novel_known_call` (a novel known answer's call is of its gene) and `real.d.unsupported` /
   `real.j.unsupported` where the donor has D or J truth (a missing D or J call there is `nan`, not covered).
+- The reference-exact known answer (`RealTruth.ref_known`, `ref_known_gene`; `real_truths(..., iuis=...)`) is the
+  known-answer rule run against the shared reference's V alleles instead of the donor's: a read whose observed V is
+  exactly one shared allele's window through Cys104 (200 nt or more, `N` never a wildcard, identical windows one set,
+  two distinct windows none) has that set as its answer. It needs no genotype, so it covers the genes the donor's
+  assembly misses or VDJbase does not call (on W-97, whose genotype lacks every IGHV4 gene, it finds thousands more
+  reads than the donor's alleles do). `real.v.ref_known_top1` (the top-1, or an allele with its sequence, is in the
+  set) and `real.v.ref_known_gene_top1` (one of its IUIS genes is the set's) are compared metrics (higher is
+  better), scored on every read with one, whatever its exclusions: the truth is the read itself. The oracle calls
+  the set's first name and must be right on every such read; the report gives the paired Δ beside known_top1 in
+  the bottom line, and the yield and the paired Δ per pair in Known answers. The truth-health audit counts these
+  reads by whether the donor carries the allele.
 - The tie-aware metrics (informational) separate "the read cannot tell" from "wrong". A call's window is the last
   `L` nt of its region through Cys104, `L` the read's `cys_end` less its first observed base; two windows are equal
   when they agree from Cys104 back over their common length, the read's `N` positions left out (a read without a

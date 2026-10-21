@@ -75,7 +75,9 @@ def _r1(n, k, verdict="tie_or_inconclusive") -> dict:
             "real.v.unsupported_gene": _entry(0.140, 0.133, n, k),
             "real.v.no_call": _entry(0.0, 0.0, n, k),
             "real.v.known_top1": _entry(1.0, 1.0, 30, 30, test="mcnemar_exact"),
-            "real.v.known_gene_top1": _entry(1.0, 1.0, 30, 30, test="mcnemar_exact")}
+            "real.v.known_gene_top1": _entry(1.0, 1.0, 30, 30, test="mcnemar_exact"),
+            "real.v.ref_known_top1": _entry(0.98, 0.92, 80, 75, "a_better"),
+            "real.v.ref_known_gene_top1": _entry(1.0, 0.99, 80, 75)}
 
 
 def _comparison(a, b, arm, n, k, *, verdict="tie_or_inconclusive", strata=("multiplex/IGHG", "multiplex/IGHM")):
@@ -183,6 +185,7 @@ def _donor(name, run, sample, protocol, *, quality="full", known=30, scale=1) ->
         "fetch": {"quality": quality, "md5": {"reads": "a2b3"}, "source": "odp" if quality == "full" else "ena"},
         "protocol": protocol, "preprocess": _preprocess(protocol),
         "truth": {"reads": 500, "known": known, "novel_known": 4, "known_share": known / 500,
+                  "ref_known": 80, "ref_known_share": 80 / 500,
                   "low_known_yield": known / 500 < 0.05, "naive": 34, "anchor": {"donor": 340, "shared": 128,
                                                                                   "none": 32},
                   "clonotypes": 488, "multi_read_clonotypes": 9, "isotypes": {"IGHG": 56, "IGHM": 444},
@@ -382,13 +385,18 @@ def test_the_bottom_line_leads_per_protocol_with_the_pre_declared_primary():
                                                              "alignair (image) − igblast, per protocol")
     rows = _table(section)
     assert rows[0] == ["Protocol (donors)", "R1 Δ, alignair (image) − igblast (primary)",
-                       "known_top1 Δ, alignair (image) − igblast", "V reads out by one call alone"]
+                       "known_top1 Δ, alignair (image) − igblast", "ref_known_top1 Δ, alignair (image) − igblast",
+                       "V reads out by one call alone"]
     assert [row[0] for row in rows[1:]] == ["multiplex (W-97)", "race (SC-23)"]
     multiplex = rows[1]
     assert multiplex[1] == "19.6% → 17.5%: -2.1 pp [-5.2, +1.0], not significant; 143 paired (139 clonotypes)"
     assert multiplex[2] == "100.0% → 100.0%: +0.0 pp [-3.1, +3.1], not significant; 30 paired (30 clonotypes)"
-    assert multiplex[3] == ("igblast 3 (1 documented known answers, 0 of them called wrong); alignair (image) 40 "
+    assert multiplex[3] == ("98.0% → 92.0%: **-6.0 pp** [-9.1, -2.9], **igblast better**; 80 paired (75 "
+                            "clonotypes)")
+    assert multiplex[4] == ("igblast 3 (1 documented known answers, 0 of them called wrong); alignair (image) 40 "
                             "(6 documented known answers, 4 of them called wrong)")
+    # what the reference-exact answer is judged against
+    assert "against the shared reference alone" in section and "assembly misses" in section
     assert rows[2][1].endswith("150 paired (147 clonotypes)")
     # the pool over both protocols comes second, said to depend on the protocols' mix
     pooled = next(line for line in section.splitlines() if line.startswith("Pooled over both protocols"))
@@ -685,11 +693,14 @@ def test_the_tie_aware_metrics_are_shown_as_paired_means():
     known = _section(md, "Known answers")
     paired = _table(known[known.index("Paired"):])
     assert paired[0] == ["Scope", "Pair", "known_top1", "known_gene_top1",
-                         "known_top1, observably (informational: paired means)"]
+                         "known_top1, observably (informational: paired means)", "ref_known_top1"]
     first = paired[1]
     assert first[:2] == ["W-97", "alignair (image) − igblast, shared"]
     assert first[2] == "+0.0 pp [-3.1, +3.1], not significant; 30 paired (30 clonotypes)"
     assert first[4] == "100.0% → 96.7% (n=30)"
+    assert first[5] == "**-6.0 pp** [-9.1, -2.9], **igblast better**; 80 paired (75 clonotypes)"
+    yields = _table(known)
+    assert yields[0][3] == "Reference-exact known answers" and yields[1][3] == "80 (16.0%)"
     assert "observed V" in known
 
 

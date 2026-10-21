@@ -482,7 +482,7 @@ def test_the_primary_comparisons_under_the_sl15_and_junction_length_clusterings(
     clusterings = pairs["igblast", "alignair", "shared"]["clusterings"]
     assert set(clusterings) == {"exact", "sl15", "junction_length"}
     for name, entry in clusterings.items():
-        assert set(entry["comparison"]) == {"real.v.unsupported", "real.v.known_top1"}, name
+        assert set(entry["comparison"]) == {"real.v.unsupported", "real.v.known_top1", "real.v.ref_known_top1"}, name
         assert entry["comparison"]["real.v.unsupported"]["n_paired"] == 30, name
     exact = clusterings["exact"]["comparison"]["real.v.unsupported"]
     assert exact["delta"] == pytest.approx(0.2) and exact["n_clusters"] == 15
@@ -896,6 +896,23 @@ def test_a_donors_j_truth_and_each_runs_top_j_calls_are_in_the_summary(tmp_path,
     shared = donor["tools"]["shared"]["igblast"]
     assert shared["j_calls"] == {"IGHJ4*02": 30} and shared["j_classes"] == {"unsupported_gene": 30}
     assert "d_calls" not in shared  # no D truth
+
+
+def test_the_reference_exact_known_answer_is_compared_and_self_checked(tmp_path, fakes):
+    """Every exact read is a reference-exact known answer, IGHV3-11's too (a gene the donor lacks): its yield is in
+    the truth block, the pairs compare ref_known_top1 on those reads whatever their exclusions, and the oracle
+    calls them right."""
+    summary = run_real(_config(tmp_path), RunLayout(tmp_path / "run"))
+    donor = summary["donors"]["W-97"]
+    assert donor["truth"]["ref_known"] == 18 and donor["truth"]["ref_known_share"] == pytest.approx(18 / 30)
+    assert donor["truth"]["known"] == 12
+    pairs = {(c["a"], c["b"], c["arm"]): c for c in donor["comparisons"]}
+    entry = pairs["igblast", "alignair", "shared"]["overall"]["real.v.ref_known_top1"]
+    assert entry["n_paired"] == 18 and entry["delta"] == 0.0  # alignair errs only on mutated reads
+    genotype = pairs["igblast", "alignair-api", "genotype"]["overall"]["real.v.ref_known_top1"]
+    assert genotype["mean_a_paired"] == genotype["mean_b_paired"] == pytest.approx(12 / 18)  # restricted: IGHV3-11
+    check = donor["oracle_self_check"]
+    assert check["ref_reads"] == 18 and check["ref_known_top1"] == 1.0 and check["status"] == "passed"
 
 
 def test_a_read_given_two_rows_fails_the_runs_scores(tmp_path, fakes, monkeypatch):

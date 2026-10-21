@@ -40,6 +40,7 @@ from alignair_assay.report.real_format import (
     NO_CALL,
     NO_TRUTH,
     PRIMARY,
+    REF_KNOWN,
     _arm_tools,
     _class_share,
     _delta,
@@ -83,6 +84,9 @@ BOTTOM_LEAD = ("The pre-declared primary is the paired shared-arm R1 Δ, {pair},
                "with the documented known answers among them and how many of those it called wrong.")
 POOL_NOTE = ("Pooled over both protocols (secondary: it depends on how many reads each protocol contributes, not on "
              "the tools alone)")
+REF_NOTE = ("ref_known_top1 is judged against the shared reference alone: a read whose observed V is exactly one "
+            "shared allele's window (200 nt or more) has that allele as its answer, whatever the donor's genotype, so "
+            "it covers the genes the donor's assembly misses or VDJbase does not call, and no exclusion touches it.")
 CONDITIONAL_NOTE = ("Every CI is conditional on these donors: they are fixed, not sampled, so it covers the variation "
                     "between clonotypes only. Verdicts outside the pre-declared primary are exploratory: Holm runs "
                     "within each comparison, not across the report.")
@@ -212,11 +216,13 @@ def _bottom_line(scopes: list[dict], protocols: list[dict], primary: tuple[str, 
     pair = _pair_header(a, b)
     lead = protocols or [scopes[-1]]
     rows = [[scope["label"], _pair_cell(_find(scope, a, b, "shared"), HEADLINE, means=True),
-             _pair_cell(_find(scope, a, b, "shared"), KNOWN[0], means=True), _one_sided(_find(scope, a, b, "shared"))]
+             _pair_cell(_find(scope, a, b, "shared"), KNOWN[0], means=True),
+             _pair_cell(_find(scope, a, b, "shared"), REF_KNOWN, means=True), _one_sided(_find(scope, a, b, "shared"))]
             for scope in lead]
     lines = [f"**Bottom line.** {BOTTOM_LEAD.format(pair=pair)}", "",
              *_table(["Protocol (donors)" if protocols else "Scope", f"R1 Δ, {pair} (primary)",
-                      f"known_top1 Δ, {pair}", "V reads out by one call alone"], rows)]
+                      f"known_top1 Δ, {pair}", f"ref_known_top1 Δ, {pair}", "V reads out by one call alone"], rows),
+             "", REF_NOTE]
     pooled = scopes[-1] if scopes[-1]["block"] is None else None
     if len(protocols) > 1 and pooled is not None:
         comparison = _find(pooled, a, b, "shared")
@@ -238,7 +244,7 @@ def _sl15_changes(scopes: list[dict], a: str, b: str) -> list[str] | None:
         clusterings = (_find(scope, a, b, "shared") or {}).get("clusterings") or {}
         exact = (clusterings.get("exact") or {}).get("comparison") or {}
         sl15 = (clusterings.get("sl15") or {}).get("comparison") or {}
-        for metric, label in ((HEADLINE, "R1"), (KNOWN[0], "known_top1")):
+        for metric, label in ((HEADLINE, "R1"), (KNOWN[0], "known_top1"), (REF_KNOWN, "ref_known_top1")):
             if metric in exact and metric in sl15:
                 seen = True
                 before, after = _verdict(exact[metric], a, b), _verdict(sl15[metric], a, b)

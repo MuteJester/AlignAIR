@@ -596,6 +596,54 @@ def test_real_truths_store_the_sl15_clonotype_next_to_the_exact_one():
         assert truth_from_json(json.loads(json.dumps(truth_to_json(truth)))) == truth
 
 
+def _labels_map(reference: Reference, labels: dict[str, tuple[str, ...]]) -> IuisMap:
+    """The IUIS map of ``reference`` whose shared alleles carry ``labels``."""
+    sequences = reference.sequences()
+    return IuisMap(labels_by_shared={name: labels.get(name, ()) for name in sequences},
+                   shared_by_sequence={sequence: (name,) for name, sequence in sequences.items()},
+                   labels_by_sequence={sequences[name]: names for name, names in labels.items()},
+                   reference_digest=reference.digest())
+
+
+def test_the_reference_exact_known_answer_needs_no_donor_genotype():
+    """The known-answer rule against the shared reference's V alleles instead of the donor's: a read whose observed V
+    is exactly one shared allele's window (200 nt or more, N never a wildcard) is a reference-exact known answer,
+    whatever the donor's genotype holds, so it covers genes the donor's assembly misses."""
+    shared_a = _allele("IGHVF1-G1*02", A_GAPPED)
+    shared_a5 = _allele("IGHVF1-G1*04", _mutate(A_GAPPED, 5))  # differs at position 5 only
+    shared_b = _allele("IGHVF3-G10*01", B.gapped)
+    reference = _reference(shared_a, shared_a5, shared_b)
+    iuis = _labels_map(reference, {"IGHVF1-G1*02": ("IGHV1-2*02",), "IGHVF1-G1*04": ("IGHV1-2*04",),
+                                   "IGHVF3-G10*01": ("IGHV3-23*01", "IGHV3-23D*01")})
+    multiplex, spans = _multiplex(A.sequence)
+    with_n = _race(B.sequence)
+    with_n = with_n[:150] + "N" + with_n[151:]
+    reads = {"b": _race(B.sequence), "a": _race(A.sequence), "m": multiplex, "n": with_n,
+             "x": _race(_random(300, 70))}
+    meta = [_meta("b"), _meta("a"), {**_meta("m", protocol="multiplex"), "primer_masked": spans}, _meta("n"),
+            _meta("x")]
+    b, a, m, n, x = real_truths(reads, meta, _genotype(A), reference, iuis=iuis)
+    # the donor does not carry IGHV3-23: no known answer, and still a reference-exact one
+    assert b.known is None and b.ref_known == frozenset({"IGHVF3-G10*01"})
+    assert b.ref_known_gene == "IGHV3-23|IGHV3-23D"
+    assert a.known == frozenset({"IGHV1-2*02"}) and a.ref_known == frozenset({"IGHVF1-G1*02"})
+    # identical windows form one set: the multiplex read's masked primer hides position 5
+    assert m.ref_known == frozenset({"IGHVF1-G1*02", "IGHVF1-G1*04"}) and m.ref_known_gene == "IGHV1-2"
+    # an N voids the match; a read of no shared allele has none
+    assert n.ref_known is None and n.ref_known_gene is None and x.ref_known is None
+    # two distinct windows that both match give none: A without its first three bases is a 5'RACE read's too
+    truncated = _allele("IGHVF1-G1*05", "..." + A_GAPPED[3:])
+    two = _reference(shared_a, truncated, shared_b)
+    (a_two,) = real_truths({"a": reads["a"]}, [_meta("a")], _genotype(A), two,
+                           iuis=_labels_map(two, {"IGHVF1-G1*02": ("IGHV1-2*02",), "IGHVF1-G1*05": ("IGHV1-2*05",)}))
+    assert a_two.ref_known is None and a_two.known == frozenset({"IGHV1-2*02"})
+    for truth in (b, a, m, n, x):
+        assert truth_from_json(json.loads(json.dumps(truth_to_json(truth)))) == truth
+    assert truth_to_json(m)["ref_known"] == ["IGHVF1-G1*02", "IGHVF1-G1*04"]
+    # without the IUIS map the truth has no reference-exact known answer
+    assert real_truths({"b": reads["b"]}, [_meta("b")], _genotype(A), reference)[0].ref_known is None
+
+
 def test_truth_health_counts_reads_that_exactly_match_an_allele_the_genotype_lacks():
     """A tool-neutral audit of the truth: the known-answer rule run against the shared reference's V alleles instead
     of the donor's. A read whose V is exactly a shared allele the donor does not carry shows an allele the genotype
@@ -618,8 +666,8 @@ def test_truth_health_counts_reads_that_exactly_match_an_allele_the_genotype_lac
               "b2": _race(shared_b.sequence, n_region=_random(16, 60)), "c": _race(c.sequence),
               "d": _race(d.sequence), "own": _race(on_h0.sequence), "none": _race(_random(300, 61))}
     meta = [_meta(read_id) for read_id in reads]
-    truths = real_truths(reads, meta, genotype, reference)
-    health = truth_health(reads, meta, truths, genotype, reference, iuis)
+    truths = real_truths(reads, meta, genotype, reference, iuis=iuis)
+    health = truth_health(truths, genotype, iuis)
     assert health["reads"] == 17 and health["shared_exact"] == 16 and health["not_carried"] == 15
     assert health["by_class"] == {"carried": 11, "captured": 2, "uncalled": 1, "not_captured": 1}
     genes = {entry["gene"]: entry for entry in health["genes"]}
@@ -690,11 +738,17 @@ def test_the_pilot_donors_real_truth(donor, reference):
                                 reference, iuis)
     layout = RunLayout(RUN)
     reads, meta = _read_fasta(layout.real_reads(donor)), _read_tsv(layout.real_reads_meta(donor))
-    truths = real_truths(reads, meta, genotype, reference)
+    truths = real_truths(reads, meta, genotype, reference, iuis=iuis)
     n = len(truths)
     assert n == len(reads) == len(meta)
     known = [t for t in truths if t.known is not None]
     assert len(known) / n > 0.05  # the design's flag line (measured: W-97 5.7%, SC-23 25.9%)
+    # the reference-exact known answer needs no genotype: on W-97, whose genotype lacks every IGHV4 gene, it finds
+    # many more reads than the donor's alleles do
+    referenced = [t for t in truths if t.ref_known is not None]
+    if donor == "W-97":
+        assert len(referenced) > len(known) + 1000, (len(referenced), len(known))
+    assert all(t.ref_known_gene for t in referenced)
     assert all(t.naive == (t.known is not None and t.isotype == "IGHM") for t in truths)
     assert all(t.novel_known == (t.known is not None and not t.known_shared) for t in truths)
     spans = {row["sequence_id"]: json.loads(row["primer_masked"]) for row in meta}

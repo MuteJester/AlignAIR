@@ -416,7 +416,7 @@ def oracle_status(check: dict) -> str:
         return "failed"
     if check.get("passed"):
         return "passed"
-    known_right = all(check.get(key) in (None, 1.0) for key in ("known_top1", "known_gene_top1"))
+    known_right = all(check.get(key) in (None, 1.0) for key in ("known_top1", "known_gene_top1", "ref_known_top1"))
     return "unchecked" if known_right and not check.get("scored") else "failed"
 
 
@@ -578,10 +578,12 @@ def _genotype_block(genotype: RealGenotype, alleles: list[str] | None, reference
 def _truth_block(truths: list[RealTruth]) -> dict:
     reads = len(truths)
     documented = sum(truth.known is not None and not truth.novel_known for truth in truths)
+    referenced = sum(truth.ref_known is not None for truth in truths)
     members = Counter(truth.clonotype for truth in truths)
     share = documented / reads if reads else None
     return {"reads": reads, "known": documented, "novel_known": sum(truth.novel_known for truth in truths),
             "known_share": share, "low_known_yield": share is not None and share < KNOWN_YIELD_FLAG,
+            "ref_known": referenced, "ref_known_share": referenced / reads if reads else None,
             "naive": sum(truth.naive for truth in truths),
             "anchor": dict(Counter(truth.anchor or "none" for truth in truths)), "clonotypes": len(members),
             "multi_read_clonotypes": sum(count > 1 for count in members.values()),

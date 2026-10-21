@@ -21,7 +21,9 @@ CaseScores = dict[str, float]
 # truth; and the crop and misorientation flags describe the read. Of the real-data metrics (``real.metrics``), where
 # the calls of novel known answers go, whether a tool's tie list hides a supported V allele, the D and J support
 # (the D and J truth is partial and its calls noisier) and the tie-aware V support and known-answer accuracy (what
-# the read's observed window can tell apart) are reported beside the V headline.
+# the read's observed window can tell apart) are reported beside the V headline. The reference-exact known-answer
+# accuracies (``real.v.ref_known_top1``, ``real.v.ref_known_gene_top1``) are compared, higher being better, so they
+# need no entry here.
 INFORMATIONAL: frozenset[str] = frozenset({".set_size", ".top1_generative", "junction.start_err", "junction.end_err",
                                            "v_indel.mutation_count_err", "v_indel.germline_errors",
                                            "v_novel.snp_mutations",

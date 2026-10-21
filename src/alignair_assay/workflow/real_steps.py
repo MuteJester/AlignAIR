@@ -20,7 +20,8 @@ whose fingerprint differs is redone, with every step after it that reads its out
   given, in their order, and the truth's audit (``real.truth.truth_health``); ``truth.jsonl.gz`` with its record,
   the audit among it (``health``), as the header line. Its fingerprint: the SHA-256s of
   ``reads.fasta``, ``reads.tsv`` and ``genotype.json``, the reference's digest and its gapped forms' (the shared
-  anchors place Cys104 through them) and ``TRUTH_CODE``.
+  anchors place Cys104 through them), the IUIS map's OGRDB file (the reference-exact known answer's genes) and
+  ``TRUTH_CODE``.
 - ``runs`` (``run_identity``, ``current_run``, ``make_run``): one tool on one arm, ``Runner.run`` on ``reads.fasta``;
   ``run.json`` (``runners.base.write_run_json``) is written last and records the run's ``identity``: the tool's
   ``fingerprint()`` (binary, image and model digests), the reads' SHA-256, the shared reference's content digest
@@ -213,15 +214,15 @@ def step_truth(donor: str, layout: RunLayout, genotype: RealGenotype, reference:
     reads, meta = layout.real_reads(donor), layout.real_reads_meta(donor)
     inputs = {"reads_sha256": sha256_file(reads), "meta_sha256": sha256_file(meta),
               "genotype_sha256": sha256_file(layout.real_genotype_json(donor)), "reference_digest": reference.digest(),
-              "reference_gapped_digest": reference.gapped_digest()}
+              "reference_gapped_digest": reference.gapped_digest(), "iuis_ogrdb_sha256": iuis.source.get("sha256")}
     fingerprint = digest({"inputs": inputs, "code_sha256": code_digest(TRUTH_CODE)})
     path = layout.real_truth(donor)
     header = jsonl_header(path)
     if header.get("fingerprint") == fingerprint and isinstance(header.get("health"), dict):
         return [truth_from_json(row) for row in read_jsonl(path)], header["health"], _step("reused", started)
     sequences, rows = dict(read_fasta(reads)), read_meta(meta)
-    truths = real_truths(sequences, rows, genotype, reference)
-    health = truth_health(sequences, rows, truths, genotype, reference, iuis)
+    truths = real_truths(sequences, rows, genotype, reference, iuis=iuis)
+    health = truth_health(truths, genotype, iuis)
     temporary = path.with_name(f".{path.name}")
     write_jsonl((truth_to_json(truth) for truth in truths), temporary,
                 header={"kind": TRUTH_KIND, "donor": donor, "fingerprint": fingerprint, "inputs": inputs,

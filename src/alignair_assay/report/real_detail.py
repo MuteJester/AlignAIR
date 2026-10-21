@@ -22,6 +22,7 @@ from alignair_assay.report.real_format import (
     KNOWN,
     KNOWN_YIELD_FLAG,
     PRIMARY,
+    REF_KNOWN,
     _arm_tools,
     _evidence,
     _find,
@@ -234,14 +235,21 @@ def _known_answers(summary: dict, scopes: list[dict]) -> list[str]:
         known = (f"{_int(truth.get('known'))} (**{_pct(share)}**, below {KNOWN_YIELD_FLAG:.0%})" if low
                  else f"{_int(truth.get('known'))} ({_pct(share)})")
         anchor = truth.get("anchor") or {}
-        rows.append([name, _int(truth.get("reads")), known, _int(truth.get("novel_known")), _int(truth.get("naive")),
+        referenced = (MISSING if truth.get("ref_known") is None
+                      else f"{_int(truth.get('ref_known'))} ({_pct(truth.get('ref_known_share'))})")
+        rows.append([name, _int(truth.get("reads")), known, referenced, _int(truth.get("novel_known")),
+                     _int(truth.get("naive")),
                      f"{_int(truth.get('clonotypes'))} ({_int(truth.get('multi_read_clonotypes'))})",
                      " / ".join(_int(anchor.get(key, 0)) for key in ("donor", "shared", "none"))])
     lines = [f"A read is a documented known answer when exactly one donor allele's region through Cys104 (at least "
              f"200 nt of it observed) occurs in it exactly, and that allele is in the shared reference; known_top1 is "
              f"scored on every one, excluded from R1 or not (its truth is tool-neutral). A yield below "
-             f"{KNOWN_YIELD_FLAG:.0%} is flagged.", "",
-             *_table(["Donor", "Reads", "Documented known answers", "Novel known answers", "Naive",
+             f"{KNOWN_YIELD_FLAG:.0%} is flagged. A reference-exact known answer is the same rule run against the "
+             f"shared reference alone: a read whose observed V is exactly one shared allele's window, whatever the "
+             f"donor's genotype, so it covers the genes the donor's assembly misses; ref_known_top1 is scored on "
+             f"every one, and no exclusion touches it.", "",
+             *_table(["Donor", "Reads", "Documented known answers", "Reference-exact known answers",
+                      "Novel known answers", "Naive",
                       "Clonotypes (multi-read)", "Cys104 anchor: donor / shared / none"], rows)]
     if not scopes:
         return lines
@@ -252,14 +260,15 @@ def _known_answers(summary: dict, scopes: list[dict]) -> list[str]:
               *_table(["Run", *(scope["label"] for scope in scopes)], accuracy)]
     paired = [[scope["label"], f"{_pair_header(a, b)}, {arm}",
                *(_pair_cell(_find(scope, a, b, arm), metric) for metric in KNOWN),
-               _informational(_find(scope, a, b, arm), KNOWN_OBSERVABLE)]
+               _informational(_find(scope, a, b, arm), KNOWN_OBSERVABLE),
+               _pair_cell(_find(scope, a, b, arm), REF_KNOWN)]
               for scope in scopes for arm in ARMS for a, b in _pairs(scopes, arm) if _find(scope, a, b, arm)]
     if paired:
         lines += ["", "Paired (known_top1, observably: whether the call's germline window over the read's observed V "
                       "is the known alleles' window, so a call the read cannot tell from the known allele counts as "
                       "right; informational):", "",
                   *_table(["Scope", "Pair", "known_top1", "known_gene_top1",
-                           "known_top1, observably (informational: paired means)"], paired)]
+                           "known_top1, observably (informational: paired means)", "ref_known_top1"], paired)]
     return lines
 
 
@@ -336,7 +345,7 @@ def _clusterings(summary: dict, scopes: list[dict], pairs: list[tuple[str, str]]
         clusterings = (_find(scope, *primary, "shared") or {}).get("clusterings") or {}
         if not clusterings:
             continue
-        for metric, label in ((HEADLINE, "R1"), (KNOWN[0], "known_top1")):
+        for metric, label in ((HEADLINE, "R1"), (KNOWN[0], "known_top1"), (REF_KNOWN, "ref_known_top1")):
             rows.append([scope["label"], label,
                          *(_pair_cell(_find(scope, *primary, "shared"), metric,
                                       entries=((clusterings.get(name) or {}).get("comparison") or {}))

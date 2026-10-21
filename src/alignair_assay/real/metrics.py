@@ -98,6 +98,11 @@ Mikelov gene-support thresholds" (``thresholds=True``); the R1 primary is the in
   (``known_shared``), or equals one of its donor alleles through 318; its gene is right when one of its IUIS genes is
   one of the known answer's: a gene VDJbase found its alleles at, or an IUIS gene of their own sequence (an allele
   found at a paralog's locus may have a documented allele's sequence). No call is wrong.
+- ``real.v.ref_known_top1`` and ``real.v.ref_known_gene_top1`` (compared, higher is better), on every read with a
+  reference-exact known answer (``RealTruth.ref_known``: the read is exactly a shared allele's window, judged against
+  the shared reference alone), excluded or not: the truth is the read itself, and it covers genes the donor's
+  assembly misses. The top-1 is right when it, or an allele with its sequence (``merge_identical``), is in the set;
+  its gene when one of its IUIS genes is one of the set's (``ref_known_gene``). No call is wrong.
 - ``real.v.novel_known_call`` (informational): on a novel known answer, whether the call's IUIS gene is the known
   gene: where calls go when the true allele is not in the tool's reference.
 - The tie-aware metrics (informational), which separate a read that cannot tell two alleles apart from a wrong call.
@@ -297,6 +302,20 @@ class SupportIndex:
         through = self._shared_318.get(name)
         return through is not None and any(through_318(allele.gapped) == through
                                            for allele_id in truth.known for allele in self._by_id.get(allele_id, ()))
+
+    def ref_known_top1(self, name: str | None, truth: RealTruth) -> bool:
+        """True when V call ``name``, or an allele with its sequence, is in ``truth``'s reference-exact known answer
+        (``ref_known``). False without a call or one."""
+        if not name or truth.ref_known is None:
+            return False
+        return bool(self.merged.get(name, frozenset({name})) & truth.ref_known)
+
+    def ref_known_gene_top1(self, name: str | None, truth: RealTruth) -> bool:
+        """True when one of V call ``name``'s IUIS genes is one of ``truth``'s reference-exact known genes
+        (``ref_known_gene``). False without a call or one."""
+        if not name or truth.ref_known is None:
+            return False
+        return bool(set(self.genes(name)) & set(truth.ref_known_gene.split("|")))
 
     def known_gene_top1(self, name: str | None, truth: RealTruth) -> bool:
         """True when one of V call ``name``'s IUIS genes is one of ``truth``'s known genes: the genes VDJbase found
@@ -510,6 +529,9 @@ def real_case_scores(pred: Prediction | None, truth: RealTruth, calls: str | Rea
             scores["real.v.known_top1"] = float(index.known_top1(top, truth))
             scores["real.v.known_gene_top1"] = float(index.known_gene_top1(top, truth))
             scores["real.v.known_top1_observable"] = float(index.known_top1_observable(top, truth))
+    if truth.ref_known is not None:
+        scores["real.v.ref_known_top1"] = float(index.ref_known_top1(top, truth))
+        scores["real.v.ref_known_gene_top1"] = float(index.ref_known_gene_top1(top, truth))
     if isinstance(calls, ReadCalls):
         for segment, cls in (("d", calls.d), ("j", calls.j)):
             if cls is None or segment in skip:
@@ -532,11 +554,18 @@ def oracle_self_check(truths: Iterable[RealTruth], index: SupportIndex) -> dict:
     """The truth checked against itself (design §10.6): the oracle (``oracle_prediction``) on every known answer
     that is not novel. ``reads``; ``classes`` (class -> reads); ``excluded_genes`` (each exclusion -> the known
     genes of its reads); ``scored`` (reads not excluded); ``supported`` and ``unsupported`` (their shares of the
-    scored reads, None without one); ``known_top1`` and ``known_gene_top1`` (shares of all ``reads``); and
-    ``passed``: every scored read supported, and every read's known top-1 and gene right."""
+    scored reads, None without one); ``known_top1`` and ``known_gene_top1`` (shares of all ``reads``);
+    ``ref_reads`` and ``ref_known_top1``: the reads with a reference-exact known answer, and the share whose oracle
+    call (the set's first shared name) is right there; and ``passed``: every scored read supported, and every read's
+    known top-1 and gene right, and every reference-exact one."""
     classes: Counter[str] = Counter()
     genes: dict[str, set[str]] = defaultdict(set)
-    reads = scored = supported = top1 = gene_top1 = 0
+    reads = scored = supported = top1 = gene_top1 = ref_reads = ref_top1 = 0
+    truths = list(truths)
+    for truth in truths:
+        if truth.ref_known is not None:
+            ref_reads += 1
+            ref_top1 += index.ref_known_top1(sorted(truth.ref_known)[0], truth)
     for truth in truths:
         pred = oracle_prediction(truth)
         if pred is None:
@@ -557,7 +586,9 @@ def oracle_self_check(truths: Iterable[RealTruth], index: SupportIndex) -> dict:
             "scored": scored, "supported": supported / scored if scored else None,
             "unsupported": (scored - supported) / scored if scored else None,
             "known_top1": top1 / reads if reads else None, "known_gene_top1": gene_top1 / reads if reads else None,
-            "passed": scored > 0 and supported == scored and top1 == reads and gene_top1 == reads}
+            "ref_reads": ref_reads, "ref_known_top1": ref_top1 / ref_reads if ref_reads else None,
+            "passed": scored > 0 and supported == scored and top1 == reads and gene_top1 == reads
+                      and ref_top1 == ref_reads}
 
 
 def decoy_calls(index: SupportIndex) -> dict:

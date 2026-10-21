@@ -46,6 +46,15 @@ VH primer. The allele matches when the read holds its window exactly, ending at 
   the locus where genomic sequencing found it); a set spanning several genes, such as identical paralogs
   (IGHV1-69*01 and IGHV1-69D*01), has them sorted and joined by ``|``.
 
+**Reference-exact known answer** (``ref_known``, ``ref_known_gene``). The same rule, run against the shared
+reference's V alleles instead of the donor's (each a ``RealAllele`` of its gapped form and IUIS genes; Cys104 from
+``cys104_end`` with the identical-sequence rule): a read whose observed V is exactly one shared allele's window, at
+least ``min_window`` (200) nt, ``N`` never a wildcard, identical windows one set and two distinct windows none. It
+needs no donor genotype, so it covers the genes the donor's assembly misses (uncaptured or uncalled), and its truth
+is the read itself: the metrics score it on every read with one, whatever its exclusions. ``ref_known`` is the set's
+shared names; ``ref_known_gene`` its IUIS genes (``IuisMap.genes``, a name standing in for an unmapped allele),
+sorted and joined by ``|``. ``real_truths`` computes it given the IUIS map (``iuis``); without one both are None.
+
 **Naive.** IgM (``NAIVE_ISOTYPE``; neither protocol has an IgD primer) and a known answer: the observed V up to
 Cys104 is the allele without a mismatch. Mutations past Cys104 (CDR3, J) are not looked at.
 
@@ -187,6 +196,10 @@ class RealTruth:
     v_window_n: tuple[int, ...] = ()
     # the SL15 clonotype: f"{donor}/sl15:{first junction of its component}", or the single clonotype; None unset
     clonotype_sl15: str | None = None
+    # the shared alleles whose window the read holds exactly (the reference-exact known answer); None without one
+    ref_known: frozenset[str] | None = None
+    # their IUIS genes, sorted and joined by "|"; None without one
+    ref_known_gene: str | None = None
 
 
 class KnownMatch(NamedTuple):
@@ -286,13 +299,15 @@ def junction_by_motif(read: str, cys_end_in_read: int, *, min_length: int = MIN_
 
 
 def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: RealGenotype, reference: Reference, *,
-                min_window: int = MIN_WINDOW, max_mismatches: int = MAX_ANCHOR_MISMATCHES) -> list[RealTruth]:
+                min_window: int = MIN_WINDOW, max_mismatches: int = MAX_ANCHOR_MISMATCHES,
+                iuis: IuisMap | None = None) -> list[RealTruth]:
     """The truth of every read, in ``meta``'s order. ``reads`` maps a sequence id to its sequence (the FASTA);
     ``meta`` holds one row per read (the TSV: ``sequence_id``, ``isotype``, ``protocol`` and ``primer_masked``,
     as a list or as JSON); ``reference`` is the shared reference, whose V anchors place Cys104 for the clonotype
-    of a read without a donor anchor. ValueError, naming an id, for an id given twice, a row without a read, a read
-    without a row, or a primer span outside its read; and for a genotype mapped to another shared reference (its
-    ``source["reference_digest"]``, where it has one)."""
+    of a read without a donor anchor and whose V alleles, named by the IUIS map ``iuis``, give the reference-exact
+    known answer (None without ``iuis``). ValueError, naming an id, for an id given twice, a row without a read, a
+    read without a row, or a primer span outside its read; and for a genotype or an IUIS map mapped to another shared
+    reference (the genotype's ``source["reference_digest"]``, where it has one)."""
     mapped_to = (genotype.source or {}).get("reference_digest")
     if mapped_to and mapped_to != reference.digest():
         raise ValueError(f"the genotype of {genotype.donor} was mapped to another shared reference (digest "
@@ -309,8 +324,12 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
     extra = [read_id for read_id in reads if read_id not in ids]
     if extra:
         raise ValueError(f"{len(extra)} reads have no metadata row (e.g. {sorted(extra)[0]})")
+    if iuis is not None and iuis.reference_digest != reference.digest():
+        raise ValueError(f"the IUIS map was built against another shared reference (digest "
+                         f"{iuis.reference_digest[:12]}, not {reference.digest()[:12]})")
     index = _index(genotype.alleles, max_mismatches)
     shared_anchors = _shared_anchors(reference, max_mismatches)
+    shared_index = None if iuis is None else _index(shared_alleles(reference, iuis), max_mismatches)
     donor = genotype.donor
     truths = []
     for row in rows:
@@ -336,11 +355,15 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
             known = frozenset(allele.allele_id for allele in match.alleles)
             shared = frozenset(name for allele in match.alleles for name in allele.shared)
             gene = "|".join(sorted({allele.gene for allele in match.alleles}))
+        ref = None if shared_index is None else _known_match(read, observed, shared_index, min_window)
         truths.append(RealTruth(read_id=read_id, donor=donor, isotype=row["isotype"], protocol=row["protocol"],
                                 observed=observed, known=known, known_shared=shared, known_gene=gene,
                                 novel_known=match is not None and not shared,
                                 naive=match is not None and row["isotype"] == NAIVE_ISOTYPE, clonotype=clonotype,
-                                anchor=anchor, cys_end=cys_end, v_window_n=gaps))
+                                anchor=anchor, cys_end=cys_end, v_window_n=gaps,
+                                ref_known=None if ref is None else frozenset(a.allele_id for a in ref.alleles),
+                                ref_known_gene=None if ref is None else "|".join(sorted(
+                                    {gene for allele in ref.alleles for gene in allele.gene.split("|")}))))
     roots = single_linkage((junction for truth in truths if (junction := _junction(truth))), SL15_SHARE)
     return [dataclasses.replace(truth, clonotype_sl15=_sl15(truth, roots)) for truth in truths]
 
@@ -350,47 +373,47 @@ def clonotype_clusters(truths: Iterable[RealTruth]) -> dict[str, str]:
     return {truth.read_id: truth.clonotype for truth in truths}
 
 
-def truth_health(reads: Mapping[str, str], meta: Iterable[Mapping], truths: Iterable[RealTruth],
-                 genotype: RealGenotype, reference: Reference, iuis: IuisMap, *, min_window: int = MIN_WINDOW,
+def shared_alleles(reference: Reference, iuis: IuisMap) -> list[RealAllele]:
+    """The shared reference's V alleles as ``RealAllele`` records, for the known-answer rule: each named by its
+    shared name, of its IUIS genes (``IuisMap.genes``, joined by ``|``; its name for an unmapped allele), with its
+    gapped form (``Reference.gapped``)."""
+    return [RealAllele(allele_id=name, gene="|".join(iuis.genes(name)) or name, segment="v",
+                       sequence=sequence.upper(), gapped=reference.gapped(name), haplotype=0, functional=True,
+                       shared=(name,), iuis=iuis.labels(name))
+            for name, sequence in reference.alleles.get("v", {}).items()]
+
+
+def truth_health(truths: Iterable[RealTruth], genotype: RealGenotype, iuis: IuisMap, *,
                  flag: int = TRUTH_GAP_FLAG) -> dict:
-    """The truth audit of the module docstring, over the reads of ``meta`` (as ``real_truths`` reads them) with their
-    ``truths`` (for the clonotypes) and the donor's captured ``genotype``, against ``reference``'s V alleles named by
-    ``iuis``: ``reads``; ``shared_exact`` (reads that are exactly one shared allele's window); ``not_carried`` (of
-    those, the reads whose allele the donor does not carry); ``by_class`` (``GAP_CLASSES`` -> reads); ``genes`` (one
-    entry per gene: ``gene``, ``class``, ``reads``, ``clonotypes``, ``alleles`` (shared allele -> reads) and
-    ``h0_only``; the most reads first); ``flagged`` (carried genes with at least ``flag`` clonotypes) and
-    ``flag_clonotypes``."""
-    shared = [RealAllele(allele_id=name, gene="|".join(iuis.genes(name)) or name, segment="v",
-                         sequence=sequence.upper(), gapped=reference.gapped(name), haplotype=0, functional=True,
-                         shared=(name,), iuis=iuis.labels(name))
-              for name, sequence in reference.alleles.get("v", {}).items()]
-    index = _index(shared)
+    """The truth audit of the module docstring over one donor's ``truths``, their reference-exact known answers
+    (``real_truths(..., iuis=iuis)``) against the donor's captured ``genotype``: ``reads``; ``shared_exact`` (reads
+    that are exactly one shared allele's window); ``not_carried`` (of those, the reads whose allele the donor does
+    not carry); ``by_class`` (``GAP_CLASSES`` -> reads); ``genes`` (one entry per gene: ``gene``, ``class``,
+    ``reads``, ``clonotypes``, ``alleles`` (shared allele -> reads) and ``h0_only``; the most reads first);
+    ``flagged`` (carried genes with at least ``flag`` clonotypes) and ``flag_clonotypes``. ``iuis`` is the map the
+    truths were computed with."""
     donor_shared = {name for allele in genotype.alleles for name in allele.shared}
-    clonotypes = {truth.read_id: truth.clonotype for truth in truths}
     carried = {allele.gene for allele in genotype.alleles}
     unphased = {gene for gene in carried if all(allele.haplotype == 0 for allele in genotype.carried(gene))}
     captured, uncalled = genotype.captured or frozenset(), genotype.uncalled or frozenset()
     found: dict[str, dict] = {}
     count = exact = 0
-    for row in meta:
+    for truth in truths:
         count += 1
-        read = mask_primers(reads[row["sequence_id"]], row.get("primer_masked"))
-        match = _known_match(read, observed_span(read, []), index, min_window)
-        if match is None:
+        if truth.ref_known is None:
             continue
         exact += 1
-        names = {allele.allele_id for allele in match.alleles}
-        if names & donor_shared:
+        if truth.ref_known & donor_shared:
             continue
-        genes = sorted({gene for allele in match.alleles for gene in allele.gene.split("|")})
+        genes = truth.ref_known_gene.split("|")
         cls = ("carried" if set(genes) & carried else "uncalled" if set(genes) & uncalled
                else "captured" if set(genes) <= captured else "not_captured")
-        entry = found.setdefault("|".join(genes), {"gene": "|".join(genes), "class": cls, "reads": 0,
-                                                   "clonotypes": set(), "alleles": defaultdict(int),
-                                                   "h0_only": bool(set(genes) & unphased)})
+        entry = found.setdefault(truth.ref_known_gene, {"gene": truth.ref_known_gene, "class": cls, "reads": 0,
+                                                        "clonotypes": set(), "alleles": defaultdict(int),
+                                                        "h0_only": bool(set(genes) & unphased)})
         entry["reads"] += 1
-        entry["clonotypes"].add(clonotypes.get(row["sequence_id"], row["sequence_id"]))
-        entry["alleles"]["|".join(sorted(names))] += 1
+        entry["clonotypes"].add(truth.clonotype)
+        entry["alleles"]["|".join(sorted(truth.ref_known))] += 1
     genes = sorted(({**entry, "clonotypes": len(entry["clonotypes"]), "alleles": dict(sorted(entry["alleles"].items()))}
                     for entry in found.values()), key=lambda entry: (-entry["reads"], entry["gene"]))
     return {"reads": count, "shared_exact": exact, "not_carried": sum(entry["reads"] for entry in genes),
@@ -468,7 +491,9 @@ def truth_to_json(truth: RealTruth) -> dict:
             "known_shared": None if truth.known_shared is None else sorted(truth.known_shared),
             "known_gene": truth.known_gene, "novel_known": truth.novel_known, "naive": truth.naive,
             "clonotype": truth.clonotype, "anchor": truth.anchor, "cys_end": truth.cys_end,
-            "v_window_n": list(truth.v_window_n), "clonotype_sl15": truth.clonotype_sl15}
+            "v_window_n": list(truth.v_window_n), "clonotype_sl15": truth.clonotype_sl15,
+            "ref_known": None if truth.ref_known is None else sorted(truth.ref_known),
+            "ref_known_gene": truth.ref_known_gene}
 
 
 def truth_from_json(record: Mapping) -> RealTruth:
@@ -481,7 +506,9 @@ def truth_from_json(record: Mapping) -> RealTruth:
                          known_shared=None if shared is None else frozenset(shared), known_gene=record["known_gene"],
                          novel_known=record["novel_known"], naive=record["naive"], clonotype=record["clonotype"],
                          anchor=record["anchor"], cys_end=record["cys_end"], v_window_n=tuple(record["v_window_n"]),
-                         clonotype_sl15=record["clonotype_sl15"])
+                         clonotype_sl15=record["clonotype_sl15"],
+                         ref_known=None if record["ref_known"] is None else frozenset(record["ref_known"]),
+                         ref_known_gene=record["ref_known_gene"])
     except (KeyError, TypeError) as error:
         raise ValueError(f"not a read's truth (truth_to_json): {error!r}") from None
 
