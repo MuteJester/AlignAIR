@@ -86,6 +86,10 @@ def _comparison(a, b, arm, n, k, *, verdict="tie_or_inconclusive", strata=("mult
                                             "real.v.known_gene_top1": _entry(1.0, 1.0, 30, 30, test="mcnemar_exact")}
     out = {"a": a, "b": b, "arm": arm, "status": "compared", "n_reads": 500, "n_clusters": 488,
            "multi_read_clusters": 9, "excluded": {"v": 357, "d": 0, "j": 0}, "overall": overall,
+           "one_sided": {"a": {"reads": 3, "reasons": {"excluded:not_captured": 3}, "documented": 1,
+                               "documented_wrong": 0},
+                         "b": {"reads": 40, "reasons": {"excluded:not_captured": 31, "excluded:uncalled": 9},
+                               "documented": 6, "documented_wrong": 4}},
            "informational": {"real.v.any_listed_supported": {"a": _cell(0.825, n), "b": _cell(0.825, n)}},
            "strata": {label: {"real.v.unsupported": _entry(0.2, 0.18, n // 2, k // 2)} for label in strata},
            "sensitivity": {
@@ -201,7 +205,11 @@ def _summary() -> dict:
               "comparisons": [{**_comparison(a, b, arm, 286, 278, strata=("multiplex/IGHM", "race/IGHG")),
                                "donors": ["SC-23", "W-97"]} for a, b, arm in pairs],
               "arm_deltas": [{**_arm_delta(tool, 242, 234), "donors": ["SC-23", "W-97"]}
-                             for tool in ("igblast", "alignair-api")]}
+                             for tool in ("igblast", "alignair-api")],
+              "protocols": {protocol: {"donors": [donor], "comparisons": [
+                  {**_comparison(a, b, arm, n, k, strata=(f"{protocol}/IGHG", f"{protocol}/IGHM")), "donors": [donor]}
+                  for a, b, arm in pairs]}
+                  for protocol, donor, n, k in (("multiplex", "W-97", 143, 139), ("race", "SC-23", 150, 147))}}
     for tool in pooled["tools"]["shared"].values():  # the pooled block has no per-run extras
         for key in ("consensus_weighted", "novel_known", "matching"):
             tool.pop(key)
@@ -313,15 +321,15 @@ def test_lite_quality_is_shown_per_run():
 
 def test_cluster_count_beside_each_delta():
     md = real_report_markdown(_summary())
-    rows = _table(_section(md, "R1 headline (shared arm)"))
-    assert rows[0] == ["Donor", "igblast", "alignair (image)", "alignair-api", "alignair (image) − igblast",
-                       "alignair-api − igblast"]
+    section = _section(md, "R1 headline (shared arm)")
+    rows = _table(section[section.index("R1 Δ per scope"):])
+    assert rows[0] == ["Scope", "alignair (image) − igblast", "alignair-api − igblast"]
     assert [row[0] for row in rows[1:]] == ["W-97", "SC-23", "Pooled (2 donors)"]
     for row in rows[1:]:
-        for cell in row[4:]:
+        for cell in row[1:]:
             assert re.search(r"-?\d+\.\d pp \[[-+]\d+\.\d, [-+]\d+\.\d\], (not significant|.* better); "
                              r"\d+ paired \(\d+ clonotypes\)", cell), cell
-    assert rows[1][4].endswith("143 paired (139 clonotypes)") and rows[3][5].endswith("286 paired (278 clonotypes)")
+    assert rows[1][1].endswith("143 paired (139 clonotypes)") and rows[3][2].endswith("286 paired (278 clonotypes)")
     # the components and the detail tables carry the clusters too
     for title in ("R1 per donor", "Sensitivity", "Stratification: protocol × isotype"):
         section = _section(md, title)
@@ -348,31 +356,71 @@ def test_the_summary_page_leads_with_a_three_line_header():
     assert md.index("\n---\n") < md.index("\n## R1 per donor\n")  # the summary page, then the detail
 
 
-def test_r1_headline_shows_each_tool_per_donor_and_pooled_then_the_components():
+def test_the_bottom_line_leads_per_protocol_with_the_pre_declared_primary():
+    md = real_report_markdown(_summary())
+    section = _section(md, "R1 headline (shared arm)")
+    assert section.index("**Bottom line.**") < section.index("pre-declared primary is the paired shared-arm R1 Δ, "
+                                                             "alignair (image) − igblast, per protocol")
+    rows = _table(section)
+    assert rows[0] == ["Protocol (donors)", "R1 Δ, alignair (image) − igblast (primary)",
+                       "known_top1 Δ, alignair (image) − igblast", "V reads out by one call alone"]
+    assert [row[0] for row in rows[1:]] == ["multiplex (W-97)", "race (SC-23)"]
+    multiplex = rows[1]
+    assert multiplex[1] == "19.6% → 17.5%: -2.1 pp [-5.2, +1.0], not significant; 143 paired (139 clonotypes)"
+    assert multiplex[2] == "100.0% → 100.0%: +0.0 pp [-3.1, +3.1], not significant; 30 paired (30 clonotypes)"
+    assert multiplex[3] == ("igblast 3 (1 documented known answers, 0 of them called wrong); alignair (image) 40 "
+                            "(6 documented known answers, 4 of them called wrong)")
+    assert rows[2][1].endswith("150 paired (147 clonotypes)")
+    # the pool over both protocols comes second, said to depend on the protocols' mix
+    pooled = next(line for line in section.splitlines() if line.startswith("Pooled over both protocols"))
+    assert "depends on how many reads each protocol contributes" in pooled
+    assert "R1 19.6% → 17.5%: -2.1 pp [-5.2, +1.0], not significant; 286 paired (278 clonotypes)" in pooled
+    assert section.index("| race (SC-23) |") < section.index("Pooled over both protocols")
+    # every CI is conditional on these donors; every other verdict is exploratory
+    assert "conditional on these donors" in section and "exploratory" in section
+    assert "Holm runs within each comparison" in section
+    # the runs' own R1, with their different denominators, are in the detail, not on the summary page
+    assert "22.5% (n=151)" not in section
+    assert "22.5% (n=151)" in _section(md, "R1 per donor")
+
+
+def test_the_scope_table_and_the_components_of_the_primary():
     summary = _summary()
     summary["pooled"]["comparisons"][0]["overall"]["real.v.unsupported"]["verdict"] = "b_better"
     md = real_report_markdown(summary)
     section = _section(md, "R1 headline (shared arm)")
-    rows = _table(section)
-    w97 = rows[1]
-    assert w97[1:4] == ["22.5% (n=151)", "17.9% (n=145)", "17.9% (n=145)"]
-    assert w97[4] == "-2.1 pp [-5.2, +1.0], not significant; 143 paired (139 clonotypes)"
-    assert rows[3][4] == "**-2.1 pp** [-5.2, +1.0], **alignair (image) better**; 286 paired (278 clonotypes)"
-    # the bottom line names the pooled result first, with the paired means
-    assert ("**Bottom line (pooled over 2 donors).** alignair (image) 17.5% vs igblast 19.6% of V calls "
-            "unsupported: -2.1 pp [-5.2, +1.0], alignair (image) better (286 paired reads in 278 "
-            "clonotypes)") in section
-    # the components follow the headline table, on the same scope
+    rows = _table(section[section.index("R1 Δ per scope"):])
+    # a protocol of one donor is that donor's row
+    assert [row[0] for row in rows[1:]] == ["W-97", "SC-23", "Pooled (2 donors)"]
+    assert rows[1][1] == "19.6% → 17.5%: -2.1 pp [-5.2, +1.0], not significant; 143 paired (139 clonotypes)"
+    assert rows[3][1] == ("19.6% → 17.5%: **-2.1 pp** [-5.2, +1.0], **alignair (image) better**; 286 paired (278 "
+                          "clonotypes)")
     components = _table(section[section.index("Components"):])
+    assert components[0] == ["Component", "multiplex (W-97)", "race (SC-23)", "Pooled (2 donors)"]
     assert [row[0] for row in components[1:]] == ["unsupported allele", "unsupported gene", "no call"]
-    assert components[1][4] == "-1.4 pp [-4.5, +1.7], not significant; 286 paired (278 clonotypes)"
-    # the bottom line, then the table, then what R1 is
+    assert components[1][3] == "5.6% → 4.2%: -1.4 pp [-4.5, +1.7], not significant; 286 paired (278 clonotypes)"
     assert section.index("**Bottom line") < section.index("| W-97 |") < section.index("R1 (`real.v.unsupported`")
     assert section.index("R1 (`real.v.unsupported`") < section.index("Components")
-    # a tie reads "not significant" in prose, and a pair with the previous pair's result says so
-    tie = _section(real_report_markdown(_summary()), "R1 headline (shared arm)")
-    assert ("alignair (image) 17.5% vs igblast 19.6% of V calls unsupported: -2.1 pp [-5.2, +1.0], not significant "
-            "(286 paired reads in 278 clonotypes); alignair-api the same.") in tie
+    # protocols of two donors each get their own rows
+    summary["pooled"]["protocols"]["multiplex"]["donors"] = ["W-97", "W-133"]
+    rows = _table(_section(real_report_markdown(summary), "R1 headline (shared arm)").split("R1 Δ per scope")[1])
+    assert [row[0] for row in rows[1:]] == ["multiplex (W-97, W-133)", "W-97", "SC-23", "Pooled (2 donors)"]
+
+
+def test_one_call_alone_takes_reads_out_and_the_exclusions_say_by_what():
+    section = _section(real_report_markdown(_summary()), "Exclusions")
+    assert "a call into an excluded gene still takes the read out of R1 for both tools" in section
+    assert ("Of those, the reads one call alone takes out, by reason: alignair (image) − igblast shared: igblast 3 "
+            "(not_captured 3), alignair (image) 40 (not_captured 31, uncalled 9)") in section
+
+
+def test_a_summary_without_protocol_pools_leads_with_its_last_scope():
+    summary = _summary()
+    del summary["pooled"]["protocols"]
+    section = _section(real_report_markdown(summary), "R1 headline (shared arm)")
+    rows = _table(section)
+    assert rows[0][0] == "Scope" and [row[0] for row in rows[1:]] == ["Pooled (2 donors)"]
+    assert "Pooled over both protocols" not in section
 
 
 def test_cells_say_not_significant_too_few_clonotypes_or_no_variation_never_tie():
@@ -382,14 +430,13 @@ def test_cells_say_not_significant_too_few_clonotypes_or_no_variation_never_tie(
     overall["real.v.no_call"].update(delta=0.0, ci95=[0.0, 0.0])  # both tools 0% on every paired read
     md = real_report_markdown(summary)
     section = _section(md, "R1 headline (shared arm)")
-    pooled = _table(section)[3]
-    assert pooled[4] == "-2.1 pp [-5.2, +1.0], too few clonotypes; 286 paired (8 clonotypes)"
-    assert pooled[5] == "-2.1 pp [-5.2, +1.0], not significant; 286 paired (278 clonotypes)"
+    pooled = _table(section[section.index("R1 Δ per scope"):])[3]
+    assert pooled[1] == "19.6% → 17.5%: -2.1 pp [-5.2, +1.0], too few clonotypes; 286 paired (8 clonotypes)"
+    assert pooled[2] == "19.6% → 17.5%: -2.1 pp [-5.2, +1.0], not significant; 286 paired (278 clonotypes)"
     no_call = next(row for row in _table(section[section.index("Components"):]) if row[0] == "no call")
-    assert no_call[4] == "+0.0 pp [+0.0, +0.0], no variation; 286 paired (278 clonotypes)"
-    assert no_call[5] == "+0.0 pp [-3.1, +3.1], not significant; 286 paired (278 clonotypes)"
-    # the bottom line uses the tables' words
-    assert "-2.1 pp [-5.2, +1.0], too few clonotypes (286 paired reads in 8 clonotypes)" in section
+    assert no_call[3] == "0.0% → 0.0%: +0.0 pp [+0.0, +0.0], no variation; 286 paired (278 clonotypes)"
+    # the pool's line uses the tables' words
+    assert "-2.1 pp [-5.2, +1.0], too few clonotypes; 286 paired (8 clonotypes)" in section
     assert ", tie;" not in md and ", tie (" not in md and "**tie" not in md
 
 
@@ -433,7 +480,7 @@ def test_sensitivity_variants_side_by_side_with_the_primary():
 
 def test_exclusions_per_tool_and_reason_with_the_invariant():
     section = _section(real_report_markdown(_summary()), "Exclusions")
-    assert "never depends on whether a call is correct" in section
+    assert "never depends on whether it is correct" in section
     for reason in EXCLUSIONS:
         assert f"`{reason}`" in section  # each class explained, one line each
     assert "Peres et al. 2023" in section and "Mikelov et al. 2024" in section
@@ -613,10 +660,13 @@ def test_a_pair_not_compared_or_without_paired_reads():
     original = copy.deepcopy(summary)
     md = real_report_markdown(summary)
     assert summary == original  # the input is not changed
-    w97 = _table(_section(md, "R1 headline (shared arm)"))[1]
-    assert w97[2] == "—" and w97[4] == "not compared: alignair on the shared arm did not run successfully"
-    assert w97[5] == "no paired read (357 of 500 V-excluded by either call)"
-    assert "no paired read" in _section(md, "R1 per donor")
+    headline = _section(md, "R1 headline (shared arm)")
+    w97 = _table(headline[headline.index("R1 Δ per scope"):])[1]
+    assert w97[1] == "not compared: alignair on the shared arm did not run successfully"
+    assert w97[2] == "no paired read (357 of 500 V-excluded by either call)"
+    detail = _section(md, "R1 per donor")
+    assert "no paired read" in detail
+    assert _table(detail)[1][2] == "—"  # the run's own R1, which did not run
 
 
 def test_a_run_stopped_after_preprocessing_renders():
@@ -639,5 +689,5 @@ def test_missing_values_render_as_a_dash():
     summary = _summary()
     summary["donors"]["W-97"]["tools"]["shared"]["igblast"]["summary"]["real.v.unsupported"] = {
         "mean": float("nan"), "n": 0, "n_applicable": 0, "coverage": 0.0}
-    rows = _table(_section(real_report_markdown(summary), "R1 headline (shared arm)"))
+    rows = _table(_section(real_report_markdown(summary), "R1 per donor"))
     assert rows[1][1] == "— (n=0)"

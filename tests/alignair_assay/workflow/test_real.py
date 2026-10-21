@@ -125,6 +125,8 @@ class FakeTool:
     runs: list = []
     prepares: list = []
     fingerprints: list = []
+    # the reads ``alignair`` calls to IGHVF5-G1*01 (IGHV3-23, not captured) on the shared arm: steered out of R1
+    steer: set = set()
     version = "1"
 
     def __init__(self, name: str, options=None):
@@ -153,6 +155,8 @@ class FakeTool:
             if self.name == "alignair" and read_id.startswith("v1_") and read_id.endswith("b") \
                     and int(read_id[3:-1]) % 2:
                 call = "IGHVF1-G1*02"
+            if self.name == "alignair" and read_id in FakeTool.steer:
+                call = "IGHVF5-G1*01"
             if allowed is not None and call not in allowed:
                 call = "IGHVF5-G1*01"
             lines.append(f"{read_id}\t{sequence}\t{call}\tIGHD3-10*01\tIGHJ4*02")
@@ -249,6 +253,7 @@ def fakes(tmp_path, monkeypatch):
     found = Fakes(tmp_path / "data")
     found.data_root.mkdir()
     FakeTool.runs, FakeTool.prepares, FakeTool.fingerprints, FakeTool.version = [], [], [], "1"
+    FakeTool.steer = set()
     for tool in ("igblast", "alignair", "alignair-api"):
         monkeypatch.setitem(RUNNERS, tool, lambda options, tool=tool: FakeTool(tool, options))
     monkeypatch.setattr(real_steps, "check_images", lambda images: {
@@ -436,6 +441,35 @@ def test_a_run_scores_every_tool_and_arm(tmp_path, fakes):
     assert {(c["a"], c["b"], c["arm"]) for c in summary["pooled"]["comparisons"]} == set(pairs)
     assert layout.real_comparison_json("W-97", "shared", "igblast_vs_alignair").is_file()
     assert summary["stopped_donors"] == [] and summary["failed_runs"] == []
+
+
+def test_a_call_into_an_excluded_gene_takes_its_read_out_for_both_and_is_counted_per_tool(tmp_path, fakes):
+    """A right call and a wrong call to the same genes are excluded alike, but a call into an excluded gene still
+    takes the read out of R1 for both tools: each comparison counts, per tool, the V reads its own call alone takes
+    out, and the documented known answers among them (and those it called wrong)."""
+    # alignair calls IGHV3-23 (not captured) on a documented known answer (v1_0a, IGHV1-2*02 exactly) and on its
+    # mutated clone mate
+    FakeTool.steer = {"v1_0a", "v1_0b"}
+    summary = run_real(_config(tmp_path), RunLayout(tmp_path / "run"))
+    pairs = {(c["a"], c["b"], c["arm"]): c for c in summary["donors"]["W-97"]["comparisons"]}
+    shared = pairs["igblast", "alignair", "shared"]
+    assert shared["excluded"]["v"] == 2 and shared["overall"]["real.v.unsupported"]["n_paired"] == 28
+    assert shared["one_sided"] == {
+        "a": {"reads": 0, "reasons": {}, "documented": 0, "documented_wrong": 0},
+        "b": {"reads": 2, "reasons": {"excluded:not_captured": 2}, "documented": 1, "documented_wrong": 1}}
+    # known_top1 is scored on the documented known answer all the same
+    assert shared["overall"]["real.v.known_top1"]["n_paired"] == 12
+    assert pairs["igblast", "alignair-api", "shared"]["one_sided"]["b"]["reads"] == 0
+    # the pooled comparison sums them, and so does each protocol's
+    pooled = {(c["a"], c["b"], c["arm"]): c for c in summary["pooled"]["comparisons"]}
+    assert pooled["igblast", "alignair", "shared"]["one_sided"] == shared["one_sided"]
+    protocols = summary["pooled"]["protocols"]
+    assert list(protocols) == ["multiplex"] and protocols["multiplex"]["donors"] == ["W-97"]
+    by_protocol = {(c["a"], c["b"], c["arm"]): c for c in protocols["multiplex"]["comparisons"]}
+    assert set(by_protocol) == set(pairs)
+    assert by_protocol["igblast", "alignair", "shared"]["overall"]["real.v.unsupported"] == \
+        shared["overall"]["real.v.unsupported"]
+    assert by_protocol["igblast", "alignair", "shared"]["one_sided"] == shared["one_sided"]
 
 
 def test_the_report_is_written_beside_the_summary(tmp_path, fakes):

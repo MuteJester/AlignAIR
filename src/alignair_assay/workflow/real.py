@@ -445,8 +445,24 @@ def _comparisons(cfg: RealConfig, data: real_score.DonorScoring, layout: RunLayo
 
 def _pooled(cfg: RealConfig, scored: dict[str, real_score.DonorScoring], blocks: dict[str, dict],
             sensitivity: dict) -> dict:
-    """The comparisons, arm deltas and each run's own R1 pooled over the donors scored (``real_score.pool``)."""
-    pooled: dict = {"donors": sorted(scored), "tools": {arm: {} for arm in ARMS}, "comparisons": [], "arm_deltas": []}
+    """The comparisons, arm deltas and each run's own R1 pooled over the donors scored (``real_score.pool``), and the
+    comparisons pooled over each protocol's donors (``protocols``: protocol -> its ``donors`` and ``comparisons``),
+    where the pre-declared primary is read: the protocols' mix of reads sets the pool over both."""
+    pooled: dict = {"donors": sorted(scored), "tools": {arm: {} for arm in ARMS}, "comparisons": [], "arm_deltas": [],
+                    "protocols": {}}
+    by_protocol: dict[str, list[str]] = {}
+    for donor in sorted(scored):
+        by_protocol.setdefault(blocks[donor].get("protocol") or "unknown", []).append(donor)
+    for protocol, members in sorted(by_protocol.items()):
+        comparisons = []
+        for a, b, arm in PAIRS:
+            donors = [donor for donor in members if (a, arm) in scored[donor].calls and (b, arm) in scored[donor].calls]
+            if a in cfg.tools and b in cfg.tools and donors:
+                pair = real_score.pool({donor: real_score.pair_scores(scored[donor], (a, arm), (b, arm))
+                                        for donor in donors})
+                comparisons.append({"a": a, "b": b, "arm": arm, "donors": donors, "status": "compared",
+                                    **real_score.comparison(pair)})
+        pooled["protocols"][protocol] = {"donors": members, "comparisons": comparisons}
     for tool, arm in expected_runs(cfg):
         summaries = [blocks[donor]["tools"][arm][tool] for donor in scored if tool in blocks[donor]["tools"][arm]]
         if summaries:

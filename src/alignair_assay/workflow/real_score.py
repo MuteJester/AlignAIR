@@ -18,7 +18,10 @@ reference and ``SCORE_CODE``); a cache whose record is not current is computed a
 - a tool alone (``tool_summary``): the reads its own calls exclude, per segment, with its classes and its exclusion
   counts per reason, so steering reads into excluded genes stays visible;
 - a pair (``pair_scores``): the reads either tool's call excludes, per segment (``real.metrics.shared_exclusions``),
-  so a read enters the paired comparison only when neither call is excluded.
+  so a read enters the paired comparison only when neither call is excluded. A right and a wrong call to the same
+  genes are excluded alike, but a call into an excluded gene still takes the read out for both tools, so each pair
+  counts, per run, the V reads its own call alone takes out (``one_sided``: how many, by reason, and the documented
+  known answers among them with those it called wrong): a tool steering its errors into excluded genes shows there.
 
 **Comparisons** (``comparison``): ``stats.compare`` of the pair over every non-informational metric either tool has
 (Holm at ``ALPHA``), with ``clusters`` the reads' clonotypes (``real.truth.clonotype_clusters``, ids carrying the
@@ -27,7 +30,7 @@ metrics: ``sd3``, without the reads whose top-1 V call, by either tool, is to a 
 cohort lacks (``workflow.real_steps.sensitivity_genes``), and ``gene_support``, the pair again in the gene-support
 variant (``pair_scores(..., variant="gene_support")``). The informational metrics are summarized beside it.
 Pooled comparisons (``pool``) join the donors' pairs with donor-prefixed read ids (``<donor>/<read id>``) and the union
-of their clusters, whose ids never collide. An arm delta is a tool's genotype arm paired with its shared arm
+of their clusters, whose ids never collide, and their one-sided counts summed. An arm delta is a tool's genotype arm paired with its shared arm
 (``pair_scores(data, (tool, "shared"), (tool, "genotype"))``), compared the same way without strata, and only
 informational.
 """
@@ -52,6 +55,7 @@ from alignair_assay.real.metrics import (
     ReadCalls,
     SupportIndex,
     exclusion_counts,
+    is_documented,
     real_case_scores,
     shared_exclusions,
 )
@@ -100,7 +104,8 @@ class DonorScoring:
 @dataclass
 class PairScores:
     """Two runs' paired scores on the same reads (read id -> scores, ``a`` and ``b``), with each read's clonotype and
-    stratum, the reads excluded per segment, and the reads the sensitivity analysis leaves out."""
+    stratum, the reads excluded per segment, the reads the sensitivity analysis leaves out, and per run (``a``,
+    ``b``) the V reads its own call alone excludes (``one_sided``)."""
 
     a: dict[str, CaseScores]
     b: dict[str, CaseScores]
@@ -108,6 +113,7 @@ class PairScores:
     strata: dict[str, str]
     excluded: dict[str, int]
     sensitivity_out: set[str]
+    one_sided: dict[str, dict] = field(default_factory=dict)
 
 
 def stratum(truth: RealTruth) -> str:
@@ -196,7 +202,27 @@ def pair_scores(data: DonorScoring, a: tuple[str, str], b: tuple[str, str], *,
     touched = {read_id for read_id in rows_a
                if _touches(data, rows_a[read_id]) or _touches(data, rows_b[read_id])}
     return PairScores(a=scores(data, rows_a, excluded), b=scores(data, rows_b, excluded), clusters=data.clusters,
-                      strata=data.strata, excluded=counts, sensitivity_out=touched)
+                      strata=data.strata, excluded=counts, sensitivity_out=touched,
+                      one_sided={"a": one_sided(data, rows_a, rows_b), "b": one_sided(data, rows_b, rows_a)})
+
+
+def one_sided(data: DonorScoring, mine: Mapping[str, dict], other: Mapping[str, dict]) -> dict:
+    """The V reads run ``mine``'s call excludes while run ``other``'s does not (each read id -> row): ``reads``, by
+    ``reasons`` (the exclusions), and the ``documented`` known answers among them, with how many of those its top-1
+    call got wrong (``documented_wrong``, ``SupportIndex.known_top1``). Each is out of R1 for both runs because of this
+    run's call alone."""
+    reasons: Counter[str] = Counter()
+    documented = wrong = 0
+    for read_id, row in mine.items():
+        if not _is_excluded(row["v"]) or _is_excluded(other[read_id]["v"]):
+            continue
+        reasons[row["v"]] += 1
+        truth = data.truths[read_id]
+        if is_documented(truth):
+            documented += 1
+            wrong += not data.index.known_top1(row["v_call"], truth)
+    return {"reads": sum(reasons.values()), "reasons": dict(sorted(reasons.items())), "documented": documented,
+            "documented_wrong": wrong}
 
 
 def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[str] | None = None,
@@ -209,6 +235,7 @@ def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[s
     members = Counter(pair.clusters.get(read_id, read_id) for read_id in pair.a)
     result = {"n_reads": len(pair.a), "n_clusters": len(members),
               "multi_read_clusters": sum(count > 1 for count in members.values()), "excluded": dict(pair.excluded),
+              "one_sided": pair.one_sided,
               "overall": _compare(pair.a, pair.b, pair.clusters), "informational": _informational(pair.a, pair.b)}
     if strata:
         result["strata"] = {label: _compare(*_subset(pair, lambda read_id: pair.strata[read_id] == label),
@@ -229,9 +256,16 @@ def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[s
 
 def pool(pairs: Mapping[str, PairScores]) -> PairScores:
     """The pairs of several donors (donor -> pair) as one: read ids prefixed ``<donor>/``, clusters joined (their ids
-    carry the donor), exclusions summed."""
-    joined = PairScores(a={}, b={}, clusters={}, strata={}, excluded=Counter(), sensitivity_out=set())
+    carry the donor), exclusions and one-sided counts summed."""
+    joined = PairScores(a={}, b={}, clusters={}, strata={}, excluded=Counter(), sensitivity_out=set(),
+                        one_sided={side: {"reads": 0, "reasons": Counter(), "documented": 0, "documented_wrong": 0}
+                                   for side in ("a", "b")})
     for donor, pair in pairs.items():
+        for side, counts in pair.one_sided.items():
+            total = joined.one_sided[side]
+            for key in ("reads", "documented", "documented_wrong"):
+                total[key] += counts[key]
+            total["reasons"].update(counts["reasons"])
         joined.a.update({f"{donor}/{read_id}": value for read_id, value in pair.a.items()})
         joined.b.update({f"{donor}/{read_id}": value for read_id, value in pair.b.items()})
         joined.clusters.update({f"{donor}/{read_id}": cluster for read_id, cluster in pair.clusters.items()})
@@ -239,6 +273,8 @@ def pool(pairs: Mapping[str, PairScores]) -> PairScores:
         joined.excluded.update(pair.excluded)
         joined.sensitivity_out.update(f"{donor}/{read_id}" for read_id in pair.sensitivity_out)
     joined.excluded = {segment: joined.excluded.get(segment, 0) for segment in SEGMENTS}
+    for counts in joined.one_sided.values():
+        counts["reasons"] = dict(sorted(counts["reasons"].items()))
     return joined
 
 
@@ -312,7 +348,11 @@ def _variant(rows: Mapping[str, dict], variant: str) -> Mapping[str, dict]:
 
 
 def _excluded(row: dict) -> set[str]:
-    return {segment for segment in SEGMENTS if (row[segment] or "").startswith(_EXCLUDED)}
+    return {segment for segment in SEGMENTS if _is_excluded(row[segment])}
+
+
+def _is_excluded(cls: str | None) -> bool:
+    return (cls or "").startswith(_EXCLUDED)
 
 
 def _touches(data: DonorScoring, row: dict) -> bool:

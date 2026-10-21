@@ -17,11 +17,12 @@ the labels it equals through IMGT 318 (``IuisMap.inferred``): ``IGHVF6-G21*06`` 
 
 **Exclusions** (``EXCLUSIONS``) are decided first, from the call's genes and tool-neutral truth alone (the donor's
 genotype, and whether the read is a documented known answer), never from whether the call is right: a right call
-and a wrong call to the same genes on the same read are excluded alike, so a tool cannot take its errors out of R1
-by making them in an excluded gene. The genes are the call's own IUIS label genes, not those of the donor alleles
-it matches: a call matches donor alleles only when it is right, so their genes would make exclusion depend on it.
-This supersedes the earlier ruling (b), "genes of the matching donor alleles". A call is excluded when any of its
-genes is, by the first reason that applies, in this order:
+and a wrong call to the same genes are excluded alike; a call into an excluded gene still takes the read out of R1
+for both tools (``shared_exclusions``), so a tool's errors into excluded genes leave R1 with their reads, which the
+workflow counts per tool (``workflow.real_score.one_sided``). The genes are the call's own IUIS label genes, not
+those of the donor alleles it matches: a call matches donor alleles only when it is right, so their genes would make
+exclusion depend on it. This supersedes the earlier ruling (b), "genes of the matching donor alleles". A call is
+excluded when any of its genes is, by the first reason that applies, in this order:
 
 - ``dropped_truth``: the gene's only calls were dropped by ``filter_d`` (D only): its truth is dropped, not absent.
 - ``not_captured``: the gene's region is not captured (``RealGenotype.captured``, ``real.locus``): the call may be

@@ -6,10 +6,14 @@ as markdown (``real_report.md``), the page AlignAIR is judged against IgBLAST on
 1. a three-line header: the donors, split, cap, date and reference; the data sources (each donor's run with its read
    quality, ``full`` or ``lite``, the genomic genotypes, the IUIS map, IGenotyper's gene coordinates and the SD3
    cohort); and the pinned images' digests, the IgBLAST binary's and the checkpoint's;
-2. **R1 headline (shared arm)**: a one-sentence bottom line, then ``real.v.unsupported`` per tool (each run's own R1
-   with its n) per donor and pooled, and each AlignAIR run's paired Δ against IgBLAST: Δ, its 95% CI, the verdict and
-   ``n paired (K clonotypes)``; the components (unsupported allele, unsupported gene, no call) follow on the
-   headline's scope, then the one-line statistics note;
+2. **R1 headline (shared arm)**: the bottom line per protocol (race, multiplex), led by the pre-declared primary, the
+   paired R1 Δ of the AlignAIR image against IgBLAST, with the known_top1 Δ beside it (no exclusion touches it) and,
+   per tool, the V reads its own call alone takes out of R1 with the documented known answers among them; then the
+   pool over both protocols, which depends on their mix of reads; then that every CI is conditional on these donors
+   and every other verdict exploratory. A table gives each AlignAIR run's paired Δ against IgBLAST (paired means, Δ,
+   its 95% CI, the verdict and ``n paired (K clonotypes)``) per protocol, donor and pool; the components (unsupported
+   allele, unsupported gene, no call) of the primary pair follow, then the one-line statistics note. Each run's own
+   R1, whose denominator differs from tool to tool, is in the detail;
 3. **Genotype arm**: R1 is 0 there by construction, so the arm's headline is known-answer accuracy (``known_top1``,
    ``known_gene_top1``), missing calls and the calls that move into uncaptured genes, shared → genotype per tool
    with the paired arm delta (informational), then the tools against each other on that arm;
@@ -49,6 +53,8 @@ KNOWN_YIELD_FLAG = 0.05
 # uncalled) is flagged.
 UNCAPTURED_FLAG = 0.25
 HEADLINE = "real.v.unsupported"
+# The pre-declared primary: the paired shared-arm R1 of the AlignAIR image against IgBLAST, per protocol.
+PRIMARY = ("igblast", "alignair")
 COMPONENTS = {"real.v.unsupported_allele": "unsupported allele", "real.v.unsupported_gene": "unsupported gene",
               "real.v.no_call": "no call"}
 KNOWN = ("real.v.known_top1", "real.v.known_gene_top1")
@@ -95,9 +101,18 @@ ASSEMBLY_KINDS = {"mismatches": "mismatches", "not_significant": "not significan
 R1_NOTE = ("R1 (`real.v.unsupported`, lower is better): the share of a tool's top-1 V calls that the donor's genome "
            "does not carry, as an unsupported allele (the gene is carried, not this allele), an unsupported gene (a "
            "gene every capturing contig shows deleted) or no call; a call is supported when it equals a donor "
-           "allele exactly or through IMGT position 318 (Peres et al. 2023). Tool columns: each run's own R1 over "
-           "the reads its own call does not exclude (n). Each Δ (AlignAIR − igblast, 95% CI, verdict) is on the "
-           "paired reads, those neither call excludes, so it need not equal the difference of the tool columns.")
+           "allele exactly or through IMGT position 318 (Peres et al. 2023). Each Δ (AlignAIR − igblast, 95% CI, "
+           "verdict) is on the paired reads, those neither call excludes. Each run's own R1, over the reads its own "
+           "call does not exclude (a different set for each tool), is in R1 per donor.")
+BOTTOM_LEAD = ("The pre-declared primary is the paired shared-arm R1 Δ, {pair}, per protocol. Beside it: the "
+               "known_top1 Δ on the documented known answers, which no exclusion touches, and per tool the V reads "
+               "its own call alone takes out of R1 (a call into an excluded gene removes the read for both tools), "
+               "with the documented known answers among them and how many of those it called wrong.")
+POOL_NOTE = ("Pooled over both protocols (secondary: it depends on how many reads each protocol contributes, not on "
+             "the tools alone)")
+CONDITIONAL_NOTE = ("Every CI is conditional on these donors: they are fixed, not sampled, so it covers the variation "
+                    "between clonotypes only. Verdicts outside the pre-declared primary are exploratory: Holm runs "
+                    "within each comparison, not across the report.")
 STATISTICS_NOTE = ("Statistics: paired tests clustered by clonotype (clustered McNemar with a cluster-robust 95% CI; "
                    "under 10 clonotypes no test: too few clonotypes); Holm within each comparison (one pair on one "
                    "scope, stratum or variant), not across the whole report; no variation: the tools agree on every "
@@ -113,11 +128,13 @@ GENOTYPE_NOTE = ("Each tool may call only the donor's alleles in the genes the t
 NOT_SIGNIFICANT = "not significant"
 TOO_FEW_CLONOTYPES = "too few clonotypes"
 NO_VARIATION = "no variation"
-INVARIANT = ("Whether a read is excluded never depends on whether a call is correct: a call is excluded by its own "
-             "IUIS genes and the read's tool-neutral truth alone, so a right and a wrong call to the same genes are "
-             "excluded alike, and no tool can take its errors out of R1 by making them in an excluded gene. A read "
-             "enters a paired comparison only when neither tool's call is excluded. The counts below are each run's "
-             "own, as a share of all its reads, so a tool steering reads into excluded genes stays visible.")
+INVARIANT = ("Whether a call is excluded never depends on whether it is correct: a call is excluded by its own IUIS "
+             "genes and the read's tool-neutral truth alone, so a right call and a wrong call to the same genes are "
+             "excluded alike; a call into an excluded gene still takes the read out of R1 for both tools. A read "
+             "enters a paired comparison only when neither tool's call is excluded, so a tool's errors into excluded "
+             "genes leave the comparison with their reads. The counts below are each run's own, as a share of all "
+             "its reads, and each pair's reads that one call alone takes out follow, so a tool steering reads into "
+             "excluded genes stays visible.")
 AIRR_NOTE = ("AIRR rows the assay's reader flags (informational): rows with a field that disagrees with the row's "
              "coordinates, out of the rows written. AlignAIR writes a read's leading unaligned bases as an `I` "
              "(insertion) in its CIGARs where the AIRR standard has a soft clip (`S`), so most of its rows are "
@@ -218,6 +235,16 @@ def _scopes(summary: dict) -> list[dict]:
                        "tools": pooled.get("tools") or {}, "comparisons": pooled.get("comparisons") or [],
                        "arm_deltas": pooled.get("arm_deltas") or [], "block": None})
     return scopes
+
+
+def _protocol_scopes(summary: dict) -> list[dict]:
+    """The comparisons pooled over each protocol's donors (``pooled["protocols"]``), as scopes, in protocol order:
+    where the bottom line reads the pre-declared primary."""
+    protocols = (summary.get("pooled") or {}).get("protocols") or {}
+    return [{"label": f"{protocol} ({', '.join(entry.get('donors') or [])})", "words": f"{protocol} reads",
+             "tools": {}, "comparisons": entry.get("comparisons") or [], "arm_deltas": [], "block": None,
+             "donors": entry.get("donors") or []}
+            for protocol, entry in protocols.items()]
 
 
 def _donor_names(summary: dict) -> list[str]:
@@ -410,41 +437,60 @@ def _image(entry) -> str:
 def _headline(summary: dict, scopes: list[dict]) -> list[str]:
     if not scopes:
         return [_nothing_scored(summary)]
-    tools, pairs, lead = _arm_tools(summary, "shared"), _pairs(scopes, "shared"), scopes[-1]
-    header = ["Donor", *map(_label, tools), *(_pair_header(a, b) for a, b in pairs)]
-    rows = [[scope["label"], *(_own(scope, "shared", tool, HEADLINE) for tool in tools),
-             *(_pair_cell(_find(scope, a, b, "shared"), HEADLINE) for a, b in pairs)] for scope in scopes]
-    components = [[label, *(_own(lead, "shared", tool, metric) for tool in tools),
-                   *(_pair_cell(_find(lead, a, b, "shared"), metric) for a, b in pairs)]
-                  for metric, label in COMPONENTS.items()]
-    return [_bottom_line(lead, pairs), "", *_table(header, rows), "", R1_NOTE, "",
-            f"Components ({lead['words']}):", "", *_table(["Component", *header[1:]], components), "",
-            STATISTICS_NOTE]
+    pairs, protocols = _pairs(scopes, "shared"), _protocol_scopes(summary)
+    primary = PRIMARY if PRIMARY in pairs else (pairs[0] if pairs else None)
+    lines = [*_bottom_line(scopes, protocols, primary), ""]
+    # a protocol of one donor is that donor's row
+    shown = [*(scope for scope in protocols if len(scope["donors"]) > 1), *scopes]
+    header = ["Scope", *(_pair_header(a, b) for a, b in pairs)]
+    rows = [[scope["label"], *(_pair_cell(_find(scope, a, b, "shared"), HEADLINE, means=True) for a, b in pairs)]
+            for scope in shown]
+    lines += ["R1 Δ per scope (paired means, igblast → AlignAIR, then Δ):", "", *_table(header, rows), "", R1_NOTE]
+    if primary is not None:
+        lead = [*protocols, *([scopes[-1]] if scopes[-1]["block"] is None or not protocols else [])]
+        components = [[label, *(_pair_cell(_find(scope, *primary, "shared"), metric, means=True) for scope in lead)]
+                      for metric, label in COMPONENTS.items()]
+        lines += ["", f"Components, {_pair_header(*primary)}:", "",
+                  *_table(["Component", *(scope["label"] for scope in lead)], components)]
+    return [*lines, "", STATISTICS_NOTE]
 
 
-def _bottom_line(lead: dict, pairs: list[tuple[str, str]]) -> str:
-    """One sentence: per shared pair on the headline's scope, the paired means, Δ, CI, verdict and paired count; a
-    pair whose result is the previous pair's to the digit says so instead of repeating it."""
-    parts, previous = [], None
-    for a, b in pairs:
-        comparison = _find(lead, a, b, "shared")
-        entry = ((comparison or {}).get("overall") or {}).get(HEADLINE)
-        if (comparison or {}).get("status", "compared") != "compared" or not entry or entry.get("delta") is None:
-            parts.append(f"{_pair_header(a, b)}: {_pair_cell(comparison, HEADLINE)}")
-            previous = None
-            continue
-        key = (a, *(entry.get(name) for name in ("mean_a_paired", "mean_b_paired", "delta", "n_paired", "n_clusters",
-                                                 "verdict", "test")), tuple(entry.get("ci95") or ()))
-        if key == previous:
-            parts.append(f"{_label(b)} the same")
-            continue
-        previous = key
-        verdict = _verdict(entry, a, b)
-        parts.append(f"{_label(b)} {_pct(entry.get('mean_b_paired'))} vs {_label(a)} "
-                     f"{_pct(entry.get('mean_a_paired'))} of V calls unsupported: {_pp(entry['delta'])} "
-                     f"{_ci(entry.get('ci95'))}, {verdict} ({entry['n_paired']} paired reads in "
-                     f"{entry.get('n_clusters', MISSING)} clonotypes)")
-    return f"**Bottom line ({lead['words']}).** " + ("; ".join(parts) or "no pair was compared on the shared arm") + "."
+def _bottom_line(scopes: list[dict], protocols: list[dict], primary: tuple[str, str] | None) -> list[str]:
+    """The bottom line: per protocol, the pre-declared primary (the paired R1 Δ of ``primary``), the known_top1 Δ and
+    the reads each tool's call alone takes out of R1; then the pool over both protocols, which their mix of reads
+    sets; then the note that every CI is conditional on these donors. Without per-protocol pools (a summary written
+    before them), the last scope stands in."""
+    if primary is None:
+        return ["**Bottom line.** No pair was compared on the shared arm."]
+    a, b = primary
+    pair = _pair_header(a, b)
+    lead = protocols or [scopes[-1]]
+    rows = [[scope["label"], _pair_cell(_find(scope, a, b, "shared"), HEADLINE, means=True),
+             _pair_cell(_find(scope, a, b, "shared"), KNOWN[0], means=True), _one_sided(_find(scope, a, b, "shared"))]
+            for scope in lead]
+    lines = [f"**Bottom line.** {BOTTOM_LEAD.format(pair=pair)}", "",
+             *_table(["Protocol (donors)" if protocols else "Scope", f"R1 Δ, {pair} (primary)",
+                      f"known_top1 Δ, {pair}", "V reads out by one call alone"], rows)]
+    pooled = scopes[-1] if scopes[-1]["block"] is None else None
+    if len(protocols) > 1 and pooled is not None:
+        comparison = _find(pooled, a, b, "shared")
+        lines += ["", f"{POOL_NOTE}: R1 {_pair_cell(comparison, HEADLINE, means=True)}; known_top1 "
+                      f"{_pair_cell(comparison, KNOWN[0], means=True)}."]
+    return [*lines, "", CONDITIONAL_NOTE]
+
+
+def _one_sided(comparison: dict | None) -> str:
+    """Per tool of a comparison, the V reads its own call alone takes out of R1, with the documented known answers
+    among them and how many of those it called wrong."""
+    sides = (comparison or {}).get("one_sided")
+    if not sides or comparison.get("status", "compared") != "compared":
+        return MISSING
+    parts = []
+    for side in ("a", "b"):
+        counts = sides.get(side) or {}
+        parts.append(f"{_label(comparison[side])} {_int(counts.get('reads'))} ({_int(counts.get('documented'))} "
+                     f"documented known answers, {_int(counts.get('documented_wrong'))} of them called wrong)")
+    return "; ".join(parts)
 
 
 def _genotype_arm(summary: dict, scopes: list[dict]) -> list[str]:
@@ -623,6 +669,10 @@ def _exclusions(summary: dict, scopes: list[dict]) -> list[str]:
         lines += ["", f"**{scope['label']}**", "", *_table(header, rows)]
         if out:
             lines += ["", f"V reads out of each pair (either call excluded): {'; '.join(out)}."]
+        alone = [f"{_pair_header(c['a'], c['b'])} {c.get('arm')}: {_one_sided_reasons(c)}"
+                 for c in scope["comparisons"] if c.get("status", "compared") == "compared" and c.get("one_sided")]
+        if alone:
+            lines += ["", f"Of those, the reads one call alone takes out, by reason: {'; '.join(alone)}."]
     return [*lines, "", *_truth_gaps(summary)]
 
 
@@ -651,6 +701,16 @@ def _truth_gaps(summary: dict) -> list[str]:
             "contig shows deleted (absent: the only genes a call can be an unsupported gene for), and the carried "
             "genes with an allele on one haplotype unknown (half resolved).", "",
             *_table(["Donor", "Uncalled", "Absent", "Half resolved"], rows)]
+
+
+def _one_sided_reasons(comparison: dict) -> str:
+    parts = []
+    for side in ("a", "b"):
+        counts = comparison["one_sided"].get(side) or {}
+        reasons = ", ".join(f"{reason.removeprefix('excluded:')} {_int(count)}"
+                            for reason, count in (counts.get("reasons") or {}).items())
+        parts.append(f"{_label(comparison[side])} {_int(counts.get('reads'))}" + (f" ({reasons})" if reasons else ""))
+    return ", ".join(parts)
 
 
 def _count_share(block: dict | None, reason: str | None) -> str:

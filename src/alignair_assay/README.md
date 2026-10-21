@@ -1703,10 +1703,12 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
 - The top-1 V call is the first allele the tool lists in `v_call`; its genes are the IUIS genes of its labels (or
   of those `IuisMap.inferred` gives an unlabelled allele).
 - Exclusions (`EXCLUSIONS`) are decided from the call's own IUIS label genes and tool-neutral truth alone, never
-  from whether the call is right: a right and a wrong call to the same genes are excluded alike, and a call is
-  excluded when any of its genes is. The reasons: `dropped_truth` (the gene's only calls were dropped by
-  `filter_d`), `not_captured`, `uncalled` (spanned and not carried, and a capturing contig holds it; V, D and J),
-  `unmapped` (a guard: no gene at all; none on HUMAN_IGH_OGRDB), `novel_gene` (the
+  from whether the call is right: a right call and a wrong call to the same genes are excluded alike; a call into
+  an excluded gene still takes the read out of R1 for both tools, so a tool's errors into excluded genes leave R1
+  with their reads (each comparison counts them per tool: `one_sided`). A call is excluded when any of its genes
+  is. The reasons: `dropped_truth` (the gene's only calls were dropped by `filter_d`), `not_captured`, `uncalled`
+  (spanned and not carried, and a capturing contig holds it; V, D and J), `unmapped` (a guard: no gene at all; none
+  on HUMAN_IGH_OGRDB), `novel_gene` (the
   gene has a donor allele absent from the shared reference, of any functionality; not for a V call on a documented
   known answer, one whose allele set is not entirely absent from the shared reference (a set may mix the two),
   whose V is a donor allele in the shared reference: `classify_v`, `read_calls` and `classify_v_call` require the
@@ -1764,16 +1766,23 @@ summary does not hold. Its first page is the summary:
 1. three header lines: the donors, split, cap, date and reference; the data (each run with its read quality, `full`
    or `lite`, and the genotype sources with their versions); the pinned images' digests, IgBLAST's binary and the
    checkpoint;
-2. the R1 headline on the shared arm, per donor and pooled (when two or more donors are scored), led by a one-line
-   bottom line, then its components and a one-line statistics note;
+2. the R1 headline on the shared arm, led by the bottom line per protocol (race, multiplex): the pre-declared
+   primary, the paired R1 Δ of the AlignAIR image against IgBLAST, beside the known_top1 Δ (no exclusion touches
+   it) and, per tool, the V reads its own call alone takes out of R1 (a call into an excluded gene removes the read
+   for both tools), with the documented known answers among them and those it called wrong. The pool over both
+   protocols comes second, since it depends on their mix of reads. Every CI is conditional on these donors (they
+   are fixed, not sampled), and every verdict outside the pre-declared primary is exploratory (Holm runs within each
+   comparison). A table gives each AlignAIR run's paired Δ per protocol, donor and pool, then the components of the
+   primary pair and a one-line statistics note; each run's own R1, whose denominator differs from tool to tool, is
+   in the detail;
 3. the genotype arm, judged on known answers (below);
 4. at most 8 flags, the most severe first: a failed or unchecked truth self-check, a stopped donor (with its
    evidence), a failed run (prediction ids that drifted from the reads included), SRA-Lite reads, a known-answer
    yield below 5%, 25% or more of a tool's shared-arm calls in genes without truth (not captured, or uncalled), an
-   assembly loss let through over
-   its line, AlignAIR assembly failures, and too few clonotypes for a verdict.
+   assembly loss let through over its line, AlignAIR assembly failures, and too few clonotypes for a verdict.
 
-The detail follows: R1 per donor with the paired means, exclusions per tool and reason, known answers, novel-allele
+The detail follows: R1 per donor with each run's own R1 and the paired means, exclusions per tool and reason (with
+the reads one call alone takes out of each pair, by reason), known answers, novel-allele
 reads, the sensitivity variants, D and J, protocol × isotype strata, preprocessing (the classifier's evidence, the
 assembly's failure rate against its 35% line, its failures by AssemblePairs' kind and the deciles of the pairs that
 passed and failed), AlignAIR's AIRR output, the truth self-check, failed runs and refusals, and the provenance.
@@ -1783,8 +1792,9 @@ passed and failed), AlignAIR's AIRR output, the truth self-check, failed runs an
   when it equals a donor allele exactly or through IMGT position 318 (Peres et al. 2023). Two tools are compared on
   the paired reads, those neither call excludes, with tests clustered by clonotype and Holm within each comparison,
   not across the report.
-- **Exclusions** come from the call's own genes and tool-neutral truth alone, never from whether the call is right
-  (see R1 per read above): `not_captured`, `uncalled`, `novel_gene`, `nonfunctional` (Mikelov et al. 2024 leave
+- **Exclusions** come from the call's own genes and tool-neutral truth alone, never from whether the call is right:
+  a right call and a wrong call to the same genes are excluded alike; a call into an excluded gene still takes the
+  read out of R1 for both tools (see R1 per read above). The reasons: `not_captured`, `uncalled`, `novel_gene`, `nonfunctional` (Mikelov et al. 2024 leave
   nonfunctional alleles out), `beyond_318` (no comparison through IMGT 318 is possible; Peres et al. 2023),
   `half_resolved`, `dropped_truth` and the `unmapped` guard. Each run's counts per reason are shown, so steering
   reads into excluded genes stays visible, and a table names, per donor, where its genomic truth stops: its uncalled
