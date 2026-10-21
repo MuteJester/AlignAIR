@@ -90,7 +90,8 @@ Mikelov gene-support thresholds" (``thresholds=True``); the R1 primary is the in
   their truth is the known allele set, which is tool-neutral, and leaving them out would hide wrong calls into
   excluded genes. The top-1 is right when it, or an allele with its sequence, is a shared name of the set
   (``known_shared``), or equals one of its donor alleles through 318; its gene is right when one of its IUIS genes is
-  one of the known answer's. No call is wrong.
+  one of the known answer's: a gene VDJbase found its alleles at, or an IUIS gene of their own sequence (an allele
+  found at a paralog's locus may have a documented allele's sequence). No call is wrong.
 - ``real.v.novel_known_call`` (informational): on a novel known answer, whether the call's IUIS gene is the known
   gene: where calls go when the true allele is not in the tool's reference.
 - ``real.d.unsupported`` and ``real.j.unsupported`` (informational), where the donor has D or J truth: the same
@@ -273,10 +274,15 @@ class SupportIndex:
                                            for allele_id in truth.known for allele in self._by_id.get(allele_id, ()))
 
     def known_gene_top1(self, name: str | None, truth: RealTruth) -> bool:
-        """True when one of V call ``name``'s IUIS genes is one of ``truth``'s known genes."""
+        """True when one of V call ``name``'s IUIS genes is one of ``truth``'s known genes: the genes VDJbase found
+        its alleles at (``known_gene``) or the IUIS genes of their own sequence (those of ``known_shared``). VDJbase
+        names an allele by its locus, and its sequence may be a paralog's documented allele (SC-11's
+        ``IGHV3-30-3*03_g150a`` is IGHV3-30*01's sequence), which a call by sequence cannot tell apart."""
         if not name or truth.known is None:
             return False
-        return bool(set(self.genes(name)) & set(truth.known_gene.split("|")))
+        known = set(truth.known_gene.split("|"))
+        known.update(gene for shared in truth.known_shared or () for gene in self.genes(shared))
+        return bool(set(self.genes(name)) & known)
 
     def _classify(self, name: str, segment: str, documented: bool) -> str:
         table = self.reference.alleles.get(segment, {})

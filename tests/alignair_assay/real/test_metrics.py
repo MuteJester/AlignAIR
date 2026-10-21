@@ -574,6 +574,28 @@ def test_oracle_scores_perfect():
         assert scores.get("real.v.unsupported", 0.0) == 0.0 and scores["real.v.known_top1"] == 1.0
 
 
+def test_known_gene_accepts_the_iuis_genes_of_the_known_alleles_own_sequence():
+    # VDJbase names an allele by the locus it was found at, whose sequence may be a paralog's documented allele
+    # (SC-11: IGHV3-30-3*03_g150a is IGHV3-30*01's sequence, IGHV3-23D*01_t13g is IGHV3-23*04's): a call of that
+    # sequence is of the known gene, and the oracle's own call passes the self-check
+    paralog = _allele("IGHV3-30-3*03_g150a", 1, shared_as="IGHVF4-G1*01", gene="IGHV3-30-3")
+    genotype = RealGenotype(donor=DONOR, alleles=(*ALLELES, paralog), captured=CAPTURED | {"IGHV3-30-3"},
+                            resolved=(CAPTURED - {"IGHV3-15"}) | {"IGHV3-30-3"}, dropped=DROPPED)
+    index = SupportIndex(genotype, IUIS, MERGED, REFERENCE, support=SUPPORT)
+    truth = _truth("s", known=("IGHV3-30-3*03_g150a",), shared=("IGHVF4-G1*01",), gene="IGHV3-30-3")
+    oracle = oracle_prediction(truth)
+    cls = index.classify_v(oracle, truth=truth)
+    scores = real_case_scores(oracle, truth, cls, excluded=cls.startswith("excluded:"), index=index)
+    assert scores["real.v.known_top1"] == scores["real.v.known_gene_top1"] == 1.0
+    check = oracle_self_check([truth], index)
+    assert check["known_gene_top1"] == 1.0 and check["passed"]
+    # another allele of the sequence's gene is of the known gene too; a call of another gene is not
+    for call, value in (("IGHVF4-G1*02", 1.0), ("IGHVF7-G1*01", 0.0)):
+        pred = _pred("s", call)
+        scores = real_case_scores(pred, truth, index.classify_v(pred, truth=truth), excluded=False, index=index)
+        assert scores["real.v.known_gene_top1"] == value, call
+
+
 def test_support_index_refuses_a_genotype_it_cannot_score():
     with pytest.raises(ValueError, match="capture"):
         SupportIndex(RealGenotype(donor=DONOR, alleles=ALLELES), IUIS, MERGED, REFERENCE, support=SUPPORT)

@@ -1722,6 +1722,9 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   variant excludes as `low_support`; on SC-23, 2,700 give 2,652 supported and 48 `low_support` in the variant (all
   supported in the primary). Both are 100% supported among the scored and 100% `known_top1`. W-97's known answers
   clear the thresholds for 25 of their 29 genes, SC-23's for 30 of 42.
+- A known answer's genes, for `known_gene_top1`, are those VDJbase found its alleles at and the IUIS genes of their
+  own sequence: VDJbase names an allele by its locus, and SC-11 carries `IGHV3-30-3*03_g150a` with IGHV3-30*01's
+  sequence and `IGHV3-23D*01_t13g` with IGHV3-23*04's (1,268 known answers), which no call by sequence can place.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
 locked for claims. `real` refuses a test donor unless `--split test` is given, and a dev donor in a `--split test`
