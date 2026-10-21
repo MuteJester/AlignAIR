@@ -469,7 +469,7 @@ def test_real_case_scores_headline_and_components():
     # a read without a known answer has no known-answer metric
     scores = real_case_scores(_pred("u", "IGHVF1-G1*01"), _truth("u"), SUPPORTED, excluded=False, index=INDEX)
     assert set(scores) == {"real.v.unsupported", "real.v.unsupported_allele", "real.v.unsupported_gene",
-                           "real.v.no_call"}
+                           "real.v.no_call", "real.v.unsupported_observable"}
 
 
 def test_known_answer_metrics_follow_the_318_rule_and_paralog_genes():
@@ -485,6 +485,60 @@ def test_known_answer_metrics_follow_the_318_rule_and_paralog_genes():
         scores = real_case_scores(_pred("n", call), novel, INDEX.classify_v(_pred("n", call), truth=novel),
                                   excluded=True, index=INDEX)
         assert scores == {"real.v.novel_known_call": value}, call
+
+
+def _window_truth(read_id: str, *, start: int, cys_end: int = 288, n: tuple[int, ...] = (),
+                  known: tuple[str, ...] = (), shared: tuple[str, ...] = (), gene: str | None = None) -> RealTruth:
+    """A read whose observed V runs from read index ``start`` to Cys104 at ``cys_end``, with Ns at offsets ``n``
+    from its first observed base."""
+    truth = _truth(read_id, known=known, shared=shared, gene=gene)
+    return RealTruth(**{**truth.__dict__, "observed": (start, cys_end + 100), "cys_end": cys_end, "v_window_n": n})
+
+
+def test_the_tie_aware_metrics_compare_germline_windows_over_the_reads_observed_v():
+    """Informational: a call is observably supported when its window over the read (its first observed base to the
+    end of codon 104) equals a donor allele's, the read's Ns left out; an unsupported call that is observably
+    supported is a tie the read cannot resolve, not an error it shows."""
+    # IGHVF1-G1*02 (IGHV1-2*04) differs from the donor's IGHV1-2*02 at ungapped position 135 only
+    wrong = _pred("t", "IGHVF1-G1*02")
+    assert INDEX.classify_v(wrong, truth=None) == UNSUPPORTED_ALLELE
+
+    def observable(pred, truth, cls):
+        return real_case_scores(pred, truth, cls, excluded=False, index=INDEX)["real.v.unsupported_observable"]
+
+    short = _window_truth("t", start=200)  # sees positions 200-287 of the V: not the difference, a tie
+    assert observable(wrong, short, UNSUPPORTED_ALLELE) == 0.0
+    assert real_case_scores(wrong, short, UNSUPPORTED_ALLELE, excluded=False, index=INDEX)["real.v.unsupported"] == 1
+    full = _window_truth("t", start=0)
+    assert observable(wrong, full, UNSUPPORTED_ALLELE) == 1.0
+    # a base the read holds as N is not compared
+    assert observable(wrong, _window_truth("t", start=0, n=(135,)), UNSUPPORTED_ALLELE) == 0.0
+    assert observable(wrong, _window_truth("t", start=0, n=(134,)), UNSUPPORTED_ALLELE) == 1.0
+    # a window longer than the allele (a 5'RACE read's leader before the V) is compared over the allele's length,
+    # and its N offsets count from the read's first observed base
+    assert observable(wrong, _window_truth("t", start=0, cys_end=358), UNSUPPORTED_ALLELE) == 1.0
+    assert observable(wrong, _window_truth("t", start=0, cys_end=358, n=(205,)), UNSUPPORTED_ALLELE) == 0.0
+    # a supported call is 0, a missing call 1, and a read without a placed Cys104 is not covered
+    assert observable(_pred("t", "IGHVF1-G1*01"), full, SUPPORTED) == 0.0
+    assert observable(_pred("t", None), full, NO_CALL) == 1.0
+    assert math.isnan(observable(wrong, _truth("t"), UNSUPPORTED_ALLELE))
+    # the window may equal any donor allele's, of any gene or functionality
+    assert INDEX.observably_supported("IGHVF12-G1*02", full)  # exactly the nonfunctional IGHV4-4*07
+    assert INDEX.observably_supported("IGHVF1-G1*02", short) and not INDEX.observably_supported("IGHVF1-G1*02",
+                                                                                                full)
+    # known_top1, observably: on a documented known answer, whether the call's window is the known one
+    known = {"known": ("IGHV1-2*02",), "shared": ("IGHVF1-G1*01",), "gene": "IGHV1-2"}
+    for start, value in ((200, 1.0), (0, 0.0)):
+        truth = _window_truth("k", start=start, **known)
+        scores = real_case_scores(_pred("k", "IGHVF1-G1*02"), truth, UNSUPPORTED_ALLELE, excluded=False,
+                                  index=INDEX)
+        assert scores["real.v.known_top1"] == 0.0 and scores["real.v.known_top1_observable"] == value
+    # scored on an excluded read too, as known_top1 is; a call of another gene's window is not the known one
+    scores = real_case_scores(_pred("k", "IGHVF5-G1*01"), _window_truth("k", start=0, **known),
+                              "excluded:not_captured", excluded=True, index=INDEX)
+    assert scores == {"real.v.known_top1": 0.0, "real.v.known_gene_top1": 0.0, "real.v.known_top1_observable": 0.0}
+    assert "real.v.known_top1_observable" not in real_case_scores(wrong, full, UNSUPPORTED_ALLELE, excluded=False,
+                                                                  index=INDEX)
 
 
 def test_shared_exclusion_removes_read_for_both_tools():
@@ -648,10 +702,11 @@ REAL_METRICS = {"real.v.unsupported": (False, True), "real.v.unsupported_allele"
                 "real.v.unsupported_gene": (False, True), "real.v.no_call": (False, True),
                 "real.v.known_top1": (False, False), "real.v.known_gene_top1": (False, False),
                 "real.v.novel_known_call": (True, False), "real.v.any_listed_supported": (True, False),
-                "real.d.unsupported": (True, True), "real.j.unsupported": (True, True)}
+                "real.d.unsupported": (True, True), "real.j.unsupported": (True, True),
+                "real.v.unsupported_observable": (True, True), "real.v.known_top1_observable": (True, False)}
 NEW_INFORMATIONAL = {"real.v.novel_known_call", "real.v.any_listed_supported", "real.d.unsupported",
-                     "real.j.unsupported"}
-NEW_LOWER = (".unsupported", ".unsupported_allele", ".unsupported_gene")
+                     "real.j.unsupported", "real.v.unsupported_observable", "real.v.known_top1_observable"}
+NEW_LOWER = (".unsupported", ".unsupported_allele", ".unsupported_gene", "real.v.unsupported_observable")
 
 
 def _package_strings() -> set[str]:

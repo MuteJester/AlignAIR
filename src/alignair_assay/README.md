@@ -1687,6 +1687,10 @@ another shared reference:
   Cys104 that ends an in-frame junction of 15 to 150 nt, and the junction runs from the Cys codon through the Trp
   codon, `N`s included; a read without both anchors is `<donor>/single:<id>`. `clonotype_clusters` gives
   `stats.compare` its clusters.
+- `cys_end` (the read index past Cys104, by the same rules; None where nothing places it) and `v_window_n` (the
+  offsets of the `N`s inside `[observed[0], cys_end)`, from the first observed base): the observed V window the
+  tie-aware metrics compare germline sequences over. `cys104_regions(alleles)` gives each donor V allele's region
+  through Cys104 with the identical-sequence rule.
 - On the pilot, W-97 has 5.7% known answers (5.6% naive); Cys104 is placed on 92.8% of its reads (66.5% by the
   donor's anchors, 26.3% by the shared reference's), 88.0% have a junction, and 5,795 clusters hold two or more
   reads (the largest 101). SC-23 has 25.9% (24.1%); 91.5% (90.7% and 0.8%), 88.9%, and 1,074 clusters (33). The
@@ -1744,6 +1748,15 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   truth is tool-neutral); and, informational, `real.v.any_listed_supported` (a tie list hides a supported allele),
   `real.v.novel_known_call` (a novel known answer's call is of its gene) and `real.d.unsupported` /
   `real.j.unsupported` where the donor has D or J truth (a missing D or J call there is `nan`, not covered).
+- The tie-aware metrics (informational) separate "the read cannot tell" from "wrong". A call's window is the last
+  `L` nt of its region through Cys104, `L` the read's `cys_end` less its first observed base; two windows are equal
+  when they agree from Cys104 back over their common length, the read's `N` positions left out (a read without a
+  placed Cys104 is `nan`). `real.v.unsupported_observable` (lower is better), on the reads R1 scores, is 1 when the
+  call is not supported and its window equals no donor allele's (any gene, any functionality); a multiplex read
+  whose masked VH primer hides the one position two alleles differ at is a tie, 0. `real.v.known_top1_observable`,
+  on every documented known answer, is 1 when the call's window is the known alleles' window. `SupportIndex`
+  caches both per call, window and Ns (`observably_supported`, `known_top1_observable`; `same_window`). R1 and
+  `known_top1` are unchanged.
 - The oracle (`oracle_prediction`, `oracle_self_check`), each known answer's own shared allele, checks the truth
   against itself, with no `novel_gene` exclusion: its reads are documented known answers. On W-97 its 2,595 known
   answers that are not novel give 2,451 supported, 134 `not_captured` (IGHV3-30-5 answers whose shared allele,
@@ -1781,9 +1794,11 @@ summary does not hold. Its first page is the summary:
    yield below 5%, 25% or more of a tool's shared-arm calls in genes without truth (not captured, or uncalled), an
    assembly loss let through over its line, AlignAIR assembly failures, and too few clonotypes for a verdict.
 
-The detail follows: R1 per donor with each run's own R1 and the paired means, exclusions per tool and reason (with
-the reads one call alone takes out of each pair, by reason), known answers, novel-allele
-reads, the sensitivity variants, D and J, protocol × isotype strata, preprocessing (the classifier's evidence, the
+The detail follows: R1 per donor with each run's own R1 and the paired means (the tie-aware
+`real.v.unsupported_observable` as one row of paired means), exclusions per tool and reason (with the reads one call
+alone takes out of each pair, by reason), known answers (`real.v.known_top1_observable` as one column of paired
+means), novel-allele reads, the sensitivity variants, D and J, protocol × isotype strata, preprocessing (the
+classifier's evidence, the
 assembly's failure rate against its 35% line, its failures by AssemblePairs' kind and the deciles of the pairs that
 passed and failed), AlignAIR's AIRR output, the truth self-check, failed runs and refusals, and the provenance.
 

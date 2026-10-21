@@ -90,7 +90,9 @@ def _comparison(a, b, arm, n, k, *, verdict="tie_or_inconclusive", strata=("mult
                                "documented_wrong": 0},
                          "b": {"reads": 40, "reasons": {"excluded:not_captured": 31, "excluded:uncalled": 9},
                                "documented": 6, "documented_wrong": 4}},
-           "informational": {"real.v.any_listed_supported": {"a": _cell(0.825, n), "b": _cell(0.825, n)}},
+           "informational": {"real.v.any_listed_supported": {"a": _cell(0.825, n), "b": _cell(0.825, n)},
+                             "real.v.unsupported_observable": {"a": _cell(0.121, n), "b": _cell(0.098, n)},
+                             "real.v.known_top1_observable": {"a": _cell(1.0, 30), "b": _cell(0.9667, 30)}},
            "strata": {label: {"real.v.unsupported": _entry(0.2, 0.18, n // 2, k // 2)} for label in strata},
            "sensitivity": {
                "sd3": {"genes": SD3_GENES, "excluded_reads": 104,
@@ -618,6 +620,24 @@ def test_stratification_comes_after_the_headline():
     section = _section(md, "Stratification: protocol × isotype")
     labels = {row[1] for row in _table(section)[1:]}
     assert {"multiplex/IGHG", "multiplex/IGHM", "race/IGHG"} <= labels
+
+
+def test_the_tie_aware_metrics_are_shown_as_paired_means():
+    md = real_report_markdown(_summary())
+    detail = _section(md, "R1 per donor")
+    w97 = _table(detail)
+    row = next(row for row in w97 if row[0].startswith("unsupported, observably"))
+    assert row[1:4] == ["—", "—", "—"]  # paired means only
+    assert row[4] == "12.1% → 9.8% (n=143)"
+    known = _section(md, "Known answers")
+    paired = _table(known[known.index("Paired"):])
+    assert paired[0] == ["Scope", "Pair", "known_top1", "known_gene_top1",
+                         "known_top1, observably (informational: paired means)"]
+    first = paired[1]
+    assert first[:2] == ["W-97", "alignair (image) − igblast, shared"]
+    assert first[2] == "+0.0 pp [-3.1, +3.1], not significant; 30 paired (30 clonotypes)"
+    assert first[4] == "100.0% → 96.7% (n=30)"
+    assert "observed V" in known
 
 
 def test_known_answers_and_novel_reads_per_tool_and_arm():

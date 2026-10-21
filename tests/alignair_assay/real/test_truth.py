@@ -522,6 +522,29 @@ def test_real_truths_fields():
         truth_from_json({"read_id": "r1"})
 
 
+def test_the_truth_records_where_cys104_is_and_the_ns_before_it():
+    """The tie-aware metrics compare germline windows over the read's observed V, from its first observed base to the
+    end of codon 104, without the positions the read holds as N: the truth records that end (``cys_end``) and the
+    N offsets from the first observed base (``v_window_n``)."""
+    genotype = _genotype(A)
+    race = _race(A.sequence)
+    uncalled = race[:100] + "N" + race[101:]  # a base the consensus could not call, inside the V
+    multiplex, spans = _multiplex(A.sequence)
+    reads = {"r": race, "n": uncalled, "m": multiplex, "x": _race(B.sequence)}
+    meta = [_meta("r"), _meta("n"), {**_meta("m", protocol="multiplex"), "primer_masked": spans}, _meta("x")]
+    r, n, m, x = real_truths(reads, meta, genotype, NO_SHARED)
+    assert r.cys_end == len(LEADER) + CYS_END and r.v_window_n == () and r.known is not None
+    # the N voids the known answer, and the Hamming anchor still places Cys104
+    assert n.known is None and n.cys_end == r.cys_end and n.v_window_n == (100,)
+    # a multiplex read's window starts after its masked VH primer
+    assert m.observed[0] == 22 and m.cys_end == CYS_END and m.v_window_n == ()
+    # no anchor, no window
+    assert x.cys_end is None and x.v_window_n == ()
+    for truth in (r, n, m, x):
+        assert truth_from_json(json.loads(json.dumps(truth_to_json(truth)))) == truth
+    assert truth_to_json(n)["cys_end"] == r.cys_end and truth_to_json(n)["v_window_n"] == [100]
+
+
 def test_real_truths_refuses_inconsistent_reads_and_metadata():
     genotype = _genotype(A)
     read = _race(A.sequence)

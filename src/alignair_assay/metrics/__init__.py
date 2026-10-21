@@ -19,8 +19,9 @@ CaseScores = dict[str, float]
 # ``*_abs_err`` twins; true-allele accuracy is informational for the same reason as above; the number of alleles over
 # the selection threshold describes the head; GenAIRR's record mutation rate is the training target, not observable
 # truth; and the crop and misorientation flags describe the read. Of the real-data metrics (``real.metrics``), where
-# the calls of novel known answers go, whether a tool's tie list hides a supported V allele, and the D and J support
-# (the D and J truth is partial and its calls noisier) are reported beside the V headline.
+# the calls of novel known answers go, whether a tool's tie list hides a supported V allele, the D and J support
+# (the D and J truth is partial and its calls noisier) and the tie-aware V support and known-answer accuracy (what
+# the read's observed window can tell apart) are reported beside the V headline.
 INFORMATIONAL: frozenset[str] = frozenset({".set_size", ".top1_generative", "junction.start_err", "junction.end_err",
                                            "v_indel.mutation_count_err", "v_indel.germline_errors",
                                            "v_novel.snp_mutations",
@@ -29,7 +30,8 @@ INFORMATIONAL: frozenset[str] = frozenset({".set_size", ".top1_generative", "jun
                                            "head.mutation_rate_abs_err.record", "head.cropped",
                                            "head.misoriented",
                                            "real.v.novel_known_call", "real.v.any_listed_supported",
-                                           "real.d.unsupported", "real.j.unsupported"})
+                                           "real.d.unsupported", "real.j.unsupported",
+                                           "real.v.unsupported_observable", "real.v.known_top1_observable"})
 
 # Errors, failure rates and counts; the genotype metrics (``metrics.genotype``) are rates of calls outside the donor's
 # genotype and of calls of its deleted genes, and the real-data ones (``real.metrics``) of calls no donor allele
@@ -38,7 +40,7 @@ INFORMATIONAL: frozenset[str] = frozenset({".set_size", ".top1_generative", "jun
 _LOWER_IS_BETTER = ("_err", ".no_call", ".spurious_call", ".germline_errors", ".mutation_count_err",
                     ".indel_false", ".outside_genotype", ".deleted_gene_call",
                     "_err.soft", "_err.argmax", "_err.read", "_err.record",
-                    ".unsupported", ".unsupported_allele", ".unsupported_gene")
+                    ".unsupported", ".unsupported_allele", ".unsupported_gene", "real.v.unsupported_observable")
 
 
 def is_informational(name: str) -> bool:

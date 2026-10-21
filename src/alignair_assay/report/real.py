@@ -59,6 +59,9 @@ COMPONENTS = {"real.v.unsupported_allele": "unsupported allele", "real.v.unsuppo
               "real.v.no_call": "no call"}
 KNOWN = ("real.v.known_top1", "real.v.known_gene_top1")
 ANY_LISTED = "real.v.any_listed_supported"
+# The tie-aware metrics (informational): what the read's observed V window can tell apart.
+UNSUPPORTED_OBSERVABLE = "real.v.unsupported_observable"
+KNOWN_OBSERVABLE = "real.v.known_top1_observable"
 # D and J (informational): each metric and the run's field of its classes. Named in full: a metric name built from
 # pieces would read as a name suffix to the registry's check (tests/alignair_assay/real/test_metrics.py).
 D_AND_J = (("real.d.unsupported", "d_classes"), ("real.j.unsupported", "j_classes"))
@@ -616,7 +619,10 @@ def _r1_detail(summary: dict, scopes: list[dict]) -> list[str]:
              "means (igblast → AlignAIR), then Δ, its 95% CI, the verdict and the paired count with its clonotypes. "
              "Consensus-weighted: each run's own R1 with every sequence weighted by the reads behind it. Any listed "
              "allele supported (informational, paired means): some V allele the tool lists is supported, so a tie "
-             "list hides a supported allele behind an unsupported top-1."]
+             "list hides a supported allele behind an unsupported top-1. Unsupported, observably (informational, "
+             "paired means): a call not supported whose germline window over the read's observed V (its first "
+             "observed base to codon 104, its Ns left out) equals no donor allele's, so the read itself shows the "
+             "error; a call the read cannot tell from a donor allele is a tie, not counted."]
     header = ["Metric", *map(_label, tools), *(_pair_header(a, b) for a, b in pairs)]
     for scope in scopes:
         rows = [[COMPONENTS.get(name, "R1 (unsupported)"), *(_own(scope, "shared", tool, name) for tool in tools),
@@ -630,6 +636,8 @@ def _r1_detail(summary: dict, scopes: list[dict]) -> list[str]:
         rows.append(["consensus-weighted R1", *weighted, *(MISSING for _ in pairs)])
         rows.append(["any listed allele supported", *(_own(scope, "shared", tool, ANY_LISTED) for tool in tools),
                      *(_informational(_find(scope, a, b, "shared"), ANY_LISTED) for a, b in pairs)])
+        rows.append(["unsupported, observably (informational)", *(MISSING for _ in tools),
+                     *(_informational(_find(scope, a, b, "shared"), UNSUPPORTED_OBSERVABLE) for a, b in pairs)])
         rows.append(["V reads out of the pair", *(MISSING for _ in tools),
                      *(_reads_out(_find(scope, a, b, "shared")) for a, b in pairs)])
         lines += ["", f"**{scope['label']}**", "", *_table(header, rows)]
@@ -752,11 +760,16 @@ def _known_answers(summary: dict, scopes: list[dict]) -> list[str]:
                 for tool, arm in runs]
     lines += ["", "known_top1 / known_gene_top1 per run (n):", "",
               *_table(["Run", *(scope["label"] for scope in scopes)], accuracy)]
-    paired = [[f"{_pair_header(a, b)}, {arm}: {metric.removeprefix('real.v.')}",
-               *(_pair_cell(_find(scope, a, b, arm), metric) for scope in scopes)]
-              for arm in ARMS for a, b in _pairs(scopes, arm) for metric in KNOWN]
+    paired = [[scope["label"], f"{_pair_header(a, b)}, {arm}",
+               *(_pair_cell(_find(scope, a, b, arm), metric) for metric in KNOWN),
+               _informational(_find(scope, a, b, arm), KNOWN_OBSERVABLE)]
+              for scope in scopes for arm in ARMS for a, b in _pairs(scopes, arm) if _find(scope, a, b, arm)]
     if paired:
-        lines += ["", "Paired:", "", *_table(["Pair and metric", *(scope["label"] for scope in scopes)], paired)]
+        lines += ["", "Paired (known_top1, observably: whether the call's germline window over the read's observed V "
+                      "is the known alleles' window, so a call the read cannot tell from the known allele counts as "
+                      "right; informational):", "",
+                  *_table(["Scope", "Pair", "known_top1", "known_gene_top1",
+                           "known_top1, observably (informational: paired means)"], paired)]
     return lines
 
 

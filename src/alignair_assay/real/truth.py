@@ -78,6 +78,14 @@ mutated members of an expanded clone share an id:
    puts a read in a cluster of its own.
 5. The clonotype is ``f"{donor}/{junction}"``; a read without both anchors is ``f"{donor}/single:{read_id}"``.
 
+**The observed V window** (``cys_end``, ``v_window_n``). Every truth records the read index just past its Cys104
+(``cys_end``, from the rules above; None where none places it) and the offsets of the ``N`` bases inside
+``[observed[0], cys_end)``, counted from the first observed base (``v_window_n``). The tie-aware metrics
+(``real.metrics``) compare germline sequences over that window: what the read could tell apart.
+
+``cys104_regions`` gives each donor V allele's region through Cys104, with the identical-sequence rule above (an
+allele without a Cys104 of its own takes that of an allele with its sequence).
+
 ``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id -> clonotype map. ``truth_to_json`` and
 ``truth_from_json`` turn a truth into JSON-ready data and back, for the workflow's truth file.
 
@@ -145,6 +153,10 @@ class RealTruth:
     # where Cys104 was found, W118 or not: "donor" (a donor allele's anchor), "shared" (the shared reference's,
     # only without a donor anchor; it places the junction and nothing else) or None
     anchor: str | None
+    # the read index just past Cys104; None when no anchor placed it
+    cys_end: int | None = None
+    # the offsets, from the first observed base, of the N bases inside [observed[0], cys_end), sorted
+    v_window_n: tuple[int, ...] = ()
 
 
 class KnownMatch(NamedTuple):
@@ -287,6 +299,8 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
             anchor = None
         junction = None if cys_end is None else junction_by_motif(read, cys_end)
         clonotype = f"{donor}/single:{read_id}" if junction is None else f"{donor}/{junction}"
+        gaps = () if cys_end is None else tuple(offset for offset, base in enumerate(read[observed[0]:cys_end])
+                                                if base == "N")
         known = shared = gene = None
         if match is not None:
             known = frozenset(allele.allele_id for allele in match.alleles)
@@ -296,7 +310,7 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
                                 observed=observed, known=known, known_shared=shared, known_gene=gene,
                                 novel_known=match is not None and not shared,
                                 naive=match is not None and row["isotype"] == NAIVE_ISOTYPE, clonotype=clonotype,
-                                anchor=anchor))
+                                anchor=anchor, cys_end=cys_end, v_window_n=gaps))
     return truths
 
 
@@ -306,13 +320,14 @@ def clonotype_clusters(truths: Iterable[RealTruth]) -> dict[str, str]:
 
 
 def truth_to_json(truth: RealTruth) -> dict:
-    """``truth`` as JSON-ready data, which ``truth_from_json`` reads back equal: the sets as sorted lists and the
-    observed span as a list."""
+    """``truth`` as JSON-ready data, which ``truth_from_json`` reads back equal: the sets as sorted lists, the
+    observed span and the window's N offsets as lists."""
     return {"read_id": truth.read_id, "donor": truth.donor, "isotype": truth.isotype, "protocol": truth.protocol,
             "observed": list(truth.observed), "known": None if truth.known is None else sorted(truth.known),
             "known_shared": None if truth.known_shared is None else sorted(truth.known_shared),
             "known_gene": truth.known_gene, "novel_known": truth.novel_known, "naive": truth.naive,
-            "clonotype": truth.clonotype, "anchor": truth.anchor}
+            "clonotype": truth.clonotype, "anchor": truth.anchor, "cys_end": truth.cys_end,
+            "v_window_n": list(truth.v_window_n)}
 
 
 def truth_from_json(record: Mapping) -> RealTruth:
@@ -324,30 +339,42 @@ def truth_from_json(record: Mapping) -> RealTruth:
                          known=None if known is None else frozenset(known),
                          known_shared=None if shared is None else frozenset(shared), known_gene=record["known_gene"],
                          novel_known=record["novel_known"], naive=record["naive"], clonotype=record["clonotype"],
-                         anchor=record["anchor"])
+                         anchor=record["anchor"], cys_end=record["cys_end"], v_window_n=tuple(record["v_window_n"]))
     except (KeyError, TypeError) as error:
         raise ValueError(f"not a read's truth (truth_to_json): {error!r}") from None
 
 
 # --- placing reads -------------------------------------------------------------------------------------------------
 
-def _index(alleles: Iterable[RealAllele], max_mismatches: int = MAX_ANCHOR_MISMATCHES) -> _Index:
+def cys104_regions(alleles: Iterable[RealAllele]) -> tuple[list[tuple[RealAllele, str]], list[RealAllele]]:
+    """``(regions, unplaced)``: each V allele of ``alleles`` (others are skipped) with its uppercase region through
+    Cys104 (``sequence[:cys104_end]``), in order, and the V alleles without a Cys104. Identity is the sequence: an
+    allele without a Cys104 of its own (no gapped form, or codon 104 off columns 309-311) takes that of an allele with
+    exactly its sequence."""
     v = [allele for allele in alleles if allele.segment == "v"]
     own = {id(allele): cys104_end(allele.gapped) if allele.gapped else None for allele in v}
-    # identity is the sequence: an allele without a Cys104 of its own takes that of an allele with its sequence
     by_sequence: dict[str, int] = {}
     for allele in v:
         if own[id(allele)] is not None:
             by_sequence.setdefault(allele.sequence.upper(), own[id(allele)])
-    windows: dict[str, list[tuple[RealAllele, str]]] = defaultdict(list)
-    unanchored = []
+    regions, unplaced = [], []
     for allele in v:
         end = own[id(allele)]
         end = by_sequence.get(allele.sequence.upper()) if end is None else end
-        if end is None or end < ANCHOR_LENGTH:
+        if end is None:
+            unplaced.append(allele)
+        else:
+            regions.append((allele, allele.sequence[:end].upper()))
+    return regions, unplaced
+
+
+def _index(alleles: Iterable[RealAllele], max_mismatches: int = MAX_ANCHOR_MISMATCHES) -> _Index:
+    regions, unanchored = cys104_regions(alleles)
+    windows: dict[str, list[tuple[RealAllele, str]]] = defaultdict(list)
+    for allele, region in regions:
+        if len(region) < ANCHOR_LENGTH:
             unanchored.append(allele)
             continue
-        region = allele.sequence[:end].upper()
         windows[region[-ANCHOR_LENGTH:]].append((allele, region))
     return _Index(windows={anchor: tuple(entries) for anchor, entries in windows.items()},
                   unanchored=tuple(unanchored), anchors=_anchors(windows, max_mismatches))

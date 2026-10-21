@@ -100,6 +100,17 @@ Mikelov gene-support thresholds" (``thresholds=True``); the R1 primary is the in
   found at a paralog's locus may have a documented allele's sequence). No call is wrong.
 - ``real.v.novel_known_call`` (informational): on a novel known answer, whether the call's IUIS gene is the known
   gene: where calls go when the true allele is not in the tool's reference.
+- The tie-aware metrics (informational), which separate a read that cannot tell two alleles apart from a wrong call.
+  A call's window over a read is the last ``L`` nt of its region through Cys104 (``real.truth.cys104_regions``; a
+  shared allele's from its gapped form), ``L`` the read's ``cys_end`` less its first observed base: what the read
+  observes of the V. Two windows are equal when they agree over their common length from Cys104 back (an allele
+  shorter than ``L`` is compared over its own length), the read's ``N`` positions (``v_window_n``) left out. A read
+  without a placed Cys104 is ``nan`` (not covered). ``SupportIndex`` caches each per call, window and Ns.
+
+  - ``real.v.unsupported_observable`` (lower is better), on the reads R1 scores: 1 when the call is not supported
+    and its window equals no donor allele's (any gene, any functionality; a missing call is 1), else 0.
+  - ``real.v.known_top1_observable``, on every documented known answer (excluded or not, as ``known_top1``): 1 when
+    the call's window equals the known alleles' window.
 - ``real.d.unsupported`` and ``real.j.unsupported`` (informational), where the donor has D or J truth: the same
   rule by exact sequence, with the same exclusions per segment (no 318 rule, no thresholds). Applicability is the
   read's: where the donor has the segment's truth and the read is not excluded for it, a missing D or J call is
@@ -119,7 +130,7 @@ from alignair_assay.core.prediction import PredSegment, Prediction
 from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import CaseScores
 from alignair_assay.real.genotype import POSITION_318, IuisMap, RealAllele, RealGenotype, upto
-from alignair_assay.real.truth import RealTruth, cys104_end
+from alignair_assay.real.truth import RealTruth, cys104_end, cys104_regions
 
 SUPPORTED = "supported"
 UNSUPPORTED_ALLELE = "unsupported_allele"
@@ -212,6 +223,10 @@ class SupportIndex:
                              f"no call could be compared to them through IMGT 318: {', '.join(unusable)}; use the "
                              "reference built from the dataconfig")
         self._classes: dict[tuple[str, str, bool], str] = {}  # (name, segment, documented) -> class
+        # the donor's V regions through Cys104, any gene or functionality, and each shared V allele's
+        self._regions = cys104_regions(genotype.alleles)[0]
+        self._shared_regions: dict[str, str | None] = {}
+        self._observable: dict[tuple, bool] = {}  # (name, window length, Ns[, known]) -> equal
 
     @property
     def donor(self) -> str:
@@ -291,6 +306,45 @@ class SupportIndex:
         known.update(gene for shared in truth.known_shared or () for gene in self.genes(shared))
         return bool(set(self.genes(name)) & known)
 
+    def observably_supported(self, name: str | None, truth: RealTruth | None) -> bool | None:
+        """Whether V call ``name``'s window over the read of ``truth`` equals some donor allele's window, of any gene
+        or functionality (the module docstring): the read could not tell the call from an allele the donor carries.
+        False without a call; None when the read has no placed Cys104."""
+        if truth is None or truth.cys_end is None:
+            return None
+        if not name:
+            return False
+        length = truth.cys_end - truth.observed[0]
+        key = (name, length, truth.v_window_n)
+        if key not in self._observable:
+            call = self._shared_region(name)
+            self._observable[key] = call is not None and any(
+                same_window(call, region, length, truth.v_window_n) for _, region in self._regions)
+        return self._observable[key]
+
+    def known_top1_observable(self, name: str | None, truth: RealTruth) -> bool:
+        """Whether V call ``name``'s window over the read of ``truth`` equals its known alleles' window. False without
+        a call, a known answer or a placed Cys104."""
+        if not name or truth.known is None or truth.cys_end is None:
+            return False
+        length = truth.cys_end - truth.observed[0]
+        key = (name, length, truth.v_window_n, truth.known)
+        if key not in self._observable:
+            call = self._shared_region(name)
+            self._observable[key] = call is not None and any(
+                same_window(call, region, length, truth.v_window_n)
+                for allele, region in self._regions if allele.allele_id in truth.known)
+        return self._observable[key]
+
+    def _shared_region(self, name: str) -> str | None:
+        """Shared V allele ``name``'s uppercase region through Cys104, from its gapped form; None without one."""
+        if name not in self._shared_regions:
+            gapped = self.reference.gapped_v.get(name)
+            end = cys104_end(gapped) if gapped else None
+            sequence = self.reference.alleles.get("v", {}).get(name)
+            self._shared_regions[name] = None if end is None or sequence is None else sequence[:end].upper()
+        return self._shared_regions[name]
+
     def _classify(self, name: str, segment: str, documented: bool) -> str:
         table = self.reference.alleles.get(segment, {})
         if name not in table:
@@ -337,6 +391,17 @@ class SupportIndex:
         if self.thresholds and segment == "v" and not self.passes(gene):
             return "excluded:low_support"
         return _CARRIED
+
+
+def same_window(a: str, b: str, length: int, gaps: Iterable[int] = ()) -> bool:
+    """Whether regions ``a`` and ``b``, each ending at Cys104, agree over a read's window of ``length`` nt ending
+    there: their last ``min(length, len(a), len(b))`` bases, leaving out the read's ``N`` offsets ``gaps`` (counted
+    from the window's first base)."""
+    size = min(length, len(a), len(b))
+    skip = {length - 1 - offset for offset in gaps}  # positions from the 3' end; 0 is the last base
+    if not skip:
+        return a[len(a) - size:] == b[len(b) - size:]
+    return all(a[-1 - k] == b[-1 - k] for k in range(size) if k not in skip)
 
 
 def classify_v_call(pred: Prediction | None, genotype: RealGenotype, iuis: IuisMap,
@@ -423,21 +488,25 @@ def real_case_scores(pred: Prediction | None, truth: RealTruth, calls: str | Rea
     skip = ({"v"} if excluded else set()) if isinstance(excluded, bool) else set(excluded)
     v = calls.v if isinstance(calls, ReadCalls) else calls
     scores: CaseScores = {}
+    top = _top1(pred, "v")
     if "v" not in skip:
         _check(v, truth.read_id, "v")
+        observable = index.observably_supported(top, truth)
         scores.update({"real.v.unsupported": float(v != SUPPORTED),
                        "real.v.unsupported_allele": float(v == UNSUPPORTED_ALLELE),
                        "real.v.unsupported_gene": float(v == UNSUPPORTED_GENE),
-                       "real.v.no_call": float(v == NO_CALL)})
+                       "real.v.no_call": float(v == NO_CALL),
+                       "real.v.unsupported_observable": NAN if observable is None else float(v != SUPPORTED
+                                                                                             and not observable)})
         if isinstance(calls, ReadCalls):
             scores["real.v.any_listed_supported"] = float(calls.v_any_listed_supported)
     if truth.known is not None:
-        top = _top1(pred, "v")
         if truth.novel_known:
             scores["real.v.novel_known_call"] = float(index.known_gene_top1(top, truth))
         else:
             scores["real.v.known_top1"] = float(index.known_top1(top, truth))
             scores["real.v.known_gene_top1"] = float(index.known_gene_top1(top, truth))
+            scores["real.v.known_top1_observable"] = float(index.known_top1_observable(top, truth))
     if isinstance(calls, ReadCalls):
         for segment, cls in (("d", calls.d), ("j", calls.j)):
             if cls is None or segment in skip:
