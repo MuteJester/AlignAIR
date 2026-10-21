@@ -1480,8 +1480,9 @@ https only, with a 60 s timeout and at most two retries; nothing downloaded is e
 - `fetch_reads(run, data_root)` returns a pilot run's pair and its `FetchRecord` (`path`, the pair's directory;
   `md5`, of the pair's `MD5SUMS.txt` lines; `bytes`, `source_url`, `kind` `"reads"`, and `quality`, `"full"` or
   `"lite"`; `detail` says what was checked). It prefers ODP: the object is checked against its pinned size and S3
-  ETag, then in `SRA_TOOLS_IMAGE` (ncbi/sra-tools 3.4.1, pinned by digest; as the current user, with no network,
-  on the run's directory only) by `vdb-validate` and converted by `fasterq-dump --split-files` with ENA's read
+  ETag, then in `SRA_TOOLS_IMAGE` (ncbi/sra-tools 3.4.1, pinned by digest; the shared hardened run of
+  `core.container`, as the current user, with no network, on a bind mount of the run's directory only) by
+  `vdb-validate` and converted by `fasterq-dump --split-files` with ENA's read
   names. The mates must hold ENA's read count and, where ENA's FASTQs are present, their first 2,000 records must
   be ENA's names and bases. When the object is missing or its qualities are SRA-Lite, the ENA FASTQs (ENA's md5s)
   are used and the record says why. All eight pilot runs convert at full quality, while ENA serves SRA-Lite

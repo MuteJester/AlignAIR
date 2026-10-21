@@ -24,6 +24,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from alignair_assay.core import container
+from alignair_assay.core.container import Mount, hardened_run
 from alignair_assay.real import fetch
 from alignair_assay.real.fetch import (
     PILOT_DONORS,
@@ -491,7 +493,7 @@ def test_recipe_digest_follows_what_makes_the_reads_and_nothing_else(monkeypatch
     assert fetch.recipe_digest("SRR23446586") != before
     # Not the threads, the user, the container's name or the run directory: the argv's placeholders.
     monkeypatch.setattr(fetch, "THREADS", 16)
-    monkeypatch.setattr(fetch.os, "getpid", lambda: 1)
+    monkeypatch.setattr(container.os, "getpid", lambda: 1)
     assert fetch.recipe_digest(RUN) == before
     for name, value in (("GZIP_LEVEL", 9), ("QUALITY_RECORDS", 10), ("ENA_SEQ_DEFLINE", "@$ac.$si"),
                         ("SRA_TOOLS_IMAGE", "ncbi/sra-tools:3.4.1@sha256:" + "a" * 64)):
@@ -700,17 +702,26 @@ def test_too_little_free_space_refuses_before_any_download(tmp_path, monkeypatch
 
 
 def test_check_image_refuses_another_digest(monkeypatch):
+    # the shared container helper checks the image (core.container.check_image); its refusals are fetch errors
     inspected = json.dumps([{"Id": "sha256:" + "2" * 64, "RepoDigests": ["ncbi/sra-tools@sha256:" + "f" * 64]}])
-    monkeypatch.setattr(fetch.subprocess, "run", lambda argv, **kwargs: _Completed(inspected))
+    monkeypatch.setattr(container.subprocess, "run", lambda argv, **kwargs: _Completed(inspected))
     with pytest.raises(FetchError, match="digest"):
+        fetch.check_image()
+    # an inspection that is not docker's JSON is refused, not a crash
+    monkeypatch.setattr(container.subprocess, "run", lambda argv, **kwargs: _Completed("[]"))
+    with pytest.raises(FetchError, match="cannot read docker's inspection"):
         fetch.check_image()
 
     def missing(argv, **kwargs):
         raise FileNotFoundError("docker")
 
-    monkeypatch.setattr(fetch.subprocess, "run", missing)
+    monkeypatch.setattr(container.subprocess, "run", missing)
     with pytest.raises(FetchError, match="docker is not available"):
         fetch.check_image()
+    pinned = json.dumps([{"Id": "sha256:" + "1" * 64,
+                          "RepoDigests": [container.pinned_repo_digest(SRA_TOOLS_IMAGE)]}])
+    monkeypatch.setattr(container.subprocess, "run", lambda argv, **kwargs: _Completed(pinned))
+    assert fetch.check_image()["repo_digests"] == [container.pinned_repo_digest(SRA_TOOLS_IMAGE)]
 
 
 def test_sra_commands_run_offline_as_the_user_on_the_run_directory_only(tmp_path):
@@ -723,8 +734,15 @@ def test_sra_commands_run_offline_as_the_user_on_the_run_directory_only(tmp_path
         assert command[command.index("--cap-drop") + 1] == "ALL"
         assert command[command.index("--security-opt") + 1] == "no-new-privileges"
         assert command[command.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
-        mounts = [command[i + 1] for i, part in enumerate(command) if part == "-v"]
-        assert mounts == [f"{tmp_path}:/data"]
+        # the shared hardened run (core.container.hardened_run): the run directory alone, by a bind mount that
+        # must exist (``-v`` would create a missing one as root), writable for the conversion
+        assert "-v" not in command
+        mounts = [command[i + 1] for i, part in enumerate(command) if part == "--mount"]
+        assert mounts == [f"type=bind,source={tmp_path},target=/data"]
+        assert command[command.index("-w") + 1] == "/data" and command[command.index("-e") + 1] == "HOME=/tmp"
+        assert command == hardened_run(SRA_TOOLS_IMAGE, command[command.index(SRA_TOOLS_IMAGE) + 1:],
+                                       name=f"alignair-fetch-{RUN}-{os.getpid()}", workdir="/data",
+                                       env={"HOME": "/tmp"}, mounts=[Mount(tmp_path, "/data", read_only=False)])
     dump = commands[1]
     assert "--split-files" in dump and dump[-1] == f"/data/{RUN}" and dump[dump.index("--threads") + 1] == "3"
     assert dump[dump.index("--seq-defline") + 1] == "@$ac.$si $sn/$ri"
@@ -742,7 +760,7 @@ def test_convert_sra_runs_the_hardened_containers(tmp_path, monkeypatch):
         calls.append(argv)
         return _Completed(stderr="Database 'x' is consistent" if "vdb-validate" in argv else "spots read : 3")
 
-    monkeypatch.setattr(fetch.subprocess, "run", run)
+    monkeypatch.setattr(container.subprocess, "run", run)
     found = fetch.convert_sra(tmp_path / RUN, tmp_path / "convert", threads=2)
     assert calls == found["commands"] == sra_commands(tmp_path, RUN, threads=2) and len(calls) == 2
     for argv in calls:
@@ -756,10 +774,10 @@ def test_a_conversion_timeout_kills_its_container(tmp_path, monkeypatch):
     def run(argv, **kwargs):
         calls.append(argv)
         if argv[:2] == ["docker", "run"]:
-            raise fetch.subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+            raise container.subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
         return _Completed()
 
-    monkeypatch.setattr(fetch.subprocess, "run", run)
+    monkeypatch.setattr(container.subprocess, "run", run)
     with pytest.raises(FetchError, match="did not finish.*killed"):
         fetch.convert_sra(tmp_path / RUN, tmp_path / "convert")
     name = f"alignair-fetch-{RUN}-{os.getpid()}"

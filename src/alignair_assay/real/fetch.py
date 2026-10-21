@@ -15,9 +15,10 @@ has its own directory under the data root, with an ``MD5SUMS.txt`` this module k
   S3 ETag pinned in ``ODP_OBJECT``) and the pair converted from it in the pinned sra-tools container
   (``SRA_TOOLS_IMAGE``): ``vdb-validate`` checks the object's internal md5s, ``fasterq-dump --split-files`` writes
   the mates with ENA's read names (``@<run>.<spot> <spot>/<mate>`` and a bare ``+``), and they are gzipped here,
-  checked record by record to be paired. The container runs as the current user, with no network, no capabilities
-  and no privilege escalation, on a mount of the run's directory only, named per run and process so that one that
-  times out is killed.
+  checked record by record to be paired. The container is the shared hardened run (``core.container``): as the
+  current user, with no network, no capabilities and no privilege escalation, on a bind mount of the run's
+  directory only (which must exist), named per run and process so that one that times out is killed; the image is
+  checked by ``core.container.check_image``.
 - ``genotypes/vdjbase_genomic_samples/<sample>.csv`` and ``.bam`` (VDJbase genomic study P25, CC0),
   ``genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json`` (OGRDB's IGH_VDJ germline set G00060 rev 8,
   CC0) and ``genotypes/igenotyper/gene_coords.bed`` (IGenotyper's gene coordinates on its ``igh`` reference, at
@@ -49,9 +50,7 @@ import gzip
 import hashlib
 import http.client
 import json
-import os
 import shutil
-import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -62,6 +61,7 @@ from datetime import datetime, timezone
 from itertools import zip_longest
 from pathlib import Path
 
+from alignair_assay.core import container
 from alignair_assay.core.provenance import sha256_file
 
 # --- the pilot ---------------------------------------------------------------------------------------------------
@@ -533,70 +533,56 @@ def ena_specs(run: str) -> tuple[FileSpec, FileSpec]:
 
 
 def check_image(image: str | None = None) -> dict:
-    """The pinned sra-tools image (``SRA_TOOLS_IMAGE``), pulled by digest when it is not local: its ``image``
-    reference, ``id`` and ``repo_digests``. FetchError when Docker is not available, the image cannot be pulled,
-    or its RepoDigests lack the pinned digest."""
-    image = image or SRA_TOOLS_IMAGE
-    digest = image.partition("@")[2]
-    inspect = ["docker", "image", "inspect", image]
+    """The pinned sra-tools image (``SRA_TOOLS_IMAGE``), pulled by digest when it is not local
+    (``core.container.check_image``): its ``image`` reference, ``id`` and ``repo_digests``. FetchError when Docker is
+    not available, the image cannot be pulled or inspected, or its RepoDigests lack the pinned digest."""
     try:
-        completed = subprocess.run(inspect, capture_output=True, text=True, timeout=120)
-        if completed.returncode != 0:
-            pulled = subprocess.run(["docker", "pull", image], capture_output=True, text=True, timeout=PULL_TIMEOUT)
-            if pulled.returncode != 0:
-                raise FetchError(f"docker cannot pull {image}: {(pulled.stdout + pulled.stderr).strip()[-500:]}")
-            completed = subprocess.run(inspect, capture_output=True, text=True, timeout=120)
-    except FileNotFoundError as error:
-        raise FetchError("docker is not available: the reads are converted in the pinned sra-tools container "
-                         f"({image}); install Docker or start its daemon") from error
-    except subprocess.TimeoutExpired as error:
-        raise FetchError(f"docker did not answer for {image} within {error.timeout:g} s") from error
-    if completed.returncode != 0:
-        raise FetchError(f"docker cannot inspect {image}: {completed.stderr.strip()[-500:]}")
-    found = json.loads(completed.stdout)[0]
-    repo_digests = list(found.get("RepoDigests") or [])
-    if _pinned_repo_digest(image) not in repo_digests:
-        raise FetchError(f"image {image}: its RepoDigests {repo_digests} lack the pinned digest {digest}")
-    return {"image": image, "id": found.get("Id"), "repo_digests": repo_digests}
+        return container.check_image(image or SRA_TOOLS_IMAGE, pull_timeout=PULL_TIMEOUT)
+    except container.ContainerError as error:
+        raise FetchError(f"{error} (the reads are converted in the pinned sra-tools container)") from error
 
 
 # The placeholders of the container commands' run-specific parts (``_command_templates``).
 _RUN_DIR, _RUN, _USER, _NAME, _THREADS = "<run_dir>", "<run>", "<user>", "<name>", "<threads>"
 
 
+def _commands(run_dir: str, run: str, name: str, threads: str) -> list[list[str]]:
+    """The two container runs of a conversion (``core.container.hardened_run``), on ``run_dir`` alone mounted
+    writable at ``/data``: ``vdb-validate`` of the object, then ``fasterq-dump --split-files`` with ENA's read
+    names."""
+    mounts = [container.Mount(run_dir, "/data", read_only=False)]
+
+    def run_in(args: list[str]) -> list[str]:
+        return container.hardened_run(SRA_TOOLS_IMAGE, args, name=name, mounts=mounts, workdir="/data",
+                                      env={"HOME": "/tmp"})
+
+    return [run_in(["vdb-validate", f"/data/{run}"]),
+            run_in(["fasterq-dump", "--split-files", "--threads", threads, "--temp", f"/data/{CONVERT_DIR}/tmp",
+                    "--outdir", f"/data/{CONVERT_DIR}", "--seq-defline", ENA_SEQ_DEFLINE, "--qual-defline", "+",
+                    f"/data/{run}"])]
+
+
 def _command_templates() -> list[list[str]]:
-    """The container commands of a conversion with their run-specific parts as placeholders: what ``sra_commands``
-    fills in, and what ``recipe_digest`` digests."""
-    base = ["docker", "run", "--rm", "--name", _NAME, "--network", "none", "--cap-drop", "ALL",
-            "--security-opt", "no-new-privileges", "--user", _USER, "-e", "HOME=/tmp", "-v", f"{_RUN_DIR}:/data",
-            "-w", "/data", SRA_TOOLS_IMAGE]
-    return [[*base, "vdb-validate", f"/data/{_RUN}"],
-            [*base, "fasterq-dump", "--split-files", "--threads", _THREADS,
-             "--temp", f"/data/{CONVERT_DIR}/tmp", "--outdir", f"/data/{CONVERT_DIR}",
-             "--seq-defline", ENA_SEQ_DEFLINE, "--qual-defline", "+", f"/data/{_RUN}"]]
+    """The container commands of a conversion with their run-specific parts as placeholders (the run directory,
+    the run, the user, the container's name and the threads): what ``recipe_digest`` digests."""
+    templates = _commands(f"/{_RUN_DIR}", _RUN, _NAME, _THREADS)
+    for argv in templates:
+        argv[argv.index("--user") + 1] = _USER
+    return templates
 
 
 def container_name(run: str) -> str:
-    """The name of this process's conversion containers for ``run``, so a timed-out one can be killed."""
-    return f"alignair-fetch-{run}-{os.getpid()}"
+    """The name of this process's conversion containers for ``run``, so a timed-out one can be killed
+    (``core.container.container_name``)."""
+    return container.container_name("fetch", run)
 
 
 def sra_commands(run_dir, run: str, *, threads: int | None = None) -> list[list[str]]:
     """The two container runs that turn ``<run_dir>/<run>`` into the pair in ``<run_dir>/convert/``:
     ``vdb-validate`` of the object, then ``fasterq-dump --split-files`` with ENA's read names. Each runs the pinned
     image as the current user, named ``container_name(run)``, with no network, no capabilities and no privilege
-    escalation, on ``run_dir`` alone mounted at ``/data``."""
-    values = {_RUN_DIR: str(Path(run_dir).absolute()), _RUN: run, _USER: f"{os.getuid()}:{os.getgid()}",
-              _NAME: container_name(run), _THREADS: str(threads or THREADS)}
-    filled = []
-    for template in _command_templates():
-        argv = []
-        for part in template:
-            for placeholder, value in values.items():
-                part = part.replace(placeholder, value)
-            argv.append(part)
-        filled.append(argv)
-    return filled
+    escalation, on ``run_dir`` alone, bound at ``/data`` (``core.container.hardened_run``)."""
+    return _commands(str(Path(run_dir).absolute()), run, container_name(run), str(threads or THREADS))
 
 
 def recipe_digest(run: str) -> str:
@@ -626,28 +612,13 @@ def convert_sra(sra_path, out_dir, *, threads: int | None = None) -> dict:
     reports = []
     for argv in commands:
         tool = argv[argv.index(SRA_TOOLS_IMAGE) + 1]
-        try:
-            completed = subprocess.run(argv, capture_output=True, text=True, timeout=CONVERT_TIMEOUT)
-        except subprocess.TimeoutExpired as error:
-            _kill(name)  # the docker client was killed; its container was not
-            raise FetchError(f"{tool} of {sra_path} did not finish within {CONVERT_TIMEOUT:g} s; its container "
-                             f"{name} was killed") from error
-        except FileNotFoundError as error:
-            raise FetchError(f"{tool} of {sra_path} did not run: {error}") from error
-        report = (completed.stdout + completed.stderr).strip()
-        if completed.returncode != 0:
-            raise FetchError(f"{tool} of {sra_path} failed with return code {completed.returncode}: {report[-1000:]}")
-        reports.append(report)
+        try:  # on a timeout, its container is killed by name (core.container.run_container)
+            completed = container.run_container(argv, name=name, timeout=CONVERT_TIMEOUT, what=f"{tool} of {sra_path}")
+        except container.ContainerError as error:
+            raise FetchError(str(error)) from error
+        reports.append((completed.stdout + completed.stderr).strip())
     return {"commands": commands, "vdb_validate": (reports[0].splitlines() or [""])[-1],
             "fasterq_dump": " / ".join(line.strip() for line in reports[1].splitlines())}
-
-
-def _kill(name: str) -> None:
-    """``docker kill`` container ``name``, best effort: it may have stopped by itself."""
-    try:
-        subprocess.run(["docker", "kill", name], capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.SubprocessError):
-        pass
 
 
 def fetch_reads(run: str, data_root, *, threads: int | None = None) -> tuple[Path, Path, FetchRecord]:
@@ -694,18 +665,11 @@ def _staleness(record: FetchRecord, recipe: str) -> str | None:
     found = record.detail.get("recipe_sha256")
     if found != recipe:
         return f"its recipe {found[:12] if found else '(none recorded)'} is not the current {recipe[:12]}"
-    pinned = _pinned_repo_digest()
+    pinned = container.pinned_repo_digest(SRA_TOOLS_IMAGE)
     digests = (record.detail.get("image") or {}).get("repo_digests") or []
     if pinned not in digests:
         return f"its image's RepoDigests {digests} lack the pinned {pinned}"
     return None
-
-
-def _pinned_repo_digest(image: str | None = None) -> str:
-    """``<repository>@<digest>`` of a pinned image reference, as Docker lists it among the image's RepoDigests."""
-    name, _, digest = (image or SRA_TOOLS_IMAGE).partition("@")
-    repository = name.rsplit(":", 1)[0] if ":" in name.rsplit("/", 1)[-1] else name
-    return f"{repository}@{digest}"
 
 
 def _reused(record: FetchRecord, **extra) -> tuple[Path, Path, FetchRecord]:
