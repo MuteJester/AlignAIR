@@ -324,4 +324,17 @@ def test_read_changes_counts_the_reads_b_fixes_and_breaks():
     assert same["reads"] == {"fixed": 0, "broken": 0, "fixed_examples": [], "broken_examples": []}
     assert {name: (m["fixed"], m["broken"]) for name, m in same["metrics"].items()} == {"hit": (0, 0),
                                                                                          "miss": (0, 0)}
+    assert (same["a_only"], same["b_only"]) == (0, 0)
+    json.dumps(found)
+
+
+def test_read_changes_counts_the_cases_of_one_side_only():
+    # r5 is only in a and r6, r7 only in b: they are not paired, and not silently dropped either (a NaN is a paired
+    # case's missing value, not a missing case)
+    a = {"r1": {"hit": 0.0}, "r4": {"hit": NAN}, "r5": {"hit": 1.0}}
+    b = {"r1": {"hit": 1.0}, "r4": {"hit": 1.0}, "r6": {"hit": 1.0}, "r7": {}}
+    found = read_changes(a, b, ["hit"], lower_is_better=set(), examples=1)
+    assert (found["a_only"], found["b_only"]) == (1, 2)
+    assert (found["a_only_examples"], found["b_only_examples"]) == (["r5"], ["r6"])
+    assert found["metrics"]["hit"]["n_paired"] == 1
     json.dumps(found)

@@ -161,7 +161,10 @@ def read_changes(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: li
     (0 -> 1, or 1 -> 0 for a ``lower_is_better`` metric) and ``broken`` the other way. A metric with no paired case,
     or any paired value other than 0 and 1, has no entry. Per metric: ``n_paired``, the ``fixed`` and ``broken``
     counts and the first ``examples`` case ids of each (sorted); ``reads``: the cases fixed, and broken, on at least
-    one metric, with their first ``examples``. JSON-ready."""
+    one metric, with their first ``examples``; ``a_only`` and ``b_only``: how many cases only ``a``, or only ``b``,
+    has (never paired, so a caller that compares the same reads must check both are 0), with their first
+    ``examples`` (``a_only_examples``, ``b_only_examples``). JSON-ready."""
+    a_only, b_only = sorted(case for case in a if case not in b), sorted(case for case in b if case not in a)
     found, fixed_any, broken_any = {}, set(), set()
     for name in metrics:
         pairs = [(case, a[case][name], b[case][name]) for case in a
@@ -177,7 +180,9 @@ def read_changes(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: li
         broken_any.update(broken)
     return {"metrics": found, "reads": {"fixed": len(fixed_any), "broken": len(broken_any),
                                         "fixed_examples": sorted(fixed_any)[:examples],
-                                        "broken_examples": sorted(broken_any)[:examples]}}
+                                        "broken_examples": sorted(broken_any)[:examples]},
+            "a_only": len(a_only), "b_only": len(b_only),
+            "a_only_examples": a_only[:examples], "b_only_examples": b_only[:examples]}
 
 
 def _cluster_sums(cases: list[str], raw: list[float], clusters: Mapping[str, str]) -> list[tuple[float, int]]:

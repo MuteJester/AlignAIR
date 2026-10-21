@@ -23,7 +23,7 @@ from alignair_assay.core.records import digest as _digest
 from alignair_assay.core.records import read_json, write_json, write_text
 from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.report import run_report_markdown
-from alignair_assay.runners import make_runner
+from alignair_assay.runners import check_labels_used, make_runner
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL
 from alignair_assay.runners.arms import run_genotype_arm
 from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path, run_suite
@@ -56,8 +56,8 @@ class RunConfig:
     runs once per suite as well), the ``split``, truth ``reference``, ``seed`` and ``scale`` the suites are built
     with, the ``workers`` building them, the tool ``threads``, the tool settings (``igblast_dir``, the AlignAIR
     image, registry model and local checkpoint, the torch ``device``), whether to measure ``speed`` and the
-    ``checkpoints`` of the checkpoint variants among the tools (label -> path: ``alignair-local@<label>``,
-    ``runners.variants``)."""
+    ``checkpoints`` of the checkpoint variants among the tools (label -> path: ``alignair-local@<label>`` or
+    ``alignair-api@<label>``, ``runners.variants``; every label must be one a tool runs)."""
 
     suites: tuple[str, ...]
     tools: tuple[str, ...]
@@ -126,7 +126,7 @@ def check_config(cfg: RunConfig) -> None:
     positive, fewer than one worker or thread, a tool without the options it needs (``runners.make_runner`` on
     ``runner_options``: no ``--igblast-dir`` for igblast, no ``--alignair-checkpoint`` for alignair-local, a
     variant's label without its checkpoint, FileNotFoundError for a variant's missing checkpoint file; nothing is
-    run, pulled or downloaded), or, with
+    run, pulled or downloaded), a ``checkpoints`` label no tool runs (``runners.check_labels_used``), or, with
     ``speed``, what ``workflow.speed.check_speed`` refuses (S1 missing or too small to time, more threads than
     logical CPUs, a timed configuration without its tool's options)."""
     if not cfg.suites:
@@ -143,6 +143,7 @@ def check_config(cfg: RunConfig) -> None:
     options = runner_options(cfg)
     for tool in cfg.tools:
         make_runner(tool, options)
+    check_labels_used(cfg.tools, cfg.checkpoints)
     if cfg.speed:
         check_speed(cfg)
 

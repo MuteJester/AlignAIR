@@ -23,8 +23,8 @@ and R1 without the reads called to the SD3-only genes (``workflow.real_score``).
 1. ``check_config``: no donor, an unknown donor, a test donor without ``split="test"`` (or a dev donor in a test
    run), an unknown tool (a checkpoint label that is not one, or on a tool other than alignair-api), a cap or
    thread count out of range, a missing data root, ``igblast`` without its release directory, ``alignair-api``
-   without its checkpoint file, a variant whose label has no checkpoint or whose checkpoint file is missing, an
-   AlignAIR image not pinned by digest;
+   without its checkpoint file, a variant whose label has no checkpoint or whose checkpoint file is missing, a
+   checkpoint label no tool runs, an AlignAIR image not pinned by digest;
 2. Docker missing, or a pinned image whose digest is not the pinned one (``real_steps.check_images``: sra-tools,
    samtools, Immcantation and the AlignAIR image);
 3. a run directory made for another configuration, unless ``force``, on every field of the manifest's identity but
@@ -97,7 +97,7 @@ from alignair_assay.real.metrics import SupportIndex, decoy_calls, gene_support,
 from alignair_assay.real.preprocess import CAP, IMMCANTATION_IMAGE, PreprocessError
 from alignair_assay.real.truth import RealTruth
 from alignair_assay.report.real import real_report_markdown
-from alignair_assay.runners import make_runner, parse_tool
+from alignair_assay.runners import check_labels_used, make_runner, parse_tool
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL, host_cache_dir
 from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path
 from alignair_assay.runners.variants import variant_checkpoint
@@ -250,6 +250,7 @@ def check_config(cfg: RealConfig) -> None:
         base, label = parse_tool(tool)
         if label is not None:
             variant_checkpoint(label, cfg.checkpoints, tool=tool)
+    check_labels_used(cfg.tools, cfg.checkpoints)
     if "alignair" in cfg.tools:
         image = cfg.alignair_image or DEFAULT_IMAGE
         try:
@@ -257,6 +258,22 @@ def check_config(cfg: RealConfig) -> None:
         except ValueError:
             raise ValueError(f"the AlignAIR image {image} is not pinned by digest (<repository>:<tag>@sha256:...); "
                              "every container the real workflow runs is") from None
+
+
+def manifest_identity(cfg: RealConfig, reference: Reference, settings: dict[str, dict] | None = None) -> dict:
+    """The manifest's ``identity`` (the module docstring): the donors, split, cap, tools (none when the run stops
+    after preprocessing), the reference's name and its ``digest()`` and ``gapped_digest()``, the preprocessing
+    options, ``stop_after`` and the pinned images; and, given, the tools' ``settings`` (each one's
+    ``fingerprint()``), which ``run_real`` adds once it has them."""
+    scoring = cfg.stop_after is None
+    identity = {"donors": list(cfg.donors), "split": cfg.split, "cap": cfg.cap,
+                "tools": list(cfg.tools) if scoring else [], "reference": cfg.reference,
+                "reference_digest": reference.digest(), "reference_gapped_digest": reference.gapped_digest(),
+                "paper_length_filter": cfg.paper_length_filter, "accept_assembly_loss": cfg.accept_assembly_loss,
+                "stop_after": cfg.stop_after, "images": pinned_images(cfg)}
+    if settings is not None:
+        identity["settings"] = settings
+    return identity
 
 
 def donor_split(donor: str) -> str:
@@ -271,11 +288,7 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
     scoring = cfg.stop_after is None
     images = real_steps.check_images(pinned_images(cfg))
     reference = real_steps.load_reference(cfg.reference)
-    identity = {"donors": list(cfg.donors), "split": cfg.split, "cap": cfg.cap,
-                "tools": list(cfg.tools) if scoring else [], "reference": cfg.reference,
-                "reference_digest": reference.digest(), "reference_gapped_digest": reference.gapped_digest(),
-                "paper_length_filter": cfg.paper_length_filter, "accept_assembly_loss": cfg.accept_assembly_loss,
-                "stop_after": cfg.stop_after, "images": pinned_images(cfg)}
+    identity = manifest_identity(cfg, reference)
     _check_manifest(identity, layout, force=force, ignore=("settings",))  # before any work: refusal 3
     sensitivity = real_steps.sensitivity_genes(cfg.data_root) if scoring else None
     setup = RunLayout(layout.real_setup_dir())

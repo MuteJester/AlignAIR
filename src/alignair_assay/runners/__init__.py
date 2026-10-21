@@ -7,7 +7,7 @@ checkpoint (``RunnerOptions.checkpoints``). Tests may register fakes in ``RUNNER
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 
 from alignair_assay.runners.alignair import AlignAIRImage, AlignAIRLocal
 from alignair_assay.runners.alignair_api import AlignAIRApi
@@ -34,7 +34,7 @@ VARIANTS: dict[str, Callable[[str, RunnerOptions], Runner]] = {
     "alignair-api": AlignAIRApiVariant.from_label,
 }
 
-__all__ = ["RUNNERS", "VARIANTS", "make_runner", "parse_tool"]
+__all__ = ["RUNNERS", "VARIANTS", "check_labels_used", "make_runner", "parse_tool"]
 
 
 def make_runner(name: str, options: RunnerOptions) -> Runner:
@@ -52,3 +52,15 @@ def make_runner(name: str, options: RunnerOptions) -> Runner:
     except KeyError:
         raise ValueError(f"unknown tool {name!r}; known tools: {', '.join(RUNNERS)}") from None
     return factory(options)
+
+
+def check_labels_used(tools: Iterable[str], checkpoints: Mapping[str, str]) -> None:
+    """ValueError naming each label of ``checkpoints`` (label -> path) that no tool of ``tools`` runs as
+    ``<base>@<label>``: a checkpoint given for nothing is a mistake (a typo in a tool id or a label), refused rather
+    than ignored. ``tools`` are parsed by ``parse_tool`` (a bad id is its ValueError)."""
+    tools = list(tools)
+    used = {parse_tool(tool)[1] for tool in tools}
+    unused = [label for label in checkpoints if label not in used]
+    if unused:
+        raise ValueError(f"no tool runs --checkpoint label {', '.join(repr(label) for label in unused)} (the tools: "
+                         f"{', '.join(tools)}); run it as <tool>@<label> or leave it out")

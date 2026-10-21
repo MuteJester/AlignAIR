@@ -154,7 +154,10 @@ def test_variants_are_refused_before_anything_is_written(tmp_path):
             (dict(tools=("alignair-local@a", "alignair-local@a")), ValueError, "two tools"),
             (dict(tools=("alignair-local@a", "alignair-local@a/b")), ValueError, "label"),
             (dict(tools=("alignair-local@a", "igblast@b")), ValueError, "take a checkpoint label"),
-            (dict(speed=True, suites=("S1",)), ValueError, "does not time checkpoint variants")):
+            (dict(speed=True, suites=("S1",)), ValueError, "does not time checkpoint variants"),
+            # a checkpoint given under a label no tool runs is a mistake, never ignored
+            (dict(checkpoints={**good, "c": str(checkpoint), "cand": str(checkpoint)}), ValueError,
+             r"no tool runs --checkpoint label 'c', 'cand'")):
         cfg = _config(overrides.pop("checkpoints", good), **overrides)
         with pytest.raises(error, match=message):
             check_config(cfg)

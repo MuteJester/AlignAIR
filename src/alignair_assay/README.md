@@ -64,7 +64,9 @@ PYTHONPATH=src python -m alignair_assay real --run-dir .private/assay/cand_real 
 
 - **A label** is 1 to 32 of the letters, digits, `_`, `.` and `-`. Anything else, or a label on a tool that runs no
   checkpoint (`igblast@x`, `alignair@x`), is refused when the tool id is parsed. A label without its
-  `--checkpoint` is refused naming the known labels, and a missing checkpoint file before any work.
+  `--checkpoint` is refused naming the known labels, a `--checkpoint` label no tool runs is refused too, and a
+  missing checkpoint file before any work. `run` takes plain tools only: a variant id is refused there, since
+  `run` has no `--checkpoint <label>=<path>`.
 - **Identity.** A variant is its base's runner on the label's checkpoint under the full id. Its runs, scores and
   comparisons are filed under `alignair-local@cand` (one path component). Its fingerprint is its base's (the
   checkpoint's path and SHA-256 among it) plus the `label`, and the reports name it with its checkpoint's short
@@ -532,7 +534,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   fallbacks), the worker count and the wall time in `seconds`; a suite with donors adds `donors_summary`
   (see Donors). It is removed first and written last, so it marks a complete build. The command prints one line per
   suite.
-- `run` runs one registered tool on built suites of `RUN`. It first checks every input: the tool and its options,
+- `run` runs one registered tool on built suites of `RUN`. It first checks every input: the tool (a plain one; a
+  checkpoint variant runs in `all` or `real`) and its options,
   that each suite is built (`build.json`) against one truth reference, whose dataconfig must still have the
   digest the truth headers record, and, for `--arm genotype`, that each suite has donors (`donors.json`). The run
   directory and the tool's paths (`--igblast-dir`, `--cache-dir`, `--checkpoint`) are made absolute, so every
@@ -611,7 +614,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
    a known split, exactly two different tool ids (two checkpoint variants of one tool, `alignair-local@a` and
    `alignair-local@b`, are two tools), a positive scale, at least one worker and thread, and the options each tool
    needs (`--igblast-dir` for igblast, `--alignair-checkpoint` for alignair-local, `--checkpoint <label>=PATH` with
-   an existing file for a variant), checked by building its runner, which runs, pulls and downloads nothing. With
+   an existing file for a variant, and no `--checkpoint` label that no tool runs), checked by building its runner,
+   which runs, pulls and downloads nothing. With
    `--speed` (`workflow.speed.check_speed`), S1 must be among the suites with at least 4000 reads at the scale
    (scale 0.8 or more), the threads must not exceed the host's logical CPUs, every timed configuration's runner
    must build, a checkpoint timed as alignair-local must be a file, and no tool may be a checkpoint variant. Each

@@ -1125,6 +1125,22 @@ def test_a_candidate_checkpoint_counts_the_reads_it_fixes_and_breaks(tmp_path, f
     assert "No AlignAIR tool was compared with igblast" in report and "| Scope |\n" not in report
 
 
+def test_a_variant_retrained_in_place_is_refused_and_forced_redoes_only_its_runs(tmp_path, fakes, monkeypatch):
+    layout = RunLayout(tmp_path / "run")
+    cfg = _variants(tmp_path, monkeypatch, "a", "b")
+    retrained = tmp_path / "b.alignair"
+    retrained.write_bytes(b"weights")
+    cfg = dataclasses.replace(cfg, checkpoints={**cfg.checkpoints, "b": str(retrained)})
+    run_real(cfg, layout)
+    retrained.write_bytes(b"retrained weights")  # a training job saving over @b's file
+    FakeTool.runs = []
+    with pytest.raises(ValueError, match=r"alignair-api@b\.checkpoint_sha256") as refused:
+        run_real(cfg, layout)
+    assert "alignair-api@a" not in str(refused.value) and FakeTool.runs == []
+    run_real(cfg, layout, force=True)
+    assert sorted(FakeTool.runs) == [("alignair-api@b", "W-97", "genotype"), ("alignair-api@b", "W-97", "shared")]
+
+
 def test_variants_are_refused_before_any_work(tmp_path, fakes, monkeypatch):
     layout = RunLayout(tmp_path / "run")
     cfg = _variants(tmp_path, monkeypatch, "a")
@@ -1134,7 +1150,9 @@ def test_variants_are_refused_before_any_work(tmp_path, fakes, monkeypatch):
             (dict(tools=("alignair-api@a/b",)), ValueError, "label"),
             (dict(tools=("alignair-api@c",)), ValueError, r"unknown checkpoint label 'c'.*known labels: a"),
             (dict(checkpoints={"a": str(tmp_path / "gone.alignair")}), FileNotFoundError,
-             "alignair-api@a: no AlignAIR checkpoint")):
+             "alignair-api@a: no AlignAIR checkpoint"),
+            (dict(checkpoints={**cfg.checkpoints, "b": cfg.checkpoints["a"]}), ValueError,
+             r"no tool runs --checkpoint label 'b' \(the tools: igblast, alignair-api@a\)")):
         with pytest.raises(error, match=message):
             run_real(dataclasses.replace(cfg, **overrides), layout)
     assert not layout.root.exists() and FakeTool.runs == [] and fakes.captures == []

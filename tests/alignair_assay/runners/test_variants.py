@@ -8,9 +8,11 @@ identity, the paths and the real run identity (all but its code digest) must sti
 import argparse
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from alignair_assay.cli import main
 from alignair_assay.cli.common import checkpoint_map, checkpoint_spec
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import sha256_file
@@ -23,6 +25,7 @@ from alignair_assay.runners.alignair_api import AlignAIRApi
 from alignair_assay.runners.base import RunnerOptions
 from alignair_assay.workflow import real_steps
 from alignair_assay.workflow.orchestrate import RunConfig, identity
+from alignair_assay.workflow.real import RealConfig, manifest_identity
 
 RECORD = json.loads((Path(__file__).resolve().parents[1] / "fixtures" / "plain_tool_records.json").read_text())
 
@@ -184,6 +187,23 @@ def test_the_plain_tools_records_are_unchanged(tmp_path, fixed_code):
                     checkpoints={"a": str(tmp_path / "a.alignair")})
     found = identity(cfg, settings)
     assert found == RECORD["all_identity"] and digest(found) == RECORD["all_config_hash"]
+    assert sorted(found) == RECORD["all_manifest_identity_keys"]
+    # the real manifest's identity and each plain tool's settings in it
+    igblast = tmp_path / "igblast"
+    for name in ("bin/igblastn", "bin/makeblastdb", "optional_file/human_gl.aux"):
+        _checkpoint(igblast / name, name.encode())
+    image = make_runner("alignair", RunnerOptions(cache_dir=str(tmp_path / "cache")))
+    image._inspect_image = lambda: {"id": "sha256:" + "i" * 64}
+    image.install_model = lambda: {"model": {"sha256": "m" * 64}}
+    real_settings = {"igblast": make_runner("igblast", RunnerOptions(igblast_dir=str(igblast))).fingerprint(),
+                     "alignair": image.fingerprint(), "alignair-api": fingerprints["alignair-api"]}
+    assert {tool: sorted(values) for tool, values in real_settings.items()} == RECORD["real_manifest_settings_keys"]
+    real_cfg = RealConfig(donors=("W-97",), split="dev", data_root=str(tmp_path),
+                          alignair_checkpoint=str(checkpoint), checkpoints={"a": str(tmp_path / "a.alignair")})
+    reference = SimpleNamespace(digest=lambda: "r" * 64, gapped_digest=lambda: "g" * 64)
+    real_identity = manifest_identity(real_cfg, reference, real_settings)
+    assert sorted(real_identity) == RECORD["real_manifest_identity_keys"]
+    assert real_identity["settings"] == real_settings
     # the paths
     layout = RunLayout(Path("/run"))
     for tool in ("alignair-local", "alignair-api"):
@@ -229,3 +249,15 @@ def test_checkpoint_option_parses_label_and_path(tmp_path, monkeypatch):
     assert checkpoint_map([]) == {} and checkpoint_map(None) == {}
     with pytest.raises(ValueError, match="label 'a' is given twice"):
         checkpoint_map([("a", "/m/a"), ("a", "/m/b")])
+
+
+def test_run_takes_plain_tools_only(tmp_path, capsys):
+    # run has no --checkpoint LABEL=PATH, so a variant is refused with where to run one instead
+    checkpoint = _checkpoint(tmp_path / "model.alignair")
+    for tool in ("alignair-api@x", "alignair-local@x"):
+        assert main(["run", "--run-dir", str(tmp_path / "run"), "--tool", tool, "--suites", "S0", "--checkpoint",
+                     str(checkpoint)]) == 2
+        err = capsys.readouterr().err
+        assert f"tool {tool!r}: run takes plain tools; use all or real for checkpoint variants" in err, err
+        assert "x=PATH" not in err
+    assert not (tmp_path / "run").exists()
