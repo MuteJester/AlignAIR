@@ -66,6 +66,8 @@ SCORE_CODE = ("real/metrics.py", "real/truth.py", "real/genotype.py", "airr/read
 # The V R1 headline and its components: the sensitivity analysis's family.
 V_R1 = ("real.v.unsupported", "real.v.unsupported_allele", "real.v.unsupported_gene", "real.v.no_call")
 ISOTYPES = ("IGHM", "IGHG")
+# The ids of rows matching no read a run's matching names.
+EXTRA_EXAMPLES = 3
 # The R1 primary and the gene-support sensitivity variant: which row field holds the V class.
 VARIANTS = {"primary": "v", "gene_support": "v_support"}
 _EXCLUDED = "excluded:"
@@ -116,8 +118,10 @@ def stratum(truth: RealTruth) -> str:
 def step_scores(data: DonorScoring, tool: str, arm: str, layout: RunLayout, inputs: dict) -> tuple[dict, dict]:
     """``(tool, arm)``'s rows on the donor's reads, from the cache while its record is current (``inputs``, the
     digests they are computed from, and ``SCORE_CODE``), else from its predictions; stored in ``data.calls``.
-    Returns the rows' ``matching`` (rows, duplicates, invalid rows, reads without a row, rows of no read) and the
-    step's ``status``."""
+    Returns the rows' ``matching`` (rows, duplicates, invalid rows, ``missing``: reads without a row, scored as no
+    call; ``extra``: rows whose id matches no read, with up to ``EXTRA_EXAMPLES`` of their ids, sorted, in
+    ``extra_ids``) and the step's ``status``. A run with extra rows is not scored (``workflow.real``): its ids
+    drifted from the reads it was given."""
     path = layout.real_scores(data.donor, arm, tool)
     fingerprint = digest({"inputs": inputs, "code_sha256": code_digest(SCORE_CODE)})
     header = jsonl_header(path)
@@ -135,8 +139,9 @@ def step_scores(data: DonorScoring, tool: str, arm: str, layout: RunLayout, inpu
         rows[read_id] = {"read_id": read_id, "v_call": None if segment is None else segment.call, "v": calls.v,
                          "d": calls.d, "j": calls.j, "any": calls.v_any_listed_supported,
                          "v_support": data.thresholded.classify_v(pred, truth=truth)}
-    matching = {**stats, "missing": sum(read_id not in predictions for read_id in data.truths),
-                "extra": sum(read_id not in data.truths for read_id in predictions)}
+    extra = sorted(read_id for read_id in predictions if read_id not in data.truths)
+    matching = {**stats, "missing": sum(read_id not in predictions for read_id in data.truths), "extra": len(extra),
+                "extra_ids": extra[:EXTRA_EXAMPLES]}
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}")
     write_jsonl(rows.values(), temporary, header={"kind": SCORES_KIND, "donor": data.donor, "tool": tool, "arm": arm,

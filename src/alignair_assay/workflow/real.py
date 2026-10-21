@@ -46,7 +46,8 @@ configuration (``force``), whose preprocessing records are reused.
 **A donor that cannot be scored** is stopped and recorded with its step, reason and evidence, and the others go on:
 a fetch that fails verification (``FetchError``), a run the classifier refuses or whose assembly loss is over the
 line (``PreprocessError``; ``accept_assembly_loss`` lets it through), or a container step that fails. A tool run that
-fails is recorded with its cause and left out of the comparisons.
+fails, or whose predictions hold rows whose ids match no read (its ids drifted), is recorded as failed with its cause
+and left out of the comparisons.
 
 **The summary** holds the configuration and provenance (images, tool fingerprints, reference, the fetch quality per
 run), the sensitivity analysis's genes, per donor (``donors``) its steps' status and seconds, preprocessing record,
@@ -371,6 +372,15 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
         started = time.monotonic()
         inputs = {**common, "predictions_sha256": result.provenance.get("predictions_sha256")}
         matching, status = real_score.step_scores(data, tool, arm, layout, inputs)
+        if matching.get("extra"):
+            # rows whose ids match no read: the ids drifted, so nothing the run predicted can be trusted to be paired
+            # with its read (as P1/P2 refuse a prediction file that does not match its truth)
+            data.calls.pop((tool, arm), None)
+            block["runs"][arm][tool].update(status="failed", error=(
+                f"{matching['extra']} predicted rows match no read (e.g. {', '.join(matching['extra_ids'])}): the "
+                "run's ids drifted from the reads it was given, so it is not scored"))
+            steps["scores"][f"{arm}/{tool}"] = {"status": "failed", "seconds": round(time.monotonic() - started, 2)}
+            continue
         steps["scores"][f"{arm}/{tool}"] = {**status, "seconds": round(time.monotonic() - started, 2)}
         block["tools"][arm][tool] = {**real_score.tool_summary(data, tool, arm), "matching": matching}
     block["comparisons"], block["arm_deltas"] = _comparisons(cfg, data, layout, ctx.sensitivity["genes"])

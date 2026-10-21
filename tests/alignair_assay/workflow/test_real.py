@@ -640,6 +640,39 @@ def test_low_support_is_a_sensitivity_variant_not_the_primary(tmp_path, fakes):
     assert summary["pooled"]["tools"]["shared"]["igblast"]["gene_support"]["v_classes"] == {
         "excluded:low_support": 8}
 
+class DriftingTool(FakeTool):
+    """A tool whose output holds two rows whose ids match no read, as when a tool rewrites the ids it was given."""
+
+    def run(self, fasta, out_tsv, **kwargs) -> RunResult:
+        result = super().run(fasta, out_tsv, **kwargs)
+        with open(out_tsv, "a", encoding="utf-8") as handle:
+            handle.write("ghost_2\tACGT\tIGHVF1-G1*01\t\t\nghost_1\tACGT\tIGHVF1-G1*01\t\t\n")
+        return result
+
+
+def test_prediction_ids_that_match_no_read_fail_the_runs_scores(tmp_path, fakes, monkeypatch, capsys):
+    monkeypatch.setitem(RUNNERS, "alignair", lambda options: DriftingTool("alignair", options))
+    layout = RunLayout(tmp_path / "run")
+    summary = run_real(_config(tmp_path), layout)
+    donor = summary["donors"]["W-97"]
+    run = donor["runs"]["shared"]["alignair"]
+    assert run["status"] == "failed" and run["error"].startswith("2 predicted rows match no read")
+    assert "ghost_1, ghost_2" in run["error"]
+    assert donor["steps"]["scores"]["shared/alignair"]["status"] == "failed"
+    assert "alignair" not in donor["tools"]["shared"]
+    pairs = {(c["a"], c["b"], c["arm"]): c for c in donor["comparisons"]}
+    assert pairs["igblast", "alignair", "shared"]["status"] == "not compared"
+    assert pairs["igblast", "alignair-api", "shared"]["status"] == "compared"
+    assert [(row["tool"], row["arm"]) for row in summary["failed_runs"]] == [("alignair", "shared")]
+    assert donor["runs"]["shared"]["igblast"]["status"] == "ok"
+    # the run itself is current, so a rerun reuses it and its scores fail again; the command exits with status 2
+    cfg = _config(tmp_path)
+    args = ["real", "--run-dir", str(layout.root), "--data-root", cfg.data_root, "--donors", "W-97", "--cap", "30",
+            "--threads", "2", "--igblast-dir", cfg.igblast_dir, "--alignair-checkpoint", cfg.alignair_checkpoint]
+    capsys.readouterr()
+    assert main(args) == 2
+    assert "alignair on W-97's shared arm failed: 2 predicted rows match no read" in capsys.readouterr().err
+
 def test_the_oracle_self_check_is_judged(tmp_path, fakes, monkeypatch, capsys):
     # on 30 reads every oracle read is scored and supported: passed
     layout = RunLayout(tmp_path / "run")
