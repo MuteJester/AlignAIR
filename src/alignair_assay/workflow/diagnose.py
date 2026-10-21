@@ -48,7 +48,6 @@ import hashlib
 import json
 import os
 import platform
-import tempfile
 import time
 import warnings
 from collections import Counter
@@ -62,6 +61,8 @@ import torch
 from alignair_assay.core.cases import evenly_spaced, read_cases
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import files_digest, sha256_file
+from alignair_assay.core.records import write_json as _write_json
+from alignair_assay.core.records import write_text as _write_text
 from alignair_assay.core.reference import Reference
 from alignair_assay.diagnostics.ablation import (
     CONTRIBUTION_METRICS,
@@ -452,29 +453,6 @@ def _cached(path: Path, key: dict) -> dict | None:
     except (OSError, ValueError):
         return None
     return record if isinstance(record, dict) and record.get("key") == key else None
-
-
-def _write_json(path: Path, data) -> None:
-    """Write ``data`` as strict JSON, atomically (``_write_text``)."""
-    _write_text(path, json.dumps(data, indent=2, allow_nan=False) + "\n")
-
-
-def _write_text(path: Path, text: str) -> None:
-    """Write ``text`` through a temporary file of its own in the same directory (``tempfile.NamedTemporaryFile``),
-    then rename it over ``path``, so the file is never seen half written, even with two writers (or two threads of
-    one process). The temporary file is removed when the write fails."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.",
-                                         suffix=".tmp", delete=False)
-    temporary = Path(handle.name)
-    try:
-        with handle:
-            handle.write(text)
-        os.chmod(temporary, 0o644)  # a temporary file is private; the report is not
-        os.replace(temporary, path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
 
 
 def _check_count(name: str, value) -> None:

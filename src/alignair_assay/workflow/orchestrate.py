@@ -13,18 +13,13 @@ recomputed from the current runs, and a run that does not match the manifest is 
 from __future__ import annotations
 
 import dataclasses
-import hashlib
-import json
-import os
-import platform
 import shutil
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path
 
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.core.provenance import genairr_provenance, git_state
+from alignair_assay.core.records import digest as _digest
+from alignair_assay.core.records import read_json, write_json, write_text
 from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.report import run_report_markdown
 from alignair_assay.runners import make_runner
@@ -37,6 +32,7 @@ from alignair_assay.suites import get_suite
 from alignair_assay.suites.donors import read_genotypes
 from alignair_assay.suites.engine import DEFAULT_SEED, check_split
 from alignair_assay.workflow.build import build_changes, build_suite
+from alignair_assay.workflow.manifest import changed_fields, describe_changes, manifest_record
 from alignair_assay.workflow.scoring import comparison_report, score_file, score_report, write_report
 from alignair_assay.workflow.speed import check_speed, run_speed
 from alignair_assay.workflow.summary import (
@@ -44,7 +40,6 @@ from alignair_assay.workflow.summary import (
     ORACLE,
     collect_run_summary,
     expected_runs,
-    read_json,
     relative,
     run_status,
     run_statuses,
@@ -215,8 +210,8 @@ def score_and_report(cfg: RunConfig, layout: RunLayout, *, reference: Reference 
     reference = reference or Reference.from_dataconfig(cfg.reference)
     errors = _score(cfg, layout, reference, command=command)
     summary = collect_run_summary(layout, cfg, scoring_errors=errors)
-    layout.report_json.write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    layout.report_md.write_text(run_report_markdown(summary), encoding="utf-8")
+    write_json(layout.report_json, summary)
+    write_text(layout.report_md, run_report_markdown(summary))
     print(f"report: {layout.report_md}", flush=True)
     for run in summary["failed_runs"]:
         donor = f" on donor {run['failed_donor']}" if run.get("failed_donor") else ""
@@ -260,48 +255,28 @@ def read_run_config(layout: RunLayout) -> RunConfig:
     return RunConfig(**{**config, "suites": tuple(config["suites"]), "tools": tuple(config["tools"])})
 
 
-def _digest(fields: dict) -> str:
-    return hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
-
-def _flat(fields: dict) -> dict:
-    """An identity with each tool's setting as its own ``<tool>.<key>`` field, for naming what differs."""
-    flat = {name: value for name, value in fields.items() if name != "settings"}
-    for tool, values in (fields.get("settings") or {}).items():
-        flat.update({f"{tool}.{key}": value for key, value in values.items()})
-    return flat
-
 
 def _manifest(cfg: RunConfig, current: dict, layout: RunLayout, *, force: bool) -> None:
     """Write the manifest, keep an identical one, or refuse (ValueError) one made for another configuration."""
-    digest = _digest(current)
+    config_hash = _digest(current)
     replaced = None
     if layout.manifest.is_file():
         old = read_json(layout.manifest) or {}
-        if old.get("config_hash") == digest:
+        if old.get("config_hash") == config_hash:
             return
-        previous, now = _flat(old.get("identity") or {}), _flat(current)
-        changed = [name for name in sorted(previous.keys() | now.keys()) if previous.get(name) != now.get(name)]
+        changed = changed_fields(old.get("identity") or {}, current)
         if not force:
-            differences = "; ".join(f"{name} {previous.get(name)} -> {now.get(name)}" for name in changed)
-            raise ValueError(f"{layout.manifest} was written for another configuration ({differences}). Rerun with "
-                             "that configuration, choose another --run-dir, or pass --force to rebuild and re-run "
-                             "what the change affects")
+            raise ValueError(f"{layout.manifest} was written for another configuration "
+                             f"({describe_changes(old.get('identity') or {}, current, changed)}). Rerun with that "
+                             "configuration, choose another --run-dir, or pass --force to rebuild and re-run what the "
+                             "change affects")
         replaced = {"config_hash": old.get("config_hash"), "changed": changed}
     warnings = _pinning_warnings(cfg)
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)
-    manifest = {
-        "kind": MANIFEST_KIND, "version": MANIFEST_VERSION, "config": dataclasses.asdict(cfg), "identity": current,
-        "config_hash": digest, "split": cfg.split,
-        "host": {"hostname": platform.node(), "platform": platform.platform(), "python": platform.python_version(),
-                 "logical_cpus": os.cpu_count()},
-        "git": git_state(Path(__file__).resolve().parent), "genairr": genairr_provenance(),
-        "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "replaced": replaced,
-        "warnings": warnings,
-    }
-    layout.root.mkdir(parents=True, exist_ok=True)
-    layout.manifest.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    write_json(layout.manifest, manifest_record(
+        kind=MANIFEST_KIND, version=MANIFEST_VERSION, config=dataclasses.asdict(cfg), identity=current,
+        config_hash=config_hash, split=cfg.split, replaced=replaced, warnings=warnings), allow_nan=True)
 
 
 def _pinning_warnings(cfg: RunConfig) -> list[str]:

@@ -65,7 +65,8 @@ from alignair_assay.real.metrics import (
 )
 from alignair_assay.real.truth import RealTruth, clonotype_clusters, junction_length_clusters, sl15_clusters
 from alignair_assay.stats import compare, summarize, to_dict
-from alignair_assay.workflow.real_steps import code_digest, digest, jsonl_header, write_json
+from alignair_assay.core.records import digest, write_json
+from alignair_assay.workflow.real_steps import code_digest, jsonl_header
 from alignair_assay.workflow.summary import ALPHA
 
 SCORES_KIND = "alignair_assay.real.scores"

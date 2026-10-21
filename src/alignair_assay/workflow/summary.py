@@ -5,7 +5,6 @@ Everything is read back from the run directory (build records, run records, scor
 """
 from __future__ import annotations
 
-import json
 import math
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -13,6 +12,7 @@ from typing import TYPE_CHECKING
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.prediction import GENES
 from alignair_assay.core.provenance import sha256_file
+from alignair_assay.core.records import read_json
 from alignair_assay.core.reference import Reference
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.report.run import RUN_REPORT_KIND, RUN_REPORT_VERSION
@@ -352,14 +352,6 @@ def excess_alleles_tables(layout: RunLayout, cfg: RunConfig) -> list[dict]:
                 for tool, arm in dict.fromkeys(runs)]
         out.append({"suite": name, "rows": rows})
     return out
-
-
-def read_json(path: Path) -> dict | None:
-    """The JSON object in ``path``; None when the file is missing or not valid JSON."""
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
 
 
 def relative(layout: RunLayout, path: Path) -> str:

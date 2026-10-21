@@ -64,7 +64,6 @@ from __future__ import annotations
 
 import dataclasses
 import os
-import platform
 import sys
 import time
 from collections import Counter
@@ -75,6 +74,7 @@ from pathlib import Path
 from alignair_assay.core.container import ContainerError, pinned_repo_digest
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import genairr_provenance, git_state, sha256_file
+from alignair_assay.core.records import digest, read_json, write_json, write_text
 from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.real.fetch import (
     IGENOTYPER_COMMIT,
@@ -94,6 +94,7 @@ from alignair_assay.runners import make_runner
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL, host_cache_dir
 from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path
 from alignair_assay.workflow import real_score, real_steps
+from alignair_assay.workflow.manifest import changed_fields, describe_changes, manifest_record
 
 TOOLS = ("igblast", "alignair", "alignair-api")
 GENOTYPE_TOOLS = ("igblast", "alignair-api")
@@ -109,8 +110,6 @@ VERSION = "1"
 # A donor whose documented known answers are fewer than this share of its reads is flagged (design §10.6).
 KNOWN_YIELD_FLAG = 0.05
 ASSEMBLY_COUNTS = ("written_records", "complete_assemblies", "partial_assemblies", "failed_assemblies")
-# A field one of two identities lacks (a manifest written before the field existed), named "(absent)".
-_ABSENT = object()
 
 
 @dataclass(frozen=True)
@@ -297,16 +296,9 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
         "oracle_unchecked": [donor for donor, block in blocks.items()
                              if (block.get("oracle_self_check") or {}).get("status") == "unchecked"],
     }
-    real_steps.write_json(layout.real_summary_json(), summary)
-    _write_text(layout.real_report_md(), real_report_markdown(summary))
+    write_json(layout.real_summary_json(), summary)
+    write_text(layout.real_report_md(), real_report_markdown(summary))
     return summary
-
-
-def _write_text(path: Path, text: str) -> None:
-    """Write ``text`` through a temporary file beside ``path``, so no reader sees half of it."""
-    temporary = path.with_name(f".{path.name}.part")
-    temporary.write_text(text, encoding="utf-8")
-    temporary.replace(path)
 
 
 def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
@@ -335,7 +327,7 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
         block.update(status="stopped", stopped={"step": step, "reason": str(error),
                                                 "evidence": getattr(error, "evidence", None)})
         if step == "preprocess":
-            block["preprocess"] = _preprocess_block(real_steps.read_json(layout.real_preprocess_json(donor)) or {})
+            block["preprocess"] = _preprocess_block(read_json(layout.real_preprocess_json(donor)) or {})
         print(f"{donor} {step}: stopped: {error}", file=sys.stderr, flush=True)
         return block, None
     block.update(protocol=record.get("protocol"), preprocess=_preprocess_block(record))
@@ -496,28 +488,25 @@ def _pooled(cfg: RealConfig, scored: dict[str, real_score.DonorScoring], blocks:
 
 
 def _check_manifest(identity: dict, layout: RunLayout, *, force: bool, ignore: tuple[str, ...] = ()) -> list | None:
-    """The fields of ``identity`` (``_flat``) that differ from the run directory's manifest, leaving out the
-    top-level keys ``ignore`` on both sides; a field one side lacks (a manifest written before the field existed)
-    differs and is shown as ``(absent)``. None without a manifest, or when its whole identity's hash is
+    """The fields of ``identity`` (``workflow.manifest.flat``) that differ from the run directory's manifest, leaving
+    out the top-level keys ``ignore`` on both sides; a field one side lacks (a manifest written before the field
+    existed) differs and is shown as ``(absent)``. None without a manifest, or when its whole identity's hash is
     ``identity``'s. ValueError naming them when they differ, unless ``force``; without ``ignore``, also when no field
     differs but the hash does ("identity format changed"). Reads only."""
     path = layout.real_manifest()
     if not path.is_file():
         return None
-    old = real_steps.read_json(path) or {}
-    if not ignore and old.get("config_hash") == real_steps.digest(identity):
+    old = read_json(path) or {}
+    if not ignore and old.get("config_hash") == digest(identity):
         return None
-    previous = _flat({key: value for key, value in (old.get("identity") or {}).items() if key not in ignore})
-    now = _flat({key: value for key, value in identity.items() if key not in ignore})
-    changed = [name for name in sorted(previous.keys() | now.keys())
-               if previous.get(name, _ABSENT) != now.get(name, _ABSENT)]
+    previous = old.get("identity") or {}
+    changed = changed_fields(previous, identity, ignore=ignore)
     if force:
         return changed
     if changed:
-        differences = "; ".join(f"{name} {_shown(previous.get(name, _ABSENT))} -> {_shown(now.get(name, _ABSENT))}"
-                                for name in changed)
-        raise ValueError(f"{path} was written for another configuration ({differences}). Rerun with that "
-                         "configuration, choose another --run-dir, or pass --force to redo what the change affects")
+        raise ValueError(f"{path} was written for another configuration "
+                         f"({describe_changes(previous, identity, changed)}). Rerun with that configuration, choose "
+                         "another --run-dir, or pass --force to redo what the change affects")
     if not ignore:
         raise ValueError(f"{path} was written for another configuration: no field of its identity differs, but its "
                          "hash does (identity format changed: the workflow that wrote it recorded its configuration "
@@ -525,41 +514,21 @@ def _check_manifest(identity: dict, layout: RunLayout, *, force: bool, ignore: t
     return changed
 
 
-def _shown(value) -> str:
-    """A field's value in a refusal: ``(absent)`` for a field the identity lacks."""
-    return "(absent)" if value is _ABSENT else str(value)
-
-
 def _manifest(cfg: RealConfig, identity: dict, layout: RunLayout, *, force: bool) -> str:
-    """Write the manifest, keep an identical one, or refuse (ValueError, ``_check_manifest``) one made for another
-    configuration; returns the configuration's hash."""
-    config_hash = real_steps.digest(identity)
+    """Write the manifest (``workflow.manifest.manifest_record``), keep an identical one, or refuse (ValueError,
+    ``_check_manifest``) one made for another configuration; returns the configuration's hash."""
+    config_hash = digest(identity)
     path = layout.real_manifest()
     replaced = None
     changed = _check_manifest(identity, layout, force=force)
     if changed is None and path.is_file():
         return config_hash
     if changed is not None:
-        old = real_steps.read_json(path) or {}
+        old = read_json(path) or {}
         replaced = {"config_hash": old.get("config_hash"), "changed": changed}
-    real_steps.write_json(path, {
-        "kind": MANIFEST_KIND, "version": VERSION, "config": dataclasses.asdict(cfg), "identity": identity,
-        "config_hash": config_hash, "split": cfg.split,
-        "host": {"hostname": platform.node(), "platform": platform.platform(), "python": platform.python_version(),
-                 "logical_cpus": os.cpu_count()},
-        "git": git_state(Path(__file__).resolve().parent), "genairr": genairr_provenance(),
-        "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "replaced": replaced})
+    write_json(path, manifest_record(kind=MANIFEST_KIND, version=VERSION, config=dataclasses.asdict(cfg),
+                                     identity=identity, config_hash=config_hash, split=cfg.split, replaced=replaced))
     return config_hash
-
-
-def _flat(identity: dict) -> dict:
-    """An identity with each tool's setting and each image as its own ``<tool>.<key>`` or ``images.<name>`` field, for
-    naming what differs."""
-    flat = {name: value for name, value in identity.items() if name not in ("settings", "images")}
-    for tool, values in (identity.get("settings") or {}).items():
-        flat.update({f"{tool}.{key}": value for key, value in values.items()})
-    flat.update({f"images.{name}": image for name, image in (identity.get("images") or {}).items()})
-    return flat
 
 
 def _preprocess_block(record: dict) -> dict:

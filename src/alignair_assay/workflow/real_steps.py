@@ -51,6 +51,7 @@ from alignair_assay.core.container import check_image
 from alignair_assay.core.jsonl import read_header, read_jsonl, write_jsonl
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import files_digest, sha256_file
+from alignair_assay.core.records import digest, read_json, write_json
 from alignair_assay.core.reference import Reference
 from alignair_assay.real.fetch import (
     PILOT_DONORS,
@@ -281,29 +282,6 @@ def make_run(runner: Runner, tool: str, donor: str, arm: str, layout: RunLayout,
 def code_digest(paths: Iterable[str]) -> str:
     """``core.provenance.files_digest`` of the package modules ``paths`` (relative to the package)."""
     return files_digest(PACKAGE, [PACKAGE / path for path in paths])
-
-
-def digest(fields) -> str:
-    """Hex SHA-256 of the canonical JSON (sorted keys, no spaces) of ``fields``."""
-    return hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
-
-def read_json(path: Path) -> dict | None:
-    """The JSON object in ``path``; None when it is missing or unreadable."""
-    try:
-        value = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return value if isinstance(value, dict) else None
-
-
-def write_json(path: Path, value) -> None:
-    """Write ``value`` as strict JSON through a temporary file beside ``path``, so no reader sees half of it."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.part")
-    temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    temporary.replace(path)
 
 
 def read_meta(path: Path) -> list[dict]:

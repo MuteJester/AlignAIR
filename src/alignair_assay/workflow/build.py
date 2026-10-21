@@ -8,7 +8,6 @@ the GenAIRR in use.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 from pathlib import Path
@@ -16,6 +15,8 @@ from pathlib import Path
 from alignair_assay.core.cases import write_cases, write_fasta
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import files_digest, genairr_provenance
+from alignair_assay.core.records import digest as _digest
+from alignair_assay.core.records import write_json
 from alignair_assay.core.reference import Reference
 from alignair_assay.suites import catalog_module, get_suite
 from alignair_assay.suites.donors import donors_summary, donors_to_json
@@ -74,8 +75,7 @@ def build_suite(name: str, layout: RunLayout, *, reference_name: str, split: str
     write_truth_jsonl(truths, layout.truth(name), header=header)
     write_fasta(generated.cases, layout.reads(name))
     if generated.donors:
-        layout.donors(name).write_text(json.dumps(donors_to_json(generated.donors), indent=2) + "\n",
-                                       encoding="utf-8")
+        write_json(layout.donors(name), donors_to_json(generated.donors), allow_nan=True)
     build = {
         "suite": name, "split": split, "seed": seed, "scale": scale,
         "reference": reference_name, "reference_digest": digest,
@@ -88,7 +88,7 @@ def build_suite(name: str, layout: RunLayout, *, reference_name: str, split: str
         build["donors_summary"] = donors_summary(generated.donors, reference)
     build["workers"] = workers
     build["seconds"] = round(time.perf_counter() - start, 3)
-    layout.build_json(name).write_text(json.dumps(build, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    write_json(layout.build_json(name), build)
     return build
 
 
@@ -155,6 +155,3 @@ def build_is_current(layout: RunLayout, suite: str, *, split: str, reference_dig
     reused."""
     return not build_changes(layout, suite, split=split, reference_digest=reference_digest, seed=seed, scale=scale)
 
-
-def _digest(fields: dict) -> str:
-    return hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

@@ -35,7 +35,8 @@ from alignair_assay.runners.alignair import LOCAL_CODE_IDENTITY, local_code_iden
 from alignair_assay.runners.base import Runner, RunnerOptions
 from alignair_assay.suites import get_suite
 from alignair_assay.suites.engine import requested_count
-from alignair_assay.workflow.summary import ORACLE, read_json
+from alignair_assay.core.records import read_json
+from alignair_assay.workflow.summary import ORACLE
 
 if TYPE_CHECKING:
     from alignair_assay.workflow.orchestrate import RunConfig
