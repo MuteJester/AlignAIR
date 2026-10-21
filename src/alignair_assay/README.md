@@ -464,7 +464,8 @@ python -m alignair_assay diagnose --run-dir RUN --checkpoint MODEL.alignair --su
 python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97 [--split dev] [--cap 50000] \
     [--tools igblast,alignair,alignair-api] [--threads 8] [--device cpu] [--batch-size 64] \
     [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE] \
-    [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair] [--force]
+    [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair] [--stop-after preprocess] \
+    [--force]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR [--donors DONORS.json]
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05] \
@@ -536,7 +537,10 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   by its preprocessing, a failed tool run or a failed truth self-check exit with status 2 once the summary is
   written; an unchecked self-check (no oracle read scored, as on a small `--cap`, where no gene reaches the support
   thresholds) is a warning. `--alignair-checkpoint` defaults to the user's cached file of `--alignair-model`, the
-  image's model.
+  image's model. `--stop-after preprocess` fetches, genotypes and preprocesses each donor (the protocol classifier's
+  verdict included) and scores nothing, so it takes any pilot donor, test donors without `--split test` included
+  (each donor's split is recorded), and needs no tool option; scoring donors in the same run directory afterwards is
+  another configuration (`--force`), which reuses their preprocessing.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit`, `genairr_git_dirty` and
   `genairr_source_sha256` (the package directory's content: sources, compiled engine and data). The

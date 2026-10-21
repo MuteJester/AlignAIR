@@ -9,7 +9,7 @@ from alignair_assay.core.reference import DEFAULT_REFERENCE
 from alignair_assay.real.preprocess import CAP
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL
 from alignair_assay.runners.base import absolute_path
-from alignair_assay.workflow.real import SPLITS, TOOLS, RealConfig, default_checkpoint, run_real
+from alignair_assay.workflow.real import SPLITS, STOP_AFTER, TOOLS, RealConfig, default_checkpoint, run_real
 
 
 def register(sub) -> None:
@@ -36,6 +36,10 @@ def register(sub) -> None:
     p.add_argument("--alignair-checkpoint",
                    help="AlignAIR .alignair model file of alignair-api (default: the user's cached file of "
                         "--alignair-model, the image's model)")
+    p.add_argument("--stop-after", choices=STOP_AFTER,
+                   help="stop after this step: preprocess fetches, genotypes and preprocesses each donor (the "
+                        "protocol classifier included) and scores nothing, so it takes any pilot donor, test donors "
+                        "too, and needs no tool option")
     p.add_argument("--force", action="store_true",
                    help="proceed in a run directory made for another configuration, redoing what the change affects")
     p.set_defaults(func=run)
@@ -51,7 +55,8 @@ def run(args) -> int:
                      paper_length_filter=args.paper_length_filter, accept_assembly_loss=args.accept_assembly_loss,
                      reference=args.reference, igblast_dir=tool_path(args.igblast_dir),
                      alignair_image=args.alignair_image, alignair_model=args.alignair_model,
-                     alignair_checkpoint=tool_path(checkpoint), batch_size=args.batch_size)
+                     alignair_checkpoint=tool_path(checkpoint), batch_size=args.batch_size,
+                     stop_after=args.stop_after)
     layout = RunLayout(absolute_path(args.run_dir))
     summary = run_real(cfg, layout, force=args.force)
     print(f"summary: {layout.real_summary_json()}", flush=True)

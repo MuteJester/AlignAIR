@@ -269,6 +269,57 @@ def test_refuses_test_donors_on_dev(tmp_path, fakes):
     assert summary["donors"]["SC-4"]["status"] == "done" and summary["config"]["split"] == "test"
 
 
+def test_stop_after_preprocess_classifies_every_donor_without_scoring(tmp_path, fakes, monkeypatch, capsys):
+    # Nothing is scored, so a test donor runs without --split test, no tool option is needed, and neither are the
+    # cohort files of the sensitivity analysis; the split of each donor is recorded.
+    def no_cohort(data_root):
+        raise AssertionError("the sensitivity analysis's files were read")
+
+    images = []
+    monkeypatch.setattr(real_steps, "sensitivity_genes", no_cohort)
+    monkeypatch.setattr(real_steps, "check_images", lambda found: images.append(dict(found)) or {
+        name: {"image": image, "id": "sha256:x", "repo_digests": [image]} for name, image in found.items()})
+    layout = RunLayout(tmp_path / "run")
+    cfg = _config(tmp_path, donors=("W-97", "SC-4"), stop_after="preprocess", igblast_dir=None,
+                  alignair_checkpoint=None)
+    summary = run_real(cfg, layout)
+    assert fakes.captures == fakes.preprocessed == ["W-97", "SC-4"]
+    assert fakes.truths == [] and FakeTool.runs == [] and FakeTool.prepares == []
+    assert set(images[0]) == {"sra_tools", "samtools", "immcantation"}  # no AlignAIR image: no tool runs
+    for donor, split in (("W-97", "dev"), ("SC-4", "test")):
+        block = summary["donors"][donor]
+        assert block["status"] == "done" and block["stopped_after"] == "preprocess" and block["split"] == split
+        assert set(block["steps"]) == {"fetch", "genotype", "preprocess"}
+        assert block["protocol"] == "multiplex" and block["preprocess"]["classifier"]["protocol"] == "multiplex"
+        assert "truth" not in block and "runs" not in block and "comparisons" not in block
+        assert not layout.real_truth(donor).exists() and not layout.real_run_dir("igblast", donor, "shared").exists()
+    assert summary["pooled"]["donors"] == [] and summary["pooled"]["comparisons"] == []
+    assert summary["config"]["stop_after"] == "preprocess" and summary["sensitivity"] is None
+    manifest = json.loads(layout.real_manifest().read_text())
+    assert manifest["identity"]["stop_after"] == "preprocess" and manifest["identity"]["settings"] == {}
+    # a rerun reuses every step
+    again = run_real(cfg, layout)["donors"]["SC-4"]["steps"]
+    assert {step["status"] for step in again.values()} == {"reused"} and fakes.preprocessed == ["W-97", "SC-4"]
+    # through the command line too
+    args = ["real", "--run-dir", str(layout.root), "--data-root", cfg.data_root, "--donors", "W-97,SC-4", "--cap",
+            "30", "--threads", "2", "--stop-after", "preprocess"]
+    capsys.readouterr()
+    assert main(args) == 0
+    assert "SC-4 preprocess: reused" in capsys.readouterr().out
+    # scoring the dev donor in the same run directory is another configuration (--force); its preprocessing is reused
+    monkeypatch.setattr(real_steps, "sensitivity_genes", lambda data_root: {
+        "genes": [], "sd3_alleles": 0, "missing_alleles": 0, "cohort": {}, "files": {}})
+    with pytest.raises(ValueError, match="stop_after preprocess -> None.*--force"):
+        run_real(_config(tmp_path), layout)
+    summary = run_real(_config(tmp_path), layout, force=True)
+    assert summary["donors"]["W-97"]["steps"]["preprocess"]["status"] == "reused"
+    assert fakes.preprocessed == ["W-97", "SC-4"] and fakes.truths == ["W-97"]
+    # without --stop-after, the test donor is refused as before, and another stop is refused
+    with pytest.raises(ValueError, match="--split test"):
+        run_real(_config(tmp_path, donors=("SC-4",)), RunLayout(tmp_path / "other"))
+    with pytest.raises(ValueError, match="stop_after"):
+        run_real(_config(tmp_path, stop_after="truth"), RunLayout(tmp_path / "other"))
+
 def test_tool_refusals_before_any_work(tmp_path, fakes):
     layout = RunLayout(tmp_path / "run")
     with pytest.raises(ValueError, match="--igblast-dir"):

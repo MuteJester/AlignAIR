@@ -20,7 +20,8 @@
   python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97 [--split dev] [--cap 50000]
       [--tools igblast,alignair,alignair-api] [--threads 8] [--device cpu] [--batch-size 64]
       [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE]
-      [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair] [--force]
+      [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
+      [--stop-after preprocess] [--force]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR

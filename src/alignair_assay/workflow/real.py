@@ -27,6 +27,13 @@ directory whose manifest has another identity, naming the fields that differ (a 
 ``<tool>.<key>``), unless ``force``; forced, the manifest is replaced (``replaced``: the old hash and the fields) and
 each step redoes what the change affects, every step being skipped only while its own record is current.
 
+**Stopping after preprocessing** (``stop_after="preprocess"``, ``--stop-after preprocess``): each donor is fetched,
+genotyped and captured, and preprocessed (the protocol classifier's verdict and evidence included), and nothing else
+runs: no truth, no tool, no score. Since nothing is scored, any pilot donor may be given, test donors without
+``split="test"`` included, and no tool option or cohort file is needed; each donor's block records its split.
+``stop_after`` is part of the manifest's identity, so scoring donors in the same run directory afterwards is another
+configuration (``force``), whose preprocessing records are reused.
+
 **A donor that cannot be scored** is stopped and recorded with its step, reason and evidence, and the others go on:
 a fetch that fails verification (``FetchError``), a run the classifier refuses or whose assembly loss is over the
 line (``PreprocessError``; ``accept_assembly_loss`` lets it through), or a container step that fails. A tool run that
@@ -80,6 +87,8 @@ ARMS = ("shared", "genotype")
 PAIRS = (("igblast", "alignair", "shared"), ("igblast", "alignair-api", "shared"),
          ("igblast", "alignair-api", "genotype"))
 SPLITS = ("dev", "test")
+# The steps a run may stop after (``RealConfig.stop_after``).
+STOP_AFTER = ("preprocess",)
 MANIFEST_KIND = "alignair_assay.real.manifest"
 SUMMARY_KIND = "alignair_assay.real.summary"
 VERSION = "1"
@@ -93,7 +102,8 @@ class RealConfig:
     """One ``real`` run: the pilot ``donors`` of one ``split``, the ``data_root`` holding the downloads, the ``cap`` of
     preprocessed sequences per donor, the ``tools`` (of ``TOOLS``), the tool and pRESTO ``threads``, the torch
     ``device`` of alignair-api, the paper's multiplex length filter, whether a run over the assembly's acceptance line
-    is let through, the shared ``reference`` and the tool options (``runners.base.RunnerOptions``)."""
+    is let through, the shared ``reference``, the tool options (``runners.base.RunnerOptions``) and the step to
+    ``stop_after`` (None: every step; ``"preprocess"``: fetch, genotype and preprocess only)."""
 
     donors: tuple[str, ...]
     split: str
@@ -110,6 +120,7 @@ class RealConfig:
     alignair_model: str = DEFAULT_MODEL
     alignair_checkpoint: str | None = None
     batch_size: int = 64
+    stop_after: str | None = None
 
 
 @dataclass
@@ -121,7 +132,7 @@ class _Context:
     runners: dict[str, Runner]
     settings: dict[str, dict]
     setup: RunLayout
-    sensitivity: dict
+    sensitivity: dict | None
     merged: dict = field(default_factory=dict)
     iuis: IuisMap | None = None
     prepared: set = field(default_factory=set)
@@ -144,25 +155,31 @@ def default_checkpoint(model: str = DEFAULT_MODEL) -> str:
 
 
 def pinned_images(cfg: RealConfig) -> dict[str, str]:
-    """The pinned images the run uses, by name: sra-tools, samtools, Immcantation and, with alignair, its image."""
+    """The pinned images the run uses, by name: sra-tools, samtools, Immcantation and, with alignair run (not when the
+    run stops after preprocessing), its image."""
     images = {"sra_tools": SRA_TOOLS_IMAGE, "samtools": SAMTOOLS_IMAGE, "immcantation": IMMCANTATION_IMAGE}
-    if "alignair" in cfg.tools:
+    if "alignair" in cfg.tools and cfg.stop_after is None:
         images["alignair"] = cfg.alignair_image or DEFAULT_IMAGE
     return images
 
 
 def check_config(cfg: RealConfig) -> None:
     """ValueError or FileNotFoundError for a configuration that cannot run (the module docstring's first refusals);
-    nothing is read beyond the paths' existence, and nothing is written."""
+    nothing is read beyond the paths' existence, and nothing is written. A run that stops after preprocessing scores
+    nothing, so it takes any pilot donor and needs no tool option."""
     if not cfg.donors:
         raise ValueError("no donor to run: give --donors")
     if cfg.split not in SPLITS:
         raise ValueError(f"split must be one of {', '.join(SPLITS)}, got {cfg.split!r}")
+    if cfg.stop_after not in (None, *STOP_AFTER):
+        raise ValueError(f"stop_after must be None or one of {', '.join(STOP_AFTER)}, got {cfg.stop_after!r}")
     for donor in cfg.donors:
         if donor not in PILOT_DONORS:
             raise ValueError(f"unknown donor {donor}: the pilot donors are {', '.join(PILOT_SPLIT['dev'])} (dev) and "
                              f"{', '.join(PILOT_SPLIT['test'])} (test)")
-        split = "dev" if donor in PILOT_SPLIT["dev"] else "test"
+        if cfg.stop_after is not None:
+            continue  # nothing is scored: any pilot donor, its split recorded
+        split = donor_split(donor)
         if split == "test" and cfg.split != "test":
             raise ValueError(f"{donor} is a test donor: the test donors are locked for claims; pass --split test to "
                              "run them (and only them)")
@@ -182,6 +199,8 @@ def check_config(cfg: RealConfig) -> None:
     if not Path(cfg.data_root).is_dir():
         raise FileNotFoundError(f"no data root {cfg.data_root}: --data-root is the directory of the PRJNA555323 "
                                 "downloads")
+    if cfg.stop_after is not None:
+        return  # no tool runs
     if "igblast" in cfg.tools:
         if not cfg.igblast_dir:
             raise ValueError("the igblast runner needs --igblast-dir, the directory of an unpacked IgBLAST release")
@@ -202,11 +221,17 @@ def check_config(cfg: RealConfig) -> None:
                              "every container the real workflow runs is") from None
 
 
+def donor_split(donor: str) -> str:
+    """The pilot split of ``donor``: ``dev`` or ``test`` (``real.fetch.PILOT_SPLIT``)."""
+    return "dev" if donor in PILOT_SPLIT["dev"] else "test"
+
+
 def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict:
     """Run ``cfg`` in ``layout`` as the module docstring describes; returns the summary it writes."""
     check_config(cfg)
     layout = RunLayout(absolute_path(layout.root))
-    sensitivity = real_steps.sensitivity_genes(cfg.data_root)
+    scoring = cfg.stop_after is None
+    sensitivity = real_steps.sensitivity_genes(cfg.data_root) if scoring else None
     images = real_steps.check_images(pinned_images(cfg))
     reference = real_steps.load_reference(cfg.reference)
     setup = RunLayout(layout.real_setup_dir())
@@ -215,14 +240,15 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
                             alignair_checkpoint=cfg.alignair_checkpoint, device=cfg.device,
                             batch_size=cfg.batch_size, cache_dir=str(setup.work_dir("alignair") / "cache"))
     runners = {}
-    for tool in cfg.tools:
+    for tool in cfg.tools if scoring else ():
         runners[tool] = make_runner(tool, options)
         if runners[tool].name != tool:
             raise ValueError(f"the runner registered as {tool!r} is named {runners[tool].name!r}")
     settings = {tool: runner.fingerprint() for tool, runner in runners.items()}
-    identity = {"donors": list(cfg.donors), "split": cfg.split, "cap": cfg.cap, "tools": list(cfg.tools),
-                "reference": cfg.reference, "paper_length_filter": cfg.paper_length_filter,
-                "accept_assembly_loss": cfg.accept_assembly_loss, "images": pinned_images(cfg), "settings": settings}
+    identity = {"donors": list(cfg.donors), "split": cfg.split, "cap": cfg.cap,
+                "tools": list(cfg.tools) if scoring else [], "reference": cfg.reference,
+                "paper_length_filter": cfg.paper_length_filter, "accept_assembly_loss": cfg.accept_assembly_loss,
+                "stop_after": cfg.stop_after, "images": pinned_images(cfg), "settings": settings}
     config_hash = _manifest(cfg, identity, layout, force=force)
     ctx = _Context(reference=reference, runners=runners, settings=settings, setup=setup, sensitivity=sensitivity,
                    merged=merge_identical(reference))
@@ -246,9 +272,9 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
                         for donor, block in blocks.items() for arm, runs in block.get("runs", {}).items()
                         for tool, run in runs.items() if run["status"] != "ok"],
         "oracle_failures": [donor for donor, block in blocks.items()
-                            if block["status"] == "done" and block["oracle_self_check"]["status"] == "failed"],
+                            if (block.get("oracle_self_check") or {}).get("status") == "failed"],
         "oracle_unchecked": [donor for donor, block in blocks.items()
-                             if block["status"] == "done" and block["oracle_self_check"]["status"] == "unchecked"],
+                             if (block.get("oracle_self_check") or {}).get("status") == "unchecked"],
     }
     real_steps.write_json(layout.real_summary_json(), summary)
     return summary
@@ -258,8 +284,8 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
            ctx: _Context) -> tuple[dict, real_score.DonorScoring | None]:
     """One donor's steps, runs, scores and comparisons, as its summary block, and what pooling needs (None for a
     stopped donor)."""
-    block: dict = {"donor": donor, "run": PILOT_DONORS[donor], "sample": VDJBASE_SAMPLE[donor], "status": "done",
-                   "stopped": None, "steps": {}}
+    block: dict = {"donor": donor, "split": donor_split(donor), "run": PILOT_DONORS[donor],
+                   "sample": VDJBASE_SAMPLE[donor], "status": "done", "stopped": None, "steps": {}}
     steps = block["steps"]
     step = "fetch"
     try:
@@ -284,6 +310,9 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
         print(f"{donor} {step}: stopped: {error}", file=sys.stderr, flush=True)
         return block, None
     block.update(protocol=record.get("protocol"), preprocess=_preprocess_block(record))
+    if cfg.stop_after == "preprocess":
+        block.update(stopped_after="preprocess", genotype=_genotype_block(genotype, None, ctx.reference))
+        return block, None
     truths, steps["truth"] = real_steps.step_truth(donor, layout, genotype, ctx.reference)
     _say(donor, "truth", steps["truth"])
     block["truth"] = _truth_block(truths)
