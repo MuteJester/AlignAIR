@@ -317,8 +317,12 @@ After a re-freeze, audit again before comparing anything.
     error, `skipped (load)` when the 1-minute load stays above 1.5).
 - **What n counts.** Reads or cases for every check but two: `band.speed` counts the timed configurations
   (`igblast_1t`, `igblast_8t`) and `self_check.sim_staleness` the stored run's suites.
-- **Verdict.** The audit exits 0 only when no check failed and one passed: a check that passes on nothing (n 0), or
-  raises, fails (an informational one warns). Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on
+- **Verdict.** Every check but the informational ones (`self_check.sim_staleness`, `band.sim_v_top1_current`,
+  `band.speed`) gates: it can fail the audit, and `audit.md`'s "Gates" column says which. The audit exits 0
+  (`AUDIT PASS`) only when no check failed, no gating check was skipped and one passed; 2 (`AUDIT FAIL`) when a check
+  failed or nothing passed; 3 (`AUDIT INCOMPLETE`) when a gating check was skipped (GenAIRR moved during a build),
+  since what was not checked may have failed: never a pass. A check that passes on nothing (n 0), or raises, fails
+  (an informational one warns). Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on
   each audit; `--out` may not overlap a stored run. The stored runs are never written; `null.real` runs `real`, whose
   fetch step updates its download bookkeeping under `--data-root` (the fetch records and manifest beside the
   downloads, outside both stored runs). The record names the code it started with, taken before any check runs:

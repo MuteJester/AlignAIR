@@ -8,8 +8,10 @@ writes ``layout.audit_json`` and ``layout.audit_md`` (``report.audit``), whose f
 **Checks.** Each is ``{name, status, n, evidence, reason}``: ``status`` is ``pass``, ``fail``, ``warn`` (worth a
 look, never a failure) or ``skipped`` (not checkable now, with why); ``n`` is how many reads or cases it rests on;
 ``evidence`` holds the numbers, its ``summary`` a one-line digest of them. A check that passes on nothing (``n`` 0)
-fails (``settle``), and so does a check that raises (its error is the reason). The audit passes when no check fails
-and at least one passed (``verdict``): an audit that checked nothing never passes.
+fails (``settle``), and so does a check that raises (its error is the reason). The ``INFORMATIONAL`` checks warn at
+worst; every other one gates (``GATING``: it can fail the audit). The audit passes when no check fails, no gating
+check was skipped and at least one passed (``verdict``); a skipped gating check makes it ``incomplete`` (exit 3),
+since what was not checked may have failed, and an audit that checked nothing never passes.
 
 - Self-checks:
   - ``self_check.sim_oracle``: the stored ``all`` run's oracle is perfect on every suite (``workflow.summary
@@ -109,7 +111,11 @@ CHECKS = ("self_check.sim_oracle", "self_check.sim_oracle_current", "self_check.
           "reproducible.real_scores", "null.diagnose", "null.all", "null.real", "band.real_known",
           "band.sim_v_top1", "band.sim_v_top1_current", "band.speed")
 # The informational checks: a warning at worst, never a failure, even when they raise.
-INFORMATIONAL = ("band.speed", "band.sim_v_top1_current")
+INFORMATIONAL = ("self_check.sim_staleness", "band.speed", "band.sim_v_top1_current")
+# The checks that can fail the audit (every other one), in report order: one of them skipped leaves it incomplete.
+GATING = tuple(name for name in CHECKS if name not in INFORMATIONAL)
+# The verdicts, and the command's exit status for each.
+VERDICTS = {"pass": 0, "fail": 2, "incomplete": 3}
 # The audited checkpoint's label (``--checkpoint base=PATH``) and the two labels it runs under in a null comparison.
 CHECKPOINT_LABEL = "base"
 NULL_LABELS = ("a", "b")
@@ -202,19 +208,25 @@ def settle(found: dict) -> dict:
 
 
 def verdict(checks: list[dict]) -> dict:
-    """The audit's verdict: ``status`` ``pass`` when no check failed and at least one passed, else ``fail``; the
-    ``counts`` per status, the ``failed`` check names and the one-line ``line`` that opens ``audit.md``."""
+    """The audit's verdict (of ``VERDICTS``): ``fail`` when a check failed; else ``incomplete`` when a check that can
+    fail the audit (``GATING``) was skipped, since what was not checked may have failed; else ``fail`` when no check
+    passed (an audit that checked nothing never passes); else ``pass``. With the ``counts`` per status, the
+    ``failed`` and ``skipped_gating`` check names and the one-line ``line`` that opens ``audit.md``."""
     counts = Counter(found["status"] for found in checks)
     failed = [found["name"] for found in checks if found["status"] == "fail"]
+    skipped = [found["name"] for found in checks if found["status"] == "skipped" and found["name"] in GATING]
     checked = any(found["status"] == "pass" for found in checks)
-    status = "pass" if not failed and checked else "fail"
+    status = "fail" if failed else "incomplete" if skipped else "pass" if checked else "fail"
     line = (f"AUDIT {status.upper()}: {len(checks)} checks, " +
             ", ".join(f"{counts[name]} {name}" for name in STATUSES))
     if failed:
         line += f"; failed: {', '.join(failed)}"
+    if skipped:
+        line += f"; skipped, and able to fail the audit: {', '.join(skipped)}"
     if not checked:
         line += "; nothing was checked"
-    return {"status": status, "counts": {name: counts[name] for name in STATUSES}, "failed": failed, "line": line}
+    return {"status": status, "counts": {name: counts[name] for name in STATUSES}, "failed": failed,
+            "skipped_gating": skipped, "line": line}
 
 
 # --- self-checks of the stored runs ---------------------------------------------------------------------------------
@@ -1124,6 +1136,7 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
     record = {"kind": AUDIT_KIND, "version": AUDIT_VERSION, "verdict": verdict(checks),
               "config": dataclasses.asdict(cfg),
               "checkpoint": {"label": CHECKPOINT_LABEL, "path": cfg.checkpoint, "sha256": sha256_file(cfg.checkpoint)},
+              "gating": list(GATING),
               "provenance": {"host": platform.node(), "assay": assay, "audit_code_sha256": code,
                              "genairr": genairr, "genairr_freeze": frozen_record(genairr.get("genairr_source"))},
               "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),

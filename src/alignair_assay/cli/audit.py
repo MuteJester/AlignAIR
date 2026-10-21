@@ -33,8 +33,10 @@ def register(sub) -> None:
 
 def run(args) -> int:
     """Run ``workflow.audit.run_audit`` (which prints each check as it finishes), print the verdict and name the
-    record; 0 when the audit passes (no check failed, and one passed), else 2. Refusals (another checkpoint label, a
-    missing input, an output directory overlapping a stored run) exit with status 2 before any work."""
+    record; ``workflow.audit.VERDICTS``: 0 when the audit passes (no check failed, none that can fail it was skipped,
+    and one passed), 3 when it is incomplete (a check that can fail it was skipped), else 2. Refusals (another
+    checkpoint label, a missing input, an output directory overlapping a stored run) exit with status 2 before any
+    work."""
     # Imported here so the other commands never load the audit's workflows.
     from alignair_assay.workflow import audit
 
@@ -55,4 +57,4 @@ def run(args) -> int:
     record = audit.run_audit(cfg, layout)
     print(record["verdict"]["line"])
     print(f"audit: {layout.audit_md} ({layout.audit_json})")
-    return 0 if record["verdict"]["status"] == "pass" else 2
+    return audit.VERDICTS.get(record["verdict"]["status"], 2)

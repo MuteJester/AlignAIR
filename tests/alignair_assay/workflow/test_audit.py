@@ -28,6 +28,7 @@ def _record(checks: list[dict]) -> dict:
     return {"kind": audit.AUDIT_KIND, "version": audit.AUDIT_VERSION, "verdict": verdict(checks),
             "config": {"sim_run": "/runs/sim", "real_run": "/runs/real", "data_root": "/data", "device": "cuda"},
             "checkpoint": {"label": "base", "path": "/models/m.alignair", "sha256": "ab" * 32},
+            "gating": list(audit.GATING),
             "provenance": {"host": "box", "assay": {"git_commit": "c0ffee" * 6 + "abcd", "git_dirty": False},
                            "genairr": {"genairr_version": "2.2.0", "genairr_source_sha256": "12" * 32}},
             "created_utc": "2026-10-21T12:00:00+00:00", "seconds": 600.0, "checks": checks, "groups": GROUPS}
@@ -58,6 +59,20 @@ def test_the_audit_passes_only_when_nothing_fails_and_something_passed():
     nothing = verdict([warned, skipped])
     assert nothing["status"] == "fail" and nothing["line"].endswith("; nothing was checked")
     assert verdict([])["status"] == "fail"
+    # a check that can fail the audit, skipped: never a pass, whatever else passed
+    gating = check("reproducible.sim_build", "skipped", 0, {}, "skipped (GenAIRR moved)")
+    assert "reproducible.sim_build" in audit.GATING and "band.speed" not in audit.GATING
+    found = verdict([passed, warned, skipped, gating])
+    assert found["status"] == "incomplete" and found["skipped_gating"] == ["reproducible.sim_build"]
+    assert found["line"] == ("AUDIT INCOMPLETE: 4 checks, 1 pass, 0 fail, 1 warn, 2 skipped; skipped, and able to "
+                             "fail the audit: reproducible.sim_build")
+    assert verdict([passed, gating, failed])["status"] == "fail"  # a failure still fails
+
+
+def test_the_gating_checks_are_every_check_but_the_informational_ones():
+    assert set(audit.GATING) == set(CHECKS) - set(audit.INFORMATIONAL)
+    assert list(audit.GATING) == [name for name in CHECKS if name in audit.GATING]  # in report order
+    assert "self_check.sim_staleness" in audit.INFORMATIONAL  # it warns, never fails
 
 
 def test_the_report_opens_with_the_verdict_and_lists_every_check_by_group():
@@ -70,9 +85,11 @@ def test_the_report_opens_with_the_verdict_and_lists_every_check_by_group():
     md = audit_markdown(_record(checks))
     lines = md.splitlines()
     assert lines[0] == "AUDIT FAIL: 4 checks, 1 pass, 1 fail, 1 warn, 1 skipped; failed: null.all"
-    assert "| self_check.sim_oracle | pass | 33,119 | oracle perfect on 12 of 12 suites |" in md
-    assert "| null.all | **fail** | 250 | S1/shared: 40 metrics |" in md
-    assert "| band.speed | skipped | 0 | load 3.2 |" in md
+    # the gates column: whether a check can fail the audit
+    assert "| Check | Gates | Status | n | Evidence |" in md
+    assert "| self_check.sim_oracle | yes | pass | 33,119 | oracle perfect on 12 of 12 suites |" in md
+    assert "| null.all | yes | **fail** | 250 | S1/shared: 40 metrics |" in md
+    assert "| band.speed | no | skipped | 0 | load 3.2 |" in md
     positions = [md.index(f"\n## {title}\n") for title in ("Self-checks", "Null comparisons", "IgBLAST bands")]
     assert positions == sorted(positions) and "\n## Reproducibility\n" not in md  # a group without checks
     assert "### null.all: fail (n = 250)" in md and "Reason: not null" in md
@@ -1308,6 +1325,8 @@ def test_the_audit_command(tmp_path, monkeypatch, capsys):
     assert seen["layout"].root == tmp_path / "out"
     seen["status"] = "fail"
     assert main(argv) == 2 and "AUDIT FAIL" in capsys.readouterr().out
+    seen["status"] = "skipped"  # null.all gates: skipped, the audit is incomplete
+    assert main(argv) == 3 and "AUDIT INCOMPLETE" in capsys.readouterr().out
     # one checkpoint, labelled base
     assert argv[7:9] == ["--checkpoint", f"base={cfg.checkpoint}"]
     assert main([*argv[:7], "--checkpoint", f"cand={cfg.checkpoint}", *argv[9:]]) == 2

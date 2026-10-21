@@ -1,8 +1,8 @@
 """The readiness audit's markdown (``audit.md``), rendered from the plain record ``workflow.audit.run_audit`` writes.
 
-The first line is the verdict (``AUDIT PASS: ...`` or ``AUDIT FAIL: ...``), then what was audited, one table row per
-check (status, n and its evidence's summary; a failure in bold), and per group of checks each one's reason and its
-evidence in full.
+The first line is the verdict (``AUDIT PASS: ...``, ``AUDIT FAIL: ...`` or ``AUDIT INCOMPLETE: ...``), then what
+was audited, one table row per check (whether it gates, i.e. can fail the audit; status, n and its evidence's summary;
+a failure in bold), and per group of checks each one's reason and its evidence in full.
 """
 from __future__ import annotations
 
@@ -29,7 +29,8 @@ def audit_markdown(record: dict) -> str:
              "The readiness gate for model comparisons: the truth checks itself, the outputs reproduce, one "
              "checkpoint compared with itself differs by nothing on every surface, and IgBLAST lands where "
              "independent evidence says it should. A warning asks for a look and never fails the audit; a skipped "
-             "check says why it could not be checked now.", "",
+             "check says why it could not be checked now. A check that gates can fail the audit, and one skipped "
+             "leaves the audit incomplete (never a pass); the others are informational.", "",
              f"- Checkpoint `{checkpoint.get('path')}` (`{(checkpoint.get('sha256') or '')[:12]}`); the null "
              f"comparisons ran on {config.get('device')}.",
              f"- Stored runs, read only: `{config.get('sim_run')}` (all) and `{config.get('real_run')}` (real); data "
@@ -39,9 +40,11 @@ def audit_markdown(record: dict) -> str:
              f"{genairr.get('genairr_version')} (`{(genairr.get('genairr_source_sha256') or '')[:12]}`"
              f"{frozen_text}); host {provenance.get('host')}; {record.get('created_utc')}, {record.get('seconds')} s.",
              ""]
-    rows = [[found["name"], _STATUS.get(found["status"], found["status"]), f"{found['n']:,}",
+    gating = record.get("gating")
+    rows = [[found["name"], MISSING if gating is None else "yes" if found["name"] in gating else "no",
+             _STATUS.get(found["status"], found["status"]), f"{found['n']:,}",
              _cell(found["evidence"].get("summary"))] for found in record["checks"]]
-    lines += markdown_table(["Check", "Status", "n", "Evidence"], rows)
+    lines += markdown_table(["Check", "Gates", "Status", "n", "Evidence"], rows)
     groups = record.get("groups") or {}
     for group, title in groups.items():
         members = [found for found in record["checks"] if found["name"].split(".")[0] == group]
