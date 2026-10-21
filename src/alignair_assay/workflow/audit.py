@@ -31,7 +31,9 @@ and at least one passed (``verdict``): an audit that checked nothing never passe
     and the scores' inputs name the truth file by those bytes, so a stored truth's digest stands for the recomputed
     one's when the two hold the same content.
 - Null comparisons (one checkpoint under ``NULL_LABELS``): every Δ 0, no significant verdict, no read won or lost
-  (fixed = broken = 0), and each side's own scores equal:
+  (fixed = broken = 0), each side's own scores equal and every read either side scores paired (``compare_problems``);
+  and the comparison must pair something (``pairing``): a comparison that pairs nothing is not null, it is empty. Its
+  ``n`` is the fewest reads an end-to-end headline metric (``SIM_HEADLINE``, ``REAL_HEADLINE``) pairs:
   - ``null.diagnose``: the checkpoint file against itself loaded in memory (two model keys, each diagnosed) on fresh
     dev builds of ``DIAGNOSE_SUITES``;
   - ``null.all``: ``all --tools alignair-local@a,alignair-local@b`` on fresh dev builds of ``NULL_SUITES`` at
@@ -61,7 +63,7 @@ import platform
 import shutil
 import time
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -122,6 +124,11 @@ CODE_FIELDS = ("code_sha256", "fingerprint")
 _EXAMPLES = 8
 _PACKAGE = Path(__file__).resolve().parents[1]
 _TIE = "tie_or_inconclusive"
+# The end-to-end headline metrics a null comparison's n rests on: the fewest reads any of them pairs.
+SIM_HEADLINE = ("clone_key.exact", "junction.nt_exact", "v.top1_in_set", "d.top1_in_set", "j.top1_in_set")
+REAL_HEADLINE = ("real.v.unsupported", "real.v.known_top1", "real.v.ref_known_top1")
+# A head boundary metric pairs only the reads both models orient as the truth: it must pair some, not all.
+HEAD_BOUNDARY_PREFIXES = tuple(f"head.{gene}.{edge}_" for gene in "vdj" for edge in ("start", "end"))
 
 
 @dataclass(frozen=True)
@@ -598,8 +605,9 @@ def _copy(source: Path, target: Path) -> None:
 
 def compare_problems(comparison: Mapping[str, dict], where: str) -> list[str]:
     """What makes a ``stats.compare`` result (metric -> entry) of one model against itself not null: a Δ other than 0
-    (None, no pair, is null), a verdict other than a tie, a read won or lost, or each side's own scores differing (a
-    read one side scores and the other does not)."""
+    (None means no pair; ``pairing`` holds a comparison to its pairs), a verdict other than a tie, a read won or lost,
+    each side's own scores differing, or a read one side scores left unpaired (``n_paired`` below either side's own
+    ``n``)."""
     problems = []
     for metric, entry in comparison.items():
         delta = entry.get("delta")
@@ -611,7 +619,30 @@ def compare_problems(comparison: Mapping[str, dict], where: str) -> list[str]:
             problems.append(f"{where} {metric}: {entry.get('wins')} reads won, {entry.get('losses')} lost")
         if entry.get("a") != entry.get("b"):
             problems.append(f"{where} {metric}: each side's own scores differ")
+        sides = [(entry.get(side) or {}).get("n") or 0 for side in ("a", "b")]
+        if any((entry.get("n_paired") or 0) != n for n in sides):
+            problems.append(f"{where} {metric}: pairs {entry.get('n_paired') or 0} of the {sides[0]} and {sides[1]} "
+                            "reads the two sides score")
     return problems
+
+
+def pairing(comparison: Mapping[str, dict], headline: Iterable[str], where: str, *,
+            offered: int | None = None) -> tuple[int, list[str]]:
+    """What a null comparison rests on, and why it may rest on too little: ``n``, the fewest reads any of the
+    ``headline`` metrics pairs; problems when no metric pairs a read, no headline metric was compared, a headline
+    metric pairs no read, or, given the reads ``offered`` (the scored cases), the most any headline metric pairs falls
+    short of them (a read never reached the comparison). A headline metric that applies to fewer reads (D top-1 where
+    no D is observable) pairs fewer; ``compare_problems`` already holds each metric to every read either side
+    scores."""
+    problems = [] if _paired(comparison) else [f"{where}: no metric pairs a read"]
+    counts = {metric: comparison[metric].get("n_paired") or 0 for metric in headline if metric in comparison}
+    if not counts:
+        return 0, [*problems, f"{where}: no headline metric ({', '.join(headline)}) was compared"]
+    problems += [f"{where} {metric}: pairs no read" for metric, n in counts.items() if not n]
+    if offered is not None and max(counts.values()) != offered:
+        problems.append(f"{where}: its headline metrics pair at most {max(counts.values())} of the {offered} reads "
+                        "offered")
+    return min(counts.values()), problems
 
 
 def changes_problems(changes: dict | None, where: str) -> list[str]:
@@ -672,8 +703,10 @@ def all_null(cfg: AuditConfig, scratch: RunLayout) -> list[dict]:
     report = read_json(scratch.report_json) or {}
     problems = [f"{run['tool']} on {run['suite']}/{run['arm']} {run['status']}: {run.get('error')}"
                 for run in report.get("failed_runs") or []]
+    built = {suite["name"]: suite for suite in report.get("suites") or []}
     suites, reads = {}, 0
     for name in cfg.null_suites:
+        offered = ((built.get(name) or {}).get("cases") or 0) - ((built.get(name) or {}).get("excluded") or 0)
         for arm in get_suite(name).arms:
             found = read_json(scratch.comparison_json(name, arm))
             if found is None:
@@ -681,13 +714,16 @@ def all_null(cfg: AuditConfig, scratch: RunLayout) -> list[dict]:
                 continue
             rows = found.get("comparison") or {}
             problems += compare_problems(rows, f"{name}/{arm}")
+            n, short = pairing(rows, SIM_HEADLINE, f"{name}/{arm}", offered=offered)
+            problems += short
             pair = [scratch.predictions(tool, name, arm) for tool in tools]
-            n = max((entry.get("n_paired") or 0 for entry in rows.values()), default=0)
-            suites[f"{name}/{arm}"] = {"metrics": len(rows), "paired_metrics": _paired(rows), "reads": n,
+            suites[f"{name}/{arm}"] = {"metrics": len(rows), "paired_metrics": _paired(rows), "n": n,
+                                       "offered": offered,
                                        "predictions_identical": all(path.is_file() for path in pair)
                                        and sha256_file(pair[0]) == sha256_file(pair[1])}
             reads += n if arm == "shared" else 0
-    evidence = {"summary": ", ".join(f"{key}: {entry['metrics']} metrics over {entry['reads']} reads, predictions "
+    evidence = {"summary": ", ".join(f"{key}: {entry['metrics']} metrics, every headline metric pairing at least "
+                                     f"{entry['n']} of {entry['offered']} reads, predictions "
                                      f"{'byte-identical' if entry['predictions_identical'] else 'differ'}"
                                      for key, entry in suites.items()) or "nothing compared",
                 "tools": list(tools), "scale": cfg.null_scale, "returncode": returned, "suites": suites,
@@ -730,23 +766,35 @@ def diagnose_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
         problems.append("one model key: the file was compared with its own record, zero by construction")
     suites, reads = {}, 0
     for name, suite in against["suites"].items():
-        reads += suite.get("cases") or 0
-        entry = {"cases": suite.get("cases")}
+        offered = (((getattr(result, "suites", None) or {}).get(name) or {}).get("reads") or {}).get("scored")
+        entry = {"cases": suite.get("cases"), "offered": offered}
         for family in ("heads", "baseline"):
             found = suite.get(family)
             if not found:
                 entry[family] = None
                 continue
-            problems += compare_problems(found["comparison"], f"{name} {family}")
-            problems += changes_problems(found.get("changes"), f"{name} {family}")
+            where = f"{name} {family}"
+            problems += compare_problems(found["comparison"], where)
+            problems += changes_problems(found.get("changes"), where)
             entry[family] = {"metrics": len(found["comparison"]), "paired_metrics": _paired(found["comparison"]),
                              "fixed": found["changes"]["reads"]["fixed"], "broken": found["changes"]["reads"]["broken"]}
+            if family == "baseline":
+                entry[family]["n"], short = pairing(found["comparison"], SIM_HEADLINE, where, offered=offered)
+                problems += short
+            else:
+                problems += [] if entry[family]["paired_metrics"] else [f"{where}: no metric pairs a read"]
+                problems += [f"{where} {metric}: pairs no read" for metric, row in found["comparison"].items()
+                             if metric.startswith(HEAD_BOUNDARY_PREFIXES) and not row.get("n_paired")]
+        if entry["baseline"] is None:
+            problems.append(f"{name}: no end-to-end family was compared (no variant ran)")
+        reads += (entry["baseline"] or {}).get("n") or 0
         suites[name] = entry
     shown = []
     for name, entry in suites.items():
         families = [f"{family} {found['metrics']} metrics" for family, found in entry.items()
                     if isinstance(found, dict)]
-        shown.append(f"{name} {entry['cases']} reads ({', '.join(families)})")
+        least = (entry["baseline"] or {}).get("n")
+        shown.append(f"{name} {entry['cases']} reads ({', '.join(families)}; headline metrics pair at least {least})")
     evidence = {"summary": f"file {result.model_key} against in-memory {against['baseline']}: {', '.join(shown)}",
                 "model_key": result.model_key, "baseline": against["baseline"], "device": device,
                 "variants": list(variants), "suites": suites}
@@ -780,12 +828,14 @@ def real_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
             problems.append(f"{label}: not compared ({entry.get('reason')})")
             continue
         problems += real_comparison_problems(entry, label)
+        n, short = pairing(entry.get("overall") or {}, REAL_HEADLINE, f"{label} overall")
+        problems += short
         if where != "pooled":
-            arms[entry["arm"]] = {"reads": entry.get("n_reads"), "metrics": len(entry.get("overall") or {}),
+            arms[entry["arm"]] = {"reads": entry.get("n_reads"), "n": n, "metrics": len(entry.get("overall") or {}),
                                   "paired_metrics": _paired(entry.get("overall") or {}),
                                   "fixed": ((entry.get("changes") or {}).get("reads") or {}).get("fixed"),
                                   "broken": ((entry.get("changes") or {}).get("reads") or {}).get("broken")}
-            reads += (entry.get("n_reads") or 0) if entry["arm"] == "shared" else 0
+            reads += n if entry["arm"] == "shared" else 0
     for arm, runs in (block.get("tools") or {}).items():
         first, second = (runs.get(tool) for tool in tools)
         if first is not None and first != second:
@@ -799,8 +849,9 @@ def real_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
                                                   and sha256_file(pair[0]) == sha256_file(pair[1]))
     oracle = (block.get("oracle_self_check") or {}).get("status")
     evidence = {"summary": f"{cfg.real_donor} capped at {cfg.real_cap}: " + ", ".join(
-                    f"{arm} {entry['metrics']} metrics over {entry['reads']} reads, fixed {entry['fixed']} / broken "
-                    f"{entry['broken']}" for arm, entry in arms.items()) + f"; its self-check {oracle}",
+                    f"{arm} {entry['metrics']} metrics over {entry['reads']} reads (headline metrics pair at least "
+                    f"{entry['n']}), fixed {entry['fixed']} / broken {entry['broken']}" for arm, entry in arms.items())
+                + f"; its self-check {oracle}",
                 "donor": cfg.real_donor, "cap": cfg.real_cap, "tools": list(tools), "arms": arms,
                 "oracle_self_check": oracle}
     return _null_check("null.real", problems, reads, evidence, "real's comparison of one checkpoint with itself")

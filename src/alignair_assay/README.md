@@ -218,7 +218,14 @@ PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_ge
   - null comparisons, the checkpoint under labels `a` and `b`: `diagnose` (the file against itself in memory: two
     model keys), `all --tools alignair-local@a,alignair-local@b` on S1 at scale 0.05 (dev) and
     `real --tools alignair-api@a,alignair-api@b --cap 2000` on W-97, each with every Δ 0, no significant verdict, no
-    read fixed or broken and each side's own scores equal;
+    read fixed or broken, each side's own scores equal and every read either side scores paired. A comparison must
+    pair something: per suite and family (`diagnose`) and per arm (`all`, `real`) some metric pairs a read and every
+    end-to-end headline metric pairs at least one (`clone_key.exact`, `junction.nt_exact`, V/D/J top-1 in set;
+    real: `real.v.unsupported`, `known_top1`, `ref_known_top1`); on the simulated surfaces the best-paired of them
+    pairs every scored case offered, and `diagnose` must have run its end-to-end family. Head boundary metrics pair
+    only the reads both models orient as the truth, so each must pair some. `n` is the fewest reads a headline
+    metric pairs (per suite, summed; real: the shared arm), since D top-1 and the real known answers apply to fewer
+    reads than are offered;
   - IgBLAST bands: `known_top1` and `ref_known_top1` at least 99% on every dev donor (shared arm); S1
     `v.top1_in_set` within 1 pp of 97.9%; its speed, timed now on a fresh dev S1, within 15% of the stored
     measurement (informational: `warn` outside, `skipped (load)` when the 1-minute load stays above 1.5).
