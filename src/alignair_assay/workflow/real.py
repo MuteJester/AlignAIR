@@ -22,7 +22,8 @@ image whose digest is not the pinned one (``real_steps.check_images``: sra-tools
 AlignAIR image); then a run directory made for another configuration, unless ``force``.
 
 **The manifest** (``real_manifest``) records the configuration and its ``identity``: the donors, split, cap, tools,
-reference, preprocessing options, pinned images and every tool's ``fingerprint()``. ``run_real`` refuses a run
+reference (its name and its content digest, so a dataconfig changed under its name is named in the refusal),
+preprocessing options, pinned images and every tool's ``fingerprint()``. ``run_real`` refuses a run
 directory whose manifest has another identity, naming the fields that differ (a tool's setting as
 ``<tool>.<key>``), unless ``force``; forced, the manifest is replaced (``replaced``: the old hash and the fields) and
 each step redoes what the change affects, every step being skipped only while its own record is current.
@@ -247,6 +248,7 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
     settings = {tool: runner.fingerprint() for tool, runner in runners.items()}
     identity = {"donors": list(cfg.donors), "split": cfg.split, "cap": cfg.cap,
                 "tools": list(cfg.tools) if scoring else [], "reference": cfg.reference,
+                "reference_digest": reference.digest(),
                 "paper_length_filter": cfg.paper_length_filter, "accept_assembly_loss": cfg.accept_assembly_loss,
                 "stop_after": cfg.stop_after, "images": pinned_images(cfg), "settings": settings}
     config_hash = _manifest(cfg, identity, layout, force=force)
@@ -323,7 +325,8 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
     for tool, arm in expected_runs(cfg):
         started = time.monotonic()
         restricted = alleles if arm == "genotype" else None
-        identity = real_steps.run_identity(tool, layout.real_reads(donor), ctx.settings[tool], alleles=restricted,
+        identity = real_steps.run_identity(tool, layout.real_reads(donor), ctx.settings[tool],
+                                           reference_digest=ctx.reference.digest(), alleles=restricted,
                                            genotype_json=layout.real_genotype_json(donor))
         result, status = real_steps.current_run(layout, tool, donor, arm, identity), "reused"
         if result is None:

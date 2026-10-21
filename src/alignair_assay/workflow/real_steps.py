@@ -20,8 +20,9 @@ whose fingerprint differs is redone, with every step after it that reads its out
   ``reads.fasta``, ``reads.tsv`` and ``genotype.json``, the reference's digest and ``TRUTH_CODE``.
 - ``runs`` (``run_identity``, ``current_run``, ``make_run``): one tool on one arm, ``Runner.run`` on ``reads.fasta``;
   ``run.json`` (``runners.base.write_run_json``) is written last and records the run's ``identity``: the tool's
-  ``fingerprint()`` (binary, image and model digests), the reads' SHA-256, ``RUNNER_CODE`` of the tool and, on the
-  genotype arm, the arm's own inputs (the SHA-256 of ``genotype.json`` and of the arm's allele list), so a changed
+  ``fingerprint()`` (binary, image and model digests), the reads' SHA-256, the shared reference's content digest
+  (a reference changed under its name is another run: a reused run skips ``prepare``, whose model-reference check
+  would otherwise refuse it), ``RUNNER_CODE`` of the tool and, on the genotype arm, the arm's own inputs (the SHA-256 of ``genotype.json`` and of the arm's allele list), so a changed
   CSV, capture or IUIS map redoes the genotype arm and leaves the shared arm alone. A run is current when
   ``require_successful_run`` passes, its identity is the current one and its predictions still have their recorded
   SHA-256; a failed run is made again.
@@ -219,15 +220,16 @@ def step_truth(donor: str, layout: RunLayout, genotype: RealGenotype,
     return truths, _step("done", started)
 
 
-def run_identity(tool: str, reads: Path, settings: dict, *, alleles: Iterable[str] | None = None,
-                 genotype_json: Path | None = None) -> dict:
-    """What a run's predictions depend on (the module docstring), as plain JSON data."""
+def run_identity(tool: str, reads: Path, settings: dict, *, reference_digest: str,
+                 alleles: Iterable[str] | None = None, genotype_json: Path | None = None) -> dict:
+    """What a run's predictions depend on (the module docstring), as plain JSON data: ``reference_digest`` is the
+    shared reference's ``Reference.digest()``."""
     arm = None
     if alleles is not None:
         names = sorted(alleles)
         arm = {"genotype_sha256": sha256_file(genotype_json),
                "alleles_sha256": hashlib.sha256("\n".join(names).encode()).hexdigest(), "alleles": len(names)}
-    identity = {"settings": settings, "reads_sha256": sha256_file(reads),
+    identity = {"settings": settings, "reads_sha256": sha256_file(reads), "reference_digest": reference_digest,
                 "code_sha256": code_digest(RUNNER_CODE.get(tool, ("runners/base.py",))), "arm": arm}
     return json.loads(json.dumps(identity))
 

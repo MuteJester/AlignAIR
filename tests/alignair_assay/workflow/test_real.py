@@ -66,14 +66,19 @@ REFERENCE = Reference(
     anchors={}, gapped_v={name: gapped for name, (gapped, _) in SHARED_V.items()})
 
 
-def _iuis() -> IuisMap:
+# The same reference name with other content: one D allele's sequence changed.
+CHANGED = Reference(alleles={**REFERENCE.alleles, "d": {"IGHD3-10*01": _random(31, 21)}}, anchors={},
+                    gapped_v=dict(REFERENCE.gapped_v))
+
+
+def _iuis(reference: Reference = REFERENCE) -> IuisMap:
     labels = {**{name: labels for name, (_, labels) in SHARED_V.items()},
-              **{name: (name,) for table in ("d", "j") for name in REFERENCE.alleles[table]}}
-    sequences = REFERENCE.sequences()
+              **{name: (name,) for table in ("d", "j") for name in reference.alleles[table]}}
+    sequences = reference.sequences()
     by_sequence = {sequences[name]: tuple(sorted(names)) for name, names in labels.items()}
     return IuisMap(labels_by_shared={name: by_sequence[sequence] for name, sequence in sequences.items()},
                    shared_by_sequence={sequence: (name,) for name, sequence in sequences.items()},
-                   labels_by_sequence=by_sequence, reference_digest=REFERENCE.digest(),
+                   labels_by_sequence=by_sequence, reference_digest=reference.digest(),
                    source={"sha256": "ogrdb", "release_version": 8})
 
 
@@ -82,13 +87,14 @@ V1, V311 = REFERENCE.seq("IGHVF1-G1*01"), REFERENCE.seq("IGHVF7-G1*01")
 CYS_END = cys104_end(SHARED_V["IGHVF1-G1*01"][0])
 
 
-def _genotype(donor: str, captured=frozenset({"IGHV1-2", "IGHV3-11"})) -> RealGenotype:
+def _genotype(donor: str, captured=frozenset({"IGHV1-2", "IGHV3-11"}),
+              reference: Reference = REFERENCE) -> RealGenotype:
     """The donor carries IGHV1-2*02 on both haplotypes; IGHV3-11 is captured and not carried."""
     alleles = tuple(RealAllele(allele_id="IGHV1-2*02", gene="IGHV1-2", segment="v", sequence=V1,
                                gapped=SHARED_V["IGHVF1-G1*01"][0], haplotype=haplotype, functional=True,
                                shared=("IGHVF1-G1*01",), iuis=("IGHV1-2*02",)) for haplotype in (1, 2))
     return RealGenotype(donor=donor, alleles=alleles, captured=frozenset(captured), resolved=frozenset(captured),
-                        source={"kind": "test", "sha256": "csv", "reference_digest": REFERENCE.digest()})
+                        source={"kind": "test", "sha256": "csv", "reference_digest": reference.digest()})
 
 
 def _reads(donor: str) -> list[dict]:
@@ -180,7 +186,7 @@ class Fakes:
 
     def capture_genotype(self, donor, fetched, reference, iuis):
         self.captures.append(donor)
-        return _genotype(donor, self.captured.get(donor, frozenset({"IGHV1-2", "IGHV3-11"})))
+        return _genotype(donor, self.captured.get(donor, frozenset({"IGHV1-2", "IGHV3-11"})), reference)
 
     def preprocess_run(self, donor, r1, r2, layout, *, quality, cap, paper_length_filter=False,
                        paper_quality_trim=False, accept_assembly_loss=False, nproc=8, timeout=None):
@@ -231,7 +237,7 @@ def fakes(tmp_path, monkeypatch):
     monkeypatch.setattr(real_steps, "check_images", lambda images: {
         name: {"image": image, "id": f"sha256:{name}", "repo_digests": [image]} for name, image in images.items()})
     monkeypatch.setattr(real_steps, "load_reference", lambda name: REFERENCE)
-    monkeypatch.setattr(real_steps, "load_iuis", lambda path, reference: IUIS)
+    monkeypatch.setattr(real_steps, "load_iuis", lambda path, reference: _iuis(reference))
     monkeypatch.setattr(real_steps, "sensitivity_genes", lambda data_root: {
         "genes": ["IGHV3-11"], "sd3_alleles": 2, "missing_alleles": 1, "cohort": {"subjects": 1}, "files": {}})
     monkeypatch.setattr(real_steps, "fetch_manifest", lambda data_root: {"quality": {"SRR0": "full"}})
@@ -457,6 +463,27 @@ def test_a_changed_genotype_redoes_only_the_genotype_arm(tmp_path, fakes):
     identity = record["provenance"]["identity"]["arm"]
     assert set(identity) == {"genotype_sha256", "alleles_sha256", "alleles"}
 
+
+def test_a_reference_changed_under_its_name_makes_every_run_stale(tmp_path, fakes, monkeypatch):
+    # HUMAN_IGH_OGRDB with other content under the same name: the manifest refusal names the digest, and forced,
+    # every run is made again on both arms (the shared arm's reads are unchanged, but its calls were made against
+    # the old reference, and a reused run skips the model-reference check of prepare)
+    layout = RunLayout(tmp_path / "run")
+    run_real(_config(tmp_path), layout)
+    runs, prepares = len(FakeTool.runs), len(FakeTool.prepares)
+    assert CHANGED.digest() != REFERENCE.digest()
+    monkeypatch.setattr(real_steps, "load_reference", lambda name: CHANGED)
+    with pytest.raises(ValueError, match=rf"reference_digest {REFERENCE.digest()} -> {CHANGED.digest()}.*--force"):
+        run_real(_config(tmp_path), layout)
+    summary = run_real(_config(tmp_path), layout, force=True)
+    assert len(FakeTool.runs) == runs + 5 and len(FakeTool.prepares) == prepares + 3
+    assert {step["status"] for step in summary["donors"]["W-97"]["steps"]["runs"].values()} == {"done"}
+    for tool, arm in (("igblast", "shared"), ("alignair", "shared"), ("alignair-api", "genotype")):
+        record = json.loads(layout.real_run_json(tool, "W-97", arm).read_text())
+        assert record["provenance"]["identity"]["reference_digest"] == CHANGED.digest()
+    manifest = json.loads(layout.real_manifest().read_text())
+    assert manifest["identity"]["reference_digest"] == CHANGED.digest()
+    assert manifest["replaced"]["changed"] == ["reference_digest"]
 
 def test_config_change_needs_force(tmp_path, fakes):
     layout = RunLayout(tmp_path / "run")
