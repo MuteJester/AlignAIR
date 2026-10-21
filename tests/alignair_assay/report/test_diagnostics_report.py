@@ -7,11 +7,14 @@ import math
 import pytest
 
 from alignair_assay.report.diagnostics import (
+    AGAINST_SECTION,
+    AGAINST_SECTIONS,
     DIAGNOSTICS_KIND,
     HOLM_NOTE,
     MAX_FLAGS,
     SUITE_SECTIONS,
     SUMMARY_SECTIONS,
+    against_markdown,
     build_diagnostics_report,
     diagnostics_markdown,
     diagnostics_scalars,
@@ -89,7 +92,7 @@ PROFILE = {"device": "cuda", "batch_size": 256, "reads": 1000, "repeats": 3, "re
                       "airr": {"ms_per_read": 0.15, "share": 0.166}}}
 
 
-def _report(suites=None, profile=PROFILE) -> dict:
+def _report(suites=None, profile=PROFILE, against=None) -> dict:
     suites = suites if suites is not None else {"S1": _suite(), "S3": _suite("S3", reused=True)}
     model = {"model_key": KEY, "source": "/models/m.alignair", "weights_sha256": "0123456789ab" + "0" * 52,
              "code_sha256": "fedcba987654" + "1" * 52, "alignair_source": "/src/alignair", "torch_version": "2.4.0",
@@ -97,7 +100,49 @@ def _report(suites=None, profile=PROFILE) -> dict:
     config = {"run_dir": "/runs/iter", "suites": list(suites), "device": "cuda", "batch_size": 256,
               "variants": ["baseline", "true_spans", "argmax_decoder"], "max_cases": 500,
               "profile": profile is not None, "seconds": 41.5}
-    return build_diagnostics_report(model=model, config=config, suites=suites, profile=profile)
+    return build_diagnostics_report(model=model, config=config, suites=suites, profile=profile, against=against)
+
+
+OTHER = "aaaaaaaaaaaa-fedcba987654"
+
+
+def _paired(a, b, verdict="tie_or_inconclusive", *, test="clustered_mcnemar", n=100, k=40, p=0.2):
+    """A ``stats.compare`` entry (a: this model, b: the against model)."""
+    delta = b - a
+    return {"a": _cell(a, n), "b": _cell(b, n), "n_paired": n, "n_clusters": k, "coverage_a": 1.0, "coverage_b": 1.0,
+            "mean_a_paired": a, "mean_b_paired": b, "delta": delta, "wins": 3, "losses": 1, "ties": n - 4,
+            "ci": [delta - 0.02, delta + 0.02], "ci95": [delta - 0.01, delta + 0.01], "test": test, "p_value": p,
+            "verdict": verdict}
+
+
+def _changed(fixed, broken, n=100):
+    return {"n_paired": n, "fixed": len(fixed), "broken": len(broken), "fixed_examples": fixed,
+            "broken_examples": broken}
+
+
+def _changes(metrics: dict, fixed: list, broken: list) -> dict:
+    return {"metrics": metrics, "reads": {"fixed": len(fixed), "broken": len(broken), "fixed_examples": fixed,
+                                          "broken_examples": broken},
+            "a_only": 0, "b_only": 0, "a_only_examples": [], "b_only_examples": []}
+
+
+def _against(*, same=False, baseline=True) -> dict:
+    """``workflow.diagnose.compare_models``' result for S1: the head boundaries and an abs. error, and the junction
+    (a better) and the clone key (too few clusters)."""
+    heads = {"metrics": ["head.v.start_exact.soft", "head.v.start_exact.argmax", "head.v.start_abs_err.soft"],
+             "comparison": {"head.v.start_exact.soft": _paired(0.90, 0.95, "b_better", p=0.001),
+                            "head.v.start_exact.argmax": _paired(0.97, 0.97),
+                            "head.v.start_abs_err.soft": _paired(0.2, 0.1, test="clustered_z")},
+             "changes": _changes({"head.v.start_exact.soft": _changed(["S1:7", "S1:9"], []),
+                                  "head.v.start_exact.argmax": _changed([], [])}, ["S1:7", "S1:9"], [])}
+    end_to_end = {"metrics": ["junction.nt_exact", "clone_key.exact"],
+                  "comparison": {"junction.nt_exact": _paired(0.6, 0.55, "a_better", p=0.004),
+                                 "clone_key.exact": _paired(0.5, 0.5, test="too_few_clusters", k=5, p=1.0)},
+                  "changes": _changes({"junction.nt_exact": _changed(["S1:3"], ["S1:1", "S1:2"]),
+                                       "clone_key.exact": _changed([], [])}, ["S1:3"], ["S1:1", "S1:2"])}
+    return {"model_key": OTHER, "source": "/models/b.alignair", "same_model": same, "replay_verified": True,
+            "suites": {"S1": {"cases": 100, "clusters": {"keys": ["clone"], "clusters": 40, "cases": 80},
+                              "heads": heads, "baseline": end_to_end if baseline else None}}}
 
 
 def _section(md: str, title: str) -> str:
@@ -111,7 +156,7 @@ def test_report_dict_is_strict_json():
     suite = _suite()
     suite["heads"]["head.v.start_err.soft"]["mean"] = math.nan
     report = _report({"S1": suite})
-    assert report["kind"] == DIAGNOSTICS_KIND and report["version"] == "2"
+    assert report["kind"] == DIAGNOSTICS_KIND and report["version"] == "3"
     assert report["model"]["model_key"] == KEY and list(report["suites"]) == ["S1"]
     assert report["suites"]["S1"]["heads"]["head.v.start_err.soft"]["mean"] is None
     assert suite["heads"]["head.v.start_err.soft"]["mean"] != suite["heads"]["head.v.start_err.soft"]["mean"]
@@ -311,11 +356,83 @@ def test_sections_without_data_say_so():
         assert f"\n## {title}\n" in summary
 
 
-def test_rendering_does_not_change_the_report():
+# --- the comparison with another model --------------------------------------------------------------------------
+
+def test_without_a_comparison_there_is_no_section():
     report = _report()
-    before = copy.deepcopy(report)
+    assert report["against"] is None and report["summary"]["against"] is None
+    assert f"## {AGAINST_SECTION}" not in diagnostics_markdown(report)
+    assert not any("/against/" in key for key in diagnostics_scalars(report["summary"]))
+
+
+def test_the_comparison_summary_and_its_scalars():
+    report = _report({"S1": _suite()}, against=_against())
+    json.dumps(report, allow_nan=False)
+    summary = report["summary"]["against"]
+    assert (summary["model_key"], summary["source"], summary["same_model"]) == (OTHER, "/models/b.alignair", False)
+    s1 = summary["suites"]["S1"]
+    assert list(s1["headline"]) == ["clone_key.exact", "junction.nt_exact", "head.v.start_exact.soft",
+                                    "head.v.start_exact.argmax"]
+    junction = s1["headline"]["junction.nt_exact"]
+    assert (junction["family"], junction["mean_a"], junction["mean_b"], junction["fixed"], junction["broken"]) == (
+        "baseline", 0.6, 0.55, 1, 2)
+    assert s1["significant"] == ["junction.nt_exact", "head.v.start_exact.soft"]
+    assert s1["reads"] == {"baseline": {"fixed": 1, "broken": 2}, "heads": {"fixed": 2, "broken": 0}}
+    assert summary["totals"] == s1["reads"] and s1["compared"] == {"baseline": 2, "heads": 3}
+    scalars = diagnostics_scalars(report["summary"])
+    assert scalars["S1/against/junction.nt_exact.delta"] == pytest.approx(-0.05)
+    assert scalars["S1/against/head.v.start_abs_err.soft.delta"] == pytest.approx(-0.1)
+    assert (scalars["S1/against/junction.nt_exact.fixed"], scalars["S1/against/junction.nt_exact.broken"]) == (1, 2)
+    assert "S1/against/head.v.start_abs_err.soft.fixed" not in scalars  # not a 0/1 metric
+    assert scalars["S1/baseline/junction.nt_exact"] == 0.6  # the rest is unchanged
+
+
+def test_the_comparison_leads_the_summary_page():
+    md = diagnostics_markdown(_report({"S1": _suite()}, against=_against()))
+    positions = [md.index(f"\n## {title}\n") for title in (AGAINST_SECTION, *SUMMARY_SECTIONS)]
+    assert positions == sorted(positions)
+    section = _section(md, AGAINST_SECTION)
+    assert f"Against model `{OTHER}` (/models/b.alignair)" in section and "Δ = b − a" in section
+    assert "| S1 | junction.nt_exact | 60.0% | 55.0% | -5.0 pp | [-6.0 pp, -4.0 pp] | a better | 1 / 2 |" in section
+    assert "| S1 | clone_key.exact | 50.0% | 50.0% | +0.0 pp | [-1.0 pp, +1.0 pp] | tie (too few clusters) | 0 / 0 |" \
+        in section
+    # the boundaries: soft / argmax, bold when significant
+    assert "| S1 | **+5.0** / +0.0 | — / — | — / — | — / — | — / — | — / — |" in section
+    assert "S1: end-to-end 1 / 2, heads 2 / 0. Total: end-to-end 1 / 2, heads 2 / 0." in section
+    assert f"[S1](S1/against_{OTHER}.md)" in section and "same model key" not in section
+    same = _section(diagnostics_markdown(_report({"S1": _suite()}, against=_against(same=True))), AGAINST_SECTION)
+    assert "same model key" in same
+    heads_only = diagnostics_markdown(_report({"S1": _suite()}, against=_against(baseline=False)))
+    assert "No end-to-end metric was compared" in _section(heads_only, AGAINST_SECTION)
+
+
+def test_the_comparison_detail_of_a_suite():
+    report = _report({"S1": _suite()}, against=_against())
+    md = against_markdown(report, "S1")
+    assert md.startswith(f"# AlignAIR diagnostics: model {KEY} against {OTHER}, suite S1\n")
+    positions = [md.index(f"\n## {title}\n") for title in AGAINST_SECTIONS]
+    assert positions == sorted(positions) and "(../diagnostics.md)" in md
+    end_to_end = _section(md, AGAINST_SECTIONS[0])
+    assert ("| junction.nt_exact | 60.0% (n=100, 100%) | 55.0% (n=100, 100%) | 100 (40 clusters) | 60.0% | 55.0% | "
+            "-5.0 pp | [-6.0 pp, -4.0 pp] | 0.004 | a better |") in end_to_end
+    assert "| head.v.start_abs_err.soft |" in _section(md, AGAINST_SECTIONS[1])
+    changes = _section(md, AGAINST_SECTIONS[2])
+    assert "end-to-end 1 fixed / 2 broken; heads 2 fixed / 0 broken" in changes
+    assert "| end-to-end | junction.nt_exact | 100 | 1 | 2 | S1:3 | S1:1, S1:2 |" in changes
+    assert "clone_key.exact" not in changes  # no read changed
+    heads_only = against_markdown(_report({"S1": _suite()}, against=_against(baseline=False)), "S1")
+    assert "No variant was run" in _section(heads_only, AGAINST_SECTIONS[0])
+
+
+def test_rendering_does_not_change_the_report():
+    report = _report(against=None)
+    compared = _report({"S1": _suite()}, against=_against())
+    before = copy.deepcopy(report), copy.deepcopy(compared)
     diagnostics_markdown(report)
     suite_markdown(report, "S1")
     profile_markdown(report)
     diagnostics_scalars(report["summary"])
-    assert report == before
+    diagnostics_markdown(compared)
+    against_markdown(compared, "S1")
+    diagnostics_scalars(compared["summary"])
+    assert (report, compared) == before

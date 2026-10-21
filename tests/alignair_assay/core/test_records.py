@@ -10,7 +10,8 @@ from pathlib import Path
 import pytest
 
 from alignair_assay.core import records
-from alignair_assay.core.records import digest, read_json, write_json, write_text
+from alignair_assay.core.jsonl import read_header, read_jsonl
+from alignair_assay.core.records import digest, read_json, write_json, write_jsonl, write_text
 
 REPO = Path(__file__).resolve().parents[3]
 # A record with nested keys out of order, a float, a None, a bool and a non-ASCII character, and its digest as the
@@ -93,3 +94,27 @@ def test_concurrent_writers_never_share_a_temporary_file(tmp_path):
     assert errors == [] and json.loads(path.read_text(encoding="utf-8"))["writer"] in range(4)
     assert [item.name for item in tmp_path.iterdir()] == ["record.json"]
     assert os.access(path, os.R_OK)
+
+
+def test_json_lines_are_written_atomically_and_compressed_reproducibly(tmp_path, monkeypatch):
+    path = tmp_path / "sub" / "cases.jsonl.gz"
+    rows = [{"case_id": "a", "scores": {"m": 1.0, "n": None}}, {"case_id": "b", "scores": {}}]
+    write_jsonl(path, rows, header={"kind": "k"})
+    assert read_jsonl(path) == rows and read_header(path) == {"kind": "k"}
+    assert path.read_bytes()[:2] == b"\x1f\x8b" and oct(path.stat().st_mode & 0o777) == "0o644"
+    # the same rows are the same bytes (no time or temporary name in the gzip header), so the file's digest is a
+    # digest of its content
+    first = path.read_bytes()
+    write_jsonl(path, iter(rows), header={"kind": "k"})
+    assert path.read_bytes() == first
+    plain = tmp_path / "cases.jsonl"
+    write_jsonl(plain, rows)
+    assert plain.read_text(encoding="utf-8") == ('{"case_id":"a","scores":{"m":1.0,"n":null}}\n'
+                                                 '{"case_id":"b","scores":{}}\n')
+    # strict JSON; a failed write leaves the file as it was and no temporary file behind
+    with pytest.raises(ValueError):
+        write_jsonl(path, [{"m": float("nan")}])
+    monkeypatch.setattr(records.os, "replace", lambda *args: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError, match="disk full"):
+        write_jsonl(path, [{"lost": 1}])
+    assert path.read_bytes() == first and [item.name for item in path.parent.iterdir()] == [path.name]

@@ -44,6 +44,8 @@ def test_layout_paths(tmp_path):
         (layout.diagnostics_dir("0a1b2c3d4e5f-6a7b8c9d0e1f"), "diagnostics/0a1b2c3d4e5f-6a7b8c9d0e1f"),
         (layout.diagnostics_suite_dir("k", "S1"), "diagnostics/k/S1"),
         (layout.diagnostics_suite_json("k", "S1"), "diagnostics/k/S1/suite.json"),
+        (layout.diagnostics_suite_cases("k", "S1"), "diagnostics/k/S1/cases.jsonl.gz"),
+        (layout.diagnostics_against_md("k", "S1", "o"), "diagnostics/k/S1/against_o.md"),
         (layout.diagnostics_profile_json("k"), "diagnostics/k/profile.json"),
         (layout.diagnostics_json("k"), "diagnostics/k/diagnostics.json"),
         (layout.diagnostics_md("k"), "diagnostics/k/diagnostics.md"),
@@ -103,6 +105,10 @@ def test_layout_rejects_names_that_are_not_one_component(tmp_path, name):
         layout.diagnostics_dir(name)
     with pytest.raises(ValueError, match="path component"):
         layout.diagnostics_suite_json("k", name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.diagnostics_suite_cases("k", name)
+    with pytest.raises(ValueError, match="path component"):
+        layout.diagnostics_against_md("k", "S1", name)
     with pytest.raises(ValueError, match="path component"):
         layout.real_donor_dir(name)
     with pytest.raises(ValueError, match="path component"):

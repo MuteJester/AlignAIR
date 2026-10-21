@@ -19,7 +19,9 @@ RUN/
   report.json, report.md
   diagnostics/<model_key>/            one model's diagnostics (``diagnose``, ``workflow.diagnose``)
   diagnostics/<model_key>/<S>/suite.json   one suite's cached diagnostics, with the key they were computed for
+  diagnostics/<model_key>/<S>/cases.jsonl.gz  its per-case scores (part of the cached diagnostics)
   diagnostics/<model_key>/<S>/report.md    one suite's detail of the last diagnostics report
+  diagnostics/<model_key>/<S>/against_<other_key>.md  its detail of the last comparison with another model
   diagnostics/<model_key>/profile.json     the cached speed profile, with its key
   diagnostics/<model_key>/profile.md       the speed profile of the last diagnostics report
   diagnostics/<model_key>/diagnostics.json, diagnostics.md   the last diagnostics report and its one-page summary
@@ -203,6 +205,16 @@ class RunLayout:
     def diagnostics_suite_json(self, model_key: str, suite: str) -> Path:
         """One suite's cached diagnostics of the model, with the key they were computed for."""
         return self.diagnostics_suite_dir(model_key, suite) / "suite.json"
+
+    def diagnostics_suite_cases(self, model_key: str, suite: str) -> Path:
+        """One suite's per-case scores of the model (gzip-compressed JSON lines, one line per diagnosed case: its
+        head metrics, its end-to-end baseline scores and each variant's), part of the cached diagnostics."""
+        return self.diagnostics_suite_dir(model_key, suite) / "cases.jsonl.gz"
+
+    def diagnostics_against_md(self, model_key: str, suite: str, other_key: str) -> Path:
+        """One suite's detail of the model's last comparison with model ``other_key`` on the same reads
+        (``diagnose --against``), as markdown (linked from the summary)."""
+        return self.diagnostics_suite_dir(model_key, suite) / f"against_{_component(other_key)}.md"
 
     def diagnostics_profile_json(self, model_key: str) -> Path:
         """The model's cached speed profile, with the key it was measured for."""
