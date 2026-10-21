@@ -992,7 +992,10 @@ def test_w97_end_to_end_on_500_reads(tmp_path):
     assert {c["status"] for c in donor["comparisons"]} == {"compared"} and len(donor["comparisons"]) == 3
     assert summary["pooled"]["donors"] == ["W-97"]
     report = RunLayout(tmp_path / "run").real_report_md().read_text(encoding="utf-8")
-    assert "**Bottom line (W-97).**" in report and "mismatches" in report
+    assert "**Bottom line.**" in report and "| multiplex (W-97) |" in report and "mismatches" in report
+    # the oracle through the tools' path agrees with the direct one, and the decoys are their classes
+    assert donor["oracle_self_check"]["pipeline"]["passed"] and donor["oracle_self_check"]["decoys"]["passed"]
+    assert donor["oracle_self_check"]["decoys"]["uncalled"]["class"] == "excluded:uncalled"  # W-97's IGHV3-11/3-15
     print(json.dumps({"seconds": round(seconds, 1), "steps": donor["steps"]}, indent=1))
     # a second run reuses every step
     again = run_real(cfg, RunLayout(tmp_path / "run"))["donors"]["W-97"]["steps"]
