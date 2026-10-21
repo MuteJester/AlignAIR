@@ -47,10 +47,12 @@ since what was not checked may have failed, and an audit that checked nothing ne
 - IgBLAST bands:
   - ``band.real_known``: IgBLAST's ``real.v.known_top1`` and ``real.v.ref_known_top1`` on the shared arm at least
     ``KNOWN_FLOOR`` on every dev donor of the stored ``real`` run;
-  - ``band.sim_v_top1``: its S1 ``v.top1_in_set`` in the stored ``all`` run within ``V_TOP1_BAND`` of
-    ``V_TOP1_TARGET`` (ruling A1: read as recorded);
-  - ``band.sim_v_top1_current`` (informational): the same metric at this code, IgBLAST run now on a fresh dev S1,
-    within ``V_TOP1_CURRENT_BAND`` of ``V_TOP1_TARGET``; ``warn`` outside it or on an error, never a failure;
+  - ``band.sim_v_top1_current``: its S1 ``v.top1_in_set`` at this code, IgBLAST run now on a fresh dev S1, within
+    ``V_TOP1_CURRENT_BAND`` of ``V_TOP1_TARGET``; ``fail`` outside it, ``skipped`` without an IgBLAST release (which
+    leaves the audit incomplete);
+  - ``band.sim_v_top1`` (informational): the same metric in the stored ``all`` run, consistent with the P2 record
+    when within ``V_TOP1_BAND`` of ``V_TOP1_TARGET`` (ruling A1: read as recorded), ``warn`` otherwise: it was
+    computed by older code, and the P2 number is where the target comes from;
   - ``band.speed`` (informational): IgBLAST's steady throughput, timed now on a fresh dev S1 by the speed protocol,
     within ``SPEED_BAND`` of the stored run's measurement; ``skipped (load)`` when the 1-minute load stays above
     ``SPEED_LOAD``, ``warn`` outside the band or on an error, never a failure.
@@ -111,7 +113,7 @@ CHECKS = ("self_check.sim_oracle", "self_check.sim_oracle_current", "self_check.
           "reproducible.real_scores", "null.diagnose", "null.all", "null.real", "band.real_known",
           "band.sim_v_top1", "band.sim_v_top1_current", "band.speed")
 # The informational checks: a warning at worst, never a failure, even when they raise.
-INFORMATIONAL = ("self_check.sim_staleness", "band.speed", "band.sim_v_top1_current")
+INFORMATIONAL = ("self_check.sim_staleness", "band.sim_v_top1", "band.speed")
 # The checks that can fail the audit (every other one), in report order: one of them skipped leaves it incomplete.
 GATING = tuple(name for name in CHECKS if name not in INFORMATIONAL)
 # The verdicts, and the command's exit status for each.
@@ -131,8 +133,8 @@ KNOWN_METRICS = ("real.v.known_top1", "real.v.ref_known_top1")
 KNOWN_FLOOR = 0.99
 V_TOP1_SUITE, V_TOP1_METRIC = "S1", "v.top1_in_set"
 V_TOP1_TARGET, V_TOP1_BAND = 0.979, 0.01
-# IgBLAST's S1 V top-1 at this code (informational): its band around the same target, and the scale of the dev S1 it
-# is run on when the speed check built none.
+# IgBLAST's S1 V top-1 at this code (the gate): its band around the same target, and the scale of the dev S1 it is
+# run on when the speed check built none.
 V_TOP1_CURRENT_BAND, V_TOP1_CURRENT_SCALE = 0.015, 0.2
 IGBLAST = "igblast"
 SPEED_BAND = 0.15
@@ -392,24 +394,29 @@ def real_known_band(real: RunLayout) -> dict:
 
 
 def sim_v_top1_band(sim: RunLayout) -> dict:
-    """``band.sim_v_top1``: IgBLAST's S1 ``v.top1_in_set`` in the stored ``all`` run (its score report, read only)
-    within ``V_TOP1_BAND`` of ``V_TOP1_TARGET``."""
+    """``band.sim_v_top1`` (informational): IgBLAST's S1 ``v.top1_in_set`` in the stored ``all`` run (its score
+    report, read only), consistent with the P2 record when within ``V_TOP1_BAND`` of ``V_TOP1_TARGET``; ``warn``
+    outside it or without IgBLAST's S1 scores. The stored number was computed by older code (and is where the target
+    comes from), so it never fails the audit: ``band.sim_v_top1_current`` is the gate."""
+    name = "band.sim_v_top1"
     cfg = read_run_config(sim)
     if IGBLAST not in cfg.tools or V_TOP1_SUITE not in cfg.suites:
-        return check("band.sim_v_top1", "fail", 0, {"summary": "IgBLAST on S1 is not in the run",
-                                                    "tools": list(cfg.tools), "suites": list(cfg.suites)},
-                     f"the stored run has no {IGBLAST} scores on {V_TOP1_SUITE}")
+        return check(name, "warn", 0, {"summary": "IgBLAST on S1 is not in the run", "tools": list(cfg.tools),
+                                       "suites": list(cfg.suites)},
+                     f"informational: the stored run has no {IGBLAST} scores on {V_TOP1_SUITE}")
     report = read_json(sim.tool_report_json(V_TOP1_SUITE, "shared", IGBLAST)) or {}
     entry = (report.get("overall") or {}).get(V_TOP1_METRIC) or {}
     mean, n = entry.get("mean"), entry.get("n") or 0
-    evidence = {"summary": f"IgBLAST S1 {V_TOP1_METRIC} {_percent(mean, 2)} (n={n}); band {_percent(V_TOP1_TARGET)} "
-                           f"± {100 * V_TOP1_BAND:.0f} pp", "mean": mean, "target": V_TOP1_TARGET,
+    consistent = mean is not None and abs(mean - V_TOP1_TARGET) <= V_TOP1_BAND + 1e-12
+    evidence = {"summary": f"IgBLAST S1 {V_TOP1_METRIC} {_percent(mean, 2)} (n={n}) in the stored run, "
+                           f"{'' if consistent else 'not '}consistent with the P2 record ({_percent(V_TOP1_TARGET)} ± "
+                           f"{100 * V_TOP1_BAND:.0f} pp)", "mean": mean, "target": V_TOP1_TARGET,
                 "band": V_TOP1_BAND, "split": cfg.split, "run": str(sim.root)}
-    if mean is None or abs(mean - V_TOP1_TARGET) > V_TOP1_BAND + 1e-12:
-        return check("band.sim_v_top1", "fail", n, evidence,
-                     f"IgBLAST's S1 {V_TOP1_METRIC} {_percent(mean, 2)} is outside {_percent(V_TOP1_TARGET)} ± "
-                     f"{100 * V_TOP1_BAND:.0f} pp")
-    return check("band.sim_v_top1", "pass", n, evidence)
+    if not consistent:
+        return check(name, "warn", n, evidence,
+                     f"informational: IgBLAST's S1 {V_TOP1_METRIC} {_percent(mean, 2)} in the stored run is outside "
+                     f"{_percent(V_TOP1_TARGET)} ± {100 * V_TOP1_BAND:.0f} pp of the P2 record")
+    return check(name, "pass", n, evidence)
 
 
 def igblast_speed(cfg: AuditConfig, sim: RunLayout, scratch: RunLayout, *, load: Callable[[], float] | None = None,
@@ -479,25 +486,18 @@ def _igblast_speed(cfg: AuditConfig, sim: RunLayout, scratch: RunLayout, *, load
 
 
 def igblast_v_top1_current(cfg: AuditConfig, sim: RunLayout, speed: RunLayout, scratch: RunLayout) -> dict:
-    """``band.sim_v_top1_current`` (informational): IgBLAST run now, at this checkout's code, on a fresh dev S1 (the
-    one ``band.speed`` built in ``speed`` when it built one, else S1 built at ``cfg.v_top1_scale`` in ``scratch``) and
-    scored as ``all`` scores it (against each read's donor genotype); ``pass`` when its ``v.top1_in_set`` is within
-    ``V_TOP1_CURRENT_BAND`` of ``V_TOP1_TARGET``, ``warn`` outside it, ``skipped`` without an IgBLAST release.
-    ``band.sim_v_top1`` reads the stored test-split run's number, computed by older code; this one is computed now,
-    on the dev split. Anything that raises is a ``warn``: it never fails the audit."""
-    try:
-        return _igblast_v_top1_current(cfg, sim, speed, scratch)
-    except Exception as error:  # informational
-        return check("band.sim_v_top1_current", "warn", 0, {"summary": f"not run: {type(error).__name__}: {error}"},
-                     f"informational: running IgBLAST on S1 raised {type(error).__name__}: {error}")
-
-
-def _igblast_v_top1_current(cfg: AuditConfig, sim: RunLayout, speed: RunLayout, scratch: RunLayout) -> dict:
+    """``band.sim_v_top1_current``, the gate on IgBLAST's numbers: IgBLAST run now, at this checkout's code, on a fresh
+    dev S1 (the one ``band.speed`` built in ``speed`` when it built one, else S1 built at ``cfg.v_top1_scale`` in
+    ``scratch``) and scored as ``all`` scores it (against each read's donor genotype); ``pass`` when its
+    ``v.top1_in_set`` is within ``V_TOP1_CURRENT_BAND`` of ``V_TOP1_TARGET``, ``fail`` outside it, ``skipped``
+    without an IgBLAST release (the audit is then incomplete). ``band.sim_v_top1`` reads the stored test-split run's
+    number, computed by older code; this one is computed now, on the dev split. An error raises (``run_audit`` fails
+    the check with it)."""
     name = "band.sim_v_top1_current"
     igblast_dir = cfg.igblast_dir or read_run_config(sim).igblast_dir
     if not igblast_dir or not Path(igblast_dir).is_dir():
         return check(name, "skipped", 0, {"summary": f"no IgBLAST release ({igblast_dir})"},
-                     f"skipped: no IgBLAST release directory {igblast_dir}")
+                     f"skipped: no IgBLAST release directory {igblast_dir} (give --igblast-dir)")
     layout = speed if speed.build_json(V_TOP1_SUITE).is_file() else scratch
     if layout is scratch:
         build_suite(V_TOP1_SUITE, scratch, reference_name=cfg.reference, split="dev", seed=cfg.seed,
@@ -523,9 +523,10 @@ def _igblast_v_top1_current(cfg: AuditConfig, sim: RunLayout, speed: RunLayout, 
                 "scale": header.get("scale"), "cases": len(truths), "settings": runner.fingerprint(),
                 "reused_speed_build": layout is speed}
     if mean is None or abs(mean - V_TOP1_TARGET) > V_TOP1_CURRENT_BAND + 1e-12:
-        return check(name, "warn", len(values), evidence,
-                     f"informational: IgBLAST's S1 {V_TOP1_METRIC} {_percent(mean, 2)} at this code is outside "
-                     f"{_percent(V_TOP1_TARGET)} ± {100 * V_TOP1_CURRENT_BAND:.1f} pp")
+        return check(name, "fail", len(values), evidence,
+                     f"IgBLAST's S1 {V_TOP1_METRIC} {_percent(mean, 2)} at this code is outside "
+                     f"{_percent(V_TOP1_TARGET)} ± {100 * V_TOP1_CURRENT_BAND:.1f} pp: the scoring or the truth "
+                     "moved, or IgBLAST did")
     return check(name, "pass", len(values), evidence)
 
 

@@ -177,18 +177,22 @@ def _igblast_report(layout: RunLayout, mean, n=5000) -> None:
                                                                  "coverage": 1.0}}})
 
 
-def test_igblast_s1_v_top1_must_be_within_a_point_of_the_p2_number(tmp_path):
+def test_the_stored_igblast_s1_v_top1_is_read_as_consistent_with_the_p2_record_or_warns(tmp_path):
+    # informational: the stored run's number was computed by older code; band.sim_v_top1_current is the gate
+    assert "band.sim_v_top1" in audit.INFORMATIONAL
     sim = _sim_run(tmp_path / "sim", suites=("S1",))
-    for mean, status in ((0.9786, "pass"), (0.969, "pass"), (0.989, "pass"), (0.9685, "fail"), (0.9895, "fail"),
-                         (None, "fail")):
+    for mean, status in ((0.9786, "pass"), (0.969, "pass"), (0.989, "pass"), (0.9685, "warn"), (0.9895, "warn"),
+                         (None, "warn")):
         _igblast_report(sim, mean)
         found = audit.sim_v_top1_band(sim)
         assert found["status"] == status, mean
         assert found["n"] == 5000
+        assert status == "pass" or "informational" in found["reason"]
     _igblast_report(sim, 0.9786)
-    assert "97.86%" in audit.sim_v_top1_band(sim)["evidence"]["summary"]
+    found = audit.sim_v_top1_band(sim)
+    assert "97.86%" in found["evidence"]["summary"] and "consistent with the P2 record" in found["evidence"]["summary"]
     other = _sim_run(tmp_path / "other", suites=("S1",), tools=("alignair-local@a", "alignair-local@b"))
-    assert audit.sim_v_top1_band(other)["status"] == "fail"
+    assert audit.sim_v_top1_band(other)["status"] == "warn"
 
 
 def _donor(status="passed", flagged=(), known=(0.995, 0.999), *, block_status="done", pipeline=True, decoys=True):
@@ -1131,13 +1135,15 @@ def test_igblast_s1_v_top1_at_this_code_within_one_and_a_half_points_passes(tmp_
     assert tool == "igblast" and options.igblast_dir == str(tmp_path / "sim" / "igblast")
 
 
-def test_igblast_s1_v_top1_at_this_code_outside_the_band_warns(tmp_path, fake_igblast, s1_build):
+def test_igblast_s1_v_top1_at_this_code_outside_the_band_fails(tmp_path, fake_igblast, s1_build):
+    # the gate: IgBLAST's S1 V top-1 at this code, on fresh dev reads
+    assert "band.sim_v_top1_current" in audit.GATING
     sim = _speed_run(tmp_path)
     speed = _with_s1(s1_build, tmp_path / "speed")
     for wrong in (0, 5):  # 100%, 95%: both outside 97.9% ± 1.5 pp
         FakeIgblast.wrong = wrong
         found = audit.igblast_v_top1_current(_config(tmp_path), sim, speed, RunLayout(tmp_path / "own"))
-        assert found["status"] == "warn" and "informational" in found["reason"], found
+        assert found["status"] == "fail" and "outside 97.9% ± 1.5 pp" in found["reason"], found
 
 
 def test_igblast_s1_v_top1_at_this_code_reuses_the_speed_checks_s1(tmp_path, fake_igblast, s1_build, monkeypatch):
@@ -1151,20 +1157,24 @@ def test_igblast_s1_v_top1_at_this_code_reuses_the_speed_checks_s1(tmp_path, fak
     assert found["evidence"]["reused_speed_build"]
 
 
-def test_igblast_s1_v_top1_at_this_code_never_fails(tmp_path, fake_igblast, s1_build, monkeypatch):
+def test_igblast_s1_v_top1_at_this_code_raises_or_is_skipped_without_igblast(tmp_path, fake_igblast, s1_build,
+                                                                             monkeypatch):
+    # a gating check that raises fails the audit (run_audit records the error); without IgBLAST it is skipped, which
+    # leaves the audit incomplete
     sim = _speed_run(tmp_path)
 
     def broken(*args, **kwargs):
         raise RuntimeError("igblastn crashed")
 
     monkeypatch.setattr(audit, "run_suite", broken)
-    found = audit.igblast_v_top1_current(_config(tmp_path), sim, _with_s1(s1_build, tmp_path / "speed"),
-                                         RunLayout(tmp_path / "own"))
-    assert found["status"] == "warn" and "RuntimeError: igblastn crashed" in found["reason"]
+    with pytest.raises(RuntimeError, match="igblastn crashed"):
+        audit.igblast_v_top1_current(_config(tmp_path), sim, _with_s1(s1_build, tmp_path / "speed"),
+                                     RunLayout(tmp_path / "own"))
     bare = _sim_run(tmp_path / "bare", suites=("S1",))  # its recorded IgBLAST release does not exist
     found = audit.igblast_v_top1_current(_config(tmp_path), bare, RunLayout(tmp_path / "speed"),
                                          RunLayout(tmp_path / "own"))
     assert found["status"] == "skipped" and "IgBLAST release" in found["reason"]
+    assert verdict([check("null.all", "pass", 10, {}), found])["status"] == "incomplete"
 
 
 # --- the audit ----------------------------------------------------------------------------------------------------

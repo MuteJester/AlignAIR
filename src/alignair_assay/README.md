@@ -310,18 +310,20 @@ After a re-freeze, audit again before comparing anything.
     pair some. `n` is the fewest reads a headline metric pairs (per suite, summed; real: the shared arm), since D
     top-1 and the real known answers apply to fewer reads than are offered;
   - IgBLAST bands: `known_top1` and `ref_known_top1` at least 99% on every dev donor (shared arm); S1
-    `v.top1_in_set` in the stored run within 1 pp of 97.9%; the same metric at this code (informational,
-    `band.sim_v_top1_current`: IgBLAST run now on the fresh dev S1 the speed check built, or on S1 built at scale 0.2
-    when it built none, `warn` outside 97.9% ± 1.5 pp), since the stored number comes from older code; its speed,
-    timed now on a fresh dev S1, within 15% of the stored measurement (informational: `warn` outside or on an
-    error, `skipped (load)` when the 1-minute load stays above 1.5).
+    `v.top1_in_set` at this code within 97.9% ± 1.5 pp (`band.sim_v_top1_current`, the gate: IgBLAST run now on the
+    fresh dev S1 the speed check built, or on S1 built at scale 0.2 when it built none; skipped without an IgBLAST
+    release, which leaves the audit incomplete); the same metric in the stored run, consistent with the P2 record
+    when within 1 pp of 97.9% (informational, `band.sim_v_top1`: `warn` otherwise, since the stored number comes
+    from older code and is where the target comes from); its speed, timed now on a fresh dev S1, within 15% of the
+    stored measurement (informational: `warn` outside or on an error, `skipped (load)` when the 1-minute load stays
+    above 1.5).
 - **What n counts.** Reads or cases for every check but two: `band.speed` counts the timed configurations
   (`igblast_1t`, `igblast_8t`) and `self_check.sim_staleness` the stored run's suites.
-- **Verdict.** Every check but the informational ones (`self_check.sim_staleness`, `band.sim_v_top1_current`,
+- **Verdict.** Every check but the informational ones (`self_check.sim_staleness`, `band.sim_v_top1`,
   `band.speed`) gates: it can fail the audit, and `audit.md`'s "Gates" column says which. The audit exits 0
   (`AUDIT PASS`) only when no check failed, no gating check was skipped and one passed; 2 (`AUDIT FAIL`) when a check
-  failed or nothing passed; 3 (`AUDIT INCOMPLETE`) when a gating check was skipped (GenAIRR moved during a build),
-  since what was not checked may have failed: never a pass. A check that passes on nothing (n 0), or raises, fails
+  failed or nothing passed; 3 (`AUDIT INCOMPLETE`) when a gating check was skipped (GenAIRR moved during a build, no
+  IgBLAST release), since what was not checked may have failed: never a pass. A check that passes on nothing (n 0), or raises, fails
   (an informational one warns). Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on
   each audit; `--out` may not overlap a stored run. The stored runs are never written; `null.real` runs `real`, whose
   fetch step updates its download bookkeeping under `--data-root` (the fetch records and manifest beside the
