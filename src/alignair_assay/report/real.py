@@ -103,8 +103,7 @@ def real_report_markdown(summary: dict) -> str:
     (``SUMMARY_SECTIONS``), a rule, then the detail (``DETAIL_SECTIONS``). ``summary`` is not changed."""
     summary = clean(summary)
     scopes = _scopes(summary)
-    split = (summary.get("config") or {}).get("split") or MISSING
-    lines = [f"# AlignAIR real-data report: {', '.join(_donor_names(summary)) or 'no donor'} ({split})", "",
+    lines = [f"# AlignAIR real-data report: {', '.join(_donor_names(summary)) or 'no donor'} ({_splits(summary)})", "",
              *_header(summary)]
     summary_page = (_headline, _genotype_arm, _flags_section)
     for title, render in zip(SUMMARY_SECTIONS, summary_page):
@@ -112,6 +111,13 @@ def real_report_markdown(summary: dict) -> str:
     lines += ["", "---"]
     lines += detail_markdown(summary, scopes)
     return "\n".join(lines) + "\n"
+
+
+def _splits(summary: dict) -> str:
+    """The donors' splits as their blocks record them (a run that stops after preprocessing may take both), else the
+    configuration's."""
+    found = sorted({block.get("split") for block in (summary.get("donors") or {}).values() if block.get("split")})
+    return " and ".join(found) if found else (summary.get("config") or {}).get("split") or MISSING
 
 
 def _header(summary: dict) -> list[str]:

@@ -86,7 +86,7 @@ from alignair_assay.real.fetch import (
 )
 from alignair_assay.real.genotype import IuisMap, RealGenotype, arm_alleles, merge_identical
 from alignair_assay.real.locus import SAMTOOLS_IMAGE
-from alignair_assay.real.metrics import SupportIndex, gene_support, oracle_self_check
+from alignair_assay.real.metrics import SupportIndex, decoy_calls, gene_support, oracle_self_check
 from alignair_assay.real.preprocess import CAP, IMMCANTATION_IMAGE, PreprocessError
 from alignair_assay.real.truth import RealTruth
 from alignair_assay.report.real import real_report_markdown
@@ -367,26 +367,25 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
     data = real_score.DonorScoring(donor=donor, truths={truth.read_id: truth for truth in truths}, index=index,
                                    thresholded=thresholded, weights=weights,
                                    sd3=frozenset(ctx.sensitivity["genes"]))
-    check = oracle_self_check(truths, index)
-    block["oracle_self_check"] = {**check, "status": oracle_status(check)}
     steps["scores"], block["tools"] = {}, {arm: {} for arm in ARMS}
     common = {"truth_sha256": sha256_file(layout.real_truth(donor)),
               "genotype_sha256": sha256_file(layout.real_genotype_json(donor)),
               "iuis_ogrdb_sha256": iuis.source.get("sha256"), "reference_digest": ctx.reference.digest(),
               "reference_gapped_digest": ctx.reference.gapped_digest()}
+    check = {**oracle_self_check(truths, index), "pipeline": real_score.pipeline_oracle(data, layout, common),
+             "decoys": decoy_calls(index)}
+    block["oracle_self_check"] = {**check, "status": oracle_status(check)}
     for (tool, arm), result in results.items():
         if block["runs"][arm][tool]["status"] != "ok":
             continue
         started = time.monotonic()
         inputs = {**common, "predictions_sha256": result.provenance.get("predictions_sha256")}
         matching, status = real_score.step_scores(data, tool, arm, layout, inputs)
-        if matching.get("extra"):
-            # rows whose ids match no read: the ids drifted, so nothing the run predicted can be trusted to be paired
-            # with its read (as P1/P2 refuse a prediction file that does not match its truth)
+        if matching.get("extra") or matching.get("duplicates"):
+            # rows whose ids match no read, or repeat one: the ids drifted, so nothing the run predicted can be
+            # trusted to be paired with its read (as P1/P2 refuse a prediction file that does not match its truth)
             data.calls.pop((tool, arm), None)
-            block["runs"][arm][tool].update(status="failed", error=(
-                f"{matching['extra']} predicted rows match no read (e.g. {', '.join(matching['extra_ids'])}): the "
-                "run's ids drifted from the reads it was given, so it is not scored"))
+            block["runs"][arm][tool].update(status="failed", error=_drift(matching))
             steps["scores"][f"{arm}/{tool}"] = {"status": "failed", "seconds": round(time.monotonic() - started, 2)}
             continue
         steps["scores"][f"{arm}/{tool}"] = {**status, "seconds": round(time.monotonic() - started, 2)}
@@ -395,11 +394,26 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
     return block, data
 
 
+def _drift(matching: dict) -> str:
+    """Why a run's rows cannot be paired with its reads: rows whose ids match no read, rows repeating a read's id."""
+    found = []
+    if matching.get("extra"):
+        found.append(f"{matching['extra']} predicted rows match no read (e.g. {', '.join(matching['extra_ids'])})")
+    if matching.get("duplicates"):
+        count = matching["duplicates"]
+        found.append(f"{count} predicted {'row repeats a read' if count == 1 else 'rows repeat a read'}'s id")
+    return f"{'; '.join(found)}: the run's ids drifted from the reads it was given, so it is not scored"
+
+
 def oracle_status(check: dict) -> str:
-    """The verdict of a ``real.metrics.oracle_self_check``: ``passed``; ``failed`` when a known answer's top-1 or gene
-    is wrong, or a scored oracle read is not supported (the truth contradicts itself); ``unchecked`` when no oracle
-    read is scored: no documented known answer, or every one excluded (e.g. ``not_captured``). The R1 primary applies
-    no gene-support threshold, so the thresholds never make it unchecked."""
+    """The verdict of a ``real.metrics.oracle_self_check`` with its ``pipeline`` and ``decoys``: ``passed``;
+    ``failed`` when a known answer's top-1 or gene is wrong, a scored oracle read is not supported (the truth
+    contradicts itself), the pipeline oracle (``real_score.pipeline_oracle``) disagrees with it, or a decoy
+    (``real.metrics.decoy_calls``) is not its class; ``unchecked`` when no oracle read is scored: no documented known
+    answer, or every one excluded (e.g. ``not_captured``). The R1 primary applies no gene-support threshold, so the
+    thresholds never make it unchecked."""
+    if (check.get("pipeline") or {}).get("passed") is False or (check.get("decoys") or {}).get("passed") is False:
+        return "failed"
     if check.get("passed"):
         return "passed"
     known_right = all(check.get(key) in (None, 1.0) for key in ("known_top1", "known_gene_top1"))
@@ -551,6 +565,8 @@ def _genotype_block(genotype: RealGenotype, alleles: list[str] | None, reference
     return {"sample": genotype.source.get("sample"), "v_genes": len(genotype.genes("v")),
             "functional_v_genes": len({a.gene for a in genotype.alleles if a.segment == "v" and a.functional}),
             "d_truth": bool(genotype.genes("d")), "j_truth": bool(genotype.genes("j")),
+            "j_alleles": [{"allele": allele.allele_id, "haplotype": allele.haplotype} for allele in genotype.alleles
+                          if allele.segment == "j"],
             "captured": len(genotype.captured or ()), "resolved": len(genotype.resolved or ()),
             "absent_genes": sorted(genotype.absent_genes()), "dropped_d": len(genotype.dropped),
             "arm_v_alleles": None if alleles is None else sum(reference.gene_letter(name) == "v" for name in alleles),

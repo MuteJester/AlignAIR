@@ -374,9 +374,21 @@ def _d_and_j(summary: dict, scopes: list[dict]) -> list[str]:
                     cells += [MISSING if not entry else f"{_pct(entry.get('mean'))} (n={entry.get('n', 0)})",
                               ", ".join(f"{key} {value}" for key, value in (classes or {}).items()) or MISSING]
                 rows.append([name, _label(tool), arm, *cells])
-    return ["Informational: a D or J call against the donor's genomic D or J alleles, by exact sequence, with the "
-            "same exclusions per segment; never compared.", "",
-            *_table(["Donor", "Tool", "Arm", "D unsupported", "D classes", "J unsupported", "J classes"], rows)]
+    lines = ["Informational: a D or J call against the donor's genomic D or J alleles, by exact sequence, with the "
+             "same exclusions per segment; never compared.", "",
+             *_table(["Donor", "Tool", "Arm", "D unsupported", "D classes", "J unsupported", "J classes"], rows)]
+    for name, block in blocks:
+        alleles = (block.get("genotype") or {}).get("j_alleles") or []
+        if len(alleles) == 1 and alleles[0].get("haplotype") == 0:
+            allele = alleles[0]["allele"]
+            calls = "; ".join(f"{_label(tool)} {arm} " + ", ".join(f"{call} {_int(count)}" for call, count in
+                                                                     (run.get("j_calls") or {}).items())
+                              for arm in ARMS for tool, run in (block["tools"].get(arm) or {}).items()
+                              if run.get("j_calls"))
+            lines += ["", f"{name}: its only J truth is one unphased allele, {allele} (h0): another allele of the "
+                          "gene may be on its other haplotype, so a call of one counts as unsupported here. The "
+                          f"tools' top J calls: {calls or MISSING}."]
+    return lines
 
 
 def _strata(summary: dict, scopes: list[dict]) -> list[str]:
@@ -536,14 +548,38 @@ def _self_check(summary: dict, scopes: list[dict]) -> list[str]:
         status = check.get("status") or ("passed" if check.get("passed") else "failed")
         rows.append([name, _int(check.get("reads")), _int(check.get("scored")), _pct(check.get("supported")),
                      _pct(check.get("known_top1")), _pct(check.get("known_gene_top1")), excluded or MISSING,
+                     _pipeline_cell(check.get("pipeline")), _decoys_cell(check.get("decoys")),
                      {"failed": "**failed**", "unchecked": "unchecked (warning)"}.get(status, status)])
     if not rows:
         return [_nothing_scored(summary)]
     return ["The oracle calls each documented known answer's own shared allele, as a tool would: every one scored "
             "must be supported and right (known_top1 and known_gene_top1 100%), or the truth contradicts itself "
-            "(failed). Unchecked: none is scored (no documented known answer, or every one excluded), a warning.", "",
+            "(failed). It proves the truth and the metric wiring on carried genes only: every oracle call is a donor "
+            "allele. The pipeline oracle writes those calls as an AIRR TSV and scores it as a tool's predictions "
+            "(the AIRR reader, then the scores' step), and must agree read for read. Two decoys check what the oracle "
+            "never calls: a non-carried allele of a carried, resolved gene must be unsupported_allele, and a call "
+            "into an uncalled gene excluded:uncalled. Unchecked: none is scored (no documented known answer, or every "
+            "one excluded), a warning.", "",
             *_table(["Donor", "Known answers", "Scored", "Supported", "known_top1", "known_gene_top1", "Excluded",
-                     "Status"], rows)]
+                     "Pipeline (AIRR → scores)", "Decoys", "Status"], rows)]
+
+
+def _pipeline_cell(pipeline: dict | None) -> str:
+    if not pipeline:
+        return MISSING
+    return (f"{_int(pipeline.get('agrees'))} of {_int(pipeline.get('reads'))} agree, known_top1 "
+            f"{_pct(pipeline.get('known_top1'))}" + ("" if pipeline.get("passed") else " (**failed**)"))
+
+
+def _decoys_cell(decoys: dict | None) -> str:
+    if not decoys:
+        return MISSING
+    parts = []
+    for key, missing in (("unsupported_allele", "no clean carried gene"), ("uncalled", "no uncalled gene")):
+        entry = decoys.get(key)
+        verdict = "ok" if entry and entry.get("passed") else f"**expected {(entry or {}).get('expected')}**"
+        parts.append(missing if entry is None else f"{entry['call']} → {entry['class']} ({verdict})")
+    return "; ".join(parts)
 
 
 def _truth_health(summary: dict, scopes: list[dict]) -> list[str]:

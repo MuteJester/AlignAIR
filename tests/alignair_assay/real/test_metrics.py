@@ -35,6 +35,7 @@ from alignair_assay.real.metrics import (
     ReadCalls,
     SupportIndex,
     classify_v_call,
+    decoy_calls,
     exclusion_counts,
     gene_support,
     oracle_prediction,
@@ -652,6 +653,25 @@ def test_oracle_scores_perfect():
         cls = INDEX.classify_v(pred, truth=truth)
         scores = real_case_scores(pred, truth, cls, excluded=cls.startswith("excluded:"), index=INDEX)
         assert scores.get("real.v.unsupported", 0.0) == 0.0 and scores["real.v.known_top1"] == 1.0
+
+
+def test_two_decoys_check_what_the_oracle_never_calls():
+    # the oracle calls donor alleles only; the decoys are chosen by the truth alone and their classes are fixed by
+    # the rules: an allele of a clean carried gene that matches no donor allele, and an allele of uncalled genes only
+    decoys = decoy_calls(INDEX)
+    assert decoys["unsupported_allele"] == {"call": "IGHVF1-G1*02", "genes": ["IGHV1-2"], "class": UNSUPPORTED_ALLELE,
+                                            "expected": UNSUPPORTED_ALLELE, "passed": True}
+    assert decoys["uncalled"] == {"call": "IGHVF16-G1*01", "genes": ["IGHV4-30-2"], "class": "excluded:uncalled",
+                                  "expected": "excluded:uncalled", "passed": True}
+    assert decoys["passed"]
+    # a donor without an uncalled gene has no such decoy; a decoy classified otherwise fails
+    plain = SupportIndex(RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED - UNCALLED,
+                                      resolved=GENOTYPE.resolved, uncalled=frozenset(), dropped=DROPPED),
+                         IUIS, MERGED, REFERENCE)
+    assert decoy_calls(plain)["uncalled"] is None and decoy_calls(plain)["passed"]
+    wrong = SupportIndex(GENOTYPE, IUIS, MERGED, REFERENCE)
+    wrong._classes[("IGHVF1-G1*02", "v", False)] = SUPPORTED  # as a broken rule would classify it
+    assert not decoy_calls(wrong)["passed"] and not decoy_calls(wrong)["unsupported_allele"]["passed"]
 
 
 def test_known_gene_accepts_the_iuis_genes_of_the_known_alleles_own_sequence():

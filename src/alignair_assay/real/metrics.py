@@ -118,7 +118,10 @@ Mikelov gene-support thresholds" (``thresholds=True``); the R1 primary is the in
 
 **The oracle** (``oracle_prediction``, ``oracle_self_check``): each known answer's own shared allele, as a tool
 would call it, is supported or excluded by a rule of its genes (never ``novel_gene``: its reads are documented known
-answers), and its ``known_top1`` is 1: the truth checked against itself (design §10.6).
+answers), and its ``known_top1`` is 1: the truth checked against itself (design §10.6). It proves the truth and the
+metric wiring on carried genes only, since every oracle call is a donor allele. Two decoys (``decoy_calls``) check
+what it never calls: an allele of a carried, resolved gene that matches no donor allele must be
+``unsupported_allele``, and an allele all of whose genes are uncalled must be ``excluded:uncalled``.
 """
 from __future__ import annotations
 
@@ -555,6 +558,41 @@ def oracle_self_check(truths: Iterable[RealTruth], index: SupportIndex) -> dict:
             "unsupported": (scored - supported) / scored if scored else None,
             "known_top1": top1 / reads if reads else None, "known_gene_top1": gene_top1 / reads if reads else None,
             "passed": scored > 0 and supported == scored and top1 == reads and gene_top1 == reads}
+
+
+def decoy_calls(index: SupportIndex) -> dict:
+    """The decoys of the module docstring for the donor of ``index``, each the first shared V allele in name order
+    that qualifies, by the truth alone: ``unsupported_allele``, an allele none of whose genes is excluded (each is
+    carried, captured, resolved, not uncalled or dropped, with no allele absent from the shared reference and a
+    functional allele, every functional one numbered through IMGT 318) and that equals no donor allele, exactly or
+    through 318; ``uncalled``, an allele all of whose genes are uncalled. Each is ``{"call", "genes", "class",
+    "expected", "passed"}``, or None when the donor has no such allele; ``passed`` when each found is its class."""
+    genotype = index.genotype
+    absent = genotype.absent_genes()
+
+    def clean(gene: str) -> bool:
+        alleles = genotype.carried(gene)
+        functional = [allele for allele in alleles if allele.functional and allele.segment == "v"]
+        return (bool(alleles) and gene in genotype.captured and gene in genotype.resolved
+                and gene not in genotype.uncalled and gene not in genotype.dropped_genes() and gene not in absent
+                and bool(functional) and all(through_318(allele.gapped) is not None for allele in functional))
+
+    found: dict = {"unsupported_allele": None, "uncalled": None}
+    for name in sorted(index.reference.alleles.get("v", {})):
+        genes = index.genes(name)
+        if not genes:
+            continue
+        if found["unsupported_allele"] is None and all(clean(gene) for gene in genes) and not index._matches(name, "v"):
+            found["unsupported_allele"] = _decoy(index, name, genes, UNSUPPORTED_ALLELE)
+        if found["uncalled"] is None and set(genes) <= genotype.uncalled:
+            found["uncalled"] = _decoy(index, name, genes, "excluded:uncalled")
+    found["passed"] = all(entry["passed"] for entry in found.values() if entry is not None)
+    return found
+
+
+def _decoy(index: SupportIndex, name: str, genes: tuple[str, ...], expected: str) -> dict:
+    cls = index.classify(name, "v")
+    return {"call": name, "genes": list(genes), "class": cls, "expected": expected, "passed": cls == expected}
 
 
 def _segment(pred: Prediction | None, segment: str) -> PredSegment | None:

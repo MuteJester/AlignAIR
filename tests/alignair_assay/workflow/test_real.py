@@ -88,14 +88,14 @@ CYS_END = cys104_end(SHARED_V["IGHVF1-G1*01"][0])
 
 
 def _genotype(donor: str, captured=frozenset({"IGHV1-2", "IGHV3-11"}),
-              reference: Reference = REFERENCE) -> RealGenotype:
+              reference: Reference = REFERENCE, uncalled=frozenset()) -> RealGenotype:
     """The donor carries IGHV1-2*02 on both haplotypes; IGHV3-11 is captured and not carried (absent: deleted on
-    every capturing contig)."""
+    every capturing contig); ``uncalled`` genes are captured, held by the contigs and not called."""
     alleles = tuple(RealAllele(allele_id="IGHV1-2*02", gene="IGHV1-2", segment="v", sequence=V1,
                                gapped=SHARED_V["IGHVF1-G1*01"][0], haplotype=haplotype, functional=True,
                                shared=("IGHVF1-G1*01",), iuis=("IGHV1-2*02",)) for haplotype in (1, 2))
-    return RealGenotype(donor=donor, alleles=alleles, captured=frozenset(captured), resolved=frozenset(captured),
-                        uncalled=frozenset(),
+    return RealGenotype(donor=donor, alleles=alleles, captured=frozenset(captured),
+                        resolved=frozenset(captured) - frozenset(uncalled), uncalled=frozenset(uncalled),
                         source={"kind": "test", "sha256": "csv", "reference_digest": reference.digest()})
 
 
@@ -180,6 +180,7 @@ class Fakes:
         self.truths: list[str] = []
         self.refuse: set[str] = set()
         self.captured: dict[str, frozenset] = {}
+        self.uncalled: dict[str, frozenset] = {}
         self.csv_md5 = "csv-md5"
 
     def fetch_inputs(self, donor, data_root, *, threads=None):
@@ -200,7 +201,8 @@ class Fakes:
 
     def capture_genotype(self, donor, fetched, reference, iuis):
         self.captures.append(donor)
-        return _genotype(donor, self.captured.get(donor, frozenset({"IGHV1-2", "IGHV3-11"})), reference)
+        return _genotype(donor, self.captured.get(donor, frozenset({"IGHV1-2", "IGHV3-11"})), reference,
+                         uncalled=self.uncalled.get(donor, frozenset()))
 
     def preprocess_run(self, donor, r1, r2, layout, *, quality, cap, paper_length_filter=False,
                        paper_quality_trim=False, accept_assembly_loss=False, nproc=8, timeout=None):
@@ -829,6 +831,92 @@ def test_the_oracle_self_check_is_judged(tmp_path, fakes, monkeypatch, capsys):
         "reads": 12, "scored": 12, "supported": 11 / 12, "known_top1": 1.0, "known_gene_top1": 1.0, "passed": False})
     assert main(args) == 2
     assert "W-97's truth self-check failed" in capsys.readouterr().err
+
+
+def test_the_oracle_also_runs_the_tools_path_and_two_decoys_check_the_wiring(tmp_path, fakes, monkeypatch):
+    """The direct oracle checks the truth and the metric wiring on carried genes only. The pipeline oracle writes
+    the known answers as an AIRR TSV and scores it as a tool's predictions (the AIRR reader, step_scores), and two
+    decoys check what the oracle never calls: a non-carried allele of a carried gene is unsupported_allele, and a
+    call into an uncalled gene is excluded:uncalled."""
+    fakes.uncalled = {"W-97": frozenset({"IGHV3-23"})}
+    fakes.captured["W-97"] = frozenset({"IGHV1-2", "IGHV3-11", "IGHV3-23"})
+    layout = RunLayout(tmp_path / "run")
+    summary = run_real(_config(tmp_path), layout)
+    check = summary["donors"]["W-97"]["oracle_self_check"]
+    assert check["status"] == "passed"
+    pipeline = check["pipeline"]
+    assert pipeline == {"reads": 12, "classes": {"supported": 12}, "agrees": 12, "known_top1": 1.0,
+                        "passed": True}
+    assert layout.real_predictions("oracle", "W-97", "shared").is_file()
+    assert ("oracle", "shared") not in summary["donors"]["W-97"]["runs"]["shared"]
+    decoys = check["decoys"]
+    assert decoys["unsupported_allele"] == {"call": "IGHVF1-G1*02", "genes": ["IGHV1-2"],
+                                            "class": "unsupported_allele", "expected": "unsupported_allele",
+                                            "passed": True}
+    assert decoys["uncalled"] == {"call": "IGHVF5-G1*01", "genes": ["IGHV3-23"], "class": "excluded:uncalled",
+                                  "expected": "excluded:uncalled", "passed": True}
+    assert decoys["passed"]
+    # a pipeline that disagrees with the direct oracle, or a decoy classified otherwise, fails the self-check
+    from alignair_assay.workflow import real as real_module
+
+    passing = {"reads": 12, "scored": 12, "supported": 1.0, "known_top1": 1.0, "known_gene_top1": 1.0,
+               "passed": True}
+    assert real_module.oracle_status({**passing, "pipeline": {**pipeline, "agrees": 11, "passed": False}}) == "failed"
+    assert real_module.oracle_status({**passing, "decoys": {**decoys, "passed": False}}) == "failed"
+    assert real_module.oracle_status({**passing, "pipeline": pipeline, "decoys": decoys}) == "passed"
+
+
+class DuplicatingTool(FakeTool):
+    """A tool whose output repeats a read's row: the first wins in the AIRR reader, so its ids are not one per
+    read."""
+
+    def run(self, fasta, out_tsv, **kwargs) -> RunResult:
+        result = super().run(fasta, out_tsv, **kwargs)
+        with open(out_tsv, "a", encoding="utf-8") as handle:
+            handle.write("v1_0a\tACGT\tIGHVF7-G1*01\t\t\n")
+        return result
+
+
+def test_a_donors_j_truth_and_each_runs_top_j_calls_are_in_the_summary(tmp_path, fakes, monkeypatch):
+    j = RealAllele(allele_id="IGHJ6*02", gene="IGHJ6", segment="j", sequence=REFERENCE.seq("IGHJ6*02"), gapped=None,
+                   haplotype=0, functional=True, shared=("IGHJ6*02",), iuis=("IGHJ6*02",))
+    capture = fakes.capture_genotype
+
+    def with_j(donor, fetched, reference, iuis):
+        genotype = capture(donor, fetched, reference, iuis)
+        return dataclasses.replace(genotype, alleles=(*genotype.alleles, j),
+                                   captured=genotype.captured | {"IGHJ6", "IGHJ4"},
+                                   resolved=genotype.resolved | {"IGHJ6", "IGHJ4"})
+
+    monkeypatch.setattr(real_steps, "capture_genotype", with_j)
+    summary = run_real(_config(tmp_path), RunLayout(tmp_path / "run"))
+    donor = summary["donors"]["W-97"]
+    assert donor["genotype"]["j_alleles"] == [{"allele": "IGHJ6*02", "haplotype": 0}]
+    # every fake run calls IGHJ4*02: a gene the donor lacks, on every read
+    shared = donor["tools"]["shared"]["igblast"]
+    assert shared["j_calls"] == {"IGHJ4*02": 30} and shared["j_classes"] == {"unsupported_gene": 30}
+    assert "d_calls" not in shared  # no D truth
+
+
+def test_a_read_given_two_rows_fails_the_runs_scores(tmp_path, fakes, monkeypatch):
+    monkeypatch.setitem(RUNNERS, "alignair", lambda options: DuplicatingTool("alignair", options))
+    summary = run_real(_config(tmp_path), RunLayout(tmp_path / "run"))
+    donor = summary["donors"]["W-97"]
+    run = donor["runs"]["shared"]["alignair"]
+    assert run["status"] == "failed" and run["error"].startswith("1 predicted row repeats a read's id")
+    assert "alignair" not in donor["tools"]["shared"]
+    assert [(row["tool"], row["arm"]) for row in summary["failed_runs"]] == [("alignair", "shared")]
+
+
+def test_the_pooled_consensus_weighted_r1_weights_every_donors_reads(tmp_path, fakes):
+    summary = run_real(_config(tmp_path, donors=("W-97", "W-133")), RunLayout(tmp_path / "run"))
+    for tool in ("igblast", "alignair"):
+        donors = [summary["donors"][donor]["tools"]["shared"][tool]["consensus_weighted"] for donor in ("W-97", "W-133")]
+        pooled = summary["pooled"]["tools"]["shared"][tool]["consensus_weighted"]
+        weight = sum(entry["weight"] for entry in donors)
+        assert pooled["weight"] == weight
+        assert pooled["real.v.unsupported"] == pytest.approx(
+            sum(entry["real.v.unsupported"] * entry["weight"] for entry in donors) / weight)
 
 
 def test_clusters_passed_to_compare(tmp_path, fakes, monkeypatch):

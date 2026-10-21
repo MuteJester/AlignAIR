@@ -722,6 +722,49 @@ def test_truth_self_check_and_d_j():
     assert ("W-97", "igblast", "shared") not in rows
 
 
+def test_the_self_check_says_what_it_proves_with_its_pipeline_and_decoys():
+    summary = _summary()
+    for block in summary["donors"].values():
+        block["oracle_self_check"]["pipeline"] = {"reads": 30, "classes": {"supported": 29,
+                                                                           "excluded:not_captured": 1},
+                                                  "agrees": 30, "known_top1": 1.0, "passed": True}
+        block["oracle_self_check"]["decoys"] = {
+            "unsupported_allele": {"call": "IGHVF1-G1*02", "genes": ["IGHV1-2"], "class": "unsupported_allele",
+                                   "expected": "unsupported_allele", "passed": True},
+            "uncalled": None, "passed": True}
+    section = _section(real_report_markdown(summary), "Truth self-check")
+    assert "carried genes only" in section and "AIRR TSV" in section and "decoy" in section
+    rows = {row[0]: row for row in _table(section)}
+    header = _table(section)[0]
+    assert header[-3:] == ["Pipeline (AIRR → scores)", "Decoys", "Status"]
+    assert rows["W-97"][-3] == "30 of 30 agree, known_top1 100.0%"
+    assert rows["W-97"][-2] == "IGHVF1-G1*02 → unsupported_allele (ok); no uncalled gene"
+
+
+def test_a_donor_with_one_unphased_j_allele_is_named_with_the_tools_j_calls():
+    summary = _summary()
+    donor = summary["donors"]["W-97"]
+    donor["genotype"].update(j_truth=True, j_alleles=[{"allele": "IGHJ6*03", "haplotype": 0}])
+    for arm, runs in donor["tools"].items():
+        for run in runs.values():
+            run["summary"]["real.j.unsupported"] = _cell(0.6, 100)
+            run["j_classes"] = {"supported": 40, "unsupported_allele": 60}
+            run["j_calls"] = {"IGHJ6*02": 60, "IGHJ6*03": 40}
+    section = _section(real_report_markdown(summary), "D and J (informational)")
+    assert ("W-97: its only J truth is one unphased allele, IGHJ6*03 (h0): another allele of the gene may be on its "
+            "other haplotype, so a call of one counts as unsupported here") in section
+    assert "igblast shared IGHJ6*02 60, IGHJ6*03 40" in section
+
+
+def test_the_title_takes_the_donors_splits():
+    summary = _summary()
+    summary["config"]["split"] = "dev"
+    summary["donors"]["SC-23"]["split"] = "test"  # a --stop-after preprocess run takes donors of both splits
+    assert real_report_markdown(summary).startswith("# AlignAIR real-data report: W-97, SC-23 (dev and test)")
+    summary["donors"]["W-97"]["split"] = "test"
+    assert real_report_markdown(summary).startswith("# AlignAIR real-data report: W-97, SC-23 (test)")
+
+
 def test_a_pair_not_compared_or_without_paired_reads():
     summary = _summary()
     donor = summary["donors"]["W-97"]

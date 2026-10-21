@@ -9,9 +9,9 @@ with the same truth per read (``SupportIndex.read_calls(pred, truth=truth)``).
 
 **Each tool's classes** (``step_scores``) are cached in ``real_scores(donor, arm, tool)``, one row per read: its top-1
 V call and the classes of its V, D and J calls, with the read's tool-neutral truth applied, and its V class in the
-gene-support variant (``v_support``; low support is V's only). The cache's header records
-what they were computed from (the predictions', truth's and genotype's digests, the IUIS map's OGRDB file, the
-reference and ``SCORE_CODE``); a cache whose record is not current is computed again.
+gene-support variant (``v_support``; low support is V's only), and its top-1 D and J calls. The cache's header
+records what they were computed from (the predictions', truth's and genotype's digests, the IUIS map's OGRDB file,
+the reference and ``SCORE_CODE``); a cache whose record is not current is computed again.
 
 **Scores** (``real.metrics.real_case_scores``) follow from the classes and the reads excluded:
 
@@ -53,6 +53,7 @@ from alignair_assay.core.prediction import PredSegment, Prediction
 from alignair_assay.metrics import CaseScores, is_informational, lower_is_better
 from alignair_assay.real.metrics import (
     MIN_CLONOTYPES,
+    SUPPORTED,
     MIN_NAIVE_CLONOTYPES,
     NO_CALL,
     SEGMENTS,
@@ -60,12 +61,14 @@ from alignair_assay.real.metrics import (
     SupportIndex,
     exclusion_counts,
     is_documented,
+    oracle_prediction,
     real_case_scores,
     shared_exclusions,
 )
 from alignair_assay.real.truth import RealTruth, clonotype_clusters, junction_length_clusters, sl15_clusters
 from alignair_assay.stats import compare, summarize, to_dict
-from alignair_assay.core.records import digest, write_json
+from alignair_assay.core.provenance import sha256_file
+from alignair_assay.core.records import digest, write_json, write_text
 from alignair_assay.workflow.real_steps import code_digest, jsonl_header
 from alignair_assay.workflow.summary import ALPHA
 
@@ -77,6 +80,10 @@ V_R1 = ("real.v.unsupported", "real.v.unsupported_allele", "real.v.unsupported_g
 ISOTYPES = ("IGHM", "IGHG")
 # The ids of rows matching no read a run's matching names.
 EXTRA_EXAMPLES = 3
+# The top D and J calls a run's summary names, where the donor has their truth.
+TOP_CALLS = 5
+# The pipeline oracle's run name (``pipeline_oracle``): its AIRR TSV and scores sit where a tool's would.
+ORACLE_TOOL = "oracle"
 # The pre-declared primary's metrics, compared again under each clustering of the reads.
 CLUSTERED = ("real.v.unsupported", "real.v.known_top1")
 # The R1 primary and the gene-support sensitivity variant: which row field holds the V class.
@@ -159,6 +166,7 @@ def step_scores(data: DonorScoring, tool: str, arm: str, layout: RunLayout, inpu
         segment = None if pred is None else pred.segments.get("v")
         rows[read_id] = {"read_id": read_id, "v_call": None if segment is None else segment.call, "v": calls.v,
                          "d": calls.d, "j": calls.j, "any": calls.v_any_listed_supported,
+                         "d_call": _call(pred, "d"), "j_call": _call(pred, "j"),
                          "v_support": data.thresholded.classify_v(pred, truth=truth)}
     extra = sorted(read_id for read_id in predictions if read_id not in data.truths)
     matching = {**stats, "missing": sum(read_id not in predictions for read_id in data.truths), "extra": len(extra),
@@ -171,6 +179,35 @@ def step_scores(data: DonorScoring, tool: str, arm: str, layout: RunLayout, inpu
     temporary.replace(path)
     data.calls[tool, arm] = rows
     return matching, {"status": "done"}
+
+
+def pipeline_oracle(data: DonorScoring, layout: RunLayout, inputs: dict) -> dict:
+    """The oracle through the tools' path: each documented known answer's own shared alleles (``oracle_prediction``:
+    the first, sorted, as the top-1) written as an AIRR TSV (``real_predictions(ORACLE_TOOL, donor, "shared")``),
+    read back by the AIRR reader and classified as a tool's rows are (``step_scores``, keyed on ``inputs`` and the
+    TSV's digest). ``reads`` (the documented known answers), ``classes`` (class -> reads), ``agrees`` (reads whose
+    class is the direct oracle's, ``SupportIndex.classify_v``), ``known_top1`` (its share among them through the
+    scores) and ``passed`` (every read agrees, every scored one is supported, every top-1 is right)."""
+    documented = [truth for truth in data.truths.values() if is_documented(truth)]
+    lines = ["sequence_id\tsequence\tv_call\td_call\tj_call"]
+    for truth in documented:
+        lines.append(f"{truth.read_id}\t\t{','.join(oracle_prediction(truth).segments['v'].call_set)}\t\t")
+    path = layout.real_predictions(ORACLE_TOOL, data.donor, "shared")
+    write_text(path, "\n".join(lines) + "\n")
+    step_scores(data, ORACLE_TOOL, "shared", layout, {**inputs, "predictions_sha256": sha256_file(path)})
+    rows = data.calls.pop((ORACLE_TOOL, "shared"))
+    classes: Counter[str] = Counter()
+    agrees = right = 0
+    for truth in documented:
+        row = rows[truth.read_id]
+        classes[row["v"]] += 1
+        agrees += row["v"] == data.index.classify_v(oracle_prediction(truth), truth=truth)
+        right += data.index.known_top1(row["v_call"], truth)
+    reads = len(documented)
+    return {"reads": reads, "classes": dict(sorted(classes.items())), "agrees": agrees,
+            "known_top1": right / reads if reads else None,
+            "passed": agrees == reads and right == reads
+                      and all(cls == SUPPORTED or cls.startswith(_EXCLUDED) for cls in classes)}
 
 
 def scores(data: DonorScoring, rows: Mapping[str, dict], excluded: Mapping[str, set[str]]) -> dict[str, CaseScores]:
@@ -196,6 +233,8 @@ def tool_summary(data: DonorScoring, tool: str, arm: str) -> dict:
     for segment in ("d", "j"):
         if data.index.has_truth(segment):
             summary[f"{segment}_classes"] = _counts(row[segment] for row in rows.values())
+            summary[f"{segment}_calls"] = dict(Counter(row[f"{segment}_call"] for row in rows.values()
+                                                       if row[f"{segment}_call"]).most_common(TOP_CALLS))
             summary.setdefault("exclusions_dj", {})[segment] = exclusion_counts([row[segment] for row in rows.values()])
     return summary
 
@@ -305,9 +344,15 @@ def pool(pairs: Mapping[str, PairScores]) -> PairScores:
 def pool_tools(summaries: Iterable[dict]) -> dict:
     """Several donors' ``tool_summary`` of one run as one: the classes and exclusion counts summed, and the reads
     behind each mean added up (``summary`` keeps each metric's pooled mean and counts), in the R1 primary and in the
-    gene-support variant (``gene_support``)."""
+    gene-support variant (``gene_support``); and the consensus-weighted R1 over every donor's reads
+    (``consensus_weighted``: each donor's weighted R1 by the reads behind it)."""
     summaries = list(summaries)
-    return {**_pool_block(summaries), "gene_support": _pool_block([summary["gene_support"] for summary in summaries])}
+    weighted = [summary.get("consensus_weighted") or {} for summary in summaries]
+    weight = sum(entry.get("weight") or 0 for entry in weighted if entry.get("real.v.unsupported") is not None)
+    total = sum(entry["real.v.unsupported"] * entry["weight"] for entry in weighted
+                if entry.get("real.v.unsupported") is not None)
+    return {**_pool_block(summaries), "gene_support": _pool_block([summary["gene_support"] for summary in summaries]),
+            "consensus_weighted": {"real.v.unsupported": total / weight if weight else None, "weight": weight}}
 
 
 def _pool_block(summaries: list[dict]) -> dict:
@@ -373,6 +418,11 @@ def _variant(rows: Mapping[str, dict], variant: str) -> Mapping[str, dict]:
 
 def _excluded(row: dict) -> set[str]:
     return {segment for segment in SEGMENTS if _is_excluded(row[segment])}
+
+
+def _call(pred: Prediction | None, segment: str) -> str | None:
+    found = None if pred is None else pred.segments.get(segment)
+    return None if found is None else found.call
 
 
 def _is_excluded(cls: str | None) -> bool:
