@@ -35,6 +35,7 @@ from alignair_assay.truth.io import read_truth_jsonl  # noqa: E402
 from alignair_assay.truth.model import ObservableTruth, SegmentTruth  # noqa: E402
 from alignair_assay.truth.segment import ObservedSegment  # noqa: E402
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
 needs_model = pytest.mark.skipif(not MODEL, reason="set ALIGNAIR_ASSAY_MODEL to a .alignair model file")
 WIDTH = 60

@@ -9,6 +9,8 @@ from alignair_assay.core.layout import RunLayout  # noqa: E402
 from alignair_assay.core.reference import DEFAULT_REFERENCE  # noqa: E402
 from alignair_assay.truth.io import read_truth_header  # noqa: E402
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+
 
 def test_cli_build(tmp_path, capsys):
     run_dir = tmp_path / "run"

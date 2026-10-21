@@ -52,6 +52,7 @@ from alignair_assay.testing import assert_oracle_perfect  # noqa: E402
 from alignair_assay.truth.io import read_truth_jsonl  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
 DOCKER = os.environ.get("ALIGNAIR_ASSAY_DOCKER") == "1"
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
 needs_docker = pytest.mark.skipif(not DOCKER, reason="set ALIGNAIR_ASSAY_DOCKER=1 to run the AlignAIR image")

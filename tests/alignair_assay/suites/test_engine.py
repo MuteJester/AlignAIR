@@ -15,6 +15,7 @@ from alignair_assay.suites.base import Stratum, Suite  # noqa: E402
 from alignair_assay.suites.donors import DonorSpec, sample_donors  # noqa: E402
 from alignair_assay.suites.engine import SPLITS, derive_seed, generate_suite, requested_count  # noqa: E402
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
 REFERENCE = "HUMAN_IGH_OGRDB"
 
 

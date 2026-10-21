@@ -46,6 +46,7 @@ from alignair_assay.diagnostics.replay import (  # noqa: E402
     unwrap_model,
 )
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
 needs_model = pytest.mark.skipif(not MODEL, reason="set ALIGNAIR_ASSAY_MODEL to a .alignair model file")
 # Batches of 16 over the 53 inputs: three full batches and a partial one.

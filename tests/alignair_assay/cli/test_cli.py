@@ -360,6 +360,7 @@ def test_compare_names_must_differ(tmp_path, capsys):
     assert not (tmp_path / "out").exists()
 
 
+@pytest.mark.genairr_build
 def test_score_and_compare_with_donors(tmp_path, capsys):
     run = tmp_path / "run"
     assert main(["build", "--suites", "S0_COHORT", "--run-dir", str(run), "--workers", "1"]) == 0

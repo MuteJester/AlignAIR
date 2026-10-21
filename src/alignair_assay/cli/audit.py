@@ -2,8 +2,12 @@
 comparisons of one checkpoint with itself and IgBLAST's bands, over a stored ``all`` and ``real`` run."""
 from __future__ import annotations
 
+import sys
+
 from alignair_assay.cli.common import checkpoint_spec, tool_path
+from alignair_assay.core.freeze import frozen_record
 from alignair_assay.core.layout import RunLayout
+from alignair_assay.core.provenance import genairr_provenance
 from alignair_assay.runners.base import absolute_path
 
 
@@ -44,6 +48,10 @@ def run(args) -> int:
                             skip_speed=args.skip_speed, igblast_dir=tool_path(args.igblast_dir),
                             workers=args.workers, threads=args.threads)
     layout = RunLayout(absolute_path(args.out))
+    if frozen_record(genairr_provenance().get("genairr_source")) is None:
+        print("warning: GenAIRR is the live checkout, not a frozen copy: a GenAIRR commit while the audit runs makes "
+              "its fresh builds stale midway; run `freeze-genairr` and audit with PYTHONPATH=<frozen root>:src",
+              file=sys.stderr)
     record = audit.run_audit(cfg, layout)
     print(record["verdict"]["line"])
     print(f"audit: {layout.audit_md} ({layout.audit_json})")

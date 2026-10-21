@@ -21,6 +21,7 @@ from alignair_assay.truth.io import read_truth_header, read_truth_jsonl  # noqa:
 from alignair_assay.workflow import build as build_module  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
 REFERENCE = "HUMAN_IGH_OGRDB"
 
 

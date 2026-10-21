@@ -20,6 +20,8 @@ from alignair_assay.report.audit import audit_markdown
 from alignair_assay.workflow import audit
 from alignair_assay.workflow.audit import CHECKS, GROUPS, AuditConfig, check, settle, verdict
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+
 
 def _record(checks: list[dict]) -> dict:
     """An audit record as ``run_audit`` writes it, around ``checks``."""
@@ -76,6 +78,10 @@ def test_the_report_opens_with_the_verdict_and_lists_every_check_by_group():
     assert "### null.all: fail (n = 250)" in md and "Reason: not null" in md
     assert '"problems": [' in md  # the evidence, in full
     assert "`/models/m.alignair`" in md and "abababababab" in md and "/runs/sim" in md
+    assert "**live** (not a frozen copy" in md  # no freeze record: the audit ran the live GenAIRR
+    record = _record(checks)
+    record["provenance"]["genairr_freeze"] = {"genairr_git_commit": "3de212ee1932" + "0" * 28, "source": "/g/src"}
+    assert "a frozen copy of commit `3de212ee1932` from /g/src" in audit_markdown(record)
 
 
 def test_the_check_order_covers_every_group():
@@ -1211,6 +1217,16 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch,
     package = Path(audit.__file__).resolve().parents[1]
     code = tree_digest(package, suffixes=CODE_SUFFIXES)
     assert record["provenance"]["audit_code_sha256"] == code and f"`{code[:12]}`" in layout.audit_md.read_text()
+    # the GenAIRR it ran: the frozen copy's digest, and what was frozen (the tests run a frozen copy)
+    import os
+
+    from alignair_assay.core.freeze import LIVE_ENV, frozen_record
+
+    genairr = record["provenance"]["genairr"]
+    assert record["provenance"]["genairr_freeze"] == frozen_record(genairr["genairr_source"])
+    if os.environ.get(LIVE_ENV) != "1":
+        assert record["provenance"]["genairr_freeze"]["genairr_source_sha256"] == genairr["genairr_source_sha256"]
+        assert "a frozen copy of commit" in layout.audit_md.read_text()
     # each check is printed once, as it finishes
     printed = capsys.readouterr().out.splitlines()
     assert [line.split(":")[0] for line in printed if line.startswith("audit ")] == [
@@ -1296,3 +1312,9 @@ def test_the_audit_command(tmp_path, monkeypatch, capsys):
     assert argv[7:9] == ["--checkpoint", f"base={cfg.checkpoint}"]
     assert main([*argv[:7], "--checkpoint", f"cand={cfg.checkpoint}", *argv[9:]]) == 2
     assert "--checkpoint base=PATH" in capsys.readouterr().err
+    # run on the live GenAIRR, it says so
+    from alignair_assay.cli import audit as audit_command
+
+    monkeypatch.setattr(audit_command, "frozen_record", lambda source: None)
+    seen["status"] = "pass"
+    assert main(argv) == 0 and "warning: GenAIRR is the live checkout" in capsys.readouterr().err

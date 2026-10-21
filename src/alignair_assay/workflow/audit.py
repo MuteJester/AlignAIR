@@ -74,6 +74,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from alignair_assay.core.freeze import frozen_record
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import CODE_SUFFIXES, genairr_provenance, git_state, sha256_file, tree_digest
 from alignair_assay.core.records import read_json, write_json, write_text
@@ -1119,11 +1120,12 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
                   f"{result['evidence'].get('summary') or ''}" + (f"; {result['reason']}" if result["reason"] and
                                                                   result["status"] != "pass" else ""), flush=True)
     checks = [found[name] for name in CHECKS if name in found]
+    genairr = genairr_provenance()
     record = {"kind": AUDIT_KIND, "version": AUDIT_VERSION, "verdict": verdict(checks),
               "config": dataclasses.asdict(cfg),
               "checkpoint": {"label": CHECKPOINT_LABEL, "path": cfg.checkpoint, "sha256": sha256_file(cfg.checkpoint)},
               "provenance": {"host": platform.node(), "assay": assay, "audit_code_sha256": code,
-                             "genairr": genairr_provenance()},
+                             "genairr": genairr, "genairr_freeze": frozen_record(genairr.get("genairr_source"))},
               "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "seconds": round(time.monotonic() - start, 1), "checks": checks, "groups": GROUPS}
     record = json.loads(json.dumps(record, default=_jsonable))

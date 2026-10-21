@@ -18,6 +18,12 @@ def audit_markdown(record: dict) -> str:
     config, checkpoint, provenance = record.get("config") or {}, record.get("checkpoint") or {}, \
         record.get("provenance") or {}
     assay, genairr = provenance.get("assay") or {}, provenance.get("genairr") or {}
+    frozen = provenance.get("genairr_freeze")
+    if frozen:
+        frozen_text = (f", a frozen copy of commit `{(frozen.get('genairr_git_commit') or MISSING)[:12]}`"
+                       f"{' (dirty)' if frozen.get('genairr_git_dirty') else ''} from {frozen.get('source')}")
+    else:
+        frozen_text = ", **live** (not a frozen copy: a GenAIRR commit while the audit ran would stale its builds)"
     commit = assay.get("git_commit")
     lines = [record["verdict"]["line"], "", "# AlignAIR assay audit", "",
              "The readiness gate for model comparisons: the truth checks itself, the outputs reproduce, one "
@@ -30,8 +36,9 @@ def audit_markdown(record: dict) -> str:
              f"root `{config.get('data_root')}`. Anything re-run is under `audit/scratch/`.",
              f"- Assay commit `{(commit or MISSING)[:12]}`{' (dirty)' if assay.get('git_dirty') else ''}, code "
              f"`{(provenance.get('audit_code_sha256') or MISSING)[:12]}`; GenAIRR "
-             f"{genairr.get('genairr_version')} (`{(genairr.get('genairr_source_sha256') or '')[:12]}`); host "
-             f"{provenance.get('host')}; {record.get('created_utc')}, {record.get('seconds')} s.", ""]
+             f"{genairr.get('genairr_version')} (`{(genairr.get('genairr_source_sha256') or '')[:12]}`"
+             f"{frozen_text}); host {provenance.get('host')}; {record.get('created_utc')}, {record.get('seconds')} s.",
+             ""]
     rows = [[found["name"], _STATUS.get(found["status"], found["status"]), f"{found['n']:,}",
              _cell(found["evidence"].get("summary"))] for found in record["checks"]]
     lines += markdown_table(["Check", "Status", "n", "Evidence"], rows)

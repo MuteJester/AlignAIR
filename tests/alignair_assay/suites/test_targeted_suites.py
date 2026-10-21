@@ -19,6 +19,7 @@ from alignair_assay.testing import assert_oracle_perfect  # noqa: E402
 from alignair_assay.truth.io import read_truth_jsonl  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
 REFERENCE = "HUMAN_IGH_OGRDB"
 SEED = 41
 SCALE = 0.02

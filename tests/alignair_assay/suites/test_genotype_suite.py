@@ -20,6 +20,7 @@ from alignair_assay.truth.oracle import oracle_prediction  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 from alignair_assay.suites.donors import read_genotypes  # noqa: E402
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
 REFERENCE = "HUMAN_IGH_OGRDB"
 GENOTYPE_METRICS = {"v.outside_genotype", "v.deleted_gene_call", "j.outside_genotype"}
 

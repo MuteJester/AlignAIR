@@ -99,11 +99,20 @@ def genairr_provenance() -> dict:
     else:
         package_file = Path(GenAIRR.__file__).resolve()
         source = package_file.parent
-        if _git(source, "ls-files", "--error-unmatch", "--", package_file.name) is not None:
-            git = git_state(source)
+        git = package_git_state(package_file)
     return {"genairr_version": version, "genairr_source": None if source is None else str(source),
             "genairr_git_commit": git["git_commit"], "genairr_git_dirty": git["git_dirty"],
             "genairr_source_sha256": None if source is None else _package_digest(str(source))}
+
+
+def package_git_state(package_file) -> dict:
+    """``git_state`` of the checkout holding a package, when it tracks the package's own file ``package_file`` (its
+    ``__init__.py``); both None otherwise: an install inside another project's checkout, ignored or not, is not
+    that project's code."""
+    package_file = Path(package_file)
+    if _git(package_file.parent, "ls-files", "--error-unmatch", "--", package_file.name) is None:
+        return {"git_commit": None, "git_dirty": None}
+    return git_state(package_file.parent)
 
 
 def _git(directory, *args: str) -> str | None:

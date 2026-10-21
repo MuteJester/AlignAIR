@@ -32,6 +32,7 @@ from alignair_assay.workflow.build import build_suite  # noqa: E402
 from alignair_assay.workflow.orchestrate import RunConfig, check_config, run_all  # noqa: E402
 from alignair_assay.workflow.speed import host_info, measure, speed_configs, speed_set  # noqa: E402
 
+pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
 HOST_KEYS = {"cpu", "logical_cpus", "ram_gb", "gpu", "docker", "kernel"}
 
 

@@ -1,19 +1,47 @@
-"""Shared fixtures for the assay tests: the GenAIRR guard, the truth reference, the committed bench cases and the
-small random-init AlignAIR models of the diagnostics and the evaluator (torch and alignair are imported only by a
-test that asks for one)."""
+"""Shared fixtures for the assay tests: the frozen GenAIRR, the GenAIRR guard, the truth reference, the committed
+bench cases and the small random-init AlignAIR models of the diagnostics and the evaluator (torch and alignair are
+imported only by a test that asks for one).
+
+**Frozen GenAIRR.** Before anything imports GenAIRR, the importable package is frozen into
+``.private/genairr_frozen/<digest>`` (``core.freeze.freeze_genairr``: reused while GenAIRR is unchanged) and that
+root is put first on ``sys.path`` and on ``PYTHONPATH``, so this process, its build workers and the subprocesses it
+starts all run one copy while the live checkout is edited. ``ALIGNAIR_ASSAY_GENAIRR_LIVE=1`` runs the live GenAIRR.
+The tests that build suites carry the ``genairr_build`` marker.
+"""
 from __future__ import annotations
 
-import json
+import os
+import sys
+import warnings
 from pathlib import Path
 
-import pytest
+from alignair_assay.core import freeze
 
-from alignair_assay.core.reference import Reference, dataconfig
+REPO = Path(__file__).resolve().parents[2]
+if os.environ.get(freeze.LIVE_ENV) != "1":
+    FROZEN = freeze.freeze_genairr(REPO / freeze.DEFAULT_DEST)
+    loaded = sys.modules.get(freeze.PACKAGE)
+    if loaded is not None and Path(loaded.__file__).resolve().parent.parent != FROZEN:
+        warnings.warn(f"GenAIRR was imported from {loaded.__file__} before the assay tests froze it: these tests "
+                      f"run that copy, not {FROZEN}", stacklevel=1)
+    sys.path.insert(0, str(FROZEN))
+    os.environ["PYTHONPATH"] = os.pathsep.join([str(FROZEN), *filter(None, [os.environ.get("PYTHONPATH")])])
+
+import json  # noqa: E402
+
+import pytest  # noqa: E402
+
+from alignair_assay.core.reference import Reference, dataconfig  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REFERENCE_NAME = "HUMAN_IGH_OGRDB"
 # Allele temperatures as a released checkpoint carries them, so the replay's calibration step runs.
 TEMPERATURES = {"v": 0.5, "d": 0.5, "j": 0.4}
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "genairr_build: builds GenAIRR suites (runs the frozen GenAIRR unless "
+                                       f"{freeze.LIVE_ENV}=1); -m 'not genairr_build' leaves them out")
 
 
 @pytest.fixture(scope="session")

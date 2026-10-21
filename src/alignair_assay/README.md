@@ -16,27 +16,43 @@ Units everywhere: coordinates are 0-based and half-open, rates run from 0 to 1, 
 A candidate checkpoint `CAND.alignair` against the base `BASE.alignair`, on the `dev` split, from the repository root
 (`ROOT`: the PRJNA555323 data root; `IGBLAST_DIR`: an unpacked IgBLAST release).
 
-**The gate.** Run the readiness audit once before relying on any comparison, and again after any change to the
-assay; it exits 0 only when it passes (see The readiness audit):
+**Freeze GenAIRR first.** GenAIRR is installed editable from a checkout that is edited and committed while the assay
+runs; a build records the GenAIRR it used, so a commit midway makes builds stale and numbers drift. Run everything
+below (the audit, the iteration loop, the tests and the final claims) on one frozen copy:
 
 ```
-PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_genairr_fix \
+PYTHONPATH=src python -m alignair_assay freeze-genairr      # prints FROZEN, the commit and the PYTHONPATH line
+export PYTHONPATH=FROZEN:src                                # FROZEN: .private/genairr_frozen/<digest>
+```
+
+The copy is named by its content digest and reused while GenAIRR is unchanged. Re-freeze deliberately, never in
+passing: when the GenAIRR fix branch lands, freeze again, re-run the audit on the new copy, and only then compare
+numbers across the change (builds made on the old copy are stale under the new one, so `all` rebuilds them). The
+tests freeze on their own (`tests/alignair_assay/conftest.py`).
+
+**The gate.** Run the readiness audit once before relying on any comparison, and again after any change to the
+assay or a re-freeze; it exits 0 only when it passes, 3 when a check that can fail it could not run (see The
+readiness audit):
+
+```
+PYTHONPATH=FROZEN:src python -m alignair_assay audit --sim-run .private/assay/p2_run_genairr_fix \
     --real-run .private/assay/p3a_dev --data-root ROOT --checkpoint base=BASE.alignair --device cuda \
-    --out .private/assay/audit
+    --igblast-dir IGBLAST_DIR --out .private/assay/audit
 ```
 
 **1. Simulated dev suites, per stage and per head** (`diagnose`, in process). Build the dev suites once, then:
 
 ```
-PYTHONPATH=src python -m alignair_assay build --run-dir .private/assay/iter_dev --suites S1,S3 --split dev --scale 0.1
-PYTHONPATH=src python -m alignair_assay diagnose --run-dir .private/assay/iter_dev --suites S1,S3 \
+PYTHONPATH=FROZEN:src python -m alignair_assay build --run-dir .private/assay/iter_dev --suites S1,S3 --split dev \
+    --scale 0.1
+PYTHONPATH=FROZEN:src python -m alignair_assay diagnose --run-dir .private/assay/iter_dev --suites S1,S3 \
     --checkpoint CAND.alignair --against BASE.alignair --device cuda
 ```
 
 **2. Simulated dev suites, end to end** (`all`: the AlignAIR CLI's AIRR output; it builds its own suites):
 
 ```
-PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter_sim --split dev --suites S1,S3 \
+PYTHONPATH=FROZEN:src python -m alignair_assay all --run-dir .private/assay/iter_sim --split dev --suites S1,S3 \
     --tools alignair-local@base,alignair-local@cand --checkpoint base=BASE.alignair \
     --checkpoint cand=CAND.alignair --device cuda
 ```
@@ -44,7 +60,7 @@ PYTHONPATH=src python -m alignair_assay all --run-dir .private/assay/iter_sim --
 **3. Real dev donors** (`real`, with Docker running; each checkpoint is also compared with IgBLAST):
 
 ```
-PYTHONPATH=src python -m alignair_assay real --run-dir .private/assay/iter_real --data-root ROOT \
+PYTHONPATH=FROZEN:src python -m alignair_assay real --run-dir .private/assay/iter_real --data-root ROOT \
     --donors SC-23,SC-11,W-97,W-133 --split dev --tools igblast,alignair-api@base,alignair-api@cand \
     --igblast-dir IGBLAST_DIR --checkpoint base=BASE.alignair --checkpoint cand=CAND.alignair --device cuda
 ```
@@ -63,10 +79,10 @@ tool − the first). A read *fixed* is one BASE gets wrong and CAND right; *brok
    `known_top1` and `ref_known_top1` Δ beside it; every other verdict is exploratory.
 
 **The test split is locked for claims.** Never iterate on it. Score it once, at the end (`all --split test`, and
-`real --split test` on the test donors), with GenAIRR frozen: copy GenAIRR's package directory (`src/GenAIRR`:
-sources, built engine and data) while its checkout is at a clean commit, and put the copy first on the path
-(`PYTHONPATH=FROZEN:src`), so edits to the live GenAIRR cannot make the run's builds stale midway. Record that
-commit with the claim: the copy has no git state, so the run records none.
+`real --split test` on the test donors), on the frozen copy (`PYTHONPATH=FROZEN:src`), preferably frozen while
+GenAIRR's checkout is at a clean commit. The copy has no git state of its own: its `freeze.json` records the commit
+and dirty flag it was frozen from, and the run records the copy's content digest (`genairr_source_sha256`); cite
+both with the claim.
 
 ### Against IgBLAST
 
@@ -259,10 +275,15 @@ stored `real` run, re-runs what it must in scratch, and writes `OUT/audit/audit.
 and `audit.json`:
 
 ```
-PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_genairr_fix \
+PYTHONPATH=FROZEN:src python -m alignair_assay audit --sim-run .private/assay/p2_run_genairr_fix \
     --real-run .private/assay/p3a_dev --data-root ROOT --checkpoint base=MODEL.alignair --device cuda \
-    --out .private/assay/readiness_audit [--skip-speed]
+    --igblast-dir IGBLAST_DIR --out .private/assay/readiness_audit [--skip-speed]
 ```
+
+Run it on the frozen GenAIRR (`FROZEN`, see Freeze GenAIRR first): on the live one, a commit while it runs makes its
+fresh builds stale midway. The record names the GenAIRR it ran (`provenance.genairr`: the copy's path and content
+digest) and, for a frozen copy, what was frozen (`provenance.genairr_freeze`: the source, commit and dirty flag).
+After a re-freeze, audit again before comparing anything.
 
 - **Checks** (`workflow.audit`), each `{name, status, n, evidence, reason}` with `status` pass, fail, warn or
   skipped and `n` the reads or cases it rests on:
@@ -662,6 +683,7 @@ python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97
     [--checkpoint LABEL=MODEL.alignair ...] [--stop-after preprocess] [--force]
 python -m alignair_assay audit --sim-run RUN --real-run RUN --data-root ROOT --checkpoint base=MODEL.alignair \
     --out DIR [--device cuda] [--skip-speed] [--igblast-dir DIR] [--workers 8] [--threads 8]
+python -m alignair_assay freeze-genairr [--dest .private/genairr_frozen]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR [--donors DONORS.json]
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05] \
@@ -747,7 +769,18 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   then prints the verdict, and exits 0 only when the audit passes. Another checkpoint label than `base`, a stored
   run without its records, a missing data root or checkpoint, an `--out` overlapping a stored run, and a CUDA device
   torch does not see exit with status 2 before any work. `--igblast-dir` defaults to the release `--sim-run`
-  recorded.
+  recorded. Run on the live GenAIRR, it warns.
+- `freeze-genairr` (`core.freeze.freeze_genairr`) copies the importable GenAIRR package (sources, compiled engine
+  and data; no byte code) into `DEST/<digest>/GenAIRR`, `<digest>` its content's `tree_digest`, with a `freeze.json`
+  beside it (the source, its checkout's commit and dirty flag, the installed version, the digest, the time). An
+  unchanged GenAIRR reuses its copy (checked to still hold that content; one edited in place is refused); a changed
+  one gets a new directory. The copy is made in a temporary directory and renamed into place once it, and the source
+  after it, digest as the source did before: a source that moved during the copy is copied again, up to 3 times. It
+  prints the root, the commit and dirty flag (a dirty checkout warns: its edits are in the copy, not in the commit)
+  and the `PYTHONPATH=<root>:src` line. The assay tests freeze into `.private/genairr_frozen` before anything
+  imports GenAIRR (`tests/alignair_assay/conftest.py`) and put the copy first on `sys.path` and `PYTHONPATH`, for
+  their subprocesses and build workers too; `ALIGNAIR_ASSAY_GENAIRR_LIVE=1` runs the live GenAIRR instead. Tests
+  that build suites are marked `genairr_build`.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit`, `genairr_git_dirty` and
   `genairr_source_sha256` (the package directory's content: sources, compiled engine and data). The
