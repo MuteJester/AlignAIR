@@ -540,6 +540,26 @@ def test_config_change_needs_force(tmp_path, fakes):
     assert summary["donors"]["W-97"]["steps"]["runs"]["shared/igblast"]["status"] == "done"
 
 
+def test_a_manifest_from_before_a_field_existed_is_named(tmp_path, fakes):
+    # a manifest written before stop_after was part of the identity: the refusal names the absent field
+    layout = RunLayout(tmp_path / "run")
+    run_real(_config(tmp_path), layout)
+    manifest = json.loads(layout.real_manifest().read_text())
+    del manifest["identity"]["stop_after"]
+    manifest["config_hash"] = real_steps.digest(manifest["identity"])
+    layout.real_manifest().write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match=r"\(stop_after \(absent\) -> None\).*--force"):
+        run_real(_config(tmp_path), layout)
+    # an identity whose fields are all the same but whose hash is not: its format changed, and the refusal says so
+    manifest = json.loads(layout.real_manifest().read_text())
+    manifest["identity"]["stop_after"] = None
+    manifest["config_hash"] = "0" * 64
+    layout.real_manifest().write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match=r"identity format changed.*--force"):
+        run_real(_config(tmp_path), layout)
+    run_real(_config(tmp_path), layout, force=True)
+    assert json.loads(layout.real_manifest().read_text())["replaced"] == {"config_hash": "0" * 64, "changed": []}
+
 def test_unknown_protocol_stops_only_that_donor(tmp_path, fakes):
     fakes.refuse.add("W-133")
     layout = RunLayout(tmp_path / "run")

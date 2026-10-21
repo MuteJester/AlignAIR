@@ -104,6 +104,8 @@ VERSION = "1"
 # A donor whose documented known answers are fewer than this share of its reads is flagged (design §10.6).
 KNOWN_YIELD_FLAG = 0.05
 ASSEMBLY_COUNTS = ("written_records", "complete_assemblies", "partial_assemblies", "failed_assemblies")
+# A field one of two identities lacks (a manifest written before the field existed), named "(absent)".
+_ABSENT = object()
 
 
 @dataclass(frozen=True)
@@ -451,8 +453,10 @@ def _pooled(cfg: RealConfig, scored: dict[str, real_score.DonorScoring], blocks:
 
 def _check_manifest(identity: dict, layout: RunLayout, *, force: bool, ignore: tuple[str, ...] = ()) -> list | None:
     """The fields of ``identity`` (``_flat``) that differ from the run directory's manifest, leaving out the
-    top-level keys ``ignore`` on both sides; None without a manifest, or when its whole identity's hash is
-    ``identity``'s. ValueError naming them when they differ, unless ``force``. Reads only."""
+    top-level keys ``ignore`` on both sides; a field one side lacks (a manifest written before the field existed)
+    differs and is shown as ``(absent)``. None without a manifest, or when its whole identity's hash is
+    ``identity``'s. ValueError naming them when they differ, unless ``force``; without ``ignore``, also when no field
+    differs but the hash does ("identity format changed"). Reads only."""
     path = layout.real_manifest()
     if not path.is_file():
         return None
@@ -461,12 +465,25 @@ def _check_manifest(identity: dict, layout: RunLayout, *, force: bool, ignore: t
         return None
     previous = _flat({key: value for key, value in (old.get("identity") or {}).items() if key not in ignore})
     now = _flat({key: value for key, value in identity.items() if key not in ignore})
-    changed = [name for name in sorted(previous.keys() | now.keys()) if previous.get(name) != now.get(name)]
-    if changed and not force:
-        differences = "; ".join(f"{name} {previous.get(name)} -> {now.get(name)}" for name in changed)
+    changed = [name for name in sorted(previous.keys() | now.keys())
+               if previous.get(name, _ABSENT) != now.get(name, _ABSENT)]
+    if force:
+        return changed
+    if changed:
+        differences = "; ".join(f"{name} {_shown(previous.get(name, _ABSENT))} -> {_shown(now.get(name, _ABSENT))}"
+                                for name in changed)
         raise ValueError(f"{path} was written for another configuration ({differences}). Rerun with that "
                          "configuration, choose another --run-dir, or pass --force to redo what the change affects")
+    if not ignore:
+        raise ValueError(f"{path} was written for another configuration: no field of its identity differs, but its "
+                         "hash does (identity format changed: the workflow that wrote it recorded its configuration "
+                         "otherwise). Choose another --run-dir, or pass --force to redo what the change affects")
     return changed
+
+
+def _shown(value) -> str:
+    """A field's value in a refusal: ``(absent)`` for a field the identity lacks."""
+    return "(absent)" if value is _ABSENT else str(value)
 
 
 def _manifest(cfg: RealConfig, identity: dict, layout: RunLayout, *, force: bool) -> str:
