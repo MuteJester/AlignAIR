@@ -123,6 +123,18 @@ def test_the_stored_oracle_is_checked_from_its_scores(tmp_path):
     assert audit.sim_oracle(sim)["evidence"]["suites"]["S0"]["status"] == "not scored"
 
 
+@pytest.mark.parametrize("recorded", ["imperfect", None])
+def test_the_stored_oracle_must_agree_with_what_its_report_recorded(tmp_path, recorded):
+    # the scores are perfect, the run's report says otherwise (or nothing): the stored run contradicts itself
+    sim = _sim_run(tmp_path / "sim", suites=("S0", "S1"))
+    report = json.loads(sim.report_json.read_text())
+    report["suites"][1]["oracle"] = {"status": recorded} if recorded else {}
+    write_json(sim.report_json, report)
+    found = audit.sim_oracle(sim)
+    assert found["status"] == "fail" and found["evidence"]["suites"]["S1"]["recorded"] == recorded
+    assert "S1" in found["reason"] and "S0" not in found["reason"] and "recorded" in found["reason"]
+
+
 def test_stale_builds_of_the_stored_run_are_a_warning(tmp_path):
     sim = _sim_run(tmp_path / "sim")
     build_suite("S0", sim, reference_name=REFERENCE_NAME, split="test", seed=7, scale=0.2, workers=1)
@@ -177,35 +189,57 @@ def _real_run(root: Path, donors: dict) -> RunLayout:
     return layout
 
 
+DEV_DONORS = ("SC-23", "SC-11", "W-97", "W-133")
+
+
+def _dev(**donors) -> dict:
+    """Every dev donor's block (``_donor()``), the given ones (by name, ``-`` as ``_``) replaced."""
+    return {name: donors.get(name.replace("-", "_"), _donor()) for name in DEV_DONORS}
+
+
 def test_every_dev_donor_must_pass_its_self_check(tmp_path):
-    real = _real_run(tmp_path / "real", {"W-97": _donor(), "SC-23": _donor(), "SC-4": _donor(status="failed")})
+    real = _real_run(tmp_path / "real", {**_dev(), "SC-4": _donor(status="failed")})
     found = audit.real_oracle(real)
-    assert found["status"] == "pass" and found["n"] == 5000  # the test donor SC-4 is not read
-    assert set(found["evidence"]["donors"]) == {"W-97", "SC-23"}
+    assert found["status"] == "pass" and found["n"] == 10000  # the test donor SC-4 is not read
+    assert set(found["evidence"]["donors"]) == set(DEV_DONORS)
     for bad in (_donor(status="unchecked"), _donor(pipeline=False), _donor(decoys=False),
                 _donor(block_status="stopped")):
-        found = audit.real_oracle(_real_run(tmp_path / "bad", {"W-97": _donor(), "SC-23": bad}))
+        found = audit.real_oracle(_real_run(tmp_path / "bad", _dev(SC_23=bad)))
         assert found["status"] == "fail" and "SC-23" in found["reason"] and "W-97" not in found["reason"]
-    assert settle(audit.real_oracle(_real_run(tmp_path / "none", {})))["status"] == "fail"  # checked nothing
+
+
+def test_every_dev_donor_must_be_in_the_stored_run(tmp_path):
+    # the pilot's dev donors, not the ones the stored run happens to hold: a missing one fails every donor check
+    partial = {name: block for name, block in _dev().items() if name != "W-133"}
+    real = _real_run(tmp_path / "real", partial)
+    for check_donors in (audit.real_oracle, audit.real_truth_health, audit.real_known_band):
+        found = check_donors(real)
+        assert found["status"] == "fail" and "W-133" in found["reason"] and "missing" in found["reason"], found
+    assert audit.real_oracle(_real_run(tmp_path / "none", {}))["status"] == "fail"
 
 
 def test_truth_health_flags_warn_and_never_fail(tmp_path):
-    real = _real_run(tmp_path / "real", {"W-97": _donor(flagged=("IGHV3-23",)), "SC-23": _donor()})
+    real = _real_run(tmp_path / "real", _dev(W_97=_donor(flagged=("IGHV3-23",))))
     found = audit.real_truth_health(real)
-    assert found["status"] == "warn" and found["n"] == 100000
+    assert found["status"] == "warn" and found["n"] == 200000
     assert found["evidence"]["flags"] == {"W-97": [{"gene": "IGHV3-23", "reads": 12, "clonotypes": 11,
                                                     "alleles": {"IGHVF1-G1*01": 12}, "h0_only": False}]}
     assert "W-97 IGHV3-23" in found["evidence"]["summary"]
-    assert audit.real_truth_health(_real_run(tmp_path / "clean", {"W-97": _donor()}))["status"] == "pass"
+    assert audit.real_truth_health(_real_run(tmp_path / "clean", _dev()))["status"] == "pass"
+    # a donor without a truth-health block was never audited: a warning, not a clean pass
+    unaudited = _donor()
+    del unaudited["truth_health"]
+    found = audit.real_truth_health(_real_run(tmp_path / "unaudited", _dev(SC_11=unaudited)))
+    assert found["status"] == "warn" and "SC-11" in found["reason"] and found["evidence"]["unaudited"] == ["SC-11"]
 
 
 def test_igblast_known_answers_on_the_shared_arm_must_reach_99_percent(tmp_path):
     # the genotype arm's ref_known_top1 (0.98 here) is not held to the band: the donor's genotype may not hold it
-    found = audit.real_known_band(_real_run(tmp_path / "real", {"W-97": _donor(), "SC-23": _donor(known=(0.99, 1.0))}))
-    assert found["status"] == "pass" and found["n"] == 5000
+    found = audit.real_known_band(_real_run(tmp_path / "real", _dev(SC_23=_donor(known=(0.99, 1.0)))))
+    assert found["status"] == "pass" and found["n"] == 10000
     assert "W-97 known_top1 99.5% (n=2500), ref_known_top1 99.9% (n=5000)" in found["evidence"]["summary"]
     for known in ((0.989, 1.0), (1.0, 0.9899), (None, 1.0)):
-        found = audit.real_known_band(_real_run(tmp_path / "low", {"W-97": _donor(), "SC-23": _donor(known=known)}))
+        found = audit.real_known_band(_real_run(tmp_path / "low", _dev(SC_23=_donor(known=known))))
         assert found["status"] == "fail" and "SC-23" in found["reason"] and "W-97" not in found["reason"], known
 
 

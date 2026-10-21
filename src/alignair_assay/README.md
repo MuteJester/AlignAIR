@@ -209,8 +209,10 @@ PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_ge
 
 - **Checks** (`workflow.audit`), each `{name, status, n, evidence, reason}` with `status` pass, fail, warn or
   skipped and `n` the reads or cases it rests on:
-  - self-checks: the stored run's oracle is perfect on every suite, and so is a fresh dev build's at this code; every
-    dev donor's real self-check passed (pipeline path and decoys); truth-health flags and stale stored builds warn;
+  - self-checks: the stored run's oracle is perfect on every suite, recomputed from its stored oracle scores and
+    agreeing with what its `report.json` recorded, and so is a fresh dev build's at this code; every pilot dev donor
+    (a dev donor missing from the stored `real` run fails) passed its real self-check (pipeline path and decoys);
+    truth-health flags, a donor without a truth-health block and stale stored builds warn;
   - reproducibility: S1 built twice at scale 0.02 (dev) gives byte-identical cases, truth and reads, each required
     in both builds (skipped when GenAIRR moved during the builds); one real dev donor's truth, self-check and every
     ok run's scores (a missing scores file fails, and at least one run must be compared), recomputed from the stored
