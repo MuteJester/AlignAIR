@@ -639,10 +639,14 @@ def test_w97_end_to_end_on_500_reads(tmp_path):
     assert seconds < 600, seconds
     donor = summary["donors"]["W-97"]
     assert donor["status"] == "done", donor.get("stopped")
-    # 500 reads leave every known gene under the support thresholds: the self-check cannot be failed, and its known
-    # answers are all right
-    assert donor["truth"]["reads"] == 500 and donor["oracle_self_check"]["status"] != "failed"
+    # the R1 primary applies no gene-support threshold, so the oracle's reads are scored and all supported even on
+    # 500 reads, and the shared arm's calls are scored; the Mikelov variant excludes the thin genes
+    assert donor["truth"]["reads"] == 500 and donor["oracle_self_check"]["status"] == "passed"
     assert donor["oracle_self_check"]["known_top1"] == donor["oracle_self_check"]["known_gene_top1"] == 1.0
+    igblast = donor["tools"]["shared"]["igblast"]
+    assert igblast["summary"]["real.v.unsupported"]["n"] > 100
+    assert igblast["gene_support"]["exclusions"]["excluded:low_support"] > 0
+    assert "excluded:low_support" not in igblast["v_classes"]
     # every tool and arm ran (on these reads none fails), the AlignAIR runs with their AIRR assembly counts
     assert summary["failed_runs"] == [] and summary["stopped_donors"] == []
     for arm, tools in (("shared", ("igblast", "alignair", "alignair-api")), ("genotype", ("igblast", "alignair-api"))):
