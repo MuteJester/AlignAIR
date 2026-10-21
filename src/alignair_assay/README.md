@@ -129,7 +129,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `airr` | AIRR TSV `reader` (`load_airr_tsv`, and `rows_to_predictions` for rows already in memory) and `writer` | core, airr |
 | `metrics` | per-case scorers (pure), the group scorers that read a case's whole clone (`groups`), the scorers against a read's donor genotype (`genotype`), and the metric registries | core, truth, metrics |
 | `stats` | aggregation with coverage and the paired comparison (pure) | core, metrics, stats |
-| `report` | JSON reports and markdown summaries (`build`, `markdown`), the run report rendered from a run summary (`run`) and the diagnostics report (`diagnostics`: its one-page summary, scalars, per-suite detail and profile) | core, stats, report |
+| `report` | JSON reports and markdown summaries (`build`, `markdown`), the run report rendered from a run summary (`run`), the diagnostics report (`diagnostics`: its one-page summary, scalars, per-suite detail and profile) and the real-data report rendered from `real_summary.json` (`real`) | core, stats, report |
 | `scoring` | `pipeline` (score one tool against a truth file; `truth_reference`, the reference built suites' truth was built against), `slices`, `oracle` (the oracle rule on per-case scores) and `clusters` (`cluster_ids`: the clone or orientation pair a comparison clusters a case by) | core, truth, airr, metrics, stats, scoring |
 | `suites` | the suite registry (`__init__`), suite types (`base`), simulated donors (`donors`, with `read_genotypes` for a `donors.json`), novel alleles (`novel`: invariant positions and validated SNP placement), the deterministic generator (`engine`), shared repertoire recipes (`recipes`) and the catalog (`catalog/`, one module per suite) | core, suites |
 | `runners` | one runner per tool (`igblast`, `alignair`: the AlignAIR image and a local checkpoint, `alignair_api`: a local checkpoint through AlignAIR's public Python API, `oracle`) and the registry (`__init__`: `RUNNERS`, `make_runner`), the runner interface, run records and timed commands (`base`), the shared reference (`reference`), the genotype arm (`arms`) | core, airr, truth, suites, runners |
@@ -394,7 +394,8 @@ RUN/
   real/<donor>/preprocess.json        the preprocessing record, written last (+ preprocess_logs/; preprocess_work/
                                       while it runs)
   real/manifest.json                  the real-data run's configuration (`real`, `workflow.real`)
-  real/real_summary.json              every donor's and the pooled results (real/real_report.md renders them)
+  real/real_summary.json              every donor's and the pooled results
+  real/real_report.md                 the real-data report rendered from them (`report.real`)
   real/_setup/                        the tools' one-time setup (a RunLayout root given to Runner.prepare)
   real/<donor>/fetch.json             what the donor's reads and genotype files were fetched as
   real/<donor>/truth.jsonl.gz         the per-read truth, its record as the header line
@@ -530,14 +531,15 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   import torch: `diagnose` imports the diagnostics layer when it runs.
 - `real` runs `workflow.real.run_real`: each pilot donor's raw reads fetched, its genomic genotype captured, its reads
   preprocessed and capped, their truth computed, the tools run on the shared and genotype arms, R1 scored and the
-  pairs compared cluster-aware, per donor and pooled, into `real/real_summary.json` (see Real data). Every step is
-  skipped while its record is current. A test donor without `--split test`, an unknown donor or tool, a tool
-  without its options, a missing cohort file, Docker missing or a pinned image with another digest, and a run
-  directory made for another configuration (without `--force`) exit with status 2 before any work; a donor stopped
-  by its preprocessing, a failed tool run or a failed truth self-check exit with status 2 once the summary is
-  written; an unchecked self-check (no oracle read scored: no documented known answer among the reads, or every one
-  excluded, e.g. `not_captured`) is a warning. `--alignair-checkpoint` defaults to the user's cached file of `--alignair-model`, the
-  image's model. `--stop-after preprocess` fetches, genotypes and preprocesses each donor (the protocol classifier's
+  pairs compared cluster-aware, per donor and pooled, into `real/real_summary.json`, rendered as
+  `real/real_report.md` (see Real data). Every step is skipped while its record is current. A test donor without
+  `--split test`, an unknown donor or tool, a tool without its options, a missing cohort file, Docker missing or a
+  pinned image with another digest, and a run directory made for another configuration (without `--force`) exit
+  with status 2 before any work; a donor stopped by its preprocessing, a failed tool run or a failed truth
+  self-check exit with status 2 once the summary and report are written; an unchecked self-check (no oracle read
+  scored: no documented known answer among the reads, or every one excluded, e.g. `not_captured`) is a warning.
+  `--alignair-checkpoint` defaults to the user's cached file of `--alignair-model`, the image's model.
+  `--stop-after preprocess` fetches, genotypes and preprocesses each donor (the protocol classifier's
   verdict included) and scores nothing, so it takes any pilot donor, test donors without `--split test` included
   (each donor's split is recorded), and needs no tool option; scoring donors in the same run directory afterwards is
   another configuration (`--force`), which reuses their preprocessing.
@@ -1405,9 +1407,33 @@ record whose key was edited is recomputed.
 
 P3 scores the tools on real human IGH repertoires (BioProject PRJNA555323; Rodriguez et al. 2023, Nat Commun
 14:4419) against each donor's own alleles from genomic long-read sequencing, published by VDJbase (genomic study
-P25, CC0). This section grows with P3a; so far it covers the downloads, the donor genotypes and their genotype
-arms, the preprocessing of the reads, each read's truth and R1, the support of each tool's V call by the donor's
-alleles. AlignAIR's genotype arm runs through `alignair-api` (see The genotype arm).
+P25, CC0). P3a is the pilot: eight donors, each with one AIRR-seq run and a genomic genotype, four on the dev split
+and four locked on the test split. `real` (`workflow.real`) runs it from the raw reads to `real/real_summary.json`
+and its report, `real/real_report.md` (The report, below). AlignAIR's genotype arm runs through `alignair-api` (see
+The genotype arm).
+
+**Running it.**
+
+```
+python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,SC-11,W-97,W-133 --igblast-dir DIR
+python -m alignair_assay real --run-dir RUN --data-root ROOT --stop-after preprocess \
+    --donors SC-23,SC-11,W-97,W-133,SC-4,SC-6,W-89,W-131
+```
+
+- Docker must be running; the pinned images are pulled on first use, and an image whose digest is not the pinned
+  one stops the run before any work. Each step is skipped while its own record is current, so a rerun resumes, and
+  a run directory made for another configuration needs `--force`.
+- `--cap` (default 50,000) caps each donor's preprocessed sequences. A small cap (500) is a smoke run: its numbers
+  are not claims.
+- `--stop-after preprocess` fetches, genotypes and preprocesses each donor and scores nothing, so it takes any pilot
+  donor, test donors included: it is how every run's protocol classification and yields are checked without
+  touching the test split's scores. Scoring the dev donors afterwards in the same run directory is another
+  configuration (`--force`), which reuses their preprocessing.
+- Gates: tests that read the data root run only when `ALIGNAIR_ASSAY_DATA` names it; those that download need
+  `ALIGNAIR_ASSAY_NETWORK=1` too, and those that run a container (sra-tools, samtools, Immcantation, the AlignAIR
+  image) `ALIGNAIR_ASSAY_DOCKER=1`. The end-to-end W-97 smoke (`slow`) needs the data root, Docker and
+  `ALIGNAIR_ASSAY_MODEL` (the checkpoint), with IgBLAST 1.22.0 unpacked under `.private/tools`. The ungated tests
+  run offline, on synthetic inputs.
 
 **Data root.** Downloads live under a data root given to the commands, never in a run directory or the repository.
 Each source has its own directory there, with an `MD5SUMS.txt`:
@@ -1417,17 +1443,38 @@ Each source has its own directory there, with an `MD5SUMS.txt`:
   it;
 - `genotypes/vdjbase_genomic_samples/<sample>.csv` and `.bam` (one VDJbase sample per donor, e.g. `P25_I58_S1` for
   SC-23: its alleles and its contigs on IGenotyper's `igh` reference);
-- `genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json` (OGRDB's IGH_VDJ germline set G00060, CC0);
+- `genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json` (OGRDB's IGH_VDJ germline set G00060, CC0: the
+  IUIS map) and `..._rev_9.json` (the release the VDJbase API names its documented alleles in);
 - `genotypes/igenotyper/gene_coords.bed` (IGenotyper's gene coordinates on `igh`, at commit `40a00015`);
-- `genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx` (the paper's supplementary data).
+- `genotypes/vdjbase_genomic_api/genomic_all_subjects_genotype_Homo_sapiens.json` (every VDJbase genomic subject's
+  genotype: the cohort of the SD3 sensitivity analysis);
+- `genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx` (the paper's supplementary data);
+- `fetch/reads/<run>.json`, `fetch/genotypes/<donor>.json`, `fetch/cohort.json` and `fetch_manifest.json`: what each
+  file was fetched and verified as.
 
-Tests that read it run only when `ALIGNAIR_ASSAY_DATA` names it; those that download need `ALIGNAIR_ASSAY_NETWORK=1`
-too, and those that run a container (sra-tools, samtools, Immcantation) `ALIGNAIR_ASSAY_DOCKER=1`.
+**Pins.** What the pilot reads or runs is pinned in the code, or for the tools given on the command line recorded
+in the manifest, and each output's provenance records it:
 
-**Fetch (`real.fetch`).** Every file is pinned in the module (size, md5 or S3 ETag, read count, commit, image
-digest), so a fresh data root gets the same bytes or a refusal. A file already there is reused only when it is the
-pinned file (and its `MD5SUMS.txt` agrees); a download goes to `<name>.part` and is renamed once verified. Downloads
-are https only, with a 60 s timeout and at most two retries; nothing downloaded is executed.
+| What | Pinned as |
+|---|---|
+| Reads | each run's ODP object by size and S3 ETag; its converted mates by read count and each mate's uncompressed md5; ENA's FASTQs by ENA's md5s (`real.fetch`) |
+| sra-tools 3.4.1 | `ncbi/sra-tools:3.4.1@sha256:4f048ba6754246e1ed7799a2c8ed469a38427f392e403ca08b93c4255104c9ce` (`SRA_TOOLS_IMAGE`) |
+| samtools 1.23.1 | `quay.io/biocontainers/samtools:1.23.1--ha83d96e_0@sha256:23cda33a3a42125872766df9aaf1d2db67cdb8c85314b793465188435af31ba6` (`SAMTOOLS_IMAGE`) |
+| pRESTO 0.7.9 | `immcantation/suite:4.8.0@sha256:44e228a45b047bdb352363ab20a670336b003e98f3d1bac505f78af41a91ab67` (`IMMCANTATION_IMAGE`) |
+| AlignAIR | the image `alignair/alignair:3.0.0@sha256:5df66a34ac7b2b3ece927c49ef440c89dc30a47d028415d924c827b6012ccfd3` (`runners.alignair.DEFAULT_IMAGE`); alignair-api's checkpoint is recorded by its SHA-256 in the manifest, and a change needs `--force` |
+| IgBLAST | the release given (`--igblast-dir`), recorded by the SHA-256 of its binaries and auxiliary data in the manifest; a change needs `--force` |
+| VDJbase genotypes | study P25, one sample per donor (`VDJBASE_SAMPLE`): CSV and contig BAM by size and md5 |
+| VDJbase cohort | the API v1 genomic all-subjects JSON by size and md5; it is served live, so an update is refused until the pin moves |
+| OGRDB | IGH_VDJ germline set G00060 rev 8 (the IUIS map) and rev 9 (the cohort's labels), by size and md5 |
+| IGenotyper | `gene_coords.bed` at commit `40a00015f000adae477d25e62ec2e9e8dba9da98`, by size and md5 |
+| SD3 | the paper's supplementary workbook, by size and md5 |
+
+**Fetch (`real.fetch`).** Every download is pinned in the module (size, md5 or S3 ETag, commit, image digest), so a
+fresh data root downloads the same bytes or refuses. A converted pair is pinned by its reads instead: each mate's
+read count and the md5 of its uncompressed FASTQ. Its `.fastq.gz` bytes depend on the host's zlib, so they may
+differ from host to host while the reads are the same. A file already there is reused only when it is the pinned
+file (and its `MD5SUMS.txt` agrees); a download goes to `<name>.part` and is renamed once verified. Downloads are
+https only, with a 60 s timeout and at most two retries; nothing downloaded is executed.
 
 - `fetch_reads(run, data_root)` returns a pilot run's pair and its `FetchRecord` (`path`, the pair's directory;
   `md5`, of the pair's `MD5SUMS.txt` lines; `bytes`, `source_url`, `kind` `"reads"`, and `quality`, `"full"` or
@@ -1677,4 +1724,46 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   clear the thresholds for 25 of their 29 genes, SC-23's for 30 of 42.
 
 **Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
-locked for claims.
+locked for claims. `real` refuses a test donor unless `--split test` is given, and a dev donor in a `--split test`
+run; `--stop-after preprocess` takes any of them, since it scores nothing. Iterate on dev; score the test split once,
+for a claim.
+
+**The report (`real/real_report.md`, `report.real`).** It renders `real_summary.json`, and shows nothing the
+summary does not hold. Its first page is the summary:
+
+1. three header lines: the donors, split, cap, date and reference; the data (each run with its read quality, `full`
+   or `lite`, and the genotype sources with their versions); the pinned images' digests, IgBLAST's binary and the
+   checkpoint;
+2. the R1 headline on the shared arm, per donor and pooled (when two or more donors are scored), led by a one-line
+   bottom line, then its components and a one-line statistics note;
+3. the genotype arm, judged on known answers (below);
+4. at most 8 flags, the most severe first: a failed or unchecked truth self-check, a stopped donor (with its
+   evidence), a failed run (prediction ids that drifted from the reads included), SRA-Lite reads, a known-answer
+   yield below 5%, 25% or more of a tool's shared-arm calls in uncaptured genes, an assembly loss let through over
+   its line, AlignAIR assembly failures, and too few clonotypes for a verdict.
+
+The detail follows: R1 per donor with the paired means, exclusions per tool and reason, known answers, novel-allele
+reads, the sensitivity variants, D and J, protocol × isotype strata, preprocessing (the classifier's evidence, the
+assembly's failure rate against its 35% line, its failures by AssemblePairs' kind and the deciles of the pairs that
+passed and failed), AlignAIR's AIRR output, the truth self-check, failed runs and refusals, and the provenance.
+
+- **R1** (`real.v.unsupported`, lower is better) is the share of a tool's top-1 V calls the donor's genome does not
+  carry: `unsupported_allele`, `unsupported_gene` or `no_call`, over the calls not excluded. A call is supported
+  when it equals a donor allele exactly or through IMGT position 318 (Peres et al. 2023). Two tools are compared on
+  the paired reads, those neither call excludes, with tests clustered by clonotype and Holm within each comparison,
+  not across the report.
+- **Exclusions** come from the call's own genes and tool-neutral truth alone, never from whether the call is right
+  (see R1 per read above): `not_captured`, `novel_gene`, `nonfunctional` (Mikelov et al. 2024 leave nonfunctional
+  alleles out), `beyond_318` (no comparison through IMGT 318 is possible; Peres et al. 2023), `half_resolved`,
+  `dropped_truth` and the `unmapped` guard. Each run's counts per reason are shown, so steering reads into excluded
+  genes stays visible.
+- **Two sensitivity variants** sit beside the primary: R1 without the reads called, by either tool, to an SD3-only
+  gene (21 genes: those of the 33 of the paper's 137 novel alleles that no subject of the VDJbase genomic cohort
+  carries), and R1 with Mikelov et al. 2024's gene-support thresholds (at least 10 clonotypes and 3 naive clonotypes
+  per V gene among the known answers; `excluded:low_support`). The primary applies no threshold.
+- **The genotype arm's R1 is 0 by construction**: each tool may call only the donor's alleles in captured genes, so
+  every call not excluded is supported. That arm is judged on `known_top1` and `known_gene_top1`, missing calls, and
+  the share of calls that move into uncaptured genes, where R1 excludes them; each tool's arm delta (genotype −
+  shared) is informational.
+- AIRR row validity per tool is informational: AlignAIR writes a read's leading unaligned bases as a CIGAR `I` where
+  the AIRR standard has a soft clip, so the assay's AIRR reader flags most of its rows. R1 reads only the calls.
