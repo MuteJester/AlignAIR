@@ -137,7 +137,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the predict pipeline replayed stage by stage, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed), `identity` (the model key: `weights_sha256` and the AlignAIR code identity) and `api_predict` (the alignair-api runner's subprocess, run by module name: AlignAIR's public API on a FASTA, written as the CLI writes it) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318), the paper's novel alleles (`sd3_novel`, `sd3_only`) and the genotype arm's alleles (`arm_alleles`) | core, real.genotype |
 | `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the pilot pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
-| `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), the capture and resolved rules (`captured_genes`, `spanned_by_haplotype`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
+| `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_alignments`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), what each contig holds over each gene (`interval_bases`, `span_evidence`), the capture, uncalled and resolved rules (`captured_genes`, `spanned_by_haplotype`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
 | `real.preprocess` | annotation-free preprocessing of a real run (see Real data): the protocol classifier (`classify_protocol`), the pRESTO recipes (`recipe`) run in the pinned Immcantation container (`IMMCANTATION_IMAGE`), the primers (`VH_PRIMERS`, `C_PRIMERS_MULTIPLEX`, `CREGION_RC`), the cap (`cap_sequences`), the primer spans (`primer_spans`) and `preprocess_run` | core, real.preprocess |
 | `real.truth` | each real read's tool-neutral truth (see Real data): `RealTruth` and `real_truths`, the observed span (`observed_span`, `mask_primers`), IMGT codon 104 (`cys104_end`), the known answer (`known_match`, `known_answer`), the Cys104 anchor (`cys104_in_read`), the junction (`junction_by_motif`) and `clonotype_clusters` | core, real.genotype, real.truth |
 | `real.metrics` | R1 per read (see Real data): `SupportIndex` and `classify_v_call` (each call's class, on a read whose truth `is_documented` or not), the gene thresholds (`gene_support`, `passing_genes`), `shared_exclusions`, `exclusion_counts`, `real_case_scores` and the oracle self-check (`oracle_prediction`, `oracle_self_check`) | core, metrics, real.genotype, real.truth, real.metrics |
@@ -1499,17 +1499,8 @@ https only, with a 60 s timeout and at most two retries; nothing downloaded is e
   on a download that is not the pinned file, a conversion that is not the run's reads, or a file already there
   that is not the pinned one, which it leaves as it is.
 
-**Sub-layers.** Each module of `real/` is a layer of its own (see Layers and dependency rule). The rows, some ahead
-of their modules:
-
-| Layer | May import from `alignair_assay.` |
-|---|---|
-| `real.genotype` | core, real.genotype |
-| `real.truth` (pure) | core, real.genotype, real.truth |
-| `real.metrics` (pure) | core, metrics, real.genotype, real.truth, real.metrics |
-| `real.fetch` | core, real.fetch |
-| `real.locus` | core, real.genotype, real.locus |
-| `real.preprocess` | core, real.preprocess |
+**Sub-layers.** Each module of `real/` is a layer of its own, with its row in the table of Layers and dependency
+rule.
 
 **Donor genotypes (`real.genotype`).** Identity is the ungapped sequence, compared exactly; names are never matched
 across sources. The shared reference's V names are OGRDB F/G labels (`IGHVF6-G21*06`) without IUIS names, so:
@@ -1654,7 +1645,10 @@ directory. No V(D)J tool and no germline reference is used; the only sequences g
   the counts and pass rate of every step, the classifier's evidence, `accepted` and the assembly evidence, the
   image, the length distribution, the isotype split, the wall time and a fingerprint of the inputs' md5s, the
   module, the image and the parameters (`nproc` among them). A current record is reused; a refused or rejected one
-  never is. pRESTO's workers write in the order they finish, so the steps whose output depends on their input's
+  never is. A known limitation: the fingerprint covers `real/preprocess.py` alone, not the core helpers it calls
+  (`core.cases`, `core.container`, `core.layout`), so an edit to one of them reuses every run's preprocessing; remove
+  a run's `preprocess.json` to redo it. Keyed on them, any core edit would redo about two hours of preprocessing.
+  pRESTO's workers write in the order they finish, so the steps whose output depends on their input's
   order (`ClusterSets`, `AlignSets`, `CollapseSeq`) read it sorted by read id, and a rerun gives the same files.
 - On the pilot, W-97 (103,049 pairs) gives 70,327 unique sequences (capped to 50,000) in 210 s, 84% of its
   primer-matched pairs assembling; SC-23 (164,664 pairs) gives 10,733 in 352 s, 88% of its consensus pairs
@@ -1706,9 +1700,13 @@ another shared reference:
   offsets of the `N`s inside `[observed[0], cys_end)`, from the first observed base): the observed V window the
   tie-aware metrics compare germline sequences over. `cys104_regions(alleles)` gives each donor V allele's region
   through Cys104 with the identical-sequence rule.
-- On the pilot, W-97 has 5.7% known answers (5.6% naive); Cys104 is placed on 92.8% of its reads (66.5% by the
-  donor's anchors, 26.3% by the shared reference's), 88.0% have a junction, and 5,795 clusters hold two or more
-  reads (the largest 101). SC-23 has 25.9% (24.1%); 91.5% (90.7% and 0.8%), 88.9%, and 1,074 clusters (33). The
+- Known-answer yield: on the dev run (`.private/assay/p3a_dev`, 50,000 sequences per donor but SC-23's 10,733),
+  the documented known answers are 25.2% of SC-23's reads, 45.2% of SC-11's, 5.2% of W-97's and 3.5% of W-133's
+  (flagged: under 5%).
+- On Task 4's run, W-97 has 5.7% known answers, novel ones included (5.6% naive); Cys104 is placed on 92.8% of its
+  reads (66.5% by the donor's anchors, 26.3% by the shared reference's), 88.0% have a junction, and 5,795 clusters
+  hold two or more reads (the largest 101). SC-23 has 25.9% (24.1%); 91.5% (90.7% and 0.8%), 88.9%, and 1,074
+  clusters (33). The
   frame and length bounds left 1,075 of W-97's first-motif junctions and 175 of SC-23's out (out of frame or under
   15 nt); 320 and 56 of those reads end at a later in-frame motif, the rest are clonotypes of their own. W-97's
   genotype holds no IGHV4 gene while about a quarter of its reads are IGHV4, which the shared anchors place. Every

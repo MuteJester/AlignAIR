@@ -36,6 +36,7 @@ from alignair_assay.real.genotype import (
     sd3_novel,
     sd3_only,
     upto,
+    _indel_tokens,
     vdjbase_cohort_sequences,
 )
 from alignair_assay.real.locus import PRESENT, SpanEvidence, with_capture
@@ -332,6 +333,17 @@ def test_filter_d_drops_gap_indel_and_low_identity():
         ("IGHD2-8*01_c12g_a15g_17accagc22_a29g", "70.97% identity to the closest IMGT allele, under 90%"),
         ("IGHD3-22*01_a14t_c28-", "gap-indel token c28-; 83.33% identity to the closest IMGT allele, under 90%"),
     ]
+
+
+def test_a_block_whose_bases_do_not_fill_its_span_is_an_indel_token():
+    # ``17accagc22`` replaces positions 17 to 22 with six bases (substitutions); fewer or more bases than the span
+    # change the allele's length
+    assert _indel_tokens("IGHD2-8*01_17accagc22") == []
+    assert _indel_tokens("IGHD2-8*01_17acc22") == ["17acc22"]          # 3 bases for 6 positions
+    assert _indel_tokens("IGHD2-8*01_c12g_17accagcta22") == ["17accagcta22"]  # 8 bases for 6 positions
+    kept, dropped = filter_d([_d("IGHD2-8*01_17acc22", 95.0)])
+    assert kept == [] and dropped == [("IGHD2-8*01_17acc22", "gap-indel token 17acc22")]
+    assert _indel_tokens("IGHD2-8") == []  # no allele part
 
 
 # --- identical alleles and IMGT position 318 ----------------------------------------------------------------------

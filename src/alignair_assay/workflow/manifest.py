@@ -36,7 +36,8 @@ def changed_fields(previous: dict, current: dict, *, ignore: Iterable[str] = ())
     ignore = set(ignore)
     before = flat({key: value for key, value in (previous or {}).items() if key not in ignore})
     after = flat({key: value for key, value in current.items() if key not in ignore})
-    return [name for name in sorted(before.keys() | after.keys()) if before.get(name, ABSENT) != after.get(name, ABSENT)]
+    return [name for name in sorted(before.keys() | after.keys())
+            if before.get(name, ABSENT) != after.get(name, ABSENT)]
 
 
 def describe_changes(previous: dict, current: dict, changed: Iterable[str]) -> str:
