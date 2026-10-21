@@ -702,9 +702,9 @@ def test_the_cohort_lacks_33_of_the_papers_novel_alleles():
     from alignair_assay.real.fetch import cohort_files
 
     files = cohort_files(DATA)
-    sequences, stats = vdjbase_cohort_sequences(files["vdjbase_api"]["path"], files["ogrdb_rev9"]["path"])
+    sequences, stats = vdjbase_cohort_sequences(files["vdjbase_api"].path, files["ogrdb_rev9"].path)
     assert stats == {"subjects": 152, "documented_labels": 174, "undocumented_sequences": 267}
-    missing = sd3_missing(sequences, sd3_novel(files["sd3"]["path"]))
+    missing = sd3_missing(sequences, sd3_novel(files["sd3"].path))
     assert len(missing) == 33 and len(sd3_genes(missing)) == 21
 
 

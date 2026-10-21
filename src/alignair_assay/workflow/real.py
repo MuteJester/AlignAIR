@@ -16,10 +16,10 @@ and R1 without the reads called to the SD3-only genes (``workflow.real_score``).
 **Refusals**, each before any work, with nothing written (``check_config``, then ``run_real``): no donor, an unknown
 donor, a test donor without ``split="test"`` (or a dev donor in a test run), an unknown tool, a cap or thread count out
 of range, a missing data root, ``igblast`` without its release directory, ``alignair-api`` without its checkpoint
-file, an AlignAIR image not pinned by digest; then a cohort file of the sensitivity analysis missing or changed
-(``real.fetch.cohort_files``); then Docker missing, or a pinned image whose digest is not the pinned one
-(``real_steps.check_images``: sra-tools, samtools, Immcantation and the AlignAIR image); then a run directory made
-for another configuration, unless ``force``.
+file, an AlignAIR image not pinned by digest; then a cohort file of the sensitivity analysis that cannot be
+fetched from its pinned URL or is not the pinned file (``real.fetch.cohort_files``); then Docker missing, or a pinned
+image whose digest is not the pinned one (``real_steps.check_images``: sra-tools, samtools, Immcantation and the
+AlignAIR image); then a run directory made for another configuration, unless ``force``.
 
 **The manifest** (``real_manifest``) records the configuration and its ``identity``: the donors, split, cap, tools,
 reference, preprocessing options, pinned images and every tool's ``fingerprint()``. ``run_real`` refuses a run

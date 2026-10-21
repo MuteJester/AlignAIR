@@ -17,6 +17,7 @@ import io
 import json
 import os
 import urllib.error
+import urllib.parse
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -827,33 +828,65 @@ def test_the_pilot_genotype_files_are_verified_in_place(tmp_path, monkeypatch):
             assert record.detail["reused"] is True and record.md5 == spec.md5
 
 
-def test_the_cohort_files_are_verified_never_downloaded(tmp_path, monkeypatch):
-    monkeypatch.setattr(fetch, "download", _no_download)
+def test_the_cohort_files_are_pinned_https_urls_on_allowed_hosts():
+    assert set(fetch.COHORT_FILES) == {"vdjbase_api", "ogrdb_rev9", "sd3"}
+    for spec in fetch.COHORT_FILES.values():
+        parsed = urllib.parse.urlsplit(spec.url)
+        assert parsed.scheme == "https" and parsed.hostname in fetch.ALLOWED_HOSTS, spec.url
+        assert len(spec.md5) == 32 and spec.bytes > 0 and spec.path.startswith("genotypes/")
+    assert fetch.COHORT_FILES["vdjbase_api"].url == (
+        "https://vdjbase.org/api/v1/genomic/all_subjects_genotype/Homo%20sapiens")
+    assert fetch.COHORT_FILES["ogrdb_rev9"].url == "https://ogrdb.airr-community.org/api/germline/set/G00060/9/airr"
+    assert fetch.COHORT_FILES["sd3"].url.endswith("/41467_2023_40070_MOESM4_ESM.xlsx")
+
+
+def test_the_cohort_files_are_fetched_verified_and_reused(tmp_path, monkeypatch):
     payloads = {key: f"{key} bytes".encode() for key in fetch.COHORT_FILES}
     monkeypatch.setattr(fetch, "COHORT_FILES", {
-        key: (path, len(payloads[key]), hashlib.md5(payloads[key]).hexdigest(), source)
-        for key, (path, _, _, source) in fetch.COHORT_FILES.items()})
-    # a missing file is refused with where it comes from
-    with pytest.raises(FetchError, match="vdjbase_genomic_api"):
-        fetch.cohort_files(tmp_path)
-    for key, (path, _, _, _) in fetch.COHORT_FILES.items():
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / path).write_bytes(payloads[key])
-    files = fetch.cohort_files(tmp_path)
-    assert set(files) == {"vdjbase_api", "ogrdb_rev9", "sd3"}
-    assert files["sd3"]["path"] == tmp_path / fetch.COHORT_FILES["sd3"][0]
-    assert files["sd3"]["md5"] == hashlib.md5(payloads["sd3"]).hexdigest()
-    # a changed file is refused
-    (tmp_path / fetch.COHORT_FILES["sd3"][0]).write_bytes(b"sd3 bytez")
+        key: replace(spec, md5=_md5(payloads[key]), bytes=len(payloads[key]))
+        for key, spec in fetch.COHORT_FILES.items()})
+    calls: list = []
+    served = {spec.url: payloads[key] for key, spec in fetch.COHORT_FILES.items()}
+    monkeypatch.setattr(fetch, "download", _serving(served, calls))
+    # a fresh data root fetches them from their pinned URLs, verified and listed
+    records = fetch.cohort_files(tmp_path)
+    assert set(records) == {"vdjbase_api", "ogrdb_rev9", "sd3"} and sorted(calls) == sorted(served)
+    for key, record in records.items():
+        spec = fetch.COHORT_FILES[key]
+        assert record.path == tmp_path / spec.path and record.path.read_bytes() == payloads[key]
+        assert record.md5 == spec.md5 and record.source_url == spec.url and record.kind == spec.kind
+        assert spec.md5 in (record.path.parent / "MD5SUMS.txt").read_text()
+    # reused once there, and recorded for the manifest
+    assert all(record.detail["reused"] for record in fetch.cohort_files(tmp_path).values()) and len(calls) == 3
+    assert fetch_manifest(tmp_path)["cohort"]["sd3"]["md5"] == fetch.COHORT_FILES["sd3"].md5
+    # a file changed since is refused, and a download that is not the pinned file leaves nothing behind
+    sd3 = tmp_path / fetch.COHORT_FILES["sd3"].path
+    sd3.write_bytes(b"sd3 bytez")
     with pytest.raises(FetchError, match="md5"):
         fetch.cohort_files(tmp_path)
+    sd3.unlink()
+    served[fetch.COHORT_FILES["sd3"].url] = b"sd3 bytez"
+    with pytest.raises(FetchError, match="md5"):
+        fetch.cohort_files(tmp_path)
+    assert not sd3.exists() and not sd3.with_name(sd3.name + ".part").exists()
 
 
 @needs_data
-def test_the_cohort_files_are_the_pinned_ones():
-    files = fetch.cohort_files(DATA)
-    assert {key: record["md5"] for key, record in files.items()} == {
-        key: md5 for key, (_, _, md5, _) in fetch.COHORT_FILES.items()}
+def test_the_cohort_files_are_the_pinned_ones(tmp_path, monkeypatch):
+    root = _linked_root(tmp_path)
+    monkeypatch.setattr(fetch, "download", _no_download)
+    records = fetch.cohort_files(root)
+    assert {key: record.md5 for key, record in records.items()} == {
+        key: spec.md5 for key, spec in fetch.COHORT_FILES.items()}
+    assert all(record.detail["reused"] for record in records.values())
+
+
+@needs_network
+def test_the_cohort_files_download_from_their_pinned_urls(tmp_path):
+    records = fetch.cohort_files(tmp_path)
+    for key, record in records.items():
+        assert record.md5 == fetch.COHORT_FILES[key].md5 and not record.detail["reused"]
+        assert md5_file(record.path) == record.md5
 
 
 @needs_data

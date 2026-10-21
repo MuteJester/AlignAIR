@@ -22,6 +22,11 @@ has its own directory under the data root, with an ``MD5SUMS.txt`` this module k
   ``genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json`` (OGRDB's IGH_VDJ germline set G00060 rev 8,
   CC0) and ``genotypes/igenotyper/gene_coords.bed`` (IGenotyper's gene coordinates on its ``igh`` reference, at
   commit ``IGENOTYPER_COMMIT``, the last to change the file; earlier commits differ by one base at some gene ends).
+- The sensitivity analysis's cohort files (``COHORT_FILES``, ``cohort_files``):
+  ``genotypes/vdjbase_genomic_api/genomic_all_subjects_genotype_Homo_sapiens.json`` (VDJbase's public API v1, every
+  genomic subject's genotype), ``genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_9.json`` and
+  ``genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx`` (the paper's Supplementary Data, from the
+  journal's static content host), each from its pinned URL with its pinned md5.
 
 ``fetch_reads`` prefers ODP: its reads are ENA's, base for base and name for name (``ena_agreement`` compares the
 first ``QUALITY_RECORDS``), with the qualities ENA dropped. It falls back to the ENA FASTQs when the ODP object is
@@ -165,26 +170,16 @@ GENE_COORDS_FILE = (13_006, "2ca651322855248cb053d76b0e981738")
 
 # --- where things go, and how --------------------------------------------------------------------------------------
 
-# The cohort-level files the sensitivity analysis reads (``cohort_files``): key -> (path under the data root, bytes,
-# md5, source). VDJbase's genomic genotypes of every subject, OGRDB's IGH germline set rev 9 (the release those
-# genotypes name their documented alleles in) and Rodriguez et al. 2023's supplementary workbook (its Supplementary
-# Data 3 lists the paper's novel alleles). The pilot's reconnaissance downloaded them; they are verified here, never
-# downloaded, the API's and the journal's URLs not being pinned.
-COHORT_FILES: dict[str, tuple[str, int, str, str]] = {
-    "vdjbase_api": ("genotypes/vdjbase_genomic_api/genomic_all_subjects_genotype_Homo_sapiens.json", 6_019_375,
-                    "29c3ffae0478e5229107643ff9041840",
-                    "VDJbase API v1 genomic/all_subjects_genotype/Homo sapiens (CC0)"),
-    "ogrdb_rev9": ("genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_9.json", 2_369_576,
-                   "1c30b9ab4d0b17bd8c8497c740e56714",
-                   "https://ogrdb.airr-community.org/api/germline/set/G00060/9/airr (CC0)"),
-    "sd3": ("genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx", 204_909,
-            "8cfa14cb96358873623aa586369e5a94",
-            "Rodriguez et al. 2023, Nat Commun 14:4419, Supplementary Data 1-7 (CC BY 4.0)"),
-}
+# The cohort-level files of the sensitivity analysis (``COHORT_FILES``, ``cohort_files``): VDJbase's public API v1,
+# the journal's supplementary material (Rodriguez et al. 2023, Nat Commun 14:4419, doi:10.1038/s41467-023-40070-x).
+VDJBASE_API_URL = "https://vdjbase.org/api/v1/genomic/all_subjects_genotype/Homo%20sapiens"
+OGRDB_REV9_URL = "https://ogrdb.airr-community.org/api/germline/set/G00060/9/airr"
+SD3_URL = ("https://static-content.springer.com/esm/art%3A10.1038%2Fs41467-023-40070-x/MediaObjects/"
+           "41467_2023_40070_MOESM4_ESM.xlsx")
 
 # The hosts of the pinned sources: a download, or a redirect, anywhere else is refused.
 ALLOWED_HOSTS = frozenset({"sra-pub-run-odp.s3.amazonaws.com", "ftp.sra.ebi.ac.uk", "vdjbase.org",
-                           "ogrdb.airr-community.org", "raw.githubusercontent.com"})
+                           "ogrdb.airr-community.org", "raw.githubusercontent.com", "static-content.springer.com"})
 ENA_DIR = "airrseq"
 ODP_DIR = "airrseq_odp"
 RECORDS_DIR = "fetch"
@@ -481,20 +476,34 @@ def fetch_genotype_files(donor: str, data_root) -> dict[str, FetchRecord]:
     return records
 
 
-def cohort_files(data_root) -> dict[str, dict]:
-    """The cohort files (``COHORT_FILES``) under ``data_root``, each verified by size and md5 and never downloaded:
-    key -> ``{"path", "bytes", "md5", "source"}``. FetchError naming the file for one that is missing or is not the
-    pinned file."""
+# The cohort-level files the sensitivity analysis reads, as served on 2026-10-21 (``cohort_files``): VDJbase's genomic
+# genotypes of every subject (its public API v1, MiAIRR GenotypeSets, CC0), OGRDB's IGH germline set rev 9 (the
+# release those genotypes name their documented alleles in, CC0) and Rodriguez et al. 2023's supplementary workbook
+# (its Supplementary Data 3 lists the paper's novel alleles, CC BY 4.0). The API's JSON is served live: a VDJbase
+# update would change it, and the md5 then refuses it until the pin is moved.
+COHORT_FILES: dict[str, FileSpec] = {
+    "vdjbase_api": FileSpec("genotypes/vdjbase_genomic_api/genomic_all_subjects_genotype_Homo_sapiens.json",
+                            VDJBASE_API_URL, "29c3ffae0478e5229107643ff9041840", 6_019_375, "vdjbase_api",
+                            {"source": "VDJbase API v1 genomic/all_subjects_genotype/Homo sapiens", "licence": "CC0"}),
+    "ogrdb_rev9": FileSpec("genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_9.json", OGRDB_REV9_URL,
+                           "1c30b9ab4d0b17bd8c8497c740e56714", 2_369_576, "ogrdb",
+                           {"germline_set_id": "G00060", "release_version": 9, "licence": "CC0"}),
+    "sd3": FileSpec("genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx", SD3_URL,
+                    "8cfa14cb96358873623aa586369e5a94", 204_909, "sd3",
+                    {"source": "Rodriguez et al. 2023, Nat Commun 14:4419, Supplementary Data 1-7",
+                     "licence": "CC BY 4.0"}),
+}
+
+
+def cohort_files(data_root) -> dict[str, FetchRecord]:
+    """The cohort files (``COHORT_FILES``) under ``data_root``, each fetched from its pinned URL when it is missing
+    and verified by size and md5 (``fetch_file``: reused when already there, a download renamed only once verified),
+    keyed as there; their records are written to ``<data root>/fetch/cohort.json``. FetchError as ``fetch_file``
+    raises it."""
     root = Path(data_root)
-    found = {}
-    for key, (relative, size, md5, source) in COHORT_FILES.items():
-        path = root / relative
-        if not path.is_file():
-            raise FetchError(f"{path} is missing: the sensitivity analysis needs it ({source}; md5 {md5}); put it "
-                             "there, as the pilot's reconnaissance downloaded it")
-        _verify(path, md5, size, f"the {key} file")
-        found[key] = {"path": path, "bytes": size, "md5": md5, "source": source}
-    return found
+    records = {key: fetch_file(spec, root) for key, spec in COHORT_FILES.items()}
+    _write_json(root / RECORDS_DIR / "cohort.json", {key: record.to_json(root) for key, record in records.items()})
+    return records
 
 
 # --- the reads ---------------------------------------------------------------------------------------------------
@@ -918,16 +927,18 @@ def fetch_manifest(data_root) -> dict:
     """What has been fetched under ``data_root``, from the records ``fetch_reads`` and ``fetch_genotype_files``
     wrote, written to ``<data root>/fetch_manifest.json``: the pins (``sra_tools_image``, ``igenotyper``), this
     module's ``code_sha256``, ``reads`` (run -> record), ``quality`` (run -> "full" | "lite"), ``genotypes``
-    (donor -> file key -> record) and ``pending`` (the pilot runs and donors not fetched yet)."""
+    (donor -> file key -> record), ``cohort`` (``cohort_files``' records; None until fetched) and ``pending`` (the
+    pilot runs and donors not fetched yet)."""
     root = Path(data_root)
     reads = {path.stem: _read_json(path) for path in sorted((root / RECORDS_DIR / "reads").glob("*.json"))}
     genotypes = {path.stem: _read_json(path) for path in sorted((root / RECORDS_DIR / "genotypes").glob("*.json"))}
+    cohort = root / RECORDS_DIR / "cohort.json"
     manifest = {
         "kind": MANIFEST_KIND, "version": MANIFEST_VERSION, "data_root": str(root),
         "code_sha256": _CODE_SHA256, "sra_tools_image": SRA_TOOLS_IMAGE,
         "igenotyper": {"repository": IGENOTYPER_REPOSITORY, "commit": IGENOTYPER_COMMIT},
         "quality": {run: record["quality"] for run, record in reads.items()},
-        "reads": reads, "genotypes": genotypes,
+        "reads": reads, "genotypes": genotypes, "cohort": _read_json(cohort) if cohort.is_file() else None,
         "pending": {"reads": [run for run in PILOT_DONORS.values() if run not in reads],
                     "genotypes": [donor for donor in PILOT_DONORS if donor not in genotypes]},
     }

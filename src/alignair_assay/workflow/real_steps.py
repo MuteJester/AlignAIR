@@ -121,14 +121,15 @@ def sensitivity_genes(data_root) -> dict:
     """The genes the sensitivity analysis leaves out: those touched by the paper's novel alleles (Supplementary Data 3)
     that the whole VDJbase genomic cohort lacks (``real.genotype.vdjbase_cohort_sequences``, ``sd3_missing``,
     ``sd3_genes``), never only a run's donors. ``{"genes", "sd3_alleles", "missing_alleles", "cohort", "files"}``.
-    FetchError for a cohort file that is missing or is not the pinned one (``real.fetch.cohort_files``)."""
+    The cohort files are fetched from their pinned URLs when missing (``real.fetch.cohort_files``); FetchError for one
+    that cannot be fetched or is not the pinned file."""
     files = cohort_files(data_root)
-    sequences, cohort = vdjbase_cohort_sequences(files["vdjbase_api"]["path"], files["ogrdb_rev9"]["path"])
-    novel = sd3_novel(files["sd3"]["path"])
+    sequences, cohort = vdjbase_cohort_sequences(files["vdjbase_api"].path, files["ogrdb_rev9"].path)
+    novel = sd3_novel(files["sd3"].path)
     missing = sd3_missing(sequences, novel)
     return {"genes": sorted(sd3_genes(missing)), "sd3_alleles": len(novel), "missing_alleles": len(missing),
-            "cohort": cohort, "files": {key: {"path": str(found["path"]), "md5": found["md5"],
-                                              "source": found["source"]} for key, found in files.items()}}
+            "cohort": cohort, "files": {key: {"path": str(found.path), "md5": found.md5, "url": found.source_url}
+                                        for key, found in files.items()}}
 
 
 def fetch_inputs(donor: str, data_root, *, threads: int | None = None) -> Fetched:
