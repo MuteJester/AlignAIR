@@ -38,7 +38,7 @@ from alignair_assay.real.genotype import (
     upto,
     vdjbase_cohort_sequences,
 )
-from alignair_assay.real.locus import with_capture
+from alignair_assay.real.locus import PRESENT, SpanEvidence, with_capture
 
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
 
@@ -491,8 +491,10 @@ def test_the_cohorts_sequences_and_the_sd3_alleles_it_lacks(tmp_path):
 
 
 def test_a_genotype_round_trips_through_json(genotype):
-    captured = with_capture(genotype, {"IGHV1-2", "IGHV1-69D", "IGHV3-11"}, {"kind": "test"},
-                            haplotypes={0: {"IGHV1-2", "IGHV1-69D", "IGHV3-11"}, 1: set(), 2: set()})
+    evidence = [SpanEvidence(gene=gene, haplotype=0, contig="c=igh:1-9_h=0_i=0", aligned=296, deleted=0,
+                             state=PRESENT) for gene in ("IGHV1-2", "IGHV1-69D", "IGHV3-11")]
+    captured = with_capture(genotype, evidence, {"kind": "test"})
+    assert captured.uncalled == {"IGHV3-11"} and captured.captured and captured.resolved is not None
     for value in (genotype, captured):
         record = json.loads(json.dumps(genotype_to_json(value)))
         assert genotype_from_json(record) == value
@@ -564,7 +566,21 @@ def _arm_donor(iuis: IuisMap, *, d_truth: bool = False) -> RealGenotype:
     # IGHV3-11 is captured and not carried (a deletion); IGHV3-30 and IGHV4-34 are not captured.
     captured = frozenset({"IGHV1-2", "IGHV1-69", "IGHV1-69D", "IGHV3-23", "IGHV3-23D", "IGHV3-30-5", "IGHV3-62",
                           "IGHV3-11", *(("IGHD4-11",) if d_truth else ())})
-    return RealGenotype(donor="W-97", alleles=tuple(alleles), captured=captured)
+    resolved = captured  # IGHV3-11 is absent: deleted on every capturing contig, so known on both haplotypes
+    return RealGenotype(donor="W-97", alleles=tuple(alleles), captured=captured, resolved=resolved,
+                        uncalled=frozenset())
+
+
+def test_arm_alleles_keeps_every_allele_of_a_gene_whose_truth_is_incomplete(arm_iuis):
+    donor = _arm_donor(arm_iuis)
+    restricted = set(arm_alleles(donor, ARM_REFERENCE, arm_iuis))
+    assert "IGHVF3-G11*01" not in restricted and "IGHVF1-G1*02" not in restricted
+    # IGHV3-11 is spanned and not called, but the contigs hold it: not a gene the donor lacks, so its alleles stay
+    uncalled = replace(donor, uncalled=frozenset({"IGHV3-11"}))
+    assert set(arm_alleles(uncalled, ARM_REFERENCE, arm_iuis)) == restricted | {"IGHVF3-G11*01"}
+    # IGHV1-2 is carried but an allele on one haplotype is unknown: any of its alleles may be the donor's
+    unresolved = replace(donor, resolved=donor.resolved - {"IGHV1-2"})
+    assert set(arm_alleles(unresolved, ARM_REFERENCE, arm_iuis)) == restricted | {"IGHVF1-G1*02"}
 
 
 def test_arm_alleles_keeps_shared_for_missing_segments(arm_iuis):
@@ -615,7 +631,7 @@ def test_arm_alleles_keeps_a_paralog_allele_by_any_of_its_genes(arm_iuis):
 def test_arm_alleles_never_empty_letter(arm_iuis):
     # A donor with few V genes and no D/J truth (W-97, W-133): every gene letter keeps alleles.
     few = RealGenotype(donor="W-133", alleles=(_carried(arm_iuis, "IGHV1-2*02", ARM_V["IGHVF1-G1*01"][0]),),
-                       captured=frozenset({"IGHV1-2"}))
+                       captured=frozenset({"IGHV1-2"}), resolved=frozenset({"IGHV1-2"}), uncalled=frozenset())
     kept = arm_alleles(few, ARM_REFERENCE, arm_iuis)
     assert {ARM_REFERENCE.gene_letter(name) for name in kept} == {"v", "d", "j"}
     assert "IGHVF1-G1*01" in kept and "IGHVF1-G1*02" not in kept
@@ -625,7 +641,8 @@ def test_arm_alleles_never_empty_letter(arm_iuis):
     path = Path(arm_iuis.source["path"])
     small_iuis = IuisMap.from_ogrdb(path, small)
     lacking = RealGenotype(donor="W-97", alleles=(_carried(small_iuis, "IGHV7-81*01", _random(296, 35)),),
-                           captured=frozenset({"IGHV1-2", "IGHV7-81"}))
+                           captured=frozenset({"IGHV1-2", "IGHV7-81"}), resolved=frozenset({"IGHV1-2", "IGHV7-81"}),
+                           uncalled=frozenset())
     with pytest.raises(ValueError, match="no v allele"):
         arm_alleles(lacking, small, small_iuis)
 
@@ -634,6 +651,9 @@ def test_arm_alleles_refuses_inconsistent_inputs(arm_iuis, iuis):
     donor = _arm_donor(arm_iuis)
     with pytest.raises(ValueError, match="captured"):
         arm_alleles(replace(donor, captured=None), ARM_REFERENCE, arm_iuis)
+    for unknown in ("resolved", "uncalled"):
+        with pytest.raises(ValueError, match="uncalled genes are unknown"):
+            arm_alleles(replace(donor, **{unknown: None}), ARM_REFERENCE, arm_iuis)
     with pytest.raises(ValueError, match="another reference"):
         arm_alleles(donor, ARM_REFERENCE, iuis)
     # A donor allele mapped against another reference names a shared allele this one does not hold.
@@ -708,7 +728,8 @@ def test_the_cohort_lacks_33_of_the_papers_novel_alleles():
     assert len(missing) == 33 and len(sd3_genes(missing)) == 21
 
 
-ARM_V_KEPT = {"SC-23": 111, "SC-4": 102, "SC-11": 110, "SC-6": 95, "W-97": 114, "W-89": 92, "W-133": 117, "W-131": 95}
+ARM_V_KEPT = {"SC-23": 114, "SC-4": 108, "SC-11": 114, "SC-6": 103, "W-97": 123, "W-89": 103, "W-133": 129,
+              "W-131": 105}
 
 
 @pytest.mark.skipif(not DATA or os.environ.get("ALIGNAIR_ASSAY_DOCKER") != "1",
@@ -722,7 +743,7 @@ def test_the_pilot_donors_genotype_arms(reference):
     kept_v = {}
     for donor, sample in PILOT.items():
         genotype = donor_capture(load_vdjbase_csv(samples / f"{sample}.csv", donor, reference, iuis),
-                                 samples / f"{sample}.bam", root / "genotypes/igenotyper/gene_coords.bed")
+                                 samples / f"{sample}.bam", root / "genotypes/igenotyper/gene_coords.bed", iuis)
         kept = arm_alleles(genotype, reference, iuis)
         by_letter = {letter: {name for name in kept if reference.gene_letter(name) == letter} for letter in "vdj"}
         # D and J are never restricted; V keeps every donor allele's shared name and is restricted

@@ -44,8 +44,9 @@ carry no IUIS name, and VDJbase names a novel allele after its closest IMGT alle
 - ``merge_identical``: each shared allele and the shared alleles with its exact sequence (D4-4*01 / D4-11*01 and
   D5-5*01 / D5-18*01 on HUMAN_IGH_OGRDB; each V paralog pair is already one shared allele with two labels).
 - ``arm_alleles``: the shared alleles a tool is restricted to in a donor's genotype arm. Only V is restricted, and
-  only where the truth exists: a captured gene keeps the donor's shared alleles, while an uncaptured gene, a gene
-  carried only with alleles absent from the shared reference, and every D and J allele keep all of theirs.
+  only where the truth exists: a resolved captured gene keeps the donor's shared alleles, while an uncaptured gene,
+  an uncalled one, a carried one not resolved, a gene carried only with alleles absent from the shared reference,
+  and every D and J allele keep all of theirs.
 - ``upto``: an allele through IMGT position 318, ungapped. Two V alleles that differ only beyond it cannot be told
   apart from rearranged reads (Peres et al. 2023, PIgLET); on HUMAN_IGH_OGRDB that is ``IGHVF3-G9*04`` and
   ``IGHVF3-G9*04_A319G``.
@@ -147,6 +148,9 @@ class RealGenotype:
     resolved: frozenset[str] | None = None
     # the D calls ``filter_d`` dropped, in file order; not among ``alleles``
     dropped: tuple[RealAllele, ...] = ()
+    # the genes the contigs span and hold, which the genotype does not call (``real.locus.with_capture``): not genes
+    # the donor lacks; None until that is known
+    uncalled: frozenset[str] | None = None
 
     def dropped_genes(self) -> set[str]:
         """The genes whose only calls ``filter_d`` dropped: their truth is dropped, so a gene there is not one the
@@ -441,17 +445,20 @@ def arm_alleles(genotype: RealGenotype, reference: Reference, iuis: IuisMap) -> 
     - one of its IUIS genes (``iuis.genes``: two for a paralog pair) is not in ``genotype.captured``, or it has none
       (no truth names its gene; none on ``HUMAN_IGH_OGRDB``);
     - one of its IUIS genes is carried only with alleles absent from the shared reference: there is no shared
-      allele to restrict that gene to, and R1 excludes it anyway.
+      allele to restrict that gene to, and R1 excludes it anyway;
+    - one of its IUIS genes is ``uncalled`` (the contigs hold it, the genotype does not call it), or carried and not
+      ``resolved`` (an allele on one haplotype is unknown): the truth there is incomplete.
 
-    So a captured gene the donor carries keeps only the donor's shared alleles, and a captured gene it lacks keeps
-    none. Every D and J allele is kept: genomic D and J truth is thin and noisy, and the arm targets V.
+    So a resolved captured gene the donor carries keeps only the donor's shared alleles, and a captured gene it lacks
+    (absent on every capturing contig) keeps none. Every D and J allele is kept: genomic D and J truth is thin and
+    noisy, and the arm targets V.
 
-    ValueError when the captured genes are unknown (``real.locus.with_capture`` sets them), ``iuis`` was built
-    against another reference, a donor allele's shared name is not in ``reference`` (mapped against another), or a
-    gene letter is left with no allele, which a tool would read as unrestricted."""
-    if genotype.captured is None:
-        raise ValueError(f"{genotype.donor}: the captured genes are unknown; the genotype arm restricts only "
-                         "captured genes (real.locus.with_capture)")
+    ValueError when the captured, resolved or uncalled genes are unknown (``real.locus.with_capture`` sets them),
+    ``iuis`` was built against another reference, a donor allele's shared name is not in ``reference`` (mapped
+    against another), or a gene letter is left with no allele, which a tool would read as unrestricted."""
+    if genotype.captured is None or genotype.resolved is None or genotype.uncalled is None:
+        raise ValueError(f"{genotype.donor}: the captured, resolved or uncalled genes are unknown; the genotype arm "
+                         "restricts only captured genes the truth resolves (real.locus.with_capture)")
     if iuis.reference_digest != reference.digest():
         raise ValueError(f"the IUIS map was built against another reference (digest {iuis.reference_digest[:12]}, "
                          f"not {reference.digest()[:12]})")
@@ -462,12 +469,13 @@ def arm_alleles(genotype: RealGenotype, reference: Reference, iuis: IuisMap) -> 
                          "does not hold (mapped against another reference)")
     carried = {allele.gene for allele in genotype.alleles}
     only_absent = {gene for gene in carried if not any(allele.shared for allele in genotype.carried(gene))}
+    incomplete = only_absent | set(genotype.uncalled) | (carried - genotype.resolved)
     kept = []
     for letter, table in reference.alleles.items():
         for name in table:
             genes = iuis.genes(name) if letter == "v" else ()
             if (letter != "v" or name in donor_shared or not genes
-                    or any(gene not in genotype.captured or gene in only_absent for gene in genes)):
+                    or any(gene not in genotype.captured or gene in incomplete for gene in genes)):
                 kept.append(name)
     for letter in reference.alleles:
         if not any(reference.gene_letter(name) == letter for name in kept):
@@ -591,8 +599,8 @@ def vdjbase_cohort_sequences(api_json, ogrdb_json) -> tuple[frozenset[str], dict
 
 def genotype_to_json(genotype: RealGenotype) -> dict:
     """``genotype`` as JSON-ready data, which ``genotype_from_json`` reads back equal: its ``donor``, ``alleles`` and
-    ``dropped`` D calls (every field, tuples as lists), its ``captured`` and ``resolved`` genes (sorted; None until
-    known) and its ``source``."""
+    ``dropped`` D calls (every field, tuples as lists), its ``captured``, ``resolved`` and ``uncalled`` genes (sorted;
+    None until known) and its ``source``."""
     def allele(record: RealAllele) -> dict:
         return {field_.name: list(value) if isinstance(value, tuple) else value
                 for field_ in fields(RealAllele) for value in (getattr(record, field_.name),)}
@@ -601,6 +609,7 @@ def genotype_to_json(genotype: RealGenotype) -> dict:
             "dropped": [allele(record) for record in genotype.dropped],
             "captured": None if genotype.captured is None else sorted(genotype.captured),
             "resolved": None if genotype.resolved is None else sorted(genotype.resolved),
+            "uncalled": None if genotype.uncalled is None else sorted(genotype.uncalled),
             "source": genotype.source}
 
 
@@ -610,10 +619,11 @@ def genotype_from_json(record: dict) -> RealGenotype:
         return RealAllele(**{key: tuple(value) if key in ("shared", "iuis") else value for key, value in data.items()})
 
     try:
-        captured, resolved = record["captured"], record["resolved"]
+        captured, resolved, uncalled = record["captured"], record["resolved"], record["uncalled"]
         return RealGenotype(donor=record["donor"], alleles=tuple(allele(data) for data in record["alleles"]),
                             captured=None if captured is None else frozenset(captured),
                             resolved=None if resolved is None else frozenset(resolved),
+                            uncalled=None if uncalled is None else frozenset(uncalled),
                             dropped=tuple(allele(data) for data in record["dropped"]),
                             source=dict(record["source"]))
     except (KeyError, TypeError) as error:

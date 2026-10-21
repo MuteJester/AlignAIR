@@ -561,8 +561,8 @@ def _genotype_block(genotype: RealGenotype, alleles: list[str] | None, reference
             "captured": len(genotype.captured or ()), "resolved": len(genotype.resolved or ()),
             "absent_genes": sorted(genotype.absent_genes()), "dropped_d": len(genotype.dropped),
             "arm_v_alleles": None if alleles is None else sum(reference.gene_letter(name) == "v" for name in alleles),
-            "capture": {key: capture.get(key) for key in ("spanned_not_carried", "carried_not_spanned",
-                                                           "half_resolved")},
+            "capture": {key: capture.get(key) for key in ("spanned_not_carried", "carried_not_spanned", "uncalled",
+                                                           "absent", "half_resolved", "unknown_haplotypes")},
             "ogrdb": genotype.source.get("ogrdb")}
 
 

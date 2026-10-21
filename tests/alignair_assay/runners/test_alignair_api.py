@@ -325,7 +325,7 @@ def test_api_genotype_arm_on_real_w97_reads(reference, tmp_path):
     samples = root / "genotypes/vdjbase_genomic_samples"
     iuis = IuisMap.from_ogrdb(root / "genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json", reference)
     genotype = donor_capture(load_vdjbase_csv(samples / "P25_I151_S1.csv", "W-97", reference, iuis),
-                             samples / "P25_I151_S1.bam", root / "genotypes/igenotyper/gene_coords.bed")
+                             samples / "P25_I151_S1.bam", root / "genotypes/igenotyper/gene_coords.bed", iuis)
     alleles = arm_alleles(genotype, reference, iuis)
     allowed_v = {name for name in alleles if reference.gene_letter(name) == "v"}
     reads = dict(evenly_spaced(read_fasta(RunLayout(RUN).real_reads("W-97")), 50))

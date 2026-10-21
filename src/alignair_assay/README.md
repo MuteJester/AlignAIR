@@ -1521,12 +1521,12 @@ across sources. The shared reference's V names are OGRDB F/G labels (`IGHVF6-G21
   IMGT-gapped forms agree through 318, or it is a 3' prefix of one that reaches 318. That makes the two
   IGHV3-13*06 and IGHV3-43D*05, and `unmapped()` empty.
 - `load_vdjbase_csv(path, donor, reference, iuis_map)` gives a `RealGenotype` (`donor`, `alleles`, `captured`,
-  `source`, `resolved`, `dropped`) of `RealAllele` records (`allele_id`, `gene`, `segment`, `sequence`,
+  `source`, `resolved`, `dropped`, `uncalled`) of `RealAllele` records (`allele_id`, `gene`, `segment`, `sequence`,
   `gapped`, `haplotype`, `functional`, `shared`, `iuis`, `imgt_identity`), one per haplotype per gene. Haplotype 0
   is unphased, not homozygous. `gapped` is VDJbase's V-REGION-GAPPED, whose gaps are `.` columns and `-` for a
   deleted base. `RealGenotype.carried(gene)`, `genes(segment)` (every carried gene, functional or not) and
-  `absent_genes()` (genes with an allele absent from the shared reference) read it; `captured` and `resolved` stay
-  None until the contig spans are known. The shared reference's own gapped V sequences are
+  `absent_genes()` (genes with an allele absent from the shared reference) read it; `captured`, `resolved` and
+  `uncalled` stay None until the contigs are read (`real.locus`). The shared reference's own gapped V sequences are
   `Reference.gapped(name)`, from the dataconfig.
 - `functional` is False when VDJbase's `notes` flag a V-REGION defect: a stop codon, a first or second cysteine or
   the conserved tryptophan not found, or a V-REGION length mismatch. On the eight pilot donors this reproduces
@@ -1548,20 +1548,21 @@ across sources. The shared reference's V names are OGRDB F/G labels (`IGHVF6-G21
 - `arm_alleles(genotype, reference, iuis)` is the shared alleles a tool is restricted to in the donor's genotype arm,
   sorted. Only V is restricted, and only where the truth exists. A shared V allele is kept when it is a donor
   allele's `shared` name (functional or not), when one of its IUIS genes (two for a paralog pair) is not
-  `captured` or it has none, or when one of its IUIS genes is carried only with alleles absent from the shared
-  reference (nothing to restrict that gene to; R1 excludes it anyway). So a captured gene the donor carries keeps
-  the donor's shared alleles, and a captured gene it lacks keeps none. Every D and J allele is kept: genomic D and J
-  truth is thin and noisy, and the arm targets V. It refuses a genotype whose `captured` is unknown, a map built
-  against another reference, and a gene letter left empty. The pilot donors keep 111 (SC-23), 102 (SC-4),
-  110 (SC-11), 95 (SC-6), 114 (W-97), 92 (W-89), 117 (W-133) and 95 (W-131) of the 198 V alleles, and all 33 D
-  and 7 J.
+  `captured` or it has none, when one of its IUIS genes is carried only with alleles absent from the shared
+  reference (nothing to restrict that gene to; R1 excludes it anyway), or when one of its IUIS genes is `uncalled` or
+  carried and not `resolved` (the truth there is incomplete). So a resolved captured gene the donor carries keeps
+  the donor's shared alleles, and a gene every capturing contig shows deleted keeps none. Every D and J allele is
+  kept: genomic D and J truth is thin and noisy, and the arm targets V. It refuses a genotype whose `captured`,
+  `resolved` or `uncalled` is unknown, a map built against another reference, and a gene letter left empty. The
+  pilot donors keep 114 (SC-23), 108 (SC-4), 114 (SC-11), 103 (SC-6), 123 (W-97), 103 (W-89), 129 (W-133) and
+  105 (W-131) of the 198 V alleles, and all 33 D and 7 J.
 
 **Captured genes (`real.locus`).** R1 counts a call to a gene the donor lacks as `unsupported_gene` only where the
-donor's long reads resolve that gene's region; a call to a gene in a region they do not resolve is excluded. A gene
-is captured when the donor carries an allele of it (any segment, any haplotype), or when its interval on
-IGenotyper's `igh` reference (`gene_coords.bed`) lies wholly inside one contig of haplotype 0 (unphased), or inside
-a contig of haplotype 1 and a contig of haplotype 2. Two contigs that cover a gene only together, or a partial
-overlap, do not capture it.
+donor's long reads show the gene deleted; a call to a gene in a region they do not resolve, or one they hold and
+VDJbase does not call, is excluded. A gene is captured when the donor carries an allele of it (any segment, any
+haplotype), or when its interval on IGenotyper's `igh` reference (`gene_coords.bed`) lies wholly inside one contig
+of haplotype 0 (unphased), or inside a contig of haplotype 1 and a contig of haplotype 2. Two contigs that cover a
+gene only together, or a partial overlap, do not capture it.
 
 - The haplotype is the contig name's `h=` (`c=igh:<start>-<end>_h=<0|1|2>_...`), the block haplotype IGenotyper
   assembled it from. The `RG` tag is per-alignment SNV phasing (RG 0: no phased SNV under the alignment), not the
@@ -1577,20 +1578,43 @@ overlap, do not capture it.
   all the same.
 - `contig_spans(bam)` runs `samtools view` in `SAMTOOLS_IMAGE` (biocontainers samtools 1.23.1, pinned by digest)
   as the current user, with no network and no capabilities, on the BAM's directory alone mounted read-only, and
-  kills the container by name on a timeout; only its SAM text is parsed (`parse_sam_spans`).
-  `donor_capture(genotype, bam, bed)` returns the genotype with `captured` set and, in `source["capture"]`, the
-  image, the whole command, the SHA-256s of the inputs (the genotype's CSV among them, since every carried gene is
-  captured) and of the module, a `fingerprint` of those, the spans per haplotype,
-  and the gene lists `spanned`, `carried_not_spanned` and `spanned_not_carried` (candidate deletions or assembly
-  gaps). Its BAM must be the genotype's VDJbase sample.
-- On the pilot donors the contigs span 40 to 52 V genes. Calls to V genes the donor lacks can be `unsupported_gene`
-  only for 0 to 3 genes per donor (IGHV4-30-2 on SC-23; IGHV3-11, IGHV3-15 and IGHV4-30-2 on W-97; IGHV4-31 on
-  SC-4); calls to the donor's other missing genes are excluded.
-- A gene is resolved (`RealGenotype.resolved`) when both haplotypes are known there: a haplotype-0 contig spans it
-  or carries an allele of it, or each of haplotypes 1 and 2 does (`spanned_by_haplotype` gives the spans per
-  haplotype). A carried gene that is not resolved has an unknown second allele, so R1 excludes an allele-level
-  unsupported call to it; `source["capture"]["half_resolved"]` lists them: 1 to 3 V genes per pilot donor
-  (IGHV3-15 and IGHV3-62 on SC-23, IGHV3-62 on W-97).
+  kills the container by name on a timeout; only its SAM text is parsed (`parse_sam_alignments`, each primary
+  record's haplotype, span, CIGAR, SEQ and contig; `parse_sam_spans` is its spans).
+- What a contig holds over a gene (`span_evidence`, from `interval_bases`: the bases aligned over the gene's
+  interval, insertions inside it included, and its bases deleted) is one of: `deleted` (deletions cover half the
+  interval or more, or under half of it is aligned); `carried` (the bases exactly contain, or are contained in, a
+  carried allele of the gene, either strand); or `present` (anything else; a record without SEQ counts as present).
+  For a gene the donor does not carry, the closest OGRDB rev 8 label names what a present contig holds, for the
+  report only: "an allele of the gene" or "another gene's sequence" at 98% identity over 95% of the label, else "no
+  allele closely". No identity threshold decides a class.
+- A gene spanned and not carried is `uncalled` (`RealGenotype.uncalled`, excluded from R1 as `excluded:uncalled`)
+  when any alignment of the clause that captured it (every haplotype-0 one, or those of haplotypes 1 and 2) is
+  present, and `absent` (a call to it is `unsupported_gene`) only when every one is deleted. VDJbase's genotype can
+  miss a gene its contigs hold: W-97's IGHV3-15 is 302 of 302 identical to IGHV3-15*01 on an unphased contig, and
+  its IGHV4-30-2 interval holds IGHV4-28*01 (a copy-number region, not evidence the gene is absent).
+- A carried gene is resolved (`RealGenotype.resolved`) when both haplotypes are known there. A haplotype with a call
+  is known; one without is known only when every alignment of it spanning the gene is deleted there or holds a
+  carried allele exactly. Haplotype 0 is unphased, not homozygous: an unphased call, or haplotype-0 alignments that
+  all hold a carried allele, resolve the gene, and a haplotype-0 alignment holding another sequence leaves it
+  unresolved. A carried gene not resolved is `half_resolved` (its region not spanned on one haplotype, or spanned
+  but not called), and R1 excludes every call to it.
+- `donor_capture(genotype, bam, bed, iuis)` returns the genotype with `captured`, `resolved` and `uncalled` set
+  and, in `source["capture"]`, the image, the whole command, the SHA-256s of the inputs (the genotype's CSV, since
+  every carried gene is captured, and the IUIS map's OGRDB file, which names what the contigs hold) and of the
+  module, a `fingerprint` of those, the spans per haplotype, the gene lists `spanned`, `carried_not_spanned`,
+  `spanned_not_carried` (spanned, not called: `uncalled` and `absent` together), `absent` and `half_resolved`, each
+  `uncalled` gene's capturing alignments (haplotype, contig, bases aligned and deleted, state, label, identity and
+  what it holds) and each half-resolved gene's `unknown_haplotypes` with why. Its BAM must be the genotype's
+  VDJbase sample.
+- On the pilot donors the contigs span 40 to 52 V genes, and no gene is absent: no call on them can be
+  `unsupported_gene`. Uncalled: IGHV4-30-2 on SC-23 (its contig holds IGHV4-30-2*01); IGHV3-11, IGHV3-15 and
+  IGHV4-30-2 on W-97; IGHV4-31 on SC-4; D genes only on SC-6, W-89 and W-131; none on SC-11 and W-133. Half
+  resolved: 1 to 5 V genes per donor (IGHV3-15, IGHV3-62 and IGHV4-28 on SC-23; IGHV3-62 on W-97; IGHV3-7,
+  IGHV3-21, IGHV3-30, IGHV3-30-5 and IGHV3-48 on W-133). Every VDJbase call whose gene a contig of its haplotype
+  spans is held exactly by one of them (the gated test).
+- The trade-off: excluding uncalled genes takes a tool's real errors into them out of R1 as well. On the dev run,
+  AlignAIR calls IGHV4-30-2 on SC-23 reads that exactly match IGHV4-59 or IGHV4-NL1; the report counts, per tool,
+  the reads only its own call takes out of R1, and the documented known answers among them.
 
 **Preprocessing (`real.preprocess`).** Each run's pairs become the unique sequences the tools are given, with pRESTO
 0.7.9 in `IMMCANTATION_IMAGE` (immcantation/suite 4.8.0, pinned by digest), one container per step: as the current
@@ -1681,14 +1705,16 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
 - Exclusions (`EXCLUSIONS`) are decided from the call's own IUIS label genes and tool-neutral truth alone, never
   from whether the call is right: a right and a wrong call to the same genes are excluded alike, and a call is
   excluded when any of its genes is. The reasons: `dropped_truth` (the gene's only calls were dropped by
-  `filter_d`), `not_captured`, `unmapped` (a guard: no gene at all; none on HUMAN_IGH_OGRDB), `novel_gene` (the
+  `filter_d`), `not_captured`, `uncalled` (spanned and not carried, and a capturing contig holds it; V, D and J),
+  `unmapped` (a guard: no gene at all; none on HUMAN_IGH_OGRDB), `novel_gene` (the
   gene has a donor allele absent from the shared reference, of any functionality; not for a V call on a documented
   known answer, one whose allele set is not entirely absent from the shared reference (a set may mix the two),
   whose V is a donor allele in the shared reference: `classify_v`, `read_calls` and `classify_v_call` require the
   read's truth by keyword, the same for both tools), `nonfunctional` (the gene is carried only as nonfunctional
   alleles),
   `beyond_318` (a functional donor allele of the gene has no usable IMGT-gapped form; none on the pilot donors),
-  `half_resolved` (the gene is carried but not resolved, so its unknown allele could be any call) and, in the
+  `half_resolved` (the gene is carried but not resolved: an allele on one haplotype is unknown, its region not
+  spanned or spanned but not called, so it could be any call) and, in the
   gene-support sensitivity variant only, `low_support` (the V gene has fewer than 10 clonotypes or 3 naive
   clonotypes among the known answers; a known answer of several genes counts toward each).
 - The R1 primary applies no gene-support threshold (this supersedes design §6). A gene the donor does not carry has
@@ -1702,8 +1728,9 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   carries it), exactly or through IMGT position 318, the two taken together (`through_318`; alleles that differ only
   past it cannot be told apart from rearranged reads, Peres et al. 2023): a call of `IGHVF3-G9*04_A319G` is
   supported for a donor carrying `IGHVF3-G9*04`. Otherwise it is `unsupported_allele` (a gene of the call is
-  carried, not this allele), `unsupported_gene` (none is carried and their regions are captured) or `no_call` (no
-  top-1 call; every read is an IGH amplicon).
+  carried, not this allele), `unsupported_gene` (none is carried, and every capturing contig shows it deleted) or
+  `no_call` (no top-1 call; every read is an IGH amplicon). `SupportIndex` refuses a genotype without its capture
+  (`captured`, `resolved` and `uncalled`).
 - `SupportIndex` refuses a shared reference with a V allele without a usable IMGT-gapped form (it names them), so
   every call can be compared through 318; HUMAN_IGH_OGRDB's dataconfig gives all 198 one. Light-chain or other loci
   (P3c, P4) will need this guard revisited.
@@ -1742,7 +1769,8 @@ summary does not hold. Its first page is the summary:
 3. the genotype arm, judged on known answers (below);
 4. at most 8 flags, the most severe first: a failed or unchecked truth self-check, a stopped donor (with its
    evidence), a failed run (prediction ids that drifted from the reads included), SRA-Lite reads, a known-answer
-   yield below 5%, 25% or more of a tool's shared-arm calls in uncaptured genes, an assembly loss let through over
+   yield below 5%, 25% or more of a tool's shared-arm calls in genes without truth (not captured, or uncalled), an
+   assembly loss let through over
    its line, AlignAIR assembly failures, and too few clonotypes for a verdict.
 
 The detail follows: R1 per donor with the paired means, exclusions per tool and reason, known answers, novel-allele
@@ -1756,17 +1784,18 @@ passed and failed), AlignAIR's AIRR output, the truth self-check, failed runs an
   the paired reads, those neither call excludes, with tests clustered by clonotype and Holm within each comparison,
   not across the report.
 - **Exclusions** come from the call's own genes and tool-neutral truth alone, never from whether the call is right
-  (see R1 per read above): `not_captured`, `novel_gene`, `nonfunctional` (Mikelov et al. 2024 leave nonfunctional
-  alleles out), `beyond_318` (no comparison through IMGT 318 is possible; Peres et al. 2023), `half_resolved`,
-  `dropped_truth` and the `unmapped` guard. Each run's counts per reason are shown, so steering reads into excluded
-  genes stays visible.
+  (see R1 per read above): `not_captured`, `uncalled`, `novel_gene`, `nonfunctional` (Mikelov et al. 2024 leave
+  nonfunctional alleles out), `beyond_318` (no comparison through IMGT 318 is possible; Peres et al. 2023),
+  `half_resolved`, `dropped_truth` and the `unmapped` guard. Each run's counts per reason are shown, so steering
+  reads into excluded genes stays visible, and a table names, per donor, where its genomic truth stops: its uncalled
+  genes with what a contig holds there, its absent genes and its half-resolved genes.
 - **Two sensitivity variants** sit beside the primary: R1 without the reads called, by either tool, to an SD3-only
   gene (21 genes: those of the 33 of the paper's 137 novel alleles that no subject of the VDJbase genomic cohort
   carries), and R1 with Mikelov et al. 2024's gene-support thresholds (at least 10 clonotypes and 3 naive clonotypes
   per V gene among the known answers; `excluded:low_support`). The primary applies no threshold.
-- **The genotype arm's R1 is 0 by construction**: each tool may call only the donor's alleles in captured genes, so
-  every call not excluded is supported. That arm is judged on `known_top1` and `known_gene_top1`, missing calls, and
-  the share of calls that move into uncaptured genes, where R1 excludes them; each tool's arm delta (genotype −
-  shared) is informational.
+- **The genotype arm's R1 is 0 by construction**: each tool may call only the donor's alleles in the genes the truth
+  resolves, so every call not excluded is supported. That arm is judged on `known_top1` and `known_gene_top1`,
+  missing calls, and the share of calls that move into genes without truth (not captured, or uncalled), where R1
+  excludes them; each tool's arm delta (genotype − shared) is informational.
 - AIRR row validity per tool is informational: AlignAIR writes a read's leading unaligned bases as a CIGAR `I` where
   the AIRR standard has a soft clip, so the assay's AIRR reader flags most of its rows. R1 reads only the calls.

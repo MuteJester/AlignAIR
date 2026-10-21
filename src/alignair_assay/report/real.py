@@ -45,7 +45,8 @@ FLAG_ITEMS = 4
 # A donor with fewer documented known answers than this share of its reads is flagged. The summary's own
 # ``low_known_yield`` (``workflow.real.KNOWN_YIELD_FLAG``) decides; this is used only where it is missing.
 KNOWN_YIELD_FLAG = 0.05
-# A donor where this share of a tool's shared-arm V calls, or more, is in uncaptured genes is flagged.
+# A donor where this share of a tool's shared-arm V calls, or more, is in genes without truth (not captured, or
+# uncalled) is flagged.
 UNCAPTURED_FLAG = 0.25
 HEADLINE = "real.v.unsupported"
 COMPONENTS = {"real.v.unsupported_allele": "unsupported allele", "real.v.unsupported_gene": "unsupported gene",
@@ -61,6 +62,9 @@ TOOL_LABELS = {"alignair": "alignair (image)"}
 IMAGE_LABELS = {"sra_tools": "sra-tools", "samtools": "samtools", "immcantation": "Immcantation",
                 "alignair": "AlignAIR"}
 NOT_CAPTURED = "excluded:not_captured"
+UNCALLED = "excluded:uncalled"
+# The exclusions of a call to a gene the truth says nothing about: its region is not captured, or it is not called.
+NO_TRUTH = (NOT_CAPTURED, UNCALLED)
 NO_CALL = "no_call"
 DECILES = ("p10", "p20", "p30", "p40", "p50", "p60", "p70", "p80", "p90")
 # The exclusions, in the order a call's genes are checked (``real.metrics.EXCLUSIONS``), and what each means.
@@ -69,6 +73,9 @@ EXCLUSION_NOTES = {
                               "is unknown, not absent.",
     "excluded:not_captured": "the donor's genomic contigs do not resolve the gene's region, so the call may be an "
                              "allele the long reads missed.",
+    "excluded:uncalled": "the contigs span the gene and hold sequence there, but VDJbase's genotype calls no allele "
+                         "of it: a calling gap, not a gene the donor lacks. The price: a tool's real error into such a "
+                         "gene leaves R1 too (e.g. a call to IGHV4-30-2 on a read that exactly matches IGHV4-59).",
     "excluded:unmapped": "a guard: the call has no IUIS gene, labelled or inferred (none on HUMAN_IGH_OGRDB).",
     "excluded:novel_gene": "the donor carries an allele of the gene that the shared reference lacks, which a call of "
                            "a carried shared allele could hide (not applied to a documented known answer).",
@@ -77,8 +84,9 @@ EXCLUSION_NOTES = {
     "excluded:beyond_318": "a functional donor allele of the gene has no usable IMGT-gapped form, so no call can be "
                            "compared with it through IMGT 318, past which rearranged reads cannot tell alleles "
                            "apart (Peres et al. 2023).",
-    "excluded:half_resolved": "the gene is carried, but one haplotype's region is not spanned: its unknown second "
-                              "allele could be any call.",
+    "excluded:half_resolved": "the gene is carried, but an allele on one haplotype is unknown: its region is not "
+                              "spanned, or spanned but not called (a contig there holds a sequence the genotype does "
+                              "not call), so that allele could be any call.",
     "excluded:low_support": "in the gene-support variant only: the V gene is below Mikelov et al. 2024's thresholds "
                             "among the donor's known answers (see Sensitivity).",
 }
@@ -86,7 +94,7 @@ ASSEMBLY_KINDS = {"mismatches": "mismatches", "not_significant": "not significan
 
 R1_NOTE = ("R1 (`real.v.unsupported`, lower is better): the share of a tool's top-1 V calls that the donor's genome "
            "does not carry, as an unsupported allele (the gene is carried, not this allele), an unsupported gene (a "
-           "gene the donor's captured contigs show it lacks) or no call; a call is supported when it equals a donor "
+           "gene every capturing contig shows deleted) or no call; a call is supported when it equals a donor "
            "allele exactly or through IMGT position 318 (Peres et al. 2023). Tool columns: each run's own R1 over "
            "the reads its own call does not exclude (n). Each Δ (AlignAIR − igblast, 95% CI, verdict) is on the "
            "paired reads, those neither call excludes, so it need not equal the difference of the tool columns.")
@@ -95,11 +103,11 @@ STATISTICS_NOTE = ("Statistics: paired tests clustered by clonotype (clustered M
                    "scope, stratum or variant), not across the whole report; no variation: the tools agree on every "
                    "paired read (Δ and interval 0), so there is nothing to test.")
 GENOTYPE_LEAD = ("R1 is 0 on this arm by construction, so the arm is judged on known answers, missing calls and the "
-                 "calls that move into uncaptured genes.")
-GENOTYPE_NOTE = ("Each tool may call only the donor's alleles in the genes its contigs capture, so every call R1 does "
-                 "not exclude is supported, and only a missing call could count against it. Calls in uncaptured "
-                 "genes are excluded from R1; both shares are of all reads. Each Δ is the tool's arm delta, genotype "
-                 "− shared on the same reads, and is informational.")
+                 "calls that move into genes without truth (not captured, or not called).")
+GENOTYPE_NOTE = ("Each tool may call only the donor's alleles in the genes the truth resolves, so every call R1 does "
+                 "not exclude is supported, and only a missing call could count against it. Calls in genes without "
+                 "truth (uncaptured, or spanned and not called) are excluded from R1; both shares are of all reads. "
+                 "Each Δ is the tool's arm delta, genotype − shared on the same reads, and is informational.")
 # The words for a verdict that is not significant, in the tables and the bottom line alike; a comparison under 10
 # clonotypes is not tested, and one whose paired differences are all 0 has nothing to test.
 NOT_SIGNIFICANT = "not significant"
@@ -259,11 +267,11 @@ def _own(scope: dict, arm: str, tool: str, metric: str) -> str:
     return f"{_pct(entry['mean'])} (n={entry['n']})"
 
 
-def _class_share(block: dict | None, name: str) -> float | None:
-    """The share of a run's reads whose V class is ``name``."""
+def _class_share(block: dict | None, *names: str) -> float | None:
+    """The share of a run's reads whose V class is one of ``names``."""
     classes = (block or {}).get("v_classes") or {}
     total = sum(classes.values())
-    return classes.get(name, 0) / total if total else None
+    return sum(classes.get(name, 0) for name in names) / total if total else None
 
 
 def _quality(summary: dict, block: dict) -> str:
@@ -451,10 +459,10 @@ def _genotype_arm(summary: dict, scopes: list[dict]) -> list[str]:
         shared, genotype = _tool_block(lead, "shared", tool), _tool_block(lead, "genotype", tool)
         known = [_arm_known(shared, genotype, (deltas.get(tool) or {}).get(metric), metric) for metric in KNOWN]
         rows.append([_label(tool), *known, _arm_share(shared, genotype, NO_CALL),
-                     _arm_share(shared, genotype, NOT_CAPTURED, delta=True),
+                     _arm_share(shared, genotype, *NO_TRUTH, delta=True),
                      f"{_pct(_mean(shared, HEADLINE))} → {_pct(_mean(genotype, HEADLINE))} (0 by construction)"])
     header = ["Tool", "known_top1, shared → genotype", "known_gene_top1, shared → genotype",
-              "No V call, of all reads", "Calls in uncaptured genes, of all reads", "R1, shared → genotype"]
+              "No V call, of all reads", "Calls in genes without truth, of all reads", "R1, shared → genotype"]
     lines = [f"{GENOTYPE_LEAD} Scope: {lead['words']}.", "", *_table(header, rows), "", GENOTYPE_NOTE]
     for a, b in _pairs([lead], "genotype"):
         comparison = _find(lead, a, b, "genotype")
@@ -470,8 +478,8 @@ def _arm_known(shared: dict | None, genotype: dict | None, entry: dict | None, m
     return text
 
 
-def _arm_share(shared: dict | None, genotype: dict | None, name: str, *, delta: bool = False) -> str:
-    before, after = _class_share(shared, name), _class_share(genotype, name)
+def _arm_share(shared: dict | None, genotype: dict | None, *names: str, delta: bool = False) -> str:
+    before, after = _class_share(shared, *names), _class_share(genotype, *names)
     text = f"{_pct(before)} → {_pct(after)}"
     return text + (f" ({_pp(after - before)})" if delta and before is not None and after is not None else "")
 
@@ -522,13 +530,14 @@ def _flags(summary: dict, scopes: list[dict]) -> list[str]:
     uncaptured = []
     for name, block in _scored_blocks(summary):
         shares = [(tool, share) for tool in tools
-                  if (share := _class_share((block["tools"].get("shared") or {}).get(tool), NOT_CAPTURED)) is not None]
+                  if (share := _class_share((block["tools"].get("shared") or {}).get(tool), *NO_TRUTH)) is not None]
         if shares and max(share for _, share in shares) >= UNCAPTURED_FLAG:
             uncaptured.append(f"{name} " + ", ".join(f"{_label(tool)} {_pct(share)}" for tool, share in shares))
     if uncaptured:
-        flags.append(_listed(f"At least {UNCAPTURED_FLAG:.0%} of a tool's shared-arm V calls are to uncaptured genes "
-                             "(excluded:not_captured; the donor's contigs miss those genes, so R1 rests on the other "
-                             "reads)", uncaptured))
+        flags.append(_listed(f"At least {UNCAPTURED_FLAG:.0%} of a tool's shared-arm V calls are to genes without "
+                             "truth (excluded:not_captured, the donor's contigs miss the gene, or excluded:uncalled, "
+                             "they hold it and the genotype does not call it), so R1 rests on the other reads",
+                             uncaptured))
     over = [f"{name} {_pct(acceptance.get('failure_rate'))}" for name, block in donors.items()
             if (acceptance := (block.get("preprocess") or {}).get("assembly_acceptance") or {}).get("override")
             and acceptance.get("within_line") is False]
@@ -614,7 +623,34 @@ def _exclusions(summary: dict, scopes: list[dict]) -> list[str]:
         lines += ["", f"**{scope['label']}**", "", *_table(header, rows)]
         if out:
             lines += ["", f"V reads out of each pair (either call excluded): {'; '.join(out)}."]
-    return lines
+    return [*lines, "", *_truth_gaps(summary)]
+
+
+def _truth_gaps(summary: dict) -> list[str]:
+    """Per donor, where its genomic truth stops: the genes its contigs hold and its genotype does not call
+    (``excluded:uncalled``), each with what a capturing contig holds there; the genes deleted on every capturing contig
+    (the only ones a call can be ``unsupported_gene`` for); and the carried genes with an unknown haplotype
+    (``excluded:half_resolved``)."""
+    rows = []
+    for name, block in (summary.get("donors") or {}).items():
+        capture = (block.get("genotype") or {}).get("capture")
+        if not capture:
+            continue
+        uncalled = []
+        for gene, evidence in (capture.get("uncalled") or {}).items():
+            shown = [f"h{entry.get('haplotype')} {entry.get('holds') or entry.get('state')}"
+                     + (f": {entry['label']} at {_pct(entry.get('identity'))}" if entry.get("label") else "")
+                     for entry in evidence if entry.get("state") != "deleted"]
+            uncalled.append(f"{gene} ({'; '.join(shown) or MISSING})")
+        rows.append([name, ", ".join(uncalled) or "none", ", ".join(capture.get("absent") or []) or "none",
+                     ", ".join(capture.get("half_resolved") or []) or "none"])
+    if not rows:
+        return []
+    return ["Where the genomic truth stops, per donor: the genes the contigs hold and the genotype does not call "
+            "(uncalled; what a capturing contig holds there, by its closest OGRDB allele), the genes every capturing "
+            "contig shows deleted (absent: the only genes a call can be an unsupported gene for), and the carried "
+            "genes with an allele on one haplotype unknown (half resolved).", "",
+            *_table(["Donor", "Uncalled", "Absent", "Half resolved"], rows)]
 
 
 def _count_share(block: dict | None, reason: str | None) -> str:

@@ -10,8 +10,9 @@ from alignair_assay.report.real import (
     real_report_markdown,
 )
 
-EXCLUSIONS = ("excluded:dropped_truth", "excluded:not_captured", "excluded:unmapped", "excluded:novel_gene",
-              "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved", "excluded:low_support")
+EXCLUSIONS = ("excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled", "excluded:unmapped",
+              "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved",
+              "excluded:low_support")
 SD3_GENES = ["IGHV1-24", "IGHV1-38-4", "IGHV1-58", "IGHV1-69", "IGHV2-70", "IGHV2-70D", "IGHV3-11", "IGHV3-13",
              "IGHV3-35", "IGHV3-38", "IGHV3-43", "IGHV3-43D", "IGHV3-49", "IGHV3-53", "IGHV3-66", "IGHV3-7",
              "IGHV3-72", "IGHV3-74", "IGHV3-9", "IGHV4-4", "IGHV5-51"]
@@ -174,8 +175,13 @@ def _donor(name, run, sample, protocol, *, quality="full", known=30, scale=1) ->
                   "strata": {strata[0]: 56, strata[1]: 444}},
         "genotype": {"sample": sample, "v_genes": 42, "functional_v_genes": 39, "d_truth": False, "j_truth": False,
                      "captured": 45, "resolved": 44, "absent_genes": ["IGHV1-2"], "dropped_d": 0,
-                     "arm_v_alleles": 114, "capture": {"spanned_not_carried": ["IGHV3-11"],
-                                                       "carried_not_spanned": [], "half_resolved": ["IGHV3-62"]},
+                     "arm_v_alleles": 114, "capture": {
+                         "spanned_not_carried": ["IGHV3-11", "IGHV4-30-2"], "carried_not_spanned": [],
+                         "half_resolved": ["IGHV3-62"], "absent": ["IGHV3-11"],
+                         "uncalled": {"IGHV4-30-2": [{"haplotype": 0, "contig": "c=igh:463603-503524_h=0_i=0_t=1",
+                                                      "aligned": 296, "deleted": 3, "state": "present",
+                                                      "label": "IGHV4-28*01", "identity": 1.0, "coverage": 1.0,
+                                                      "holds": "another gene's sequence"}]}},
                      "ogrdb": {"release_version": 8, "release_date": "2024-01-11"}},
         "runs": runs,
         "oracle_self_check": {"reads": known, "classes": {"excluded:not_captured": 1, "supported": known - 1},
@@ -400,7 +406,7 @@ def test_the_genotype_arm_leads_with_known_answers_not_r1():
     assert "0 by construction" in section and "informational" in section
     rows = _table(section)
     assert rows[0] == ["Tool", "known_top1, shared → genotype", "known_gene_top1, shared → genotype",
-                       "No V call, of all reads", "Calls in uncaptured genes, of all reads",
+                       "No V call, of all reads", "Calls in genes without truth, of all reads",
                        "R1, shared → genotype"]
     igblast, api = rows[1], rows[2]
     assert igblast[0] == "igblast" and api[0] == "alignair-api"
@@ -438,6 +444,31 @@ def test_exclusions_per_tool_and_reason_with_the_invariant():
     assert by_reason["excluded:not_captured"] == ["307 (61.4%)", "308 (61.6%)", "308 (61.6%)", "327 (65.4%)",
                                                   "319 (63.8%)"]
     assert "excluded:unmapped" not in by_reason  # a reason no run has is left out of the table
+
+
+def test_uncalled_genes_count_as_genes_without_truth_and_each_donors_truth_gaps_are_named():
+    summary = _summary()
+    for arm in ("shared", "genotype"):
+        for tool in summary["donors"]["W-97"]["tools"][arm].values():
+            classes = tool["v_classes"]
+            classes["excluded:uncalled"] = 40
+            classes["excluded:not_captured"] -= 40
+    md = real_report_markdown(summary)
+    exclusions = _section(md, "Exclusions")
+    assert "`excluded:uncalled`" in exclusions and "calling gap" in exclusions
+    rows = {row[0]: row[1:] for row in _table(exclusions)}
+    assert rows["excluded:uncalled"][0] == "40 (8.0%)"
+    # where the genomic truth stops, per donor: the genes the contigs hold and the genotype does not call, with what
+    # they hold, the genes deleted on every capturing contig, and the carried genes with an unknown haplotype
+    gaps = exclusions[exclusions.index("Where the genomic truth stops"):]
+    gap_rows = {row[0]: row[1:] for row in _table(gaps)}
+    assert gap_rows["W-97"] == ["IGHV4-30-2 (h0 another gene's sequence: IGHV4-28*01 at 100.0%)", "IGHV3-11",
+                                "IGHV3-62"]
+    # the flag counts uncalled with not captured: the share is unchanged
+    flags = "\n".join(_bullets(_section(md, "Flags")))
+    assert "W-97 igblast 61.4%, alignair (image) 61.6%, alignair-api 61.6%" in flags
+    # the genotype arm counts both too
+    assert _table(_section(md, "Genotype arm"))[1][4] == "61.4% → 65.4% (+4.0 pp)"
 
 
 def test_assembly_failures_are_described_by_kind():
@@ -507,7 +538,7 @@ def test_data_limit_flags():
     assert "W-133 stopped at preprocess" in text and "neither protocol: linker in 41.0%" in text
     assert "alignair on W-97 shared" in text and "match no read" in text
     assert "unchecked" in text and "SC-23" in text
-    uncaptured = [flag for flag in flags if "uncaptured genes" in flag]
+    uncaptured = [flag for flag in flags if "genes without truth" in flag]
     assert len(uncaptured) == 1 and "W-97 igblast 61.4%, alignair (image) 61.6%, alignair-api 61.6%" in uncaptured[0]
     failures = _section(md, "Failed runs and refusals")
     assert "W-133" in failures and "race_linker 0.41" in failures and "ghost_1" in failures

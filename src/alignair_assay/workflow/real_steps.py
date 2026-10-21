@@ -151,7 +151,7 @@ def capture_genotype(donor: str, fetched: Fetched, reference: Reference, iuis: I
     """The donor's VDJbase genotype mapped to ``reference`` (``real.genotype.load_vdjbase_csv``) with the genes its
     contigs capture and resolve (``real.locus.donor_capture``, in the pinned samtools container)."""
     genotype = load_vdjbase_csv(fetched.files["vdjbase_csv"], donor, reference, iuis)
-    return donor_capture(genotype, fetched.files["vdjbase_bam"], fetched.files["gene_coords"])
+    return donor_capture(genotype, fetched.files["vdjbase_bam"], fetched.files["gene_coords"], iuis)
 
 
 # --- the steps ---------------------------------------------------------------------------------------------------

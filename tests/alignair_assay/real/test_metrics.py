@@ -96,12 +96,14 @@ SHARED_V = {
     "IGHVF13-G1*02": (_gapped(14, 150), ("IGHV4-59*02",)),  # a nonfunctional donor allele, before 318
     "IGHVF14-G1*01": (_gapped(15), ("IGHV2-70*01", "IGHV2-70D*01")),  # both genes captured, neither carried
     "IGHVF15-G1*01": (_gapped(16), ("IGHV3-64*01", "IGHV3-64D*01")),  # IGHV3-64D not captured
+    "IGHVF16-G1*01": (_gapped(18), ("IGHV4-30-2*01",)),  # spanned and held by the contigs, not called: uncalled
+    "IGHVF17-G1*01": (_gapped(19), ("IGHV3-30-5*01", "IGHV3-30*18")),  # IGHV3-30-5 uncalled, IGHV3-30 carried
 }
 # Shared V allele without a label -> the OGRDB labels it equals through IMGT 318 (``IuisMap.inferred``).
 INFERRED = {"IGHVF10-G33*01": ("IGHV3-13*06",)}
 D_SEQ = {"IGHD3-10*01": _random(31, 20), "IGHD3-3*01": _random(31, 21), "IGHD2-2*01": _random(31, 22),
-         "IGHD4-4*01": _random(20, 23), "IGHD2-15*01": _random(31, 24)}
-J_SEQ = {"IGHJ4*02": _random(48, 30), "IGHJ6*02": _random(63, 31)}
+         "IGHD4-4*01": _random(20, 23), "IGHD2-15*01": _random(31, 24), "IGHD1-26*01": _random(20, 26)}
+J_SEQ = {"IGHJ4*02": _random(48, 30), "IGHJ6*02": _random(63, 31), "IGHJ3*02": _random(50, 32)}
 REFERENCE = Reference(
     alleles={"v": {name: gapped.replace(".", "") for name, (gapped, _) in SHARED_V.items()},
              "d": {**D_SEQ, "IGHD4-11*01": D_SEQ["IGHD4-4*01"]}, "j": dict(J_SEQ)},
@@ -173,12 +175,14 @@ V_ALLELES = tuple(allele for allele in ALLELES if allele.segment == "v")
 DROPPED = (RealAllele(allele_id="IGHD3-3*01_g8-", gene="IGHD3-3", segment="d", sequence=_random(30, 40),
                       gapped=None, haplotype=1, functional=True, shared=(), iuis=()),)
 CARRIED = {allele.gene for allele in ALLELES}
-# IGHV3-11, IGHV1-69, IGHV2-70, IGHV2-70D, IGHV3-64, IGHV3-13, IGHD2-2 and IGHJ6 are spanned and not carried;
-# IGHV3-23, IGHV3-64D and IGHD4-4 / IGHD4-11 are not spanned.
-CAPTURED = frozenset(CARRIED | {"IGHV3-11", "IGHV1-69", "IGHV2-70", "IGHV2-70D", "IGHV3-64", "IGHV3-13", "IGHD2-2",
-                                "IGHJ6"})
-GENOTYPE = RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED, resolved=CAPTURED - {"IGHV3-15"},
-                        dropped=DROPPED)
+# IGHV3-11, IGHV1-69, IGHV2-70, IGHV2-70D, IGHV3-64, IGHV3-13, IGHD2-2 and IGHJ6 are spanned and not carried, and
+# absent from every capturing contig; IGHV4-30-2, IGHV3-30-5, IGHD1-26 and IGHJ3 are spanned and not carried, but the
+# contigs hold them (uncalled); IGHV3-23, IGHV3-64D and IGHD4-4 / IGHD4-11 are not spanned.
+UNCALLED = frozenset({"IGHV4-30-2", "IGHV3-30-5", "IGHD1-26", "IGHJ3"})
+CAPTURED = frozenset(CARRIED | UNCALLED | {"IGHV3-11", "IGHV1-69", "IGHV2-70", "IGHV2-70D", "IGHV3-64", "IGHV3-13",
+                                           "IGHD2-2", "IGHJ6"})
+GENOTYPE = RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED,
+                        resolved=CAPTURED - {"IGHV3-15"} - UNCALLED, dropped=DROPPED, uncalled=UNCALLED)
 # Clonotypes and naive clonotypes per gene, from the known answers: IGHV1-46 has too few naive clonotypes.
 SUPPORT = {**{gene: (MIN_CLONOTYPES, MIN_NAIVE_CLONOTYPES) for gene in CARRIED},
            "IGHV1-46": (MIN_CLONOTYPES + 5, MIN_NAIVE_CLONOTYPES - 1)}
@@ -222,6 +226,28 @@ def test_call_to_a_captured_gene_the_donor_lacks_is_unsupported_gene():
 
 def test_call_to_an_uncaptured_gene_is_excluded():
     assert INDEX.classify("IGHVF5-G1*01") == "excluded:not_captured"  # IGHV3-23: its region is not spanned
+
+
+def test_call_to_a_gene_the_contigs_hold_and_the_genotype_does_not_call_is_excluded():
+    # VDJbase's calls can miss a gene: IGHV4-30-2 is spanned, and a capturing contig holds sequence there, so it is
+    # not a gene the donor lacks, and a call to it, right or wrong, is excluded
+    assert "IGHV4-30-2" in CAPTURED and not GENOTYPE.carried("IGHV4-30-2")
+    assert INDEX.classify("IGHVF16-G1*01") == INDEX.classify("IGHVF16-G1*01", documented=True) == "excluded:uncalled"
+    # D and J alike (informational)
+    assert INDEX.classify("IGHD1-26*01", "d") == "excluded:uncalled"
+    assert INDEX.classify("IGHJ3*02", "j") == "excluded:uncalled"
+    # a paralog allele whose other gene is carried is still excluded by its uncalled gene
+    assert IUIS.genes("IGHVF17-G1*01") == ("IGHV3-30", "IGHV3-30-5") and GENOTYPE.carried("IGHV3-30")
+    assert INDEX.classify("IGHVF17-G1*01") == "excluded:uncalled"
+    # a gene deleted on every capturing contig is one the donor lacks: unsupported_gene
+    assert INDEX.classify("IGHVF7-G1*01") == UNSUPPORTED_GENE
+    assert INDEX.classify("IGHD2-2*01", "d") == INDEX.classify("IGHJ6*02", "j") == UNSUPPORTED_GENE
+    # not captured comes first, uncalled next
+    assert EXCLUSIONS[:3] == ("excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled")
+    # a genotype whose uncalled genes are unknown is refused
+    with pytest.raises(ValueError, match="uncalled"):
+        SupportIndex(RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED, resolved=CAPTURED),
+                     IUIS, MERGED, REFERENCE, support=SUPPORT)
 
 
 def test_call_differing_from_the_donor_allele_only_beyond_318_is_supported():
@@ -304,9 +330,9 @@ def test_the_other_exclusions():
     assert INDEX.classify("IGHVF2-G1*01") == SUPPORTED and INDEX.classify("IGHVF2-G1*02") == UNSUPPORTED_ALLELE
     # a gene with a functional donor allele without a usable IMGT-gapped form: no call can be compared through 318
     assert INDEX.classify("IGHVF11-G1*01") == INDEX.classify("IGHVF11-G1*02") == "excluded:beyond_318"
-    assert set(EXCLUSIONS) == {"excluded:not_captured", "excluded:dropped_truth", "excluded:unmapped",
-                               "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318",
-                               "excluded:half_resolved", "excluded:low_support"}
+    assert set(EXCLUSIONS) == {"excluded:not_captured", "excluded:dropped_truth", "excluded:uncalled",
+                               "excluded:unmapped", "excluded:novel_gene", "excluded:nonfunctional",
+                               "excluded:beyond_318", "excluded:half_resolved", "excluded:low_support"}
 
 
 def test_the_gene_support_thresholds_are_a_sensitivity_variant():
@@ -403,8 +429,8 @@ def test_d_and_j_calls_where_the_donor_has_their_truth():
     scores = real_case_scores(_pred(v="IGHVF1-G1*01"), _truth("r"), no_dj, excluded={"d"}, index=INDEX)
     assert "real.d.unsupported" not in scores and math.isnan(scores["real.j.unsupported"])
     # a donor without D and J truth gets neither metric
-    v_only = SupportIndex(RealGenotype(donor=DONOR, alleles=V_ALLELES, captured=CAPTURED, resolved=CAPTURED),
-                          IUIS, MERGED, REFERENCE, support=SUPPORT)
+    v_only = SupportIndex(RealGenotype(donor=DONOR, alleles=V_ALLELES, captured=CAPTURED, resolved=CAPTURED,
+                                       uncalled=UNCALLED), IUIS, MERGED, REFERENCE, support=SUPPORT)
     calls = v_only.read_calls(_pred(v="IGHVF1-G1*01", d="IGHD3-10*01", j="IGHJ4*02"), truth=None)
     assert calls.d is None and calls.j is None
     scores = real_case_scores(_pred(v="IGHVF1-G1*01", d="IGHD3-10*01", j="IGHJ4*02"), _truth("r"), calls,
@@ -580,7 +606,7 @@ def test_known_gene_accepts_the_iuis_genes_of_the_known_alleles_own_sequence():
     # sequence is of the known gene, and the oracle's own call passes the self-check
     paralog = _allele("IGHV3-30-3*03_g150a", 1, shared_as="IGHVF4-G1*01", gene="IGHV3-30-3")
     genotype = RealGenotype(donor=DONOR, alleles=(*ALLELES, paralog), captured=CAPTURED | {"IGHV3-30-3"},
-                            resolved=(CAPTURED - {"IGHV3-15"}) | {"IGHV3-30-3"}, dropped=DROPPED)
+                            resolved=(GENOTYPE.resolved | {"IGHV3-30-3"}), dropped=DROPPED, uncalled=UNCALLED)
     index = SupportIndex(genotype, IUIS, MERGED, REFERENCE, support=SUPPORT)
     truth = _truth("s", known=("IGHV3-30-3*03_g150a",), shared=("IGHVF4-G1*01",), gene="IGHV3-30-3")
     oracle = oracle_prediction(truth)
@@ -602,7 +628,7 @@ def test_support_index_refuses_a_genotype_it_cannot_score():
     other = Reference(alleles={"v": dict(REFERENCE.alleles["v"])}, anchors={})
     with pytest.raises(ValueError, match="reference"):
         SupportIndex(GENOTYPE, IUIS, MERGED, other, support=SUPPORT)
-    mapped = RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED, resolved=CAPTURED,
+    mapped = RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED, resolved=CAPTURED, uncalled=UNCALLED,
                           source={"reference_digest": other.digest()})
     with pytest.raises(ValueError, match="reference"):
         SupportIndex(mapped, IUIS, MERGED, REFERENCE, support=SUPPORT)
@@ -702,7 +728,7 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
     iuis = IuisMap.from_ogrdb(root / "genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json", reference)
     genotype = load_vdjbase_csv(samples / f"{PILOT_SAMPLES[donor]}.csv", donor, reference, iuis)
     genotype = donor_capture(genotype, samples / f"{PILOT_SAMPLES[donor]}.bam",
-                             root / "genotypes/igenotyper/gene_coords.bed")
+                             root / "genotypes/igenotyper/gene_coords.bed", iuis)
     layout = RunLayout(RUN)
     truths = real_truths(_read_fasta(layout.real_reads(donor)), _read_tsv(layout.real_reads_meta(donor)), genotype,
                          reference)
@@ -718,7 +744,7 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
     # only the rules of the call's genes exclude an oracle call, and never novel_gene: every oracle read is a
     # documented known answer. The guard never fires on this reference.
     assert set(check["classes"]) <= {SUPPORTED, "excluded:not_captured", "excluded:nonfunctional",
-                                     "excluded:beyond_318", "excluded:half_resolved"}
+                                     "excluded:beyond_318", "excluded:half_resolved", "excluded:uncalled"}
     for segment in ("v", "d", "j"):
         assert all(index.classify(name, segment) != "excluded:unmapped" for name in reference.alleles[segment])
     # each class is explained by the call's own genes, read off the genotype
@@ -732,6 +758,7 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
         carried = {gene for gene in genes if genotype.carried(gene)}
         functional = {allele.gene for allele in v if allele.functional}
         reasons = {"excluded:not_captured": bool(genes - genotype.captured),
+                   "excluded:uncalled": bool(genes & genotype.uncalled),
                    "excluded:nonfunctional": bool(carried - functional),
                    "excluded:beyond_318": any(allele.functional and through_318(allele.gapped) is None
                                               for allele in v if allele.gene in carried),
@@ -747,3 +774,41 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
             assert thresholded.classify_v(oracle, truth=truth) == cls
     assert sum(check["classes"].values()) == len(known)
     json.dumps(check)  # plain data, for the report
+
+
+DEV_RUN = Path(__file__).resolve().parents[3] / ".private" / "assay" / "p3a_dev"
+DEV_SAMPLES = {"SC-23": "P25_I58_S1", "SC-11": "P25_I48_S1", "W-97": "P25_I151_S1", "W-133": "P25_I93_S1"}
+
+
+@pytest.mark.skipif(not DATA or not DOCKER or not (DEV_RUN / "real").is_dir(),
+                    reason="set ALIGNAIR_ASSAY_DATA to the PRJNA555323 data root and ALIGNAIR_ASSAY_DOCKER=1, with the "
+                           "dev run in .private/assay/p3a_dev")
+def test_no_dev_donors_call_is_an_unsupported_gene_once_uncalled_genes_are_excluded(reference):
+    """Every unsupported_gene of the dev run was a VDJbase calling gap: the four dev donors' shared-arm predictions,
+    re-scored against their new capture, have none. A gene the contigs hold and the genotype does not call is
+    excluded, and no dev donor has a gene deleted on every capturing contig. The read's truth only lifts novel_gene,
+    which applies to carried genes, so classifying without it is exact for unsupported_gene."""
+    from alignair_assay.airr.reader import load_airr_tsv
+    from alignair_assay.core.layout import RunLayout
+    from alignair_assay.real.genotype import load_vdjbase_csv
+    from alignair_assay.real.locus import donor_capture
+
+    root = Path(DATA)
+    samples = root / "genotypes/vdjbase_genomic_samples"
+    iuis = IuisMap.from_ogrdb(root / "genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json", reference)
+    layout, merged = RunLayout(DEV_RUN), merge_identical(reference)
+    uncalled_calls = {}
+    for donor, sample in DEV_SAMPLES.items():
+        genotype = donor_capture(load_vdjbase_csv(samples / f"{sample}.csv", donor, reference, iuis),
+                                 samples / f"{sample}.bam", root / "genotypes/igenotyper/gene_coords.bed", iuis)
+        assert genotype.source["capture"]["absent"] == []
+        index = SupportIndex(genotype, iuis, merged, reference)
+        for tool in ("igblast", "alignair", "alignair-api"):
+            path = layout.real_predictions(tool, donor, "shared")
+            if not path.is_file():
+                continue
+            predictions, _ = load_airr_tsv(path)
+            classes = [index.classify_v(pred, truth=None) for pred in predictions.values()]
+            assert UNSUPPORTED_GENE not in classes, (donor, tool)
+            uncalled_calls[donor, tool] = classes.count("excluded:uncalled")
+    assert uncalled_calls[("W-97", "igblast")] > 0 and uncalled_calls[("SC-11", "igblast")] == 0

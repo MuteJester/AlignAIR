@@ -89,11 +89,13 @@ CYS_END = cys104_end(SHARED_V["IGHVF1-G1*01"][0])
 
 def _genotype(donor: str, captured=frozenset({"IGHV1-2", "IGHV3-11"}),
               reference: Reference = REFERENCE) -> RealGenotype:
-    """The donor carries IGHV1-2*02 on both haplotypes; IGHV3-11 is captured and not carried."""
+    """The donor carries IGHV1-2*02 on both haplotypes; IGHV3-11 is captured and not carried (absent: deleted on
+    every capturing contig)."""
     alleles = tuple(RealAllele(allele_id="IGHV1-2*02", gene="IGHV1-2", segment="v", sequence=V1,
                                gapped=SHARED_V["IGHVF1-G1*01"][0], haplotype=haplotype, functional=True,
                                shared=("IGHVF1-G1*01",), iuis=("IGHV1-2*02",)) for haplotype in (1, 2))
     return RealGenotype(donor=donor, alleles=alleles, captured=frozenset(captured), resolved=frozenset(captured),
+                        uncalled=frozenset(),
                         source={"kind": "test", "sha256": "csv", "reference_digest": reference.digest()})
 
 

@@ -26,6 +26,10 @@ genes is, by the first reason that applies, in this order:
 - ``dropped_truth``: the gene's only calls were dropped by ``filter_d`` (D only): its truth is dropped, not absent.
 - ``not_captured``: the gene's region is not captured (``RealGenotype.captured``, ``real.locus``): the call may be
   an allele the donor's long reads did not resolve.
+- ``uncalled``: the gene is spanned and not carried, but a capturing contig holds sequence there
+  (``RealGenotype.uncalled``, ``real.locus``): VDJbase did not call it, which is no evidence the donor lacks it. For
+  V, D and J alike. A tool's real error into such a gene leaves R1 too (SC-23: AlignAIR calls IGHV4-30-2 on reads
+  that exactly match IGHV4-59 or IGHV4-NL1), the price of not counting a calling gap as the tool's error.
 - ``unmapped``: a guard for a call with no gene at all, labelled or inferred; none on HUMAN_IGH_OGRDB.
 - ``novel_gene``: the gene has a donor allele absent from the shared reference, of any functionality
   (``RealGenotype.absent_genes``, per segment: a D gene's absent allele touches only D calls). Over-excluding is
@@ -43,8 +47,9 @@ genes is, by the first reason that applies, in this order:
   codon 104 off columns 309-311 as on VDJbase's insertion-gapped calls), so no call to the gene can be compared to
   it through 318. On the pilot donors none has. The shared reference must give every V allele a usable one
   (``SupportIndex`` refuses it otherwise; the dataconfig's does).
-- ``half_resolved``: the gene is carried but not resolved (``RealGenotype.resolved``): one haplotype is known and
-  the other's region is not spanned, so its unknown second allele could be any call.
+- ``half_resolved``: the gene is carried but not resolved (``RealGenotype.resolved``): an allele on one haplotype is
+  unknown, its region not spanned, or spanned but not called (a contig there holds a sequence the genotype does not
+  call), so that allele could be any call.
 - ``low_support``, in the gene-support sensitivity variant only (``SupportIndex(..., thresholds=True)``): the V
   gene has fewer than ``MIN_CLONOTYPES`` (10) clonotypes or ``MIN_NAIVE_CLONOTYPES`` (3) naive clonotypes among the
   known answers (Mikelov et al. 2024's thresholds, per gene; ``gene_support``). The R1 primary does not apply it
@@ -67,8 +72,8 @@ supports a donor that carries the sequence at IGHV1-69D only. A donor allele wit
 this concerns nonfunctional alleles alone, and it changes no class on the pilot donors. Otherwise the call is:
 
 - ``unsupported_allele``: a gene of the call is carried, but not this allele.
-- ``unsupported_gene``: no gene of the call is carried, and their regions are captured: a call to a gene the donor's
-  long reads show it lacks.
+- ``unsupported_gene``: no gene of the call is carried, and every capturing contig shows it deleted (``absent``,
+  ``real.locus``): a call to a gene the donor's long reads show it lacks.
 - ``no_call``: no top-1 V call.
 
 **Shared exclusions** (``shared_exclusions``). A read enters the paired comparison only when neither tool's call
@@ -121,8 +126,9 @@ UNSUPPORTED_GENE = "unsupported_gene"
 NO_CALL = "no_call"
 EXCLUDED = "excluded:"
 # The exclusions, in the order a call's genes are checked: the first that applies to any of them is its class.
-EXCLUSIONS = ("excluded:dropped_truth", "excluded:not_captured", "excluded:unmapped", "excluded:novel_gene",
-              "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved", "excluded:low_support")
+EXCLUSIONS = ("excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled", "excluded:unmapped",
+              "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved",
+              "excluded:low_support")
 # The headline's components: a read with one of these classes is not supported.
 UNSUPPORTED = (UNSUPPORTED_ALLELE, UNSUPPORTED_GENE, NO_CALL)
 CLASSES = (SUPPORTED, *UNSUPPORTED, *EXCLUSIONS)
@@ -169,9 +175,9 @@ class SupportIndex:
         if thresholds and support is None:
             raise ValueError("the gene-support thresholds need the gene support of the donor's known answers "
                              "(gene_support)")
-        if genotype.captured is None or genotype.resolved is None:
-            raise ValueError(f"the genotype of {genotype.donor} has no capture (its captured and resolved genes): "
-                             "compute it with real.locus.donor_capture")
+        if genotype.captured is None or genotype.resolved is None or genotype.uncalled is None:
+            raise ValueError(f"the genotype of {genotype.donor} has no capture (its captured, resolved and uncalled "
+                             "genes): compute it with real.locus.donor_capture")
         if iuis.reference_digest != reference.digest():
             raise ValueError(f"the IUIS map was built against another shared reference (digest "
                              f"{iuis.reference_digest[:12]}, not {reference.digest()[:12]})")
@@ -317,7 +323,7 @@ class SupportIndex:
             return "excluded:not_captured"
         alleles = self._carried[segment].get(gene)
         if not alleles:
-            return _ABSENT
+            return "excluded:uncalled" if gene in self.genotype.uncalled else _ABSENT
         if novel and gene in self._absent[segment]:
             return "excluded:novel_gene"
         functional = [allele for allele in alleles if allele.functional]
