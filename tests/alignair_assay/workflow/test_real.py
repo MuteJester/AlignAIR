@@ -222,6 +222,7 @@ class Fakes:
                                                                            "capped": len(rows)},
                   "classifier": {"protocol": "multiplex", "evidence": {"multiplex": {"vh": 0.95, "c": 0.93}}},
                   "assembly_acceptance": {"failure_rate": 0.16, "accepted": True},
+                  "assembly": ASSEMBLY_EVIDENCE,
                   "isotypes": dict(Counter(row["isotype"] for row in rows))}
         record_path.write_text(json.dumps(record))
         return {**record, "reused": False}
@@ -231,6 +232,12 @@ class Fakes:
         return ORIGINAL_TRUTHS(reads, meta, genotype, reference, **kwargs)
 
 
+# What ``real.preprocess.assembly_evidence`` records: the deciles of the pairs that passed and failed, and the
+# failures by kind.
+ASSEMBLY_EVIDENCE = {"pass": {"n": 84, "insert_length": {"n": 84, "p10": 386, "p50": 400, "p90": 415},
+                              "mates_length": {"n": 84, "p10": 500, "p50": 500, "p90": 500}},
+                     "fail": {"n": 16, "mates_length": {"n": 16, "p10": 500, "p50": 500, "p90": 500},
+                              "kinds": {"mismatches": 15, "not_significant": 1, "no_overlap": 0}}}
 ORIGINAL_TRUTHS = real_steps.real_truths
 ORIGINAL_CHECK_IMAGES = real_steps.check_images
 
@@ -427,6 +434,19 @@ def test_a_run_scores_every_tool_and_arm(tmp_path, fakes):
     assert {(c["a"], c["b"], c["arm"]) for c in summary["pooled"]["comparisons"]} == set(pairs)
     assert layout.real_comparison_json("W-97", "shared", "igblast_vs_alignair").is_file()
     assert summary["stopped_donors"] == [] and summary["failed_runs"] == []
+
+
+def test_the_report_is_written_beside_the_summary(tmp_path, fakes):
+    layout = RunLayout(tmp_path / "run")
+    summary = run_real(_config(tmp_path), layout)
+    # the preprocessing record's assembly evidence reaches the summary, for the report's failures by kind
+    preprocess = summary["donors"]["W-97"]["preprocess"]
+    assert preprocess["assembly"] == ASSEMBLY_EVIDENCE
+    assert preprocess["assembly_failures"] == ASSEMBLY_EVIDENCE["fail"]["kinds"]
+    report = layout.real_report_md().read_text(encoding="utf-8")
+    assert report.startswith("# AlignAIR real-data report: W-97 (dev)")
+    assert "\n## R1 headline (shared arm)\n" in report and "30 paired (15 clonotypes)" in report
+    assert "mismatches 15, not significant 1, no overlap 0" in report
 
 
 def test_resume_skips_current_steps(tmp_path, fakes):
@@ -735,6 +755,7 @@ def test_the_cli_runs_and_refuses(tmp_path, fakes, capsys):
     assert main(args) == 0
     out = capsys.readouterr().out
     assert "W-97 preprocess: done" in out and "summary:" in out
+    assert f"report: {tmp_path / 'run' / 'real' / 'real_report.md'}" in out
     assert main([*args[:6], "SC-4", *args[7:]]) == 2
     assert "--split test" in capsys.readouterr().err
 
@@ -773,6 +794,8 @@ def test_w97_end_to_end_on_500_reads(tmp_path):
     assert donor["tools"]["shared"]["alignair"]["v_classes"] == donor["tools"]["shared"]["alignair-api"]["v_classes"]
     assert {c["status"] for c in donor["comparisons"]} == {"compared"} and len(donor["comparisons"]) == 3
     assert summary["pooled"]["donors"] == ["W-97"]
+    report = RunLayout(tmp_path / "run").real_report_md().read_text(encoding="utf-8")
+    assert "**Bottom line (W-97).**" in report and "mismatches" in report
     print(json.dumps({"seconds": round(seconds, 1), "steps": donor["steps"]}, indent=1))
     # a second run reuses every step
     again = run_real(cfg, RunLayout(tmp_path / "run"))["donors"]["W-97"]["steps"]

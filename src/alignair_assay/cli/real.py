@@ -60,6 +60,7 @@ def run(args) -> int:
     layout = RunLayout(absolute_path(args.run_dir))
     summary = run_real(cfg, layout, force=args.force)
     print(f"summary: {layout.real_summary_json()}", flush=True)
+    print(f"report: {layout.real_report_md()}", flush=True)
     for stopped in summary["stopped_donors"]:
         print(f"error: {stopped['donor']} stopped at {stopped['step']}: {stopped['reason']}", file=sys.stderr)
     for failed in summary["failed_runs"]:

@@ -2,7 +2,8 @@
 
 ``run_real(cfg, layout)`` runs each donor of ``cfg`` through the steps of ``workflow.real_steps`` (fetch, genotype and
 capture, preprocess, truth, the tools' runs) and scores it with ``workflow.real_score``, then pools the donors and
-writes ``real_summary.json`` (``RunLayout.real_summary_json``), which it returns.
+writes ``real_summary.json`` (``RunLayout.real_summary_json``), which it returns, and its markdown report
+``real_report.md`` (``RunLayout.real_report_md``, ``report.real``).
 
 **Tools and arms.** The shared arm runs ``igblast``, ``alignair`` (the released image, 3.0.0) and ``alignair-api``
 (the image's checkpoint through AlignAIR's public API, ``runners.alignair_api``) on the donor's preprocessed reads;
@@ -86,6 +87,7 @@ from alignair_assay.real.locus import SAMTOOLS_IMAGE
 from alignair_assay.real.metrics import SupportIndex, gene_support, oracle_self_check
 from alignair_assay.real.preprocess import CAP, IMMCANTATION_IMAGE, PreprocessError
 from alignair_assay.real.truth import RealTruth
+from alignair_assay.report.real import real_report_markdown
 from alignair_assay.runners import make_runner
 from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL, host_cache_dir
 from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path
@@ -292,7 +294,15 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
                              if (block.get("oracle_self_check") or {}).get("status") == "unchecked"],
     }
     real_steps.write_json(layout.real_summary_json(), summary)
+    _write_text(layout.real_report_md(), real_report_markdown(summary))
     return summary
+
+
+def _write_text(path: Path, text: str) -> None:
+    """Write ``text`` through a temporary file beside ``path``, so no reader sees half of it."""
+    temporary = path.with_name(f".{path.name}.part")
+    temporary.write_text(text, encoding="utf-8")
+    temporary.replace(path)
 
 
 def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
@@ -530,11 +540,13 @@ def _flat(identity: dict) -> dict:
 
 def _preprocess_block(record: dict) -> dict:
     """The preprocessing record without its commands: status, protocol, quality, classifier evidence, acceptance,
-    counts and pass rates per step, lengths, isotypes and timing."""
+    the assembly evidence (``assembly``: the deciles of the pairs that passed and failed, and the failures by kind,
+    also as ``assembly_failures``), counts and pass rates per step, lengths, isotypes and timing."""
     keys = ("status", "protocol", "quality", "quality_steps", "classifier", "accepted", "assembly_acceptance", "counts",
             "pass_rates", "checks", "lengths", "isotypes", "isotypes_unique", "nproc", "wall_seconds", "fingerprint")
     block = {key: record[key] for key in keys if key in record}
     if isinstance(record.get("assembly"), dict):
+        block["assembly"] = record["assembly"]
         block["assembly_failures"] = (record["assembly"].get("fail") or {}).get("kinds")
     block["steps"] = [{key: step.get(key) for key in ("name", "records", "pass_rate", "seconds")}
                       for step in record.get("steps") or ()]
