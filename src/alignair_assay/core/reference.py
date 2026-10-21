@@ -72,6 +72,15 @@ class Reference:
                 h.update(f"{letter}\t{name}\t{self.alleles[letter][name]}\n".encode())
         return h.hexdigest()
 
+    def gapped_digest(self) -> str:
+        """SHA-256 over every IMGT-gapped V form's name and sequence, in sorted order. ``digest`` leaves the gapped
+        forms out, so the caches keyed on it stay valid; what reads the gapped forms (Cys104, the 318 rule) is keyed
+        on this too."""
+        h = hashlib.sha256()
+        for name in sorted(self.gapped_v):
+            h.update(f"{name}\t{self.gapped_v[name]}\n".encode())
+        return h.hexdigest()
+
     def sequences(self) -> dict[str, str]:
         """Every allele's sequence by name, across the gene letters."""
         return {name: seq for table in self.alleles.values() for name, seq in table.items()}

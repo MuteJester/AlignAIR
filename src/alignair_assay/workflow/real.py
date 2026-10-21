@@ -31,8 +31,9 @@ and R1 without the reads called to the SD3-only genes (``workflow.real_score``).
    (``AlignAIRImage.install_model``) before this refusal; no other file of the run directory is written.
 
 **The manifest** (``real_manifest``) records the configuration and its ``identity``: the donors, split, cap, tools,
-reference (its name and its content digest, so a dataconfig changed under its name is named in the refusal),
-preprocessing options, pinned images and every tool's ``fingerprint()``. ``run_real`` refuses a run
+reference (its name, its content digest and its gapped forms' digest, so a dataconfig changed under its name is
+named in the refusal), preprocessing options, pinned images and every tool's ``fingerprint()``; and the GenAIRR the
+reference was built from (``core.provenance.genairr_provenance``), as ``all`` records it. ``run_real`` refuses a run
 directory whose manifest has another identity, naming the fields that differ (a tool's setting as
 ``<tool>.<key>``), unless ``force``; forced, the manifest is replaced (``replaced``: the old hash and the fields) and
 each step redoes what the change affects, every step being skipped only while its own record is current.
@@ -72,7 +73,7 @@ from pathlib import Path
 
 from alignair_assay.core.container import ContainerError, pinned_repo_digest
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.core.provenance import git_state, sha256_file
+from alignair_assay.core.provenance import genairr_provenance, git_state, sha256_file
 from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.real.fetch import (
     IGENOTYPER_COMMIT,
@@ -249,7 +250,7 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
     reference = real_steps.load_reference(cfg.reference)
     identity = {"donors": list(cfg.donors), "split": cfg.split, "cap": cfg.cap,
                 "tools": list(cfg.tools) if scoring else [], "reference": cfg.reference,
-                "reference_digest": reference.digest(),
+                "reference_digest": reference.digest(), "reference_gapped_digest": reference.gapped_digest(),
                 "paper_length_filter": cfg.paper_length_filter, "accept_assembly_loss": cfg.accept_assembly_loss,
                 "stop_after": cfg.stop_after, "images": pinned_images(cfg)}
     _check_manifest(identity, layout, force=force, ignore=("settings",))  # before any work: refusal 3
@@ -278,8 +279,10 @@ def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict
     summary = {
         "kind": SUMMARY_KIND, "version": VERSION, "config": dataclasses.asdict(cfg), "config_hash": config_hash,
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "provenance": {"git": git_state(Path(__file__).resolve().parent), "images": images, "tools": settings,
-                       "reference": {"name": cfg.reference, "digest": reference.digest()},
+        "provenance": {"git": git_state(Path(__file__).resolve().parent), "genairr": genairr_provenance(),
+                       "images": images, "tools": settings,
+                       "reference": {"name": cfg.reference, "digest": reference.digest(),
+                                     "gapped_digest": reference.gapped_digest()},
                        "ogrdb": None if ctx.iuis is None else ctx.iuis.source,
                        "igenotyper_commit": IGENOTYPER_COMMIT, "fetch_quality": (fetched or {}).get("quality")},
         "sensitivity": sensitivity, "donors": blocks, "pooled": _pooled(cfg, scored, blocks, sensitivity),
@@ -375,7 +378,8 @@ def _donor(cfg: RealConfig, donor: str, layout: RunLayout,
     steps["scores"], block["tools"] = {}, {arm: {} for arm in ARMS}
     common = {"truth_sha256": sha256_file(layout.real_truth(donor)),
               "genotype_sha256": sha256_file(layout.real_genotype_json(donor)),
-              "iuis_ogrdb_sha256": iuis.source.get("sha256"), "reference_digest": ctx.reference.digest()}
+              "iuis_ogrdb_sha256": iuis.source.get("sha256"), "reference_digest": ctx.reference.digest(),
+              "reference_gapped_digest": ctx.reference.gapped_digest()}
     for (tool, arm), result in results.items():
         if block["runs"][arm][tool]["status"] != "ok":
             continue
@@ -539,7 +543,7 @@ def _manifest(cfg: RealConfig, identity: dict, layout: RunLayout, *, force: bool
         "config_hash": config_hash, "split": cfg.split,
         "host": {"hostname": platform.node(), "platform": platform.platform(), "python": platform.python_version(),
                  "logical_cpus": os.cpu_count()},
-        "git": git_state(Path(__file__).resolve().parent),
+        "git": git_state(Path(__file__).resolve().parent), "genairr": genairr_provenance(),
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "replaced": replaced})
     return config_hash
 

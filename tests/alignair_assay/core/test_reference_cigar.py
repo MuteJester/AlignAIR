@@ -58,3 +58,22 @@ def test_reference_digest():
     renamed = Reference(alleles={"v": {"A*01": "ACGT", "A*03": "ACGA"}, "j": {"J*01": "TTT"}}, anchors={})
     moved = Reference(alleles={"v": {"A*01": "ACGT"}, "j": {"J*01": "TTT", "A*02": "ACGA"}}, anchors={})
     assert len({ref.digest(), changed.digest(), renamed.digest(), moved.digest()}) == 4
+
+
+def test_reference_gapped_digest_follows_the_gapped_forms_and_leaves_the_digest_alone():
+    # the IMGT-gapped forms decide Cys104 and the 318 rule, so what reads them is keyed on them; digest() stays the
+    # alleles' alone, so every cache keyed on it stays valid
+    alleles = {"v": {"A*01": "ACGT", "A*02": "ACGA"}}
+    ref = Reference(alleles=alleles, anchors={}, gapped_v={"A*01": "AC.GT", "A*02": "ACG.A"})
+    regapped = Reference(alleles=alleles, anchors={}, gapped_v={"A*01": "A.CGT", "A*02": "ACG.A"})
+    shuffled = Reference(alleles=alleles, anchors={"A*01": 3}, gapped_v={"A*02": "ACG.A", "A*01": "AC.GT"})
+    plain = Reference(alleles=alleles, anchors={})
+    assert ref.digest() == regapped.digest() == plain.digest()
+    assert ref.gapped_digest() == shuffled.gapped_digest() and len(ref.gapped_digest()) == 64
+    assert len({ref.gapped_digest(), regapped.gapped_digest(), plain.gapped_digest()}) == 3
+
+
+def test_the_dataconfigs_digest_is_unchanged(reference):
+    # P1 and P2 caches are keyed on it
+    assert reference.digest() == "4d70015675eb18e3af36cc94c516a83aeb7288cc8aa84aaf05d358c25489bf89"
+    assert reference.gapped_digest() != reference.digest()

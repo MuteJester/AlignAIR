@@ -575,6 +575,41 @@ def test_a_reference_changed_under_its_name_makes_every_run_stale(tmp_path, fake
     assert manifest["identity"]["reference_digest"] == CHANGED.digest()
     assert manifest["replaced"]["changed"] == ["reference_digest"]
 
+def test_a_gapped_form_changed_under_the_same_sequences_redoes_what_reads_it(tmp_path, fakes, monkeypatch):
+    # The gapped forms place Cys104 (the truth's windows and anchors) and decide the 318 rule (the scores), and the
+    # IUIS map reads them; the tools never do. Another gapped form under the same sequences changes no digest(), so
+    # the manifest names reference_gapped_digest, and forced, the genotype, truth and scores are redone, the shared
+    # arm's runs are reused, and the genotype arm's, keyed on genotype.json as on any change of the capture, redone.
+    layout = RunLayout(tmp_path / "run")
+    first = run_real(_config(tmp_path), layout)
+    runs = list(FakeTool.runs)
+    gapped = dict(REFERENCE.gapped_v)
+    old = gapped["IGHVF5-G1*01"]  # one gap column moved inside FR1: the same sequence, codon 104 where it was
+    gapped["IGHVF5-G1*01"] = old[:26] + "." + old[26] + old[28:]
+    assert gapped["IGHVF5-G1*01"].replace(".", "") == old.replace(".", "") and len(gapped["IGHVF5-G1*01"]) == len(old)
+    regapped = Reference(alleles=REFERENCE.alleles, anchors={}, gapped_v=gapped)
+    assert regapped.digest() == REFERENCE.digest() and regapped.gapped_digest() != REFERENCE.gapped_digest()
+    monkeypatch.setattr(real_steps, "load_reference", lambda name: regapped)
+    with pytest.raises(ValueError, match="reference_gapped_digest"):
+        run_real(_config(tmp_path), layout)
+    summary = run_real(_config(tmp_path), layout, force=True)
+    steps = summary["donors"]["W-97"]["steps"]
+    assert steps["genotype"]["status"] == steps["truth"]["status"] == "done"
+    assert {step["status"] for step in steps["scores"].values()} == {"done"}
+    assert {name: step["status"] for name, step in steps["runs"].items()} == {
+        "shared/igblast": "reused", "shared/alignair": "reused", "shared/alignair-api": "reused",
+        "genotype/igblast": "done", "genotype/alignair-api": "done"}
+    assert sorted(FakeTool.runs[len(runs):]) == [("alignair-api", "W-97", "genotype"), ("igblast", "W-97", "genotype")]
+    for summary_ in (first, summary):
+        assert summary_["provenance"]["reference"]["gapped_digest"] in (REFERENCE.gapped_digest(),
+                                                                         regapped.gapped_digest())
+    # the GenAIRR the reference was built from is recorded in the manifest and the summary
+    manifest = json.loads(layout.real_manifest().read_text())
+    assert manifest["identity"]["reference_gapped_digest"] == regapped.gapped_digest()
+    assert set(manifest["genairr"]) >= {"genairr_version", "genairr_git_commit", "genairr_source_sha256"}
+    assert summary["provenance"]["genairr"] == manifest["genairr"]
+
+
 def test_config_change_needs_force(tmp_path, fakes):
     layout = RunLayout(tmp_path / "run")
     run_real(_config(tmp_path), layout)

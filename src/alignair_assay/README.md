@@ -1468,6 +1468,7 @@ in the manifest, and each output's provenance records it:
 | OGRDB | IGH_VDJ germline set G00060 rev 8 (the IUIS map) and rev 9 (the cohort's labels), by size and md5 |
 | IGenotyper | `gene_coords.bed` at commit `40a00015f000adae477d25e62ec2e9e8dba9da98`, by size and md5 |
 | SD3 | the paper's supplementary workbook, by size and md5 |
+| Shared reference | the GenAIRR dataconfig named, by its alleles' digest (`Reference.digest`) and its IMGT-gapped V forms' (`Reference.gapped_digest`: they place Cys104 and decide the 318 rule) in the manifest's identity, with the GenAIRR it was built from (`genairr_provenance`) in the manifest and the summary; a change needs `--force`, and the genotype, truth and scores are keyed on both digests |
 
 **Fetch (`real.fetch`).** Every download is pinned in the module (size, md5 or S3 ETag, commit, image digest), so a
 fresh data root downloads the same bytes or refuses. A converted pair is pinned by its reads instead: each mate's

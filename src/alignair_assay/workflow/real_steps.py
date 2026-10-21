@@ -10,14 +10,16 @@ whose fingerprint differs is redone, with every step after it that reads its out
 - ``genotype`` (``step_genotype``): the VDJbase CSV loaded and mapped to the shared reference and the IUIS labels, with
   the genes the donor's contigs capture and resolve (``real.locus.donor_capture``, in the pinned samtools container),
   as ``genotype.json``. Its fingerprint: the md5s of the CSV, the BAM, the BED and the OGRDB set, the reference's
-  digest, the IUIS map's OGRDB file, ``SAMTOOLS_IMAGE`` and ``GENOTYPE_CODE``.
+  digest and its gapped forms' (``Reference.gapped_digest``: the IUIS map infers labels through them), the IUIS
+  map's OGRDB file, ``SAMTOOLS_IMAGE`` and ``GENOTYPE_CODE``.
 - ``preprocess`` (``step_preprocess``): ``real.preprocess.preprocess_run``, which reuses its own record while current
   (the mates' md5s, the pinned Immcantation image, its code and parameters, the cap among them). A run the classifier
   refuses, or whose assembly loss is over the line, raises ``PreprocessError`` with its evidence: the workflow stops
   that donor and goes on.
 - ``truth`` (``step_truth``): ``real.truth.real_truths`` on the capped preprocessed reads, the very reads every tool is
   given, in their order; ``truth.jsonl.gz`` with its record as the header line. Its fingerprint: the SHA-256s of
-  ``reads.fasta``, ``reads.tsv`` and ``genotype.json``, the reference's digest and ``TRUTH_CODE``.
+  ``reads.fasta``, ``reads.tsv`` and ``genotype.json``, the reference's digest and its gapped forms' (the shared
+  anchors place Cys104 through them) and ``TRUTH_CODE``.
 - ``runs`` (``run_identity``, ``current_run``, ``make_run``): one tool on one arm, ``Runner.run`` on ``reads.fasta``;
   ``run.json`` (``runners.base.write_run_json``) is written last and records the run's ``identity``: the tool's
   ``fingerprint()`` (binary, image and model digests), the reads' SHA-256, the shared reference's content digest
@@ -76,7 +78,7 @@ PACKAGE = Path(__file__).resolve().parents[1]
 # The modules each step runs, relative to the package; their code digest is in the step's fingerprint.
 FETCH_CODE = ("real/fetch.py",)
 GENOTYPE_CODE = ("real/genotype.py", "real/locus.py", "core/container.py")
-TRUTH_CODE = ("real/truth.py", "real/genotype.py")
+TRUTH_CODE = ("real/truth.py", "real/genotype.py", "core/reference.py")
 RUNNER_CODE = {"igblast": ("runners/base.py", "runners/igblast.py", "runners/reference.py"),
                "alignair": ("runners/base.py", "runners/alignair.py", "runners/reference.py"),
                "alignair-api": ("runners/base.py", "runners/alignair.py", "runners/alignair_api.py",
@@ -173,7 +175,7 @@ def step_genotype(donor: str, fetched: Fetched, layout: RunLayout, reference: Re
     ``capture_genotype`` and written there."""
     started = time.monotonic()
     inputs = {**{key: fetched.md5[key] for key in GENOTYPE_FILES}, "reference_digest": reference.digest(),
-              "iuis_ogrdb_sha256": iuis.source.get("sha256")}
+              "reference_gapped_digest": reference.gapped_digest(), "iuis_ogrdb_sha256": iuis.source.get("sha256")}
     fingerprint = digest({"inputs": inputs, "image": SAMTOOLS_IMAGE, "code_sha256": code_digest(GENOTYPE_CODE)})
     path = layout.real_genotype_json(donor)
     record = read_json(path)
@@ -207,7 +209,8 @@ def step_truth(donor: str, layout: RunLayout, genotype: RealGenotype,
     started = time.monotonic()
     reads, meta = layout.real_reads(donor), layout.real_reads_meta(donor)
     inputs = {"reads_sha256": sha256_file(reads), "meta_sha256": sha256_file(meta),
-              "genotype_sha256": sha256_file(layout.real_genotype_json(donor)), "reference_digest": reference.digest()}
+              "genotype_sha256": sha256_file(layout.real_genotype_json(donor)), "reference_digest": reference.digest(),
+              "reference_gapped_digest": reference.gapped_digest()}
     fingerprint = digest({"inputs": inputs, "code_sha256": code_digest(TRUTH_CODE)})
     path = layout.real_truth(donor)
     if jsonl_header(path).get("fingerprint") == fingerprint:
