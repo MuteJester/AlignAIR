@@ -1129,7 +1129,9 @@ def _fake_checks(monkeypatch, *, raising: str | None = None, statuses: dict | No
     return roots
 
 
-def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch):
+def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch, capsys):
+    from alignair_assay.core.provenance import CODE_SUFFIXES, tree_digest
+
     cfg = _stored_runs(tmp_path)
     roots = _fake_checks(monkeypatch, statuses={"self_check.real_truth_health": "warn"})
     layout = RunLayout(tmp_path / "out")
@@ -1151,6 +1153,18 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch)
     assert scratches[0] == layout.audit_scratch("speed")  # IgBLAST is timed first, on a quiet machine
     assert {root.name for root in scratches} == {"speed", "sim_v_top1_current", "sim_build_1", "sim_build_2",
                                                  "real_scores", "null_all", "null_diagnose", "null_real"}
+    # the record names the assay code it ran (its sources' digest), and the markdown shows it
+    package = Path(audit.__file__).resolve().parents[1]
+    code = tree_digest(package, suffixes=CODE_SUFFIXES)
+    assert record["provenance"]["assay_code_sha256"] == code and f"`{code[:12]}`" in layout.audit_md.read_text()
+    # each check is printed once, as it finishes
+    printed = capsys.readouterr().out.splitlines()
+    assert [line.split(":")[0] for line in printed if line.startswith("audit ")] == [
+        f"audit {name}" for name in ("band.speed", "band.sim_v_top1_current", "self_check.sim_oracle",
+                                     "self_check.sim_staleness", "self_check.real_oracle",
+                                     "self_check.real_truth_health", "band.real_known", "band.sim_v_top1",
+                                     "reproducible.sim_build", "reproducible.real_scores", "null.all",
+                                     "self_check.sim_oracle_current", "null.diagnose", "null.real")]
 
 
 def test_a_check_that_raises_fails_and_the_others_go_on(tmp_path, monkeypatch):
@@ -1207,6 +1221,7 @@ def test_the_audit_command(tmp_path, monkeypatch, capsys):
     assert main(argv) == 0
     out = capsys.readouterr().out
     assert "AUDIT PASS: 1 checks" in out and str(RunLayout(tmp_path / "out").audit_md) in out
+    assert "null.all" not in out  # the workflow prints each check as it finishes; the command adds the verdict only
     given = seen["cfg"]
     assert (given.checkpoint, given.device, given.skip_speed) == (cfg.checkpoint, "cuda", True)
     assert seen["layout"].root == tmp_path / "out"

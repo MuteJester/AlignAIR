@@ -235,9 +235,14 @@ PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_ge
     when it built none, `warn` outside 97.9% ± 1.5 pp), since the stored number comes from older code; its speed,
     timed now on a fresh dev S1, within 15% of the stored measurement (informational: `warn` outside or on an
     error, `skipped (load)` when the 1-minute load stays above 1.5).
+- **What n counts.** Reads or cases for every check but two: `band.speed` counts the timed configurations
+  (`igblast_1t`, `igblast_8t`) and `self_check.sim_staleness` the stored run's suites.
 - **Verdict.** The audit exits 0 only when no check failed and one passed: a check that passes on nothing (n 0), or
-  raises, fails. Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on each audit; `--out` may not
-  overlap a stored run.
+  raises, fails (an informational one warns). Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on
+  each audit; `--out` may not overlap a stored run. The stored runs are never written; `null.real` runs `real`, whose
+  fetch step updates its download bookkeeping under `--data-root` (the fetch records and manifest beside the
+  downloads, outside both stored runs). The record names the code it ran: the assay's git state and `assay_code_sha256`, the digest of
+  `src/alignair_assay`'s sources.
 
 ## Layers and dependency rule
 
@@ -678,8 +683,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   verdict included) and scores nothing, so it takes any pilot donor, test donors without `--split test` included
   (each donor's split is recorded), and needs no tool option; scoring donors in the same run directory afterwards is
   another configuration (`--force`), which reuses their preprocessing.
-- `audit` runs `workflow.audit.run_audit` (see The readiness audit), prints each check and the verdict, and exits 0
-  only when the audit passes. Another checkpoint label than `base`, a stored run without its records, a missing data
+- `audit` runs `workflow.audit.run_audit` (see The readiness audit), which prints each check once as it finishes,
+  then prints the verdict, and exits 0 only when the audit passes. Another checkpoint label than `base`, a stored run without its records, a missing data
   root or checkpoint, an `--out` overlapping a stored run, and a CUDA device torch does not see exit with status 2
   before any work. `--igblast-dir` defaults to the release `--sim-run` recorded.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the

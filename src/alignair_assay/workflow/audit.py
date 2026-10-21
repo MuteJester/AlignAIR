@@ -72,7 +72,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.core.provenance import genairr_provenance, git_state, sha256_file, tree_digest
+from alignair_assay.core.provenance import CODE_SUFFIXES, genairr_provenance, git_state, sha256_file, tree_digest
 from alignair_assay.core.records import read_json, write_json, write_text
 from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.real.fetch import PILOT_SPLIT
@@ -1047,9 +1047,11 @@ def check_inputs(cfg: AuditConfig, layout: RunLayout) -> None:
 def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
     """Run every check (the module docstring) and write ``layout.audit_json`` and ``layout.audit_md``; returns the
     record: ``kind``, ``version``, the ``verdict``, the ``config``, the audited ``checkpoint`` (path and SHA-256),
-    the ``provenance`` (host, the assay's git state, the GenAIRR in use), ``created_utc``, ``seconds`` and the
-    ``checks`` in ``CHECKS`` order. IgBLAST is timed first, while the machine is quietest. A check that raises fails
-    with its error as the reason, and the others go on. Refusals (``check_inputs``) come before any work."""
+    the ``provenance`` (host, the assay's git state, ``assay_code_sha256``: the digest of this package's sources, so the
+    record names the code it ran, and the GenAIRR in use), ``created_utc``, ``seconds`` and the ``checks`` in
+    ``CHECKS`` order, each printed as it finishes. IgBLAST is timed first, while the machine is quietest. A check that
+    raises fails with its error as the reason (an ``INFORMATIONAL`` one warns), and the others go on. Refusals
+    (``check_inputs``) come before any work."""
     start = time.monotonic()
     cfg = dataclasses.replace(cfg, sim_run=absolute_path(cfg.sim_run), real_run=absolute_path(cfg.real_run),
                               data_root=absolute_path(cfg.data_root), checkpoint=absolute_path(cfg.checkpoint),
@@ -1102,7 +1104,9 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
     record = {"kind": AUDIT_KIND, "version": AUDIT_VERSION, "verdict": verdict(checks),
               "config": dataclasses.asdict(cfg),
               "checkpoint": {"label": CHECKPOINT_LABEL, "path": cfg.checkpoint, "sha256": sha256_file(cfg.checkpoint)},
-              "provenance": {"host": platform.node(), "assay": git_state(_PACKAGE), "genairr": genairr_provenance()},
+              "provenance": {"host": platform.node(), "assay": git_state(_PACKAGE),
+                             "assay_code_sha256": tree_digest(_PACKAGE, suffixes=CODE_SUFFIXES),
+                             "genairr": genairr_provenance()},
               "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "seconds": round(time.monotonic() - start, 1), "checks": checks, "groups": GROUPS}
     record = json.loads(json.dumps(record, default=_jsonable))

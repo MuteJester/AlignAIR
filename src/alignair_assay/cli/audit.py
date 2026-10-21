@@ -28,7 +28,8 @@ def register(sub) -> None:
 
 
 def run(args) -> int:
-    """Run ``workflow.audit.run_audit``, print each check and the verdict and name the record; 0 when the audit
+    """Run ``workflow.audit.run_audit`` (which prints each check as it finishes), print the verdict and name the
+    record; 0 when the audit
     passes (no check failed, and one passed), else 2. Refusals (another checkpoint label, a missing input, an output
     directory overlapping a stored run) exit with status 2 before any work."""
     # Imported here so the other commands never load the audit's workflows.
@@ -45,9 +46,6 @@ def run(args) -> int:
                             workers=args.workers, threads=args.threads)
     layout = RunLayout(absolute_path(args.out))
     record = audit.run_audit(cfg, layout)
-    for found in record["checks"]:
-        reason = f"; {found['reason']}" if found["reason"] and found["status"] != "pass" else ""
-        print(f"{found['name']}: {found['status']} (n={found['n']}) {found['evidence'].get('summary') or ''}{reason}")
     print(record["verdict"]["line"])
     print(f"audit: {layout.audit_md} ({layout.audit_json})")
     return 0 if record["verdict"]["status"] == "pass" else 2
