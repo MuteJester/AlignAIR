@@ -33,9 +33,10 @@ def register(sub) -> None:
                    help="diagnose even when the AlignAIR code the replay mirrors has changed since it was pinned "
                         "(the results are marked unverified)")
     p.add_argument("--against", metavar="PATH_OR_MODEL_KEY",
-                   help="compare with another model on the same reads: a .alignair checkpoint (diagnosed first with "
-                        "these settings) or the model key of one already diagnosed in --run-dir. a is --checkpoint, "
-                        "b this one: Δ = b − a, fixed = reads a gets wrong and b right")
+                   help="compare with a baseline model on the same reads: a .alignair checkpoint (diagnosed first "
+                        "with these settings) or the model key of one already diagnosed in --run-dir. Δ = "
+                        "--checkpoint − the baseline; fixed = reads the baseline gets wrong and --checkpoint right, "
+                        "broken = the baseline right and --checkpoint wrong")
     p.set_defaults(func=run)
 
 
@@ -49,10 +50,11 @@ def run(args) -> int:
     and so does AlignAIR code the replay is not pinned to, unless ``--allow-unverified-replay`` (then the results
     are marked unverified, with a warning).
 
-    With ``--against`` (``evaluate``'s ``against``): an existing file is a checkpoint (made absolute), else a model
-    key; a missing checkpoint, a model key without current diagnostics of every suite, or diagnostics that differ in
-    anything but the model exit with status 2. It then prints the comparison: per suite the headline deltas and the
-    reads fixed and broken, and the detail file."""
+    With ``--against`` (``evaluate``'s ``against``, the baseline): an existing file is a checkpoint (made absolute),
+    else a model key; a missing checkpoint, a model key without current diagnostics of every suite, or diagnostics that
+    differ in anything but the model exit with status 2. It then prints the comparison: per suite the headline deltas
+    (this model − the baseline) and the reads fixed (the baseline wrong, this model right) and broken, and the detail
+    file."""
     # Imported here so the other commands never load torch and alignair.
     from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS
     from alignair_assay.workflow.diagnose import MODEL_KEY, evaluate, parse_device
@@ -96,13 +98,14 @@ def run(args) -> int:
 
 
 def _print_against(result, layout: RunLayout) -> None:
-    """The comparison: which model, then per suite the headline deltas, the significant metrics, the reads fixed and
-    broken and the detail file."""
+    """The comparison with the baseline: which model, then per suite the headline deltas (this − baseline), the
+    significant metrics, the reads fixed and broken and the detail file."""
     summary = result.against["summary"]
-    other = summary["model_key"]
+    other = summary["baseline"]
     same = " (the same model key: one record compared with itself)" if summary["same_model"] else ""
-    print(f"against {other} ({summary['source'] or 'source not recorded'}){same}: a is this model, b the against "
-          "model; Δ = b − a, fixed = reads a gets wrong and b right, broken the other way")
+    print(f"against the baseline {other} ({summary['source'] or 'source not recorded'}){same}: Δ = this model − the "
+          "baseline; fixed = reads the baseline gets wrong and this model right, broken = the baseline right and "
+          "this model wrong")
     for name, suite in summary["suites"].items():
         deltas = ", ".join(f"{metric} {format_value(metric, entry['delta'], delta=True)}"
                            for metric in AGAINST_HEADLINE if (entry := suite["headline"].get(metric)))

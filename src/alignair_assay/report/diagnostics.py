@@ -3,12 +3,14 @@ markdown.
 
 ``build_diagnostics_report`` assembles the dict (strict JSON: NaN and infinity become None) with its ``summary``
 (``diagnostics_summary``), which ``diagnostics_scalars`` flattens for a training dashboard. With a comparison against
-another model (``against``: ``workflow.diagnose.compare_models``), the report holds it and its summary
-(``against_summary``). Four renderings:
+a baseline model (``against``: ``workflow.diagnose.compare_models``; Δ = this model − the baseline, fixed: reads the
+baseline gets wrong and this model right), the report holds it and its summary (``against_summary``). Four
+renderings:
 
 - ``diagnostics_markdown``: the summary, ``diagnostics.md``. A three-line header, then, with a comparison,
-  ``AGAINST_SECTION`` first: per suite the paired deltas of ``AGAINST_HEADLINE`` (the two models' paired means, Δ,
-  its 95% CI, the verdict and the reads fixed and broken), the boundary exact rates' Δ under both decoders
+  ``AGAINST_SECTION`` first: per suite the paired deltas of ``AGAINST_HEADLINE`` (the baseline's and this model's
+  paired means, Δ, its 95% CI, the verdict and the reads fixed and broken), the boundary exact rates' Δ under both
+  decoders
   (``AGAINST_BOUNDARIES``), and the reads fixed and broken per family with their totals. Then ``SUMMARY_SECTIONS``:
   1. **Where the end-to-end error comes from**: per suite, for ``clone_key.exact`` and ``junction.nt_exact``, the
      baseline, the Δ of each stage's truth (bold when significant, marked when worse), what is left after every
@@ -54,8 +56,8 @@ FAMILY_LABELS = {"baseline": "end-to-end", "heads": "heads"}
 AGAINST_HEADLINE = ("clone_key.exact", "junction.nt_exact", "v.top1_in_set", "d.top1_in_set", "j.top1_in_set")
 AGAINST_BOUNDARIES = tuple(f"head.{g}.{edge}_exact.{decoder}" for g in ("v", "d", "j") for edge in ("start", "end")
                            for decoder in ("soft", "argmax"))
-# A comparison's verdict, from the models' side (a: this model; b: the against model).
-AGAINST_VERDICTS = {"b_better": "b better", "a_better": "a better", "tie_or_inconclusive": "tie"}
+# A comparison's verdict (``stats.compare``'s a is the baseline, b this model).
+AGAINST_VERDICTS = {"b_better": "this better", "a_better": "baseline better", "tie_or_inconclusive": "tie"}
 # The end-to-end metrics the summary traces through the stages.
 SUMMARY_METRICS = ("clone_key.exact", "junction.nt_exact")
 # The cumulative chain's stages, in order, and their summary column names.
@@ -123,15 +125,17 @@ _FALLBACKS_NOTE = ("Cropped: reads longer than AlignAIR's window, which it crops
                    "scored. A fallback is a read whose truth for a segment could not be substituted in a variant "
                    "(unscorable, unobserved, a wrong model orientation, cropped, an allele the model cannot call, an "
                    "inverted D): that segment kept the model's output.")
-_AGAINST_NOTE = ("a is this model, b the against model, on the same reads (the same suite builds and settings). "
-                 "Δ = b − a over the reads both score (percentage points for rates), with its 95% CI; fixed: reads a "
-                 "gets wrong and b right (a 0/1 metric), broken: the other way. Verdicts: Holm within each suite's "
-                 "end-to-end and head families, cluster-aware where a suite has clusters.")
-_AGAINST_BOUNDARIES_NOTE = ("Boundary exact rates (head metrics): Δ under the product's soft-argmax decoder / the "
-                            "position logits' argmax, in pp; bold: significant. Their CIs are in the suite detail.")
+_AGAINST_NOTE = ("This model against the baseline (`--against`), on the same reads (the same suite builds and "
+                 "settings). Δ = this model − the baseline over the reads both score (percentage points for rates), "
+                 "with its 95% CI; fixed: reads the baseline gets wrong and this model right (a 0/1 metric), broken: "
+                 "reads the baseline gets right and this model wrong. Verdicts: Holm within each suite's end-to-end "
+                 "and head families, cluster-aware where a suite has clusters.")
+_AGAINST_BOUNDARIES_NOTE = ("Boundary exact rates (head metrics): Δ (this − baseline) under the product's soft-argmax "
+                            "decoder / the position logits' argmax, in pp; bold: significant. Their CIs are in the "
+                            "suite detail.")
 _AGAINST_DETAIL_NOTE = ("Each model's own mean over its own reads (n, coverage), then the paired means over the reads "
-                        "both score, whose difference is Δ (b − a), its 95% CI, p and the Holm-corrected verdict "
-                        "within the family. Informational metrics are not compared.")
+                        "both score, whose difference is Δ (this − baseline), its 95% CI, p and the Holm-corrected "
+                        "verdict within the family. Informational metrics are not compared.")
 
 
 def build_diagnostics_report(*, model: dict, config: dict, suites: dict, profile: dict | None,
@@ -194,15 +198,16 @@ def diagnostics_summary(report: dict) -> dict:
 
 
 def against_summary(against: dict | None) -> dict | None:
-    """The one-page summary of a comparison with another model (``workflow.diagnose.compare_models``; None for
-    None): its ``model_key``, ``source``, ``same_model`` and ``replay_verified``; per suite (``suites``) the
-    ``cases``, the ``clusters`` of two or more reads, how many metrics each family ``compared``, the ``headline``
-    (each metric of ``AGAINST_HEADLINE`` and ``AGAINST_BOUNDARIES`` compared -> its ``family``, the paired means
-    ``mean_a`` and ``mean_b``, ``delta``, ``ci95``, ``verdict``, ``test``, ``p_value``, ``n_paired``, ``n_clusters``
-    and the reads ``fixed`` and ``broken``, None for a metric that is not 0/1), ``deltas`` (every compared metric ->
-    Δ), ``fixed`` and ``broken`` (every 0/1 metric -> reads), ``reads`` (family -> the reads fixed and broken on at
-    least one of its metrics) and the ``significant`` metrics; and the ``totals`` (family -> reads fixed and broken,
-    summed over the suites)."""
+    """The one-page summary of a comparison with a baseline model (``workflow.diagnose.compare_models``; None for
+    None): the ``baseline``'s model key, its ``source``, ``same_model`` and ``replay_verified``; per suite
+    (``suites``) the ``cases``, the ``clusters`` of two or more reads, how many metrics each family ``compared``, the
+    ``headline`` (each metric of ``AGAINST_HEADLINE`` and ``AGAINST_BOUNDARIES`` compared -> its ``family``, the
+    paired means ``mean_baseline`` and ``mean_this``, ``delta`` (this − baseline), ``ci95``, ``verdict``, ``test``,
+    ``p_value``, ``n_paired``, ``n_clusters`` and the reads ``fixed`` (the baseline wrong, this model right) and
+    ``broken``, None for a metric that is not 0/1), ``deltas`` (every compared metric -> Δ), ``fixed`` and
+    ``broken`` (every 0/1 metric -> reads), ``reads`` (family -> the reads fixed and broken on at least one of its
+    metrics) and the ``significant`` metrics; and the ``totals`` (family -> reads fixed and broken, summed over the
+    suites)."""
     if not against:
         return None
     suites = {}
@@ -216,8 +221,8 @@ def against_summary(against: dict | None) -> dict | None:
         for metric in (*AGAINST_HEADLINE, *AGAINST_BOUNDARIES):
             if metric in entries:
                 family, entry = entries[metric]
-                headline[metric] = {"family": family, "mean_a": entry.get("mean_a_paired"),
-                                    "mean_b": entry.get("mean_b_paired"),
+                headline[metric] = {"family": family, "mean_baseline": entry.get("mean_a_paired"),
+                                    "mean_this": entry.get("mean_b_paired"),
                                     **{key: entry.get(key) for key in ("delta", "ci95", "verdict", "test", "p_value",
                                                                        "n_paired", "n_clusters")},
                                     "fixed": (changes.get(metric) or {}).get("fixed"),
@@ -236,7 +241,7 @@ def against_summary(against: dict | None) -> dict | None:
     totals = {family: {kind: sum(suite["reads"][family][kind] for suite in suites.values() if family in suite["reads"])
                        for kind in ("fixed", "broken")}
               for family in AGAINST_FAMILIES if any(family in suite["reads"] for suite in suites.values())}
-    return {"model_key": against["model_key"], "source": against.get("source"),
+    return {"baseline": against["baseline"], "source": against.get("source"),
             "same_model": bool(against.get("same_model")),
             "replay_verified": against.get("replay_verified") is not False, "suites": suites, "totals": totals}
 
@@ -247,7 +252,8 @@ def diagnostics_scalars(summary: dict) -> dict[str, float]:
     ``<S>/true_germline/<metric>``, ``<S>/heads/<head metric>`` (``head.{g}.{edge}_exact.{soft,argmax}``, the
     allele top-1/top-3 and the metadata heads), ``<S>/calibration/<g>.ece``, ``speed/reads_per_second`` and
     ``speed/{stages,modules}/<name>`` (shares); with a comparison, ``<S>/against/<metric>.delta`` for every compared
-    metric (b − a) and ``<S>/against/<metric>.fixed`` and ``.broken`` (reads) for every 0/1 one."""
+    metric (this model − the baseline) and ``<S>/against/<metric>.fixed`` (the baseline wrong, this model right) and
+    ``.broken`` (reads) for every 0/1 one."""
     out: dict[str, float] = {}
 
     def put(key: str, value) -> None:
@@ -444,23 +450,24 @@ def diagnostics_markdown(report: dict) -> str:
 
 def _against_section(summary: dict) -> list[str]:
     against = summary["against"]
-    key = against["model_key"]
-    lines = [f"Against model `{key}` ({against['source'] or 'source not recorded'}). {_AGAINST_NOTE}"]
+    key = against["baseline"]
+    lines = [f"Against the baseline `{key}` ({against['source'] or 'source not recorded'}). {_AGAINST_NOTE}"]
     if against["same_model"]:
         lines += ["", "Both are the same model key, so this compares one record with itself: every Δ is 0. Compare "
                       "with the model in memory, or another file of other weights, to diagnose it twice."]
     if not against["replay_verified"]:
-        lines += ["", "**The against model was diagnosed with an unverified replay.**"]
+        lines += ["", "**The baseline was diagnosed with an unverified replay.**"]
     rows = []
     for name, suite in against["suites"].items():
         for metric in AGAINST_HEADLINE:
             entry = suite["headline"].get(metric)
             if entry:
-                rows.append([name, metric, format_value(metric, entry["mean_a"]), format_value(metric, entry["mean_b"]),
-                             format_value(metric, entry["delta"], delta=True), _ci(metric, entry["ci95"]),
-                             _against_verdict(entry), _fixed_broken(entry)])
-    lines += ["", *(markdown_table(["Suite", "Metric", "a", "b", "Δ (b − a)", "95% CI", "Verdict", "Fixed / broken"],
-                                   rows) if rows else ["No end-to-end metric was compared (no variant was run)."])]
+                rows.append([name, metric, format_value(metric, entry["mean_baseline"]),
+                             format_value(metric, entry["mean_this"]), format_value(metric, entry["delta"], delta=True),
+                             _ci(metric, entry["ci95"]), _against_verdict(entry), _fixed_broken(entry)])
+    header = ["Suite", "Metric", "Baseline", "This model", "Δ (this − baseline)", "95% CI", "Verdict", "Fixed / broken"]
+    lines += ["", *(markdown_table(header, rows) if rows else
+                    ["No end-to-end metric was compared (no variant was run)."])]
     columns = [(g, edge) for g in _GENES for edge in _EDGES]
     rows = [[name, *(_boundary_delta(suite["headline"], g, edge) for g, edge in columns)]
             for name, suite in against["suites"].items()]
@@ -824,16 +831,16 @@ def _suite_fallbacks(suite: dict) -> list[str]:
 # --- one suite's comparison with another model ------------------------------------------------------------------
 
 def against_markdown(report: dict, name: str) -> str:
-    """Suite ``name``'s detail of the comparison with the against model, ``<S>/against_<other key>.md`` (see the
+    """Suite ``name``'s detail of the comparison with the baseline, ``<S>/against_<baseline key>.md`` (see the
     module docstring), linking back to the summary."""
     model, against = report["model"], report["against"]
     suite = against["suites"][name]
-    key = against["model_key"]
+    key = against["baseline"]
     clusters = suite.get("clusters") or {}
     lines = [f"# AlignAIR diagnostics: model {model['model_key']} against {key}, suite {name}", "",
-             f"Back to the [summary](../diagnostics.md). a: this model `{model['model_key']}` ({model['source']}); "
-             f"b: `{key}` ({against.get('source') or 'source not recorded'}). {suite['cases']} diagnosed reads, the "
-             f"same for both; clusters: {_clusters_text(clusters)}. {_AGAINST_NOTE}"]
+             f"Back to the [summary](../diagnostics.md). This model: `{model['model_key']}` ({model['source']}); "
+             f"the baseline: `{key}` ({against.get('source') or 'source not recorded'}). {suite['cases']} diagnosed "
+             f"reads, the same for both; clusters: {_clusters_text(clusters)}. {_AGAINST_NOTE}"]
     if against.get("same_model"):
         lines += ["", "Both are the same model key: one record compared with itself."]
     if clusters.get("clusters"):
@@ -855,18 +862,20 @@ def _against_table(found: dict) -> list[str]:
         if e is None:
             continue
         p = e.get("p_value")
+        # stats.compare's a is the baseline, b this model
         rows.append([metric, format_cell(metric, e.get("a")), format_cell(metric, e.get("b")), format_paired(e),
                      format_value(metric, e.get("mean_a_paired")), format_value(metric, e.get("mean_b_paired")),
                      format_value(metric, e.get("delta"), delta=True), _ci(metric, e.get("ci95")),
                      MISSING if p is None else f"{p:.3g}", _against_verdict(e)])
-    return markdown_table(["Metric", "a", "b", "n paired", "a (paired)", "b (paired)", "Δ (b − a)", "95% CI", "p",
-                           "Verdict"], rows)
+    return markdown_table(["Metric", "Baseline", "This model", "n paired", "Baseline (paired)", "This (paired)",
+                           "Δ (this − baseline)", "95% CI", "p", "Verdict"], rows)
 
 
 def _changes_tables(suite: dict) -> list[str]:
     families = [(family, suite[family]) for family in AGAINST_FAMILIES if suite.get(family)]
-    lines = ["Reads a gets wrong and b right (fixed) and the other way (broken), per 0/1 metric, with up to "
-             "10 case ids each; the metrics where no read changed are left out.", ""]
+    lines = ["Reads the baseline gets wrong and this model right (fixed), and the baseline right and this model "
+             "wrong (broken), per 0/1 metric, with up to 10 case ids each; the metrics where no read changed are left "
+             "out.", ""]
     totals = []
     rows = []
     for family, found in families:

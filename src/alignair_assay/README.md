@@ -155,12 +155,12 @@ stage contributions (each step's Δ with its verdict and "n paired (K clusters)"
 whose difference is Δ beside each variant's own mean and coverage), the calibration (ECE and reliability bins), the
 single swaps, and the fallbacks. `profile.md` holds the profile's tables (per stage and per network module).
 
-**Two checkpoints on the same reads** (`--against`). Every suite record also stores its per-case scores
-(`<S>/cases.jsonl.gz`), so two models are compared read by read:
+**A candidate against a baseline on the same reads** (`--against`). Every suite record also stores its per-case
+scores (`<S>/cases.jsonl.gz`), so two models are compared read by read:
 
 ```
-PYTHONPATH=src python -m alignair_assay diagnose --run-dir .private/assay/dev --checkpoint BASE.alignair \
-    --suites S1,S3 --against CAND.alignair            # or --against <model key> already diagnosed there
+PYTHONPATH=src python -m alignair_assay diagnose --run-dir .private/assay/dev --checkpoint CAND.alignair \
+    --suites S1,S3 --against BASE.alignair            # or --against <model key> already diagnosed there
 ```
 
 ```python
@@ -169,9 +169,11 @@ result.against["summary"]["suites"]["S1"]["headline"]["junction.nt_exact"]   # �
 result.scalars()["S1/against/junction.nt_exact.delta"]                         # also .fixed and .broken
 ```
 
-- **Direction.** a is the model under test (`--checkpoint`, `model_or_checkpoint`), b the against model:
-  Δ = b − a; *fixed* counts the reads a gets wrong and b right on a 0/1 metric, *broken* the other way.
-- **The other model** is a checkpoint (diagnosed first, through the same cache, with the same device, batch size,
+- **Direction.** `--against` (`against`) is the baseline; the model under test (`--checkpoint`,
+  `model_or_checkpoint`) is compared with it: Δ = this model − the baseline, *fixed* counts the reads the baseline
+  gets wrong and this model right on a 0/1 metric, *broken* the reads the baseline gets right and this model wrong.
+  As in `real`, where `--tools alignair-api@base,alignair-api@cand` gives Δ = cand − base.
+- **The baseline** is a checkpoint (diagnosed first, through the same cache, with the same device, batch size,
   variants and `max_cases`, without a profile), an in-memory `(model, reference_set)` pair (likewise), or the model
   key of one already diagnosed in the run directory. A string naming an existing file is a checkpoint.
 - **The same reads, or nothing.** The two models' records must have the same suite build (`suite.identity`,
@@ -183,10 +185,11 @@ result.scalars()["S1/against/junction.nt_exact.delta"]                         #
   end-to-end baseline metrics (the suite's compared family), each with `stats.compare` (cluster-aware, Holm within
   the family) and `stats.read_changes` (fixed and broken, up to 10 example case ids each). The truth-substitution
   variants are stored per case but not compared across models.
-- **The report.** *Checkpoint comparison* leads the summary page: per suite the paired means, Δ, 95% CI, verdict and
-  reads fixed / broken of `clone_key.exact`, `junction.nt_exact` and V / D / J top-1 in set; each boundary's exact
-  rate Δ under the soft-argmax and the argmax decoders; and the reads fixed / broken per family with their totals.
-  Each suite's full tables and examples are in `<S>/against_<other key>.md`.
+- **The report.** *Checkpoint comparison* leads the summary page: per suite the baseline's and this model's paired
+  means, Δ, 95% CI, verdict ("this better", "baseline better", "tie") and reads fixed / broken of `clone_key.exact`,
+  `junction.nt_exact` and V / D / J top-1 in set; each boundary's exact rate Δ under the soft-argmax and the argmax
+  decoders; and the reads fixed / broken per family with their totals. Each suite's full tables and examples are in
+  `<S>/against_<baseline key>.md`.
 - **The null comparison.** A checkpoint against itself in memory (two model keys, diagnosed twice) must give Δ 0 on
   every metric and no read fixed or broken; a checkpoint file against itself is one model key, one record compared
   with itself.
@@ -606,10 +609,10 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   flag in the summary. An unbuilt suite, a suite on the `test` split, an unknown variant, a missing checkpoint, a
   model on another reference, a CUDA device torch does not see, or AlignAIR code the replay is not pinned to
   (without `--allow-unverified-replay`) exits with status 2 before anything is written. The other commands never
-  import torch: `diagnose` imports the diagnostics layer when it runs. With `--against` (an existing file is a
-  checkpoint, made absolute; otherwise a model key), the other model is diagnosed first (or read by its key), and
-  one more line per suite gives the headline Δ (b − a), the significant metrics, the reads fixed and broken and the
-  detail file; a missing checkpoint, a model key without current diagnostics, or diagnostics that differ in
+  import torch: `diagnose` imports the diagnostics layer when it runs. With `--against` (the baseline: an existing
+  file is a checkpoint, made absolute; otherwise a model key), the baseline is diagnosed first (or read by its key),
+  and one more line per suite gives the headline Δ (this model − the baseline), the significant metrics, the reads
+  fixed (the baseline wrong, this model right) and broken and the detail file; a missing checkpoint, a model key without current diagnostics, or diagnostics that differ in
   anything but the model exit with status 2 (see Model diagnostics).
 - `real` runs `workflow.real.run_real`: each pilot donor's raw reads fetched, its genomic genotype captured, its reads
   preprocessed and capped, their truth computed, the tools run on the shared and genotype arms, R1 scored and the
@@ -1448,14 +1451,15 @@ on up to `PROFILE_READS` (1000) of the diagnosed reads, evenly spaced.
 `DiagnosticsResult` holds the `model_key`, the per-suite results (`suites`), the `profile`, the one-page summary as
 markdown (`report_md`) and as data (`summary`: `report.diagnostics.diagnostics_summary`), `replay_verified` and
 `replay_changes` (see The pin), `stale_builds` (suite -> what changed) and, with `against`, the comparison
-(`against`: `compare_models`' `model_key`, `source`, `same_model`, `replay_verified` and per suite its `cases`,
-`clusters` and the `heads` and `baseline` families, each with its `metrics`, `comparison` (`stats.compare`; a is
-this model, b the other) and `changes` (`stats.read_changes`); and its `summary`, `report.diagnostics.against_summary`).
-`scalars()` flattens the summary for a training dashboard: `{"S1/baseline/junction.nt_exact": 0.77,
-"S1/delta/segmentation/junction.nt_exact": 0.21, "S1/heads/head.j.end_exact.soft": 0.003, "S1/calibration/v.ece":
-0.05, "speed/reads_per_second": 1103.4, ...}`, and with a comparison `"S1/against/<metric>.delta"` (b − a) for every
-compared metric and `.fixed` and `.broken` for every 0/1 one (`report.diagnostics.diagnostics_scalars`; a missing
-value is left out).
+(`against`: `compare_models`' `baseline` (its model key), `source`, `same_model`, `replay_verified` and per suite
+its `cases`, `clusters` and the `heads` and `baseline` families, each with its `metrics`, `comparison`
+(`stats.compare`; a is the baseline, b this model) and `changes` (`stats.read_changes`, the same way round); and
+its `summary`, `report.diagnostics.against_summary`). `scalars()` flattens the summary for a training dashboard:
+`{"S1/baseline/junction.nt_exact": 0.77, "S1/delta/segmentation/junction.nt_exact": 0.21,
+"S1/heads/head.j.end_exact.soft": 0.003, "S1/calibration/v.ece": 0.05, "speed/reads_per_second": 1103.4, ...}`,
+and with a comparison `"S1/against/<metric>.delta"` (this model − the baseline) for every compared metric and
+`.fixed` (the baseline wrong, this model right) and `.broken` for every 0/1 one
+(`report.diagnostics.diagnostics_scalars`; a missing value is left out).
 
 **Per-case scores.** Each suite record also writes `<S>/cases.jsonl.gz` (`RunLayout.diagnostics_suite_cases`,
 `core.records.write_jsonl`: atomic, gzip without a time or name in its header, so the same scores are the same

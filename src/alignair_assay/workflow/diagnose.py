@@ -48,15 +48,18 @@ atomically (``core.records.write_jsonl``) before the record, which names the fil
 (``case_scores``). A record whose per-case file is missing or has other bytes is stale (``_cached_suite``);
 ``read_case_scores`` reads them back.
 
-**Comparison** (``evaluate(..., against=...)``, ``diagnose --against``). Two models are compared on the same reads
-from their per-case scores (``compare_models``): a is the model under test, b the ``against`` model. The other
-model's records must equal this model's in everything but the model (``other_records``: the suite build, assay
+**Comparison** (``evaluate(..., against=...)``, ``diagnose --against``). The ``against`` model is the baseline: the
+model under test is compared with it on the same reads, from their per-case scores (``compare_models``), so
+Δ = this model − the baseline and a read is fixed when the baseline gets it wrong and this model right (a is the
+baseline, b this model, as ``real`` compares ``<tool>@base`` with ``<tool>@cand``). The baseline's records must
+equal this model's in everything but the model (``other_records``: the suite build, assay
 code, variants, ``max_cases``, device and batch size; refused naming each field that differs), its per-case scores
 must be of the same case ids, and each family must score the same reads (``stats.read_changes``' ``a_only`` and
 ``b_only`` are 0): a comparison never pairs a subset. Per suite, the head metrics (``head_family``: the
 non-informational ones either model scores) and the end-to-end baseline metrics (the suite's compared family) are
-compared with ``stats.compare`` (b − a, cluster-aware by ``scoring.clusters.cluster_ids`` of the suite's truths,
-Holm within the family), and each 0/1 metric's reads fixed (a wrong, b right) and broken are counted with up to
+compared with ``stats.compare`` (this − baseline, cluster-aware by ``scoring.clusters.cluster_ids`` of the suite's
+truths, Holm within the family), and each 0/1 metric's reads fixed (the baseline wrong, this model right) and broken
+(the baseline right, this model wrong) are counted with up to
 ``CHANGE_EXAMPLES`` case ids (``stats.read_changes``). The variants are stored per case but not compared across
 models. The comparison is computed afresh on every call and rendered first on the summary page, with each suite's
 detail in ``layout.diagnostics_against_md``.
@@ -179,15 +182,17 @@ class DiagnosticsResult:
     replay_changes: dict[str, str] = field(default_factory=dict)
     # suite -> what changed, for each suite whose build is not current for this checkout (diagnosed as built)
     stale_builds: dict[str, list[str]] = field(default_factory=dict)
-    # the comparison with the ``against`` model (see ``evaluate``): its ``model_key``, ``source``, ``same_model``,
-    # ``replay_verified``, per suite its paired comparisons (``suites``) and their ``summary``; None without one
+    # the comparison with the ``against`` model, the baseline (see ``evaluate``): its key (``baseline``), ``source``,
+    # ``same_model``, ``replay_verified``, per suite its paired comparisons (``suites``; Δ = this − baseline) and their
+    # ``summary``; None without one
     against: dict | None = None
 
     def scalars(self) -> dict[str, float]:
         """The summary's numbers flattened for a training dashboard (TensorBoard, W&B), e.g.
         ``{"S1/baseline/junction.nt_exact": 0.77, "S1/delta/segmentation/junction.nt_exact": 0.21, ...}``, and with
-        ``against`` each compared metric's ``"S1/against/<metric>.delta"`` and each 0/1 metric's ``.fixed`` and
-        ``.broken`` read counts (``report.diagnostics.diagnostics_scalars``)."""
+        ``against`` each compared metric's ``"S1/against/<metric>.delta"`` (this model − the baseline) and each 0/1
+        metric's ``.fixed`` (the baseline wrong, this model right) and ``.broken`` read counts
+        (``report.diagnostics.diagnostics_scalars``)."""
         return diagnostics_scalars(self.summary)
 
 
@@ -228,13 +233,14 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     ``variants`` are run in ``ablation.DEFAULT_VARIANTS`` order (``variant_set``: the baseline is added to any
     other); none runs the heads, the calibration and the profile only. Raises as the module docstring says.
 
-    **Against another model** (``against``; see the module docstring's Comparison): a ``.alignair`` checkpoint path,
-    an in-memory ``(model, reference_set)`` pair, or the model key of a model already diagnosed in ``layout``
+    **Against a baseline** (``against``; see the module docstring's Comparison): a ``.alignair`` checkpoint path, an
+    in-memory ``(model, reference_set)`` pair, or the model key of a model already diagnosed in ``layout``
     (``MODEL_KEY``; a string naming an existing file is a path). A checkpoint or a pair is diagnosed first, by this
     function and its cache, on the same suites with this call's device, batch size, variants, ``max_cases`` and
     ``allow_unverified_replay``, without a profile. A model key's records are checked before any work. The result's
-    ``against`` holds the comparison. FileNotFoundError for a missing checkpoint (before any work); ValueError for a
-    model key without a current record of every suite, or records that differ in anything but the model."""
+    ``against`` holds the comparison: this model − the baseline. FileNotFoundError for a missing checkpoint (before
+    any work); ValueError for a model key without a current record of every suite, or records that differ in anything
+    but the model."""
     start = time.perf_counter()
     names = list(dict.fromkeys([suites] if isinstance(suites, str) else suites))
     if not names:
@@ -385,7 +391,7 @@ def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, nam
     for name in names:
         _write_text(layout.diagnostics_suite_md(key_name, name), suite_markdown(report, name))
         if comparison is not None:
-            _write_text(layout.diagnostics_against_md(key_name, name, comparison["model_key"]),
+            _write_text(layout.diagnostics_against_md(key_name, name, comparison["baseline"]),
                         against_markdown(report, name))
     if measured is not None:
         _write_text(layout.diagnostics_profile_md(key_name), profile_markdown(report))
@@ -626,47 +632,49 @@ def other_records(layout: RunLayout, other_key: str, keys: dict[str, dict]) -> d
     return records
 
 
-def compare_models(layout: RunLayout, reference: Reference, names: Sequence[str], this_key: str, other_key: str, *,
-                   keys: dict[str, dict], source: str | None = None) -> dict:
-    """Model ``this_key`` (a) against ``other_key`` (b) on the same reads of each suite of ``names``, from their
-    stored per-case scores (see the module docstring's Comparison). ``keys`` (suite -> this model's suite key)
-    checks the other's records (``other_records``); ``source`` names the other model. ValueError when the two
-    models' per-case scores are of other case ids, or score other cases of a family (``stats.read_changes``'
-    ``a_only`` and ``b_only``): a comparison never pairs a subset."""
-    others = other_records(layout, other_key, keys)
+def compare_models(layout: RunLayout, reference: Reference, names: Sequence[str], this_key: str,
+                   baseline_key: str, *, keys: dict[str, dict], source: str | None = None) -> dict:
+    """Model ``this_key`` against the baseline ``baseline_key`` on the same reads of each suite of ``names``, from
+    their stored per-case scores (see the module docstring's Comparison): ``stats.compare(baseline, this)``, so a is
+    the baseline, b this model and Δ = this − baseline, and ``stats.read_changes(baseline, this)``, so a read is
+    fixed when the baseline gets it wrong and this model right. ``keys`` (suite -> this model's suite key) checks the
+    baseline's records (``other_records``); ``source`` names the baseline. ValueError when the two models' per-case
+    scores are of other case ids, or score other cases of a family (``stats.read_changes``' ``a_only`` and
+    ``b_only``): a comparison never pairs a subset."""
+    baselines = other_records(layout, baseline_key, keys)
     suites = {}
     for name in names:
         own = read_json(layout.diagnostics_suite_json(this_key, name)) or {}
-        a, b = read_case_scores(layout, this_key, name), read_case_scores(layout, other_key, name)
-        if set(a) != set(b):
-            only_a, only_b = sorted(set(a) - set(b)), sorted(set(b) - set(a))
-            raise ValueError(f"suite {name}: model {other_key}'s per-case scores are of other case ids than this "
-                             f"model's ({len(only_a)} only here, {len(only_b)} only there; e.g. "
-                             f"{', '.join((only_a + only_b)[:3])}): a comparison never pairs a subset")
-        truths = _truths(layout, name, reference, list(a))
+        this, base = read_case_scores(layout, this_key, name), read_case_scores(layout, baseline_key, name)
+        if set(this) != set(base):
+            only_this, only_base = sorted(set(this) - set(base)), sorted(set(base) - set(this))
+            raise ValueError(f"suite {name}: the baseline {baseline_key}'s per-case scores are of other case ids than "
+                             f"this model's ({len(only_this)} only here, {len(only_base)} only in the baseline; e.g. "
+                             f"{', '.join((only_this + only_base)[:3])}): a comparison never pairs a subset")
+        truths = _truths(layout, name, reference, list(this))
         clusters = cluster_ids(truths)
-        found: dict = {"cases": len(a), "clusters": cluster_counts(truths, clusters)}
-        families = (("heads", "head", head_family(a, b)),
-                    ("baseline", "baseline", list(dict.fromkeys([*(own.get("metrics") or []),
-                                                                 *(others[name].get("metrics") or [])]))))
+        found: dict = {"cases": len(this), "clusters": cluster_counts(truths, clusters)}
+        families = (("heads", "head", head_family(base, this)),
+                    ("baseline", "baseline", list(dict.fromkeys([*(baselines[name].get("metrics") or []),
+                                                                 *(own.get("metrics") or [])]))))
         for family, field, metrics in families:
-            mine = {case: scores[field] for case, scores in a.items() if scores[field] is not None}
-            theirs = {case: scores[field] for case, scores in b.items() if scores[field] is not None}
-            if not mine and not theirs:
+            a = {case: scores[field] for case, scores in base.items() if scores[field] is not None}
+            b = {case: scores[field] for case, scores in this.items() if scores[field] is not None}
+            if not a and not b:
                 found[family] = None  # e.g. the end-to-end baseline when no variant ran
                 continue
             low = {metric for metric in metrics if lower_is_better(metric)}
-            changes = read_changes(mine, theirs, metrics, lower_is_better=low, examples=CHANGE_EXAMPLES)
+            changes = read_changes(a, b, metrics, lower_is_better=low, examples=CHANGE_EXAMPLES)
             if changes["a_only"] or changes["b_only"]:
                 shown = ", ".join([*changes["a_only_examples"], *changes["b_only_examples"]][:3])
-                raise ValueError(f"suite {name}: {changes['a_only']} reads have {family} scores only for this model "
-                                 f"and {changes['b_only']} only for model {other_key} (e.g. {shown}): a comparison "
-                                 "never pairs a subset")
-            compared = compare(mine, theirs, metrics, lower_is_better=low, clusters=clusters)
+                raise ValueError(f"suite {name}: {changes['b_only']} reads have {family} scores only for this model "
+                                 f"and {changes['a_only']} only for the baseline {baseline_key} (e.g. {shown}): a "
+                                 "comparison never pairs a subset")
+            compared = compare(a, b, metrics, lower_is_better=low, clusters=clusters)
             found[family] = {"metrics": metrics, "comparison": to_dict(compared), "changes": changes}
         suites[name] = found
-    return {"model_key": other_key, "source": source, "same_model": this_key == other_key,
-            "replay_verified": all(record.get("replay_verified") is not False for record in others.values()),
+    return {"baseline": baseline_key, "source": source, "same_model": this_key == baseline_key,
+            "replay_verified": all(record.get("replay_verified") is not False for record in baselines.values()),
             "suites": suites}
 
 

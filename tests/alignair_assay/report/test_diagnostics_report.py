@@ -107,7 +107,7 @@ OTHER = "aaaaaaaaaaaa-fedcba987654"
 
 
 def _paired(a, b, verdict="tie_or_inconclusive", *, test="clustered_mcnemar", n=100, k=40, p=0.2):
-    """A ``stats.compare`` entry (a: this model, b: the against model)."""
+    """A ``stats.compare`` entry (a: the baseline, b: this model)."""
     delta = b - a
     return {"a": _cell(a, n), "b": _cell(b, n), "n_paired": n, "n_clusters": k, "coverage_a": 1.0, "coverage_b": 1.0,
             "mean_a_paired": a, "mean_b_paired": b, "delta": delta, "wins": 3, "losses": 1, "ties": n - 4,
@@ -127,8 +127,9 @@ def _changes(metrics: dict, fixed: list, broken: list) -> dict:
 
 
 def _against(*, same=False, baseline=True) -> dict:
-    """``workflow.diagnose.compare_models``' result for S1: the head boundaries and an abs. error, and the junction
-    (a better) and the clone key (too few clusters)."""
+    """``workflow.diagnose.compare_models``' result for S1 against the baseline ``OTHER``: the head boundaries (this
+    model better at the V start) and an abs. error, and the junction (the baseline better) and the clone key (too
+    few clusters)."""
     heads = {"metrics": ["head.v.start_exact.soft", "head.v.start_exact.argmax", "head.v.start_abs_err.soft"],
              "comparison": {"head.v.start_exact.soft": _paired(0.90, 0.95, "b_better", p=0.001),
                             "head.v.start_exact.argmax": _paired(0.97, 0.97),
@@ -140,7 +141,7 @@ def _against(*, same=False, baseline=True) -> dict:
                                  "clone_key.exact": _paired(0.5, 0.5, test="too_few_clusters", k=5, p=1.0)},
                   "changes": _changes({"junction.nt_exact": _changed(["S1:3"], ["S1:1", "S1:2"]),
                                        "clone_key.exact": _changed([], [])}, ["S1:3"], ["S1:1", "S1:2"])}
-    return {"model_key": OTHER, "source": "/models/b.alignair", "same_model": same, "replay_verified": True,
+    return {"baseline": OTHER, "source": "/models/b.alignair", "same_model": same, "replay_verified": True,
             "suites": {"S1": {"cases": 100, "clusters": {"keys": ["clone"], "clusters": 40, "cases": 80},
                               "heads": heads, "baseline": end_to_end if baseline else None}}}
 
@@ -369,13 +370,14 @@ def test_the_comparison_summary_and_its_scalars():
     report = _report({"S1": _suite()}, against=_against())
     json.dumps(report, allow_nan=False)
     summary = report["summary"]["against"]
-    assert (summary["model_key"], summary["source"], summary["same_model"]) == (OTHER, "/models/b.alignair", False)
+    assert (summary["baseline"], summary["source"], summary["same_model"]) == (OTHER, "/models/b.alignair", False)
     s1 = summary["suites"]["S1"]
     assert list(s1["headline"]) == ["clone_key.exact", "junction.nt_exact", "head.v.start_exact.soft",
                                     "head.v.start_exact.argmax"]
     junction = s1["headline"]["junction.nt_exact"]
-    assert (junction["family"], junction["mean_a"], junction["mean_b"], junction["fixed"], junction["broken"]) == (
-        "baseline", 0.6, 0.55, 1, 2)
+    assert (junction["family"], junction["mean_baseline"], junction["mean_this"], junction["delta"]) == (
+        "baseline", 0.6, 0.55, pytest.approx(-0.05))  # this model − the baseline
+    assert (junction["fixed"], junction["broken"]) == (1, 2)
     assert s1["significant"] == ["junction.nt_exact", "head.v.start_exact.soft"]
     assert s1["reads"] == {"baseline": {"fixed": 1, "broken": 2}, "heads": {"fixed": 2, "broken": 0}}
     assert summary["totals"] == s1["reads"] and s1["compared"] == {"baseline": 2, "heads": 3}
@@ -392,8 +394,13 @@ def test_the_comparison_leads_the_summary_page():
     positions = [md.index(f"\n## {title}\n") for title in (AGAINST_SECTION, *SUMMARY_SECTIONS)]
     assert positions == sorted(positions)
     section = _section(md, AGAINST_SECTION)
-    assert f"Against model `{OTHER}` (/models/b.alignair)" in section and "Δ = b − a" in section
-    assert "| S1 | junction.nt_exact | 60.0% | 55.0% | -5.0 pp | [-6.0 pp, -4.0 pp] | a better | 1 / 2 |" in section
+    assert f"Against the baseline `{OTHER}` (/models/b.alignair)" in section
+    assert "Δ = this model − the baseline" in section and "fixed: reads the baseline gets wrong and this model right" \
+        in section
+    assert ("| Suite | Metric | Baseline | This model | Δ (this − baseline) | 95% CI | Verdict | Fixed / broken |"
+            in section)
+    assert ("| S1 | junction.nt_exact | 60.0% | 55.0% | -5.0 pp | [-6.0 pp, -4.0 pp] | baseline better | 1 / 2 |"
+            in section)
     assert "| S1 | clone_key.exact | 50.0% | 50.0% | +0.0 pp | [-1.0 pp, +1.0 pp] | tie (too few clusters) | 0 / 0 |" \
         in section
     # the boundaries: soft / argmax, bold when significant
@@ -414,7 +421,9 @@ def test_the_comparison_detail_of_a_suite():
     assert positions == sorted(positions) and "(../diagnostics.md)" in md
     end_to_end = _section(md, AGAINST_SECTIONS[0])
     assert ("| junction.nt_exact | 60.0% (n=100, 100%) | 55.0% (n=100, 100%) | 100 (40 clusters) | 60.0% | 55.0% | "
-            "-5.0 pp | [-6.0 pp, -4.0 pp] | 0.004 | a better |") in end_to_end
+            "-5.0 pp | [-6.0 pp, -4.0 pp] | 0.004 | baseline better |") in end_to_end
+    assert "| Metric | Baseline | This model | n paired |" in end_to_end and f"the baseline: `{OTHER}`" in md
+    assert "| head.v.start_exact.soft |" in _section(md, AGAINST_SECTIONS[1]) and "| this better |" in md
     assert "| head.v.start_abs_err.soft |" in _section(md, AGAINST_SECTIONS[1])
     changes = _section(md, AGAINST_SECTIONS[2])
     assert "end-to-end 1 fixed / 2 broken; heads 2 fixed / 0 broken" in changes

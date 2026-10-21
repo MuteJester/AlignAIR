@@ -171,7 +171,7 @@ def test_the_same_model_under_two_inputs_compares_to_zero(built, tmp_path, save_
     checkpoint = save_checkpoint(tmp_path / "model.alignair", seed=3)
     result = evaluate(checkpoint, layout, ["S0", "S1"], **FAST, against=make_small_model(REFERENCE, seed=3))
     against = result.against
-    assert against["model_key"] != result.model_key and result.model_key == _key(checkpoint)
+    assert against["baseline"] != result.model_key and result.model_key == _key(checkpoint)
     assert list(against["suites"]) == ["S0", "S1"]
     for name, suite in against["suites"].items():
         assert set(_families(suite)) == {"heads", "baseline"}, name
@@ -204,13 +204,14 @@ def test_the_same_model_under_two_inputs_compares_to_zero(built, tmp_path, save_
     md = result.report_md
     assert md.index("\n## Checkpoint comparison\n") < md.index(f"\n## {SUMMARY_SECTIONS[0]}\n")
     section = md[md.index("\n## Checkpoint comparison\n"):md.index(f"\n## {SUMMARY_SECTIONS[0]}\n")]
-    assert against["model_key"] in section and "| S1 | junction.nt_exact |" in section
-    assert f"[S1](S1/against_{against['model_key']}.md)" in section
+    assert against["baseline"] in section and "| S1 | junction.nt_exact |" in section
+    assert f"[S1](S1/against_{against['baseline']}.md)" in section
+    assert "Against the baseline" in section and "Δ (this − baseline)" in section
     assert layout.diagnostics_md(result.model_key).read_text(encoding="utf-8") == md
     report = json.loads(layout.diagnostics_json(result.model_key).read_text())
-    assert report["against"]["model_key"] == against["model_key"] and report["summary"]["against"]
+    assert report["against"]["baseline"] == against["baseline"] and report["summary"]["against"]["baseline"]
     for name in ("S0", "S1"):
-        detail = layout.diagnostics_against_md(result.model_key, name, against["model_key"]).read_text("utf-8")
+        detail = layout.diagnostics_against_md(result.model_key, name, against["baseline"]).read_text("utf-8")
         positions = [detail.index(f"\n## {title}\n") for title in AGAINST_SECTIONS]
         assert positions == sorted(positions) and "(../diagnostics.md)" in detail
     assert not list(layout.diagnostics_root.rglob("*.tmp"))
@@ -223,25 +224,26 @@ def test_a_perturbed_model_changes_reads_and_they_are_counted(built, tmp_path, m
     with torch.no_grad():  # its orientation head now calls every read forward
         perturbed.orientation_head.fc.weight.zero_()
         perturbed.orientation_head.fc.bias.zero_()
+    # The perturbed model is the baseline: Δ = this model − the baseline, fixed = the baseline wrong, this one right.
     result = evaluate((model, reference_set), layout, ["S1"], **FAST, against=(perturbed, reference_set))
     suite = result.against["suites"]["S1"]
-    other = result.against["model_key"]
+    other = result.against["baseline"]
     assert other != result.model_key
     # A direct recount from the two per-case files, as written (null: not covered).
-    a = {line["case_id"]: line for line in read_jsonl(layout.diagnostics_suite_cases(result.model_key, "S1"))}
-    b = {line["case_id"]: line for line in read_jsonl(layout.diagnostics_suite_cases(other, "S1"))}
-    assert set(a) == set(b)
+    mine = {line["case_id"]: line for line in read_jsonl(layout.diagnostics_suite_cases(result.model_key, "S1"))}
+    base = {line["case_id"]: line for line in read_jsonl(layout.diagnostics_suite_cases(other, "S1"))}
+    assert set(mine) == set(base)
     changed = 0
     for family, field in (("heads", "head"), ("baseline", "baseline")):
         metrics = suite[family]["changes"]["metrics"]
         assert metrics, family
         for metric, found in metrics.items():
-            sign = -1 if lower_is_better(metric) else 1
-            pairs = [(case, a[case][field][metric], b[case][field][metric]) for case in a
-                     if a[case][field] and b[case][field] and a[case][field].get(metric) is not None
-                     and b[case][field].get(metric) is not None]
-            fixed = sorted(case for case, x, y in pairs if sign * (y - x) > 0)
-            broken = sorted(case for case, x, y in pairs if sign * (y - x) < 0)
+            right, wrong = (0.0, 1.0) if lower_is_better(metric) else (1.0, 0.0)
+            pairs = [(case, base[case][field][metric], mine[case][field][metric]) for case in mine
+                     if mine[case][field] and base[case][field] and mine[case][field].get(metric) is not None
+                     and base[case][field].get(metric) is not None]
+            fixed = sorted(case for case, was, now in pairs if (was, now) == (wrong, right))
+            broken = sorted(case for case, was, now in pairs if (was, now) == (right, wrong))
             assert (found["n_paired"], found["fixed"], found["broken"]) == (len(pairs), len(fixed), len(broken))
             assert (found["fixed_examples"], found["broken_examples"]) == (fixed[:10], broken[:10])
             changed += len(fixed) + len(broken)
@@ -249,6 +251,12 @@ def test_a_perturbed_model_changes_reads_and_they_are_counted(built, tmp_path, m
             assert result.scalars()[f"S1/against/{metric}.broken"] == len(broken)
     orientation = suite["heads"]["changes"]["metrics"]["head.orientation.correct"]
     assert orientation["fixed"] > 0 and orientation["broken"] > 0 and changed > 0
+    entry = suite["heads"]["comparison"]["head.orientation.correct"]
+    values = [(base[case]["head"]["head.orientation.correct"], mine[case]["head"]["head.orientation.correct"])
+              for case in mine if mine[case]["head"]]
+    assert entry["mean_b_paired"] == pytest.approx(sum(now for _, now in values) / len(values))  # this model
+    assert entry["delta"] == pytest.approx(sum(now - was for was, now in values) / len(values))  # this − baseline
+    assert result.scalars()["S1/against/head.orientation.correct.delta"] == pytest.approx(entry["delta"])
     assert any(entry["delta"] for entry in suite["heads"]["comparison"].values())
     totals = result.against["summary"]["suites"]["S1"]["reads"]
     assert totals["baseline"]["fixed"] == suite["baseline"]["changes"]["reads"]["fixed"]
@@ -265,7 +273,7 @@ def test_the_other_model_is_diagnosed_first_with_the_same_settings(built, tmp_pa
     checkpoint = save_checkpoint(tmp_path / "other.alignair", seed=2)
     options = dict(device="cpu", batch_size=8, variants=("argmax_decoder",), profile=False, max_cases=7)
     result = evaluate(small_model, layout, ["S0", "S1"], **options, against=str(checkpoint))
-    other = result.against["model_key"]
+    other = result.against["baseline"]
     assert other == _key(checkpoint) and result.against["summary"]["source"] == str(checkpoint)
     # the other model first, then this one; each record under its own key, with the same configuration
     assert _suites(replays) == ["S0", "S1", "S0", "S1"]
@@ -328,7 +336,8 @@ def test_diagnose_command_compares_against_a_checkpoint_or_a_model_key(built, tm
     assert main([*base, "--against", str(theirs)]) == 0
     out = capsys.readouterr().out
     other = _key(theirs)
-    assert f"against {other}" in out and "S1 against" in out and "fixed" in out and "broken" in out
+    assert f"against the baseline {other}" in out and "Δ = this model − the baseline" in out
+    assert f"S1 against {other}" in out and "fixed" in out and "broken" in out
     assert str(layout.diagnostics_against_md(_key(mine), "S1", other)) in out
     # by its model key: read from the run directory
     assert main([*base, "--against", other]) == 0
