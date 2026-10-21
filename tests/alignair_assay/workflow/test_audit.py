@@ -774,6 +774,21 @@ def _fake_all(monkeypatch, *, nan=False, cases=10, excluded=0, n_paired=10, retu
 _TIE = "tie_or_inconclusive"
 
 
+@pytest.mark.parametrize("fault, expected", [
+    ({}, None), (dict(informational_differs=True), "S0/shared v.set_size: the informational summaries differ"),
+    (dict(slices_differ=True), "S0/shared: the two tools' per-slice summaries differ"),
+    (dict(returncode=1), "alignair-local@a S0/shared: return code 1")])
+def test_all_holds_informational_metrics_slices_and_return_codes_to_the_null(tmp_path, monkeypatch, fault, expected):
+    _fake_all(monkeypatch, **fault)
+    null, _ = audit.all_null(_config(tmp_path), RunLayout(tmp_path / "all"))
+    if expected is None:
+        assert null["status"] == "pass" and null["n"] == 10, null["reason"]
+        assert null["evidence"]["runs"] == {"oracle S0/shared": 0, "alignair-local@a S0/shared": 0,
+                                            "alignair-local@b S0/shared": 0}
+    else:
+        assert null["status"] == "fail" and expected in null["evidence"]["problems"], null["evidence"]["problems"]
+
+
 def test_diagnose_of_a_small_model_file_against_itself_in_memory(tmp_path, make_small_model):
     # the real evaluator on S0 (10 reads): the file and the same weights in memory are two model keys
     from alignair.model_file import save_model

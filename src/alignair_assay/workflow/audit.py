@@ -75,7 +75,7 @@ from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.real.fetch import PILOT_SPLIT
 from alignair_assay.real.genotype import genotype_from_json, merge_identical
 from alignair_assay.report.audit import audit_markdown
-from alignair_assay.runners.base import absolute_path
+from alignair_assay.runners.base import absolute_path, read_run_json
 from alignair_assay.scoring.pipeline import truth_reference
 from alignair_assay.suites import get_suite
 from alignair_assay.suites.engine import DEFAULT_SEED
@@ -757,18 +757,34 @@ def all_null(cfg: AuditConfig, scratch: RunLayout) -> list[dict]:
             problems += compare_problems(rows, f"{name}/{arm}")
             n, short = pairing(rows, SIM_HEADLINE, f"{name}/{arm}", offered=offered)
             problems += short
+            problems += [f"{name}/{arm} {metric}: the informational summaries differ"
+                         for metric, sides in (found.get("informational") or {}).items()
+                         if sides.get("a") != sides.get("b")]
+            slices = found.get("by_slice") or {}
+            if slices.get("a") != slices.get("b"):
+                problems.append(f"{name}/{arm}: the two tools' per-slice summaries differ")
             pair = [scratch.predictions(tool, name, arm) for tool in tools]
             suites[f"{name}/{arm}"] = {"metrics": len(rows), "paired_metrics": _paired(rows), "n": n,
                                        "offered": offered,
                                        "predictions_identical": all(path.is_file() for path in pair)
                                        and sha256_file(pair[0]) == sha256_file(pair[1])}
             reads += n if arm == "shared" else 0
+    runs = {}
+    for tool, suite, arm in dict.fromkeys([(ORACLE, name, "shared") for name in cfg.null_suites]
+                                          + [(tool, name, arm) for tool in tools for name in cfg.null_suites
+                                             for arm in get_suite(name).arms]):
+        try:
+            runs[f"{tool} {suite}/{arm}"] = read_run_json(scratch.run_json(tool, suite, arm)).returncode
+        except (OSError, ValueError, TypeError):
+            runs[f"{tool} {suite}/{arm}"] = None
+    problems += [f"{run}: {'no run record' if code is None else f'return code {code}'}"
+                 for run, code in runs.items() if code != 0]
     evidence = {"summary": ", ".join(f"{key}: {entry['metrics']} metrics, every headline metric pairing at least "
                                      f"{entry['n']} of {entry['offered']} reads, predictions "
                                      f"{'byte-identical' if entry['predictions_identical'] else 'differ'}"
                                      for key, entry in suites.items()) or "nothing compared",
                 "tools": list(tools), "scale": cfg.null_scale, "returncode": returned, "suites": suites,
-                "genairr_moved": moved}
+                "runs": runs, "genairr_moved": moved}
     null = _null_check("null.all", problems, reads, evidence, "all's comparison of one checkpoint with itself")
     oracle = {suite["name"]: suite.get("oracle") or {} for suite in report.get("suites") or []}
     bad = [name for name in cfg.null_suites if (oracle.get(name) or {}).get("status") != "perfect"]
