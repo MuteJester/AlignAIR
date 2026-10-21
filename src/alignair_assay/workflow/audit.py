@@ -32,8 +32,11 @@ and at least one passed (``verdict``): an audit that checked nothing never passe
     one's when the two hold the same content.
 - Null comparisons (one checkpoint under ``NULL_LABELS``): every Δ 0, no significant verdict, no read won or lost
   (fixed = broken = 0), each side's own scores equal and every read either side scores paired (``compare_problems``);
-  and the comparison must pair something (``pairing``): a comparison that pairs nothing is not null, it is empty. Its
-  ``n`` is the fewest reads an end-to-end headline metric (``SIM_HEADLINE``, ``REAL_HEADLINE``) pairs:
+  the comparison must pair something (``pairing``): a comparison that pairs nothing is not null, it is empty; and it
+  must hold everything expected of it, since what is missing is never null: every end-to-end headline metric
+  (``SIM_HEADLINE``, ``REAL_HEADLINE``) on every suite and arm, and in ``diagnose`` every suite diagnosed, each with
+  its head family (one metric per ``HEAD_BOUNDARY_PREFIXES`` at least) and its scored reads. Its ``n`` is the fewest
+  reads a headline metric pairs:
   - ``null.diagnose``: the checkpoint file against itself loaded in memory (two model keys, each diagnosed) on fresh
     dev builds of ``DIAGNOSE_SUITES``;
   - ``null.all``: ``all --tools alignair-local@a,alignair-local@b`` on fresh dev builds of ``NULL_SUITES`` at
@@ -95,7 +98,7 @@ from alignair_assay.workflow.speed import run_speed
 from alignair_assay.workflow.summary import ORACLE, oracle_check
 
 AUDIT_KIND = "alignair_assay.audit"
-AUDIT_VERSION = "1"
+AUDIT_VERSION = "2"  # 2: the provenance names the code audit_code_sha256, taken at the start
 STATUSES = ("pass", "fail", "warn", "skipped")
 # The check groups, in report order, and every check in report order.
 GROUPS = {"self_check": "Self-checks", "reproducible": "Reproducibility", "null": "Null comparisons",
@@ -141,7 +144,8 @@ _TIE = "tie_or_inconclusive"
 # The end-to-end headline metrics a null comparison's n rests on: the fewest reads any of them pairs.
 SIM_HEADLINE = ("clone_key.exact", "junction.nt_exact", "v.top1_in_set", "d.top1_in_set", "j.top1_in_set")
 REAL_HEADLINE = ("real.v.unsupported", "real.v.known_top1", "real.v.ref_known_top1")
-# A head boundary metric pairs only the reads both models orient as the truth: it must pair some, not all.
+# The head family of a diagnose comparison holds a boundary metric of each gene and edge; one pairs only the reads
+# both models orient as the truth, so it must pair some, not all.
 HEAD_BOUNDARY_PREFIXES = tuple(f"head.{gene}.{edge}_" for gene in "vdj" for edge in ("start", "end"))
 
 
@@ -750,20 +754,20 @@ def compare_problems(comparison: Mapping[str, dict], where: str) -> list[str]:
 def pairing(comparison: Mapping[str, dict], headline: Iterable[str], where: str, *,
             offered: int | None = None) -> tuple[int, list[str]]:
     """What a null comparison rests on, and why it may rest on too little: ``n``, the fewest reads any of the
-    ``headline`` metrics pairs; problems when no metric pairs a read, no headline metric was compared, a headline
-    metric pairs no read, or, given the reads ``offered`` (the scored cases), the most any headline metric pairs falls
-    short of them (a read never reached the comparison). A headline metric that applies to fewer reads (D top-1 where
-    no D is observable) pairs fewer; ``compare_problems`` already holds each metric to every read either side
-    scores."""
+    ``headline`` metrics pairs (a headline metric not compared pairs none); problems when no metric pairs a read, a
+    headline metric was not compared (what is absent is never null), a headline metric pairs no read, or, given the
+    reads ``offered`` (the scored cases), the most any headline metric pairs falls short of them (a read never reached
+    the comparison). A headline metric that applies to fewer reads (D top-1 where no D is observable) pairs fewer;
+    ``compare_problems`` already holds each metric to every read either side scores."""
     problems = [] if _paired(comparison) else [f"{where}: no metric pairs a read"]
-    counts = {metric: comparison[metric].get("n_paired") or 0 for metric in headline if metric in comparison}
-    if not counts:
-        return 0, [*problems, f"{where}: no headline metric ({', '.join(headline)}) was compared"]
-    problems += [f"{where} {metric}: pairs no read" for metric, n in counts.items() if not n]
-    if offered is not None and max(counts.values()) != offered:
-        problems.append(f"{where}: its headline metrics pair at most {max(counts.values())} of the {offered} reads "
-                        "offered")
-    return min(counts.values()), problems
+    counts = {metric: (comparison[metric].get("n_paired") or 0) if metric in comparison else None
+              for metric in headline}
+    problems += [f"{where} {metric}: a headline metric, not compared" for metric, n in counts.items() if n is None]
+    problems += [f"{where} {metric}: pairs no read" for metric, n in counts.items() if n == 0]
+    paired = [n for n in counts.values() if n is not None]
+    if offered is not None and paired and max(paired) != offered:
+        problems.append(f"{where}: its headline metrics pair at most {max(paired)} of the {offered} reads offered")
+    return min((n or 0 for n in counts.values()), default=0), problems
 
 
 def changes_problems(changes: dict | None, where: str) -> list[str]:
@@ -882,7 +886,10 @@ def diagnose_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
     """``null.diagnose``: fresh dev builds of ``cfg.diagnose_suites`` in ``scratch``, then the checkpoint file
     diagnosed against itself loaded in memory (``workflow.diagnose.evaluate(..., against=(model,
     reference_set))``): two model keys, each diagnosed on the same reads, whose comparison must be null. One model
-    key (one record compared with itself, zero by construction) fails."""
+    key (one record compared with itself, zero by construction) fails, and so does a comparison missing anything it
+    must hold: a suite of ``cfg.diagnose_suites`` (or one more), a suite's head family or a boundary metric of each
+    gene and edge in it, its end-to-end family or a headline metric in it, or the suite's scored reads
+    (``reads.scored``, what the headline metrics must pair)."""
     # torch and alignair are imported only when diagnostics run
     from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS
     from alignair_assay.diagnostics.replay import load_model_checked
@@ -901,9 +908,15 @@ def diagnose_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
     problems = []
     if against["same_model"] or against["baseline"] == result.model_key:
         problems.append("one model key: the file was compared with its own record, zero by construction")
+    compared = list(against.get("suites") or {})
+    if sorted(compared) != sorted(names):
+        problems.append(f"the comparison holds the suites {', '.join(compared) or 'none'}, not the diagnosed "
+                        f"{', '.join(names)}")
     suites, reads = {}, 0
-    for name, suite in against["suites"].items():
+    for name, suite in (against.get("suites") or {}).items():
         offered = (((getattr(result, "suites", None) or {}).get(name) or {}).get("reads") or {}).get("scored")
+        if offered is None:
+            problems.append(f"{name}: the diagnosis records no scored reads (reads.scored)")
         entry = {"cases": suite.get("cases"), "offered": offered}
         for family in ("heads", "baseline"):
             found = suite.get(family)
@@ -920,8 +933,12 @@ def diagnose_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
                 problems += short
             else:
                 problems += [] if entry[family]["paired_metrics"] else [f"{where}: no metric pairs a read"]
+                problems += [f"{where}: no {prefix}* boundary metric" for prefix in HEAD_BOUNDARY_PREFIXES
+                             if not any(metric.startswith(prefix) for metric in found["comparison"])]
                 problems += [f"{where} {metric}: pairs no read" for metric, row in found["comparison"].items()
                              if metric.startswith(HEAD_BOUNDARY_PREFIXES) and not row.get("n_paired")]
+        if entry["heads"] is None:
+            problems.append(f"{name}: no head family was compared")
         if entry["baseline"] is None:
             problems.append(f"{name}: no end-to-end family was compared (no variant ran)")
         reads += (entry["baseline"] or {}).get("n") or 0
@@ -1047,12 +1064,13 @@ def check_inputs(cfg: AuditConfig, layout: RunLayout) -> None:
 def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
     """Run every check (the module docstring) and write ``layout.audit_json`` and ``layout.audit_md``; returns the
     record: ``kind``, ``version``, the ``verdict``, the ``config``, the audited ``checkpoint`` (path and SHA-256),
-    the ``provenance`` (host, the assay's git state, ``assay_code_sha256``: the digest of this package's sources, so the
-    record names the code it ran, and the GenAIRR in use), ``created_utc``, ``seconds`` and the ``checks`` in
-    ``CHECKS`` order, each printed as it finishes. IgBLAST is timed first, while the machine is quietest. A check that
-    raises fails with its error as the reason (an ``INFORMATIONAL`` one warns), and the others go on. Refusals
-    (``check_inputs``) come before any work."""
+    the ``provenance`` (host, the assay's git state and ``audit_code_sha256``, the digest of this whole package's
+    sources, both taken before any check runs, so the record names the code it started with; the GenAIRR in use),
+    ``created_utc``, ``seconds`` and the ``checks`` in ``CHECKS`` order, each printed as it finishes. IgBLAST is timed
+    first, while the machine is quietest. A check that raises fails with its error as the reason (an
+    ``INFORMATIONAL`` one warns), and the others go on. Refusals (``check_inputs``) come before any work."""
     start = time.monotonic()
+    assay, code = git_state(_PACKAGE), tree_digest(_PACKAGE, suffixes=CODE_SUFFIXES)
     cfg = dataclasses.replace(cfg, sim_run=absolute_path(cfg.sim_run), real_run=absolute_path(cfg.real_run),
                               data_root=absolute_path(cfg.data_root), checkpoint=absolute_path(cfg.checkpoint),
                               igblast_dir=absolute_path(cfg.igblast_dir) if cfg.igblast_dir else None)
@@ -1104,8 +1122,7 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
     record = {"kind": AUDIT_KIND, "version": AUDIT_VERSION, "verdict": verdict(checks),
               "config": dataclasses.asdict(cfg),
               "checkpoint": {"label": CHECKPOINT_LABEL, "path": cfg.checkpoint, "sha256": sha256_file(cfg.checkpoint)},
-              "provenance": {"host": platform.node(), "assay": git_state(_PACKAGE),
-                             "assay_code_sha256": tree_digest(_PACKAGE, suffixes=CODE_SUFFIXES),
+              "provenance": {"host": platform.node(), "assay": assay, "audit_code_sha256": code,
                              "genairr": genairr_provenance()},
               "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "seconds": round(time.monotonic() - start, 1), "checks": checks, "groups": GROUPS}

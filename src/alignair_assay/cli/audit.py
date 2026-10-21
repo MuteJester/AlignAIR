@@ -29,9 +29,8 @@ def register(sub) -> None:
 
 def run(args) -> int:
     """Run ``workflow.audit.run_audit`` (which prints each check as it finishes), print the verdict and name the
-    record; 0 when the audit
-    passes (no check failed, and one passed), else 2. Refusals (another checkpoint label, a missing input, an output
-    directory overlapping a stored run) exit with status 2 before any work."""
+    record; 0 when the audit passes (no check failed, and one passed), else 2. Refusals (another checkpoint label, a
+    missing input, an output directory overlapping a stored run) exit with status 2 before any work."""
     # Imported here so the other commands never load the audit's workflows.
     from alignair_assay.workflow import audit
 

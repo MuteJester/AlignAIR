@@ -222,13 +222,15 @@ PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_ge
     model keys), `all --tools alignair-local@a,alignair-local@b` on S1 at scale 0.05 (dev) and
     `real --tools alignair-api@a,alignair-api@b --cap 2000` on W-97, each with every Δ 0, no significant verdict, no
     read fixed or broken, each side's own scores equal and every read either side scores paired. A comparison must
-    pair something: per suite and family (`diagnose`) and per arm (`all`, `real`) some metric pairs a read and every
-    end-to-end headline metric pairs at least one (`clone_key.exact`, `junction.nt_exact`, V/D/J top-1 in set;
-    real: `real.v.unsupported`, `known_top1`, `ref_known_top1`); on the simulated surfaces the best-paired of them
-    pairs every scored case offered, and `diagnose` must have run its end-to-end family. Head boundary metrics pair
-    only the reads both models orient as the truth, so each must pair some. `n` is the fewest reads a headline
-    metric pairs (per suite, summed; real: the shared arm), since D top-1 and the real known answers apply to fewer
-    reads than are offered;
+    pair something and hold everything expected of it, since what is missing is never null: per suite and family
+    (`diagnose`) and per arm (`all`, `real`) some metric pairs a read and every end-to-end headline metric is
+    compared and pairs at least one (`clone_key.exact`, `junction.nt_exact`, V/D/J top-1 in set; real:
+    `real.v.unsupported`, `known_top1`, `ref_known_top1`); on the simulated surfaces the best-paired of them pairs
+    every scored case offered (`diagnose` must record each suite's scored reads); `diagnose` must compare every suite
+    it diagnosed, each with its end-to-end family and its head family, which holds a start and an end boundary
+    metric of V, D and J. Head boundary metrics pair only the reads both models orient as the truth, so each must
+    pair some. `n` is the fewest reads a headline metric pairs (per suite, summed; real: the shared arm), since D
+    top-1 and the real known answers apply to fewer reads than are offered;
   - IgBLAST bands: `known_top1` and `ref_known_top1` at least 99% on every dev donor (shared arm); S1
     `v.top1_in_set` in the stored run within 1 pp of 97.9%; the same metric at this code (informational,
     `band.sim_v_top1_current`: IgBLAST run now on the fresh dev S1 the speed check built, or on S1 built at scale 0.2
@@ -241,8 +243,9 @@ PYTHONPATH=src python -m alignair_assay audit --sim-run .private/assay/p2_run_ge
   raises, fails (an informational one warns). Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on
   each audit; `--out` may not overlap a stored run. The stored runs are never written; `null.real` runs `real`, whose
   fetch step updates its download bookkeeping under `--data-root` (the fetch records and manifest beside the
-  downloads, outside both stored runs). The record names the code it ran: the assay's git state and `assay_code_sha256`, the digest of
-  `src/alignair_assay`'s sources.
+  downloads, outside both stored runs). The record names the code it started with, taken before any check runs:
+  the assay's git state and `audit_code_sha256`, the digest of all of `src/alignair_assay`'s sources (`diagnose`'s
+  `assay_code_sha256` digests fewer).
 
 ## Layers and dependency rule
 
@@ -684,9 +687,10 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   (each donor's split is recorded), and needs no tool option; scoring donors in the same run directory afterwards is
   another configuration (`--force`), which reuses their preprocessing.
 - `audit` runs `workflow.audit.run_audit` (see The readiness audit), which prints each check once as it finishes,
-  then prints the verdict, and exits 0 only when the audit passes. Another checkpoint label than `base`, a stored run without its records, a missing data
-  root or checkpoint, an `--out` overlapping a stored run, and a CUDA device torch does not see exit with status 2
-  before any work. `--igblast-dir` defaults to the release `--sim-run` recorded.
+  then prints the verdict, and exits 0 only when the audit passes. Another checkpoint label than `base`, a stored
+  run without its records, a missing data root or checkpoint, an `--out` overlapping a stored run, and a CUDA device
+  torch does not see exit with status 2 before any work. `--igblast-dir` defaults to the release `--sim-run`
+  recorded.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit`, `genairr_git_dirty` and
   `genairr_source_sha256` (the package directory's content: sources, compiled engine and data). The

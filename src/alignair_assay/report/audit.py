@@ -29,7 +29,7 @@ def audit_markdown(record: dict) -> str:
              f"- Stored runs, read only: `{config.get('sim_run')}` (all) and `{config.get('real_run')}` (real); data "
              f"root `{config.get('data_root')}`. Anything re-run is under `audit/scratch/`.",
              f"- Assay commit `{(commit or MISSING)[:12]}`{' (dirty)' if assay.get('git_dirty') else ''}, code "
-             f"`{(provenance.get('assay_code_sha256') or MISSING)[:12]}`; GenAIRR "
+             f"`{(provenance.get('audit_code_sha256') or MISSING)[:12]}`; GenAIRR "
              f"{genairr.get('genairr_version')} (`{(genairr.get('genairr_source_sha256') or '')[:12]}`); host "
              f"{provenance.get('host')}; {record.get('created_utc')}, {record.get('seconds')} s.", ""]
     rows = [[found["name"], _STATUS.get(found["status"], found["status"]), f"{found['n']:,}",

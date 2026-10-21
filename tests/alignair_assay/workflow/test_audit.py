@@ -612,8 +612,7 @@ def _compared(a: dict, b: dict) -> dict:
             "changes": read_changes(a, b, metrics, lower_is_better=set())}
 
 
-def _scores(n=20, *, wrong=(), uncovered=(), nan=False, metrics=("junction.nt_exact", "v.top1_in_set"),
-            nan_metrics=()) -> dict:
+def _scores(n=20, *, wrong=(), uncovered=(), nan=False, metrics=audit.SIM_HEADLINE, nan_metrics=()) -> dict:
     """Per-read scores of ``n`` reads: 1.0 on every metric, 0.0 on junction.nt_exact for ``wrong`` reads, NaN
     (applicable, not covered) on it for ``uncovered`` ones, NaN on every read for ``nan_metrics``, and NaN everywhere
     with ``nan``."""
@@ -627,13 +626,20 @@ def _scores(n=20, *, wrong=(), uncovered=(), nan=False, metrics=("junction.nt_ex
     return {f"S1:{k}": {metric: value(metric, k) for metric in metrics} for k in range(n)}
 
 
+# The head metrics of a fake diagnosis: one boundary metric per gene and edge, and the orientation.
+HEAD_METRICS = (*(f"head.{gene}.{edge}_exact.soft" for gene in "vdj" for edge in ("start", "end")),
+                "head.orientation.correct")
+
+
 def _fake_diagnosis(monkeypatch, *, same=False, wrong=(), uncovered=(), both_uncovered=(), nan=False, scored=20,
-                    baseline=True, heads_unpaired=()):
+                    baseline=True, heads=True, heads_unpaired=(), head_metrics=HEAD_METRICS,
+                    baseline_metrics=audit.SIM_HEADLINE, dropped=()):
     """Stand-ins for the builds, the model load and ``evaluate``: the file's key, the in-memory model's key (the same
-    with ``same``) and their comparison on 20 reads, of which ``scored`` are offered as scored (the in-memory model
-    gets ``wrong`` reads wrong and does not cover ``uncovered``; neither covers ``both_uncovered``; ``nan``: no score
-    on either side; no end-to-end family without ``baseline``; ``heads_unpaired``: head metrics neither side
-    scores)."""
+    with ``same``) and their comparison on 20 reads of each suite but the ``dropped`` ones, of which ``scored`` are
+    offered as scored (None: the result records no ``reads.scored``). The in-memory model gets ``wrong`` reads wrong
+    and does not cover ``uncovered``; neither covers ``both_uncovered``; ``nan``: no score on either side; no
+    end-to-end family without ``baseline``, no head family without ``heads``; ``heads_unpaired``: head metrics
+    neither side scores; the families compare ``head_metrics`` and ``baseline_metrics``."""
     import types
 
     from alignair_assay.diagnostics import replay
@@ -644,21 +650,22 @@ def _fake_diagnosis(monkeypatch, *, same=False, wrong=(), uncovered=(), both_unc
         name))
     monkeypatch.setattr(audit, "truth_reference", lambda layout, names: "reference")
     monkeypatch.setattr(replay, "load_model_checked", lambda checkpoint, reference, device: ("model", "set"))
-    head_metrics = ("head.v.start_exact.soft", "head.orientation.correct")
 
     def evaluate(checkpoint, layout, names, **kwargs):
         calls["evaluate"] = (checkpoint, list(names), kwargs)
         common = tuple(both_uncovered)
-        heads = [_scores(nan=nan, metrics=head_metrics, nan_metrics=heads_unpaired) for _ in range(2)]
+        sides = [_scores(nan=nan, metrics=head_metrics, nan_metrics=heads_unpaired) for _ in range(2)]
+        ends = (_scores(wrong=wrong, uncovered=(*uncovered, *common), nan=nan, metrics=baseline_metrics),
+                _scores(uncovered=common, nan=nan, metrics=baseline_metrics))
         suites = {name: {"cases": 20, "clusters": {"clusters": 0},
-                         "heads": _compared(*heads),
-                         "baseline": _compared(_scores(wrong=wrong, uncovered=(*uncovered, *common), nan=nan),
-                                               _scores(uncovered=common, nan=nan)) if baseline else None}
-                  for name in names}
+                         "heads": _compared(*sides) if heads else None,
+                         "baseline": _compared(*ends) if baseline else None}
+                  for name in names if name not in dropped}
         against = {"baseline": "k1" if same else "k2", "source": "in-memory model", "same_model": same,
                    "suites": suites}
+        reads = {} if scored is None else {"scored": scored}
         return types.SimpleNamespace(model_key="k1", against=against,
-                                     suites={name: {"reads": {"scored": scored}} for name in names})
+                                     suites={name: {"reads": dict(reads)} for name in names})
 
     monkeypatch.setattr(diagnose, "evaluate", evaluate)
     return calls
@@ -675,7 +682,7 @@ def test_diagnose_against_itself_in_memory_must_compare_to_zero(tmp_path, monkey
     assert kwargs["against"] == ("model", "set") and kwargs["profile"] is False  # the in-memory form: two keys
     assert kwargs["variants"] == ("baseline",)
     assert found["evidence"]["model_key"] == "k1" and found["evidence"]["baseline"] == "k2"
-    assert found["evidence"]["suites"]["S1"]["baseline"] == {"metrics": 2, "paired_metrics": 2, "fixed": 0,
+    assert found["evidence"]["suites"]["S1"]["baseline"] == {"metrics": 5, "paired_metrics": 5, "fixed": 0,
                                                              "broken": 0, "n": 20}
     assert found["evidence"]["suites"]["S1"]["offered"] == 20
 
@@ -701,6 +708,7 @@ def test_diagnose_of_one_model_key_or_with_changed_reads_fails(tmp_path, monkeyp
 
 def test_null_comparisons_that_pair_nothing_fail(tmp_path, monkeypatch):
     # every score NaN on both sides: every Δ is None and nothing differs, but nothing was compared
+    monkeypatch.setattr(audit, "_EXAMPLES", 100)  # the evidence keeps every problem, not only the first few
     _fake_diagnosis(monkeypatch, nan=True)
     found = audit.diagnose_null(_config(tmp_path), RunLayout(tmp_path / "diagnose"))
     assert found["status"] == "fail" and found["n"] == 0
@@ -739,17 +747,33 @@ def test_a_null_comparison_rests_on_its_fewest_paired_headline_reads(tmp_path, m
     assert "S0 heads head.v.start_exact.soft: pairs no read" in found["evidence"]["problems"]
 
 
+@pytest.mark.parametrize("fault, expected", [
+    (dict(baseline_metrics=tuple(metric for metric in audit.SIM_HEADLINE if metric != "d.top1_in_set")),
+     "S1 baseline d.top1_in_set: a headline metric, not compared"),
+    (dict(heads=False), "S1: no head family was compared"),
+    (dict(head_metrics=tuple(metric for metric in HEAD_METRICS if not metric.startswith("head.j.end_"))),
+     "S1 heads: no head.j.end_* boundary metric"),
+    (dict(dropped=("S3",)), "the comparison holds the suites S1, not the diagnosed S1, S3"),
+    (dict(scored=None), "S1: the diagnosis records no scored reads (reads.scored)"),
+], ids=["headline_metric", "heads_family", "boundary_metric", "suite", "reads_scored"])
+def test_diagnose_without_what_it_must_compare_is_not_null(tmp_path, monkeypatch, fault, expected):
+    # whatever is there pairs every read and differs by nothing: what is missing fails on its own
+    _fake_diagnosis(monkeypatch, **fault)
+    found = audit.diagnose_null(_config(tmp_path, diagnose_suites=("S1", "S3")), RunLayout(tmp_path / "null"))
+    assert found["status"] == "fail" and expected in found["evidence"]["problems"], found["evidence"]["problems"]
+
+
 def _fake_all(monkeypatch, *, nan=False, cases=10, excluded=0, n_paired=10, returncode=0, informational_differs=False,
-              slices_differ=False):
-    """A stand-in for ``run_all`` that writes the run report, the S0 comparison (``n_paired`` reads on every metric,
-    or none with ``nan``), both tools' predictions and run records."""
+              slices_differ=False, metrics=audit.SIM_HEADLINE):
+    """A stand-in for ``run_all`` that writes the run report, the S0 comparison of ``metrics`` (``n_paired`` reads on
+    each, or none with ``nan``), both tools' predictions and run records."""
     from alignair_assay.runners.base import RunResult, write_run_json
 
     def run_all(cfg, layout):
         entry = {"n_paired": 0 if nan else n_paired, "delta": None if nan else 0.0, "verdict": _TIE, "wins": 0,
                  "losses": 0, "a": None if nan else {"mean": 1.0, "n": n_paired}}
         entry["b"] = entry["a"]
-        rows = {metric: dict(entry) for metric in ("v.top1_in_set", "junction.nt_exact")}
+        rows = {metric: dict(entry) for metric in metrics}
         info = {"v.set_size": {"a": {"mean": 1.0}, "b": {"mean": 2.0 if informational_differs else 1.0}}}
         slices = {"a": {"stratum": {"plain": 1.0}}, "b": {"stratum": {"plain": 0.5 if slices_differ else 1.0}}}
         write_json(layout.comparison_json("S0", "shared"), {"a": cfg.tools[0], "b": cfg.tools[1], "comparison": rows,
@@ -789,11 +813,27 @@ def test_all_holds_informational_metrics_slices_and_return_codes_to_the_null(tmp
         assert null["status"] == "fail" and expected in null["evidence"]["problems"], null["evidence"]["problems"]
 
 
+def test_all_without_a_headline_metric_is_not_null(tmp_path, monkeypatch):
+    # the metrics compared pair every read and differ by nothing, but clone_key.exact was never compared
+    _fake_all(monkeypatch, metrics=tuple(metric for metric in audit.SIM_HEADLINE if metric != "clone_key.exact"))
+    null, _ = audit.all_null(_config(tmp_path), RunLayout(tmp_path / "all"))
+    assert null["status"] == "fail"
+    assert "S0/shared clone_key.exact: a headline metric, not compared" in null["evidence"]["problems"]
+
+
 def test_diagnose_of_a_small_model_file_against_itself_in_memory(tmp_path, make_small_model):
     # the real evaluator on S0 (10 reads): the file and the same weights in memory are two model keys
+    import torch
+    from alignair.core.layers import EmbeddingOrientationHead
     from alignair.model_file import save_model
 
     model, _ = make_small_model(REFERENCE_NAME, seed=3)
+    # random weights misorient every read, and a misoriented read's boundaries are not scored: the orientation head
+    # keeps every read as given (S0's with_d reads are forward), so each boundary metric pairs reads
+    assert isinstance(model.orientation_head, EmbeddingOrientationHead)
+    with torch.no_grad():
+        model.orientation_head.fc.weight.zero_()
+        model.orientation_head.fc.bias.copy_(torch.tensor([1.0, 0.0, 0.0, 0.0]))  # IDENTITY first
     checkpoint = tmp_path / "small.alignair"
     save_model(str(checkpoint), model, dataconfigs=[REFERENCE_NAME], training={"steps": 0, "batch_size": 0},
                include_trusted_pickle=False)
@@ -811,10 +851,11 @@ def _pair(wrong=(), nan=False):
 
     reads = [f"r{k}" for k in range(20)]
     none = math.nan if nan else None
-    a = {read: {"real.v.unsupported": none if nan else 0.0, "real.v.known_top1": none if nan else 1.0}
-         for read in reads}
+    a = {read: {"real.v.unsupported": none if nan else 0.0, "real.v.known_top1": none if nan else 1.0,
+                "real.v.ref_known_top1": none if nan else 1.0} for read in reads}
     b = {read: {"real.v.unsupported": none if nan else 1.0 if read in wrong else 0.0,
-                "real.v.known_top1": none if nan else 1.0} for read in reads}
+                "real.v.known_top1": none if nan else 1.0, "real.v.ref_known_top1": none if nan else 1.0}
+         for read in reads}
     clusters = {read: f"{DONOR}/c{k // 2}" for k, read in enumerate(reads)}
     side = {"reads": 0, "reasons": {}, "documented": 0, "documented_wrong": 0}
     return PairScores(a=a, b=b, clusters=clusters, strata={read: "multiplex/IGHG" for read in reads},
@@ -823,10 +864,11 @@ def _pair(wrong=(), nan=False):
 
 
 def _fake_real(monkeypatch, *, wrong=(), arms=("shared", "genotype"), stopped=False, summaries_differ=False,
-               nan=False):
+               nan=False, uncompared=()):
     """A stand-in for ``run_real``: the checkpoint comparisons of alignair-api@a and @b on ``arms`` (and pooled),
     computed by ``real_score.comparison`` on 20 synthetic reads (@b wrong on ``wrong``; no score on either side with
-    ``nan``), and their predictions."""
+    ``nan``; the ``(arm, metric)`` pairs of ``uncompared`` left out of that arm's overall comparison), and their
+    predictions."""
     from alignair_assay.workflow import real_score
 
     seen = {}
@@ -838,6 +880,8 @@ def _fake_real(monkeypatch, *, wrong=(), arms=("shared", "genotype"), stopped=Fa
             pair = _pair(wrong, nan)
             entry = real_score.comparison(pair, sensitivity=["IGHV3-11"], gene_support=pair, clusterings=True,
                                           changes=True)
+            for metric in (metric for where, metric in uncompared if where == arm):
+                del entry["overall"][metric]
             comparisons.append({"a": cfg.tools[0], "b": cfg.tools[1], "arm": arm, "kind": "checkpoint",
                                 "status": "compared", **json.loads(json.dumps(entry))})
             for tool in cfg.tools:
@@ -879,6 +923,16 @@ def test_real_comparisons_that_are_not_null_fail(tmp_path, monkeypatch, fault, e
     found = audit.real_null(_config(tmp_path), RunLayout(tmp_path / "null_real"))
     assert found["status"] == "fail"
     assert any(expected in problem for problem in found["evidence"]["problems"]), found["evidence"]["problems"]
+
+
+def test_real_without_a_headline_metric_on_an_arm_is_not_null(tmp_path, monkeypatch):
+    # the shared arm compares every headline metric; the genotype arm lacks ref_known_top1
+    _fake_real(monkeypatch, uncompared=(("genotype", "real.v.ref_known_top1"),))
+    found = audit.real_null(_config(tmp_path), RunLayout(tmp_path / "null_real"))
+    assert found["status"] == "fail"
+    problems = found["evidence"]["problems"]
+    assert f"{DONOR} genotype overall real.v.ref_known_top1: a headline metric, not compared" in problems, problems
+    assert not any(problem.startswith(f"{DONOR} shared") for problem in problems)
 
 
 # --- speed --------------------------------------------------------------------------------------------------------
@@ -1156,7 +1210,7 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch,
     # the record names the assay code it ran (its sources' digest), and the markdown shows it
     package = Path(audit.__file__).resolve().parents[1]
     code = tree_digest(package, suffixes=CODE_SUFFIXES)
-    assert record["provenance"]["assay_code_sha256"] == code and f"`{code[:12]}`" in layout.audit_md.read_text()
+    assert record["provenance"]["audit_code_sha256"] == code and f"`{code[:12]}`" in layout.audit_md.read_text()
     # each check is printed once, as it finishes
     printed = capsys.readouterr().out.splitlines()
     assert [line.split(":")[0] for line in printed if line.startswith("audit ")] == [
@@ -1165,6 +1219,17 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch,
                                      "self_check.real_truth_health", "band.real_known", "band.sim_v_top1",
                                      "reproducible.sim_build", "reproducible.real_scores", "null.all",
                                      "self_check.sim_oracle_current", "null.diagnose", "null.real")]
+
+
+def test_the_audit_names_the_code_it_started_with(tmp_path, monkeypatch):
+    # the whole package's digest is taken before any check runs (code edited meanwhile does not rename the run), under
+    # a name of its own: diagnose's assay_code_sha256 digests other files
+    cfg = _stored_runs(tmp_path)
+    roots = _fake_checks(monkeypatch)
+    monkeypatch.setattr(audit, "tree_digest", lambda *args, **kwargs: "after a check" if roots else "before")
+    record = audit.run_audit(cfg, RunLayout(tmp_path / "out"))
+    assert record["provenance"]["audit_code_sha256"] == "before"
+    assert "assay_code_sha256" not in record["provenance"]
 
 
 def test_a_check_that_raises_fails_and_the_others_go_on(tmp_path, monkeypatch):
