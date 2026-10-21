@@ -11,6 +11,7 @@ import json
 import os
 import random
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -678,6 +679,59 @@ def test_truth_health_counts_reads_that_exactly_match_an_allele_the_genotype_lac
     assert [entry["gene"] for entry in health["genes"]][0] == "IGHV1-2"  # most reads first
     assert health["flagged"] == ["IGHV1-2"] and health["flag_clonotypes"] == 10
     json.dumps(health)
+
+
+def test_truth_health_compares_windows_never_shared_names():
+    """VDJbase can call as novel an allele that equals a shared allele over every read: SC-11's
+    IGHV5-10-1*03_c319-_a320- differs from IGHV5-10-1*03 only past Cys104, so it has no shared name. The audit
+    compares windows, never names: a read with a known answer holds the donor's own allele and is not counted, and one
+    without counts only when no donor allele's window, at the reference-exact window's place, is that window
+    (``RealTruth.ref_donor``, the known-answer rule; an allele that cannot be windowed when the window is in its
+    V-REGION)."""
+    shared = _allele("IGHV5-10-1*03", _gapped_v(8), shared=("IGHV5-10-1*03",))
+    inside = _allele("IGHV5-10-1*01", _mutate(shared.gapped, 100), shared=("IGHV5-10-1*01",))  # differs in the window
+    past = _mutate(shared.gapped, 316)  # past codon 104: no read's window reaches it
+    novel = _allele("IGHV5-10-1*03_c319-", past, shared=(), haplotype=0)
+    reference = _reference(shared, inside)
+    iuis = IuisMap(labels_by_shared={name: (name,) for name in reference.alleles["v"]},
+                   shared_by_sequence={seq: (name,) for name, seq in reference.alleles["v"].items()},
+                   labels_by_sequence={seq: (name,) for name, seq in reference.alleles["v"].items()},
+                   reference_digest=reference.digest())
+    reads = {f"s{k}": _race(shared.sequence, n_region=_random(16, 200 + k)) for k in range(12)}
+    reads |= {f"i{k}": _race(inside.sequence, n_region=_random(16, 300 + k)) for k in range(3)}
+    meta = [_meta(read_id) for read_id in reads]
+    gene = frozenset({"IGHV5-10-1"})
+    # 1. the donor's novel allele is the read's known answer: never "not carried"
+    genotype = RealGenotype(donor=DONOR, alleles=(novel,), captured=gene, resolved=gene, uncalled=frozenset())
+    truths = real_truths(reads, meta, genotype, reference, iuis=iuis)
+    known = next(truth for truth in truths if truth.read_id == "s0")
+    assert known.known == frozenset({novel.allele_id}) and known.ref_known == frozenset({"IGHV5-10-1*03"})
+    assert known.ref_donor == frozenset({novel.allele_id})
+    gap = next(truth for truth in truths if truth.read_id == "i0")
+    assert gap.known is None and gap.ref_known == frozenset({"IGHV5-10-1*01"}) and gap.ref_donor == frozenset()
+    health = truth_health(truths, genotype, iuis, flag=3)
+    assert health["shared_exact"] == 15 and health["not_carried"] == 3
+    assert health["genes"] == [{"gene": "IGHV5-10-1", "class": "carried", "reads": 3, "clonotypes": 3,
+                                "alleles": {"IGHV5-10-1*01": 3}, "h0_only": True}]
+    assert health["flagged"] == ["IGHV5-10-1"]
+    # 2. no known answer (two donor windows: the novel allele and a copy without its first three bases), but the
+    #    novel allele's window is the reference-exact one
+    clipped = _allele("IGHV5-10-1*03_x", "..." + past[3:], shared=(), haplotype=1)
+    genotype = replace(genotype, alleles=(novel, clipped))
+    truths = real_truths(reads, meta, genotype, reference, iuis=iuis)
+    ambiguous = next(truth for truth in truths if truth.read_id == "s0")
+    assert ambiguous.known is None and ambiguous.ref_donor == frozenset({novel.allele_id})
+    assert truth_health(truths, genotype, iuis)["not_carried"] == 3
+    # 3. a donor allele that cannot be windowed (no gapped form, no twin) holding the window could be the source
+    unwindowed = RealAllele(allele_id="IGHV5-10-1*03_y", gene="IGHV5-10-1", segment="v",
+                            sequence="GG" + novel.sequence, gapped=None, haplotype=1, functional=True, shared=(),
+                            iuis=())
+    genotype = replace(genotype, alleles=(unwindowed,))
+    truths = real_truths(reads, meta, genotype, reference, iuis=iuis)
+    assert next(truth for truth in truths if truth.read_id == "s0").ref_donor == frozenset({unwindowed.allele_id})
+    assert truth_health(truths, genotype, iuis)["not_carried"] == 3
+    for truth in truths:
+        assert truth_from_json(json.loads(json.dumps(truth_to_json(truth)))) == truth
 
 
 def test_real_truths_refuses_inconsistent_reads_and_metadata():

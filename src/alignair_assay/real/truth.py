@@ -53,7 +53,10 @@ least ``min_window`` (200) nt, ``N`` never a wildcard, identical windows one set
 needs no donor genotype, so it covers the genes the donor's assembly misses (uncaptured or uncalled), and its truth
 is the read itself: the metrics score it on every read with one, whatever its exclusions. ``ref_known`` is the set's
 shared names; ``ref_known_gene`` its IUIS genes (``IuisMap.genes``, a name standing in for an unmapped allele),
-sorted and joined by ``|``. ``real_truths`` computes it given the IUIS map (``iuis``); without one both are None.
+sorted and joined by ``|``. ``ref_donor`` is the donor V alleles whose window, at the reference-exact window's
+place, is that window (the rule above, so the read cannot tell them from the answer), and those that cannot be
+windowed whose V-REGION holds it; empty when the donor has none. ``real_truths`` computes them given the IUIS map
+(``iuis``); without one all three are None.
 
 **Naive.** IgM (``NAIVE_ISOTYPE``; neither protocol has an IgD primer) and a known answer: the observed V up to
 Cys104 is the allele without a mismatch. Mutations past Cys104 (CDR3, J) are not looked at.
@@ -110,9 +113,12 @@ allele without a Cys104 of its own takes that of an allele with its sequence).
 
 **Truth health** (``truth_health``), a tool-neutral audit of the truth: the known-answer rule run against the shared
 reference's V alleles instead of the donor's. A read whose V is exactly one shared allele's window (at least
-``MIN_WINDOW`` nt) that the donor does not carry, by sequence, shows an allele the genotype lacks. Such reads are
-counted per gene (the allele's IUIS genes), split by where the gene stands in the truth: ``carried`` (the donor
-carries another allele of it: an allele VDJbase missed, or a haplotype it did not resolve), ``captured`` (spanned,
+``MIN_WINDOW`` nt) that no donor allele explains shows an allele the genotype lacks: the read has no known answer,
+and no donor allele's window at that place is that window (``ref_donor`` is empty). Windows are compared, never
+names: VDJbase calls as novel, with no shared name, alleles that equal a shared one over every read (SC-11's
+``IGHV5-10-1*03_c319-_a320-`` differs from IGHV5-10-1*03 only past Cys104). Such reads are counted per gene (the
+allele's IUIS genes), split by where the gene stands in the truth: ``carried`` (the donor carries another allele of
+it: an allele VDJbase missed, or a haplotype it did not resolve), ``captured`` (spanned,
 and deleted on every capturing contig), ``uncalled`` or ``not_captured``. A carried gene with ``TRUTH_GAP_FLAG``
 (10) clonotypes of such reads or more is flagged, and whether all its alleles are unphased (``h0_only``) is
 noted. ``truth_to_json`` and ``truth_from_json`` turn a truth into JSON-ready data and back, for the workflow's
@@ -200,6 +206,9 @@ class RealTruth:
     ref_known: frozenset[str] | None = None
     # their IUIS genes, sorted and joined by "|"; None without one
     ref_known_gene: str | None = None
+    # the donor alleles whose window at the reference-exact window's place is that window, and those that cannot be
+    # windowed whose V-REGION holds it; None without a reference-exact known answer
+    ref_donor: frozenset[str] | None = None
 
 
 class KnownMatch(NamedTuple):
@@ -356,6 +365,7 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
             shared = frozenset(name for allele in match.alleles for name in allele.shared)
             gene = "|".join(sorted({allele.gene for allele in match.alleles}))
         ref = None if shared_index is None else _known_match(read, observed, shared_index, min_window)
+        ref_donor = None if ref is None else _windowed_by(index, ref, observed[0])
         truths.append(RealTruth(read_id=read_id, donor=donor, isotype=row["isotype"], protocol=row["protocol"],
                                 observed=observed, known=known, known_shared=shared, known_gene=gene,
                                 novel_known=match is not None and not shared,
@@ -363,7 +373,8 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
                                 anchor=anchor, cys_end=cys_end, v_window_n=gaps,
                                 ref_known=None if ref is None else frozenset(a.allele_id for a in ref.alleles),
                                 ref_known_gene=None if ref is None else "|".join(sorted(
-                                    {gene for allele in ref.alleles for gene in allele.gene.split("|")}))))
+                                    {gene for allele in ref.alleles for gene in allele.gene.split("|")})),
+                                ref_donor=ref_donor))
     roots = single_linkage((junction for truth in truths if (junction := _junction(truth))), SL15_SHARE)
     return [dataclasses.replace(truth, clonotype_sl15=_sl15(truth, roots)) for truth in truths]
 
@@ -387,12 +398,12 @@ def truth_health(truths: Iterable[RealTruth], genotype: RealGenotype, iuis: Iuis
                  flag: int = TRUTH_GAP_FLAG) -> dict:
     """The truth audit of the module docstring over one donor's ``truths``, their reference-exact known answers
     (``real_truths(..., iuis=iuis)``) against the donor's captured ``genotype``: ``reads``; ``shared_exact`` (reads
-    that are exactly one shared allele's window); ``not_carried`` (of those, the reads whose allele the donor does
-    not carry); ``by_class`` (``GAP_CLASSES`` -> reads); ``genes`` (one entry per gene: ``gene``, ``class``,
-    ``reads``, ``clonotypes``, ``alleles`` (shared allele -> reads) and ``h0_only``; the most reads first);
+    that are exactly one shared allele's window); ``not_carried`` (of those, the reads no donor allele explains: no
+    known answer and an empty ``ref_donor``; windows compared, never names); ``by_class`` (``GAP_CLASSES`` ->
+    reads); ``genes`` (one entry per gene: ``gene``, ``class``, ``reads``, ``clonotypes``, ``alleles`` (shared allele
+    -> reads) and ``h0_only``; the most reads first);
     ``flagged`` (carried genes with at least ``flag`` clonotypes) and ``flag_clonotypes``. ``iuis`` is the map the
     truths were computed with."""
-    donor_shared = {name for allele in genotype.alleles for name in allele.shared}
     carried = {allele.gene for allele in genotype.alleles}
     unphased = {gene for gene in carried if all(allele.haplotype == 0 for allele in genotype.carried(gene))}
     captured, uncalled = genotype.captured or frozenset(), genotype.uncalled or frozenset()
@@ -403,7 +414,7 @@ def truth_health(truths: Iterable[RealTruth], genotype: RealGenotype, iuis: Iuis
         if truth.ref_known is None:
             continue
         exact += 1
-        if truth.ref_known & donor_shared:
+        if truth.known is not None or truth.ref_donor:
             continue
         genes = truth.ref_known_gene.split("|")
         cls = ("carried" if set(genes) & carried else "uncalled" if set(genes) & uncalled
@@ -493,7 +504,8 @@ def truth_to_json(truth: RealTruth) -> dict:
             "clonotype": truth.clonotype, "anchor": truth.anchor, "cys_end": truth.cys_end,
             "v_window_n": list(truth.v_window_n), "clonotype_sl15": truth.clonotype_sl15,
             "ref_known": None if truth.ref_known is None else sorted(truth.ref_known),
-            "ref_known_gene": truth.ref_known_gene}
+            "ref_known_gene": truth.ref_known_gene,
+            "ref_donor": None if truth.ref_donor is None else sorted(truth.ref_donor)}
 
 
 def truth_from_json(record: Mapping) -> RealTruth:
@@ -508,7 +520,8 @@ def truth_from_json(record: Mapping) -> RealTruth:
                          anchor=record["anchor"], cys_end=record["cys_end"], v_window_n=tuple(record["v_window_n"]),
                          clonotype_sl15=record["clonotype_sl15"],
                          ref_known=None if record["ref_known"] is None else frozenset(record["ref_known"]),
-                         ref_known_gene=record["ref_known_gene"])
+                         ref_known_gene=record["ref_known_gene"],
+                         ref_donor=None if record["ref_donor"] is None else frozenset(record["ref_donor"]))
     except (KeyError, TypeError) as error:
         raise ValueError(f"not a read's truth (truth_to_json): {error!r}") from None
 
@@ -596,9 +609,8 @@ def _known_match(read: str, observed: tuple[int, int], index: _Index, min_window
         while at != -1:
             cys_end = at + ANCHOR_LENGTH
             for allele, region in entries:
-                length = min(len(region), cys_end - start)
-                window = region[len(region) - length:]
-                if read.startswith(window, cys_end - length):
+                window = _window(region, cys_end - start)
+                if read.startswith(window, cys_end - len(window)):
                     found.setdefault((window, cys_end), []).append(allele)
             at = read.find(anchor, at + 1, end)
     if len(found) != 1:
@@ -607,6 +619,22 @@ def _known_match(read: str, observed: tuple[int, int], index: _Index, min_window
     if len(window) < min_window or any(window in allele.sequence.upper() for allele in index.unanchored):
         return None
     return KnownMatch(alleles=tuple(alleles), window=window, cys_end=cys_end)
+
+
+def _window(region: str, span: int) -> str:
+    """An allele's window in a read: its ``region`` through Cys104 from the position facing the first observed base,
+    ``span`` bases before the read's Cys104 end (the whole region when the read reaches past its start)."""
+    return region[max(0, len(region) - span):]
+
+
+def _windowed_by(index: _Index, match: KnownMatch, start: int) -> frozenset[str]:
+    """The ids of ``index``'s alleles whose window at ``match``'s place (``start`` the first observed base) is
+    ``match.window``, and of those that cannot be windowed whose V-REGION holds it (``_known_match``'s rule)."""
+    span = match.cys_end - start
+    same = {allele.allele_id for allele, region in index.windows.get(match.window[-ANCHOR_LENGTH:], ())
+            if _window(region, span) == match.window}
+    same |= {allele.allele_id for allele in index.unanchored if match.window in allele.sequence.upper()}
+    return frozenset(same)
 
 
 def _anchor_end(read: str, observed: tuple[int, int], anchors: _Anchors) -> int | None:

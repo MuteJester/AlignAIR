@@ -351,6 +351,12 @@ def test_a_haplotype_without_a_call_is_known_only_where_its_contigs_show_the_gen
         "h2 not stored": (on_h1, [_over(2, 3900, 4400, seq="*")], False),
         "h0 holds the carried allele": (on_h1, [_over(0, 3900, 4400)], True),
         "h0 differs from it": (on_h1, [_over(0, 3900, 4400, put={4000: V323_02})], False),
+        # a deleted alignment leaves its haplotype known: hemizygous there (only a present one unresolves the gene)
+        "h0 deleted, h1 called": (on_h1, [_over(0, 3900, 4400, **deleted)], True),
+        "h0 deleted and holding the carried allele": (on_h1, [_over(0, 3900, 4400, **deleted),
+                                                              _over(0, 3900, 4400, index=1)], True),
+        "h0 deleted and differing": (on_h1, [_over(0, 3900, 4400, **deleted),
+                                             _over(0, 3900, 4400, index=1, put={4000: V323_02})], False),
         "h0 differs, h1 and h2 called": (_genotype(_v("IGHV3-23", 1, V323), _v("IGHV3-23", 2, V323)),
                                          [_over(0, 3900, 4400, put={4000: V428})], False),
         "an unphased call": (_genotype(_v("IGHV3-23", 0, V323)), [], True),

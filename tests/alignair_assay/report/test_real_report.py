@@ -653,6 +653,8 @@ def test_the_primary_under_the_sl15_and_junction_length_clusterings():
     sensitivity = _section(md, "Sensitivity")
     part = sensitivity[sensitivity.index("Clustering"):]
     assert "candidate primary for P3b" in part and "stress test" in part
+    # each clustering is its own Holm family of the three clustered metrics (workflow.real_score.CLUSTERED)
+    assert "R1, known_top1 and ref_known_top1" in part and "Holm family of those three metrics" in part
     rows = _table(part)
     assert rows[0] == ["Scope", "Metric", "exact junction (primary)", "SL15", "donor × junction length (stress)"]
     assert [row[:2] for row in rows[1:3]] == [["multiplex (W-97)", "R1"], ["multiplex (W-97)", "known_top1"]]

@@ -1691,8 +1691,11 @@ another shared reference:
   junction length, a stress test) give `stats.compare` those clusterings.
 - `truth_health(truths, genotype, iuis)`: a tool-neutral audit of the truth, over the reference-exact known answers
   (the known-answer rule run against the shared reference's V alleles instead of the donor's, below). A read whose
-  V is exactly a shared allele the donor does not carry shows an allele the genotype lacks; those reads
-  are counted per gene, split by where it stands in the truth (`carried`, `captured`, `uncalled`, `not_captured`),
+  V is exactly a shared allele's window that no donor allele explains (no known answer, and no donor allele's window
+  at that place is that window: `RealTruth.ref_donor` is empty) shows an allele the genotype lacks. Windows are
+  compared, never names: VDJbase calls as novel, with no shared name, alleles that equal a shared one over every
+  read (SC-11's `IGHV5-10-1*03_c319-_a320-` differs from IGHV5-10-1*03 only past Cys104). Those reads are counted
+  per gene, split by where it stands in the truth (`carried`, `captured`, `uncalled`, `not_captured`),
   and a carried gene with 10 clonotypes of them or more is `flagged` (an allele VDJbase missed, or a haplotype it
   did not resolve; `h0_only` notes a gene carried only unphased). The truth step stores it in the truth file's
   header; the summary has it per donor (`truth_health`), and the report a section and a flag.
@@ -1770,8 +1773,9 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   set) and `real.v.ref_known_gene_top1` (one of its IUIS genes is the set's) are compared metrics (higher is
   better), scored on every read with one, whatever its exclusions: the truth is the read itself. The oracle calls
   the set's first name and must be right on every such read; the report gives the paired Δ beside known_top1 in
-  the bottom line, and the yield and the paired Δ per pair in Known answers. The truth-health audit counts these
-  reads by whether the donor carries the allele.
+  the bottom line, and the yield and the paired Δ per pair in Known answers. `RealTruth.ref_donor` holds the donor
+  alleles whose window, at the answer's place, is the answer's window (and those that cannot be windowed whose
+  V-REGION holds it); the truth-health audit counts these reads when the donor has none and no known answer.
 - The tie-aware metrics (informational) separate "the read cannot tell" from "wrong". A call's window is the last
   `L` nt of its region through Cys104, `L` the read's `cys_end` less its first observed base; two windows are equal
   when they agree from Cys104 back over their common length, the read's `N` positions left out (a read without a
@@ -1844,10 +1848,10 @@ carried gene with 10 clonotypes of them or more), failed runs and refusals, and 
   gene (21 genes: those of the 33 of the paper's 137 novel alleles that no subject of the VDJbase genomic cohort
   carries), and R1 with Mikelov et al. 2024's gene-support thresholds (at least 10 clonotypes and 3 naive clonotypes
   per V gene among the known answers; `excluded:low_support`). The primary applies no threshold.
-- **Clustering**: the pre-declared primary pair's R1 and known_top1, per protocol and pooled, are compared again on
-  the same paired reads clustered by SL15 and, as a stress test, by donor × junction length, beside the exact
-  junctions (`clusterings` in each comparison; each its own Holm family of the two metrics). The bottom line says
-  whether SL15 changes a verdict.
+- **Clustering**: the pre-declared primary pair's R1, known_top1 and ref_known_top1
+  (`workflow.real_score.CLUSTERED`), per protocol and pooled, are compared again on the same paired reads clustered
+  by SL15 and, as a stress test, by donor × junction length, beside the exact junctions (`clusterings` in each
+  comparison; each its own Holm family of those three metrics). The bottom line says whether SL15 changes a verdict.
 - **The genotype arm's R1 is 0 by construction**: each tool may call only the donor's alleles in the genes the truth
   resolves, so every call not excluded is supported. That arm is judged on `known_top1` and `known_gene_top1`,
   missing calls, and the share of calls that move into genes without truth (not captured, or uncalled), where R1

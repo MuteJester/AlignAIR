@@ -35,12 +35,13 @@ capture it count: every haplotype-0 alignment that spans it, and those of haplot
 **Resolved.** A carried gene is resolved when both of the donor's haplotypes are known there. A haplotype with a call
 of the gene is known. One without is known only when it has alignments spanning the gene and each is ``deleted`` or
 ``carried`` there; one not spanned, or spanned and holding another sequence, is unknown. Haplotype 0 is unphased, not
-homozygous: an unphased call, or haplotype-0 alignments that all hold a carried allele, resolve the gene, while a
-haplotype-0 alignment that is not ``carried`` (it holds another sequence, or is deleted where a call says the gene
-is) leaves it unresolved. A carried gene that is not resolved is ``half_resolved``: an allele on one of its haplotypes
-is unknown, its region not spanned (SC-23's IGHV3-15, whose haplotype-2 contig starts 9 bases inside it) or spanned
-but not called (W-133's IGHV3-30-5, whose unphased contigs hold sequences VDJbase did not call), so R1 excludes every
-call to it (``real.metrics``). A gene ``absent`` on every capturing alignment is resolved too.
+homozygous: an unphased call, or haplotype-0 alignments that are each ``carried`` or ``deleted`` (a deleted one leaves
+its haplotype known, hemizygous there), resolve the gene, while a ``present`` haplotype-0 alignment (it holds another
+sequence than the carried alleles) leaves it unresolved. A carried gene that is not resolved is ``half_resolved``: an
+allele on one of its haplotypes is unknown, its region not spanned (SC-23's IGHV3-15, whose haplotype-2 contig starts
+9 bases inside it) or spanned but not called (W-133's IGHV3-30-5, whose unphased contigs hold sequences VDJbase did
+not call), so R1 excludes every call to it (``real.metrics``). A gene ``absent`` on every capturing alignment is
+resolved too.
 
 - **The haplotype is the contig name's ``h=``, not the alignment's read group.** IGenotyper names each contig after
   the phased block and haplotype it was assembled from (``c=igh:<start>-<end>_h=<0|1|2>_i=<n>_t=<n>_/0/0_0``; 0
@@ -483,7 +484,8 @@ def _capturing(spans: Mapping[int, list[SpanEvidence]]) -> list[SpanEvidence]:
 def _unknown_haplotypes(spans: Mapping[int, list[SpanEvidence]], called: set[int]) -> list[dict]:
     """A carried gene's unknown haplotypes, each ``{"haplotype", "why"}``; [] when the gene is resolved (the module
     docstring)."""
-    differing = [entry for entry in spans[0] if entry.state != CARRIED]
+    # only a present alignment unresolves the gene: a deleted one leaves its haplotype known (hemizygous there)
+    differing = [entry for entry in spans[0] if entry.state == PRESENT]
     if differing:
         return [{"haplotype": 0, "why": f"an unphased contig ({differing[0].contig}) is {differing[0].state} there, "
                                         "not a carried allele"}]

@@ -84,11 +84,11 @@ ASSEMBLY_KINDS = {"mismatches": "mismatches", "not_significant": "not significan
 # The clusterings the pre-declared primary is compared under: the primary clonotypes, the candidate for P3b, a stress.
 CLUSTERINGS = {"exact": "exact junction (primary)", "sl15": "SL15",
                "junction_length": "donor × junction length (stress)"}
-CLUSTERING_NOTE = ("Clustering: the pre-declared primary pair's R1 and known_top1 compared under three clusterings of "
-                   "the same paired reads, each its own Holm family of those two metrics: exact junctions (the primary "
-                   "clonotypes in P3a), SL15 (single linkage at 15% or less nt Hamming among a donor's junctions of "
-                   "one length; the candidate primary for P3b) and, as a stress test, one cluster per donor and "
-                   "junction length.")
+CLUSTERING_NOTE = ("Clustering: the pre-declared primary pair's R1, known_top1 and ref_known_top1 compared under three "
+                   "clusterings of the same paired reads, each its own Holm family of those three metrics: exact "
+                   "junctions (the primary clonotypes in P3a), SL15 (single linkage at 15% or less nt Hamming among a "
+                   "donor's junctions of one length; the candidate primary for P3b) and, as a stress test, one cluster "
+                   "per donor and junction length.")
 INVARIANT = ("Whether a call is excluded never depends on whether it is correct: a call is excluded by its own IUIS "
              "genes and the read's tool-neutral truth alone, so a right call and a wrong call to the same genes are "
              "excluded alike; a call into an excluded gene still takes the read out of R1 for both tools. A read "
@@ -337,7 +337,8 @@ def _sensitivity(summary: dict, scopes: list[dict]) -> list[str]:
 
 
 def _clusterings(summary: dict, scopes: list[dict], pairs: list[tuple[str, str]]) -> list[str]:
-    """The pre-declared primary pair's R1 and known_top1 per protocol (and pooled) under each clustering."""
+    """The pre-declared primary pair's R1, known_top1 and ref_known_top1 per protocol (and pooled) under each
+    clustering."""
     primary = PRIMARY if PRIMARY in pairs else (pairs[0] if pairs else None)
     lead = _protocol_scopes(summary) + [scope for scope in scopes if scope["block"] is None]
     rows = []
@@ -610,9 +611,10 @@ def _truth_health(summary: dict, scopes: list[dict]) -> list[str]:
                           "yes" if entry.get("h0_only") else "no"])
     flag = next((health.get("flag_clonotypes") for _, health in blocks if health.get("flag_clonotypes")), 10)
     lines = ["A tool-neutral audit of the truth: the known-answer rule run against the shared reference's V alleles "
-             "instead of the donor's. A read whose V is exactly a shared allele's window (at least 200 nt) that the "
-             "donor does not carry shows an allele the genotype lacks; its gene is carried (another allele of it: an "
-             "allele VDJbase missed, or a haplotype it did not resolve), captured (deleted on every capturing "
+             "instead of the donor's. A read whose V is exactly a shared allele's window (at least 200 nt) that no "
+             "donor allele explains (no known answer, and no donor allele's window there is that window; windows "
+             "are compared, never names) shows an allele the genotype lacks; its gene is carried (another allele of "
+             "it: an allele VDJbase missed, or a haplotype it did not resolve), captured (deleted on every capturing "
              f"contig), uncalled or not captured. A carried gene with {flag} clonotypes of such reads or more is in "
              "bold and flagged.", "",
              *_table(["Donor", "Reads", "Exactly a shared allele", "Not carried by the donor",
