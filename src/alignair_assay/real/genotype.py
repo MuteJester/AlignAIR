@@ -53,7 +53,11 @@ carry no IUIS name, and VDJbase names a novel allele after its closest IMGT alle
   (132 IGHV, 5 IGHD), without donor ids. Each sequence is given reverse-complemented: all 125 whose closest IMGT
   allele is in OGRDB align better reversed. VDJbase lacks some of them, so R1 is also reported without the genes
   they touch (the sensitivity analysis). Exact equality finds 97 of them among the cohort's VDJbase undocumented
-  sequences, as many as containment with 90% overlap does.
+  sequences, as many as containment with 90% overlap does. The analysis takes the whole cohort
+  (``vdjbase_cohort_sequences``: every subject's undocumented sequences, and its documented alleles through the
+  OGRDB release they are named in), never only a run's donors: the cohort lacks 33 of the 137 (``sd3_missing``),
+  which touch 21 genes (``sd3_genes``); the eight pilot donors alone would leave 45 genes.
+- ``genotype_to_json`` and ``genotype_from_json``: a genotype, captured or not, as JSON-ready data and back.
 """
 from __future__ import annotations
 
@@ -64,7 +68,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import NamedTuple
 
@@ -526,16 +530,94 @@ def sd3_only(genotypes: Iterable[RealGenotype], sd3: Iterable[Sd3Allele]) -> set
     """The genes touched by a novel allele of ``sd3`` whose sequence is in none of ``genotypes``' alleles: its own
     ``gene`` and the gene of every closest allele the sheet names, so the sensitivity analysis leans to excluding
     more. Only the donors given count, so a subset of the cohort can only add genes; the D calls ``filter_d``
-    dropped are not among a genotype's alleles."""
+    dropped are not among a genotype's alleles. The workflow passes the whole cohort's sequences instead
+    (``vdjbase_cohort_sequences``, ``sd3_missing``, ``sd3_genes``)."""
     carried = {allele.sequence for genotype in genotypes for allele in genotype.alleles}
+    return sd3_genes(sd3_missing(carried, sd3))
+
+
+def sd3_missing(carried: Iterable[str], sd3: Iterable[Sd3Allele]) -> list[Sd3Allele]:
+    """The novel alleles of ``sd3`` whose sequence (exactly, uppercase) is none of ``carried``, in order."""
+    found = {sequence.upper() for sequence in carried}
+    return [allele for allele in sd3 if allele.sequence not in found]
+
+
+def sd3_genes(alleles: Iterable[Sd3Allele]) -> set[str]:
+    """The genes ``alleles`` touch: each one's own ``gene`` and the gene of every closest allele the sheet names."""
     touched: set[str] = set()
-    for allele in sd3:
-        if allele.sequence not in carried:
-            touched.add(allele.gene)
-            # ``closest_all`` defaults to (): a record built with only ``closest`` still names that allele's gene
-            closest = allele.closest_all or ((allele.closest,) if allele.closest else ())
-            touched.update(gene_name(label) for label in closest)
+    for allele in alleles:
+        touched.add(allele.gene)
+        # ``closest_all`` defaults to (): a record built with only ``closest`` still names that allele's gene
+        closest = allele.closest_all or ((allele.closest,) if allele.closest else ())
+        touched.update(gene_name(label) for label in closest)
     return touched
+
+
+def vdjbase_cohort_sequences(api_json, ogrdb_json) -> tuple[frozenset[str], dict]:
+    """Every IGH allele sequence of VDJbase's genomic cohort, from its API's all-subjects genotype JSON (MiAIRR
+    GenotypeSets; ``fetch.COHORT_FILES["vdjbase_api"]``) and the OGRDB germline set its documented alleles are named
+    in (``ogrdb_json``, AIRR format): an undocumented allele carries its sequence, and a documented one, given by
+    label only, takes its label's coding sequence. Only the subjects' IGH genotypes count. Returns the uppercase
+    sequences and ``{"subjects", "documented_labels", "undocumented_sequences"}`` (distinct). On the pilot's file,
+    with OGRDB rev 9, the cohort lacks 33 of the paper's 137 novel alleles, which touch 21 genes. ValueError for a
+    documented allele named in another germline set release than ``ogrdb_json``'s, or a label it does not hold."""
+    (germline_set,) = json.loads(Path(ogrdb_json).read_text(encoding="utf-8"))["GermlineSet"]
+    coding = {description["label"]: description["coding_sequence"].strip().upper()
+              for description in germline_set["allele_descriptions"]}
+    release = germline_set.get("release_version")
+    subjects, labels, undocumented = set(), set(), set()
+    for subject in json.loads(Path(api_json).read_text(encoding="utf-8"))["genotype_class_list"]:
+        for genotype in subject["genotypeSet"]["genotype_class_list"]:
+            if genotype.get("locus") != "IGH":
+                continue
+            subjects.add(subject["subject_name"])
+            for allele in genotype.get("documented_alleles") or ():
+                reference = allele.get("germline_set_ref") or ""
+                if reference.rsplit(":", 1)[-1] != f"v{release}":
+                    raise ValueError(f"{api_json}: {allele['label']} is named in {reference!r}, not in the germline "
+                                     f"set release {release} of {ogrdb_json}")
+                labels.add(allele["label"])
+            undocumented.update((allele.get("sequence") or "").strip().upper()
+                                for allele in genotype.get("undocumented_alleles") or ())
+    unknown = sorted(labels - set(coding))
+    if unknown:
+        raise ValueError(f"{api_json}: {len(unknown)} documented alleles are not in {ogrdb_json}: "
+                         f"{', '.join(unknown[:5])}")
+    undocumented.discard("")
+    sequences = frozenset(undocumented | {coding[label] for label in labels})
+    return sequences, {"subjects": len(subjects), "documented_labels": len(labels),
+                       "undocumented_sequences": len(undocumented)}
+
+
+def genotype_to_json(genotype: RealGenotype) -> dict:
+    """``genotype`` as JSON-ready data, which ``genotype_from_json`` reads back equal: its ``donor``, ``alleles`` and
+    ``dropped`` D calls (every field, tuples as lists), its ``captured`` and ``resolved`` genes (sorted; None until
+    known) and its ``source``."""
+    def allele(record: RealAllele) -> dict:
+        return {field_.name: list(value) if isinstance(value, tuple) else value
+                for field_ in fields(RealAllele) for value in (getattr(record, field_.name),)}
+
+    return {"donor": genotype.donor, "alleles": [allele(record) for record in genotype.alleles],
+            "dropped": [allele(record) for record in genotype.dropped],
+            "captured": None if genotype.captured is None else sorted(genotype.captured),
+            "resolved": None if genotype.resolved is None else sorted(genotype.resolved),
+            "source": genotype.source}
+
+
+def genotype_from_json(record: dict) -> RealGenotype:
+    """The ``RealGenotype`` of ``genotype_to_json``'s data. ValueError for data that is not a genotype's."""
+    def allele(data: dict) -> RealAllele:
+        return RealAllele(**{key: tuple(value) if key in ("shared", "iuis") else value for key, value in data.items()})
+
+    try:
+        captured, resolved = record["captured"], record["resolved"]
+        return RealGenotype(donor=record["donor"], alleles=tuple(allele(data) for data in record["alleles"]),
+                            captured=None if captured is None else frozenset(captured),
+                            resolved=None if resolved is None else frozenset(resolved),
+                            dropped=tuple(allele(data) for data in record["dropped"]),
+                            source=dict(record["source"]))
+    except (KeyError, TypeError) as error:
+        raise ValueError(f"not a genotype's JSON (genotype_to_json): {error!r}") from None
 
 
 def _xlsx_sheet(path: Path, name: str) -> list[list[str]]:

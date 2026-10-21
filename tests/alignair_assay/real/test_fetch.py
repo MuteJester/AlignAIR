@@ -827,6 +827,35 @@ def test_the_pilot_genotype_files_are_verified_in_place(tmp_path, monkeypatch):
             assert record.detail["reused"] is True and record.md5 == spec.md5
 
 
+def test_the_cohort_files_are_verified_never_downloaded(tmp_path, monkeypatch):
+    monkeypatch.setattr(fetch, "download", _no_download)
+    payloads = {key: f"{key} bytes".encode() for key in fetch.COHORT_FILES}
+    monkeypatch.setattr(fetch, "COHORT_FILES", {
+        key: (path, len(payloads[key]), hashlib.md5(payloads[key]).hexdigest(), source)
+        for key, (path, _, _, source) in fetch.COHORT_FILES.items()})
+    # a missing file is refused with where it comes from
+    with pytest.raises(FetchError, match="vdjbase_genomic_api"):
+        fetch.cohort_files(tmp_path)
+    for key, (path, _, _, _) in fetch.COHORT_FILES.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_bytes(payloads[key])
+    files = fetch.cohort_files(tmp_path)
+    assert set(files) == {"vdjbase_api", "ogrdb_rev9", "sd3"}
+    assert files["sd3"]["path"] == tmp_path / fetch.COHORT_FILES["sd3"][0]
+    assert files["sd3"]["md5"] == hashlib.md5(payloads["sd3"]).hexdigest()
+    # a changed file is refused
+    (tmp_path / fetch.COHORT_FILES["sd3"][0]).write_bytes(b"sd3 bytez")
+    with pytest.raises(FetchError, match="md5"):
+        fetch.cohort_files(tmp_path)
+
+
+@needs_data
+def test_the_cohort_files_are_the_pinned_ones():
+    files = fetch.cohort_files(DATA)
+    assert {key: record["md5"] for key, record in files.items()} == {
+        key: md5 for key, (_, _, md5, _) in fetch.COHORT_FILES.items()}
+
+
 @needs_data
 def test_the_ena_fastqs_are_the_pinned_ones(tmp_path):
     root = Path(DATA)

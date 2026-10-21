@@ -17,6 +17,10 @@
   python -m alignair_assay diagnose --run-dir RUN --checkpoint MODEL.alignair --suites S1,S3 [--device cuda]
       [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] [--max-cases N]
       [--allow-unverified-replay]
+  python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97 [--split dev] [--cap 50000]
+      [--tools igblast,alignair,alignair-api] [--threads 8] [--device cpu] [--batch-size 64]
+      [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE]
+      [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair] [--force]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
   python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR
@@ -35,9 +39,9 @@ import argparse
 import sys
 
 from alignair_assay.cli import all as all_command
-from alignair_assay.cli import build, compare, diagnose, report, run, score, speed, truth
+from alignair_assay.cli import build, compare, diagnose, real, report, run, score, speed, truth
 
-COMMANDS = (all_command, report, build, run, speed, diagnose, truth, score, compare)
+COMMANDS = (all_command, report, build, run, speed, diagnose, real, truth, score, compare)
 
 
 def main(argv: list[str] | None = None) -> int:

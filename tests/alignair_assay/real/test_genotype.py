@@ -27,12 +27,18 @@ from alignair_assay.real.genotype import (
     Sd3Allele,
     arm_alleles,
     filter_d,
+    genotype_from_json,
+    genotype_to_json,
     load_vdjbase_csv,
     merge_identical,
+    sd3_genes,
+    sd3_missing,
     sd3_novel,
     sd3_only,
     upto,
+    vdjbase_cohort_sequences,
 )
+from alignair_assay.real.locus import with_capture
 
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
 
@@ -443,6 +449,58 @@ def test_sd3_only_falls_back_to_the_closest_allele_without_closest_all():
     assert sd3_only([], [Sd3Allele("", D_X, "IGHD4-23")]) == {"IGHD4-23"}
 
 
+def _api_subject(name: str, locus: str, documented: list[str], undocumented: list[tuple[str, str]]) -> dict:
+    """One subject of VDJbase's genomic all-subjects genotype JSON (MiAIRR GenotypeSet), as the API writes it."""
+    return {"subject_name": name, "genotypeSet": {"receptor_genotype_set_id": f"Genomic_genotype_set_{name}",
+                                                  "genotype_class_list": [{
+        "receptor_genotype_id": f"IGenotyper_genotype_{name}_{locus}", "locus": locus,
+        "documented_alleles": [{"label": label, "germline_set_ref": "OGRDB:Homo sapiens:v8", "phasing": 0}
+                               for label in documented],
+        "undocumented_alleles": [{"allele_name": allele, "sequence": sequence.lower(), "phasing": 0}
+                                 for allele, sequence in undocumented],
+        "deleted_genes": [], "inference_process": "genomic_sequencing"}]}}
+
+
+def test_the_cohorts_sequences_and_the_sd3_alleles_it_lacks(tmp_path):
+    ogrdb = tmp_path / "ogrdb.json"
+    ogrdb.write_text(json.dumps(OGRDB), encoding="utf-8")
+    api = tmp_path / "api.json"
+    api.write_text(json.dumps({"genotype_class_list": [
+        _api_subject("P25_I1", "IGH", ["IGHV1-2*02"], [("IGHV1-2*02_a41c", _snp(V_A, 40))]),
+        _api_subject("P25_I2", "IGH", ["IGHD4-11*01"], []),
+        # another locus is not the cohort's IGH genotype
+        _api_subject("P26_I1", "IGK", [], [("IGKV1-5*01_a1c", NOVEL_V)]),
+    ]}), encoding="utf-8")
+    sequences, stats = vdjbase_cohort_sequences(api, ogrdb)
+    # documented labels are resolved through the germline set the API names; undocumented ones carry their sequence
+    assert sequences == {V_A, _snp(V_A, 40), D_44}
+    assert stats == {"subjects": 2, "documented_labels": 2, "undocumented_sequences": 1}
+    # the SD3 alleles in none of the cohort's sequences, and the genes they touch (as sd3_only)
+    missing = sd3_missing(sequences, SD3_EXPECTED)
+    assert missing == SD3_EXPECTED[1:]
+    assert sd3_genes(missing) == {"IGHV1-69D", "IGHV1-69", "IGHD4-23"} == sd3_only([], SD3_EXPECTED[1:])
+    # a documented label the germline set does not hold, or another germline set, is refused
+    api.write_text(json.dumps({"genotype_class_list": [_api_subject("P25_I1", "IGH", ["IGHV9-99*01"], [])]}))
+    with pytest.raises(ValueError, match="IGHV9-99"):
+        vdjbase_cohort_sequences(api, ogrdb)
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps({"GermlineSet": [{**OGRDB["GermlineSet"][0], "release_version": 9}]}))
+    api.write_text(json.dumps({"genotype_class_list": [_api_subject("P25_I1", "IGH", ["IGHV1-2*02"], [])]}))
+    with pytest.raises(ValueError, match="v8"):
+        vdjbase_cohort_sequences(api, other)
+
+
+def test_a_genotype_round_trips_through_json(genotype):
+    captured = with_capture(genotype, {"IGHV1-2", "IGHV1-69D", "IGHV3-11"}, {"kind": "test"},
+                            haplotypes={0: {"IGHV1-2", "IGHV1-69D", "IGHV3-11"}, 1: set(), 2: set()})
+    for value in (genotype, captured):
+        record = json.loads(json.dumps(genotype_to_json(value)))
+        assert genotype_from_json(record) == value
+    assert captured.dropped and genotype_from_json(genotype_to_json(captured)).dropped == captured.dropped
+    with pytest.raises(ValueError, match="genotype"):
+        genotype_from_json({"donor": DONOR})
+
+
 # --- the genotype arm's alleles -----------------------------------------------------------------------------------
 
 # A shared reference for the genotype arm: shared name -> (sequence, OGRDB labels with that sequence).
@@ -638,6 +696,18 @@ def test_the_pilot_donors_vdjbase_genotypes(reference):
 
 # The genotype arm's V alleles per pilot donor (kept of the shared reference's 198), on HUMAN_IGH_OGRDB. W-97 and
 # W-133 keep the most: their contigs capture the fewest V genes (45 and 44), so more genes keep all their alleles.
+@pytest.mark.skipif(not DATA, reason="set ALIGNAIR_ASSAY_DATA to the PRJNA555323 data root")
+def test_the_cohort_lacks_33_of_the_papers_novel_alleles():
+    # The sensitivity analysis takes the whole cohort's VDJbase genotypes, never only the donors of a run.
+    from alignair_assay.real.fetch import cohort_files
+
+    files = cohort_files(DATA)
+    sequences, stats = vdjbase_cohort_sequences(files["vdjbase_api"]["path"], files["ogrdb_rev9"]["path"])
+    assert stats == {"subjects": 152, "documented_labels": 174, "undocumented_sequences": 267}
+    missing = sd3_missing(sequences, sd3_novel(files["sd3"]["path"]))
+    assert len(missing) == 33 and len(sd3_genes(missing)) == 21
+
+
 ARM_V_KEPT = {"SC-23": 111, "SC-4": 102, "SC-11": 110, "SC-6": 95, "W-97": 114, "W-89": 92, "W-133": 117, "W-131": 95}
 
 

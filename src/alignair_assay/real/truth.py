@@ -78,7 +78,8 @@ mutated members of an expanded clone share an id:
    puts a read in a cluster of its own.
 5. The clonotype is ``f"{donor}/{junction}"``; a read without both anchors is ``f"{donor}/single:{read_id}"``.
 
-``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id -> clonotype map.
+``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id -> clonotype map. ``truth_to_json`` and
+``truth_from_json`` turn a truth into JSON-ready data and back, for the workflow's truth file.
 
 **On the pilot reads** (Task 4's preprocessed run): W-97 (multiplex, 50,000 sequences) has 5.7% known answers and
 5.6% naive; Cys104 is placed on 92.8% of its reads (66.5% by the donor's anchors, 26.3% by the shared reference's)
@@ -302,6 +303,30 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
 def clonotype_clusters(truths: Iterable[RealTruth]) -> dict[str, str]:
     """Read id -> clonotype, the ``clusters`` of ``stats.compare``."""
     return {truth.read_id: truth.clonotype for truth in truths}
+
+
+def truth_to_json(truth: RealTruth) -> dict:
+    """``truth`` as JSON-ready data, which ``truth_from_json`` reads back equal: the sets as sorted lists and the
+    observed span as a list."""
+    return {"read_id": truth.read_id, "donor": truth.donor, "isotype": truth.isotype, "protocol": truth.protocol,
+            "observed": list(truth.observed), "known": None if truth.known is None else sorted(truth.known),
+            "known_shared": None if truth.known_shared is None else sorted(truth.known_shared),
+            "known_gene": truth.known_gene, "novel_known": truth.novel_known, "naive": truth.naive,
+            "clonotype": truth.clonotype, "anchor": truth.anchor}
+
+
+def truth_from_json(record: Mapping) -> RealTruth:
+    """The ``RealTruth`` of ``truth_to_json``'s data. ValueError for data that is not a truth's."""
+    try:
+        known, shared = record["known"], record["known_shared"]
+        return RealTruth(read_id=record["read_id"], donor=record["donor"], isotype=record["isotype"],
+                         protocol=record["protocol"], observed=tuple(record["observed"]),
+                         known=None if known is None else frozenset(known),
+                         known_shared=None if shared is None else frozenset(shared), known_gene=record["known_gene"],
+                         novel_known=record["novel_known"], naive=record["naive"], clonotype=record["clonotype"],
+                         anchor=record["anchor"])
+    except (KeyError, TypeError) as error:
+        raise ValueError(f"not a read's truth (truth_to_json): {error!r}") from None
 
 
 # --- placing reads -------------------------------------------------------------------------------------------------

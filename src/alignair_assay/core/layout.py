@@ -27,6 +27,13 @@ RUN/
   real/<donor>/reads.fasta            the donor's preprocessed unique sequences (+ reads.tsv, one row each)
   real/<donor>/preprocess.json        the preprocessing record, written last (+ preprocess_logs/; preprocess_work/
                                       while it runs)
+  real/manifest.json                  the real-data run's configuration (``workflow.real``)
+  real/real_summary.json              every donor's and the pooled results; real/real_report.md renders them
+  real/_setup/                        the tools' one-time setup (a RunLayout root given to Runner.prepare)
+  real/<donor>/fetch.json             what the donor's reads and genotype files were fetched as
+  real/<donor>/truth.jsonl.gz         the per-read truth, its record as the header line
+  real/<donor>/runs/<tool>/<arm>/     predictions.tsv + run.json (written last) + logs/
+  real/<donor>/scores/<arm>/          <tool>.scores.jsonl.gz (each read's classes), <a>_vs_<b>.json comparisons
 ```
 
 ``RunLayout`` only joins paths: it never reads, writes or creates anything.
@@ -250,6 +257,55 @@ class RunLayout:
     def real_preprocess_work(self, donor: str) -> Path:
         """The preprocessing container's one writable directory, removed once the outputs are written."""
         return self.real_donor_dir(donor) / "preprocess_work"
+
+    def real_manifest(self) -> Path:
+        """The real-data run's configuration and provenance (``workflow.real``)."""
+        return self.real_root / "manifest.json"
+
+    def real_summary_json(self) -> Path:
+        """Every donor's and the pooled results of the real-data run."""
+        return self.real_root / "real_summary.json"
+
+    def real_report_md(self) -> Path:
+        """The real-data run's report, rendered from ``real_summary_json``."""
+        return self.real_root / "real_report.md"
+
+    def real_setup_dir(self) -> Path:
+        """The root the tools' one-time setup is given (``Runner.prepare(RunLayout(real_setup_dir()), ...)``: the
+        IgBLAST databases, the AlignAIR model cache and exported references); ``_setup`` is no donor's name."""
+        return self.real_root / "_setup"
+
+    def real_fetch_json(self, donor: str) -> Path:
+        """What the donor's reads and genotype files were fetched as (the data root's fetch records)."""
+        return self.real_donor_dir(donor) / "fetch.json"
+
+    def real_truth(self, donor: str) -> Path:
+        """The donor's per-read truth, with the record of what it was computed from as its header line."""
+        return self.real_donor_dir(donor) / "truth.jsonl.gz"
+
+    def real_run_dir(self, tool: str, donor: str, arm: str) -> Path:
+        """One tool's run on the donor's reads, on one arm (``shared`` or ``genotype``)."""
+        return self.real_donor_dir(donor) / "runs" / _component(tool) / _component(arm)
+
+    def real_predictions(self, tool: str, donor: str, arm: str) -> Path:
+        """The tool's AIRR rearrangement TSV of the donor's reads."""
+        return self.real_run_dir(tool, donor, arm) / "predictions.tsv"
+
+    def real_run_json(self, tool: str, donor: str, arm: str) -> Path:
+        """The tool run's record (written last): command, return code, wall time, its inputs' identity."""
+        return self.real_run_dir(tool, donor, arm) / "run.json"
+
+    def real_logs_dir(self, tool: str, donor: str, arm: str) -> Path:
+        """The tool run's logs and scratch files."""
+        return self.real_run_dir(tool, donor, arm) / "logs"
+
+    def real_scores(self, donor: str, arm: str, tool: str) -> Path:
+        """One tool's class of every read's calls on one arm, with the record of what they were computed from."""
+        return self.real_donor_dir(donor) / "scores" / _component(arm) / f"{_component(tool)}.scores.jsonl.gz"
+
+    def real_comparison_json(self, donor: str, arm: str, pair: str) -> Path:
+        """One paired comparison of the donor's reads (``<a>_vs_<b>`` on an arm, or a tool's arm delta)."""
+        return self.real_donor_dir(donor) / "scores" / _component(arm) / f"{_component(pair)}.json"
 
 
 def _component(name: str) -> str:

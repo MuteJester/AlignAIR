@@ -33,6 +33,8 @@ from alignair_assay.real.truth import (
     mask_primers,
     observed_span,
     real_truths,
+    truth_from_json,
+    truth_to_json,
 )
 
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
@@ -512,6 +514,12 @@ def test_real_truths_fields():
     assert not r4.novel_known and not r4.naive and r4.clonotype == f"{DONOR}/single:r4"
     assert r4.observed == (0, len(reads["r4"]))
     assert [t.anchor for t in truths] == ["donor", "donor", "donor", None]
+    # every truth round-trips through JSON, a known answer's sets and one without alike
+    for truth in truths:
+        assert truth_from_json(json.loads(json.dumps(truth_to_json(truth)))) == truth
+    assert truth_to_json(r1)["known"] == ["IGHV1-69*01", "IGHV1-69D*01"] and truth_to_json(r4)["known"] is None
+    with pytest.raises(ValueError, match="truth"):
+        truth_from_json({"read_id": "r1"})
 
 
 def test_real_truths_refuses_inconsistent_reads_and_metadata():

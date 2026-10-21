@@ -393,6 +393,14 @@ RUN/
   real/<donor>/reads.fasta            the donor's preprocessed unique sequences (+ reads.tsv, one row each)
   real/<donor>/preprocess.json        the preprocessing record, written last (+ preprocess_logs/; preprocess_work/
                                       while it runs)
+  real/manifest.json                  the real-data run's configuration (`real`, `workflow.real`)
+  real/real_summary.json              every donor's and the pooled results (real/real_report.md renders them)
+  real/_setup/                        the tools' one-time setup (a RunLayout root given to Runner.prepare)
+  real/<donor>/fetch.json             what the donor's reads and genotype files were fetched as
+  real/<donor>/truth.jsonl.gz         the per-read truth, its record as the header line
+  real/<donor>/runs/<tool>/<arm>/     predictions.tsv + run.json (written last) + logs/
+  real/<donor>/scores/<arm>/          <tool>.scores.jsonl.gz (each read's classes), <a>_vs_<b>.json comparisons;
+                                      scores/arms/<tool>.json is a tool's arm delta
   diagnostics/<model_key>/            one model's diagnostics (`diagnose`, `workflow.diagnose`)
     <S>/suite.json                    one suite's cached result, with the key it was computed for
     <S>/report.md                     one suite's detail of the last report
@@ -422,6 +430,10 @@ RUN/
 | `real/`, `real/<donor>/`, `real/<donor>/genotype.json` | `real_root`, `real_donor_dir(donor)`, `real_genotype_json(donor)` |
 | `real/<donor>/reads.fasta`, `reads.tsv`, `preprocess.json` | `real_reads(donor)`, `real_reads_meta(donor)`, `real_preprocess_json(donor)` |
 | `real/<donor>/preprocess_logs/`, `preprocess_work/` | `real_preprocess_logs(donor)`, `real_preprocess_work(donor)` |
+| `real/manifest.json`, `real_summary.json`, `real_report.md`, `_setup/` | `real_manifest()`, `real_summary_json()`, `real_report_md()`, `real_setup_dir()` |
+| `real/<donor>/fetch.json`, `truth.jsonl.gz` | `real_fetch_json(donor)`, `real_truth(donor)` |
+| `real/<donor>/runs/<tool>/<arm>/` and its files | `real_run_dir(tool, donor, arm)`, `real_predictions(...)`, `real_run_json(...)`, `real_logs_dir(...)` |
+| `real/<donor>/scores/<arm>/<tool>.scores.jsonl.gz`, `<pair>.json` | `real_scores(donor, arm, tool)`, `real_comparison_json(donor, arm, pair)` |
 
 Suites are `S0` (toy: tests and smoke runs), `S0_EXHAUST` and `S0_COHORT` (tests only) and `S1`–`S12`; arms are
 `shared` and `genotype`; splits are `dev` (the default, for model iteration) and `test` (locked, used only for
@@ -449,6 +461,10 @@ python -m alignair_assay speed --run-dir RUN [--tools igblast,alignair] [--threa
 python -m alignair_assay diagnose --run-dir RUN --checkpoint MODEL.alignair --suites S1,S3 [--device cuda] \
     [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] [--max-cases N] \
     [--allow-unverified-replay]
+python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97 [--split dev] [--cap 50000] \
+    [--tools igblast,alignair,alignair-api] [--threads 8] [--device cpu] [--batch-size 64] \
+    [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE] \
+    [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair] [--force]
 python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] [--reference HUMAN_IGH_OGRDB] --out TRUTH.jsonl.gz
 python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR [--donors DONORS.json]
 python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --b-name B --out-dir DIR [--alpha 0.05] \
@@ -511,6 +527,16 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   model on another reference, a CUDA device torch does not see, or AlignAIR code the replay is not pinned to
   (without `--allow-unverified-replay`) exits with status 2 before anything is written. The other commands never
   import torch: `diagnose` imports the diagnostics layer when it runs.
+- `real` runs `workflow.real.run_real`: each pilot donor's raw reads fetched, its genomic genotype captured, its reads
+  preprocessed and capped, their truth computed, the tools run on the shared and genotype arms, R1 scored and the
+  pairs compared cluster-aware, per donor and pooled, into `real/real_summary.json` (see Real data). Every step is
+  skipped while its record is current. A test donor without `--split test`, an unknown donor or tool, a tool
+  without its options, a missing cohort file, Docker missing or a pinned image with another digest, and a run
+  directory made for another configuration (without `--force`) exit with status 2 before any work; a donor stopped
+  by its preprocessing, a failed tool run or a failed truth self-check exit with status 2 once the summary is
+  written; an unchecked self-check (no oracle read scored, as on a small `--cap`, where no gene reaches the support
+  thresholds) is a warning. `--alignair-checkpoint` defaults to the user's cached file of `--alignair-model`, the
+  image's model.
 - `truth` writes the truth file. Its header records `kind`, `version`, `reference`, `reference_digest` and the
   GenAIRR provenance: `genairr_version`, `genairr_source`, `genairr_git_commit`, `genairr_git_dirty` and
   `genairr_source_sha256` (the package directory's content: sources, compiled engine and data). The

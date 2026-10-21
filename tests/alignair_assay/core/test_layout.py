@@ -57,6 +57,20 @@ def test_layout_paths(tmp_path):
         (layout.real_preprocess_json("SC-23"), "real/SC-23/preprocess.json"),
         (layout.real_preprocess_logs("SC-23"), "real/SC-23/preprocess_logs"),
         (layout.real_preprocess_work("SC-23"), "real/SC-23/preprocess_work"),
+        (layout.real_manifest(), "real/manifest.json"),
+        (layout.real_summary_json(), "real/real_summary.json"),
+        (layout.real_report_md(), "real/real_report.md"),
+        (layout.real_setup_dir(), "real/_setup"),
+        (layout.real_fetch_json("W-97"), "real/W-97/fetch.json"),
+        (layout.real_truth("W-97"), "real/W-97/truth.jsonl.gz"),
+        (layout.real_run_dir("igblast", "W-97", "shared"), "real/W-97/runs/igblast/shared"),
+        (layout.real_predictions("alignair-api", "W-97", "genotype"),
+         "real/W-97/runs/alignair-api/genotype/predictions.tsv"),
+        (layout.real_run_json("alignair", "SC-23", "shared"), "real/SC-23/runs/alignair/shared/run.json"),
+        (layout.real_logs_dir("igblast", "SC-23", "genotype"), "real/SC-23/runs/igblast/genotype/logs"),
+        (layout.real_scores("W-97", "shared", "igblast"), "real/W-97/scores/shared/igblast.scores.jsonl.gz"),
+        (layout.real_comparison_json("W-97", "shared", "igblast_vs_alignair"),
+         "real/W-97/scores/shared/igblast_vs_alignair.json"),
     ]
     for path, relative in expected:
         assert path == tmp_path / relative, relative
@@ -97,3 +111,14 @@ def test_layout_rejects_names_that_are_not_one_component(tmp_path, name):
         layout.real_reads(name)
     with pytest.raises(ValueError, match="path component"):
         layout.real_preprocess_work(name)
+    for method in (layout.real_fetch_json, layout.real_truth):
+        with pytest.raises(ValueError, match="path component"):
+            method(name)
+    for args in ((name, "W-97", "shared"), ("igblast", name, "shared"), ("igblast", "W-97", name)):
+        with pytest.raises(ValueError, match="path component"):
+            layout.real_run_json(*args)
+    for args in ((name, "shared", "igblast"), ("W-97", name, "igblast"), ("W-97", "shared", name)):
+        with pytest.raises(ValueError, match="path component"):
+            layout.real_scores(*args)
+        with pytest.raises(ValueError, match="path component"):
+            layout.real_comparison_json(*args)

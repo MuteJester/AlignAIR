@@ -165,6 +165,23 @@ GENE_COORDS_FILE = (13_006, "2ca651322855248cb053d76b0e981738")
 
 # --- where things go, and how --------------------------------------------------------------------------------------
 
+# The cohort-level files the sensitivity analysis reads (``cohort_files``): key -> (path under the data root, bytes,
+# md5, source). VDJbase's genomic genotypes of every subject, OGRDB's IGH germline set rev 9 (the release those
+# genotypes name their documented alleles in) and Rodriguez et al. 2023's supplementary workbook (its Supplementary
+# Data 3 lists the paper's novel alleles). The pilot's reconnaissance downloaded them; they are verified here, never
+# downloaded, the API's and the journal's URLs not being pinned.
+COHORT_FILES: dict[str, tuple[str, int, str, str]] = {
+    "vdjbase_api": ("genotypes/vdjbase_genomic_api/genomic_all_subjects_genotype_Homo_sapiens.json", 6_019_375,
+                    "29c3ffae0478e5229107643ff9041840",
+                    "VDJbase API v1 genomic/all_subjects_genotype/Homo sapiens (CC0)"),
+    "ogrdb_rev9": ("genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_9.json", 2_369_576,
+                   "1c30b9ab4d0b17bd8c8497c740e56714",
+                   "https://ogrdb.airr-community.org/api/germline/set/G00060/9/airr (CC0)"),
+    "sd3": ("genotypes/rodriguez2023_suppl/41467_2023_40070_MOESM4_ESM.xlsx", 204_909,
+            "8cfa14cb96358873623aa586369e5a94",
+            "Rodriguez et al. 2023, Nat Commun 14:4419, Supplementary Data 1-7 (CC BY 4.0)"),
+}
+
 # The hosts of the pinned sources: a download, or a redirect, anywhere else is refused.
 ALLOWED_HOSTS = frozenset({"sra-pub-run-odp.s3.amazonaws.com", "ftp.sra.ebi.ac.uk", "vdjbase.org",
                            "ogrdb.airr-community.org", "raw.githubusercontent.com"})
@@ -462,6 +479,22 @@ def fetch_genotype_files(donor: str, data_root) -> dict[str, FetchRecord]:
     _write_json(root / RECORDS_DIR / "genotypes" / f"{donor}.json",
                 {key: record.to_json(root) for key, record in records.items()})
     return records
+
+
+def cohort_files(data_root) -> dict[str, dict]:
+    """The cohort files (``COHORT_FILES``) under ``data_root``, each verified by size and md5 and never downloaded:
+    key -> ``{"path", "bytes", "md5", "source"}``. FetchError naming the file for one that is missing or is not the
+    pinned file."""
+    root = Path(data_root)
+    found = {}
+    for key, (relative, size, md5, source) in COHORT_FILES.items():
+        path = root / relative
+        if not path.is_file():
+            raise FetchError(f"{path} is missing: the sensitivity analysis needs it ({source}; md5 {md5}); put it "
+                             "there, as the pilot's reconnaissance downloaded it")
+        _verify(path, md5, size, f"the {key} file")
+        found[key] = {"path": path, "bytes": size, "md5": md5, "source": source}
+    return found
 
 
 # --- the reads ---------------------------------------------------------------------------------------------------
