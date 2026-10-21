@@ -22,8 +22,9 @@ whose fingerprint differs is redone, with every step after it that reads its out
   ``run.json`` (``runners.base.write_run_json``) is written last and records the run's ``identity``: the tool's
   ``fingerprint()`` (binary, image and model digests), the reads' SHA-256, the shared reference's content digest
   (a reference changed under its name is another run: a reused run skips ``prepare``, whose model-reference check
-  would otherwise refuse it), ``RUNNER_CODE`` of the tool and, on the genotype arm, the arm's own inputs (the SHA-256 of ``genotype.json`` and of the arm's allele list), so a changed
-  CSV, capture or IUIS map redoes the genotype arm and leaves the shared arm alone. A run is current when
+  would otherwise refuse it), ``RUNNER_CODE`` of the tool and, on the genotype arm, the arm's own inputs (the
+  SHA-256 of ``genotype.json`` and of the arm's allele list), so a changed CSV, capture or IUIS map redoes the
+  genotype arm and leaves the shared arm alone. A run is current when
   ``require_successful_run`` passes, its identity is the current one and its predictions still have their recorded
   SHA-256; a failed run is made again.
 
