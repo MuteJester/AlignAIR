@@ -14,7 +14,7 @@ from .augment import aa_substitute
 from .config import aa_igh_config
 from .data import build_class_maps, collate_aa
 from .gym_bridge import aa_usable
-from .loss import aa_loss
+from ..tasks import build_tasks
 from .model import AAAlignAIR
 from .tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
@@ -91,6 +91,7 @@ def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, d_inde
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     d_index = d_index or {}
     genes = ("v", "d", "j") if cfg.has_d else ("v", "j")
+    tasks = build_tasks(model.cfg, genes=genes)
     stream = _sample_stream(dc_name, class_maps, d_index, tok, cfg.max_seq_length, sub_prob, seed, rng)
 
     history = []
@@ -100,7 +101,7 @@ def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, d_inde
             break
         bi, tg = collate_aa(batch, cfg.max_seq_length, device)
         out = model(bi)
-        total, parts = aa_loss(out, tg, genes=genes)
+        total, parts = tasks.loss(out, tg)
         opt.zero_grad()
         total.backward()
         if grad_clip:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import torch
 
 from ..core.config import AlignAIRConfig
-from ..core.losses import make_logvars
+from ..tasks import build_tasks
 from ..core.model import AlignAIR
 from ..reference.reference_set import ReferenceSet
 from .gym_bridge import aa_usable, build_batch_aa
@@ -27,7 +27,7 @@ def setup_aa(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192):
     cfg = AlignAIRConfig.from_dataconfigs(dc, max_seq_length=max_seq_length,
                                           vocab_size=23, use_orientation=False)
     model = AlignAIR(cfg)
-    logvars = make_logvars(cfg)
+    logvars = build_tasks(cfg).make_weights()
     return model, ref, cfg, logvars
 
 
@@ -58,6 +58,7 @@ def train_aa(model, reference_set, dc_name, cfg, logvars, *, steps=2000, batch_s
 
     model.to(device)
     logvars.to(device)
+    tasks = build_tasks(cfg)
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=lr)
     stream = _usable_stream(dc_name, progresses, heavy_shm, seed, short_boost, mutation_cap)
     tok = AAProteinTokenizer()
@@ -69,7 +70,7 @@ def train_aa(model, reference_set, dc_name, cfg, logvars, *, steps=2000, batch_s
             break
         bi, tg = build_batch_aa(recs, reference_set, cfg, device, tok)
         total, parts, gnorm = train_step(model, bi, tg, cfg, logvars, opt,
-                                          step=step, grad_clip=grad_clip)
+                                          step=step, grad_clip=grad_clip, tasks=tasks)
         history.append({"step": step, "total": total, "gnorm": gnorm, "parts": parts})
         if log_every and step % log_every == 0:
             line = (f"[{step}/{steps}] loss {total:.3f} gnorm {gnorm:.2f} "

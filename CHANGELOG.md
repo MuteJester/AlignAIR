@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared `alignair.tasks` contracts for multilabel/categorical objectives, optional-head losses,
+  supervised metric totals, and validation aggregation. Trainers accept explicit task implementations.
 - Shared configurable nucleotide/protein model assembly, named architecture component factories, and
   a common layer-inspection interface. Construction choices round-trip through model configuration.
 - Website model-composition API guide with component, checkpoint, and score-semantics contracts.
@@ -20,6 +22,9 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Loss implementations and batch metrics have a shared owner; historical NT/AA imports delegate to it.
+- Validation weights metrics by supervised rows or positions. Categorical metrics respect invalid genes
+  and compatible class sets. Excluded empty sets and fully ignored state labels have finite zero loss.
 - The AA model constructor delegates to the shared AlignAIR implementation; categorical scores,
   separate boundary masks, and optional heads are explicit configuration choices.
 - ModelXRay, AA representation extraction, and the assay profiler use shared model inspection points.

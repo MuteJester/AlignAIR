@@ -146,7 +146,7 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
     :func:`alignair.train.trainer.train` (e.g. ``lr=``, ``batch_size=``, ``progresses=``,
     ``short_boost=``, ``resume_path=``)."""
     import GenAIRR.data as gd
-    from .core.losses import make_logvars
+    from .tasks import build_tasks
     from .train.guards import validate_training_request
     from .train.trainer import train as _train
 
@@ -159,7 +159,10 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
                               reference=reference, progresses=train_overrides.get("progresses", (0.3,)),
                               grad_clip=train_overrides.get("grad_clip"))
     model = AlignAIR(cfg)
-    logvars = make_logvars(cfg)
+    tasks = train_overrides.get("tasks")
+    tasks = build_tasks(cfg) if tasks is None else tasks
+    train_overrides["tasks"] = tasks
+    logvars = tasks.make_weights()
     _train(model, reference, dcs, cfg, logvars, steps=steps, device=device,
            save_path=out_path, **train_overrides)
     return out_path

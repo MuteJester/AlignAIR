@@ -103,9 +103,9 @@ segmentation_tower = points["v.seg_tower"]`} />
         custom branches can extend their own inspection dictionary.
       </p>
       <p>
-        Head selection does not automatically select a training objective. The existing multilabel
-        hierarchical loss and protein categorical loss retain their target, masking, and reduction contracts.
-        When adding or combining heads, provide matching losses and metrics explicitly. Existing inference
+        Use the <DocLink to="training-tasks">training task API</DocLink> to select matching losses and
+        metrics from the configured score semantics and enabled heads. Multilabel hierarchical and
+        categorical objectives retain their distinct target and reduction contracts. Existing inference
         pipelines also retain their nucleotide AIRR and protein-class output contracts; model composition
         does not make those pipelines interchangeable. See the <DocLink to="python-api">Python API</DocLink>
         for end-to-end prediction.

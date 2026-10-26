@@ -21,7 +21,7 @@ import torch
 
 from .augment import aa_substitute, il_ambiguity
 from .data import collate_aa
-from .loss import aa_loss
+from ..tasks import build_tasks
 from .reference import build_aa_germlines
 from .resume import load_checkpoint, restore_rng, save_checkpoint
 from .strategic import _class_sample
@@ -185,6 +185,7 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
                 yield s
     stream = gen()
 
+    tasks = build_tasks(model.cfg, genes=("v", "d", "j"))
     history = []
     val_history = []
     for step in range(start_step + 1, start_step + steps + 1):
@@ -193,7 +194,7 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
             break
         bi, tg = collate_stage1(batch, cfg.max_seq_length, n_classes, device)
         out = model(bi)
-        total, parts = aa_loss(out, tg, genes=("v", "d", "j"))
+        total, parts = tasks.loss(out, tg)
         opt.zero_grad()
         total.backward()
         if grad_clip:

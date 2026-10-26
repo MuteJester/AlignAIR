@@ -263,7 +263,7 @@ def run_training(config: TrainingConfig, *, output_dir: str | None = None,
     import GenAIRR.data as gd
     from .core import AlignAIR
     from .core.config import AlignAIRConfig
-    from .core.losses import make_logvars
+    from .tasks import build_tasks
     from .reference.reference_set import ReferenceSet
     from .train.guards import validate_training_request
     from .train.trainer import train as _train
@@ -281,14 +281,15 @@ def run_training(config: TrainingConfig, *, output_dir: str | None = None,
                               max_seq_length=cfg.max_seq_length, reference=reference,
                               grad_clip=config.grad_clip)
     model = AlignAIR(cfg)
-    logvars = make_logvars(cfg)
+    tasks = build_tasks(cfg)
+    logvars = tasks.make_weights()
     dev = resolve_device(config.device)
     # No run-level SHM cap: the trainer derives it PER dataconfig (TCR -> 0, IG -> uncapped), so a
     # mixed IG+TCR run keeps full SHM on its IG streams. A global `0.0 if any(TCR)` would disable SHM
     # for IGH in a combined IGH+TRB model.
     _train(model, reference, dcs, cfg, logvars, steps=config.steps, batch_size=config.batch_size,
            lr=config.lr, short_boost=config.short_boost, seed=config.seed, device=dev,
-           save_path=path, grad_clip=config.grad_clip, val_every=config.val_every)
+           save_path=path, grad_clip=config.grad_clip, val_every=config.val_every, tasks=tasks)
     stem, ext = os.path.splitext(path)
     best = f"{stem}.best{ext}"
     return TrainingRun(model_path=path, best_model_path=best if os.path.exists(best) else None,

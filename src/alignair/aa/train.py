@@ -3,19 +3,8 @@ from __future__ import annotations
 
 import torch
 
-from .loss import aa_loss
-
-
-@torch.no_grad()
-def aa_eval_metrics(out: dict, targets: dict, genes=("v", "j")) -> dict:
-    m = {}
-    for g in genes:
-        pred = out[f"{g}_class_logits"].argmax(-1)
-        m[f"{g}_class_acc"] = float((pred == targets[f"{g}_class"]).float().mean())
-        for b in ("start", "end"):
-            m[f"{g}_{b}_mae"] = float(
-                (out[f"{g}_{b}"].squeeze(-1) - targets[f"{g}_{b}"].squeeze(-1)).abs().mean())
-    return m
+from ..tasks import build_tasks
+from ..tasks.metrics import categorical_metrics as aa_eval_metrics
 
 
 def assert_batch_diverse(samples, min_v_classes: int = 3, min_j_classes: int = 2) -> None:
@@ -45,12 +34,13 @@ def diverse_selector(min_v_classes: int = 3, min_j_classes: int = 2):
 def overfit_one_batch(model, batch_in, targets, *, steps=300, lr=1e-3, genes=("v", "j")) -> dict:
     """Drive one batch to memorization. Returns initial/final loss, final metrics, and the
     per-step component history."""
+    tasks = build_tasks(model.cfg, genes=genes)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     model.train()
     history, initial = [], None
     for _ in range(steps):
         out = model(batch_in)
-        total, parts = aa_loss(out, targets, genes=genes)
+        total, parts = tasks.loss(out, targets)
         history.append({"total": float(total.detach()),
                         **{k: float(v.detach()) for k, v in parts.items()}})
         if initial is None:
@@ -61,6 +51,6 @@ def overfit_one_batch(model, batch_in, targets, *, steps=300, lr=1e-3, genes=("v
     model.eval()
     with torch.no_grad():
         out = model(batch_in)
-        final = float(aa_loss(out, targets, genes=genes)[0])
+        final = float(tasks.loss(out, targets)[0])
         metrics = aa_eval_metrics(out, targets, genes)
     return {"initial_loss": initial, "final_loss": final, "history": history, **metrics}
