@@ -6,10 +6,11 @@ import pytest
 from alignair.train.guards import (NonFiniteLossError, TrainingConfigError,
                                     check_finite_loss, validate_training_request)
 
+pytestmark = pytest.mark.component
+
 
 def _ref(nv=10, nj=5):
-    return SimpleNamespace(gene=lambda g: SimpleNamespace(__len__=lambda: 0) if False
-                           else {"V": [0] * nv, "J": [0] * nj}[g.upper()])
+    return SimpleNamespace(gene=lambda g: {"V": [0] * nv, "J": [0] * nj}[g.upper()])
 
 
 def _ok(**over):
@@ -52,12 +53,14 @@ def test_grad_clip_must_be_finite():
         validate_training_request(**_ok(grad_clip=float("inf")))
 
 
-def test_train_step_aborts_on_non_finite_gradient_from_finite_loss():
-    """A finite loss with an infinite gradient (d/dx sqrt(x) at 0) must abort BEFORE the optimizer
-    corrupts the weights."""
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), None],
+                         ids=["nan-loss", "positive-infinite-loss", "negative-infinite-loss", "non-finite-gradient"])
+def test_train_step_rejects_non_finite_loss_or_gradient_before_optimizer(monkeypatch, bad):
+    """Invalid loss or gradient must abort the real training step before weights change."""
     import torch
 
-    from alignair.train.guards import NonFiniteLossError as _NFE
+    from alignair.core import losses
+    from alignair.train.trainer import train_step
 
     class _M(torch.nn.Module):
         def __init__(self):
@@ -67,12 +70,26 @@ def test_train_step_aborts_on_non_finite_gradient_from_finite_loss():
         def forward(self, x):
             return self.p
 
+        def clamp_params(self):
+            pass
+
     m = _M()
     opt = torch.optim.SGD(m.parameters(), lr=0.1)
-    # a tiny hand-rolled step mirroring train_step's guard: finite loss, infinite gradient
-    loss = torch.sqrt(m.p.abs())                    # loss=0 (finite), grad = 1/(2*sqrt(0)) = inf
-    check_finite_loss(1, float(loss), {"x": float(loss)})   # loss guard passes
-    opt.zero_grad()
-    loss.backward()
-    ok = all(pp.grad is None or torch.isfinite(pp.grad).all() for pp in m.parameters())
-    assert not ok                                   # the gradient guard would fire (raise NonFiniteLossError)
+    # Inject numerical edge cases at the objective boundary, then exercise the
+    # actual training step rather than duplicating its safety-check logic.
+    monkeypatch.setattr(losses, "hierarchical_loss",
+                        lambda out, *_: (torch.sqrt(out.abs()).sum() if bad is None
+                                          else out.sum() + bad, {}))
+    calls = []
+    original_step = opt.step
+    def optimizer_step(*args, **kwargs):
+        calls.append(True)
+        return original_step(*args, **kwargs)
+    monkeypatch.setattr(opt, "step", optimizer_step)
+    with pytest.raises(NonFiniteLossError, match="non-finite (loss|gradient)") as caught:
+        train_step(m, {}, {}, object(), {}, opt, step=17)
+    assert caught.value.code == "ALIGNAIR_TRAINING_NONFINITE"
+    assert caught.value.context["stage"] == ("training_gradient" if bad is None else "training_loss")
+    assert caught.value.context["step"] == 17
+    assert calls == []
+    torch.testing.assert_close(m.p.detach(), torch.zeros(1))

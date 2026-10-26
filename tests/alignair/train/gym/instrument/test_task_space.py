@@ -1,5 +1,8 @@
+import pytest
 import random
 from alignair.train.gym.instrument.task_space import Axis, TaskSpace
+
+pytestmark = pytest.mark.component
 
 
 def test_deployment_box_covers_hard_tail():

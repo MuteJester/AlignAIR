@@ -15,6 +15,8 @@ import pytest
 
 from alignair.cli.main import build_parser
 
+pytestmark = pytest.mark.component
+
 _ROOT = Path(__file__).resolve().parents[3]
 
 # public surfaces users copy-paste from (implementation/architecture notes are intentionally excluded)

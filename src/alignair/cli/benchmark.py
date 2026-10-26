@@ -5,6 +5,9 @@ against IgBLAST lives in the separate ``alignair_benchmark`` package.
 """
 from __future__ import annotations
 
+from ..errors import AlignAIRError, ConfigurationError, ModelError, RegistryError, report_error
+from ._errors import fail
+
 import json
 
 
@@ -47,24 +50,23 @@ def run(args) -> int:
     try:
         model_path = str(resolve_model(args.model, sources=_sources.resolve_sources(args.registry),
                                         offline=args.offline))
-    except Exception as e:
-        print(f"could not resolve model '{args.model}': {e}")
-        return 1
+    except (AlignAIRError, OSError, ValueError) as e:
+        return fail(e, error_type=RegistryError, message=f"could not resolve model '{args.model}'",
+                    context={"model_id": args.model})
     names = _dataconfig_names(args, model_path)
     if not names:
-        print("--dataconfig is required to generate benchmark data (the model card has none)")
-        return 1
+        return report_error(ConfigurationError(
+            "--dataconfig is required to generate benchmark data (the model card has none)"))
     try:
         dcs = [getattr(gd, n) if isinstance(n, str) else n for n in names]
     except AttributeError as e:
-        print(f"unknown GenAIRR dataconfig: {e}")
-        return 1
+        return fail(e, error_type=ConfigurationError, message="unknown GenAIRR dataconfig",
+                    context={"dataconfigs": names})
     try:
         model, reference = load_model(model_path, dataconfigs=args.dataconfig or names, device=device,
                                       trust_pickle=args.trust_pickle)
     except ValueError as e:
-        print(str(e))
-        return 1
+        return fail(e, error_type=ModelError, context={"path": model_path})
 
     strata = [s.strip() for s in args.strata.split(",")] if args.strata else None
     results = run_benchmark(model, reference, dcs[0], n=args.n, seed=args.seed, strata_names=strata,

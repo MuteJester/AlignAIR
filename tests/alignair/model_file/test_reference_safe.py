@@ -1,4 +1,5 @@
 """Safe (no-pickle) reference serialization + canonical integrity hashes."""
+import pytest
 import hashlib
 import json
 
@@ -6,6 +7,8 @@ import GenAIRR.data as gd
 
 from alignair.model_file import serialize
 from alignair.reference.reference_set import ReferenceSet
+
+pytestmark = pytest.mark.integration
 
 
 def test_serializable_roundtrip_preserves_order_gapped_anchors():

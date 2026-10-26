@@ -1,4 +1,7 @@
+import pytest
 from alignair.align.seed_prefilter import SeedPrefilter
+
+pytestmark = pytest.mark.component
 
 
 class _Gene:

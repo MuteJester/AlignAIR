@@ -1,8 +1,11 @@
 """The frozen, versioned domain-prep procedures (motif_fr4_junction_v1 / motif_cys_wgxg_v1)."""
 from __future__ import annotations
+import pytest
 
 from alignair.aa.product.applicability.domain_trim import (
     MAX_VH, trim_vh, rebuild_cdr3_j, TRIM_PROCEDURE, REBUILD_PROCEDURE)
+
+pytestmark = pytest.mark.component
 
 _VH = ("EVQLVESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSAISGSGGSTYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDT"
        "AVYYCAKDLYYYGMDVWGQGTTVTVSS")

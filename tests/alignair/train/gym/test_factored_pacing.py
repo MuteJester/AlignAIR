@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.factored import FactoredCurriculum, axis_competence_from_field
+
+pytestmark = pytest.mark.component
 
 
 def test_advance_only_raises_axes_above_threshold():

@@ -1,8 +1,11 @@
 """Endpoint-specific Stage-2 roles: completeness (locus-agnostic, no IgSF) vs membership (human IGH only)."""
 from __future__ import annotations
+import pytest
 
 from alignair.aa.product.applicability.roles import (
     completeness_role, membership_role, assign_roles)
+
+pytestmark = pytest.mark.component
 
 
 def _rec(cat, lk, rid="x"):

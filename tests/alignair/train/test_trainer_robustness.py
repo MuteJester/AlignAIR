@@ -11,6 +11,8 @@ from alignair.core.losses import make_logvars
 from alignair.train.guards import TrainingConfigError
 from alignair.train.trainer import train
 
+pytestmark = pytest.mark.integration
+
 
 def _tiny_model():
     cfg = AlignAIRConfig(max_seq_length=576, has_d=True,

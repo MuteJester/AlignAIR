@@ -4,6 +4,9 @@ import pytest
 
 from alignair.registry import hf
 from alignair.registry.cache import resolve_model
+from alignair.errors import RegistryError
+
+pytestmark = pytest.mark.integration
 
 
 def test_is_hf_repo_spec():
@@ -45,8 +48,28 @@ def test_resolve_model_routes_hf_spec(monkeypatch, tmp_path):
 
 def test_download_from_hub_offline_miss_is_clean_error():
     # offline + a repo definitely not in the local HF cache -> a clear ValueError, no network, no crash
-    with pytest.raises(ValueError, match="Hugging Face|offline"):
+    with pytest.raises(RegistryError, match="offline") as caught:
         hf.download_from_hub("hf://alignair/definitely-not-a-real-repo-xyz", offline=True)
+    assert caught.value.context["offline"] is True
+    assert isinstance(caught.value.__cause__, FileNotFoundError)
+
+
+def test_offline_hub_cache_hit_never_calls_the_download_api(tmp_path, monkeypatch):
+    import huggingface_hub
+    from huggingface_hub import constants
+
+    root = tmp_path / "hub"
+    repo = root / "models--org--model"
+    snapshot = repo / "snapshots" / "fixture-commit" / "model.alignair"
+    snapshot.parent.mkdir(parents=True)
+    snapshot.write_bytes(b"cached artifact")
+    (repo / "refs").mkdir()
+    (repo / "refs" / "main").write_text("fixture-commit")
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(root))
+    def refuse(**kwargs):
+        raise AssertionError("offline lookup invoked the download API")
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", refuse)
+    assert hf.download_from_hub("hf://org/model", offline=True) == snapshot
 
 
 def test_aligner_from_pretrained_captures_hf_commit(monkeypatch, tmp_path):

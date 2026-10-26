@@ -28,6 +28,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from ...errors import ModelError
+
 from ...aligner import resolve_device
 from ...model_file import container, serialize
 from ..conformal import FrozenConformal
@@ -84,12 +86,12 @@ def _resolve_path(model) -> str:
     mapped = _MODEL_MAP.get(str(model))
     if mapped is not None:
         return str(mapped)
-    raise ValueError(f"unknown AA model id or path: {model!r}")
+    raise ModelError(f"unknown AA model id or path: {model!r}", context={"model_id": model})
 
 
 def _require(cond: bool, message: str) -> None:
     if not cond:
-        raise ValueError(message)
+        raise ModelError(message)
 
 
 def _integrity_manifest(header: dict, *, class_maps_bytes: bytes, asc_bytes: bytes,
@@ -273,7 +275,7 @@ def load_aa_model(model, *, device: str = "auto", trust_pickle: bool = False) ->
 
     if not container.is_alignair_file(path):
         if not trust_pickle:
-            raise ValueError(
+            raise ModelError(
                 f"{path!r} is not a v2 .alignair bundle (looks like a legacy pickle checkpoint); pass "
                 "trust_pickle=True to load it anyway (dev-only, integrity-unverified path).")
         return _load_legacy_pickle(path, device=device)

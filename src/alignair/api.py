@@ -16,6 +16,8 @@ from typing import Sequence
 
 import torch
 
+from .errors import ConfigurationError, ModelError
+
 from .core.config import AlignAIRConfig
 from .core import AlignAIR
 from .predict import PredictConfig, predict as _predict
@@ -76,7 +78,7 @@ def _assert_reference_matches(caller, embedded) -> None:
             detail = f"allele set/order differs ({len(cal_names)} supplied vs {len(emb_names)} embedded)"
         else:
             detail = "allele names match but germline sequences / anchors differ"
-        raise ValueError(
+        raise ModelError(
             f"supplied reference does not match the model's embedded reference for gene {g}: {detail}. "
             f"This fixed-head model is tied to its embedded reference — omit reference= to use it, or "
             f"retrain to change the reference.")
@@ -86,7 +88,7 @@ def _build_reference(dataconfigs, reference):
     if reference is not None:
         return reference
     if dataconfigs is None:
-        raise ValueError("pass reference=... or dataconfigs=[...] to supply the germline reference "
+        raise ConfigurationError("pass reference=... or dataconfigs=[...] to supply the germline reference "
                          "(it must match the one the model was trained on)")
     import GenAIRR.data as gd
     dcs = [getattr(gd, d) if isinstance(d, str) else d for d in dataconfigs]
@@ -110,7 +112,7 @@ def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSe
             _assert_reference_matches(reference, lm.reference)
         return lm.model, (reference or lm.reference)
     if not trust_pickle:
-        raise ValueError(
+        raise ModelError(
             f"{checkpoint_path} is a legacy .pt checkpoint; loading it runs torch.load "
             "(arbitrary-code pickle). Pass trust_pickle=True only for a local file you trust, or "
             "convert it once: `alignair convert x.pt x.alignair --dataconfig … --trust-pickle`.")

@@ -1,8 +1,11 @@
 """Tests for genotype-based likelihood correction."""
+import pytest
 import numpy as np
 
 from alignair.genotype.constraint import adjust_for_genotype
 from alignair.predict.state import Predictions
+
+pytestmark = pytest.mark.component
 
 
 class _FakeGene:

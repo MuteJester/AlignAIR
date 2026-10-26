@@ -115,8 +115,12 @@ model/*
 /tmp_run/
 /checkpoints/
 /experiments/
-
+# Local plans, AI notes, and research artifacts; public documentation lives in website/
+/Notes and Plans/
 # Python caches
+.pytest_cache/
+.coverage*
+/test-results/
 __pycache__/
 *.pyc
 
@@ -131,10 +135,6 @@ CLAUDE.md
 AGENTS.md
 .cursor/
 .aider*
-
-# Phase-3 real-protein: never commit raw VH sequences or sequence-bearing predictions
-docs/superpowers/artifacts/2026-07-21-aa-phase3/hydrated_sequences.tsv
-docs/superpowers/artifacts/2026-07-21-aa-phase3/predictions.jsonl
 
 # Gate-3 applicability cohort hydration (raw sequences — never committed)
 .private/aa-gate3-hydration/

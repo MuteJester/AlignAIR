@@ -1,5 +1,8 @@
+import pytest
 from alignair.train.gym.control.state import GateStatus, GymState
 from alignair.train.gym.control.hud import GymHUD
+
+pytestmark = pytest.mark.component
 
 
 def _state():

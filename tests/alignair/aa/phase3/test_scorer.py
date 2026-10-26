@@ -2,6 +2,8 @@ import pytest
 from types import SimpleNamespace
 from alignair.aa.phase3.scorer import Prediction, score_gold, score_concordance
 
+pytestmark = pytest.mark.component
+
 class FakeMap:  # class0 -> IGHV3-23 (2 alleles); class1 -> IGHV1-69
     class_members = {0: ["IGHV3-23*01", "IGHV3-23*02"], 1: ["IGHV1-69*01"]}
 

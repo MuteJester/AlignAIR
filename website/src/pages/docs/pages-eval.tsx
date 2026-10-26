@@ -5,23 +5,18 @@ const benchmarks: DocPage = {
   slug: "benchmarks",
   title: "Benchmarks",
   section: "Evaluation",
-  lead: "AlignAIR evaluated against IgBLAST as a reference implementation, on a frozen simulated benchmark.",
+  lead: "Evaluate model accuracy on labeled simulated reads and compare tools on shared inputs.",
   body: () => (
     <>
       <p>
-        AlignAIR is validated on a frozen, simulated benchmark with known ground truth: 2,600 cases across 13 strata
-        (200 each - clean, moderate and hard full-length, high SHM, high indel, noisy/ambiguous, trimmed, five 5'- and
-        3'-anchored amplicon and short-fragment shapes, and arbitrary orientation), reference human IGH (OGRDB), scored
-        with paired-case bootstrap confidence intervals and Bonferroni correction. The metrics below define what is
-        measured on every read.
+        Accuracy evaluation uses simulated reads with known ground truth, covering clean reads, mutation, indels,
+        noise, fragments, and orientation changes. Read results by gene and read type, and compare tools on the same
+        inputs and compatible germline references. The metrics below describe what the evaluation tools measure.
       </p>
 
-      <Callout kind="warning" title="The IgBLAST head-to-head is being re-verified for v3.0.0">
-        An earlier AlignAIR-vs-IgBLAST comparison on this dataset is archived under{" "}
-        <code>benchmarks/bench_v2/</code>, but it does not record which AlignAIR model produced the predictions, nor the
-        IgBLAST version, so its numbers cannot be attributed to the v3.0.0 product. The comparison is being re-run
-        against the released model with full provenance; quantitative head-to-head scores and verdicts will be published
-        here once that lands. Until then this page states what the benchmark measures, not comparative scores.
+      <Callout kind="note" title="Reproducible comparisons">
+        A comparative result needs identified model and tool versions, reference and input fingerprints, and the
+        commands used to produce it. This page describes evaluation methods; it does not publish comparative scores.
       </Callout>
 
       <h2>Metrics</h2>
@@ -42,16 +37,13 @@ const benchmarks: DocPage = {
 
       <h2>Throughput</h2>
       <p>
-        Throughput is device-dependent, so it does not reduce to a single comparison. On CPU-only hardware AlignAIR runs
-        somewhat below IgBLAST's multi-threaded CPU baseline; on a GPU it runs several times above it. A lighter{" "}
-        <code>--columns core</code> preset recovers roughly a tenth of the time by writing a much smaller row. See{" "}
+        Throughput depends on the device, batch size, and requested output fields. See{" "}
         <DocLink to="performance">Speed and throughput</DocLink> for the measured per-device figures, stated with their
         hardware, backend and timing boundary.
       </p>
       <Callout kind="note" title="Throughput is not part of the scored benchmark">
-        The accuracy comparison above is the frozen, ground-truth head-to-head. The speed figures are measured separately
-        (see the linked page) and were not collected as a same-run, same-box race against IgBLAST - so treat the
-        direction as reliable and the exact ratio as indicative.
+        Accuracy and throughput use different measurement boundaries. The linked speed figures describe AlignAIR's
+        workload and hardware; a tool-to-tool speed comparison also needs matching inputs and timing boundaries.
       </Callout>
 
       <h2>Methodology and reproducibility</h2>
@@ -182,9 +174,9 @@ const design: DocPage = {
 
       <h2>Evaluation</h2>
       <p>
-        AlignAIR is validated on a frozen 2,600-case / 13-stratum ground-truth benchmark, scored on V/D/J allele
-        accuracy, segment coordinates, the junction, productivity and orientation. A verified v3.0.0 head-to-head against
-        IgBLAST, with full model and IgBLAST provenance, is in preparation. Full methodology is on the{" "}
+        Evaluation tools score V/D/J allele accuracy, segment coordinates, the junction, productivity, and orientation
+        against labeled simulated reads. Tool comparisons should record model, software, reference, and input
+        provenance. Evaluation workflows are on the{" "}
         <DocLink to="benchmarks">Benchmarks</DocLink> page.
       </p>
 

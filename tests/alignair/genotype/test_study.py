@@ -1,6 +1,8 @@
 """Genotype-constraint study: end-to-end structure + the tight-genotype accuracy effect."""
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.slow
 def test_genotype_study_returns_constrained_and_unconstrained():

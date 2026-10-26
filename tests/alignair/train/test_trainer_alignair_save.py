@@ -1,3 +1,4 @@
+import pytest
 import GenAIRR.data as gd
 import torch
 from alignair.core.config import AlignAIRConfig
@@ -5,6 +6,8 @@ from alignair.core import AlignAIR
 from alignair.core.losses import make_logvars
 from alignair.train.trainer import save_checkpoint
 from alignair import model_file as mf
+
+pytestmark = pytest.mark.integration
 
 
 def test_trainer_save_checkpoint_writes_alignair(tmp_path):

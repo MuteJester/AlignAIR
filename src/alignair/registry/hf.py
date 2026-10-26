@@ -3,7 +3,7 @@
 The catalog path (``registry.json`` under a source) still works; this adds the *one-repo-per-model*
 path used by `Aligner.from_pretrained("hf://org/repo")` / `"org/repo"`: pull the ``.alignair`` straight
 from a HF model repo via ``huggingface_hub`` — with revision (branch/tag/commit) pinning, tokens for
-private/gated repos, offline (``local_files_only``) mode, the standard HF cache, retries and resumable
+private/gated repos, offline cache lookup, the standard HF cache, retries and resumable
 transfers. Both paths funnel through ``resolve_model`` so aliases stay a convenience, not a second
 incompatible loader.
 """
@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+
+from ..errors import MissingDependencyError, RegistryError
 
 DEFAULT_FILENAME = "model.alignair"
 
@@ -59,26 +61,37 @@ def resolved_commit(path: str | Path) -> str | None:
 def download_from_hub(spec: str, *, revision: str | None = None, filename: str | None = None,
                       token: str | None = None, offline: bool = False) -> Path:
     """Download a model's ``.alignair`` from a HF repo and return the local cached path. ``offline`` uses
-    ``local_files_only`` (no network; a cache miss raises a clear error). Requires ``huggingface_hub``."""
+    the local cache directly (no network; a cache miss raises a clear error). Requires ``huggingface_hub``."""
     repo_id, spec_rev, spec_file = parse_hf_spec(spec)
     rev = revision or spec_rev
     fname = filename or spec_file or DEFAULT_FILENAME
     try:
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import hf_hub_download, try_to_load_from_cache
     except ImportError as e:                             # pragma: no cover - optional dep
-        raise ImportError(
+        raise MissingDependencyError(
             "loading a model directly from a Hugging Face repo needs 'huggingface_hub'; "
-            "install it with `pip install alignair[hub]` (or `[cli]`).") from e
+            "install it with `pip install alignair[hub]` (or `[cli]`).",
+            context={"dependency": "huggingface_hub", "stage": "model_download"}) from e
     try:
         from .. import __version__ as _v
     except Exception:                                    # noqa: BLE001
         _v = "0"
     try:
+        if offline:
+            # Some SDK versions build telemetry headers even with local_files_only.
+            # The cache lookup API does not create a request or consult remote metadata.
+            cached = try_to_load_from_cache(repo_id=repo_id, filename=fname, revision=rev)
+            if isinstance(cached, str) and Path(cached).is_file():
+                return Path(cached)
+            raise FileNotFoundError(f"{repo_id}@{rev or 'main'}:{fname} is not in the local HF cache")
         path = hf_hub_download(repo_id=repo_id, filename=fname, revision=rev, token=_token(token),
                                local_files_only=offline, library_name="alignair", library_version=_v)
     except Exception as e:                               # normalize hub errors to an actionable message
         hint = " (offline: not in the local HF cache)" if offline else ""
-        raise ValueError(
+        raise RegistryError(
             f"could not fetch {fname!r} from Hugging Face repo {repo_id!r} "
-            f"(revision {rev or 'main'}){hint}: {e}") from e
+            f"(revision {rev or 'main'}){hint}",
+            context={"stage": "model_download", "repo_id": repo_id, "revision": rev,
+                     "filename": fname, "offline": offline},
+            hint="Check repository access, revision, connectivity, and local cache availability.") from e
     return Path(path)

@@ -1,6 +1,9 @@
 """The controller's progress drives the gym; an evaluator that always passes the
 gate climbs floors as fit() runs. Uses a stub trainer to stay GPU-free."""
+import pytest
 from alignair.train.gym.control import GymConfig, GateSpec, RankLadder, PromotionGate, GymController
+
+pytestmark = pytest.mark.component
 
 
 class _StubGym:

@@ -1,8 +1,11 @@
 """Forward-pass tests for the faithful AlignAIR model."""
+import pytest
 import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
+
+pytestmark = pytest.mark.component
 
 _COMMON = ["v_start", "v_end", "j_start", "j_end", "v_allele", "j_allele",
            "mutation_rate", "indel_count", "productive"]

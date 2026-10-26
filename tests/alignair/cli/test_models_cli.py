@@ -6,6 +6,8 @@ import pytest
 
 from alignair.cli.main import build_parser
 
+pytestmark = pytest.mark.integration
+
 
 def _run(argv):
     args = build_parser().parse_args(argv)

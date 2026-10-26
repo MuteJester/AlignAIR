@@ -1,8 +1,11 @@
 """Genotype task 1: allele prototype geometry + asymmetric leakage model."""
+import pytest
 import numpy as np
 
 from alignair.genotype.geometry import (LeakageModel, allele_prototypes, prototype_cosine,
                                         residual_support)
+
+pytestmark = pytest.mark.component
 
 
 def test_prototypes_shape_from_model():

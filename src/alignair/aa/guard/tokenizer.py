@@ -12,6 +12,8 @@ No biological residue is ever silently discarded.
 """
 from __future__ import annotations
 
+from alignair.errors import InputError
+
 from dataclasses import dataclass
 
 import torch
@@ -27,8 +29,9 @@ _X_ID = _AA2ID["X"]
 VOCAB_SIZE = 24                                # 23 residues + CLS
 
 
-class InputTooLong(ValueError):
+class InputTooLong(InputError):
     """Raised by AaTokenizer when asked to encode a sequence longer than max_len — truncation is forbidden."""
+    code = "ALIGNAIR_INPUT_TOO_LONG"
 
 
 class AaTokenizer:

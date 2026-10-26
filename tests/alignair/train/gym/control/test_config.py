@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.control.config import GateSpec, GymConfig, default_gates, _linspace
+
+pytestmark = pytest.mark.component
 
 
 def test_linspace_endpoints_and_length():

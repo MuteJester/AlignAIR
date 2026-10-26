@@ -1,5 +1,6 @@
 """Tests for `AAPredictor.predict` (Task 5): calls + §5 coordinates + inter_vj_aa, no calibration yet."""
 from __future__ import annotations
+import pytest
 
 import torch
 
@@ -9,9 +10,11 @@ from alignair.aa.product.loader import AAPredictor, load_aa_model
 from alignair.aa.product.schema import AAPrediction
 from alignair.aa.product.validate import ErrorResult
 
+pytestmark = pytest.mark.component
+
 _REAL_MODEL_ID = "alignair-aa-igh-human@2.0.0"
 
-# Two real, full-length VH amino-acid reads (from docs/superpowers/artifacts/2026-07-21-aa-phase3/
+# Two real, full-length VH amino-acid reads (from Notes and Plans/docs/superpowers/artifacts/2026-07-21-aa-phase3/
 # hydrated_sequences.tsv — real antibody VH sequences used elsewhere in this repo's AA test suite).
 _VH_1 = ("EVQLVESGGGLVQPGGSLRLSCAASGFNIKDTYIHWVRQAPGKGLEWVARIYPTNGYTRYADSVKGRFTISADTSKNTAYLQMNSLRAEDTAV"
         "YYCSRWGGDGFYAMDYWGQGTLVTVSS")

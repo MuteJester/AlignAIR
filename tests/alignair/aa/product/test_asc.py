@@ -2,6 +2,8 @@ import pytest
 
 from alignair.aa.product.asc import asc_to_imgt_multi, class_alleles, class_genes, class_families
 
+pytestmark = pytest.mark.component
+
 class FakeDC:
     asc_tables = {"V": [
         {"new_allele": "IGHVF1-G1*01", "imgt_allele": "IGHV3-23*01"},

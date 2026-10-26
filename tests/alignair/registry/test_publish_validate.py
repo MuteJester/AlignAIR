@@ -1,4 +1,5 @@
 """Publish into a local registry + validator gate."""
+import pytest
 import hashlib
 import json
 import shutil
@@ -10,6 +11,8 @@ from alignair.core import AlignAIR
 from alignair.core.config import AlignAIRConfig
 from alignair.registry.publish import publish_local
 from alignair.registry.validate import validate_registry
+
+pytestmark = pytest.mark.integration
 
 
 def _save(path, **kw):

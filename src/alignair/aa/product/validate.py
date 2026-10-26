@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Union, Iterable, Sequence
 
+from ...errors import ConfigurationError, InputError
+
 
 # Canonical amino acids (20) + X (unknown)
 VALID_AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWYX")
@@ -58,7 +60,7 @@ def normalize_inputs(
     """
     # Validate on_invalid parameter
     if on_invalid not in ("error", "skip"):
-        raise ValueError(f"on_invalid must be 'error' or 'skip', got {on_invalid!r}")
+        raise ConfigurationError(f"on_invalid must be 'error' or 'skip', got {on_invalid!r}")
 
     records: list[Record] = []
     errors: list[ErrorResult] = []
@@ -88,7 +90,9 @@ def normalize_inputs(
             error = ErrorResult(sequence_id=sequence_id, error=error_code, detail=error_detail)
 
             if on_invalid == "error":
-                raise ValueError(f"{sequence_id}: {error_detail}")
+                raise InputError(f"{sequence_id}: {error_detail}",
+                                 context={"stage": "aa_input_validation", "record_id": sequence_id,
+                                          "reason": error_code})
             else:  # on_invalid == "skip"
                 errors.append(error)
 
@@ -158,7 +162,7 @@ def _validate_sequence(
 
     # Check for interior whitespace (after strip)
     if any(c.isspace() for c in stripped):
-        return ("interior_whitespace", f"Sequence contains interior whitespace: {stripped}")
+        return ("interior_whitespace", "Sequence contains interior whitespace")
 
     # Check overlength
     if len(stripped) > max_len:

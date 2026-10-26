@@ -44,12 +44,21 @@ def soft_gaussian_target(gt: torch.Tensor, length: int, sigma: float = 1.5) -> t
     return F.softmax(-0.5 * (idx - gt) ** 2 / sigma ** 2, dim=-1)                     # (B, L)
 
 
-def _kendall(uw: UncertaintyWeight, loss: torch.Tensor) -> torch.Tensor:
-    return loss * uw() + uw.penalty()
+def _kendall(uw: UncertaintyWeight, loss: torch.Tensor, row_mask=None) -> torch.Tensor:
+    weighted = loss * uw() + uw.penalty()
+    return weighted if row_mask is None else weighted * row_mask.any().to(weighted.dtype)
+
+
+def _mean_rows(values, row_mask=None):
+    rows = values.reshape(values.shape[0], -1).mean(-1)
+    if row_mask is None:
+        return rows.mean()
+    weights = row_mask.reshape(-1).to(rows.dtype)
+    return (rows * weights).sum() / weights.sum().clamp_min(1)
 
 
 def _soft_ce(logits: torch.Tensor, soft_target: torch.Tensor,
-             mask: torch.Tensor | None = None) -> torch.Tensor:
+             mask: torch.Tensor | None = None, row_mask=None) -> torch.Tensor:
     """Soft-label cross-entropy over positions. ``mask`` (B, L bool) restricts the softmax to the
     valid read positions so the model never competes on padding; the pad terms are dropped from the
     sum (guarding against ``0 * -inf`` NaN)."""
@@ -59,7 +68,7 @@ def _soft_ce(logits: torch.Tensor, soft_target: torch.Tensor,
     term = soft_target * logp
     if mask is not None:
         term = torch.where(mask, term, term.new_zeros(()))
-    return -term.sum(-1).mean()
+    return _mean_rows(-term.sum(-1), row_mask)
 
 
 def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn.ModuleDict):
@@ -71,37 +80,43 @@ def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn
     pos_mask = out.get("position_mask")                         # restrict CE to the read (not the pad)
     seg = out["v_start"].new_zeros(())
     for g in genes:
+        supervise = targets.get(f"{g}_supervise")
         for b in ("start", "end"):
             key = f"{g}_{b}"
-            ce = _soft_ce(out[f"{key}_logits"], soft_gaussian_target(targets[key], L), pos_mask)
-            seg = seg + _kendall(logvars[key], ce)
+            ce = _soft_ce(out[f"{key}_logits"], soft_gaussian_target(targets[key], L),
+                          pos_mask, supervise)
+            seg = seg + _kendall(logvars[key], ce, supervise)
     aux_len = out["v_start"].new_zeros(())
     aux_iou = out["v_start"].new_zeros(())
     aux_hinge = out["v_start"].new_zeros(())
     for g in genes:
+        supervise = targets.get(f"{g}_supervise")
         sp, ep = out[f"{g}_start"], out[f"{g}_end"]
         st, et = targets[f"{g}_start"].reshape(-1, 1), targets[f"{g}_end"].reshape(-1, 1)
         len_p, len_t = ep - sp, et - st
-        aux_len = aux_len + F.huber_loss(len_p, len_t, delta=1.0)
+        aux_len = aux_len + _mean_rows(F.huber_loss(len_p, len_t, delta=1.0, reduction="none"), supervise)
         inter = (torch.minimum(ep, et) - torch.maximum(sp, st)).clamp(min=0)
         union = (len_p.clamp(min=0) + len_t.clamp(min=0) - inter).clamp(min=1e-6)
-        aux_iou = aux_iou + (1.0 - (inter / union)).mean()
-        aux_hinge = aux_hinge + F.relu(1.0 - len_p).mean()
+        aux_iou = aux_iou + _mean_rows(1.0 - (inter / union), supervise)
+        aux_hinge = aux_hinge + _mean_rows(F.relu(1.0 - len_p), supervise)
     seg = seg + 0.1 * aux_len + 0.1 * aux_iou + 0.05 * aux_hinge
     parts["segmentation"] = seg
 
     # ---- classification: multi-label sigmoid BCE (label smoothing 0.1), Kendall-weighted ----
     clf = out["v_start"].new_zeros(())
     for g in genes:
+        supervise = targets.get(f"{g}_supervise")
         y = targets[f"{g}_allele"]
         y_smooth = y * (1.0 - 0.1) + 0.05                       # Keras label_smoothing=0.1
-        bce = F.binary_cross_entropy(out[f"{g}_allele"].clamp(1e-7, 1 - 1e-7), y_smooth)
-        clf = clf + _kendall(logvars[f"{g}_classification"], bce)
+        bce = _mean_rows(F.binary_cross_entropy(
+            out[f"{g}_allele"].clamp(1e-7, 1 - 1e-7), y_smooth, reduction="none"), supervise)
+        clf = clf + _kendall(logvars[f"{g}_classification"], bce, supervise)
     for spec in cfg.gene_specs:                                 # short-D degenerate-span penalty
         if spec.short_d_penalty:
             d_len = (out[f"{spec.name}_end"] - out[f"{spec.name}_start"]).reshape(-1)
             short_d_prob = out[f"{spec.name}_allele"][:, -1]
-            clf = clf + ((d_len < 5).float() * short_d_prob).mean()
+            clf = clf + _mean_rows((d_len < 5).float() * short_d_prob,
+                                   targets.get(f"{spec.name}_supervise"))
     parts["classification"] = clf
 
     # ---- analysis: mutation/indel MAE, productivity BCE (no smoothing) ----

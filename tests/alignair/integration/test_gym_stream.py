@@ -8,6 +8,8 @@ from alignair.reference.reference_set import ReferenceSet
 from alignair.train.gym.gym import AlignAIRGym
 from alignair.train.gym.collate import gym_collate
 
+pytestmark = pytest.mark.integration
+
 
 def test_gym_streams_batches_with_full_targets(caplog):
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)

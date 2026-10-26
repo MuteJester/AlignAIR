@@ -1,6 +1,9 @@
+import pytest
 import json
 from alignair.train.gym.control.state import GateStatus, AxisStat, GymState
 from alignair.train.gym.control.reporter import StruggleReporter
+
+pytestmark = pytest.mark.component
 
 
 def _state():

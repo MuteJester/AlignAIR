@@ -11,6 +11,8 @@ from alignair.aa.strategic import strategic_setup
 from alignair.aa.tokenizer import pad_tokenize_aa
 from alignair.model_file import container
 
+pytestmark = pytest.mark.component
+
 _REAL_MODEL_ID = "alignair-aa-igh-human@2.0.0"
 _FAKE_MODEL_SHA256 = "cafebabe" * 8
 _OTHER_MODEL_SHA256 = "deadbeef" * 8

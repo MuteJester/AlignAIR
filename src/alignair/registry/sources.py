@@ -14,6 +14,8 @@ so never colon-split) > ``~/.config/alignair/config.toml`` ``registries`` > the 
 """
 from __future__ import annotations
 
+from alignair.errors import RegistryError, error_context
+
 import json
 import os
 from urllib.parse import urljoin
@@ -27,8 +29,9 @@ DEFAULT_REGISTRY = "hf://AlignAIR/AlignAIR-pretrained"
 _HF = "https://huggingface.co"
 
 
-class OfflineError(RuntimeError):
+class OfflineError(RegistryError):
     """Raised when a fetch is attempted while offline."""
+    code = "ALIGNAIR_OFFLINE"
 
 
 def _config_dir() -> str:
@@ -109,22 +112,44 @@ def fetch_bytes(source: str, relpath: str, *, offline: bool = False, revision: s
 
 
 def load_registry(source: str, *, offline: bool = False) -> dict:
-    return json.loads(fetch_bytes(source, "registry.json", offline=offline).decode("utf-8"))
+    with error_context(source=source, stage="registry_lookup"):
+        try:
+            registry = json.loads(fetch_bytes(source, "registry.json", offline=offline).decode("utf-8"))
+        except (ValueError, UnicodeError) as exc:
+            if isinstance(exc, RegistryError):
+                raise
+            raise RegistryError("invalid registry JSON", hint="Check the configured registry source.") from exc
+        if not isinstance(registry, dict) or not isinstance(registry.get("models"), dict):
+            raise RegistryError("registry must contain a models mapping")
+        return registry
 
 
 def find_model(model_id: str, version: str | None, sources: list[str], *, offline: bool = False):
     """Search ``sources`` in order for ``model_id`` (``version`` or the registry's ``latest``).
-    Returns ``(source, version, version_entry, model_entry)`` or None. Unreachable sources are skipped."""
+    Returns ``(source, version, version_entry, model_entry)`` or None. Failed sources are
+    tried in order; if no match is found, failures are reported rather than called 'unknown model'."""
+    failures = []
     for src in sources:
         try:
             reg = load_registry(src, offline=offline)
-        except Exception:
+        except (OSError, RegistryError) as exc:
+            failures.append((src, exc))
             continue
         model = reg.get("models", {}).get(model_id)
         if not model:
+            continue
+        if not isinstance(model, dict) or not isinstance(model.get("versions"), dict):
+            failures.append((src, RegistryError("invalid model registry entry")))
             continue
         ver = version or model.get("latest")
         entry = model.get("versions", {}).get(ver)
         if entry is not None:
             return src, ver, entry, model
+    if failures:
+        error_type = OfflineError if all(isinstance(e, OfflineError) for _, e in failures) else RegistryError
+        message = "offline: model is not available in the local cache or registries" if error_type is OfflineError \
+            else "could not resolve model because registry sources failed"
+        raise error_type(message, context={"model_id": model_id, "version": version,
+                                          "failed_sources": [s for s, _ in failures]},
+                         hint="Check registry connectivity, configuration, and offline/cache settings.") from failures[-1][1]
     return None

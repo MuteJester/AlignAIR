@@ -7,12 +7,15 @@ rather than silently feed features into the wrong positions.
 """
 from __future__ import annotations
 
+from alignair.errors import DataContractError
+
 import numpy as np
 import torch
 
 
-class FusionContractError(RuntimeError):
+class FusionContractError(DataContractError):
     """Raised when the incoming HMM feature ordering or bank checksum does not match what fusion was fit on."""
+    code = "ALIGNAIR_FUSION_CONTRACT"
 
 
 class HmmFusion:

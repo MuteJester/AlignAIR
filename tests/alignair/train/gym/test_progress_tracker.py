@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.targeting import ProgressTracker
+
+pytestmark = pytest.mark.component
 
 
 def test_regret_ranks_low_competence_cells_first():

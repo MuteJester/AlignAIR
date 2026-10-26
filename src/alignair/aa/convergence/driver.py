@@ -2,7 +2,7 @@
 fixed schedule, and evaluate every checkpoint (incumbent + candidates) on the SAME frozen §3
 cohort -- producing the per-checkpoint metrics table + provenance artifacts consumed by the
 (separate, later) §5 selection step. See
-docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md §4/§8.
+Notes and Plans/docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md §4/§8.
 
 This module does NOT run selection (``alignair.aa.convergence.select.select_checkpoint``) --
 that stays a separate, auditable step run against the frozen ``checkpoints_metrics.json`` this
@@ -29,7 +29,7 @@ DEFAULT_CKPT_DIR = "experiments/aa/strategic"
 PREDECLARATION_TEXT = """\
 # Frozen predeclared selection rule
 
-Copied verbatim from `docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md` §5
+Copied verbatim from `Notes and Plans/docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md` §5
 (predeclared and committed BEFORE the +300k continuation training in this study ran). The
 executable form of this rule lives in `alignair.aa.convergence.select.select_checkpoint`; this
 file is the frozen, human-readable predeclaration copy, not a second implementation.

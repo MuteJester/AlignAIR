@@ -1,4 +1,7 @@
+import pytest
 from alignair.aa.phase3.stats import clopper_pearson, coverage_decision
+
+pytestmark = pytest.mark.component
 
 
 def test_bounds_bracket_estimate():

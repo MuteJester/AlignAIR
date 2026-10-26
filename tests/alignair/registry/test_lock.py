@@ -2,7 +2,7 @@
 exclusion where flock is absent (Windows), reclaims stale locks, and times out — replacing the old
 Windows no-op that let concurrent downloads corrupt the cache. Also: env-override cache/config paths."""
 import os
-import threading
+import multiprocessing
 import time
 from pathlib import Path
 
@@ -11,26 +11,43 @@ import pytest
 from alignair.registry.cache import _excl_lock, cache_root
 from alignair.registry.sources import _config_dir
 
+pytestmark = pytest.mark.integration
 
-def test_excl_lock_serializes_concurrent_holders(tmp_path):
+
+@pytest.mark.parametrize("backend", ["portable", "platform"])
+def test_excl_lock_serializes_concurrent_holders(tmp_path, backend):
+    from tests.support.lock_workers import contend
+
     lock = tmp_path / "x.lock"
-    events = []
-
-    def worker(tag):
-        with _excl_lock(lock, poll=0.005):
-            events.append(("start", tag))
-            time.sleep(0.05)                       # hold the lock; a second holder must wait
-            events.append(("end", tag))
-
-    ts = [threading.Thread(target=worker, args=(i,)) for i in range(3)]
-    for t in ts:
-        t.start()
-    for t in ts:
-        t.join()
-    # every start is immediately followed by its own end -> no interleaving (mutual exclusion held)
-    assert len(events) == 6
-    for i in range(0, 6, 2):
-        assert events[i][0] == "start" and events[i + 1] == ("end", events[i][1])
+    context = multiprocessing.get_context("spawn")
+    ready, finished = context.Queue(), context.Queue()
+    start = context.Event()
+    active, peak = context.Value("i", 0), context.Value("i", 0)
+    workers = [context.Process(target=contend, args=(lock, backend, ready, start, active, peak, finished))
+               for _ in range(3)]
+    try:
+        for worker in workers:
+            worker.start()
+        for _ in workers:
+            assert ready.get(timeout=20)
+        start.set()
+        for worker in workers:
+            worker.join(timeout=20)
+            assert not worker.is_alive(), "lock contender hung"
+            assert worker.exitcode == 0, "lock contender failed"
+        assert [finished.get(timeout=5) for _ in workers] == [True] * 3
+        assert peak.value == 1, "multiple processes entered the protected section together"
+        assert active.value == 0
+    finally:
+        start.set()
+        for worker in workers:
+            if worker.is_alive():
+                worker.terminate()
+            if worker.pid is not None:
+                worker.join(timeout=5)
+        for queue in (ready, finished):
+            queue.close()
+            queue.join_thread()
 
 
 def test_excl_lock_reclaims_stale_lock(tmp_path):

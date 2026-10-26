@@ -8,7 +8,7 @@ fully observed -> singleton true allele; partial/absent -> masked.
 
 Resumability: `stage1_train` can be continued from a full-state checkpoint (`resume.save_checkpoint` /
 `load_checkpoint`) that carries the optimizer/scheduler/RNG state, making a continuation mathematically
-faithful (not a cold restart). See docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md §2."""
+faithful (not a cold restart). See Notes and Plans/docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md §2."""
 from __future__ import annotations
 
 import dataclasses

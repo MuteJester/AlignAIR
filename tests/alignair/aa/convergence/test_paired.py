@@ -7,6 +7,8 @@ from alignair.aa.convergence.paired import (
     class_stratified_bootstrap_macro_diff,
 )
 
+pytestmark = pytest.mark.component
+
 
 def test_paired_bootstrap_diff_ci_point_estimate_and_bounds():
     a = np.array([True, True, False, False])

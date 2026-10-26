@@ -1,8 +1,11 @@
+import pytest
 import hashlib
 
 from alignair.aa.phase3.cohort import (
     validate_row, validate_cohort, sha256_seq, LabelRow, LABEL_FIELDS,
 )
+
+pytestmark = pytest.mark.component
 
 SEQ = "EVQLVESGGGLVQPGGSLRLSCAAS"
 VID = hashlib.sha256(SEQ.encode()).hexdigest()

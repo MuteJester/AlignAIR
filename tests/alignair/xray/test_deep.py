@@ -1,7 +1,10 @@
 """Tests for the deep xray tiers: geometry, dynamics/interference, deep_probe."""
+import pytest
 import torch
 
 from alignair.xray import deep_probe, dynamics, geometry
+
+pytestmark = pytest.mark.component
 
 
 # ---------------- geometry ----------------

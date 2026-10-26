@@ -1,6 +1,9 @@
+import pytest
 import numpy as np
 from alignair.data.sample_builder import build_xy
 from alignair.data.encoders import AlleleEncoder
+
+pytestmark = pytest.mark.component
 
 
 def _encoder():

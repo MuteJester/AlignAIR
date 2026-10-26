@@ -1,8 +1,11 @@
 """Tests for germline alignment (reuse align/ WFA/parasail; Short-D sentinel)."""
+import pytest
 import numpy as np
 
 from alignair.predict.germline import align_germline
 from alignair.predict.state import GeneCall, Segments
+
+pytestmark = pytest.mark.component
 
 
 class _FakeGene:

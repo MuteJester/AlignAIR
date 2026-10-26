@@ -1,8 +1,11 @@
+import pytest
 import GenAIRR.data as gd
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair import model_file as mf
 from alignair.cli.main import main
+
+pytestmark = pytest.mark.integration
 
 
 def _save(tmp_path):

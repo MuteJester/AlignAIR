@@ -3,6 +3,8 @@ genairr = pytest.importorskip("GenAIRR")
 import GenAIRR.data as gdata
 from alignair.data.experiment_presets import full_augmentation, no_corruption, minimal
 
+pytestmark = pytest.mark.integration
+
 
 def test_full_augmentation_streams_a_record():
     exp = full_augmentation(gdata.HUMAN_IGH_OGRDB)

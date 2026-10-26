@@ -1,4 +1,7 @@
+import pytest
 from alignair.data.record_adapter import RecordAdapter
+
+pytestmark = pytest.mark.component
 
 
 def _row(**over):

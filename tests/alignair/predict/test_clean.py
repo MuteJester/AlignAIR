@@ -1,7 +1,10 @@
 """Tests for batch-merge / clean stage."""
+import pytest
 import numpy as np
 
 from alignair.predict.clean import clean
+
+pytestmark = pytest.mark.component
 
 
 def _batch(vp, vs, ve, prod):

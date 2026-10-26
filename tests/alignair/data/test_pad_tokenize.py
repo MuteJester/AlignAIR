@@ -1,5 +1,8 @@
+import pytest
 import torch
 from alignair.data.tokenizer import pad_tokenize
+
+pytestmark = pytest.mark.component
 
 
 def test_pad_tokenize_shapes_and_mask():

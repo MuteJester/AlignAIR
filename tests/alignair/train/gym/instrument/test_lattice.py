@@ -1,5 +1,8 @@
+import pytest
 from alignair.train.gym.instrument.task_space import TaskSpace
 from alignair.train.gym.instrument.lattice import LatticeCell, FrozenLattice
+
+pytestmark = pytest.mark.component
 
 
 def test_standard_lattice_has_hard_and_axis_isolated_cells():

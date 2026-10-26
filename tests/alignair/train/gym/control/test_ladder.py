@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.control.ladder import RankLadder
+
+pytestmark = pytest.mark.component
 
 
 def test_progress_maps_levels_to_unit_interval():

@@ -3,6 +3,8 @@ genairr = pytest.importorskip("GenAIRR")
 import GenAIRR.data as gdata
 from alignair.data.genairr import assert_genairr_capable, allele_vocab_from_dataconfig
 
+pytestmark = pytest.mark.integration
+
 
 def test_capability_check_passes():
     assert_genairr_capable()  # must not raise on the installed 2.2.0 code

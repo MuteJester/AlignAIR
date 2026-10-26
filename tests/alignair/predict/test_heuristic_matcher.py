@@ -3,6 +3,7 @@
 The exhaustive identical-results check vs the TF logic was run over the whole benchmark
 (7920 matches, V/D/J x fractional indel counts) at port time; these lock in the key behaviours.
 """
+import pytest
 from alignair.predict.heuristic_matcher import GermlineMatch, HeuristicGermlineMatcher
 
 _G = "ACGTACGTAC" * 4          # a 40 bp germline
@@ -50,6 +51,8 @@ def test_from_reference_builds_germline_table():
 
 # ---------------- derive_alignment (CIGAR reconstruction) ----------------
 from alignair.predict.heuristic_matcher import derive_alignment
+
+pytestmark = pytest.mark.component
 
 
 def _consumes(cigar):

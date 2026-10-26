@@ -1,9 +1,12 @@
 """Tests for the reusable ModelXRay network-health analytics."""
+import pytest
 import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.train.trainer import eval_metrics
 from alignair.xray import ModelXRay, network
+
+pytestmark = pytest.mark.component
 
 
 def test_stable_rank_extremes():

@@ -1,3 +1,4 @@
+import pytest
 import json
 
 import GenAIRR as ga
@@ -6,6 +7,8 @@ from alignair.aa.product.asc import asc_to_imgt_multi
 from alignair.aa.product.bundle import canonical_json, complete_calibration, save_aa_bundle
 from alignair.aa.strategic import strategic_setup
 from alignair.model_file import container
+
+pytestmark = pytest.mark.component
 
 _CALIBRATION = {
     "alpha": 0.05,

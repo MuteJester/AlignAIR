@@ -7,25 +7,32 @@ sealed partition file or revealing any record's split assignment.
 
 Before the corpus is trusted, its committed global canonical digest is reproduced by replaying the public
 freeze procedure (Phase-3 exclusion -> per-group sequence dedup -> deterministic split assignment ->
-canonical digest), mirroring ``scripts/aa/gate3/split_freeze.py``. A mismatch means the corpus is not the
+canonical digest). The historical freeze policy is preserved below and checked against captured fixture
+assignments and digests. A mismatch means the corpus is not the
 exact frozen one and the denylist is refused. This module imports only the pure canonical helpers; it has
 no path or call capable of reading the sealed partition.
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from alignair.errors import (
+    AlignAIRError, ArtifactIntegrityError, DataContractError, InternalError,
+    OperationCancelledError, OperationIOError, report_error,
+)
 from alignair.aa.product.applicability import canonical
 
-_PHASE3_GOLD = "docs/superpowers/artifacts/2026-07-21-aa-phase3/gold_labels.tsv"
+_PHASE3_GOLD = "Notes and Plans/docs/superpowers/artifacts/2026-07-21-aa-phase3/gold_labels.tsv"
 
 
-class Gate3DigestMismatch(RuntimeError):
+class Gate3DigestMismatch(ArtifactIntegrityError):
     """Raised when the pre-split corpus does not reproduce the committed global canonical digest."""
+    code = "ALIGNAIR_COHORT_DIGEST_MISMATCH"
 
 
 @dataclass(frozen=True)
@@ -61,7 +68,7 @@ def _load_phase3_gold(path) -> tuple[set, dict]:
 def _replay_splits(kept: list[dict]) -> dict:
     """Reproduce the frozen Gate-3 split assignment from the deduped pre-split records.
 
-    Byte-for-byte mirror of the split logic in scripts/aa/gate3/split_freeze.py: positives split
+    Historical Gate-3 allocation policy: positives split
     fit/val/test .50/.25/.25 (structural-shared lineages restricted to val/test), structural inherits the
     positive_real assignment where shared else val/test .50/.50, all other groups val/test .50/.50 —
     all by deterministic sha256(lineage_key) rank.
@@ -112,7 +119,7 @@ def build_gate3_global_denylist(cleaned_cohort_path, split_fingerprint, *,
     if p.exists():
         entries = [json.loads(line) for line in open(p) if line.strip()]
 
-    # (1) Phase-3 exclusion (mirror split_freeze): drop the 16 therapeutics by INN name or VH hash.
+    # (1) Historical Phase-3 exclusion: drop therapeutics by INN name or VH hash.
     p3_names, vh_by_name = _load_phase3_gold(phase3_gold_path)
     name_by_vh = {v: k for k, v in vh_by_name.items()}
     kept0 = [e for e in entries
@@ -177,3 +184,68 @@ def audit_disjoint(fresh_records, *, gate3_denylist, phase3) -> DisjointReport:
 
     clean = all(not v for v in overlaps.values())
     return DisjointReport(clean=clean, overlaps=overlaps)
+
+
+def _fresh_records(path):
+    """Read JSONL incrementally and identify malformed records by their line number."""
+    with path.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise DataContractError("Invalid JSON in fresh cohort.",
+                                        context={"path": path, "line": line_number}) from exc
+            if (not isinstance(record, dict) or
+                    any(not isinstance(record.get(key), str) for key in ("id", "aa")) or
+                    any(record.get(key) is not None and not isinstance(record[key], str)
+                        for key in ("lineage_key", "donor", "study"))):
+                raise DataContractError("Fresh records require text id/aa and optional text lineage/donor/study fields.",
+                                        context={"path": path, "line": line_number})
+            yield record
+
+
+def main(argv=None) -> int:
+    """Audit explicit input files, returning failure for overlaps or invalid inputs."""
+    parser = argparse.ArgumentParser(description="Audit fresh-cohort overlap against verified pre-split and Phase-3 data.")
+    parser.add_argument("fresh_cohort", type=Path, help="Fresh records in JSONL format")
+    for option in ("cleaned", "fingerprint", "phase3-gold"):
+        parser.add_argument("--" + option, type=Path, required=True)
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--error-format", choices=("text", "json"), default="text")
+    args = parser.parse_args(argv)
+    try:
+        if not args.phase3_gold.is_file():
+            raise OperationIOError("Phase-3 digest replay labels are missing.", context={"path": args.phase3_gold})
+        fingerprint = json.loads(args.fingerprint.read_text(encoding="utf-8"))
+        if not isinstance(fingerprint, dict) or not isinstance(fingerprint.get("record_digest", {}), dict):
+            raise DataContractError("Pre-split fingerprint requires a record_digest mapping.")
+        denylist = build_gate3_global_denylist(args.cleaned, fingerprint, phase3_gold_path=args.phase3_gold)
+        names, vh_by_name = _load_phase3_gold(args.phase3_gold)
+        report = audit_disjoint(_fresh_records(args.fresh_cohort), gate3_denylist=denylist,
+                                phase3=(names, set(vh_by_name.values())))
+        print(json.dumps({
+            "clean": report.clean,
+            "overlap_counts": {key: len(values) for key, values in report.overlaps.items()},
+            "denylist_sizes": {key: len(values) for key, values in denylist.items()},
+        }, indent=2, sort_keys=True))
+        return 0 if report.clean else 1
+    except AlignAIRError as exc:
+        error = exc
+    except KeyboardInterrupt:
+        error = OperationCancelledError("Disjointness audit interrupted.")
+    except OSError as exc:
+        error = OperationIOError("Cannot access disjointness audit inputs.", context={"reason": str(exc)})
+        error.__cause__ = exc
+    except (json.JSONDecodeError, UnicodeError) as exc:
+        error = DataContractError("Invalid JSON or text encoding in disjointness audit input.")
+        error.__cause__ = exc
+    except Exception as exc:
+        error = InternalError("Unexpected disjointness audit failure.", context={"cause_type": type(exc).__name__})
+        error.__cause__ = exc
+    return report_error(error, debug=args.debug, json_output=args.error_format == "json")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

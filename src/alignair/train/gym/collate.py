@@ -39,6 +39,7 @@ def gym_collate(batch, reference_set, has_d: bool):
         G = g.upper()
         gref = reference_set.gene(G)
         pres = [g in s["germline"] for s in batch]
+        out[f"{g}_supervise"] = torch.tensor(pres, dtype=torch.bool)
         out[f"{g}_germline_start"] = torch.tensor(
             [s["germline"][g][0] if p else 0 for s, p in zip(batch, pres)], dtype=torch.long)
         out[f"{g}_germline_end"] = torch.tensor(

@@ -2,10 +2,13 @@
 deduplicates by independent lineage, excludes gamma/delta from the TCR floor, requires both loci in
 combined groups, and counts structural negatives by PARENT lineage."""
 from __future__ import annotations
+import pytest
 
 from alignair.aa.product.applicability.cohort import CohortEntry
 from alignair.aa.product.applicability.feasibility import (
     FLOOR_5, FLOOR_10, feasibility_report, min_n_zero_error, min_n_for_upper_bound)
+
+pytestmark = pytest.mark.component
 
 
 def _entries(category, group, state, n, *, lineage_prefix=None, shared_lineage=None):

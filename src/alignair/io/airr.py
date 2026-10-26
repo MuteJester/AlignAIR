@@ -4,6 +4,8 @@ set confidence). Only the equivalence set (``*_call_set``) is populated by defau
 level and set confidence are reserved for the optional (separate) calibration step."""
 from __future__ import annotations
 
+from alignair.errors import DataContractError
+
 import csv
 import os
 from typing import List
@@ -54,9 +56,10 @@ _PROTECTED_FIELDS = frozenset(COLUMNS)
 _METADATA_FILL_ONLY = frozenset({"c_call"})
 
 
-class PredictionCountMismatch(RuntimeError):
+class PredictionCountMismatch(DataContractError):
     """The writer was given a different number of ids / sequences / predictions — a pipeline or model
     defect. Raised instead of silently truncating (and losing reads) via ``zip``."""
+    code = "ALIGNAIR_PREDICTION_COUNT_MISMATCH"
 
 # Named column presets users can pick from (or pass their own list / comma-string). `full` is the
 # default; `airr` is the MiAIRR-minimal required rearrangement set; `core`/`minimal` are compact.

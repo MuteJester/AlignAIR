@@ -1,5 +1,8 @@
+import pytest
 import numpy as np
 from alignair.aa.convergence.metrics import macro_accuracy, per_frequency_bins, softmax_nll, brier_score
+
+pytestmark = pytest.mark.component
 
 def test_macro_downweights_common_class():
     # class 0 has 8 examples all correct; class 1 has 2 examples all wrong -> micro 0.8, macro 0.5

@@ -1,6 +1,9 @@
+import pytest
 import torch
 from alignair.data.tokenizer import pad_tokenize
 from alignair.nn.heads.orientation import apply_orientation, complement, reverse_valid, OrientationHead
+
+pytestmark = pytest.mark.component
 
 # helper to decode tokens back to letters for readability
 INV = {0: "-", 1: "A", 2: "T", 3: "G", 4: "C", 5: "N"}

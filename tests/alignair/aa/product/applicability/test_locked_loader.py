@@ -8,6 +8,8 @@ import pytest
 
 from alignair.aa.product.applicability.cohort_loader import GateCohort, LockedTestError
 
+pytestmark = pytest.mark.component
+
 
 @pytest.fixture
 def store(tmp_path):

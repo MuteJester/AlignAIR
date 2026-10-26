@@ -1,14 +1,12 @@
 """The ReferenceSet carries a per-locus schema (ordered loci + per-gene allele-index membership)
 so multi-chain prediction can label the locus, mask cross-locus alleles, and assemble per-record."""
-import os
-
 import numpy as np
 import pytest
 
 import GenAIRR.data as gd
 from alignair.reference.reference_set import ReferenceSet
 
-_IGKL = ".private/models/alignair_igkl_v1.cal.alignair"
+pytestmark = pytest.mark.component
 
 
 @pytest.fixture(scope="module")
@@ -68,13 +66,13 @@ def test_same_locus_panels_merge_into_one_contiguous_locus():
     assert np.all(ref.locus_mask("IGH", "V"))                   # contiguous over the whole V head
 
 
-@pytest.mark.skipif(not os.path.exists(_IGKL), reason="shipped IGK+IGL model not present")
-def test_real_multichain_model_locus_schema_matches_training():
+@pytest.mark.model_validation
+def test_real_multichain_model_locus_schema_matches_training(igkl_model):
     """The shipped IGK+IGL model's embedded reference (schema inferred from names, saved before the
     schema existed) yields chain-class order (IGK, IGL) with masks that partition the head — matching
     the dataconfig order the chain_type head was trained on."""
     from alignair.api import load_model
-    _, ref = load_model(_IGKL, device="cpu")
+    _, ref = load_model(igkl_model, device="cpu")
     assert ref.locus_names() == ("IGK", "IGL")                  # class 0 = IGK, class 1 = IGL
     for gene in ("V", "J"):
         k, l = ref.locus_mask("IGK", gene), ref.locus_mask("IGL", gene)

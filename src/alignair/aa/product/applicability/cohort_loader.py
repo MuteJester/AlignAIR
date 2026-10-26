@@ -10,6 +10,8 @@ The freeze writes two partitions into the git-ignored store: ``dev_cohort.jsonl`
 """
 from __future__ import annotations
 
+from alignair.errors import AccessPolicyError
+
 import json
 import os
 
@@ -19,8 +21,9 @@ _LOCKED = "locked_test.jsonl"
 _AUDIT = "locked_test_unlock_audit.jsonl"
 
 
-class LockedTestError(RuntimeError):
+class LockedTestError(AccessPolicyError):
     """Raised on any attempt to reach the locked test set outside the sanctioned one-shot unlock."""
+    code = "ALIGNAIR_LOCKED_TEST_ACCESS"
 
 
 class GateCohort:

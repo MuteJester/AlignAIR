@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.instrument.competence import CompetenceMetric
+
+pytestmark = pytest.mark.component
 
 
 def _perfect():

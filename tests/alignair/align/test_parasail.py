@@ -1,7 +1,7 @@
 import pytest
 from alignair.align.parasail import ParasailAligner, parasail_available
 
-pytestmark = pytest.mark.skipif(not parasail_available(), reason="parasail not installed")
+pytestmark = [pytest.mark.skipif(not parasail_available(), reason='parasail not installed'), pytest.mark.component]
 AL = ParasailAligner()
 
 

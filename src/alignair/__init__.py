@@ -17,6 +17,7 @@ The lower-level functional façade (``load_model`` / ``predict_sequences`` / ``t
 back-compat. I/O + reference helpers: ``read_sequences``, ``write_airr``, ``ReferenceSet``,
 ``compare_airr``.
 """
+from .errors import AlignAIRError
 from .reference.reference_set import ReferenceSet
 from .io.sequence_reader import read_sequences, iter_sequences, DuplicateMetadataId
 from .io.airr import write_airr, AirrWriter, PredictionCountMismatch
@@ -66,6 +67,7 @@ def predict_aa(sequences, *, model: str = "alignair-aa-igh-human@2.0.0", coverag
 
 
 __all__ = [
+    "AlignAIRError",
     # stable object API
     "Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training", "resolve_device",
     # functional façade (back-compat)

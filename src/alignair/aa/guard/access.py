@@ -15,6 +15,8 @@ frozen in ``decision``/``selection`` (before any fresh read) and hashed via ``th
 """
 from __future__ import annotations
 
+from alignair.errors import AccessPolicyError, ArtifactIntegrityError, DataContractError
+
 import hashlib
 import json
 import os
@@ -44,20 +46,24 @@ def threshold_grid_hash() -> str:
         "selection_gates": SELECTION_GATES, "fold_gate": FOLD_GATE})
 
 
-class AccessViolation(RuntimeError):
+class AccessViolation(AccessPolicyError):
     """A loader was asked to open a file outside its permitted role (e.g. selection loader → challenge file)."""
+    code = "ALIGNAIR_ACCESS_VIOLATION"
 
 
-class ThresholdArtifactMissing(RuntimeError):
+class ThresholdArtifactMissing(DataContractError):
     """Challenge access attempted with no complete, hash-bound fold-threshold artifact present."""
+    code = "ALIGNAIR_THRESHOLD_ARTIFACT_MISSING"
 
 
-class HashMismatch(RuntimeError):
+class HashMismatch(ArtifactIntegrityError):
     """A bound identity (checkpoint bytes, mask, grid, bundle, selection manifest, or challenge file) drifted."""
+    code = "ALIGNAIR_IDENTITY_MISMATCH"
 
 
-class NoAdmissibleThreshold(RuntimeError):
+class NoAdmissibleThreshold(DataContractError):
     """No grid point satisfied every applicable selection gate — a STOP, never a relaxation."""
+    code = "ALIGNAIR_NO_ADMISSIBLE_THRESHOLD"
 
 
 # ---- fold-threshold artifact -------------------------------------------------------------------------

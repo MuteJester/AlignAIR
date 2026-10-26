@@ -30,15 +30,12 @@ classifiers = [
 # ── Core dependencies ────────────────────────────────────────────────────────
 dependencies = [
     "torch>=2.2",
-    "pandas>=1.5",
     "numpy>=1.24",
     "GenAIRR>=2.2.0",
     "safetensors>=0.4",       # portable weights section of the .alignair model format
-    "tqdm>=4.60",
     "scipy>=1.11",
     "PyYAML>=6.0",
     "biopython>=1.80",
-    "psutil>=5.8",
     "platformdirs>=3.0",     # per-OS cache/config locations (cross-platform, honors XDG/env overrides)
     "tomli>=2; python_version < '3.11'",   # tomllib backport: runtime TOML registry-config reader on Python 3.10
 ]
@@ -51,7 +48,6 @@ zstd = ["zstandard>=0.22"]    # optional stronger compression for .alignair sect
 hub = ["huggingface-hub>=0.20"]
 cli = [
     "huggingface-hub>=0.20",
-    "airr>=1.4",
     # gapped alignment (exact cigars / germline_alignment / identity) + fast V reader. parasail ships
     # no arm64-macOS wheel and would try to compile, so it is excluded on Apple Silicon; there the
     # Biopython fallback in align/ is used instead. Installed everywhere a binary wheel exists.
@@ -80,9 +76,21 @@ server = [
     "flask>=3.0",
     "requests>=2.28",
 ]
-dev = [
-    "AlignAIR[cli,train,viz,server]",
+test = [
     "pytest>=7.0",
+    "airr>=1.4",           # official AIRR schema validation in acceptance/interop tests
+    "jinja2>=3.0",         # conda recipe rendering tests
+    "pytest-cov>=4.1",     # statement/branch evidence and CI artifacts
+    "pytest-timeout>=2.2", # bound test and fixture hangs, including concurrency tests
+    "pytest-xdist>=3.5",   # verify component tests in separate concurrent workers
+]
+test-research = [
+    "AlignAIR[test]",
+    "pyhmmer==0.12.1",     # deterministic AA profile fixtures; matches the research toolchain
+    "scikit-learn>=1.0",   # AA applicability scorer tests
+]
+dev = [
+    "AlignAIR[cli,train,viz,server,test-research]",
     "build>=1.0",
     "twine>=5.0",
     "cibuildwheel>=2.21",  # build binary wheels (with the compiled germline-CIGAR kernel) locally
@@ -127,23 +135,38 @@ build-frontend = "build"
 # compiled kernel can be imported + tested in-place. Verify it actually loaded in every built wheel
 # (the smoke test loads the extension directly).
 # Preinstall a frozen, binary-only scientific stack before cibuildwheel installs AlignAIR. Without
-# this, a future SciPy/Pandas release can drop an older manylinux tag, making pip attempt an unrelated
+# this, a future SciPy/NumPy release can drop an older manylinux tag, making pip attempt an unrelated
 # source build inside the wheel-test container (which has no OpenBLAS) even though AlignAIR's wheel
 # itself built correctly. The release smoke later tests normal dependency resolution independently.
 before-test = "python -m pip install --only-binary=:all: -r {package}/constraints/cibuildwheel-test.txt"
-test-command = "python {project}/tests/wheel_smoke.py"
+test-command = "python {project}/tests/packaging/wheel_smoke.py"
 
 # ── Pytest configuration ────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# importlib mode: tests have no __init__.py, so same-basename files in different dirs
-# (e.g. test_batch.py) would otherwise collide under the default prepend mode.
-addopts = "--import-mode=importlib"
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests",
-    "e2e: End-to-end tests",
-    "regression: Regression tests",
-    "performance: Performance tests",
-    "slow: Slow tests (real model/reference; excluded from fast runs via -m 'not slow')",
+# Source packages and the private tests.* helper package, including when invoked outside the checkout.
+pythonpath = ["src", "."]
+# Keep imports independent of test basenames and catch misspelled configuration/markers.
+addopts = "--import-mode=importlib --strict-markers --strict-config"
+timeout = 300
+filterwarnings = [
+    "error::pytest.PytestUnhandledThreadExceptionWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
 ]
+markers = [
+    "component: Deterministic component contracts, with injected provider inputs where needed",
+    "integration: Real simulator, process, serialization, or application integration",
+    "acceptance: Public guarantees and release acceptance criteria",
+    "claim_evidence: Test referenced by a version-controlled release claim",
+    "model_validation: Requires pre-fetched checksum-pinned public model artifacts",
+    "performance: Resource-behavior checks with explicit budgets",
+    "slow: Slow tests (real model/reference; excluded from fast runs via -m 'not slow')",
+    "local_data: Requires optional local model weights or frozen research artifacts; skips when inputs are absent",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["alignair", "alignair_benchmark"]
+
+[tool.coverage.report]
+show_missing = true

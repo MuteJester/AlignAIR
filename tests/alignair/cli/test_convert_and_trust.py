@@ -12,6 +12,8 @@ from alignair.core import AlignAIR
 from alignair.core.config import AlignAIRConfig
 from alignair.model_file import container as C, serialize
 
+pytestmark = pytest.mark.integration
+
 
 def _model():
     cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)

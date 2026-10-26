@@ -7,6 +7,8 @@ from alignair.aa.product.calibration_group import (
     resolve_group,
 )
 
+pytestmark = pytest.mark.component
+
 
 class TestResolveGroupConstants:
     """Test module constants."""

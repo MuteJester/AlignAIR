@@ -1,7 +1,7 @@
 """Frozen Phase-3 label schema + row/cohort validators. No model, no alignment, no raw sequences committed.
 
 vh_aa lives ONLY in a git-ignored hydrated map; committed rows carry exact_vh_id = sha256(vh_aa).
-See docs/superpowers/specs/2026-07-21-aa-phase3-realprotein-design.md.
+See Notes and Plans/docs/superpowers/specs/2026-07-21-aa-phase3-realprotein-design.md.
 """
 from __future__ import annotations
 

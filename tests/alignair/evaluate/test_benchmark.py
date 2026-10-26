@@ -5,6 +5,8 @@ import pytest
 
 from alignair.evaluate import default_strata, format_text, score
 
+pytestmark = pytest.mark.integration
+
 
 def _truth():
     return [

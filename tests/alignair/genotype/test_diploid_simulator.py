@@ -8,6 +8,8 @@ from alignair.genotype.benchmark import recovery, sample_diploid_genotype
 from alignair.genotype.infer import _gene_of
 from alignair.reference.reference_set import ReferenceSet
 
+pytestmark = pytest.mark.integration
+
 
 def _ref():
     return ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)

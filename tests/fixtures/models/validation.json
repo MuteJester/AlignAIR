@@ -1,0 +1,24 @@
+{
+  "schema": "alignair.test-models.v1",
+  "source": "hf://AlignAIR/AlignAIR-pretrained",
+  "models": {
+    "igh": {
+      "id": "alignair-igh-human",
+      "version": "1.0.0",
+      "file": "alignair-igh-human/1.0.0.alignair",
+      "artifact_sha256": "c418a72cda22e81b0ff5f63eba55c4cb61e7fed7e220f6dc64bd5dfafb801b59",
+      "size": 57325936,
+      "reference_fasta_sha256": "b8db09eb86080c888ded27cc430f74b51bad535bfb91c4ba8ab0114c49d5cb8b",
+      "allele_order_sha256": "d615b59babba6902cb876ed415809df8e565682511dc9ab6032d2fc294dd582a"
+    },
+    "igkl": {
+      "id": "alignair-igkl-human",
+      "version": "1.0.0",
+      "file": "alignair-igkl-human/1.0.0.alignair",
+      "artifact_sha256": "c6aa29a7ae7eb4f061aead2727d73e2f107db3e249159f959536973dd86451d1",
+      "size": 45704181,
+      "reference_fasta_sha256": "9ac60e7d6b7577b5e383cc3f8b72a1958f0d707cd4a2b9e3c9153fb181a99064",
+      "allele_order_sha256": "d32cd6fe79114117a504def1321ee831d60c95ef585e1127358d6be36a826463"
+    }
+  }
+}

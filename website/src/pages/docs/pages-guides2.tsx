@@ -122,7 +122,7 @@ const pythonApi: DocPage = {
       />
       <p>
         The stable import surface is the top-level <code>alignair</code> namespace plus the documented{" "}
-        <code>alignair.genotype</code> helpers. Everything else is implementation detail.
+        <code>alignair.genotype</code> helpers and <code>alignair.errors</code> diagnostics.
       </p>
 
       <h2>Streaming large inputs</h2>
@@ -158,6 +158,12 @@ const pythonApi: DocPage = {
       <p>See <DocLink to="airr-fields">AIRR output fields</DocLink> for the status codes and orientation contract.</p>
 
       <h2>Errors to handle</h2>
+      <p>
+        Catch <code>AlignAIRError</code> for classified failures, or a domain exception such as
+        <code> RegistryError</code> or <code>ModelError</code> when recovery depends on the cause.
+        See <DocLink to="errors">Errors and diagnostics API</DocLink> for exception types, structured diagnostics,
+        and reporting helpers.
+      </p>
       <ul>
         <li><code>FileNotFoundError</code> / <code>ValueError</code> from <code>from_pretrained</code> on a missing path or unresolvable id.</li>
         <li>A load-time error when a caller-supplied reference does not match the model's embedded, fingerprinted reference.</li>
@@ -176,7 +182,8 @@ const pythonApi: DocPage = {
 
       <h2>API stability</h2>
       <p>
-        The stable surface is the top-level <code>alignair</code> namespace plus <code>alignair.genotype</code> helpers;
+        The stable surface is the top-level <code>alignair</code> namespace, <code>alignair.genotype</code> helpers,
+        and the documented <code>alignair.errors</code> API;
         the 3.x line keeps these signatures backward-compatible. Submodules may change in any release.
       </p>
     </>

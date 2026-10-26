@@ -1,8 +1,11 @@
 """Stage-1 HIGH-SPECIFICITY structural prefilter: hard-rejects only decisive defects, defers everything
 else (including divergent/mutated complete VHs and all complete-domain non-IGH inputs) to Stage-2."""
 from __future__ import annotations
+import pytest
 
 from alignair.aa.product.applicability.completeness import structural_prefilter, RULESET_VERSION
+
+pytestmark = pytest.mark.component
 
 _VH = ("EVQLVESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSAISGSGGSTYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDT"
        "AVYYCAKDLYYYGMDVWGQGTTVTVSS")

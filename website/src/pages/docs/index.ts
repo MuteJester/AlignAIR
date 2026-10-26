@@ -6,8 +6,11 @@ import { guidesPages, trainingPages } from "./pages-guides";
 import { guides2Pages } from "./pages-guides2";
 import { airrFieldsPages } from "./pages-airrfields";
 import { referencePages } from "./pages-reference";
+import { errorPages } from "./pages-errors";
 import { evalPages } from "./pages-eval";
 import { maintainerPages } from "./pages-maintainer";
+import { aaResearchPages } from "./pages-aa-research";
+import { testingPages } from "./pages-testing";
 import { communityPages } from "./pages-community";
 
 /**
@@ -24,10 +27,13 @@ export const DOCS: DocPage[] = [
   ...guidesPages, // models  [Using AlignAIR]
   ...guides2Pages, // cli, python-api, integrations  [Using AlignAIR]
   ...airrFieldsPages, // airr-fields  [Reference]
+  ...errorPages, // errors  [Reference]
   ...referencePages, // model-contract, known-failure-modes, troubleshooting
   ...trainingPages, // training  [Training]
   ...evalPages, // benchmarks, performance  [Evaluation]; design  [Design]
   ...maintainerPages, // publishing  [Maintainer]
+  ...aaResearchPages, // aa-guard-research  [Maintainer]
+  ...testingPages, // testing  [Maintainer]
   ...communityPages, // citation-support  [Community]
 ];
 

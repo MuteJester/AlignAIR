@@ -1,7 +1,7 @@
 """Unified checkpoint evaluator over a frozen, hash-fingerprinted simulator cohort.
 
-``build_cohort`` freezes a strata cohort (the same strata as ``scripts/aa/eval_strategic.py``:
-clean-pool + AA-native augmentation strata + native-indel buckets + a J-anchored short stratum)
+``build_cohort`` freezes a strata cohort (clean-pool + AA-native augmentation strata +
+native-indel buckets + a J-anchored short stratum)
 plus a disjoint calibration slice, all from ONE seeded ``stream_benchmark`` pass so the whole thing
 is reproducible from ``(dc_name, n_per_stratum, seed)`` alone. It is fingerprinted with SHA-256 so
 every checkpoint scored in a convergence sweep is compared against byte-identical data.
@@ -30,8 +30,7 @@ from ..infer import class_probs
 from ..tokenizer import AAProteinTokenizer
 from .metrics import brier_score, macro_accuracy, per_frequency_bins, softmax_nll
 
-# Stratum names/order: matches scripts/aa/eval_strategic.py exactly, so cohorts built here are
-# directly comparable to that script's ad-hoc reports.
+# Fixed stratum order for cohort fingerprints and checkpoint comparisons.
 STRATA_ORDER = ("clean", "moderate_full", "aa_subs_7pct", "aa_single_indel", "aa_il_ambiguity",
                 "aa_truncate_50_80", "short_janchor", "dj_indel", "v_indel_1", "v_indel_multi")
 
@@ -46,7 +45,7 @@ def build_cohort(dc_name: str = "HUMAN_IGH_OGRDB", n_per_stratum: int = 200,
                  seed: int = 20250722, *, cal_frac: float = 0.3):
     """Build a FROZEN simulator eval cohort + a disjoint calibration slice from one seeded stream.
 
-    Reuses the exact strata-construction logic of ``scripts/aa/eval_strategic.py``: a clean pool
+    Constructs the declared evaluation strata: a clean pool
     from ``stream_benchmark(default_igh_spec(...))`` (AA-usable, orientation 0, known V+J allele,
     ``n_indels==0``, stratum == ``clean_full`` ONLY -- this matches the frozen baseline/§5 gates,
     which were computed against ``clean_full`` alone), AA-native augmentation strata built from

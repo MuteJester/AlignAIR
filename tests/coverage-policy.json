@@ -1,0 +1,17 @@
+{
+  "schema": "alignair.coverage-policy.v1",
+  "files": {
+    "src/alignair/errors/base.py": {"statements": 100, "branches": 100},
+    "src/alignair/errors/context.py": {"statements": 90, "branches": 85},
+    "src/alignair/errors/reporting.py": {"statements": 95, "branches": 90},
+    "src/alignair/data/readers.py": {"statements": 100, "branches": 100},
+    "src/alignair/io/sequence_reader.py": {"statements": 90, "branches": 75},
+    "src/alignair/model_file/container.py": {"statements": 80, "branches": 75},
+    "src/alignair/registry/cache.py": {"statements": 80, "branches": 75},
+    "src/alignair/train/gym/coordinates.py": {"statements": 95, "branches": 95},
+    "src/alignair/train/gym/targets.py": {"statements": 95, "branches": 85},
+    "src/alignair/train/gym/crop.py": {"statements": 95, "branches": 85},
+    "src/alignair/core/losses.py": {"statements": 98, "branches": 90},
+    "src/alignair/aa/convergence/evaluator.py": {"statements": 90, "branches": 80}
+  }
+}

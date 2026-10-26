@@ -1,12 +1,15 @@
 """Tests for the public `alignair.predict_aa` / `alignair.load_aa_model` façade (Task 8, design spec
 §9): sequences/records in, `list[dict]` (§6 schema) out, model cached per (model, device)."""
 from __future__ import annotations
+import pytest
 
 import alignair
 from alignair.aa.product.loader import AAPredictor
 
+pytestmark = pytest.mark.component
+
 # A real, full-length VH amino-acid read (same fixture used in test_predictor.py, sourced from
-# docs/superpowers/artifacts/2026-07-21-aa-phase3/hydrated_sequences.tsv).
+# Notes and Plans/docs/superpowers/artifacts/2026-07-21-aa-phase3/hydrated_sequences.tsv).
 _VH_1 = ("EVQLVESGGGLVQPGGSLRLSCAASGFNIKDTYIHWVRQAPGKGLEWVARIYPTNGYTRYADSVKGRFTISADTSKNTAYLQMNSLRAEDTAV"
         "YYCSRWGGDGFYAMDYWGQGTLVTVSS")
 _VH_2 = ("EVQLVESGGGLVQPGGSLRLSCAASGYTFTNYGMNWVRQAPGKGLEWVGWINTYTGEPTYAADFKRRFTFSLDTSKSTAYLQMNSLRAEDTAV"

@@ -7,6 +7,8 @@ import pytest
 from alignair.aa.product.applicability.scorers import (
     ShrinkageMahalanobisScorer, KNNScorer, CANDIDATES)
 
+pytestmark = pytest.mark.component
+
 
 def _data():
     rng = np.random.RandomState(0)

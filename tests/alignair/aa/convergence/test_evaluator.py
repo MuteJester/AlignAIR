@@ -1,65 +1,53 @@
+"""Evaluator contracts on fresh, hand-written cohorts independent of GenAIRR simulation."""
+import math
+from copy import deepcopy
+
 import numpy as np
 import pytest
+import torch
 
-from alignair.aa.convergence.evaluator import STRATA_ORDER, build_cohort, evaluate_checkpoint
-from alignair.aa.strategic import strategic_setup
+from alignair.aa.config import aa_igh_config
+from alignair.aa.equivalence import EquivalenceClassMap
+from alignair.aa.model import AAAlignAIR
+from alignair.aa.translation import CODON_TABLE
+from alignair.aa.convergence.evaluator import evaluate_checkpoint
 
-DC_NAME = "HUMAN_IGH_OGRDB"
-SEED = 20250722          # disjoint from calibrate_stage2's 1000/9000 and training seed 0
-N_PER_STRATUM = 40       # small but big enough that D/truncate/short_janchor buckets are non-empty
+pytestmark = pytest.mark.component
 
 REQUIRED_STRATA = ("clean", "aa_truncate_50_80", "short_janchor", "moderate_full")
 
 
-@pytest.fixture(scope="module")
-def cohort():
-    coh, fp = build_cohort(DC_NAME, n_per_stratum=N_PER_STRATUM, seed=SEED)
-    return coh, fp
+@pytest.fixture
+def evaluation_inputs():
+    class_maps = {g: EquivalenceClassMap(g, "fixture", {g+"0*01": 0, g+"1*01": 1},
+                                       {0: [g+"0*01"], 1: [g+"1*01"]}) for g in ("V", "J")}
+    cfg = aa_igh_config(2, 2, 2, max_seq_length=128, has_d=True)
+    meta = {"d_index": {"D0*01": 0, "D1*01": 1}}
+    codons = {aa: codon for codon, aa in CODON_TABLE.items()}
+    sequences = ["ACDEFGHIKLMNPQRSTVWY", "YWVTSRQPNMLKIHGFEDCA"]
+    def row(sequence, index):
+        calls = {g.lower()+"_call": g+str(index)+"*01" for g in ("V", "D", "J")}
+        record = {"sequence": "".join(codons[aa] for aa in sequence), "sequence_aa": sequence,
+                  "productive": True, "junction_start": 24, **calls,
+                  "v_sequence_start": 0, "v_sequence_end": 24,
+                  "d_sequence_start": 24, "d_sequence_end": 48,
+                  "j_sequence_start": 48, "j_sequence_end": 60}
+        return {"aa": sequence, **calls, "d_inverted": False, "record": record}
+    clean = [row(s, i) for i, s in enumerate(sequences)]
+    strata = {name: deepcopy(clean) for name in REQUIRED_STRATA}
+    for item in strata["aa_truncate_50_80"]:
+        item["aa"] = item["aa"][:12]
+        item.pop("record")
+    for item in strata["short_janchor"]:
+        item["aa"] = item["aa"][-8:]
+        item.pop("record")
+    calibration = [row(s[1:]+s[:1], i) for i, s in enumerate(sequences)]
+    cohort = {"by_stratum": strata, "calibration": calibration, "dc_name": "fixture"}
+    return AAAlignAIR(cfg).eval(), cfg, class_maps, meta, cohort
 
 
-def test_build_cohort_fingerprint_is_deterministic():
-    coh_a, fp_a = build_cohort(DC_NAME, n_per_stratum=N_PER_STRATUM, seed=SEED)
-    coh_b, fp_b = build_cohort(DC_NAME, n_per_stratum=N_PER_STRATUM, seed=SEED)
-    assert fp_a == fp_b
-    assert isinstance(fp_a, str) and len(fp_a) == 64          # sha256 hex digest
-
-    for name in REQUIRED_STRATA:
-        assert coh_a["by_stratum"].get(name), f"missing/empty required stratum: {name}"
-    assert coh_a["calibration"], "calibration slice must be non-empty"
-
-    # calibration is disjoint from the "clean" eval rows (no shared record identity)
-    cal_ids = {id(r["record"]) for r in coh_a["calibration"]}
-    clean_ids = {id(r["record"]) for r in coh_a["by_stratum"]["clean"]}
-    assert cal_ids.isdisjoint(clean_ids)
-
-
-def test_build_cohort_fingerprint_changes_with_seed():
-    _, fp_a = build_cohort(DC_NAME, n_per_stratum=N_PER_STRATUM, seed=SEED)
-    _, fp_b = build_cohort(DC_NAME, n_per_stratum=N_PER_STRATUM, seed=SEED + 1)
-    assert fp_a != fp_b
-
-
-def test_build_cohort_strata_are_subset_of_declared_order(cohort):
-    coh, _fp = cohort
-    assert set(coh["by_stratum"].keys()) <= set(STRATA_ORDER)
-
-
-def test_moderate_full_is_its_own_stratum_not_merged_into_clean(cohort):
-    """`clean` must be clean_full-only (matches the frozen baseline/§5 gates); moderate_full
-    (n_indels==0 rows from the moderate_full GenAIRR stratum) is scored SEPARATELY and must never
-    be pooled into `clean`."""
-    coh, _fp = cohort
-    assert "moderate_full" in coh["by_stratum"]
-    assert coh["by_stratum"]["moderate_full"], "moderate_full stratum must be non-empty"
-
-    clean_ids = {id(r["record"]) for r in coh["by_stratum"]["clean"]}
-    moderate_ids = {id(r["record"]) for r in coh["by_stratum"]["moderate_full"]}
-    assert clean_ids.isdisjoint(moderate_ids)
-
-
-def test_evaluate_checkpoint_well_formed(cohort):
-    coh, _fp = cohort
-    model, cfg, class_maps, meta = strategic_setup(DC_NAME, 192)
+def test_evaluate_checkpoint_well_formed(evaluation_inputs):
+    model, cfg, class_maps, meta, coh = evaluation_inputs
     model.eval()
 
     out = evaluate_checkpoint(model, cfg, class_maps, meta, coh, device="cpu")
@@ -102,16 +90,39 @@ def test_evaluate_checkpoint_well_formed(cohort):
     assert set(out["freq_bins"].keys()) == {"v", "j"}
     assert "v" in out["boundary_mae"] and "j" in out["boundary_mae"]
 
-
-def test_evaluate_checkpoint_is_a_pure_function_of_model_and_cohort(cohort):
+def test_evaluate_checkpoint_is_a_pure_function_of_model_and_cohort(evaluation_inputs):
     """Same frozen model + same frozen cohort -> identical metric dict (no hidden randomness)."""
-    coh, _fp = cohort
-    model, cfg, class_maps, meta = strategic_setup(DC_NAME, 192)
+    model, cfg, class_maps, meta, coh = evaluation_inputs
     model.eval()
+    original = deepcopy(coh)
+    weights = deepcopy(model.state_dict())
 
     out_a = evaluate_checkpoint(model, cfg, class_maps, meta, coh, device="cpu")
     out_b = evaluate_checkpoint(model, cfg, class_maps, meta, coh, device="cpu")
 
-    assert out_a["clean_v_acc"] == out_b["clean_v_acc"]
-    assert out_a["clean_j_acc"] == out_b["clean_j_acc"]
-    assert out_a["conformal"]["coverage"] == out_b["conformal"]["coverage"]
+    assert out_a == out_b
+    assert coh == original
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(value, weights[key], rtol=0, atol=0)
+
+
+def test_evaluator_metrics_match_hand_calculated_predictions(evaluation_inputs):
+    _, cfg, maps, meta, cohort = evaluation_inputs
+    class FixedModel(torch.nn.Module):
+        def forward(self, batch):
+            count = len(batch["tokenized_sequence"])
+            result = {f"{g}_class_logits": torch.tensor([[math.log(3), 0.0]]).repeat(count, 1)
+                      for g in ("v", "d", "j")}
+            result.update({name: torch.full((count, 1), value)
+                           for name, value in (("v_start", 0.0), ("v_end", 8.0),
+                                               ("j_start", 16.0), ("j_end", 20.0))})
+            return result
+    result = evaluate_checkpoint(FixedModel(), cfg, maps, meta, cohort)
+    for key in ("clean_v_acc", "clean_j_acc", "v_macro", "j_macro",
+                "d_allele_acc", "d_allele_macro", "d_gene_acc"):
+        assert result[key] == 0.5
+    for gene in ("v", "d", "j"):
+        assert result["nll"][gene] == pytest.approx(-math.log(0.75 * 0.25) / 2)
+        assert result["brier"][gene] == pytest.approx(0.625)
+    assert result["boundary_mae"] == {"v": {"start": 0.0, "end": 0.0},
+                                      "j": {"start": 0.0, "end": 0.0}, "n": 2}

@@ -7,6 +7,8 @@ from alignair.aa.product.validate import (
     normalize_inputs,
 )
 
+pytestmark = pytest.mark.component
+
 
 class TestRecord:
     """Test Record dataclass."""

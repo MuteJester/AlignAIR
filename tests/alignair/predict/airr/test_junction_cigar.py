@@ -5,6 +5,8 @@ from alignair.predict.airr import build_airr
 from alignair.predict.airr.regions import (cigar_has_indel, compute_junction_cigar,
                                            cys_position, map_germline_to_read)
 
+pytestmark = pytest.mark.component
+
 
 def test_cigar_has_indel():
     assert not cigar_has_indel("295M")

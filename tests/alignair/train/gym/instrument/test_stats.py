@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.instrument.stats import bootstrap_ci
+
+pytestmark = pytest.mark.component
 
 
 def test_ci_brackets_mean_and_is_deterministic():

@@ -1,6 +1,6 @@
 """FROZEN blinded checkpoint-selection rule.
 
-Implements §5 of ``docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md`` VERBATIM.
+Implements §5 of ``Notes and Plans/docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md`` VERBATIM.
 This predeclaration was frozen and committed BEFORE any +300k continuation training ran; the
 thresholds below MUST NOT be re-tuned after seeing results. Pure function of metric dicts -- no
 I/O, no model, no randomness.

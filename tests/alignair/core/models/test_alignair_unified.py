@@ -1,5 +1,6 @@
 """The unified AlignAIR model: GeneSpec-driven assembly, GeneBranch/MetaHead blocks, and the
 dataconfig-driven single-vs-multi behavior (1 dataconfig -> single, N -> multi)."""
+import pytest
 import torch
 
 import GenAIRR.data as gd
@@ -7,6 +8,8 @@ import GenAIRR.data as gd
 from alignair.core.config import AlignAIRConfig, GeneSpec
 from alignair.core.model import AlignAIR
 from alignair.core.gene_branch import GeneBranch, MetaHead
+
+pytestmark = pytest.mark.component
 
 
 def test_gene_specs_are_canonical_and_data_driven():

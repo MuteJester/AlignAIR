@@ -1,7 +1,10 @@
+import pytest
 from alignair.train.gym.control.config import GymConfig, GateSpec
 from alignair.train.gym.control.ladder import RankLadder
 from alignair.train.gym.control.gate import PromotionGate
 from alignair.train.gym.control.controller import GymController
+
+pytestmark = pytest.mark.component
 
 
 def _controller(evaluator, n_levels=3):

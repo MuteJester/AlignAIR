@@ -3,12 +3,12 @@
 Maps the per-gene calls onto the AIRR `GenotypeSet`/`Genotype` schema: kept alleles ->
 `documented_alleles`, sufficiently-covered novel candidates -> `undocumented_alleles`, deletion
 candidates -> `deleted_genes`. Counts/coverage/evidence are NOT in the schema (they stay in the
-report). Validation uses the AIRR `airr` package when importable, else the vendored structural schema
-below (local `airr` is not installed). Source: docs.airr-community.org/en/latest/datarep/germline.html.
+report). Validation uses the vendored structural schema below.
+Source: docs.airr-community.org/en/latest/datarep/germline.html.
 """
 from __future__ import annotations
 
-# Vendored structural schema (AIRR Genotype/GenotypeSet) — used when the `airr` package is absent.
+# Vendored structural schema (AIRR Genotype/GenotypeSet).
 _REQUIRED = {
     "GenotypeSet": ["receptor_genotype_set_id", "genotype_class_list"],
     "Genotype": ["receptor_genotype_id", "locus", "documented_alleles", "undocumented_alleles",
@@ -47,14 +47,8 @@ def to_genotype_set(gene_calls, locus: str, *, germline_set_ref=None,
 
 
 def validate(genotype_set: dict) -> list:
-    """AIRR-conformance errors ([] == valid). Prefers the `airr` package, falls back to the vendored
-    structural schema."""
-    errors = _validate_structural(genotype_set)
-    try:                                                       # best-effort: also run the airr package
-        import airr  # noqa: F401  (not installed here; the structural check is authoritative)
-    except Exception:
-        pass
-    return errors
+    """Structural AIRR-conformance errors ([] == valid)."""
+    return _validate_structural(genotype_set)
 
 
 def _validate_structural(gs: dict) -> list:

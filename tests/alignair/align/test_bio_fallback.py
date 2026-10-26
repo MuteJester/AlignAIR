@@ -4,8 +4,11 @@ Covers the two portability defects: (1) get_aligner must probe each optional bac
 return one that only fails at align() time, and (2) with NO optional backend (no pywfa, no parasail
 - e.g. a default Apple Silicon install) it must still return a working aligner via Biopython, which
 is a core dependency."""
+import pytest
 from alignair.align import backend
 from alignair.align.bio import BioAligner, bio_available
+
+pytestmark = pytest.mark.component
 
 
 def test_bio_backend_is_always_available():

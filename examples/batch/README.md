@@ -1,18 +1,29 @@
-# Multiple samples (cohorts)
+# Predict multiple samples
 
-AlignAIR aligns one input at a time; run a cohort by looping `alignair predict` over your samples with
-your workflow engine (Nextflow / Snakemake / Galaxy — see [`../../workflows/`](../../workflows/)) or a
-plain shell loop. Each run writes an AIRR rearrangement TSV plus a `<out>.run.json` provenance sidecar.
+[manifest.tsv](manifest.tsv) has a header and three tab-separated columns:
+`sample_id`, `input`, and optional `metadata`. Input paths are relative to this folder.
+The two rows use the basic reads and the 10x contigs included elsewhere in `examples/`.
+
+Run this Bash block from the repository root:
 
 ```bash
-# one AIRR TSV per sample from a simple sample list (sample_id<TAB>reads_path)
-while IFS=$'\t' read -r sample reads; do
-    alignair predict --model my_model/bundle/model.alignair --input "$reads" --out "results/${sample}.tsv" --quiet
-done < samples.tsv
+set -euo pipefail
+out_dir="${TMPDIR:-/tmp}/alignair-batch-example"
+mkdir -p "$out_dir"
+tail -n +2 examples/batch/manifest.tsv |
+while IFS=$'\t' read -r sample input metadata; do
+    [[ -n "$sample" ]] || continue
+    if [[ -n "$metadata" ]]; then
+        alignair predict --model alignair-igh-human --input "examples/batch/$input" \
+          --metadata "examples/batch/$metadata" --out "$out_dir/${sample}.tsv" --quiet
+    else
+        alignair predict --model alignair-igh-human --input "examples/batch/$input" \
+          --out "$out_dir/${sample}.tsv" --quiet
+    fi
+done
 ```
 
-Per-sample options (`--genotype`, `--metadata` / `--keep-columns`, `--device`, `--rejects-out`) are
-passed on each `predict` call.
-
-> A native `alignair batch` verb (one model load across samples, manifest validation, consolidated
-> provenance) is on the roadmap but not yet implemented — use a workflow engine or the loop above.
+This skips the header, forwards metadata when supplied, and writes one AIRR table and
+run-provenance sidecar per sample under `$out_dir`. Each sample loads the model separately.
+For parallel execution, see the [workflow wrappers](../../workflows/) and
+[integrations guide](https://mutejester.github.io/AlignAIR/#/docs/integrations).

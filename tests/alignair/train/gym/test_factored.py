@@ -1,5 +1,8 @@
+import pytest
 from alignair.train.gym.factored import FactoredCurriculum
 from alignair.train.gym.curriculum import StratifiedCurriculum
+
+pytestmark = pytest.mark.component
 
 
 def _hard_mass(dist):           # prob mass on the hardest two bins of a (value,prob) list

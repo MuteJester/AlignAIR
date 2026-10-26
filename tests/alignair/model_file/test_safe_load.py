@@ -8,6 +8,8 @@ from alignair.core import AlignAIR
 from alignair import model_file as mf
 from alignair.model_file import container as C
 
+pytestmark = pytest.mark.integration
+
 
 def _model():
     cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)

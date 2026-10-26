@@ -2,6 +2,9 @@
 V/D/J germline FASTAs, and export a safe (pickle-free) distributable bundle."""
 from __future__ import annotations
 
+from ..errors import ConfigurationError, report_error
+from ._errors import fail
+
 import json
 import os
 
@@ -44,8 +47,7 @@ def run(args) -> int:
                                         d_fasta=args.d_fasta, j_fasta=args.j_fasta,
                                         chain_type=args.chain_type)
     except ValueError as e:
-        print(str(e))
-        return 1
+        return fail(e, error_type=ConfigurationError, context={"stage": "training_reference"})
 
     from ..aligner import TrainingConfig, run_training
     overrides = {"lr": args.lr, "grad_clip": args.grad_clip, "seed": args.seed}
@@ -69,15 +71,15 @@ def run(args) -> int:
     # fail closed BEFORE spending training time: don't train for minutes/hours only to refuse the export
     bundle_dir = os.path.join(args.out, "bundle")
     if os.path.exists(bundle_dir) and not args.overwrite:
-        print(f"bundle already exists: {bundle_dir}. Refusing to overwrite a possibly-published bundle — "
-              f"choose a new --out or pass --overwrite. (No training was run.)")
-        return 1
+        return report_error(ConfigurationError(
+            f"bundle already exists: {bundle_dir}. Refusing to overwrite a possibly-published bundle — "
+            f"choose a new --out or pass --overwrite. (No training was run.)",
+            context={"path": bundle_dir, "stage": "training_preflight"}))
 
     try:
         run = run_training(cfg, output_dir=args.out)
     except TrainingConfigError as e:
-        print(str(e))
-        return 1
+        return fail(e)
 
     checkpoint = run.best_model_path or run.model_path
     sources = {"v_fasta": args.v_fasta, "d_fasta": args.d_fasta, "j_fasta": args.j_fasta} if args.v_fasta else None

@@ -1,12 +1,15 @@
 """Tests for the FROZEN blinded selection rule (§5 of
-docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md).
+Notes and Plans/docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md).
 
 These synthetic-metric-dict tests pin down the exact gate thresholds, the weakness-objective
 count, both tie-break stages, and the null (incumbent-wins) outcome -- this rule is scientifically
 load-bearing and MUST NOT be re-tuned after the fact, so every clause of §5 gets a dedicated
 assertion here.
 """
+import pytest
 from alignair.aa.convergence.select import select_checkpoint
+
+pytestmark = pytest.mark.component
 
 
 def make_metrics(name, step, **overrides):

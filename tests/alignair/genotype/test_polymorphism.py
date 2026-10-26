@@ -1,6 +1,9 @@
 """Genotype task 3: CIGAR->germline observation + SHM-vs-polymorphism resolution."""
+import pytest
 from alignair.genotype.observe import germline_observations
 from alignair.genotype.polymorphism import polymorphism_profile, resolve
+
+pytestmark = pytest.mark.component
 
 
 class _Gene:

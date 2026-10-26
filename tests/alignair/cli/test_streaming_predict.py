@@ -1,9 +1,12 @@
 """The predict CLI streams reader-chunk -> predict -> assemble -> write in bounded
 memory, preserving order + cross-chunk duplicate-id handling, streaming rejects, and accounting by
 state. Tested with a fake aligner (no model / no torch needed)."""
+import pytest
 import csv
 
 from alignair.cli.predict import _stream_predict
+
+pytestmark = pytest.mark.component
 
 
 class _Result:
@@ -71,6 +74,7 @@ def test_stream_counts_partial_status(tmp_path):
     assert pr == {"missing_calls_or_coordinates": 4}
 
 
+@pytest.mark.performance
 def test_stream_memory_is_bounded(tmp_path):
     """Peak memory scales with chunk_size, not the repertoire: a large payload held for all records
     would dwarf the streamed peak."""
@@ -79,11 +83,13 @@ def test_stream_memory_is_bounded(tmp_path):
     _fasta(tmp_path / "big.fasta", n)
     aligner = _FakeAligner(payload=800)                   # ~0.8 KB/record -> all-held ~32 MB
     tracemalloc.start()
-    counts, _, _ = _stream_predict(
-        aligner, input_path=str(tmp_path / "big.fasta"), out_path=str(tmp_path / "out.tsv"),
-        columns="minimal", chunk_size=1000, seq_column=None, id_column=None, meta_by_id=None,
-        extra_cols=None, out_locus="IGH", overrides={}, batch_size=64, rejects_out=None)
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    try:
+        counts, _, _ = _stream_predict(
+            aligner, input_path=str(tmp_path / "big.fasta"), out_path=str(tmp_path / "out.tsv"),
+            columns="minimal", chunk_size=1000, seq_column=None, id_column=None, meta_by_id=None,
+            extra_cols=None, out_locus="IGH", overrides={}, batch_size=64, rejects_out=None)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
     assert counts["written"] == n
     assert peak < 20_000_000                              # << the ~32 MB an eager (all-records) run needs

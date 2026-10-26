@@ -1,5 +1,8 @@
+import pytest
 import numpy as np
 from alignair.data.encoders import AlleleEncoder, ChainTypeEncoder
+
+pytestmark = pytest.mark.component
 
 
 def test_multi_hot_single():

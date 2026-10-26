@@ -1,6 +1,9 @@
+import pytest
 import torch
 from alignair.train.gym.instrument.band_metrics import (
     top1_recall, topm_union_recall, fail_open_rate, cell_budget)
+
+pytestmark = pytest.mark.component
 
 
 def _two_peaks(Lg=40, a=5, b=25):

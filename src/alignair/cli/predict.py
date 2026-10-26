@@ -12,6 +12,8 @@ import os
 from datetime import datetime, timezone
 
 from ..aligner import Aligner
+from ..errors import AlignAIRError, ConfigurationError, InputError, ModelError, RegistryError, report_error
+from ._errors import fail
 
 
 def register(sub) -> None:
@@ -219,56 +221,49 @@ def run(args) -> int:
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
 
     if args.chunk_size <= 0 or args.batch_size <= 0:
-        print("--chunk-size and --batch-size must be positive")
-        return 1
+        return report_error(ConfigurationError("--chunk-size and --batch-size must be positive"))
     for name, val in (("--max-assembly-failures", args.max_assembly_failures),
                       ("--max-partial-assemblies", args.max_partial_assemblies)):
         if not (0.0 <= val <= 1.0):
-            print(f"{name} must be a fraction in [0, 1] (got {val})")
-            return 1
+            return report_error(ConfigurationError(f"{name} must be a fraction in [0, 1] (got {val})"))
 
     # 1) resolve + load the model ONCE (before reading, so a 1M-read input never sits in memory)
     srcs = _sources.resolve_sources(args.registry)
     try:
         model_path = str(resolve_model(args.model, sources=srcs, offline=args.offline,
                                        token=args.hf_token, revision=args.revision))
-    except Exception as e:
-        print(f"could not resolve model '{args.model}': {e}")
-        return 1
+    except (AlignAIRError, OSError, ValueError) as e:
+        return fail(e, error_type=RegistryError, message=f"could not resolve model '{args.model}'",
+                    context={"model_id": args.model})
     if not container.is_alignair_file(model_path) and not args.dataconfig:
-        print("--dataconfig is required for legacy .pt models")
-        return 1
+        return report_error(ConfigurationError("--dataconfig is required for legacy .pt models"))
     try:  # the CLI is a thin client of the stable Aligner API
         aligner = Aligner.from_pretrained(model_path, device=device, dataconfigs=args.dataconfig,
                                           trust_pickle=args.trust_pickle)
     except ValueError as e:
-        print(str(e))
-        return 1
+        return fail(e, error_type=ModelError, context={"path": model_path})
     reference = aligner.reference
 
     # locus: don't silently default to IGH when the model declares its locus
     loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
     if args.locus and loci and args.locus.upper() not in {l.upper() for l in loci}:
-        print(f"--locus {args.locus} is not one of this model's loci {loci}")
-        return 1
+        return report_error(ConfigurationError(f"--locus {args.locus} is not one of this model's loci {loci}"))
     out_locus = args.locus or (loci[0] if len(loci) == 1 else "IGH")
 
     overrides = {}
     if args.genotype:
         from ..genotype.constraint import load_genotype
         try:                    # fixed-head models cannot call novel alleles -> reject, do not drop
-            genotype = load_genotype(args.genotype, reference=reference, drop_unknown=False)
+            genotype, _unknown = load_genotype(args.genotype, reference=reference, drop_unknown=False)
         except ValueError as e:
-            print(f"invalid genotype: {e}")
-            return 1
+            return fail(e, context={"stage": "genotype_validation"})
         overrides = {"genotype": genotype, "genotype_method": args.genotype_method}
 
     from ..io.sequence_reader import DuplicateMetadataId
     try:
         meta_by_id, extra_cols = _load_metadata_table(args)  # disk-backed join index (bounded lookup)
     except DuplicateMetadataId as e:
-        print(f"metadata error: {e}")
-        return 1
+        return fail(e)
 
     # 2) stream reader-chunk -> predict -> assemble -> join -> write, in bounded memory (~chunk_size)
     from ..io.airr import PredictionCountMismatch
@@ -279,8 +274,7 @@ def run(args) -> int:
             meta_by_id=meta_by_id, extra_cols=extra_cols, out_locus=out_locus, overrides=overrides,
             batch_size=args.batch_size, rejects_out=args.rejects_out)
     except PredictionCountMismatch as e:                  # a defect returned != 1 prediction per read
-        print(f"internal error: {e}. No output written.")
-        return 1
+        return fail(e)
     finally:
         if hasattr(meta_by_id, "close"):                 # release the disk-backed metadata index
             meta_by_id.close()
@@ -289,23 +283,23 @@ def run(args) -> int:
         _write_run_metadata(args.out, model_path, args, device, counts, loci=loci,
                             fail_reasons=fail_reasons, partial_reasons=partial_reasons)
     if counts["accepted"] == 0:
-        print(f"no valid reads in {args.input} (wrote {counts['rejected']} to rejects)")
-        return 1
+        return report_error(InputError(f"no valid reads in {args.input} (wrote {counts['rejected']} to rejects)",
+                                       context={"path": args.input, "rejected_count": counts["rejected"]}))
 
     # 3) assembly gate on the AGGREGATE rate (output is already written + tagged, like the eager path)
     n = counts["written"]
     fail_rate = counts["failed"] / n if n else 0.0
     partial_rate = counts["partial"] / n if n else 0.0
     if not args.permissive and counts["failed"] and fail_rate > args.max_assembly_failures:
-        print(f"AIRR assembly FAILED for {counts['failed']}/{n} reads ({fail_rate:.1%} > "
+        return report_error(InputError(f"AIRR assembly FAILED for {counts['failed']}/{n} reads ({fail_rate:.1%} > "
               f"--max-assembly-failures {args.max_assembly_failures:.1%}); reasons {fail_reasons}. "
-              f"Wrote tagged output to {args.out}. Re-run with --permissive or raise the threshold.")
-        return 1
+              f"Wrote tagged output to {args.out}.",
+              context={"stage": "assembly_quality_gate", "path": args.out, "reasons": fail_reasons}))
     if not args.permissive and counts["partial"] and partial_rate > args.max_partial_assemblies:
-        print(f"AIRR assembly PARTIAL for {counts['partial']}/{n} reads ({partial_rate:.1%} > "
+        return report_error(InputError(f"AIRR assembly PARTIAL for {counts['partial']}/{n} reads ({partial_rate:.1%} > "
               f"--max-partial-assemblies {args.max_partial_assemblies:.1%}); reasons {partial_reasons}. "
-              f"Wrote tagged output to {args.out}. Re-run with --permissive or raise the threshold.")
-        return 1
+              f"Wrote tagged output to {args.out}.",
+              context={"stage": "assembly_quality_gate", "path": args.out, "reasons": partial_reasons}))
 
     msg = f"aligned {counts['accepted']} reads ({counts['rejected']} dropped) -> {args.out}"
     if counts["failed"] or counts["partial"]:

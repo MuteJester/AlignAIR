@@ -5,7 +5,10 @@ output. This is the only piece of ``driver.py`` that is pure-function unit-testa
 end-to-end training->per-checkpoint-eval orchestration is exercised later by the smoke test
 (the driver imports real GenAIRR/torch machinery that isn't worth mocking for this task).
 """
+import pytest
 from alignair.aa.convergence.driver import flatten_row
+
+pytestmark = pytest.mark.component
 
 
 def make_evaluator_output(**overrides) -> dict:

@@ -2,6 +2,8 @@ import pytest
 
 from alignair.aa.phase3.cohort import load_crosswalk, load_hydrated
 
+pytestmark = pytest.mark.component
+
 
 def test_crosswalk_requires_citation(tmp_path):
     p = tmp_path / "x.tsv"

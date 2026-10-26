@@ -1,9 +1,12 @@
 """Unit tests for the faithful PyTorch AlignAIR layers (port of TF Models/Layers/Layers.py)."""
+import pytest
 import torch
 
 from alignair.core.layers import (Conv1DBatchNorm, ConvResidualFeatureExtractionBlock,
                                      SoftCutoutLayer, TokenAndPositionEmbedding, same_pad1d)
 from alignair.nn.weighting import UncertaintyWeight
+
+pytestmark = pytest.mark.component
 
 
 def test_token_pos_embedding_shape_and_additivity():

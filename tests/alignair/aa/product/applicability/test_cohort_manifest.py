@@ -1,11 +1,14 @@
 """Task 1: the Gate-3 cohort manifest is provenance-only, covers every category, and reflects the four
 settled cohort-design decisions (2026-07-24)."""
 from __future__ import annotations
+import pytest
 
 import dataclasses
 
 from alignair.aa.product.applicability.cohort import (
     CategorySpec, CohortEntry, DESCRIPTIVE, load_manifest)
+
+pytestmark = pytest.mark.component
 
 _VALID_STATES = {"supported", "insufficient_evidence", "unknown_ood"}
 

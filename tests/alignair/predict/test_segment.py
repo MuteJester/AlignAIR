@@ -1,7 +1,10 @@
 """Tests for segmentation correction (de-pad, clip, one-directional ordering)."""
+import pytest
 import numpy as np
 
 from alignair.predict.segment import correct_segments
+
+pytestmark = pytest.mark.component
 
 
 def test_floor_clip_and_ordering():

@@ -103,11 +103,9 @@ const benchmarking: Lesson = {
             interval, and a difference whose interval still spans zero is not yet real - you read the point estimate{" "}
             <em>and</em> its interval together.
           </p>
-          <Callout kind="warning" title="The v3.0.0 IgBLAST head-to-head is being re-verified">
-            A quantitative AlignAIR-vs-IgBLAST comparison on this dataset exists, but it does not pin the exact model or
-            IgBLAST version, so it is being re-run against the released model with full provenance before publication.
-            This lesson teaches how to <em>read</em> such a comparison; the verified numbers will land on the Benchmarks
-            page.
+          <Callout kind="note" title="Record comparison provenance">
+            Record the exact model, tool versions, germline reference, input cases, and commands for each comparison.
+            This lesson explains how to read comparison results; its examples do not establish comparative accuracy.
           </Callout>
         </>
       ),

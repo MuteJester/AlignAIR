@@ -16,6 +16,8 @@ from alignair.aa.product.calibration_group import SUPPLIED_WARNING
 from alignair.aa.product.loader import _V2_BUNDLE_PATH, AAPredictor, load_aa_model
 from alignair.model_file import container
 
+pytestmark = pytest.mark.component
+
 _REAL_MODEL_ID = "alignair-aa-igh-human@2.0.0"
 
 # Same two real, full-length VH amino-acid reads used by test_predictor.py.
@@ -44,8 +46,10 @@ def _raw_calibration(gene: str) -> tuple:
 # --------------------------------------------------------------------------------- parity (pooled)
 
 
-@pytest.mark.parametrize("gene", ["V", "J"])
-@pytest.mark.parametrize("seq", [_VH_1, _VH_2], ids=["vh1", "vh2"])
+@pytest.mark.parametrize("gene", ["V", "D", "J"])
+@pytest.mark.parametrize("seq", [
+    _VH_1, _VH_2, _VH_1[15:-15], _VH_2[15:-15], _VH_1[35:85], _VH_2[35:85],
+], ids=["vh1_full", "vh2_full", "vh1_trunc", "vh2_trunc", "vh1_short", "vh2_short"])
 def test_calibrated_class_set_parity_with_research_path_pooled(predictor, gene, seq):
     [result] = predictor.predict([seq])
     product_set = result.segments[gene]["calibrated_class_set"]
@@ -56,6 +60,7 @@ def test_calibrated_class_set_parity_with_research_path_pooled(predictor, gene, 
     research_set = sorted(FrozenConformal(q_pooled, lam=lam, k_reg=k_reg).predict_set(prob_row))
 
     assert product_set == research_set
+    assert result.segments[gene]["top_call"]["class_id"] == int(prob_row.argmax())
     assert result.applied_calibration_group == {"group": "pooled", "source": "pooled_fallback"}
 
 
@@ -69,16 +74,18 @@ def test_calibrated_class_set_pooled_matches_the_predictors_own_conformal_object
 # --------------------------------------------------------------------------------- supplied group
 
 
-def test_supplied_group_full_uses_q_mondrian_full(predictor):
-    [result] = predictor.predict([_VH_1], coverage_group="full")
+@pytest.mark.parametrize("group", ["full", "trunc", "short"])
+def test_supplied_group_uses_its_mondrian_quantile(predictor, group):
+    seq = {"full": _VH_1, "trunc": _VH_1[15:-15], "short": _VH_1[35:85]}[group]
+    [result] = predictor.predict([seq], coverage_group=group)
 
     _q_pooled, q_mondrian, lam, k_reg = _raw_calibration("V")
-    prob_row = class_probs(predictor.model, [_VH_1], predictor.cfg, predictor.device,
+    prob_row = class_probs(predictor.model, [seq], predictor.cfg, predictor.device,
                            "v_class_logits")[0]
-    expected = sorted(FrozenConformal(q_mondrian["full"], lam=lam, k_reg=k_reg).predict_set(prob_row))
+    expected = sorted(FrozenConformal(q_mondrian[group], lam=lam, k_reg=k_reg).predict_set(prob_row))
 
     assert result.segments["V"]["calibrated_class_set"] == expected
-    assert result.applied_calibration_group == {"group": "full", "source": "supplied"}
+    assert result.applied_calibration_group == {"group": group, "source": "supplied"}
     assert SUPPLIED_WARNING in result.warnings
 
 

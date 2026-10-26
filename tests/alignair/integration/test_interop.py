@@ -14,6 +14,8 @@ import pytest
 
 from alignair.io.airr import COLUMNS, write_airr
 
+pytestmark = pytest.mark.integration
+
 airr = pytest.importorskip("airr")
 
 

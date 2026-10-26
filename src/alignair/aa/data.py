@@ -6,6 +6,8 @@ segment coordinates are projected into AA residue boundaries with straddling-cod
 Stop-containing reads are REJECTED, matching the Phase-0 input contract."""
 from __future__ import annotations
 
+from alignair.errors import TrainingError
+
 from collections import Counter
 
 import numpy as np
@@ -18,8 +20,9 @@ REJECT_REASONS = ("not_productive", "no_aa", "no_frame", "stop_codon", "unknown_
                   "no_bounds", "too_long", "empty", "translation_length_mismatch")
 
 
-class SeedBudgetExhausted(RuntimeError):
+class SeedBudgetExhausted(TrainingError):
     """A stream ran out of its allotted seed range before collecting the samples requested."""
+    code = "ALIGNAIR_SEED_BUDGET_EXHAUSTED"
 
 
 _SEG_COLS = {"V": ("v_sequence_start", "v_sequence_end"),

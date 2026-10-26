@@ -8,6 +8,8 @@ from alignair.data.genairr import allele_vocab_from_dataconfig
 from alignair.data.synthetic import SyntheticDataset
 from alignair.data.collate import align_collate
 
+pytestmark = pytest.mark.integration
+
 L = 576
 
 

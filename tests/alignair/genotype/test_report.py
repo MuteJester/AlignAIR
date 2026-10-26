@@ -1,6 +1,9 @@
 """Genotype task 5: explainable report (json + text)."""
+import pytest
 from alignair.genotype.report import build_report, format_report
 from alignair.genotype.zygosity import GeneCall
+
+pytestmark = pytest.mark.component
 
 
 def _gc():

@@ -9,6 +9,8 @@ import pytest
 
 from alignair.aa.product.applicability import canonical
 
+pytestmark = pytest.mark.component
+
 _REC = {"id": "igk_3", "aa": "DIQMTQSPSSLSASVGDRVTITCRASQ", "lineage_key": "study::subj::IGKV1::QQ",
         "category": "igk", "group": "igk_igl", "expected_state": "unknown_ood"}
 
@@ -48,12 +50,14 @@ def test_anchor_prepared_and_transformation_labels():
 
 
 _STORE = ".private/aa-gate3-hydration"
-_FP = "docs/superpowers/artifacts/2026-07-24-aa-gate3/split_fingerprint.json"
+_FP = "Notes and Plans/docs/superpowers/artifacts/2026-07-24-aa-gate3/split_fingerprint.json"
 
 
 @pytest.mark.skipif(not (os.path.exists(os.path.join(_STORE, "dev_cohort.jsonl"))
+                         and os.path.exists(os.path.join(_STORE, "locked_test.jsonl"))
                          and os.path.exists(_FP)),
                     reason="frozen cohort not hydrated in this environment")
+@pytest.mark.local_data
 def test_frozen_record_digest_is_reproducible():
     """Recompute the global canonical digest from the frozen dev+test partitions and assert it matches
     the committed fingerprint — proving the freeze binds the actual evaluation records."""
