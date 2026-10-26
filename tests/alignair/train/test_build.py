@@ -6,6 +6,8 @@ import pytest
 
 from alignair.train.build import build_dataconfigs, training_plan
 
+pytestmark = pytest.mark.integration
+
 _V = "examples/custom_reference/v.fasta"
 _D = "examples/custom_reference/d.fasta"
 _J = "examples/custom_reference/j.fasta"

@@ -1,6 +1,9 @@
+import pytest
 from alignair.train.gym.factored import FactoredCurriculum
 from alignair.train.gym.instrument.lattice import FrozenLattice
 from alignair.train.gym.targeting import TargetedCurriculum
+
+pytestmark = pytest.mark.component
 
 
 def _tc():

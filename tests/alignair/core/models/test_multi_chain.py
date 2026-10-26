@@ -1,9 +1,12 @@
 """Tests for the faithful MultiChain port: SingleChain + a chain_type head/loss term."""
+import pytest
 import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair.core.losses import hierarchical_loss, make_logvars
+
+pytestmark = pytest.mark.component
 
 
 def _cfg(has_d=True, num_chain_types=3):

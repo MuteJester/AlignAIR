@@ -1,8 +1,11 @@
 """Behavior tests for the new diagnostic/validation/reference commands (no model needed)."""
+import pytest
 import argparse
 
 from alignair.cli import doctor, reference, validate_airr as validate_cmd
 from alignair.io.airr_validate import cigar_query_length, validate_airr_file
+
+pytestmark = pytest.mark.integration
 
 
 def _run(register, argv, **defaults):

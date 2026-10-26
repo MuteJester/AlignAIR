@@ -1,6 +1,8 @@
 import pytest
 from alignair.model_file import container as C
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.parametrize("codec", ["none", "zlib"])
 def test_codec_roundtrip(codec):

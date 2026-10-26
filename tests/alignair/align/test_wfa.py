@@ -4,8 +4,7 @@ from alignair.align.parasail import ParasailAligner, parasail_available
 pytest.importorskip("pywfa")
 from alignair.align.wfa import WFAAligner, wfa_available
 
-pytestmark = pytest.mark.skipif(not (wfa_available() and parasail_available()),
-                                reason="pywfa or parasail unavailable")
+pytestmark = [pytest.mark.skipif(not (wfa_available() and parasail_available()), reason='pywfa or parasail unavailable'), pytest.mark.component]
 # (query, target): identity, 5' germline trim, single mismatch, query insertion, germline deletion
 CASES = [("ACGTACGT", "ACGTACGT"), ("ACGTACGT", "GGGACGTACGT"),
          ("ACGTACGT", "ACGTTCGT"), ("ACGTAACGT", "ACGTACGT"), ("ACGTCGT", "ACGTACGT")]

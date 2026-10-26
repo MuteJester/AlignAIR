@@ -1,5 +1,8 @@
+import pytest
 import numpy as np
 from alignair.data.tokenizer import CenterPaddedTokenizer
+
+pytestmark = pytest.mark.component
 
 
 def test_token_vocab():

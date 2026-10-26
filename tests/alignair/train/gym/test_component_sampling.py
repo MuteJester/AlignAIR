@@ -1,5 +1,8 @@
+import pytest
 import numpy as np
 from alignair.train.gym.gym import _pick_params
+
+pytestmark = pytest.mark.component
 
 
 def test_pick_params_respects_weights():

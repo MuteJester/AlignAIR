@@ -7,6 +7,8 @@ from alignair.core import AlignAIR
 from alignair.core.config import AlignAIRConfig
 from alignair.core.losses import make_logvars
 
+pytestmark = pytest.mark.component
+
 
 def _cfg(**kw):
     return AlignAIRConfig(v_allele_count=5, j_allele_count=3, d_allele_count=2, has_d=True,

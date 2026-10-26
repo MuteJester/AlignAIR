@@ -1,10 +1,13 @@
 """Segmentation pad-masking: boundary logits must be restricted to the valid read length so the
 soft-argmax can't be pulled into the right-padding (the short-read coordinate bug)."""
+import pytest
 import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair.core.losses import hierarchical_loss, make_logvars
+
+pytestmark = pytest.mark.component
 
 
 def _cfg():

@@ -8,7 +8,7 @@
   model predicts V/D/J allele calls, segment coordinates, and the junction, and writes standard AIRR
   output. Constrain calls to a donor genotype (a subset of the model's reference), or train a model for
   your own reference / species.<br>
-  <a href="https://hub.docker.com/r/alignair/alignair"><img alt="Docker Hub: alignair/alignair" src="https://img.shields.io/badge/docker-alignair%2Falignair-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://github.com/MuteJester/AlignAIR/pkgs/container/alignair"><img alt="Container: GHCR" src="https://img.shields.io/badge/container-ghcr.io-2496ED?logo=docker&logoColor=white"></a>
   <a href="https://doi.org/10.1093/nar/gkaf651"><img src="https://img.shields.io/badge/DOI-10.1093%2Fnar%2Fgkaf651-blue" alt="DOI"></a>
   <a href="LICENSE"><img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
   <a href="https://mutejester.github.io/AlignAIR/"><img alt="Documentation" src="https://img.shields.io/badge/docs-guides%20%26%20lessons-6d5cf5"></a>
@@ -28,7 +28,7 @@
 - **Donor genotype constraint.** At inference you can restrict calls to a subset of the model's reference (a donor genotype, as YAML or FASTA) with no retraining. Adding alleles, a new species, or a new locus requires training a new compatible model.
 - **Uncertainty-aware.** When a read cannot distinguish alleles (e.g. short fragments), AlignAIR reports a **candidate set** (`*_call_set`) rather than forcing a single call. Optional per-allele confidence calibration is available as a separate step.
 - **AIRR output.** Standard AIRR rearrangement TSV (V/D/J calls, coordinates, junction, productivity) that reads directly into Change-O / Scirpy / Immcantation.
-- **Validated on a frozen, ground-truth benchmark.** AlignAIR is evaluated on a simulated 2,600-case / 13-stratum human-IGH benchmark with known truth (clean, SHM, indels, fragments, arbitrary orientation), scoring V/D/J allele accuracy, segment coordinates, the junction, productivity, and orientation. A verified v3.0.0 head-to-head against IgBLAST, with full model and IgBLAST provenance, is in preparation and will be published with the benchmark. See [benchmarks](https://mutejester.github.io/AlignAIR/#/docs/benchmarks) and [known failure modes](https://mutejester.github.io/AlignAIR/#/docs/known-failure-modes).
+- **Model evaluation.** The CLI provides a model self-check on simulated reads with known truth. The source benchmark harness supports paired tool comparisons, scoring V/D/J allele accuracy, segment coordinates, the junction, productivity, and orientation. See [benchmarks](https://mutejester.github.io/AlignAIR/#/docs/benchmarks) for the evaluation workflows.
 
 ## Install
 
@@ -37,26 +37,26 @@ pip install "AlignAIR[cli]"            # core + CLI (recommended)
 alignair doctor                        # verify Python / PyTorch+CUDA / GenAIRR
 ```
 
-Install extras: `[cli]` (CLI + model download + AIRR validation + parasail), `[train]` (training
-extras), `[all]`. PyTorch is auto-detected for GPU; for a CPU-only install, `pip install torch
+Install extras: `[cli]` (model download + parasail), `[train]` (training extras), `[test]` (pytest +
+official AIRR validation and recipe checks), `[test-research]` (also AA HMM/scorer test tools), `[all]`.
+CSV/TSV reading uses Python's standard library; pandas is not
+required for inference or training. PyTorch is auto-detected for GPU; for a CPU-only install, `pip install torch
 --index-url https://download.pytorch.org/whl/cpu` first.
 
 Or Docker (no local install needed):
 
 ```bash
-docker pull alignair/alignair:latest
-docker run --rm alignair/alignair:latest doctor
+docker pull ghcr.io/mutejester/alignair:latest
+docker run --rm ghcr.io/mutejester/alignair:latest doctor
 
 # align reads: mount an input dir + an output dir, and persist the model cache across runs
 docker run --rm \
   -v "$PWD:/data" -v alignair-cache:/home/appuser/.cache/alignair \
-  alignair/alignair:latest \
+  ghcr.io/mutejester/alignair:latest \
   predict --input /data/reads.fasta --out /data/out.tsv --model alignair-igh-human
 ```
 
-The same image is mirrored at `ghcr.io/mutejester/alignair` (identical tags) if Docker Hub's anonymous
-pull limit is a problem, e.g. on a shared cluster. The default image is CPU-only; pin a version tag
-(`alignair/alignair:3.0.0`) for reproducibility. The
+The default image is CPU-only; pin a version tag (`ghcr.io/mutejester/alignair:3.0.0`) for reproducibility. The
 container runs as a non-root user, so mount a writable output dir (add `--user $(id -u):$(id -g)` if
 your host uid differs). Models are not baked in - the `alignair-cache` volume above keeps a downloaded
 `--model <id>` from being re-fetched on every run. GPU is auto-detected when you run in a CUDA base image.
@@ -151,6 +151,10 @@ alignair validate-airr out.tsv      # structural check: columns, coordinate/CIGA
 | `alignair convert` | convert a legacy checkpoint into a versioned, fingerprinted `.alignair` |
 
 Run `alignair <command> --help` for options.
+
+Runtime errors support `--debug` for chained tracebacks and `--error-format json` for structured
+diagnostics on stderr. Python callers can catch `alignair.errors.AlignAIRError`; see
+[Errors and diagnostics API](https://mutejester.github.io/AlignAIR/#/docs/errors) for exception types and reporting helpers.
 
 ## Documentation
 

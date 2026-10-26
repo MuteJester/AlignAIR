@@ -7,6 +7,8 @@ path, hitting the network only when necessary (never for a pinned, already-cache
 """
 from __future__ import annotations
 
+from alignair.errors import ArtifactIntegrityError, ModelError, RegistryError
+
 import contextlib
 import hashlib
 import os
@@ -15,8 +17,9 @@ from pathlib import Path
 from . import sources
 
 
-class IntegrityError(RuntimeError):
+class IntegrityError(ArtifactIntegrityError):
     """A downloaded artifact failed SHA256 verification."""
+    code = "ALIGNAIR_DOWNLOAD_INTEGRITY"
 
 
 def cache_root() -> Path:
@@ -181,7 +184,10 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
         if expected_sha256 and got != expected_sha256:
             part.unlink(missing_ok=True)
             raise IntegrityError(
-                f"SHA256 mismatch for {relpath}: expected {expected_sha256}, got {got} — refusing to install.")
+                f"SHA256 mismatch for {relpath}: expected {expected_sha256}, got {got} — refusing to install.",
+                context={"stage": "model_download", "source": source, "artifact": relpath,
+                         "path": dest, "expected_sha256": expected_sha256, "actual_sha256": got},
+                hint="Re-download from a trusted source; do not bypass integrity verification.")
         os.replace(part, dest)                                     # atomic
         _write_sidecar(dest, expected_sha256 or got)
     return dest
@@ -221,9 +227,11 @@ def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool 
                 if cached.exists() and _sidecar_ok(cached) is not False:
                     return cached
 
+    lookup_error = None
     try:
         found = _find(model_id, version, srcs, offline)
-    except Exception:
+    except RegistryError as exc:
+        lookup_error = exc
         found = None
 
     if not found:
@@ -233,9 +241,13 @@ def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool 
                 cached = cache_path(model_id, inst[-1])
                 if cached.exists() and _sidecar_ok(cached) is not False:
                     return cached
+        if lookup_error is not None:
+            raise lookup_error
         known = _known_ids(srcs, offline)
         hint = f" Known ids: {', '.join(known)}." if known else ""
-        raise ValueError(f"unknown model '{spec}' — pass a file path or a registry id.{hint}")
+        raise ModelError(f"unknown model '{spec}' — pass a file path or a registry id.{hint}",
+                         context={"stage": "model_resolution", "model_id": model_id, "version": version},
+                         hint="Check the model ID, requested version, and registry configuration.")
     src, ver, entry, _ = found
     dest = cache_path(model_id, ver)
     sha = entry.get("artifact_sha256")

@@ -10,7 +10,8 @@ const workedExample: DocPage = {
     <>
       <p>
         This takes a real public dataset from raw reads to a validated AIRR table, and reads the output
-        honestly - including where it is imperfect. The runnable version, with the bundled merge script, is in{" "}
+        honestly - including where it is imperfect. Download the repository and run from its root. The merge helper
+        and a short command sequence are in{" "}
         <a href="https://github.com/MuteJester/AlignAIR/tree/main/examples/end-to-end" target="_blank" rel="noreferrer">
           examples/end-to-end
         </a>{" "}
@@ -33,7 +34,7 @@ const workedExample: DocPage = {
       <h2>1. Download a subset</h2>
       <p>Stream the first 2000 reads of each mate (no full 1.2 GB download - <code>head</code> stops the transfer early):</p>
       <CodeBlock
-        code={`mkdir -p aa_example && cd aa_example\nB="https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR828/004/SRR8283604"\ncurl -sSL "$B/SRR8283604_1.fastq.gz" | zcat | head -8000 > R1.sub.fastq\ncurl -sSL "$B/SRR8283604_2.fastq.gz" | zcat | head -8000 > R2.sub.fastq\nmd5sum R1.sub.fastq R2.sub.fastq`}
+        code={`REPO_ROOT="$PWD"\nmkdir -p aa_example && cd aa_example\nB="https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR828/004/SRR8283604"\ncurl -sSL "$B/SRR8283604_1.fastq.gz" | zcat | head -8000 > R1.sub.fastq\ncurl -sSL "$B/SRR8283604_2.fastq.gz" | zcat | head -8000 > R2.sub.fastq\nmd5sum R1.sub.fastq R2.sub.fastq`}
       />
       <p>The exact subset has a stable checksum, so anyone reproduces the same bytes:</p>
       <CodeBlock lang="text" code={`f855e9a9488ac446f82d5e9fd8413bbe  R1.sub.fastq\n7cb75441bb2bf3821bd84c41656f00c7  R2.sub.fastq`} />
@@ -52,7 +53,7 @@ const workedExample: DocPage = {
         The reads are 2x250, so a full VDJ amplicon (~350-450 nt) spans both mates. Merge with the bundled
         zero-dependency merger:
       </p>
-      <CodeBlock code={`python3 merge_pairs.py R1.sub.fastq R2.sub.fastq merged.fastq\nmd5sum merged.fastq`} />
+      <CodeBlock code={`python3 "$REPO_ROOT/examples/end-to-end/merge_pairs.py" R1.sub.fastq R2.sub.fastq merged.fastq\nmd5sum merged.fastq`} />
       <CodeBlock lang="text" code={`pairs=2000 merged=1945          # 97% of pairs overlap and merge\n06c7767cbe5718367d84d2fb624353c6  merged.fastq`} />
       <p>The merged reads span the whole rearrangement (the longest reach ~444 nt).</p>
       <Callout kind="note" title="The bundled merger is demonstration preprocessing, not a pipeline">

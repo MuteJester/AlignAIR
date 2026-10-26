@@ -1,6 +1,8 @@
 import pytest
 from alignair.align.backend import AlignResult, get_aligner
 
+pytestmark = pytest.mark.component
+
 
 def test_align_result_fields():
     r = AlignResult(score=16.0, cigar="8M", q_start=0, q_end=8, t_start=0, t_end=8)

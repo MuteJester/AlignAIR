@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.crop import crop_record, FLANK
+
+pytestmark = pytest.mark.component
 
 
 def _rec():

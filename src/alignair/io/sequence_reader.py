@@ -6,6 +6,8 @@ ambiguity codes -> N; a read with >20% non-ACGTN characters is dropped (reported
 """
 from __future__ import annotations
 
+from alignair.errors import InputError
+
 import csv
 import gzip
 import io
@@ -96,12 +98,12 @@ def _metadata_plan(fields, id_column, keep_columns, normalize_10x, path):
     idcol = id_column or next(
         (c for c in fields if c.lower() in ("sequence_id", "contig_id", "cell_id", "id", "name")), None)
     if idcol is None or idcol not in fields:
-        raise ValueError(f"metadata id column {id_column or '(auto)'} not found in {path} "
+        raise InputError(f"metadata id column {id_column or '(auto)'} not found in {path} "
                          f"(columns: {fields})")
     if keep_columns:
         missing = [c for c in keep_columns if c not in fields]
         if missing:
-            raise ValueError(f"--keep-columns not in {path}: {missing} (have {fields})")
+            raise InputError(f"--keep-columns not in {path}: {missing} (have {fields})")
         keep = [c for c in keep_columns if c in fields]
     else:
         keep = [c for c in _META_DEFAULTS if c in fields]
@@ -140,10 +142,11 @@ def load_metadata(path: str, id_column: str | None = None, keep_columns=None, no
     return {rid: row for rid, row in it}, out_cols
 
 
-class DuplicateMetadataId(ValueError):
+class DuplicateMetadataId(InputError):
     """The metadata join key is not unique (an id appears on more than one row), which would make the
     per-read join ambiguous. Raised so the caller can pick a unique --metadata-id-column instead of one
     row silently winning."""
+    code = "ALIGNAIR_DUPLICATE_METADATA_ID"
 
 
 # SQLite caps host parameters per statement (SQLITE_MAX_VARIABLE_NUMBER; historically 999). Stay well
@@ -272,18 +275,18 @@ def _iter_records(fmt: str, lines, head: str, seq_column, id_column, path: str):
                 break
             ln += 1
             if not h.startswith("@"):
-                raise ValueError(f"malformed FASTQ at line {ln}: expected '@' header, "
+                raise InputError(f"malformed FASTQ at line {ln}: expected '@' header, "
                                  f"got {h.rstrip()[:20]!r}")
             s, plus, q = next(it, ""), next(it, ""), next(it, "")
             if not q:
-                raise ValueError(f"malformed FASTQ: truncated record starting at line {ln} "
+                raise InputError(f"malformed FASTQ: truncated record starting at line {ln} "
                                  f"(a record needs 4 lines)")
             if not plus.startswith("+"):
-                raise ValueError(f"malformed FASTQ at line {ln + 2}: expected '+' separator, "
+                raise InputError(f"malformed FASTQ at line {ln + 2}: expected '+' separator, "
                                  f"got {plus.rstrip()[:20]!r}")
             seq, qual = s.rstrip("\n"), q.rstrip("\n")
             if len(seq) != len(qual):
-                raise ValueError(f"malformed FASTQ at line {ln + 3}: sequence length {len(seq)} "
+                raise InputError(f"malformed FASTQ at line {ln + 3}: sequence length {len(seq)} "
                                  f"!= quality length {len(qual)}")
             ln += 3
             tok = h.rstrip("\n")[1:].split()
@@ -294,16 +297,16 @@ def _iter_records(fmt: str, lines, head: str, seq_column, id_column, path: str):
         fields = reader.fieldnames or []
         if seq_column is not None:
             if seq_column not in fields:
-                raise ValueError(f"sequence column '{seq_column}' not in {path} (have {fields})")
+                raise InputError(f"sequence column '{seq_column}' not in {path} (have {fields})")
             col = seq_column
         else:
             col = next((c for c in fields if c.lower() in _SEQ_COLS), None)
         if col is None:
-            raise ValueError(f"no sequence column in {path}; expected one of {_SEQ_COLS} "
+            raise InputError(f"no sequence column in {path}; expected one of {_SEQ_COLS} "
                              f"or pass --sequence-column")
         if id_column is not None:
             if id_column not in fields:
-                raise ValueError(f"id column '{id_column}' not in {path} (have {fields})")
+                raise InputError(f"id column '{id_column}' not in {path} (have {fields})")
             idcol = id_column
         else:
             idcol = next((c for c in fields if c.lower() in ("sequence_id", "id", "name")), None)

@@ -1,9 +1,12 @@
 """Multi-chain predict wiring: chain_type_logits -> chain_type index -> AIRR locus."""
+import pytest
 import numpy as np
 
 from alignair.predict.clean import clean
 from alignair.predict.pipeline import _to_records
 from alignair.predict.state import GeneCall, GermlineAlignment, Predictions
+
+pytestmark = pytest.mark.component
 
 
 def test_clean_populates_chain_type_from_logits():

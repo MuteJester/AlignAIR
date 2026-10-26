@@ -5,6 +5,8 @@ import pytest
 
 from alignair.registry import sources
 
+pytestmark = pytest.mark.integration
+
 
 def test_resolve_precedence_cli_env_config_default(tmp_path, monkeypatch):
     monkeypatch.delenv("ALIGNAIR_REGISTRY", raising=False)

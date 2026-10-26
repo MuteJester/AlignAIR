@@ -1,5 +1,8 @@
+import pytest
 from alignair.train.gym.control.config import GateSpec
 from alignair.train.gym.control.gate import PromotionGate
+
+pytestmark = pytest.mark.component
 
 
 def _gate():

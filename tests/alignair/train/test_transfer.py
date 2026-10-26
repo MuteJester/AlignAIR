@@ -1,8 +1,11 @@
 """Backbone transfer: shape-matched partial weight load."""
+import pytest
 import torch
 import torch.nn as nn
 
 from alignair.train.transfer import summarize, transfer_compatible_weights
+
+pytestmark = pytest.mark.integration
 
 
 class _Net(nn.Module):

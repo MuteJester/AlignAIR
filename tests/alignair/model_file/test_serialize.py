@@ -1,8 +1,11 @@
+import pytest
 import torch
 import GenAIRR.data as gd
 from alignair.core.config import AlignAIRConfig
 from alignair.reference.reference_set import ReferenceSet
 from alignair.model_file import serialize as S
+
+pytestmark = pytest.mark.integration
 
 
 def test_config_roundtrip_full_fields():

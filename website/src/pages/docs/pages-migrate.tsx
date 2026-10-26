@@ -12,7 +12,7 @@ const migrating: DocPage = {
         IgBLAST with <code>-outfmt 19</code> and <code>alignair predict</code> both emit the AIRR-C rearrangement
         schema, so a downstream reader (Change-O, Immcantation, Scirpy, nf-core/airrflow) written for one reads the
         other. What changes is how you invoke it, how the reference travels, and a handful of AlignAIR extensions. The
-        runnable version of this page lives in{" "}
+        short invocation using the included sample reads is in{" "}
         <a href="https://github.com/MuteJester/AlignAIR/tree/main/examples/igblast-migration" target="_blank" rel="noreferrer">
           examples/igblast-migration
         </a>{" "}

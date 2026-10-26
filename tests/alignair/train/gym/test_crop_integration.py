@@ -11,12 +11,17 @@ import GenAIRR.data as gdata
 from alignair.reference.reference_set import ReferenceSet
 from alignair.train.gym.gym import AlignAIRGym, build_experiment
 
+pytestmark = pytest.mark.integration
+
 
 def _valid_bundle(b, has_d):
     n = len(b["tokens"])
     assert (b["region_labels"] >= 0).all() and len(b["region_labels"]) == n
     genes = ["v", "j"] + (["d"] if has_d else [])
     for g in genes:
+        if g not in b["inseq"]:
+            assert g not in b["germline"]
+            continue
         gs, ge = b["germline"][g]
         ss, ee = b["inseq"][g]
         assert 0 <= gs <= ge, (g, gs, ge)

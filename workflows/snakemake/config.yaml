@@ -4,4 +4,4 @@ samplesheet: "../samplesheet.csv"      # columns: sample_id, input [, genotype]
 model: "PLEASE_SET_A_MODEL"            # bundle dir / .pt checkpoint / catalog id / HF repo id
 outdir: "results"
 device: "cpu"
-container: "docker://alignair/alignair:3.0.0"
+container: "docker://thomask90/alignair:latest"

@@ -1,0 +1,43 @@
+name: Model acceptance
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the model acceptance environment
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install ".[cli,test-research]"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/validation-models
+          key: validation-models-${{ hashFiles('tests/fixtures/models/validation.json') }}
+      - name: Fetch and verify the pinned public fixtures
+        run: python -m tests.support.model_artifacts --cache "$RUNNER_TEMP/validation-models"
+      - name: Require scientific gates and every named release claim to pass
+        run: |
+          python -m pytest tests -q -m "model_validation or acceptance or claim_evidence" \
+            --model-cache="$RUNNER_TEMP/validation-models" --enforce-claims \
+            --claim-report=test-results/model-claims.json --junitxml=test-results/model-junit.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: model-acceptance-results
+          path: test-results/

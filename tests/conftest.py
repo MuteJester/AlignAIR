@@ -1,8 +1,22 @@
-import sys
+"""Shared paths for fixtures used across package and packaging tests."""
 from pathlib import Path
 
-# Ensure src is on sys.path when running from repo root or driver
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SRC = REPO_ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+import pytest
+
+pytest_plugins = (
+    "pytester",
+    "tests.support.environment",
+    "tests.support.policy",
+    "tests.support.model_artifacts",
+)
+
+
+@pytest.fixture(scope="session")
+def repo_root(pytestconfig) -> Path:
+    return pytestconfig.rootpath
+
+
+@pytest.fixture(scope="session")
+def training_csv(repo_root) -> Path:
+    """The retained IGH CSV also tests real allele-vocabulary cardinalities."""
+    return repo_root / "tests" / "fixtures" / "training" / "sample_igh.csv"

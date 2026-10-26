@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
+from multiprocessing import get_context
 from time import perf_counter
 from typing import Any, Iterator
 
@@ -477,7 +478,7 @@ def _candidate_cases_parallel(
     if not active_strata:
         return
     max_workers = min(workers, len(active_strata))
-    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+    with ProcessPoolExecutor(max_workers=max_workers, mp_context=get_context("spawn")) as pool:
         while generated < max_candidates:
             tasks = [
                 (spec, s_idx, stratum, round_idx, reference_set)

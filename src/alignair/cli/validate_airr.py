@@ -5,6 +5,8 @@ can gate a pipeline or a release. See :mod:`alignair.io.airr_validate`.
 """
 from __future__ import annotations
 
+from ..errors import InputError, report_error
+
 
 def register(sub) -> None:
     p = sub.add_parser("validate-airr", help="validate an AIRR TSV (columns + coordinate/CIGAR bounds)")
@@ -17,15 +19,14 @@ def run(args) -> int:
     from ..io.airr_validate import validate_airr_file
     report = validate_airr_file(args.input)
     if report["missing_columns"]:
-        print(f"INVALID: {args.input} is missing required AIRR columns: {report['missing_columns']}")
-        return 1
+        return report_error(InputError(
+            f"INVALID: {args.input} is missing required AIRR columns: {report['missing_columns']}",
+            context={"path": args.input, "missing_columns": report["missing_columns"]}))
     errors = report["errors"]
     if not errors:
         print(f"OK: {args.input} — {report['n_rows']} rows, no coordinate/CIGAR violations")
         return 0
-    print(f"INVALID: {args.input} — {len(errors)} violation(s) across {report['n_rows']} rows:")
-    for sid, msg in errors[: args.max_show]:
-        print(f"  {sid}: {msg}")
-    if len(errors) > args.max_show:
-        print(f"  ... and {len(errors) - args.max_show} more")
-    return 1
+    return report_error(InputError(
+        f"INVALID: {args.input} — {len(errors)} violation(s) across {report['n_rows']} rows",
+        context={"path": args.input, "error_count": len(errors),
+                 "examples": [{"record_id": sid, "detail": msg} for sid, msg in errors[:args.max_show]]}))

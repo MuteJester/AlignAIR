@@ -4,6 +4,8 @@ genairr = pytest.importorskip("GenAIRR")
 import GenAIRR.data as gdata
 from alignair.reference.reference_set import ReferenceSet
 
+pytestmark = pytest.mark.component
+
 
 def test_build_from_igh():
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)

@@ -8,6 +8,8 @@ from alignair.predict.airr.builder import AirrAssemblyError
 from alignair.predict.airr.alignment import build_sequence_alignment
 from alignair.predict.airr.regions import compute_junction
 
+pytestmark = pytest.mark.component
+
 
 class _FakeRef:
     """Minimal reference stub for status/error-handling tests (no germline math needed)."""

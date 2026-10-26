@@ -31,15 +31,15 @@ const gettingStarted: DocPage = {
           ["Linux / Windows, CPU only", <>install CPU torch first (see below)</>, <code>pip install "AlignAIR[cli]"</code>, "CPU"],
           ["macOS, Apple Silicon", <>default <code>pip</code> wheel</>, <code>pip install "AlignAIR[cli]"</code>, "MPS (auto)"],
           ["macOS, Intel", <>default <code>pip</code> wheel</>, <code>pip install "AlignAIR[cli]"</code>, "CPU"],
-          ["Docker (CPU)", "included in the image", <code>docker pull alignair/alignair:latest</code>, "CPU"],
+          ["Docker (CPU)", "included in the image", <code>docker pull ghcr.io/mutejester/alignair:latest</code>, "CPU"],
         ]}
       />
       <p>For a CPU-only environment, install CPU torch first:</p>
       <CodeBlock code={`pip install torch --index-url https://download.pytorch.org/whl/cpu`} />
       <p>
         On Windows use PowerShell and quote the extra. For Docker, pin a version tag for reproducibility (for example{" "}
-        <code>alignair/alignair:3.0.0</code>) rather than only <code>latest</code>; the default image is CPU-only. The same
-        image is mirrored at <code>ghcr.io/mutejester/alignair</code> if Docker Hub's anonymous pull limit is a problem.
+        <code>ghcr.io/mutejester/alignair:3.0.0</code> once released) rather than only <code>latest</code>; the default image is
+        CPU-only.
       </p>
       <p>Verify the install on any platform:</p>
       <CodeBlock code={`alignair doctor        # Python, PyTorch + CUDA/MPS, GenAIRR, parasail\nalignair demo          # offline end-to-end trial (no download)`} />

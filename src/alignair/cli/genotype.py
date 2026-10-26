@@ -6,6 +6,9 @@ alignment run.
 """
 from __future__ import annotations
 
+from ..errors import AlignAIRError, InputError, ModelError, RegistryError, report_error
+from ._errors import fail
+
 import json
 
 
@@ -38,20 +41,18 @@ def run(args) -> int:
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     _, seqs, stats = read_sequences(args.input)
     if not seqs:
-        print(f"no valid reads in {args.input}")
-        return 1
+        return report_error(InputError(f"no valid reads in {args.input}", context={"path": args.input}))
     try:
         model_path = str(resolve_model(args.model, sources=_sources.resolve_sources(args.registry),
                                        offline=args.offline))
-    except Exception as e:
-        print(f"could not resolve model '{args.model}': {e}")
-        return 1
+    except (AlignAIRError, OSError, ValueError) as e:
+        return fail(e, error_type=RegistryError, message=f"could not resolve model '{args.model}'",
+                    context={"model_id": args.model})
     try:
         model, reference = load_model(model_path, dataconfigs=args.dataconfig, device=device,
                                       trust_pickle=args.trust_pickle)
     except ValueError as e:
-        print(str(e))
-        return 1
+        return fail(e, error_type=ModelError, context={"path": model_path})
 
     result = infer_genotype(model, reference, seqs, locus=args.locus, min_support=args.min_support,
                             germline_set_ref=args.germline_set_ref, device=device, batch_size=args.batch_size)

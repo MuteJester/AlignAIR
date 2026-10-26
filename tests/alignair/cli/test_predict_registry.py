@@ -12,6 +12,8 @@ from alignair.core import AlignAIR
 from alignair.core.config import AlignAIRConfig
 from alignair.reference.reference_set import ReferenceSet
 
+pytestmark = pytest.mark.integration
+
 
 def _run(argv):
     args = build_parser().parse_args(argv)

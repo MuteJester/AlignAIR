@@ -1,10 +1,13 @@
 """Orientation: head from shared embeddings + in-model correct-and-re-embed."""
+import pytest
 import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core.layers import EmbeddingOrientationHead
 from alignair.core import AlignAIR
 from alignair.nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+
+pytestmark = pytest.mark.component
 
 
 def test_orientation_head_shape_and_order_sensitivity():

@@ -28,7 +28,8 @@ class AlignAIR(nn.Module):
         C = cfg.embed_dim
 
         self.embedding = TokenAndPositionEmbedding(cfg.vocab_size, C, cfg.max_seq_length)
-        self.orientation_head = EmbeddingOrientationHead(C)
+        # in-model orientation is nucleotide-only (reverse-complement); off for amino-acid models
+        self.orientation_head = EmbeddingOrientationHead(C) if getattr(cfg, "use_orientation", True) else None
         self.meta_tower = build_tower(cfg, _SEG_KERNELS)
         self.branches = nn.ModuleDict({s.name: GeneBranch(s, cfg) for s in cfg.gene_specs})
         self.meta_heads = nn.ModuleDict(self._build_meta_heads(cfg))
@@ -55,13 +56,16 @@ class AlignAIR(nn.Module):
 
         # orientation: predict from the shared initial embeddings, correct the input via an
         # involution transform, then re-embed the canonicalized read for the rest of the model.
-        emb0 = self.embedding(tokens)
-        orient_logits = self.orientation_head(emb0, mask)
-        out["orientation_logits"] = orient_logits
-        out["orientation"] = orient_logits.argmax(-1)
-        correct = (batch["orientation"] if "orientation" in batch   # teacher-forced during training
-                   else orient_logits.argmax(-1).detach())          # self-corrected at inference
-        emb = self.embedding(apply_orientation(tokens, mask, correct))
+        # Disabled (orientation_head is None) for amino-acid models: reverse-complement is undefined
+        # for protein and the complement table is nucleotide-only.
+        emb = emb0 = self.embedding(tokens)
+        if self.orientation_head is not None:
+            orient_logits = self.orientation_head(emb0, mask)
+            out["orientation_logits"] = orient_logits
+            out["orientation"] = orient_logits.argmax(-1)
+            correct = (batch["orientation"] if "orientation" in batch   # teacher-forced during training
+                       else orient_logits.argmax(-1).detach())          # self-corrected at inference
+            emb = self.embedding(apply_orientation(tokens, mask, correct))
 
         meta = self.meta_tower(emb)
         out["position_mask"] = mask                            # valid read positions (for pad-masked seg loss)

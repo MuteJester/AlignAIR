@@ -5,6 +5,8 @@ import pytest
 
 from alignair.genotype.benchmark import recovery
 
+pytestmark = pytest.mark.integration
+
 
 def test_recovery_precision_recall_and_zygosity():
     # truth uses IGHV1-2*01/*02 (het), IGHJ4*02 (homo); inferred adds a wrong allele + misses J

@@ -1,8 +1,11 @@
 """AIRR fields are semantically correct — `productive` is a DERIVED fact (not the neural
 prediction), advertised per-segment identities are populated, and the validator enforces the
 productivity cross-field invariant."""
+import pytest
 from alignair.predict.airr import quality
 from alignair.io.airr_validate import validate_airr_file
+
+pytestmark = pytest.mark.component
 
 
 def test_airr_productive_is_derived_from_frame_and_stop():

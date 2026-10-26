@@ -8,6 +8,8 @@ import pytest
 
 from alignair.io.airr import AirrWriter, COLUMN_PRESETS, COLUMNS, needs_assembly, resolve_columns, write_airr
 
+pytestmark = pytest.mark.component
+
 
 def _read_rows(path):
     with open(path) as f:

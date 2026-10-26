@@ -34,7 +34,7 @@ rule predict:
             if SAMPLES[wc.sample].get("genotype") else ""
         ),
     container:
-        config.get("container", "docker://alignair/alignair:3.0.0")
+        config.get("container", "docker://thomask90/alignair:latest")
     log:
         config["outdir"] + "/logs/{sample}.log",
     shell:

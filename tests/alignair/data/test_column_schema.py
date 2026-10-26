@@ -1,4 +1,7 @@
+import pytest
 from alignair.data.column_schema import ColumnSet
+
+pytestmark = pytest.mark.component
 
 
 def test_no_d_columns():

@@ -7,8 +7,10 @@ import pytest
 
 from alignair.cli.main import build_parser
 
+pytestmark = pytest.mark.component
+
 # The contract surface. Every command here is referenced by a maintained wrapper (README / ci.yml /
-# Dockerfile / scripts/release_smoke.sh). Add here only alongside the wrapper that uses it.
+# Dockerfile / tests/packaging/release_smoke.sh). Add here only alongside the wrapper that uses it.
 CONTRACT_COMMANDS = {
     "predict", "train", "demo", "doctor", "info", "models", "model", "reference",
     "export-reference", "convert", "validate-airr", "compare", "analyze", "benchmark", "genotype",
@@ -47,6 +49,6 @@ def test_reference_subcommands_parse(sub):
 
 
 def test_release_smoke_commands_are_all_in_the_contract():
-    """The exact verbs scripts/release_smoke.sh invokes must all be contract commands."""
+    """The exact verbs tests/packaging/release_smoke.sh invokes must all be contract commands."""
     for cmd in ("doctor", "demo", "validate-airr", "compare"):
         assert cmd in CONTRACT_COMMANDS

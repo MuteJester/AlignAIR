@@ -1,9 +1,12 @@
+import pytest
 import GenAIRR.data as gd
 import torch
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair.reference.reference_set import ReferenceSet
 from alignair import model_file as mf
+
+pytestmark = pytest.mark.integration
 
 
 def _fresh_model():

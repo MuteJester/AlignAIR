@@ -5,6 +5,8 @@ import pytest
 from alignair.io.sequence_reader import read_sequences, validate, validate_sequence
 from alignair.predict.pipeline import apply_input_policy
 
+pytestmark = pytest.mark.component
+
 
 def test_validate_sequence_reasons():
     assert validate_sequence("")[1] == "empty"

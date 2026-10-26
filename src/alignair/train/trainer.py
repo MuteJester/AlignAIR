@@ -17,6 +17,7 @@ import torch
 import torch.nn.functional as F
 
 from ..core.config import AlignAIRConfig
+from ..errors import error_context
 from .gym import build_experiment, build_targets, gym_collate
 from ..nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 
@@ -29,7 +30,10 @@ def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu"
     4) to each read's tokens and supplies the label — the model learns to detect and self-correct it,
     while the segmentation/allele targets stay in the forward frame (correction re-canonicalizes).
     """
-    bundles = [build_targets(r, reference_set, cfg.has_d) for r in records]
+    bundles = []
+    for index, record in enumerate(records):
+        with error_context(record_index=index):
+            bundles.append(build_targets(record, reference_set, cfg.has_d))
     b = gym_collate(bundles, reference_set, cfg.has_d)
     L = cfg.max_seq_length
     tok = b["tokens"]
@@ -48,6 +52,7 @@ def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu"
         targets[f"{g}_start"] = b[f"{g}_start"].float().unsqueeze(-1).to(device)
         targets[f"{g}_end"] = b[f"{g}_end"].float().unsqueeze(-1).to(device)
         targets[f"{g}_allele"] = b[f"{g}_allele"].to(device)
+        targets[f"{g}_supervise"] = b[f"{g}_supervise"].to(device)
     for k in ("mutation_rate", "indel_count", "productive"):
         targets[k] = b[k].to(device)
     targets["orientation"] = orient.to(device)
@@ -77,8 +82,9 @@ def train_step(model, batch_in, targets, cfg, logvars, opt, *, step: int = 0, gr
     # clipping/stepping — otherwise the step corrupts the weights. clip_grad_norm_ itself
     # turns an inf grad into NaN, so this check must precede it.
     if not all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()):
-        raise NonFiniteLossError(f"non-finite gradient at step {step} (loss was finite: {float(total):.3g}). "
-                                 f"Lower the learning rate or add gradient clipping (--grad-clip).")
+        raise NonFiniteLossError(f"non-finite gradient at step {step} (loss was finite: {float(total.detach()):.3g}). "
+                                 f"Lower the learning rate or add gradient clipping (--grad-clip).",
+                                 context={"stage": "training_gradient", "step": step, "total": float(total.detach())})
     # grads are now finite: measure the norm (inf clip = measure-only) or clip to `grad_clip`
     grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(),
                                                      grad_clip if grad_clip is not None else float("inf")))
@@ -328,14 +334,18 @@ def validate(model, val_batches, cfg) -> tuple[dict, float]:
 def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     """Per-task quality on a batch (AlignAIR heads) — the ModelXRay ``task_eval`` for this model
     family: allele top-1-in-set, segmentation MAE, orientation accuracy, mutation/indel MAE,
-    productivity accuracy."""
+    productivity accuracy. Gene metrics omit rows without supervision; a gene with
+    no supervised rows is omitted rather than reported as a fabricated zero."""
     m = {}
     for g in ["v", "j"] + (["d"] if cfg.has_d else []):
         top1 = out[f"{g}_allele"].argmax(-1)
+        visible = targets.get(f"{g}_supervise", torch.ones_like(top1, dtype=torch.bool)).bool()
+        if not visible.any():
+            continue
         in_set = targets[f"{g}_allele"].gather(1, top1.unsqueeze(1)).squeeze(1)
-        m[f"{g}_allele_top1"] = float((in_set > 0.5).float().mean())
+        m[f"{g}_allele_top1"] = float((in_set[visible] > 0.5).float().mean())
         m[f"{g}_seg_mae"] = sum(
-            float((out[f"{g}_{b}"].squeeze(-1) - targets[f"{g}_{b}"].squeeze(-1)).abs().mean())
+            float((out[f"{g}_{b}"].squeeze(-1) - targets[f"{g}_{b}"].squeeze(-1))[visible].abs().mean())
             for b in ("start", "end")) / 2
     if "orientation_logits" in out and "orientation" in targets:
         m["orientation_acc"] = float((out["orientation_logits"].argmax(-1)
@@ -461,7 +471,8 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
             vr = list(itertools.islice(vstream, batch_size))
             if len(vr) < batch_size:
                 break
-            val_set.append(build_batch(vr, reference_set, cfg, device, augment_orientation=False))
+            with error_context(stage="training_validation", validation_batch=len(val_set)):
+                val_set.append(build_batch(vr, reference_set, cfg, device, augment_orientation=False))
     best_score = float("-inf")
 
     completed = start                              # the last step actually run (a short/early
@@ -471,9 +482,10 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
         if len(records) < batch_size:
             break
         completed = step
-        batch_in, targets = build_batch(records, reference_set, cfg, device)
-        total, parts, grad_norm = train_step(model, batch_in, targets, cfg, logvars, opt,
-                                             step=step, grad_clip=grad_clip)
+        with error_context(stage="training", step=step):
+            batch_in, targets = build_batch(records, reference_set, cfg, device)
+            total, parts, grad_norm = train_step(model, batch_in, targets, cfg, logvars, opt,
+                                                 step=step, grad_clip=grad_clip)
         if step % log_every == 0:
             line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
                     + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))

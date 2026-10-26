@@ -7,6 +7,8 @@ import pytest
 
 from alignair.registry import cache, updates
 
+pytestmark = pytest.mark.integration
+
 
 def _registry(tmp_path, latest="2.1.0"):
     d = tmp_path / "registry"
@@ -61,7 +63,10 @@ def test_no_notice_when_up_to_date(tmp_path, monkeypatch):
     assert s.getvalue() == ""
 
 
-def test_unreachable_registry_is_silent(env):
+def test_unreachable_registry_is_silent(env, monkeypatch):
+    def unreachable(source, **kwargs):
+        raise OSError("registry unavailable")
+    monkeypatch.setattr(updates.sources, "load_registry", unreachable)
     s = io.StringIO()
     assert updates.maybe_notify_updates(sources_list=["hf://unreachable/x"], stream=s) == []
     assert s.getvalue() == ""

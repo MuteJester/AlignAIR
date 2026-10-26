@@ -1,9 +1,12 @@
 """Tests for the faithful hierarchical multi-task loss (proper-Kendall weighting)."""
 import torch
+import pytest
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core.losses import hierarchical_loss, make_logvars, soft_gaussian_target
 from alignair.core import AlignAIR
+
+pytestmark = pytest.mark.component
 
 
 def test_soft_gaussian_target_normalized():
@@ -38,3 +41,38 @@ def test_hierarchical_loss_assembles_and_backprops():
     total.backward()
     assert any(p.grad is not None for p in m.parameters())
     assert any(uw.log_var.grad is not None for uw in logvars.values())   # Kendall params learn
+
+
+@pytest.mark.parametrize("gene", ["v", "d", "j"])
+def test_absent_gene_predictions_do_not_contribute_to_loss(gene):
+    cfg = AlignAIRConfig(max_seq_length=256, v_allele_count=3, d_allele_count=3,
+                         j_allele_count=3, has_d=True)
+    model = AlignAIR(cfg).eval()
+    out = model({"tokenized_sequence": torch.ones(2, 256, dtype=torch.long)})
+    targets = _targets(2, cfg)
+    targets[f"{gene}_supervise"] = torch.tensor([True, False])
+    logvars = make_logvars(cfg)
+    original, _ = hierarchical_loss(out, targets, cfg, logvars)
+    changed = {key: value.clone() for key, value in out.items()}
+    changed[f"{gene}_start"][1] = 200
+    changed[f"{gene}_end"][1] = 1
+    changed[f"{gene}_start_logits"][1] = torch.arange(256, dtype=torch.float32)
+    changed[f"{gene}_end_logits"][1] = -torch.arange(256, dtype=torch.float32)
+    changed[f"{gene}_allele"][1] = torch.tensor([0.99, 0.001, 0.001])
+    other, _ = hierarchical_loss(changed, targets, cfg, logvars)
+    torch.testing.assert_close(original, other)
+
+
+def test_completely_absent_gene_has_zero_uncertainty_gradient():
+    cfg = AlignAIRConfig(max_seq_length=256, v_allele_count=3, d_allele_count=3,
+                         j_allele_count=3, has_d=True)
+    model = AlignAIR(cfg)
+    out = model({"tokenized_sequence": torch.ones(2, 256, dtype=torch.long)})
+    targets = _targets(2, cfg)
+    targets["j_supervise"] = torch.zeros(2, dtype=torch.bool)
+    logvars = make_logvars(cfg)
+    total, _ = hierarchical_loss(out, targets, cfg, logvars)
+    assert torch.isfinite(total)
+    total.backward()
+    for key in ("j_start", "j_end", "j_classification"):
+        assert logvars[key].log_var.grad.item() == 0

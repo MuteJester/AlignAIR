@@ -1,5 +1,8 @@
+import pytest
 from alignair.train.gym.control.state import AxisStat
 from alignair.train.gym.control.exam import bucket_axis, axis_breakdown
+
+pytestmark = pytest.mark.component
 
 
 def _recs():

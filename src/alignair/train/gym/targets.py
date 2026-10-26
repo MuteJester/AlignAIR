@@ -2,9 +2,12 @@
 plus the ReferenceSet germline sequences (forward-orientation frame)."""
 import numpy as np
 
+from ...errors import AlignAIRError, TrainingDataError, error_context
+
 from ...data.tokenizer import TOKEN_DICT
 from ...nn.heads.region import REGION_INDEX
 from ...nn.heads.state import STATE_INDEX
+from .coordinates import segment_spans
 
 _GENES = ("v", "d", "j")
 
@@ -66,12 +69,21 @@ def _label_segment_states(state, seq, ss, gref, gs, cigar):
 
 
 def build_targets(record: dict, reference_set, has_d: bool) -> dict:
+    with error_context(stage="build_targets", record_id=record.get("sequence_id")):
+        try:
+            return _build_targets(record, reference_set, has_d)
+        except (KeyError, TypeError, ValueError) as exc:
+            if isinstance(exc, AlignAIRError):
+                raise
+            raise TrainingDataError("Training record does not satisfy the target schema.",
+                                    context={"field": exc.args[0] if isinstance(exc, KeyError) else None},
+                                    hint="Check simulator annotations and training-record coordinate fields.") from exc
+
+
+def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
     seq = str(record["sequence"]).upper()
     L = len(seq)
-    coords = {g: (int(record[f"{g}_sequence_start"]), int(record[f"{g}_sequence_end"]))
-              for g in _GENES if record.get(f"{g}_sequence_start") is not None}
-    germ = {g: (int(record[f"{g}_germline_start"]), int(record[f"{g}_germline_end"]))
-            for g in _GENES if record.get(f"{g}_germline_start") is not None}
+    coords, germ = segment_spans(record)
 
     # ---- region labels (presence-aware: one-sided/adaptive crops can drop V and/or D) ----
     region = np.full(L, REGION_INDEX["pre"], dtype=np.int64)

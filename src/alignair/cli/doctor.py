@@ -10,7 +10,7 @@ import platform
 import sys
 
 _CRITICAL = ("torch", "numpy")
-_OPTIONAL = ("pandas", "GenAIRR", "safetensors", "zstandard", "huggingface_hub", "parasail")
+_OPTIONAL = ("GenAIRR", "safetensors", "zstandard", "huggingface_hub", "parasail")
 
 
 def register(sub) -> None:

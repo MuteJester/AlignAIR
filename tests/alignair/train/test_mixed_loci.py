@@ -18,6 +18,8 @@ from alignair.train.gym import Curriculum, build_experiment
 from alignair.train.trainer import (_amplicon_specs, _cap_for, _dc_name, _effective_mutation_caps,
                                     _is_tcr)
 
+pytestmark = pytest.mark.integration
+
 _IGH = gd.HUMAN_IGH_OGRDB
 _TRA = gd.HUMAN_TCRA_IMGT
 _TRB = gd.HUMAN_TCRB_IMGT

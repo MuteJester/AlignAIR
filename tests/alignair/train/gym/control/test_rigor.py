@@ -1,5 +1,8 @@
+import pytest
 from alignair.train.gym.control.rigor import (
     mann_kendall_trend, HardenedCeiling, RegressionGuard)
+
+pytestmark = pytest.mark.component
 
 
 def test_trend_up_down_flat():

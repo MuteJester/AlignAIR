@@ -1,0 +1,8 @@
+# Direct dependencies for the AA-guard build/comparator toolchain.
+# Compile to a hash-pinned lock with:
+#   python -m piptools compile --generate-hashes \
+#       --output-file requirements/aa-guard-build.lock requirements/aa-guard-build.in
+# (If pip-tools is unavailable, regenerate aa-guard-build.lock via
+#  `pip download` + `pip hash` as documented in that file's header.)
+pyhmmer==0.12.1
+anarcii==2.0.8

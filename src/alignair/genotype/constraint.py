@@ -19,6 +19,8 @@ Methods (see the module tests for the guarantees):
 """
 from __future__ import annotations
 
+from alignair.errors import InputError
+
 import numpy as np
 
 from ..predict.state import Predictions
@@ -26,11 +28,12 @@ from ..predict.state import Predictions
 METHODS = ("mask", "softmax", "renormalize", "redistribute")
 
 
-class NovelAlleleUnsupportedError(ValueError):
+class NovelAlleleUnsupportedError(InputError):
     """A genotype (or supplied reference) names an allele the model was not trained on. A fixed-head
     model's classification indices are tied to its trained allele catalog, so it cannot call a novel
     allele at inference — retrain/fine-tune to add alleles. Subclasses ``ValueError`` so existing
     ``except ValueError`` handlers keep working while the type documents the fixed-reference contract."""
+    code = "ALIGNAIR_NOVEL_ALLELE_UNSUPPORTED"
 
 
 def genotype_allowed_mask(genotype: dict, reference, genes=None) -> dict:
@@ -59,7 +62,7 @@ def genotype_allowed_mask(genotype: dict, reference, genes=None) -> dict:
 
 def adjust_for_genotype(preds: Predictions, genotype: dict, reference, method: str = "renormalize") -> Predictions:
     if method not in METHODS:
-        raise ValueError(f"unknown genotype method {method!r}; choose from {METHODS}")
+        raise InputError(f"unknown genotype method {method!r}; choose from {METHODS}")
     masks = genotype_allowed_mask(genotype, reference, genes=set(preds.allele))   # validates non-empty
     for gene, allowed in genotype.items():
         if gene.lower() not in preds.allele:

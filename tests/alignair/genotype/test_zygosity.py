@@ -1,5 +1,8 @@
 """Genotype task 4: evidence-gated zygosity / CNV decision + pruning."""
+import pytest
 from alignair.genotype.zygosity import call_gene
+
+pytestmark = pytest.mark.component
 
 
 def test_prune_leakage_sibling_without_evidence():

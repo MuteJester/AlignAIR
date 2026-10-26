@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.control.plateau import PlateauDetector
+
+pytestmark = pytest.mark.component
 
 
 def test_improving_never_plateaus():

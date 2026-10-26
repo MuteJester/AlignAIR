@@ -1,21 +1,21 @@
+import pytest
 import torch
 from torch.utils.data import DataLoader
 from alignair.data.dataset import AlignAIRDataset, allele_vocab_from_csv
 from alignair.data.collate import align_collate
 
-CSV = "tests/data/test/sample_igh.csv"
+pytestmark = pytest.mark.component
 
-
-def test_vocab_from_csv_has_short_d_last():
-    vocab = allele_vocab_from_csv(CSV, has_d=True)
+def test_vocab_from_csv_has_short_d_last(training_csv):
+    vocab = allele_vocab_from_csv(training_csv, has_d=True)
     assert vocab["D"][-1] == "Short-D"
     assert len(vocab["V"]) == 198 and len(vocab["J"]) == 7
     # 34 unique D tokens in the CSV already include 'Short-D' (33 real + Short-D).
     assert len(vocab["D"]) == 34
 
 
-def test_dataset_item_shapes():
-    ds = AlignAIRDataset(CSV, max_seq_length=576, has_d=True, nrows=8)
+def test_dataset_item_shapes(training_csv):
+    ds = AlignAIRDataset(training_csv, max_seq_length=576, has_d=True, nrows=8)
     x, y = ds[0]
     assert x["tokenized_sequence"].shape == (576,)
     assert y["v_start"].shape == (1,)
@@ -26,8 +26,8 @@ def test_dataset_item_shapes():
                              "mutation_rate", "indel_count", "productive"}
 
 
-def test_dataset_dataloader_batches():
-    ds = AlignAIRDataset(CSV, max_seq_length=576, has_d=True, nrows=8)
+def test_dataset_dataloader_batches(training_csv):
+    ds = AlignAIRDataset(training_csv, max_seq_length=576, has_d=True, nrows=8)
     dl = DataLoader(ds, batch_size=4, collate_fn=align_collate)
     x, y = next(iter(dl))
     assert x["tokenized_sequence"].shape == (4, 576)

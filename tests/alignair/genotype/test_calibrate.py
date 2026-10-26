@@ -1,6 +1,8 @@
 """Genotype: threshold calibration harness."""
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.slow
 def test_calibrate_returns_best_params_and_results():

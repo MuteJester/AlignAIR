@@ -11,7 +11,7 @@ params.device      = "cpu"
 
 process ALIGNAIR_PREDICT {
     tag "${sample_id}"
-    container "alignair/alignair:3.0.0"
+    container "thomask90/alignair:latest"
     publishDir "${params.outdir}", mode: "copy"
     cpus 4
 

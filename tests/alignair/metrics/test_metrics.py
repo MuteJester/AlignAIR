@@ -1,9 +1,12 @@
+import pytest
 import torch
 from alignair.metrics.accumulator import MeanAccumulator
 from alignair.metrics.boundary import BoundaryMetrics
 from alignair.metrics.entropy import AlleleEntropy
 from alignair.metrics.allele_auc import MultiLabelAUC
 from alignair.metrics.average_last_label import AverageLastLabel
+
+pytestmark = pytest.mark.component
 
 
 def test_mean_accumulator():

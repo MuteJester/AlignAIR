@@ -8,5 +8,4 @@
 # This is not an end-user lock file. Normal dependency resolution is exercised by
 # CI's wheel release smoke and again by the tagged PyPI release pipeline.
 numpy==2.2.6
-pandas==2.2.3
 scipy==1.15.3

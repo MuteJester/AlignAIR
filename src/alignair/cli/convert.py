@@ -13,6 +13,7 @@ from ..api import _remap_state_dict
 from ..core import AlignAIR
 from ..core.config import AlignAIRConfig
 from ..model_file import container
+from ..errors import ConfigurationError, report_error
 
 
 def register(sub) -> None:
@@ -40,8 +41,8 @@ def _convert_legacy_alignair(src, dst) -> int:
 
 def _convert_pt(src, dst, dataconfig) -> int:
     if not dataconfig:
-        print("--dataconfig is required to convert a legacy .pt (the reference the model was trained on)")
-        return 1
+        return report_error(ConfigurationError(
+            "--dataconfig is required to convert a legacy .pt (the reference the model was trained on)"))
     ck = torch.load(src, map_location="cpu", weights_only=False)   # pickle (trusted via --trust-pickle)
     cfg = AlignAIRConfig(**ck["config"])
     model = AlignAIR(cfg)
@@ -53,9 +54,9 @@ def _convert_pt(src, dst, dataconfig) -> int:
 
 def run(args) -> int:
     if not args.trust_pickle:
-        print("converting reads pickle (torch.load for .pt, or the embedded dataconfig for a legacy "
-              ".alignair). Pass --trust-pickle only for a source you trust.")
-        return 1
+        return report_error(ConfigurationError(
+            "converting reads pickle (torch.load for .pt, or the embedded dataconfig for a legacy "
+            ".alignair). Pass --trust-pickle only for a source you trust."))
     is_alignair = container.is_alignair_file(args.src)
     rc = _convert_legacy_alignair(args.src, args.dst) if is_alignair \
         else _convert_pt(args.src, args.dst, args.dataconfig)

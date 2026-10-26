@@ -1,76 +1,32 @@
 # AlignAIR examples
 
-Tiny, self-contained data for a first run.
+Sample inputs and short commands for the workflows documented on the
+[AlignAIR website](https://mutejester.github.io/AlignAIR/#/docs/getting-started).
+Run commands from the repository root unless an example says otherwise.
 
-| File | What it is |
+| Example | Included files |
 | --- | --- |
-| `reads.fasta` | 8 simulated human IGH reads (FASTA header notes the true V allele) |
-| `donor_genotype.yaml` | a small "donor" genotype (a subset of the human IGH reference) |
-| `10x/` | a 10x Genomics (Cell Ranger) BCR workflow: contig FASTA + `filtered_contig_annotations.csv`, with per-cell metadata carried into the AIRR output — see [`10x/README.md`](10x/README.md) |
-| `airr/` | a bulk AIRR/TSV input with a separate sample-metadata table joined onto the output — see [`airr/README.md`](airr/README.md) |
-| `batch/` | running a cohort by looping `alignair predict` (per-sample AIRR TSV) — see [`batch/README.md`](batch/README.md) |
-| `novel_allele/` | a donor genotype (a subset of the model's reference) — see [`novel_allele/README.md`](novel_allele/README.md) |
-| `custom_reference/` | germline V/D/J FASTAs to **train on your own reference / species** (`alignair train --v-fasta ...`) — see [`custom_reference/README.md`](custom_reference/README.md) |
-| `compare/` | two tiny AIRR TSVs for `alignair compare` (AlignAIR vs IgBLAST, with set-rescue) — see [`compare/README.md`](compare/README.md) |
+| [Basic prediction](reads.fasta) | Eight simulated human IGH reads |
+| [Donor genotype](donor_genotype/) | Two allele subsets for genotype-constrained prediction |
+| [10x metadata](10x/) | Four IGH contigs and matching Cell Ranger-style annotations |
+| [AIRR input](airr/) | A sequence table and sample metadata |
+| [Multiple samples](batch/) | A two-sample manifest and a Bash loop |
+| [Custom reference](custom_reference/) | V, D, and J germline FASTAs |
+| [Tool agreement](compare/) | Two small, hand-written AIRR tables |
+| [Real-data walkthrough](end-to-end/) | A demonstration paired-read merger |
+| [IgBLAST migration](igblast-migration/) | An invocation using the included reads |
 
-## Gallery by scenario
-
-| Scenario | Where |
-| --- | --- |
-| First run, offline | `alignair demo` |
-| Single-sample IGH predict | [`reads.fasta`](reads.fasta) |
-| Donor genotype (subset) | [`donor_genotype.yaml`](donor_genotype.yaml) |
-| Novel allele | [`novel_allele/`](novel_allele/) |
-| Light chain (IGK/IGL) / TCR | train or predict with the matching reference, e.g. `--dataconfig HUMAN_IGK_OGRDB` / `HUMAN_TCRB_IMGT` (`alignair reference list`) — same commands, different reference |
-| Custom reference / species | [`custom_reference/`](custom_reference/) |
-| Single-cell 10x BCR/TCR | [`10x/`](10x/) |
-| Bulk + sample metadata | [`airr/`](airr/) |
-| Cohort (many samples) | [`batch/`](batch/) |
-| Tool comparison | [`compare/`](compare/) |
-
-## Run
-
-The fastest way to see everything work (no model needed — it trains a tiny one offline):
+## First run
 
 ```bash
-alignair doctor      # environment check
-alignair demo        # tiny train -> predict -> validate AIRR -> donor genotype
-```
-
-To run on these example reads with a pretrained model (downloaded on first use, no login), or with
-your own trained model:
-
-```bash
-# pretrained (human IGH / IGK+IGL / TRB — see `alignair models list`)
+alignair doctor
 alignair predict --input examples/reads.fasta --out out.tsv --model alignair-igh-human
-
-# or train your own, then align against the model's default (full) reference
-alignair train --dataconfig HUMAN_IGH_OGRDB --out my_model --preset desktop
-alignair predict --input examples/reads.fasta --out out.tsv --model my_model/bundle/model.alignair
-
-# constrain to a donor genotype (a subset of the model's reference)
-alignair predict --input examples/reads.fasta --out out_donor.tsv \
-  --model alignair-igh-human --genotype examples/donor_genotype.yaml
 ```
 
-The output is an AIRR rearrangement TSV (V/D/J calls + coordinates + junction + a per-gene
-candidate-set column `*_call_set`). A genotype file may be YAML or FASTA, and may contain a subset
-of the trained reference's alleles — calls are then restricted to those alleles.
+The model is downloaded on first use. For an offline trial with a tiny model trained
+locally, run `alignair demo`.
 
-## Run with Docker
-
-Mount your reads, your model, and a writable output directory. Add `--user $(id -u):$(id -g)`
-so output files are owned by you (the image runs as a non-root user):
-
-```bash
-docker run --rm \
-  --user $(id -u):$(id -g) \
-  -v "$PWD/examples:/data:ro" \
-  -v "/path/to/models:/models:ro" \
-  -v "$PWD/out:/out" \
-  alignair/alignair:latest \
-  predict --input /data/reads.fasta --out /out/result.tsv --model /models/<model.alignair>
-```
-
-Add `--genotype /data/donor_genotype.yaml` to constrain to a donor subset. For GPU, add
-`--gpus all` and `--device cuda` (requires a CUDA-enabled image/host).
+See [installation](https://mutejester.github.io/AlignAIR/#/docs/getting-started),
+[models](https://mutejester.github.io/AlignAIR/#/docs/models), and the
+[CLI reference](https://mutejester.github.io/AlignAIR/#/docs/cli) for full options,
+Docker commands, and output semantics.

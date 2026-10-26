@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.control.state import GateStatus, AxisStat, GymState, composite_score
+
+pytestmark = pytest.mark.component
 
 
 def test_gatestatus_open_and_fraction_higher():

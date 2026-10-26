@@ -3,6 +3,8 @@ import numpy as np
 import pytest
 import torch
 
+pytestmark = pytest.mark.component
+
 
 @pytest.mark.slow
 def test_predict_end_to_end_contract():

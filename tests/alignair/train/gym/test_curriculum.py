@@ -1,4 +1,7 @@
+import pytest
 from alignair.train.gym.curriculum import Curriculum
+
+pytestmark = pytest.mark.component
 
 
 def test_curriculum_ramps_and_describes():

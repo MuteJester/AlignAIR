@@ -1,0 +1,8 @@
+{
+  "qhat": 0.6,
+  "cases": [
+    {"probs": [0.5, 0.3, 0.2], "expected_set": [0, 1]},
+    {"probs": [0.7, 0.2, 0.1], "expected_set": [0]},
+    {"probs": [0.2, 0.5, 0.3], "expected_set": [1, 2]}
+  ]
+}

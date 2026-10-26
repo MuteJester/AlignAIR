@@ -1,7 +1,10 @@
 """Genotype task 2: repertoire alignment + weighted usage aggregation."""
+import pytest
 import numpy as np
 
 from alignair.genotype.aggregate import AlignedRepertoire, weighted_usage
+
+pytestmark = pytest.mark.component
 
 
 def _stub():

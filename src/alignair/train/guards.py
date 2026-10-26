@@ -3,17 +3,21 @@ non-finite loss/gradients with a diagnostic, and bound gradient norms — so a r
 on a bad config or a diverging optimizer instead of silently producing a broken model."""
 from __future__ import annotations
 
+from alignair.errors import ConfigurationError, NumericalError, TrainingError
+
 import math
 
 
-class TrainingConfigError(ValueError):
+class TrainingConfigError(ConfigurationError, TrainingError):
     """A training request is invalid (bad hyperparameters / config / reference). Raised *before* the
     full model is allocated so misuse fails fast with an actionable message."""
+    code = "ALIGNAIR_TRAINING_CONFIG"
 
 
-class NonFiniteLossError(RuntimeError):
+class NonFiniteLossError(TrainingError, NumericalError):
     """Loss or a gradient became NaN/Inf — training is aborted with a per-task diagnostic rather than
     continuing to corrupt the weights."""
+    code = "ALIGNAIR_TRAINING_NONFINITE"
 
 
 def validate_training_request(*, steps, batch_size, lr, max_seq_length, reference, progresses=(0.3,),
@@ -39,16 +43,20 @@ def validate_training_request(*, steps, batch_size, lr, max_seq_length, referenc
                                       and math.isfinite(grad_clip)):
         problems.append(f"grad_clip must be a positive finite number or None (got {grad_clip!r})")
     # reference must be non-empty for the genes the model will train (V and J are always required)
+    reference_error = None
     try:
         n_v = len(reference.gene("V"))
         n_j = len(reference.gene("J"))
     except Exception as e:                              # noqa: BLE001 - any malformed reference
+        reference_error = e
         problems.append(f"reference is unusable: {e}")
     else:
         if n_v == 0 or n_j == 0:
             problems.append(f"reference has empty V ({n_v}) or J ({n_j}) allele set")
     if problems:
-        raise TrainingConfigError("invalid training request:\n  - " + "\n  - ".join(problems))
+        raise TrainingConfigError("invalid training request:\n  - " + "\n  - ".join(problems),
+                                  context={"stage": "training_preflight", "problems": problems},
+                                  hint="Correct the listed configuration problems before starting training.") from reference_error
 
 
 def check_finite_loss(step: int, total: float, parts: dict) -> None:
@@ -58,4 +66,6 @@ def check_finite_loss(step: int, total: float, parts: dict) -> None:
     diag = ", ".join(f"{k}={v:.3g}" for k, v in parts.items())
     raise NonFiniteLossError(f"non-finite loss {total!r} at step {step}; per-task: {diag}. "
                              f"Lower the learning rate, add gradient clipping (--grad-clip), or check "
-                             f"the data/targets.")
+                             f"the data/targets.", context={"stage": "training_loss", "step": step,
+                                                           "total": total, "parts": parts},
+                             hint="Lower the learning rate or check the training data and targets.")

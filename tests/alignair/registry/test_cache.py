@@ -7,6 +7,8 @@ import pytest
 
 from alignair.registry import cache
 
+pytestmark = pytest.mark.integration
+
 
 def _registry(tmp_path, payload=b"ALIGNAIR-ARTIFACT" * 2000):
     d = tmp_path / "registry"
@@ -84,7 +86,7 @@ def test_pinned_cache_tampered_file_is_not_returned(monkeypatch, tmp_path):
     dest.parent.mkdir(parents=True)
     dest.write_bytes(b"TAMPERED-OR-CORRUPTED-BYTES")
     cache._write_sidecar(dest, hashlib.sha256(b"the-original-artifact").hexdigest())   # != file
-    with pytest.raises(ValueError, match="unknown"):     # offline + integrity fail -> clean error
+    with pytest.raises(cache.sources.OfflineError, match="offline"):
         cache.resolve_model("human-igh@2.1.0", sources=["hf://unreachable/x"], offline=True)
 
 

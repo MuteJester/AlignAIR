@@ -1,11 +1,14 @@
 """Tests for allele-set selection. The default is the derived, calibration-free ``absolute`` rule
 (p >= 0.5, the BCE-calibrated decision boundary); ``largest_gap`` is a parameter-free alternative;
 ``max_likelihood_percentage`` is the legacy relative-to-max rule kept for comparison."""
+import pytest
 import numpy as np
 
 from alignair.predict.threshold import (absolute_threshold, largest_gap,
                                          max_likelihood_percentage, select_alleles)
 from alignair.predict.state import GeneCall
+
+pytestmark = pytest.mark.component
 
 
 def test_absolute_keeps_calibrated_members_only():

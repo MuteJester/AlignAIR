@@ -10,7 +10,7 @@ import subprocess
 import sys
 from typing import Optional
 
-_DEFAULT_PACKAGES = ("torch", "GenAIRR", "numpy", "pandas", "airr", "parasail", "huggingface-hub")
+_DEFAULT_PACKAGES = ("torch", "GenAIRR", "numpy", "airr", "parasail", "huggingface-hub")
 
 
 def alignair_version() -> str:

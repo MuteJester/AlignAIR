@@ -1,6 +1,9 @@
 """`alignair analyze` — repertoire + QC + AIRR validation of a predict TSV."""
+import pytest
 from alignair.analyze import analyze_file, analyze_rows, format_text, validate_airr
 from alignair.io.airr import write_airr
+
+pytestmark = pytest.mark.component
 
 
 def _records():

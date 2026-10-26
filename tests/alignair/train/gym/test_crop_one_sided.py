@@ -4,6 +4,8 @@ import GenAIRR.data as gdata
 from alignair.train.gym.gym import build_experiment
 from alignair.train.gym.crop import crop_one_sided, anchor_c0
 
+pytestmark = pytest.mark.integration
+
 
 def _clean_record(seed=1):
     exp = build_experiment(gdata.HUMAN_IGH_OGRDB, dict(

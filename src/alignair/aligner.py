@@ -17,6 +17,8 @@ training subpackage — a top-level ``train`` name would collide with it.)
 """
 from __future__ import annotations
 
+from .errors import ConfigurationError, MissingDependencyError, ModelError
+
 from dataclasses import dataclass, field, replace
 from typing import Iterator, Optional, Sequence
 
@@ -123,12 +125,12 @@ class Aligner:
         (dataconfig / train_state) and must not be published — export a pickle-free inference artifact
         first."""
         if not self.model_path:
-            raise ValueError("needs an aligner loaded from a file (model_path is unset)")
+            raise ModelError("needs an aligner loaded from a file (model_path is unset)")
         from .model_file import read_metadata
         secs = read_metadata(self.model_path).get("sections", {})
         pickle_secs = [k for k in secs if str(k).startswith("dataconfig/") or k == "train_state"]
         if pickle_secs:
-            raise ValueError(
+            raise ModelError(
                 f"{self.model_path} is a resumable checkpoint with pickle sections {pickle_secs}; it is "
                 f"not distributable. Export a pickle-free inference artifact first "
                 f"(`alignair convert <in> <out>` / save with include_trusted_pickle=False).")
@@ -153,7 +155,7 @@ class Aligner:
         try:
             from huggingface_hub import HfApi
         except ImportError as e:                    # pragma: no cover - optional dep
-            raise ImportError("push_to_hub needs 'huggingface_hub' (`pip install alignair[hub]`)") from e
+            raise MissingDependencyError("push_to_hub needs 'huggingface_hub' (`pip install alignair[hub]`)") from e
         api = HfApi(token=token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
         if create:
             api.create_repo(repo_id, private=private, exist_ok=True, repo_type="model")
@@ -231,7 +233,7 @@ class TrainingConfig:
     @classmethod
     def from_genairr(cls, *dataconfigs: str, preset: str | None = None, **overrides) -> "TrainingConfig":
         if preset is not None and preset not in _PRESETS:
-            raise ValueError(f"unknown preset {preset!r}; choose from {sorted(_PRESETS)}")
+            raise ConfigurationError(f"unknown preset {preset!r}; choose from {sorted(_PRESETS)}")
         base = dict(_PRESETS.get(preset, {}))
         base.update(overrides)
         return cls(dataconfigs=tuple(dataconfigs), **base)
@@ -267,7 +269,7 @@ def run_training(config: TrainingConfig, *, output_dir: str | None = None,
     from .train.trainer import train as _train
 
     if not (output_dir or out_path):
-        raise ValueError("pass output_dir=... or out_path=...")
+        raise ConfigurationError("pass output_dir=... or out_path=...")
     path = out_path or os.path.join(output_dir, "model.alignair")
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)

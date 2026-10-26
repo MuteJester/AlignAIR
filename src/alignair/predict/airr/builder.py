@@ -6,6 +6,8 @@ Per-record ``try/except`` isolates edge cases (fall back to a bare row).
 """
 from __future__ import annotations
 
+from alignair.errors import InferenceError
+
 from . import quality
 from .alignment import (build_germline_alignment, build_sequence_alignment,
                         compute_alignment_positions, compute_np_regions,
@@ -18,15 +20,17 @@ from .regions import cigar_has_indel, compute_junction, compute_junction_cigar, 
 _EXPECTED_ASSEMBLY_ERRORS = (ValueError, IndexError, KeyError)
 
 
-class AirrAssemblyError(Exception):
+class AirrAssemblyError(InferenceError):
     """AIRR assembly failed for one record. Carries the record identifier and the originating error so
     an unexpected (non-data) failure surfaces with context instead of silently dropping AIRR fields."""
+    code = "ALIGNAIR_AIRR_ASSEMBLY_FAILED"
 
     def __init__(self, ident, original):
         self.ident = ident
         self.original = original
         super().__init__(f"AIRR assembly failed for {ident}: "
-                         f"{type(original).__name__}: {original}")
+                         f"{type(original).__name__}: {original}",
+                         context={"stage": "airr_assembly", "record_id": ident})
 
 
 def _germline_maps(reference):
@@ -169,7 +173,7 @@ def build_airr(records: list, reference, chain: str = "heavy", strict: bool = Fa
     locus_hasd = {l.locus: l.has_d for l in getattr(reference, "loci", [])}
     out = []                                                     # junction -> use the read-coordinate path
     for i, rec in enumerate(records):
-        ident = rec.get("sequence_id") or f"record[{i}] {str(rec.get('sequence', ''))[:24]!r}"
+        ident = rec.get("sequence_id") or f"record[{i}]"
         rec_chain = ("heavy" if locus_hasd[rec["locus"]] else "light") if rec.get("locus") in locus_hasd \
             else chain
         try:

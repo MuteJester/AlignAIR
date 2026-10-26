@@ -1,6 +1,9 @@
+import pytest
 import numpy as np
 import torch
 from alignair.data.collate import align_collate
+
+pytestmark = pytest.mark.component
 
 
 def test_collate_stacks_contract():

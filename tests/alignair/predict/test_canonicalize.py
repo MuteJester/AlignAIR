@@ -1,6 +1,9 @@
 """Orientation canonicalization: re-applying the predicted transform recovers the forward frame
 (the transforms are involutions), so coords/germline/AIRR all operate on one consistent sequence."""
+import pytest
 from alignair.predict.pipeline import _canonicalize
+
+pytestmark = pytest.mark.component
 
 _COMP = str.maketrans("ACGTN", "TGCAN")
 

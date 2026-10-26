@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 
 import GenAIRR.data as gd
 
+from ..errors import ModelError, ModelIntegrityError
+
 from ..core import AlignAIR
 from ..core.config import AlignAIRConfig
 from ..reference.reference_set import ReferenceSet
@@ -201,11 +203,11 @@ def _verify_reference_integrity(reference, md) -> None:
     ref_md = md.get("reference", {})
     order = ref_md.get("allele_order_sha256")
     if order and serialize.allele_order_sha256(reference) != order:
-        raise ValueError("allele_order_sha256 mismatch: the embedded reference order does not match "
+        raise ModelIntegrityError("allele_order_sha256 mismatch: the embedded reference order does not match "
                          "the model card; allele calls would be misaligned to the model head.")
     fasta = ref_md.get("reference_fasta_sha256")
     if fasta and serialize.reference_fasta_sha256(reference) != fasta:
-        raise ValueError("reference_fasta_sha256 mismatch: the embedded reference differs from the card.")
+        raise ModelIntegrityError("reference_fasta_sha256 mismatch: the embedded reference differs from the card.")
 
 
 def _rebuild(path, device, *, trust_pickle=False):
@@ -221,7 +223,7 @@ def _rebuild(path, device, *, trust_pickle=False):
         dcs = [serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{i}")) for i in range(n)]
         reference = ReferenceSet.from_dataconfigs(*dcs)
     else:
-        raise ValueError(
+        raise ModelError(
             "this .alignair has no safe `reference_json` section (it predates the safe format). "
             "Upgrade it: `alignair convert <old>.alignair <new>.alignair --trust-pickle`, or pass "
             "trust_pickle=True for a local file you trust (it will unpickle the embedded dataconfig).")
@@ -250,7 +252,7 @@ class TrainingState:
 def load_training_state(path, *, device="cpu") -> TrainingState:
     md, cfg, model, reference = _rebuild(path, device, trust_pickle=True)   # resume is a trusted flow
     if "train_state" not in md["sections"]:
-        raise ValueError("no train_state section; this model file cannot resume training")
+        raise ModelError("no train_state section; this model file cannot resume training")
     st = serialize.train_state_from_bytes(container.read_section(path, "train_state"))
     logvars_state = (serialize.state_dict_from_bytes(container.read_section(path, "logvars"))
                      if "logvars" in md["sections"] else None)

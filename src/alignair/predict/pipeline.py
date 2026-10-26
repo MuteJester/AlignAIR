@@ -6,6 +6,8 @@ assembly (sequence_alignment, junction, regions, quality).
 """
 from __future__ import annotations
 
+from ..errors import InputError, NumericalError
+
 import numpy as np
 
 from .clean import clean
@@ -25,7 +27,8 @@ def _assert_finite(allele: dict, stage: str) -> None:
     NaN'd probability would otherwise propagate into calls/confidence."""
     for g, a in allele.items():
         if not np.all(np.isfinite(a)):
-            raise ValueError(f"non-finite allele probabilities after {stage} (gene {g!r})")
+            raise NumericalError(f"non-finite allele probabilities after {stage} (gene {g!r})",
+                                 context={"stage": stage, "gene": g, "field": "allele_probabilities"})
 
 
 def _validate_predictions(preds, stage: str = "model forward") -> None:
@@ -35,11 +38,12 @@ def _validate_predictions(preds, stage: str = "model forward") -> None:
     for name, d in (("start", preds.start), ("end", preds.end)):
         for g, a in d.items():
             if not np.all(np.isfinite(a)):
-                raise ValueError(f"non-finite {name} coordinates after {stage} (gene {g!r})")
+                raise NumericalError(f"non-finite {name} coordinates after {stage} (gene {g!r})",
+                                     context={"stage": stage, "gene": g, "field": name})
     for name in ("mutation_rate", "indel_count"):
         a = getattr(preds, name)
         if a is not None and not np.all(np.isfinite(a)):
-            raise ValueError(f"non-finite {name} after {stage}")
+            raise NumericalError(f"non-finite {name} after {stage}", context={"stage": stage, "field": name})
 
 
 def _locus_allowed(chain_type, reference, genes, genotype_allowed=None) -> dict:
@@ -72,8 +76,10 @@ def apply_input_policy(sequences, max_len: int) -> tuple[list, list]:
     empties = [i for i, s in enumerate(sequences) if not s.strip()]
     if empties:
         shown = empties[:10]
-        raise ValueError(f"empty input sequence(s) at index {shown}"
-                         f"{'...' if len(empties) > 10 else ''}; every read must be non-empty")
+        raise InputError(f"empty input sequence(s) at index {shown}"
+                         f"{'...' if len(empties) > 10 else ''}; every read must be non-empty",
+                         context={"stage": "input_validation", "record_indices": shown,
+                                  "invalid_count": len(empties)})
     was_cropped = [len(s) > max_len for s in sequences]
     sequences = [s[:max_len] for s in sequences]
     return sequences, was_cropped

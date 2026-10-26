@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from multiprocessing import get_context
 from time import perf_counter
 from typing import Any, Iterator
 
@@ -268,7 +269,7 @@ def generate_benchmark(
 
     tasks = [(spec, s_idx, stratum, reference_set) for s_idx, stratum in active]
     max_workers = min(resolved_workers, len(tasks))
-    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+    with ProcessPoolExecutor(max_workers=max_workers, mp_context=get_context("spawn")) as pool:
         results = list(pool.map(_stratum_worker, tasks))
     cases = []
     for _, chunk in sorted(results, key=lambda item: item[0]):
