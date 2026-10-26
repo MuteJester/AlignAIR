@@ -114,7 +114,7 @@ def test_registry_fallback_still_works(tmp_path, monkeypatch):
 
 
 def test_training_record_failure_preserves_cause_and_record_context():
-    from alignair.train.gym.targets import build_targets
+    from alignair.data.targets import build_targets
     with pytest.raises(TrainingDataError) as caught:
         build_targets({"sequence_id": "read-42"}, object(), True)
     assert isinstance(caught.value.__cause__, KeyError)
@@ -124,7 +124,7 @@ def test_training_record_failure_preserves_cause_and_record_context():
 def test_missing_gene_coordinates_explain_the_contract_and_keep_operation_context():
     from types import SimpleNamespace
     from alignair.errors import error_context
-    from alignair.train.gym.targets import build_targets
+    from alignair.data.targets import build_targets
 
     reference = SimpleNamespace(gene=lambda gene: SimpleNamespace(index={"D*01": 0}, sequences=["ACGT"]))
     record = {"sequence": "ACGT", "sequence_id": "read-D", "d_sequence_start": 0,
@@ -140,7 +140,7 @@ def test_missing_gene_coordinates_explain_the_contract_and_keep_operation_contex
 
 
 def test_target_builder_does_not_convert_unexpected_defects_to_invalid_records(monkeypatch):
-    from alignair.train.gym import targets
+    from alignair.data import targets
     def broken(*args):
         raise AssertionError("unexpected defect")
     monkeypatch.setattr(targets, "_build_targets", broken)

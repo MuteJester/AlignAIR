@@ -1,7 +1,6 @@
 """Training loop for the faithful AlignAIR model on the GenAIRR gym stream.
 
-``build_batch`` adapts the reusable ``gym_collate`` output (tokens, query coords, allele multi-hot,
-mutation/indel/productive) into the model's input + target dicts. ``train_step`` runs one
+``build_batch`` is a compatibility import of the shared data adapter. ``train_step`` runs one
 optimizer step and applies the TF weight *constraints* (analysis-head kernel clamps + Kendall
 log-var clamps) after ``optimizer.step()``.
 """
@@ -14,56 +13,12 @@ import re
 import shutil
 
 import torch
-import torch.nn.functional as F
 
 from ..core.config import AlignAIRConfig
 from ..errors import error_context
+from ..data.adapters import build_nucleotide_batch as build_batch
 from ..tasks import MetricAccumulator, TrainingTasks, build_tasks
-from .gym import build_experiment, build_targets, gym_collate
-from ..nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
-
-
-def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu",
-                augment_orientation: bool = True):
-    """(records, reference) -> (model_input, targets), tokens padded/truncated to max_seq_length.
-
-    The gym stream is forward-only, so ``augment_orientation`` applies a random orientation (one of
-    4) to each read's tokens and supplies the label — the model learns to detect and self-correct it,
-    while the segmentation/allele targets stay in the forward frame (correction re-canonicalizes).
-    """
-    bundles = []
-    for index, record in enumerate(records):
-        with error_context(record_index=index):
-            bundles.append(build_targets(record, reference_set, cfg.has_d))
-    b = gym_collate(bundles, reference_set, cfg.has_d)
-    L = cfg.max_seq_length
-    tok = b["tokens"]
-    tok = F.pad(tok, (0, L - tok.shape[1])) if tok.shape[1] < L else tok[:, :L]
-
-    if augment_orientation:
-        orient = torch.randint(0, NUM_ORIENTATIONS, (tok.shape[0],))
-        tok = apply_orientation(tok, tok != 0, orient)
-    else:
-        orient = torch.zeros(tok.shape[0], dtype=torch.long)
-    batch_in = {"tokenized_sequence": tok.to(device), "orientation": orient.to(device)}
-
-    genes = ["v", "j"] + (["d"] if cfg.has_d else [])
-    targets: dict = {}
-    for g in genes:
-        targets[f"{g}_start"] = b[f"{g}_start"].float().unsqueeze(-1).to(device)
-        targets[f"{g}_end"] = b[f"{g}_end"].float().unsqueeze(-1).to(device)
-        targets[f"{g}_allele"] = b[f"{g}_allele"].to(device)
-        targets[f"{g}_supervise"] = b[f"{g}_supervise"].to(device)
-    for k in ("mutation_rate", "indel_count", "productive"):
-        targets[k] = b[k].to(device)
-    targets["orientation"] = orient.to(device)
-    if getattr(cfg, "num_chain_types", 1) > 1:        # multi-chain: supervise the chain_type/locus head
-        targets["chain_type"] = b["chain_type"].to(device)
-    # per-position edit-state labels (forward frame; the model canonicalizes internally) padded to L
-    st = b["state_labels"]
-    st = F.pad(st, (0, L - st.shape[1]), value=-100) if st.shape[1] < L else st[:, :L]
-    targets["state_labels"] = st.to(device)
-    return batch_in, targets
+from .gym import build_experiment
 
 
 def train_step(model, batch_in, targets, cfg, logvars, opt, *, step: int = 0, grad_clip=None,

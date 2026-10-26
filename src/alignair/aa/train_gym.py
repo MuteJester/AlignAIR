@@ -2,8 +2,8 @@
 
 The model (real ``AlignAIR`` with ``use_orientation=False``), loss (``hierarchical_loss``), optimizer
 step (``train_step``), and data stream (the gym's ``_mixed_stream`` curriculum) are all reused. The
-only differences are the AA input tokens and AA-space coordinates (see ``gym_bridge``). Records with
-no ``sequence_aa`` (junction-trimmed amplicons) are skipped."""
+only differences are the AA input tokens and AA-space coordinates (see ``data.adapters``).
+Records without a translation/frame or with inconsistent translation length are skipped."""
 from __future__ import annotations
 
 import torch
@@ -12,8 +12,8 @@ from ..core.config import AlignAIRConfig
 from ..tasks import build_tasks
 from ..core.model import AlignAIR
 from ..reference.reference_set import ReferenceSet
-from .gym_bridge import aa_usable, build_batch_aa
-from .tokenizer import AAProteinTokenizer
+from ..data.adapters import translated_record_usable as aa_usable, build_protein_allele_batch as build_batch_aa
+from ..data.tokenizer import AAProteinTokenizer
 
 
 def setup_aa(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192):
@@ -32,7 +32,7 @@ def setup_aa(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192):
 
 
 def _usable_stream(dc_name, progresses, heavy_shm, seed, short_boost, mutation_cap):
-    """The gym's mixed-amplicon curriculum stream, filtered to AA-usable (junction-intact) records."""
+    """The gym's mixed-amplicon curriculum stream, filtered by shared translation eligibility."""
     import GenAIRR as ga
     from ..train.trainer import _mixed_stream
     dc = getattr(ga, dc_name)

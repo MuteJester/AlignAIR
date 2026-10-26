@@ -11,7 +11,8 @@ const trainingTasks: DocPage = {
       <p>
         <code>alignair.tasks.build_tasks(config)</code> selects alignment objectives from the model’s
         classification semantics and enabled heads. It does not select an objective by alphabet or prepare
-        training examples. Use the tokenizers and collators that match your reference, labels, and coordinates.
+        training examples. The <DocLink to="training-batches">batch adapters</DocLink> prepare examples
+        with the reference, labels, and coordinates required by those objectives.
         Model construction is described in the <DocLink to="model-composition">composition API</DocLink>.
       </p>
       <H2 id="step">Configure a training step</H2>

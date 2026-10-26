@@ -6,6 +6,10 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared training samples, batches, and source adapters in `alignair.data`, with explicit window
+  policies, positional-label padding, device transfer, and preserved supervision/compatible-set masks.
+- Website training-batch API guide covering nucleotide records, translated allele targets, and
+  categorical samples.
 - Shared `alignair.tasks` contracts for multilabel/categorical objectives, optional-head losses,
   supervised metric totals, and validation aggregation. Trainers accept explicit task implementations.
 - Shared configurable nucleotide/protein model assembly, named architecture component factories, and
@@ -22,6 +26,12 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Tokenization, codon projection, query-coordinate validation, target construction, and allele-set
+  encoding have shared owners under `alignair.data`. Historical imports delegate to these owners;
+  the separate stage-one categorical collator is removed.
+- Record prefix windows clip boundary targets and exclude genes lost from the retained read.
+  Protein allele batches exclude absent/inverted genes from supervision. Translated-record eligibility
+  now excludes lengths inconsistent with the declared junction frame; it does not infer another frame.
 - Loss implementations and batch metrics have a shared owner; historical NT/AA imports delegate to it.
 - Validation weights metrics by supervised rows or positions. Categorical metrics respect invalid genes
   and compatible class sets. Excluded empty sets and fully ignored state labels have finite zero loss.

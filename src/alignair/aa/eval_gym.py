@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import torch
 
-from .gym_bridge import build_batch_aa
-from .tokenizer import AAProteinTokenizer
+from ..data.adapters import build_protein_allele_batch as build_batch_aa
+from ..data.tokenizer import AAProteinTokenizer
 
 
 def gene_allele_counts(probs, target, names, class_of, threshold: float = 0.5) -> dict:

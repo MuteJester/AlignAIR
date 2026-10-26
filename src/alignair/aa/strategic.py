@@ -12,13 +12,14 @@ import torch
 
 from .augment import aa_substitute
 from .config import aa_igh_config
-from .data import build_class_maps, collate_aa
-from .gym_bridge import aa_usable
+from .data import build_class_maps
+from ..data.adapters import collate_categorical as collate_aa
+from ..data.adapters import translated_record_usable as aa_usable
 from ..tasks import build_tasks
 from .model import AAAlignAIR
-from .tokenizer import AAProteinTokenizer
+from ..data.tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
-from .translation import frame_offset_of, project_codons
+from ..data.projection import frame_offset_of, project_codons, projection_segments
 
 
 def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192, has_d: bool = True):
@@ -44,11 +45,7 @@ def _class_sample(rec, class_maps, d_index, tok, max_len):
         jc = class_maps["J"].class_of(rec["j_call"].split(",")[0].strip())
     except KeyError:
         return None
-    segs = {}
-    for g, G in (("v", "V"), ("d", "D"), ("j", "J")):
-        s, e = rec.get(f"{g}_sequence_start"), rec.get(f"{g}_sequence_end")
-        if s is not None and e is not None:
-            segs[G] = (int(s), int(e))
+    segs = projection_segments(rec)
     proj = project_codons(len(rec["sequence"]), frame_offset_of(rec["junction_start"]), segs)
     vb, jb = proj.aa_bounds.get("V"), proj.aa_bounds.get("J")
     if vb is None or jb is None:

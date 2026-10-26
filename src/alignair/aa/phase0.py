@@ -4,27 +4,11 @@ from __future__ import annotations
 
 import statistics
 
-from .translation import frame_offset_of, project_codons
+from ..data.projection import frame_offset_of, project_codons, projection_segments
 from .reference import build_aa_germlines
 from .equivalence import db_hash, build_equivalence_classes
 from .audit import identifiability_summary, prefix_identifiability_curve
 from .report import assemble_report
-
-_SEG_COLS = {
-    "V": ("v_sequence_start", "v_sequence_end"),
-    "D": ("d_sequence_start", "d_sequence_end"),
-    "J": ("j_sequence_start", "j_sequence_end"),
-}
-
-
-def _segments(rec) -> dict:
-    segs = {}
-    for seg, (a, b) in _SEG_COLS.items():
-        s, e = rec.get(a), rec.get(b)
-        if s is not None and e is not None:
-            segs[seg] = (int(s), int(e))
-    return segs
-
 
 def build_phase0_report(n: int, seed: int = 0, rate: float = 0.05,
                         productive_only: bool = True,
@@ -71,7 +55,7 @@ def build_phase0_report(n: int, seed: int = 0, rate: float = 0.05,
         n_stop += aa.count("*")
         n_aa_chars += len(aa)
         fo = frame_offset_of(js)
-        segs = _segments(rec)
+        segs = projection_segments(rec)
         proj = project_codons(len(rec["sequence"]), fo, segs)
         if "V" in proj.phase and proj.phase["V"]["end"] != 0:
             v_end_cuts += 1

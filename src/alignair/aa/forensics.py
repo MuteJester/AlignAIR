@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .tokenizer import AAProteinTokenizer
+from ..data.tokenizer import AAProteinTokenizer
 
 
 def germline_id_matrix(reference_set, germlines: dict, gene: str = "V", tokenizer=None):

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .translation import translate_nt
+from ..data.projection import translate_nt
 
 ANCHOR_AA: dict[str, str] = {"V": "C", "J": "W"}   # Cys-104 (V), Trp-118 (J)
 

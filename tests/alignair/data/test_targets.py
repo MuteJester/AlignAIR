@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from alignair.errors import TrainingDataError
-from alignair.train.gym.targets import build_targets
+from alignair.data.targets import build_targets
 
 pytestmark = pytest.mark.component
 

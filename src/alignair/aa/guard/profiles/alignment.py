@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from alignair.aa.translation import CODON_TABLE
+from alignair.data.projection import CODON_TABLE
 from alignair.errors import ConfigurationError, DataContractError
 
 V_MIN_AA, J_MIN_AA = 85, 9

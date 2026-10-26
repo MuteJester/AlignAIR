@@ -25,9 +25,9 @@ from ..augment import aa_indel, aa_substitute, aa_truncate, il_ambiguity
 from ..conformal import Conformal
 from ..data import build_class_maps, record_to_sample
 from ..evaluate import evaluate_frozen
-from ..gym_bridge import aa_usable
+from ...data.adapters import translated_record_usable as aa_usable
 from ..infer import class_probs
-from ..tokenizer import AAProteinTokenizer
+from ...data.tokenizer import AAProteinTokenizer
 from .metrics import brier_score, macro_accuracy, per_frequency_bins, softmax_nll
 
 # Fixed stratum order for cohort fingerprints and checkpoint comparisons.

@@ -35,7 +35,7 @@ from ...model_file import container, serialize
 from ..conformal import FrozenConformal
 from ..equivalence import EquivalenceClassMap
 from ..model import AAAlignAIR
-from ..tokenizer import AAProteinTokenizer
+from ...data.tokenizer import AAProteinTokenizer
 from .bundle import canonical_json
 from .predictor import _predict
 

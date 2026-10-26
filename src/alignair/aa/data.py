@@ -10,11 +10,9 @@ from alignair.errors import TrainingError
 
 from collections import Counter
 
-import numpy as np
-import torch
-
 from .equivalence import build_equivalence_classes, db_hash
-from .translation import frame_offset_of, project_codons
+from ..data.projection import frame_offset_of, project_codons, projection_segments, residue_count
+from ..data.adapters import collate_categorical as collate_aa
 
 REJECT_REASONS = ("not_productive", "no_aa", "no_frame", "stop_codon", "unknown_allele",
                   "no_bounds", "too_long", "empty", "translation_length_mismatch")
@@ -25,22 +23,8 @@ class SeedBudgetExhausted(TrainingError):
     code = "ALIGNAIR_SEED_BUDGET_EXHAUSTED"
 
 
-_SEG_COLS = {"V": ("v_sequence_start", "v_sequence_end"),
-             "D": ("d_sequence_start", "d_sequence_end"),
-             "J": ("j_sequence_start", "j_sequence_end")}
-
-
 def _first(call: str) -> str:
     return str(call).split(",")[0].strip()
-
-
-def _segments(rec) -> dict:
-    segs = {}
-    for seg, (a, b) in _SEG_COLS.items():
-        s, e = rec.get(a), rec.get(b)
-        if s is not None and e is not None:
-            segs[seg] = (int(s), int(e))
-    return segs
 
 
 def record_to_sample(rec: dict, class_maps: dict, tokenizer, max_len: int):
@@ -56,7 +40,7 @@ def record_to_sample(rec: dict, class_maps: dict, tokenizer, max_len: int):
     if "*" in aa:
         return None, "stop_codon"
     frame = frame_offset_of(rec["junction_start"])
-    if len(aa) != (len(rec["sequence"]) - frame) // 3:
+    if len(aa) != residue_count(len(rec["sequence"]), frame):
         # tokens and projected boundaries would live in different coordinate systems
         return None, "translation_length_mismatch"
     try:
@@ -64,7 +48,7 @@ def record_to_sample(rec: dict, class_maps: dict, tokenizer, max_len: int):
         j_class = class_maps["J"].class_of(_first(rec["j_call"]))
     except KeyError:
         return None, "unknown_allele"
-    proj = project_codons(len(rec["sequence"]), frame, _segments(rec))
+    proj = project_codons(len(rec["sequence"]), frame, projection_segments(rec))
     vb, jb = proj.aa_bounds.get("V"), proj.aa_bounds.get("J")
     if vb is None or jb is None:
         return None, "no_bounds"
@@ -75,26 +59,6 @@ def record_to_sample(rec: dict, class_maps: dict, tokenizer, max_len: int):
         return None, "too_long"
     return {"tokens": tokens, "v_class": v_class, "j_class": j_class,
             "v_start": vb[0], "v_end": vb[1], "j_start": jb[0], "j_end": jb[1]}, None
-
-
-def collate_aa(samples: list, max_len: int, device: str = "cpu"):
-    B = len(samples)
-    tokens = torch.zeros(B, max_len, dtype=torch.long)
-    for i, s in enumerate(samples):
-        t = np.asarray(s["tokens"], dtype=np.int64)
-        tokens[i, :len(t)] = torch.from_numpy(t)
-    batch_in = {"tokenized_sequence": tokens.to(device)}
-    genes = ["v", "j"] + (["d"] if "d_class" in samples[0] else [])
-    targets = {f"{g}_class": torch.tensor([s[f"{g}_class"] for s in samples], dtype=torch.long, device=device)
-               for g in genes}
-    for g in genes:
-        for b in ("start", "end"):
-            targets[f"{g}_{b}"] = torch.tensor([[float(s[f"{g}_{b}"])] for s in samples],
-                                               dtype=torch.float32, device=device)
-    if "d" in genes:                                          # D validity (0 for inverted/absent -> masked)
-        targets["d_valid"] = torch.tensor([float(s.get("d_valid", 1.0)) for s in samples],
-                                          dtype=torch.float32, device=device)
-    return batch_in, targets
 
 
 def build_class_maps(dc_name: str = "HUMAN_IGH_OGRDB"):

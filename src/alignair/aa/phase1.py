@@ -11,11 +11,12 @@ from collections import Counter
 import torch
 
 from .config import aa_igh_config
-from .data import build_class_maps, check_counter, collate_aa, collect_usable
+from .data import build_class_maps, check_counter, collect_usable
+from ..data.adapters import collate_categorical as collate_aa
 from .evaluate import evaluate_frozen
 from .loss import aa_loss
 from .model import AAAlignAIR
-from .tokenizer import AAProteinTokenizer
+from ..data.tokenizer import AAProteinTokenizer
 from .train import assert_batch_diverse, diverse_selector, overfit_one_batch
 
 # Disjoint seed ranges. GenAIRR consumes CONSECUTIVE per-record seeds, so a stream seeded S

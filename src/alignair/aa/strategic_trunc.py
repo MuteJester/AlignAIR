@@ -20,12 +20,12 @@ import numpy as np
 import torch
 
 from .augment import aa_substitute, il_ambiguity
-from .data import collate_aa
+from ..data.adapters import CategoricalBatchAdapter
 from ..tasks import build_tasks
 from .reference import build_aa_germlines
 from .resume import load_checkpoint, restore_rng, save_checkpoint
 from .strategic import _class_sample
-from .tokenizer import AAProteinTokenizer
+from ..data.tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
 from .truncation import compatible_classes, crop_window, shift_clip
 
@@ -105,20 +105,6 @@ def stage1_sample(rec, class_maps, d_index, protos, tok, max_len, rng,
     return s
 
 
-def collate_stage1(samples, max_len, n_classes: dict, device="cpu"):
-    """Like collate_aa but adds {g}_compatible multi-hot (B, n_classes[g]) and {g}_valid for v/j/d."""
-    bi, tg = collate_aa(samples, max_len, device)             # tokens + {g}_class/start/end (+ d_valid)
-    for g in ("v", "j", "d"):
-        comp = torch.zeros(len(samples), n_classes[g], device=device)
-        for i, s in enumerate(samples):
-            for c in s[f"{g}_compatible"]:
-                comp[i, c] = 1.0
-        tg[f"{g}_compatible"] = comp
-        tg[f"{g}_valid"] = torch.tensor([float(s[f"{g}_valid"]) for s in samples],
-                                        dtype=torch.float32, device=device)
-    return bi, tg
-
-
 def _git_sha() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -150,7 +136,6 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
     dc = getattr(ga, dc_name)
     protos = {"v": prototypes_by_class(dc, class_maps["V"], "V"),
               "j": prototypes_by_class(dc, class_maps["J"], "J")}
-    n_classes = {"v": meta["n_v_classes"], "j": meta["n_j_classes"], "d": meta["n_d_alleles"]}
     tok = AAProteinTokenizer()
     d_index = meta["d_index"]
     model.to(device).train()
@@ -186,13 +171,14 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
     stream = gen()
 
     tasks = build_tasks(model.cfg, genes=("v", "d", "j"))
+    batch_adapter = CategoricalBatchAdapter.from_config(cfg, device=device)
     history = []
     val_history = []
     for step in range(start_step + 1, start_step + steps + 1):
         batch = list(itertools.islice(stream, batch_size))
         if len(batch) < batch_size:
             break
-        bi, tg = collate_stage1(batch, cfg.max_seq_length, n_classes, device)
+        bi, tg = batch_adapter(batch)
         out = model(bi)
         total, parts = tasks.loss(out, tg)
         opt.zero_grad()

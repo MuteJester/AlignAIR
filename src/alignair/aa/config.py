@@ -7,7 +7,7 @@ uncertainty is carried by a calibrated allele set rather than a confident single
 from __future__ import annotations
 
 from ..core.config import AlignAIRConfig
-from .tokenizer import AA_VOCAB_SIZE
+from ..data.tokenizer import AA_VOCAB_SIZE
 
 
 def aa_igh_config(n_v_classes: int, n_j_classes: int, n_d_alleles: int = 0,

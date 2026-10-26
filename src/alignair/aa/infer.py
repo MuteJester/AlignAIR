@@ -1,7 +1,7 @@
 """Single hardened AA-head inference path, shared by Stage-2 calibration and Phase-3 eval."""
 from __future__ import annotations
 import numpy as np, torch
-from .tokenizer import AAProteinTokenizer
+from ..data.tokenizer import AAProteinTokenizer
 
 _AA = set("ACDEFGHIKLMNPQRSTVWYX*")
 

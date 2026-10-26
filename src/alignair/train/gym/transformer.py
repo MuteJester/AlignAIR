@@ -3,7 +3,7 @@
 import numpy as np
 
 from .crop import crop_record
-from .targets import build_targets, _tok
+from ...data.targets import build_targets, _tok
 
 # token complement by id: pad0 A1<->T2 G3<->C4 N5
 _COMPLEMENT_NP = np.array([0, 2, 1, 4, 3, 5], dtype=np.int64)

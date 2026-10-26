@@ -11,7 +11,7 @@ from collections import Counter
 
 import torch
 
-from .data import collate_aa
+from ..data.adapters import collate_categorical as collate_aa
 
 
 def wilson_interval(k: int, n: int, z: float = 1.96):

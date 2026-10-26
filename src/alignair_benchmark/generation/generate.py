@@ -8,7 +8,7 @@ from multiprocessing import get_context
 from time import perf_counter
 from typing import Any, Iterator
 
-from alignair.train.gym.targets import build_targets
+from alignair.data.targets import build_targets
 from alignair.reference.reference_set import ReferenceSet
 from ..core.schema import BenchmarkCase, BenchmarkSpec, GENES, GeneTruth, StratumSpec
 from .genairr import (

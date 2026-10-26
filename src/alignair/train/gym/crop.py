@@ -9,7 +9,7 @@ J 5' flanks (up to ``FLANK`` bases). Already absent genes remain absent.
 ``target_len`` is a floor expanded as needed to retain those observed flanks.
 """
 
-from .coordinates import segment_spans
+from ...data.coordinates import segment_spans
 
 FLANK = 3
 _GENES = ("v", "d", "j")

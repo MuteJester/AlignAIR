@@ -1,34 +1,20 @@
 """Collate gym target bundles into batched tensors."""
 import torch
 
+from ...data.batching import pad_vectors
+from ...data.encoders import encode_allele_sets
+from ...errors import TrainingDataError
+
 IGNORE = -100  # CrossEntropyLoss ignore_index for padded per-position labels
 
 
-def _multihot(call_sets, gene_ref):
-    n = len(gene_ref.names)
-    out = torch.zeros(len(call_sets), n, dtype=torch.float32)
-    for i, names in enumerate(call_sets):
-        for nm in names:
-            j = gene_ref.index.get(nm)
-            if j is not None:
-                out[i, j] = 1.0
-    return out
-
-
 def gym_collate(batch, reference_set, has_d: bool):
-    B = len(batch)
-    lmax = max(len(s["tokens"]) for s in batch)
-
-    tokens = torch.zeros(B, lmax, dtype=torch.long)
-    mask = torch.zeros(B, lmax, dtype=torch.bool)
-    region = torch.full((B, lmax), IGNORE, dtype=torch.long)
-    state = torch.full((B, lmax), IGNORE, dtype=torch.long)
-    for i, s in enumerate(batch):
-        n = len(s["tokens"])
-        tokens[i, :n] = torch.from_numpy(s["tokens"])
-        mask[i, :n] = True
-        region[i, :n] = torch.from_numpy(s["region_labels"])
-        state[i, :n] = torch.from_numpy(s["state_labels"])
+    if not batch:
+        raise TrainingDataError("cannot collate an empty gym batch")
+    tokens = pad_vectors([sample["tokens"] for sample in batch])
+    mask = tokens != 0
+    region = pad_vectors([sample["region_labels"] for sample in batch], width=tokens.shape[1], padding=IGNORE)
+    state = pad_vectors([sample["state_labels"] for sample in batch], width=tokens.shape[1], padding=IGNORE)
 
     genes = ["v", "j"] + (["d"] if has_d else [])
     out = {"tokens": tokens, "mask": mask, "region_labels": region, "state_labels": state}
@@ -48,8 +34,8 @@ def gym_collate(batch, reference_set, has_d: bool):
             [s["inseq"][g][0] if p else 0 for s, p in zip(batch, pres)], dtype=torch.long)
         out[f"{g}_end"] = torch.tensor(
             [s["inseq"][g][1] if p else 0 for s, p in zip(batch, pres)], dtype=torch.long)
-        out[f"{g}_allele"] = _multihot(
-            [s["calls"].get(G, []) if p else [] for s, p in zip(batch, pres)], gref)
+        out[f"{g}_allele"] = torch.from_numpy(encode_allele_sets(
+            [s["calls"].get(G, []) if p else [] for s, p in zip(batch, pres)], gref.index, len(gref.names)))
 
         def _primary(s, p):
             if not p:
@@ -78,15 +64,9 @@ def gym_collate(batch, reference_set, has_d: bool):
 
     # teacher (full forward read) view for EMA self-distillation, padded separately
     if "teacher_tokens" in batch[0]:
-        tl = max(len(s["teacher_tokens"]) for s in batch)
-        t_tok = torch.zeros(B, tl, dtype=torch.long)
-        t_mask = torch.zeros(B, tl, dtype=torch.bool)
-        for i, s in enumerate(batch):
-            n = len(s["teacher_tokens"])
-            t_tok[i, :n] = torch.from_numpy(s["teacher_tokens"])
-            t_mask[i, :n] = True
+        t_tok = pad_vectors([sample["teacher_tokens"] for sample in batch])
         out["teacher_tokens"] = t_tok
-        out["teacher_mask"] = t_mask
+        out["teacher_mask"] = t_tok != 0
 
     for key in ("noise_count", "mutation_rate", "indel_count", "productive"):
         out[key] = torch.tensor([[s[key]] for s in batch], dtype=torch.float32)
