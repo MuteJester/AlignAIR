@@ -1,0 +1,57 @@
+"""``diagnostics.perturb``: a model file with one module's weights zeroed and every other byte unchanged, the positive
+control of the readiness audit."""
+from __future__ import annotations
+
+import pytest
+
+pytest.importorskip("GenAIRR")
+
+import torch  # noqa: E402
+from alignair.model_file import container, load_model, save_model  # noqa: E402
+
+from alignair_assay.diagnostics.perturb import zero_module  # noqa: E402
+
+REFERENCE = "HUMAN_IGH_OGRDB"
+
+
+@pytest.fixture
+def checkpoint(tmp_path, make_small_model):
+    model, _ = make_small_model(REFERENCE, seed=2)
+    path = tmp_path / "base.alignair"
+    save_model(str(path), model, dataconfigs=[REFERENCE], training={"steps": 0, "batch_size": 0},
+               include_trusted_pickle=False)
+    return path
+
+
+def test_zeroing_a_module_changes_its_weights_and_nothing_else(tmp_path, checkpoint):
+    out = tmp_path / "perturbed.alignair"
+    found = zero_module(checkpoint, out, "branches.j.end_head")
+    assert found["parameters"] == ["branches.j.end_head.weight", "branches.j.end_head.bias"]
+    assert found["values"] > 0
+    base, perturbed = load_model(str(checkpoint)).model, load_model(str(out)).model
+    before, after = base.state_dict(), perturbed.state_dict()
+    for name in before:
+        if name.startswith("branches.j.end_head."):
+            assert torch.count_nonzero(after[name]) == 0 and torch.count_nonzero(before[name]) > 0
+        else:
+            assert torch.equal(before[name], after[name]), name
+    # every other section and the header are byte for byte the file's
+    head_a, head_b = container.read_header(str(checkpoint)), container.read_header(str(out))
+    for name in head_a["sections"]:
+        if name != "weights":
+            assert container.read_section(str(checkpoint), name) == container.read_section(str(out), name), name
+    strip = ("sections", "_sections_base")
+    assert {k: v for k, v in head_a.items() if k not in strip} == {k: v for k, v in head_b.items() if k not in strip}
+
+
+def test_the_perturbed_file_is_deterministic(tmp_path, checkpoint):
+    zero_module(checkpoint, tmp_path / "one.alignair", "branches.j.end_head")
+    zero_module(checkpoint, tmp_path / "two.alignair", "branches.j.end_head")
+    assert (tmp_path / "one.alignair").read_bytes() == (tmp_path / "two.alignair").read_bytes()
+    assert (tmp_path / "one.alignair").read_bytes() != checkpoint.read_bytes()
+
+
+def test_a_module_without_weights_is_refused(tmp_path, checkpoint):
+    with pytest.raises(ValueError, match="no parameter of module 'branches.x.end_head'"):
+        zero_module(checkpoint, tmp_path / "out.alignair", "branches.x.end_head")
+    assert not (tmp_path / "out.alignair").exists()

@@ -1,0 +1,431 @@
+"""The run summary: plain, JSON-ready data describing what a run directory's files say, for the run report.
+
+Everything is read back from the run directory (build records, run records, score files and comparisons), so
+``all`` and ``report`` describe the same state. ``report.run.run_report_markdown`` renders the summary.
+"""
+from __future__ import annotations
+
+import functools
+import math
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from alignair_assay.core.layout import RunLayout
+from alignair_assay.core.prediction import GENES
+from alignair_assay.core.provenance import sha256_file
+from alignair_assay.core.records import read_json
+from alignair_assay.core.reference import Reference
+from alignair_assay.metrics import is_informational, lower_is_better
+from alignair_assay.report.run import RUN_REPORT_KIND, RUN_REPORT_VERSION
+from alignair_assay.runners.alignair import LOCAL_CODE_IDENTITY, AlignAIRLocal, local_code_identity
+from alignair_assay.runners.base import absolute_path, read_run_json, require_successful_run
+from alignair_assay.scoring.oracle import oracle_problems
+from alignair_assay.scoring.pipeline import read_scores
+from alignair_assay.stats import compare
+from alignair_assay.suites import get_suite
+from alignair_assay.truth.io import read_truth_jsonl
+from alignair_assay.workflow.build import build_is_current
+
+if TYPE_CHECKING:
+    from alignair_assay.workflow.orchestrate import RunConfig
+
+ORACLE = "oracle"
+# Family-wise error rate of every Holm-corrected verdict in a run.
+ALPHA = 0.05
+VERDICTS = ("a_better", "b_better", "tie_or_inconclusive")
+# S1's stratum with S10's read design (full) and SHM rate (igg) under the default distributions.
+S10_BASELINE = "full_igg"
+_EXAMPLES = 5
+
+
+def expected_runs(cfg: RunConfig) -> list[tuple[str, str, str]]:
+    """The ``(tool, suite, arm)`` runs ``all`` makes for ``cfg``, in order: the oracle on every suite's shared arm,
+    then each of the two tools on every suite and each of the suite's arms (the oracle's shared runs once)."""
+    jobs = [(ORACLE, suite, "shared") for suite in cfg.suites]
+    jobs += [(tool, suite, arm) for tool in cfg.tools for suite in cfg.suites for arm in get_suite(suite).arms]
+    return list(dict.fromkeys(jobs))
+
+
+def inputs_unchanged(layout: RunLayout, suite: str, provenance: dict) -> bool:
+    """True when a run's recorded input files still have their recorded SHA-256: the suite's reads (which every
+    run record holds) and, when recorded, its truth (the oracle) and donors (the genotype arm)."""
+    if "reads" not in provenance:
+        return False
+    files = {"reads": layout.reads(suite), "truth": layout.truth(suite), "donors_json": layout.donors(suite)}
+    for key, path in files.items():
+        if key in provenance:
+            recorded = (provenance[key] or {}).get("sha256")
+            if not path.is_file() or sha256_file(path) != recorded:
+                return False
+    return True
+
+
+def run_status(layout: RunLayout, tool: str, suite: str, arm: str, settings: dict | None) -> dict:
+    """Whether a run may be reused and scored. ``status`` is ``ok`` when ``runners.base.require_successful_run``
+    passes, the predictions exist, the record's ``settings`` (the tool's fingerprint when it ran) equal
+    ``settings`` (the run directory's configuration for the tool) and its inputs are unchanged
+    (``inputs_unchanged``). Otherwise it is ``missing`` (no run record or no predictions), ``failed`` (a non-zero
+    return code, or an unreadable record) or ``stale`` (made with other tool settings, or on files that changed
+    since; or, for a checkpoint variant, its checkpoint file missing or changed since: ``checkpoint_changed``). The
+    dict also holds ``tool``, ``suite``, ``arm``, the ``returncode``, the ``failed_donor`` and ``error`` the record
+    names (None otherwise) and the ``run_json`` path relative to the run directory."""
+    path = layout.run_json(tool, suite, arm)
+    status = {"tool": tool, "suite": suite, "arm": arm, "status": "ok", "returncode": None, "failed_donor": None,
+              "error": None, "run_json": relative(layout, path)}
+    try:
+        record = require_successful_run(path)
+    except FileNotFoundError:
+        return {**status, "status": "missing", "error": "no run record: the run never finished"}
+    except (ValueError, TypeError) as error:
+        try:
+            record = read_run_json(path)
+        except (ValueError, TypeError):
+            return {**status, "status": "failed", "error": f"unreadable run record: {error}"}
+        return {**status, "status": "failed", "returncode": record.returncode,
+                "failed_donor": record.provenance.get("failed_donor"), "error": record.provenance.get("error")}
+    status["returncode"] = record.returncode
+    if not layout.predictions(tool, suite, arm).is_file():
+        return {**status, "status": "missing", "error": "the run's predictions are missing"}
+    if record.provenance.get("settings") != settings:
+        return {**status, "status": "stale",
+                "error": "made with other tool settings than the run directory's configuration; run all again"}
+    changed = checkpoint_changed(settings)
+    if changed:
+        return {**status, "status": "stale", "error": f"{changed}; run all again"}
+    if not inputs_unchanged(layout, suite, record.provenance):
+        return {**status, "status": "stale", "error": "the suite's files changed after this run; run all again"}
+    return status
+
+
+def checkpoint_changed(settings: dict | None) -> str | None:
+    """Why a checkpoint variant's runs (settings with a ``label``, ``runners.variants``) no longer match its weights:
+    the ``checkpoint`` file is missing, or its SHA-256 is not the recorded ``checkpoint_sha256`` (retrained in
+    place); None when it is unchanged, and for every other tool (``all`` re-fingerprints those before it runs)."""
+    if not settings or "label" not in settings or not settings.get("checkpoint"):
+        return None
+    path = Path(settings["checkpoint"])
+    if not path.is_file():
+        return f"its checkpoint {path} is missing since this run"
+    stat = path.stat()
+    if _sha256(str(path), stat.st_mtime_ns, stat.st_size) != settings.get("checkpoint_sha256"):
+        return f"its checkpoint {path} changed since this run (another SHA-256)"
+    return None
+
+
+@functools.lru_cache(maxsize=16)
+def _sha256(path: str, mtime_ns: int, size: int) -> str:
+    """``sha256_file`` of ``path``, once per version of the file (its modification time and size)."""
+    return sha256_file(path)
+
+
+def configured_settings(layout: RunLayout) -> dict[str, dict]:
+    """Per tool, the settings (fingerprint) the run directory's ``manifest.json`` records; empty without one."""
+    return ((read_json(layout.manifest) or {}).get("identity") or {}).get("settings") or {}
+
+
+def run_statuses(layout: RunLayout, cfg: RunConfig) -> dict[tuple[str, str, str], dict]:
+    """``run_status`` of every expected run (``expected_runs``) against the manifest's tool settings
+    (``configured_settings``). A run that would be ``ok`` on a suite whose build does not match ``cfg``
+    (``workflow.build.build_is_current``) is ``stale`` too."""
+    settings = configured_settings(layout)
+    digest = Reference.from_dataconfig(cfg.reference).digest()
+    current = {suite: build_is_current(layout, suite, split=cfg.split, reference_digest=digest, seed=cfg.seed,
+                                       scale=cfg.scale) for suite in cfg.suites}
+    statuses = {}
+    for tool, suite, arm in expected_runs(cfg):
+        status = run_status(layout, tool, suite, arm, settings.get(tool))
+        if status["status"] == "ok" and not current[suite]:
+            status = {**status, "status": "stale",
+                      "error": "the suite's build does not match the run directory's configuration; run all again"}
+        statuses[tool, suite, arm] = status
+    return statuses
+
+
+def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: list[dict] | None = None) -> dict:
+    """The run report's data for ``cfg`` over ``layout``, as strict JSON.
+
+    It holds ``kind``, ``version``, the compared tools ``a`` and ``b``, the ``config`` (suites, tools, split,
+    reference, seed, scale), the manifest's ``config_hash`` and, per checkpoint variant among the tools, its
+    ``checkpoints`` entry (``label``, ``path``, ``sha256``, as the manifest's settings record them).
+    ``failed_runs`` lists every expected run whose status (``run_statuses``) is not ``ok``, then ``scoring_errors``
+    (runs that succeeded but could not be scored). ``suites`` has, per suite: ``name``, ``title``, ``purpose``,
+    ``primary``, ``cases``, ``excluded`` (from ``build.json``), the ``oracle`` check (``status`` perfect, imperfect or not scored; ``cases``,
+    ``problems`` and the first ``examples`` as ``[case id, metric, value]``), the ``truth`` summary
+    (``truth_counts``) and per arm whether the two tools were ``compared``, the ``link`` to the arm's
+    ``comparison.md`` (relative to the run directory), the primary-metric ``rows`` of ``comparison.json`` and their
+    ``verdicts`` counts. ``oracle_failures`` repeats the suites whose oracle is not perfect (with the ``reason`` when
+    it was not scored, from the oracle's failed run: an unchecked truth, not a defect), and ``truth_warnings``
+    (``suite``, ``unscorable`` per gene, cases with ``warnings``, the ``build_json`` path) the suites with unscorable
+    segments, which are not scored. ``s10_vs_s1``, ``s11_parity`` and ``speed`` (``speed_summary``) are None
+    without their data, and ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see
+    the functions below).
+    """
+    a, b = cfg.tools
+    failed = [status for status in run_statuses(layout, cfg).values() if status["status"] != "ok"]
+    failed += list(scoring_errors or [])
+    suites = [_suite_summary(layout, cfg, name) for name in cfg.suites]
+    manifest = read_json(layout.manifest) or {}
+    settings = configured_settings(layout)
+    return {
+        "kind": RUN_REPORT_KIND, "version": RUN_REPORT_VERSION, "a": a, "b": b,
+        "config": {"suites": list(cfg.suites), "tools": list(cfg.tools), "split": cfg.split,
+                   "reference": cfg.reference, "seed": cfg.seed, "scale": cfg.scale},
+        "config_hash": manifest.get("config_hash"),
+        "checkpoints": {tool: {"label": settings[tool]["label"], "path": settings[tool].get("checkpoint"),
+                               "sha256": settings[tool].get("checkpoint_sha256")}
+                        for tool in cfg.tools if "label" in (settings.get(tool) or {})},
+        "failed_runs": failed,
+        "oracle_failures": [_oracle_failure(suite, failed) for suite in suites
+                            if suite["oracle"]["status"] != "perfect"],
+        "truth_warnings": [{"suite": suite["name"], "unscorable": suite["truth"]["unscorable"],
+                            "warnings": suite["truth"]["warnings"],
+                            "build_json": relative(layout, layout.build_json(suite["name"]))} for suite in suites
+                           if suite["truth"] and any(suite["truth"]["unscorable"].values())],
+        "suites": suites,
+        "s10_vs_s1": s10_vs_s1(layout, cfg),
+        "s11_parity": s11_parity(layout, cfg),
+        "genotype_arms": genotype_arms(layout, cfg),
+        "excess_alleles": excess_alleles_tables(layout, cfg),
+        "speed": speed_summary(layout, cfg),
+    }
+
+
+def speed_summary(layout: RunLayout, cfg: RunConfig) -> dict | None:
+    """The run's speed measurements (``speed/speed.json``, see ``workflow.speed.run_speed``) for the run report,
+    showing only what was measured for ``cfg``; None without the file.
+
+    The whole file is stale, and not shown, when its ``version`` is not the protocol's (``workflow.speed
+    .SPEED_VERSION``), its ``config_hash`` is not the manifest's (measured for another configuration, or by the
+    ``speed`` command) or its reads' SHA-256 is not that of the timed suite's current ``reads.fasta``:
+    ``{"stale": True, "config_hash": the file's, "reason": why}``. Otherwise the result is the file's content with
+    ``results`` restricted to the current configurations, ``stale_results`` (``name``, ``reason``) naming the
+    others, ``failed`` (``name``, ``error``) the current ones whose measurement failed, and ``missing`` the planned
+    configurations with no result (an interrupted ``all --speed``).
+    An alignair-local configuration is stale when its ``checkpoint_sha256`` is not the SHA-256 of
+    ``cfg.alignair_checkpoint`` now (the checkpoint was retrained in place or replaced), or when the code its CLI
+    ran (``runners.alignair.LOCAL_CODE_IDENTITY``) is not this checkout's now (``local_code_identity``): the config
+    hash does not show either when alignair-local is not a compared tool."""
+    # workflow.speed imports this module, so its protocol version is imported here.
+    from alignair_assay.workflow.speed import SPEED_VERSION
+
+    speed = read_json(layout.speed_json)
+    if speed is None:
+        return None
+    digest = speed.get("config_hash")
+    if speed.get("version") != SPEED_VERSION:
+        return {"stale": True, "config_hash": digest,
+                "reason": f"measured with speed protocol version {speed.get('version')}, not the current "
+                          f"{SPEED_VERSION}"}
+    if digest is None or digest != (read_json(layout.manifest) or {}).get("config_hash"):
+        reason = ("measured for another configuration" if digest else
+                  "measured by the speed command, outside this configuration")
+        return {"stale": True, "config_hash": digest, "reason": reason}
+    reads = speed.get("reads") or {}
+    timed = layout.reads(reads["suite"]) if reads.get("suite") else None
+    if timed is None or not timed.is_file() or sha256_file(timed) != reads.get("sha256"):
+        return {"stale": True, "config_hash": digest,
+                "reason": f"measured on other {reads.get('suite')} reads than the suite's current ones (it was "
+                          "rebuilt since)"}
+    checkpoint = absolute_path(cfg.alignair_checkpoint) if cfg.alignair_checkpoint else None
+    current_checkpoint = sha256_file(checkpoint) if checkpoint and Path(checkpoint).is_file() else None
+    current_code = None
+    results, stale = {}, []
+    for name, result in (speed.get("results") or {}).items():
+        if result.get("tool") != AlignAIRLocal.name and "checkpoint_sha256" not in result:
+            results[name] = result
+            continue
+        if result.get("checkpoint_sha256") != current_checkpoint:
+            stale.append({"name": name, "reason": "measured on another checkpoint than the configuration's "
+                                                  f"{cfg.alignair_checkpoint or '(none)'}"})
+            continue
+        current_code = current_code or local_code_identity()
+        changed = [key for key in LOCAL_CODE_IDENTITY if result.get(key) != current_code[key]]
+        if changed:
+            stale.append({"name": name, "reason": "measured with other AlignAIR code than this checkout's "
+                                                  f"({', '.join(changed)})"})
+        else:
+            results[name] = result
+    failed = [{"name": name, "error": result["error"]} for name, result in results.items() if "error" in result]
+    measured = speed.get("results") or {}
+    missing = [name for name in speed.get("planned") or [] if name not in measured]
+    return {**speed, "results": results, "stale_results": stale, "failed": failed, "missing": missing}
+
+
+def truth_counts(build: dict) -> dict | None:
+    """The truth summary a suite's build record holds (``build.json``'s ``truth``, see
+    ``truth.summary.truth_summary``), counted for the run report: ``excluded`` cases, cases with ``warnings``, and
+    per gene the ``unscorable`` cases (truth that could not be built, so not scored) and the ``recalled`` reads
+    (GenAIRR's first call is not the generative allele; None when the record does not count them). None without a
+    truth summary."""
+    truth = build.get("truth")
+    if not truth:
+        return None
+    unscorable = truth.get("unscorable") or {}
+    calls = truth.get("simulator_calls") or {}
+    return {"excluded": sum((truth.get("excluded") or {}).values()), "warnings": len(truth.get("warnings") or {}),
+            "unscorable": {g: unscorable.get(g, 0) for g in GENES},
+            "recalled": {g: (calls.get(g) or {}).get("recalled") for g in GENES}}
+
+
+def oracle_check(layout: RunLayout, suite: str) -> dict:
+    """The oracle rule (``scoring.oracle.oracle_problems``) on the oracle's scores of ``suite``'s shared arm:
+    ``status`` (``perfect``, ``imperfect``, or ``not scored`` when there are no oracle scores), the scored
+    ``cases``, the number of ``problems`` and the first ``examples`` (``[case id, metric, value]``, nan as None).
+    A suite with no scored case is imperfect."""
+    path = layout.tool_scores(suite, "shared", ORACLE)
+    if not path.is_file():
+        return {"status": "not scored", "cases": 0, "problems": 0, "examples": []}
+    scores = read_scores(path)
+    if not scores:
+        return {"status": "imperfect", "cases": 0, "problems": 1, "examples": [[None, "no scored case", None]]}
+    problems = oracle_problems(scores)
+    examples = [[case_id, metric, None if math.isnan(value) else value]
+                for case_id, metric, value in problems[:_EXAMPLES]]
+    return {"status": "imperfect" if problems else "perfect", "cases": len(scores), "problems": len(problems),
+            "examples": examples}
+
+
+def s10_vs_s1(layout: RunLayout, cfg: RunConfig) -> dict | None:
+    """S10's primary-metric means against S1's per tool, when both suites are in the run: unpaired and
+    informational (no test). The baseline is S1's ``S10_BASELINE`` stratum, whose read design and SHM rate are
+    S10's. Per tool, rows hold the ``metric``, the summary entries (``mean``, ``n``, ``n_applicable``,
+    ``coverage``; None when absent) ``s1`` and ``s10``, the ``delta`` of their means (S10 - S1) and the entries per
+    held-out setting (``by_setting``). None when neither tool has both score reports."""
+    if not {"S1", "S10"} <= set(cfg.suites):
+        return None
+    s10 = get_suite("S10")
+    settings = [stratum.labels.get("heldout", stratum.name) for stratum in s10.strata]
+    tools = {}
+    for tool in cfg.tools:
+        s1_report = read_json(layout.tool_report_json("S1", "shared", tool))
+        s10_report = read_json(layout.tool_report_json("S10", "shared", tool))
+        if s1_report is None or s10_report is None:
+            continue
+        baseline = s1_report["by_slice"].get("stratum", {}).get(S10_BASELINE)
+        heldout = s10_report["by_slice"].get("heldout", {})
+        rows = []
+        for metric in s10.primary:
+            before, after = _entry(baseline, metric), _entry(s10_report["overall"], metric)
+            means = [None if entry is None else entry.get("mean") for entry in (before, after)]
+            rows.append({"metric": metric, "s1": before, "s10": after,
+                         "delta": None if None in means else means[1] - means[0],
+                         "by_setting": {setting: _entry(heldout.get(setting), metric) for setting in settings}})
+        tools[tool] = rows
+    return {"baseline": f"S1 {S10_BASELINE}", "settings": settings, "tools": tools} if tools else None
+
+
+def s11_parity(layout: RunLayout, cfg: RunConfig) -> dict | None:
+    """Per tool, its S11 forward reads against their reverse-complemented twins (cases sharing ``groups["pair"]``),
+    compared with ``stats.compare`` (forward as a, reverse as b) over every non-informational metric, Holm at
+    ``ALPHA``. Per tool: the ``pairs`` with both cases scored, the ``family_size``, the metrics whose verdict
+    ``differ`` and the S11 primary-metric ``rows`` (paired ``forward`` and ``reverse`` means, ``delta`` = reverse -
+    forward, ``n_paired``, ``verdict``). None without S11 or without scores."""
+    if "S11" not in cfg.suites or not layout.truth("S11").is_file():
+        return None
+    pairs: dict[str, dict[int, str]] = {}
+    for truth in read_truth_jsonl(layout.truth("S11")):
+        if "pair" in truth.groups:
+            pairs.setdefault(truth.groups["pair"], {})[truth.orientation] = truth.case_id
+    primary = get_suite("S11").primary
+    tools = {}
+    for tool in cfg.tools:
+        path = layout.tool_scores("S11", "shared", tool)
+        if not path.is_file():
+            continue
+        scores = read_scores(path)
+        forward, reverse = {}, {}
+        for pair, cases in pairs.items():
+            if cases.get(0) in scores and cases.get(1) in scores:
+                forward[pair], reverse[pair] = scores[cases[0]], scores[cases[1]]
+        seen = {name for side in (forward, reverse) for case in side.values() for name in case}
+        family = sorted(name for name in seen if not is_informational(name))
+        comparison = compare(forward, reverse, family, alpha=ALPHA,
+                             lower_is_better={name for name in family if lower_is_better(name)})
+        rows = [{"metric": metric, "forward": comparison[metric]["mean_a_paired"],
+                 "reverse": comparison[metric]["mean_b_paired"], "delta": comparison[metric]["delta"],
+                 "n_paired": comparison[metric]["n_paired"], "verdict": comparison[metric]["verdict"]}
+                for metric in primary if metric in comparison]
+        tools[tool] = {"pairs": len(forward), "family_size": len(family),
+                       "differ": [name for name in family if comparison[name]["verdict"] != "tie_or_inconclusive"],
+                       "rows": rows}
+    return {"alpha": ALPHA, "tools": tools} if tools else None
+
+
+def genotype_arms(layout: RunLayout, cfg: RunConfig) -> list[dict]:
+    """Per suite with a genotype arm: its ``arms`` and, per primary metric, each tool's summary entry in each arm
+    (``values[tool][arm]``: ``mean``, ``n``, ``n_applicable``, ``coverage``; None when the tool has no score report
+    for that arm or no value of the metric)."""
+    out = []
+    for name in cfg.suites:
+        suite = get_suite(name)
+        if "genotype" not in suite.arms:
+            continue
+        overall = {(tool, arm): (read_json(layout.tool_report_json(name, arm, tool)) or {}).get("overall")
+                   for tool in cfg.tools for arm in suite.arms}
+        rows = [{"metric": metric, "values": {tool: {arm: _entry(overall[tool, arm], metric) for arm in suite.arms}
+                                              for tool in cfg.tools}} for metric in suite.primary]
+        out.append({"suite": name, "arms": list(suite.arms), "rows": rows})
+    return out
+
+
+def excess_alleles_tables(layout: RunLayout, cfg: RunConfig) -> list[dict]:
+    """Per suite with donors (a ``donors.json``): its ``rows``, one per run, the oracle's shared arm first and then
+    each tool in each of the suite's arms, each with ``tool``, ``arm`` and the ``table`` its score report holds
+    (``metrics.genotype.excess_alleles``: ``min_reads`` and per gene letter ``n``, ``excess``, ``fraction``,
+    ``avoidable_excess`` and ``avoidable_fraction``; None when the run has no score report)."""
+    out = []
+    for name in cfg.suites:
+        if not layout.donors(name).is_file():
+            continue
+        runs = [(ORACLE, "shared")] + [(tool, arm) for tool in cfg.tools for arm in get_suite(name).arms]
+        rows = [{"tool": tool, "arm": arm,
+                 "table": (read_json(layout.tool_report_json(name, arm, tool)) or {}).get("excess_alleles")}
+                for tool, arm in dict.fromkeys(runs)]
+        out.append({"suite": name, "rows": rows})
+    return out
+
+
+def relative(layout: RunLayout, path: Path) -> str:
+    """``path`` relative to the run directory, with forward slashes (as a markdown link)."""
+    return Path(path).relative_to(layout.root).as_posix()
+
+
+def _oracle_failure(suite: dict, failed_runs: list[dict]) -> dict:
+    """A suite's oracle check that is not perfect. One that was not scored (its oracle run failed, is missing or
+    stale, or could not be scored) gets the ``reason`` from the oracle's entry in ``failed_runs``: its truth is
+    unchecked, which is not a truth defect."""
+    failure = {"suite": suite["name"], **suite["oracle"]}
+    if suite["oracle"]["status"] == "not scored":
+        run = next((run for run in failed_runs if (run["tool"], run["suite"], run["arm"]) ==
+                    (ORACLE, suite["name"], "shared")), None)
+        failure["reason"] = ("the oracle has no scores" if run is None else
+                             f"the oracle run is {run['status']}: {run.get('error')}")
+    return failure
+
+
+def _suite_summary(layout: RunLayout, cfg: RunConfig, name: str) -> dict:
+    suite = get_suite(name)
+    build = read_json(layout.build_json(name)) or {}
+    excluded = (build.get("truth") or {}).get("excluded") or {}
+    return {"name": name, "title": suite.title, "purpose": suite.purpose, "primary": list(suite.primary),
+            "cases": build.get("n_cases"), "excluded": sum(excluded.values()), "truth": truth_counts(build),
+            "oracle": oracle_check(layout, name),
+            "arms": {arm: _arm_summary(layout, cfg, name, arm, suite.primary) for arm in suite.arms}}
+
+
+def _arm_summary(layout: RunLayout, cfg: RunConfig, name: str, arm: str, primary) -> dict:
+    """The primary-metric rows of the arm's comparison of the run's two tools; not ``compared`` when there is no
+    comparison of exactly those tools."""
+    report = read_json(layout.comparison_json(name, arm))
+    if report is None or (report.get("a"), report.get("b")) != tuple(cfg.tools):
+        return {"compared": False, "link": None, "rows": {}, "verdicts": None}
+    rows = {metric: report["comparison"][metric] for metric in primary if metric in report["comparison"]}
+    verdicts = {verdict: sum(row["verdict"] == verdict for row in rows.values()) for verdict in VERDICTS}
+    return {"compared": True, "link": relative(layout, layout.comparison_md(name, arm)), "rows": rows,
+            "verdicts": verdicts}
+
+
+def _entry(entries: dict | None, metric: str) -> dict | None:
+    """The summary entry (``mean``, ``n``, ``n_applicable``, ``coverage``) of ``metric`` in a ``{metric:
+    summary}`` mapping of a report; None when absent."""
+    return (entries or {}).get(metric)
