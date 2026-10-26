@@ -72,7 +72,7 @@ def activation_stats(model, model_input, module_names=None, eps: float = 1e-6, s
     """
     if module_names is None:
         module_names = default_hook_targets(model)
-    named = dict(model.named_modules())
+    named = _inspection_modules(model)
     stats, handles = {}, []
 
     def make_hook(nm):
@@ -107,7 +107,7 @@ def capture_activations(model, model_input, module_names=None, max_samples: int 
     (eval + no_grad, hooks always removed). Rows are subsampled to ``max_samples`` to bound cost."""
     if module_names is None:
         module_names = default_hook_targets(model)
-    named = dict(model.named_modules())
+    named = _inspection_modules(model)
     caps, handles = {}, []
 
     def make_hook(nm):
@@ -132,10 +132,18 @@ def capture_activations(model, model_input, module_names=None, max_samples: int 
     return caps
 
 
+def _inspection_modules(model) -> dict:
+    modules = dict(model.named_modules())
+    if callable(getattr(model, "component_modules", None)):
+        modules.update(model.component_modules())
+    return modules
+
+
 def default_hook_targets(model) -> list:
-    """Heuristic representative slice for AlignAIR-style conv models: embedding, orientation head,
-    one post-nonlinearity block per tower (bounded -> real saturation), tower projections + heads."""
-    targets = [n for n in ("embedding", "orientation_head") if hasattr(model, n)]
+    """Use a model's declared inspection points, with a heuristic fallback for other PyTorch models."""
+    if callable(getattr(model, "component_modules", None)):
+        return list(model.component_modules())
+    targets = [n for n in ("embedding", "orientation_head") if getattr(model, n, None) is not None]
     for nm, _ in model.named_modules():
         if nm.endswith("conv_layers.0") or nm.endswith(".proj") or nm.endswith("_head") \
                 or nm.endswith(".head"):     # branch boundary/allele heads + meta_heads.*.head

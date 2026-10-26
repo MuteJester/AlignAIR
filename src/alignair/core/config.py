@@ -1,6 +1,6 @@
 """Configuration for the faithful PyTorch AlignAIR aligner.
 
-One model — :class:`alignair.models.AlignAIR` — serves both the old single- and multi-chain cases.
+One model — :class:`alignair.core.AlignAIR` — serves nucleotide and protein-class configurations.
 Which one you get is pure data: build the config from **one** GenAIRR dataconfig and it behaves like
 the old SingleChain (no chain_type head); build it from **several** and it behaves like the old
 MultiChain (union allele counts + a chain_type/locus head). Allele counts, ``has_d`` and
@@ -11,8 +11,10 @@ consumer (model + loss) iterates it, so ``has_d`` never has to be re-expanded in
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass, replace
+from typing import Literal, Optional
+
+from ..errors import ConfigurationError
 
 # conv-tower kernel schedules (len == N+1: N convs + 1 residual).
 _SEG_KERNELS = (3, 3, 3, 2, 5)          # meta + all segmentation towers (N=4)
@@ -70,6 +72,35 @@ class AlignAIRConfig:
     # post-hoc allele-confidence calibration: per-gene temperature {"v":T,...} applied to the sigmoid
     # allele probabilities at inference (sigmoid(logit(p)/T)); fitted post-training, argmax-preserving.
     allele_temperatures: Optional[dict] = None
+    # Serialized construction choices shared by nucleotide and protein models. Architecture names
+    # resolve through core.components; loading never imports arbitrary code from a model file.
+    architecture: str = "conv-v1"
+    classification_mode: Literal["multilabel", "categorical"] = "multilabel"
+    boundary_mode: Literal["residue", "half_open"] = "residue"
+    use_meta_heads: bool = True
+    reject_empty_sequences: bool = False
+
+    def __post_init__(self):
+        for name, choices in (("classification_mode", ("multilabel", "categorical")),
+                              ("boundary_mode", ("residue", "half_open"))):
+            if getattr(self, name) not in choices:
+                raise ConfigurationError(f"unsupported {name}: {getattr(self, name)!r}",
+                                         context={"field": name, "allowed": choices})
+
+    def with_amino_acid_heads(self) -> "AlignAIRConfig":
+        """Copy this config with the established protein-class model's head and mask choices.
+
+        The caller supplies its tokenizer vocabulary and label counts. Other combinations, such as
+        categorical heads with auxiliary predictions, can be selected with dataclasses.replace.
+        """
+        return replace(self, classification_mode="categorical", boundary_mode="half_open",
+                       use_orientation=False, use_meta_heads=False, state_head=False,
+                       reject_empty_sequences=True)
+
+    def classification_key(self, gene: str) -> str:
+        """Output key with explicit score semantics: sigmoid allele probabilities or class logits."""
+        suffix = "allele" if self.classification_mode == "multilabel" else "class_logits"
+        return f"{gene}_{suffix}"
 
     @property
     def gene_specs(self) -> tuple:

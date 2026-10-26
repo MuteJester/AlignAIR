@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared configurable nucleotide/protein model assembly, named architecture component factories, and
+  a common layer-inspection interface. Construction choices round-trip through model configuration.
+- Website model-composition API guide with component, checkpoint, and score-semantics contracts.
 - QA execution layers, per-test RNG/cache isolation, outbound-network rejection, bounded test execution,
   shuffled component checks, critical-file branch/statement coverage gates, and persisted CI reports.
 - Checksum-pinned public-model acceptance fixtures and required release-claim execution gates. Model
@@ -17,6 +20,9 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- The AA model constructor delegates to the shared AlignAIR implementation; categorical scores,
+  separate boundary masks, and optional heads are explicit configuration choices.
+- ModelXRay, AA representation extraction, and the assay profiler use shared model inspection points.
 - Fully removed simulator segments are treated as absent; visible segments still require valid germline
   annotations. Training losses and metrics exclude absent/inverted gene supervision instead of using
   placeholder coordinates. Crop handling accepts the same absent-segment contract.

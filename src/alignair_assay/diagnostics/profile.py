@@ -111,16 +111,7 @@ def _sync(device: str) -> None:
 
 def hooked_modules(model) -> dict[str, torch.nn.Module]:
     """The leaf submodules that are timed, by profile name (the module docstring lists them)."""
-    modules = {"embedding": model.embedding, "orientation_head": model.orientation_head,
-               "meta_tower": model.meta_tower}
-    for key, head in model.meta_heads.items():
-        modules[f"meta_heads.{key}"] = head
-    if getattr(model, "state_branch", None) is not None:
-        modules["state_branch"] = model.state_branch
-    for gene, branch in model.branches.items():
-        for part in ("seg_tower", "start_head", "end_head", "cutout", "cls_tower", "cls_mid", "cls_head"):
-            modules[f"{gene}.{part}"] = getattr(branch, part)
-    return modules
+    return model.component_modules()
 
 
 @contextmanager

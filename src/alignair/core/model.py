@@ -1,57 +1,42 @@
-"""The one AlignAIR model — SingleChain and MultiChain unified into a single class.
+"""Shared AlignAIR assembly and execution for nucleotide and amino-acid models.
 
 Single vs multi chain is not two classes here, it is data: ``cfg.gene_specs`` says which genes exist
 and ``cfg.num_chain_types`` says whether a chain_type/locus head is present. Build the config from one
 GenAIRR dataconfig for the old single-chain behavior, or several for the old multi-chain behavior.
 
-Flow (unchanged from the TF model): token+position embedding -> in-model orientation detect/correct
-/re-embed -> shared meta tower -> per-gene :class:`GeneBranch` segmentation -> meta :class:`MetaHead`
-predictions -> per-gene soft-cutout classification.
+Construction is selected by the serialized architecture name. Configuration independently selects
+classification score semantics, boundary slots, orientation correction, auxiliary heads and edit states.
+Every configuration follows the same per-gene segmentation and soft-cutout classification path.
 """
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from .config import _SEG_KERNELS, AlignAIRConfig
+from .config import AlignAIRConfig
+from .boundaries import boundary_masks
+from .components import architecture_components
+from ..errors import InputError
 from ..nn.heads.orientation import apply_orientation
-from ..nn.heads.state import PerPositionStateBranch
-from .gene_branch import GeneBranch, MetaHead, build_tower
-from .layers import EmbeddingOrientationHead, TokenAndPositionEmbedding
 
 
 class AlignAIR(nn.Module):
     def __init__(self, cfg: AlignAIRConfig):
         super().__init__()
         self.cfg = cfg
-        C = cfg.embed_dim
-
-        self.embedding = TokenAndPositionEmbedding(cfg.vocab_size, C, cfg.max_seq_length)
-        # in-model orientation is nucleotide-only (reverse-complement); off for amino-acid models
-        self.orientation_head = EmbeddingOrientationHead(C) if getattr(cfg, "use_orientation", True) else None
-        self.meta_tower = build_tower(cfg, _SEG_KERNELS)
-        self.branches = nn.ModuleDict({s.name: GeneBranch(s, cfg) for s in cfg.gene_specs})
-        self.meta_heads = nn.ModuleDict(self._build_meta_heads(cfg))
-        # optional per-position edit-state head (germline/sub/insertion/deletion); off by default so
-        # legacy checkpoints (no such weights) still load strict.
-        self.state_branch = PerPositionStateBranch(C) if getattr(cfg, "state_head", False) else None
-
-    @staticmethod
-    def _build_meta_heads(cfg: AlignAIRConfig) -> dict:
-        L = cfg.max_seq_length
-        heads = {
-            "mutation_rate": MetaHead(cfg.block_out, 1, mid_dim=L, out_act=F.relu, clamp=(0.0, 1.0)),
-            "indel_count": MetaHead(cfg.block_out, 1, mid_dim=L, out_act=F.relu, clamp=(0.0, 50.0)),
-            "productive": MetaHead(cfg.block_out, 1, out_act=torch.sigmoid),
-        }
-        if cfg.num_chain_types > 1:                        # multi-chain: chain_type (locus) head
-            heads["chain_type_logits"] = MetaHead(cfg.block_out, cfg.num_chain_types, mid_dim=L)
-        return heads
+        components = architecture_components(cfg.architecture)
+        self.embedding = components.embedding(cfg)
+        self.orientation_head = components.orientation_head(cfg) if cfg.use_orientation else None
+        self.meta_tower = components.meta_tower(cfg) if cfg.use_meta_heads else None
+        self.branches = nn.ModuleDict({s.name: components.gene_branch(s, cfg) for s in cfg.gene_specs})
+        self.meta_heads = nn.ModuleDict(components.meta_heads(cfg) if cfg.use_meta_heads else {})
+        self.state_branch = components.state_head(cfg) if cfg.state_head else None
 
     def forward(self, batch: dict) -> dict:
         tokens = batch["tokenized_sequence"]
-        mask = tokens != 0                                 # non-pad
+        mask, end_mask = boundary_masks(tokens, self.cfg.boundary_mode)
+        if self.cfg.reject_empty_sequences and not mask.any(-1).all():
+            raise InputError("empty (all-pad) sequence in batch; reject empty reads upstream")
         out: dict = {}
 
         # orientation: predict from the shared initial embeddings, correct the input via an
@@ -67,8 +52,11 @@ class AlignAIR(nn.Module):
                        else orient_logits.argmax(-1).detach())          # self-corrected at inference
             emb = self.embedding(apply_orientation(tokens, mask, correct))
 
-        meta = self.meta_tower(emb)
-        out["position_mask"] = mask                            # valid read positions (for pad-masked seg loss)
+        meta = self.meta_tower(emb) if self.meta_tower is not None else None
+        if self.cfg.boundary_mode == "half_open":
+            out["start_mask"], out["end_mask"] = mask, end_mask
+        else:
+            out["position_mask"] = mask
 
         # per-position edit states, from the canonicalized embedding -> forward-frame, aligns with the
         # forward-frame `state_labels` target (indel positions the postprocessing can consume directly)
@@ -78,7 +66,7 @@ class AlignAIR(nn.Module):
         # per-gene segmentation (soft-argmax boundary expectations; masked to the read, not the pad)
         exp: dict = {}
         for name, branch in self.branches.items():
-            s_log, e_log, s_exp, e_exp = branch.segment(emb, mask)
+            s_log, e_log, s_exp, e_exp = branch.segment(emb, mask, end_mask)
             out[f"{name}_start_logits"], out[f"{name}_end_logits"] = s_log, e_log
             out[f"{name}_start"], out[f"{name}_end"] = s_exp, e_exp
             exp[name] = (s_exp, e_exp)
@@ -87,16 +75,33 @@ class AlignAIR(nn.Module):
         for key, head in self.meta_heads.items():
             out[key] = head(meta)
 
-        # per-gene soft-cutout classification (multi-label allele probs)
+        # Per-gene scores retain their explicit probability/logit semantics in the output key.
         for name, branch in self.branches.items():
-            out[f"{name}_allele"] = branch.classify(emb, *exp[name])
+            out[self.cfg.classification_key(name)] = branch.classify(emb, *exp[name])
         return out
+
+    def component_modules(self) -> dict[str, nn.Module]:
+        """Named inspection points shared by profilers and model diagnostics.
+
+        Values are the registered modules themselves, with no duplicate ownership or hooks.
+        A custom gene branch declares its own inspection points through the same method.
+        """
+        modules = {"embedding": self.embedding}
+        for name in ("orientation_head", "meta_tower", "state_branch"):
+            module = getattr(self, name)
+            if module is not None:
+                modules[name] = module
+        modules.update({f"meta_heads.{name}": head for name, head in self.meta_heads.items()})
+        for gene, branch in self.branches.items():
+            modules.update({f"{gene}.{name}": module for name, module in branch.component_modules().items()})
+        return modules
 
     @torch.no_grad()
     def clamp_params(self) -> None:
         """TF MinMaxValueConstraint on the analysis-head kernels (applied after each optimizer step)."""
         for head in self.meta_heads.values():
-            head.clamp_()
+            if hasattr(head, "clamp_"):
+                head.clamp_()
 
     # ------------------------------------------------------------------ constructors
     @classmethod

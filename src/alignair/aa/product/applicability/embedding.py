@@ -29,7 +29,8 @@ def branch_features(predictor, sequences, branches=("v", "j")) -> np.ndarray:
     model = predictor.model
     model.eval()
     captured: dict = {}
-    handles = [model.branches[b].cls_head.register_forward_pre_hook(
+    components = model.component_modules()
+    handles = [components[f"{b}.cls_head"].register_forward_pre_hook(
         lambda mod, inp, nm=b: captured.__setitem__(nm, inp[0].detach())) for b in branches]
     try:
         with torch.no_grad():

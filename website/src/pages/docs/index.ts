@@ -11,6 +11,7 @@ import { evalPages } from "./pages-eval";
 import { maintainerPages } from "./pages-maintainer";
 import { aaResearchPages } from "./pages-aa-research";
 import { testingPages } from "./pages-testing";
+import { compositionPages } from "./pages-composition";
 import { communityPages } from "./pages-community";
 
 /**
@@ -31,6 +32,7 @@ export const DOCS: DocPage[] = [
   ...referencePages, // model-contract, known-failure-modes, troubleshooting
   ...trainingPages, // training  [Training]
   ...evalPages, // benchmarks, performance  [Evaluation]; design  [Design]
+  ...compositionPages, // model-composition  [Design]
   ...maintainerPages, // publishing  [Maintainer]
   ...aaResearchPages, // aa-guard-research  [Maintainer]
   ...testingPages, // testing  [Maintainer]

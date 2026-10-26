@@ -258,6 +258,7 @@ def _load_legacy_pickle(path: str, *, device: str) -> AAPredictor:
         **{f.name: cfg_raw[f.name] for f in dataclasses.fields(AlignAIRConfig) if f.name in cfg_raw})
     dev = resolve_device(device)
     model = AAAlignAIR(cfg)
+    cfg = model.cfg
     model.load_state_dict(ck["model"], strict=True)
     model.to(dev).eval()
     return AAPredictor(model=model, cfg=cfg, tokenizer=AAProteinTokenizer(), class_maps={},
@@ -305,6 +306,7 @@ def load_aa_model(model, *, device: str = "auto", trust_pickle: bool = False) ->
 
     dev = resolve_device(device)
     model_obj = AAAlignAIR(cfg)
+    cfg = model_obj.cfg
     model_obj.load_state_dict(serialize.state_dict_from_bytes(weights_bytes), strict=True)
     model_obj.to(dev).eval()
 

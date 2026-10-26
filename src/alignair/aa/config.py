@@ -20,4 +20,4 @@ def aa_igh_config(n_v_classes: int, n_j_classes: int, n_d_alleles: int = 0,
         num_chain_types=1,
         max_seq_length=max_seq_length,
         vocab_size=AA_VOCAB_SIZE,
-    )
+    ).with_amino_acid_heads()
