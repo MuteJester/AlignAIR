@@ -41,6 +41,8 @@ from alignair_assay.real.genotype import (
 )
 from alignair_assay.real.locus import PRESENT, SpanEvidence, with_capture
 
+pytestmark = pytest.mark.component
+
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
 
 # The header of a VDJbase genomic per-sample CSV, copied from P25_I58_S1.csv (study P25).

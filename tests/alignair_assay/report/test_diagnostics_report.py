@@ -23,6 +23,8 @@ from alignair_assay.report.diagnostics import (
     suite_markdown,
 )
 
+pytestmark = pytest.mark.component
+
 KEY = "0123456789ab-fedcba987654"
 
 

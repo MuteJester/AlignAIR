@@ -10,6 +10,8 @@ from alignair_assay.truth.build import truth_from_genairr_record
 from alignair_assay.truth.io import read_truth_jsonl, write_truth_jsonl
 from alignair_assay.truth.segment import check_invariants
 
+pytestmark = pytest.mark.component
+
 ga = pytest.importorskip("GenAIRR")
 
 

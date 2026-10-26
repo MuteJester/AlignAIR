@@ -43,6 +43,8 @@ from alignair_assay.real.truth import (
     truth_to_json,
 )
 
+pytestmark = pytest.mark.component
+
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
 RUN = Path(__file__).resolve().parents[3] / ".private" / "assay" / "p3a_task4_run"
 DONOR = "SC-23"

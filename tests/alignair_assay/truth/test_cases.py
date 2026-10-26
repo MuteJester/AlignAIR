@@ -9,6 +9,8 @@ from alignair_assay.truth.build import truth_from_genairr_record
 from alignair_assay.truth.case import truth_from_case
 from alignair_assay.truth.io import read_truth_jsonl, truth_from_dict, truth_to_dict, write_truth_jsonl
 
+pytestmark = pytest.mark.component
+
 
 @pytest.fixture(scope="module")
 def records(genairr):

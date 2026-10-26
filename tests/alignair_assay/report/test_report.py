@@ -1,8 +1,12 @@
+
+import pytest
 import json
 import math
 
 from alignair_assay.report import build_comparison_report, build_score_report, headline_table, to_markdown
 from alignair_assay.stats import MetricSummary, compare
+
+pytestmark = pytest.mark.component
 
 
 def _ms(mean, n=10, cov=1.0):

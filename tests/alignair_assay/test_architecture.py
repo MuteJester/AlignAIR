@@ -8,10 +8,14 @@ by ``real.<sub>`` (``real/__init__.py`` by ``real``), with its own row, and an i
 ``diagnostics/``, ``alignair_benchmark`` never, and the pure layers (truth, metrics, stats, real.truth,
 real.metrics) do no file, process or network IO.
 """
+
+import pytest
 import ast
 from pathlib import Path
 
 import alignair_assay
+
+pytestmark = pytest.mark.component
 
 PACKAGE = Path(alignair_assay.__file__).resolve().parent
 # Subpackages whose modules are each a sub-layer of their own.

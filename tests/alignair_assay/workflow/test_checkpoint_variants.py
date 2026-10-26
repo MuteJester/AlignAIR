@@ -25,7 +25,7 @@ from alignair_assay.runners.oracle import OracleRunner  # noqa: E402
 from alignair_assay.runners.variants import AlignAIRLocalVariant  # noqa: E402
 from alignair_assay.workflow.orchestrate import RunConfig, check_config, run_all, score_and_report  # noqa: E402
 
-pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+pytestmark = [pytest.mark.integration, pytest.mark.genairr_build]  # these tests build GenAIRR suites
 CODE = {"code_sha256": "c" * 64, "torch_version": None}
 TOOLS = ("alignair-local@a", "alignair-local@b")
 

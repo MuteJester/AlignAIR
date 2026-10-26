@@ -19,6 +19,8 @@ from alignair_assay.core.provenance import (
     tree_digest,
 )
 
+pytestmark = pytest.mark.component
+
 GENAIRR_FIELDS = {"genairr_version", "genairr_source", "genairr_git_commit", "genairr_git_dirty",
                   "genairr_source_sha256"}
 

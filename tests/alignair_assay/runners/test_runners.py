@@ -42,7 +42,7 @@ from alignair_assay.testing import assert_oracle_perfect  # noqa: E402
 from alignair_assay.truth.io import read_truth_jsonl  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 
-pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+pytestmark = [pytest.mark.integration, pytest.mark.genairr_build]  # these tests build GenAIRR suites
 IGBLAST_DIR = os.environ.get("ALIGNAIR_ASSAY_IGBLAST_DIR")
 needs_igblast = pytest.mark.skipif(not IGBLAST_DIR,
                                    reason="set ALIGNAIR_ASSAY_IGBLAST_DIR to an unpacked IgBLAST release")

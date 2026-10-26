@@ -21,6 +21,8 @@ from alignair_assay.suites.donors import (  # noqa: E402
     sample_donors,
 )
 
+pytestmark = pytest.mark.integration
+
 REFERENCE = "HUMAN_IGH_OGRDB"
 
 

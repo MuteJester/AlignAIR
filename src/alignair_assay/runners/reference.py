@@ -87,4 +87,3 @@ def _selected(reference: Reference, alleles: Iterable[str] | None) -> list[str]:
     if unknown:
         raise ValueError(f"allele {unknown[0]!r} is not in the reference ({len(unknown)} unknown in total)")
     return names
-

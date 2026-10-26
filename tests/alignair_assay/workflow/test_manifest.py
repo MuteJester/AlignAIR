@@ -1,7 +1,11 @@
 """The run directory's manifest, shared by ``all`` and ``real`` (``workflow.manifest``)."""
 from __future__ import annotations
 
+import pytest
+
 from alignair_assay.workflow.manifest import ABSENT, changed_fields, describe_changes, flat, manifest_record
+
+pytestmark = pytest.mark.integration
 
 IDENTITY = {"donors": ["W-97"], "cap": 500, "settings": {"igblast": {"version": "1.22.0", "threads": 8}},
             "images": {"samtools": "quay.io/biocontainers/samtools:1.23.1@sha256:23cd"}}

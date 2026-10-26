@@ -34,6 +34,8 @@ from alignair_assay.runners.base import RunResult
 from alignair_assay.workflow import real_score, real_steps
 from alignair_assay.workflow.real import RealConfig, run_real
 
+pytestmark = pytest.mark.integration
+
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
 DOCKER = os.environ.get("ALIGNAIR_ASSAY_DOCKER") == "1"
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")

@@ -2,6 +2,8 @@ import pytest
 
 from alignair_assay.truth.segment import check_invariants, observe_segment
 
+pytestmark = pytest.mark.component
+
 ga = pytest.importorskip("GenAIRR")
 
 

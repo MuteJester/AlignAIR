@@ -27,6 +27,8 @@ from alignair_assay.workflow import real_steps
 from alignair_assay.workflow.orchestrate import RunConfig, identity
 from alignair_assay.workflow.real import RealConfig, manifest_identity
 
+pytestmark = pytest.mark.integration
+
 RECORD = json.loads((Path(__file__).resolve().parents[1] / "fixtures" / "plain_tool_records.json").read_text())
 
 

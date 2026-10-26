@@ -1,7 +1,11 @@
+
+import pytest
 from dataclasses import replace
 
 from alignair_assay.truth.bench import truth_from_bench_case
 from alignair_assay.truth.summary import simulator_calls, truth_summary
+
+pytestmark = pytest.mark.component
 
 FIXTURE_NAMES = ("amplicon_janchor_000000.json", "orientation_000001.json", "orientation_000002.json")
 

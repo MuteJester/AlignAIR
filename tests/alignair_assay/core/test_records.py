@@ -13,6 +13,8 @@ from alignair_assay.core import records
 from alignair_assay.core.jsonl import read_header, read_jsonl
 from alignair_assay.core.records import digest, read_json, write_json, write_jsonl, write_text
 
+pytestmark = pytest.mark.component
+
 REPO = Path(__file__).resolve().parents[3]
 # A record with nested keys out of order, a float, a None, a bool and a non-ASCII character, and its digest as the
 # workflow helpers computed it before they were promoted (``real_steps.digest``, ``build._digest``,

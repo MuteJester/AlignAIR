@@ -1,8 +1,12 @@
 """Group metrics: ``clone.agree_modal``, scored over the members of each simulated clone."""
+
+import pytest
 from alignair_assay.core.prediction import PredSegment, Prediction
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.metrics.groups import clone_agreement
 from alignair_assay.truth.model import ObservableTruth
+
+pytestmark = pytest.mark.component
 
 TRUTH_KEY = (frozenset({"IGHV1-2"}), frozenset({"IGHJ4"}), 48)
 K = ("IGHV1-2*02", "IGHJ4*02", 48)

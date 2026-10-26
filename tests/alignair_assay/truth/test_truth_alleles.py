@@ -4,6 +4,8 @@ from alignair_assay.core.reference import Reference, gene_name
 from alignair_assay.truth.alleles import observable_alleles
 from alignair_assay.truth.segment import ObservedSegment, observe_segment
 
+pytestmark = pytest.mark.component
+
 ga = pytest.importorskip("GenAIRR")
 
 

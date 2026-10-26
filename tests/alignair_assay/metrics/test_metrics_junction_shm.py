@@ -16,6 +16,8 @@ from alignair_assay.truth.build import truth_from_genairr_record
 from alignair_assay.truth.model import JunctionTruth
 from alignair_assay.truth.oracle import oracle_prediction
 
+pytestmark = pytest.mark.component
+
 ga = pytest.importorskip("GenAIRR")
 
 FIXTURE_NAMES = ("amplicon_janchor_000000.json", "orientation_000001.json", "orientation_000002.json")

@@ -50,6 +50,8 @@ from alignair_assay.real.fetch import (
     sra_commands,
 )
 
+pytestmark = pytest.mark.component
+
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
 NETWORK = os.environ.get("ALIGNAIR_ASSAY_NETWORK") == "1"
 DOCKER = os.environ.get("ALIGNAIR_ASSAY_DOCKER") == "1"

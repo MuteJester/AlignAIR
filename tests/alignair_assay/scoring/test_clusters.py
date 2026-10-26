@@ -7,6 +7,8 @@ import pytest
 from alignair_assay.scoring.clusters import CLUSTER_KEYS, cluster_ids
 from alignair_assay.truth.model import ObservableTruth
 
+pytestmark = pytest.mark.component
+
 
 def _truth(case_id: str, stratum: str, groups: dict) -> ObservableTruth:
     return ObservableTruth(case_id=case_id, stratum=stratum, sequence="ACGT", orientation=0, segments={},

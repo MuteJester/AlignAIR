@@ -1,5 +1,7 @@
 """The real-data report: markdown rendered from the plain summary dict ``workflow.real.run_real`` writes
 (``real_summary.json``). Every summary here is built by hand."""
+
+import pytest
 import copy
 import re
 
@@ -9,6 +11,8 @@ from alignair_assay.report.real import (
     SUMMARY_SECTIONS,
     real_report_markdown,
 )
+
+pytestmark = pytest.mark.component
 
 EXCLUSIONS = ("excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled", "excluded:unmapped",
               "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved",

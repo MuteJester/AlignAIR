@@ -1,9 +1,13 @@
 """``diagnose --against``'s printed comparison: each significant metric with its direction."""
+
+import pytest
 from types import SimpleNamespace
 
 from alignair_assay.cli.diagnose import _print_against
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.report.diagnostics import against_summary
+
+pytestmark = pytest.mark.integration
 
 THIS, BASELINE = "0123456789ab-fedcba987654", "aaaaaaaaaaaa-fedcba987654"
 

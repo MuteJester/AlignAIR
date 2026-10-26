@@ -15,6 +15,8 @@ from alignair.model_file import save_model  # noqa: E402
 from alignair_assay.core.reference import Reference  # noqa: E402
 from alignair_assay.diagnostics.api_predict import CHUNK_SIZE, GENOTYPE_FAILED, GENOTYPE_NOTE, main  # noqa: E402
 
+pytestmark = pytest.mark.component
+
 
 @pytest.fixture(scope="module")
 def checkpoint(tmp_path_factory, make_shaped_model):

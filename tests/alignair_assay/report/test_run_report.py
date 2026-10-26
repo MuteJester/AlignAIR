@@ -1,7 +1,11 @@
 """The run report: markdown rendered from the plain summary dict ``workflow.summary.collect_run_summary`` builds."""
+
+import pytest
 import copy
 
 from alignair_assay.report.run import run_report_markdown
+
+pytestmark = pytest.mark.component
 
 
 def _entry(a, b, verdict):

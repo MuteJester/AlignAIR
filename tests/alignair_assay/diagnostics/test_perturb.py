@@ -11,6 +11,8 @@ from alignair.model_file import container, load_model, save_model  # noqa: E402
 
 from alignair_assay.diagnostics.perturb import zero_module  # noqa: E402
 
+pytestmark = pytest.mark.component
+
 REFERENCE = "HUMAN_IGH_OGRDB"
 
 

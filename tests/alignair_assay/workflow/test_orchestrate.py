@@ -21,7 +21,7 @@ from alignair_assay.suites import SUITES, get_suite  # noqa: E402
 from alignair_assay.workflow import build as build_module  # noqa: E402
 from alignair_assay.workflow.orchestrate import RunConfig, check_config, config_hash, run_all  # noqa: E402
 
-pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+pytestmark = [pytest.mark.integration, pytest.mark.genairr_build]  # these tests build GenAIRR suites
 JUNCTION_COLUMNS = ("junction", "junction_aa", "junction_start", "junction_end")
 
 

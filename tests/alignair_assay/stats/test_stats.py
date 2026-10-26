@@ -9,6 +9,8 @@ import pytest
 
 from alignair_assay.stats import MetricSummary, by_slice, compare, holm, read_changes, summarize, to_dict
 
+pytestmark = pytest.mark.component
+
 NAN = float("nan")
 
 

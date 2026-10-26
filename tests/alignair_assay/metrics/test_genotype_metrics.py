@@ -15,6 +15,8 @@ from alignair_assay.truth.boundaries import BoundaryTruth
 from alignair_assay.truth.model import ObservableTruth, SegmentTruth
 from alignair_assay.truth.segment import ObservedSegment
 
+pytestmark = pytest.mark.component
+
 OUTSIDE_V, OUTSIDE_J, DELETED = "v.outside_genotype", "j.outside_genotype", "v.deleted_gene_call"
 # donor00 is heterozygous for IGHV1-2, homozygous for IGHV3-23 and IGHJ4, and has IGHV1-69 and IGHV4-34 deleted.
 DONOR = DonorGenotype("donor00", carried=frozenset({"IGHV1-2*02", "IGHV1-2*04", "IGHV3-23*01", "IGHJ4*02"}),

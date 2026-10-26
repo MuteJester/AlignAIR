@@ -4,6 +4,8 @@ import pytest
 
 from alignair_assay.core.layout import RunLayout
 
+pytestmark = pytest.mark.component
+
 
 def test_layout_paths(tmp_path):
     layout = RunLayout(tmp_path)

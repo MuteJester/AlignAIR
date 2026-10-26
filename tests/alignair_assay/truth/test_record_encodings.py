@@ -13,6 +13,8 @@ from alignair_assay.truth.build import truth_from_genairr_record
 from alignair_assay.truth.genairr import observe_forward, observe_inverted_d, record_calls
 from alignair_assay.truth.segment import check_invariants
 
+pytestmark = pytest.mark.component
+
 # A 16-nt toy D allele. The read holds NP bases, revcomp(D[2:13]) (trims 2 and 3) and more NP bases.
 D_ALLELE = "ACGTTGCAAGGCTTAC"
 LEFT, RIGHT = "GGGGG", "CCCCC"

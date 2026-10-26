@@ -154,4 +154,3 @@ def build_is_current(layout: RunLayout, suite: str, *, split: str, reference_dig
     current truth version (``build_changes`` is empty): the build need not be redone, and runs on it may be
     reused."""
     return not build_changes(layout, suite, split=split, reference_digest=reference_digest, seed=seed, scale=scale)
-

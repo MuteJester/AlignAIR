@@ -16,7 +16,7 @@ from alignair_assay.core.cases import read_fasta  # noqa: E402
 from alignair_assay.diagnostics.profile import OTHER, hooked_modules, profile_model  # noqa: E402
 from alignair_assay.diagnostics.replay import STAGES, load_model_checked, replay  # noqa: E402
 
-pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+pytestmark = [pytest.mark.integration, pytest.mark.genairr_build]  # these tests build GenAIRR suites
 BATCH = 16
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
 

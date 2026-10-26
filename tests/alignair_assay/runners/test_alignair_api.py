@@ -38,7 +38,7 @@ from alignair_assay.runners.alignair_api import (  # noqa: E402
 from alignair_assay.runners.base import RunnerOptions, error_line, require_successful_run  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 
-pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+pytestmark = [pytest.mark.integration, pytest.mark.genairr_build]  # these tests build GenAIRR suites
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
 GPU = os.environ.get("ALIGNAIR_ASSAY_GPU") == "1"
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")

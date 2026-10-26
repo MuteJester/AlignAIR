@@ -38,7 +38,7 @@ from alignair_assay.workflow import diagnose as diagnose_module  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 from alignair_assay.workflow.diagnose import evaluate, read_case_scores, select_cases  # noqa: E402
 
-pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+pytestmark = [pytest.mark.integration, pytest.mark.genairr_build]  # these tests build GenAIRR suites
 MODEL = os.environ.get("ALIGNAIR_ASSAY_MODEL")
 REFERENCE = "HUMAN_IGH_OGRDB"
 SCALE = 0.02

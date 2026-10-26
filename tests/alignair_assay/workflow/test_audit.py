@@ -20,7 +20,7 @@ from alignair_assay.report.audit import audit_markdown
 from alignair_assay.workflow import audit
 from alignair_assay.workflow.audit import CHECKS, GROUPS, AuditConfig, check, settle, verdict
 
-pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+pytestmark = [pytest.mark.integration, pytest.mark.genairr_build]  # these tests build GenAIRR suites
 
 
 def _record(checks: list[dict]) -> dict:

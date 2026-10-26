@@ -5,6 +5,8 @@ import pytest
 from alignair_assay.scoring.slices import d_len_bin, slice_labels, v_len_bin
 from alignair_assay.truth.bench import truth_from_bench_case
 
+pytestmark = pytest.mark.component
+
 
 @pytest.mark.parametrize("length,label", [
     (None, "absent"), (0, "<5"), (4, "<5"), (5, "5-7"), (7, "5-7"), (8, "8-9"), (9, "8-9"), (10, "10-11"),

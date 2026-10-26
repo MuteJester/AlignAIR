@@ -18,6 +18,8 @@ from alignair_assay.core.container import (
     run_container,
 )
 
+pytestmark = pytest.mark.component
+
 DIGEST = "sha256:" + "a" * 64
 IMAGE = f"quay.io/biocontainers/samtools:1.0--h0_0@{DIGEST}"
 

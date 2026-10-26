@@ -47,6 +47,8 @@ from alignair_assay.real.metrics import (
 )
 from alignair_assay.real.truth import RealTruth
 
+pytestmark = pytest.mark.component
+
 DONOR = "SC-23"
 # IMGT gap columns (0-based, half-open) of the synthetic V alleles: codon 104 (columns 309-311) is TGT.
 GAPS = ((27, 30), (72, 84), (165, 171), (195, 198))

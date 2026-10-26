@@ -12,6 +12,8 @@ ga = pytest.importorskip("GenAIRR")
 
 from alignair_assay.suites.donors import sample_donors  # noqa: E402
 
+pytestmark = pytest.mark.component
+
 CONFIG = ga.data.HUMAN_IGH_OGRDB
 
 V1 = "ACGTACGTACGT"  # the generative allele

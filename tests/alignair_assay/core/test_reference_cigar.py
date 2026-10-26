@@ -6,6 +6,8 @@ import pytest
 from alignair_assay.core.cigar import format_cigar, parse_cigar, walk
 from alignair_assay.core.reference import Reference, gene_name
 
+pytestmark = pytest.mark.component
+
 
 def test_parse_format_roundtrip():
     assert format_cigar(parse_cigar("3M0I2M1D4M")) == "5M1D4M"

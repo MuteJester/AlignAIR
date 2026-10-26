@@ -18,6 +18,8 @@ from alignair_assay.core import freeze
 from alignair_assay.core.freeze import FREEZE_RECORD, PACKAGE, freeze_genairr, read_freeze
 from alignair_assay.core.provenance import tree_digest
 
+pytestmark = pytest.mark.component
+
 
 def _package(root: Path) -> Path:
     """A fake GenAIRR package: sources, a compiled engine, data and byte code."""

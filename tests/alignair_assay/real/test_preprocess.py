@@ -43,6 +43,8 @@ from alignair_assay.real.preprocess import (
     recipe,
 )
 
+pytestmark = pytest.mark.component
+
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
 DOCKER = os.environ.get("ALIGNAIR_ASSAY_DOCKER") == "1"
 needs_data = pytest.mark.skipif(not DATA, reason="set ALIGNAIR_ASSAY_DATA to the PRJNA555323 data root")

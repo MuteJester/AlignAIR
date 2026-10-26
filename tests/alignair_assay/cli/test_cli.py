@@ -21,6 +21,8 @@ from alignair_assay.truth.bench import truth_from_bench_case
 from alignair_assay.truth.io import read_truth_header, read_truth_jsonl, write_truth_jsonl
 from alignair_assay.truth.oracle import oracle_prediction
 
+pytestmark = pytest.mark.integration
+
 ga = pytest.importorskip("GenAIRR")
 
 FIXTURE_NAMES = ("amplicon_janchor_000000.json", "orientation_000001.json", "orientation_000002.json")

@@ -1,5 +1,9 @@
+
+import pytest
 from alignair_assay.truth.boundaries import boundary_intervals
 from alignair_assay.truth.segment import observe_segment
+
+pytestmark = pytest.mark.component
 
 ALLELE = "ACGTACGTAC"
 

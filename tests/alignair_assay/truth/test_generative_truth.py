@@ -21,7 +21,7 @@ from alignair_assay.truth.segment import check_invariants, observe_segment  # no
 from alignair_assay.truth.summary import truth_summary  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 
-pytestmark = pytest.mark.genairr_build  # these tests build GenAIRR suites
+pytestmark = [pytest.mark.integration, pytest.mark.genairr_build]  # these tests build GenAIRR suites
 CONFIG = ga.data.HUMAN_IGH_OGRDB
 
 

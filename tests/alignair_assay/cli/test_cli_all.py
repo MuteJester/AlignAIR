@@ -1,9 +1,13 @@
 """The ``all`` command's flags: how they map onto ``RunConfig``, and ``--quick``."""
+
+import pytest
 from pathlib import Path
 
 import alignair_assay.cli.all as all_command
 from alignair_assay.cli import main
 from alignair_assay.workflow.orchestrate import RunConfig
+
+pytestmark = pytest.mark.integration
 
 
 def _parse(monkeypatch, *flags):

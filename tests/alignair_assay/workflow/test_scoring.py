@@ -1,8 +1,12 @@
 """Comparison reports cluster the reads of a clone and the two strands of a read (``scoring.clusters``)."""
+
+import pytest
 from alignair_assay.report import to_markdown
 from alignair_assay.scoring.clusters import CLUSTER_KEYS
 from alignair_assay.truth.model import ObservableTruth
 from alignair_assay.workflow.scoring import ToolScores, comparison_report
+
+pytestmark = pytest.mark.integration
 
 
 def _truth(case_id: str, groups: dict) -> ObservableTruth:

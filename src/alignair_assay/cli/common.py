@@ -67,4 +67,3 @@ def print_matching(tool: str, m: dict) -> None:
     print(f"{tool}: {m['scored']} cases scored ({m['excluded']} excluded of {m['truth_cases']}); "
           f"{m['rows']} rows, {m['duplicates']} duplicates, {m['invalid_rows']} invalid rows; "
           f"missing {m['missing']}, extra {m['extra']}, ignored for excluded cases {m['excluded_ignored']}")
-

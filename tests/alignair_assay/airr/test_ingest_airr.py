@@ -1,7 +1,11 @@
+
+import pytest
 import builtins
 
 from alignair_assay.airr import reader
 from alignair_assay.airr.reader import load_airr_tsv
+
+pytestmark = pytest.mark.component
 
 SID = "human_igh_ogrdb_broad:amplicon_janchor:000000"
 SEQ = "ACGT" * 30
