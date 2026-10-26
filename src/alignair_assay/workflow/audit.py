@@ -32,18 +32,28 @@ since what was not checked may have failed, and an audit that checked nothing ne
     reported, not required: files written before JSON-lines gzip was reproducible carry a time in their gzip header,
     and the scores' inputs name the truth file by those bytes, so a stored truth's digest stands for the recomputed
     one's when the two hold the same content.
-- Null comparisons (one checkpoint under ``NULL_LABELS``): every Δ 0, no significant verdict, no read won or lost
+- Null comparisons (one checkpoint under ``NULL_LABELS``), the simulated ones on one shared dev build of
+  ``null_suites`` and ``diagnose_suites`` at ``null_scale`` (``layout.audit_scratch("null_sim")``): every Δ 0, no
+  significant verdict, no read won or lost
   (fixed = broken = 0), each side's own scores equal and every read either side scores paired (``compare_problems``);
   the comparison must pair something (``pairing``): a comparison that pairs nothing is not null, it is empty; and it
   must hold everything expected of it, since what is missing is never null: every end-to-end headline metric
   (``SIM_HEADLINE``, ``REAL_HEADLINE``) on every suite and arm, and in ``diagnose`` every suite diagnosed, each with
   its head family (one metric per ``HEAD_BOUNDARY_PREFIXES`` at least) and its scored reads. Its ``n`` is the fewest
   reads a headline metric pairs:
-  - ``null.diagnose``: the checkpoint file against itself loaded in memory (two model keys, each diagnosed) on fresh
-    dev builds of ``DIAGNOSE_SUITES``;
-  - ``null.all``: ``all --tools alignair-local@a,alignair-local@b`` on fresh dev builds of ``NULL_SUITES`` at
-    ``NULL_SCALE``;
+  - ``null.all``: ``all --tools alignair-local@a,alignair-local@b`` on ``NULL_SUITES``;
+  - ``null.diagnose``: the checkpoint file against itself loaded in memory (two model keys, each diagnosed) on
+    ``DIAGNOSE_SUITES``, built where ``all`` did not already build them;
   - ``null.real``: ``real --tools alignair-api@a,alignair-api@b --cap REAL_CAP`` on ``REAL_DONOR``.
+- The positive control, ``positive.diagnose``: the checkpoint with ``POSITIVE_MODULE`` zeroed
+  (``diagnostics.perturb.zero_module``, written to ``layout.audit_scratch("positive")``) diagnosed against the
+  checkpoint on the first suite both null surfaces share (S1): the perturbed head metric ``POSITIVE_METRIC`` must be
+  worse (Δ < 0, the verdict "baseline better"), with reads broken and fewer fixed, and the suite detail must render
+  that direction: a comparison that cannot see a broken head, or reads it backwards, is no instrument.
+- Cross-surface agreement, ``agreement.all_vs_diagnose``: on that suite's one build, ``all``'s per-case end-to-end
+  scores of ``alignair-local@b`` must equal ``diagnose``'s per-case baseline scores of the same checkpoint (its file's
+  model key), case by case, on every metric both score: the CLI's AIRR output and the in-process replay are one
+  pipeline.
 - IgBLAST bands:
   - ``band.real_known``: IgBLAST's ``real.v.known_top1`` and ``real.v.ref_known_top1`` on the shared arm at least
     ``KNOWN_FLOOR`` on every dev donor of the stored ``real`` run;
@@ -89,7 +99,7 @@ from alignair_assay.report.audit import audit_markdown
 from alignair_assay.runners import make_runner
 from alignair_assay.runners.base import RunnerOptions, absolute_path, read_run_json, run_suite
 from alignair_assay.runners.reference import ensure_shared_reference
-from alignair_assay.scoring.pipeline import load_truth, truth_reference
+from alignair_assay.scoring.pipeline import load_truth, read_scores, truth_reference
 from alignair_assay.suites import get_suite
 from alignair_assay.suites.donors import read_genotypes
 from alignair_assay.suites.engine import DEFAULT_SEED
@@ -103,15 +113,17 @@ from alignair_assay.workflow.speed import run_speed
 from alignair_assay.workflow.summary import ORACLE, oracle_check
 
 AUDIT_KIND = "alignair_assay.audit"
-AUDIT_VERSION = "2"  # 2: the provenance names the code audit_code_sha256, taken at the start
+# 2: the provenance names the code audit_code_sha256, taken at the start; 3: the gating checks and the incomplete
+# verdict, the positive control and the cross-surface agreement, the GenAIRR freeze in the provenance
+AUDIT_VERSION = "3"
 STATUSES = ("pass", "fail", "warn", "skipped")
 # The check groups, in report order, and every check in report order.
 GROUPS = {"self_check": "Self-checks", "reproducible": "Reproducibility", "null": "Null comparisons",
-          "band": "IgBLAST bands"}
+          "positive": "Positive control", "agreement": "Cross-surface agreement", "band": "IgBLAST bands"}
 CHECKS = ("self_check.sim_oracle", "self_check.sim_oracle_current", "self_check.sim_staleness",
           "self_check.real_oracle", "self_check.real_truth_health", "reproducible.sim_build",
-          "reproducible.real_scores", "null.diagnose", "null.all", "null.real", "band.real_known",
-          "band.sim_v_top1", "band.sim_v_top1_current", "band.speed")
+          "reproducible.real_scores", "null.diagnose", "null.all", "null.real", "positive.diagnose",
+          "agreement.all_vs_diagnose", "band.real_known", "band.sim_v_top1", "band.sim_v_top1_current", "band.speed")
 # The informational checks: a warning at worst, never a failure, even when they raise.
 INFORMATIONAL = ("self_check.sim_staleness", "band.sim_v_top1", "band.speed")
 # The checks that can fail the audit (every other one), in report order: one of them skipped leaves it incomplete.
@@ -124,10 +136,17 @@ NULL_LABELS = ("a", "b")
 # Reproducibility: the suite built twice, its scale, and the files both builds must hold (donors.json only with donors).
 REPRO_SUITE, REPRO_SCALE = "S1", 0.02
 REPRO_FILES = ("cases", "truth", "reads")
-# The null ``all`` comparison's suites and scale; ``diagnose``'s; ``real``'s donor and cap.
-NULL_SUITES, NULL_SCALE = ("S1",), 0.05
-DIAGNOSE_SUITES, DIAGNOSE_SCALE = ("S1", "S3"), 0.05
+# The null ``all`` comparison's suites, ``diagnose``'s, the scale of their one shared build, and the batch size
+# ``diagnose`` replays with (the alignair-local runner's, so the two surfaces compute alike); ``real``'s donor and cap.
+NULL_SUITES, DIAGNOSE_SUITES, NULL_SCALE = ("S1",), ("S1", "S3"), 0.05
+DIAGNOSE_BATCH = RunnerOptions().batch_size
 REAL_DONOR, REAL_CAP = "W-97", 2000
+# The positive control: the module zeroed in a copy of the checkpoint, and the head metric that must get worse. The
+# J end under the logits' argmax: the released model gets it right on most S1 reads (87 of 100), while its soft-argmax
+# J end is almost never exact (the decoder's bias), so a broken head could not make the soft metric worse.
+POSITIVE_MODULE, POSITIVE_METRIC = "branches.j.end_head", "head.j.end_exact.argmax"
+# The tool of ``all`` whose per-case scores must equal ``diagnose``'s (the checkpoint's second label).
+AGREEMENT_TOOL = f"alignair-local@{NULL_LABELS[1]}"
 # IgBLAST against independent evidence: its known answers on real reads, its S1 V top-1 (the P2 number) and speed.
 KNOWN_METRICS = ("real.v.known_top1", "real.v.ref_known_top1")
 KNOWN_FLOOR = 0.99
@@ -164,9 +183,10 @@ class AuditConfig:
     ``checkpoint`` (a ``.alignair`` file) and the torch ``device`` the null comparisons run it on, whether to time
     IgBLAST (``skip_speed``), the IgBLAST release to time (None: the one the ``all`` run recorded), the build
     ``workers`` and tool ``threads``, the suites' ``seed`` and ``reference``; then the ruling's sizes, which only a
-    test shrinks: the reproducibility build, the null comparisons' suites, scales, donor and cap, the diagnosed
-    ``diagnose_variants`` (None: every one), the speed protocol's S1 scale and the scale of the S1 IgBLAST's current
-    V top-1 is measured on when the speed check built none."""
+    test shrinks: the reproducibility build, the null comparisons' suites (``all``'s and ``diagnose``'s), the scale
+    of their shared build, ``diagnose``'s batch size, the donor and cap, the diagnosed ``diagnose_variants`` (None:
+    every one), the speed protocol's S1 scale and the scale of the S1 IgBLAST's current V top-1 is measured on when
+    the speed check built none."""
 
     sim_run: str
     real_run: str
@@ -184,7 +204,7 @@ class AuditConfig:
     null_suites: tuple[str, ...] = NULL_SUITES
     null_scale: float = NULL_SCALE
     diagnose_suites: tuple[str, ...] = DIAGNOSE_SUITES
-    diagnose_scale: float = DIAGNOSE_SCALE
+    batch_size: int = DIAGNOSE_BATCH
     diagnose_variants: tuple[str, ...] | None = None
     real_donor: str = REAL_DONOR
     real_cap: int = REAL_CAP
@@ -897,7 +917,8 @@ def all_null(cfg: AuditConfig, scratch: RunLayout) -> list[dict]:
 
 
 def diagnose_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
-    """``null.diagnose``: fresh dev builds of ``cfg.diagnose_suites`` in ``scratch``, then the checkpoint file
+    """``null.diagnose``: dev builds of ``cfg.diagnose_suites`` at ``cfg.null_scale`` in ``scratch`` (the null
+    ``all`` run's directory: a suite it built current is not built again, ``ensure_built``), then the checkpoint file
     diagnosed against itself loaded in memory (``workflow.diagnose.evaluate(..., against=(model,
     reference_set))``): two model keys, each diagnosed on the same reads, whose comparison must be null. One model
     key (one record compared with itself, zero by construction) fails, and so does a comparison missing anything it
@@ -910,14 +931,12 @@ def diagnose_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
     from alignair_assay.workflow.diagnose import evaluate, parse_device
 
     names = list(cfg.diagnose_suites)
-    for suite in names:
-        build_suite(suite, scratch, reference_name=cfg.reference, split="dev", seed=cfg.seed,
-                    scale=cfg.diagnose_scale, workers=cfg.workers)
+    ensure_built(cfg, scratch, names)
     device = parse_device(cfg.device, fix="--device cpu")
     in_memory = load_model_checked(cfg.checkpoint, truth_reference(scratch, names), device=device)
     variants = DEFAULT_VARIANTS if cfg.diagnose_variants is None else cfg.diagnose_variants
-    result = evaluate(cfg.checkpoint, scratch, names, device=device, variants=variants, profile=False,
-                      against=in_memory)
+    result = evaluate(cfg.checkpoint, scratch, names, device=device, batch_size=cfg.batch_size, variants=variants,
+                      profile=False, against=in_memory)
     against = result.against
     problems = []
     if against["same_model"] or against["baseline"] == result.model_key:
@@ -965,10 +984,190 @@ def diagnose_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
         shown.append(f"{name} {entry['cases']} reads ({', '.join(families)}; headline metrics pair at least {least})")
     evidence = {"summary": f"file {result.model_key} against in-memory {against['baseline']}: {', '.join(shown)}",
                 "model_key": result.model_key, "baseline": against["baseline"], "device": device,
-                "variants": list(variants), "suites": suites}
+                "batch_size": cfg.batch_size, "variants": list(variants), "suites": suites}
     return _null_check("null.diagnose", problems, reads, evidence,
                        "diagnose's comparison of the checkpoint with itself in memory")
 
+
+def ensure_built(cfg: AuditConfig, layout: RunLayout, names: Iterable[str]) -> list[str]:
+    """Build each suite of ``names`` on the dev split at ``cfg.null_scale`` in ``layout`` unless its build there is
+    current (``workflow.build.build_changes``): the null surfaces share one build of a suite, never two. Returns the
+    suites built."""
+    digest = Reference.from_dataconfig(cfg.reference).digest()
+    built = []
+    for name in names:
+        if build_changes(layout, name, split="dev", reference_digest=digest, seed=cfg.seed, scale=cfg.null_scale):
+            build_suite(name, layout, reference_name=cfg.reference, split="dev", seed=cfg.seed, scale=cfg.null_scale,
+                        workers=cfg.workers)
+            built.append(name)
+    return built
+
+
+def shared_suite(cfg: AuditConfig) -> str | None:
+    """The first suite of ``cfg.null_suites`` that ``diagnose`` diagnoses too (S1): the build ``all`` and
+    ``diagnose`` share, which the positive control and the agreement check use; None when there is none."""
+    return next((name for name in cfg.null_suites if name in cfg.diagnose_suites), None)
+
+
+# --- the positive control and cross-surface agreement ---------------------------------------------------------------
+
+def positive_diagnose(cfg: AuditConfig, layout: RunLayout, scratch: RunLayout) -> dict:
+    """``positive.diagnose``: the checkpoint with ``POSITIVE_MODULE`` zeroed (``diagnostics.perturb.zero_module``,
+    written to ``scratch``) diagnosed against the checkpoint (``workflow.diagnose.evaluate``, the baseline: its
+    records from ``null.diagnose`` are reused) on the shared suite's build in ``layout`` (``shared_suite``), with the
+    null's settings. The perturbed model is the model under test, so the direction is known: ``POSITIVE_METRIC`` must
+    be compared on some reads with Δ < 0 and the verdict ``a_better`` (baseline better), reads must be fixed or
+    broken, more broken than fixed, the summary must carry that Δ and verdict, and the suite detail
+    (``layout.diagnostics_against_md``) must render the metric's verdict as "baseline better". ``n`` is the reads the
+    metric pairs."""
+    # torch and alignair are imported only when diagnostics run
+    from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS
+    from alignair_assay.diagnostics.perturb import zero_module
+    from alignair_assay.report.diagnostics import AGAINST_VERDICTS
+    from alignair_assay.workflow.diagnose import evaluate, parse_device
+
+    name, suite = "positive.diagnose", shared_suite(cfg)
+    if suite is None:
+        return check(name, "fail", 0, {"summary": "no suite both null surfaces build"},
+                     "the null all and diagnose suites share no suite to perturb on")
+    perturbed = Path(scratch.root) / "perturbed.alignair"
+    zeroed = zero_module(cfg.checkpoint, perturbed, POSITIVE_MODULE)
+    ensure_built(cfg, layout, [suite])
+    device = parse_device(cfg.device, fix="--device cpu")
+    variants = DEFAULT_VARIANTS if cfg.diagnose_variants is None else cfg.diagnose_variants
+    result = evaluate(str(perturbed), layout, [suite], device=device, batch_size=cfg.batch_size, variants=variants,
+                      profile=False, against=cfg.checkpoint)
+    against = result.against
+    problems = ["one model key: the perturbed file was compared with its own record"] if (
+        against["same_model"] or against["baseline"] == result.model_key) else []
+    heads = (against["suites"].get(suite) or {}).get("heads") or {}
+    entry = (heads.get("comparison") or {}).get(POSITIVE_METRIC)
+    change = ((heads.get("changes") or {}).get("metrics") or {}).get(POSITIVE_METRIC) or {}
+    delta, verdict, n = (entry or {}).get("delta"), (entry or {}).get("verdict"), (entry or {}).get("n_paired") or 0
+    fixed, broken = change.get("fixed") or 0, change.get("broken") or 0
+    if entry is None or not n:
+        problems.append(f"{POSITIVE_METRIC} was not compared on any read")
+    else:
+        if delta is None or delta >= 0:
+            problems.append(f"Δ {_signed(delta)} on {POSITIVE_METRIC}: the model with its {POSITIVE_MODULE} zeroed "
+                            "must be worse (Δ = this − the baseline < 0)")
+        if verdict != "a_better":
+            problems.append(f"verdict {verdict} on {POSITIVE_METRIC}, not a_better (baseline better)")
+        if fixed + broken == 0:
+            problems.append(f"no read fixed or broken on {POSITIVE_METRIC}")
+        elif broken <= fixed:
+            problems.append(f"{fixed} reads fixed and {broken} broken on {POSITIVE_METRIC}: broken must outnumber "
+                            "fixed")
+    headline = ((((against.get("summary") or {}).get("suites") or {}).get(suite) or {}).get("headline") or {}).get(
+        POSITIVE_METRIC) or {}
+    if (headline.get("delta"), headline.get("verdict")) != (delta, verdict):
+        problems.append(f"the summary's {POSITIVE_METRIC} (Δ {_signed(headline.get('delta'))}, verdict "
+                        f"{headline.get('verdict')}) is not the comparison's")
+    detail = layout.diagnostics_against_md(result.model_key, suite, against["baseline"])
+    rows = [line for line in (detail.read_text(encoding="utf-8").splitlines() if detail.is_file() else [])
+            if line.startswith(f"| {POSITIVE_METRIC} |")]
+    rendered = AGAINST_VERDICTS["a_better"]
+    if not rows or not rows[0].rstrip(" |").endswith(rendered):
+        problems.append(f"the suite detail's {POSITIVE_METRIC} row does not read {rendered!r} ({detail.name})")
+    evidence = {"summary": f"{POSITIVE_MODULE} zeroed: {POSITIVE_METRIC} Δ {_signed(delta)} on {n} reads, "
+                           f"{AGAINST_VERDICTS.get(verdict, verdict)}, {fixed} fixed / {broken} broken ({suite}, "
+                           f"perturbed {result.model_key} against {against['baseline']})",
+                "suite": suite, "module": POSITIVE_MODULE, "zeroed": zeroed, "metric": POSITIVE_METRIC,
+                "model_key": result.model_key, "baseline": against["baseline"], "delta": delta, "verdict": verdict,
+                "ci95": (entry or {}).get("ci95"), "fixed": fixed, "broken": broken, "detail": str(detail),
+                "problems": problems}
+    if problems:
+        return check(name, "fail", n, evidence, f"the positive control did not see the perturbed head get worse "
+                                                f"({'; '.join(problems[:3])}): the comparison is blind or backwards")
+    return check(name, "pass", n, evidence)
+
+
+def checkpoint_model_key(checkpoint: str) -> str:
+    """The model key ``diagnose`` files the checkpoint ``checkpoint`` under in this process
+    (``diagnostics.identity.model_key`` of its bytes' digest and the AlignAIR code)."""
+    from alignair_assay.diagnostics.identity import alignair_code, model_key, weights_sha256
+
+    return model_key(weights_sha256(checkpoint), alignair_code()["code_sha256"])
+
+
+def all_vs_diagnose(cfg: AuditConfig, layout: RunLayout) -> dict:
+    """``agreement.all_vs_diagnose``: on the shared suite's one build in ``layout`` (``shared_suite``), ``all``'s
+    per-case end-to-end scores of ``AGREEMENT_TOOL`` (``layout.tool_scores``) against ``diagnose``'s per-case
+    baseline scores of the same checkpoint (``workflow.diagnose.read_case_scores`` under ``checkpoint_model_key``),
+    whose record must be of this build (its cases' and truth's digests). The same cases must be scored (an excluded
+    case by neither) and every metric both surfaces score must have the same value on every case (NaN on both, or
+    absent from both, is the same). ``n`` is the cases compared; the evidence names the first differing ones."""
+    from alignair_assay.workflow.diagnose import read_case_scores
+
+    name, suite = "agreement.all_vs_diagnose", shared_suite(cfg)
+    if suite is None:
+        return check(name, "fail", 0, {"summary": "no suite both null surfaces build"},
+                     "the null all and diagnose suites share no suite to compare on")
+    evidence = {"suite": suite, "tool": AGREEMENT_TOOL}
+    problems = []
+    path = layout.tool_scores(suite, "shared", AGREEMENT_TOOL)
+    key = checkpoint_model_key(cfg.checkpoint)
+    record = read_json(layout.diagnostics_suite_json(key, suite))
+    evidence["model_key"] = key
+    if not path.is_file():
+        problems.append(f"all did not score {AGREEMENT_TOOL} on {suite} ({path.name} is missing)")
+    if record is None:
+        problems.append(f"no diagnose record of {suite} for the checkpoint ({key})")
+    else:
+        build = (record.get("key") or {}).get("suite") or {}
+        files = {"cases_sha256": layout.cases(suite), "truth_sha256": layout.truth(suite)}
+        if any(not file.is_file() or build.get(field) != sha256_file(file) for field, file in files.items()):
+            problems.append(f"diagnosed on another build of {suite} than the one all scored")
+    if problems:
+        evidence.update(summary="; ".join(problems), problems=problems)
+        return check(name, "fail", 0, evidence, "; ".join(problems))
+    ends = read_scores(path)
+    replayed = {case: scores["baseline"] for case, scores in read_case_scores(layout, key, suite).items()
+                if scores["baseline"] is not None}
+    only_all = [case for case in ends if case not in replayed]
+    only_diagnose = [case for case in replayed if case not in ends]
+    common = [case for case in ends if case in replayed]
+    metrics = sorted({metric for scores in ends.values() for metric in scores}
+                     & {metric for scores in replayed.values() for metric in scores})
+    differ = [(case, metric, ends[case].get(metric), replayed[case].get(metric))
+              for case in common for metric in metrics
+              if not _same_score(ends[case].get(metric), replayed[case].get(metric))]
+    cases_differing = list(dict.fromkeys(case for case, *_ in differ))
+    problems += [f"cases only all scores: {len(only_all)} (e.g. {', '.join(only_all[:3])})"] if only_all else []
+    problems += ([f"cases only diagnose scores: {len(only_diagnose)} (e.g. {', '.join(only_diagnose[:3])})"]
+                 if only_diagnose else [])
+    problems += [] if metrics else ["no metric is scored by both surfaces"]
+    problems += [f"{case} {metric}: all {_score_text(a)}, diagnose {_score_text(b)}" for case, metric, a, b in
+                 differ[:_EXAMPLES]]
+    evidence.update(metrics=metrics, cases=len(common), only_all=len(only_all), only_diagnose=len(only_diagnose),
+                    differing=len(cases_differing), differing_values=len(differ),
+                    first_differing=cases_differing[:_EXAMPLES], problems=problems,
+                    summary=(f"{suite}: {AGREEMENT_TOOL}'s scores in all and the checkpoint's ({key}) in diagnose, "
+                             f"{len(common)} cases × {len(metrics)} metrics: "
+                             + (f"{len(cases_differing)} cases differ (e.g. {', '.join(cases_differing[:3])})"
+                                if cases_differing else "identical case by case")
+                             + (f"; {len(only_all)} only in all, {len(only_diagnose)} only in diagnose"
+                                if only_all or only_diagnose else "")))
+    if problems:
+        return check(name, "fail", len(common), evidence,
+                     f"all and diagnose score the checkpoint differently ({'; '.join(problems[:3])}): the CLI's AIRR "
+                     "output and the in-process replay are not one pipeline, or did not run on one build")
+    return check(name, "pass", len(common), evidence)
+
+
+def _same_score(a, b) -> bool:
+    """Two per-case values of one metric are the same: equal, both NaN, or both absent (None)."""
+    if a is None or b is None:
+        return a is b
+    return a == b or (math.isnan(a) and math.isnan(b))
+
+
+def _score_text(value) -> str:
+    return "absent" if value is None else f"{value:g}"
+
+
+def _signed(value) -> str:
+    return "—" if value is None else "0" if value == 0 else f"{value:+.6g}"
 
 def real_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
     """``null.real``: ``real`` with the checkpoint as ``alignair-api@a`` and ``@b`` on ``cfg.real_donor``, capped at
@@ -1099,7 +1298,7 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
         shutil.rmtree(path, ignore_errors=True)
         return RunLayout(path)
 
-    speed = scratch("speed")
+    speed, null_sim = scratch("speed"), scratch("null_sim")
     steps: list[tuple[tuple[str, ...], Callable[[], dict | list[dict]]]] = [
         (("band.speed",), lambda: igblast_speed(cfg, sim, speed)),
         (("band.sim_v_top1_current",),
@@ -1112,8 +1311,10 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
         (("band.sim_v_top1",), lambda: sim_v_top1_band(sim)),
         (("reproducible.sim_build",), lambda: sim_reproducible(cfg, scratch("sim_build_1"), scratch("sim_build_2"))),
         (("reproducible.real_scores",), lambda: real_reproducible(cfg, real, scratch("real_scores"))),
-        (("null.all", "self_check.sim_oracle_current"), lambda: all_null(cfg, scratch("null_all"))),
-        (("null.diagnose",), lambda: diagnose_null(cfg, scratch("null_diagnose"))),
+        (("null.all", "self_check.sim_oracle_current"), lambda: all_null(cfg, null_sim)),
+        (("null.diagnose",), lambda: diagnose_null(cfg, null_sim)),
+        (("positive.diagnose",), lambda: positive_diagnose(cfg, null_sim, scratch("positive"))),
+        (("agreement.all_vs_diagnose",), lambda: all_vs_diagnose(cfg, null_sim)),
         (("null.real",), lambda: real_null(cfg, scratch("null_real"))),
     ]
     for names, step in steps:

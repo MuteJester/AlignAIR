@@ -296,10 +296,12 @@ After a re-freeze, audit again before comparing anything.
     ok run's scores (a missing scores file fails, and at least one run must be compared), recomputed from the stored
     reads, genotype and predictions, equal the stored ones in content: every row, and every input (a stored file
     written before JSON-lines gzip was reproducible carries a time, so its bytes are reported, not required);
-  - null comparisons, the checkpoint under labels `a` and `b`: `diagnose` (the file against itself in memory: two
-    model keys), `all --tools alignair-local@a,alignair-local@b` on S1 at scale 0.05 (dev) and
-    `real --tools alignair-api@a,alignair-api@b --cap 2000` on W-97, each with every Δ 0, no significant verdict, no
-    read fixed or broken, each side's own scores equal and every read either side scores paired. A comparison must
+  - null comparisons, the checkpoint under labels `a` and `b`: `all --tools alignair-local@a,alignair-local@b` on S1
+    and `diagnose` (the file against itself in memory: two model keys) on S1 and S3, on one shared dev build at
+    scale 0.05 (`OUT/audit/scratch/null_sim/`: `diagnose` builds only what `all` did not), with `diagnose` replaying
+    at the alignair-local runner's batch size (64), and `real --tools alignair-api@a,alignair-api@b --cap 2000` on
+    W-97, each with every Δ 0, no significant verdict, no read fixed or broken, each side's own scores equal and
+    every read either side scores paired. A comparison must
     pair something and hold everything expected of it, since what is missing is never null: per suite and family
     (`diagnose`) and per arm (`all`, `real`) some metric pairs a read and every end-to-end headline metric is
     compared and pairs at least one (`clone_key.exact`, `junction.nt_exact`, V/D/J top-1 in set; real:
@@ -309,6 +311,18 @@ After a re-freeze, audit again before comparing anything.
     metric of V, D and J. Head boundary metrics pair only the reads both models orient as the truth, so each must
     pair some. `n` is the fewest reads a headline metric pairs (per suite, summed; real: the shared arm), since D
     top-1 and the real known answers apply to fewer reads than are offered;
+  - the positive control (`positive.diagnose`): a nulls-only gate cannot tell a blind comparison from a sound one,
+    so the checkpoint with its J end head zeroed (`diagnostics.perturb.zero_module`: only the weights section is
+    rewritten, so the copy is the same bytes every time) is diagnosed against the checkpoint on the shared S1 build:
+    `head.j.end_exact.argmax` must be worse (Δ < 0, verdict "baseline better"), with reads broken and fewer fixed,
+    the summary must carry that Δ and verdict, and the suite detail must render the row as "baseline better". `n` is
+    the reads the metric pairs. The argmax J end, because the released model gets it right on most reads while its
+    soft-argmax J end is almost never exact (the decoder's bias): a broken head cannot make that metric worse;
+  - cross-surface agreement (`agreement.all_vs_diagnose`): on the shared S1 build, `all`'s per-case end-to-end
+    scores of `alignair-local@b` (the CLI's AIRR output) must equal `diagnose`'s per-case baseline scores of the same
+    checkpoint (the in-process replay, under the file's model key), case by case on every metric both score, with the
+    same cases scored; the record must be of that build. `n` is the cases compared, and the evidence names the first
+    differing ones;
   - IgBLAST bands: `known_top1` and `ref_known_top1` at least 99% on every dev donor (shared arm); S1
     `v.top1_in_set` at this code within 97.9% ± 1.5 pp (`band.sim_v_top1_current`, the gate: IgBLAST run now on the
     fresh dev S1 the speed check built, or on S1 built at scale 0.2 when it built none; skipped without an IgBLAST

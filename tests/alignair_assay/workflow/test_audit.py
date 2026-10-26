@@ -103,7 +103,7 @@ def test_the_report_opens_with_the_verdict_and_lists_every_check_by_group():
 
 def test_the_check_order_covers_every_group():
     assert {name.split(".")[0] for name in CHECKS} == set(GROUPS)
-    assert len(CHECKS) == len(set(CHECKS)) == 14
+    assert len(CHECKS) == len(set(CHECKS)) == 16
 
 
 # --- the stored runs' self-checks and IgBLAST bands -----------------------------------------------------------------
@@ -280,7 +280,7 @@ def _config(tmp_path: Path, **overrides) -> AuditConfig:
     (tmp_path / "data").mkdir(exist_ok=True)
     fields = dict(sim_run=str(tmp_path / "sim"), real_run=str(tmp_path / "real"), data_root=str(tmp_path / "data"),
                   checkpoint=str(checkpoint), workers=1, threads=1, seed=7, repro_suite="S0", repro_scale=0.2,
-                  null_suites=("S0",), null_scale=0.2, diagnose_suites=("S0",), diagnose_scale=0.2,
+                  null_suites=("S0",), null_scale=0.2, diagnose_suites=("S0",),
                   diagnose_variants=("baseline",), speed_scale=0.2)
     return AuditConfig(**(fields | overrides))
 
@@ -962,6 +962,156 @@ def test_real_without_a_headline_metric_on_an_arm_is_not_null(tmp_path, monkeypa
     assert not any(problem.startswith(f"{DONOR} shared") for problem in problems)
 
 
+# --- the positive control and cross-surface agreement ---------------------------------------------------------------
+
+POSITIVE = audit.POSITIVE_METRIC
+
+
+def _fake_positive(monkeypatch, layout: RunLayout, *, effect="worse", row=None, same=False):
+    """Stand-ins for the perturbation, the build and ``evaluate``: the perturbed model (``kp``) against the base file
+    (``kb``) on 20 reads of S0, the perturbed head metric ``effect`` (``worse``: 12 reads the base gets right are
+    wrong, ``none``: no read changes, ``better``: 12 reads the base gets wrong are right), and the suite detail's
+    row of that metric (default: the verdict the comparison gives, as the report renders it)."""
+    import types
+
+    from alignair_assay.diagnostics import perturb
+    from alignair_assay.report.diagnostics import AGAINST_VERDICTS, against_summary
+    from alignair_assay.workflow import diagnose
+
+    seen = {}
+    monkeypatch.setattr(perturb, "zero_module", lambda source, out, module: seen.update(
+        perturbed=(source, Path(out), module)) or {"module": module, "parameters": ["w", "b"], "values": 10})
+    monkeypatch.setattr(audit, "build_suite", lambda name, layout, **kwargs: seen.setdefault("built", []).append(name))
+
+    def evaluate(checkpoint, run, names, **kwargs):
+        seen["evaluate"] = (checkpoint, run.root, list(names), kwargs)
+        base = {f"S0:{k}": {POSITIVE: 1.0 if effect != "better" or k >= 12 else 0.0} for k in range(20)}
+        this = {case: {POSITIVE: 0.0 if effect == "worse" and int(case[3:]) < 12 else
+                       1.0 if effect == "better" else scores[POSITIVE]} for case, scores in base.items()}
+        suites = {"S0": {"cases": 20, "clusters": {"clusters": 0}, "heads": _compared(base, this), "baseline": None}}
+        against = {"baseline": "kp" if same else "kb", "source": str(kwargs["against"]), "same_model": same,
+                   "replay_verified": True, "suites": suites}
+        summary = against_summary(against)
+        verdict = AGAINST_VERDICTS[suites["S0"]["heads"]["comparison"][POSITIVE]["verdict"]]
+        detail = layout.diagnostics_against_md("kp", "S0", against["baseline"])
+        detail.parent.mkdir(parents=True, exist_ok=True)
+        detail.write_text(f"# detail\n\n| {POSITIVE} | 100.0% | x | 20 | y | z | Δ | ci | p | {row or verdict} |\n")
+        return types.SimpleNamespace(model_key="kp", against={**against, "summary": summary})
+
+    monkeypatch.setattr(diagnose, "evaluate", evaluate)
+    return seen
+
+
+def test_the_positive_control_sees_the_perturbed_head_get_worse(tmp_path, monkeypatch):
+    layout = RunLayout(tmp_path / "null_sim")
+    cfg = _config(tmp_path, device="cuda")
+    seen = _fake_positive(monkeypatch, layout)
+    found = audit.positive_diagnose(cfg, layout, RunLayout(tmp_path / "positive"))
+    assert found["status"] == "pass" and found["n"] == 20, found["reason"]
+    source, out, module = seen["perturbed"]
+    assert source == cfg.checkpoint and out.parent == tmp_path / "positive" and module == audit.POSITIVE_MODULE
+    checkpoint, root, names, kwargs = seen["evaluate"]
+    # the perturbed checkpoint is the model under test, the audited one the baseline, on the null's shared build
+    assert checkpoint == str(out) and kwargs["against"] == cfg.checkpoint and root == layout.root and names == ["S0"]
+    assert kwargs["profile"] is False and kwargs["batch_size"] == cfg.batch_size
+    evidence = found["evidence"]
+    assert evidence["delta"] == pytest.approx(-0.6) and evidence["verdict"] == "a_better"
+    assert (evidence["fixed"], evidence["broken"]) == (0, 12)
+    assert "baseline better" in evidence["summary"]
+
+
+@pytest.mark.parametrize("fault, expected", [
+    (dict(effect="none"), f"Δ 0 on {POSITIVE}"),
+    (dict(effect="better"), f"Δ +0.6 on {POSITIVE}"),
+    (dict(row="this better"), f"the suite detail's {POSITIVE} row does not read 'baseline better'"),
+    (dict(same=True), "one model key"),
+], ids=["no_effect", "wrong_direction", "rendered_direction", "one_key"])
+def test_a_positive_control_that_sees_no_damage_or_the_wrong_direction_fails(tmp_path, monkeypatch, fault, expected):
+    layout = RunLayout(tmp_path / "null_sim")
+    _fake_positive(monkeypatch, layout, **fault)
+    found = audit.positive_diagnose(_config(tmp_path), layout, RunLayout(tmp_path / "positive"))
+    assert found["status"] == "fail"
+    assert any(expected in problem for problem in found["evidence"]["problems"]), found["evidence"]["problems"]
+
+
+def _diagnosed(layout: RunLayout, key: str, suite: str, baseline: dict) -> None:
+    """A diagnose record of ``suite`` for model ``key`` in ``layout``: its per-case scores (``baseline`` per case,
+    None for an excluded case) and the record naming them and the suite's build files."""
+    from alignair_assay.core.provenance import sha256_file
+    from alignair_assay.workflow.diagnose import CASES_KIND
+
+    def encoded(scores):
+        return None if scores is None else {name: None if value != value else value for name, value in scores.items()}
+
+    cases = layout.diagnostics_suite_cases(key, suite)
+    cases.parent.mkdir(parents=True, exist_ok=True)
+    write_jsonl(cases, [{"case_id": case, "head": {}, "baseline": encoded(scores), "variants": {}}
+                        for case, scores in baseline.items()], header={"kind": CASES_KIND})
+    write_json(layout.diagnostics_suite_json(key, suite),
+               {"key": {"suite": {"name": suite, "cases_sha256": sha256_file(layout.cases(suite)),
+                                  "truth_sha256": sha256_file(layout.truth(suite))}},
+                "case_scores": {"sha256": sha256_file(cases)}})
+
+
+@pytest.fixture
+def surfaces(tmp_path, monkeypatch):
+    """One S0 build's per-case scores on both surfaces: all's alignair-local@b and diagnose's baseline for the
+    checkpoint's model key (``kb``), equal on 6 cases (one excluded on both, one NaN on both)."""
+    import math
+
+    layout = RunLayout(tmp_path / "null_sim")
+    layout.suite_dir("S0").mkdir(parents=True)
+    layout.cases("S0").write_text("cases\n")
+    layout.truth("S0").write_text("truth\n")
+    scores = {f"S0:{k}": {"v.top1_in_set": 1.0, "junction.nt_exact": math.nan if k == 2 else 0.0}
+              for k in range(6)}
+    layout.scores_dir("S0", "shared").mkdir(parents=True)
+    write_scores(scores, layout.tool_scores("S0", "shared", "alignair-local@b"))
+    _diagnosed(layout, "kb", "S0", {**{case: {**value, "head.extra": 1.0} for case, value in scores.items()},
+                                    "S0:9": None})
+    monkeypatch.setattr(audit, "checkpoint_model_key", lambda checkpoint: "kb")
+    return layout
+
+
+def test_all_and_diagnose_score_the_checkpoint_alike_case_by_case(tmp_path, surfaces):
+    found = audit.all_vs_diagnose(_config(tmp_path), surfaces)
+    assert found["status"] == "pass" and found["n"] == 6, found["reason"]
+    evidence = found["evidence"]
+    assert evidence["metrics"] == ["junction.nt_exact", "v.top1_in_set"] and evidence["model_key"] == "kb"
+    assert evidence["tool"] == "alignair-local@b" and evidence["suite"] == "S0" and evidence["differing"] == 0
+
+
+@pytest.mark.parametrize("fault, expected", [
+    ("value", "S0:3 v.top1_in_set: all 0, diagnose 1"),
+    ("nan", "S0:4 junction.nt_exact: all nan, diagnose 0"),
+    ("case", "cases only all scores: 1 (e.g. S0:5)"),
+    ("build", "diagnosed on another build of S0"),
+    ("missing", "no diagnose record of S0 for the checkpoint (kb)"),
+], ids=["value", "nan", "case", "build", "missing"])
+def test_all_and_diagnose_that_disagree_fail(tmp_path, surfaces, fault, expected):
+    import math
+
+    from alignair_assay.scoring.pipeline import read_scores
+
+    path = surfaces.tool_scores("S0", "shared", "alignair-local@b")
+    scores = read_scores(path)
+    if fault == "value":
+        scores["S0:3"]["v.top1_in_set"] = 0.0
+        write_scores(scores, path)
+    elif fault == "nan":
+        scores["S0:4"]["junction.nt_exact"] = math.nan
+        write_scores(scores, path)
+    elif fault == "case":
+        _diagnosed(surfaces, "kb", "S0", {case: value for case, value in scores.items() if case != "S0:5"})
+    elif fault == "build":
+        surfaces.cases("S0").write_text("rebuilt\n")
+    else:
+        surfaces.diagnostics_suite_json("kb", "S0").unlink()
+    found = audit.all_vs_diagnose(_config(tmp_path), surfaces)
+    assert found["status"] == "fail"
+    assert any(expected in problem for problem in found["evidence"]["problems"]), found["evidence"]["problems"]
+
+
 # --- speed --------------------------------------------------------------------------------------------------------
 
 STORED_SPEED = {"results": {
@@ -1185,15 +1335,22 @@ def _stored_runs(tmp_path) -> AuditConfig:
     return _config(tmp_path)
 
 
+# The (run directory, check) pairs the fake checks were given, first run directory argument after the config.
+_CALLS: list = []
+
+
 def _fake_checks(monkeypatch, *, raising: str | None = None, statuses: dict | None = None) -> list[Path]:
     """Every check function replaced by one returning ``statuses[name]`` (default pass, n 10), or raising for the
     check ``raising``; returns the run directories (``RunLayout`` roots) each was given, in call order."""
     statuses = statuses or {}
     roots = []
+    calls = _CALLS
+    calls.clear()
 
     def fake(*names):
         def run(*args):
             roots.extend(Path(arg.root) for arg in args if isinstance(arg, RunLayout))
+            calls.extend((Path(arg.root), names[0]) for arg in args[1:2] if isinstance(arg, RunLayout))
             if raising in names:
                 raise RuntimeError("docker is not running")
             found = [check(name, statuses.get(name, "pass"), 10, {"summary": f"{name} checked"},
@@ -1211,7 +1368,8 @@ def _fake_checks(monkeypatch, *, raising: str | None = None, statuses: dict | No
                             ("sim_reproducible", ("reproducible.sim_build",)),
                             ("real_reproducible", ("reproducible.real_scores",)),
                             ("all_null", ("null.all", "self_check.sim_oracle_current")),
-                            ("diagnose_null", ("null.diagnose",)), ("real_null", ("null.real",))):
+                            ("diagnose_null", ("null.diagnose",)), ("positive_diagnose", ("positive.diagnose",)),
+                            ("all_vs_diagnose", ("agreement.all_vs_diagnose",)), ("real_null", ("null.real",))):
         monkeypatch.setattr(audit, function, fake(*names))
     return roots
 
@@ -1221,8 +1379,9 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch,
 
     cfg = _stored_runs(tmp_path)
     roots = _fake_checks(monkeypatch, statuses={"self_check.real_truth_health": "warn"})
+    calls = _CALLS
     layout = RunLayout(tmp_path / "out")
-    stale = layout.audit_scratch("null_all") / "old.txt"  # an earlier audit's scratch is replaced
+    stale = layout.audit_scratch("null_sim") / "old.txt"  # an earlier audit's scratch is replaced
     stale.parent.mkdir(parents=True)
     stale.write_text("old")
     record = audit.run_audit(cfg, layout)
@@ -1239,7 +1398,11 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch,
     assert set(roots) - set(scratches) == {Path(cfg.sim_run), Path(cfg.real_run)}
     assert scratches[0] == layout.audit_scratch("speed")  # IgBLAST is timed first, on a quiet machine
     assert {root.name for root in scratches} == {"speed", "sim_v_top1_current", "sim_build_1", "sim_build_2",
-                                                 "real_scores", "null_all", "null_diagnose", "null_real"}
+                                                 "real_scores", "null_sim", "positive", "null_real"}
+    # all, diagnose, the positive control and the agreement share one dev build: they are given one directory
+    given = {name: [root for root, check_name in calls if check_name == name] for name in (
+        "null.all", "null.diagnose", "positive.diagnose", "agreement.all_vs_diagnose")}
+    assert {tuple(roots) for roots in given.values()} == {(layout.audit_scratch("null_sim"),)}
     # the record names the assay code it ran (its sources' digest), and the markdown shows it
     package = Path(audit.__file__).resolve().parents[1]
     code = tree_digest(package, suffixes=CODE_SUFFIXES)
@@ -1261,7 +1424,8 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch,
                                      "self_check.sim_staleness", "self_check.real_oracle",
                                      "self_check.real_truth_health", "band.real_known", "band.sim_v_top1",
                                      "reproducible.sim_build", "reproducible.real_scores", "null.all",
-                                     "self_check.sim_oracle_current", "null.diagnose", "null.real")]
+                                     "self_check.sim_oracle_current", "null.diagnose", "positive.diagnose",
+                                     "agreement.all_vs_diagnose", "null.real")]
 
 
 def test_the_audit_names_the_code_it_started_with(tmp_path, monkeypatch):
