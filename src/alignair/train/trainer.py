@@ -11,10 +11,11 @@ import itertools
 import torch
 
 from ..errors import error_context
-from ..data.adapters import build_nucleotide_batch as build_batch
+from ..data.adapters import NucleotideBatchAdapter, build_nucleotide_batch as build_batch
 from ..tasks import TrainingTasks, build_tasks
 from .gym import build_experiment
 from .engine import TrainingEngine, train_step, validate
+from .loop import training_iterations
 from .checkpoints import save_checkpoint, save_rotating, latest_checkpoint, load_training_checkpoint, _stem, _ext
 from .random_state import restore_rng_state as _restore_rng
 
@@ -250,14 +251,11 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
 
     completed = start                              # the last step actually run (a short/early
     stream = _build_stream(seed + start)           # stream must not let the final save claim `steps`)
-    for step in range(start + 1, steps + 1):
-        records = list(itertools.islice(stream, batch_size))
-        if len(records) < batch_size:
-            break
-        completed = step
-        with error_context(stage="training", step=step):
-            batch_in, targets = build_batch(records, reference_set, cfg, device)
-            total, parts, grad_norm = engine.step((batch_in, targets), step=step)
+    batch_adapter = NucleotideBatchAdapter(reference_set, cfg, device)
+    for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
+                                         stop_step=steps, batch_size=batch_size):
+        step = completed = iteration.step
+        total, parts, grad_norm = iteration.result
         if step % log_every == 0:
             line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
                     + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))

@@ -15,7 +15,6 @@ from collections import Counter
 from collections.abc import Mapping
 import dataclasses
 import hashlib
-import itertools
 import subprocess
 
 import numpy as np
@@ -31,6 +30,7 @@ from ..train.checkpoints import (load_research_checkpoint as load_checkpoint,
                                   research_checkpoint_rng, save_snapshot as _save)
 from ..train.random_state import restore_rng_state
 from ..train.engine import TrainingEngine, evaluation_mode
+from ..train.loop import training_iterations
 from ..data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
 from ..data.tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
@@ -122,12 +122,9 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
     engine = TrainingEngine(model, opt, tasks=tasks, grad_clip=grad_clip, scheduler=sch)
     history = []
     val_history = []
-    for step in range(start_step + 1, start_step + steps + 1):
-        batch = list(itertools.islice(stream, batch_size))
-        if len(batch) < batch_size:
-            break
-        bi, tg = batch_adapter(batch)
-        result = engine.step((bi, tg), step=step)
+    for iteration in training_iterations(engine, stream, batch_adapter, start_step=start_step,
+                                         stop_step=start_step + steps, batch_size=batch_size):
+        step, result, batch = iteration.step, iteration.result, iteration.records
         class_support = {gene: sum(bool(row[f"{gene}_class_supervise"]) for row in batch) for gene in genes}
         class_reasons = {gene: dict(Counter(row[f"{gene}_class_reason"] for row in batch))
                          for gene in genes}

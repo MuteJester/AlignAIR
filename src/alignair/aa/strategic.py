@@ -5,18 +5,17 @@ nonproductive/stop-containing reads and applies length-preserving substitutions 
 """
 from __future__ import annotations
 
-import itertools
-
 import numpy as np
 import torch
 
 from ..data.augmentation.protein import aa_substitute
 from .config import aa_igh_config
 from ..reference import build_protein_reference
-from ..data.adapters import collate_categorical as collate_aa
+from ..data.adapters import CategoricalBatchAdapter
 from ..data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
 from ..tasks import build_tasks
 from ..train.engine import TrainingEngine
+from ..train.loop import training_iterations
 from ..train.checkpoints import save_snapshot as _save
 from .model import AAAlignAIR
 from ..data.tokenizer import AAProteinTokenizer
@@ -60,13 +59,10 @@ def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, d_inde
     engine = TrainingEngine(model, opt, tasks=tasks, grad_clip=grad_clip)
     stream = _sample_stream(dc_name, class_maps, d_index, tok, cfg.max_seq_length, sub_prob, seed, rng)
 
+    batch_adapter = CategoricalBatchAdapter.from_config(cfg, device=device)
     history = []
-    for step in range(1, steps + 1):
-        batch = list(itertools.islice(stream, batch_size))
-        if len(batch) < batch_size:
-            break
-        bi, tg = collate_aa(batch, cfg.max_seq_length, device)
-        result = engine.step((bi, tg), step=step)
+    for iteration in training_iterations(engine, stream, batch_adapter, stop_step=steps, batch_size=batch_size):
+        step, result = iteration.step, iteration.result
         history.append({"step": step, "total": result.total, **result.parts})
         if log_every and step % log_every == 0:
             h = history[-1]

@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared `alignair.train.training_iterations` API for explicit optimizer-step windows, lazy batch
+  consumption, completed-step results, and scoped diagnostics across nucleotide and protein runners.
 - Shared protein augmentation and validated CIGAR mapping, with conservative fragment-compatible
   crop labels, classification-only masks, and a website API guide.
 - Shared protein-class sample builder with explicit productivity/stop policies, plus source-independent
@@ -37,6 +39,9 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Nucleotide, protein allele, categorical, and cropped-protein runners use one batch/step iteration
+  owner. Removed the duplicated loops and the AA-specific next-batch helper. Runner-specific history,
+  validation, checkpoint timing, scientific policies, and resume step semantics are preserved.
 - Protein crop targets now use aligned reference codons instead of slicing prototypes with read
   coordinates. Missing reference evidence excludes classification while preserving known boundaries.
   Trimmed V reads can now be cropped. Full-state Stage-1 resume requires the matching versioned

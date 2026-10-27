@@ -5,7 +5,7 @@ const trainingEngine: DocPage = {
   slug: "training-engine",
   title: "Training engine API",
   section: "Design",
-  lead: "Use the same optimizer, numerical checks, and validation mechanics for nucleotide and protein alignment tasks.",
+  lead: "Use shared batch iteration, optimizer steps, numerical checks, and validation for nucleotide and protein alignment tasks.",
   body: () => (
     <>
       <p>
@@ -58,6 +58,59 @@ for step, batch in enumerate(training_batches, start=1):
         schedulers or schedulers driven by validation metrics should be managed by the runner instead.
         Every trainable task-weight parameter must be included in the optimizer; omission is a
         <code> ConfigurationError</code>.
+      </p>
+      <H2 id="iterations">Run an explicit step window</H2>
+      <CodeBlock lang="python" code={`from alignair.data import NucleotideBatchAdapter, CategoricalBatchAdapter
+from alignair.train import training_iterations
+
+# Choose the adapter that matches your prepared source and model configuration.
+adapter = NucleotideBatchAdapter(reference, model.cfg, device=device)
+# For protein-class samples, use CategoricalBatchAdapter.from_config(model.cfg, device=device).
+
+completed_step = start_step
+for iteration in training_iterations(
+    engine, records, adapter,
+    start_step=start_step, stop_step=10_000, batch_size=32,
+):
+    completed_step = iteration.step
+    print(completed_step, iteration.result.total)
+    # Evaluate, checkpoint, inspect iteration.records, or break before the next update.
+
+# A final checkpoint should record completed_step, including when records end early.`} />
+      <p>
+        <code>training_iterations</code> accepts an engine, an iterable of records or prepared samples,
+        and a <DocLink to="training-batches">batch adapter</DocLink>. It yields
+        <code> TrainingIteration(step, result, records)</code> after each successful engine step.
+        The result is the shared <code>StepResult</code>; records is a tuple containing references to
+        that update’s source rows, available for diagnostics such as per-gene class support.
+        The iterator does not retain the adapted tensor batch while runner callbacks execute.
+      </p>
+      <DocTable head={["Argument", "Contract"]} rows={[
+        ["start_step", "Last completed optimizer step; defaults to zero."],
+        ["stop_step", "Absolute final step, inclusive. A resumed window 50 to 55 performs five updates."],
+        ["batch_size", "Positive integer. Only complete batches are adapted and trained."],
+        ["records", "Lazy iterable of source records or prepared samples. The adapter determines their label and input semantics."],
+      ]} />
+      <p>
+        Count and adapter validation runs when the function is called. Source iteration begins on the
+        first request for an update. Equal start and stop steps form an empty window and do not
+        initialize the source. Each subsequent request reads one batch; there is no prefetch beyond
+        the requested step budget. If the source ends, its incomplete final batch is consumed and
+        discarded. Closing the iterator does not explicitly close the caller’s source.
+      </p>
+      <p>
+        AlignAIR errors created while reading, adapting, or training carry the attempted step in scoped
+        diagnostics. Engine errors retain their more specific stage. Failed iterations yield no
+        completion record. The iteration scope ends before control returns to the runner, so its
+        validation and checkpoint callbacks do not inherit a stale training context.
+      </p>
+      <p>
+        The runner owns history, logging, validation timing, source rejection budgets, checkpoint
+        timing, and stopping decisions. An iteration limit bounds optimizer updates; it cannot bound
+        raw simulator attempts hidden inside a filtering source. The function does not restore source
+        positions or RNG state. When preserving a runner’s additional-step API, pass
+        <code> stop_step=start_step + steps</code>; the nucleotide trainer retains its absolute-target
+        API, while the crop runner retains its additional-step API.
       </p>
       <H2 id="validation">Validate without changing training modes</H2>
       <CodeBlock lang="python" code={`report = engine.validate(validation_batches)
@@ -131,7 +184,10 @@ save_snapshot("run/warm-start.pt", model, model.cfg, step)`} />
         Historical <code>train.trainer.train_step</code>, <code>validate</code>, checkpoint helpers,
         and <code>aa.resume</code> imports delegate to shared owners. Duplicate optimizer loops,
         snapshot writers, and process-RNG implementations have been removed from those runners.
-        Study-specific sampling, stopping rules, and provenance remain with the study code.
+        Nucleotide training, protein allele training, categorical training, and partial-coverage
+        training also share <code>train.loop.training_iterations</code>; their repeated batch-fetch
+        and step-window implementations have been removed. Study-specific sampling, stopping rules,
+        and provenance remain with the study code.
       </p>
     </>
   ),
