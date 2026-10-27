@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared task-driven one-batch capacity diagnostics for nucleotide and protein models, with weighted
+  evaluation loss and final task metrics; class-diversity sampling policies with explicit quota checks.
 - Shared training-engine factory for task selection, weight/device placement, stable parameter binding,
   replaceable optimizers, and update-based scheduler construction, with API documentation.
 - Shared curriculum record sources with explicit automatic/amplicon policies, provider injection,
@@ -46,6 +48,8 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Capacity-proof training and diversity selection now live in `train.diagnostics` and `data.sampling`;
+  the protein proof study imports shared owners, and `aa.train` retains compatibility imports only.
 - Alignment runners and capacity/frozen-cohort proofs use one training-state initializer. Public
   nucleotide training creates task weights there when omitted; supplied weights retain their identity.
 - Optimizer assembly deduplicates shared parameters, checks custom parameter groups and scheduler

@@ -11,7 +11,7 @@ from collections import Counter
 import torch
 
 from .config import aa_igh_config
-from ..data.sampling import check_counter, collect_usable
+from ..data.sampling import ClassDiversity, check_counter, collect_usable
 from ..reference import build_protein_reference
 from ..data.adapters import collate_categorical as collate_aa
 from .evaluate import evaluate_frozen
@@ -19,7 +19,7 @@ from ..tasks import build_tasks
 from ..train.setup import build_training_engine
 from .model import AAAlignAIR
 from ..data.tokenizer import AAProteinTokenizer
-from .train import assert_batch_diverse, diverse_selector, overfit_one_batch
+from ..train.diagnostics import overfit_one_batch
 
 # Disjoint seed ranges. GenAIRR consumes CONSECUTIVE per-record seeds, so a stream seeded S
 # occupies [S, S+generated). A 3000x64 run needs ~192k usable ~= ~1.4M raw records at the observed
@@ -94,11 +94,12 @@ def run_seed(seed, cfg, class_maps, heldout, *, replicate, train_steps, batch_si
 
     # (a) capacity: overfit one ACTIVELY DIVERSE batch, from this replicate's own seed range
     torch.manual_seed(seed)
+    diversity = ClassDiversity({"v_class": 3, "j_class": 2})
     ob_range = _range_for("overfit", replicate)
     ob, ob_info = collect_usable(**ob_range, want=overfit_batch, class_maps=class_maps,
                                  tokenizer=tok, max_len=cfg.max_seq_length, dc_name=dc_name,
-                                 counter=counters["overfit"], select=diverse_selector())
-    assert_batch_diverse(ob)
+                                 counter=counters["overfit"], select=diversity)
+    diversity.validate(ob)
     obi, obt = collate_aa(ob, cfg.max_seq_length, device)
     overfit = overfit_one_batch(AAAlignAIR(cfg).to(device), obi, obt,
                                 steps=overfit_steps, lr=lr)

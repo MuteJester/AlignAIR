@@ -2,6 +2,8 @@
 from .engine import TrainingEngine, StepResult, ValidationResult, evaluation_mode
 from .loop import TrainingIteration, training_iterations
 from .setup import OptimizerFactory, build_training_engine
+from .diagnostics import overfit_one_batch
 
 __all__ = ["TrainingEngine", "StepResult", "ValidationResult", "evaluation_mode",
-           "TrainingIteration", "training_iterations", "OptimizerFactory", "build_training_engine"]
+           "TrainingIteration", "training_iterations", "OptimizerFactory", "build_training_engine",
+           "overfit_one_batch"]

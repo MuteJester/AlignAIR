@@ -88,6 +88,38 @@ consumed_records = collection.generated`} />
         Source exhaustion or an insufficient budget raises <code>SampleBudgetExhausted</code> with the
         actual consumed and collected counts.
       </p>
+      <H2 id="diversity">Select a cohort with class-diversity floors</H2>
+      <CodeBlock lang="python" code={`from alignair.data.sampling import ClassDiversity, collect_samples
+
+diversity = ClassDiversity({"v_class": 3, "j_class": 2})
+collection = collect_samples(
+    source_records, builder, want=64, budget=20_000,
+    rejection_reasons=REJECT_REASONS, select=diversity,
+)
+diversity.validate(collection.samples)`} />
+      <p>
+        <code>ClassDiversity</code> accepts any declared sample-field names with positive integer
+        minimums. Samples must supply observed, nonnegative integer class IDs for those fields;
+        missing labels and unknown IDs such as <code>-1</code> raise <code>TrainingDataError</code>.
+        The policy copies its minimums and retains no collection state, so it can be reused with
+        independent selected sequences.
+      </p>
+      <p>
+        Until every minimum is met, it accepts a sample when any declared field contributes an unseen
+        ID. Afterward it accepts freely to fill the batch. An unseen ID can still be accepted for
+        a field whose own minimum is already met; this preserves the protein proof study’s sampling
+        rule. A small batch or limited source can therefore fill before every minimum is reached.
+        Call <code>validate</code> on the completed cohort. Insufficient diversity raises
+        <code> SampleDiversityError</code> with observed and required counts; it is both a
+        <code> TrainingDataError</code> and a <code>ValueError</code> for historical assertion callers.
+      </p>
+      <p>
+        The historical <code>diverse_selector</code> and <code>assert_batch_diverse</code> functions
+        delegate to this policy with their established V/J minimums. Selection declines remain
+        <code> selection_skipped</code> in the collector census. Use this policy before a
+        <DocLink to="training-engine">one-batch learning diagnostic</DocLink>; training mechanics
+        do not choose the scientific cohort policy.
+      </p>
       <H2 id="accounting">Validate preparation and selection counts</H2>
       <CodeBlock lang="text" code={`generated = usable + sum(rejection counts) + preparation_errors
 usable = selected + selection_skipped + selection_errors + selection_untracked`} />

@@ -6,7 +6,7 @@ import torch
 
 from alignair.tasks import MetricAccumulator, build_tasks
 from alignair.train.trainer import validate
-from alignair.aa.train import aa_eval_metrics
+from alignair.tasks.metrics import categorical_metrics
 
 pytestmark = pytest.mark.component
 
@@ -30,9 +30,9 @@ def test_completely_unobserved_gene_has_no_fabricated_metrics(task_batch):
     assert not any(key.startswith("j_") for key in metrics)
 
 
-def test_historical_categorical_metric_entry_delegates_to_shared_contract(task_batch):
+def test_categorical_metric_entry_delegates_to_shared_contract(task_batch):
     cfg, out, targets = task_batch()
-    assert aa_eval_metrics(out, targets) == build_tasks(cfg).metrics(out, targets)
+    assert categorical_metrics(out, targets) == build_tasks(cfg).metrics(out, targets)
 
 
 def test_auxiliary_metrics_omit_a_prediction_without_observed_truth(task_batch):
@@ -107,3 +107,21 @@ def test_validation_restores_model_mode_after_task_failure(task_batch):
     with pytest.raises(RuntimeError, match="broken task"):
         validate(model, [(out, targets)], cfg)
     assert model.training
+
+
+def test_eval_metrics_on_perfect_predictions():
+    B = 3
+    out = {}
+    for g in ("v", "j"):
+        lg = torch.full((B, 4), -10.0)
+        lg[range(B), 2] = 10.0
+        out[f"{g}_class_logits"] = lg
+        out[f"{g}_start"] = torch.full((B, 1), 5.0)
+        out[f"{g}_end"] = torch.full((B, 1), 40.0)
+    tg = {"v_class": torch.full((B,), 2), "j_class": torch.full((B,), 2),
+          "v_start": torch.full((B, 1), 5.0), "v_end": torch.full((B, 1), 40.0),
+          "j_start": torch.full((B, 1), 5.0), "j_end": torch.full((B, 1), 40.0)}
+    m = categorical_metrics(out, tg)
+    assert m["v_class_acc"] == 1.0 and m["j_class_acc"] == 1.0
+    for k in ("v_start_mae", "v_end_mae", "j_start_mae", "j_end_mae"):
+        assert m[k] < 1e-4

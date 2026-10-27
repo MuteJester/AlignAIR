@@ -176,6 +176,45 @@ with evaluation_mode(model):
         failure, including mixed modes such as a frozen evaluation-only child inside a training model.
         The same context surrounds Stage-1 validation callbacks and the AA frozen/allele evaluators.
       </p>
+      <H2 id="capacity">Diagnose one-batch learning capacity</H2>
+      <CodeBlock lang="python" code={`from alignair.train import overfit_one_batch
+
+# Prepare inputs and targets on the model's device through a batch adapter.
+report = overfit_one_batch(model, inputs, targets, steps=300, lr=1e-3)
+print(report["initial_loss"], report["final_loss"])
+print(report["history"][-1])`} />
+      <p>
+        <code>train.diagnostics.overfit_one_batch</code> repeatedly updates the supplied model on one
+        fixed batch. Default tasks follow its configuration, including every configured gene and
+        auxiliary task. This supports nucleotide allele and protein categorical models through the
+        same interface. Pass explicit <code>tasks=</code> to select another loss and metrics, or use
+        <code> genes=</code> to select a supported subset of the built-in tasks. Those options are
+        mutually exclusive. Hierarchical allele tasks require their complete canonical gene set.
+      </p>
+      <DocTable head={["Result", "Meaning"]} rows={[
+        ["initial_loss", "The first training loss, before any optimizer update."],
+        ["history", "One detached total/component-loss dictionary per successful update, measured before that update."],
+        ["final_loss", "Evaluation-mode loss after the final update, using the actual learned task weights."],
+        ["Other keys", "Final metrics provided by tasks.metrics; names follow the configured task semantics."],
+      ]} />
+      <p>
+        The helper creates fresh AdamW state through <code>build_training_engine</code>. Supplied
+        <code> weights=</code> are retained and optimized; omitted weights are created once. Optional
+        <code> grad_clip</code> uses the engine’s combined gradient policy. Positive integer steps
+        and custom metric capability are validated before training. Training failures retain their
+        step diagnostics; a non-finite final total or component loss raises
+        <code> NonFiniteLossError</code> with evaluation context.
+      </p>
+      <p>
+        This operation changes model and task-weight parameters in place and leaves the model in
+        evaluation mode on success. Inputs and targets remain on their supplied device. Seed the
+        experiment and prepare a representative batch before running it; the helper does not fetch
+        records, check diversity, or assert a universal passing threshold. Memorization on this batch
+        measures learning capacity. Use a separate held-out cohort to assess generalization.
+        The <DocLink to="sample-preparation">sample preparation API</DocLink> provides class-diversity
+        policies and explicit completed-cohort validation. Historical <code>aa.train</code> imports
+        delegate here; the shared default includes all configured genes rather than assuming V/J only.
+      </p>
       <H2 id="checkpoints">Choose a checkpoint contract</H2>
       <DocTable head={["API in alignair.train.checkpoints", "Stored state and purpose"]} rows={[
         ["save_checkpoint / load_training_checkpoint", <>Self-contained <code>.alignair</code> artifacts
