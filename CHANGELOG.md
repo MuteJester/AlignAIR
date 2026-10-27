@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared evaluation statistics and exact-class/boundary reports, validated observation contracts,
+  bounded NumPy bootstrap resampling, and a website API guide.
 - Shared task-driven one-batch capacity diagnostics for nucleotide and protein models, with weighted
   evaluation loss and final task metrics; class-diversity sampling policies with explicit quota checks.
 - Shared training-engine factory for task selection, weight/device placement, stable parameter binding,
@@ -48,6 +50,9 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Frozen protein-cohort reports and convergence macro accuracy use shared evaluation owners. Gym
+  competence statistics retain their seeded Python resampling convention under the same statistics module.
+- Statistical imports defer benchmark loading; existing evaluation and historical estimator imports remain available.
 - Capacity-proof training and diversity selection now live in `train.diagnostics` and `data.sampling`;
   the protein proof study imports shared owners, and `aa.train` retains compatibility imports only.
 - Alignment runners and capacity/frozen-cohort proofs use one training-state initializer. Public

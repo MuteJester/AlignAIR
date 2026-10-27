@@ -4,7 +4,7 @@ composite of allele calls, coordinate accuracy (within a fixed nt tolerance), re
 accuracy, and junction exact-match. Aggregated with bootstrap CIs."""
 from typing import Sequence
 
-from .stats import bootstrap_ci
+from ....evaluate.statistics import bootstrap_competence_ci
 
 _DEFAULT_WEIGHTS = {"v_call": 0.2, "d_call": 0.1, "j_call": 0.15,
                     "coords": 0.25, "region": 0.15, "junction": 0.15}
@@ -44,7 +44,7 @@ class CompetenceMetric:
 
     def aggregate(self, recs: Sequence[dict], seed: int = 0) -> dict:
         scores = [self.score(r) for r in recs]
-        mean, lo, hi = bootstrap_ci(scores, seed=seed)
+        mean, lo, hi = bootstrap_competence_ci(scores, seed=seed)
         return {"S": mean, "lo": lo, "hi": hi, "n": len(scores)}
 
     # diagnostic: decompose competence into the aligner-driven (coords), reader-driven
@@ -73,7 +73,7 @@ class CompetenceMetric:
         out = {}
         for name, vals in cols.items():
             if vals:
-                mean, lo, hi = bootstrap_ci(vals, seed=seed)
+                mean, lo, hi = bootstrap_competence_ci(vals, seed=seed)
                 out[name] = {"S": mean, "lo": lo, "hi": hi, "n": len(vals)}
             else:
                 out[name] = {"S": 0.0, "lo": 0.0, "hi": 0.0, "n": 0}

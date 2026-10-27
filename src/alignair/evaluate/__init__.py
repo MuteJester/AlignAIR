@@ -1,10 +1,20 @@
-"""In-package model evaluation: score a model on freshly-generated, labelled GenAIRR reads.
+"""Shared evaluation statistics, cohort reports, and the model benchmark API."""
+from .reports import (boundary_error_report, classification_report, constant_median_mae,
+                      macro_accuracy, majority_class_baseline)
+from .statistics import (bootstrap_competence_ci, bootstrap_mean_ci, paired_diff_ci,
+                         wilson_interval)
 
-This ships in the wheel (unlike the wheel-excluded ``alignair_benchmark`` head-to-head suite). It
-generates labelled reads via the training gym's GenAIRR stream, runs the model, and reports per-stratum
-call accuracy, coordinate MAE and junction_nt_exact — a fast "how good is this model" self-check.
-"""
-from .benchmark import default_strata, format_text, generate_labeled, run_benchmark, score
+_BENCHMARK_EXPORTS = ("default_strata", "format_text", "generate_labeled", "run_benchmark", "score")
+__all__ = [*_BENCHMARK_EXPORTS, "boundary_error_report", "classification_report", "constant_median_mae",
+           "macro_accuracy", "majority_class_baseline", "bootstrap_competence_ci", "bootstrap_mean_ci",
+           "paired_diff_ci", "wilson_interval"]
 
-# genotype constraint study moved to alignair.genotype.study
-__all__ = ["default_strata", "format_text", "generate_labeled", "run_benchmark", "score"]
+
+def __getattr__(name):
+    # Pure report/statistic imports must not initialize the prediction API or simulator benchmark.
+    if name in _BENCHMARK_EXPORTS:
+        from . import benchmark
+        value = getattr(benchmark, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

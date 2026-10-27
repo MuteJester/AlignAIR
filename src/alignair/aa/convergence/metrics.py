@@ -2,10 +2,7 @@
 from __future__ import annotations
 import numpy as np
 
-def macro_accuracy(y_true, y_pred) -> float:
-    y_true = np.asarray(y_true); y_pred = np.asarray(y_pred)
-    accs = [(y_pred[y_true == c] == c).mean() for c in np.unique(y_true)]
-    return float(np.mean(accs)) if accs else 0.0
+from ...evaluate.reports import macro_accuracy
 
 def per_frequency_bins(y_true, y_pred, freq, edges) -> dict:
     y_true = np.asarray(y_true); y_pred = np.asarray(y_pred); freq = np.asarray(freq)

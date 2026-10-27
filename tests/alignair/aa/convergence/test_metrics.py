@@ -1,13 +1,8 @@
 import pytest
 import numpy as np
-from alignair.aa.convergence.metrics import macro_accuracy, per_frequency_bins, softmax_nll, brier_score
+from alignair.aa.convergence.metrics import per_frequency_bins, softmax_nll, brier_score
 
 pytestmark = pytest.mark.component
-
-def test_macro_downweights_common_class():
-    # class 0 has 8 examples all correct; class 1 has 2 examples all wrong -> micro 0.8, macro 0.5
-    yt = np.array([0]*8 + [1]*2); yp = np.array([0]*8 + [0]*2)
-    assert abs(macro_accuracy(yt, yp) - 0.5) < 1e-9
 
 def test_frequency_bins():
     yt = np.array([0,0,1]); yp = np.array([0,1,1]); freq = np.array([0.9,0.9,0.01])
