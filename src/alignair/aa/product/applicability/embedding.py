@@ -9,33 +9,15 @@ they do not alter the model outputs, so predictions are byte-identical with or w
 """
 from __future__ import annotations
 
-import numpy as np
-import torch
+from ....data.inference import SequenceInputAdapter
+from ....predict.features import component_features
 
 REPRESENTATION_VERSION = "vj_penultimate_v1"
 
 
-def branch_features(predictor, sequences, branches=("v", "j")) -> np.ndarray:
-    """Return ``[n, d]`` float features: the concatenated ``cls_head``-input of the named branches."""
-    cfg = predictor.cfg
-    L = cfg.max_seq_length
-    toks = torch.zeros(len(sequences), L, dtype=torch.long)
-    for i, s in enumerate(sequences):
-        enc = predictor.tokenizer.encode(s)
-        if len(enc) > L:
-            raise ValueError(f"sequence length {len(enc)} exceeds max_seq_length {L}")
-        toks[i, :len(enc)] = torch.from_numpy(enc)
-
-    model = predictor.model
-    model.eval()
-    captured: dict = {}
-    components = model.component_modules()
-    handles = [components[f"{b}.cls_head"].register_forward_pre_hook(
-        lambda mod, inp, nm=b: captured.__setitem__(nm, inp[0].detach())) for b in branches]
-    try:
-        with torch.no_grad():
-            model({"tokenized_sequence": toks.to(predictor.device)})
-    finally:
-        for h in handles:
-            h.remove()
-    return torch.cat([captured[b] for b in branches], dim=-1).cpu().numpy()
+def branch_features(predictor, sequences, branches=("v", "j")):
+    """Extract the predeclared branch-head inputs through the shared feature observer."""
+    adapter = SequenceInputAdapter(predictor.tokenizer, predictor.cfg.max_seq_length, predictor.device,
+                                    vocab_size=getattr(predictor.cfg, "vocab_size", None))
+    return component_features(predictor.model, sequences, adapter,
+                               components=tuple(f"{branch}.cls_head" for branch in branches))

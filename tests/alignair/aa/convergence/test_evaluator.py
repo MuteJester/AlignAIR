@@ -1,5 +1,6 @@
 """Evaluator contracts on fresh, hand-written cohorts independent of GenAIRR simulation."""
 import math
+from dataclasses import replace
 from copy import deepcopy
 
 import numpy as np
@@ -15,6 +16,25 @@ from alignair.aa.convergence.evaluator import evaluate_checkpoint
 pytestmark = pytest.mark.component
 
 REQUIRED_STRATA = ("clean", "aa_truncate_50_80", "short_janchor", "moderate_full")
+
+
+def test_clean_heads_and_conformal_test_probabilities_share_one_forward(evaluation_inputs):
+    model, cfg, maps, meta, cohort = evaluation_inputs
+    calls = []
+    handle = model.register_forward_hook(lambda *args: calls.append(1))
+    try:
+        evaluate_checkpoint(model,cfg,maps,meta,cohort,device='cpu')
+    finally:
+        handle.remove()
+    # Four strata, one boundary pass, one calibration pass. Clean V/J/D and test APS reuse logits.
+    assert len(calls) == 6
+
+
+def test_evaluator_supports_a_model_without_a_d_head(evaluation_inputs):
+    _, cfg, maps, meta, cohort = evaluation_inputs
+    cfg = replace(cfg,has_d=False,d_allele_count=0)
+    output = evaluate_checkpoint(AAAlignAIR(cfg),cfg,maps,meta,cohort,device='cpu')
+    assert output['d_allele_acc'] is output['d_gene_acc'] is output['nll']['d'] is None
 
 
 @pytest.fixture

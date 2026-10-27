@@ -25,7 +25,9 @@ than importing that class, so this module has ZERO dependency on ``loader.py`` �
 """
 from __future__ import annotations
 
-import torch
+from ...data.inference import SequenceInputAdapter
+from ...predict.forward import forward_batch
+from ...predict.probabilities import softmax_probabilities
 
 from .asc import class_alleles, class_families, class_genes, family_of, gene_of
 from .calibration_group import resolve_group
@@ -69,26 +71,10 @@ def _item_id_and_sequence(item, idx: int) -> tuple:
 
 
 def _forward(predictor, sequences: list) -> dict:
-    """One batched forward pass through the bundle's own verified tokenizer (``predictor.tokenizer``
-    — reconstructed from the bundle's tokenizer section, not ``alignair.aa.infer.class_probs``'s
-    module-default tokenizer instance) producing every head's raw output (class logits + start/end
-    soft-argmax) in a single pass, so `class` probabilities AND coordinates both come from exactly one
-    forward call per `predict()` invocation. Probabilities are computed the same way
-    ``alignair.aa.infer.class_probs`` does (plain softmax over the raw per-gene class logits) — kept as
-    a private single-pass forward here, instead of 2-3 separate ``class_probs`` calls (one per gene
-    head, each re-running the whole model), purely to avoid that redundant recompute; the math is
-    identical."""
-    cfg = predictor.cfg
-    L = cfg.max_seq_length
-    toks = torch.zeros(len(sequences), L, dtype=torch.long)
-    for i, s in enumerate(sequences):
-        encoded = predictor.tokenizer.encode(s)
-        if len(encoded) > L:
-            raise ValueError(f"_forward: sequence length {len(encoded)} exceeds max_seq_length {L}")
-        toks[i, :len(encoded)] = torch.from_numpy(encoded)
-    predictor.model.eval()
-    with torch.no_grad():
-        return predictor.model({"tokenized_sequence": toks.to(predictor.device)})
+    """Use the bundle's verified tokenizer and one shared forward for all heads and coordinates."""
+    adapter = SequenceInputAdapter(predictor.tokenizer, predictor.cfg.max_seq_length, predictor.device,
+                                    vocab_size=getattr(predictor.cfg, "vocab_size", None))
+    return forward_batch(predictor.model, adapter(sequences), expected_rows=len(sequences))
 
 
 def _select_conformal(predictor, genes: tuple, group: str):
@@ -242,7 +228,7 @@ def _predict_valid(predictor, records: list, indices: list, coverage_group) -> l
     out = _forward(predictor, sequences)
     genes = ("V", "J", "D") if getattr(predictor.cfg, "has_d", False) else ("V", "J")
 
-    probs = {g: torch.softmax(out[f"{g.lower()}_class_logits"], dim=-1).cpu().numpy() for g in genes}
+    probs = {g: softmax_probabilities(out[f"{g.lower()}_class_logits"]) for g in genes}
     starts = {g: out[f"{g.lower()}_start"].detach().cpu().numpy()[:, 0] for g in genes}
     ends = {g: out[f"{g.lower()}_end"].detach().cpu().numpy()[:, 0] for g in genes}
 

@@ -29,7 +29,7 @@ from ..train.checkpoints import (load_research_checkpoint as load_checkpoint,
                                   save_research_checkpoint as save_checkpoint,
                                   research_checkpoint_rng, save_snapshot as _save)
 from ..train.random_state import restore_rng_state
-from ..train.engine import evaluation_mode
+from ..core.runtime import evaluation_mode
 from ..train.setup import build_training_engine
 from ..train.loop import training_iterations
 from ..data.sampling import ProteinSampleBuilder, ProteinSamplePolicy

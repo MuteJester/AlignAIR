@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared sequence-input adaptation, mode-safe prediction batches, multi-head probabilities, and named
+  component-feature capture, with explicit tokenizer/window policies and inference API documentation.
 - Shared allele-cohort evaluation with optional sparse predicted sets, scalar-head observations,
   explicit equivalence-map coverage, and metadata-head-aware reporting for either input alphabet.
 - Shared supervision-aware cohort observation collection for nucleotide/protein and categorical/multilabel
@@ -54,6 +56,12 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Research, product, feature extraction, and nucleotide prediction share padding/forward mechanics;
+  duplicate implementations are removed. The evaluation context now lives in core runtime.
+- Research probability inference enters evaluation mode and restores caller flags. Product inference
+  keeps its verified tokenizer and device-local softmax; research keeps CPU softmax arithmetic.
+- Checkpoint evaluation reuses clean-cohort V/J/D probabilities and conformal test probabilities,
+  reducing redundant model passes and supporting configurations without a D head.
 - Protein allele evaluation and stratified benchmarking use shared observation collection and allele counters;
   duplicate inference/counting loops and dummy-tensor counter initialization have been removed.
 - Unmapped alleles no longer form a false equivalence class. Class accuracy and within-class error

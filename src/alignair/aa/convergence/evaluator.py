@@ -7,7 +7,7 @@ is reproducible from ``(dc_name, n_per_stratum, seed)`` alone. It is fingerprint
 every checkpoint scored in a convergence sweep is compared against byte-identical data.
 
 ``evaluate_checkpoint`` runs one checkpoint's V/J/D heads over that frozen cohort (via the shared
-hardened inference path ``alignair.aa.infer.class_probs``) and reports the metric set used to gate
+hardened inference path ``alignair.predict.probabilities.protein_class_probabilities``) and reports the metric set used to gate
 checkpoint selection: clean-stratum V/J accuracy (micro + macro), D allele/gene accuracy, per-stratum
 V accuracy, softmax NLL + Brier, allele-frequency-binned accuracy, boundary MAE (reusing
 ``evaluate.py::evaluate_frozen``), and a per-checkpoint conformal (APS) coverage/set-size summary.
@@ -27,7 +27,7 @@ from ...data.sampling import ProteinSampleBuilder
 from ...reference import build_protein_reference
 from ..evaluate import evaluate_frozen
 from ...data.projection import translated_record_usable as aa_usable
-from ..infer import class_probs
+from ...predict.probabilities import protein_class_probabilities
 from ...data.tokenizer import AAProteinTokenizer
 from .metrics import brier_score, macro_accuracy, per_frequency_bins, softmax_nll
 
@@ -200,7 +200,7 @@ def _boundary_mae(model, cfg, class_maps, clean_rows: list, device: str) -> dict
 
 
 def _conformal_v(model, cfg, device: str, class_maps, calibration_rows: list, clean_rows: list,
-                 alpha: float, seed: int = 0) -> dict:
+                 alpha: float, seed: int = 0, *, test_probabilities) -> dict:
     """Per-checkpoint APS conformal fit (V gene -- the selection-critical head) on the fixed
     calibration slice, evaluated (coverage + set-size stats) on the clean-stratum test rows."""
     if not calibration_rows or not clean_rows:
@@ -208,11 +208,12 @@ def _conformal_v(model, cfg, device: str, class_maps, calibration_rows: list, cl
                 "note": "insufficient rows for conformal fit"}
     vclass = class_maps["V"].allele_class
     y_cal = np.array([vclass[_first(r["v_call"])] for r in calibration_rows])
-    p_cal = class_probs(model, [r["aa"] for r in calibration_rows], cfg, device, "v_class_logits")
+    p_cal = protein_class_probabilities(model, [r["aa"] for r in calibration_rows], cfg, device,
+                                        ("v_class_logits",))["v_class_logits"]
     conf = Conformal(alpha=alpha, seed=seed).fit(p_cal, y_cal)
 
     y_tst = np.array([vclass[_first(r["v_call"])] for r in clean_rows])
-    p_tst = class_probs(model, [r["aa"] for r in clean_rows], cfg, device, "v_class_logits")
+    p_tst = test_probabilities
     sizes, covered = [], []
     for i in range(len(clean_rows)):
         s = conf.predict_set(p_tst[i])
@@ -249,10 +250,13 @@ def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "
             continue
         seqs = [r["aa"] for r in rows]
         y_v = np.array([vclass[_first(r["v_call"])] for r in rows])
-        pv = class_probs(model, seqs, cfg, device, "v_class_logits")
+        keys = (("v_class_logits", "j_class_logits") + (("d_class_logits",) if cfg.has_d else ())
+                if name == "clean" else ("v_class_logits",))
+        probabilities = protein_class_probabilities(model, seqs, cfg, device, keys)
+        pv = probabilities["v_class_logits"]
         pred_v = pv.argmax(-1)
         by_stratum[name] = {"n": len(rows), "v_acc": float((pred_v == y_v).mean())}
-        v_probs_cache[name] = {"probs": pv, "y": y_v}
+        v_probs_cache[name] = {"probs": pv, "y": y_v, "heads": probabilities}
 
     clean_rows = by_stratum_rows["clean"]
     pv_clean = v_probs_cache["clean"]["probs"]
@@ -260,7 +264,7 @@ def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "
     pred_v_clean = pv_clean.argmax(-1)
 
     y_j_clean = np.array([jclass[_first(r["j_call"])] for r in clean_rows])
-    pj_clean = class_probs(model, [r["aa"] for r in clean_rows], cfg, device, "j_class_logits")
+    pj_clean = v_probs_cache["clean"]["heads"]["j_class_logits"]
     pred_j_clean = pj_clean.argmax(-1)
 
     clean_v_acc = float((pred_v_clean == y_v_clean).mean())
@@ -269,10 +273,12 @@ def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "
     j_macro = macro_accuracy(y_j_clean, pred_j_clean)
 
     # ---- D on clean (allele + gene; gene = allele name before "*") ----
-    d_rows = [r for r in clean_rows if not r["d_inverted"] and _first(r["d_call"]) in d_index]
+    d_indices = [i for i,r in enumerate(clean_rows)
+                 if cfg.has_d and not r["d_inverted"] and _first(r["d_call"]) in d_index]
+    d_rows = [clean_rows[i] for i in d_indices]
     if d_rows:
         y_d = np.array([d_index[_first(r["d_call"])] for r in d_rows])
-        pd_ = class_probs(model, [r["aa"] for r in d_rows], cfg, device, "d_class_logits")
+        pd_ = v_probs_cache["clean"]["heads"]["d_class_logits"][d_indices]
         pred_d = pd_.argmax(-1)
         d_allele_acc = float((pred_d == y_d).mean())
         d_allele_macro = macro_accuracy(y_d, pred_d)
@@ -294,7 +300,8 @@ def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "
     }
 
     boundary_mae = _boundary_mae(model, cfg, class_maps, clean_rows, device)
-    conformal = _conformal_v(model, cfg, device, class_maps, calibration_rows, clean_rows, alpha)
+    conformal = _conformal_v(model, cfg, device, class_maps, calibration_rows, clean_rows, alpha,
+                              test_probabilities=pv_clean)
 
     return {
         "clean_v_acc": clean_v_acc, "clean_j_acc": clean_j_acc,

@@ -12,6 +12,35 @@ from alignair.aa.product.validate import ErrorResult
 
 pytestmark = pytest.mark.component
 
+
+def test_product_forward_uses_the_supplied_tokenizer_once_for_all_heads():
+    from types import SimpleNamespace
+    import numpy as np
+    predictor = _fake_predictor()
+    encodes, forwards = [], []
+    def encode(sequence):
+        encodes.append(sequence)
+        return np.full(len(sequence),7,dtype=np.int64)
+    predictor.tokenizer = SimpleNamespace(encode=encode)
+    handle = predictor.model.register_forward_hook(lambda module,args,out: forwards.append(args[0]['tokenized_sequence'].clone()))
+    try:
+        predictor.predict(['EVQLVES'])
+    finally:
+        handle.remove()
+    assert encodes == ['EVQLVES'] and len(forwards) == 1
+    assert forwards[0][0,:7].tolist() == [7]*7
+    assert predictor.model.training
+
+
+def test_product_refuses_nonfinite_coordinates_and_restores_model_mode():
+    from alignair.errors import NumericalError
+    predictor = _fake_predictor()
+    predictor.model._out['v_start'].fill_(float('nan'))
+    with pytest.raises(NumericalError) as caught:
+        predictor.predict(['EVQLVES'])
+    assert caught.value.context['field'] == 'v_start'
+    assert predictor.model.training
+
 _REAL_MODEL_ID = "alignair-aa-igh-human@2.0.0"
 
 # Two real, full-length VH amino-acid reads (from Notes and Plans/docs/superpowers/artifacts/2026-07-21-aa-phase3/
@@ -127,17 +156,15 @@ def _minimal_class_map(gene: str, allele: str) -> EquivalenceClassMap:
                                allele_class={allele: 0}, class_members={0: [allele]})
 
 
-class _StubModel:
+class _StubModel(torch.nn.Module):
     """Ignores its input and always returns a fixed forward-pass output — used to force a
     deterministic V start>end without needing real model weights."""
 
     def __init__(self, out: dict):
+        super().__init__()
         self._out = out
 
-    def eval(self):
-        return self
-
-    def __call__(self, batch):
+    def forward(self, batch):
         return self._out
 
 

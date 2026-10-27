@@ -112,14 +112,12 @@ def test_d_calibrated_allele_set_is_the_d_allele_names_of_the_class_set(predicto
 # --------------------------------------------------------------------------------- crafted one-to-many
 
 
-class _StubModel:
+class _StubModel(torch.nn.Module):
     def __init__(self, out: dict):
+        super().__init__()
         self._out = out
 
-    def eval(self):
-        return self
-
-    def __call__(self, batch):
+    def forward(self, batch):
         return self._out
 
 

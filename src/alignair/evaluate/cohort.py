@@ -13,7 +13,7 @@ from ..core.config import AlignAIRConfig
 from ..data.batching import BatchAdapter
 from ..errors import ConfigurationError, NumericalError, TrainingDataError, error_context
 from ..tasks.supervision import categorical_rows, supervised_rows
-from ..train.engine import evaluation_mode
+from ..core.runtime import evaluation_mode
 from .statistics import _integer
 
 

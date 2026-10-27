@@ -1,13 +1,13 @@
 """Shared optimizer steps and support-weighted validation for alignment tasks."""
 from __future__ import annotations
 
-from contextlib import contextmanager
 import math
 from typing import NamedTuple
 
 import torch
 
 from ..errors import ConfigurationError, TrainingError, error_context
+from ..core.runtime import evaluation_mode
 from ..tasks import MetricAccumulator, TrainingTasks, build_tasks
 from .guards import NonFiniteLossError, check_finite_loss, validate_grad_clip
 
@@ -21,19 +21,6 @@ class StepResult(NamedTuple):
 class ValidationResult(NamedTuple):
     metrics: dict[str, float]
     score: float
-
-
-@contextmanager
-def evaluation_mode(model):
-    """Evaluate without gradients, restoring every module's prior mode even on failure."""
-    modes = [(module, module.training) for module in model.modules()]
-    try:
-        model.eval()
-        with torch.no_grad():
-            yield
-    finally:
-        for module, training in modes:
-            module.training = training
 
 
 def _parameters(optimizer):
