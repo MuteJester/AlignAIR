@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared raw sequence-file parsing for FASTA, FASTQ, CSV/TSV, text, gzip and stdin, with
+  structured source-location errors and explicit file ownership, independent of sequence alphabets.
 - Shared sequence normalization with configurable alphabets, stable source indices, structured failures,
   and checked prediction/error interleaving; protein product interfaces retain their existing IDs and JSON fields.
 - Shared sequence-input adaptation, mode-safe prediction batches, multi-head probabilities, and named
@@ -58,6 +60,10 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Protein CLI and nucleotide readers share file parsing. The protein CLI no longer reads a second
+  whole-file string, supports the shared formats, and reports empty FASTA entries as record failures.
+- Unnamed FASTA entries reach downstream ID assignment and validation. Malformed FASTA/table
+  structure now fails explicitly; nucleotide ambiguity cleaning and chunking remain caller policies.
 - Protein product prediction normalizes each batch once. Duplicate input dispatch, ID assignment,
   per-item validation calls, and placeholder-slot reconstruction have been removed.
 - Non-string sequence values produce structured invalid_type failures in skip mode. Normalized

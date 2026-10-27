@@ -9,25 +9,14 @@ from __future__ import annotations
 from alignair.errors import InputError
 
 import csv
-import gzip
-import io
+from contextlib import closing
 import os
 from typing import List, Tuple
 
+from .sequence_records import _open_text, detect_sequence_format, iter_sequence_records
+
 _VALID = set("ACGTN")
 _IUPAC = set("RYSWKMBDHVN")          # ambiguity codes -> N
-_SEQ_COLS = ("sequence", "seq", "nucleotide", "read")
-
-
-def _open_stream(path: str):
-    """Open ``path`` for a SINGLE streaming pass. stdin (``-``) is returned as-is — never slurped or
-    cached — so a piped 1M-read repertoire streams in bounded memory."""
-    if path == "-":
-        import sys
-        return sys.stdin
-    if path.endswith(".gz"):
-        return io.TextIOWrapper(gzip.open(path, "rb"))
-    return open(path, "r")
 
 
 def validate_sequence(seq: str, max_len: int | None = None) -> tuple[str | None, str | None]:
@@ -61,27 +50,6 @@ def validate_sequence(seq: str, max_len: int | None = None) -> tuple[str | None,
 def validate(seq: str) -> str | None:
     """Back-compat wrapper: the cleaned sequence, or ``None`` if unusable (see ``validate_sequence``)."""
     return validate_sequence(seq)[0]
-
-
-def _sniff(path: str, head: str, seq_column: str | None = None) -> str:
-    ext = os.path.basename(path).lower().rstrip(".gz") if False else os.path.basename(path).lower()
-    ext = ext[:-3] if ext.endswith(".gz") else ext
-    if ext.endswith((".fasta", ".fa", ".fna")):
-        return "fasta"
-    if ext.endswith((".fastq", ".fq")):
-        return "fastq"
-    if ext.endswith((".csv", ".tsv")):
-        return "table"
-    if head.startswith(">"):
-        return "fasta"
-    if head.startswith("@"):
-        return "fastq"
-    # extensionless (e.g. piped stdin): a delimited header is a table if it names a known sequence
-    # column OR the caller explicitly told us the column via --sequence-column.
-    if any(c in head for c in (",", "\t")) and (
-            seq_column is not None or any(k in head.lower() for k in _SEQ_COLS)):
-        return "table"
-    return "txt"
 
 
 # metadata columns worth carrying into output by default (10x / AIRR / Immcantation single-cell)
@@ -241,81 +209,12 @@ def build_metadata_index(path, id_column=None, keep_columns=None, normalize_10x=
     return idx, out_cols
 
 
-def _detect_format(path: str) -> str:
-    if path == "-":                       # can't peek stdin without consuming its single pass
+def _detect_format(path: str, seq_column: str | None = None) -> str:
+    if path == "-":
         return "stdin"
-    with _open_stream(path) as f:
-        head = f.readline()
-    return _sniff(path, head)
-
-
-def _iter_records(fmt: str, lines, head: str, seq_column, id_column, path: str):
-    """Yield (id_or_None, raw_sequence) from a single line iterator (`head` already chained in) — never
-    reopens or slurps the source, so stdin streams in bounded memory. `path` is used only for messages
-    and the table delimiter."""
-    if fmt == "fasta":
-        name, buf = None, []
-        for line in lines:
-            line = line.rstrip("\n")
-            if line.startswith(">"):
-                if name is not None:
-                    yield name, "".join(buf)
-                tok = line[1:].split()
-                name, buf = (tok[0] if tok else None), []
-            else:
-                buf.append(line)
-        if name is not None:
-            yield name, "".join(buf)
-    elif fmt == "fastq":
-        it = iter(lines)
-        ln = 0
-        while True:
-            h = next(it, "")
-            if not h:
-                break
-            ln += 1
-            if not h.startswith("@"):
-                raise InputError(f"malformed FASTQ at line {ln}: expected '@' header, "
-                                 f"got {h.rstrip()[:20]!r}")
-            s, plus, q = next(it, ""), next(it, ""), next(it, "")
-            if not q:
-                raise InputError(f"malformed FASTQ: truncated record starting at line {ln} "
-                                 f"(a record needs 4 lines)")
-            if not plus.startswith("+"):
-                raise InputError(f"malformed FASTQ at line {ln + 2}: expected '+' separator, "
-                                 f"got {plus.rstrip()[:20]!r}")
-            seq, qual = s.rstrip("\n"), q.rstrip("\n")
-            if len(seq) != len(qual):
-                raise InputError(f"malformed FASTQ at line {ln + 3}: sequence length {len(seq)} "
-                                 f"!= quality length {len(qual)}")
-            ln += 3
-            tok = h.rstrip("\n")[1:].split()
-            yield (tok[0] if tok else None), seq
-    elif fmt == "table":
-        delim = "\t" if path.lower().rstrip(".gz").endswith(".tsv") or "\t" in head else ","
-        reader = csv.DictReader(lines, delimiter=delim)
-        fields = reader.fieldnames or []
-        if seq_column is not None:
-            if seq_column not in fields:
-                raise InputError(f"sequence column '{seq_column}' not in {path} (have {fields})")
-            col = seq_column
-        else:
-            col = next((c for c in fields if c.lower() in _SEQ_COLS), None)
-        if col is None:
-            raise InputError(f"no sequence column in {path}; expected one of {_SEQ_COLS} "
-                             f"or pass --sequence-column")
-        if id_column is not None:
-            if id_column not in fields:
-                raise InputError(f"id column '{id_column}' not in {path} (have {fields})")
-            idcol = id_column
-        else:
-            idcol = next((c for c in fields if c.lower() in ("sequence_id", "id", "name")), None)
-        for row in reader:
-            yield (row.get(idcol) if idcol else None), row.get(col, "")
-    else:  # txt: one sequence per line
-        for line in lines:
-            if line.strip():
-                yield None, line
+    with _open_text(os.fspath(path)) as stream:
+        head = next((line for line in stream if line.strip()), "")
+    return detect_sequence_format(os.fspath(path), head, seq_column)
 
 
 def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = None,
@@ -325,8 +224,6 @@ def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = 
     ``read_sequences``; ids default to ``seq{global_index}`` when the source has none. If ``rejects``
     (a list) is given, each dropped read is appended as ``{id, position, reason, sequence}`` so the
     caller can emit a rejects table rather than silently dropping records."""
-    import itertools
-    stream = _open_stream(path)           # opened ONCE; stdin is not slurped
     ids: List[str] = []
     seqs: List[str] = []
     dropped = 0
@@ -341,11 +238,8 @@ def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = 
         seen[base] = n + 1                # deterministic disambiguation of duplicate ids
         return f"{base}_dup{n + 1}"
 
-    try:
-        head = stream.readline()
-        fmt = _sniff(path, head, seq_column)      # --sequence-column disambiguates a piped table
-        lines = itertools.chain([head], stream)   # put the sniffed line back — no reopen, no slurp
-        for i, (rid, raw) in enumerate(_iter_records(fmt, lines, head, seq_column, id_column, path)):
+    with closing(iter_sequence_records(path, seq_column=seq_column, id_column=id_column)) as records:
+        for i, (rid, raw) in enumerate(records):
             v, reason = validate_sequence(raw)
             if v is None:
                 dropped += 1
@@ -358,9 +252,6 @@ def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = 
             if len(seqs) >= chunk_size:
                 yield ids, seqs, dropped
                 ids, seqs, dropped = [], [], 0
-    finally:
-        if path != "-":                   # leave stdin open for the parent process
-            stream.close()
     if ids or dropped:
         yield ids, seqs, dropped
 
@@ -377,7 +268,7 @@ def read_sequences(path: str, seq_column: str | None = None, id_column: str | No
     for cids, cseqs, drp in iter_sequences(path, chunk_size=10 ** 9, seq_column=seq_column,
                                            id_column=id_column, rejects=rejects):
         ids += cids; seqs += cseqs; dropped += drp
-    info = {"n_read": len(ids) + dropped, "n_dropped": dropped, "format": _detect_format(path)}
+    info = {"n_read": len(ids) + dropped, "n_dropped": dropped, "format": _detect_format(path, seq_column)}
     if collect_rejects:
         info["rejects"] = rejects
     return ids, seqs, info

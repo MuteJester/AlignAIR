@@ -90,10 +90,10 @@ def test_stdin_is_streamed_not_slurped(monkeypatch):
 def test_sniff_requires_seq_column_for_custom_table():
     """An extensionless delimited header (piped stdin) with a non-standard column is txt UNLESS the
     caller names the sequence column, in which case it is a table."""
-    from alignair.io.sequence_reader import _sniff
+    from alignair.io import detect_sequence_format
     head = "contig_id,nt,barcode\n"
-    assert _sniff("-", head) == "txt"                       # no known seq-col keyword, no hint
-    assert _sniff("-", head, seq_column="nt") == "table"    # explicit --sequence-column disambiguates
+    assert detect_sequence_format("-", head) == "txt"                       # no known seq-col keyword, no hint
+    assert detect_sequence_format("-", head, seq_column="nt") == "table"    # explicit --sequence-column disambiguates
 
 
 def test_stdin_custom_column_table_is_detected(monkeypatch):
@@ -106,6 +106,27 @@ def test_stdin_custom_column_table_is_detected(monkeypatch):
                         _io.StringIO("contig_id,nt,barcode\nc1,ACGTACGT,AAAA\nc2,TTTTGGGG,CCCC\n"))
     ids, seqs, info = sr.read_sequences("-", seq_column="nt", id_column="contig_id")
     assert seqs == ["ACGTACGT", "TTTTGGGG"] and ids == ["c1", "c2"]
+
+
+def test_unnamed_and_empty_fasta_records_are_accounted_for_by_nucleotide_policy(tmp_path):
+    path = tmp_path / 'reads.fa'
+    path.write_text('>\n>\nacgtr\n>same\nXXXXZZ\n>same\nACGT\n>same\nTGCA\n')
+    ids, sequences, info = read_sequences(path, collect_rejects=True)
+    assert ids == ['seq1', 'same', 'same_dup1']
+    assert sequences == ['ACGTN', 'ACGT', 'TGCA']
+    assert info['n_read'] == 5 and info['n_dropped'] == 2
+    assert [(row['position'], row['reason']) for row in info['rejects']] == [(0, 'empty'), (2, 'ambiguous')]
+
+
+def test_closing_nucleotide_chunk_iterator_closes_owned_source(monkeypatch):
+    import io
+    from alignair.io.sequence_reader import iter_sequences
+    source = io.StringIO('>one\nAC\n>two\nGT\n')
+    monkeypatch.setattr('builtins.open', lambda *args, **kwargs: source)
+    chunks = iter_sequences('reads.fa', chunk_size=1)
+    assert next(chunks) == (['one'], ['AC'], 0)
+    chunks.close()
+    assert source.closed
 
 
 def test_metadata_join_carries_10x_columns(tmp_path):

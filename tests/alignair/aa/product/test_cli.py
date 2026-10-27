@@ -79,6 +79,23 @@ def test_read_records_ignores_leading_blank_lines_before_first_header(tmp_path):
     assert records[1] == {"sequence_id": "read-2", "sequence": _VH_2}
 
 
+def test_shared_reader_retains_empty_and_unnamed_protein_records(tmp_path):
+    fasta = tmp_path / "reads.fa"
+    fasta.write_text(">\n>same\n ac \n de \n>same\n\n")
+    assert _read_records(fasta) == [{"sequence_id": None, "sequence": ""},
+                                   {"sequence_id": "same", "sequence": "acde"},
+                                   {"sequence_id": "same", "sequence": ""}]
+
+
+@pytest.mark.parametrize("suffix,text", [(".fq", "@protein\nevQL*X\n+\n!!!!!!\n"),
+                                         (".csv", "id,sequence\nprotein,evQL*X\n"),
+                                         (".tsv", "id\tsequence\nprotein\tevQL*X\n")])
+def test_shared_formats_preserve_raw_protein_values(tmp_path, suffix, text):
+    path = tmp_path / ("reads" + suffix)
+    path.write_text(text)
+    assert _read_records(path) == [{"sequence_id": "protein", "sequence": "evQL*X"}]
+
+
 # --------------------------------------------------------------------------------- CLI end-to-end
 
 
@@ -173,6 +190,19 @@ def test_cli_empty_input_returns_error_and_writes_nothing(tmp_path):
     rc = run(args)
     assert rc == 1
     assert not out.exists()
+
+
+def test_cli_empty_headers_emit_failures_and_preserve_following_positions(tmp_path):
+    fasta = tmp_path / "reads.fa"
+    fasta.write_text(f">\n>same\n{_VH_1}\n>same\n\n")
+    out = tmp_path / "out.jsonl"
+    assert run(_parse_args(["predict-aa", str(fasta), "--out", str(out)])) == 0
+    results = [json.loads(line) for line in out.read_text().splitlines()]
+    assert [result['sequence_id'] for result in results] == ['seq_0', 'same', 'same']
+    assert results[0]['error'] == results[2]['error'] == 'empty'
+    assert 'segments' in results[1]
+    meta = json.loads(out.with_suffix('.jsonl.run.json').read_text())
+    assert (meta['n_input'], meta['n_predicted'], meta['n_errors']) == (3, 1, 2)
 
 
 def test_cli_uses_coverage_group_flag(tmp_path):

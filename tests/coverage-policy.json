@@ -27,6 +27,7 @@
     "src/alignair/data/sampling/collection.py": {"statements": 98, "branches": 95},
     "src/alignair/data/sampling/genairr.py": {"statements": 98, "branches": 95},
     "src/alignair/io/sequence_reader.py": {"statements": 90, "branches": 75},
+    "src/alignair/io/sequence_records.py": {"statements": 98, "branches": 95},
     "src/alignair/model_file/container.py": {"statements": 80, "branches": 75},
     "src/alignair/registry/cache.py": {"statements": 80, "branches": 75},
     "src/alignair/data/coordinates.py": {"statements": 95, "branches": 95},

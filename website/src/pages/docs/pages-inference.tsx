@@ -15,6 +15,51 @@ const modelInference: DocPage = {
         See <DocLink to="model-setup">model setup</DocLink> for input and label configuration and
         <DocLink to="evaluation-reports">evaluation reports</DocLink> for labelled cohort scoring.
       </p>
+      <H2 id="files">Read sequence files before validation</H2>
+      <CodeBlock lang="python" code={`from contextlib import closing
+from alignair.io import iter_sequence_records
+
+with closing(iter_sequence_records("reads.fa.gz")) as records:
+    for record in records:
+        print(record.sequence_id, record.sequence)
+
+# Table columns and format overrides are explicit when auto-detection is unsuitable.
+with closing(iter_sequence_records(
+    "reads.tsv", seq_column="protein", id_column="sample",
+)) as records:
+    inputs = [record._asdict() for record in records]`} />
+      <p>
+        <code>iter_sequence_records</code> parses FASTA, four-line FASTQ, CSV/TSV, and nonblank text
+        lines. It accepts filesystem paths, gzip files, or <code>"-"</code> for stdin. Auto-detection
+        prefers recognized filename suffixes, then examines the first nonblank line. Set
+        <code> format</code> to <code>"fasta"</code>, <code>"fastq"</code>, <code>"table"</code>,
+        or <code>"txt"</code> to override detection. Table sequence columns default to
+        <code> sequence</code>, <code>seq</code>, <code>nucleotide</code>, or <code>read</code>;
+        ID columns default to <code>sequence_id</code>, <code>id</code>, or <code>name</code>.
+      </p>
+      <DocTable head={["RawSequenceRecord", "Contract"]} rows={[
+        ["sequence_id", "Header first word or table ID, possibly None; duplicate IDs are retained."],
+        ["sequence", "Case and alphabet are preserved. FASTA sequence lines are joined; FASTQ quality is checked and discarded."],
+        ["strip_sequence_lines", "False by default. True strips each FASTA/text sequence line before joining or emitting it; interior spaces remain."],
+      ]} />
+      <p>
+        FASTA and FASTQ retain empty and unnamed records for downstream validation and fallback ID
+        assignment. Blank text lines are ignored. Sequence text before a FASTA header, malformed
+        FASTQ, missing table fields, and invalid CSV quoting raise <code>InputError</code> with path,
+        format, and physical line context. These are file-structure failures; per-sequence
+        <code> on_invalid="skip"</code> does not suppress them. Decode and compressed-data failures
+        raise <code>InputError</code>; filesystem failures raise <code>OperationIOError</code>.
+        Translated failures preserve their original exception as the cause.
+      </p>
+      <p>
+        Parsing reads the source once and holds the current record. Owned files close on exhaustion,
+        errors, or explicit iterator closure; borrowed stdin remains open. Use <code>closing</code>
+        when iteration may stop early. Protein CLI input uses this parser with per-line stripping,
+        then the normalizer below; it supports all shared formats and reports empty FASTA entries as
+        per-record errors. It still collects the records for one prediction request. Nucleotide
+        <code>iter_sequences</code> adds its existing ambiguity cleaning, rejects, ID policy, and
+        chunking. Use raw parsing when sequence content must reach a different validation policy.
+      </p>
       <H2 id="records">Normalize records without losing source identity</H2>
       <CodeBlock lang="python" code={`from alignair.data import SequenceValidationPolicy, normalize_sequence_inputs
 
