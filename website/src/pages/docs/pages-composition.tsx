@@ -13,6 +13,11 @@ const composition: DocPage = {
         Its configuration selects score semantics, boundary slots, and optional heads. The tokenizer and
         reference determine the vocabulary and label counts; the model does not infer them from the input.
       </p>
+      <p>
+        Shared neural-network components live in <code>alignair.neural</code>, including prediction
+        heads and learned uncertainty weights. This package serves both nucleotide and protein models.
+        Historical <code>alignair.nn</code> imports delegate to the same components.
+      </p>
       <H2 id="construction">Construct a model</H2>
       <p>
         This example uses small label vocabularies to illustrate construction. For training, supply counts

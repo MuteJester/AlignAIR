@@ -13,7 +13,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from ..errors import ConfigurationError
-from ..nn.heads.state import PerPositionStateBranch
+from ..neural.heads.state import PerPositionStateBranch
 from .config import AlignAIRConfig, GeneSpec, _SEG_KERNELS
 from .gene_branch import GeneBranch, MetaHead, build_tower
 from .layers import EmbeddingOrientationHead, TokenAndPositionEmbedding

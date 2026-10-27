@@ -1,7 +1,7 @@
 import pytest
 import math
 import torch
-from alignair.nn.weighting import UncertaintyWeight
+from alignair.neural.weighting import UncertaintyWeight
 
 pytestmark = pytest.mark.component
 

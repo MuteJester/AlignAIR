@@ -2,7 +2,7 @@
 
 Only the layers actually wired into the ``AlignAIR`` model are ported:
 ``TokenAndPositionEmbedding``, ``Conv1DBatchNorm``, ``ConvResidualFeatureExtractionBlock``,
-``SoftCutoutLayer``. Kendall task-weighting reuses :class:`alignair.nn.weighting.UncertaintyWeight`
+``SoftCutoutLayer``. Kendall task-weighting reuses :class:`alignair.neural.weighting.UncertaintyWeight`
 (already proper-Kendall). TF-isms handled here: channels-first conv, ``same`` padding for even
 kernels (asymmetric, matching TF), BatchNorm ``eps=0.8``/``momentum=0.9``, ``LeakyReLU(0.3)``.
 """

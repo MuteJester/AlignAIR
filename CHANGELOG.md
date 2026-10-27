@@ -30,6 +30,8 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Renamed shared neural-network components to `alignair.neural` for clearer package navigation.
+  Internal callers and tests use the new name; `alignair.nn` imports remain compatibility reexports.
 - NT and AA alignment runners use one training engine; migrated optimizer loops, snapshot writers,
   and RNG implementations are removed. Historical trainer and AA resume imports delegate to it.
 - Gradient checks and clipping include learned task weights. Non-finite norms abort before optimizer

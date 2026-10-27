@@ -6,8 +6,8 @@ from torch import nn
 from torch.nn import functional as F
 
 from ..core.config import AlignAIRConfig
-from ..nn.heads.state import STATE_CLASS_WEIGHTS
-from ..nn.weighting import UncertaintyWeight
+from ..neural.heads.state import STATE_CLASS_WEIGHTS
+from ..neural.weighting import UncertaintyWeight
 from .supervision import supervised_rows, categorical_rows
 from .functional import (_kendall, _mean_rows, _soft_ce, soft_gaussian_target,
                          soft_cross_entropy_rows as _soft_ce_per_sample)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import torch
 from torch.nn import functional as F
 
-from ..nn.weighting import UncertaintyWeight
+from ..neural.weighting import UncertaintyWeight
 
 
 def soft_gaussian_target(gt: torch.Tensor, length: int, sigma: float = 1.5) -> torch.Tensor:

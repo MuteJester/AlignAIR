@@ -6,7 +6,7 @@ import torch
 
 from alignair.data import TrainingBatch
 from alignair.errors import ConfigurationError
-from alignair.nn.weighting import UncertaintyWeight
+from alignair.neural.weighting import UncertaintyWeight
 from alignair.tasks import MetricReport
 from alignair.train import TrainingEngine, evaluation_mode
 from alignair.train.guards import NonFiniteLossError

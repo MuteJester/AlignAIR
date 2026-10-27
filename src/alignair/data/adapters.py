@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error_context
-from ..nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+from ..neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .encoders import encode_allele_sets
 from .projection import frame_offset_of, project_codons, projection_segments, residue_count

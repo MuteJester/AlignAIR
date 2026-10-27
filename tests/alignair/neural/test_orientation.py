@@ -1,7 +1,7 @@
 import pytest
 import torch
 from alignair.data.tokenizer import pad_tokenize
-from alignair.nn.heads.orientation import apply_orientation, complement, reverse_valid, OrientationHead
+from alignair.neural.heads.orientation import apply_orientation, complement, reverse_valid, OrientationHead
 
 pytestmark = pytest.mark.component
 

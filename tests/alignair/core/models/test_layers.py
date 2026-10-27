@@ -4,7 +4,7 @@ import torch
 
 from alignair.core.layers import (Conv1DBatchNorm, ConvResidualFeatureExtractionBlock,
                                      SoftCutoutLayer, TokenAndPositionEmbedding, same_pad1d)
-from alignair.nn.weighting import UncertaintyWeight
+from alignair.neural.weighting import UncertaintyWeight
 
 pytestmark = pytest.mark.component
 

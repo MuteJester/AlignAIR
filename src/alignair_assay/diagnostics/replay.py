@@ -54,7 +54,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from alignair.api import load_model
-from alignair.nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+from alignair.neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.predict import PredictConfig, forward, pipeline
 from alignair.predict.airr import build_airr
 from alignair.predict.calibrate import apply_temperature

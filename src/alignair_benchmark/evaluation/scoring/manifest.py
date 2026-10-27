@@ -9,8 +9,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from alignair.nn.heads.region import REGIONS
-from alignair.nn.heads.state import STATES
+from alignair.neural.heads.region import REGIONS
+from alignair.neural.heads.state import STATES
 from ..performance import PERFORMANCE_GLOBAL_KEYS, PERFORMANCE_PREDICTION_FIELD_KEYS
 
 AGGREGATION_MEAN = "mean"

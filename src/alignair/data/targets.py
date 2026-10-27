@@ -5,8 +5,8 @@ import numpy as np
 from ..errors import AlignAIRError, TrainingDataError, error_context
 
 from .tokenizer import TOKEN_DICT
-from ..nn.heads.region import REGION_INDEX
-from ..nn.heads.state import STATE_INDEX
+from ..neural.heads.region import REGION_INDEX
+from ..neural.heads.state import STATE_INDEX
 from .coordinates import segment_spans
 
 _GENES = ("v", "d", "j")

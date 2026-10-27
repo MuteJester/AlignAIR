@@ -4,8 +4,8 @@ from __future__ import annotations
 from typing import Any
 
 from ...core.schema import BenchmarkCase
-from alignair.nn.heads.region import REGIONS
-from alignair.nn.heads.state import STATE_INDEX, STATES
+from alignair.neural.heads.region import REGIONS
+from alignair.neural.heads.state import STATE_INDEX, STATES
 from .primitives import as_float, avg
 
 

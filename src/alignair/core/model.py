@@ -17,7 +17,7 @@ from .config import AlignAIRConfig
 from .boundaries import boundary_masks
 from .components import architecture_components
 from ..errors import InputError
-from ..nn.heads.orientation import apply_orientation
+from ..neural.heads.orientation import apply_orientation
 
 
 class AlignAIR(nn.Module):
