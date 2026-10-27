@@ -34,7 +34,7 @@ from ...aligner import resolve_device
 from ...model_file import container, serialize
 from ..conformal import FrozenConformal
 from ...reference.labels import EquivalenceClassMap
-from ..model import AAAlignAIR
+from ...core import AlignAIR
 from ...data.tokenizer import AAProteinTokenizer
 from .bundle import canonical_json
 from .predictor import _predict
@@ -63,7 +63,7 @@ class AAPredictor:
     pick a default group, that policy belongs to the caller / Task 7). All `FrozenConformal` instances
     for a gene share that gene's frozen `lambda`/`k_reg` (APS unless the calibration says otherwise).
     """
-    model: AAAlignAIR
+    model: AlignAIR
     cfg: object
     tokenizer: AAProteinTokenizer
     class_maps: dict            # {"V": EquivalenceClassMap, "J": EquivalenceClassMap}
@@ -165,7 +165,7 @@ def _require_nonempty_hex(value, message: str) -> None:
 
 
 def _check_binding(header: dict, calibration: dict, *, class_maps: dict, d_allele_order: list,
-                   cfg, model: AAAlignAIR) -> tuple:
+                   cfg, model: AlignAIR) -> tuple:
     """Calibration<->model cryptographic binding + label-count agreement. Returns the tuple of gene
     names present (``("V","J")`` or ``("V","J","D")``) for the caller to build the conformal holder
     from, so the same "which genes exist" logic is not duplicated."""
@@ -242,7 +242,7 @@ def _conformal_holder(calibration: dict, genes: tuple) -> dict:
 
 
 def _load_legacy_pickle(path: str, *, device: str) -> AAPredictor:
-    """Dev-only convenience load of a raw ``strategic._save``-style checkpoint (``{"model", "cfg",
+    """Dev-only convenience load of a historical weights/config/step checkpoint (``{"model", "cfg",
     "step"}``, `torch.save` pickle). It carries no class maps / ASC table / calibration, so those come
     back empty — there is no calibration to bind, and no conformal sets can be built. Only reachable
     with an explicit ``trust_pickle=True``; never used by the verified v2-bundle path above."""
@@ -257,7 +257,9 @@ def _load_legacy_pickle(path: str, *, device: str) -> AAPredictor:
     cfg = cfg_raw if not isinstance(cfg_raw, dict) else AlignAIRConfig(
         **{f.name: cfg_raw[f.name] for f in dataclasses.fields(AlignAIRConfig) if f.name in cfg_raw})
     dev = resolve_device(device)
-    model = AAAlignAIR(cfg)
+    # Historical protein artifacts predate explicit head metadata; normalize at the format boundary.
+    cfg = cfg.with_amino_acid_heads()
+    model = AlignAIR(cfg)
     cfg = model.cfg
     model.load_state_dict(ck["model"], strict=True)
     model.to(dev).eval()
@@ -305,7 +307,8 @@ def load_aa_model(model, *, device: str = "auto", trust_pickle: bool = False) ->
     tokenizer = _rebuild_tokenizer(json.loads(tokenizer_bytes.decode("utf-8")))
 
     dev = resolve_device(device)
-    model_obj = AAAlignAIR(cfg)
+    cfg = cfg.with_amino_acid_heads()
+    model_obj = AlignAIR(cfg)
     cfg = model_obj.cfg
     model_obj.load_state_dict(serialize.state_dict_from_bytes(weights_bytes), strict=True)
     model_obj.to(dev).eval()

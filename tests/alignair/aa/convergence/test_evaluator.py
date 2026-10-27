@@ -7,9 +7,8 @@ import numpy as np
 import pytest
 import torch
 
-from alignair.aa.config import aa_igh_config
+from alignair.core import AlignAIR, build_model_config
 from alignair.reference.labels import EquivalenceClassMap
-from alignair.aa.model import AAAlignAIR
 from alignair.aa.translation import CODON_TABLE
 from alignair.aa.convergence.evaluator import evaluate_checkpoint
 
@@ -33,7 +32,7 @@ def test_clean_heads_and_conformal_test_probabilities_share_one_forward(evaluati
 def test_evaluator_supports_a_model_without_a_d_head(evaluation_inputs):
     _, cfg, maps, meta, cohort = evaluation_inputs
     cfg = replace(cfg,has_d=False,d_allele_count=0)
-    output = evaluate_checkpoint(AAAlignAIR(cfg),cfg,maps,meta,cohort,device='cpu')
+    output = evaluate_checkpoint(AlignAIR(cfg),cfg,maps,meta,cohort,device='cpu')
     assert output['d_allele_acc'] is output['d_gene_acc'] is output['nll']['d'] is None
 
 
@@ -41,7 +40,8 @@ def test_evaluator_supports_a_model_without_a_d_head(evaluation_inputs):
 def evaluation_inputs():
     class_maps = {g: EquivalenceClassMap(g, "fixture", {g+"0*01": 0, g+"1*01": 1},
                                        {0: [g+"0*01"], 1: [g+"1*01"]}) for g in ("V", "J")}
-    cfg = aa_igh_config(2, 2, 2, max_seq_length=128, has_d=True)
+    cfg = build_model_config(2, 2, 2, input_space='protein', label_space='protein_classes',
+                             max_seq_length=128, has_d=True)
     meta = {"d_index": {"D0*01": 0, "D1*01": 1}}
     codons = {aa: codon for codon, aa in CODON_TABLE.items()}
     sequences = ["ACDEFGHIKLMNPQRSTVWY", "YWVTSRQPNMLKIHGFEDCA"]
@@ -63,7 +63,7 @@ def evaluation_inputs():
         item.pop("record")
     calibration = [row(s[1:]+s[:1], i) for i, s in enumerate(sequences)]
     cohort = {"by_stratum": strata, "calibration": calibration, "dc_name": "fixture"}
-    return AAAlignAIR(cfg).eval(), cfg, class_maps, meta, cohort
+    return AlignAIR(cfg).eval(), cfg, class_maps, meta, cohort
 
 
 def test_evaluate_checkpoint_well_formed(evaluation_inputs):

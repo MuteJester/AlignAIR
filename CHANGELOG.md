@@ -135,8 +135,8 @@ All notable changes to AlignAIR are documented here. The format follows
 - Locus tagging leaves provider-owned records unchanged, repeated component dictionaries are
   independent, and colliding custom provenance names retain every reference panel.
 - Protein setup helpers, public nucleotide training entries, and training plans use one model setup
-  owner and construct the shared `AlignAIR` class. `aa_igh_config` delegates to the shared count-based
-  factory. Reference allele-order validation
+  owner and construct the shared `AlignAIR` class. Count-only configuration uses `build_model_config`
+  with explicit input/label spaces. Reference allele-order validation
   lives on `ReferenceSet` and is reused by protein views and model setup.
 - Nucleotide, protein allele, categorical, and cropped-protein runners use one batch/step iteration
   owner. Removed the duplicated loops and the AA-specific next-batch helper. Runner-specific history,
@@ -230,6 +230,9 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Protein-only `aa.model` subclasses and `aa.config` factory. Studies and product loading now use
+  the shared `AlignAIR` class; historical artifact head normalization stays at the product-loading boundary.
+  Protein model/configuration behavior tests now live in the shared core model suite.
 - Obsolete `aa.train`, `aa.data` and `aa.gym_bridge` compatibility facades. Their implementations
   remain in shared training, task, sampling, reference and adapter modules. Website API guides list
   replacement imports; protein adapter tests now live with the shared data tests.

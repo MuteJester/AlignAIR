@@ -128,6 +128,19 @@ def test_count_only_factory_rejects_invalid_dimensions(counts, options):
         build_model_config(*counts, **options)
 
 
+@pytest.mark.parametrize('has_d', [False, True])
+def test_count_only_protein_class_preset_has_explicit_vocab_heads_and_endpoint_room(has_d):
+    cfg = build_model_config(149, 7, 33 if has_d else 0, input_space='protein',
+                             label_space='protein_classes', has_d=has_d)
+    assert (cfg.input_space, cfg.label_space) == ('protein', 'protein_classes')
+    assert cfg.vocab_size == 23 and cfg.max_seq_length == 192
+    assert cfg.classification_mode == 'categorical' and cfg.boundary_mode == 'half_open'
+    assert not cfg.use_orientation and not cfg.use_meta_heads and cfg.reject_empty_sequences
+    assert tuple(spec.name for spec in cfg.gene_specs) == (('v','d','j') if has_d else ('v','j'))
+    assert tuple(spec.allele_count for spec in cfg.gene_specs) == ((149,33,7) if has_d else (149,7))
+    assert cfg.has_d is has_d and cfg.d_allele_count == (33 if has_d else 0)
+
+
 def test_invalid_reference_type_and_unavailable_d_are_rejected():
     with pytest.raises(ConfigurationError, match='ReferenceSet'):
         prepare_model('HUMAN_IGH_OGRDB')

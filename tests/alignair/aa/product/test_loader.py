@@ -10,6 +10,7 @@ from alignair.aa.product.loader import AAPredictor, _MODEL_MAP, _resolve_path, l
 from tests.support.model_setup import protein_class_setup
 from alignair.aa.tokenizer import pad_tokenize_aa
 from alignair.model_file import container
+from alignair.core import AlignAIR, evaluation_mode
 
 pytestmark = pytest.mark.component
 
@@ -140,6 +141,7 @@ def test_resolve_path_hard_coded_ids_and_raw_path(tmp_path):
 def test_load_real_v2_bundle_returns_predictor_with_working_forward_pass():
     pred = load_aa_model(_REAL_MODEL_ID)
     assert isinstance(pred, AAPredictor)
+    assert type(pred.model) is AlignAIR
 
     # card + class maps + asc reconstruct and agree with each other
     assert pred.card["model_id"] == "alignair-aa-igh-human"
@@ -205,6 +207,39 @@ def test_load_legacy_pt_with_trust_pickle_builds_a_working_model(tmp_path, built
     tokens = torch.nn.functional.pad(tokens, (0, pred.cfg.max_seq_length - tokens.shape[1]))
     out = pred.model({"tokenized_sequence": tokens.to(pred.device)})
     assert out["v_class_logits"].shape == (1, pred.cfg.v_allele_count)
+
+
+@pytest.mark.parametrize('artifact', ['bundle', 'legacy_pickle'])
+def test_historical_config_without_head_metadata_loads_the_shared_model(tmp_path, built, artifact):
+    raw_config = dict(built['cfg'].__dict__)
+    for name in ('input_space', 'label_space', 'classification_mode', 'boundary_mode',
+                 'use_orientation', 'use_meta_heads', 'state_head', 'reject_empty_sequences'):
+        raw_config.pop(name)
+    if artifact == 'bundle':
+        original = tmp_path/'original.alignair'
+        _write_bundle(built, original)
+        header = container.read_header(original)
+        header.pop('_sections_base', None)
+        sections = {name: (container.read_section(original, name), entry['codec'])
+                    for name, entry in header['sections'].items()}
+        config_bytes = canonical_json(raw_config)
+        sections['config'] = (config_bytes, sections['config'][1])
+        header['integrity']['config_sha256'] = container.sha256_hex(config_bytes)
+        path = tmp_path/'historical.alignair'
+        container.write_container(path, header, sections)
+    else:
+        path = tmp_path/'historical.pt'
+        torch.save({'model': built['model'].state_dict(), 'cfg': raw_config, 'step': 7}, path)
+    predictor = load_aa_model(str(path), device='cpu', trust_pickle=artifact == 'legacy_pickle')
+    assert type(predictor.model) is AlignAIR
+    assert predictor.cfg == built['cfg']
+    tokens, _ = pad_tokenize_aa(['EVQLVESGGGLVQPGGSLRLSCAAS', 'C'])
+    tokens = torch.nn.functional.pad(tokens, (0, predictor.cfg.max_seq_length-tokens.shape[1]))
+    with evaluation_mode(built['model']), torch.no_grad():
+        expected = built['model']({'tokenized_sequence': tokens})
+        actual = predictor.model({'tokenized_sequence': tokens})
+    assert actual.keys() == expected.keys()
+    assert all(torch.equal(value, actual[key]) for key, value in expected.items())
 
 
 # ------------------------------------------------------------------ (b) binding-failure tests

@@ -9,8 +9,7 @@ from alignair.core import AlignAIR
 from alignair.train.trainer import build_batch
 from alignair.train import overfit_one_batch
 from alignair.data.sampling import ClassDiversity
-from alignair.aa.config import aa_igh_config
-from alignair.aa.model import AAAlignAIR
+from alignair.core import prepare_model
 
 pytestmark = pytest.mark.integration
 
@@ -51,17 +50,18 @@ def test_overfit_one_batch_learns_classes_and_all_four_boundaries():
     torch.manual_seed(0)
     from alignair.data.adapters import collate_categorical as collate_aa
     from alignair.data.sampling import collect_usable
-    from alignair.reference.protein import build_class_maps
+    from alignair.reference import build_protein_reference
     from alignair.aa.tokenizer import AAProteinTokenizer
     diversity = ClassDiversity({"v_class": 3, "j_class": 2})
-    cmaps, meta = build_class_maps("HUMAN_IGH_OGRDB")
-    cfg = aa_igh_config(meta["n_v_classes"], meta["n_j_classes"])
+    setup = prepare_model(build_protein_reference('HUMAN_IGH_OGRDB'), input_space='protein',
+                          label_space='protein_classes', has_d=False)
+    cmaps, cfg = setup.protein_reference.class_maps, setup.config
     samples, _ = collect_usable(start_seed=7_000_000, budget=50_000, want=16, class_maps=cmaps,
                                 tokenizer=AAProteinTokenizer(), max_len=cfg.max_seq_length,
                                 select=diversity)    # actively diverse, not hoped-for
     diversity.validate(samples)                       # the proof must not be trivially degenerate
     bi, tg = collate_aa(samples, cfg.max_seq_length)
-    res = overfit_one_batch(AAAlignAIR(cfg), bi, tg, steps=300, lr=1e-3, genes=("v", "j"))
+    res = overfit_one_batch(setup.build_model(), bi, tg, steps=300, lr=1e-3, genes=("v", "j"))
     assert res["final_loss"] < 0.5 * res["initial_loss"]
     assert res["v_class_acc"] >= 0.9 and res["j_class_acc"] >= 0.9
     for k in ("v_start_mae", "v_end_mae", "j_start_mae", "j_end_mae"):

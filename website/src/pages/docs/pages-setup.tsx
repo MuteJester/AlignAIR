@@ -106,14 +106,14 @@ assert setup.protein_reference is protein_reference`} />
       <p>
         When only validated counts are available, <code>build_model_config(v_label_count,
         j_label_count, d_label_count=0, ...)</code> selects the same defaults and returns an
-        <code> AlignAIRConfig</code>. It cannot verify class identity or source ordering. The historical
-        <code> aa_igh_config</code> factory delegates to this implementation. Protein setup helpers,
+        <code> AlignAIRConfig</code>. It cannot verify class identity or source ordering. For protein
+        classes, select <code>input_space="protein"</code> and <code>label_space="protein_classes"</code>.
+        The former <code>aa_igh_config</code> factory has been removed. Protein setup helpers,
         public nucleotide training entries, and the reference training plan use the shared setup path.
       </p>
       <p>
-        Existing setup tuple layouts, configuration serialization, and weight keys are preserved.
-        Protein setup helpers now return the shared <code>AlignAIR</code> model; <code>AAAlignAIR</code>
-        remains a compatibility constructor for callers that still use it.
+        Configuration serialization and weight keys are preserved.
+        Protein setup and product loading use the shared <code>AlignAIR</code> model.
         <code>ModelSetup</code> is a preparation object, not an inference bundle or a resume checkpoint.
         Protein class maps must accompany their weights through the existing label-aware export path.
         The selected <DocLink to="training-engine">training engine</DocLink> and runner continue to own

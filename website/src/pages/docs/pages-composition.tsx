@@ -25,25 +25,38 @@ const composition: DocPage = {
         The <DocLink to="model-setup">model setup API</DocLink> derives those counts and binds them to
         an ordered reference before allocating model parameters.
       </p>
-      <CodeBlock lang="python" code={`from alignair.core import AlignAIR, AlignAIRConfig
+      <CodeBlock lang="python" code={`from alignair.core import AlignAIR, build_model_config
 
-nt_config = AlignAIRConfig(
-    v_allele_count=3, j_allele_count=2, has_d=False,
-    max_seq_length=192,
-)
+nt_config = build_model_config(3, 2, max_seq_length=192)
 nt_model = AlignAIR(nt_config)
 
-protein_config = AlignAIRConfig(
-    v_allele_count=3, j_allele_count=2, has_d=False,
-    vocab_size=23, max_seq_length=192,
-).with_amino_acid_heads()
+protein_config = build_model_config(
+    3, 2, input_space="protein", label_space="protein_classes",
+)
 protein_model = AlignAIR(protein_config)`} />
       <p>
         Both models accept a dictionary containing <code>tokenized_sequence</code>: an integer tensor of
         shape <code>(batch, max_seq_length)</code> with padding ID zero. The protein preset uses right padding,
         categorical scores, and separate start/end masks. It disables orientation correction, auxiliary
-        predictions, and edit-state predictions and rejects empty rows. Existing <code>AAAlignAIR</code> imports
-        remain compatibility constructors for this preset.
+        predictions, and edit-state predictions and rejects empty rows. Both profiles use the same
+        <code> AlignAIR</code> class. Its constructor uses the supplied configuration without replacing
+        head choices.
+      </p>
+      <H2 id="migration">Migrate former protein model imports</H2>
+      <p>
+        The <code>aa.model</code> and <code>aa.config</code> facades have been removed. Select
+        the protein input and label spaces explicitly when preparing a configuration.
+      </p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.model.AAAlignAIR", "alignair.core.AlignAIR with an explicit protein-class configuration"],
+        ["aa.model.AAGeneBranch", "alignair.core.gene_branch.GeneBranch with that configuration"],
+        ["aa.model.boundary_masks", "alignair.core.boundaries.boundary_masks"],
+        ["aa.config.aa_igh_config", "alignair.core.build_model_config with input_space='protein' and label_space='protein_classes'"],
+      ]} />
+      <p>
+        Product loading retains normalization of historical protein head metadata at the artifact
+        boundary. Existing supported state dictionaries, classification columns and decoder outputs
+        remain compatible with the shared class.
       </p>
       <H2 id="choices">Configuration and output semantics</H2>
       <DocTable head={["Setting", "Behavior"]} rows={[

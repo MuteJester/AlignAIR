@@ -10,14 +10,13 @@ from collections import Counter
 
 import torch
 
-from .config import aa_igh_config
+from ..core import AlignAIR, prepare_model
 from ..data.sampling import ClassDiversity, check_counter, collect_usable
 from ..reference import build_protein_reference
 from ..data.adapters import collate_categorical as collate_aa
 from .evaluate import evaluate_frozen
 from ..tasks import build_tasks
 from ..train.setup import build_training_engine
-from .model import AAAlignAIR
 from ..data.tokenizer import AAProteinTokenizer
 from ..train.diagnostics import overfit_one_batch
 
@@ -101,7 +100,7 @@ def run_seed(seed, cfg, class_maps, heldout, *, replicate, train_steps, batch_si
                                  counter=counters["overfit"], select=diversity)
     diversity.validate(ob)
     obi, obt = collate_aa(ob, cfg.max_seq_length, device)
-    overfit = overfit_one_batch(AAAlignAIR(cfg).to(device), obi, obt,
+    overfit = overfit_one_batch(AlignAIR(cfg).to(device), obi, obt,
                                 steps=overfit_steps, lr=lr)
 
     # (b) generalization. RE-SEED first so this model's init does not depend on how much RNG the
@@ -112,7 +111,7 @@ def run_seed(seed, cfg, class_maps, heldout, *, replicate, train_steps, batch_si
                                             class_maps=class_maps, tokenizer=tok,
                                             max_len=cfg.max_seq_length, dc_name=dc_name,
                                             counter=counters["train"])
-    model = AAAlignAIR(cfg)
+    model = AlignAIR(cfg)
     engine = build_training_engine(model, device=device, lr=lr, tasks=build_tasks(cfg, genes=("v", "j")))
     losses = []
     for i in range(train_steps):
@@ -139,7 +138,7 @@ def run_learning_proof(*, seeds=(0, 1, 2), heldout_size=4096, train_steps=3000, 
                        dc_name="HUMAN_IGH_OGRDB", manifest_path=None) -> dict:
     reference = build_protein_reference(dc_name)
     class_maps, meta = reference.class_maps, reference.metadata()
-    cfg = aa_igh_config(meta["n_v_classes"], meta["n_j_classes"])
+    cfg = prepare_model(reference, input_space='protein', label_space='protein_classes', has_d=False).config
     tok = AAProteinTokenizer()
 
     # ONE held-out cohort from its own seed range, disjoint from every train/overfit range.
@@ -157,7 +156,7 @@ def run_learning_proof(*, seeds=(0, 1, 2), heldout_size=4096, train_steps=3000, 
                                      overfit_batch=overfit_batch, overfit_steps=overfit_steps,
                                      device=device, dc_name=dc_name)
 
-    ref_model = AAAlignAIR(cfg)
+    ref_model = AlignAIR(cfg)
     out = {"schema": "alignair.aa.phase1.v2",
            "provenance": provenance(cfg, class_maps, meta, ref_model),
            "heldout_size": len(heldout),

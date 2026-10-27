@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from alignair.aa.loss import aa_loss, masked_soft_gaussian
-from alignair.aa.model import boundary_masks
+from alignair.core.boundaries import boundary_masks
 
 pytestmark = pytest.mark.component
 
