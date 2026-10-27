@@ -90,19 +90,32 @@ result = augment(record)`} />
       </p>
       <H2 id="checkpoints">Training policy and existing checkpoints</H2>
       <p>
-        Stage-1 continuation checkpoints record the sample policy
+        Crop-training continuation checkpoints record the sample policy
         <code> protein-crop-reference-fragments-v1</code>. A full-state checkpoint with a missing or
-        different policy cannot resume optimizer state. Use <code>init_path</code> for an explicit
+        different policy cannot resume optimizer state. Use <code>TrainingConfig.init_from</code> for an explicit
         weights-only warm start with a fresh optimizer and schedule. This changes crop targets and
         removes the previous restriction on cropping trimmed V reads; existing scientific training
         results need to be re-evaluated under this policy. Inference weight loading is unchanged.
       </p>
       <p>
-        Stage-1 history records per-gene class support and reason counts. Its resume procedure reseeds
-        the source stream and augmentation generator from the seed and checkpoint step; it provides
-        statistical continuation rather than exact replay of the next uninterrupted batch. Historical
-        <code> aa.augment</code> and <code>aa.truncation</code> imports re-export the shared operators;
-        the old Stage-1 crop-label implementation has been removed.
+        The shared training lifecycle reseeds the source stream and augmentation generator from the
+        seed and checkpoint step; it provides statistical continuation rather than exact replay of
+        the next uninterrupted batch. See the <DocLink to="training-engine">training engine guide</DocLink>
+        for checkpoint and process RNG contracts.
+      </p>
+      <H2 id="migration">Migrate former augmentation imports</H2>
+      <p>
+        The <code>alignair.aa.augment</code> and <code>alignair.aa.truncation</code> wrappers have
+        been removed. Import their operators from the shared data modules.
+      </p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.augment.aa_substitute / aa_indel / il_ambiguity / aa_truncate", "alignair.data.augmentation.protein (same function names)"],
+        ["aa.truncation.crop_window / shift_clip / compatible_classes", "alignair.data.augmentation.cropping (same function names)"],
+      ]} />
+      <p>
+        <code>compatible_classes</code> compares known reference-aligned windows. Use
+        <code> fragment_compatible_classes</code> for fragments with unknown reference positions;
+        <code> ProteinCropAugmenter</code> already applies that conservative policy to partial reads.
       </p>
     </>
   ),

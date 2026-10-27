@@ -69,12 +69,3 @@ def test_cuda_state_uses_cpu_byte_tensors_without_requiring_a_gpu(monkeypatch):
 def test_rng_buffers_cannot_silently_coerce_invalid_byte_values(state):
     with pytest.raises(TrainingError, match='cannot be restored'):
         restore_rng_state({'torch': state})
-
-
-def test_historical_aa_rng_tuple_still_restores_numpy_and_torch_exactly():
-    from alignair.aa.resume import capture_rng, restore_rng
-    snapshot = capture_rng()
-    expected_numpy, expected_torch = np.random.rand(4), torch.rand(4)
-    restore_rng(*snapshot)
-    np.testing.assert_array_equal(np.random.rand(4), expected_numpy)
-    torch.testing.assert_close(torch.rand(4), expected_torch, rtol=0, atol=0)

@@ -231,6 +231,9 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Obsolete `aa.augment`, `aa.truncation`, and `aa.resume` import wrappers and unused RNG tuple
+  adapters. Use `data.augmentation`, `train.checkpoints`, and the dictionary-based `train.random_state`
+  API directly. Historical checkpoint formats and readers remain supported.
 - Obsolete `aa.reference` and `aa.equivalence` facades. Reference and class-map APIs remain under
   `alignair.reference`; the stored `alignair.aa.equivalence.v1` schema and reference identities are preserved.
 - Obsolete `aa.tokenizer` and `aa.translation` facades. Vocabulary, encoding and codon-projection

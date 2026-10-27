@@ -134,12 +134,10 @@ def test_engine_validation_uses_task_support_and_accepts_custom_models_without_c
 
 def test_historical_trainer_imports_delegate_to_shared_owners():
     from alignair.train import trainer, engine, checkpoints, random_state
-    from alignair.aa import resume
     assert trainer.train_step is engine.train_step
     assert trainer.validate is engine.validate
     assert trainer.save_checkpoint is checkpoints.save_checkpoint
     assert trainer._restore_rng is random_state.restore_rng_state
-    assert resume.save_checkpoint is checkpoints.save_research_checkpoint
 
 
 def test_engine_infers_default_tasks_for_a_categorical_model():

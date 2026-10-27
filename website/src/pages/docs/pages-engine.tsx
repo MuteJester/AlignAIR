@@ -270,17 +270,34 @@ save_snapshot("run/warm-start.pt", model, model.cfg, step)`} />
       </p>
       <p>
         Restoring these generators and optimizer moments does not restore a simulator iterator or a
-        separately constructed NumPy <code>Generator</code>. Current gym and Stage-1 runners re-seed
-        their source streams at resume; Stage-1 also re-seeds its augmentation generator. They provide
+        separately constructed NumPy <code>Generator</code>. The shared training lifecycle re-seeds
+        its source stream and augmentation generator at resume. It provides
         statistical continuation, while exact uninterrupted replay would additionally require restoring
         those source positions and local generator states.
+      </p>
+      <H2 id="checkpoint-imports">Migrate former checkpoint imports</H2>
+      <p>
+        The <code>alignair.aa.resume</code> wrapper and the unused RNG tuple adapters have been removed.
+        Research checkpoint field names and historical checkpoint readers are unchanged.
+      </p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.resume.save_checkpoint", "alignair.train.checkpoints.save_research_checkpoint"],
+        ["aa.resume.load_checkpoint", "alignair.train.checkpoints.load_research_checkpoint"],
+        ["aa.resume.capture_rng / restore_rng", "alignair.train.random_state.capture_rng_state / restore_rng_state"],
+        ["train.random_state.capture_legacy_rng / restore_legacy_rng", "alignair.train.random_state.capture_rng_state / restore_rng_state"],
+      ]} />
+      <p>
+        The shared RNG API uses a dictionary instead of the former NumPy/Torch/CUDA tuple and also
+        captures Python’s generator. Restore it with <code>restore_rng_state(state)</code>.
+        For a historical research checkpoint, convert its flat fields with
+        <code> train.checkpoints.research_checkpoint_rng(checkpoint)</code> first.
       </p>
       <H2 id="migration">Implementation ownership</H2>
       <p>
         NT, AA allele, categorical, partial-label, and capacity-proof runners share this engine and
         its training-state factory. Frozen-cohort replicate training uses the same factory.
-        Historical <code>train.trainer.train_step</code>, <code>validate</code>, checkpoint helpers,
-        and <code>aa.resume</code> imports delegate to shared owners. Duplicate optimizer loops,
+        Historical <code>train.trainer.train_step</code>, <code>validate</code>, and checkpoint helpers
+        delegate to shared owners. Duplicate optimizer loops,
         snapshot writers, and process-RNG implementations have been removed from those runners.
         Nucleotide training, protein allele training, categorical training, and partial-coverage
         training also share <code>train.loop.training_iterations</code>; their repeated batch-fetch

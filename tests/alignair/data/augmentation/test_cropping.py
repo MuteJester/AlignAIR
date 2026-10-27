@@ -59,10 +59,3 @@ def test_legacy_reference_window_cannot_silently_slice_to_empty(lo,hi):
 def test_legacy_reference_window_requires_true_class():
     from alignair.errors import ConfigurationError
     with pytest.raises(ConfigurationError): compatible_classes(4,0,2,{0:'ACD'})
-
-
-def test_historical_modules_only_reexport_the_canonical_operators():
-    from alignair.aa import augment, truncation
-    from alignair.data.augmentation import protein, cropping
-    for name in augment.__all__: assert getattr(augment,name) is getattr(protein,name)
-    for name in truncation.__all__: assert getattr(truncation,name) is getattr(cropping,name)

@@ -1,4 +1,4 @@
-"""One RNG-state contract for training checkpoints and legacy research adapters."""
+"""One process RNG-state contract for training and research checkpoints."""
 from __future__ import annotations
 
 import random
@@ -51,13 +51,3 @@ def restore_rng_state(state: dict) -> None:
         _apply(previous)
         raise TrainingError("checkpoint RNG state cannot be restored",
                             context={"stage": "training_resume_rng"}) from exc
-
-
-def capture_legacy_rng():
-    """Historical AA tuple contract; new checkpoint writers capture Python state as well."""
-    state = capture_rng_state()
-    return state["numpy"], state["torch"], state.get("cuda")
-
-
-def restore_legacy_rng(rng_numpy, rng_torch, rng_cuda=None):
-    restore_rng_state({"numpy": rng_numpy, "torch": rng_torch, "cuda": rng_cuda})
