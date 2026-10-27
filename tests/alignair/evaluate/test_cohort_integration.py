@@ -8,7 +8,7 @@ from alignair.core import prepare_model
 from alignair.data.adapters import CategoricalBatchAdapter, NucleotideBatchAdapter, ProteinAlleleBatchAdapter
 from alignair.data.sampling import ProteinSampleBuilder
 from alignair.data.tokenizer import AAProteinTokenizer, CenterPaddedTokenizer
-from alignair.evaluate import collect_alignment_observations
+from alignair.evaluate import collect_alignment_observations, evaluate_allele_cohort
 from alignair.reference import build_protein_reference
 from alignair.tasks import build_tasks
 from alignair.train import evaluation_mode
@@ -81,3 +81,19 @@ def test_real_alphabet_and_head_combinations_match_task_metrics(native_cohort, i
                     assert sum(row.absolute_error for row in boundaries)/len(boundaries) == pytest.approx(metrics.means()[name])
     assert model.training
     assert all(torch.equal(value,before[key]) for key,value in model.state_dict().items())
+    if label_space == 'alleles':
+        equivalence = {gene: mapping.allele_class for gene,mapping in reference.class_maps.items()}
+        report = evaluate_allele_cohort(model, iter(records), adapter, cfg, reference.source,
+                                        equivalence, batch_size=2)
+        assert report['n'] == 3
+        assert report['mutation_mae'] == pytest.approx(metrics.means()['mutation_mae'])
+        assert report['productive_acc'] == pytest.approx(metrics.means()['productive_acc'])
+        for gene, rows in observed.classification.items():
+            assert report['alleles'][gene]['n'] == len(rows)
+            if rows:
+                assert report['alleles'][gene]['nt_top1'] == pytest.approx(sum(row.correct for row in rows)/len(rows))
+        if input_space == 'protein':
+            from alignair.aa.eval_gym import evaluate_aa
+            compatibility = evaluate_aa(model, records, reference.source, cfg, equivalence, batch_size=2)
+            assert compatibility == report
+        assert model.training

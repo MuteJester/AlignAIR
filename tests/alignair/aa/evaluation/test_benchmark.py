@@ -32,3 +32,16 @@ def test_run_aa_benchmark_stratifies_and_flags_non_aa_strata():
     for g in ("v", "d", "j"):
         assert "nt_top1" in bs["clean_full"]["alleles"][g]
     assert "overall_alleles" in r and "by_stratum" in r
+    assert model.training  # the shared collector restores the caller's mode
+
+
+@pytest.mark.parametrize('options', [{'batch_size':0}, {'threshold':None}, {'threshold':1.1}])
+def test_invalid_benchmark_request_does_not_start_the_source(monkeypatch, options):
+    from alignair.aa.benchmark import run_aa_benchmark
+    from alignair.core import AlignAIRConfig
+    from alignair.errors import ConfigurationError
+    import alignair_benchmark
+    monkeypatch.setattr(alignair_benchmark, 'stream_benchmark', lambda *a,**k: pytest.fail('started source'))
+    cfg = AlignAIRConfig(v_allele_count=2, j_allele_count=2, has_d=False)
+    with pytest.raises(ConfigurationError):
+        run_aa_benchmark(None,None,cfg,{},**options)

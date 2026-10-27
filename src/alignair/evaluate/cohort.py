@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import islice
+import math
 from typing import NamedTuple
 
 import torch
@@ -34,17 +35,34 @@ class BoundaryObservation(NamedTuple):
     absolute_error: float
 
 
+class PredictionSetObservation(NamedTuple):
+    record_index: int
+    members: tuple[int, ...]
+
+
+class ScalarObservation(NamedTuple):
+    record_index: int
+    truth: float
+    prediction: float
+    absolute_error: float
+
+
 @dataclass(frozen=True)
 class CohortObservations:
     """Detached Python observations; indices refer to the original ordered record stream."""
     record_count: int
     classification: dict[str, tuple[ClassificationObservation, ...]]
     boundaries: dict[str, tuple[BoundaryObservation, ...]]
+    prediction_sets: dict[str, tuple[PredictionSetObservation, ...]] = field(default_factory=dict)
+    scalars: dict[str, tuple[ScalarObservation, ...]] = field(default_factory=dict)
 
     @property
     def support(self) -> dict:
-        return {"classification": {gene: len(rows) for gene, rows in self.classification.items()},
-                "boundaries": {key: len(rows) for key, rows in self.boundaries.items()}}
+        support = {"classification": {gene: len(rows) for gene, rows in self.classification.items()},
+                   "boundaries": {key: len(rows) for key, rows in self.boundaries.items()}}
+        if self.scalars:
+            support["scalars"] = {key: len(rows) for key, rows in self.scalars.items()}
+        return support
 
 
 def _tensor(mapping, key, shape, device=None):
@@ -61,7 +79,51 @@ def _finite(values, selected, field):
         raise NumericalError("non-finite supervised cohort values", context={"field": field})
 
 
-def _classification(outputs, targets, config, gene, count, class_count, offset):
+def _threshold(value):
+    if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
+                              or not math.isfinite(value) or not 0 <= value <= 1):
+        raise ConfigurationError("prediction-set threshold must be between zero and one",
+                                 context={"field": "prediction_set_threshold"})
+    return value
+
+
+def _member_sets(membership):
+    members = [[] for _ in range(membership.shape[0])]
+    for row, label in membership.nonzero().cpu().tolist():
+        members[row].append(label)
+    return [tuple(labels) for labels in members]
+
+
+def allele_observations(probabilities, targets, *, supervision=None, prediction_set_threshold=None,
+                        record_offset: int = 0):
+    """Shared tensor-to-observation adapter for multilabel allele heads and historical counters."""
+    threshold = _threshold(prediction_set_threshold)
+    record_offset = _integer(record_offset, "record_offset", 0)
+    if (not isinstance(probabilities, torch.Tensor) or probabilities.ndim != 2
+            or probabilities.shape[1] == 0 or not probabilities.is_floating_point()):
+        raise TrainingDataError("allele probabilities must be a floating-point batch-by-vocabulary matrix")
+    targets = _tensor({"alleles": targets}, "alleles", (tuple(probabilities.shape),), probabilities.device)
+    masks = {} if supervision is None else {"allele_supervise": supervision}
+    valid = supervised_rows(masks, "allele", probabilities)
+    if not ((targets[valid] == 0) | (targets[valid] == 1)).all():
+        raise TrainingDataError("multilabel cohort truth must contain binary membership", context={"field": "alleles"})
+    selected = valid & targets.bool().any(-1)
+    scores = probabilities[selected]
+    if not ((scores >= 0) & (scores <= 1)).all():
+        raise NumericalError("multilabel cohort scores must be probabilities", context={"field": "probabilities"})
+    _finite(probabilities, selected, "probabilities")
+    indices = selected.nonzero().flatten().cpu().tolist()
+    truth = _member_sets(targets[selected])
+    predictions = scores.argmax(-1).cpu().tolist()
+    rows = [ClassificationObservation(record_offset + row, labels, prediction)
+            for row, labels, prediction in zip(indices, truth, predictions)]
+    sets = ([] if threshold is None else
+            [PredictionSetObservation(record_offset + row, members)
+             for row, members in zip(indices, _member_sets(scores > threshold))])
+    return rows, sets
+
+
+def _classification(outputs, targets, config, gene, count, class_count, offset, threshold):
     key = config.classification_key(gene)
     scores = _tensor(outputs, key, ((count, class_count),))
     if not scores.is_floating_point():
@@ -74,45 +136,66 @@ def _classification(outputs, targets, config, gene, count, class_count, offset):
         membership = _tensor(targets, membership_key, ((count, class_count),), scores.device)
     else:
         _tensor(targets, f"{gene}_class", ((count,),), scores.device)
-    if categorical:
-        selected = categorical_rows(targets, gene, scores)
-    else:
-        if not ((membership[valid] == 0) | (membership[valid] == 1)).all():
-            raise TrainingDataError("multilabel cohort truth must contain binary membership",
-                                    context={"field": membership_key})
-        selected = valid & membership.bool().any(-1)
-        if not ((scores[selected] >= 0) & (scores[selected] <= 1)).all():
-            raise NumericalError("multilabel cohort scores must be probabilities", context={"field": key})
+    if not categorical:
+        rows, sets = allele_observations(scores, membership, supervision=valid,
+                                         prediction_set_threshold=threshold, record_offset=offset)
+        return rows, valid, scores.device, sets
+    selected = categorical_rows(targets, gene, scores)
     _finite(scores, selected, key)
     indices = selected.nonzero().flatten().cpu().tolist()
     predictions = scores[selected].argmax(-1).cpu().tolist()
     if membership is None:
         truth = [(label,) for label in targets[f"{gene}_class"][selected].cpu().tolist()]
     else:
-        truth = [[] for _ in indices]
-        for row, label in membership[selected].nonzero().cpu().tolist():
-            truth[row].append(label)
-        truth = [tuple(labels) for labels in truth]
+        truth = _member_sets(membership[selected])
     rows = [ClassificationObservation(offset + row, labels, prediction)
             for row, labels, prediction in zip(indices, truth, predictions)]
-    return rows, valid, scores.device
+    return rows, valid, scores.device, []
+
+
+def _scalar_observations(outputs, targets, key, count, offset, *, device=None, selected=None,
+                         observation_type=ScalarObservation):
+    shape = ((count,), (count, 1))
+    predicted = _tensor(outputs, key, shape, device).reshape(-1)
+    truth = _tensor(targets, key, shape, predicted.device).reshape(-1)
+    if predicted.dtype == torch.bool or truth.dtype == torch.bool:
+        raise TrainingDataError("scalar observations must be numeric, not boolean", context={"field": key})
+    selected = supervised_rows(targets, key, predicted) if selected is None else selected
+    _finite(predicted, selected, key)
+    _finite(truth, selected, key)
+    errors = (predicted[selected] - truth[selected]).abs()
+    _finite(errors, slice(None), key)
+    return [observation_type(offset + row, target, prediction, error)
+            for row, target, prediction, error in zip(selected.nonzero().flatten().cpu().tolist(),
+                truth[selected].cpu().tolist(), predicted[selected].cpu().tolist(), errors.cpu().tolist())]
 
 
 def collect_alignment_observations(model, records, batch_adapter: BatchAdapter, config: AlignAIRConfig,
-                                   *, batch_size: int = 128, genes=None) -> CohortObservations:
+                                   *, batch_size: int = 128, genes=None, prediction_set_threshold=None,
+                                   scalar_heads=()) -> CohortObservations:
     """Evaluate an ordered record stream through a shared batch adapter, including its final tail.
 
     The adapter must preserve record order and cardinality and place inputs/targets on the model's
     device. Gene masks govern boundaries; categorical class masks/unknown labels and empty allele
     sets separately govern classification. Truth sets remain sets; no canonical label is guessed.
     Only native Python observations are retained, never model outputs or gradient graphs. Source
-    freezing, task-specific reports, strata, and optional auxiliary heads belong to the caller.
+    freezing, task-specific reports, and strata belong to the caller. Thresholded allele sets and
+    named scalar heads are opt-in, so default collection retains no extra output data.
     """
     batch_size = _integer(batch_size, "batch_size", 1)
     if not isinstance(model, torch.nn.Module) or not isinstance(config, AlignAIRConfig):
         raise ConfigurationError("cohort collection requires a torch model and AlignAIRConfig")
     if not callable(batch_adapter):
         raise ConfigurationError("batch_adapter must be callable", context={"field": "batch_adapter"})
+    threshold = _threshold(prediction_set_threshold)
+    if threshold is not None and config.classification_mode != "multilabel":
+        raise ConfigurationError("thresholded allele sets require multilabel model heads")
+    try:
+        heads = tuple(scalar_heads)
+        if isinstance(scalar_heads, str) or any(not isinstance(head, str) or not head for head in heads) or len(set(heads)) != len(heads):
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError("scalar_heads must contain distinct nonempty names") from exc
     canonical = {spec.name: spec.allele_count for spec in config.gene_specs}
     try:
         selected = tuple(canonical) if genes is None else tuple(genes)
@@ -123,6 +206,8 @@ def collect_alignment_observations(model, records, batch_adapter: BatchAdapter, 
     counts = {gene: _integer(canonical[gene], f"{gene}_class_count", 1) for gene in selected}
     classification = {gene: [] for gene in selected}
     boundaries = {f"{gene}_{boundary}": [] for gene in selected for boundary in ("start", "end")}
+    prediction_sets = {} if threshold is None else {gene: [] for gene in selected}
+    scalars = {head: [] for head in heads}
     total = 0
     with evaluation_mode(model), error_context(stage="cohort_collection"):
         stream = iter(records)
@@ -140,25 +225,19 @@ def collect_alignment_observations(model, records, batch_adapter: BatchAdapter, 
                     raise TrainingDataError("cohort model outputs must be a mapping")
                 for gene in selected:
                     with error_context(gene=gene):
-                        rows, valid, device = _classification(outputs, targets, config, gene, len(chunk), counts[gene], total)
+                        rows, valid, device, sets = _classification(outputs, targets, config, gene, len(chunk), counts[gene], total, threshold)
                         classification[gene].extend(rows)
-                        indices = valid.nonzero().flatten().cpu().tolist()
+                        if threshold is not None:
+                            prediction_sets[gene].extend(sets)
                         for boundary in ("start", "end"):
                             key = f"{gene}_{boundary}"
-                            shape = ((len(chunk),), (len(chunk), 1))
-                            predicted = _tensor(outputs, key, shape, device).reshape(-1)
-                            truth = _tensor(targets, key, shape, device).reshape(-1)
-                            if predicted.dtype == torch.bool or truth.dtype == torch.bool:
-                                raise TrainingDataError("boundary coordinates must be numeric, not boolean",
-                                                        context={"field": key})
-                            _finite(predicted, valid, key)
-                            _finite(truth, valid, key)
-                            errors = (predicted[valid] - truth[valid]).abs()
-                            _finite(errors, slice(None), key)
-                            errors = errors.cpu().tolist()
-                            boundaries[key].extend(BoundaryObservation(total + row, target, prediction, error)
-                                for row, target, prediction, error in zip(indices, truth[valid].cpu().tolist(),
-                                                                        predicted[valid].cpu().tolist(), errors))
+                            boundaries[key].extend(_scalar_observations(outputs, targets, key, len(chunk), total,
+                                device=device, selected=valid, observation_type=BoundaryObservation))
+                for head in heads:
+                    with error_context(head=head):
+                        scalars[head].extend(_scalar_observations(outputs, targets, head, len(chunk), total))
                 total += len(chunk)
     return CohortObservations(total, {gene: tuple(rows) for gene, rows in classification.items()},
-                              {key: tuple(rows) for key, rows in boundaries.items()})
+                              {key: tuple(rows) for key, rows in boundaries.items()},
+                              {gene: tuple(rows) for gene, rows in prediction_sets.items()},
+                              {head: tuple(rows) for head, rows in scalars.items()})

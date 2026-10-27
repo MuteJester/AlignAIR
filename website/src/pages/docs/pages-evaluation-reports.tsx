@@ -62,9 +62,65 @@ for row in observed.classification["v"]:
       <p>
         Inference disables gradients and restores every module’s prior training/evaluation flag,
         including on failures. Outputs and gradient graphs are not retained. Cohort freezing, source
-        seeds, dataset fingerprints, and optional auxiliary-head reports remain caller policies.
+        seeds, dataset fingerprints, and selection of auxiliary-head reports remain caller policies.
         Keep an indexable frozen source when later joining observations to study strata through
         <code> record_index</code>.
+      </p>
+      <p>
+        Optional <code>prediction_set_threshold=0.5</code> retains sparse
+        <code> prediction_sets[gene]</code> rows with <code>record_index</code> and
+        <code> members</code>. This option requires multilabel probability heads and uses a strict
+        greater-than comparison, including at thresholds zero and one. Rows align with observed
+        classifications. Optional <code>scalar_heads=("mutation_rate", "productive")</code>
+        collects named <code>ScalarObservation</code> rows with truth, prediction, and absolute
+        error. Scalar heads accept row vectors or one-column tensors and honor their own
+        <code> {"{head}_supervise"}</code> and <code>{"{head}_valid"}</code> masks. Their counts
+        appear under <code>support["scalars"]</code>. Defaults retain neither optional payload;
+        full probability matrices are never retained. Storage for requested sets grows with their retained membership.
+      </p>
+      <H2 id="alleles">Evaluate allele recovery and equivalence</H2>
+      <CodeBlock lang="python" code={`from alignair.evaluate import evaluate_allele_cohort
+
+# Choose a nucleotide or protein allele adapter for the same shared model config.
+report = evaluate_allele_cohort(
+    model, frozen_records, adapter, model.cfg, reference,
+    class_maps={"V": v_allele_to_class, "J": j_allele_to_class},
+    threshold=0.5, batch_size=128,
+)
+print(report["alleles"]["v"])
+print(report["support"])`} />
+      <p>
+        <code>evaluate_allele_cohort</code> requires multilabel heads and a reference whose ordered
+        allele vocabulary matches the model. The batch adapter binds targets to that order.
+        Equivalence maps assign allele names to nonnegative integer class IDs; missing entries
+        or <code>None</code> mean that the class is unavailable. Omit a gene’s map to report only
+        its allele metrics. An empty map explicitly requests class reporting with zero mapped support.
+      </p>
+      <DocTable head={["Allele field", "Definition"]} rows={[
+        ["n / nt_top1", "Observed allele rows and the fraction whose top prediction belongs to the truth set."],
+        ["true_in_predicted_set / mean_pred_set_size", "Fraction with truth intersecting the thresholded predicted set, and mean predicted-set size."],
+        ["class_top1 / class_support", "Class accuracy over rows whose prediction and every truth allele have mapped classes, plus that comparison count."],
+        ["nt_error_rate", "Allele error fraction over all observed allele rows."],
+        ["frac_errors_within_class / class_error_support", "Within-class fraction among allele errors with fully mapped class comparisons, plus that error count."],
+        ["unmapped_class_rows", "Observed allele rows excluded from class comparison because a required class label is unavailable."],
+      ]} />
+      <p>
+        Missing labels never match each other as a synthetic class. Class metrics can therefore
+        have smaller denominators than allele metrics; inspect their coverage when comparing models.
+        Zero support retains zero-valued rates with explicit zero counts. The report also contains
+        <code> segmentation_mae</code>, <code>mutation_mae</code>, <code>productive_acc</code>,
+        and per-field <code>support</code>. Each boundary or scalar metric uses its observed rows.
+        Metadata heads are requested when <code>config.use_meta_heads</code> is enabled; disabled
+        heads report null. An empty cohort reports <code>n=0</code>. Productivity truth is binary,
+        and its prediction must be a probability.
+      </p>
+      <p>
+        Reusable counters and normalization live in <code>evaluate.alleles</code>. The historical
+        <code>aa.eval_gym.evaluate_aa</code> selects the protein allele adapter and delegates here;
+        its counter imports remain aliases. The stratified protein benchmark uses the same collector
+        and counters while retaining its source strata and translated-read eligibility rules. Both
+        paths restore caller module modes. Boundary and scalar totals now accumulate detached per-row
+        errors, so older float32 batch reductions can differ by floating-point roundoff.
       </p>
       <H2 id="classification">Report exact-class predictions</H2>
       <CodeBlock lang="python" code={`from alignair.evaluate import classification_report

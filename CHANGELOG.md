@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared allele-cohort evaluation with optional sparse predicted sets, scalar-head observations,
+  explicit equivalence-map coverage, and metadata-head-aware reporting for either input alphabet.
 - Shared supervision-aware cohort observation collection for nucleotide/protein and categorical/multilabel
   models, with original record indices, per-field support, shape checks, and mode-safe inference.
 - Shared evaluation statistics and exact-class/boundary reports, validated observation contracts,
@@ -52,6 +54,12 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Protein allele evaluation and stratified benchmarking use shared observation collection and allele counters;
+  duplicate inference/counting loops and dummy-tensor counter initialization have been removed.
+- Unmapped alleles no longer form a false equivalence class. Class accuracy and within-class error
+  fractions use explicit mapped-comparison support. Boundary/scalar errors use their observed row counts.
+- Empty allele cohorts report zero records; disabled metadata heads report null metrics. Stratified
+  protein benchmarking now restores caller module modes after inference.
 - Frozen protein-cohort evaluation delegates prediction collection to the shared owner, excludes
   unobserved classes without dropping observed boundaries, and reports explicit per-field support.
 - Categorical batch adaptation preserves gene-level supervision masks alongside class-only masks.

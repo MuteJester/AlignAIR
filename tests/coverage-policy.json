@@ -1,6 +1,7 @@
 {
   "schema": "alignair.coverage-policy.v1",
   "files": {
+    "src/alignair/evaluate/alleles.py": {"statements": 98, "branches": 95},
     "src/alignair/evaluate/cohort.py": {"statements": 98, "branches": 95},
     "src/alignair/evaluate/statistics.py": {"statements": 98, "branches": 95},
     "src/alignair/evaluate/reports.py": {"statements": 98, "branches": 95},
