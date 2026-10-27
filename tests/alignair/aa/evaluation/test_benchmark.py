@@ -8,7 +8,7 @@ def test_run_aa_benchmark_stratifies_and_flags_non_aa_strata():
     from alignair_benchmark import default_igh_spec
 
     from alignair.aa.benchmark import run_aa_benchmark
-    from alignair.aa.data import build_class_maps
+    from alignair.reference.protein import build_class_maps
     from alignair.aa.train_gym import setup_aa
 
     model, ref, cfg, _ = setup_aa("HUMAN_IGH_OGRDB", 192)      # untrained is fine: no_aa_rate is data-driven

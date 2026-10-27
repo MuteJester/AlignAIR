@@ -10,7 +10,7 @@ from alignair.errors import TrainingError
 
 from collections import Counter
 
-from .equivalence import build_equivalence_classes, db_hash
+from ..reference.protein import build_class_maps
 from ..data.projection import frame_offset_of, project_codons, projection_segments, residue_count
 from ..data.adapters import collate_categorical as collate_aa
 
@@ -59,25 +59,6 @@ def record_to_sample(rec: dict, class_maps: dict, tokenizer, max_len: int):
         return None, "too_long"
     return {"tokens": tokens, "v_class": v_class, "j_class": j_class,
             "v_start": vb[0], "v_end": vb[1], "j_start": jb[0], "j_end": jb[1]}, None
-
-
-def build_class_maps(dc_name: str = "HUMAN_IGH_OGRDB"):
-    """Frozen V/J protein-equivalence class maps from a GenAIRR dataconfig."""
-    import GenAIRR as ga
-
-    from .reference import build_aa_germlines
-    dc = getattr(ga, dc_name)
-    gset = build_aa_germlines(dc, genes=("V", "J"))
-    dbh = db_hash([(a.name, a.ungapped_seq) for a in dc.allele_list("v")]
-                  + [(a.name, a.ungapped_seq) for a in dc.allele_list("j")])
-    class_maps = {g: build_equivalence_classes(
-        g, {n: x.aa_seq for n, x in gset.genes[g].items()}, dbh) for g in ("V", "J")}
-    meta = {"n_v_classes": class_maps["V"].n_classes(),
-            "n_j_classes": class_maps["J"].n_classes(),
-            "db_hash": dbh,
-            "quarantined_v": len(gset.quarantined["V"]),
-            "quarantined_j": len(gset.quarantined["J"])}
-    return class_maps, meta
 
 
 def collect_usable(*, start_seed, budget, want, class_maps, tokenizer, max_len, rate=0.05,

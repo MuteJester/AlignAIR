@@ -12,7 +12,7 @@ import torch
 
 from .augment import aa_substitute
 from .config import aa_igh_config
-from .data import build_class_maps
+from ..reference import build_protein_reference
 from ..data.adapters import collate_categorical as collate_aa
 from ..data.adapters import translated_record_usable as aa_usable
 from ..tasks import build_tasks
@@ -25,13 +25,9 @@ from ..data.projection import frame_offset_of, project_codons, projection_segmen
 
 
 def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192, has_d: bool = True):
-    import GenAIRR as ga
-
-    from ..reference.reference_set import ReferenceSet
-    dc = getattr(ga, dc_name)
-    ref = ReferenceSet.from_dataconfigs(dc)
-    class_maps, meta = build_class_maps(dc_name)
-    d_index = dict(ref.gene("D").index) if has_d else {}
+    reference = build_protein_reference(dc_name)
+    class_maps, meta = reference.class_maps, reference.metadata()
+    d_index = dict(reference.source.gene("D").index) if has_d else {}
     cfg = aa_igh_config(meta["n_v_classes"], meta["n_j_classes"], len(d_index), max_seq_length, has_d=has_d)
     meta = {**meta, "n_d_alleles": len(d_index), "d_index": d_index}
     return AAAlignAIR(cfg), cfg, class_maps, meta

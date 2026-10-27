@@ -10,7 +10,7 @@ import pytest
 import torch
 
 from alignair.aa.conformal import FrozenConformal
-from alignair.aa.equivalence import EquivalenceClassMap
+from alignair.reference.labels import EquivalenceClassMap
 from alignair.aa.infer import class_probs
 from alignair.aa.product.calibration_group import SUPPLIED_WARNING
 from alignair.aa.product.loader import _V2_BUNDLE_PATH, AAPredictor, load_aa_model

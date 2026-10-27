@@ -11,7 +11,8 @@ from collections import Counter
 import torch
 
 from .config import aa_igh_config
-from .data import build_class_maps, check_counter, collect_usable
+from .data import check_counter, collect_usable
+from ..reference import build_protein_reference
 from ..data.adapters import collate_categorical as collate_aa
 from .evaluate import evaluate_frozen
 from ..tasks import build_tasks
@@ -136,7 +137,8 @@ def run_seed(seed, cfg, class_maps, heldout, *, replicate, train_steps, batch_si
 def run_learning_proof(*, seeds=(0, 1, 2), heldout_size=4096, train_steps=3000, batch_size=64,
                        lr=1e-3, overfit_batch=32, overfit_steps=400, device="cpu",
                        dc_name="HUMAN_IGH_OGRDB", manifest_path=None) -> dict:
-    class_maps, meta = build_class_maps(dc_name)
+    reference = build_protein_reference(dc_name)
+    class_maps, meta = reference.class_maps, reference.metadata()
     cfg = aa_igh_config(meta["n_v_classes"], meta["n_j_classes"])
     tok = AAProteinTokenizer()
 

@@ -2,7 +2,7 @@
 full-length and under coverage-limited windows (truncated reads collapse classes further)."""
 from __future__ import annotations
 
-from .equivalence import EquivalenceClassMap
+from ..reference.labels import EquivalenceClassMap
 
 
 def identifiability_summary(cmap: EquivalenceClassMap) -> dict:

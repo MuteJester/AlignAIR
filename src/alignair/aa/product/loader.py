@@ -33,7 +33,7 @@ from ...errors import ModelError
 from ...aligner import resolve_device
 from ...model_file import container, serialize
 from ..conformal import FrozenConformal
-from ..equivalence import EquivalenceClassMap
+from ...reference.labels import EquivalenceClassMap
 from ..model import AAAlignAIR
 from ...data.tokenizer import AAProteinTokenizer
 from .bundle import canonical_json

@@ -5,7 +5,7 @@ pytestmark = pytest.mark.integration
 
 def test_prototypes_by_class_covers_all_v_classes():
     import GenAIRR as ga
-    from alignair.aa.data import build_class_maps
+    from alignair.reference.protein import build_class_maps
     from alignair.aa.strategic_trunc import prototypes_by_class
     cm, _ = build_class_maps("HUMAN_IGH_OGRDB")
     p = prototypes_by_class(ga.HUMAN_IGH_OGRDB, cm["V"], "V")

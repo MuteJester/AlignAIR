@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from alignair.aa.data import collate_aa, record_to_sample
-from alignair.aa.equivalence import build_equivalence_classes, db_hash
+from alignair.reference.labels import build_equivalence_classes, db_hash
 from alignair.aa.tokenizer import AAProteinTokenizer
 
 pytestmark = pytest.mark.component

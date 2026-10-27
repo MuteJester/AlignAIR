@@ -46,7 +46,8 @@ def test_diverse_selector_prioritizes_unseen_classes():
 @pytest.mark.slow
 def test_overfit_one_batch_learns_classes_and_all_four_boundaries():
     torch.manual_seed(0)
-    from alignair.aa.data import build_class_maps, collate_aa, collect_usable
+    from alignair.aa.data import collate_aa, collect_usable
+    from alignair.reference.protein import build_class_maps
     from alignair.aa.tokenizer import AAProteinTokenizer
     from alignair.aa.train import diverse_selector
     cmaps, meta = build_class_maps("HUMAN_IGH_OGRDB")

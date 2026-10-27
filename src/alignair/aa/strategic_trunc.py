@@ -22,7 +22,7 @@ import torch
 from .augment import aa_substitute, il_ambiguity
 from ..data.adapters import CategoricalBatchAdapter
 from ..tasks import build_tasks
-from .reference import build_aa_germlines
+from ..reference import build_protein_germlines
 from ..train.checkpoints import (load_research_checkpoint as load_checkpoint,
                                   save_research_checkpoint as save_checkpoint,
                                   research_checkpoint_rng, save_snapshot as _save)
@@ -36,7 +36,7 @@ from .truncation import compatible_classes, crop_window, shift_clip
 
 def prototypes_by_class(dc, class_map, gene: str) -> dict:
     """{class_id: representative protein} for a gene's protein-equivalence classes."""
-    germ = build_aa_germlines(dc, genes=(gene,)).genes[gene.upper()]
+    germ = build_protein_germlines(dc, genes=(gene,)).genes[gene.upper()]
     out: dict = {}
     for name, g in germ.items():
         c = class_map.class_of(name) if name in class_map.allele_class else None

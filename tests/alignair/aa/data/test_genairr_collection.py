@@ -8,7 +8,8 @@ pytestmark = pytest.mark.integration
 
 @pytest.mark.slow
 def test_collect_usable_real_igh_is_valid_budgeted_and_fully_accounted():
-    from alignair.aa.data import build_class_maps, check_counter, collect_usable
+    from alignair.aa.data import check_counter, collect_usable
+    from alignair.reference.protein import build_class_maps
     cmaps, meta = build_class_maps("HUMAN_IGH_OGRDB")
     assert meta["n_v_classes"] == 149 and meta["n_j_classes"] == 7
     counter = Counter()
@@ -27,7 +28,8 @@ def test_collect_usable_real_igh_is_valid_budgeted_and_fully_accounted():
 
 @pytest.mark.slow
 def test_collect_usable_raises_when_the_seed_budget_is_exhausted():
-    from alignair.aa.data import SeedBudgetExhausted, build_class_maps, collect_usable
+    from alignair.aa.data import SeedBudgetExhausted, collect_usable
+    from alignair.reference.protein import build_class_maps
     cmaps, _ = build_class_maps("HUMAN_IGH_OGRDB")
     with pytest.raises(SeedBudgetExhausted):                  # ~14% yield: 50 records cannot give 500
         collect_usable(start_seed=6_000_000, budget=50, want=500, class_maps=cmaps,

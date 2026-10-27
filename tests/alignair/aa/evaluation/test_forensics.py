@@ -1,6 +1,6 @@
 import pytest
 from alignair.aa.forensics import germline_id_matrix, nearest_germline
-from alignair.aa.reference import AAGermline
+from alignair.reference import ProteinGermline
 from alignair.aa.tokenizer import AAProteinTokenizer
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
@@ -13,7 +13,7 @@ def _ref():
 
 
 def _germlines(seqs, anchors):
-    return {n: AAGermline(n, s, 0, anchors[n], "V") for n, s in seqs.items()}
+    return {n: ProteinGermline(n, s, 0, anchors[n], "V") for n, s in seqs.items()}
 
 
 def test_germline_matrix_follows_reference_order_and_keeps_anchors():

@@ -23,7 +23,8 @@ from alignair_benchmark import default_igh_spec, stream_benchmark
 
 from ..augment import aa_indel, aa_substitute, aa_truncate, il_ambiguity
 from ..conformal import Conformal
-from ..data import build_class_maps, record_to_sample
+from ..data import record_to_sample
+from ...reference import build_protein_reference
 from ..evaluate import evaluate_frozen
 from ...data.adapters import translated_record_usable as aa_usable
 from ..infer import class_probs
@@ -74,7 +75,7 @@ def build_cohort(dc_name: str = "HUMAN_IGH_OGRDB", n_per_stratum: int = 200,
     import GenAIRR as ga
 
     dc = getattr(ga, dc_name)
-    class_maps, _meta = build_class_maps(dc_name)
+    class_maps = build_protein_reference(dc_name).class_maps
     vclass, jclass = class_maps["V"].allele_class, class_maps["J"].allele_class
 
     rng = np.random.default_rng(seed)

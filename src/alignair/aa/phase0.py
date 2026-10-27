@@ -5,8 +5,7 @@ from __future__ import annotations
 import statistics
 
 from ..data.projection import frame_offset_of, project_codons, projection_segments
-from .reference import build_aa_germlines
-from .equivalence import db_hash, build_equivalence_classes
+from ..reference import build_protein_reference
 from .audit import identifiability_summary, prefix_identifiability_curve
 from .report import assemble_report
 
@@ -18,17 +17,13 @@ def build_phase0_report(n: int, seed: int = 0, rate: float = 0.05,
     dc = getattr(ga, dc_name)
 
     # ---- germline-derived identifiability (no simulation needed) ----
-    gset = build_aa_germlines(dc, genes=("V", "J"))
-    dbh = db_hash(
-        [(a.name, a.ungapped_seq) for a in dc.allele_list("v")]
-        + [(a.name, a.ungapped_seq) for a in dc.allele_list("d")]
-        + [(a.name, a.ungapped_seq) for a in dc.allele_list("j")]
-    )
+    reference = build_protein_reference(dc, hash_genes=("V", "D", "J"))
+    gset, dbh = reference.germlines, reference.db_hash
     identifiability = {}
     coverage_curve = {}
     for gene in ("V", "J"):
         aa_by_name = {n_: g.aa_seq for n_, g in gset.genes[gene].items()}
-        cmap = build_equivalence_classes(gene, aa_by_name, dbh)
+        cmap = reference.class_maps[gene]
         identifiability[gene] = identifiability_summary(cmap)
         if gene == "V":
             lengths = [30, 60, 90, 120, max((len(s) for s in aa_by_name.values()), default=0)]

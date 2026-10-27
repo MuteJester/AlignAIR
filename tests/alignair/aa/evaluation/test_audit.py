@@ -1,5 +1,5 @@
 import pytest
-from alignair.aa.equivalence import build_equivalence_classes, db_hash
+from alignair.reference.labels import build_equivalence_classes, db_hash
 from alignair.aa.audit import (
     identifiability_summary, window_identifiability, prefix_identifiability_curve,
 )

@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from alignair.aa.config import aa_igh_config
-from alignair.aa.equivalence import EquivalenceClassMap
+from alignair.reference.labels import EquivalenceClassMap
 from alignair.aa.model import AAAlignAIR
 from alignair.aa.translation import CODON_TABLE
 from alignair.aa.convergence.evaluator import evaluate_checkpoint

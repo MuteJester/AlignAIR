@@ -1,15 +1,15 @@
 import pytest
 from alignair.aa.local_aligner import classify_v, v_class_prototypes
-from alignair.aa.reference import AAGermline
+from alignair.reference import ProteinGermline
 
 pytestmark = pytest.mark.component
 
 
 def _germlines():
     # two synonymous alleles (class 0, identical protein) + one distinct (class 1)
-    return ({"a*01": AAGermline("a*01", "QVQLVESGGGLVQP", 0, 13, "V"),
-             "a*02": AAGermline("a*02", "QVQLVESGGGLVQP", 0, 13, "V"),
-             "b*01": AAGermline("b*01", "EVQLLESGGGLIKP", 0, 13, "V")},
+    return ({"a*01": ProteinGermline("a*01", "QVQLVESGGGLVQP", 0, 13, "V"),
+             "a*02": ProteinGermline("a*02", "QVQLVESGGGLVQP", 0, 13, "V"),
+             "b*01": ProteinGermline("b*01", "EVQLLESGGGLIKP", 0, 13, "V")},
             {"a*01": 0, "a*02": 0, "b*01": 1})
 
 

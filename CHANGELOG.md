@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared protein reference views derived from the ordered nucleotide `ReferenceSet`, with explicit
+  anchor and hash-scope policies, deterministic equivalence labels, and reference API documentation.
 - Shared `alignair.train.TrainingEngine` for optimizer steps, full optimized-parameter gradient
   checks/clipping, constraints, scheduler ordering, and mode-safe validation. Website API guide added.
 - Atomic training checkpoint publication, shared snapshot/research/self-contained checkpoint helpers,
@@ -30,6 +32,11 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Germline translation, protein label maps, and class-map assembly live under `alignair.reference`.
+  AA training, audit, and product callers use the shared owners; historical imports reexport them.
+  Source allele order, class IDs, V/J versus V/D/J hash scopes, and the existing wire schema are preserved.
+- Protein views quarantine invalid anchors and reject inconsistent source indices or empty required
+  label spaces. Serialized equivalence maps validate class IDs and exact allele/member agreement.
 - Renamed shared neural-network components to `alignair.neural` for clearer package navigation.
   Internal callers and tests use the new name; `alignair.nn` imports remain compatibility reexports.
 - NT and AA alignment runners use one training engine; migrated optimizer loops, snapshot writers,
