@@ -189,7 +189,7 @@ class Aligner:
         if genotype is not None:
             overrides["genotype"] = genotype
             overrides["genotype_method"] = genotype_method
-        records = predict_sequences(self.model, self.reference, list(sequences), device=self.device,
+        records = predict_sequences(self.model, self.reference, sequences, device=self.device,
                                     batch_size=bs, airr=airr, **overrides)
         return PredictionResult(records, locus=self.default_locus)
 
@@ -197,8 +197,9 @@ class Aligner:
                      **kw) -> Iterator[dict]:
         """Stream prediction over an iterable of sequences in bounded memory: yields per-read records,
         predicting ``chunk_size`` reads at a time. Same options as :meth:`predict`."""
+        from .data.inputs import sequence_batch_iterator
         buf: list = []
-        for s in sequences:
+        for s in sequence_batch_iterator(sequences):
             buf.append(s)
             if len(buf) >= chunk_size:
                 yield from self.predict(buf, batch_size=batch_size, **kw).records

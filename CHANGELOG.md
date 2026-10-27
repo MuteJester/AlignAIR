@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared sequence-content results, explicit unknown/ambiguity handling and crop metadata, with
+  nucleotide file and prediction policy presets in the data input module.
 - Source-aware nucleotide read batches and a unique output-ID allocator that reserves generated
   names across chunks. Metadata lookup now has a dedicated module with eager and disk-backed APIs.
 - Shared raw sequence-file parsing for FASTA, FASTQ, CSV/TSV, text, gzip and stdin, with
@@ -62,6 +64,13 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Nucleotide file validation, prediction, raw forward, genotype alignment and calibration share
+  content preparation. Protein validation keeps its strict policy through the same normalization owner.
+- In-memory nucleotide prediction rejects non-string values and bare non-batch inputs, strips outer
+  whitespace, and maps unknown characters to N before tokenization, alignment and reporting.
+  Literal P input no longer becomes padding. Eager empty batches raise a typed input error.
+- Genotype repertoire alignment consumes generators once and uses prepared read lengths while retaining
+  crop flags in prediction records. Assay replay uses shared adaptation/forward execution with verified pins.
 - Nucleotide CLI metadata joins use original source IDs, preventing generated suffixes from matching
   another read's metadata. Unnamed reads receive no metadata through invented fallback join keys.
 - Both metadata loaders reject duplicate keys. Inserts are transactional; temporary indexes support

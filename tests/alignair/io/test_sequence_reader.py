@@ -3,7 +3,6 @@ empty rejection, and duplicate-ID disambiguation with preserved order."""
 import pytest
 
 from alignair.io.sequence_reader import read_sequences, validate, validate_sequence
-from alignair.predict.pipeline import apply_input_policy
 
 pytestmark = pytest.mark.component
 
@@ -17,18 +16,6 @@ def test_validate_sequence_reasons():
     assert validate_sequence("XXXXZZ")[1] == "ambiguous"        # >20% unusable
     # back-compat wrapper still returns just the cleaned string (or None)
     assert validate("acgt") == "ACGT" and validate("") is None
-
-
-def test_apply_input_policy_crops_over_length_and_flags():
-    seqs = ["ACGTACGT", "ACGTACGTAC"]        # second is 10, window is 8
-    out, cropped = apply_input_policy(seqs, max_len=8)
-    assert out == ["ACGTACGT", "ACGTACGT"]   # cropped CONSISTENTLY to the window (not silently)
-    assert cropped == [False, True]
-
-
-def test_apply_input_policy_rejects_empty():
-    with pytest.raises(ValueError, match="empty"):
-        apply_input_policy(["ACGT", "", "ACGT"], max_len=576)
 
 
 def test_reader_disambiguates_duplicate_ids_preserving_order(tmp_path):

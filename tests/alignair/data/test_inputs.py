@@ -110,7 +110,7 @@ def test_invalid_stop_policy_is_rejected(stop):
         SequenceValidationPolicy(frozenset('AC'),8,stop_symbol=stop)
 
 
-@pytest.mark.parametrize('length', [0,-1,True,1.5,None])
+@pytest.mark.parametrize('length', [0,-1,True,1.5])
 def test_invalid_window_is_rejected_before_input_consumption(length):
     with pytest.raises(ConfigurationError) as caught:
         SequenceValidationPolicy(frozenset('AC'),length)

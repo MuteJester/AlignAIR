@@ -13,46 +13,11 @@ import os
 from typing import List, Tuple
 
 from ..data.identity import UniqueSequenceIds
+from ..data.inputs import (nucleotide_file_policy, validate_nucleotide as validate,
+                           validate_nucleotide_sequence as validate_sequence)
 from ..errors import ConfigurationError
 from .metadata import DuplicateMetadataId, MetadataIndex, build_metadata_index, load_metadata  # compatibility imports
 from .sequence_records import _open_text, detect_sequence_format, iter_sequence_records
-
-_VALID = set("ACGTN")
-_IUPAC = set("RYSWKMBDHVN")          # ambiguity codes -> N
-
-
-def validate_sequence(seq: str, max_len: int | None = None) -> tuple[str | None, str | None]:
-    """The single content validator (used by the reader and the predict pipeline).
-
-    Returns ``(cleaned, reason)``: ``cleaned`` is the uppercased sequence with IUPAC ambiguity codes
-    mapped to ``N``; ``reason`` is ``None`` when accepted, else a machine-readable rejection code:
-    ``"empty"`` (blank), ``"ambiguous"`` (>20% unusable characters), or ``"too_long"`` (exceeds
-    ``max_len`` — callers decide crop vs reject; the reader never silently truncates)."""
-    s = seq.strip().upper()
-    if not s:
-        return None, "empty"
-    bad = 0
-    out = []
-    for c in s:
-        if c in _VALID:
-            out.append(c)
-        elif c in _IUPAC:
-            out.append("N")
-        else:
-            bad += 1
-            out.append("N")
-    if bad / len(s) > 0.20:
-        return None, "ambiguous"
-    cleaned = "".join(out)
-    if max_len is not None and len(cleaned) > max_len:
-        return None, "too_long"
-    return cleaned, None
-
-
-def validate(seq: str) -> str | None:
-    """Back-compat wrapper: the cleaned sequence, or ``None`` if unusable (see ``validate_sequence``)."""
-    return validate_sequence(seq)[0]
-
 
 def _detect_format(path: str, seq_column: str | None = None) -> str:
     if path == "-":
@@ -106,9 +71,11 @@ def iter_sequence_batches(path: str, chunk_size: int = 20000, seq_column: str | 
     records = []
     dropped = 0
     allocator = UniqueSequenceIds()
+    policy = nucleotide_file_policy()
     with closing(iter_sequence_records(path, seq_column=seq_column, id_column=id_column)) as source:
         for position, (source_id, raw) in enumerate(source):
-            sequence, reason = validate_sequence(raw)
+            result = policy.normalize(raw)
+            sequence, reason = result.sequence, result.error
             if sequence is None:
                 dropped += 1
                 if rejects is not None:

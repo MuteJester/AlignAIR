@@ -10,6 +10,7 @@ import torch
 
 from ..core.runtime import evaluation_mode
 from ..data.inference import SequenceInputAdapter
+from ..data.inputs import prepare_nucleotide_inputs
 from ..data.tokenizer import CenterPaddedTokenizer
 from ..errors import ConfigurationError, InferenceError, NumericalError, error_context
 
@@ -91,9 +92,9 @@ def output_numpy(value: torch.Tensor):
 
 
 def run_model(model, sequences, cfg, device: str = "cpu") -> list:
-    """Historical nucleotide interface: uppercase, unknown-to-N, prefix truncation, right padding."""
+    """Nucleotide forward inputs use the same content/window policy as prediction and reporting."""
+    records, _ = prepare_nucleotide_inputs(sequences, cfg.max_seq_length)
     adapter = SequenceInputAdapter(CenterPaddedTokenizer(), cfg.max_seq_length, device,
-                                    overflow="prefix", allow_empty=True, vocab_size=6)
-    records = (str(sequence).upper() for sequence in sequences)
+                                    vocab_size=6)
     return [{key: output_numpy(value) for key, value in batch.outputs.items()}
             for batch in prediction_batches(model, records, adapter, batch_size=cfg.batch_size)]

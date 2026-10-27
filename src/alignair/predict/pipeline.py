@@ -6,7 +6,8 @@ assembly (sequence_alignment, junction, regions, quality).
 """
 from __future__ import annotations
 
-from ..errors import InputError, NumericalError
+from ..errors import NumericalError
+from ..data.inputs import prepare_nucleotide_inputs
 
 import numpy as np
 
@@ -68,21 +69,8 @@ def _locus_allowed(chain_type, reference, genes, genotype_allowed=None) -> dict:
 
 
 def apply_input_policy(sequences, max_len: int) -> tuple[list, list]:
-    """The single input-length/content gate for prediction: uppercase, reject empty reads, and
-    crop over-length reads to the model window **consistently** — the cropped string is what the
-    tokenizer, coordinates, germline reader, and AIRR assembly all see, so an over-length read is never
-    *silently* truncated with mismatched downstream coordinates. Returns ``(sequences, was_cropped)``."""
-    sequences = [str(s).upper() for s in sequences]
-    empties = [i for i, s in enumerate(sequences) if not s.strip()]
-    if empties:
-        shown = empties[:10]
-        raise InputError(f"empty input sequence(s) at index {shown}"
-                         f"{'...' if len(empties) > 10 else ''}; every read must be non-empty",
-                         context={"stage": "input_validation", "record_indices": shown,
-                                  "invalid_count": len(empties)})
-    was_cropped = [len(s) > max_len for s in sequences]
-    sequences = [s[:max_len] for s in sequences]
-    return sequences, was_cropped
+    """Compatibility entry point for shared nucleotide prediction preparation."""
+    return prepare_nucleotide_inputs(sequences, max_len)
 
 
 _COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
@@ -104,11 +92,8 @@ def _canonicalize(seq: str, orientation_id: int) -> str:
 
 def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu", aligner=None):
     genes = _genes(cfg)
-    # single input gate: uppercase once (GenAIRR/FASTA mark bases with case; the germline reader
-    # + AIRR assembly consume the raw string and case-mixed input mis-anchors the junction — DNA
-    # alignment is case-insensitive), reject empty reads, and crop over-length reads to the model window
-    # CONSISTENTLY so coords/AIRR refer to the same string (never a silent truncation).
-    sequences, was_cropped = apply_input_policy(sequences, cfg.max_seq_length)
+    # Tokenization, orientation, alignment and reported coordinates share the same normalized read.
+    sequences, was_cropped = prepare_nucleotide_inputs(sequences, cfg.max_seq_length)
     preds = clean(run_model(model, sequences, cfg, device), genes)
     _validate_predictions(preds)  # raw outputs must be finite before any use
     allowed = None

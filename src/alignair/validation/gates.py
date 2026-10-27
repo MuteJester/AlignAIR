@@ -39,7 +39,7 @@ CLAIM_TESTS = {
     "no advertised output column is undocumented":
         "tests/alignair/io/test_field_map.py::test_every_emitted_column_is_documented",
     "over-length reads are cropped and flagged, never silently truncated":
-        "tests/alignair/io/test_sequence_reader.py::test_apply_input_policy_crops_over_length_and_flags",
+        "tests/alignair/data/test_input_policies.py::test_prediction_crops_over_length_and_flags_exact_short_and_long_reads",
     "AIRR assembly failures are tagged, not swallowed":
         "tests/alignair/predict/airr/test_airr.py::test_build_airr_expected_exception_is_tagged_not_swallowed",
     "orientation transforms are involutions":

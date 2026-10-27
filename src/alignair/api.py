@@ -136,7 +136,7 @@ def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Seque
     predict_overrides.setdefault("chain_types", chain_types)
     pcfg = PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size,
                          allele_temperatures=getattr(cfg, "allele_temperatures", None), **predict_overrides)
-    return _predict(model, list(sequences), reference, pcfg, device=device)
+    return _predict(model, sequences, reference, pcfg, device=device)
 
 
 def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str = "cpu",

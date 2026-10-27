@@ -3,9 +3,9 @@
 ``replay`` does what ``alignair.api.predict_sequences`` does (``alignair.predict.pipeline.predict`` under the
 ``PredictConfig`` that ``predict_sequences`` builds), one stage at a time:
 
-1. ``input_policy``: ``pipeline.apply_input_policy`` (upper case, reads cropped to the model's window).
+1. ``input_policy``: shared nucleotide normalization and cropping through ``prepare_nucleotide_inputs``.
 2. ``forward``: the batched forward pass of ``alignair.predict.forward.run_model``, with each batch dict built here
-   (``forward._tokenize``, right-padded), which is where a teacher-forced ``batch["orientation"]`` goes.
+   (``SequenceInputAdapter``, right-padded), which is where a teacher-forced ``batch["orientation"]`` goes.
 3. ``clean``: ``pipeline.clean`` and ``pipeline._validate_predictions``.
 4. ``masks``: the allele temperature calibration (``calibrate.apply_temperature``) and the per-read locus masks of a
    multi-locus model (``pipeline._locus_allowed``). The genotype constraint needs a ``genotype`` override, which the
@@ -20,7 +20,7 @@
 Every stage is AlignAIR's own function, looked up where ``pipeline.predict`` looks it up; none is re-implemented.
 Substitutions (``Substitutions``) happen only between stage calls. The private AlignAIR names called here
 (``pipeline._genes``, ``_validate_predictions``, ``_assert_finite``, ``_locus_allowed``, ``_canonicalize``,
-``_to_records`` and ``forward._tokenize``) are pinned by the replay's equivalence tests, which also pin the code of
+``_to_records``) are pinned by the replay's equivalence tests, which also pin the code of
 the product functions the replay mirrors.
 
 **Substitutions**, each fed in between two stages (``Substitutions`` documents the fields):
@@ -54,6 +54,9 @@ from pathlib import Path
 import numpy as np
 import torch
 from alignair.api import load_model
+from alignair.core.runtime import evaluation_mode
+from alignair.data import SequenceInputAdapter, prepare_nucleotide_inputs
+from alignair.data.tokenizer import CenterPaddedTokenizer
 from alignair.neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.predict import PredictConfig, forward, pipeline
 from alignair.predict.airr import build_airr
@@ -229,7 +232,7 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
     seconds: dict[str, float] = {}
 
     with _timed(seconds, "input_policy"):
-        reads, was_cropped = pipeline.apply_input_policy(sequences, cfg.max_seq_length)
+        reads, was_cropped = prepare_nucleotide_inputs(sequences, cfg.max_seq_length)
     _check_spans(subs.spans, [len(read) for read in reads])  # orientation keeps a read's length
     with _timed(seconds, "forward"):
         batches = _forward(model, reads, cfg, device, orientation=subs.orientation,
@@ -304,23 +307,20 @@ def _forward(model, reads: list[str], cfg: PredictConfig, device: str, *, orient
     """``run_model``'s batched forward pass: the same batches and tokens, each batch's outputs as numpy arrays.
     ``orientation`` (per read, None for the model's own) is teacher-forced; with ``spans``, each gene's allele
     probabilities are the classifier's on those spans (``_classify``)."""
-    training = model.training
-    model.eval()
-    try:
+    adapter = SequenceInputAdapter(CenterPaddedTokenizer(), cfg.max_seq_length, device, vocab_size=6)
+    with evaluation_mode(model):
         outputs = []
         for start in range(0, len(reads), cfg.batch_size):
             stop = min(start + cfg.batch_size, len(reads))
-            tokens = forward._tokenize(reads[start:stop], cfg.max_seq_length).to(device)
-            batch = {"tokenized_sequence": tokens}
+            batch = adapter(reads[start:stop])
+            tokens = batch["tokenized_sequence"]
             if orientation is not None:
                 batch["orientation"] = _forced_orientation(model, tokens, orientation[start:stop])
-            out = model(batch)
+            out = forward.forward_batch(model, batch, expected_rows=stop - start)
             if spans is not None:
                 _classify(model, tokens, batch.get("orientation", out["orientation"]), out, spans, start)
-            outputs.append({key: value.detach().cpu().numpy() for key, value in out.items()})
+            outputs.append({key: forward.output_numpy(value) for key, value in out.items()})
         return outputs
-    finally:
-        model.train(training)
 
 
 def _forced_orientation(model, tokens: torch.Tensor, given: list) -> torch.Tensor:

@@ -74,9 +74,12 @@ def calibrate_allele_temperatures(model, reference, val_records, genes=("v", "d"
     Returns ``(temperatures, report)`` where ``temperatures`` = ``{gene: T}`` and ``report`` gives the
     fitted ``T``, ECE before/after, and top-1 accuracy (unchanged by scaling) per gene."""
     from .forward import run_model
+    from ..data.inputs import prepare_nucleotide_inputs
     cfg = model.cfg
     rc = SimpleNamespace(max_seq_length=cfg.max_seq_length, batch_size=128)
-    raw = run_model(model, [str(r["sequence"]) for r in val_records], rc, device=device)
+    val_records = list(val_records)
+    sequences, _ = prepare_nucleotide_inputs((record["sequence"] for record in val_records), cfg.max_seq_length)
+    raw = run_model(model, sequences, rc, device=device)
     out = {k: np.concatenate([b[k] for b in raw]) for k in raw[0] if k.endswith("_allele")}
     temps, report = {}, {}
     for g in genes:

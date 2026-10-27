@@ -99,6 +99,16 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
         assert not any(row.get("d_call") for row in out.airr_rows)
 
 
+def test_replay_and_product_share_unknown_base_whitespace_and_crop_normalization(small_model):
+    from alignair.data import prepare_nucleotide_inputs
+    model, reference_set = small_model
+    sequences = [' acgr?p ', 'acgt' * 150, ' nN ']
+    prepared, _ = prepare_nucleotide_inputs(sequences, model.cfg.max_seq_length)
+    out = replay(model, reference_set, sequences, ['one', 'two', 'three'], device='cpu', batch_size=2)
+    assert out.airr_rows == api.predict_sequences(model, reference_set, sequences, device='cpu', batch_size=2)
+    assert [record['input_sequence'] for record in out.records] == prepared
+
+
 @needs_model
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
     os.environ.get("ALIGNAIR_ASSAY_GPU") != "1", reason="set ALIGNAIR_ASSAY_GPU=1"))])

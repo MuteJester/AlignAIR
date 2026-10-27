@@ -2,13 +2,17 @@
 from ...data.inputs import (NormalizedSequenceBatch, SequenceInputFailure as ErrorResult,
                            SequenceRecord as Record, SequenceValidationPolicy, normalize_sequence_inputs)
 from ...data.tokenizer import AA_TOKEN_DICT
+from ...data.batching import _width
+from ...errors import error_context
 
 VALID_AMINO_ACIDS = frozenset(AA_TOKEN_DICT) - {'*'}
 
 
 def normalize_input_batch(sequences, on_invalid: str = "error", max_len: int = 192) -> NormalizedSequenceBatch:
     """Apply the product alphabet while preserving source positions for predictions and failures."""
-    policy = SequenceValidationPolicy(VALID_AMINO_ACIDS, max_len, stop_symbol='*')
+    with error_context(field="max_length"):
+        maximum = _width(max_len)
+    policy = SequenceValidationPolicy(VALID_AMINO_ACIDS, maximum, stop_symbol='*')
     return normalize_sequence_inputs(sequences, policy, on_invalid=on_invalid)
 
 

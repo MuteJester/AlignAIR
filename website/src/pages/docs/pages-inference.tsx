@@ -140,10 +140,11 @@ print([record.sequence for record in batch.records])  # ["ACDE", "XX"]
 ordered_results = batch.restore_order(predictions)`} />
       <p>
         <code>normalize_sequence_inputs</code> strips surrounding whitespace, uppercases accepted
-        strings, and applies the supplied alphabet and positive length limit. A nucleotide caller
-        can supply its own alphabet and window through the same policy type. The normalizer checks
+        strings, and applies the supplied alphabet and optional positive length limit.
+        <code> max_length=None</code> permits unbounded content validation; model-facing presets
+        require a finite window. The normalizer checks
         length after case conversion as well, so Unicode case expansion cannot produce an accepted
-        read longer than the model window. Interior whitespace remains invalid. Optional
+        read longer than the model window. Interior whitespace is invalid by default. Optional
         <code> stop_symbol</code> identifies one forbidden character for the stop-specific diagnostic.
       </p>
       <p>
@@ -158,6 +159,7 @@ ordered_results = batch.restore_order(predictions)`} />
         ["outcomes", "One SequenceRecord or SequenceInputFailure per consumed source item, in original order."],
         ["records / errors", "Tuple views of accepted normalized records and structured failures."],
         ["valid_indices", "Original zero-based positions of accepted records, suitable for positional metadata lookup."],
+        ["cropped_indices / crop_flags", "Original positions of cropped records, and boolean flags aligned with accepted records, respectively."],
         ["restore_order(predictions)", "Interleave one downstream result per accepted record with the original failures; reject missing or extra results with DataContractError."],
       ]} />
       <p>
@@ -171,6 +173,21 @@ ordered_results = batch.restore_order(predictions)`} />
         consumption with <code>ConfigurationError</code>.
       </p>
       <p>
+        <code>policy.normalize(value)</code> applies the same rules to one value and returns
+        <code> SequenceNormalizationResult</code>: <code>sequence</code>, <code>error</code>,
+        <code> detail</code>, and <code>was_cropped</code>. A rejected result has no sequence.
+        This lets streaming readers validate content without allocating record IDs or batches.
+        Batch normalization accepts mapping records by default; <code>allow_records=False</code>
+        requires each batch item to be a sequence value instead of interpreting mapping fields.
+      </p>
+      <DocTable head={["Policy option", "Behavior"]} rows={[
+        ["unknown_symbol", "None rejects characters outside the alphabet. An allowed replacement character maps unknown input characters into that alphabet."],
+        ["ambiguity_symbols", "Characters outside the alphabet that map to unknown_symbol without counting toward the unusable-character fraction."],
+        ["max_invalid_fraction", "Optional finite fraction from 0 to 1. Requires unknown_symbol; reject when the unusable fraction exceeds it."],
+        ["overflow", "error rejects overlength input; prefix crops to a required finite window and records crop metadata."],
+        ["reject_interior_whitespace", "True by default. False sends interior whitespace through the declared character policy."],
+      ]} />
+      <p>
         Protein product prediction selects its canonical-residue-plus-X policy through
         <code>aa.product.validate.normalize_input_batch</code>. It normalizes once per request and
         uses the retained positions for calibration-group lists and output restoration. Duplicate IDs
@@ -178,6 +195,44 @@ ordered_results = batch.restore_order(predictions)`} />
         historical <code>normalize_inputs</code> split-list interface and <code>Record/ErrorResult</code>
         names remain adapters and aliases of the shared owner. Tokenization and tensor-shape
         validation remain the model-input boundary described below.
+      </p>
+      <H2 id="nucleotide-policy">Select the nucleotide content policy</H2>
+      <CodeBlock lang="python" code={`from alignair.data import (
+    nucleotide_file_policy, nucleotide_prediction_policy, prepare_nucleotide_inputs,
+)
+
+content = nucleotide_file_policy().normalize(" acgr ")
+print(content.sequence)  # ACGN
+
+prepared, cropped = prepare_nucleotide_inputs([" ac?gtn "], max_length=4)
+print(prepared, cropped)  # ["ACNG"], [True]
+
+# The same policy can retain source positions and per-record failures.
+batch = normalize_sequence_inputs(
+    ["ACGTN", "", "N"], nucleotide_prediction_policy(4), on_invalid="skip",
+)
+print(batch.cropped_indices, batch.crop_flags)  # (0,), (True, False)`} />
+      <DocTable head={["Entry point", "Content and window rules"]} rows={[
+        ["nucleotide_file_policy(max_length=None)", "Strip surrounding whitespace; uppercase; map IUPAC ambiguity and unknown characters to N. Reject more than 20% non-IUPAC content before checking length. A supplied window rejects overlength input."],
+        ["nucleotide_prediction_policy(max_length)", "Strip and uppercase; map every non-ACGTN character to N; crop to the finite model window. It applies no file-quality rejection threshold."],
+        ["prepare_nucleotide_inputs(sequences, max_length)", "Require a batch of strings; return prepared sequences and crop flags. Reject bare strings/bytes/mappings, non-string items, empty reads and empty eager batches with InputError."],
+      ]} />
+      <p>
+        The product pipeline, raw nucleotide forward path, genotype repertoire alignment, temperature
+        calibration, and assay replay use this shared preparation. Tokenization, orientation,
+        germline alignment, and reported coordinates therefore refer to the same normalized read.
+        A literal <code>P</code> in submitted nucleotide text becomes <code>N</code>; it cannot
+        become an internal padding token. Genotype read lengths reflect normalized, cropped reads.
+      </p>
+      <p>
+        File readers keep their quality-rejection policy; an in-memory prediction does not silently
+        drop reads by applying that threshold. Eager preparation validates the complete batch before
+        model execution and stops consuming a source at its first invalid value. Streaming prediction
+        validates each chunk before forwarding it; an empty stream produces no results.
+        The compatibility <code>io.sequence_reader.validate_sequence</code> import delegates to
+        <code>data.inputs.validate_nucleotide_sequence</code> and retains its
+        <code> (sequence, reason)</code> return shape, including <code>too_long</code> for a rejected
+        window. Shared normalization uses <code>overlength</code> for that failure.
       </p>
       <H2 id="inputs">Bind the tokenizer and input window</H2>
       <CodeBlock lang="python" code={`from alignair.data import SequenceInputAdapter

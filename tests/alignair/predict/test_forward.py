@@ -123,11 +123,11 @@ def test_numpy_snapshots_are_independent_and_bfloat16_is_representable():
     assert output_numpy(torch.ones(2,dtype=torch.bfloat16)).dtype == np.float32
 
 
-def test_nucleotide_compatibility_keeps_normalization_unknowns_prefix_and_empty_policy():
+def test_nucleotide_forward_uses_shared_normalization_unknowns_and_cropping():
     model = Echo()
-    batches = run_model(model,['acgtn?',123,''],SimpleNamespace(max_seq_length=4,batch_size=2))
-    assert batches[0]['tokenized_sequence'].tolist() == [[1,4,3,2],[5,5,5,0]]
-    assert batches[1]['tokenized_sequence'].tolist() == [[0,0,0,0]]
+    batches = run_model(model,['acgtn?','a?p','nn'],SimpleNamespace(max_seq_length=4,batch_size=2))
+    assert batches[0]['tokenized_sequence'].tolist() == [[1,4,3,2],[1,5,5,0]]
+    assert batches[1]['tokenized_sequence'].tolist() == [[5,5,0,0]]
     assert model.training
 
 

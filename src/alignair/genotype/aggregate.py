@@ -44,20 +44,23 @@ def weighted_usage(aligned: AlignedRepertoire, gene: str) -> dict:
 def align_repertoire(model, reference, sequences, *, device: str = "cpu", batch_size: int = 64) -> AlignedRepertoire:
     """Run Stage 0: raw allele probs + state logits + predict records for the repertoire."""
     from ..api import predict_sequences
+    from ..data.inputs import prepare_nucleotide_inputs, sequence_batch_iterator
     from ..predict.clean import clean
     from ..predict.config import PredictConfig
     from ..predict.forward import run_model
     cfg = PredictConfig(max_seq_length=model.cfg.max_seq_length, has_d=model.cfg.has_d, batch_size=batch_size)
+    source = tuple(sequence_batch_iterator(sequences))
+    prepared, _ = prepare_nucleotide_inputs(source, cfg.max_seq_length)
     genes = ("v", "d", "j") if cfg.has_d else ("v", "j")
-    preds = clean(run_model(model, list(sequences), cfg, device), genes)      # raw probs + state logits
-    records = predict_sequences(model, reference, list(sequences), device=device,
+    preds = clean(run_model(model, prepared, cfg, device), genes)      # raw probs + state logits
+    records = predict_sequences(model, reference, source, device=device,
                                 batch_size=batch_size, airr=False)            # calls / coords / cigars
     return AlignedRepertoire(
-        sequences=list(sequences),
+        sequences=prepared,
         allele_probs={g: preds.allele[g] for g in genes},
         records=records,
         mutation_rate=preds.mutation_rate,
-        read_lengths=np.array([len(s) for s in sequences]),
+        read_lengths=np.array([len(s) for s in prepared]),
         state_logits=preds.state_logits,
         gene_names={g: list(reference.gene(g.upper()).names) for g in genes},
         reference=reference,
