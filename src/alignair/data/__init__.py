@@ -7,9 +7,13 @@ from .batching import BatchAdapter, PositionLabels, TrainingBatch, TrainingSampl
 from .adapters import NucleotideBatchAdapter, ProteinAlleleBatchAdapter, CategoricalBatchAdapter
 from .sampling import SampleResult, ProteinSampleBuilder, ProteinSamplePolicy, collect_samples
 from .inference import SequenceInputAdapter
+from .inputs import (NormalizedSequenceBatch, SequenceInputFailure, SequenceRecord,
+                     SequenceValidationPolicy, normalize_sequence_inputs)
 
 __all__ = ["AlignAIRDataset", "allele_vocab_from_csv", "align_collate",
            "SyntheticDataset", "full_augmentation", "no_corruption", "minimal",
            "allele_vocab_from_dataconfig", "BatchAdapter", "PositionLabels", "TrainingBatch", "TrainingSample",
            "collate_samples", "NucleotideBatchAdapter", "ProteinAlleleBatchAdapter", "CategoricalBatchAdapter",
-           "SampleResult", "ProteinSampleBuilder", "ProteinSamplePolicy", "collect_samples", "SequenceInputAdapter"]
+           "SampleResult", "ProteinSampleBuilder", "ProteinSamplePolicy", "collect_samples", "SequenceInputAdapter",
+           "NormalizedSequenceBatch", "SequenceInputFailure", "SequenceRecord", "SequenceValidationPolicy",
+           "normalize_sequence_inputs"]

@@ -1,5 +1,5 @@
 import { CodeBlock } from "../../components/ui";
-import { DocLink, H2, type DocPage } from "./doc-kit";
+import { DocLink, DocTable, H2, type DocPage } from "./doc-kit";
 
 const modelInference: DocPage = {
   slug: "model-inference",
@@ -14,6 +14,63 @@ const modelInference: DocPage = {
         add their own validation, calibrated sets, coordinate interpretation, and result schemas.
         See <DocLink to="model-setup">model setup</DocLink> for input and label configuration and
         <DocLink to="evaluation-reports">evaluation reports</DocLink> for labelled cohort scoring.
+      </p>
+      <H2 id="records">Normalize records without losing source identity</H2>
+      <CodeBlock lang="python" code={`from alignair.data import SequenceValidationPolicy, normalize_sequence_inputs
+
+policy = SequenceValidationPolicy(
+    alphabet=frozenset("ACDEFGHIKLMNPQRSTVWYX"),
+    max_length=192, stop_symbol="*",
+)
+batch = normalize_sequence_inputs(
+    [" acde ", {"sequence_id": "sample", "sequence": "A C"}, "xX"],
+    policy, on_invalid="skip",
+)
+print(batch.valid_indices)  # (0, 2)
+print([record.sequence for record in batch.records])  # ["ACDE", "XX"]
+
+# Downstream inference supplies one result per accepted record, in that order.
+ordered_results = batch.restore_order(predictions)`} />
+      <p>
+        <code>normalize_sequence_inputs</code> strips surrounding whitespace, uppercases accepted
+        strings, and applies the supplied alphabet and positive length limit. A nucleotide caller
+        can supply its own alphabet and window through the same policy type. The normalizer checks
+        length after case conversion as well, so Unicode case expansion cannot produce an accepted
+        read longer than the model window. Interior whitespace remains invalid. Optional
+        <code> stop_symbol</code> identifies one forbidden character for the stop-specific diagnostic.
+      </p>
+      <p>
+        A bare string is one read. An iterable may contain strings or mappings with
+        <code> sequence</code> and optional <code>sequence_id</code>. Bare mappings and bytes raise
+        <code> TypeError</code> as input-format errors. Missing sequence fields retain the empty-read
+        behavior; explicit non-string values produce <code>invalid_type</code> failures. A nonempty
+        string ID is preserved exactly, including duplicate IDs. Otherwise the ID is
+        <code> seq_&lt;original_index&gt;</code>. IDs do not replace positional identity.
+      </p>
+      <DocTable head={["NormalizedSequenceBatch", "Contract"]} rows={[
+        ["outcomes", "One SequenceRecord or SequenceInputFailure per consumed source item, in original order."],
+        ["records / errors", "Tuple views of accepted normalized records and structured failures."],
+        ["valid_indices", "Original zero-based positions of accepted records, suitable for positional metadata lookup."],
+        ["restore_order(predictions)", "Interleave one downstream result per accepted record with the original failures; reject missing or extra results with DataContractError."],
+      ]} />
+      <p>
+        <code>on_invalid="error"</code> raises <code>InputError</code> at the first invalid record
+        and stops consuming the source. Its context includes the original ID, index, and reason
+        under <code>sequence_input_validation</code>. <code>on_invalid="skip"</code> retains
+        failures in their slots, using <code>empty</code>, <code>interior_whitespace</code>,
+        <code> overlength</code>, <code>invalid_character</code>, or <code>invalid_type</code>.
+        <code>SequenceInputFailure.to_dict()</code> returns the existing
+        <code> sequence_id/error/detail</code> JSON fields. Invalid policies fail before source
+        consumption with <code>ConfigurationError</code>.
+      </p>
+      <p>
+        Protein product prediction selects its canonical-residue-plus-X policy through
+        <code>aa.product.validate.normalize_input_batch</code>. It normalizes once per request and
+        uses the retained positions for calibration-group lists and output restoration. Duplicate IDs
+        still share ID-based group lookups while retaining independent positional lookups. The
+        historical <code>normalize_inputs</code> split-list interface and <code>Record/ErrorResult</code>
+        names remain adapters and aliases of the shared owner. Tokenization and tensor-shape
+        validation remain the model-input boundary described below.
       </p>
       <H2 id="inputs">Bind the tokenizer and input window</H2>
       <CodeBlock lang="python" code={`from alignair.data import SequenceInputAdapter

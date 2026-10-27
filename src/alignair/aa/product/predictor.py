@@ -25,6 +25,9 @@ than importing that class, so this module has ZERO dependency on ``loader.py`` �
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from ...data.inputs import SequenceRecord
 from ...data.inference import SequenceInputAdapter
 from ...predict.forward import forward_batch
 from ...predict.probabilities import softmax_probabilities
@@ -32,42 +35,9 @@ from ...predict.probabilities import softmax_probabilities
 from .asc import class_alleles, class_families, class_genes, family_of, gene_of
 from .calibration_group import resolve_group
 from .schema import AAPrediction
-from .validate import normalize_inputs
+from .validate import normalize_input_batch
 
 _OVERLAP_WARNING = "segment coordinates overlap/out-of-order"
-
-
-def _split_batch(sequences):
-    """Mirror ``validate._normalize_input_format``'s top-level dispatch (bare str -> one item; bare
-    dict -> reject; anything else iterable -> a list of items) — NOT a reimplementation of any actual
-    validation (every alphabet/length/whitespace/empty check still happens exactly once per item,
-    inside ``normalize_inputs`` below). This exists only so ``_predict`` can walk the batch one input
-    record at a time and interleave `AAPrediction`/`ErrorResult` outputs in the caller's original order
-    (§9.1: "in place order") — something a single whole-batch ``normalize_inputs`` call cannot recover,
-    since it returns valid records and invalid-record errors as two separate lists with no shared
-    positional index back to the original input.
-    """
-    if isinstance(sequences, str):
-        return [sequences]
-    if isinstance(sequences, dict):
-        raise TypeError(
-            "sequences must be a str, an iterable of str, or an iterable of "
-            "{sequence,sequence_id} dicts — not a single dict")
-    return list(sequences)
-
-
-def _item_id_and_sequence(item, idx: int) -> tuple:
-    """Resolve the ``(sequence_id, raw_sequence)`` pair for one batch item using the exact same
-    auto-ID rule ``normalize_inputs`` applies internally (explicit non-empty string id wins; otherwise
-    ``seq_<index>``) — duplicated here (2 lines, not real validation) purely so that pre-resolving the
-    id and handing it back to ``normalize_inputs`` per-item reproduces byte-identical ids/behavior to
-    one whole-batch call, while every actual validation decision still happens inside
-    ``normalize_inputs`` itself (see ``_split_batch``)."""
-    if isinstance(item, dict):
-        provided = item.get("sequence_id")
-        seq_id = provided if isinstance(provided, str) and provided else f"seq_{idx}"
-        return seq_id, item.get("sequence", "")
-    return f"seq_{idx}", item
 
 
 def _forward(predictor, sequences: list) -> dict:
@@ -218,7 +188,7 @@ def _top_call_d(class_id: int, softmax_score: float, predictor) -> dict:
     }
 
 
-def _predict_valid(predictor, records: list, indices: list, coverage_group) -> list:
+def _predict_valid(predictor, records: Sequence[SequenceRecord], indices: Sequence[int], coverage_group) -> list:
     """Run the model once on ``records`` (already-validated ``Record``s, in order) and build one
     `AAPrediction` per record. ``indices[i]`` is record ``i``'s position in the CALLER's original
     input batch (not its position among only the valid records) — required so a per-sequence
@@ -296,33 +266,10 @@ def _predict_valid(predictor, records: list, indices: list, coverage_group) -> l
 
 
 def _predict(predictor, sequences, *, coverage_group=None, on_invalid="error") -> list:
-    """``AAPredictor.predict`` core. Returns a list of `AAPrediction` / `ErrorResult`, one per input
-    record, in the caller's original order (§9.1). ``coverage_group`` (§7) is resolved per sequence in
-    ``_predict_valid``; ``on_invalid`` is exactly the §9.1 contract, delegated to ``normalize_inputs``
-    per item (see ``_split_batch``'s docstring for why per-item)."""
-    if on_invalid not in ("error", "skip"):
-        raise ValueError(f"on_invalid must be 'error' or 'skip', got {on_invalid!r}")
-    max_len = getattr(predictor.cfg, "max_seq_length", 192)
-
-    items = _split_batch(sequences)
-    ordered: list = []
-    valid_records: list = []
-    valid_slots: list = []
-
-    for idx, item in enumerate(items):
-        seq_id, raw = _item_id_and_sequence(item, idx)
-        recs, errs = normalize_inputs([{"sequence_id": seq_id, "sequence": raw}],
-                                      on_invalid=on_invalid, max_len=max_len)
-        if errs:
-            ordered.append(errs[0])
-        else:
-            ordered.append(None)          # filled in below once the batched forward pass runs
-            valid_slots.append(len(ordered) - 1)
-            valid_records.append(recs[0])
-
-    if valid_records:
-        predictions = _predict_valid(predictor, valid_records, valid_slots, coverage_group)
-        for slot, pred in zip(valid_slots, predictions):
-            ordered[slot] = pred
-
-    return ordered
+    """Normalize once and preserve original indices for calibration lookup and result ordering."""
+    batch = normalize_input_batch(sequences, on_invalid=on_invalid,
+                                   max_len=getattr(predictor.cfg, "max_seq_length", 192))
+    records = batch.records
+    predictions = (_predict_valid(predictor, records, batch.valid_indices, coverage_group)
+                   if records else ())
+    return batch.restore_order(predictions)

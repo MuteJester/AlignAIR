@@ -2,6 +2,7 @@
   "schema": "alignair.coverage-policy.v1",
   "files": {
     "src/alignair/core/runtime.py": {"statements": 100, "branches": 100},
+    "src/alignair/data/inputs.py": {"statements": 98, "branches": 95},
     "src/alignair/data/inference.py": {"statements": 98, "branches": 95},
     "src/alignair/predict/forward.py": {"statements": 98, "branches": 95},
     "src/alignair/predict/probabilities.py": {"statements": 98, "branches": 95},

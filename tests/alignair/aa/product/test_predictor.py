@@ -41,6 +41,25 @@ def test_product_refuses_nonfinite_coordinates_and_restores_model_mode():
     assert caught.value.context['field'] == 'v_start'
     assert predictor.model.training
 
+
+def test_all_invalid_inputs_do_not_run_model_or_resolve_unused_calibration_groups():
+    predictor = _fake_predictor()
+    def forbidden(_): pytest.fail('ran model for invalid inputs')
+    predictor.model.forward = forbidden
+    results = predictor.predict([None, {'sequence':'*'}, {'sequence':12}],on_invalid='skip',
+                                coverage_group='unused')
+    assert [result.error for result in results] == ['invalid_type','invalid_character','invalid_type']
+    assert [result.sequence_id for result in results] == ['seq_0','seq_1','seq_2']
+
+
+def test_prediction_cardinality_mismatch_is_not_silently_truncated(monkeypatch):
+    import alignair.aa.product.predictor as implementation
+    from alignair.errors import DataContractError
+    monkeypatch.setattr(implementation,'_predict_valid',lambda *args: ['one'])
+    with pytest.raises(DataContractError) as caught:
+        _fake_predictor().predict(['EVQLVES','','EVQLVES'],on_invalid='skip')
+    assert caught.value.context == {'expected':2,'received':1}
+
 _REAL_MODEL_ID = "alignair-aa-igh-human@2.0.0"
 
 # Two real, full-length VH amino-acid reads (from Notes and Plans/docs/superpowers/artifacts/2026-07-21-aa-phase3/

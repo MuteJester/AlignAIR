@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared sequence normalization with configurable alphabets, stable source indices, structured failures,
+  and checked prediction/error interleaving; protein product interfaces retain their existing IDs and JSON fields.
 - Shared sequence-input adaptation, mode-safe prediction batches, multi-head probabilities, and named
   component-feature capture, with explicit tokenizer/window policies and inference API documentation.
 - Shared allele-cohort evaluation with optional sparse predicted sets, scalar-head observations,
@@ -56,6 +58,10 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Protein product prediction normalizes each batch once. Duplicate input dispatch, ID assignment,
+  per-item validation calls, and placeholder-slot reconstruction have been removed.
+- Non-string sequence values produce structured invalid_type failures in skip mode. Normalized
+  sequence lengths are checked after case conversion; invalid normalization windows fail preflight.
 - Research, product, feature extraction, and nucleotide prediction share padding/forward mechanics;
   duplicate implementations are removed. The evaluation context now lives in core runtime.
 - Research probability inference enters evaluation mode and restores caller flags. Product inference

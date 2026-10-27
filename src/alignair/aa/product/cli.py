@@ -14,7 +14,7 @@ which would corrupt or outright drop real amino-acid sequences — almost every 
 protein sequence trips the reader's own >20%-ambiguous rejection and silently discards the record.
 AA-specific validation (20-residue alphabet, ``X``, no ``*``, no interior whitespace, overlength) is
 applied exactly once, downstream, inside ``AAPredictor.predict`` itself
-(``alignair.aa.product.validate.normalize_inputs``) — this module only turns file bytes into raw
+(``alignair.aa.product.validate.normalize_input_batch``) — this module only turns file bytes into raw
 ``{sequence_id, sequence}`` records, verbatim.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 
 from .loader import load_aa_model
 from .predictor import _provenance
-from .validate import ErrorResult
+from ...data.inputs import SequenceInputFailure
 
 
 def register(sub) -> None:
@@ -115,7 +115,7 @@ def run(args) -> int:
     n_errors = 0
     with open(args.out, "w") as f:
         for r in results:
-            if isinstance(r, ErrorResult):
+            if isinstance(r, SequenceInputFailure):
                 n_errors += 1
             f.write(json.dumps(r.to_dict()) + "\n")
 

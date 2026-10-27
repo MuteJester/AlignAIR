@@ -218,6 +218,27 @@ def test_predict_skip_coverage_group_list_aligns_by_original_batch_index(predict
     assert v2.applied_calibration_group["group"] == "short"
 
 
+def test_duplicate_ids_and_generator_input_keep_independent_original_group_positions(predictor):
+    inputs = [None, {'sequence_id':'same','sequence':_VH_1},
+              {'sequence_id':'same','sequence':'EV*QL'},
+              {'sequence_id':'same','sequence':_VH_2}, {'sequence':' '}]
+    results = predictor.predict((item for item in inputs),on_invalid='skip',
+                                coverage_group=['unused','full','unused','short','unused'])
+    assert len(results) == 5
+    assert [result.sequence_id for result in results] == ['seq_0','same','same','same','seq_4']
+    assert results[0].error == 'invalid_type'
+    assert results[2].error == 'invalid_character' and results[4].error == 'empty'
+    assert results[1].applied_calibration_group['group'] == 'full'
+    assert results[3].applied_calibration_group['group'] == 'short'
+
+
+def test_duplicate_ids_retain_id_based_calibration_lookup(predictor):
+    inputs = [{'sequence_id':'same','sequence':_VH_1}, '', {'sequence_id':'same','sequence':_VH_2}]
+    results = predictor.predict(inputs,on_invalid='skip',coverage_group={'same':'trunc'})
+    assert results[0].applied_calibration_group['group'] == results[2].applied_calibration_group['group'] == 'trunc'
+    assert results[1].sequence_id == 'seq_1' and results[1].error == 'empty'
+
+
 # --------------------------------------------------- §6 calibrated_classes (ranked class-level scores)
 #
 # Contract: `calibrated_classes` is the SAME calibrated set as `calibrated_class_set`, re-presented as
