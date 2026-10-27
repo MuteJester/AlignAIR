@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 
-import torch
+from ..train.engine import evaluation_mode
 
 from ..data.adapters import collate_categorical as collate_aa
 
@@ -70,26 +70,25 @@ def _macro_accuracy(true_ids, pred_ids) -> float:
     return (sum(h / n for h, n in per.values()) / len(per)) if per else 0.0
 
 
-@torch.no_grad()
 def evaluate_frozen(model, samples, cfg, class_maps, *, batch_size: int = 128,
                     device: str = "cpu") -> dict:
     """Evaluate over the WHOLE frozen held-out set in batches, with baselines + intervals."""
-    model.eval()
     true = {"v": [], "j": []}
     pred = {"v": [], "j": []}
     errs = {f"{g}_{b}": [] for g in ("v", "j") for b in ("start", "end")}
     tgts = {f"{g}_{b}": [] for g in ("v", "j") for b in ("start", "end")}
-    for i in range(0, len(samples), batch_size):
-        chunk = samples[i:i + batch_size]
-        bi, tg = collate_aa(chunk, cfg.max_seq_length, device)
-        out = model(bi)
-        for g in ("v", "j"):
-            true[g] += tg[f"{g}_class"].tolist()
-            pred[g] += out[f"{g}_class_logits"].argmax(-1).tolist()
-            for b in ("start", "end"):
-                e = (out[f"{g}_{b}"].squeeze(-1) - tg[f"{g}_{b}"].squeeze(-1)).abs().tolist()
-                errs[f"{g}_{b}"] += e
-                tgts[f"{g}_{b}"] += tg[f"{g}_{b}"].squeeze(-1).tolist()
+    with evaluation_mode(model):
+        for i in range(0, len(samples), batch_size):
+            chunk = samples[i:i + batch_size]
+            bi, tg = collate_aa(chunk, cfg.max_seq_length, device)
+            out = model(bi)
+            for g in ("v", "j"):
+                true[g] += tg[f"{g}_class"].tolist()
+                pred[g] += out[f"{g}_class_logits"].argmax(-1).tolist()
+                for b in ("start", "end"):
+                    e = (out[f"{g}_{b}"].squeeze(-1) - tg[f"{g}_{b}"].squeeze(-1)).abs().tolist()
+                    errs[f"{g}_{b}"] += e
+                    tgts[f"{g}_{b}"] += tg[f"{g}_{b}"].squeeze(-1).tolist()
 
     res: dict = {"n": len(samples), "classification": {}, "boundaries": {}, "stratified": {}}
     for g in ("v", "j"):

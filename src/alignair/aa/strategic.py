@@ -16,6 +16,8 @@ from .data import build_class_maps
 from ..data.adapters import collate_categorical as collate_aa
 from ..data.adapters import translated_record_usable as aa_usable
 from ..tasks import build_tasks
+from ..train.engine import TrainingEngine
+from ..train.checkpoints import save_snapshot as _save
 from .model import AAAlignAIR
 from ..data.tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
@@ -89,6 +91,7 @@ def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, d_inde
     d_index = d_index or {}
     genes = ("v", "d", "j") if cfg.has_d else ("v", "j")
     tasks = build_tasks(model.cfg, genes=genes)
+    engine = TrainingEngine(model, opt, tasks=tasks, grad_clip=grad_clip)
     stream = _sample_stream(dc_name, class_maps, d_index, tok, cfg.max_seq_length, sub_prob, seed, rng)
 
     history = []
@@ -97,15 +100,8 @@ def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, d_inde
         if len(batch) < batch_size:
             break
         bi, tg = collate_aa(batch, cfg.max_seq_length, device)
-        out = model(bi)
-        total, parts = tasks.loss(out, tg)
-        opt.zero_grad()
-        total.backward()
-        if grad_clip:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-        opt.step()
-        history.append({"step": step, "total": float(total.detach()),
-                        **{k: float(v.detach()) for k, v in parts.items()}})
+        result = engine.step((bi, tg), step=step)
+        history.append({"step": step, "total": result.total, **result.parts})
         if log_every and step % log_every == 0:
             h = history[-1]
             print(f"[{step}/{steps}] loss {h['total']:.3f} seg {h['segmentation']:.3f} "
@@ -115,8 +111,3 @@ def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, d_inde
     if save_path:
         _save(save_path, model, cfg, history[-1]["step"] if history else 0)
     return history
-
-
-def _save(path, model, cfg, step):
-    import dataclasses
-    torch.save({"model": model.state_dict(), "cfg": dataclasses.asdict(cfg), "step": step}, path)

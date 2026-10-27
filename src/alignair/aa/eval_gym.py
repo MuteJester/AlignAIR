@@ -11,6 +11,7 @@ import torch
 
 from ..data.adapters import build_protein_allele_batch as build_batch_aa
 from ..data.tokenizer import AAProteinTokenizer
+from ..train.engine import evaluation_mode
 
 
 def gene_allele_counts(probs, target, names, class_of, threshold: float = 0.5) -> dict:
@@ -57,14 +58,13 @@ def _merge(a: dict, b: dict) -> dict:
 def evaluate_aa(model, records, reference_set, cfg, class_maps, *, device="cpu",
                 threshold: float = 0.5, batch_size: int = 256) -> dict:
     """Whole-set evaluation. ``class_maps``: {"V": {name:class}, "J": {name:class}} (no D)."""
-    model.eval()
     genes = ["v", "j"] + (["d"] if cfg.has_d else [])
     tok = AAProteinTokenizer()
     acc = {g: gene_allele_counts(torch.zeros(0, 1), torch.zeros(0, 1), [], None) for g in genes}
     seg_abs = {f"{g}_{b}": 0.0 for g in genes for b in ("start", "end")}
     mut_abs = prod_ok = ntot = 0.0
 
-    with torch.no_grad():
+    with evaluation_mode(model):
         for i in range(0, len(records), batch_size):
             chunk = records[i:i + batch_size]
             bi, tg = build_batch_aa(chunk, reference_set, cfg, device, tok)

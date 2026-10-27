@@ -4,6 +4,7 @@ from __future__ import annotations
 import torch
 
 from ..tasks import build_tasks
+from ..train.engine import TrainingEngine
 from ..tasks.metrics import categorical_metrics as aa_eval_metrics
 
 
@@ -36,18 +37,13 @@ def overfit_one_batch(model, batch_in, targets, *, steps=300, lr=1e-3, genes=("v
     per-step component history."""
     tasks = build_tasks(model.cfg, genes=genes)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    model.train()
+    engine = TrainingEngine(model, opt, tasks=tasks)
     history, initial = [], None
-    for _ in range(steps):
-        out = model(batch_in)
-        total, parts = tasks.loss(out, targets)
-        history.append({"total": float(total.detach()),
-                        **{k: float(v.detach()) for k, v in parts.items()}})
+    for step in range(1, steps + 1):
+        result = engine.step((batch_in, targets), step=step)
+        history.append({"total": result.total, **result.parts})
         if initial is None:
-            initial = float(total.detach())
-        opt.zero_grad()
-        total.backward()
-        opt.step()
+            initial = result.total
     model.eval()
     with torch.no_grad():
         out = model(batch_in)

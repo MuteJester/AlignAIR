@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 
-from ..resume import load_checkpoint
+from ...train.checkpoints import load_research_checkpoint as load_checkpoint
 from ..strategic import strategic_setup
 from ..strategic_trunc import stage1_train
 from .evaluator import build_cohort, evaluate_checkpoint

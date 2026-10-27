@@ -19,7 +19,7 @@ const trainingTasks: DocPage = {
       <CodeBlock lang="python" code={`from itertools import chain
 import torch
 from alignair.tasks import build_tasks
-from alignair.train.trainer import train_step
+from alignair.train import TrainingEngine
 
 tasks = build_tasks(model.cfg)
 weights = tasks.make_weights().to(device)
@@ -27,11 +27,11 @@ optimizer = torch.optim.AdamW(
     chain(model.parameters(), weights.parameters()), lr=3e-4,
 )
 
+engine = TrainingEngine(
+    model, optimizer, tasks=tasks, weights=weights, grad_clip=1.0,
+)
 # inputs and targets come from the matching data adapter.
-total, parts, gradient_norm = train_step(
-    model, inputs, targets, model.cfg, weights, optimizer,
-    step=1, grad_clip=1.0, tasks=tasks,
-)`} />
+total, parts, gradient_norm = engine.step((inputs, targets), step=1)`} />
       <p>
         Create task weights once and include them in the optimizer. Only enabled weighted tasks receive
         uncertainty parameters. A standard protein-class model has no uncertainty weights for its gene
@@ -100,7 +100,7 @@ selection_score = tasks.selection_score(metrics)`} />
         Python task callbacks are not serialized into model files.
       </p>
       <p>
-        The shared optimizer step works with either target contract. Existing gym and research runners
+        The <DocLink to="training-engine">shared training engine</DocLink> works with either target contract. Existing gym and research runners
         retain their data preparation and study schedules. The historical <code>core.losses</code>,{" "}
         <code>aa.loss</code>, and batch-metric entry points delegate to this package so existing imports
         continue to work.

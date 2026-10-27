@@ -14,6 +14,7 @@ import { testingPages } from "./pages-testing";
 import { compositionPages } from "./pages-composition";
 import { taskPages } from "./pages-tasks";
 import { batchingPages } from "./pages-batching";
+import { enginePages } from "./pages-engine";
 import { communityPages } from "./pages-community";
 
 /**
@@ -37,6 +38,7 @@ export const DOCS: DocPage[] = [
   ...compositionPages, // model-composition  [Design]
   ...taskPages, // training-tasks  [Design]
   ...batchingPages, // training-batches  [Design]
+  ...enginePages, // training-engine  [Design]
   ...maintainerPages, // publishing  [Maintainer]
   ...aaResearchPages, // aa-guard-research  [Maintainer]
   ...testingPages, // testing  [Maintainer]

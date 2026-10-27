@@ -6,6 +6,10 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared `alignair.train.TrainingEngine` for optimizer steps, full optimized-parameter gradient
+  checks/clipping, constraints, scheduler ordering, and mode-safe validation. Website API guide added.
+- Atomic training checkpoint publication, shared snapshot/research/self-contained checkpoint helpers,
+  and one process-RNG state contract with malformed-state rollback.
 - Shared training samples, batches, and source adapters in `alignair.data`, with explicit window
   policies, positional-label padding, device transfer, and preserved supervision/compatible-set masks.
 - Website training-batch API guide covering nucleotide records, translated allele targets, and
@@ -26,6 +30,13 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- NT and AA alignment runners use one training engine; migrated optimizer loops, snapshot writers,
+  and RNG implementations are removed. Historical trainer and AA resume imports delegate to it.
+- Gradient checks and clipping include learned task weights. Non-finite norms abort before optimizer
+  updates; validation restores individual module modes and cannot leave later steps in evaluation mode.
+- New research checkpoints include Python RNG state. RNG restoration failures now raise a typed error
+  instead of continuing with partially restored generators. Resume documentation explicitly describes
+  re-seeded simulator/augmentation streams rather than claiming exact uninterrupted replay.
 - Tokenization, codon projection, query-coordinate validation, target construction, and allele-set
   encoding have shared owners under `alignair.data`. Historical imports delegate to these owners;
   the separate stage-one categorical collator is removed.

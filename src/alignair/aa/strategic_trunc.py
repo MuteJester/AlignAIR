@@ -6,9 +6,9 @@ compatible protein-class SET), and AA-native subs / single-residue indel / I/L a
 allele posterior (no protein-equivalence merging — its observability is frame/trim/junction-dependent):
 fully observed -> singleton true allele; partial/absent -> masked.
 
-Resumability: `stage1_train` can be continued from a full-state checkpoint (`resume.save_checkpoint` /
-`load_checkpoint`) that carries the optimizer/scheduler/RNG state, making a continuation mathematically
-faithful (not a cold restart). See Notes and Plans/docs/superpowers/specs/2026-07-22-aa-convergence-study-design.md §2."""
+Resumability: shared checkpoint I/O retains optimizer, scheduler, process RNG, and provenance.
+The runner deterministically re-seeds the source stream and local augmentation generator at resume;
+this is statistical continuation, not a replay of the exact next uninterrupted batch."""
 from __future__ import annotations
 
 import dataclasses
@@ -23,7 +23,11 @@ from .augment import aa_substitute, il_ambiguity
 from ..data.adapters import CategoricalBatchAdapter
 from ..tasks import build_tasks
 from .reference import build_aa_germlines
-from .resume import load_checkpoint, restore_rng, save_checkpoint
+from ..train.checkpoints import (load_research_checkpoint as load_checkpoint,
+                                  save_research_checkpoint as save_checkpoint,
+                                  research_checkpoint_rng, save_snapshot as _save)
+from ..train.random_state import restore_rng_state
+from ..train.engine import TrainingEngine, evaluation_mode
 from .strategic import _class_sample
 from ..data.tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
@@ -132,7 +136,7 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
                  val_every=0, val_fn=None, ckpt_dir=None, ckpt_steps=(), plateau_k=0):
     import GenAIRR as ga
     if init_path:                                            # warm-start (fine-tune a passing baseline)
-        model.load_state_dict(torch.load(init_path, map_location="cpu")["model"])
+        model.load_state_dict(load_checkpoint(init_path)["model"])
     dc = getattr(ga, dc_name)
     protos = {"v": prototypes_by_class(dc, class_maps["V"], "V"),
               "j": prototypes_by_class(dc, class_maps["J"], "J")}
@@ -149,7 +153,7 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
         if ck["optimizer"] is not None:                       # full-state checkpoint -> faithful continuation
             opt.load_state_dict(ck["optimizer"])
             sch.load_state_dict(ck["scheduler"])
-            restore_rng(ck["rng_numpy"], ck["rng_torch"], ck.get("rng_cuda"))
+            restore_rng_state(research_checkpoint_rng(ck))
             start_step = ck["step"]
         else:                                                 # old {model,cfg,step} incumbent -> warm-start only
             start_step = ck.get("step") or 0
@@ -172,6 +176,7 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
 
     tasks = build_tasks(model.cfg, genes=("v", "d", "j"))
     batch_adapter = CategoricalBatchAdapter.from_config(cfg, device=device)
+    engine = TrainingEngine(model, opt, tasks=tasks, grad_clip=grad_clip, scheduler=sch)
     history = []
     val_history = []
     for step in range(start_step + 1, start_step + steps + 1):
@@ -179,16 +184,8 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
         if len(batch) < batch_size:
             break
         bi, tg = batch_adapter(batch)
-        out = model(bi)
-        total, parts = tasks.loss(out, tg)
-        opt.zero_grad()
-        total.backward()
-        if grad_clip:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-        opt.step()
-        sch.step()
-        history.append({"step": step, "total": float(total.detach()), "lr": sch.get_last_lr()[0],
-                        **{k: float(v.detach()) for k, v in parts.items()}})
+        result = engine.step((bi, tg), step=step)
+        history.append({"step": step, "total": result.total, "lr": sch.get_last_lr()[0], **result.parts})
         if log_every and step % log_every == 0:
             h = history[-1]
             print(f"[{step}/{start_step + steps}] loss {h['total']:.3f} seg {h['segmentation']:.3f} "
@@ -204,7 +201,8 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
                             cfg=dataclasses.asdict(cfg), step=step, optimizer=opt, scheduler=sch,
                             lr=sch.get_last_lr()[0], history=history, provenance=provenance)
         if val_every and val_fn and step % val_every == 0:
-            v = val_fn(model, step)
+            with evaluation_mode(model):
+                v = val_fn(model, step)
             val_history.append(v)
             objectives = [r.get("objective") for r in val_history[-plateau_k:]] if plateau_k else []
             if plateau_k and len(objectives) >= plateau_k and all(o is not None for o in objectives) \
@@ -216,7 +214,3 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
     if save_path:
         _save(save_path, model, cfg, history[-1]["step"] if history else start_step)
     return history
-
-
-def _save(path, model, cfg, step):
-    torch.save({"model": model.state_dict(), "cfg": dataclasses.asdict(cfg), "step": step}, path)

@@ -14,7 +14,8 @@ from .config import aa_igh_config
 from .data import build_class_maps, check_counter, collect_usable
 from ..data.adapters import collate_categorical as collate_aa
 from .evaluate import evaluate_frozen
-from .loss import aa_loss
+from ..tasks import build_tasks
+from ..train.engine import TrainingEngine
 from .model import AAAlignAIR
 from ..data.tokenizer import AAProteinTokenizer
 from .train import assert_batch_diverse, diverse_selector, overfit_one_batch
@@ -111,17 +112,13 @@ def run_seed(seed, cfg, class_maps, heldout, *, replicate, train_steps, batch_si
                                             counter=counters["train"])
     model = AAAlignAIR(cfg).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    model.train()
+    engine = TrainingEngine(model, opt, tasks=build_tasks(cfg, genes=("v", "j")))
     losses = []
     for i in range(train_steps):
         batch = train_samples[i * batch_size:(i + 1) * batch_size]
         bi, bt = collate_aa(batch, cfg.max_seq_length, device)
-        total, parts = aa_loss(model(bi), bt)
-        losses.append({"total": float(total.detach()),
-                       **{k: float(v.detach()) for k, v in parts.items()}})
-        opt.zero_grad()
-        total.backward()
-        opt.step()
+        result = engine.step((bi, bt), step=i + 1)
+        losses.append({"total": result.total, **result.parts})
 
     for c in counters.values():
         check_counter(c)                       # generated == usable + rejections, per stream

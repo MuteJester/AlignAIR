@@ -10,6 +10,8 @@ import torch
 
 from ..core.config import AlignAIRConfig
 from ..tasks import build_tasks
+from ..train.engine import TrainingEngine
+from ..train.checkpoints import save_snapshot as _save
 from ..core.model import AlignAIR
 from ..reference.reference_set import ReferenceSet
 from ..data.adapters import translated_record_usable as aa_usable, build_protein_allele_batch as build_batch_aa
@@ -54,12 +56,11 @@ def train_aa(model, reference_set, dc_name, cfg, logvars, *, steps=2000, batch_s
              progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, mutation_cap=None,
              seed=0, device="cpu", log_every=50, grad_clip=1.0, save_path=None, save_every=2000):
     """Train with the gym curriculum; returns a per-step history of losses."""
-    from ..train.trainer import train_step
-
     model.to(device)
     logvars.to(device)
     tasks = build_tasks(cfg)
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=lr)
+    engine = TrainingEngine(model, opt, tasks=tasks, weights=logvars, grad_clip=grad_clip)
     stream = _usable_stream(dc_name, progresses, heavy_shm, seed, short_boost, mutation_cap)
     tok = AAProteinTokenizer()
 
@@ -69,8 +70,7 @@ def train_aa(model, reference_set, dc_name, cfg, logvars, *, steps=2000, batch_s
         if len(recs) < batch_size:
             break
         bi, tg = build_batch_aa(recs, reference_set, cfg, device, tok)
-        total, parts, gnorm = train_step(model, bi, tg, cfg, logvars, opt,
-                                          step=step, grad_clip=grad_clip, tasks=tasks)
+        total, parts, gnorm = engine.step((bi, tg), step=step)
         history.append({"step": step, "total": total, "gnorm": gnorm, "parts": parts})
         if log_every and step % log_every == 0:
             line = (f"[{step}/{steps}] loss {total:.3f} gnorm {gnorm:.2f} "
@@ -81,8 +81,3 @@ def train_aa(model, reference_set, dc_name, cfg, logvars, *, steps=2000, batch_s
     if save_path:
         _save(save_path, model, cfg, history[-1]["step"] if history else 0)
     return history
-
-
-def _save(path, model, cfg, step):
-    import dataclasses
-    torch.save({"model": model.state_dict(), "cfg": dataclasses.asdict(cfg), "step": step}, path)

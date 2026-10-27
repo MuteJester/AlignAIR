@@ -4,7 +4,7 @@ import torch
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair.core.losses import make_logvars
-from alignair.train.trainer import save_checkpoint
+from alignair.train.checkpoints import save_checkpoint, load_training_checkpoint
 from alignair import model_file as mf
 
 pytestmark = pytest.mark.integration
@@ -22,6 +22,6 @@ def test_trainer_save_checkpoint_writes_alignair(tmp_path):
     assert mf.container.is_alignair_file(str(p))
     md = mf.read_metadata(str(p))
     assert md["training"]["train_args"]["batch_size"] == 64
-    ts = mf.load_training_state(str(p))
+    ts = load_training_checkpoint(p)
     assert ts.step == 1000 and ts.optimizer_state is not None
     assert "python" in ts.rng and "torch" in ts.rng
