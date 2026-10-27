@@ -1,7 +1,7 @@
 """One public build/train/checkpoint/reload workflow for nucleotide and protein models."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 import random
 
@@ -14,6 +14,8 @@ class TrainingRun:
     model_path: str
     best_model_path: str | None = None
     steps: int = 0
+    checkpoints: dict = field(default_factory=dict)
+    validations: tuple = ()
 
     def best_aligner(self, *, device='auto'):
         """Reload through the shared model owner; predict_raw works with either input space."""
@@ -63,5 +65,6 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
           lr=config.lr, short_boost=config.short_boost, seed=config.seed, device=device,
           save_path=path, grad_clip=config.grad_clip, val_every=config.val_every,
           model_setup=setup, on_iteration=on_iteration, resume_path=config.resume_path,
-          augmentation=config.augmentation)
-    return TrainingRun(path, outcome.best_model_path, outcome.steps)
+          augmentation=config.augmentation, schedule=config.schedule, study=config.study,
+          init_from=config.init_from, init_trust_pickle=config.trust_pickle, resume_trust_pickle=config.trust_pickle)
+    return TrainingRun(path, outcome.best_model_path, outcome.steps, outcome.checkpoints, outcome.validations)

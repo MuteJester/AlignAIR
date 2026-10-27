@@ -9,6 +9,8 @@ from .adapters import CategoricalBatchAdapter, NucleotideBatchAdapter, ProteinAl
 from .sampling.protein import ProteinSampleBuilder, ProteinSamplePolicy
 from .tokenizer import AAProteinTokenizer
 from .augmentation.protein import ProteinSubstitutionPolicy
+from .augmentation.partial import ProteinCropPolicy, ProteinCropAugmenter
+from ..reference.protein import ProteinReference
 
 
 @dataclass(frozen=True)
@@ -17,22 +19,27 @@ class TrainingDataSetup:
     validation_adapter: object
     translated_only: bool
     sample_builder: ProteinSampleBuilder | None = None
-    augmentation: ProteinSubstitutionPolicy | None = None
+    augmentation: ProteinSubstitutionPolicy | ProteinCropPolicy | None = None
+    protein_reference: ProteinReference | None = None
 
-    def prepare_records(self, records, *, augment=False, seed=0):
+    def prepare_records(self, records, *, augment=False, seed=0, start_step=0):
         """Keep source order; fail on prolonged rejection rather than stall an infinite simulator."""
         import numpy as np
-        rng = np.random.default_rng(seed) if augment and self.augmentation is not None else None
+        crop = augment and isinstance(self.augmentation, ProteinCropPolicy)
+        rng = (np.random.default_rng([seed, start_step] if crop else seed + start_step)
+               if augment and self.augmentation is not None else None)
+        builder = (ProteinCropAugmenter(self.protein_reference, self.sample_builder, rng, self.augmentation)
+                   if crop else self.sample_builder)
         rejected = 0
         for record in records:
             if self.sample_builder is None:
                 yield record
             else:
-                result = self.sample_builder(record)
+                result = builder(record)
                 if result.sample is not None:
                     rejected = 0
                     sample = result.sample
-                    if rng is not None:
+                    if rng is not None and not crop:
                         sequence = self.augmentation.apply(record['sequence_aa'], rng)
                         tokens = self.sample_builder.tokenizer.encode(sequence)
                         if len(tokens) != len(sample['tokens']):
@@ -50,10 +57,10 @@ def prepare_training_data(setup: ModelSetup, *, device='cpu', augmentation=None)
     setup.validate()
     config = setup.config
     if augmentation is not None:
-        if not isinstance(augmentation, ProteinSubstitutionPolicy):
-            raise ConfigurationError('augmentation must be a ProteinSubstitutionPolicy or None')
+        if not isinstance(augmentation, (ProteinSubstitutionPolicy, ProteinCropPolicy)):
+            raise ConfigurationError('augmentation must be a ProteinSubstitutionPolicy, ProteinCropPolicy or None')
         if (setup.input_space, setup.label_space) != ('protein', 'protein_classes'):
-            raise ConfigurationError('substitution augmentation currently requires protein-class training')
+            raise ConfigurationError('protein augmentation currently requires protein-class training')
     if setup.input_space == 'protein' and config.state_head:
         raise ConfigurationError('protein training presets do not provide nucleotide edit-state targets')
     if setup.label_space == 'protein_classes':
@@ -66,7 +73,7 @@ def prepare_training_data(setup: ModelSetup, *, device='cpu', augmentation=None)
                                        setup.reference.gene('D').index if config.has_d else None,
                                        ProteinSamplePolicy(require_productive=False, allow_stops=True))
         adapter = CategoricalBatchAdapter.from_config(config, device=device)
-        return TrainingDataSetup(adapter, adapter, False, builder, augmentation)
+        return TrainingDataSetup(adapter, adapter, False, builder, augmentation, setup.protein_reference)
     if config.classification_mode != 'multilabel':
         raise ConfigurationError('allele-record training requires multilabel heads')
     if setup.input_space == 'protein':

@@ -195,3 +195,38 @@ def test_old_research_snapshot_reports_missing_continuation_state(tmp_path):
     state = checkpoints.load_research_checkpoint(path)
     assert state['step'] == 40000
     assert all(state[key] is None for key in ('optimizer', 'scheduler', 'rng_python', 'rng_numpy', 'rng_torch', 'rng_cuda'))
+
+
+@pytest.mark.parametrize('changes,message', [({'config': 'other'}, 'configuration'),
+    ({'label_schema': {'other': 1}}, 'label identity'), ({'augmentation': {'policy':'old'}}, 'augmentation'),
+    ({'schedule': {'policy':'old'}}, 'schedule'), ({'optimizer_state': None}, 'optimizer continuation')])
+def test_incompatible_continuation_state_is_rejected_without_mutation(changes, message):
+    from dataclasses import replace
+    state = checkpoints.ResumeState({}, {}, {}, 4, {}, config='same', label_schema={'v': ['one']})
+    invalid = replace(state, **changes)
+    with pytest.raises(ConfigurationError, match=message):
+        checkpoints.validate_continuation(invalid, 'same', {'v':['one']})
+    assert state.config == 'same' and state.optimizer_state == {} and state.step == 4
+
+
+def test_missing_scheduled_continuation_state_is_rejected():
+    state = checkpoints.ResumeState({}, {}, {}, 4, {}, schedule={'policy':'cosine-v1'}, initial_lr=.001)
+    with pytest.raises(ConfigurationError, match='schedule'):
+        checkpoints.validate_continuation(state, None, None, schedule=state.schedule, lr=.001)
+
+
+@pytest.mark.parametrize('kind', ['configuration', 'scheduler', 'hyperparameters', 'optimizer'])
+def test_incomplete_historical_crop_state_fails_with_domain_error(tmp_path, kind):
+    from alignair.data.augmentation import SAMPLE_POLICY_ID
+    from alignair.core import build_model_config
+    from dataclasses import asdict
+    config = build_model_config(2, 1, input_space='protein', label_space='protein_classes', has_d=False)
+    state = {'model': {}, 'cfg': {} if kind == 'configuration' else asdict(config),
+             'step': 3, 'optimizer': {}, 'scheduler': None, 'provenance': {'sample_policy': SAMPLE_POLICY_ID}}
+    if kind in ('hyperparameters', 'optimizer'):
+        state['scheduler'] = {'T_max': 10, 'eta_min': .00001}
+        state['provenance']['hyperparams'] = [] if kind == 'hyperparameters' else {}
+    path = tmp_path/'incomplete.pt'
+    torch.save(state, path)
+    with pytest.raises(ConfigurationError, match='configuration|scheduler|hyperparameters|optimizer'):
+        checkpoints.load_training_checkpoint(path, trust_pickle=True)

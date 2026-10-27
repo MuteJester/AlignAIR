@@ -30,3 +30,11 @@ def test_named_dataconfig_and_ordered_reference_views_have_identical_labels():
     assert direct.metadata() == named.metadata()
     assert {gene: labels.to_json() for gene, labels in direct.class_maps.items()} == {
         gene: labels.to_json() for gene, labels in named.class_maps.items()}
+
+
+def test_prototype_sequences_cover_the_real_v_class_vocabulary():
+    import GenAIRR as ga
+    from alignair.reference.protein import prototypes_by_class
+    reference = build_protein_reference(ga.HUMAN_IGH_OGRDB)
+    prototypes = prototypes_by_class(ga.HUMAN_IGH_OGRDB, reference.class_maps['V'], 'V')
+    assert len(prototypes) == 149 and all(isinstance(value, str) and value for value in prototypes.values())

@@ -7,7 +7,7 @@ log-var clamps) after ``optimizer.step()``.
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..errors import ConfigurationError, error_context
 from ..data.adapters import build_nucleotide_batch as build_batch
@@ -19,8 +19,11 @@ from .gym.streams import CurriculumStreamPolicy, training_records, effective_mut
 from .engine import train_step, validate
 from .setup import build_training_engine
 from .loop import training_iterations
-from .checkpoints import save_checkpoint, save_rotating, latest_checkpoint, load_training_checkpoint, _stem, _ext
+from .checkpoints import (save_checkpoint, save_rotating, latest_checkpoint, load_training_checkpoint,
+                          validate_continuation, _stem, _ext)
 from .random_state import restore_rng_state as _restore_rng
+from .schedules import CosineSchedule
+from .study import TrainingStudy, StudySession
 
 
 def eval_metrics(out: dict, targets: dict, cfg) -> dict:
@@ -34,6 +37,8 @@ class TrainingOutcome:
     model: object
     steps: int
     best_model_path: str | None
+    checkpoints: dict = field(default_factory=dict)
+    validations: tuple = ()
 
 
 def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, batch_size=32,
@@ -42,7 +47,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
           monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
-          augmentation=None):
+          augmentation=None, schedule=None, study=None, start_step=0):
     from .guards import validate_training_request
     tasks = build_tasks(cfg) if tasks is None else tasks
     dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
@@ -53,6 +58,15 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                               grad_clip=grad_clip)
     if on_iteration is not None and not callable(on_iteration):
         raise ConfigurationError('on_iteration must be callable or None')
+    if (init_from and resume_path or isinstance(start_step, bool) or not isinstance(start_step, int)
+            or start_step < 0 or start_step and not init_from):
+        raise ConfigurationError('choose resume_path or init_from; a warm-start offset requires init_from')
+    if schedule is not None:
+        if not isinstance(schedule, CosineSchedule):
+            raise ConfigurationError('schedule must be a CosineSchedule or None')
+        schedule.validate(lr)
+    if study is not None and not isinstance(study, TrainingStudy):
+        raise ConfigurationError('study must be a TrainingStudy or None')
 
     setup = model_setup or ModelSetup(reference_set, cfg, cfg.input_space, cfg.label_space,
         build_protein_reference(reference_set) if cfg.label_space == 'protein_classes' else None)
@@ -60,36 +74,39 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         raise ConfigurationError('training setup must bind this model configuration and reference')
     data = prepare_training_data(setup, device=device, augmentation=augmentation)
     augmentation_metadata = augmentation.to_dict() if augmentation is not None else None
+    schedule_metadata = schedule.to_dict() if schedule is not None else None
     schema = setup.label_schema()
     source_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
                                            mode='amplicon' if cfg.input_space == 'protein' else 'auto')
 
-    def _build_stream(seed_value, *, augment=False):
+    def _build_stream(seed_value, *, augment=False, start_step=0):
         records = training_records(dataconfigs, policy=source_policy, seed=seed_value,
                                    translated_only=data.translated_only)
-        return data.prepare_records(records, augment=augment, seed=seed_value)
+        return data.prepare_records(records, augment=augment, seed=seed if augment else seed_value,
+                                    start_step=start_step)
 
     engine = build_training_engine(model, tasks=tasks, weights=logvars, device=device,
-                                   lr=lr, grad_clip=grad_clip)
+                                   lr=lr, grad_clip=grad_clip,
+                                   scheduler_factory=schedule.build if schedule is not None else None)
     opt, logvars = engine.optimizer, engine.weights
 
-    start = 0
+    start = start_step
     resume_from = latest_checkpoint(resume_path) if resume_path else None
+    if resume_path and resume_from is None:
+        raise ConfigurationError('resume checkpoint does not exist', context={'path': str(resume_path)})
     if resume_from:
         state = load_training_checkpoint(resume_from, device=device, trust_pickle=resume_trust_pickle)
-        if (state.config is not None and state.config != cfg
-                or state.label_schema is not None and state.label_schema != schema):
-            raise ConfigurationError('resume configuration or label identity differs from the requested model setup')
-        if state.augmentation != augmentation_metadata:
-            raise ConfigurationError('resume augmentation policy differs from the requested training data',
-                                     hint='Use init_from for a weights-only warm start when changing the augmentation policy.')
+        validate_continuation(state, cfg, schema, augmentation=augmentation_metadata, schedule=schedule_metadata, lr=lr)
         model.load_state_dict(state.model_state)
         if state.weight_state is not None:
             logvars.load_state_dict(state.weight_state)
         if state.optimizer_state is not None:
             opt.load_state_dict(state.optimizer_state)
-            for group in opt.param_groups:     # honor the requested learning rate on resume
-                group["lr"] = lr
+            if schedule is None:
+                for group in opt.param_groups:     # scheduled runs retain their decayed rate
+                    group["lr"] = lr
+        if engine.scheduler is not None:
+            engine.scheduler.load_state_dict(state.scheduler_state)
         with error_context(path=str(resume_from)):
             _restore_rng(state.rng)
         start = state.step
@@ -111,8 +128,20 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    "input_space": cfg.input_space, "label_space": cfg.label_space,
                    "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
                    "augmentation": augmentation_metadata,
+                   "schedule": schedule_metadata, "study": study.to_dict() if study is not None else None,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap)}
     _dcs = dataconfigs
+    source_checkpoint = resume_from or init_from
+    if source_checkpoint:
+        import hashlib
+        with open(source_checkpoint, 'rb') as source:
+            _train_args['source_checkpoint_sha256'] = hashlib.file_digest(source, 'sha256').hexdigest()
+
+    def _checkpoint(path, step, **extra):
+        save_checkpoint(path, cfg, model, logvars, step, opt, dataconfigs=_dcs,
+                        train_args={**_train_args, **extra}, label_schema=schema, scheduler=engine.scheduler)
+
+    observation = StudySession(study, model, _checkpoint) if study is not None else None
 
     # ModelXRay: a read-only training X-ray over a fixed held-out probe batch
     xray = probe_input = None
@@ -145,7 +174,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     best_path = None
 
     completed = start                              # last successful update, including early exhaustion
-    stream = _build_stream(seed + start, augment=True)  # short streams must not claim requested steps
+    stream = _build_stream(seed + start, augment=True, start_step=start)
     batch_adapter = data.batch_adapter
     for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
                                          stop_step=steps, batch_size=batch_size):
@@ -153,6 +182,8 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         total, parts, grad_norm = iteration.result
         if on_iteration is not None:
             on_iteration(iteration)
+        if observation is not None:
+            observation.observe(iteration)
         if log_every and step % log_every == 0:
             line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
                     + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
@@ -168,12 +199,14 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                 best_score = vscore
                 stem, ext = _stem(save_path), _ext(save_path)
                 best_path = f"{stem}.best{ext}"
-                save_checkpoint(best_path, cfg, model, logvars, step, opt,
-                                dataconfigs=_dcs, train_args={**_train_args, "val_score": vscore}, label_schema=schema)
+                _checkpoint(best_path, step, val_score=vscore)
         if save_path and save_every and step % save_every == 0:
-            save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args, label_schema=schema)
+            save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args,
+                          label_schema=schema, scheduler=engine.scheduler)
     if save_path:                                  # save the ACTUAL completed step, not the requested one
-        save_rotating(save_path, cfg, model, logvars, completed, opt, dataconfigs=_dcs, train_args=_train_args, label_schema=schema)
+        save_rotating(save_path, cfg, model, logvars, completed, opt, dataconfigs=_dcs, train_args=_train_args,
+                      label_schema=schema, scheduler=engine.scheduler)
     if xray is not None:
         xray.close()
-    return TrainingOutcome(model, completed, best_path)
+    return TrainingOutcome(model, completed, best_path, observation.checkpoints if observation else {},
+                           tuple(observation.validations) if observation else ())

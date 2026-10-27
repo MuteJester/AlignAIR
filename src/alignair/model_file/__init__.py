@@ -81,7 +81,7 @@ _RESERVED_CARD_KEYS = {"format_version", "model_format_version", "model_class", 
 
 def save_model(path, model, *, dataconfigs, training, inference=None, logvars=None,
                optimizer=None, rng=None, description="", include_trusted_pickle=True,
-               model_id=None, model_version=None, card=None, label_schema=None) -> None:
+               model_id=None, model_version=None, card=None, label_schema=None, scheduler=None) -> None:
     """Write an .alignair model file. ``include_trusted_pickle=True`` (default) keeps the pickled
     ``dataconfig``/``train_state`` sections (a resumable training checkpoint). Set it to ``False`` for
     a **publish/inference artifact**: weights + config + safe ``reference_json`` + ``reference`` FASTA
@@ -109,8 +109,9 @@ def save_model(path, model, *, dataconfigs, training, inference=None, logvars=No
     if include_trusted_pickle:                                             # only in trusted checkpoints
         for i, (_, dc) in enumerate(resolved):
             add(f"dataconfig/{i}", serialize.dataconfig_to_bytes(dc), "python-pickle")
-        if optimizer is not None or rng is not None:
+        if optimizer is not None or rng is not None or scheduler is not None:
             state = {"optimizer": optimizer.state_dict() if optimizer is not None else None,
+                     "scheduler": scheduler.state_dict() if scheduler is not None else None,
                      "rng": rng or {}, "step": int(training.get("steps", 0)),
                      "train_args": training.get("train_args", {})}
             add("train_state", serialize.train_state_to_bytes(state), "python-pickle")
@@ -261,6 +262,7 @@ class TrainingState:
     rng: dict
     train_args: dict
     metadata: dict
+    scheduler_state: dict | None = None
 
 
 def load_training_state(path, *, device="cpu") -> TrainingState:
@@ -272,7 +274,8 @@ def load_training_state(path, *, device="cpu") -> TrainingState:
                      if "logvars" in md["sections"] else None)
     return TrainingState(model=model, reference=reference, config=cfg, logvars_state=logvars_state,
                          optimizer_state=st.get("optimizer"), step=int(st.get("step", 0)),
-                         rng=st.get("rng", {}), train_args=st.get("train_args", {}), metadata=md)
+                         rng=st.get("rng", {}), train_args=st.get("train_args", {}), metadata=md,
+                         scheduler_state=st.get('scheduler'))
 
 
 def read_dataconfig(path, index=None):

@@ -37,6 +37,10 @@ def transfer_compatible_weights(target_model, source_state_dict: dict) -> tuple[
 def load_source_state_dict(source_path: str, device: str = "cpu", trust_pickle: bool = False) -> dict:
     """State_dict of another AlignAIR model (any reference/architecture), for backbone transfer."""
     from ..api import load_model
+    from ..model_file import container
+    if trust_pickle and not container.is_alignair_file(source_path):
+        import torch
+        return torch.load(source_path, map_location=device, weights_only=False)['model']
     src, _ = load_model(source_path, device=device, trust_pickle=trust_pickle)
     return src.state_dict()
 

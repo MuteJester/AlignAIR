@@ -6,6 +6,10 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared partial-protein training through `ProteinCropPolicy`, serializable cosine schedules,
+  retained study checkpoints and evaluation callbacks with model-mode restoration.
+- Scheduler continuation state and source checkpoint hashes in resumable artifacts; explicit
+  warm starts and trusted historical crop-checkpoint import in the shared workflow.
 - Explicit protein substitution policies in the shared training workflow, with unaugmented
   validation, versioned checkpoint provenance and augmentation-policy checks on resume.
 - One public training request/workflow for nucleotide allele, protein allele and protein-class models,
@@ -70,6 +74,8 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Removed the separate partial-protein training runner. The convergence study uses the common
+  trainer and records newly written self-contained candidate checkpoints.
 - Removed the independent strategic protein training module. Protein-class substitution experiments
   use `TrainingConfig` and `run_training`; study and product callers use reference-bound model setup.
 - Public training types and orchestration now live in `alignair.train`; root and historical object-API

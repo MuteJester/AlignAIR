@@ -89,7 +89,9 @@ def test_flatten_row_missing_macro_or_micro_degrades_macro_minus_micro_to_none()
 def test_incompatible_resume_fails_before_cohort_or_output_creation(tmp_path,monkeypatch):
     from alignair.aa.convergence import driver
     from alignair.errors import ConfigurationError
-    monkeypatch.setattr(driver,'load_checkpoint',lambda _: {'optimizer':{},'provenance':{}})
+    def invalid_checkpoint(*args, **kwargs):
+        raise ConfigurationError('checkpoint crop-label policy differs from this trainer')
+    monkeypatch.setattr(driver,'load_checkpoint',invalid_checkpoint)
     def unexpected(*args,**kwargs):raise AssertionError('cohort generation preceded resume validation')
     monkeypatch.setattr(driver,'build_cohort',unexpected)
     with pytest.raises(ConfigurationError,match='policy differs'):
@@ -100,7 +102,7 @@ def test_incompatible_resume_fails_before_cohort_or_output_creation(tmp_path,mon
 
 @pytest.mark.parametrize('provenance',[None,{},'old-format'])
 def test_missing_or_malformed_resume_policy_raises_domain_error(provenance):
-    from alignair.aa.strategic_trunc import validate_stage1_resume
+    from alignair.train.checkpoints import validate_research_resume
     from alignair.errors import ConfigurationError
     with pytest.raises(ConfigurationError,match='policy differs'):
-        validate_stage1_resume({'optimizer':{},'provenance':provenance})
+        validate_research_resume({'optimizer':{},'provenance':provenance})

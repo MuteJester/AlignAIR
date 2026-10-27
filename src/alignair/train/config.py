@@ -7,6 +7,9 @@ from dataclasses import dataclass, field, replace
 
 from ..errors import ConfigurationError
 from ..data.augmentation.protein import ProteinSubstitutionPolicy
+from ..data.augmentation.partial import ProteinCropPolicy
+from .schedules import CosineSchedule
+from .study import TrainingStudy
 
 _PRESETS = {
     'quick': {'steps': 300, 'batch_size': 16, 'val_every': 100},
@@ -37,11 +40,23 @@ class TrainingConfig:
     has_d: bool | None = None
     model_options: Mapping = field(default_factory=dict)
     resume_path: str | None = None
-    augmentation: ProteinSubstitutionPolicy | None = None
+    augmentation: ProteinSubstitutionPolicy | ProteinCropPolicy | None = None
+    schedule: CosineSchedule | None = None
+    study: TrainingStudy | None = None
+    init_from: str | None = None
+    trust_pickle: bool = False
 
     def __post_init__(self):
-        if self.augmentation is not None and not isinstance(self.augmentation, ProteinSubstitutionPolicy):
-            raise ConfigurationError('augmentation must be a ProteinSubstitutionPolicy or None')
+        if self.init_from and self.resume_path or type(self.trust_pickle) is not bool:
+            raise ConfigurationError('choose init_from or resume_path; trust_pickle must be a boolean')
+        if self.augmentation is not None and not isinstance(self.augmentation, (ProteinSubstitutionPolicy, ProteinCropPolicy)):
+            raise ConfigurationError('augmentation must be a ProteinSubstitutionPolicy, ProteinCropPolicy or None')
+        if self.schedule is not None:
+            if not isinstance(self.schedule, CosineSchedule):
+                raise ConfigurationError('schedule must be a CosineSchedule or None')
+            self.schedule.validate(self.lr)
+        if self.study is not None and not isinstance(self.study, TrainingStudy):
+            raise ConfigurationError('study must be a TrainingStudy or None')
         if self.input_space not in ('nucleotide', 'protein') or self.label_space not in ('alleles', 'protein_classes'):
             raise ConfigurationError('choose nucleotide/protein input and alleles/protein_classes labels')
         if self.label_space == 'protein_classes' and self.input_space != 'protein':

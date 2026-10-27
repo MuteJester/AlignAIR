@@ -53,7 +53,10 @@ print(predictor.label_schema["genes"]["v"][0])  # alleles represented by class 0
         ["val_every", "Zero disables periodic validation. A positive interval selects the best checkpoint using the shared task metrics on fixed held-out batches."],
         ["seed", "A uint32 seed for model initialization, process RNGs and source construction. Fixed-seed CPU runs are reproducible under the same environment."],
         ["resume_path", "An existing checkpoint. Restore model, task weights, optimizer and process RNG state; configuration and label identity must agree."],
-        ["augmentation", "None by default. An explicit ProteinSubstitutionPolicy enables length-preserving substitutions for protein-class training; validation and diagnostic probes remain unaugmented."],
+        ["init_from / trust_pickle", "An explicit weights-only warm start with a fresh optimizer/scheduler. Mutually exclusive with resume_path. Historical Python checkpoint loading requires trust_pickle=True for a file you trust."],
+        ["augmentation", "None, ProteinSubstitutionPolicy or ProteinCropPolicy. Protein-class training only; validation and diagnostic probes remain unaugmented."],
+        ["schedule", "None uses constant lr. CosineSchedule(total_steps, min_lr) advances after successful updates; resume retains the saved scheduler phase and decayed rate."],
+        ["study", "Optional TrainingStudy with absolute checkpoint steps and an external evaluation callback. Retained checkpoints and validation results are returned on TrainingRun."],
       ]} />
       <p>
         <code>preset="quick"</code>, <code>"desktop"</code>, or <code>"full"</code> selects
@@ -95,8 +98,61 @@ run = run_training(augmented, output_dir="runs/protein_substitutions")`} />
         diagnostic probe streams use the original samples. Resume requires the same augmentation
         policy, including whether it is enabled. The local augmentation generator and source are
         deterministically reseeded with seed plus the checkpoint step; continuation does not replay
-        the exact next batch of an uninterrupted run. To change policy while reusing weights, use
-        the lower-level trainer&apos;s <code>init_from</code> warm start with a fresh optimizer.
+        the exact next batch of an uninterrupted run. To change policy while reusing weights, set
+        <code>init_from</code> for a warm start with a fresh optimizer.
+      </p>
+      <H2 id="partial-training">Train on partial protein reads</H2>
+      <CodeBlock lang="python" code={`from alignair.data.augmentation import ProteinCropPolicy
+from alignair.train import CosineSchedule, TrainingStudy
+
+partial = request.with_(
+    steps=20, lr=1e-4, grad_clip=1.0,
+    augmentation=ProteinCropPolicy(
+        crop_probability=0.4, substitution_probability=0.4, il_probability=0.15,
+    ),
+    schedule=CosineSchedule(total_steps=40, min_lr=1e-5),
+    study=TrainingStudy(
+        checkpoint_dir="runs/partial/selected", checkpoint_steps=(5, 10, 20),
+    ),
+)
+partial_run = run_training(partial, output_dir="runs/partial")
+print(partial_run.checkpoints)  # actual step -> retained .alignair checkpoint`} />
+      <p>
+        Crops shift and clip gene boundaries into the observed window. V/J class supervision uses
+        conservative germline-fragment compatibility from aligned reference codons; unavailable
+        evidence masks class supervision while retaining known boundaries. D retains its source
+        allele label only when fully observed and otherwise remains masked. Full-read rehearsal,
+        substitutions and I/L ambiguity use the established crop policy. Crop augmentation uses
+        a local generator seeded from <code>[seed, completed_step]</code>; it preserves the former
+        partial-training runner&apos;s sample and RNG semantics.
+      </p>
+      <p>
+        Set the cosine horizon to cover the intended scheduler updates, including later continuation.
+        Resume checks the schedule, initial learning rate, augmentation and label identity before
+        loading destination state. It restores optimizer moments and scheduler phase together.
+        Changing a policy requires an explicit warm start. Historical full crop checkpoints can
+        continue only with explicit pickle trust, a usable model configuration, the current sample
+        policy and a saved cosine scheduler. They lack the ordered label schema added by the shared
+        workflow, so retain the original source panel and class ordering when importing them.
+        Weights-only snapshots use <code>init_from</code> and start a new optimizer/scheduler.
+      </p>
+      <H2 id="study">Retain and evaluate study checkpoints</H2>
+      <p>
+        A <code>TrainingStudy</code> saves requested absolute steps as
+        <code> checkpoint-&lt;step&gt;.alignair</code>, separately from rotating model checkpoints.
+        <code>TrainingRun.checkpoints</code> contains only files written during that invocation;
+        finite sources cannot cause stale files to be reported as newly trained candidates.
+        Each checkpoint records its actual step, reference/label identity, seed, policies and source
+        checkpoint hash, alongside optimizer, scheduler and process RNG state.
+      </p>
+      <p>
+        For external evaluation, supply <code>validation_every</code> and an
+        <code>evaluate(model, step)</code> callback returning a metric mapping. The callback runs
+        in evaluation mode with the previous model mode restored even on failure.
+        <code>TrainingRun.validations</code> retains those mappings. An optional
+        <code>plateau_window</code> reports a non-improving <code>objective</code>; it does not stop
+        training or select a model. The convergence study uses this shared lifecycle and continues
+        to apply its frozen cohort and selection rules separately.
       </p>
       <H2 id="observe">Observe successful updates</H2>
       <CodeBlock lang="python" code={`def observe(iteration):
@@ -123,7 +179,8 @@ labels = loaded.label_schema["genes"]["v"]`} />
         <code>TrainingRun.model_path</code> is the final checkpoint;
         <code>best_model_path</code> is present when validation selected a best model.
         <code>steps</code> records the actual completed step. Checkpoints retain the safe model
-        configuration, weights and source reference, plus trusted Python training state for resume.
+        configuration, weights and source reference, plus trusted Python training state for resume,
+        including the scheduler when configured.
         Inference reload uses the safe model/reference sections. Resume restores the process RNGs
         and starts the source under the existing seed-plus-step policy; it does not restore a simulator cursor.
       </p>

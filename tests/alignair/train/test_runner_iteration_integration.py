@@ -3,7 +3,6 @@ from dataclasses import replace
 from itertools import islice
 
 import pytest
-import torch
 
 from alignair.core import AlignAIR
 from alignair.data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
@@ -13,7 +12,7 @@ from alignair.tasks import build_tasks
 from alignair.train import trainer
 from alignair.train.gym.streams import training_records, CurriculumStreamPolicy
 from alignair.train.checkpoints import load_training_checkpoint
-from alignair.aa import strategic_trunc
+from alignair.data.augmentation import ProteinCropPolicy
 from alignair.core import prepare_model
 
 pytestmark = pytest.mark.integration
@@ -37,19 +36,12 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
     options = dict(steps=5, batch_size=2, log_every=1000, save_every=100)
     expected_step = source_size // 2
 
-    if runner != 'protein_crops':
-        import GenAIRR as ga
-        monkeypatch.setattr(trainer, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
-        path = tmp_path / 'model.alignair'
-        weights = None if runner == 'nucleotide_auto_weights' else build_tasks(cfg).make_weights()
-        trainer.train(model, ref, ga.HUMAN_IGH_OGRDB, cfg, weights,
-                      progresses=(.3,), heavy_shm=0., save_path=path, **options)
-        saved = load_training_checkpoint(path)
-        assert saved.step == expected_step and saved.weight_state is not None
-    else:
-        monkeypatch.setattr(strategic_trunc, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
-        path = tmp_path / 'model.pt'
-        history = strategic_trunc.stage1_train(model, cfg, setup.protein_reference.class_maps,
-                      {'d_index': dict(ref.gene('D').index)}, p_crop=1., save_path=path, **options)
-        assert len(history) == expected_step
-        assert torch.load(path, weights_only=True)['step'] == expected_step
+    import GenAIRR as ga
+    monkeypatch.setattr(trainer, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
+    path = tmp_path / 'model.alignair'
+    weights = None if runner == 'nucleotide_auto_weights' else build_tasks(cfg).make_weights()
+    trainer.train(model, ref, ga.HUMAN_IGH_OGRDB, cfg, weights,
+                  progresses=(.3,), heavy_shm=0., save_path=path,
+                  augmentation=ProteinCropPolicy(crop_probability=1.) if runner == 'protein_crops' else None, **options)
+    saved = load_training_checkpoint(path)
+    assert saved.step == expected_step and saved.weight_state is not None

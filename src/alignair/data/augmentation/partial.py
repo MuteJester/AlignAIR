@@ -1,7 +1,7 @@
 """Alignment-aware reference evidence and conservative cropped protein-class supervision."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from numbers import Real
 from typing import TYPE_CHECKING
 import math
@@ -129,6 +129,9 @@ class ProteinCropPolicy:
         for value in (self.crop_probability, self.substitution_probability, self.il_probability):
             if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) or not 0 <= value <= 1:
                 raise ConfigurationError("augmentation probabilities must be finite numbers in [0, 1]")
+
+    def to_dict(self) -> dict:
+        return {'policy': SAMPLE_POLICY_ID, **asdict(self)}
 
 
 @dataclass(frozen=True)

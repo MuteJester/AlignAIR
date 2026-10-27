@@ -14,10 +14,13 @@ from __future__ import annotations
 import json
 import os
 
-from ...train.checkpoints import load_research_checkpoint as load_checkpoint
+from ...train.checkpoints import load_training_checkpoint as load_checkpoint, validate_continuation
+from ...train.trainer import train
+from ...train import CosineSchedule, TrainingStudy
+from ...data.augmentation import ProteinCropPolicy
 from ...core import prepare_model
+from ...core.setup import ModelSetup, setup_from_schema
 from ...reference import build_protein_reference
-from ..strategic_trunc import stage1_train, validate_stage1_resume
 from .evaluator import build_cohort, evaluate_checkpoint
 
 DC_NAME = "HUMAN_IGH_OGRDB"
@@ -103,14 +106,21 @@ def _study_setup(dc_name, max_seq_length):
                          max_seq_length=max_seq_length, has_d=True)
 
 
+def _checkpoint_setup(checkpoint, dc_name, max_seq_length):
+    setup = _study_setup(dc_name, max_seq_length)
+    if checkpoint.label_schema is not None:
+        return setup_from_schema(setup.reference, checkpoint.config, checkpoint.label_schema)
+    return ModelSetup(setup.reference, checkpoint.config, 'protein', 'protein_classes', setup.protein_reference)
+
+
 def _load_fresh_candidate(ckpt_path: str, dc_name: str, max_seq_length: int, device: str):
     """A fresh reference-bound model with a saved continuation checkpoint's weights loaded in
     (never reuses the in-training model instance, so a candidate's eval is never contaminated by
     optimizer-adjacent state or a stale ``.eval()``/``.train()`` mode from training)."""
-    setup = _study_setup(dc_name, max_seq_length)
+    ck = load_checkpoint(ckpt_path, trust_pickle=True)
+    setup = _checkpoint_setup(ck, dc_name, max_seq_length)
     model = setup.build_model()
-    ck = load_checkpoint(ckpt_path)
-    model.load_state_dict(ck["model"])
+    model.load_state_dict(ck.model_state)
     model.to(device).eval()
     return model, setup
 
@@ -163,18 +173,22 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
 
     ``ckpt_steps`` are relative (as declared on the CLI / in the spec's "+25k/+75k/..."
     phrasing); they are converted to ABSOLUTE step numbers (``start_step + rel``) before being
-    passed to ``stage1_train``, since the resumed training loop counts absolute steps starting
-    from the incumbent's own checkpointed step (NOT from 0) -- see ``strategic_trunc.stage1_train``
-    (`start_step = ck["step"]`, loop range `start_step+1 .. start_step+steps`).
+    passed to the shared trainer. Its target step is the incumbent step plus the requested budget.
+    Full checkpoints retain their saved scheduler; weights-only historical incumbents use an
+    explicit warm start with a fresh optimizer/scheduler and an absolute step offset.
     """
-    ck = load_checkpoint(resume_path)
-    validate_stage1_resume(ck)
+    ck = load_checkpoint(resume_path, trust_pickle=True)
+    setup = _checkpoint_setup(ck, dc_name, MAX_SEQ_LENGTH)
+    schedule = (CosineSchedule(ck.schedule['total_steps'], ck.schedule['min_lr']) if ck.schedule is not None
+                else CosineSchedule(budget, lr_min))
+    if ck.optimizer_state is not None:
+        validate_continuation(ck, setup.config, setup.label_schema(), augmentation=ProteinCropPolicy().to_dict(),
+                              schedule=schedule.to_dict(), lr=base_lr)
     os.makedirs(art_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_steps = tuple(int(s) for s in ckpt_steps)
 
     # ---- 1. model/cfg/class_maps/meta ----
-    setup = _study_setup(dc_name, MAX_SEQ_LENGTH)
     model, cfg = setup.build_model(), setup.config
     class_maps = setup.protein_reference.class_maps
     meta = {'d_index': dict(setup.reference.gene('D').index)}
@@ -191,8 +205,8 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
     # `start_step` is read from the incumbent checkpoint's OWN `step` field (58000 for the
     # current `model_stage1_PASS.pt`) rather than hardcoded, so a re-run against a different
     # incumbent still computes correct absolute checkpoint/budget numbers.
-    model.load_state_dict(ck["model"])
-    start_step = int(ck.get("step") or 0)
+    model.load_state_dict(ck.model_state)
+    start_step = ck.step
     model.to(device).eval()
     incumbent_out = evaluate_checkpoint(model, cfg, class_maps, meta, cohort, device=device)
     incumbent_row = _row_from_evaluator_output("incumbent", start_step, incumbent_out)
@@ -202,25 +216,26 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
 
     # ---- 4. resumed continuation training, checkpointing at ABSOLUTE step numbers ----
     abs_ckpt_steps = tuple(start_step + rel for rel in ckpt_steps)
-    total_budget = budget  # T_max = number of scheduler steps this run traverses, not absolute step number
 
     def val_fn(m, step):
         out = evaluate_checkpoint(m, cfg, class_maps, meta, cohort, device=device)
-        m.to(device).train()                      # evaluate_checkpoint leaves the model in eval() mode
         row = flatten_row(f"val_step{step}", step, out)
         return {"objective": row["d_allele_macro"], **row}
 
-    stage1_train(model, cfg, class_maps, meta, dc_name, steps=budget, batch_size=batch_size,
-                base_lr=base_lr, lr_min=lr_min, total_budget=total_budget, seed=0, device=device,
-                resume_path=resume_path, ckpt_dir=ckpt_dir, ckpt_steps=abs_ckpt_steps,
-                val_every=val_every, val_fn=val_fn, plateau_k=plateau_k)
+    import GenAIRR.data as gd
+    continuation = ({'resume_path': resume_path, 'resume_trust_pickle': True} if ck.optimizer_state is not None
+                    else {'init_from': resume_path, 'init_trust_pickle': True, 'start_step': start_step})
+    outcome = train(model, setup.reference, [getattr(gd, dc_name)], cfg, steps=start_step + budget,
+                    batch_size=batch_size, lr=base_lr, grad_clip=1., seed=0, device=device,
+                    model_setup=setup, augmentation=ProteinCropPolicy(), schedule=schedule,
+                    study=TrainingStudy(ckpt_dir, abs_ckpt_steps, val_every, val_fn, plateau_k), **continuation)
 
     # ---- 5. evaluate every saved candidate checkpoint (fresh model instance each time) ----
     candidate_rows = []
     for abs_step in abs_ckpt_steps:
-        ckpt_path = os.path.join(ckpt_dir, f"model_cont_step{abs_step}.pt")
-        if not os.path.exists(ckpt_path):
-            print(f"[convergence] WARNING: expected checkpoint '{ckpt_path}' was not saved "
+        ckpt_path = outcome.checkpoints.get(abs_step)
+        if ckpt_path is None:
+            print(f"[convergence] WARNING: requested checkpoint at step {abs_step} was not saved "
                  f"(training may have exhausted the stream before this step) -- skipping.", flush=True)
             continue
         cand_model, cand_setup = _load_fresh_candidate(
@@ -242,7 +257,7 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
         "provenance": {
             "resume_path": resume_path, "start_step": start_step, "device": device,
             "dc_name": dc_name, "batch_size": batch_size, "base_lr": base_lr, "lr_min": lr_min,
-            "total_budget": total_budget, "val_every": val_every, "plateau_k": plateau_k,
+            "schedule": schedule.to_dict(), "val_every": val_every, "plateau_k": plateau_k,
             "ckpt_dir": ckpt_dir,
         },
     }
