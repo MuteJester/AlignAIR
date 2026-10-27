@@ -19,7 +19,8 @@ back-compat. I/O + reference helpers: ``read_sequences``, ``write_airr``, ``Refe
 """
 from .errors import AlignAIRError
 from .reference.reference_set import ReferenceSet
-from .io.sequence_reader import read_sequences, iter_sequences, DuplicateMetadataId
+from .io.sequence_reader import read_sequences, iter_sequences
+from .io.metadata import DuplicateMetadataId
 from .io.airr import write_airr, AirrWriter, PredictionCountMismatch
 from .compare import compare_airr
 from .api import load_model, predict_sequences, train_model

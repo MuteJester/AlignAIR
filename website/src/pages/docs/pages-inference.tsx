@@ -60,6 +60,68 @@ with closing(iter_sequence_records(
         <code>iter_sequences</code> adds its existing ambiguity cleaning, rejects, ID policy, and
         chunking. Use raw parsing when sequence content must reach a different validation policy.
       </p>
+      <H2 id="source-identity">Join metadata by source identity</H2>
+      <CodeBlock lang="python" code={`from contextlib import closing
+from alignair.io import (
+    build_metadata_index, iter_sequence_batches, lookup_metadata_rows,
+)
+
+metadata, columns = build_metadata_index(
+    "annotations.csv", id_column="contig_id", normalize_10x=True,
+)
+with metadata, closing(iter_sequence_batches("reads.fa", chunk_size=20000)) as batches:
+    for batch in batches:
+        metas = lookup_metadata_rows(metadata, batch.source_ids)
+        # Each metadata row corresponds to the same accepted read as batch.ids[i].
+        for record, meta in zip(batch.records, metas):
+            print(record.sequence_id, record.source_id, record.source_index, meta)`} />
+      <p>
+        <code>iter_sequence_batches</code> applies nucleotide cleaning and yields
+        <code> SequenceReadBatch</code> objects. Each accepted <code>SequenceRead</code> retains
+        its unique output <code>sequence_id</code>, cleaned <code>sequence</code>, original
+        <code> source_id</code>, and zero-based <code>source_index</code>. A batch exposes
+        <code> ids</code>, <code>sequences</code>, <code>source_ids</code>, and its
+        <code> n_dropped</code> count. Rejected records retain their original positions in the
+        optional rejects output. The historical <code>iter_sequences</code> tuple interface remains
+        available; use batches when retaining source provenance or joining metadata.
+      </p>
+      <p>
+        Output IDs are allocated in input order across all chunks. An unoccupied source ID is
+        preserved; collisions receive the next available <code>_dupN</code> suffix. Generated names
+        are reserved just like real headers. Missing or empty source IDs receive
+        <code> seq&lt;source_index&gt;</code> output IDs. A generated output name can occupy a later
+        header’s name, so metadata lookup always uses the original source ID:
+      </p>
+      <DocTable head={["Source header", "Output ID", "Metadata key"]} rows={[
+        ["read", "read", "read"],
+        ["read", "read_dup1", "read"],
+        ["read_dup1", "read_dup1_dup1", "read_dup1"],
+      ]} />
+      <p>
+        <code>lookup_metadata_rows</code> accepts an in-memory mapping or a metadata index and
+        returns rows in source order. Repeated source IDs share their unique metadata row; missing
+        or empty IDs and unmatched keys receive empty dictionaries. Generated output IDs are never
+        invented as metadata keys. With no metadata it returns <code>None</code>. Indexed lookup
+        deduplicates source keys and limits each SQL query to 900 parameters. Sequence and metadata
+        payloads are processed in chunks; ID reservation memory grows with distinct accepted IDs.
+      </p>
+      <p>
+        <code>load_metadata</code> and <code>build_metadata_index</code>, owned by
+        <code> alignair.io.metadata</code>, both reject duplicate join keys with
+        <code> DuplicateMetadataId</code>. They parse CSV/TSV, including gzip, through the same
+        normalization policy. With <code>normalize_10x=True</code>, nonempty canonical AIRR values
+        take precedence over aliases; aliases fill missing values. Duplicate header names and
+        colliding output names after <code>rename</code> raise <code>InputError</code>.
+        The CLI protects scientific result fields by namespacing conflicting metadata columns.
+      </p>
+      <p>
+        The disk-backed <code>MetadataIndex</code> supports context management and idempotent
+        <code> close()</code>. A failed insertion rolls back its entire batch while preserving
+        earlier committed batches. Construction or loading failures remove the temporary database.
+        Close the returned index after use; lookups and writes after closure raise
+        <code> DataContractError</code>. Legacy metadata imports from
+        <code> io.sequence_reader</code> remain aliases of the shared owner.
+      </p>
       <H2 id="records">Normalize records without losing source identity</H2>
       <CodeBlock lang="python" code={`from alignair.data import SequenceValidationPolicy, normalize_sequence_inputs
 

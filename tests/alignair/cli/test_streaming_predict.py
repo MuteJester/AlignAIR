@@ -74,6 +74,70 @@ def test_stream_counts_partial_status(tmp_path):
     assert pr == {"missing_calls_or_coordinates": 4}
 
 
+@pytest.mark.parametrize('indexed', [False, True])
+def test_metadata_joins_original_source_ids_across_output_id_collisions(tmp_path, indexed):
+    from alignair.io.metadata import build_metadata_index, load_metadata
+    reads = tmp_path / 'reads.fa'
+    reads.write_text('>read\nAC\n>read\nGT\n>read_dup1\nTG\n>\nAC\n>seq3\nCG\n')
+    metadata = tmp_path / 'metadata.csv'
+    metadata.write_text('sequence_id,cell_id\nread,first\nread_dup1,second\nseq3,third\n')
+    lookup, columns = (build_metadata_index if indexed else load_metadata)(metadata)
+    try:
+        counts, _, _ = _stream_predict(
+            _FakeAligner(), input_path=str(reads), out_path=str(tmp_path / 'out.tsv'),
+            columns='minimal', chunk_size=1, seq_column=None, id_column=None, meta_by_id=lookup,
+            extra_cols=columns, out_locus='IGH', overrides={}, batch_size=4, rejects_out=None)
+        rows = _rows(tmp_path / 'out.tsv')
+        assert counts['written'] == 5
+        assert [row['sequence_id'] for row in rows] == ['read', 'read_dup1', 'read_dup1_dup1', 'seq3', 'seq3_dup1']
+        assert [row['cell_id'] for row in rows] == ['first', 'first', 'second', '', 'third']
+    finally:
+        if indexed:
+            lookup.close()
+
+
+def test_stream_closes_input_and_discards_output_if_metadata_lookup_fails(tmp_path, monkeypatch):
+    import io
+    source = io.StringIO('>one\nAC\n>two\nGT\n')
+    original_open = open
+    def open_source(path, *args, **kwargs):
+        return source if str(path) == 'reads.fa' else original_open(path, *args, **kwargs)
+    monkeypatch.setattr('builtins.open', open_source)
+    class BrokenLookup:
+        def get_many(self, keys): raise RuntimeError('lookup failed')
+    out = tmp_path / 'out.tsv'
+    with pytest.raises(RuntimeError, match='lookup failed'):
+        _stream_predict(_FakeAligner(), input_path='reads.fa', out_path=str(out), columns='minimal',
+                        chunk_size=1, seq_column=None, id_column=None, meta_by_id=BrokenLookup(),
+                        extra_cols=['cell_id'], out_locus='IGH', overrides={}, batch_size=4, rejects_out=None)
+    assert source.closed and not out.exists()
+
+
+def test_metadata_column_protection_uses_the_real_cli_policy(tmp_path):
+    from types import SimpleNamespace
+    from alignair.cli.predict import _load_metadata_table
+    path = tmp_path / 'metadata.csv'
+    path.write_text('id,v_call,sequence,c_call,cell_id\nread,metadata_call,metadata_sequence,IGHG,cell\n')
+    args = SimpleNamespace(metadata=str(path), metadata_id_column=None,
+                           keep_columns='v_call,sequence,c_call,cell_id')
+    index, columns = _load_metadata_table(args)
+    with index:
+        assert columns == ['meta_v_call', 'meta_sequence', 'c_call', 'cell_id']
+        assert index.get('read') == {'meta_v_call': 'metadata_call', 'meta_sequence': 'metadata_sequence',
+                                      'c_call': 'IGHG', 'cell_id': 'cell'}
+
+
+def test_metadata_column_protection_rejects_an_existing_namespace_collision(tmp_path):
+    from types import SimpleNamespace
+    from alignair.cli.predict import _load_metadata_table
+    from alignair.errors import InputError
+    path = tmp_path / 'metadata.csv'
+    path.write_text('id,v_call,meta_v_call\nread,one,two\n')
+    with pytest.raises(InputError, match='output columns'):
+        _load_metadata_table(SimpleNamespace(metadata=str(path), metadata_id_column=None,
+                                              keep_columns='v_call,meta_v_call'))
+
+
 @pytest.mark.performance
 def test_stream_memory_is_bounded(tmp_path):
     """Peak memory scales with chunk_size, not the repertoire: a large payload held for all records

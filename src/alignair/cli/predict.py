@@ -6,6 +6,7 @@ model is available (suppressed for a pinned id / a path / ``--offline`` / ``--qu
 """
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -44,7 +45,7 @@ def register(sub) -> None:
     p.add_argument("--device", default=None, help="cpu / cuda (default: auto)")
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--chunk-size", type=int, default=20000,
-                   help="stream the input in chunks of this many reads (bounded memory; default 20000)")
+                   help="stream the input in chunks of this many reads (default 20000)")
     p.add_argument("--genotype", default=None,
                    help="genotype JSON/YAML {gene: [alleles]} (a subset of the trained reference) to "
                         "constrain the allele calls to")
@@ -74,7 +75,7 @@ def register(sub) -> None:
 def _load_metadata_table(args):
     """Load the per-read metadata JOIN TABLE once (id -> {col: value}), returning
     ``(meta_by_id, extra_columns)`` or ``(None, None)`` if no --metadata given. The per-chunk join looks
-    up by id, so memory is bounded by the metadata table, not the repertoire.
+    up by original source ID through a temporary disk-backed index.
 
     Metadata may NEVER overwrite a model/scientific AIRR field: any metadata column colliding with a
     produced field (sequence/v_call/productive/coords/…) is namespaced to ``meta_<col>`` so the aligner's
@@ -82,7 +83,7 @@ def _load_metadata_table(args):
     if not args.metadata:
         return None, None
     from ..io.airr import COLUMNS, _METADATA_FILL_ONLY
-    from ..io.sequence_reader import build_metadata_index
+    from ..io.metadata import build_metadata_index
     keep = [c.strip() for c in args.keep_columns.split(",")] if args.keep_columns else None
     protected = frozenset(COLUMNS)
 
@@ -95,26 +96,18 @@ def _load_metadata_table(args):
     return index, kept_safe
 
 
-def _lookup_metas(meta_by_id, cids):
-    """Per-chunk metadata rows aligned to ``cids``. Uses a single batched SQLite query when the index
-    supports it (bounded, not one query per read); falls back to a plain dict for small/eager callers."""
-    if meta_by_id is None:
-        return None
-    found = meta_by_id.get_many(cids) if hasattr(meta_by_id, "get_many") else meta_by_id
-    return [found.get(i, {}) for i in cids]
-
-
 def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_column, id_column,
                     meta_by_id, extra_cols, out_locus, overrides, batch_size, rejects_out):
     """Stream reader-chunk -> predict -> AIRR assembly -> metadata join -> writer -> counters, in
-    bounded memory (peak ~ chunk_size, not repertoire size). Order and cross-chunk duplicate-id handling
-    are preserved by the reader; rejects are written incrementally (never accumulated). Returns
+    chunks of sequence/metadata payloads. ID reservations grow with distinct accepted output IDs.
+    Order and cross-chunk ID handling are preserved; rejects are written incrementally. Returns
     ``(counts, fail_reasons, partial_reasons)``. The output is committed atomically on a clean pass."""
     import csv
     from collections import Counter
 
     from ..io.airr import AirrWriter, needs_assembly
-    from ..io.sequence_reader import iter_sequences
+    from ..io.sequence_reader import iter_sequence_batches
+    from ..io.metadata import lookup_metadata_rows
     do_airr = needs_assembly(columns)
     counts = dict(input=0, accepted=0, rejected=0, cropped=0, complete=0, partial=0, failed=0,
                   written=0, nonstandard_orientation=0)
@@ -132,35 +125,37 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
     writer = AirrWriter(out_path, locus=out_locus, columns=columns, extra_columns=extra_cols)
     committed = False
     try:
-        for cids, cseqs, dropped in iter_sequences(input_path, chunk_size=chunk_size,
-                                                   seq_column=seq_column, id_column=id_column,
-                                                   rejects=rejects_buf):
-            counts["rejected"] += dropped
-            if rejects_buf is not None:              # drain this chunk's rejects to disk, keep memory flat
-                for rj in rejects_buf:
-                    rej_w.writerow(rj)
-                rejects_buf.clear()
-            if not cseqs:
-                continue
-            records = aligner.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides).to_dicts()
-            metas = _lookup_metas(meta_by_id, cids)  # ONE indexed query per chunk, not per read
-            writer.write(cids, cseqs, records, metas=metas)
-            counts["accepted"] += len(cseqs)
-            counts["written"] += len(records)
-            for r in records:
-                st = r.get("airr_assembly_status")
-                if st == "complete":
-                    counts["complete"] += 1
-                elif st == "partial":
-                    counts["partial"] += 1
-                    partial_reasons[r.get("airr_assembly_reason", "unknown")] += 1
-                elif st == "failed":
-                    counts["failed"] += 1
-                    fail_reasons[r.get("airr_assembly_error", "?").split(":")[0]] += 1
-                if r.get("length_cropped"):
-                    counts["cropped"] += 1
-                if r.get("orientation_id") in (2, 3):   # complement/reverse-only: not AIRR-representable
-                    counts["nonstandard_orientation"] += 1
+        with closing(iter_sequence_batches(input_path, chunk_size=chunk_size,
+                                            seq_column=seq_column, id_column=id_column,
+                                            rejects=rejects_buf)) as batches:
+            for batch in batches:
+                cids, cseqs, dropped = batch.ids, batch.sequences, batch.n_dropped
+                counts["rejected"] += dropped
+                if rejects_buf is not None:              # drain this chunk's rejects to disk, keep memory flat
+                    for rj in rejects_buf:
+                        rej_w.writerow(rj)
+                    rejects_buf.clear()
+                if not cseqs:
+                    continue
+                records = aligner.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides).to_dicts()
+                metas = lookup_metadata_rows(meta_by_id, batch.source_ids)  # Batched lookup by original source ID
+                writer.write(cids, cseqs, records, metas=metas)
+                counts["accepted"] += len(cseqs)
+                counts["written"] += len(records)
+                for r in records:
+                    st = r.get("airr_assembly_status")
+                    if st == "complete":
+                        counts["complete"] += 1
+                    elif st == "partial":
+                        counts["partial"] += 1
+                        partial_reasons[r.get("airr_assembly_reason", "unknown")] += 1
+                    elif st == "failed":
+                        counts["failed"] += 1
+                        fail_reasons[r.get("airr_assembly_error", "?").split(":")[0]] += 1
+                    if r.get("length_cropped"):
+                        counts["cropped"] += 1
+                    if r.get("orientation_id") in (2, 3):   # complement/reverse-only: not AIRR-representable
+                        counts["nonstandard_orientation"] += 1
         writer.close(commit=True)
         committed = True
     finally:
@@ -259,7 +254,7 @@ def run(args) -> int:
             return fail(e, context={"stage": "genotype_validation"})
         overrides = {"genotype": genotype, "genotype_method": args.genotype_method}
 
-    from ..io.sequence_reader import DuplicateMetadataId
+    from ..io.metadata import DuplicateMetadataId
     try:
         meta_by_id, extra_cols = _load_metadata_table(args)  # disk-backed join index (bounded lookup)
     except DuplicateMetadataId as e:

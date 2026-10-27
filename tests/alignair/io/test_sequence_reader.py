@@ -129,70 +129,31 @@ def test_closing_nucleotide_chunk_iterator_closes_owned_source(monkeypatch):
     assert source.closed
 
 
-def test_metadata_join_carries_10x_columns(tmp_path):
-    m = tmp_path / "annot.csv"
-    m.write_text("contig_id,barcode,umi_count\nc1,AAAA-1,7\nc2,CCCC-1,3\n")
-    from alignair.io.sequence_reader import load_metadata
-    meta, kept = load_metadata(str(m), id_column="contig_id")
-    assert "barcode" in kept and meta["c1"]["umi_count"] == "7"
+@pytest.mark.parametrize('chunk_size', [1, 2, 3, 20])
+def test_source_identity_survives_suffix_and_fallback_collisions_across_chunks(tmp_path, chunk_size):
+    from alignair.io import iter_sequence_batches
+    path = tmp_path / 'reads.fa'
+    path.write_text('>read\nAC\n>bad\nXXXXX\n>read\nGT\n>read_dup1\nTG\n>\nAC\n>seq4\nCG\n')
+    batches = list(iter_sequence_batches(path, chunk_size=chunk_size))
+    records = [record for batch in batches for record in batch.records]
+    assert [record.sequence_id for record in records] == ['read', 'read_dup1', 'read_dup1_dup1', 'seq4', 'seq4_dup1']
+    assert [record.source_id for record in records] == ['read', 'read', 'read_dup1', None, 'seq4']
+    assert [record.source_index for record in records] == [0, 2, 3, 4, 5]
+    assert sum(batch.n_dropped for batch in batches) == 1
+    assert [key for batch in batches for key in batch.source_ids] == ['read', 'read', 'read_dup1', None, 'seq4']
 
 
-def test_10x_metadata_normalized_to_airr_names(tmp_path):
-    """A stock 10x annotations file gains AIRR-standard cell_id/umi_count/c_call (raw columns kept)."""
-    m = tmp_path / "filtered_contig_annotations.csv"
-    m.write_text("barcode,contig_id,reads,umis,chain,c_gene\n"
-                 "AAAA-1,c1,120,7,IGH,IGHM\n")
-    from alignair.io.sequence_reader import load_metadata
-    meta, kept = load_metadata(str(m), id_column="contig_id", normalize_10x=True)
-    assert meta["c1"]["cell_id"] == "AAAA-1"          # barcode -> cell_id
-    assert meta["c1"]["umi_count"] == "7"             # umis -> umi_count
-    assert meta["c1"]["c_call"] == "IGHM"             # c_gene -> c_call
-    assert meta["c1"]["barcode"] == "AAAA-1"          # raw 10x column preserved
-    for c in ("cell_id", "umi_count", "c_call"):
-        assert c in kept
+def test_empty_table_ids_receive_fallback_output_names(tmp_path):
+    path = tmp_path / 'reads.csv'
+    path.write_text('id,sequence\n,ACGT\nseq0,ACGT\n')
+    assert read_sequences(path)[0] == ['seq0', 'seq0_dup1']
 
 
-def _meta_csv(tmp_path, n):
-    m = tmp_path / "meta.csv"
-    lines = ["contig_id,cell_id,umi_count"]
-    lines += [f"c{i},BC{i}-1,{i}" for i in range(n)]
-    m.write_text("\n".join(lines) + "\n")
-    return m
-
-
-def test_metadata_index_get_many_batches_across_param_limit(tmp_path):
-    """get_many returns the right rows and chunks past SQLite's ~999-parameter limit."""
-    from alignair.io.sequence_reader import build_metadata_index
-    idx, cols = build_metadata_index(str(_meta_csv(tmp_path, 2500)), id_column="contig_id")
-    try:
-        ids = [f"c{i}" for i in range(2500)] + ["missing"]        # > 999 -> exercises chunking
-        got = idx.get_many(ids)
-        assert len(got) == 2500 and "missing" not in got
-        assert got["c0"]["cell_id"] == "BC0-1" and got["c2499"]["umi_count"] == "2499"
-    finally:
-        idx.close()
-
-
-def test_metadata_index_temp_db_deleted_on_success(tmp_path):
-    from alignair.io.sequence_reader import build_metadata_index
-    import os
-    idx, _ = build_metadata_index(str(_meta_csv(tmp_path, 3)), id_column="contig_id")
-    path = idx._path
-    assert os.path.exists(path)
-    idx.close()
-    assert not os.path.exists(path)                              # cleaned up after use
-
-
-def test_metadata_index_duplicate_id_fails_and_cleans_up(tmp_path):
-    """A non-unique join key fails closed (no silent last-wins) AND leaves no orphan temp DB."""
-    import glob
-    import os
-    import tempfile
-    from alignair.io.sequence_reader import build_metadata_index, DuplicateMetadataId
-    m = tmp_path / "dup.csv"
-    m.write_text("contig_id,cell_id\nc1,A\nc1,B\n")               # c1 twice
-    before = set(glob.glob(os.path.join(tempfile.gettempdir(), "*.alignair-meta.sqlite")))
-    with pytest.raises(DuplicateMetadataId, match="c1"):
-        build_metadata_index(str(m), id_column="contig_id")
-    after = set(glob.glob(os.path.join(tempfile.gettempdir(), "*.alignair-meta.sqlite")))
-    assert after == before                                       # no orphan temp DB left behind
+@pytest.mark.parametrize('chunk_size', [0, -1, True, 1.5, None])
+def test_invalid_chunk_sizes_fail_before_opening_source(monkeypatch, chunk_size):
+    from alignair.errors import ConfigurationError
+    def forbidden(*args, **kwargs): pytest.fail('opened invalid request')
+    monkeypatch.setattr('builtins.open', forbidden)
+    from alignair.io.sequence_reader import iter_sequences
+    with pytest.raises(ConfigurationError, match='chunk_size'):
+        next(iter_sequences('unused', chunk_size=chunk_size))

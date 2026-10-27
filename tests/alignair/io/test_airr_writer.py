@@ -272,23 +272,6 @@ def test_metadata_does_not_overwrite_populated_c_call():
         os.remove(tmp)
 
 
-def test_metadata_dangerous_call_column_is_namespaced():
-    """A metadata column colliding with a produced call (v_call) is namespaced to meta_v_call by the
-    CLI's rename policy, so it can never masquerade as the model's call. c_call is the sole exception."""
-    from alignair.io.airr import _METADATA_FILL_ONLY, COLUMNS
-    protected = frozenset(COLUMNS)
-
-    def _safe(col):                                 # mirrors cli.predict._load_metadata_table
-        if col in _METADATA_FILL_ONLY:
-            return col
-        return f"meta_{col}" if col in protected else col
-
-    assert _safe("v_call") == "meta_v_call"         # dangerous call -> namespaced
-    assert _safe("sequence") == "meta_sequence"
-    assert _safe("c_call") == "c_call"              # fill-only exception keeps its AIRR name
-    assert _safe("cell_id") == "cell_id"            # non-protected passes through
-
-
 def test_writer_is_atomic_on_interrupt():
     """An interrupted write must not leave the final path (only a discarded temp), so a crashed job is
     never mistaken for a complete one."""

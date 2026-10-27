@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Source-aware nucleotide read batches and a unique output-ID allocator that reserves generated
+  names across chunks. Metadata lookup now has a dedicated module with eager and disk-backed APIs.
 - Shared raw sequence-file parsing for FASTA, FASTQ, CSV/TSV, text, gzip and stdin, with
   structured source-location errors and explicit file ownership, independent of sequence alphabets.
 - Shared sequence normalization with configurable alphabets, stable source indices, structured failures,
@@ -60,6 +62,11 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Nucleotide CLI metadata joins use original source IDs, preventing generated suffixes from matching
+  another read's metadata. Unnamed reads receive no metadata through invented fallback join keys.
+- Both metadata loaders reject duplicate keys. Inserts are transactional; temporary indexes support
+  context management and idempotent closure. Header/rename collisions fail before rows are lost.
+- 10x metadata normalization preserves nonempty canonical AIRR values and fills gaps from aliases.
 - Protein CLI and nucleotide readers share file parsing. The protein CLI no longer reads a second
   whole-file string, supports the shared formats, and reports empty FASTA entries as record failures.
 - Unnamed FASTA entries reach downstream ID assignment and validation. Malformed FASTA/table
