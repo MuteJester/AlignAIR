@@ -7,7 +7,7 @@ from alignair.reference import build_protein_reference
 from alignair.data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
 from alignair.data.tokenizer import AAProteinTokenizer
 from alignair.data.augmentation import ProteinCropAugmenter, ProteinCropPolicy
-from alignair.aa.train_gym import _usable_stream
+from alignair.train.gym.streams import training_records, CurriculumStreamPolicy
 
 pytestmark=pytest.mark.integration
 
@@ -18,7 +18,7 @@ def test_native_cropped_reads_never_exclude_their_source_class():
         policy=ProteinSamplePolicy(require_productive=False,allow_stops=True))
     augmenter=ProteinCropAugmenter(reference,builder,np.random.default_rng(17),ProteinCropPolicy(1.,0.,0.))
     outcomes=Counter()
-    for record in islice(_usable_stream('HUMAN_IGH_OGRDB',(.3,.6,.9),.25,17,1,None),24):
+    for record in islice(training_records(('HUMAN_IGH_OGRDB',), policy=CurriculumStreamPolicy(mode='amplicon'), seed=17, translated_only=True),24):
         result=augmenter(record)
         if result.sample is None:
             continue

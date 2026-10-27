@@ -18,7 +18,7 @@ class Curriculum:
             # Minor observation-stage end loss (primer/read-end nibble) — the CORRUPTION axis, kept
             # small so the bulk of the molecule survives. Read LENGTH / short-read amplicons are a
             # separate, orthogonal axis modelled by GenAIRR end-loss profiles in the training mix
-            # (V-anchored / J-anchored / fragment); see alignair_trainer._amplicon_specs.
+            # (V-anchored / J-anchored / fragment); see train.gym.streams.CurriculumStreamPolicy.
             "end_loss_5": (0, int(round(_lerp(0, 40, p)))),
             "end_loss_3": (0, int(round(_lerp(0, 40, p)))),
             "indel_count": (0, int(round(_lerp(0, 5, p)))),

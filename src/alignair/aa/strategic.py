@@ -18,7 +18,7 @@ from ..train.engine import TrainingEngine
 from ..train.loop import training_iterations
 from ..train.checkpoints import save_snapshot as _save
 from ..data.tokenizer import AAProteinTokenizer
-from .train_gym import _usable_stream
+from ..train.gym.streams import CurriculumStreamPolicy, training_records
 
 
 def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192, has_d: bool = True):
@@ -34,7 +34,9 @@ def _sample_stream(dc_name, class_maps, d_index, tok, max_len, sub_prob, seed, r
     """Real gym records -> class-target samples, with length-preserving substitution augmentation."""
     builder = ProteinSampleBuilder(class_maps, tok, max_len, d_index,
                                    policy=ProteinSamplePolicy(require_productive=False, allow_stops=True))
-    for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, seed, 1, None):
+    records = training_records((dc_name,), policy=CurriculumStreamPolicy(mode="amplicon"),
+                               seed=seed, translated_only=True)
+    for rec in records:
         s = builder(rec).sample
         if s is None:
             continue

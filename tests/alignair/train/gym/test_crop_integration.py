@@ -50,9 +50,9 @@ def test_training_mix_yields_genairr_short_reads():
     full-length rehearsal + a meaningful fraction of short amplicon/fragment reads, all with
     engine-correct coordinates."""
     import itertools
-    from alignair.train.trainer import _mixed_stream
+    from alignair.train.gym.streams import training_records, CurriculumStreamPolicy
     dc = gdata.HUMAN_IGH_OGRDB
-    recs = list(itertools.islice(_mixed_stream(dc, (0.3, 0.6, 0.9), 0.25, 0), 1200))
+    recs = list(itertools.islice(training_records((dc,), policy=CurriculumStreamPolicy(mode="amplicon"), seed=0), 1200))
     lengths = np.array([len(str(r["sequence"])) for r in recs])
     assert (lengths < 160).mean() > 0.15, lengths          # meaningful short-read exposure
     assert (lengths > 300).mean() > 0.3, "full-length rehearsal must remain"

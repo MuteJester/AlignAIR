@@ -121,7 +121,8 @@ check_counter(provider_counts)`} />
         Sampling contracts, protein preparation, generic collection, and the GenAIRR adapter live in
         separate modules under <code>data.sampling</code>. Translation eligibility is shared with the
         record batch adapters through <code>data.projection</code>. Historical <code>aa.data</code>
-        imports delegate to these owners. Curriculum and partial-coverage runners use the same base
+        imports delegate to these owners. The <DocLink to="curriculum-sources">curriculum source API</DocLink>
+        supplies training records. Curriculum and partial-coverage runners use the same base
         builder and retain their explicit scientific policies. Crop augmentation and compatible-label
         transformations live in the <DocLink to="protein-augmentation">protein augmentation API</DocLink>,
         separate from base sample preparation.

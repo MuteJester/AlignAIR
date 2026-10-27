@@ -79,13 +79,14 @@ def test_train_step_end_to_end_includes_state_loss():
     import GenAIRR.data as gd
     from alignair.reference.reference_set import ReferenceSet
     from alignair.train.gym import Curriculum
-    from alignair.train.trainer import _stream_records, build_batch, train_step
+    from alignair.train.trainer import build_batch, train_step
+    from alignair.train.gym.streams import stream_records
 
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576, state_head=True)
     model = AlignAIR(cfg)
     logvars = make_logvars(cfg)
-    recs = list(itertools.islice(_stream_records(gd.HUMAN_IGH_OGRDB, dict(Curriculum().params(0.6)), 0), 4))
+    recs = list(itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, dict(Curriculum().params(0.6)), 0), 4))
     batch_in, targets = build_batch(recs, ref, cfg)
     assert targets["state_labels"].shape == (4, cfg.max_seq_length)
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=1e-3)

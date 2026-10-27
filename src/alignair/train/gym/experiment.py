@@ -1,4 +1,5 @@
 """GenAIRR Experiment Factory."""
+from ...reference.reference_set import is_tcr
 
 
 def build_experiment(dataconfig, params, allow_curatable: bool = False):
@@ -46,7 +47,7 @@ def build_experiment(dataconfig, params, allow_curatable: bool = False):
     # Somatic hypermutation and receptor revision are BCR-only biology; GenAIRR rejects
     # mutate() on TCR sequences. Detect receptor from chain_type so the same builder
     # generates valid samples for both BCR (IG) and TCR loci.
-    is_tcr = str(dataconfig.metadata.chain_type.value).upper().startswith("TCR")
+    tcr = is_tcr(dataconfig)
     mutation_kwargs = {
         "model": params.get("mutation_model", "s5f"),
         "s5f_model": params.get("s5f_model", "hh_s5f"),
@@ -55,7 +56,7 @@ def build_experiment(dataconfig, params, allow_curatable: bool = False):
         mutation_kwargs["segment_rates"] = params["segment_rates"]
     if params.get("v_subregion_rates") is not None:
         mutation_kwargs["v_subregion_rates"] = params["v_subregion_rates"]
-    if not is_tcr:
+    if not tcr:
         if params.get("mutation_count") is not None:
             exp = exp.mutate(count=params["mutation_count"], **mutation_kwargs)
         elif params.get("mutation_rate"):
@@ -63,7 +64,7 @@ def build_experiment(dataconfig, params, allow_curatable: bool = False):
     if dataconfig.metadata.has_d:
         exp = exp.invert_d(prob=float(params.get("invert_d_prob", 0.05)))
     revision_prob = float(params.get("receptor_revision_prob", 0.0))
-    if revision_prob > 0.0 and not is_tcr:          # receptor revision: BCR only
+    if revision_prob > 0.0 and not tcr:          # receptor revision: BCR only
         exp = exp.receptor_revision(
             prob=revision_prob,
             same_haplotype=bool(params.get("receptor_revision_same_haplotype", True)),

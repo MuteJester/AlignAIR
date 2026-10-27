@@ -15,6 +15,7 @@ import { setupPages } from "./pages-setup";
 import { compositionPages } from "./pages-composition";
 import { labelPages } from "./pages-labels";
 import { augmentationPages } from "./pages-augmentation";
+import { streamPages } from "./pages-streams";
 import { samplingPages } from "./pages-sampling";
 import { taskPages } from "./pages-tasks";
 import { batchingPages } from "./pages-batching";
@@ -42,6 +43,7 @@ export const DOCS: DocPage[] = [
   ...compositionPages, // model-composition  [Design]
   ...setupPages, // model-setup  [Design]
   ...labelPages, // reference-labels  [Design]
+  ...streamPages, // curriculum-sources  [Design]
   ...samplingPages, // sample-preparation  [Design]
   ...augmentationPages, // protein-augmentation  [Design]
   ...taskPages, // training-tasks  [Design]

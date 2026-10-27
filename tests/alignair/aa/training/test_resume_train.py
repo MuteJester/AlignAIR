@@ -30,16 +30,17 @@ def test_resume_reseeds_gym_corpus_stream_from_seed_plus_start_step(tmp_path, mo
     The local augmentation Generator already does this (`np.random.default_rng([seed, start_step])`)
     but the GYM/CORPUS record stream must ALSO incorporate start_step (mirroring
     `trainer.py`'s `_build_stream(seed + start)`) — otherwise every resume replays the corpus from
-    record 0 instead of walking a fresh slice. Captures the seed actually passed to `_usable_stream`
+    record 0 instead of walking a fresh slice. Captures the seed actually passed to `training_records`
     (monkeypatched to avoid touching the real GenAIRR pipeline) instead of relying on end-to-end
     behavior, since that is deterministic and fast."""
     captured = []
 
-    def fake_usable_stream(dc_name, progresses, heavy_shm, seed, short_boost, mutation_cap):
+    def fake_training_records(dataconfigs, *, policy, seed, translated_only):
+        assert policy.mode == "amplicon" and translated_only
         captured.append(seed)
         return iter(())                       # empty -> batch loop breaks after 0 steps
 
-    monkeypatch.setattr(st, "_usable_stream", fake_usable_stream)
+    monkeypatch.setattr(st, "training_records", fake_training_records)
 
     # -- fresh run: start_step == 0, stream seed must be seed + 0 --
     model, cfg, cmaps, meta = strategic_setup("HUMAN_IGH_OGRDB", 192, has_d=True)

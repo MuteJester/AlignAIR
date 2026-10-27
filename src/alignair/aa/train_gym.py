@@ -1,7 +1,7 @@
 """Train the amino-acid AlignAIR with the SAME scheme as the nucleotide model.
 
 The model (real ``AlignAIR`` with ``use_orientation=False``), loss (``hierarchical_loss``), optimizer
-step (``train_step``), and data stream (the gym's ``_mixed_stream`` curriculum) are all reused. The
+step (``train_step``), and data stream (the shared gym curriculum) are all reused. The
 only differences are the AA input tokens and AA-space coordinates (see ``data.adapters``).
 Records without a translation/frame or with inconsistent translation length are skipped."""
 from __future__ import annotations
@@ -15,7 +15,7 @@ from ..train.loop import training_iterations
 from ..train.checkpoints import save_snapshot as _save
 from ..reference.reference_set import ReferenceSet
 from ..data.adapters import ProteinAlleleBatchAdapter
-from ..data.projection import translated_record_usable as aa_usable
+from ..train.gym.streams import CurriculumStreamPolicy, training_records
 from ..data.tokenizer import AAProteinTokenizer
 
 
@@ -31,16 +31,6 @@ def setup_aa(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192):
     return setup.build_model(), setup.reference, setup.config, build_tasks(setup.config).make_weights()
 
 
-def _usable_stream(dc_name, progresses, heavy_shm, seed, short_boost, mutation_cap):
-    """The gym's mixed-amplicon curriculum stream, filtered by shared translation eligibility."""
-    import GenAIRR as ga
-    from ..train.trainer import _mixed_stream
-    dc = getattr(ga, dc_name)
-    for rec in _mixed_stream(dc, progresses, heavy_shm, seed, short_boost, mutation_cap):
-        if aa_usable(rec):
-            yield rec
-
-
 def train_aa(model, reference_set, dc_name, cfg, logvars, *, steps=2000, batch_size=64, lr=3e-4,
              progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, mutation_cap=None,
              seed=0, device="cpu", log_every=50, grad_clip=1.0, save_path=None, save_every=2000):
@@ -50,7 +40,8 @@ def train_aa(model, reference_set, dc_name, cfg, logvars, *, steps=2000, batch_s
     tasks = build_tasks(cfg)
     opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=lr)
     engine = TrainingEngine(model, opt, tasks=tasks, weights=logvars, grad_clip=grad_clip)
-    stream = _usable_stream(dc_name, progresses, heavy_shm, seed, short_boost, mutation_cap)
+    policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap, mode="amplicon")
+    stream = training_records((dc_name,), policy=policy, seed=seed, translated_only=True)
     tok = AAProteinTokenizer()
 
     batch_adapter = ProteinAlleleBatchAdapter(reference_set, cfg, device, tok)

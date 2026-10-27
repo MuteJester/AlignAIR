@@ -33,7 +33,7 @@ from ..train.engine import TrainingEngine, evaluation_mode
 from ..train.loop import training_iterations
 from ..data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
 from ..data.tokenizer import AAProteinTokenizer
-from .train_gym import _usable_stream
+from ..train.gym.streams import CurriculumStreamPolicy, training_records
 
 
 def _git_sha() -> str:
@@ -110,7 +110,9 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
     augmenter = ProteinCropAugmenter(reference, sample_builder, rng, ProteinCropPolicy(p_crop, p_sub, p_il))
 
     def gen():
-        for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, stream_seed, 1, None):
+        records = training_records((dc_name,), policy=CurriculumStreamPolicy(mode="amplicon"),
+                                   seed=stream_seed, translated_only=True)
+        for rec in records:
             s = augmenter(rec).sample
             if s is not None:
                 yield s

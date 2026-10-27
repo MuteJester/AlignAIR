@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared curriculum record sources with explicit automatic/amplicon policies, provider injection,
+  deterministic component/panel seeds, translated-read eligibility, and a website API guide.
 - Shared reference-bound model preparation in `alignair.core`, with explicit nucleotide/protein input
   and allele/protein-class label policies, configurable components, and delayed model allocation.
 - Model setup API guide covering label identity, head defaults, adapters, and preflight validation.
@@ -42,6 +44,11 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Nucleotide and protein runners share `train.gym.streams`; removed stream construction from the
+  nucleotide trainer and the private protein source bridge. Receptor detection is shared with the
+  experiment builder. Source ordering, per-locus mutation caps, and resume seed schedules are preserved.
+- Locus tagging leaves provider-owned records unchanged, repeated component dictionaries are
+  independent, and colliding custom provenance names retain every reference panel.
 - Protein setup helpers, public nucleotide training entries, and training plans use one model setup
   owner and construct the shared `AlignAIR` class. `aa_igh_config` delegates to the shared count-based
   factory. Reference allele-order validation

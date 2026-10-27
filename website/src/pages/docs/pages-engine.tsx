@@ -84,6 +84,8 @@ for iteration in training_iterations(
         The result is the shared <code>StepResult</code>; records is a tuple containing references to
         that update’s source rows, available for diagnostics such as per-gene class support.
         The iterator does not retain the adapted tensor batch while runner callbacks execute.
+        The <DocLink to="curriculum-sources">curriculum source API</DocLink> constructs simulator
+        mixtures upstream of this iterator.
       </p>
       <DocTable head={["Argument", "Contract"]} rows={[
         ["start_step", "Last completed optimizer step; defaults to zero."],

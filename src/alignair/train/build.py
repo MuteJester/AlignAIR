@@ -95,12 +95,13 @@ def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_s
 
     from ..api import load_model
     from ..train.gym import Curriculum, build_experiment
-    from ..train.trainer import _is_tcr, build_batch, eval_metrics
+    from ..train.trainer import build_batch, eval_metrics
+    from ..reference.reference_set import is_tcr
     model, ref = load_model(checkpoint_path, device="cpu")
     agg: dict = {}
     for i, dc in enumerate(dcs):
         params = dict(Curriculum().params(0.3))
-        if _is_tcr(dc):                            # TCR loci do not undergo SHM (GenAIRR forbids mutate())
+        if is_tcr(dc):                            # TCR loci do not undergo SHM (GenAIRR forbids mutate())
             params["mutation_rate"] = 0.0
         exp = build_experiment(dc, params, allow_curatable=True)
         segs = required_segments(dc)               # per-locus, not the union reference (see the helper)

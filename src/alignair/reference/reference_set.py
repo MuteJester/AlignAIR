@@ -24,6 +24,12 @@ def _locus_of(chain_type) -> str:
     return _LOCUS_OF_CHAIN.get(key, key)
 
 
+def is_tcr(dataconfig) -> bool:
+    """Whether a provider reference declares a T-cell receptor chain."""
+    chain_type = getattr(dataconfig.metadata, "chain_type", "")
+    return "TCR" in str(getattr(chain_type, "value", chain_type)).upper()
+
+
 def _locus_from_name(name: str):
     """The AIRR locus a standard IMGT/AIRR allele name belongs to (IGKV1-5*01 -> IGK), or None."""
     m = _LOCUS_NAME_RE.match(str(name).upper())

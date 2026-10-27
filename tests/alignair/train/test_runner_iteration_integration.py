@@ -11,6 +11,7 @@ from alignair.data.tokenizer import AAProteinTokenizer
 from alignair.reference import build_protein_reference
 from alignair.tasks import build_tasks
 from alignair.train import trainer
+from alignair.train.gym.streams import training_records, CurriculumStreamPolicy
 from alignair.train.checkpoints import load_training_checkpoint
 from alignair.aa import train_gym, strategic, strategic_trunc
 
@@ -23,7 +24,7 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
     reference = build_protein_reference('HUMAN_IGH_OGRDB')
     builder = ProteinSampleBuilder(reference.class_maps, AAProteinTokenizer(), 192,
         reference.source.gene('D').index, policy=ProteinSamplePolicy(False, True))
-    source = train_gym._usable_stream('HUMAN_IGH_OGRDB', (.3, .6, .9), .25, 21, 1, None)
+    source = training_records(('HUMAN_IGH_OGRDB',), policy=CurriculumStreamPolicy(mode='amplicon'), seed=21, translated_only=True)
     record = next(record for record in islice(source, 50) if builder(record).sample is not None)
 
     if runner in ('nucleotide', 'protein_alleles'):
@@ -39,7 +40,7 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
 
     if runner == 'nucleotide':
         import GenAIRR as ga
-        monkeypatch.setattr(trainer, '_stream_records', lambda *args: iter([record] * source_size))
+        monkeypatch.setattr(trainer, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
         path = tmp_path / 'model.alignair'
         trainer.train(model, ref, ga.HUMAN_IGH_OGRDB, cfg, build_tasks(cfg).make_weights(),
                       progresses=(.3,), heavy_shm=0., save_path=path, **options)
@@ -48,7 +49,7 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
     else:
         module = {'protein_alleles': train_gym, 'protein_classes': strategic,
                   'protein_crops': strategic_trunc}[runner]
-        monkeypatch.setattr(module, '_usable_stream', lambda *args: iter([record] * source_size))
+        monkeypatch.setattr(module, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
         path = tmp_path / 'model.pt'
         if runner == 'protein_alleles':
             history = train_gym.train_aa(model, ref, 'HUMAN_IGH_OGRDB', cfg,
