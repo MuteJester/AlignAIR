@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared protein-class sample builder with explicit productivity/stop policies, plus source-independent
+  budgeted collection and preparation/selection ledgers under `alignair.data.sampling`.
+- Sample preparation API guide covering rejection reasons, hard failures, selection counts, and seed budgets.
 - Shared protein reference views derived from the ordered nucleotide `ReferenceSet`, with explicit
   anchor and hash-scope policies, deterministic equivalence labels, and reference API documentation.
 - Shared `alignair.train.TrainingEngine` for optimizer steps, full optimized-parameter gradient
@@ -32,6 +35,11 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Replaced duplicate strict/curriculum protein sample assembly with one builder. Historical `aa.data`
+  imports delegate to shared owners; migrated the implementation out of that module and removed
+  `_class_sample`. Shared translation eligibility also serves protein allele-batch source filtering.
+- Collection distinguishes scientific rejections, selection skips, callback failures, and untracked
+  historical selection outcomes. Malformed frames and length-changing tokenizers raise typed errors.
 - Germline translation, protein label maps, and class-map assembly live under `alignair.reference`.
   AA training, audit, and product callers use the shared owners; historical imports reexport them.
   Source allele order, class IDs, V/J versus V/D/J hash scopes, and the existing wire schema are preserved.

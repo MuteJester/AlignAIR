@@ -2,7 +2,7 @@
 
 Augmentation mix per read: full-length rehearsal, N/C/internal crops (coordinate-aware — boundaries
 shifted+clipped into crop coords, absent genes masked, partially-observed V/J supervised against the
-compatible protein-class SET), and AA-native subs / single-residue indel / I/L ambiguity. D stays an
+compatible protein-class SET), and length-preserving substitutions / I/L ambiguity. D stays an
 allele posterior (no protein-equivalence merging — its observability is frame/trim/junction-dependent):
 fully observed -> singleton true allele; partial/absent -> masked.
 
@@ -28,7 +28,7 @@ from ..train.checkpoints import (load_research_checkpoint as load_checkpoint,
                                   research_checkpoint_rng, save_snapshot as _save)
 from ..train.random_state import restore_rng_state
 from ..train.engine import TrainingEngine, evaluation_mode
-from .strategic import _class_sample
+from ..data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
 from ..data.tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
 from .truncation import compatible_classes, crop_window, shift_clip
@@ -55,12 +55,15 @@ def _compat(true_c, obs_lo, obs_hi, full_span, protos):
 
 
 def stage1_sample(rec, class_maps, d_index, protos, tok, max_len, rng,
-                  p_crop=0.4, p_sub=0.4, p_il=0.15):
+                  p_crop=0.4, p_sub=0.4, p_il=0.15, *, sample_builder=None):
     """Full-length gym record -> a training sample. DECOUPLED axes: (1) crop (coordinate-aware,
     boundaries shifted/clipped, absent genes masked, partial V/J -> compatible-class set); then
     (2) length-preserving AA-native subs / I/L applied ON TOP (so substitution exposure ~p_sub
     regardless of cropping). D never gets a compatible set (allele posterior; masked when partial)."""
-    base = _class_sample(rec, class_maps, d_index, tok, max_len)
+    builder = (sample_builder if sample_builder is not None else
+               ProteinSampleBuilder(class_maps, tok, max_len, d_index,
+                                    policy=ProteinSamplePolicy(require_productive=False, allow_stops=True)))
+    base = builder(rec).sample
     if base is None:
         return None
     genes = ("v", "j", "d")
@@ -142,6 +145,8 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
               "j": prototypes_by_class(dc, class_maps["J"], "J")}
     tok = AAProteinTokenizer()
     d_index = meta["d_index"]
+    sample_builder = ProteinSampleBuilder(class_maps, tok, cfg.max_seq_length, d_index,
+                                         policy=ProteinSamplePolicy(require_productive=False, allow_stops=True))
     model.to(device).train()
     opt = torch.optim.AdamW(model.parameters(), lr=base_lr)
     sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=(total_budget or steps), eta_min=lr_min)
@@ -169,7 +174,7 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
     def gen():
         for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, stream_seed, 1, None):
             s = stage1_sample(rec, class_maps, d_index, protos, tok, cfg.max_seq_length, rng,
-                              p_crop, p_sub, p_il)
+                              p_crop, p_sub, p_il, sample_builder=sample_builder)
             if s is not None:
                 yield s
     stream = gen()

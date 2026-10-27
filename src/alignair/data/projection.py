@@ -9,8 +9,12 @@ are masked (provenance ``None``).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Mapping
+from operator import index
+from numbers import Integral
 
 from .coordinates import query_spans
+from ..errors import TrainingDataError
 
 
 def projection_segments(record):
@@ -21,6 +25,37 @@ def projection_segments(record):
 def residue_count(seq_len_nt: int, frame_offset: int) -> int:
     """Number of complete codons in the declared read frame."""
     return max(0, (seq_len_nt - frame_offset) // 3)
+
+
+def protein_translation_issue(record) -> str | None:
+    """Return an eligibility reason; malformed annotation types raise rather than becoming rejections."""
+    if not isinstance(record, Mapping):
+        raise TrainingDataError("protein records must be mappings")
+    aa = record.get("sequence_aa")
+    if aa is not None and not isinstance(aa, str):
+        raise TrainingDataError("protein sequence must be a string", context={"field": "sequence_aa"})
+    if not aa:
+        return "no_aa"
+    if record.get("junction_start") is None:
+        return "no_frame"
+    if not isinstance(record.get("sequence"), str):
+        raise TrainingDataError("nucleotide sequence must be a string", context={"field": "sequence"})
+    try:
+        junction = record["junction_start"]
+        if isinstance(junction, bool) or not isinstance(junction, Integral):
+            raise TypeError
+        frame = index(junction) % 3
+    except TypeError as exc:
+        raise TrainingDataError("junction frame requires an integer coordinate",
+                                context={"field": "junction_start"}) from exc
+    if len(record["sequence_aa"]) != residue_count(len(record["sequence"]), frame):
+        return "translation_length_mismatch"
+    return None
+
+
+def translated_record_usable(record) -> bool:
+    """Whether the exported protein length agrees with its declared nucleotide reading frame."""
+    return protein_translation_issue(record) is None
 
 # Standard genetic code (NCBI transl_table=1). Codons enumerated with base order T,C,A,G
 # so they align with the canonical amino-acid string below.

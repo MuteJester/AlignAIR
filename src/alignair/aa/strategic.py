@@ -1,8 +1,8 @@
-"""Strategic AA path (b): explicit protein-equivalence CLASS targets, on the REAL gym distribution,
-with AA-native augmentation, trained longer. Reuses Phase-1's softmax class-head model (`AAAlignAIR`)
-and loss (`aa_loss`), fed by the real curriculum gym (`train_gym._usable_stream`) via the class-target
-adapter (`data.record_to_sample`). Substitution augmentation is length-preserving, so boundary targets
-stay valid; truncation/indel/IL are evaluation strata (see `augment.py`)."""
+"""Categorical protein training with explicit curriculum and acceptance policies.
+
+Shared sample preparation maps V/J protein classes and optional D alleles. This runner retains
+nonproductive/stop-containing reads and applies length-preserving substitutions before batching.
+"""
 from __future__ import annotations
 
 import itertools
@@ -14,14 +14,13 @@ from .augment import aa_substitute
 from .config import aa_igh_config
 from ..reference import build_protein_reference
 from ..data.adapters import collate_categorical as collate_aa
-from ..data.adapters import translated_record_usable as aa_usable
+from ..data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
 from ..tasks import build_tasks
 from ..train.engine import TrainingEngine
 from ..train.checkpoints import save_snapshot as _save
 from .model import AAAlignAIR
 from ..data.tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
-from ..data.projection import frame_offset_of, project_codons, projection_segments
 
 
 def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192, has_d: bool = True):
@@ -33,41 +32,12 @@ def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192,
     return AAAlignAIR(cfg), cfg, class_maps, meta
 
 
-def _class_sample(rec, class_maps, d_index, tok, max_len):
-    """Junction-intact gym record -> class-target sample. Lighter than data.record_to_sample: keeps
-    non-productive/stop-containing reads (the V/J CLASS label is still the germline call, and stop
-    exposure is realistic), which restores training throughput. D is added at the allele level
-    (inverted/absent D -> d_class=-1, d_valid=0, masked from the loss)."""
-    try:
-        vc = class_maps["V"].class_of(rec["v_call"].split(",")[0].strip())
-        jc = class_maps["J"].class_of(rec["j_call"].split(",")[0].strip())
-    except KeyError:
-        return None
-    segs = projection_segments(rec)
-    proj = project_codons(len(rec["sequence"]), frame_offset_of(rec["junction_start"]), segs)
-    vb, jb = proj.aa_bounds.get("V"), proj.aa_bounds.get("J")
-    if vb is None or jb is None:
-        return None
-    enc = tok.encode(rec["sequence_aa"])
-    if len(enc) == 0 or len(enc) >= max_len:
-        return None
-    s = {"tokens": enc, "v_class": vc, "j_class": jc,
-         "v_start": vb[0], "v_end": vb[1], "j_start": jb[0], "j_end": jb[1]}
-    if d_index:
-        db = proj.aa_bounds.get("D")
-        dcall = rec.get("d_call")
-        d0 = dcall.split(",")[0].strip() if dcall else None
-        valid = (not rec.get("d_inverted", False)) and (d0 in d_index) and (db is not None)
-        s["d_class"] = d_index[d0] if valid else -1
-        s["d_start"], s["d_end"] = db if valid else (0, 0)
-        s["d_valid"] = 1.0 if valid else 0.0
-    return s
-
-
 def _sample_stream(dc_name, class_maps, d_index, tok, max_len, sub_prob, seed, rng):
     """Real gym records -> class-target samples, with length-preserving substitution augmentation."""
+    builder = ProteinSampleBuilder(class_maps, tok, max_len, d_index,
+                                   policy=ProteinSamplePolicy(require_productive=False, allow_stops=True))
     for rec in _usable_stream(dc_name, (0.3, 0.6, 0.9), 0.25, seed, 1, None):
-        s = _class_sample(rec, class_maps, d_index, tok, max_len)
+        s = builder(rec).sample
         if s is None:
             continue
         if sub_prob and rng.random() < sub_prob:

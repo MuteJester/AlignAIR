@@ -23,10 +23,10 @@ from alignair_benchmark import default_igh_spec, stream_benchmark
 
 from ..augment import aa_indel, aa_substitute, aa_truncate, il_ambiguity
 from ..conformal import Conformal
-from ..data import record_to_sample
+from ...data.sampling import ProteinSampleBuilder
 from ...reference import build_protein_reference
 from ..evaluate import evaluate_frozen
-from ...data.adapters import translated_record_usable as aa_usable
+from ...data.projection import translated_record_usable as aa_usable
 from ..infer import class_probs
 from ...data.tokenizer import AAProteinTokenizer
 from .metrics import brier_score, macro_accuracy, per_frequency_bins, softmax_nll
@@ -176,16 +176,17 @@ def _freq_for(rows: list, gene_key: str, allele_class: dict, dc_name: str) -> np
 def _boundary_mae(model, cfg, class_maps, clean_rows: list, device: str) -> dict:
     """Boundary MAE (V/J start+end) on the clean stratum, reusing ``evaluate.py::evaluate_frozen``
     end-to-end (the model's soft-argmax boundary heads vs the record's projected AA-space germline
-    coordinates via ``data.record_to_sample``). Best-effort/informational: returns nulls with a note
-    if no clean-stratum record survives ``record_to_sample``'s stricter filters (productive,
+    coordinates via the shared sample builder). Best-effort/informational: returns nulls with a note
+    if no clean-stratum record survives its stricter filters (productive,
     no-stop-codon, exact translation length)."""
     tok = AAProteinTokenizer()
+    builder = ProteinSampleBuilder(class_maps, tok, cfg.max_seq_length)
     samples = []
     for row in clean_rows:
         rec = row.get("record")
         if rec is None:
             continue
-        sample, _why = record_to_sample(rec, class_maps, tok, cfg.max_seq_length)
+        sample = builder(rec).sample
         if sample is not None:
             samples.append(sample)
     if not samples:

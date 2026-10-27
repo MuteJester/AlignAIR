@@ -14,7 +14,7 @@ from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error
 from ..neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .encoders import encode_allele_sets
-from .projection import frame_offset_of, project_codons, projection_segments, residue_count
+from .projection import frame_offset_of, project_codons, projection_segments, translated_record_usable
 from .targets import build_targets
 from .tokenizer import AAProteinTokenizer
 
@@ -125,12 +125,6 @@ class NucleotideBatchAdapter:
             raise ConfigurationError("orientation augmentation requires the model's orientation head")
         return batch.to(self.device)
 
-
-def translated_record_usable(record):
-    """A translation must have a frame and a length consistent with its residue coordinate grid."""
-    if record.get("junction_start") is None or not record.get("sequence_aa"):
-        return False
-    return len(record["sequence_aa"]) == residue_count(len(record["sequence"]), frame_offset_of(record["junction_start"]))
 
 
 @dataclass(frozen=True)

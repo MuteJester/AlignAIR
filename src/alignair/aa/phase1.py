@@ -11,7 +11,7 @@ from collections import Counter
 import torch
 
 from .config import aa_igh_config
-from .data import check_counter, collect_usable
+from ..data.sampling import check_counter, collect_usable
 from ..reference import build_protein_reference
 from ..data.adapters import collate_categorical as collate_aa
 from .evaluate import evaluate_frozen

@@ -1,14 +1,14 @@
 """Real simulator collection budgets and rejection accounting."""
 from collections import Counter
 import pytest
-from alignair.aa.tokenizer import AAProteinTokenizer
+from alignair.data.tokenizer import AAProteinTokenizer
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.mark.slow
 def test_collect_usable_real_igh_is_valid_budgeted_and_fully_accounted():
-    from alignair.aa.data import check_counter, collect_usable
+    from alignair.data.sampling import check_counter, collect_usable
     from alignair.reference.protein import build_class_maps
     cmaps, meta = build_class_maps("HUMAN_IGH_OGRDB")
     assert meta["n_v_classes"] == 149 and meta["n_j_classes"] == 7
@@ -28,9 +28,17 @@ def test_collect_usable_real_igh_is_valid_budgeted_and_fully_accounted():
 
 @pytest.mark.slow
 def test_collect_usable_raises_when_the_seed_budget_is_exhausted():
-    from alignair.aa.data import SeedBudgetExhausted, collect_usable
+    from alignair.data.sampling import SeedBudgetExhausted, collect_usable
     from alignair.reference.protein import build_class_maps
     cmaps, _ = build_class_maps("HUMAN_IGH_OGRDB")
     with pytest.raises(SeedBudgetExhausted):                  # ~14% yield: 50 records cannot give 500
         collect_usable(start_seed=6_000_000, budget=50, want=500, class_maps=cmaps,
                        tokenizer=AAProteinTokenizer(), max_len=192)
+
+
+@pytest.mark.parametrize('seed', [-1, True, .5])
+def test_provider_rejects_invalid_seed_ranges(seed):
+    from alignair.data.sampling import collect_usable
+    from alignair.errors import ConfigurationError
+    with pytest.raises(ConfigurationError):
+        collect_usable(start_seed=seed, budget=1, want=1, class_maps={}, tokenizer=AAProteinTokenizer(), max_len=192)

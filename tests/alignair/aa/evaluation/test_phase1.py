@@ -1,4 +1,5 @@
 import pytest
+from alignair.data.sampling import REJECT_REASONS
 
 pytestmark = pytest.mark.integration
 
@@ -61,8 +62,8 @@ def test_run_learning_proof_smoke_has_provenance_paired_stats_and_disjoint_range
     # per-stream accounting, and replicates must occupy DIFFERENT seed ranges
     for kind in ("overfit", "train"):
         c = one["counters"][kind]
-        assert c["generated"] == c["usable"] + sum(v for k, v in c.items()
-                                                   if k not in ("generated", "usable"))
+        assert c["generated"] == c["usable"] + sum(c.get(reason, 0) for reason in REJECT_REASONS)
+        assert c["usable"] == c.get("selected", 0) + c.get("selection_skipped", 0)
     a = r["seeds"]["0"]["seed_ranges"]["train"]
     b = r["seeds"]["1"]["seed_ranges"]["train"]
     assert a["last_seed"] < b["first_seed"] or b["last_seed"] < a["first_seed"]

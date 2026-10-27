@@ -14,7 +14,8 @@ from ..train.engine import TrainingEngine
 from ..train.checkpoints import save_snapshot as _save
 from ..core.model import AlignAIR
 from ..reference.reference_set import ReferenceSet
-from ..data.adapters import translated_record_usable as aa_usable, build_protein_allele_batch as build_batch_aa
+from ..data.adapters import build_protein_allele_batch as build_batch_aa
+from ..data.projection import translated_record_usable as aa_usable
 from ..data.tokenizer import AAProteinTokenizer
 
 

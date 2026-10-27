@@ -14,6 +14,8 @@ const trainingBatches: DocPage = {
         target names follow the <DocLink to="training-tasks">training task API</DocLink>.
         Choose an adapter by the source annotations and objective. Alphabet alone does not determine
         whether gene labels are allele sets or categorical classes.
+        The <DocLink to="sample-preparation">sample preparation API</DocLink> describes source filtering
+        and bounded collection before categorical batching.
       </p>
       <H2 id="adapters">Choose a source adapter</H2>
       <DocTable head={["Adapter", "Source and target semantics"]} rows={[

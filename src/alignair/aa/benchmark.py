@@ -16,7 +16,8 @@ from collections import defaultdict
 import torch
 
 from .eval_gym import _merge, finalize_gene, gene_allele_counts
-from ..data.adapters import translated_record_usable as aa_usable, build_protein_allele_batch as build_batch_aa
+from ..data.adapters import build_protein_allele_batch as build_batch_aa
+from ..data.projection import translated_record_usable as aa_usable
 
 _GENES = ("v", "d", "j")
 
