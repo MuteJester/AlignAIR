@@ -11,9 +11,60 @@ const evaluationReports: DocPage = {
       <p>
         <code>alignair.evaluate</code> provides pure report and interval functions. They consume
         observed labels or numerical values supplied by an evaluator, independent of the model’s
-        input alphabet. The evaluator selects the cohort, applies supervision masks, and keeps
-        truth and predictions aligned. The <DocLink to="training-tasks">task interface</DocLink>
-        separately defines training metrics and compatible-label or multilabel correctness.
+        input alphabet. The shared observation collector applies task supervision masks and keeps
+        source indices aligned. The evaluator selects the cohort and reporting policy. The{" "}
+        <DocLink to="training-tasks">task interface</DocLink> defines the shared supervision rules.
+      </p>
+      <H2 id="collection">Collect supervised observations</H2>
+      <CodeBlock lang="python" code={`from alignair.data.adapters import NucleotideBatchAdapter
+from alignair.evaluate import collect_alignment_observations
+
+adapter = NucleotideBatchAdapter(reference, model.cfg, device=device,
+                                 augment_orientation=False)
+observed = collect_alignment_observations(
+    model, frozen_records, adapter, model.cfg, batch_size=128,
+)
+print(observed.record_count, observed.support)
+for row in observed.classification["v"]:
+    print(row.record_index, row.truth, row.prediction, row.correct)`} />
+      <p>
+        <code>collect_alignment_observations</code> uses the model configuration’s gene vocabulary
+        and classification semantics. The same collector accepts <code>ProteinAlleleBatchAdapter</code>
+        or <code>CategoricalBatchAdapter.from_config(config, device=device)</code>. Input alphabet
+        and target preparation remain with the <DocLink to="training-batches">batch adapter</DocLink>.
+        Optional <code>genes=</code> selects a nonempty unique subset of configured genes, for either
+        categorical or multilabel models. The default selects every configured gene.
+      </p>
+      <DocTable head={["Observation", "Fields and meaning"]} rows={[
+        ["record_count", "Total consumed source records, including records with unobserved fields."],
+        ["classification[gene]", "ClassificationObservation rows with record_index, truth as a tuple of compatible IDs, prediction as a top-1 ID, and a membership-based correct property."],
+        ["boundaries[gene_start / gene_end]", "BoundaryObservation rows with record_index, truth, prediction, and absolute_error in the adapter’s coordinate units."],
+        ["support", "Separate observed classification and boundary counts; each gene/field retains its own denominator."],
+      ]} />
+      <p>
+        Gene-level <code>{"{gene}_valid"}</code> and <code>{"{gene}_supervise"}</code> masks govern
+        boundaries and classification. Categorical <code>{"{gene}_class_supervise"}</code> masks
+        and unknown class IDs of <code>-1</code> can exclude classification while preserving
+        observed boundaries. Compatible sets use the same validation as training tasks. Multilabel
+        truth must be binary membership; an empty allele set has no classification observation.
+        Compatible and multilabel sets are retained without choosing a canonical label. An exact-class
+        summary needs singleton truth; broader sets can use each row’s membership correctness.
+      </p>
+      <p>
+        The collector consumes an ordered iterable in bounded batches, includes a final partial
+        batch, and retains detached Python values with zero-based source indices. The adapter must
+        preserve order and cardinality and place inputs and targets on the model’s device. Fields
+        are checked against configured vocabulary sizes and batch shapes. Non-finite supervised
+        values raise <code>NumericalError</code>; malformed fields raise <code>TrainingDataError</code>
+        with batch offset, gene, and field context. Masked placeholders do not count as observations.
+        Invalid batch sizes, gene selections, or assembly options raise <code>ConfigurationError</code>.
+      </p>
+      <p>
+        Inference disables gradients and restores every module’s prior training/evaluation flag,
+        including on failures. Outputs and gradient graphs are not retained. Cohort freezing, source
+        seeds, dataset fingerprints, and optional auxiliary-head reports remain caller policies.
+        Keep an indexable frozen source when later joining observations to study strata through
+        <code> record_index</code>.
       </p>
       <H2 id="classification">Report exact-class predictions</H2>
       <CodeBlock lang="python" code={`from alignair.evaluate import classification_report
@@ -94,8 +145,12 @@ print(report["paired_improvement"])`} />
       <p>
         Numerical intervals live in <code>evaluate.statistics</code>; class and boundary summaries
         live in <code>evaluate.reports</code>. The protein frozen-cohort evaluator delegates those
-        calculations while retaining its V/J inference policy, coverage bins, ambiguity strata,
-        and report schema. Convergence metrics share the macro-accuracy owner. Gym competence
+        calculations and prediction collection while retaining its V/J selection, coverage bins,
+        and ambiguity strata. Its existing metric fields remain; the added <code>support</code>
+        field records per-field denominators. Unknown and masked class rows are excluded from class
+        summaries and strata while observed boundaries remain eligible. Multi-member truth sets
+        require an explicit membership report instead of this study’s exact-class summary.
+        Convergence metrics share the macro-accuracy owner. Gym competence
         aggregation imports its preserved estimator directly. Historical estimator imports from
         <code> aa.evaluate</code> and <code>train.gym.instrument.stats</code> remain aliases.
         The existing <code>alignair.evaluate</code> benchmark exports load on demand.

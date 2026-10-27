@@ -134,6 +134,29 @@ def test_categorical_adapter_replaces_stage_specific_collation_and_keeps_all_mas
     assert batch.inputs["tokenized_sequence"].shape == (1, 8)
 
 
+def test_categorical_adapter_preserves_gene_supervision_and_defaults_only_missing_rows():
+    samples = [_sample(), _sample()]
+    samples[0]['v_supervise'] = False
+    cfg = AlignAIRConfig(v_allele_count=2, j_allele_count=2, has_d=False,
+                         max_seq_length=8).with_amino_acid_heads()
+    batch = CategoricalBatchAdapter.from_config(cfg)(samples)
+    assert batch.targets['v_supervise'].tolist() == [False,True]
+    assert batch.targets['v_supervise'].dtype == torch.bool
+    assert 'j_supervise' not in batch.targets
+
+
+@pytest.mark.parametrize('field', ['v_supervise', 'v_class_supervise'])
+def test_categorical_adapter_rejects_nonbinary_supervision_masks(field):
+    sample = _sample()
+    sample[field] = .5
+    cfg = AlignAIRConfig(v_allele_count=2, j_allele_count=2, has_d=False,
+                         max_seq_length=8).with_amino_acid_heads()
+    with pytest.raises(TrainingDataError) as caught:
+        CategoricalBatchAdapter.from_config(cfg)([sample])
+    assert caught.value.context['field'] == field
+    assert caught.value.context['record_index'] == 0
+
+
 @pytest.mark.parametrize("failure", ["empty", "class_type", "gene_set", "missing_set", "bad_set", "counts", "long"])
 def test_categorical_adapter_contract_errors_are_classified(failure):
     samples = [_sample(), _sample()]

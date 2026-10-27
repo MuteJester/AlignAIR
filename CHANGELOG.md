@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared supervision-aware cohort observation collection for nucleotide/protein and categorical/multilabel
+  models, with original record indices, per-field support, shape checks, and mode-safe inference.
 - Shared evaluation statistics and exact-class/boundary reports, validated observation contracts,
   bounded NumPy bootstrap resampling, and a website API guide.
 - Shared task-driven one-batch capacity diagnostics for nucleotide and protein models, with weighted
@@ -50,6 +52,9 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Frozen protein-cohort evaluation delegates prediction collection to the shared owner, excludes
+  unobserved classes without dropping observed boundaries, and reports explicit per-field support.
+- Categorical batch adaptation preserves gene-level supervision masks alongside class-only masks.
 - Frozen protein-cohort reports and convergence macro accuracy use shared evaluation owners. Gym
   competence statistics retain their seeded Python resampling convention under the same statistics module.
 - Statistical imports defer benchmark loading; existing evaluation and historical estimator imports remain available.
