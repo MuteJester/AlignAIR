@@ -5,7 +5,7 @@ import GenAIRR as ga
 
 from alignair.aa.product.asc import asc_to_imgt_multi
 from alignair.aa.product.bundle import canonical_json, complete_calibration, save_aa_bundle
-from alignair.aa.strategic import strategic_setup
+from tests.support.model_setup import protein_class_setup
 from alignair.model_file import container
 
 pytestmark = pytest.mark.component
@@ -30,7 +30,10 @@ def _card_extra(**overrides):
 
 
 def _build_bundle(tmp_path, filename="bundle.alignair", **card_overrides):
-    model, cfg, class_maps, meta = strategic_setup("HUMAN_IGH_OGRDB", 192, has_d=True)
+    setup = protein_class_setup("HUMAN_IGH_OGRDB", 192, has_d=True)
+    model = setup.build_model()
+    cfg, class_maps = setup.config, setup.protein_reference.class_maps
+    meta = {'d_index': dict(setup.reference.gene('D').index) if setup.config.has_d else {}}
     dc = ga.HUMAN_IGH_OGRDB
     asc_multi = asc_to_imgt_multi(dc)
     d_allele_order = [name for name, _ in sorted(meta["d_index"].items(), key=lambda kv: kv[1])]

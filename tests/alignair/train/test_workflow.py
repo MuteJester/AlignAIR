@@ -100,7 +100,7 @@ def test_training_config_has_one_owner_and_snapshots_model_options():
 @pytest.mark.parametrize('options', [{'input_space': 'aa'}, {'label_space': 'classes'},
                                     {'input_space': 'nucleotide', 'label_space': 'protein_classes'},
                                     {'model_options': []}, {'model_options': {'v_allele_count': 2}},
-                                    {'steps': True}, {'batch_size': 0}, {'short_boost': False}])
+                                    {'steps': True}, {'batch_size': 0}, {'short_boost': False}, {'augmentation': {}}])
 def test_bad_public_requests_fail_at_construction(options):
     with pytest.raises(ConfigurationError):
         request(**options)

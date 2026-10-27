@@ -57,6 +57,7 @@ class ResumeState:
     rng: dict
     config: object = None
     label_schema: dict | None = None
+    augmentation: dict | None = None
 
 
 def load_training_checkpoint(path, *, device="cpu", trust_pickle=False) -> ResumeState:
@@ -68,7 +69,8 @@ def load_training_checkpoint(path, *, device="cpu", trust_pickle=False) -> Resum
         if mf.container.is_alignair_file(path):
             state = mf.load_training_state(path, device=device)
             return ResumeState(state.model.state_dict(), state.logvars_state, state.optimizer_state,
-                               state.step, state.rng, state.config, state.metadata.get('model', {}).get('label_schema'))
+                               state.step, state.rng, state.config, state.metadata.get('model', {}).get('label_schema'),
+                               state.metadata.get('training', {}).get('train_args', {}).get('augmentation'))
         if not trust_pickle:
             raise ModelError("resuming a legacy .pt checkpoint runs torch.load (arbitrary-code pickle); "
                              "pass resume_trust_pickle=True only for a checkpoint you trust.")

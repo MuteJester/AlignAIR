@@ -44,7 +44,7 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     setup = prepare_model(reference, input_space=config.input_space, label_space=config.label_space,
                           max_seq_length=config.max_seq_length, has_d=config.has_d, **config.model_options)
     device = resolve_device(config.device)
-    prepare_training_data(setup, device=device)  # preflight adapters before model allocation/output creation
+    prepare_training_data(setup, device=device, augmentation=config.augmentation)
     validate_training_request(steps=config.steps, batch_size=config.batch_size, lr=config.lr,
                               max_seq_length=setup.config.max_seq_length, reference=reference,
                               short_boost=config.short_boost, grad_clip=config.grad_clip)
@@ -62,5 +62,6 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     outcome = train(model, reference, sources, setup.config, steps=config.steps, batch_size=config.batch_size,
           lr=config.lr, short_boost=config.short_boost, seed=config.seed, device=device,
           save_path=path, grad_clip=config.grad_clip, val_every=config.val_every,
-          model_setup=setup, on_iteration=on_iteration, resume_path=config.resume_path)
+          model_setup=setup, on_iteration=on_iteration, resume_path=config.resume_path,
+          augmentation=config.augmentation)
     return TrainingRun(path, outcome.best_model_path, outcome.steps)

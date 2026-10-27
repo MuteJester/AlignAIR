@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
 from ..errors import ConfigurationError
+from ..data.augmentation.protein import ProteinSubstitutionPolicy
 
 _PRESETS = {
     'quick': {'steps': 300, 'batch_size': 16, 'val_every': 100},
@@ -36,8 +37,11 @@ class TrainingConfig:
     has_d: bool | None = None
     model_options: Mapping = field(default_factory=dict)
     resume_path: str | None = None
+    augmentation: ProteinSubstitutionPolicy | None = None
 
     def __post_init__(self):
+        if self.augmentation is not None and not isinstance(self.augmentation, ProteinSubstitutionPolicy):
+            raise ConfigurationError('augmentation must be a ProteinSubstitutionPolicy or None')
         if self.input_space not in ('nucleotide', 'protein') or self.label_space not in ('alleles', 'protein_classes'):
             raise ConfigurationError('choose nucleotide/protein input and alleles/protein_classes labels')
         if self.label_space == 'protein_classes' and self.input_space != 'protein':

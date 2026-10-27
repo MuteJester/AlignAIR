@@ -41,7 +41,8 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
           log_every=50, save_path=None, save_every=2000, resume_path=None,
           monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
-          tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None):
+          tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
+          augmentation=None):
     from .guards import validate_training_request
     tasks = build_tasks(cfg) if tasks is None else tasks
     dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
@@ -57,15 +58,16 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         build_protein_reference(reference_set) if cfg.label_space == 'protein_classes' else None)
     if setup.reference is not reference_set or setup.config != cfg:
         raise ConfigurationError('training setup must bind this model configuration and reference')
-    data = prepare_training_data(setup, device=device)
+    data = prepare_training_data(setup, device=device, augmentation=augmentation)
+    augmentation_metadata = augmentation.to_dict() if augmentation is not None else None
     schema = setup.label_schema()
     source_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
                                            mode='amplicon' if cfg.input_space == 'protein' else 'auto')
 
-    def _build_stream(seed_value):
+    def _build_stream(seed_value, *, augment=False):
         records = training_records(dataconfigs, policy=source_policy, seed=seed_value,
                                    translated_only=data.translated_only)
-        return data.prepare_records(records)
+        return data.prepare_records(records, augment=augment, seed=seed_value)
 
     engine = build_training_engine(model, tasks=tasks, weights=logvars, device=device,
                                    lr=lr, grad_clip=grad_clip)
@@ -78,6 +80,9 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         if (state.config is not None and state.config != cfg
                 or state.label_schema is not None and state.label_schema != schema):
             raise ConfigurationError('resume configuration or label identity differs from the requested model setup')
+        if state.augmentation != augmentation_metadata:
+            raise ConfigurationError('resume augmentation policy differs from the requested training data',
+                                     hint='Use init_from for a weights-only warm start when changing the augmentation policy.')
         model.load_state_dict(state.model_state)
         if state.weight_state is not None:
             logvars.load_state_dict(state.weight_state)
@@ -105,6 +110,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
                    "input_space": cfg.input_space, "label_space": cfg.label_space,
                    "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
+                   "augmentation": augmentation_metadata,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap)}
     _dcs = dataconfigs
 
@@ -138,8 +144,8 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     best_score = float("-inf")
     best_path = None
 
-    completed = start                              # the last step actually run (a short/early
-    stream = _build_stream(seed + start)           # stream must not let the final save claim `steps`)
+    completed = start                              # last successful update, including early exhaustion
+    stream = _build_stream(seed + start, augment=True)  # short streams must not claim requested steps
     batch_adapter = data.batch_adapter
     for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
                                          stop_step=steps, batch_size=batch_size):

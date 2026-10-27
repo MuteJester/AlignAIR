@@ -227,9 +227,9 @@ def _conformal_v(model, cfg, device: str, class_maps, calibration_rows: list, cl
 
 def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "cpu",
                         alpha: float = 0.05, freq_edges=_DEFAULT_FREQ_EDGES) -> dict:
-    """Evaluate one checkpoint (``model``/``cfg``/``class_maps``/``meta`` as returned by
-    ``strategic_setup``) over a frozen cohort from ``build_cohort``. Pure function of
-    (model weights, cohort) -- no mutation of the cohort.
+    """Evaluate a prepared model and its class maps/D indices over a frozen cohort.
+
+    Results depend on model weights and cohort; the cohort is not mutated.
     """
     model.to(device).eval()
     vclass, jclass = class_maps["V"].allele_class, class_maps["J"].allele_class

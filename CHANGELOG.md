@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Explicit protein substitution policies in the shared training workflow, with unaugmented
+  validation, versioned checkpoint provenance and augmentation-policy checks on resume.
 - One public training request/workflow for nucleotide allele, protein allele and protein-class models,
   with shared validation, resume, checkpoints, update callbacks and raw prediction after reload.
 - Portable input/label metadata and ordered output-label schemas, preserved through safe export and
@@ -68,6 +70,8 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Removed the independent strategic protein training module. Protein-class substitution experiments
+  use `TrainingConfig` and `run_training`; study and product callers use reference-bound model setup.
 - Public training types and orchestration now live in `alignair.train`; root and historical object-API
   imports point to the same owners. The independent `aa.train_gym` loop is removed and its tests migrated.
 - The common trainer selects existing record/batch preparation from a reference-bound setup.

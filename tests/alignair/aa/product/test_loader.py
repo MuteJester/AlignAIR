@@ -7,7 +7,7 @@ import torch
 from alignair.aa.product.asc import asc_to_imgt_multi
 from alignair.aa.product.bundle import canonical_json, save_aa_bundle
 from alignair.aa.product.loader import AAPredictor, _MODEL_MAP, _resolve_path, load_aa_model
-from alignair.aa.strategic import strategic_setup
+from tests.support.model_setup import protein_class_setup
 from alignair.aa.tokenizer import pad_tokenize_aa
 from alignair.model_file import container
 
@@ -54,8 +54,11 @@ def _full_calibration(class_maps, d_allele_order, *, model_sha256):
 @pytest.fixture(scope="module")
 def built():
     """Built once (needs GenAIRR reference data) and reused by every tmp-bundle test in this module —
-    only `save_aa_bundle` (cheap: serialize + write) runs per test, not `strategic_setup`."""
-    model, cfg, class_maps, meta = strategic_setup("HUMAN_IGH_OGRDB", 192, has_d=True)
+    only `save_aa_bundle` (cheap: serialize + write) runs per test, not model preparation."""
+    setup = protein_class_setup("HUMAN_IGH_OGRDB", 192, has_d=True)
+    model = setup.build_model()
+    cfg, class_maps = setup.config, setup.protein_reference.class_maps
+    meta = {'d_index': dict(setup.reference.gene('D').index) if setup.config.has_d else {}}
     dc = ga.HUMAN_IGH_OGRDB
     asc_multi = asc_to_imgt_multi(dc)
     d_allele_order = [name for name, _ in sorted(meta["d_index"].items(), key=lambda kv: kv[1])]

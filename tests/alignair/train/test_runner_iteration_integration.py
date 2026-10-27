@@ -13,7 +13,7 @@ from alignair.tasks import build_tasks
 from alignair.train import trainer
 from alignair.train.gym.streams import training_records, CurriculumStreamPolicy
 from alignair.train.checkpoints import load_training_checkpoint
-from alignair.aa import strategic, strategic_trunc
+from alignair.aa import strategic_trunc
 from alignair.core import prepare_model
 
 pytestmark = pytest.mark.integration
@@ -29,17 +29,15 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
     record = next(record for record in islice(source, 50) if builder(record).sample is not None)
 
     nucleotide = runner.startswith('nucleotide')
-    if nucleotide or runner == 'protein_alleles':
-        setup = prepare_model(reference.source, input_space='nucleotide' if nucleotide else 'protein')
-        ref, cfg = setup.reference, setup.config
-    else:
-        _, cfg, maps, meta = strategic.strategic_setup(max_seq_length=192)
+    setup = prepare_model(reference.source, input_space='nucleotide' if nucleotide else 'protein',
+                          label_space='protein_classes' if runner in ('protein_classes', 'protein_crops') else 'alleles')
+    ref, cfg = setup.reference, setup.config
     cfg = replace(cfg, embed_dim=4, filters=4, block_out=8)
     model = AlignAIR(cfg)
     options = dict(steps=5, batch_size=2, log_every=1000, save_every=100)
     expected_step = source_size // 2
 
-    if nucleotide or runner == 'protein_alleles':
+    if runner != 'protein_crops':
         import GenAIRR as ga
         monkeypatch.setattr(trainer, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
         path = tmp_path / 'model.alignair'
@@ -47,17 +45,11 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
         trainer.train(model, ref, ga.HUMAN_IGH_OGRDB, cfg, weights,
                       progresses=(.3,), heavy_shm=0., save_path=path, **options)
         saved = load_training_checkpoint(path)
-        assert saved.step == expected_step and saved.weight_state
+        assert saved.step == expected_step and saved.weight_state is not None
     else:
-        module = {'protein_classes': strategic,
-                  'protein_crops': strategic_trunc}[runner]
-        monkeypatch.setattr(module, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
+        monkeypatch.setattr(strategic_trunc, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
         path = tmp_path / 'model.pt'
-        if runner == 'protein_classes':
-            history = strategic.strategic_train(model, cfg, maps, d_index=meta['d_index'],
-                                               save_path=path, **options)
-        else:
-            history = strategic_trunc.stage1_train(model, cfg, maps, meta, p_crop=1.,
-                                                  save_path=path, **options)
+        history = strategic_trunc.stage1_train(model, cfg, setup.protein_reference.class_maps,
+                      {'d_index': dict(ref.gene('D').index)}, p_crop=1., save_path=path, **options)
         assert len(history) == expected_step
         assert torch.load(path, weights_only=True)['step'] == expected_step

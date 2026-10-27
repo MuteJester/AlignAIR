@@ -15,10 +15,13 @@ def test_prototypes_by_class_covers_all_v_classes():
 @pytest.mark.slow
 def test_stage1_train_runs_with_crops_and_partial_labels():
     import torch
-    from alignair.aa.strategic import strategic_setup
+    from tests.support.model_setup import protein_class_setup
     from alignair.aa.strategic_trunc import stage1_train
     torch.manual_seed(0)
-    model, cfg, class_maps, meta = strategic_setup("HUMAN_IGH_OGRDB", 192, has_d=True)
+    setup = protein_class_setup("HUMAN_IGH_OGRDB", 192, has_d=True)
+    model = setup.build_model()
+    cfg, class_maps = setup.config, setup.protein_reference.class_maps
+    meta = {'d_index': dict(setup.reference.gene('D').index) if setup.config.has_d else {}}
     hist = stage1_train(model, cfg, class_maps, meta, steps=40, batch_size=16, lr=3e-4,
                         p_crop=0.4, p_sub=0.4, p_il=0.15, seed=1, device="cpu", log_every=1000)
     assert len(hist) == 40
@@ -29,9 +32,11 @@ def test_stage1_train_runs_with_crops_and_partial_labels():
 def test_validation_callback_cannot_leave_following_steps_in_evaluation_mode():
     from dataclasses import replace
     from alignair.core import AlignAIR
-    from alignair.aa.strategic import strategic_setup
+    from tests.support.model_setup import protein_class_setup
     from alignair.aa.strategic_trunc import stage1_train
-    _, cfg, maps, meta = strategic_setup(max_seq_length=192, has_d=True)
+    setup = protein_class_setup(max_seq_length=192, has_d=True)
+    cfg, maps = setup.config, setup.protein_reference.class_maps
+    meta = {'d_index': dict(setup.reference.gene('D').index) if setup.config.has_d else {}}
     cfg = replace(cfg, embed_dim=4, filters=4, block_out=8)
     model = AlignAIR(cfg)
     training_modes, callback_modes = [], []

@@ -1,7 +1,8 @@
 import pytest
 import numpy as np
 
-from alignair.data.augmentation.protein import aa_indel, aa_substitute, aa_truncate, il_ambiguity
+from alignair.data.augmentation.protein import ProteinSubstitutionPolicy, aa_indel, aa_substitute, aa_truncate, il_ambiguity
+from alignair.errors import ConfigurationError
 
 pytestmark = pytest.mark.component
 
@@ -47,3 +48,27 @@ def test_empty_corruptions_and_both_single_residue_indel_outcomes():
     assert aa_indel('',_rng())=='' and aa_truncate('',.4,.8,_rng())==''
     lengths={len(aa_indel('ACD',np.random.default_rng(seed))) for seed in range(20)}
     assert lengths=={2,4}
+
+
+@pytest.mark.parametrize('fields', [{'probability': True}, {'probability': -1}, {'probability': 1.1},
+    {'probability': float('nan')}, {'min_rate': '0.1'}, {'min_rate': float('inf')},
+    {'max_rate': False}, {'min_rate': .3, 'max_rate': .1}])
+def test_invalid_substitution_policy_is_rejected(fields):
+    with pytest.raises(ConfigurationError):
+        ProteinSubstitutionPolicy(**fields)
+
+
+def test_substitution_policy_preserves_length_and_special_residues_and_is_seeded():
+    sequence = 'ACDEFGHIKLMNPQRSTVWY' * 10 + 'X*'
+    policy = ProteinSubstitutionPolicy(1, 1, 1)
+    one = policy.apply(sequence, np.random.default_rng(5))
+    assert one == policy.apply(sequence, np.random.default_rng(5))
+    assert len(one) == len(sequence) and one != sequence and one.endswith('X*')
+    assert policy.to_dict() == {'policy': 'protein-substitution-v1', 'probability': 1., 'min_rate': 1., 'max_rate': 1.}
+
+
+def test_disabled_substitution_policy_does_not_consume_rng():
+    first, second = np.random.default_rng(6), np.random.default_rng(6)
+    assert ProteinSubstitutionPolicy(0).apply('ACD', first) == 'ACD'
+    assert first.random() == second.random()
+    assert ProteinSubstitutionPolicy(.1).apply('ACD', np.random.default_rng(0)) == 'ACD'

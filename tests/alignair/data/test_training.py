@@ -7,6 +7,7 @@ import pytest
 from alignair.core import ModelSetup, prepare_model
 from alignair.core.setup import validate_label_schema
 from alignair.data.training import prepare_training_data
+from alignair.data.augmentation import ProteinSubstitutionPolicy
 from alignair.errors import ConfigurationError, TrainingDataError
 from alignair.reference import GeneReference, ReferenceSet
 
@@ -88,3 +89,44 @@ def test_allele_schema_requires_original_order(reference):
     schema['genes']['v'].reverse()
     with pytest.raises(ConfigurationError, match='order'):
         validate_label_schema(schema, reference, setup.config)
+
+
+def test_training_substitutions_preserve_targets_and_validation_and_do_not_mutate_records(reference):
+    import numpy as np
+    setup = prepare_model(reference, input_space='protein', label_space='protein_classes')
+    data = prepare_training_data(setup, augmentation=ProteinSubstitutionPolicy(1, 1, 1))
+    record = {'sequence': 'ATGTGTTGG', 'sequence_aa': 'MCW', 'junction_start': 3,
+              'v_sequence_start': 0, 'v_sequence_end': 6, 'j_sequence_start': 6, 'j_sequence_end': 9,
+              'v_call': 'V1', 'j_call': 'J1', 'productive': False}
+    before = deepcopy(record)
+    clean = list(data.prepare_records([record]))[0]
+    augmented = list(data.prepare_records([record], augment=True, seed=5))[0]
+    assert record == before and not np.array_equal(clean['tokens'], augmented['tokens'])
+    assert all(np.array_equal(value, augmented[key]) for key, value in clean.items() if key != 'tokens')
+    # Rejected rows cannot shift the augmentation RNG for accepted rows.
+    filtered = list(data.prepare_records([{'sequence_aa': None}, record], augment=True, seed=5))[0]
+    assert np.array_equal(filtered['tokens'], augmented['tokens'])
+    assert np.array_equal(list(data.prepare_records([record]))[0]['tokens'], clean['tokens'])
+
+
+@pytest.mark.parametrize('space,labels', [('nucleotide', 'alleles'), ('protein', 'alleles')])
+def test_substitution_policy_requires_supported_training_targets(reference, space, labels):
+    with pytest.raises(ConfigurationError, match='protein-class'):
+        prepare_training_data(prepare_model(reference, input_space=space, label_space=labels),
+                              augmentation=ProteinSubstitutionPolicy())
+
+
+def test_training_data_rejects_unknown_augmentation_type(reference):
+    with pytest.raises(ConfigurationError, match='ProteinSubstitutionPolicy'):
+        prepare_training_data(prepare_model(reference), augmentation={})
+
+
+def test_broken_length_changing_corruption_raises_a_training_data_error(reference, monkeypatch):
+    data = prepare_training_data(prepare_model(reference, input_space='protein', label_space='protein_classes'),
+                                 augmentation=ProteinSubstitutionPolicy())
+    record = {'sequence': 'ATGTGTTGG', 'sequence_aa': 'MCW', 'junction_start': 3,
+              'v_sequence_start': 0, 'v_sequence_end': 6, 'j_sequence_start': 6, 'j_sequence_end': 9,
+              'v_call': 'V1', 'j_call': 'J1', 'productive': False}
+    monkeypatch.setattr(ProteinSubstitutionPolicy, 'apply', lambda *args: 'A')
+    with pytest.raises(TrainingDataError, match='preserve residue positions'):
+        list(data.prepare_records([record], augment=True))

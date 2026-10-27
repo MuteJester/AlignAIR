@@ -4,6 +4,38 @@ evaluation strata: residue substitutions, single-residue indels, I/L ambiguity, 
 (partial peptide coverage). All are deterministic given a numpy Generator."""
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
+import math
+from numbers import Real
+
+from ...errors import ConfigurationError
+
+
+@dataclass(frozen=True)
+class ProteinSubstitutionPolicy:
+    """Training-only, length-preserving substitutions; rates are sampled once per selected read."""
+    probability: float = .5
+    min_rate: float = .02
+    max_rate: float = .10
+
+    def __post_init__(self):
+        for name in ('probability', 'min_rate', 'max_rate'):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) or not 0 <= value <= 1:
+                raise ConfigurationError('substitution probabilities and rates must be finite numbers in [0, 1]',
+                                         context={'field': name})
+            object.__setattr__(self, name, float(value))
+        if self.min_rate > self.max_rate:
+            raise ConfigurationError('minimum substitution rate must not exceed maximum rate')
+
+    def apply(self, sequence: str, rng) -> str:
+        if self.probability and rng.random() < self.probability:
+            return aa_substitute(sequence, float(rng.uniform(self.min_rate, self.max_rate)), rng)
+        return sequence
+
+    def to_dict(self) -> dict:
+        return {'policy': 'protein-substitution-v1', **asdict(self)}
+
 
 _AA = "ACDEFGHIKLMNPQRSTVWY"
 

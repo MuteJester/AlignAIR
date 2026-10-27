@@ -53,6 +53,7 @@ print(predictor.label_schema["genes"]["v"][0])  # alleles represented by class 0
         ["val_every", "Zero disables periodic validation. A positive interval selects the best checkpoint using the shared task metrics on fixed held-out batches."],
         ["seed", "A uint32 seed for model initialization, process RNGs and source construction. Fixed-seed CPU runs are reproducible under the same environment."],
         ["resume_path", "An existing checkpoint. Restore model, task weights, optimizer and process RNG state; configuration and label identity must agree."],
+        ["augmentation", "None by default. An explicit ProteinSubstitutionPolicy enables length-preserving substitutions for protein-class training; validation and diagnostic probes remain unaugmented."],
       ]} />
       <p>
         <code>preset="quick"</code>, <code>"desktop"</code>, or <code>"full"</code> selects
@@ -69,6 +70,33 @@ print(predictor.label_schema["genes"]["v"][0])  # alleles represented by class 0
         A prolonged run of rejected class samples raises a training-data error. Presets reject head
         combinations for which their adapters do not supply targets, including protein edit-state
         targets and protein-class auxiliary heads. Custom targets belong in an explicit batch adapter.
+      </p>
+      <H2 id="augmentation">Configure training augmentation</H2>
+      <CodeBlock lang="python" code={`from alignair.data.augmentation import ProteinSubstitutionPolicy
+
+augmented = request.with_(
+    augmentation=ProteinSubstitutionPolicy(
+        probability=0.5, min_rate=0.02, max_rate=0.10,
+    ),
+    grad_clip=1.0,
+)
+run = run_training(augmented, output_dir="runs/protein_substitutions")`} />
+      <p>
+        This policy replaces the former strategic protein-class runner. Each accepted training
+        read has the configured probability of augmentation. A substitution rate is sampled
+        uniformly from the configured rate bounds; each canonical residue is then selected at that
+        rate and assigned a random canonical residue. A replacement may equal the original residue.
+        Unknown and stop residues retain their positions. Class labels, boundary targets and D
+        validity masks remain unchanged. The policy currently requires protein-class targets;
+        unsupported profiles fail during preflight.
+      </p>
+      <p>
+        The versioned policy and its parameters are saved in training provenance. Validation and
+        diagnostic probe streams use the original samples. Resume requires the same augmentation
+        policy, including whether it is enabled. The local augmentation generator and source are
+        deterministically reseeded with seed plus the checkpoint step; continuation does not replay
+        the exact next batch of an uninterrupted run. To change policy while reusing weights, use
+        the lower-level trainer&apos;s <code>init_from</code> warm start with a fresh optimizer.
       </p>
       <H2 id="observe">Observe successful updates</H2>
       <CodeBlock lang="python" code={`def observe(iteration):

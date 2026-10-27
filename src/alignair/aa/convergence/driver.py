@@ -15,7 +15,8 @@ import json
 import os
 
 from ...train.checkpoints import load_research_checkpoint as load_checkpoint
-from ..strategic import strategic_setup
+from ...core import prepare_model
+from ...reference import build_protein_reference
 from ..strategic_trunc import stage1_train, validate_stage1_resume
 from .evaluator import build_cohort, evaluate_checkpoint
 
@@ -97,15 +98,21 @@ def _row_from_evaluator_output(name: str, step: int, out: dict) -> dict:
     return {**out, **flatten_row(name, step, out)}
 
 
+def _study_setup(dc_name, max_seq_length):
+    return prepare_model(build_protein_reference(dc_name), input_space='protein', label_space='protein_classes',
+                         max_seq_length=max_seq_length, has_d=True)
+
+
 def _load_fresh_candidate(ckpt_path: str, dc_name: str, max_seq_length: int, device: str):
-    """A fresh ``strategic_setup`` model with a saved continuation checkpoint's weights loaded in
+    """A fresh reference-bound model with a saved continuation checkpoint's weights loaded in
     (never reuses the in-training model instance, so a candidate's eval is never contaminated by
     optimizer-adjacent state or a stale ``.eval()``/``.train()`` mode from training)."""
-    model, cfg, class_maps, meta = strategic_setup(dc_name, max_seq_length, has_d=True)
+    setup = _study_setup(dc_name, max_seq_length)
+    model = setup.build_model()
     ck = load_checkpoint(ckpt_path)
     model.load_state_dict(ck["model"])
     model.to(device).eval()
-    return model, cfg, class_maps, meta
+    return model, setup
 
 
 def _write_json(path: str, obj: dict) -> None:
@@ -167,7 +174,10 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
     ckpt_steps = tuple(int(s) for s in ckpt_steps)
 
     # ---- 1. model/cfg/class_maps/meta ----
-    model, cfg, class_maps, meta = strategic_setup(dc_name, MAX_SEQ_LENGTH, has_d=True)
+    setup = _study_setup(dc_name, MAX_SEQ_LENGTH)
+    model, cfg = setup.build_model(), setup.config
+    class_maps = setup.protein_reference.class_maps
+    meta = {'d_index': dict(setup.reference.gene('D').index)}
 
     # ---- 2. frozen evaluator cohort + predeclaration copy ----
     cohort, fingerprint = build_cohort(dc_name, n_per_stratum=n_per_stratum, seed=cohort_seed)
@@ -213,9 +223,10 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
             print(f"[convergence] WARNING: expected checkpoint '{ckpt_path}' was not saved "
                  f"(training may have exhausted the stream before this step) -- skipping.", flush=True)
             continue
-        cand_model, cand_cfg, cand_class_maps, cand_meta = _load_fresh_candidate(
+        cand_model, cand_setup = _load_fresh_candidate(
             ckpt_path, dc_name, MAX_SEQ_LENGTH, device)
-        out = evaluate_checkpoint(cand_model, cand_cfg, cand_class_maps, cand_meta, cohort, device=device)
+        out = evaluate_checkpoint(cand_model, cand_setup.config, cand_setup.protein_reference.class_maps,
+                                  {'d_index': dict(cand_setup.reference.gene('D').index)}, cohort, device=device)
         row = _row_from_evaluator_output(f"cont_step{abs_step}", abs_step, out)
         candidate_rows.append(row)
         print(f"[convergence] cont_step{abs_step}: clean_v_acc={row['clean_v_acc']:.4f} "
