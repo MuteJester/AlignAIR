@@ -261,18 +261,12 @@ def test_raw_gym_view_retains_separate_teacher_and_germline_metadata():
 
 
 def test_historical_imports_use_the_shared_implementations():
-    from alignair.aa.tokenizer import AAProteinTokenizer as old_tokenizer
-    from alignair.aa.translation import project_codons as old_projection
     from alignair.train.gym.targets import build_targets as old_targets
     from alignair.train.trainer import build_batch
     from alignair.data.adapters import build_nucleotide_batch
-    from alignair.data.projection import project_codons
     from alignair.data.targets import build_targets
-    from alignair.data.tokenizer import AAProteinTokenizer
 
     assert build_batch is build_nucleotide_batch
-    assert old_tokenizer is AAProteinTokenizer
-    assert old_projection is project_codons
     assert old_targets is build_targets
 
 

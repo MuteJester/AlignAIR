@@ -19,7 +19,7 @@ pytestmark = pytest.mark.component
     ("train.guards", "TrainingConfigError", ValueError),
     ("train.guards", "NonFiniteLossError", RuntimeError),
     ("genotype.constraint", "NovelAlleleUnsupportedError", ValueError),
-    ("aa.tokenizer", "InvalidResidueError", ValueError),
+    ("data.tokenizer", "InvalidResidueError", ValueError),
     ("data.sampling.collection", "SampleBudgetExhausted", RuntimeError),
     ("aa.guard.access", "AccessViolation", RuntimeError),
     ("aa.guard.access", "ThresholdArtifactMissing", RuntimeError),

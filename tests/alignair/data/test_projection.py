@@ -1,5 +1,5 @@
 import pytest
-from alignair.aa.translation import (
+from alignair.data.projection import (
     CODON_TABLE, translate_nt, frame_offset_of, project_codons, AAProjection,
 )
 
@@ -21,6 +21,8 @@ def test_translate_nt_basic_frame_unknown_and_partial():
     assert translate_nt("ATGA") == "M"                    # trailing partial dropped
     assert translate_nt("ATGNNN") == "MX"                 # non-ACGT codon -> X
     assert translate_nt("atgtgg") == "MW"                 # lowercase ok
+    assert translate_nt('AUGUGG') == 'MW'                  # RNA uses the same code
+    assert translate_nt('ATGNNNTAG', unknown='?', stop='!') == 'M?!'
 
 
 def test_frame_offset_of():
@@ -65,13 +67,18 @@ def test_project_codons_d_region_and_np_gaps():
     assert proj.aa_bounds["D"] == (3, 5)           # 2 fully-owned D residues
 
 
-@pytest.mark.parametrize("fo", [0, 1, 2])
-@pytest.mark.parametrize("vend", [6, 7, 8])
-def test_project_codons_phase_matches_boundary_offset(fo, vend):
-    proj = project_codons(30, fo, {"V": (fo, vend), "J": (vend, 30)})
-    assert proj.phase["V"]["end"] == (vend - fo) % 3
-    # a residue is owned by V iff its whole codon is inside [fo, vend)
-    for r, owner in enumerate(proj.provenance):
-        a = fo + 3 * r
-        if a + 3 <= vend:
-            assert owner == "V"
+@pytest.mark.parametrize('frame,v_end,phase,v_residues,j_start,read_residues', [
+    (0,6,0,2,2,10), (0,7,1,2,3,10), (0,8,2,2,3,10),
+    (1,6,2,1,2,9),  (1,7,0,2,2,9),  (1,8,1,2,3,9),
+    (2,6,1,1,2,9),  (2,7,2,1,2,9),  (2,8,0,2,2,9),
+])
+def test_project_codons_matches_explicit_reading_frame_and_boundary_cases(
+        frame, v_end, phase, v_residues, j_start, read_residues):
+    projection = project_codons(30, frame, {'V':(frame,v_end), 'J':(v_end,30)})
+    assert isinstance(projection, AAProjection)
+    assert projection.n_residues == read_residues
+    assert projection.phase['V'] == {'start':0, 'end':phase}
+    assert projection.phase['J']['start'] == phase
+    assert projection.aa_bounds == {'V':(0,v_residues), 'J':(j_start,read_residues)}
+    assert projection.provenance == (('V',)*v_residues + (None,)*(j_start-v_residues)
+                                     + ('J',)*(read_residues-j_start))

@@ -164,12 +164,13 @@ All notable changes to AlignAIR are documented here. The format follows
   instead of continuing with partially restored generators. Resume documentation explicitly describes
   re-seeded simulator/augmentation streams rather than claiming exact uninterrupted replay.
 - Tokenization, codon projection, query-coordinate validation, target construction, and allele-set
-  encoding have shared owners under `alignair.data`. Historical imports delegate to these owners;
+  encoding have shared owners under `alignair.data`. Their callers use those owners directly;
   the separate stage-one categorical collator is removed.
 - Record prefix windows clip boundary targets and exclude genes lost from the retained read.
   Protein allele batches exclude absent/inverted genes from supervision. Translated-record eligibility
   now excludes lengths inconsistent with the declared junction frame; it does not infer another frame.
-- Loss implementations and batch metrics have a shared owner; historical NT/AA imports delegate to it.
+- Loss implementations and batch metrics live under `alignair.tasks`; the retained core/trainer
+  entry points delegate to those owners.
 - Validation weights metrics by supervised rows or positions. Categorical metrics respect invalid genes
   and compatible class sets. Excluded empty sets and fully ignored state labels have finite zero loss.
 - The AA model constructor delegates to the shared AlignAIR implementation; categorical scores,
@@ -230,6 +231,8 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Obsolete `aa.tokenizer` and `aa.translation` facades. Vocabulary, encoding and codon-projection
+  tests now live under `tests/alignair/data`; website guides list the shared replacement imports.
 - Obsolete `aa.loss` facade. Categorical and boundary objectives remain in `tasks.losses`;
   endpoint, reduction and gradient regressions are consolidated under the shared task tests.
 - Protein-only `aa.model` subclasses and `aa.config` factory. Studies and product loading now use

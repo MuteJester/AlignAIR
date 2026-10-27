@@ -9,7 +9,7 @@ import torch
 
 from alignair.core import AlignAIR, build_model_config
 from alignair.reference.labels import EquivalenceClassMap
-from alignair.aa.translation import CODON_TABLE
+from alignair.data.projection import CODON_TABLE
 from alignair.aa.convergence.evaluator import evaluate_checkpoint
 
 pytestmark = pytest.mark.component

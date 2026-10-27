@@ -7,7 +7,7 @@ import pytest
 from alignair.aa.guard.profiles import build_profile, load_bank
 from alignair.aa.guard.profiles import alignment, builder, cli
 from alignair.aa.guard.profiles.bank import _serialize_deterministic
-from alignair.aa.translation import CODON_TABLE
+from alignair.data.projection import CODON_TABLE
 from alignair.errors import ArtifactIntegrityError, DataContractError
 
 pytestmark = pytest.mark.component

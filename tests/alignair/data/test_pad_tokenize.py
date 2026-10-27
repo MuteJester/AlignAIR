@@ -1,6 +1,6 @@
 import pytest
 import torch
-from alignair.data.tokenizer import pad_tokenize
+from alignair.data.tokenizer import pad_tokenize, pad_tokenize_aa
 
 pytestmark = pytest.mark.component
 
@@ -18,3 +18,11 @@ def test_pad_tokenize_shapes_and_mask():
 def test_pad_tokenize_unknown_to_n():
     tokens, _ = pad_tokenize(["AXN"])
     assert tokens[0].tolist() == [1, 5, 5]  # X -> N(5), N -> 5
+
+
+def test_protein_batch_right_padding_and_mask_preserve_residue_positions():
+    tokens, mask = pad_tokenize_aa(['AC', 'ACDE'])
+    assert tokens.shape == mask.shape == (2,4)
+    assert tokens.dtype == torch.long and mask.dtype == torch.bool
+    assert tokens.tolist() == [[1,2,0,0], [1,2,3,4]]
+    assert mask.tolist() == [[True,True,False,False], [True,True,True,True]]

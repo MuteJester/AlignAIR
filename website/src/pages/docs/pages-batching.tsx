@@ -82,6 +82,13 @@ inputs, targets = batch`} />
         gene’s projected interval.
       </p>
       <p>
+        <code>data.projection.translate_nt</code> uses the standard genetic code, accepts lowercase
+        and RNA U, and drops a trailing incomplete codon. <code>frame_offset_of</code> derives the
+        declared junction frame; <code>project_codons</code> returns an <code>AAProjection</code>
+        with residue provenance, half-open gene bounds and boundary phases. N/P gaps and codons
+        crossing a gene boundary remain unassigned.
+      </p>
+      <p>
         Protein allele adaptation requires an exported translation whose length agrees with the declared
         junction frame. <code>data.adapters.translated_record_usable</code> applies the same eligibility rule
         in simulator runners. Some source records fail this check and are excluded before batching.
@@ -137,8 +144,8 @@ batch = collate_samples([sample], max_length=128)`} />
       <H2 id="ownership">Shared implementation and compatibility</H2>
       <p>
         Tokenizers, translation and codon projection, coordinate validation, allele-set encoding, and
-        nucleotide target construction live in <code>alignair.data</code>. Historical AA tokenizer
-        and translation imports, plus the trainer’s <code>build_batch</code>, delegate to these
+        nucleotide target construction live in <code>alignair.data</code>. The trainer’s
+        <code> build_batch</code> delegates to these
         implementations. The separate stage-one collator has been removed; its caller uses the categorical
         adapter with model vocabulary counts. <code>collate_categorical</code> supports samples without
         compatible sets; compatible sets require an explicitly configured adapter.
@@ -149,16 +156,29 @@ batch = collate_samples([sample], max_length=128)`} />
         allele encoding with the adapters. Training schedules, experiment selection, and study-specific
         sample construction remain with their runners; reusable batch assembly belongs here.
       </p>
-      <H2 id="migration">Migrate former protein batch imports</H2>
       <p>
-        The <code>aa.gym_bridge</code> and <code>aa.data</code> facades have been removed.
-        The shared helper functions retain their tuple-of-inputs-and-targets return contract;
+        The low-level <code>AAProteinTokenizer</code> keeps canonical residue IDs 1–20, X=21 and
+        stop=22; zero is padding only, and proline is 13. It uppercases protein text and maps unknown
+        residues to X by default. Use <code>on_invalid="raise"</code> for an
+        <code> InvalidResidueError</code>. <code>pad_tokenize_aa</code> returns right-padded integer
+        tokens and a Boolean validity mask. A supplied <code>token_dict</code> preserves its IDs,
+        including vocabularies reconstructed from verified model artifacts.
+      </p>
+      <H2 id="migration">Migrate former protein data imports</H2>
+      <p>
+        The <code>aa.gym_bridge</code>, <code>aa.data</code>, <code>aa.tokenizer</code> and
+        <code> aa.translation</code> facades have been removed.
+        Batch helper functions retain their tuple-of-inputs-and-targets return contract;
         adapter classes return a <code>TrainingBatch</code>.
       </p>
       <DocTable head={["Former import", "Replacement"]} rows={[
         ["aa.gym_bridge.build_batch_aa", "alignair.data.adapters.build_protein_allele_batch"],
         ["aa.gym_bridge.aa_usable", "alignair.data.projection.translated_record_usable"],
         ["aa.data.collate_aa", "alignair.data.adapters.collate_categorical"],
+        ["aa.tokenizer.AAProteinTokenizer / AA_TOKEN_DICT / AA_VOCAB_SIZE", "alignair.data.tokenizer"],
+        ["aa.tokenizer.pad_tokenize_aa / InvalidResidueError", "alignair.data.tokenizer"],
+        ["aa.translation.translate_nt / CODON_TABLE", "alignair.data.projection"],
+        ["aa.translation.project_codons / AAProjection / frame_offset_of", "alignair.data.projection"],
       ]} />
     </>
   ),

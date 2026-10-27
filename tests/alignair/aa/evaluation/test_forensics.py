@@ -1,7 +1,7 @@
 import pytest
 from alignair.aa.forensics import germline_id_matrix, nearest_germline
 from alignair.reference import ProteinGermline
-from alignair.aa.tokenizer import AAProteinTokenizer
+from alignair.data.tokenizer import AAProteinTokenizer
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 pytestmark = pytest.mark.component

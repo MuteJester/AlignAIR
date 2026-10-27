@@ -364,7 +364,7 @@ def test_predict_d_out_of_range_end_warns_without_repair():
 
 def test_predict_loaded_tokenizer_vocab_matches_fresh_aatokenizer():
     """§3 parity: loaded v2 predictor's tokenizer vocabulary is identical to a fresh AAProteinTokenizer()."""
-    from alignair.aa.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT
+    from alignair.data.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT
 
     predictor = load_aa_model(_REAL_MODEL_ID)
 

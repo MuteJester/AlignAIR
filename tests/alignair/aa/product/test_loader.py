@@ -8,7 +8,7 @@ from alignair.aa.product.asc import asc_to_imgt_multi
 from alignair.aa.product.bundle import canonical_json, save_aa_bundle
 from alignair.aa.product.loader import AAPredictor, _MODEL_MAP, _resolve_path, load_aa_model
 from tests.support.model_setup import protein_class_setup
-from alignair.aa.tokenizer import pad_tokenize_aa
+from alignair.data.tokenizer import pad_tokenize_aa
 from alignair.model_file import container
 from alignair.core import AlignAIR, evaluation_mode
 

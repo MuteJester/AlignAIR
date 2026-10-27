@@ -51,7 +51,7 @@ def test_overfit_one_batch_learns_classes_and_all_four_boundaries():
     from alignair.data.adapters import collate_categorical as collate_aa
     from alignair.data.sampling import collect_usable
     from alignair.reference import build_protein_reference
-    from alignair.aa.tokenizer import AAProteinTokenizer
+    from alignair.data.tokenizer import AAProteinTokenizer
     diversity = ClassDiversity({"v_class": 3, "j_class": 2})
     setup = prepare_model(build_protein_reference('HUMAN_IGH_OGRDB'), input_space='protein',
                           label_space='protein_classes', has_d=False)
