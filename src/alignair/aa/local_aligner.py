@@ -18,7 +18,7 @@ def _sanitize(seq: str) -> str:
 
 def v_class_prototypes(germlines: dict, class_of: dict):
     """One representative protein per V class (synonymous alleles share a protein, so any member works).
-    ``germlines``: {name: AAGermline}; ``class_of``: {name: class_id}. Returns (classes, protos)."""
+    ``germlines``: {name: ProteinGermline}; ``class_of``: {name: class_id}. Returns (classes, protos)."""
     proto: dict = {}
     for name, g in germlines.items():
         c = class_of.get(name)

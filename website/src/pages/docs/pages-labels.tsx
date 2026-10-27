@@ -87,7 +87,8 @@ audit_reference = build_protein_reference(source, hash_genes=("V", "D", "J"))`} 
       <H2 id="serialization">Serialization and compatibility</H2>
       <p>
         <code>EquivalenceClassMap.to_json()</code> and <code>from_json()</code> retain the existing
-        <code> alignair.aa.equivalence.v1</code> wire schema. Relocating the implementation does not rename
+        <code> alignair.aa.equivalence.v1</code> wire schema. This stored format identifier remains
+        valid after removal of the Python compatibility module. Relocating the implementation does not rename
         that stored schema or assign new class IDs. Loading validates contiguous integer IDs, nonempty
         classes, and exact agreement between allele-to-class and class-to-member mappings. Unsupported
         schemas and malformed maps raise <code>ModelError</code> before prediction or calibration uses them.
@@ -95,12 +96,27 @@ audit_reference = build_protein_reference(source, hash_genes=("V", "D", "J"))`} 
       </p>
       <p>
         The implementations live in <code>alignair.reference.protein</code> and
-        <code> alignair.reference.labels</code>. Historical <code>aa.reference</code> and
-        <code> aa.equivalence</code> imports delegate to them. Import <code>build_class_maps</code>
+        <code> alignair.reference.labels</code>. Import <code>build_class_maps</code>
         directly from <code>alignair.reference.protein</code>.
         Phase-0, training setup, convergence evaluation, and product loading use the shared owners.
         Study-specific read filtering remains in the sample-preparation layer.
       </p>
+      <H2 id="migration">Migrate former protein reference imports</H2>
+      <p>
+        The <code>aa.reference</code> and <code>aa.equivalence</code> facades have been removed.
+        Use the shared imports below. Class IDs, member ordering, reference hashes and serialized
+        class-map schemas keep their existing contracts.
+      </p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.reference.ANCHOR_AA", "alignair.reference.protein.DEFAULT_ANCHOR_RESIDUES"],
+        ["aa.reference.AAGermline", "alignair.reference.ProteinGermline"],
+        ["aa.reference.AAGermlineSet", "alignair.reference.ProteinGermlineSet"],
+        ["aa.reference.build_aa_germlines", "alignair.reference.build_protein_germlines"],
+        ["aa.reference.translate_germline", "alignair.reference.protein.translate_germline"],
+        ["aa.equivalence.EquivalenceClassMap", "alignair.reference.EquivalenceClassMap"],
+        ["aa.equivalence.build_equivalence_classes", "alignair.reference.build_equivalence_classes"],
+        ["aa.equivalence.db_hash", "alignair.reference.labels.db_hash"],
+      ]} />
     </>
   ),
 };

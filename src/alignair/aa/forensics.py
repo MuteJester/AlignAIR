@@ -19,7 +19,7 @@ from ..data.tokenizer import AAProteinTokenizer
 
 def germline_id_matrix(reference_set, germlines: dict, gene: str = "V", tokenizer=None):
     """Encode germline proteins into an (A, Lmax) int matrix in REFERENCE allele order (row i lines
-    up with the model's allele-head index i). ``germlines``: {name: AAGermline}. Returns
+    up with the model's allele-head index i). ``germlines``: {name: ProteinGermline}. Returns
     (names, G, glen, ganchor) where ``ganchor[i]`` is the Cys residue index of allele i."""
     tok = tokenizer or AAProteinTokenizer()
     names = list(reference_set.gene(gene.upper()).names)

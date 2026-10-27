@@ -30,6 +30,7 @@ def test_ambiguity_set_returns_all_alleles_in_class():
 
 def test_json_round_trip_is_identity():
     cmap = _toy()
+    assert cmap.to_json()['schema'] == 'alignair.aa.equivalence.v1'
     back = EquivalenceClassMap.from_json(cmap.to_json())
     assert back.gene == cmap.gene
     assert back.db_hash == cmap.db_hash

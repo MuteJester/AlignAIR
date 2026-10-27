@@ -150,7 +150,7 @@ All notable changes to AlignAIR are documented here. The format follows
 - Collection distinguishes scientific rejections, selection skips, callback failures, and untracked
   historical selection outcomes. Malformed frames and length-changing tokenizers raise typed errors.
 - Germline translation, protein label maps, and class-map assembly live under `alignair.reference`.
-  AA training, audit, and product callers use the shared owners; historical imports reexport them.
+  AA training, audit, and product callers use the shared owners directly.
   Source allele order, class IDs, V/J versus V/D/J hash scopes, and the existing wire schema are preserved.
 - Protein views quarantine invalid anchors and reject inconsistent source indices or empty required
   label spaces. Serialized equivalence maps validate class IDs and exact allele/member agreement.
@@ -231,6 +231,8 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Obsolete `aa.reference` and `aa.equivalence` facades. Reference and class-map APIs remain under
+  `alignair.reference`; the stored `alignair.aa.equivalence.v1` schema and reference identities are preserved.
 - Obsolete `aa.tokenizer` and `aa.translation` facades. Vocabulary, encoding and codon-projection
   tests now live under `tests/alignair/data`; website guides list the shared replacement imports.
 - Obsolete `aa.loss` facade. Categorical and boundary objectives remain in `tasks.losses`;

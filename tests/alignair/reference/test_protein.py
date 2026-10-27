@@ -125,9 +125,7 @@ def test_reference_view_refuses_inconsistent_source_vocabularies(defect):
         build_protein_reference(source)
 
 
-def test_invalid_sources_and_retained_reference_imports_have_clear_contracts():
-    from alignair.aa.reference import AAGermline, build_aa_germlines
-    assert AAGermline is ProteinGermline and build_aa_germlines is build_protein_germlines
+def test_invalid_reference_sources_raise_configuration_errors():
     for source in (None, 'NOT_A_REFERENCE'):
         with pytest.raises(ConfigurationError): build_protein_reference(source)
 
