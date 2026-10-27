@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared reference-bound model preparation in `alignair.core`, with explicit nucleotide/protein input
+  and allele/protein-class label policies, configurable components, and delayed model allocation.
+- Model setup API guide covering label identity, head defaults, adapters, and preflight validation.
 - Shared `alignair.train.training_iterations` API for explicit optimizer-step windows, lazy batch
   consumption, completed-step results, and scoped diagnostics across nucleotide and protein runners.
 - Shared protein augmentation and validated CIGAR mapping, with conservative fragment-compatible
@@ -39,6 +42,10 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Protein setup helpers, public nucleotide training entries, and training plans use one model setup
+  owner and construct the shared `AlignAIR` class. `aa_igh_config` delegates to the shared count-based
+  factory. Reference allele-order validation
+  lives on `ReferenceSet` and is reused by protein views and model setup.
 - Nucleotide, protein allele, categorical, and cropped-protein runners use one batch/step iteration
   owner. Removed the duplicated loops and the AA-specific next-batch helper. Runner-specific history,
   validation, checkpoint timing, scientific policies, and resume step semantics are preserved.

@@ -49,12 +49,12 @@ def build_dataconfigs(*, dataconfig: Optional[list] = None, v_fasta: Optional[st
 def training_plan(dcs, *, steps: int, batch_size: int) -> dict:
     """A pre-flight plan (no training): reference composition, model parameter count, and the resolved
     schedule — so a user can sanity-check a custom reference / preset before committing GPU time."""
-    from ..core import AlignAIR
-    from ..core.config import AlignAIRConfig
+    from ..core import prepare_model
     from ..reference.reference_set import ReferenceSet
     ref = ReferenceSet.from_dataconfigs(*dcs)
-    cfg = AlignAIRConfig.from_dataconfigs(*dcs)
-    params = sum(p.numel() for p in AlignAIR(cfg).parameters())
+    setup = prepare_model(ref)
+    cfg = setup.config
+    params = sum(p.numel() for p in setup.build_model().parameters())
     return {
         "loci": list(ref.locus_names()),
         "alleles": {G: len(ref.gene(G)) for G in ("V", "D", "J") if G in ref.genes},

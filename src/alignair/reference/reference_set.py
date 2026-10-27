@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import re
+from numbers import Integral
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List
 
 import numpy as np
 import torch
+
+from ..errors import ConfigurationError, DataContractError
 
 # GenAIRR chain-type value -> AIRR locus code
 _LOCUS_OF_CHAIN = {
@@ -106,6 +109,21 @@ class ReferenceSet:
 
     def gene(self, g: str) -> GeneReference:
         return self.genes[g.upper()]
+
+    def validate(self, *, genes=None) -> None:
+        """Validate selected ordered vocabularies before model or protein-view construction."""
+        selected = (('V', 'J', 'D') if self.has_d else ('V', 'J')) if genes is None else genes
+        for gene in selected:
+            gene = gene.upper()
+            if gene not in self.genes:
+                raise ConfigurationError("selected gene is absent from the reference", context={"gene": gene})
+            rows = self.gene(gene)
+            if (any(not isinstance(name, str) or not name for name in rows.names)
+                    or any(not isinstance(sequence, str) for sequence in rows.sequences)
+                    or any(isinstance(value, bool) or not isinstance(value, Integral) for value in rows.index.values())
+                    or len(rows.names) != len(rows.sequences) or len(set(rows.names)) != len(rows.names)
+                    or rows.index != {name: i for i, name in enumerate(rows.names)}):
+                raise DataContractError("reference allele order, sequences, and index disagree", context={"gene": gene})
 
     def locus_names(self) -> tuple:
         """Ordered AIRR locus codes, aligned to the model's chain_type class id (empty if unknown)."""

@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 from ..data.augmentation.protein import aa_substitute
-from .config import aa_igh_config
+from ..core import prepare_model
 from ..reference import build_protein_reference
 from ..data.adapters import CategoricalBatchAdapter
 from ..data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
@@ -17,18 +17,17 @@ from ..tasks import build_tasks
 from ..train.engine import TrainingEngine
 from ..train.loop import training_iterations
 from ..train.checkpoints import save_snapshot as _save
-from .model import AAAlignAIR
 from ..data.tokenizer import AAProteinTokenizer
 from .train_gym import _usable_stream
 
 
 def strategic_setup(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192, has_d: bool = True):
     reference = build_protein_reference(dc_name)
-    class_maps, meta = reference.class_maps, reference.metadata()
-    d_index = dict(reference.source.gene("D").index) if has_d else {}
-    cfg = aa_igh_config(meta["n_v_classes"], meta["n_j_classes"], len(d_index), max_seq_length, has_d=has_d)
-    meta = {**meta, "n_d_alleles": len(d_index), "d_index": d_index}
-    return AAAlignAIR(cfg), cfg, class_maps, meta
+    setup = prepare_model(reference, input_space="protein", label_space="protein_classes",
+                          max_seq_length=max_seq_length, has_d=has_d)
+    d_index = dict(setup.reference.gene("D").index) if setup.config.has_d else {}
+    meta = {**reference.metadata(), "n_d_alleles": len(d_index), "d_index": d_index}
+    return setup.build_model(), setup.config, reference.class_maps, meta
 
 
 def _sample_stream(dc_name, class_maps, d_index, tok, max_len, sub_prob, seed, rng):

@@ -22,6 +22,8 @@ const composition: DocPage = {
       <p>
         This example uses small label vocabularies to illustrate construction. For training, supply counts
         from the actual nucleotide reference or protein equivalence maps and encode inputs with the matching tokenizer.
+        The <DocLink to="model-setup">model setup API</DocLink> derives those counts and binds them to
+        an ordered reference before allocating model parameters.
       </p>
       <CodeBlock lang="python" code={`from alignair.core import AlignAIR, AlignAIRConfig
 

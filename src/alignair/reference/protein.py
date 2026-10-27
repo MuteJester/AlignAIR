@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from operator import index
-from numbers import Integral
 
 from ..errors import ConfigurationError, DataContractError
 from .labels import EquivalenceClassMap, build_equivalence_classes, db_hash
@@ -78,16 +77,8 @@ def _source_reference(source):
 
 
 def _gene(reference, gene):
-    if gene not in reference.genes:
-        raise ConfigurationError("selected gene is absent from the reference", context={"gene": gene})
-    rows = reference.gene(gene)
-    if (any(not isinstance(name, str) or not name for name in rows.names)
-            or any(not isinstance(sequence, str) for sequence in rows.sequences)
-            or any(isinstance(value, bool) or not isinstance(value, Integral) for value in rows.index.values())
-            or len(rows.names) != len(rows.sequences) or len(set(rows.names)) != len(rows.names)
-            or rows.index != {name: i for i, name in enumerate(rows.names)}):
-        raise DataContractError("reference allele order, sequences, and index disagree", context={"gene": gene})
-    return rows
+    reference.validate(genes=(gene,))
+    return reference.gene(gene)
 
 
 def _anchor_policy(overrides):

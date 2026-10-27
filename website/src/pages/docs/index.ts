@@ -11,6 +11,7 @@ import { evalPages } from "./pages-eval";
 import { maintainerPages } from "./pages-maintainer";
 import { aaResearchPages } from "./pages-aa-research";
 import { testingPages } from "./pages-testing";
+import { setupPages } from "./pages-setup";
 import { compositionPages } from "./pages-composition";
 import { labelPages } from "./pages-labels";
 import { augmentationPages } from "./pages-augmentation";
@@ -39,6 +40,7 @@ export const DOCS: DocPage[] = [
   ...trainingPages, // training  [Training]
   ...evalPages, // benchmarks, performance  [Evaluation]; design  [Design]
   ...compositionPages, // model-composition  [Design]
+  ...setupPages, // model-setup  [Design]
   ...labelPages, // reference-labels  [Design]
   ...samplingPages, // sample-preparation  [Design]
   ...augmentationPages, // protein-augmentation  [Design]

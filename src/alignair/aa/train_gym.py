@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import torch
 
-from ..core.config import AlignAIRConfig
+from ..core import prepare_model
 from ..tasks import build_tasks
 from ..train.engine import TrainingEngine
 from ..train.loop import training_iterations
 from ..train.checkpoints import save_snapshot as _save
-from ..core.model import AlignAIR
 from ..reference.reference_set import ReferenceSet
 from ..data.adapters import ProteinAlleleBatchAdapter
 from ..data.projection import translated_record_usable as aa_usable
@@ -28,11 +27,8 @@ def setup_aa(dc_name: str = "HUMAN_IGH_OGRDB", max_seq_length: int = 192):
     import GenAIRR as ga
     dc = getattr(ga, dc_name)
     ref = ReferenceSet.from_dataconfigs(dc)
-    cfg = AlignAIRConfig.from_dataconfigs(dc, max_seq_length=max_seq_length,
-                                          vocab_size=23, use_orientation=False)
-    model = AlignAIR(cfg)
-    logvars = build_tasks(cfg).make_weights()
-    return model, ref, cfg, logvars
+    setup = prepare_model(ref, input_space="protein", max_seq_length=max_seq_length)
+    return setup.build_model(), setup.reference, setup.config, build_tasks(setup.config).make_weights()
 
 
 def _usable_stream(dc_name, progresses, heavy_shm, seed, short_boost, mutation_cap):

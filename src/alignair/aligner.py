@@ -261,8 +261,7 @@ def run_training(config: TrainingConfig, *, output_dir: str | None = None,
     import os
 
     import GenAIRR.data as gd
-    from .core import AlignAIR
-    from .core.config import AlignAIRConfig
+    from .core import prepare_model
     from .tasks import build_tasks
     from .reference.reference_set import ReferenceSet
     from .train.guards import validate_training_request
@@ -276,11 +275,12 @@ def run_training(config: TrainingConfig, *, output_dir: str | None = None,
 
     dcs = [getattr(gd, d) if isinstance(d, str) else d for d in config.dataconfigs]
     reference = ReferenceSet.from_dataconfigs(*dcs)
-    cfg = AlignAIRConfig.from_dataconfigs(*dcs)
+    setup = prepare_model(reference)
+    cfg = setup.config
     validate_training_request(steps=config.steps, batch_size=config.batch_size, lr=config.lr,
                               max_seq_length=cfg.max_seq_length, reference=reference,
                               grad_clip=config.grad_clip)
-    model = AlignAIR(cfg)
+    model = setup.build_model()
     tasks = build_tasks(cfg)
     logvars = tasks.make_weights()
     dev = resolve_device(config.device)
