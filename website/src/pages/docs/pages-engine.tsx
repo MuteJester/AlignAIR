@@ -5,7 +5,7 @@ const trainingEngine: DocPage = {
   slug: "training-engine",
   title: "Training engine API",
   section: "Design",
-  lead: "Use shared batch iteration, optimizer steps, numerical checks, and validation for nucleotide and protein alignment tasks.",
+  lead: "Assemble training state, iterate batches, and run optimizer and validation steps through shared nucleotide and protein APIs.",
   body: () => (
     <>
       <p>
@@ -16,24 +16,70 @@ const trainingEngine: DocPage = {
         support-weighted metric validation.
       </p>
       <H2 id="step">Construct and run an engine</H2>
-      <CodeBlock lang="python" code={`from itertools import chain
-import torch
-from alignair.tasks import build_tasks
-from alignair.train import TrainingEngine
+      <CodeBlock lang="python" code={`from alignair.train import build_training_engine
 
-model.to(device)
-tasks = build_tasks(model.cfg)
-weights = tasks.make_weights().to(device)
-optimizer = torch.optim.AdamW(
-    chain(model.parameters(), weights.parameters()), lr=3e-4,
-)
-engine = TrainingEngine(
-    model, optimizer, tasks=tasks, weights=weights, grad_clip=1.0,
-)
+# model can come from alignair.core.prepare_model(...).build_model().
+engine = build_training_engine(model, device=device, lr=3e-4, grad_clip=1.0)
 
 for step, batch in enumerate(training_batches, start=1):
     result = engine.step(batch.to(device), step=step)
     print(result.total, result.parts, result.gradient_norm)`} />
+      <p>
+        <code>build_training_engine</code> returns a <code>TrainingEngine</code> containing the model,
+        task implementation, task weights, optimizer, and optional scheduler. It selects default tasks
+        from <code>model.cfg</code>, calls <code>tasks.make_weights()</code> once when weights are omitted,
+        and creates AdamW with the requested learning rate and its established library defaults.
+        Models without an <code>AlignAIRConfig</code> need explicit <code>tasks=</code>.
+      </p>
+      <H2 id="initialization">Placement and parameter ownership</H2>
+      <DocTable head={["Argument", "Contract"]} rows={[
+        ["device", "Explicit Torch device, or None to retain the model’s current single device. Tensor-free models default to CPU. Mixed-device models require an explicit target or manual assembly."],
+        ["tasks", "An optional TrainingTasks implementation. A supplied task object is retained."],
+        ["weights", "An optional ModuleDict or mapping from names to modules. The supplied container and modules are retained; an empty mapping remains empty."],
+        ["lr / grad_clip", "Positive finite learning rate; clipping is a positive finite value or None. Invalid requests fail before placement."],
+      ]} />
+      <p>
+        The factory moves model and task modules in place before creating the optimizer. Parameter
+        order is model first, followed by task weights, with shared identities included once. Default
+        groups retain frozen parameters, preserving the existing checkpoint order. Parameters registered
+        directly on a task <code>ModuleDict</code> are included as well as child-module parameters.
+        If placement splits shared parameter aliases, construction fails before optimizer creation;
+        place and tie those modules on the target device before assembly.
+      </p>
+      <p>
+        Assembly preserves training/evaluation flags; each engine step enters training mode. Reusing
+        supplied weights avoids reinitializing learned values. The factory creates fresh optimizer state
+        and does not load checkpoints or alter a runner’s resume learning-rate policy. Build the engine
+        once per run. The existing nucleotide trainer now creates task weights when its optional
+        <code> logvars</code> argument is omitted; supplied weights retain their existing behavior.
+      </p>
+      <H2 id="factories">Select optimizers and update schedulers</H2>
+      <CodeBlock lang="python" code={`import torch
+from alignair.train import build_training_engine
+
+def optimizer_factory(parameters, *, lr):
+    return torch.optim.SGD(parameters, lr=lr, momentum=0.9)
+
+engine = build_training_engine(
+    model, tasks=custom_tasks, device=device, lr=0.01,
+    optimizer_factory=optimizer_factory,
+    scheduler_factory=lambda optimizer: torch.optim.lr_scheduler.StepLR(
+        optimizer, step_size=1000, gamma=0.5,
+    ),
+)`} />
+      <p>
+        An <code>OptimizerFactory</code> receives a parameter tuple and keyword learning rate. It can
+        define parameter groups but must include every trainable model/task parameter exactly once,
+        with no foreign parameters. It may omit frozen parameters. Extra learned values belong in a
+        registered model or task module. The returned object must be a Torch optimizer.
+      </p>
+      <p>
+        A scheduler factory receives that optimizer and must return a scheduler bound to it. The engine
+        calls its argument-free <code>step()</code> after successful updates. Metric-driven
+        <code> ReduceLROnPlateau</code> is rejected here; manage it in the runner with validation results.
+        Epoch-based policies likewise belong to the runner. When using an existing optimizer or a more
+        specialized placement policy, construct <code>TrainingEngine</code> directly.
+      </p>
       <p>
         A step accepts a <code>TrainingBatch</code> or an <code>(inputs, targets)</code> pair.
         It enters training mode, clears gradients, computes the task loss, checks its value, and
@@ -139,7 +185,8 @@ with evaluation_mode(model):
         ["save_research_checkpoint / load_research_checkpoint", <>Trusted Python <code>.pt</code> research
           checkpoints containing model/configuration, optimizer, scheduler, process RNG, learning rate,
           history, and provenance. Existing research field names remain supported; new files also include
-          Python’s RNG state.</>],
+          Python’s RNG state. Task-weight module state is not stored by this research helper and
+          must be persisted/restored separately when the experiment needs it.</>],
         ["save_snapshot", <>Model weights, plain configuration, and completed step only. Used for a warm
           start or research weight export; optimizer and RNG continuation state are absent.</>],
         ["save_rotating / latest_checkpoint", "Publish numbered checkpoints, retain the requested number of recent states, and resolve the newest completed step. Retention must be a positive integer."],
@@ -147,7 +194,7 @@ with evaluation_mode(model):
       <CodeBlock lang="python" code={`from alignair.train.checkpoints import save_checkpoint, save_snapshot
 
 save_checkpoint(
-    "run/model.alignair", model.cfg, model, weights, step, optimizer,
+    "run/model.alignair", model.cfg, model, engine.weights, step, engine.optimizer,
     dataconfigs=dataconfigs,
     train_args={"lr": 3e-4, "batch_size": 32, "seed": 0},
 )
@@ -182,7 +229,8 @@ save_snapshot("run/warm-start.pt", model, model.cfg, step)`} />
       </p>
       <H2 id="migration">Implementation ownership</H2>
       <p>
-        NT, AA allele, categorical, partial-label, and capacity-proof runners share this engine.
+        NT, AA allele, categorical, partial-label, and capacity-proof runners share this engine and
+        its training-state factory. Frozen-cohort replicate training uses the same factory.
         Historical <code>train.trainer.train_step</code>, <code>validate</code>, checkpoint helpers,
         and <code>aa.resume</code> imports delegate to shared owners. Duplicate optimizer loops,
         snapshot writers, and process-RNG implementations have been removed from those runners.

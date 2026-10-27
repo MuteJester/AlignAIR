@@ -6,7 +6,6 @@ nonproductive/stop-containing reads and applies length-preserving substitutions 
 from __future__ import annotations
 
 import numpy as np
-import torch
 
 from ..data.augmentation.protein import aa_substitute
 from ..core import prepare_model
@@ -14,7 +13,7 @@ from ..reference import build_protein_reference
 from ..data.adapters import CategoricalBatchAdapter
 from ..data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
 from ..tasks import build_tasks
-from ..train.engine import TrainingEngine
+from ..train.setup import build_training_engine
 from ..train.loop import training_iterations
 from ..train.checkpoints import save_snapshot as _save
 from ..data.tokenizer import AAProteinTokenizer
@@ -52,12 +51,11 @@ def strategic_train(model, cfg, class_maps, dc_name="HUMAN_IGH_OGRDB", *, d_inde
                     grad_clip=1.0, save_path=None, save_every=5000):
     tok = AAProteinTokenizer()
     rng = np.random.default_rng(seed)
-    model.to(device).train()
-    opt = torch.optim.AdamW(model.parameters(), lr=lr)
+    model.train()
     d_index = d_index or {}
     genes = ("v", "d", "j") if cfg.has_d else ("v", "j")
     tasks = build_tasks(model.cfg, genes=genes)
-    engine = TrainingEngine(model, opt, tasks=tasks, grad_clip=grad_clip)
+    engine = build_training_engine(model, tasks=tasks, device=device, lr=lr, grad_clip=grad_clip)
     stream = _sample_stream(dc_name, class_maps, d_index, tok, cfg.max_seq_length, sub_prob, seed, rng)
 
     batch_adapter = CategoricalBatchAdapter.from_config(cfg, device=device)

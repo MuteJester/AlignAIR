@@ -164,7 +164,6 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
     tasks = train_overrides.get("tasks")
     tasks = build_tasks(cfg) if tasks is None else tasks
     train_overrides["tasks"] = tasks
-    logvars = tasks.make_weights()
-    _train(model, reference, dcs, cfg, logvars, steps=steps, device=device,
+    _train(model, reference, dcs, cfg, steps=steps, device=device,
            save_path=out_path, **train_overrides)
     return out_path

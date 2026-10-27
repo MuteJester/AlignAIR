@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import itertools
 
-import torch
-
 from ..errors import error_context
 from ..data.adapters import NucleotideBatchAdapter, build_nucleotide_batch as build_batch
 from ..tasks import TrainingTasks, build_tasks
 from .gym.streams import CurriculumStreamPolicy, training_records, effective_mutation_caps
-from .engine import TrainingEngine, train_step, validate
+from .engine import train_step, validate
+from .setup import build_training_engine
 from .loop import training_iterations
 from .checkpoints import save_checkpoint, save_rotating, latest_checkpoint, load_training_checkpoint, _stem, _ext
 from .random_state import restore_rng_state as _restore_rng
@@ -25,7 +24,7 @@ def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     return build_tasks(cfg).metrics(out, targets)
 
 
-def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_size=32,
+def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
           monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
@@ -45,10 +44,9 @@ def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_
     def _build_stream(seed_value):
         return training_records(dataconfigs, policy=source_policy, seed=seed_value)
 
-    model.to(device)
-    logvars.to(device)                         # Kendall log-vars must share the model's device
-    opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=lr)
-    engine = TrainingEngine(model, opt, tasks=tasks, weights=logvars, grad_clip=grad_clip)
+    engine = build_training_engine(model, tasks=tasks, weights=logvars, device=device,
+                                   lr=lr, grad_clip=grad_clip)
+    opt, logvars = engine.optimizer, engine.weights
 
     start = 0
     resume_from = latest_checkpoint(resume_path) if resume_path else None

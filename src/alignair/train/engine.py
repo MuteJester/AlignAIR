@@ -9,7 +9,7 @@ import torch
 
 from ..errors import ConfigurationError, TrainingError, error_context
 from ..tasks import MetricAccumulator, TrainingTasks, build_tasks
-from .guards import NonFiniteLossError, check_finite_loss
+from .guards import NonFiniteLossError, check_finite_loss, validate_grad_clip
 
 
 class StepResult(NamedTuple):
@@ -47,6 +47,15 @@ def _parameters(optimizer):
     return parameters
 
 
+def task_weight_parameters(weights):
+    """Include parameters registered on a ModuleDict itself as well as its child modules."""
+    if isinstance(weights, torch.nn.ModuleDict):
+        yield from weights.parameters()
+    else:
+        for weight in weights.values():
+            yield from weight.parameters()
+
+
 class TrainingEngine:
     """Own step mechanics; source sampling, schedules, and checkpoint policy belong to runners.
 
@@ -56,9 +65,7 @@ class TrainingEngine:
 
     def __init__(self, model, optimizer, *, tasks: TrainingTasks | None = None, weights=None,
                  grad_clip=None, scheduler=None):
-        if grad_clip is not None and (isinstance(grad_clip, bool) or not isinstance(grad_clip, (int, float))
-                                      or not math.isfinite(grad_clip) or grad_clip <= 0):
-            raise ConfigurationError("grad_clip must be a positive finite number or None")
+        validate_grad_clip(grad_clip)
         self.model = model
         self.optimizer = optimizer
         self.tasks = build_tasks(model.cfg) if tasks is None else tasks
@@ -67,7 +74,7 @@ class TrainingEngine:
         self.scheduler = scheduler
         optimized = {id(parameter) for parameter in _parameters(optimizer)}
         if any(parameter.requires_grad and id(parameter) not in optimized
-               for weight in self.weights.values() for parameter in weight.parameters()):
+               for parameter in task_weight_parameters(self.weights)):
             raise ConfigurationError("the optimizer must include every trainable task weight",
                                      hint="Create task weights before the optimizer and include their parameters.")
         if scheduler is not None and scheduler.optimizer is not optimizer:
@@ -96,8 +103,11 @@ class TrainingEngine:
             gradient_norm = float(norm)
             if not math.isfinite(gradient_norm):
                 names = {id(parameter): f"model.{name}" for name, parameter in self.model.named_parameters()}
-                for task, weight in self.weights.items():
-                    names.update({id(parameter): f"tasks.{task}.{name}" for name, parameter in weight.named_parameters()})
+                if isinstance(self.weights, torch.nn.ModuleDict):
+                    names.update({id(parameter): f"tasks.{name}" for name, parameter in self.weights.named_parameters()})
+                else:
+                    for task, weight in self.weights.items():
+                        names.update({id(parameter): f"tasks.{task}.{name}" for name, parameter in weight.named_parameters()})
                 invalid = [names.get(id(parameter), f"optimizer[{i}]") for i, parameter in enumerate(parameters)
                            if not torch.isfinite(parameter.grad).all()]
                 # Do not leave rejected gradients available for a caller to accidentally reuse.

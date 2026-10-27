@@ -20,6 +20,14 @@ class NonFiniteLossError(TrainingError, NumericalError):
     code = "ALIGNAIR_TRAINING_NONFINITE"
 
 
+def validate_grad_clip(grad_clip) -> None:
+    """Validate the shared engine/factory clipping contract without allocating training state."""
+    if grad_clip is not None and (isinstance(grad_clip, bool) or not isinstance(grad_clip, (int, float))
+                                  or not math.isfinite(grad_clip) or grad_clip <= 0):
+        raise ConfigurationError("grad_clip must be a positive finite number or None",
+                                 context={"field": "grad_clip"})
+
+
 def validate_training_request(*, steps, batch_size, lr, max_seq_length, reference, progresses=(0.3,),
                               heavy_shm=0.0, short_boost=1, grad_clip=None) -> None:
     """Validate hyperparameters/config/reference up front. Raises :class:`TrainingConfigError` on the
@@ -39,8 +47,9 @@ def validate_training_request(*, steps, batch_size, lr, max_seq_length, referenc
         problems.append(f"heavy_shm must be in [0, 1] (got {heavy_shm!r})")
     if not (isinstance(short_boost, int) and short_boost >= 1):
         problems.append(f"short_boost must be an int >= 1 (got {short_boost!r})")
-    if grad_clip is not None and not (isinstance(grad_clip, (int, float)) and grad_clip > 0
-                                      and math.isfinite(grad_clip)):
+    try:
+        validate_grad_clip(grad_clip)
+    except ConfigurationError:
         problems.append(f"grad_clip must be a positive finite number or None (got {grad_clip!r})")
     # reference must be non-empty for the genes the model will train (V and J are always required)
     reference_error = None

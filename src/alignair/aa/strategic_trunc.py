@@ -29,7 +29,8 @@ from ..train.checkpoints import (load_research_checkpoint as load_checkpoint,
                                   save_research_checkpoint as save_checkpoint,
                                   research_checkpoint_rng, save_snapshot as _save)
 from ..train.random_state import restore_rng_state
-from ..train.engine import TrainingEngine, evaluation_mode
+from ..train.engine import evaluation_mode
+from ..train.setup import build_training_engine
 from ..train.loop import training_iterations
 from ..data.sampling import ProteinSampleBuilder, ProteinSamplePolicy
 from ..data.tokenizer import AAProteinTokenizer
@@ -84,9 +85,15 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
         raise ConfigurationError("D-enabled crop training requires an explicit D allele vocabulary")
     sample_builder = ProteinSampleBuilder(class_maps, tok, cfg.max_seq_length, d_index,
                                          policy=ProteinSamplePolicy(require_productive=False, allow_stops=True))
-    model.to(device).train()
-    opt = torch.optim.AdamW(model.parameters(), lr=base_lr)
-    sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=(total_budget or steps), eta_min=lr_min)
+    model.train()
+    genes = tuple(spec.name for spec in cfg.gene_specs)
+    tasks = build_tasks(model.cfg, genes=genes)
+    engine = build_training_engine(
+        model, tasks=tasks, device=device, lr=base_lr, grad_clip=grad_clip,
+        scheduler_factory=lambda optimizer: torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=(total_budget or steps), eta_min=lr_min),
+    )
+    opt, sch = engine.optimizer, engine.scheduler
 
     start_step = 0
     if resume_path:
@@ -118,10 +125,7 @@ def stage1_train(model, cfg, class_maps, meta, dc_name="HUMAN_IGH_OGRDB", *, ste
                 yield s
     stream = gen()
 
-    genes = tuple(spec.name for spec in cfg.gene_specs)
-    tasks = build_tasks(model.cfg, genes=genes)
     batch_adapter = CategoricalBatchAdapter.from_config(cfg, device=device)
-    engine = TrainingEngine(model, opt, tasks=tasks, grad_clip=grad_clip, scheduler=sch)
     history = []
     val_history = []
     for iteration in training_iterations(engine, stream, batch_adapter, start_step=start_step,

@@ -16,7 +16,7 @@ from ..reference import build_protein_reference
 from ..data.adapters import collate_categorical as collate_aa
 from .evaluate import evaluate_frozen
 from ..tasks import build_tasks
-from ..train.engine import TrainingEngine
+from ..train.setup import build_training_engine
 from .model import AAAlignAIR
 from ..data.tokenizer import AAProteinTokenizer
 from .train import assert_batch_diverse, diverse_selector, overfit_one_batch
@@ -111,9 +111,8 @@ def run_seed(seed, cfg, class_maps, heldout, *, replicate, train_steps, batch_si
                                             class_maps=class_maps, tokenizer=tok,
                                             max_len=cfg.max_seq_length, dc_name=dc_name,
                                             counter=counters["train"])
-    model = AAAlignAIR(cfg).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    engine = TrainingEngine(model, opt, tasks=build_tasks(cfg, genes=("v", "j")))
+    model = AAAlignAIR(cfg)
+    engine = build_training_engine(model, device=device, lr=lr, tasks=build_tasks(cfg, genes=("v", "j")))
     losses = []
     for i in range(train_steps):
         batch = train_samples[i * batch_size:(i + 1) * batch_size]

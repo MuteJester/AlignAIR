@@ -18,7 +18,7 @@ from alignair.aa import train_gym, strategic, strategic_trunc
 pytestmark = pytest.mark.integration
 
 
-@pytest.mark.parametrize('runner', ['nucleotide', 'protein_alleles', 'protein_classes', 'protein_crops'])
+@pytest.mark.parametrize('runner', ['nucleotide', 'nucleotide_auto_weights', 'protein_alleles', 'protein_classes', 'protein_crops'])
 @pytest.mark.parametrize('source_size', [0, 1, 3])
 def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, monkeypatch):
     reference = build_protein_reference('HUMAN_IGH_OGRDB')
@@ -27,9 +27,10 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
     source = training_records(('HUMAN_IGH_OGRDB',), policy=CurriculumStreamPolicy(mode='amplicon'), seed=21, translated_only=True)
     record = next(record for record in islice(source, 50) if builder(record).sample is not None)
 
-    if runner in ('nucleotide', 'protein_alleles'):
-        _, ref, cfg, _ = train_gym.setup_aa(max_seq_length=576 if runner == 'nucleotide' else 192)
-        if runner == 'nucleotide':
+    nucleotide = runner.startswith('nucleotide')
+    if nucleotide or runner == 'protein_alleles':
+        _, ref, cfg, _ = train_gym.setup_aa(max_seq_length=576 if nucleotide else 192)
+        if nucleotide:
             cfg = replace(cfg, vocab_size=6, use_orientation=True)
     else:
         _, cfg, maps, meta = strategic.strategic_setup(max_seq_length=192)
@@ -38,14 +39,15 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
     options = dict(steps=5, batch_size=2, log_every=1000, save_every=100)
     expected_step = source_size // 2
 
-    if runner == 'nucleotide':
+    if nucleotide:
         import GenAIRR as ga
         monkeypatch.setattr(trainer, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
         path = tmp_path / 'model.alignair'
-        trainer.train(model, ref, ga.HUMAN_IGH_OGRDB, cfg, build_tasks(cfg).make_weights(),
+        weights = None if runner == 'nucleotide_auto_weights' else build_tasks(cfg).make_weights()
+        trainer.train(model, ref, ga.HUMAN_IGH_OGRDB, cfg, weights,
                       progresses=(.3,), heavy_shm=0., save_path=path, **options)
         saved = load_training_checkpoint(path)
-        assert saved.step == expected_step
+        assert saved.step == expected_step and saved.weight_state
     else:
         module = {'protein_alleles': train_gym, 'protein_classes': strategic,
                   'protein_crops': strategic_trunc}[runner]

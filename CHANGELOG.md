@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared training-engine factory for task selection, weight/device placement, stable parameter binding,
+  replaceable optimizers, and update-based scheduler construction, with API documentation.
 - Shared curriculum record sources with explicit automatic/amplicon policies, provider injection,
   deterministic component/panel seeds, translated-read eligibility, and a website API guide.
 - Shared reference-bound model preparation in `alignair.core`, with explicit nucleotide/protein input
@@ -44,6 +46,11 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Alignment runners and capacity/frozen-cohort proofs use one training-state initializer. Public
+  nucleotide training creates task weights there when omitted; supplied weights retain their identity.
+- Optimizer assembly deduplicates shared parameters, checks custom parameter groups and scheduler
+  ownership, and rejects device transfers that split parameter ties. Root task-container parameters
+  are included in ownership checks and gradient diagnostics. Clipping validation has one owner.
 - Nucleotide and protein runners share `train.gym.streams`; removed stream construction from the
   nucleotide trainer and the private protein source bridge. Receptor detection is shared with the
   experiment builder. Source ordering, per-locus mutation caps, and resume seed schedules are preserved.

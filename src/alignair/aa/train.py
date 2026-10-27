@@ -4,7 +4,7 @@ from __future__ import annotations
 import torch
 
 from ..tasks import build_tasks
-from ..train.engine import TrainingEngine
+from ..train.setup import build_training_engine
 from ..tasks.metrics import categorical_metrics as aa_eval_metrics
 
 
@@ -36,8 +36,7 @@ def overfit_one_batch(model, batch_in, targets, *, steps=300, lr=1e-3, genes=("v
     """Drive one batch to memorization. Returns initial/final loss, final metrics, and the
     per-step component history."""
     tasks = build_tasks(model.cfg, genes=genes)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    engine = TrainingEngine(model, opt, tasks=tasks)
+    engine = build_training_engine(model, tasks=tasks, lr=lr)
     history, initial = [], None
     for step in range(1, steps + 1):
         result = engine.step((batch_in, targets), step=step)

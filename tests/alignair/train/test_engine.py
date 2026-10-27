@@ -168,3 +168,28 @@ def test_an_optimizer_disconnected_from_the_loss_fails_before_a_false_successful
     with pytest.raises(TrainingError, match='no gradients|no gradient graph'):
         engine.step(({}, {}))
     assert unrelated.item() == 1.
+
+
+def test_module_dict_root_parameters_are_guarded_and_named_in_gradient_diagnostics():
+    model = ScalarModel()
+    weights = torch.nn.ModuleDict()
+    weights.register_parameter('global_weight',torch.nn.Parameter(torch.tensor(0.)))
+    tasks = SimpleNamespace(loss=lambda output,_,weights: (output+weights.global_weight.abs().sqrt(),{}))
+    with pytest.raises(ConfigurationError,match='every trainable task weight'):
+        TrainingEngine(model,torch.optim.SGD(model.parameters(),lr=.1),tasks=tasks,weights=weights)
+    optimizer=torch.optim.SGD([*model.parameters(),*weights.parameters()],lr=.1)
+    engine=TrainingEngine(model,optimizer,tasks=tasks,weights=weights)
+    with pytest.raises(NonFiniteLossError) as caught:
+        engine.step(({},{}))
+    assert caught.value.context['parameters']==['tasks.global_weight']
+    assert model.value.item()==weights.global_weight.item()==0.
+
+
+def test_plain_weight_mapping_keeps_named_gradient_diagnostics():
+    model=ScalarModel()
+    weights={'extra':UncertaintyWeight()}
+    optimizer=torch.optim.SGD([*model.parameters(),*weights['extra'].parameters()],lr=.1)
+    tasks=SimpleNamespace(loss=lambda output,_,weights: (output+weights['extra'].log_var.abs().sqrt(),{}))
+    with pytest.raises(NonFiniteLossError) as caught:
+        TrainingEngine(model,optimizer,tasks=tasks,weights=weights).step(({},{}))
+    assert caught.value.context['parameters']==['tasks.extra.log_var']
