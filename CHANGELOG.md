@@ -230,6 +230,8 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Obsolete `aa.loss` facade. Categorical and boundary objectives remain in `tasks.losses`;
+  endpoint, reduction and gradient regressions are consolidated under the shared task tests.
 - Protein-only `aa.model` subclasses and `aa.config` factory. Studies and product loading now use
   the shared `AlignAIR` class; historical artifact head normalization stays at the product-loading boundary.
   Protein model/configuration behavior tests now live in the shared core model suite.

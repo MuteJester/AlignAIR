@@ -103,9 +103,23 @@ selection_score = tasks.selection_score(metrics)`} />
       </p>
       <p>
         The <DocLink to="training-engine">shared training engine</DocLink> works with either target contract. Existing gym and research runners
-        retain their data preparation and study schedules. The historical <code>core.losses</code>,{" "}
-        <code>aa.loss</code>, and batch-metric entry points delegate to this package so existing imports
-        continue to work.
+        retain their data preparation and study schedules. The historical <code>core.losses</code>
+        and batch-metric entry points delegate to this package.
+      </p>
+      <H2 id="migration">Migrate former protein loss imports</H2>
+      <p>
+        The <code>aa.loss</code> facade has been removed. Training code should use
+        <code>build_tasks(config).loss(...)</code> to select the configured gene set and validate its
+        targets. Code calling the lower-level functions directly can use these replacements.
+      </p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["alignair.aa.loss.aa_loss", "alignair.tasks.losses.categorical_loss"],
+        ["alignair.aa.loss.masked_soft_gaussian", "alignair.tasks.losses.masked_soft_gaussian"],
+      ]} />
+      <p>
+        <code>categorical_loss</code> retains its <code>(outputs, targets, genes=("v", "j"))</code>
+        signature and scalar-total/component-dictionary return contract. Select D explicitly in
+        that function&apos;s gene tuple when needed; the task interface derives it from configuration.
       </p>
     </>
   ),

@@ -7,7 +7,7 @@ import torch
 
 from alignair.errors import ConfigurationError, TrainingDataError
 from alignair.tasks import build_tasks
-from alignair.tasks.losses import masked_soft_gaussian
+from alignair.tasks.losses import categorical_loss, masked_soft_gaussian
 from alignair.tasks.functional import _soft_ce
 from alignair.core import AlignAIR
 from alignair.core.boundaries import boundary_masks
@@ -16,16 +16,22 @@ from alignair.train.trainer import train_step
 pytestmark = pytest.mark.component
 
 
-def test_uniform_categorical_objective_has_hand_calculated_loss_and_gradient(task_batch):
-    cfg, out, targets = task_batch(batch_size=1)
+@pytest.mark.parametrize('has_d', [False, True])
+def test_uniform_categorical_objective_has_hand_calculated_loss_and_gradient(task_batch, has_d):
+    cfg, out, targets = task_batch(batch_size=1, has_d=has_d)
     out["v_class_logits"] = torch.tensor([[math.log(3), 0.]], requires_grad=True)
     tasks = build_tasks(cfg)
     total, parts = tasks.loss(out, targets)
+    assert total.ndim == 0 and set(parts) == {'segmentation', 'classification'}
     assert float(parts["segmentation"].detach()) == pytest.approx(math.log(8))
-    assert float(parts["classification"].detach()) == pytest.approx((math.log(4 / 3) + math.log(2)) / 2)
+    gene_count = 3 if has_d else 2
+    expected = (math.log(4 / 3) + (gene_count-1) * math.log(2)) / gene_count
+    assert float(parts["classification"].detach()) == pytest.approx(expected)
+    assert float(total.detach()) == pytest.approx(math.log(8) + expected)
     total.backward()
-    torch.testing.assert_close(out["v_class_logits"].grad, torch.tensor([[-.125, .125]]))
-    torch.testing.assert_close(out["j_class_logits"].grad, torch.tensor([[-.25, .25]]))
+    torch.testing.assert_close(out["v_class_logits"].grad, torch.tensor([[-.25, .25]]) / gene_count)
+    for gene in (('d', 'j') if has_d else ('j',)):
+        torch.testing.assert_close(out[f'{gene}_class_logits'].grad, torch.tensor([[-.5, .5]]) / gene_count)
 
 
 def test_compatible_set_containing_every_class_has_zero_class_gradient(task_batch):
@@ -116,6 +122,44 @@ def test_gaussian_width_parameter_changes_target_concentration():
     torch.testing.assert_close(narrow.sum(), torch.tensor(1.))
 
 
+def test_terminal_gaussian_target_retains_mass_and_is_normalized_over_end_slots():
+    tokens = torch.zeros(1, 16, dtype=torch.long)
+    tokens[:, :8] = 1
+    start_mask, end_mask = boundary_masks(tokens)
+    endpoint = torch.tensor([8.])
+    target = masked_soft_gaussian(endpoint, 16, end_mask)
+    assert target.sum().item() == pytest.approx(1.)
+    assert target.argmax(-1).item() == 8
+    assert target[0, 8] > .4 and target[0, 0] == 0 and target[0, 9:].sum() == 0
+    # Reusing the start mask would erase the true exclusive endpoint.
+    assert masked_soft_gaussian(endpoint, 16, start_mask)[0, 8] == 0
+
+
+def test_fixed_terminal_truth_rewards_predictions_closer_to_the_endpoint(task_batch):
+    cfg, outputs, targets = task_batch(batch_size=1)
+    targets['v_end'].fill_(8.)
+    tasks = build_tasks(cfg)
+    losses = []
+    for position in (8, 7, 6, 4):
+        logits = torch.zeros(1, 16)
+        logits[0, position] = 10.
+        total, _ = tasks.loss({**outputs, 'v_end_logits': logits}, targets)
+        losses.append(total.item())
+    assert all(closer < farther for closer, farther in zip(losses, losses[1:]))
+
+
+def test_confident_correct_categorical_classes_have_near_zero_loss_and_finite_gradients(task_batch):
+    _, outputs, targets = task_batch(batch_size=1)
+    for gene in ('v', 'j'):
+        outputs[f'{gene}_class_logits'] = torch.tensor([[10., -10.]], requires_grad=True)
+    total, parts = categorical_loss(outputs, targets)
+    assert parts['classification'].item() < 1e-6
+    total.backward()
+    for gene in ('v', 'j'):
+        gradient = outputs[f'{gene}_class_logits'].grad
+        assert torch.isfinite(gradient).all() and gradient.abs().max() < 1e-6
+
+
 def test_unmasked_soft_cross_entropy_has_expected_entropy_and_gradient():
     logits = torch.zeros(1, 4, requires_grad=True)
     target = torch.tensor([[.1, .2, .3, .4]])
@@ -143,18 +187,21 @@ def test_shared_optimizer_step_trains_either_score_family(task_batch, protein):
     assert not torch.equal(before, model.branches["v"].cls_head.weight.detach())
 
 
-def test_hierarchical_loss_uses_explicit_exclusive_end_slots(task_batch):
-    cfg, out, targets = task_batch(protein=False)
+@pytest.mark.parametrize('protein', [False, True])
+def test_both_score_families_learn_terminal_exclusive_end_slots(task_batch, protein):
+    cfg, out, targets = task_batch(protein=protein)
     cfg = replace(cfg, boundary_mode="half_open")
     tokens = torch.zeros(2, 16, dtype=torch.long)
     tokens[:, :8] = 1
     out["start_mask"], out["end_mask"] = boundary_masks(tokens)
-    del out["position_mask"]
+    out.pop('position_mask', None)
     targets["v_end"].fill_(8.)
     tasks = build_tasks(cfg)
     total, _ = tasks.loss(out, targets, tasks.make_weights())
     total.backward()
     assert (out["v_end_logits"].grad[:, 8] < 0).all()
+    assert (out['v_end_logits'].grad[:, 9:] == 0).all()
+    assert (out['v_end_logits'].grad[:, 0] == 0).all()
 
 
 @pytest.mark.parametrize("failure", ["missing", "empty_set", "set_shape", "set_values", "mask", "label",

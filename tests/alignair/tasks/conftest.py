@@ -10,8 +10,8 @@ from alignair.core.boundaries import boundary_masks
 
 @pytest.fixture
 def task_batch():
-    def make(protein=True, batch_size=2, auxiliary=False):
-        cfg = AlignAIRConfig(v_allele_count=2, j_allele_count=2, has_d=False,
+    def make(protein=True, batch_size=2, auxiliary=False, has_d=False):
+        cfg = AlignAIRConfig(v_allele_count=2, j_allele_count=2, d_allele_count=2 if has_d else 0, has_d=has_d,
                              max_seq_length=16, use_orientation=False, use_meta_heads=False)
         if protein:
             cfg = cfg.with_amino_acid_heads()
@@ -23,7 +23,7 @@ def task_batch():
         out = ({"start_mask": start_mask, "end_mask": end_mask} if protein
                else {"position_mask": start_mask})
         targets = {}
-        for gene in ("v", "j"):
+        for gene in (('v', 'd', 'j') if has_d else ('v', 'j')):
             for boundary, value in (("start", 1.), ("end", 4.)):
                 out[f"{gene}_{boundary}"] = torch.full((batch_size, 1), value, requires_grad=True)
                 out[f"{gene}_{boundary}_logits"] = torch.zeros(batch_size, 16, requires_grad=True)
