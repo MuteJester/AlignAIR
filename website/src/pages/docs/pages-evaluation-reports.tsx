@@ -115,12 +115,63 @@ print(report["support"])`} />
         and its prediction must be a probability.
       </p>
       <p>
-        Reusable counters and normalization live in <code>evaluate.alleles</code>. The historical
-        <code>aa.eval_gym.evaluate_aa</code> selects the protein allele adapter and delegates here;
-        its counter imports remain aliases. The stratified protein benchmark uses the same collector
-        and counters while retaining its source strata and translated-read eligibility rules. Both
-        paths restore caller module modes. Boundary and scalar totals now accumulate detached per-row
+        Reusable counters and normalization live in <code>evaluate.alleles</code>. Select
+        <code> ProteinAlleleBatchAdapter(reference, config, device)</code> for translated reads;
+        the former <code>aa.eval_gym</code> adapter has been removed. The stratified protein benchmark
+        uses the same collector and counters while retaining its source strata and translated-read
+        eligibility rules. Both paths restore caller module modes. Boundary and scalar totals accumulate detached per-row
         errors, so older float32 batch reductions can differ by floating-point roundoff.
+      </p>
+      <H2 id="categorical-cohorts">Evaluate categorical cohorts with explicit strata</H2>
+      <CodeBlock lang="python" code={`from alignair.data import CategoricalBatchAdapter
+from alignair.evaluate import evaluate_categorical_cohort, protein_v_strata
+
+adapter = CategoricalBatchAdapter.from_config(model.cfg, device=device)
+report = evaluate_categorical_cohort(
+    model, frozen_samples, adapter, model.cfg,
+    genes=("v", "j"), batch_size=128,
+    strata=protein_v_strata(class_maps["V"]),
+)
+print(report["classification"]["v"])
+print(report["stratified"]["v_acc_by_coverage"])`} />
+      <p>
+        <code>evaluate_categorical_cohort</code> accepts either input alphabet and requires categorical
+        heads. It reports every configured gene, including D when enabled, unless <code>genes</code>
+        selects a subset. Its result contains <code>n</code>, <code>classification</code>,
+        <code> boundaries</code>, <code>stratified</code>, and per-field <code>support</code>.
+        Classification uses only supervised singleton truth; multi-member compatible truth raises
+        <code> ConfigurationError</code>. Use observation membership correctness for a compatible-label study.
+      </p>
+      <p>
+        Without strata, records may be an iterator and <code>stratified</code> is empty. Stratified
+        evaluation requires an indexable frozen sequence so each supervised observation can be
+        joined to its original record. Masked class rows never enter strata; their observed boundaries
+        remain eligible. The report uses the same baselines, paired intervals, and exact-class
+        denominators as the numerical functions below.
+      </p>
+      <CodeBlock lang="python" code={`from alignair.evaluate import ClassificationStratum
+
+source_group = ClassificationStratum(
+    name="v_acc_by_source", gene="v",
+    group=lambda record, true_class: record["source_group"],
+)
+report = evaluate_categorical_cohort(
+    model, frozen_samples, adapter, model.cfg, strata=(source_group,),
+)`} />
+      <p>
+        A <code>ClassificationStratum</code> declares a unique report name, a selected gene, and a
+        <code> group(record, true_class)</code> callback returning a nonempty string label. The callback
+        receives the original record and singleton true class ID and must not mutate records.
+        Each bin reports accuracy, count, and a Wilson interval. Invalid policies fail before
+        the cohort is consumed; invalid returned labels include stratum, gene, and source index context.
+      </p>
+      <p>
+        <code>protein_v_strata(class_map)</code> preserves the established V-study report keys and
+        bins: visible residue spans <code>&lt;40</code>, <code>40-79</code>, and <code>≥80</code>, and
+        synonymous allele counts <code>1</code>, <code>2</code>, and <code>≥3</code>. It expects V boundaries
+        in amino-acid residue coordinates and does not translate nucleotide positions. Define a
+        different grouping policy when units, bins, or scientific questions differ. Convergence
+        boundary-only summaries omit these diagnostic strata while retaining their V/J gene selection.
       </p>
       <H2 id="classification">Report exact-class predictions</H2>
       <CodeBlock lang="python" code={`from alignair.evaluate import classification_report
@@ -200,12 +251,11 @@ print(report["paired_improvement"])`} />
       <H2 id="ownership">Study integration</H2>
       <p>
         Numerical intervals live in <code>evaluate.statistics</code>; class and boundary summaries
-        live in <code>evaluate.reports</code>. The protein frozen-cohort evaluator delegates those
-        calculations and prediction collection while retaining its V/J selection, coverage bins,
-        and ambiguity strata. Its existing metric fields remain; the added <code>support</code>
-        field records per-field denominators. Unknown and masked class rows are excluded from class
-        summaries and strata while observed boundaries remain eligible. Multi-member truth sets
-        require an explicit membership report instead of this study’s exact-class summary.
+        live in <code>evaluate.reports</code>. Phase-1 and convergence studies use the shared
+        categorical evaluator with explicit V/J selection. The protein preset preserves historical
+        coverage and ambiguity fields; no alphabet-specific evaluation implementation is required.
+        Unknown and masked class rows are excluded from class summaries and strata while observed
+        boundaries remain eligible. Multi-member truth sets require an explicit membership report.
         Convergence metrics share the macro-accuracy owner. Gym competence
         aggregation imports its preserved estimator directly; the historical
         <code> train.gym.instrument.stats.bootstrap_ci</code> alias remains available.
@@ -213,11 +263,13 @@ print(report["paired_improvement"])`} />
       </p>
       <H2 id="migration">Import shared evaluation utilities directly</H2>
       <p>
-        Unused utility aliases have been removed from the protein study modules. Their declared
-        public entry points are <code>aa.evaluate.evaluate_frozen</code> and
-        <code> aa.eval_gym.evaluate_aa</code>. Import reusable calculations from their shared owners.
+        The <code>aa.evaluate</code> and <code>aa.eval_gym</code> modules have been removed. Choose
+        the shared evaluator and batch adapter explicitly. The categorical example above preserves
+        the former frozen protein report’s V/J selection and diagnostic bins.
       </p>
       <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.evaluate.evaluate_frozen", "alignair.evaluate.evaluate_categorical_cohort with CategoricalBatchAdapter, V/J genes and protein_v_strata"],
+        ["aa.eval_gym.evaluate_aa", "alignair.evaluate.evaluate_allele_cohort with ProteinAlleleBatchAdapter"],
         ["aa.evaluate._macro_accuracy", "alignair.evaluate.macro_accuracy"],
         ["aa.evaluate.majority_class_baseline / constant_median_mae", "alignair.evaluate (same function names)"],
         ["aa.evaluate.bootstrap_mean_ci / paired_diff_ci / wilson_interval", "alignair.evaluate (same function names)"],

@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared `evaluate_categorical_cohort` for either input alphabet, with configured gene selection,
+  independent classification/boundary support and explicit `ClassificationStratum` policies.
+  `protein_v_strata` preserves established protein-study coverage and ambiguity bins.
 - Shared partial-protein training through `ProteinCropPolicy`, serializable cosine schedules,
   retained study checkpoints and evaluation callbacks with model-mode restoration.
 - Scheduler continuation state and source checkpoint hashes in resumable artifacts; explicit
@@ -231,6 +234,8 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Protein-only `aa.evaluate` and `aa.eval_gym` entry points. Phase-1 and convergence callers now use
+  shared cohort evaluators; categorical report tests live under `tests/alignair/evaluate`.
 - Obsolete `aa.infer` probability wrapper and unused report/statistic/counter aliases in the
   protein evaluation adapters. Import reusable functions from `predict.probabilities` and `evaluate`;
   the adapters retain their study-specific evaluation policies and report contracts.
@@ -256,7 +261,7 @@ All notable changes to AlignAIR are documented here. The format follows
 - Redundant `train_strategic_igh.py` wrapper and historical training defaults.
   Its functionality lives in shared model setup and training.
 - Historical `train_eval_aa_igh.py` allele-head experiment runner and held-out sampling recipe.
-  Training uses the shared workflow; evaluation remains in `aa.eval_gym`.
+  Training uses the shared workflow; evaluation uses the shared cohort API with an explicit batch adapter.
 - Redundant `benchmark_aa_igh.py` wrapper for the historical allele-head checkpoint.
   The package benchmark implementation and shared allele-recovery metrics remain unchanged.
 - Historical `eval_baseline_complete.py` report runner and study-specific junction-masking analysis.

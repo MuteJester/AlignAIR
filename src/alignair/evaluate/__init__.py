@@ -6,13 +6,16 @@ from .statistics import (bootstrap_competence_ci, bootstrap_mean_ci, paired_diff
 from .cohort import (BoundaryObservation, ClassificationObservation, CohortObservations,
                      PredictionSetObservation, ScalarObservation, collect_alignment_observations)
 from .alleles import evaluate_allele_cohort
+from .categorical import evaluate_categorical_cohort
+from .strata import ClassificationStratum, protein_v_strata
 
 _BENCHMARK_EXPORTS = ("default_strata", "format_text", "generate_labeled", "run_benchmark", "score")
 __all__ = [*_BENCHMARK_EXPORTS, "boundary_error_report", "classification_report", "constant_median_mae",
            "macro_accuracy", "majority_class_baseline", "bootstrap_competence_ci", "bootstrap_mean_ci",
            "paired_diff_ci", "wilson_interval", "BoundaryObservation", "ClassificationObservation",
            "CohortObservations", "collect_alignment_observations", "PredictionSetObservation",
-           "ScalarObservation", "evaluate_allele_cohort"]
+           "ScalarObservation", "evaluate_allele_cohort", "evaluate_categorical_cohort",
+           "ClassificationStratum", "protein_v_strata"]
 
 
 def __getattr__(name):

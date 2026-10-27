@@ -170,6 +170,18 @@ def _scalar_observations(outputs, targets, key, count, offset, *, device=None, s
                 truth[selected].cpu().tolist(), predicted[selected].cpu().tolist(), errors.cpu().tolist())]
 
 
+def _selected_gene_counts(config, genes):
+    """Normalize the configured gene selection once for collectors and report preflight."""
+    canonical = {spec.name: spec.allele_count for spec in config.gene_specs}
+    try:
+        selected = tuple(canonical) if genes is None else tuple(genes)
+        if isinstance(genes, str) or not selected or len(set(selected)) != len(selected) or not set(selected) <= canonical.keys():
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError("genes must be a nonempty unique subset of configured gene names") from exc
+    return {gene: _integer(canonical[gene], f"{gene}_class_count", 1) for gene in selected}
+
+
 def collect_alignment_observations(model, records, batch_adapter: BatchAdapter, config: AlignAIRConfig,
                                    *, batch_size: int = 128, genes=None, prediction_set_threshold=None,
                                    scalar_heads=()) -> CohortObservations:
@@ -196,14 +208,8 @@ def collect_alignment_observations(model, records, batch_adapter: BatchAdapter, 
             raise ValueError
     except (TypeError, ValueError) as exc:
         raise ConfigurationError("scalar_heads must contain distinct nonempty names") from exc
-    canonical = {spec.name: spec.allele_count for spec in config.gene_specs}
-    try:
-        selected = tuple(canonical) if genes is None else tuple(genes)
-        if isinstance(genes, str) or not selected or len(set(selected)) != len(selected) or not set(selected) <= canonical.keys():
-            raise ValueError
-    except (TypeError, ValueError) as exc:
-        raise ConfigurationError("genes must be a nonempty unique subset of configured gene names") from exc
-    counts = {gene: _integer(canonical[gene], f"{gene}_class_count", 1) for gene in selected}
+    counts = _selected_gene_counts(config, genes)
+    selected = tuple(counts)
     classification = {gene: [] for gene in selected}
     boundaries = {f"{gene}_{boundary}": [] for gene in selected for boundary in ("start", "end")}
     prediction_sets = {} if threshold is None else {gene: [] for gene in selected}

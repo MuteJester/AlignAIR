@@ -10,7 +10,7 @@ every checkpoint scored in a convergence sweep is compared against byte-identica
 hardened inference path ``alignair.predict.probabilities.protein_class_probabilities``) and reports the metric set used to gate
 checkpoint selection: clean-stratum V/J accuracy (micro + macro), D allele/gene accuracy, per-stratum
 V accuracy, softmax NLL + Brier, allele-frequency-binned accuracy, boundary MAE (reusing
-``evaluate.py::evaluate_frozen``), and a per-checkpoint conformal (APS) coverage/set-size summary.
+``evaluate.evaluate_categorical_cohort``), and a per-checkpoint conformal (APS) coverage/set-size summary.
 """
 from __future__ import annotations
 
@@ -25,7 +25,8 @@ from ...data.augmentation.protein import aa_indel, aa_substitute, aa_truncate, i
 from ..conformal import Conformal
 from ...data.sampling import ProteinSampleBuilder
 from ...reference import build_protein_reference
-from ..evaluate import evaluate_frozen
+from ...data.adapters import CategoricalBatchAdapter
+from ...evaluate import evaluate_categorical_cohort
 from ...data.projection import translated_record_usable as aa_usable
 from ...predict.probabilities import protein_class_probabilities
 from ...data.tokenizer import AAProteinTokenizer
@@ -174,7 +175,7 @@ def _freq_for(rows: list, gene_key: str, allele_class: dict, dc_name: str) -> np
 
 
 def _boundary_mae(model, cfg, class_maps, clean_rows: list, device: str) -> dict:
-    """Boundary MAE (V/J start+end) on the clean stratum, reusing ``evaluate.py::evaluate_frozen``
+    """Boundary MAE (V/J start+end) on the clean stratum through shared categorical evaluation
     end-to-end (the model's soft-argmax boundary heads vs the record's projected AA-space germline
     coordinates via the shared sample builder). Best-effort/informational: returns nulls with a note
     if no clean-stratum record survives its stricter filters (productive,
@@ -192,7 +193,8 @@ def _boundary_mae(model, cfg, class_maps, clean_rows: list, device: str) -> dict
     if not samples:
         return {"v": None, "j": None,
                 "note": "deferred: no clean-stratum record survived record_to_sample filtering"}
-    res = evaluate_frozen(model, samples, cfg, class_maps, device=device)
+    res = evaluate_categorical_cohort(
+        model, samples, CategoricalBatchAdapter.from_config(cfg, device=device), cfg, genes=("v", "j"))
     b = res["boundaries"]
     return {"v": {"start": b["v_start"]["mae"], "end": b["v_end"]["mae"]},
             "j": {"start": b["j_start"]["mae"], "end": b["j_end"]["mae"]},

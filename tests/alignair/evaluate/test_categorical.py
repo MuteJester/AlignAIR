@@ -1,10 +1,11 @@
-"""Protein-study inference/strata composed with shared cohort report arithmetic."""
+"""Exact-class evaluation, explicit study strata and independent observed support."""
 from types import SimpleNamespace
 
 import pytest
 import torch
 
-from alignair.aa.evaluate import evaluate_frozen
+from alignair.data.adapters import CategoricalBatchAdapter
+from alignair.evaluate import ClassificationStratum, evaluate_categorical_cohort, protein_v_strata
 from alignair.errors import ConfigurationError
 from alignair.core import AlignAIRConfig
 
@@ -47,11 +48,17 @@ def maps():
     return {'V': SimpleNamespace(ambiguity_set=lambda label: [0] if label == 0 else [1,2,3])}
 
 
+def report_options():
+    cfg = config()
+    return {'batch_adapter': CategoricalBatchAdapter.from_config(cfg), 'config': cfg,
+            'genes': ('v', 'j'), 'strata': protein_v_strata(maps()['V'])}
+
+
 @pytest.mark.parametrize('batch_size', [1,2,3,8])
 def test_frozen_report_includes_tail_and_preserves_study_strata_and_module_modes(batch_size):
     model = CohortModel()
     modes = [module.training for module in model.modules()]
-    report = evaluate_frozen(model, cohort(), config(), maps(), batch_size=batch_size)
+    report = evaluate_categorical_cohort(model, cohort(), **report_options(), batch_size=batch_size)
     assert model.calls == (3+batch_size-1)//batch_size
     assert [module.training for module in model.modules()] == modes
     assert report['n'] == 3
@@ -70,7 +77,7 @@ def test_frozen_report_includes_tail_and_preserves_study_strata_and_module_modes
 
 def test_empty_frozen_cohort_does_not_run_model_or_invent_strata():
     model = CohortModel()
-    report = evaluate_frozen(model, [], config(), maps())
+    report = evaluate_categorical_cohort(model, [], **report_options())
     assert report['n'] == model.calls == 0
     assert report['stratified'] == {'v_acc_by_coverage':{}, 'v_acc_by_ambiguity_size':{}}
     assert report['classification']['v']['paired_lift']['mean'] == 0.
@@ -84,7 +91,7 @@ def test_frozen_inference_failure_restores_each_modules_mode():
     model = Broken()
     modes = [module.training for module in model.modules()]
     with pytest.raises(RuntimeError, match='cohort inference'):
-        evaluate_frozen(model, cohort(), config(), maps())
+        evaluate_categorical_cohort(model, cohort(), **report_options())
     assert [module.training for module in model.modules()] == modes
 
 
@@ -92,7 +99,7 @@ def test_frozen_report_omits_unknown_classes_while_retaining_observed_boundaries
     model = CohortModel()
     samples = cohort()
     samples[0]['v_class'] = -1
-    report = evaluate_frozen(model, samples, config(), maps())
+    report = evaluate_categorical_cohort(model, samples, **report_options())
     assert report['n'] == 3
     assert report['support']['classification']['v'] == 2
     assert report['support']['boundaries']['v_start'] == 3
@@ -105,7 +112,7 @@ def test_frozen_report_omits_unknown_classes_while_retaining_observed_boundaries
 def test_supervision_filtering_keeps_original_record_indices_for_strata(mask):
     samples = cohort()
     samples[0][mask] = False
-    report = evaluate_frozen(CohortModel(), samples, config(), maps(), batch_size=2)
+    report = evaluate_categorical_cohort(CohortModel(), samples, **report_options(), batch_size=2)
     assert report['support']['classification']['v'] == 2
     assert report['support']['boundaries']['v_start'] == (3 if mask == 'v_class_supervise' else 2)
     assert report['support']['classification']['j'] == 3
@@ -119,17 +126,89 @@ def test_exact_class_study_refuses_to_guess_one_label_from_compatible_truth():
     for sample in samples:
         sample['v_compatible'] = {0,1}
     with pytest.raises(ConfigurationError, match='singleton truth'):
-        evaluate_frozen(CohortModel(), samples, config(), maps())
+        evaluate_categorical_cohort(CohortModel(), samples, **report_options())
 
 
 def test_categorical_study_rejects_a_multilabel_configuration():
     cfg = AlignAIRConfig(v_allele_count=2, j_allele_count=2, has_d=False)
     with pytest.raises(ConfigurationError, match='categorical'):
-        evaluate_frozen(CohortModel(), cohort(), cfg, maps())
+        evaluate_categorical_cohort(CohortModel(), cohort(), lambda records: None, cfg)
 
 
 def test_study_rejects_an_unfrozen_iterator_before_collecting_observations():
     model = CohortModel()
     with pytest.raises(ConfigurationError, match='indexable'):
-        evaluate_frozen(model, iter(cohort()), config(), maps())
+        evaluate_categorical_cohort(model, iter(cohort()), **report_options())
     assert model.calls == 0
+
+
+@pytest.mark.parametrize('field,value', [('name', ''), ('name', True), ('gene', None), ('gene', ' '), ('group', 0)])
+def test_invalid_stratum_definitions_are_configuration_errors(field, value):
+    fields = {'name': 'coverage', 'gene': 'v', 'group': lambda record, truth: 'observed'}
+    with pytest.raises(ConfigurationError):
+        ClassificationStratum(**{**fields, field: value})
+
+
+@pytest.mark.parametrize('strata', [None, ['bad'],
+    [ClassificationStratum('same', 'v', str), ClassificationStratum('same', 'j', str)],
+    [ClassificationStratum('d', 'd', str)]])
+def test_invalid_strata_fail_before_consuming_records(strata):
+    model = CohortModel()
+    class Untouched:
+        def __iter__(self):
+            pytest.fail('invalid request consumed the source')
+    options = {**report_options(), 'strata': strata}
+    with pytest.raises(ConfigurationError):
+        evaluate_categorical_cohort(model, Untouched(), **options)
+    assert model.calls == 0
+
+
+@pytest.mark.parametrize('label', [None, '', ' ', 1])
+def test_invalid_group_labels_have_stratum_and_original_record_context(label):
+    model = CohortModel()
+    options = {**report_options(), 'strata': (ClassificationStratum('custom', 'v', lambda record, truth: label),)}
+    with pytest.raises(ConfigurationError, match='labels must be nonempty') as caught:
+        evaluate_categorical_cohort(model, cohort(), **options)
+    assert caught.value.context['stage'] == 'classification_stratification'
+    assert caught.value.context['stratum'] == 'custom'
+    assert caught.value.context['record_index'] == 0
+    assert model.training and not model.child.training
+
+
+def test_custom_strata_join_only_supervised_original_rows_and_singleton_truth():
+    samples = cohort()
+    samples[0]['v_class_supervise'] = False
+    received = []
+    def group(record, truth):
+        received.append((record, truth))
+        return 'second' if record is samples[1] else 'third'
+    options = {**report_options(), 'strata': (ClassificationStratum('selected', 'v', group),)}
+    report = evaluate_categorical_cohort(CohortModel(), samples, **options, batch_size=2)
+    assert received == [(samples[1], 0), (samples[2], 1)]
+    assert report['stratified']['selected']['second']['acc'] == 0.
+    assert report['stratified']['selected']['third']['acc'] == 1.
+    assert report['support']['boundaries']['v_start'] == 3
+
+
+def test_no_strata_supports_an_iterator_and_gene_selection_iterables():
+    options = {**report_options(), 'strata': (), 'genes': iter(('j',))}
+    report = evaluate_categorical_cohort(CohortModel(), iter(cohort()), **options, batch_size=2)
+    assert list(report['classification']) == ['j']
+    assert set(report['boundaries']) == {'j_start', 'j_end'}
+    assert report['n'] == 3 and report['stratified'] == {}
+
+
+def test_protein_preset_requires_an_explicit_class_map():
+    with pytest.raises(ConfigurationError, match='class map'):
+        protein_v_strata(None)
+
+
+@pytest.mark.parametrize('span,expected', [(39, '<40'), (40, '40-79'), (79, '40-79'), (80, '>=80')])
+def test_established_protein_bins_keep_thresholds_and_two_allele_ambiguity(span, expected):
+    samples = [cohort()[0]]
+    samples[0]['v_end'] = span
+    class_map = SimpleNamespace(ambiguity_set=lambda label: ['one', 'two'])
+    options = {**report_options(), 'strata': protein_v_strata(class_map)}
+    report = evaluate_categorical_cohort(CohortModel(), samples, **options)
+    assert list(report['stratified']['v_acc_by_coverage']) == [expected]
+    assert report['stratified']['v_acc_by_ambiguity_size']['2']['n'] == 1

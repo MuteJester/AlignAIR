@@ -10,6 +10,8 @@
     "src/alignair/predict/features.py": {"statements": 98, "branches": 95},
     "src/alignair/evaluate/alleles.py": {"statements": 98, "branches": 95},
     "src/alignair/evaluate/cohort.py": {"statements": 98, "branches": 95},
+    "src/alignair/evaluate/categorical.py": {"statements": 98, "branches": 95},
+    "src/alignair/evaluate/strata.py": {"statements": 98, "branches": 95},
     "src/alignair/evaluate/statistics.py": {"statements": 98, "branches": 95},
     "src/alignair/evaluate/reports.py": {"statements": 98, "branches": 95},
     "src/alignair/errors/base.py": {"statements": 100, "branches": 100},

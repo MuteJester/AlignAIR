@@ -13,8 +13,8 @@ import torch
 from ..core import AlignAIR, prepare_model
 from ..data.sampling import ClassDiversity, check_counter, collect_usable
 from ..reference import build_protein_reference
-from ..data.adapters import collate_categorical as collate_aa
-from .evaluate import evaluate_frozen
+from ..data.adapters import CategoricalBatchAdapter, collate_categorical as collate_aa
+from ..evaluate import evaluate_categorical_cohort, protein_v_strata
 from ..tasks import build_tasks
 from ..train.setup import build_training_engine
 from ..data.tokenizer import AAProteinTokenizer
@@ -129,8 +129,9 @@ def run_seed(seed, cfg, class_maps, heldout, *, replicate, train_steps, batch_si
             "train_loss_last": losses[-1] if losses else None,
             "seed_ranges": {"overfit": ob_info, "train": tr_info},
             "counters": {k: dict(v) for k, v in counters.items()},
-            "heldout": evaluate_frozen(model, heldout, cfg, class_maps,
-                                       batch_size=batch_size, device=device)}
+            "heldout": evaluate_categorical_cohort(
+                model, heldout, CategoricalBatchAdapter.from_config(cfg, device=device), cfg,
+                batch_size=batch_size, genes=("v", "j"), strata=protein_v_strata(class_maps["V"]))}
 
 
 def run_learning_proof(*, seeds=(0, 1, 2), heldout_size=4096, train_steps=3000, batch_size=64,
