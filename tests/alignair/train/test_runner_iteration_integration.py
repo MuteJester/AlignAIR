@@ -13,7 +13,8 @@ from alignair.tasks import build_tasks
 from alignair.train import trainer
 from alignair.train.gym.streams import training_records, CurriculumStreamPolicy
 from alignair.train.checkpoints import load_training_checkpoint
-from alignair.aa import train_gym, strategic, strategic_trunc
+from alignair.aa import strategic, strategic_trunc
+from alignair.core import prepare_model
 
 pytestmark = pytest.mark.integration
 
@@ -29,9 +30,8 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
 
     nucleotide = runner.startswith('nucleotide')
     if nucleotide or runner == 'protein_alleles':
-        _, ref, cfg, _ = train_gym.setup_aa(max_seq_length=576 if nucleotide else 192)
-        if nucleotide:
-            cfg = replace(cfg, vocab_size=6, use_orientation=True)
+        setup = prepare_model(reference.source, input_space='nucleotide' if nucleotide else 'protein')
+        ref, cfg = setup.reference, setup.config
     else:
         _, cfg, maps, meta = strategic.strategic_setup(max_seq_length=192)
     cfg = replace(cfg, embed_dim=4, filters=4, block_out=8)
@@ -39,7 +39,7 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
     options = dict(steps=5, batch_size=2, log_every=1000, save_every=100)
     expected_step = source_size // 2
 
-    if nucleotide:
+    if nucleotide or runner == 'protein_alleles':
         import GenAIRR as ga
         monkeypatch.setattr(trainer, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
         path = tmp_path / 'model.alignair'
@@ -49,14 +49,11 @@ def test_exhausted_source_saves_completed_steps(runner, source_size, tmp_path, m
         saved = load_training_checkpoint(path)
         assert saved.step == expected_step and saved.weight_state
     else:
-        module = {'protein_alleles': train_gym, 'protein_classes': strategic,
+        module = {'protein_classes': strategic,
                   'protein_crops': strategic_trunc}[runner]
         monkeypatch.setattr(module, 'training_records', lambda *args, **kwargs: iter([record] * source_size))
         path = tmp_path / 'model.pt'
-        if runner == 'protein_alleles':
-            history = train_gym.train_aa(model, ref, 'HUMAN_IGH_OGRDB', cfg,
-                                        build_tasks(cfg).make_weights(), save_path=path, **options)
-        elif runner == 'protein_classes':
+        if runner == 'protein_classes':
             history = strategic.strategic_train(model, cfg, maps, d_index=meta['d_index'],
                                                save_path=path, **options)
         else:

@@ -34,7 +34,7 @@ def _atomic_write(path, writer):
             os.unlink(temporary)
 
 
-def save_checkpoint(path, cfg, model, logvars, step, opt=None, *, dataconfigs=None, train_args=None):
+def save_checkpoint(path, cfg, model, logvars, step, opt=None, *, dataconfigs=None, train_args=None, label_schema=None):
     """Self-contained .alignair checkpoint, retaining embedded reference and trusted training state."""
     from .. import model_file as mf
 
@@ -45,7 +45,7 @@ def save_checkpoint(path, cfg, model, logvars, step, opt=None, *, dataconfigs=No
     rng = capture_rng_state()
     _atomic_write(path, lambda temporary: mf.save_model(
         temporary, model, dataconfigs=dataconfigs or [], training=training,
-        logvars=logvars, optimizer=opt, rng=rng))
+        logvars=logvars, optimizer=opt, rng=rng, label_schema=label_schema))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -55,6 +55,8 @@ class ResumeState:
     optimizer_state: dict | None
     step: int
     rng: dict
+    config: object = None
+    label_schema: dict | None = None
 
 
 def load_training_checkpoint(path, *, device="cpu", trust_pickle=False) -> ResumeState:
@@ -66,7 +68,7 @@ def load_training_checkpoint(path, *, device="cpu", trust_pickle=False) -> Resum
         if mf.container.is_alignair_file(path):
             state = mf.load_training_state(path, device=device)
             return ResumeState(state.model.state_dict(), state.logvars_state, state.optimizer_state,
-                               state.step, state.rng)
+                               state.step, state.rng, state.config, state.metadata.get('model', {}).get('label_schema'))
         if not trust_pickle:
             raise ModelError("resuming a legacy .pt checkpoint runs torch.load (arbitrary-code pickle); "
                              "pass resume_trust_pickle=True only for a checkpoint you trust.")
@@ -123,7 +125,7 @@ def _step_of(path) -> int:
     return int(match.group(1)) if match else -1
 
 
-def save_rotating(base_path, cfg, model, logvars, step, opt, keep=3, *, dataconfigs=None, train_args=None):
+def save_rotating(base_path, cfg, model, logvars, step, opt, keep=3, *, dataconfigs=None, train_args=None, label_schema=None):
     """Keep numbered checkpoints and atomically refresh the convenient base-path copy."""
     try:
         if isinstance(keep, bool) or index(keep) <= 0:
@@ -133,7 +135,7 @@ def save_rotating(base_path, cfg, model, logvars, step, opt, keep=3, *, dataconf
         raise ConfigurationError("checkpoint retention must be a positive integer") from exc
     stem, extension = _stem(base_path), _ext(base_path)
     path = f"{stem}.step{step}{extension}"
-    save_checkpoint(path, cfg, model, logvars, step, opt, dataconfigs=dataconfigs, train_args=train_args)
+    save_checkpoint(path, cfg, model, logvars, step, opt, dataconfigs=dataconfigs, train_args=train_args, label_schema=label_schema)
     _atomic_write(base_path, lambda temporary: shutil.copyfile(path, temporary))
     candidates = [candidate for candidate in glob.glob(f"{glob.escape(stem)}.step*{extension}")
                   if _step_of(candidate) >= 0]

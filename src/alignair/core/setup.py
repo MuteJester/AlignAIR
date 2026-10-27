@@ -94,7 +94,7 @@ def build_model_config(v_label_count: int, j_label_count: int, d_label_count: in
                             use_orientation=input_space == 'nucleotide')
     if label_space == 'protein_classes':
         config = replace(config.with_amino_acid_heads(), use_orientation=input_space == 'nucleotide')
-    config = replace(config, **config_options)
+    config = replace(config, input_space=input_space, label_space=label_space, **config_options)
     _input_config(config, input_space)
     return config
 
@@ -130,6 +130,8 @@ class ModelSetup:
             _protein_labels(self.protein_reference, self.reference)
         elif self.protein_reference is not None:
             raise ConfigurationError('allele setups must use the source ReferenceSet directly')
+        if (self.config.input_space, self.config.label_space) != (self.input_space, self.label_space):
+            raise ConfigurationError('model configuration disagrees with its setup input/label spaces')
         for spec in self.config.gene_specs:
             expected = _count(self.label_counts[spec.name], f'{spec.name}_label_count')
             if _count(spec.allele_count, f'{spec.name}_allele_count') != expected:
@@ -146,6 +148,57 @@ class ModelSetup:
         """Allocate the shared model after preflight; architecture registration selects components."""
         self.validate()
         return AlignAIR(self.config)
+
+    def label_schema(self) -> dict:
+        """Portable output-column identity; preserve class order instead of rebuilding it on reload."""
+        self.validate()
+        genes = {}
+        for spec in self.config.gene_specs:
+            if self.label_space == 'protein_classes' and spec.name != 'd':
+                labels = self.protein_reference.class_maps[spec.name.upper()]
+                genes[spec.name] = [list(labels.class_members[index]) for index in range(labels.n_classes())]
+            else:
+                genes[spec.name] = list(self.reference.gene(spec.name.upper()).names)
+        return {'schema_version': 1, 'input_space': self.input_space, 'label_space': self.label_space,
+                'genes': genes}
+
+
+def validate_label_schema(schema, reference, config) -> None:
+    """Validate persisted label identity against the model's head shapes and source allele panel."""
+    if (not isinstance(schema, dict) or schema.get('schema_version') != 1
+            or schema.get('input_space') != config.input_space or schema.get('label_space') != config.label_space
+            or not isinstance(schema.get('genes'), dict)
+            or set(schema['genes']) != {spec.name for spec in config.gene_specs}):
+        raise ConfigurationError('label schema disagrees with the model input/label spaces or genes')
+    for spec in config.gene_specs:
+        labels = schema['genes'][spec.name]
+        if not isinstance(labels, list) or len(labels) != spec.allele_count:
+            raise ConfigurationError('label schema length disagrees with the model head', context={'gene': spec.name})
+        names = list(reference.gene(spec.name.upper()).names)
+        if config.label_space == 'protein_classes' and spec.name != 'd':
+            if any(not isinstance(group, list) or not group for group in labels):
+                raise ConfigurationError('class labels must be nonempty member lists', context={'gene': spec.name})
+            members = [member for group in labels for member in group]
+            if (any(not isinstance(member, str) or member not in names for member in members)
+                    or len(set(members)) != len(members)):
+                raise ConfigurationError('class label members must be unique source alleles', context={'gene': spec.name})
+        elif labels != names:
+            raise ConfigurationError('allele label order disagrees with the source reference', context={'gene': spec.name})
+
+
+def setup_from_schema(reference, config, schema) -> ModelSetup:
+    """Rebind validation adapters to saved class IDs without inventing a new column order."""
+    from ..reference.labels import EquivalenceClassMap
+    validate_label_schema(schema, reference, config)
+    view = build_protein_reference(reference) if config.label_space == 'protein_classes' else None
+    if view is not None:
+        maps = {}
+        for gene in ('V', 'J'):
+            groups = {index: list(members) for index, members in enumerate(schema['genes'][gene.lower()])}
+            maps[gene] = EquivalenceClassMap(gene, view.db_hash,
+                {name: index for index, members in groups.items() for name in members}, groups)
+        view = replace(view, class_maps=maps)
+    return ModelSetup(reference, config, config.input_space, config.label_space, view)
 
 
 def prepare_model(reference: ReferenceSet | ProteinReference, *, input_space: InputSpace = 'nucleotide',

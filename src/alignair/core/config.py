@@ -79,10 +79,14 @@ class AlignAIRConfig:
     boundary_mode: Literal["residue", "half_open"] = "residue"
     use_meta_heads: bool = True
     reject_empty_sequences: bool = False
+    input_space: Literal["nucleotide", "protein"] = "nucleotide"
+    label_space: Literal["alleles", "protein_classes"] = "alleles"
 
     def __post_init__(self):
         for name, choices in (("classification_mode", ("multilabel", "categorical")),
-                              ("boundary_mode", ("residue", "half_open"))):
+                              ("boundary_mode", ("residue", "half_open")),
+                              ("input_space", ("nucleotide", "protein")),
+                              ("label_space", ("alleles", "protein_classes"))):
             if getattr(self, name) not in choices:
                 raise ConfigurationError(f"unsupported {name}: {getattr(self, name)!r}",
                                          context={"field": name, "allowed": choices})
@@ -95,7 +99,7 @@ class AlignAIRConfig:
         """
         return replace(self, classification_mode="categorical", boundary_mode="half_open",
                        use_orientation=False, use_meta_heads=False, state_head=False,
-                       reject_empty_sequences=True)
+                       reject_empty_sequences=True, input_space="protein", label_space="protein_classes")
 
     def classification_key(self, gene: str) -> str:
         """Output key with explicit score semantics: sigmoid allele probabilities or class logits."""

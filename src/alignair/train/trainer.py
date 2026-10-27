@@ -7,9 +7,13 @@ log-var clamps) after ``optimizer.step()``.
 from __future__ import annotations
 
 import itertools
+from dataclasses import dataclass
 
-from ..errors import error_context
-from ..data.adapters import NucleotideBatchAdapter, build_nucleotide_batch as build_batch
+from ..errors import ConfigurationError, error_context
+from ..data.adapters import build_nucleotide_batch as build_batch
+from ..data.training import prepare_training_data
+from ..core.setup import ModelSetup
+from ..reference.protein import build_protein_reference
 from ..tasks import TrainingTasks, build_tasks
 from .gym.streams import CurriculumStreamPolicy, training_records, effective_mutation_caps
 from .engine import train_step, validate
@@ -24,12 +28,20 @@ def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     return build_tasks(cfg).metrics(out, targets)
 
 
+@dataclass(frozen=True)
+class TrainingOutcome:
+    """This invocation's completed updates and best checkpoint, never inferred from old files."""
+    model: object
+    steps: int
+    best_model_path: str | None
+
+
 def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
           monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
-          tasks: TrainingTasks | None = None):
+          tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None):
     from .guards import validate_training_request
     tasks = build_tasks(cfg) if tasks is None else tasks
     dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
@@ -38,11 +50,22 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                               max_seq_length=cfg.max_seq_length, reference=reference_set,
                               progresses=progresses, heavy_shm=heavy_shm, short_boost=short_boost,
                               grad_clip=grad_clip)
+    if on_iteration is not None and not callable(on_iteration):
+        raise ConfigurationError('on_iteration must be callable or None')
 
-    source_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap)
+    setup = model_setup or ModelSetup(reference_set, cfg, cfg.input_space, cfg.label_space,
+        build_protein_reference(reference_set) if cfg.label_space == 'protein_classes' else None)
+    if setup.reference is not reference_set or setup.config != cfg:
+        raise ConfigurationError('training setup must bind this model configuration and reference')
+    data = prepare_training_data(setup, device=device)
+    schema = setup.label_schema()
+    source_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
+                                           mode='amplicon' if cfg.input_space == 'protein' else 'auto')
 
     def _build_stream(seed_value):
-        return training_records(dataconfigs, policy=source_policy, seed=seed_value)
+        records = training_records(dataconfigs, policy=source_policy, seed=seed_value,
+                                   translated_only=data.translated_only)
+        return data.prepare_records(records)
 
     engine = build_training_engine(model, tasks=tasks, weights=logvars, device=device,
                                    lr=lr, grad_clip=grad_clip)
@@ -52,6 +75,9 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     resume_from = latest_checkpoint(resume_path) if resume_path else None
     if resume_from:
         state = load_training_checkpoint(resume_from, device=device, trust_pickle=resume_trust_pickle)
+        if (state.config is not None and state.config != cfg
+                or state.label_schema is not None and state.label_schema != schema):
+            raise ConfigurationError('resume configuration or label identity differs from the requested model setup')
         model.load_state_dict(state.model_state)
         if state.weight_state is not None:
             logvars.load_state_dict(state.weight_state)
@@ -77,7 +103,8 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    # `mutation_cap` is the run-level REQUEST; `effective_mutation_caps` is what each
                    # locus actually got (TCR -> 0). Without the latter the card misstates the training
                    # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
-                   "mutation_cap": mutation_cap,
+                   "input_space": cfg.input_space, "label_space": cfg.label_space,
+                   "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap)}
     _dcs = dataconfigs
 
@@ -86,7 +113,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     if monitor_log:
         from ..xray import ModelXRay
         ev = list(itertools.islice(_build_stream(seed + 99991), batch_size))
-        probe_input, probe_targets = build_batch(ev, reference_set, cfg, device)
+        probe_input, probe_targets = data.validation_adapter(ev)
 
         def task_eval(m, inp, _tg=probe_targets):
             return tasks.metrics(m(inp), _tg)
@@ -107,17 +134,20 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
             if len(vr) < batch_size:
                 break
             with error_context(stage="training_validation", validation_batch=len(val_set)):
-                val_set.append(build_batch(vr, reference_set, cfg, device, augment_orientation=False))
+                val_set.append(data.validation_adapter(vr))
     best_score = float("-inf")
+    best_path = None
 
     completed = start                              # the last step actually run (a short/early
     stream = _build_stream(seed + start)           # stream must not let the final save claim `steps`)
-    batch_adapter = NucleotideBatchAdapter(reference_set, cfg, device)
+    batch_adapter = data.batch_adapter
     for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
                                          stop_step=steps, batch_size=batch_size):
         step = completed = iteration.step
         total, parts, grad_norm = iteration.result
-        if step % log_every == 0:
+        if on_iteration is not None:
+            on_iteration(iteration)
+        if log_every and step % log_every == 0:
             line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
                     + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
             if xray is not None:                   # reads this step's grads (pre next zero_grad)
@@ -131,12 +161,13 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
             if save_path and vscore == vscore and vscore > best_score:   # not NaN and improved
                 best_score = vscore
                 stem, ext = _stem(save_path), _ext(save_path)
-                save_checkpoint(f"{stem}.best{ext}", cfg, model, logvars, step, opt,
-                                dataconfigs=_dcs, train_args={**_train_args, "val_score": vscore})
-        if save_path and step % save_every == 0:
-            save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args)
+                best_path = f"{stem}.best{ext}"
+                save_checkpoint(best_path, cfg, model, logvars, step, opt,
+                                dataconfigs=_dcs, train_args={**_train_args, "val_score": vscore}, label_schema=schema)
+        if save_path and save_every and step % save_every == 0:
+            save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args, label_schema=schema)
     if save_path:                                  # save the ACTUAL completed step, not the requested one
-        save_rotating(save_path, cfg, model, logvars, completed, opt, dataconfigs=_dcs, train_args=_train_args)
+        save_rotating(save_path, cfg, model, logvars, completed, opt, dataconfigs=_dcs, train_args=_train_args, label_schema=schema)
     if xray is not None:
         xray.close()
-    return model
+    return TrainingOutcome(model, completed, best_path)

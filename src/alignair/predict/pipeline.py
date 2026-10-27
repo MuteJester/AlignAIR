@@ -6,7 +6,7 @@ assembly (sequence_alignment, junction, regions, quality).
 """
 from __future__ import annotations
 
-from ..errors import NumericalError
+from ..errors import ConfigurationError, NumericalError
 from ..data.inputs import prepare_nucleotide_inputs
 
 import numpy as np
@@ -91,6 +91,11 @@ def _canonicalize(seq: str, orientation_id: int) -> str:
 
 
 def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu", aligner=None):
+    model_config = getattr(model, 'cfg', None)
+    if (getattr(model_config, 'input_space', 'nucleotide') != 'nucleotide'
+            or getattr(model_config, 'classification_mode', 'multilabel') != 'multilabel'
+            or getattr(model_config, 'boundary_mode', 'residue') != 'residue'):
+        raise ConfigurationError('AIRR prediction requires the nucleotide allele/residue-boundary profile; use Aligner.predict_raw for shared model outputs')
     genes = _genes(cfg)
     # Tokenization, orientation, alignment and reported coordinates share the same normalized read.
     sequences, was_cropped = prepare_nucleotide_inputs(sequences, cfg.max_seq_length)

@@ -81,7 +81,7 @@ _RESERVED_CARD_KEYS = {"format_version", "model_format_version", "model_class", 
 
 def save_model(path, model, *, dataconfigs, training, inference=None, logvars=None,
                optimizer=None, rng=None, description="", include_trusted_pickle=True,
-               model_id=None, model_version=None, card=None) -> None:
+               model_id=None, model_version=None, card=None, label_schema=None) -> None:
     """Write an .alignair model file. ``include_trusted_pickle=True`` (default) keeps the pickled
     ``dataconfig``/``train_state`` sections (a resumable training checkpoint). Set it to ``False`` for
     a **publish/inference artifact**: weights + config + safe ``reference_json`` + ``reference`` FASTA
@@ -90,6 +90,9 @@ def save_model(path, model, *, dataconfigs, training, inference=None, logvars=No
     cfg = model.cfg
     resolved = _resolve_dataconfigs(dataconfigs)
     reference = ReferenceSet.from_dataconfigs(*[dc for _, dc in resolved])
+    if label_schema is not None:
+        from ..core.setup import validate_label_schema
+        validate_label_schema(label_schema, reference, cfg)
 
     sections, formats = {}, {}
 
@@ -131,6 +134,8 @@ def save_model(path, model, *, dataconfigs, training, inference=None, logvars=No
         "description": description, "license": "GPL-3.0-or-later", "citation": "AlignAIR",
         **_versions(),
         "model": {"embed_dim": cfg.embed_dim, "max_seq_length": cfg.max_seq_length,
+                  "input_space": cfg.input_space, "label_space": cfg.label_space,
+                  "label_schema": label_schema,
                   "num_chain_types": cfg.num_chain_types, "has_d": cfg.has_d,
                   "param_count": sum(p.numel() for p in model.parameters()),
                   "allele_counts": {"v": cfg.v_allele_count, "d": cfg.d_allele_count,
@@ -227,6 +232,15 @@ def _rebuild(path, device, *, trust_pickle=False):
             "this .alignair has no safe `reference_json` section (it predates the safe format). "
             "Upgrade it: `alignair convert <old>.alignair <new>.alignair --trust-pickle`, or pass "
             "trust_pickle=True for a local file you trust (it will unpickle the embedded dataconfig).")
+    schema = md.get('model', {}).get('label_schema')
+    if schema is not None:
+        from ..core.setup import validate_label_schema
+        from ..errors import ConfigurationError
+        try:
+            validate_label_schema(schema, reference, cfg)
+        except ConfigurationError as exc:
+            raise ModelIntegrityError('stored label schema disagrees with the model/reference',
+                                      context={'field': 'label_schema'}) from exc
     md.pop("_sections_base", None)
     return md, cfg, model, reference
 

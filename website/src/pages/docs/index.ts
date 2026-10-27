@@ -20,6 +20,7 @@ import { samplingPages } from "./pages-sampling";
 import { taskPages } from "./pages-tasks";
 import { batchingPages } from "./pages-batching";
 import { enginePages } from "./pages-engine";
+import { trainingWorkflowPages } from "./pages-training-workflow";
 import { evaluationReportPages } from "./pages-evaluation-reports";
 import { inferencePages } from "./pages-inference";
 import { communityPages } from "./pages-community";
@@ -41,6 +42,7 @@ export const DOCS: DocPage[] = [
   ...errorPages, // errors  [Reference]
   ...referencePages, // model-contract, known-failure-modes, troubleshooting
   ...trainingPages, // training  [Training]
+  ...trainingWorkflowPages, // training-workflow  [Training]
   ...evalPages, // benchmarks, performance  [Evaluation]; design  [Design]
   ...compositionPages, // model-composition  [Design]
   ...setupPages, // model-setup  [Design]

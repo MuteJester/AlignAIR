@@ -49,7 +49,8 @@ def run(args) -> int:
     except ValueError as e:
         return fail(e, error_type=ConfigurationError, context={"stage": "training_reference"})
 
-    from ..aligner import TrainingConfig, run_training
+    from ..train.config import TrainingConfig
+    from ..train.workflow import run_training
     overrides = {"lr": args.lr, "grad_clip": args.grad_clip, "seed": args.seed}
     if args.steps is not None:
         overrides["steps"] = args.steps

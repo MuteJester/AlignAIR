@@ -17,9 +17,9 @@ training subpackage — a top-level ``train`` name would collide with it.)
 """
 from __future__ import annotations
 
-from .errors import ConfigurationError, MissingDependencyError, ModelError
+from .errors import ConfigurationError, InputError, MissingDependencyError, ModelError
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Iterator, Optional, Sequence
 
 __all__ = ["Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training",
@@ -90,11 +90,12 @@ class Aligner:
     inference entry point the CLI is a client of."""
 
     def __init__(self, model, reference, *, device: str = "cpu", model_path: Optional[str] = None,
-                 source_commit: Optional[str] = None):
+                 source_commit: Optional[str] = None, label_schema=None):
         self.model = model
         self.reference = reference
         self.device = device
         self.model_path = model_path
+        self.label_schema = label_schema
         self.source_commit = source_commit     # resolved HF commit SHA (provenance), else None
 
     # ------------------------------------------------------------------ constructors
@@ -118,7 +119,9 @@ class Aligner:
         dev = resolve_device(device)
         m, ref = load_model(path, dataconfigs=dataconfigs, reference=reference, device=dev,
                             trust_pickle=trust_pickle)
-        return cls(m, ref, device=dev, model_path=path, source_commit=hf.resolved_commit(path))
+        from .model_file import read_metadata, container
+        schema = read_metadata(path).get('model', {}).get('label_schema') if container.is_alignair_file(path) else None
+        return cls(m, ref, device=dev, model_path=path, source_commit=hf.resolved_commit(path), label_schema=schema)
 
     def _assert_distributable(self) -> None:
         """Refuse to distribute a resumable checkpoint: those carry trusted **pickle** sections
@@ -193,6 +196,38 @@ class Aligner:
                                     batch_size=bs, airr=airr, **overrides)
         return PredictionResult(records, locus=self.default_locus)
 
+    def predict_raw(self, sequences, *, batch_size=64) -> dict:
+        """Shared raw head arrays for nucleotide/protein models; label_schema describes column identity.
+
+        This method does not apply product calibration or AIRR assembly. Every output uses model
+        semantics, including categorical logits versus multilabel probabilities and model-frame positions.
+        """
+        from .data import prepare_nucleotide_inputs, normalize_sequence_inputs, SequenceValidationPolicy, SequenceInputAdapter
+        from .data.inputs import sequence_batch_iterator
+        from .data.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT, CenterPaddedTokenizer
+        from .predict.forward import prediction_batches, output_numpy
+        from .core.setup import _input_config
+        import numpy as np
+        cfg = self.model.cfg
+        _input_config(cfg, cfg.input_space)
+        window = cfg.max_seq_length - int(cfg.boundary_mode == 'half_open')
+        if cfg.input_space == 'protein':
+            batch = normalize_sequence_inputs(sequence_batch_iterator(sequences),
+                SequenceValidationPolicy(frozenset(AA_TOKEN_DICT), window), allow_records=False)
+            values = [record.sequence for record in batch.records]
+            if not values:
+                raise InputError('cannot predict an empty protein batch')
+            tokenizer = AAProteinTokenizer(on_invalid='raise')
+        else:
+            values, _ = prepare_nucleotide_inputs(sequences, window)
+            tokenizer = CenterPaddedTokenizer()
+        adapter = SequenceInputAdapter(tokenizer, cfg.max_seq_length, self.device, vocab_size=cfg.vocab_size)
+        results = {}
+        for batch in prediction_batches(self.model, values, adapter, batch_size=batch_size):
+            for key, value in batch.outputs.items():
+                results.setdefault(key, []).append(output_numpy(value))
+        return {key: np.concatenate(parts, axis=0) for key, parts in results.items()}
+
     def predict_iter(self, sequences: "Iterator[str]", *, batch_size="auto", chunk_size: int = 20000,
                      **kw) -> Iterator[dict]:
         """Stream prediction over an iterable of sequences in bounded memory: yields per-read records,
@@ -208,89 +243,6 @@ class Aligner:
             yield from self.predict(buf, batch_size=batch_size, **kw).records
 
 
-# ============================================================================ training
-
-_PRESETS = {
-    "quick": {"steps": 300, "batch_size": 16, "val_every": 100},        # smoke / CI
-    "desktop": {"steps": 50_000, "batch_size": 64, "val_every": 2000},  # a single workstation GPU
-    "full": {"steps": 300_000, "batch_size": 128, "val_every": 5000},   # a full production run
-}
-
-
-@dataclass(frozen=True)
-class TrainingConfig:
-    """Typed, immutable training request (replaces unrestricted ``**overrides``). Build with
-    :meth:`from_genairr`; ``preset`` supplies resource-tuned defaults you can still override."""
-    dataconfigs: tuple
-    steps: int = 100_000
-    batch_size: int = 64
-    lr: float = 3e-4
-    device: str = "auto"
-    short_boost: int = 1
-    grad_clip: Optional[float] = None
-    val_every: int = 0
-    seed: int = 0
-
-    @classmethod
-    def from_genairr(cls, *dataconfigs: str, preset: str | None = None, **overrides) -> "TrainingConfig":
-        if preset is not None and preset not in _PRESETS:
-            raise ConfigurationError(f"unknown preset {preset!r}; choose from {sorted(_PRESETS)}")
-        base = dict(_PRESETS.get(preset, {}))
-        base.update(overrides)
-        return cls(dataconfigs=tuple(dataconfigs), **base)
-
-    def with_(self, **changes) -> "TrainingConfig":
-        return replace(self, **changes)
-
-
-@dataclass
-class TrainingRun:
-    """The result of a training run: the final and best checkpoint paths."""
-    model_path: str
-    best_model_path: Optional[str] = None
-    steps: int = 0
-
-    def best_aligner(self, *, device: str = "auto") -> Aligner:
-        """Load the best (or final) checkpoint as an :class:`Aligner` ready to predict."""
-        return Aligner.from_pretrained(self.best_model_path or self.model_path, device=device)
-
-
-def run_training(config: TrainingConfig, *, output_dir: str | None = None,
-                 out_path: str | None = None) -> TrainingRun:
-    """Train a model from a typed :class:`TrainingConfig`. Writes ``<output_dir>/model.alignair`` (or
-    ``out_path``) plus a ``.best.alignair`` when ``val_every > 0``. Returns a :class:`TrainingRun`."""
-    import os
-
-    import GenAIRR.data as gd
-    from .core import prepare_model
-    from .tasks import build_tasks
-    from .reference.reference_set import ReferenceSet
-    from .train.guards import validate_training_request
-    from .train.trainer import train as _train
-
-    if not (output_dir or out_path):
-        raise ConfigurationError("pass output_dir=... or out_path=...")
-    path = out_path or os.path.join(output_dir, "model.alignair")
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-
-    dcs = [getattr(gd, d) if isinstance(d, str) else d for d in config.dataconfigs]
-    reference = ReferenceSet.from_dataconfigs(*dcs)
-    setup = prepare_model(reference)
-    cfg = setup.config
-    validate_training_request(steps=config.steps, batch_size=config.batch_size, lr=config.lr,
-                              max_seq_length=cfg.max_seq_length, reference=reference,
-                              grad_clip=config.grad_clip)
-    model = setup.build_model()
-    tasks = build_tasks(cfg)
-    dev = resolve_device(config.device)
-    # No run-level SHM cap: the trainer derives it PER dataconfig (TCR -> 0, IG -> uncapped), so a
-    # mixed IG+TCR run keeps full SHM on its IG streams. A global `0.0 if any(TCR)` would disable SHM
-    # for IGH in a combined IGH+TRB model.
-    _train(model, reference, dcs, cfg, steps=config.steps, batch_size=config.batch_size,
-           lr=config.lr, short_boost=config.short_boost, seed=config.seed, device=dev,
-           save_path=path, grad_clip=config.grad_clip, val_every=config.val_every, tasks=tasks)
-    stem, ext = os.path.splitext(path)
-    best = f"{stem}.best{ext}"
-    return TrainingRun(model_path=path, best_model_path=best if os.path.exists(best) else None,
-                       steps=config.steps)
+# Public training names remain available here for existing imports; their owner is alignair.train.
+from .train.config import TrainingConfig
+from .train.workflow import TrainingRun, run_training

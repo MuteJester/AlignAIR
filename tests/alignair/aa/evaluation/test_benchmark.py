@@ -9,9 +9,12 @@ def test_run_aa_benchmark_stratifies_and_flags_non_aa_strata():
 
     from alignair.aa.benchmark import run_aa_benchmark
     from alignair.reference.protein import build_class_maps
-    from alignair.aa.train_gym import setup_aa
+    from alignair.core import prepare_model
+    from alignair.reference import ReferenceSet
+    import GenAIRR.data as gd
 
-    model, ref, cfg, _ = setup_aa("HUMAN_IGH_OGRDB", 192)      # untrained is fine: no_aa_rate is data-driven
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), input_space='protein')
+    model, ref, cfg = setup.build_model(), setup.reference, setup.config
     cmaps, _ = build_class_maps("HUMAN_IGH_OGRDB")
     eval_class_maps = {"V": cmaps["V"].allele_class, "J": cmaps["J"].allele_class}
 

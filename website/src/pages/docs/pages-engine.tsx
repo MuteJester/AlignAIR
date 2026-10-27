@@ -9,6 +9,8 @@ const trainingEngine: DocPage = {
   body: () => (
     <>
       <p>
+        For the public build/train/checkpoint/reload entry point, see the
+        <DocLink to="training-workflow"> training workflow API</DocLink>.
         <code>alignair.train.TrainingEngine</code> consumes the shared{" "}
         <DocLink to="training-batches">batch contract</DocLink> and{" "}
         <DocLink to="training-tasks">task interface</DocLink>. A runner selects data, augmentation,

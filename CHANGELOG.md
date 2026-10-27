@@ -6,6 +6,10 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- One public training request/workflow for nucleotide allele, protein allele and protein-class models,
+  with shared validation, resume, checkpoints, update callbacks and raw prediction after reload.
+- Portable input/label metadata and ordered output-label schemas, preserved through safe export and
+  conversion. Reload and resume check label identity; the website documents the full training workflow.
 - Shared sequence-content results, explicit unknown/ambiguity handling and crop metadata, with
   nucleotide file and prediction policy presets in the data input module.
 - Source-aware nucleotide read batches and a unique output-ID allocator that reserves generated
@@ -64,6 +68,12 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Public training types and orchestration now live in `alignair.train`; root and historical object-API
+  imports point to the same owners. The independent `aa.train_gym` loop is removed and its tests migrated.
+- The common trainer selects existing record/batch preparation from a reference-bound setup.
+  New runs seed model initialization and sources, and report actual completed steps.
+- `Aligner.predict_raw` handles either input space. The AIRR pipeline explicitly requires nucleotide
+  allele models; uncalibrated protein checkpoints cannot be mistaken for calibrated product predictions.
 - Nucleotide file validation, prediction, raw forward, genotype alignment and calibration share
   content preparation. Protein validation keeps its strict policy through the same normalization owner.
 - In-memory nucleotide prediction rejects non-string values and bare non-batch inputs, strips outer

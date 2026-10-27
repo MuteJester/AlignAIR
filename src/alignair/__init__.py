@@ -24,7 +24,9 @@ from .io.metadata import DuplicateMetadataId
 from .io.airr import write_airr, AirrWriter, PredictionCountMismatch
 from .compare import compare_airr
 from .api import load_model, predict_sequences, train_model
-from .aligner import Aligner, PredictionResult, TrainingConfig, TrainingRun, run_training, resolve_device
+from .aligner import Aligner, PredictionResult, resolve_device
+from .train.config import TrainingConfig
+from .train.workflow import TrainingRun, run_training
 from .core import AlignAIR
 from .core.config import AlignAIRConfig
 from .predict import PredictConfig

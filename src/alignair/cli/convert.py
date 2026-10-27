@@ -35,7 +35,7 @@ def _convert_legacy_alignair(src, dst) -> int:
     md = mf.read_metadata(src)
     mf.save_model(dst, lm.model, dataconfigs=dcs, training=md.get("training", {"steps": 0, "batch_size": 0}),
                   include_trusted_pickle=False, model_id=md.get("model_id"),
-                  model_version=md.get("model_version"))
+                  model_version=md.get("model_version"), label_schema=md.get('model', {}).get('label_schema'))
     return 0
 
 
