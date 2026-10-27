@@ -84,3 +84,23 @@ def test_flatten_row_missing_macro_or_micro_degrades_macro_minus_micro_to_none()
     out = make_evaluator_output(v_macro=None)
     row = flatten_row("cont_step25000", 83000, out)
     assert row["macro_minus_micro"] is None
+
+
+def test_incompatible_resume_fails_before_cohort_or_output_creation(tmp_path,monkeypatch):
+    from alignair.aa.convergence import driver
+    from alignair.errors import ConfigurationError
+    monkeypatch.setattr(driver,'load_checkpoint',lambda _: {'optimizer':{},'provenance':{}})
+    def unexpected(*args,**kwargs):raise AssertionError('cohort generation preceded resume validation')
+    monkeypatch.setattr(driver,'build_cohort',unexpected)
+    with pytest.raises(ConfigurationError,match='policy differs'):
+        driver.run_study('legacy.pt',budget=1,ckpt_steps=(1,),device='cpu',
+                         art_dir=tmp_path/'output',ckpt_dir=tmp_path/'checkpoints')
+    assert not (tmp_path/'output').exists() and not (tmp_path/'checkpoints').exists()
+
+
+@pytest.mark.parametrize('provenance',[None,{},'old-format'])
+def test_missing_or_malformed_resume_policy_raises_domain_error(provenance):
+    from alignair.aa.strategic_trunc import validate_stage1_resume
+    from alignair.errors import ConfigurationError
+    with pytest.raises(ConfigurationError,match='policy differs'):
+        validate_stage1_resume({'optimizer':{},'provenance':provenance})

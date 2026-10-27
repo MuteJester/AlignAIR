@@ -37,6 +37,14 @@ class ProteinReference:
     db_hash: str
     hash_genes: tuple[str, ...]
 
+    def prototype_sequences(self, gene: str) -> dict[int, str]:
+        """One representative translation per equivalence class in this reference."""
+        gene = gene.upper()
+        if gene not in self.class_maps:
+            raise ConfigurationError("protein class vocabulary is absent", context={"gene": gene})
+        return {label: self.germlines.genes[gene][members[0]].aa_seq
+                for label, members in self.class_maps[gene].class_members.items()}
+
     def metadata(self) -> dict:
         return {**{f"n_{gene.lower()}_classes": labels.n_classes() for gene, labels in self.class_maps.items()},
                 "db_hash": self.db_hash,
@@ -169,3 +177,9 @@ def build_class_maps(dc_name="HUMAN_IGH_OGRDB"):
     """Historical V/J maps-and-metadata interface, backed by the shared reference view."""
     view = build_protein_reference(dc_name)
     return view.class_maps, view.metadata()
+
+
+def prototypes_by_class(source, class_map, gene: str) -> dict[int, str]:
+    """Historical prototype interface for a separately supplied class map."""
+    germlines = build_protein_germlines(source, genes=(gene,)).genes[gene.upper()]
+    return {label: germlines[members[0]].aa_seq for label, members in class_map.class_members.items()}

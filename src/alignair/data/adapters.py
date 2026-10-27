@@ -198,6 +198,7 @@ class CategoricalBatchAdapter:
         if not genes:
             raise TrainingDataError("categorical samples need gene class labels")
         validity = {gene for gene in genes if gene == "d" or any(f"{gene}_valid" in row for row in samples)}
+        class_masks = {gene for gene in genes if any(f"{gene}_class_supervise" in row for row in samples)}
         compatible = {gene for gene in genes if any(f"{gene}_compatible" in row for row in samples)}
         prepared = []
         for i, sample in enumerate(samples):
@@ -214,6 +215,12 @@ class CategoricalBatchAdapter:
                         targets[f"{gene}_{boundary}"] = torch.tensor([float(sample[f"{gene}_{boundary}"])], dtype=torch.float32)
                     if gene in validity:
                         targets[f"{gene}_valid"] = torch.tensor(float(sample.get(f"{gene}_valid", 1.)), dtype=torch.float32)
+                    if gene in class_masks:
+                        key = f"{gene}_class_supervise"
+                        mask = sample.get(key, True)
+                        if not isinstance(mask, (bool, int, float, np.number)) or mask not in (0, 1):
+                            raise TrainingDataError("class supervision must be binary", context={"field": key})
+                        targets[key] = torch.tensor(bool(mask))
                     key = f"{gene}_compatible"
                     if gene in compatible:
                         if self.class_counts is None or gene not in self.class_counts:

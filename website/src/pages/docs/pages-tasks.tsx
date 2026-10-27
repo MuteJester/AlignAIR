@@ -54,7 +54,9 @@ total, parts, gradient_norm = engine.step((inputs, targets), step=1)`} />
       <p>
         <code>{"{gene}_supervise"}</code> and <code>{"{gene}_valid"}</code> are binary row masks; when both
         exist, their intersection selects supervised rows. Categorical label <code>-1</code> excludes class
-        supervision while allowing known boundary targets. An empty compatible set is permitted on an
+        supervision while allowing known boundary targets. The binary row mask <code>{"{gene}_class_supervise"}</code>
+        also excludes classification independently of boundaries, including when compatible sets are supplied.
+        An empty compatible set is permitted on an
         excluded row and rejected on a supervised row. Excluded categorical rows are removed before
         cross-entropy and logarithms, keeping empty sets from producing non-finite losses.
       </p>

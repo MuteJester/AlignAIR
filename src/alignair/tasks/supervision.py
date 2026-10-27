@@ -6,24 +6,26 @@ import torch
 from ..errors import TrainingDataError
 
 
+def _row_mask(targets, key, reference):
+    shape = (reference.shape[0],)
+    if key not in targets:
+        return torch.ones(shape, dtype=torch.bool, device=reference.device)
+    mask = targets[key]
+    if not isinstance(mask, torch.Tensor) or mask.shape != shape or not ((mask == 0) | (mask == 1)).all():
+        raise TrainingDataError(f"{key} must be a binary row mask of shape {shape}",
+                                context={"gene": key.split("_", 1)[0], "field": key})
+    return mask.to(device=reference.device, dtype=torch.bool)
+
+
 def supervised_rows(targets: dict, gene: str, reference: torch.Tensor) -> torch.Tensor:
     """Combine binary gene masks; masks are row vectors, never positional labels."""
-    valid = torch.ones(reference.shape[0], dtype=torch.bool, device=reference.device)
-    for suffix in ("supervise", "valid"):
-        key = f"{gene}_{suffix}"
-        if key not in targets:
-            continue
-        mask = targets[key]
-        if not isinstance(mask, torch.Tensor) or mask.shape != valid.shape or not ((mask == 0) | (mask == 1)).all():
-            raise TrainingDataError(f"{key} must be a binary row mask of shape {tuple(valid.shape)}",
-                                    context={"gene": gene, "field": key})
-        valid = valid & mask.to(device=valid.device, dtype=torch.bool)
-    return valid
+    return (_row_mask(targets, f"{gene}_supervise", reference)
+            & _row_mask(targets, f"{gene}_valid", reference))
 
 
 def categorical_rows(targets: dict, gene: str, logits: torch.Tensor) -> torch.Tensor:
     """Rows with a class label or a nonempty compatible set; -1 means no class supervision."""
-    valid = supervised_rows(targets, gene, logits)
+    valid = supervised_rows(targets, gene, logits) & _row_mask(targets, f"{gene}_class_supervise", logits)
     key = f"{gene}_compatible"
     if key in targets:
         compatible = targets[key]

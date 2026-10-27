@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from alignair.aa.augment import aa_indel, aa_substitute, aa_truncate, il_ambiguity
+from alignair.data.augmentation.protein import aa_indel, aa_substitute, aa_truncate, il_ambiguity
 
 pytestmark = pytest.mark.component
 
@@ -41,3 +41,9 @@ def test_truncate_keeps_a_contiguous_window_within_length():
     out = aa_truncate(seq, min_frac=0.4, max_frac=0.8, rng=_rng())
     assert 4 <= len(out) <= 8
     assert out in [seq[i:i + len(out)] for i in range(len(seq) - len(out) + 1)]
+
+
+def test_empty_corruptions_and_both_single_residue_indel_outcomes():
+    assert aa_indel('',_rng())=='' and aa_truncate('',.4,.8,_rng())==''
+    lengths={len(aa_indel('ACD',np.random.default_rng(seed))) for seed in range(20)}
+    assert lengths=={2,4}

@@ -51,7 +51,7 @@ def test_resume_reseeds_gym_corpus_stream_from_seed_plus_start_step(tmp_path, mo
     sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=100, eta_min=1e-5)
     ck_path = str(tmp_path / "model_cont_step50.pt")
     save_checkpoint(ck_path, model=model, cfg={}, step=50, optimizer=opt, scheduler=sch,
-                    lr=1e-4, history=[], provenance={})
+                    lr=1e-4, history=[], provenance={"sample_policy": st.SAMPLE_POLICY_ID})
 
     stage1_train(model, cfg, cmaps, meta, steps=1, batch_size=8, seed=7, device="cpu", log_every=0,
                  resume_path=ck_path)
@@ -67,3 +67,39 @@ def test_checkpoint_provenance_carries_created_step(tmp_path):
                  total_budget=6, seed=0, device="cpu", log_every=0, ckpt_dir=d, ckpt_steps=(6,))
     ck = load_checkpoint(f"{d}/model_cont_step6.pt")
     assert ck["provenance"]["created_step"] == 6 == ck["step"]
+
+
+@pytest.mark.parametrize('policy',[None,'protein-crop-read-offset-v0'])
+def test_incompatible_resume_is_rejected_before_model_mutation(tmp_path,policy):
+    from dataclasses import replace
+    from alignair.core import AlignAIR
+    from alignair.errors import ConfigurationError
+    _,cfg,maps,meta=strategic_setup(max_seq_length=192,has_d=False)
+    cfg=replace(cfg,embed_dim=4,filters=4,block_out=8)
+    model=AlignAIR(cfg)
+    state={key:value.clone() for key,value in model.state_dict().items()}
+    opt=torch.optim.AdamW(model.parameters(),lr=1e-4)
+    sch=torch.optim.lr_scheduler.CosineAnnealingLR(opt,T_max=10)
+    path=tmp_path/'old.pt'
+    save_checkpoint(path,model=model,cfg={},step=3,optimizer=opt,scheduler=sch,
+                    lr=1e-4,history=[],provenance={'sample_policy':policy})
+    with pytest.raises(ConfigurationError,match='policy differs') as exc:
+        stage1_train(model,cfg,maps,meta,steps=1,resume_path=path)
+    assert 'init_path' in exc.value.hint
+    for key,value in model.state_dict().items(): torch.testing.assert_close(value,state[key])
+    # Explicit warm starts reuse weights with a fresh optimizer and a fresh policy.
+    history=stage1_train(model,cfg,maps,meta,steps=1,batch_size=2,init_path=path,log_every=0,p_crop=1.)
+    assert history[0]['step']==1 and set(history[0]['class_support'])=={'v','j'}
+
+
+def test_policy_is_stamped_on_new_continuation_checkpoints(tmp_path):
+    from dataclasses import replace
+    from alignair.core import AlignAIR
+    _,cfg,maps,meta=strategic_setup(max_seq_length=192,has_d=False)
+    cfg=replace(cfg,embed_dim=4,filters=4,block_out=8)
+    model=AlignAIR(cfg)
+    history=stage1_train(model,cfg,maps,meta,steps=1,batch_size=2,ckpt_dir=tmp_path,
+                         ckpt_steps=(1,),log_every=0,p_crop=1.)
+    ck=load_checkpoint(tmp_path/'model_cont_step1.pt')
+    assert ck['provenance']['sample_policy']==st.SAMPLE_POLICY_ID
+    assert all(sum(reasons.values())==2 for reasons in history[0]['class_reasons'].values())

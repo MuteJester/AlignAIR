@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared protein augmentation and validated CIGAR mapping, with conservative fragment-compatible
+  crop labels, classification-only masks, and a website API guide.
 - Shared protein-class sample builder with explicit productivity/stop policies, plus source-independent
   budgeted collection and preparation/selection ledgers under `alignair.data.sampling`.
 - Sample preparation API guide covering rejection reasons, hard failures, selection counts, and seed budgets.
@@ -35,6 +37,10 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Protein crop targets now use aligned reference codons instead of slicing prototypes with read
+  coordinates. Missing reference evidence excludes classification while preserving known boundaries.
+  Trimmed V reads can now be cropped. Full-state Stage-1 resume requires the matching versioned
+  sample policy; older checkpoints can initialize weights through `init_path`.
 - Replaced duplicate strict/curriculum protein sample assembly with one builder. Historical `aa.data`
   imports delegate to shared owners; migrated the implementation out of that module and removed
   `_class_sample`. Shared translation eligibility also serves protein allele-batch source filtering.

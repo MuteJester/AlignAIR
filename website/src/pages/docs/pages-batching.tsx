@@ -106,7 +106,8 @@ batch = adapter([sample])`} />
         on every sample in the batch, plus explicit vocabulary counts. <code>from_config</code> supplies
         those counts. Validity fields are preserved for V, D, and J; an omitted validity field defaults
         to one when other samples supply it. Prepared D labels retain the historical default
-        <code> d_valid=1</code>.
+        <code> d_valid=1</code>. Classification-only <code>{"{gene}_class_supervise"}</code> masks
+        are preserved as booleans, defaulting to true on rows where the field is omitted.
       </p>
       <CodeBlock lang="python" code={`import torch
 from alignair.data import PositionLabels, TrainingSample, collate_samples

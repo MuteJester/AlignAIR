@@ -21,7 +21,7 @@ import numpy as np
 
 from alignair_benchmark import default_igh_spec, stream_benchmark
 
-from ..augment import aa_indel, aa_substitute, aa_truncate, il_ambiguity
+from ...data.augmentation.protein import aa_indel, aa_substitute, aa_truncate, il_ambiguity
 from ..conformal import Conformal
 from ...data.sampling import ProteinSampleBuilder
 from ...reference import build_protein_reference

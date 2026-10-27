@@ -133,3 +133,11 @@ def test_invalid_sources_and_old_imports_have_clear_contracts():
     assert old_builder is build_class_maps
     for source in (None, 'NOT_A_REFERENCE'):
         with pytest.raises(ConfigurationError): build_protein_reference(source)
+
+
+def test_protein_prototype_selection_requires_a_class_vocabulary():
+    from alignair.reference.protein import ProteinReference
+    from alignair.errors import ConfigurationError
+    reference = ProteinReference(None, None, {}, 'hash', ())
+    with pytest.raises(ConfigurationError,match='vocabulary is absent'):
+        reference.prototype_sequences('D')

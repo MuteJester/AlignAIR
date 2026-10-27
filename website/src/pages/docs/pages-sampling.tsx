@@ -123,7 +123,8 @@ check_counter(provider_counts)`} />
         record batch adapters through <code>data.projection</code>. Historical <code>aa.data</code>
         imports delegate to these owners. Curriculum and partial-coverage runners use the same base
         builder and retain their explicit scientific policies. Crop augmentation and compatible-label
-        transformations remain separate from base sample preparation.
+        transformations live in the <DocLink to="protein-augmentation">protein augmentation API</DocLink>,
+        separate from base sample preparation.
       </p>
     </>
   ),

@@ -201,3 +201,28 @@ def test_hierarchical_plan_rejects_an_implicit_gene_subset(task_batch):
     cfg, _, _ = task_batch(protein=False)
     with pytest.raises(ConfigurationError, match="configured gene set"):
         build_tasks(cfg, genes=("v",))
+
+
+def test_unknown_partial_classes_keep_boundary_gradients_and_metrics(task_batch):
+    cfg, out, targets = task_batch(batch_size=1)
+    for gene in ('v','j'):
+        targets[f'{gene}_compatible'] = torch.zeros(1,2)
+        targets[f'{gene}_class_supervise'] = torch.tensor([False])
+    tasks = build_tasks(cfg)
+    total,parts = tasks.loss(out,targets)
+    assert torch.isfinite(total) and parts['classification'].item() == 0
+    total.backward()
+    for gene in ('v','j'):
+        torch.testing.assert_close(out[f'{gene}_class_logits'].grad,torch.zeros(1,2))
+        assert out[f'{gene}_end_logits'].grad.abs().sum() > 0
+    report = tasks.metric_report(out,targets)
+    assert 'v_class_acc' not in report.counts
+    assert report.counts['v_end_mae'] == 1
+
+
+@pytest.mark.parametrize('mask',[torch.tensor([.5,1.]),torch.ones(2,1),[True,False]])
+def test_class_only_mask_must_be_a_binary_row_vector(task_batch,mask):
+    cfg,out,targets=task_batch()
+    targets['v_class_supervise']=mask
+    with pytest.raises(TrainingDataError,match='binary row mask'):
+        build_tasks(cfg).loss(out,targets)

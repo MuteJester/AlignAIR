@@ -8,6 +8,7 @@ from .tokenizer import TOKEN_DICT
 from ..neural.heads.region import REGION_INDEX
 from ..neural.heads.state import STATE_INDEX
 from .coordinates import segment_spans
+from .alignment import parse_cigar
 
 _GENES = ("v", "d", "j")
 
@@ -15,20 +16,6 @@ _GENES = ("v", "d", "j")
 def _tok(seq: str) -> np.ndarray:
     n = TOKEN_DICT["N"]
     return np.array([TOKEN_DICT.get(c, n) for c in seq.upper()], dtype=np.int64)
-
-
-def _parse_cigar(cigar: str) -> list:
-    """'41M13D' -> [(41,'M'), (13,'D')]. Empty/None -> []."""
-    if not cigar:
-        return []
-    ops, num = [], ""
-    for ch in str(cigar):
-        if ch.isdigit():
-            num += ch
-        else:
-            ops.append((int(num or 0), ch))
-            num = ""
-    return ops
 
 
 def _label_segment_states(state, seq, ss, gref, gs, cigar):
@@ -42,7 +29,7 @@ def _label_segment_states(state, seq, ss, gref, gs, cigar):
     obs, germ = ss, gs
     pending_del = False
     n_del = 0
-    for count, op in _parse_cigar(cigar):
+    for count, op in parse_cigar(cigar):
         if op in ("M", "=", "X"):
             for _ in range(count):
                 if obs >= len(seq):

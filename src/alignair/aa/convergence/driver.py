@@ -16,7 +16,7 @@ import os
 
 from ...train.checkpoints import load_research_checkpoint as load_checkpoint
 from ..strategic import strategic_setup
-from ..strategic_trunc import stage1_train
+from ..strategic_trunc import stage1_train, validate_stage1_resume
 from .evaluator import build_cohort, evaluate_checkpoint
 
 DC_NAME = "HUMAN_IGH_OGRDB"
@@ -160,6 +160,8 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
     from the incumbent's own checkpointed step (NOT from 0) -- see ``strategic_trunc.stage1_train``
     (`start_step = ck["step"]`, loop range `start_step+1 .. start_step+steps`).
     """
+    ck = load_checkpoint(resume_path)
+    validate_stage1_resume(ck)
     os.makedirs(art_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_steps = tuple(int(s) for s in ckpt_steps)
@@ -179,7 +181,6 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
     # `start_step` is read from the incumbent checkpoint's OWN `step` field (58000 for the
     # current `model_stage1_PASS.pt`) rather than hardcoded, so a re-run against a different
     # incumbent still computes correct absolute checkpoint/budget numbers.
-    ck = load_checkpoint(resume_path)
     model.load_state_dict(ck["model"])
     start_step = int(ck.get("step") or 0)
     model.to(device).eval()

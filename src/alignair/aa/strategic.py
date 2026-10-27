@@ -10,7 +10,7 @@ import itertools
 import numpy as np
 import torch
 
-from .augment import aa_substitute
+from ..data.augmentation.protein import aa_substitute
 from .config import aa_igh_config
 from ..reference import build_protein_reference
 from ..data.adapters import collate_categorical as collate_aa
