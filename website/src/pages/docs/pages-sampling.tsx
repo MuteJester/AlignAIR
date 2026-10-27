@@ -152,13 +152,21 @@ check_counter(provider_counts)`} />
       <p>
         Sampling contracts, protein preparation, generic collection, and the GenAIRR adapter live in
         separate modules under <code>data.sampling</code>. Translation eligibility is shared with the
-        record batch adapters through <code>data.projection</code>. Historical <code>aa.data</code>
-        imports delegate to these owners. The <DocLink to="curriculum-sources">curriculum source API</DocLink>
+        record batch adapters through <code>data.projection</code>.
+        The <DocLink to="curriculum-sources">curriculum source API</DocLink>
         supplies training records. Curriculum and partial-coverage runners use the same base
         builder and retain their explicit scientific policies. Crop augmentation and compatible-label
         transformations live in the <DocLink to="protein-augmentation">protein augmentation API</DocLink>,
         separate from base sample preparation.
       </p>
+      <H2 id="migration">Migrate former protein data imports</H2>
+      <p>The <code>alignair.aa.data</code> facade has been removed. Its functions use these shared paths.</p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.data.record_to_sample", "alignair.data.sampling.prepare_protein_sample"],
+        ["aa.data.build_class_maps", "alignair.reference.protein.build_class_maps"],
+        ["aa.data.collect_usable / check_counter / REJECT_REASONS", "alignair.data.sampling"],
+        ["aa.data.SeedBudgetExhausted", "alignair.data.sampling.SampleBudgetExhausted"],
+      ]} />
     </>
   ),
 };

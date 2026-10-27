@@ -137,11 +137,11 @@ batch = collate_samples([sample], max_length=128)`} />
       <H2 id="ownership">Shared implementation and compatibility</H2>
       <p>
         Tokenizers, translation and codon projection, coordinate validation, allele-set encoding, and
-        nucleotide target construction live in <code>alignair.data</code>. Historical AA tokenizer,
-        translation, and batch functions, plus the trainer’s <code>build_batch</code>, delegate to these
+        nucleotide target construction live in <code>alignair.data</code>. Historical AA tokenizer
+        and translation imports, plus the trainer’s <code>build_batch</code>, delegate to these
         implementations. The separate stage-one collator has been removed; its caller uses the categorical
-        adapter with model vocabulary counts. Older <code>collate_aa</code> calls without compatible sets
-        remain supported; compatible sets require an explicitly configured adapter.
+        adapter with model vocabulary counts. <code>collate_categorical</code> supports samples without
+        compatible sets; compatible sets require an explicitly configured adapter.
       </p>
       <p>
         <code>train.gym.gym_collate</code> still builds the simulator’s intermediate ground-truth view,
@@ -149,6 +149,17 @@ batch = collate_samples([sample], max_length=128)`} />
         allele encoding with the adapters. Training schedules, experiment selection, and study-specific
         sample construction remain with their runners; reusable batch assembly belongs here.
       </p>
+      <H2 id="migration">Migrate former protein batch imports</H2>
+      <p>
+        The <code>aa.gym_bridge</code> and <code>aa.data</code> facades have been removed.
+        The shared helper functions retain their tuple-of-inputs-and-targets return contract;
+        adapter classes return a <code>TrainingBatch</code>.
+      </p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.gym_bridge.build_batch_aa", "alignair.data.adapters.build_protein_allele_batch"],
+        ["aa.gym_bridge.aa_usable", "alignair.data.projection.translated_record_usable"],
+        ["aa.data.collate_aa", "alignair.data.adapters.collate_categorical"],
+      ]} />
     </>
   ),
 };

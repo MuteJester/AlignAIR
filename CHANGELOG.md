@@ -123,7 +123,7 @@ All notable changes to AlignAIR are documented here. The format follows
   competence statistics retain their seeded Python resampling convention under the same statistics module.
 - Statistical imports defer benchmark loading; existing evaluation and historical estimator imports remain available.
 - Capacity-proof training and diversity selection now live in `train.diagnostics` and `data.sampling`;
-  the protein proof study imports shared owners, and `aa.train` retains compatibility imports only.
+  the protein proof study imports those shared owners directly.
 - Alignment runners and capacity/frozen-cohort proofs use one training-state initializer. Public
   nucleotide training creates task weights there when omitted; supplied weights retain their identity.
 - Optimizer assembly deduplicates shared parameters, checks custom parameter groups and scheduler
@@ -144,9 +144,8 @@ All notable changes to AlignAIR are documented here. The format follows
 - Protein crop targets now use aligned reference codons instead of slicing prototypes with read
   coordinates. Missing reference evidence excludes classification while preserving known boundaries.
   Trimmed V reads can now be cropped. Full-state Stage-1 resume requires the matching versioned
-  sample policy; older checkpoints can initialize weights through `init_path`.
-- Replaced duplicate strict/curriculum protein sample assembly with one builder. Historical `aa.data`
-  imports delegate to shared owners; migrated the implementation out of that module and removed
+  sample policy; older checkpoints can initialize weights through `init_from` in the shared workflow.
+- Replaced duplicate strict/curriculum protein sample assembly with one shared builder and removed
   `_class_sample`. Shared translation eligibility also serves protein allele-batch source filtering.
 - Collection distinguishes scientific rejections, selection skips, callback failures, and untracked
   historical selection outcomes. Malformed frames and length-changing tokenizers raise typed errors.
@@ -231,14 +230,17 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Obsolete `aa.train`, `aa.data` and `aa.gym_bridge` compatibility facades. Their implementations
+  remain in shared training, task, sampling, reference and adapter modules. Website API guides list
+  replacement imports; protein adapter tests now live with the shared data tests.
 - Historical `calibrate_stage2.py` simulator-specific calibration runner. APS/RAPS and group-based
   fitting remain in `aa.conformal`; embedded calibration loading and existing model artifacts are unchanged.
-- Redundant `train_stage1_trunc.py` wrapper. The shared truncation trainer, warm-start/checkpoint
-  support, and convergence-driver integration remain unchanged.
+- Redundant `train_stage1_trunc.py` wrapper. Crop training, checkpoint continuation and convergence
+  studies use the shared training workflow.
 - Redundant `train_strategic_igh.py` wrapper and historical training defaults.
-  The strategic model setup and trainer remain in the existing package module.
+  Its functionality lives in shared model setup and training.
 - Historical `train_eval_aa_igh.py` allele-head experiment runner and held-out sampling recipe.
-  Existing training and evaluation APIs remain in `aa.train_gym` and `aa.eval_gym`.
+  Training uses the shared workflow; evaluation remains in `aa.eval_gym`.
 - Redundant `benchmark_aa_igh.py` wrapper for the historical allele-head checkpoint.
   The package benchmark implementation and shared allele-recovery metrics remain unchanged.
 - Historical `eval_baseline_complete.py` report runner and study-specific junction-masking analysis.

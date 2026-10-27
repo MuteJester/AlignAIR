@@ -1,5 +1,6 @@
 """Source-to-model batch adaptation with independent, hand-written annotations."""
 from copy import deepcopy
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -89,18 +90,29 @@ def test_orientation_is_repeatable_and_disabled_models_receive_forward_reads():
         NucleotideBatchAdapter(_reference(), _config(use_orientation=False), augment_orientation=True)([_record()])
 
 
-def test_protein_projection_preserves_full_allele_labels_and_masks_inverted_d():
+@pytest.mark.parametrize('inverted', [False, True])
+def test_protein_projection_preserves_full_allele_labels_and_masks_inverted_d(inverted):
     record = _record()
     assert translate_nt(record["sequence"]) == record["sequence_aa"]
-    record["d_inverted"] = True
-    cfg = _config(vocab_size=23, use_orientation=False)
-    batch = ProteinAlleleBatchAdapter(_reference(), cfg)([record])
+    record["d_inverted"] = inverted
+    reference = _reference()
+    gene = reference.gene('V')
+    gene.names.append('V*03')
+    gene.sequences.append(gene.sequences[0])
+    gene.index['V*03'] = 2
+    cfg = replace(_config(vocab_size=23, use_orientation=False), v_allele_count=3)
+    batch = ProteinAlleleBatchAdapter(reference, cfg)([record])
+    assert batch.inputs['tokenized_sequence'].shape == (1,128)
     assert batch.lengths.tolist() == [8]
+    assert batch.targets['v_start'].item() == 0
     assert batch.targets["v_end"].item() == 4 and batch.targets["j_start"].item() == 5
     assert batch.targets["j_end"].item() == 8
-    assert batch.targets["v_allele"].tolist() == [[1., 1.]]
-    assert not batch.targets["d_supervise"].item()
-    assert batch.targets["d_allele"].sum().item() == 0
+    assert batch.targets["v_allele"].tolist() == [[1., 1., 0.]]
+    assert batch.targets['j_allele'].tolist() == [[1.,0.]]
+    assert batch.targets['mutation_rate'].item() == pytest.approx(.05)
+    assert batch.targets['productive'].item() == 1.
+    assert batch.targets["d_supervise"].item() is not inverted
+    assert batch.targets["d_allele"].tolist() == ([[0.,0.]] if inverted else [[1.,0.]])
 
 
 def test_protein_prefix_window_and_translation_mismatch_are_explicit():
@@ -208,9 +220,9 @@ def test_record_adapters_reject_the_wrong_objective_and_malformed_records(kind):
 def test_protein_records_require_exported_translation_and_disable_nt_orientation():
     with pytest.raises(ConfigurationError, match="orientation"):
         ProteinAlleleBatchAdapter(_reference(), _config())([_record()])
-    for field in ("junction_start", "sequence_aa"):
+    for field, value in (("junction_start", None), ("sequence_aa", None), ("sequence_aa", "")):
         record = _record()
-        record[field] = None
+        record[field] = value
         assert not translated_record_usable(record)
         with pytest.raises(TrainingDataError, match="require a translation"):
             ProteinAlleleBatchAdapter(_reference(), _config(use_orientation=False))([record])
@@ -249,19 +261,15 @@ def test_raw_gym_view_retains_separate_teacher_and_germline_metadata():
 
 
 def test_historical_imports_use_the_shared_implementations():
-    from alignair.aa.data import collate_aa
-    from alignair.aa.gym_bridge import build_batch_aa
     from alignair.aa.tokenizer import AAProteinTokenizer as old_tokenizer
     from alignair.aa.translation import project_codons as old_projection
     from alignair.train.gym.targets import build_targets as old_targets
     from alignair.train.trainer import build_batch
-    from alignair.data.adapters import build_nucleotide_batch, build_protein_allele_batch, collate_categorical
+    from alignair.data.adapters import build_nucleotide_batch
     from alignair.data.projection import project_codons
     from alignair.data.targets import build_targets
     from alignair.data.tokenizer import AAProteinTokenizer
 
-    assert collate_aa is collate_categorical
-    assert build_batch_aa is build_protein_allele_batch
     assert build_batch is build_nucleotide_batch
     assert old_tokenizer is AAProteinTokenizer
     assert old_projection is project_codons

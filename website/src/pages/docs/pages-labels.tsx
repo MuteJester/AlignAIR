@@ -95,8 +95,9 @@ audit_reference = build_protein_reference(source, hash_genes=("V", "D", "J"))`} 
       </p>
       <p>
         The implementations live in <code>alignair.reference.protein</code> and
-        <code> alignair.reference.labels</code>. Historical <code>aa.reference</code>,
-        <code> aa.equivalence</code>, and <code>aa.data.build_class_maps</code> imports delegate to them.
+        <code> alignair.reference.labels</code>. Historical <code>aa.reference</code> and
+        <code> aa.equivalence</code> imports delegate to them. Import <code>build_class_maps</code>
+        directly from <code>alignair.reference.protein</code>.
         Phase-0, training setup, convergence evaluation, and product loading use the shared owners.
         Study-specific read filtering remains in the sample-preparation layer.
       </p>

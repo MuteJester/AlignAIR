@@ -214,15 +214,22 @@ print(report["history"][-1])`} />
         records, check diversity, or assert a universal passing threshold. Memorization on this batch
         measures learning capacity. Use a separate held-out cohort to assess generalization.
         The <DocLink to="sample-preparation">sample preparation API</DocLink> provides class-diversity
-        policies and explicit completed-cohort validation. Historical <code>aa.train</code> imports
-        delegate here; the shared default includes all configured genes rather than assuming V/J only.
+        policies and explicit completed-cohort validation. The shared default includes all configured
+        genes rather than assuming V/J only.
       </p>
+      <H2 id="training-imports">Migrate former protein training imports</H2>
+      <p>The <code>alignair.aa.train</code> facade has been removed. Use the shared owners directly.</p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.train.overfit_one_batch", "alignair.train.overfit_one_batch"],
+        ["aa.train.aa_eval_metrics", "alignair.tasks.metrics.categorical_metrics"],
+        ["aa.train.assert_batch_diverse / diverse_selector", "alignair.data.sampling.assert_batch_diverse / diverse_selector"],
+      ]} />
       <H2 id="checkpoints">Choose a checkpoint contract</H2>
       <DocTable head={["API in alignair.train.checkpoints", "Stored state and purpose"]} rows={[
         ["save_checkpoint / load_training_checkpoint", <>Self-contained <code>.alignair</code> artifacts
           with model configuration, reference, weights, task weights, and process RNG state.
-          Supplying an optimizer stores its continuation state. The reader also supports explicitly
-          trusted historical NT checkpoints.</>],
+          Supplying an optimizer stores its continuation state; configured schedulers retain their phase.
+          The reader also supports explicitly trusted historical nucleotide and crop-training checkpoints.</>],
         ["save_research_checkpoint / load_research_checkpoint", <>Trusted Python <code>.pt</code> research
           checkpoints containing model/configuration, optimizer, scheduler, process RNG, learning rate,
           history, and provenance. Existing research field names remain supported; new files also include

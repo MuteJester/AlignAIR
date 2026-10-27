@@ -168,12 +168,6 @@ def test_preparation_is_repeatable_and_does_not_mutate_the_record():
     with pytest.raises(TrainingDataError, match='mappings'): translated_record_usable(None)
 
 
-def test_historical_entry_point_delegates_to_the_shared_builder_function():
-    from alignair.aa.data import record_to_sample as old
-    from alignair.data.sampling import prepare_protein_sample
-    assert old is prepare_protein_sample
-
-
 def test_a_length_changing_tokenizer_cannot_silently_desynchronize_boundary_labels():
     tokenizer = SimpleNamespace(encode=lambda _: np.array([1], dtype=np.int64))
     with pytest.raises(TrainingDataError, match='preserve residue positions') as caught:

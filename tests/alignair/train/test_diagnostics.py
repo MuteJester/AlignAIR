@@ -137,13 +137,3 @@ def test_final_eval_rejects_nonfinite_losses_with_evaluation_context(kind):
     assert caught.value.context["stage"] == "capacity_evaluation"
     assert caught.value.context["step"] == 1
     assert current_error_context() == {}
-
-
-def test_historical_imports_are_aliases_of_shared_implementations():
-    from alignair.aa import train as old
-    from alignair.data.sampling import assert_batch_diverse, diverse_selector
-    from alignair.tasks.metrics import categorical_metrics
-    assert old.overfit_one_batch is overfit_one_batch
-    assert old.diverse_selector is diverse_selector
-    assert old.assert_batch_diverse is assert_batch_diverse
-    assert old.aa_eval_metrics is categorical_metrics
