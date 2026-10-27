@@ -35,7 +35,7 @@ def test_v_plus_j_is_wider_than_v_alone(predictor):
 
 
 def test_extraction_does_not_change_predictions(predictor):
-    from alignair.aa.infer import class_probs
+    from alignair.predict.probabilities import class_probs
     before = class_probs(predictor.model, [_VH1], predictor.cfg, predictor.device, "v_class_logits")
     branch_features(predictor, [_VH1])                  # hooks attach + detach
     after = class_probs(predictor.model, [_VH1], predictor.cfg, predictor.device, "v_class_logits")

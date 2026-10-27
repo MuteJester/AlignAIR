@@ -63,8 +63,6 @@ def test_research_protein_policy_is_strict_and_rejects_bad_late_rows_before_infe
     assert model.calls == 0
 
 
-def test_legacy_single_head_import_delegates_to_shared_research_owner():
-    from alignair.aa.infer import class_probs as old
-    assert old is class_probs
+def test_single_head_research_probabilities_accept_unknown_and_stop_residues():
     result = class_probs(Heads(),['X*'],SimpleNamespace(max_seq_length=4),'cpu','v')
     assert result.shape == (1,2)

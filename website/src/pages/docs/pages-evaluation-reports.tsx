@@ -207,10 +207,23 @@ print(report["paired_improvement"])`} />
         summaries and strata while observed boundaries remain eligible. Multi-member truth sets
         require an explicit membership report instead of this study’s exact-class summary.
         Convergence metrics share the macro-accuracy owner. Gym competence
-        aggregation imports its preserved estimator directly. Historical estimator imports from
-        <code> aa.evaluate</code> and <code>train.gym.instrument.stats</code> remain aliases.
+        aggregation imports its preserved estimator directly; the historical
+        <code> train.gym.instrument.stats.bootstrap_ci</code> alias remains available.
         The existing <code>alignair.evaluate</code> benchmark exports load on demand.
       </p>
+      <H2 id="migration">Import shared evaluation utilities directly</H2>
+      <p>
+        Unused utility aliases have been removed from the protein study modules. Their declared
+        public entry points are <code>aa.evaluate.evaluate_frozen</code> and
+        <code> aa.eval_gym.evaluate_aa</code>. Import reusable calculations from their shared owners.
+      </p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.evaluate._macro_accuracy", "alignair.evaluate.macro_accuracy"],
+        ["aa.evaluate.majority_class_baseline / constant_median_mae", "alignair.evaluate (same function names)"],
+        ["aa.evaluate.bootstrap_mean_ci / paired_diff_ci / wilson_interval", "alignair.evaluate (same function names)"],
+        ["aa.eval_gym.gene_allele_counts / finalize_gene", "alignair.evaluate.alleles (same function names)"],
+        ["aa.eval_gym._merge", "alignair.evaluate.alleles.merge_allele_counts"],
+      ]} />
     </>
   ),
 };

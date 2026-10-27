@@ -84,12 +84,9 @@ def test_boundary_reports_reject_misaligned_nonfinite_or_negative_errors(targets
         boundary_error_report(targets, errors)
 
 
-def test_old_macro_and_baseline_imports_delegate_to_shared_report_owner():
-    from alignair.aa import evaluate as old
+def test_convergence_macro_accuracy_uses_shared_report_owner():
     from alignair.aa.convergence import metrics
-    assert old._macro_accuracy is metrics.macro_accuracy is macro_accuracy
-    assert old.majority_class_baseline is majority_class_baseline
-    assert old.constant_median_mae is constant_median_mae
+    assert metrics.macro_accuracy is macro_accuracy
 
 
 def test_public_benchmark_exports_remain_available_and_unknown_attributes_fail():

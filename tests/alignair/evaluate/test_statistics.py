@@ -152,10 +152,6 @@ def test_wilson_rejects_invalid_critical_values(z):
         wilson_interval(0, 1, z=z)
 
 
-def test_historical_estimator_imports_are_shared_aliases():
-    from alignair.aa import evaluate as previous
+def test_gym_bootstrap_import_uses_shared_competence_estimator():
     from alignair.train.gym.instrument.stats import bootstrap_ci
-    assert previous.bootstrap_mean_ci is bootstrap_mean_ci
-    assert previous.paired_diff_ci is paired_diff_ci
-    assert previous.wilson_interval is wilson_interval
     assert bootstrap_ci is bootstrap_competence_ci

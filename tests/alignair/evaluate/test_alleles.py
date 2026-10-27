@@ -228,11 +228,7 @@ def test_runner_preflight_and_productivity_failures_are_classified(failure):
     assert model.training and not model.child.training
 
 
-def test_old_counter_imports_are_aliases_and_default_collector_retains_no_optional_payload():
-    from alignair.aa import eval_gym
-    assert eval_gym.gene_allele_counts is gene_allele_counts
-    assert eval_gym.finalize_gene is finalize_gene
-    assert eval_gym._merge is merge_allele_counts
+def test_default_collector_retains_no_optional_payload():
     cfg, _, _, _, adapter = runner_fixture()
     observed = collect_alignment_observations(Echo(), range(3), adapter, cfg)
     assert not observed.prediction_sets and not observed.scalars

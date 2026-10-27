@@ -302,9 +302,22 @@ print(probabilities["v_class_logits"].shape)`} />
       <p>
         <code>predict.probabilities.protein_class_probabilities</code> binds the research protein
         policy: uppercase canonical residues plus X and stop, nonempty reads, and no truncation.
-        It validates the input list before model execution. Historical <code>aa.infer.class_probs</code>
-        delegates to its single-head interface. Product prediction retains its separate normalized
+        It validates the input list before model execution. Product prediction retains its separate normalized
         input policy, verified tokenizer, single all-head forward, and device-local softmax.
+      </p>
+      <H2 id="probability-imports">Migrate former research inference imports</H2>
+      <p>
+        The <code>alignair.aa.infer</code> wrapper has been removed. Import its functions from the
+        shared prediction module; their signatures and CPU softmax default are unchanged.
+      </p>
+      <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.infer.class_probs", "alignair.predict.probabilities.class_probs"],
+        ["aa.infer.protein_class_probabilities", "alignair.predict.probabilities.protein_class_probabilities"],
+      ]} />
+      <p>
+        <code>class_probs(model, seqs, cfg, device, key, batch=256)</code> returns one NumPy probability
+        matrix. Use <code>protein_class_probabilities(model, seqs, cfg, device, keys, batch=256)</code>
+        to collect several named heads in one forward per batch.
       </p>
       <H2 id="features">Inspect named component inputs</H2>
       <CodeBlock lang="python" code={`from alignair.predict import component_features

@@ -11,10 +11,10 @@ from ..core.config import AlignAIRConfig
 from ..data.adapters import CategoricalBatchAdapter
 from ..errors import ConfigurationError
 from ..evaluate.cohort import collect_alignment_observations
-from ..evaluate.reports import (boundary_error_report, classification_report,
-                                constant_median_mae, majority_class_baseline,
-                                macro_accuracy as _macro_accuracy)
-from ..evaluate.statistics import bootstrap_mean_ci, paired_diff_ci, wilson_interval
+from ..evaluate.reports import boundary_error_report, classification_report
+from ..evaluate.statistics import wilson_interval
+
+__all__ = ["evaluate_frozen"]
 
 
 def evaluate_frozen(model, samples, cfg, class_maps, *, batch_size: int = 128,

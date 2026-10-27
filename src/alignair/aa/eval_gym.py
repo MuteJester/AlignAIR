@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from ..data.adapters import ProteinAlleleBatchAdapter
-from ..evaluate.alleles import (evaluate_allele_cohort, finalize_gene, gene_allele_counts,
-                               merge_allele_counts as _merge)
+from ..evaluate.alleles import evaluate_allele_cohort
+
+__all__ = ["evaluate_aa"]
 
 
 def evaluate_aa(model, records, reference_set, cfg, class_maps, *, device="cpu",

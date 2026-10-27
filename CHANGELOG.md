@@ -231,6 +231,9 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Obsolete `aa.infer` probability wrapper and unused report/statistic/counter aliases in the
+  protein evaluation adapters. Import reusable functions from `predict.probabilities` and `evaluate`;
+  the adapters retain their study-specific evaluation policies and report contracts.
 - Obsolete `aa.augment`, `aa.truncation`, and `aa.resume` import wrappers and unused RNG tuple
   adapters. Use `data.augmentation`, `train.checkpoints`, and the dictionary-based `train.random_state`
   API directly. Historical checkpoint formats and readers remain supported.
