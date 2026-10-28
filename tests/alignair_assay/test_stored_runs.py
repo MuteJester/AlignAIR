@@ -23,7 +23,7 @@ def test_a_worktree_without_runs_reads_the_main_checkouts(tmp_path, monkeypatch)
     # run data lives with the main checkout; a worktree's .git file names the main checkout's git directory
     monkeypatch.delenv(ENV, raising=False)
     main = _checkout(tmp_path / "main")
-    worktree = tmp_path / "main" / ".claude" / "worktrees" / "w"
+    worktree = tmp_path / "main" / "worktrees" / "w"
     worktree.mkdir(parents=True)
     (worktree / ".git").write_text(f"gitdir: {main / '.git' / 'worktrees' / 'w'}\n")
     assert runs_root(worktree) == main / ".private" / "assay"
