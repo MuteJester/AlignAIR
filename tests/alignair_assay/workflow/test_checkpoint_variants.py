@@ -119,6 +119,24 @@ def test_one_checkpoint_under_two_labels_compares_to_zero(null_run):
             f"`{digest[:12]}` ({checkpoints['b']}); both ran under AlignAIR code `{'c' * 12}`.") in md
 
 
+def test_a_checkpoint_retrained_in_place_makes_a_plain_tools_runs_stale_too(tmp_path):
+    from alignair_assay.workflow.summary import checkpoint_changed
+
+    path = tmp_path / "model.alignair"
+    path.write_bytes(b"weights")
+    plain = {"checkpoint": str(path), "checkpoint_sha256": sha256_file(path), "device": "cpu", **CODE}
+    variant = {**plain, "label": "a"}
+    assert checkpoint_changed(plain) is None and checkpoint_changed(variant) is None
+    path.write_bytes(b"retrained")
+    for settings in (plain, variant):  # alignair-local as well as alignair-local@a
+        assert checkpoint_changed(settings) == f"its checkpoint {path} changed since this run (another SHA-256)"
+    path.unlink()
+    assert checkpoint_changed(plain) == f"its checkpoint {path} is missing since this run"
+    # a tool that runs no checkpoint file (the alignair image, igblast) has nothing to check
+    assert checkpoint_changed({"image": "alignair", "model": "alignair-igh-human@1.0.0"}) is None
+    assert checkpoint_changed(None) is None
+
+
 def test_a_changed_checkpoint_is_another_configuration_and_a_stale_run(null_run, tmp_path, capsys):
     root = _copy(null_run[0], tmp_path)
     layout = RunLayout(root)

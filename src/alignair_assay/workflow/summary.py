@@ -66,7 +66,7 @@ def run_status(layout: RunLayout, tool: str, suite: str, arm: str, settings: dic
     ``settings`` (the run directory's configuration for the tool) and its inputs are unchanged
     (``inputs_unchanged``). Otherwise it is ``missing`` (no run record or no predictions), ``failed`` (a non-zero
     return code, or an unreadable record) or ``stale`` (made with other tool settings, or on files that changed
-    since; or, for a checkpoint variant, its checkpoint file missing or changed since: ``checkpoint_changed``). The
+    since; or, for a tool that runs a checkpoint file, that file missing or changed since: ``checkpoint_changed``). The
     dict also holds ``tool``, ``suite``, ``arm``, the ``returncode``, the ``failed_donor`` and ``error`` the record
     names (None otherwise) and the ``run_json`` path relative to the run directory."""
     path = layout.run_json(tool, suite, arm)
@@ -98,10 +98,11 @@ def run_status(layout: RunLayout, tool: str, suite: str, arm: str, settings: dic
 
 
 def checkpoint_changed(settings: dict | None) -> str | None:
-    """Why a checkpoint variant's runs (settings with a ``label``, ``runners.variants``) no longer match its weights:
-    the ``checkpoint`` file is missing, or its SHA-256 is not the recorded ``checkpoint_sha256`` (retrained in
-    place); None when it is unchanged, and for every other tool (``all`` re-fingerprints those before it runs)."""
-    if not settings or "label" not in settings or not settings.get("checkpoint"):
+    """Why the runs of a tool that runs a checkpoint file (settings with a ``checkpoint``: ``alignair-local``,
+    ``alignair-api`` and their variants, ``runners.variants``) no longer match its weights: the ``checkpoint`` file is
+    missing, or its SHA-256 is not the recorded ``checkpoint_sha256`` (retrained in place); None when it is
+    unchanged, and for a tool that runs no checkpoint file."""
+    if not settings or not settings.get("checkpoint"):
         return None
     path = Path(settings["checkpoint"])
     if not path.is_file():

@@ -161,9 +161,9 @@ PYTHONPATH=src python -m alignair_assay real --run-dir .private/assay/cand_real 
 - **Identity.** A variant is its base's runner on the label's checkpoint under the full id. Its runs, scores and
   comparisons are filed under `alignair-local@cand` (one path component). Its fingerprint is its base's (the
   checkpoint's path and SHA-256 among it) plus the `label`, and the reports name it with its checkpoint's short
-  digest. A checkpoint changed after its run (retrained in place), or gone, makes that variant's runs stale; in
-  `all` it is a new configuration (`alignair-local@cand.checkpoint_sha256`), and `--force` redoes that variant's
-  runs only.
+  digest. A checkpoint changed after its run (retrained in place), or gone, makes that variant's runs stale (and a
+  plain `alignair-local` or `alignair-api` run's, likewise); in `all` it is a new configuration
+  (`alignair-local@cand.checkpoint_sha256`), and `--force` redoes that variant's runs only.
 - **The null comparison.** The same checkpoint under two labels must compare to zero: Δ 0 on every metric, no
   significant verdict, no read fixed or broken. Anything else means something in the pipeline is not deterministic,
   or not paired.
