@@ -68,23 +68,70 @@ def test_study_trains_real_candidates_and_evaluates_the_same_frozen_cohort(tmp_p
     assert (tmp_path/'artifacts'/'predeclaration.md').read_text() == driver.PREDECLARATION_TEXT
 
 
-def test_missing_current_candidate_is_not_replaced_by_an_old_file(tmp_path, monkeypatch):
-    from types import SimpleNamespace
+def test_existing_checkpoint_directory_is_refused_before_loading_the_incumbent(tmp_path, monkeypatch):
+    from alignair.aa.convergence import driver
+    from alignair.errors import ConfigurationError
+    directory = tmp_path/'selected'
+    directory.mkdir()
+    stale = directory/'checkpoint-1.alignair'
+    stale.write_text('previous run')
+    def forbidden(*args, **kwargs): pytest.fail('existing output must fail before checkpoint loading')
+    monkeypatch.setattr(driver, 'load_checkpoint', forbidden)
+    with pytest.raises(ConfigurationError):
+        driver.run_study('source.pt', budget=1, ckpt_steps=(1,), device='cpu',
+            art_dir=tmp_path/'artifacts', ckpt_dir=directory)
+    assert stale.read_text() == 'previous run' and not (tmp_path/'artifacts').exists()
+
+
+@pytest.fixture
+def incumbent(tmp_path, monkeypatch):
     from alignair.aa.convergence import driver
     from alignair.train.checkpoints import save_snapshot
     from tests.support.model_setup import protein_class_setup
     setup = protein_class_setup(embed_dim=4, filters=4, block_out=8)
     source = tmp_path/'incumbent.pt'
     save_snapshot(source, setup.build_model(), setup.config, 0)
-    directory = tmp_path/'selected'
-    directory.mkdir()
-    stale = directory/'checkpoint-1.alignair'
-    stale.write_text('stale candidate')
     monkeypatch.setattr(driver, 'build_cohort', lambda *a,**kw: ({},'fixed'))
     monkeypatch.setattr(driver, 'evaluate_checkpoint', lambda *a,**kw:
                         {'clean_v_acc':.99,'clean_j_acc':.99,'d_allele_macro':.3})
-    monkeypatch.setattr(driver, 'train', lambda *a,**kw: SimpleNamespace(checkpoints={}))
-    result = driver.run_study(str(source), budget=1, ckpt_steps=(1,), device='cpu',
-        art_dir=str(tmp_path/'artifacts'), ckpt_dir=str(directory), batch_size=2, val_every=0)
+    return source
+
+
+def test_missing_current_candidate_is_not_replaced_by_an_unreported_file(tmp_path, monkeypatch, incumbent):
+    from types import SimpleNamespace
+    from alignair.aa.convergence import driver
+    directory = tmp_path/'selected'
+    def train(*args, **kwargs):
+        (directory/'checkpoint-1.alignair').write_text('unreported candidate')
+        return SimpleNamespace(checkpoints={})
+    def forbidden(*args, **kwargs): pytest.fail('candidate was not reported by this training run')
+    monkeypatch.setattr(driver, 'train', train)
+    monkeypatch.setattr(driver, '_load_fresh_candidate', forbidden)
+    result = driver.run_study(incumbent, budget=1, ckpt_steps=(1,), device='cpu',
+        art_dir=tmp_path/'artifacts', ckpt_dir=directory, batch_size=2, val_every=0)
     assert [row['name'] for row in result['rows']] == ['incumbent']
-    assert stale.read_text() == 'stale candidate'
+    assert (directory/'checkpoint-1.alignair').read_text() == 'unreported candidate'
+
+
+@pytest.mark.parametrize('failure_stage', ['baseline', 'training', 'markdown'])
+def test_failed_runs_retain_recovery_material_without_publishing_final_metrics(tmp_path, monkeypatch, incumbent, failure_stage):
+    from types import SimpleNamespace
+    from alignair.aa.convergence import driver
+    art, ckpt = tmp_path/'artifacts', tmp_path/'selected'
+    def fail(*args, **kwargs): raise RuntimeError('injected failure')
+    def train(*args, **kwargs):
+        (ckpt/'recovery.alignair').write_text('saved recovery material')
+        if failure_stage == 'training': fail()
+        return SimpleNamespace(checkpoints={})
+    monkeypatch.setattr(driver, 'train', train)
+    if failure_stage == 'baseline': monkeypatch.setattr(driver, 'evaluate_checkpoint', fail)
+    if failure_stage == 'markdown': monkeypatch.setattr(driver, '_render_convergence_md', fail)
+    with pytest.raises(RuntimeError, match='injected failure'):
+        driver.run_study(incumbent, budget=1, ckpt_steps=(1,), device='cpu', art_dir=art, ckpt_dir=ckpt)
+    if failure_stage == 'baseline':
+        assert not art.exists() and not ckpt.exists()
+    else:
+        assert (art/'cohort_fingerprint.json').is_file()
+        assert (art/'predeclaration.md').read_text() == driver.PREDECLARATION_TEXT
+        assert (ckpt/'recovery.alignair').read_text() == 'saved recovery material'
+        assert not (art/'checkpoints_metrics.json').exists() and not (art/'convergence.md').exists()

@@ -85,6 +85,10 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Convergence studies validate run requests before loading checkpoints and require fresh, distinct,
+  nonoverlapping output directories. Fractional checkpoint offsets are rejected instead of truncated.
+  Reports and training checkpoints share `alignair.io.atomic`; finite metrics JSON is published last,
+  while failed studies retain saved checkpoints and metadata for recovery in a fresh workspace.
 - Convergence cohort construction now lives in `aa.convergence.cohort`, separate from checkpoint
   scoring, with validated split requests and lazy loading of the source-only benchmark generator.
   The versioned cohort digest now includes complete records, D inversion and split/reference metadata;

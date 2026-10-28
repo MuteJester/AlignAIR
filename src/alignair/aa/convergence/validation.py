@@ -1,6 +1,7 @@
-"""Preflight the convergence scoring contract before model execution or placement."""
+"""Preflight convergence study requests and scoring inputs before expensive work."""
 from collections.abc import Mapping, Sequence
 from numbers import Integral
+import math
 
 import numpy as np
 import torch
@@ -15,6 +16,46 @@ from ...errors import ConfigurationError, InputError, error_context
 from ...reference import EquivalenceClassMap
 from ...evaluate.probabilities import validate_frequency_edges
 from .cohort import _first
+
+
+def validate_study_request(budget, ckpt_steps, cohort_seed, n_per_stratum, batch_size,
+                           base_lr, lr_min, val_every, plateau_k, dc_name, device):
+    """Check continuation options before checkpoint loading, allocation or output creation."""
+    from ...train.schedules import CosineSchedule
+    with error_context(stage="convergence_study_preflight"):
+        for field, value, minimum in (("budget", budget, 1), ("cohort_seed", cohort_seed, 0),
+                ("n_per_stratum", n_per_stratum, 1), ("batch_size", batch_size, 1),
+                ("val_every", val_every, 0), ("plateau_k", plateau_k, 0)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ConfigurationError("study counts must be valid integers", context={"field": field})
+        if not isinstance(dc_name, str) or not dc_name:
+            raise ConfigurationError("study requires a dataconfig name", context={"field": "dc_name"})
+        if not isinstance(device, str) or not device:
+            raise ConfigurationError("study device must be a nonempty string", context={"field": "device"})
+        try:
+            torch.device(device)
+        except (TypeError, ValueError, RuntimeError) as exc:
+            raise ConfigurationError("invalid study device", context={"field": "device"}) from exc
+        for field, value in (("base_lr", base_lr), ("lr_min", lr_min)):
+            try:
+                valid = not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value >= 0
+            except OverflowError:
+                valid = False
+            if not valid or field == "base_lr" and value == 0:
+                raise ConfigurationError("learning rates must be finite; base_lr positive and lr_min nonnegative",
+                                         context={"field": field})
+        CosineSchedule(budget, lr_min).validate(base_lr)
+        if isinstance(ckpt_steps, (str, bytes, Mapping, set, frozenset)):
+            raise ConfigurationError("checkpoint offsets must be an ordered integer iterable", context={"field": "ckpt_steps"})
+        try:
+            offsets = tuple(ckpt_steps)
+        except TypeError as exc:
+            raise ConfigurationError("checkpoint offsets must be iterable", context={"field": "ckpt_steps"}) from exc
+        if (any(isinstance(step, bool) or not isinstance(step, int) or not 0 < step <= budget for step in offsets)
+                or any(left >= right for left, right in zip(offsets, offsets[1:]))):
+            raise ConfigurationError("checkpoint offsets must be strictly increasing integers within the study budget",
+                                     context={"field": "ckpt_steps"})
+        return offsets
 
 
 def _rows(value, field):

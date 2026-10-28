@@ -400,6 +400,44 @@ metrics = evaluate_checkpoint(
         stratum, gene and source position where applicable. Unexpected model exceptions retain
         their original type while runtime state is restored.
       </p>
+      <H2 id="convergence-run">Run a convergence study</H2>
+      <CodeBlock lang="python" code={`from alignair.aa.convergence.driver import run_study
+
+# Both output paths must be new, including when continuing a previous study.
+report = run_study(
+    resume_path="runs/incumbent/model.alignair",
+    budget=300000, ckpt_steps=(25000, 75000, 150000, 300000),
+    device="cpu", art_dir="runs/convergence-01/reports",
+    ckpt_dir="runs/convergence-01/checkpoints",
+)`} />
+      <p>
+        Checkpoint offsets are relative to the source checkpoint’s saved step. They must be
+        strictly increasing positive Python integers within the additional training budget; floats,
+        booleans and duplicate offsets are rejected. An empty sequence requests no candidate
+        checkpoints. The budget, batch size and per-stratum count must be positive integers;
+        seed, validation interval and plateau count are nonnegative integers. Learning rates must
+        be finite, with a positive base rate and a minimum between zero and the base rate. Device
+        is a nonempty PyTorch device string. Request validation precedes checkpoint loading.
+      </p>
+      <p>
+        The source checkpoint is loaded through the training checkpoint API, with trusted historical
+        pickle loading enabled. Use a trusted source. Full continuation retains the saved scheduler
+        and checks optimizer/configuration compatibility; a weights-only source starts a fresh
+        optimizer and cosine schedule at its saved step. Model loading and incumbent evaluation
+        finish before output directories are claimed. Every candidate is reloaded into a fresh model
+        and evaluated on the same cohort. Selection remains a separate call.
+      </p>
+      <p>
+        Output directories must be distinct, nonoverlapping and absent, even if an existing directory
+        is empty. The driver claims them exclusively and rejects a concurrent claim. Metadata and
+        the frozen predeclaration are published before training. UTF-8 reports and checkpoints share
+        <code> alignair.io.atomic</code>: a temporary sibling is written, its contents are fsynced,
+        and the destination is replaced atomically. JSON rejects nonfinite values.
+        <code> checkpoints_metrics.json</code> is published last, after <code>convergence.md</code>;
+        its absence indicates an incomplete report set. A failed run retains metadata and saved
+        checkpoints for recovery using fresh output paths. Publication is atomic per file, without
+        a whole-run transaction or a directory-entry durability guarantee after power loss.
+      </p>
       <H2 id="convergence-selection">Apply the frozen convergence selection rule</H2>
       <CodeBlock lang="python" code={`from alignair.aa.convergence.select import select_checkpoint
 

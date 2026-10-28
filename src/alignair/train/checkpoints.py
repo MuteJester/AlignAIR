@@ -9,29 +9,12 @@ import os
 from pathlib import Path
 import re
 import shutil
-import tempfile
 
 import torch
 
 from ..errors import ConfigurationError, error_context
+from ..io.atomic import atomic_write
 from .random_state import capture_rng_state
-
-
-def _atomic_write(path, writer):
-    """Publish on the same filesystem; a failed writer leaves the previous artifact intact."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    os.close(descriptor)
-    try:
-        with error_context(stage="training_checkpoint", path=str(path)):
-            writer(temporary)
-            with open(temporary, "rb") as stream:
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
 
 
 def save_checkpoint(path, cfg, model, logvars, step, opt=None, *, dataconfigs=None, train_args=None, label_schema=None,
@@ -44,9 +27,9 @@ def save_checkpoint(path, cfg, model, logvars, step, opt=None, *, dataconfigs=No
                 "progresses": arguments.get("progresses"), "heavy_shm": arguments.get("heavy_shm"),
                 "short_boost": arguments.get("short_boost"), "seed": arguments.get("seed"), "train_args": arguments}
     rng = capture_rng_state()
-    _atomic_write(path, lambda temporary: mf.save_model(
+    atomic_write(path, lambda temporary: mf.save_model(
         temporary, model, dataconfigs=dataconfigs or [], training=training,
-        logvars=logvars, optimizer=opt, rng=rng, label_schema=label_schema, scheduler=scheduler))
+        logvars=logvars, optimizer=opt, rng=rng, label_schema=label_schema, scheduler=scheduler), stage="training_checkpoint")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -147,8 +130,8 @@ def _research_training_state(state):
 def save_snapshot(path, model, cfg, step):
     """Weights/config/step only: a warm-start snapshot, without optimizer or RNG continuation."""
     config = dataclasses.asdict(cfg) if dataclasses.is_dataclass(cfg) else cfg
-    _atomic_write(path, lambda temporary: torch.save(
-        {"model": model.state_dict(), "cfg": config, "step": step}, temporary))
+    atomic_write(path, lambda temporary: torch.save(
+        {"model": model.state_dict(), "cfg": config, "step": step}, temporary), stage="training_checkpoint")
 
 
 def save_research_checkpoint(path, *, model, cfg, step, optimizer, scheduler, lr, history, provenance):
@@ -159,7 +142,7 @@ def save_research_checkpoint(path, *, model, cfg, step, optimizer, scheduler, lr
              "scheduler": scheduler.state_dict() if scheduler is not None else None,
              "rng_python": rng["python"], "rng_numpy": rng["numpy"], "rng_torch": rng["torch"],
              "rng_cuda": rng.get("cuda"), "lr": lr, "history": history, "provenance": provenance}
-    _atomic_write(path, lambda temporary: torch.save(state, temporary))
+    atomic_write(path, lambda temporary: torch.save(state, temporary), stage="training_checkpoint")
 
 
 def load_research_checkpoint(path) -> dict:
@@ -205,7 +188,7 @@ def save_rotating(base_path, cfg, model, logvars, step, opt, keep=3, *, dataconf
     path = f"{stem}.step{step}{extension}"
     save_checkpoint(path, cfg, model, logvars, step, opt, dataconfigs=dataconfigs, train_args=train_args,
                     label_schema=label_schema, scheduler=scheduler)
-    _atomic_write(base_path, lambda temporary: shutil.copyfile(path, temporary))
+    atomic_write(base_path, lambda temporary: shutil.copyfile(path, temporary), stage="training_checkpoint")
     candidates = [candidate for candidate in glob.glob(f"{glob.escape(stem)}.step*{extension}")
                   if _step_of(candidate) >= 0]
     for old in sorted(candidates, key=_step_of)[:-keep]:

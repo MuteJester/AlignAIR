@@ -11,7 +11,6 @@ same breath as the numbers it judges.
 """
 from __future__ import annotations
 
-import json
 import os
 
 from ...train.checkpoints import load_training_checkpoint as load_checkpoint, validate_continuation
@@ -21,8 +20,11 @@ from ...data.augmentation import ProteinCropPolicy
 from ...core import prepare_model
 from ...core.setup import ModelSetup, setup_from_schema
 from ...reference import build_protein_reference
+from ...errors import ConfigurationError
+from .artifacts import StudyArtifacts
 from .cohort import COHORT_SCHEMA, build_cohort
 from .evaluator import evaluate_checkpoint
+from .validation import validate_study_request
 
 DC_NAME = "HUMAN_IGH_OGRDB"
 MAX_SEQ_LENGTH = 192
@@ -126,11 +128,6 @@ def _load_fresh_candidate(ckpt_path: str, dc_name: str, max_seq_length: int, dev
     return model, setup
 
 
-def _write_json(path: str, obj: dict) -> None:
-    with open(path, "w") as f:
-        json.dump(obj, f, indent=2, sort_keys=True)
-
-
 def _fmt(v) -> str:
     if v is None:
         return "n/a"
@@ -177,20 +174,37 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
     passed to the shared trainer. Its target step is the incumbent step plus the requested budget.
     Full checkpoints retain their saved scheduler; weights-only historical incumbents use an
     explicit warm start with a fresh optimizer/scheduler and an absolute step offset.
+
+    Both output directories must be fresh, distinct and nonoverlapping. Requests, checkpoint
+    compatibility and incumbent evaluation are checked before claiming them. Each artifact is
+    published atomically; final metrics JSON is written last. Failed runs retain their metadata
+    and saved checkpoints for recovery in a new workspace, without claiming whole-run atomicity.
     """
+    ckpt_steps = validate_study_request(budget, ckpt_steps, cohort_seed, n_per_stratum, batch_size,
+                                        base_lr, lr_min, val_every, plateau_k, dc_name, device)
+    outputs = StudyArtifacts(art_dir, ckpt_dir)
+    try:
+        if not resume_path:
+            raise TypeError
+        resume_path = os.fspath(resume_path)
+        if not isinstance(resume_path, str):
+            raise TypeError
+    except TypeError as exc:
+        raise ConfigurationError("study requires a checkpoint path",
+                                 context={"stage": "convergence_study_preflight", "field": "resume_path"}) from exc
+    art_dir, ckpt_dir = os.fspath(art_dir), os.fspath(ckpt_dir)
     ck = load_checkpoint(resume_path, trust_pickle=True)
     setup = _checkpoint_setup(ck, dc_name, MAX_SEQ_LENGTH)
     schedule = (CosineSchedule(ck.schedule['total_steps'], ck.schedule['min_lr']) if ck.schedule is not None
                 else CosineSchedule(budget, lr_min))
+    schedule.validate(base_lr)
     if ck.optimizer_state is not None:
         validate_continuation(ck, setup.config, setup.label_schema(), augmentation=ProteinCropPolicy().to_dict(),
                               schedule=schedule.to_dict(), lr=base_lr)
-    os.makedirs(art_dir, exist_ok=True)
-    os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_steps = tuple(int(s) for s in ckpt_steps)
-
     # ---- 1. model/cfg/class_maps/meta ----
     model, cfg = setup.build_model(), setup.config
+    model.load_state_dict(ck.model_state)
+    model.to(device).eval()
     class_maps = setup.protein_reference.class_maps
     meta = {'d_index': dict(setup.reference.gene('D').index)}
 
@@ -198,19 +212,16 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
     cohort, fingerprint = build_cohort(dc_name, n_per_stratum=n_per_stratum, seed=cohort_seed)
     cohort_fp = {"schema": COHORT_SCHEMA, "fingerprint": fingerprint, "seed": cohort_seed,
                 "n_per_stratum": n_per_stratum, "dc_name": dc_name}
-    _write_json(os.path.join(art_dir, "cohort_fingerprint.json"), cohort_fp)
-    with open(os.path.join(art_dir, "predeclaration.md"), "w") as f:
-        f.write(PREDECLARATION_TEXT)
-
     # ---- 3. incumbent baseline ----
     # `start_step` is read from the incumbent checkpoint's OWN `step` field (58000 for the
     # current `model_stage1_PASS.pt`) rather than hardcoded, so a re-run against a different
     # incumbent still computes correct absolute checkpoint/budget numbers.
-    model.load_state_dict(ck.model_state)
     start_step = ck.step
-    model.to(device).eval()
     incumbent_out = evaluate_checkpoint(model, cfg, class_maps, meta, cohort, device=device)
     incumbent_row = _row_from_evaluator_output("incumbent", start_step, incumbent_out)
+    outputs.create()
+    outputs.write_json("cohort_fingerprint.json", cohort_fp)
+    outputs.write_text("predeclaration.md", PREDECLARATION_TEXT)
     print(f"[convergence] incumbent (step {start_step}): clean_v_acc={incumbent_row['clean_v_acc']:.4f} "
          f"clean_j_acc={incumbent_row['clean_j_acc']:.4f} d_allele_macro={_fmt(incumbent_row['d_allele_macro'])}",
          flush=True)
@@ -262,9 +273,8 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
             "ckpt_dir": ckpt_dir,
         },
     }
-    _write_json(os.path.join(art_dir, "checkpoints_metrics.json"), checkpoints_metrics)
-    with open(os.path.join(art_dir, "convergence.md"), "w") as f:
-        f.write(_render_convergence_md(rows, budget, ckpt_steps, cohort_fp))
+    outputs.write_text("convergence.md", _render_convergence_md(rows, budget, ckpt_steps, cohort_fp))
+    outputs.write_json("checkpoints_metrics.json", checkpoints_metrics)
 
     print(f"\n[convergence] wrote {len(rows)} row(s) ({1} incumbent + {len(candidate_rows)} candidate(s)) "
          f"to {art_dir}. Selection (§5) NOT run here -- see alignair.aa.convergence.select.", flush=True)
