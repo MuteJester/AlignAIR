@@ -85,6 +85,10 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Guard training uses the shared process-RNG capture/restoration owner, with explicit CUDA
+  exclusion for CPU runs and a complete process-state requirement on resume. Local record-sampling
+  state remains separate. Malformed and truncated generator state now raises contextual errors
+  with process-state rollback; valid checkpoint fields and sampling sequences are retained.
 - Guard periodic and final checkpoints share atomic publication and one loader for run/runtime
   identity verification. Reuse and resume now check tokenizer, profile bank, feature order, class map
   and partition provenance before restoring state or accounting success. Older periodic checkpoints

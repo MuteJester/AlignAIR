@@ -160,6 +160,15 @@ python -m alignair.aa.guard.training loco --help`} />
         failures keep their original exception type. Publication is atomic per file, without a whole-run
         transaction or a power-loss guarantee for directory entries.
       </p>
+      <p>
+        Guard checkpoints use the shared <code>train.random_state</code> implementation for process
+        generators and retain a separate <code>sampling_rng</code> state for choosing training records.
+        Resume requires Python, NumPy and PyTorch CPU states; missing or malformed state raises
+        <code> TrainingError</code> with checkpoint and run context. The sampler is checked before
+        model or process-state restoration. CPU guard runs exclude CUDA state on every host and
+        preserve the explicit null <code>rng.cuda</code> checkpoint field. CUDA runs capture and
+        restore all CUDA generators. Record-sampling seeds and checkpoint field names are unchanged.
+      </p>
 
       <H2 id="diagnostics">Diagnostics and release checks</H2>
       <p>

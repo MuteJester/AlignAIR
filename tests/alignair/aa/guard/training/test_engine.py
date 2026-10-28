@@ -56,6 +56,8 @@ def test_cpu_training_writes_reusable_checkpoint_and_accounting(run_inputs):
     saved = torch.load(config.checkpoint_dir / "C4.s7.final.pt", weights_only=False)
     assert saved["training_contract"]
     assert saved["provenance"]["bank_checksum"] == "bank"
+    periodic = torch.load(config.checkpoint_dir / "C4.s7.pt", weights_only=False)
+    assert set(periodic['rng']) == {'python', 'numpy', 'torch', 'cuda'} and periodic['rng']['cuda'] is None
     assert "C4.s7" in json.loads(config.budget_path.read_text())["runs"]
     config.budget_path.unlink()
     assert engine.train_one(**run_inputs) == metrics
@@ -83,6 +85,59 @@ def test_interrupted_resume_matches_uninterrupted_weights_and_metrics(run_inputs
     assert all(torch.equal(state[key], ref_state[key]) for key in state)
     for key in ("dev_total_loss", "train_loss_ema", "component_losses", "applicability_auroc"):
         assert actual[key] == expected[key]
+
+
+@pytest.mark.parametrize('value', [None, (), 'malformed'])
+def test_invalid_sampling_rng_fails_before_model_restore_or_process_rng_restore(run_inputs, monkeypatch, value):
+    from alignair.errors import TrainingError
+    engine.train_one(**run_inputs)
+    config = run_inputs['config']; path = config.checkpoint_dir/'C4.s7.pt'
+    state = torch.load(path, weights_only=False); state['sampling_rng'] = value; torch.save(state, path)
+    (config.checkpoint_dir/'C4.s7.final.pt').unlink(); config.budget_path.unlink()
+    previous = path.read_bytes()
+    def forbidden(*args, **kwargs): pytest.fail('malformed sampler must fail before any state restore')
+    monkeypatch.setattr(GuardModel, 'load_state_dict', forbidden)
+    monkeypatch.setattr(engine, 'restore_rng_state', forbidden)
+    with pytest.raises(TrainingError) as caught: engine.train_one(**run_inputs)
+    assert caught.value.context['field'] == 'sampling_rng' and caught.value.context['path'] == str(path)
+    assert caught.value.__cause__ is not None and path.read_bytes() == previous and not config.budget_path.exists()
+
+
+@pytest.mark.parametrize('change', ['absent_rng', 'null_python', 'missing_torch', 'truncated_numpy'])
+def test_guard_requires_complete_process_rng_without_replacing_saved_checkpoint(run_inputs, change):
+    from alignair.errors import TrainingError
+    engine.train_one(**run_inputs)
+    config = run_inputs['config']; path = config.checkpoint_dir/'C4.s7.pt'
+    state = torch.load(path, weights_only=False)
+    if change == 'absent_rng': del state['rng']
+    elif change == 'null_python': state['rng']['python'] = None
+    elif change == 'missing_torch': del state['rng']['torch']
+    else: state['rng']['numpy'] = ()
+    torch.save(state, path)
+    (config.checkpoint_dir/'C4.s7.final.pt').unlink(); config.budget_path.unlink()
+    previous = path.read_bytes()
+    with pytest.raises(TrainingError) as caught: engine.train_one(**run_inputs)
+    assert caught.value.context['stage'] == 'training_resume_rng' and caught.value.context['path'] == str(path)
+    assert caught.value.context['run_tag'] == 'C4.s7'
+    assert path.read_bytes() == previous and not config.budget_path.exists()
+
+
+def test_cpu_guard_uses_shared_rng_owner_with_cuda_excluded_for_capture_and_resume(run_inputs, monkeypatch):
+    capture, restore = engine.capture_rng_state, engine.restore_rng_state
+    captures, restores = [], []
+    def take(**kwargs):
+        captures.append(kwargs)
+        return capture(**kwargs)
+    def apply(state, **kwargs):
+        restores.append(kwargs)
+        return restore(state, **kwargs)
+    monkeypatch.setattr(engine, 'capture_rng_state', take)
+    monkeypatch.setattr(engine, 'restore_rng_state', apply)
+    engine.train_one(**run_inputs)
+    (run_inputs['config'].checkpoint_dir/'C4.s7.final.pt').unlink()
+    engine.train_one(**run_inputs)
+    assert captures and all(options == {'include_cuda': False} for options in captures)
+    assert restores == [{'include_cuda': False, 'require_process_state': True}]
 
 
 def test_completed_checkpoint_rejects_changed_training_settings(run_inputs):

@@ -19,7 +19,8 @@ from alignair.aa.guard.fusion import fit_fusion
 from alignair.aa.guard.losses import energy_margin_loss, supcon_loss
 from alignair.aa.guard.model import GuardModel
 from alignair.aa.guard.tokenizer import MAX_LEN, AaTokenizer
-from alignair.errors import AlignAIRError, ArtifactIntegrityError, ConfigurationError, NumericalError, TrainingError
+from alignair.errors import AlignAIRError, ArtifactIntegrityError, ConfigurationError, NumericalError, TrainingError, error_context
+from alignair.train.random_state import capture_rng_state, restore_rng_state
 from . import budget
 from .data import build_tensors
 from .metrics import binary_auroc
@@ -92,11 +93,6 @@ def _forward_losses(model, T, W, margins, cfg, grl, device):
     return total, parts, out
 
 
-def _rng_state(device):
-    return {"torch": torch.get_rng_state(), "cuda": torch.cuda.get_rng_state_all() if torch.device(device).type == "cuda" else None,
-            "python": random.getstate(), "numpy": np.random.get_state()}
-
-
 def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sources, *,
               config: RunConfig, bank, mask_groups=frozenset(), ckpt_dir=None, extra_provenance=None, run_tag=None):
     manifest = config.manifest
@@ -155,23 +151,25 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
         scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
     start_step, best_dev, patience, best_state = 0, float("inf"), 0, None
 
+    sampling_rng = random.Random(seed + 1000)
     resumed = None
     if ckpt_path.exists():                               # resume operationally
         st = load_checkpoint(ckpt_path, training_contract=contract, provenance=prov, device=device)
+        try:
+            sampling_rng.setstate(st.get("sampling_rng"))
+        except (ValueError, TypeError, IndexError) as exc:
+            raise TrainingError("guard checkpoint sampling RNG state cannot be restored",
+                                context={"stage": "guard_training_resume_rng", "path": str(ckpt_path),
+                                         "run_tag": tag, "field": "sampling_rng"}) from exc
         model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"]); sched.load_state_dict(st["sched"])
         scaler.load_state_dict(st["scaler"]); start_step = st["step"]; best_dev = st["best_dev"]
         patience = st["patience"]; best_state = st.get("best_state")
-        random.setstate(st["rng"]["python"]); np.random.set_state(st["rng"]["numpy"])
-        torch.set_rng_state(st["rng"]["torch"].cpu())
-        if is_cuda and st["rng"]["cuda"] is not None:
-            torch.cuda.set_rng_state_all([state.cpu() for state in st["rng"]["cuda"]])
+        with error_context(path=str(ckpt_path), run_tag=tag):
+            restore_rng_state(st.get("rng"), include_cuda=is_cuda, require_process_state=True)
         resumed = st
 
     if is_cuda:
         torch.cuda.reset_peak_memory_stats()
-    rng = random.Random(seed + 1000)
-    if resumed is not None:
-        rng.setstate(resumed["sampling_rng"])
     by_role = {"positive": [r for r in train if r["group"] in ("positive_real", "positive_sim")],
                "biological_negative": [r for r in train if r["group"] in ("vhh_nonhuman", "igsf", "igk_igl", "tcr")],
                "structural": [r for r in train if r["group"] == "structural"]}
@@ -188,11 +186,11 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
         end_step = max_steps if patience < tr["early_stop_patience"] else start_step
         for step in range(start_step, end_step):
             progress_step = step
-            batch = [rng.choice(by_role[r]) for r in roles for _ in range(per_role)]
+            batch = [sampling_rng.choice(by_role[r]) for r in roles for _ in range(per_role)]
             Tb = build_tensors(batch, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt,
                                mask_groups=mask_groups, bank=bank)
             if oe and n_oe:
-                Toe = build_tensors([rng.choice(oe) for _ in range(n_oe)], feat_cache, fusion, tok,
+                Toe = build_tensors([sampling_rng.choice(oe) for _ in range(n_oe)], feat_cache, fusion, tok,
                                     bank_checksum, cat2id, eligible_dt, is_oe=True, mask_groups=mask_groups, bank=bank)
                 for k in Tb:
                     Tb[k] = torch.cat([Tb[k], Toe[k]], dim=0)
@@ -224,8 +222,9 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
                     patience += 1
                 save_checkpoint(ckpt_path, {"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),
                             "scaler": scaler.state_dict(), "step": step + 1, "best_dev": best_dev,
-                            "patience": patience, "best_state": best_state, "rng": _rng_state(device),
-                            "sampling_rng": rng.getstate(), "train_loss_ema": train_loss_ema,
+                            "patience": patience, "best_state": best_state,
+                            "rng": {"cuda": None, **capture_rng_state(include_cuda=is_cuda)},
+                            "sampling_rng": sampling_rng.getstate(), "train_loss_ema": train_loss_ema,
                             "training_contract": contract, "best_step": stop_step, "provenance": prov.to_dict()})
                 model.train()
                 if patience >= tr["early_stop_patience"]:

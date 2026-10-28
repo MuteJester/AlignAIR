@@ -190,6 +190,27 @@ labels = loaded.label_schema["genes"]["v"]`} />
         member lists. Loading validates schema shape and source membership. Resume also checks the
         exact schema, preventing the same-sized heads from being continued with different label IDs.
       </p>
+      <H2 id="rng-state">Capture and restore process RNG state</H2>
+      <CodeBlock lang="python" code={`from alignair.train.random_state import capture_rng_state, restore_rng_state
+
+state = capture_rng_state(include_cuda=False)
+# Restore the saved generators when continuing CPU training.
+restore_rng_state(state, include_cuda=False, require_process_state=True)`} />
+      <p>
+        The shared state dictionary contains Python, NumPy and PyTorch CPU generators. By default,
+        capture also includes all CUDA generators when CUDA is available, and restore applies any
+        supplied CUDA state on an available GPU host. Set <code>include_cuda=False</code> on both
+        operations to exclude CUDA capture, restoration and rollback even on a host with a GPU.
+      </p>
+      <p>
+        Restore accepts sparse dictionaries and <code>None</code> by default, leaving omitted or null
+        fields untouched. Set <code>require_process_state=True</code> to require non-null Python,
+        NumPy and PyTorch CPU states before anything is applied; CUDA remains independently optional.
+        Invalid state raises <code>TrainingError</code>. A malformed supplied generator state triggers
+        rollback of the process generators to their values immediately before restoration.
+        This does not undo earlier model, optimizer or source changes. Local <code>random.Random</code>
+        and NumPy generator instances have separate state and must be checkpointed by their owners.
+      </p>
       <H2 id="predictions">Use the appropriate prediction interface</H2>
       <p>
         <code>Aligner.predict_raw</code> returns NumPy arrays for all model heads through the same
