@@ -143,9 +143,21 @@ def test_the_package_source_is_the_importable_genairr(genairr):
     assert freeze.package_source() == Path(genairr.__file__).resolve().parent
 
 
+def _assay_only(config) -> bool:
+    """Whether every path the session was given lies in tests/alignair_assay."""
+    assay = Path(__file__).resolve().parents[1]
+    paths = [(Path(config.invocation_params.dir) / arg.split("::")[0]).resolve() for arg in config.args]
+    return all(path == assay or assay in path.parents for path in paths)
+
+
 @pytest.mark.skipif(os.environ.get("ALIGNAIR_ASSAY_GENAIRR_LIVE") == "1", reason="the session runs live GenAIRR")
-def test_the_test_session_and_its_subprocesses_run_the_frozen_copy(genairr):
-    # tests/alignair_assay/conftest.py freezes GenAIRR and puts the copy first, for this process and its children
+def test_the_test_session_and_its_subprocesses_run_the_frozen_copy(genairr, genairr_preimported, request):
+    # tests/alignair_assay/conftest.py freezes GenAIRR and puts the copy first, for this process and its children.
+    # A wider session's product conftests import alignair, and with it GenAIRR, before that conftest loads; an assay
+    # session must not (the repository's plugins import alignair lazily), so there the freeze is required.
+    if genairr_preimported is not None and not _assay_only(request.config):
+        pytest.skip(f"this session imported GenAIRR ({genairr_preimported}) outside tests/alignair_assay before the "
+                    "assay conftest could freeze it: run tests/alignair_assay on its own for the frozen copy")
     frozen = Path(__file__).resolve().parents[3] / ".private" / "genairr_frozen"
     package = Path(genairr.__file__).resolve().parent
     assert package.parent.parent == frozen and package.parent.name == tree_digest(package)

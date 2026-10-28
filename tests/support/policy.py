@@ -5,9 +5,23 @@ import os
 
 import pytest
 
-from alignair.validation.gates import CLAIM_TESTS
-
 LAYERS = {"component", "integration", "acceptance"}
+
+
+def _claim_tests():
+    """The release claims' evidence tests: ``alignair.validation.gates.CLAIM_TESTS``, or a replacement assigned to
+    this module's ``CLAIM_TESTS``. Imported when first needed, not when this plugin loads: importing ``alignair``
+    imports GenAIRR, which a test directory's conftest may first put a frozen copy of on the path."""
+    claims = globals().get("CLAIM_TESTS")
+    if claims is None:
+        from alignair.validation.gates import CLAIM_TESTS as claims
+    return claims
+
+
+def __getattr__(name):
+    if name == "CLAIM_TESTS":
+        return _claim_tests()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def pytest_addoption(parser):
@@ -48,7 +62,7 @@ def pytest_collection_modifyitems(config, items):
     config._alignair_claim_results = {}
     config._alignair_selected = []
     for item in items:
-        if any(_matches(item.nodeid, target) for target in CLAIM_TESTS.values()):
+        if any(_matches(item.nodeid, target) for target in _claim_tests().values()):
             item.add_marker(pytest.mark.claim_evidence)
         layers = LAYERS & {mark.name for mark in item.iter_markers()}
         if len(layers) != 1:
@@ -77,7 +91,7 @@ def pytest_runtest_makereport(item, call):
 
 def claim_failures(selected, results):
     failures = {}
-    for claim, target in CLAIM_TESTS.items():
+    for claim, target in _claim_tests().items():
         matches = [nodeid for nodeid in selected if _matches(nodeid, target)]
         if not matches:
             failures[claim] = {"target": target, "reason": "not selected"}
@@ -99,7 +113,7 @@ def pytest_sessionfinish(session, exitstatus):
         from pathlib import Path
         path = Path(config.getoption("--claim-report"))
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"claims": CLAIM_TESTS, "failures": failures}, indent=2) + "\n")
+        path.write_text(json.dumps({"claims": _claim_tests(), "failures": failures}, indent=2) + "\n")
     if failures:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
         reporter = config.pluginmanager.getplugin("terminalreporter")

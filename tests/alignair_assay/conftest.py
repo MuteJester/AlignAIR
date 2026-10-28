@@ -6,7 +6,10 @@ imported only by a test that asks for one).
 ``.private/genairr_frozen/<digest>`` (``core.freeze.freeze_genairr``: reused while GenAIRR is unchanged) and that
 root is put first on ``sys.path`` and on ``PYTHONPATH``, so this process, its build workers and the subprocesses it
 starts all run one copy while the live checkout is edited. ``ALIGNAIR_ASSAY_GENAIRR_LIVE=1`` runs the live GenAIRR.
-The tests that build suites carry the ``genairr_build`` marker.
+The tests that build suites carry the ``genairr_build`` marker. The freeze takes only when nothing imported GenAIRR
+before this conftest: true of ``pytest tests/alignair_assay`` (the repository's own plugins import ``alignair`` lazily),
+not of a whole-repository session, whose product conftests import ``alignair`` (and so GenAIRR) first; that session
+runs the GenAIRR they imported, with a warning (``PREIMPORTED`` names it).
 """
 from __future__ import annotations
 
@@ -18,10 +21,13 @@ from pathlib import Path
 from alignair_assay.core import freeze
 
 REPO = Path(__file__).resolve().parents[2]
+# The GenAIRR ``__init__`` imported before the freeze, from somewhere other than the frozen copy (None: the freeze took).
+PREIMPORTED = None
 if os.environ.get(freeze.LIVE_ENV) != "1":
     FROZEN = freeze.freeze_genairr(REPO / freeze.DEFAULT_DEST)
     loaded = sys.modules.get(freeze.PACKAGE)
     if loaded is not None and Path(loaded.__file__).resolve().parent.parent != FROZEN:
+        PREIMPORTED = loaded.__file__
         warnings.warn(f"GenAIRR was imported from {loaded.__file__} before the assay tests froze it: these tests "
                       f"run that copy, not {FROZEN}", stacklevel=1)
     sys.path.insert(0, str(FROZEN))
@@ -48,6 +54,12 @@ def pytest_configure(config):
 def genairr():
     """The GenAIRR package; a test that needs it, directly or through ``reference``, is skipped when it is missing."""
     return pytest.importorskip("GenAIRR")
+
+
+@pytest.fixture(scope="session")
+def genairr_preimported():
+    """``PREIMPORTED``: the GenAIRR imported before this conftest could freeze it (None when the freeze took)."""
+    return PREIMPORTED
 
 
 @pytest.fixture(scope="session")
