@@ -325,6 +325,23 @@ def test_each_models_alignair_code_is_named_and_another_code_flagged(built, tmp_
     assert "Different AlignAIR code" in layout.diagnostics_against_md(result.model_key, "S0", before).read_text()
 
 
+def test_a_report_keeps_only_the_comparison_it_holds(built, tmp_path, small_model, make_small_model):
+    # each suite's against_<key>.md is the detail of the last report's comparison: an older one is removed
+    layout = _copy(built, tmp_path)
+    first = evaluate(make_small_model(REFERENCE, seed=9), layout, ["S0"], **FAST).model_key
+    second = evaluate(make_small_model(REFERENCE, seed=8), layout, ["S0"], **FAST).model_key
+    mine = evaluate(small_model, layout, ["S0"], **FAST, against=first).model_key
+
+    def details():
+        return sorted(path.name for path in layout.diagnostics_suite_dir(mine, "S0").glob("against_*.md"))
+
+    assert details() == [f"against_{first}.md"]
+    evaluate(small_model, layout, ["S0"], **FAST, against=second)
+    assert details() == [f"against_{second}.md"]
+    evaluate(small_model, layout, ["S0"], **FAST)
+    assert details() == []
+
+
 def test_a_comparison_of_other_reads_or_settings_is_refused(built, tmp_path, small_model, make_small_model,
                                                             replays):
     layout = _copy(built, tmp_path)

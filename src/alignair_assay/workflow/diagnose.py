@@ -62,7 +62,8 @@ truths, Holm within the family), and each 0/1 metric's reads fixed (the baseline
 (the baseline right, this model wrong) are counted with up to
 ``CHANGE_EXAMPLES`` case ids (``stats.read_changes``). The variants are stored per case but not compared across
 models. The comparison is computed afresh on every call and rendered first on the summary page, with each suite's
-detail in ``layout.diagnostics_against_md``.
+detail in ``layout.diagnostics_against_md``; a suite's detail of any other comparison (an older report's) is removed,
+so the details beside a report are its own.
 """
 from __future__ import annotations
 
@@ -390,9 +391,13 @@ def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, nam
     markdown = diagnostics_markdown(report)
     for name in names:
         _write_text(layout.diagnostics_suite_md(key_name, name), suite_markdown(report, name))
+        current = None
         if comparison is not None:
-            _write_text(layout.diagnostics_against_md(key_name, name, comparison["baseline"]),
-                        against_markdown(report, name))
+            current = layout.diagnostics_against_md(key_name, name, comparison["baseline"])
+            _write_text(current, against_markdown(report, name))
+        for detail in layout.diagnostics_suite_dir(key_name, name).glob("against_*.md"):
+            if detail != current:
+                detail.unlink(missing_ok=True)  # an older comparison's: not this report's
     if measured is not None:
         _write_text(layout.diagnostics_profile_md(key_name), profile_markdown(report))
     _write_json(layout.diagnostics_json(key_name), report)
