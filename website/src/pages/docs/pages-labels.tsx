@@ -78,6 +78,10 @@ ambiguous_v = {
     if len(members) > 1
 }
 print(ambiguous_v)`} />
+      <CodeBlock lang="python" code={`# One representative protein per class, keyed by the model's class IDs.
+v_prototypes = protein.prototype_sequences("V")
+class_ids = sorted(v_prototypes)
+prototype_sequences = [v_prototypes[class_id] for class_id in class_ids]`} />
       <p>
         Equivalence classes record equality of complete reference protein translations. Keep all
         member alleles when interpreting a class prediction. Choosing the first member introduces
@@ -86,12 +90,27 @@ print(ambiguous_v)`} />
         indel-affected observations.
       </p>
       <p>
+        <code>ProteinReference.prototype_sequences(gene)</code> keeps class IDs attached to their
+        representative translations. The representative is the first stored member of each class;
+        all members have the same complete translated sequence. Quarantined alleles remain outside
+        these classes. An absent class vocabulary raises <code>ConfigurationError</code>.
+      </p>
+      <p>
         Use the <DocLink to="evaluation-reports">observation collector</DocLink> to compare supervised
         truth with model predictions and the <DocLink to="model-inference">feature-inspection API</DocLink>
         to examine named component inputs. Preserve the reference label mapping and observation support
         when joining these analyses. The unused <code>aa.forensics</code> module has been removed;
         its anchor-aligned identity heuristic is not provided as an information-ceiling estimator
         or a replacement allele caller.
+      </p>
+      <p>
+        The unused <code>aa.local_aligner</code> protein-class baseline and the duplicate
+        <code> reference.protein.prototypes_by_class</code> helper have also been removed. Use
+        <code> protein.prototype_sequences(gene)</code> for prototype lookup. The existing
+        <code> alignair.align</code> backends retain their nucleotide alignment scoring and
+        query-global, germline-ends-free coordinate contract; they do not provide the former
+        BLOSUM62 local protein-class caller. Parasail remains an optional dependency for active
+        nucleotide alignment.
       </p>
       <H2 id="identity">Reference identity and hash scope</H2>
       <CodeBlock lang="python" code={`# Training class maps retain their historical V/J scope.

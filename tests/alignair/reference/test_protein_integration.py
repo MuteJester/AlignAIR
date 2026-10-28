@@ -34,7 +34,7 @@ def test_named_dataconfig_and_ordered_reference_views_have_identical_labels():
 
 def test_prototype_sequences_cover_the_real_v_class_vocabulary():
     import GenAIRR as ga
-    from alignair.reference.protein import prototypes_by_class
     reference = build_protein_reference(ga.HUMAN_IGH_OGRDB)
-    prototypes = prototypes_by_class(ga.HUMAN_IGH_OGRDB, reference.class_maps['V'], 'V')
+    prototypes = reference.prototype_sequences('V')
     assert len(prototypes) == 149 and all(isinstance(value, str) and value for value in prototypes.values())
+    assert set(prototypes) == set(reference.class_maps['V'].class_members)

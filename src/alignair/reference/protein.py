@@ -168,9 +168,3 @@ def build_class_maps(dc_name="HUMAN_IGH_OGRDB"):
     """Historical V/J maps-and-metadata interface, backed by the shared reference view."""
     view = build_protein_reference(dc_name)
     return view.class_maps, view.metadata()
-
-
-def prototypes_by_class(source, class_map, gene: str) -> dict[int, str]:
-    """Historical prototype interface for a separately supplied class map."""
-    germlines = build_protein_germlines(source, genes=(gene,)).genes[gene.upper()]
-    return {label: germlines[members[0]].aa_seq for label, members in class_map.class_members.items()}

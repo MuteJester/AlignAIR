@@ -59,6 +59,8 @@ def test_protein_view_keeps_source_order_and_uses_deterministic_protein_class_id
     assert view.class_maps['V'].allele_class == {'V1': 0, 'V2': 1, 'V3': 0}
     assert view.class_maps['V'].class_members == {0: ['V1', 'V3'], 1: ['V2']}
     assert view.class_maps['J'].allele_class == {'J1': 0, 'J2': 1}
+    assert view.prototype_sequences('V') == {0: 'MCK', 1: 'MCF'}
+    assert view.prototype_sequences('J') == {0: 'WF', 1: 'WK'}
     assert view.source.gene('D').index == {'D2': 0, 'D1': 1}
     assert 'D' not in view.class_maps
     assert view.germlines.quarantined['V'] == {'Vbad': "anchor residue 'G' != expected 'C'", 'Vmissing': 'no conserved anchor'}

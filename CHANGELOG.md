@@ -234,6 +234,9 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Unused `aa.local_aligner` protein V-class baseline and duplicate `reference.protein.prototypes_by_class`
+  helper. Prototype lookup uses `ProteinReference.prototype_sequences`; active nucleotide alignment
+  backends and their optional dependencies retain their existing contracts.
 - Unused `aa.forensics` anchor-identity diagnostic and its helper-specific tests. Reference order,
   protein equivalence classes and model feature inspection retain their shared owners and tests.
   The former diagnostic's allele selection and unsupported information-ceiling claim are retired.
@@ -278,9 +281,9 @@ All notable changes to AlignAIR are documented here. The format follows
 - Historical `error_forensics.py` allele-head diagnostic runner. Reference ambiguity and model
   feature analysis use the shared reference, observation-collection and feature-inspection APIs.
 - Historical `derisk_local_aligner.py` comparison runner, its duplicate augmentation functions,
-  and study-specific decision rule. Shared local alignment and augmentation remain in the package.
+  and study-specific decision rule. Shared reference prototypes and augmentation remain available.
 - Unused `mask_recovery.py` simulator-truth diagnostic for the historical allele-head model.
-  Shared translation and reference APIs remain available; local alignment is unchanged.
+  Shared translation and reference APIs remain available.
 - Unused `diagnose_ambiguity.py` diagnostic for the historical allele-head checkpoint,
   including its import-time model loading. Protein-equivalence and allele-expansion APIs remain.
 - Redundant `phase1_proof.py` experiment wrapper and console summary. The package learning-proof
