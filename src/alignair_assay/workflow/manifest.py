@@ -10,14 +10,38 @@ from __future__ import annotations
 
 import os
 import platform
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
 from alignair_assay.core.provenance import genairr_provenance, git_state
+from alignair_assay.runners.variants import parse_tool
 
 # A field one of two identities lacks.
 ABSENT = object()
+
+
+def tool_order_warnings(tools: Sequence[str]) -> list[str]:
+    """What may be read backwards or mixed in a comparison of the checkpoint tools of ``tools`` (in the order given,
+    where Δ = the second − the first): a tool labelled ``base`` after another tool of its base, and two variants of
+    different bases (``alignair-local@x`` with ``alignair-api@y``: the CLI and the API, two pipelines). Kept out of
+    ``runners.variants``, whose source is part of a variant's real run identity."""
+    warnings = []
+    seen: list[str] = []
+    for tool in tools:
+        base, label = parse_tool(tool)
+        earlier = next((other for other in seen if parse_tool(other)[0] == base), None)
+        if label == "base" and earlier is not None:
+            warnings.append(f"{tool} comes after {earlier}, so Δ = {tool} − {earlier}: give the baseline first "
+                            f"(--tools {tool},{earlier})")
+        seen.append(tool)
+    variants = [tool for tool in tools if parse_tool(tool)[1] is not None]
+    mixed = next(((a, b) for i, a in enumerate(variants) for b in variants[i + 1:]
+                  if parse_tool(a)[0] != parse_tool(b)[0]), None)
+    if mixed is not None:
+        warnings.append(f"{mixed[0]} and {mixed[1]} run different pipelines (the CLI and the Python API): their Δ "
+                        "holds the pipeline as well as the checkpoint; compare variants of one base")
+    return warnings
 
 
 def flat(identity: dict) -> dict:

@@ -1139,6 +1139,13 @@ def test_a_candidate_checkpoint_counts_the_reads_it_fixes_and_breaks(tmp_path, f
     assert "No AlignAIR tool was compared with igblast" in report and "| Scope |\n" not in report
 
 
+def test_a_baseline_given_second_is_warned_of(tmp_path, fakes, monkeypatch, capsys):
+    cfg = _variants(tmp_path, monkeypatch, "cand", "base", tools=("alignair-api@cand", "alignair-api@base"))
+    run_real(cfg, RunLayout(tmp_path / "run"))
+    assert ("warning: alignair-api@base comes after alignair-api@cand, so Δ = alignair-api@base − alignair-api@cand: "
+            "give the baseline first") in capsys.readouterr().err
+
+
 def test_a_variant_retrained_in_place_is_refused_and_forced_redoes_only_its_runs(tmp_path, fakes, monkeypatch):
     layout = RunLayout(tmp_path / "run")
     cfg = _variants(tmp_path, monkeypatch, "a", "b")

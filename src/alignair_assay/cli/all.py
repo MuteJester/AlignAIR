@@ -21,8 +21,9 @@ def register(sub) -> None:
     p.add_argument("--suites", required=True, type=comma_list, help="comma-separated suite names, e.g. S1,S10,S11")
     p.add_argument("--tools", required=True, type=comma_list,
                    help=f"the two compared tools, a,b ({', '.join(RUNNERS)}, or a checkpoint variant "
-                        "alignair-local@LABEL / alignair-api@LABEL with --checkpoint LABEL=PATH); the oracle always "
-                        "runs as well")
+                        "alignair-local@LABEL / alignair-api@LABEL with --checkpoint LABEL=PATH), the baseline first: "
+                        "Δ = the second − the first (a label named base given second, or variants of two bases, "
+                        "is warned of); the oracle always runs as well")
     p.add_argument("--split", choices=SPLITS, default="dev",
                    help="dev for model iteration (default); test is locked and used only for claims")
     p.add_argument("--reference", default=DEFAULT_REFERENCE, help="GenAIRR dataconfig name")

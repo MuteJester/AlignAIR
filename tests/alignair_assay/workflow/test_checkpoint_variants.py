@@ -119,6 +119,16 @@ def test_one_checkpoint_under_two_labels_compares_to_zero(null_run):
             f"`{digest[:12]}` ({checkpoints['b']}); both ran under AlignAIR code `{'c' * 12}`.") in md
 
 
+def test_a_baseline_given_second_is_warned_of(tmp_path, capsys):
+    checkpoint = tmp_path / "model.alignair"
+    checkpoint.write_bytes(b"weights")
+    cfg = _config({"base": str(checkpoint), "cand": str(checkpoint)},
+                  tools=("alignair-local@cand", "alignair-local@base"))
+    assert run_all(cfg, RunLayout(tmp_path / "run")) == 0
+    assert ("warning: alignair-local@base comes after alignair-local@cand, so Δ = alignair-local@base − "
+            "alignair-local@cand: give the baseline first") in capsys.readouterr().err
+
+
 def test_a_checkpoint_retrained_in_place_makes_a_plain_tools_runs_stale_too(tmp_path):
     from alignair_assay.workflow.summary import checkpoint_changed
 

@@ -34,7 +34,7 @@ from alignair_assay.suites import get_suite
 from alignair_assay.suites.donors import read_genotypes
 from alignair_assay.suites.engine import DEFAULT_SEED, check_split
 from alignair_assay.workflow.build import build_changes, build_suite
-from alignair_assay.workflow.manifest import changed_fields, describe_changes, manifest_record
+from alignair_assay.workflow.manifest import changed_fields, describe_changes, manifest_record, tool_order_warnings
 from alignair_assay.workflow.scoring import comparison_report, score_file, score_report, write_report
 from alignair_assay.workflow.speed import check_speed, run_speed
 from alignair_assay.workflow.summary import (
@@ -165,7 +165,8 @@ def run_all(cfg: RunConfig, layout: RunLayout, *, force: bool = False) -> int:
        differ (a tool's setting as ``<tool>.<key>``) before any output changes, unless ``force``; forced, the
        manifest is replaced (``replaced`` records the old hash and the changed fields) and the steps below redo
        what the change affects. ``warnings`` notes an AlignAIR image not pinned by digest or a model not pinned to
-       a version.
+       a version. A baseline given second, or two variants of different bases, is warned of first
+       (``workflow.manifest.tool_order_warnings``).
     2. Build each suite (``workflow.build.build_suite``), skipped when its build is current
        (``workflow.build.build_changes`` is empty: the same identity, which covers the suite's and the truth's
        source and the GenAIRR in use). A rebuilt suite with byte-identical reads keeps the tools' runs on it, whose
@@ -182,6 +183,8 @@ def run_all(cfg: RunConfig, layout: RunLayout, *, force: bool = False) -> int:
     6. Scoring, comparison and the report: ``score_and_report``.
     """
     check_config(cfg)
+    for warning in tool_order_warnings(cfg.tools):
+        print(f"warning: {warning}", file=sys.stderr)
     reference = Reference.from_dataconfig(cfg.reference)
     layout = RunLayout(absolute_path(layout.root))
     runners = make_runners(cfg, layout)

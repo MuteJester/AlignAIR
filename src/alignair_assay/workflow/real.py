@@ -102,7 +102,7 @@ from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL, host_c
 from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path
 from alignair_assay.runners.variants import variant_checkpoint
 from alignair_assay.workflow import real_score, real_steps
-from alignair_assay.workflow.manifest import changed_fields, describe_changes, manifest_record
+from alignair_assay.workflow.manifest import changed_fields, describe_changes, manifest_record, tool_order_warnings
 
 TOOLS = ("igblast", "alignair", "alignair-api")
 GENOTYPE_TOOLS = ("igblast", "alignair-api")
@@ -282,8 +282,11 @@ def donor_split(donor: str) -> str:
 
 
 def run_real(cfg: RealConfig, layout: RunLayout, *, force: bool = False) -> dict:
-    """Run ``cfg`` in ``layout`` as the module docstring describes; returns the summary it writes."""
+    """Run ``cfg`` in ``layout`` as the module docstring describes; returns the summary it writes. A baseline given
+    second is warned of first (``workflow.manifest.tool_order_warnings``)."""
     check_config(cfg)
+    for warning in tool_order_warnings(cfg.tools):
+        print(f"warning: {warning}", file=sys.stderr)
     layout = RunLayout(absolute_path(layout.root))
     scoring = cfg.stop_after is None
     images = real_steps.check_images(pinned_images(cfg))

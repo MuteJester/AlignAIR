@@ -23,7 +23,8 @@ def register(sub) -> None:
     p.add_argument("--cap", type=int, default=CAP, help=f"preprocessed sequences kept per donor (default {CAP})")
     p.add_argument("--tools", type=comma_list, default=TOOLS,
                    help=f"tools to run (default {','.join(TOOLS)}); alignair-api@LABEL runs the --checkpoint of "
-                        "LABEL as a tool of its own, compared with igblast and with the other checkpoints")
+                        "LABEL as a tool of its own, compared with igblast and with the other checkpoints, the "
+                        "baseline first: Δ = the second − the first (a label named base given second is warned of)")
     p.add_argument("--threads", type=int, default=8, help="tool and pRESTO threads")
     p.add_argument("--device", default="cpu", help="torch device of alignair-api, e.g. cpu or cuda")
     p.add_argument("--batch-size", type=int, default=64, help="alignair-api reads per batch")

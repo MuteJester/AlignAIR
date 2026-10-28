@@ -71,6 +71,30 @@ def test_only_the_checkpoint_tools_take_a_label(name):
 
 # --- building a variant ------------------------------------------------------------------------------------------
 
+def test_a_baseline_given_second_or_two_pipelines_are_warned_of():
+    from alignair_assay.workflow.manifest import tool_order_warnings as order_warnings
+
+    assert order_warnings(["alignair-local@base", "alignair-local@cand"]) == []
+    assert order_warnings(["igblast", "alignair-api@base", "alignair-api@cand"]) == []
+    # a label named base after another tool of its base: Δ = the second − the first reads backwards
+    (backwards,) = order_warnings(["alignair-local@cand", "alignair-local@base"])
+    assert backwards == ("alignair-local@base comes after alignair-local@cand, so Δ = alignair-local@base − "
+                         "alignair-local@cand: give the baseline first (--tools alignair-local@base,"
+                         "alignair-local@cand)")
+    assert len(order_warnings(["igblast", "alignair-api", "alignair-api@base"])) == 1
+    # two variants of different bases: another pipeline as well as another checkpoint (all compares any two tools)
+    (mixed,) = order_warnings(["alignair-local@a", "alignair-api@b"])
+    assert mixed == ("alignair-local@a and alignair-api@b run different pipelines (the CLI and the Python API): "
+                     "their Δ holds the pipeline as well as the checkpoint; compare variants of one base")
+
+
+def test_the_tools_help_says_the_baseline_goes_first(capsys):
+    for command in ("all", "real"):
+        with pytest.raises(SystemExit):
+            main([command, "--help"])
+        assert "the baseline first: Δ = the second − the first" in " ".join(capsys.readouterr().out.split())
+
+
 def test_make_runner_builds_the_variant_with_its_labels_checkpoint(tmp_path):
     base = _checkpoint(tmp_path / "base.alignair", b"base")
     cand = _checkpoint(tmp_path / "cand.alignair", b"cand")
