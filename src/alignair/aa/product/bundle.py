@@ -63,7 +63,7 @@ def complete_calibration(calibration: dict) -> dict:
     """Return a COPY of `calibration` with the conformal method parameters guaranteed present under a
     top-level `method` block: `{"name", "alpha", "lambda", "k_reg"}`. The frozen calibration JSONs
     (e.g. `calibration_cont_step318000.json`) predate this block entirely -- their calibrator
-    (`aa/conformal.py`) ran with the `FrozenConformal` defaults (APS, i.e. `lambda=0.0`, `k_reg=1`) but
+    ran with the `FrozenConformal` defaults (APS, i.e. `lambda=0.0`, `k_reg=1`) but
     never wrote those defaults back into the JSON, and `alpha` lives only at top level. This backfills
     exactly those gaps so Task-3's §4 binding (which requires an embedded `method/alpha/lambda/k_reg`)
     holds for artifacts built from those frozen snapshots, WITHOUT ever overwriting a value the source

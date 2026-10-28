@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared `alignair.calibration` APS/RAPS and frozen prediction-set APIs for either input alphabet,
+  with contextual input validation, fitted vocabulary-width checks and a dedicated website guide.
 - Shared reference nomenclature and lossless class-to-allele/gene/family expansion for product
   prediction and study scoring. Explicit allele mappings preserve every ASC-to-IMGT origin.
 - Shared `evaluate_categorical_cohort` for either input alphabet, with configured gene selection,
@@ -236,6 +238,8 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Protein-only `aa.conformal` module. Product and study callers use `calibration.conformal`;
+  calibration tests and their hand-computed fixture live under `tests/alignair/calibration`.
 - Duplicate `aa.taxonomy` and `aa.product.asc` implementations. Their active callers use
   `reference.nomenclature`; unused representative-only ASC mapping and `ImgtView` helpers are removed.
   Shared class expansions return sorted, unique lists; malformed naming/mapping requests raise
@@ -271,7 +275,7 @@ All notable changes to AlignAIR are documented here. The format follows
   remain in shared training, task, sampling, reference and adapter modules. Website API guides list
   replacement imports; protein adapter tests now live with the shared data tests.
 - Historical `calibrate_stage2.py` simulator-specific calibration runner. APS/RAPS and group-based
-  fitting remain in `aa.conformal`; embedded calibration loading and existing model artifacts are unchanged.
+  fitting use shared calibration APIs; embedded calibration loading and existing model artifacts are unchanged.
 - Redundant `train_stage1_trunc.py` wrapper. Crop training, checkpoint continuation and convergence
   studies use the shared training workflow.
 - Redundant `train_strategic_igh.py` wrapper and historical training defaults.
@@ -335,6 +339,9 @@ All notable changes to AlignAIR are documented here. The format follows
   and the unused website widget. Documentation no longer cites the retired comparison.
 
 ### Fixed
+- Refitting conformal calibration replaces all group thresholds, preventing a former group's
+  stale threshold from surviving a pooled-only or differently grouped fit. Invalid fit inputs
+  are rejected before consuming calibration randomness or replacing fitted thresholds.
 - Benchmark process pools use an explicit spawn context, avoiding fork-after-thread initialization
   while preserving deterministic case and coverage-acceptance ordering.
 - Offline Hugging Face loading uses a cache-only lookup, avoiding SDK metadata requests even when

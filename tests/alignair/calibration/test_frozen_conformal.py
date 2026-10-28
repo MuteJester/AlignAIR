@@ -2,7 +2,7 @@ import pytest
 import json
 import numpy as np
 import pathlib
-from alignair.aa.conformal import FrozenConformal
+from alignair.calibration import FrozenConformal
 
 pytestmark = pytest.mark.component
 

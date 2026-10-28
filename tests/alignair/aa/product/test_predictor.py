@@ -4,7 +4,7 @@ import pytest
 
 import torch
 
-from alignair.aa.conformal import FrozenConformal
+from alignair.calibration import FrozenConformal
 from alignair.reference.labels import EquivalenceClassMap
 from alignair.aa.product.loader import AAPredictor, load_aa_model
 from alignair.aa.product.schema import AAPrediction

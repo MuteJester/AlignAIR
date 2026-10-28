@@ -9,7 +9,7 @@ import json
 import pytest
 import torch
 
-from alignair.aa.conformal import FrozenConformal
+from alignair.calibration import FrozenConformal
 from alignair.reference.labels import EquivalenceClassMap
 from alignair.predict.probabilities import class_probs
 from alignair.aa.product.calibration_group import SUPPLIED_WARNING

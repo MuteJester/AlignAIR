@@ -23,6 +23,7 @@ import { enginePages } from "./pages-engine";
 import { trainingWorkflowPages } from "./pages-training-workflow";
 import { evaluationReportPages } from "./pages-evaluation-reports";
 import { inferencePages } from "./pages-inference";
+import { calibrationPages } from "./pages-calibration";
 import { communityPages } from "./pages-community";
 
 /**
@@ -55,6 +56,7 @@ export const DOCS: DocPage[] = [
   ...enginePages, // training-engine  [Design]
   ...evaluationReportPages, // evaluation-reports  [Design]
   ...inferencePages, // model-inference  [Design]
+  ...calibrationPages, // prediction-calibration  [Design]
   ...maintainerPages, // publishing  [Maintainer]
   ...aaResearchPages, // aa-guard-research  [Maintainer]
   ...testingPages, // testing  [Maintainer]

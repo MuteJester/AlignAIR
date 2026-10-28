@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from alignair.aa.conformal import Conformal, aps_scores, aps_set, conformal_quantile
+from alignair.calibration import Conformal, aps_scores, aps_set, conformal_quantile
 
 pytestmark = pytest.mark.component
 

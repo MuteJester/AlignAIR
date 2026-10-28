@@ -304,6 +304,8 @@ print(probabilities["v_class_logits"].shape)`} />
         policy: uppercase canonical residues plus X and stop, nonempty reads, and no truncation.
         It validates the input list before model execution. Product prediction retains its separate normalized
         input policy, verified tokenizer, single all-head forward, and device-local softmax.
+        The <DocLink to="prediction-calibration">prediction-set calibration API</DocLink> fits and
+        applies shared APS/RAPS thresholds to these categorical probabilities.
       </p>
       <H2 id="probability-imports">Migrate former research inference imports</H2>
       <p>
