@@ -240,6 +240,9 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Unused `aa.phase1` learning-proof runner, its report-specific provenance/manifest/fingerprint
+  helpers, fixed seed schedule and three dedicated tests. Shared capacity diagnostics, training,
+  checkpoint provenance and categorical evaluation remain available; the historical report is retired.
 - Unused exploratory `aa.phase0` simulation report and its dedicated `aa.audit`/`aa.report`
   helpers and tests. Shared reference labels, codon projection and active study/product workflows
   retain their existing owners; the historical report has no replacement entry point.

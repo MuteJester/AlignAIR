@@ -250,7 +250,7 @@ print(report["paired_improvement"])`} />
       <H2 id="ownership">Study integration</H2>
       <p>
         Numerical intervals live in <code>evaluate.statistics</code>; class and boundary summaries
-        live in <code>evaluate.reports</code>. Phase-1 and convergence studies use the shared
+        live in <code>evaluate.reports</code>. Convergence studies use the shared
         categorical evaluator with explicit V/J selection. The protein preset preserves historical
         coverage and ambiguity fields; no alphabet-specific evaluation implementation is required.
         Unknown and masked class rows are excluded from class summaries and strata while observed
@@ -259,6 +259,15 @@ print(report["paired_improvement"])`} />
         aggregation imports its preserved estimator directly; the historical
         <code> train.gym.instrument.stats.bootstrap_ci</code> alias remains available.
         The existing <code>alignair.evaluate</code> benchmark exports load on demand.
+      </p>
+      <p>
+        The exploratory <code>alignair.aa.phase1.run_learning_proof</code> API has been retired,
+        including its fixed seed ranges, held-out manifest/fingerprint helpers and
+        <code> alignair.aa.phase1.v2</code> report. There is no replacement entry point for that
+        report. Use the <DocLink to="training-workflow">shared training workflow</DocLink> for
+        training, checkpoints and study callbacks, <code>alignair.train.overfit_one_batch</code>
+        for capacity diagnostics, and the evaluator documented here for frozen-cohort reports.
+        Cohort identity and train/evaluation separation remain explicit study responsibilities.
       </p>
       <H2 id="benchmark-contracts">Benchmark generation and model evaluation</H2>
       <p>
