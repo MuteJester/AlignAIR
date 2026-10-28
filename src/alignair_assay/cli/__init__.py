@@ -24,6 +24,7 @@
       [--checkpoint LABEL=MODEL.alignair ...] [--stop-after preprocess] [--force]
   python -m alignair_assay audit --sim-run RUN --real-run RUN --data-root ROOT --checkpoint base=MODEL.alignair
       --out DIR [--device cuda] [--skip-speed] [--igblast-dir DIR] [--workers 8] [--threads 8]
+  python -m alignair_assay show --run-dir RUN (--case ID | --donor D --read ID) [--tools a,b] [--arm shared]
   python -m alignair_assay freeze-genairr [--dest .private/genairr_frozen]
   python -m alignair_assay truth --bench-cases CASES.jsonl[.gz] --reference HUMAN_IGH_OGRDB --out TRUTH.jsonl.gz
   python -m alignair_assay score --truth TRUTH --predictions AIRR.tsv --tool NAME --out-dir DIR
@@ -53,11 +54,13 @@ from alignair_assay.cli import (
     report,
     run,
     score,
+    show,
     speed,
     truth,
 )
 
-COMMANDS = (all_command, report, build, run, speed, diagnose, real, audit, freeze_genairr, truth, score, compare)
+COMMANDS = (all_command, report, build, run, speed, diagnose, real, audit, show, freeze_genairr, truth, score,
+            compare)
 
 
 def main(argv: list[str] | None = None) -> int:
