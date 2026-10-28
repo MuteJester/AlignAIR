@@ -46,6 +46,7 @@ from alignair_assay.real.metrics import (
     through_318,
 )
 from alignair_assay.real.truth import RealTruth
+from tests.alignair_assay.stored_runs import RUNS
 
 pytestmark = pytest.mark.component
 
@@ -814,7 +815,7 @@ def test_informational_names_registered():
 
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
 DOCKER = os.environ.get("ALIGNAIR_ASSAY_DOCKER") == "1"
-RUN = Path(__file__).resolve().parents[3] / ".private" / "assay" / "p3a_task4_run"
+RUN = RUNS / "p3a_task4_run"
 PILOT_SAMPLES = {"W-97": "P25_I151_S1", "SC-23": "P25_I58_S1"}
 
 
@@ -897,7 +898,7 @@ def test_the_oracle_on_the_pilot_donors_real_truth(donor, reference):
     json.dumps(check)  # plain data, for the report
 
 
-DEV_RUN = Path(__file__).resolve().parents[3] / ".private" / "assay" / "p3a_dev"
+DEV_RUN = RUNS / "p3a_dev"
 DEV_SAMPLES = {"SC-23": "P25_I58_S1", "SC-11": "P25_I48_S1", "W-97": "P25_I151_S1", "W-133": "P25_I93_S1"}
 
 

@@ -5,17 +5,16 @@ from __future__ import annotations
 import json
 import os
 import threading
-from pathlib import Path
 
 import pytest
 
 from alignair_assay.core import records
 from alignair_assay.core.jsonl import read_header, read_jsonl
 from alignair_assay.core.records import digest, read_json, write_json, write_jsonl, write_text
+from tests.alignair_assay.stored_runs import RUNS
 
 pytestmark = pytest.mark.component
 
-REPO = Path(__file__).resolve().parents[3]
 # A record with nested keys out of order, a float, a None, a bool and a non-ASCII character, and its digest as the
 # workflow helpers computed it before they were promoted (``real_steps.digest``, ``build._digest``,
 # ``orchestrate._digest``, all equal).
@@ -30,13 +29,12 @@ def test_a_known_record_hashes_as_before():
     assert digest(reordered) == KNOWN_DIGEST  # key order never matters
 
 
-@pytest.mark.parametrize("path", [".private/assay/p2b_dev/suites/S2/build.json",
-                                  ".private/assay/p2_run_genairr_fix/manifest.json",
-                                  ".private/assay/p3a_dev/real/manifest.json"])
+@pytest.mark.parametrize("path", ["p2b_dev/suites/S2/build.json", "p2_run_genairr_fix/manifest.json",
+                                  "p3a_dev/real/manifest.json"])
 def test_stored_records_still_match_their_hash(path):
     # the P2 build and run and the P3a dev run were hashed by the old helpers: the promoted digest reproduces them,
     # so their caches stay valid
-    record = REPO / path
+    record = RUNS / path  # a stored run, read only
     if not record.is_file():
         pytest.skip(f"{path} is not here")
     stored = json.loads(record.read_text(encoding="utf-8"))

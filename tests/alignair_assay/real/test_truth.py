@@ -42,11 +42,12 @@ from alignair_assay.real.truth import (
     truth_from_json,
     truth_to_json,
 )
+from tests.alignair_assay.stored_runs import RUNS
 
 pytestmark = pytest.mark.component
 
 DATA = os.environ.get("ALIGNAIR_ASSAY_DATA")
-RUN = Path(__file__).resolve().parents[3] / ".private" / "assay" / "p3a_task4_run"
+RUN = RUNS / "p3a_task4_run"
 DONOR = "SC-23"
 
 # OGRDB rev 8 (Homo_sapiens_IGH_VDJ_rev_8.json), IGHV3-23*01: v_gene_delineations[0].aligned_sequence, the IMGT
