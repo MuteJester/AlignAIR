@@ -106,7 +106,7 @@ try:                                                        # optional C-speed k
         return _cy_derive_cigar(read.encode("ascii"), germ.encode("ascii"), indels)
 
     DERIVE_BACKEND = "cython"
-except Exception:                                           # pragma: no cover - pure-Python fallback
+except (ImportError, OSError):                              # pragma: no cover - optional compiled kernel
     _derive_cigar = _derive_cigar_py
     DERIVE_BACKEND = "python"
 
@@ -314,5 +314,5 @@ def _scalar(x) -> float:
     try:
         import numpy as np
         return float(np.asarray(x).squeeze())
-    except Exception:
+    except (ImportError, TypeError, ValueError):
         return float(x)

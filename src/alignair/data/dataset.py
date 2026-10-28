@@ -6,6 +6,7 @@ from .readers import CsvTableReader
 from .tokenizer import CenterPaddedTokenizer
 from .encoders import AlleleEncoder
 from .record_adapter import RecordAdapter
+from ..errors import error_context
 
 
 def allele_vocab_from_csv(csv_path: str, has_d: bool, sep: str = ",") -> dict:
@@ -39,6 +40,7 @@ class AlignAIRDataset(Dataset):
                  allele_vocab: dict | None = None, sep: str = ",",
                  nrows: int | None = None):
         self.has_d = has_d
+        self.csv_path = str(csv_path)
         self.max_seq_length = max_seq_length
         self.reader = CsvTableReader(csv_path, ColumnSet(has_d=has_d), sep=sep, nrows=nrows)
         self.tokenizer = CenterPaddedTokenizer(max_length=max_seq_length)
@@ -60,6 +62,7 @@ class AlignAIRDataset(Dataset):
     def __getitem__(self, i: int):
         from .sample_builder import build_xy
         row = self.reader[i]
-        tokens, pad_left = self.tokenizer.encode_and_pad(row["sequence"])
-        rec = self.adapter.adapt(row, pad_left)
-        return build_xy(tokens, rec, self.encoder, self.has_d)
+        with error_context(path=self.csv_path, record_index=i):
+            tokens, pad_left = self.tokenizer.encode_and_pad(row["sequence"])
+            rec = self.adapter.adapt(row, pad_left)
+            return build_xy(tokens, rec, self.encoder, self.has_d)

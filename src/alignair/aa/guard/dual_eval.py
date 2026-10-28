@@ -18,6 +18,8 @@ Contract (owner-mandated):
 """
 from __future__ import annotations
 
+from alignair.core.runtime import evaluation_mode
+
 import hashlib
 import json
 from dataclasses import asdict, dataclass
@@ -130,8 +132,7 @@ def _score_record(model, bank, fusion, tok, rec, idx, *, mask_groups, bank_check
     vec = feats.to_vector().tolist()
     hmm_norm = fusion.normalize(vec, feature_names=FEATURE_NAMES, bank_checksum=bank_checksum)  # fusion input
     ids, mask = tok.encode(seq)
-    model.eval()
-    with torch.no_grad():
+    with evaluation_mode(model):
         out = model(ids.unsqueeze(0).to(device), mask.unsqueeze(0).to(device),
                     hmm_norm=hmm_norm.unsqueeze(0).to(device) if model.cfg["fusion"] else None)
     return RecordScore(

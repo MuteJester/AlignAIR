@@ -2,9 +2,12 @@
 import argparse
 
 import torch
+from alignair.core.runtime import restore_model_state
+from alignair.errors import ModelFormatError
 
 from alignair.matcher.config import MatcherConfig
 from alignair.matcher.model import AIRRMatch
+from alignair.matcher.checkpoint import read_checkpoint
 from alignair.matcher.evaluate import evaluate  # re-exported for `from eval_matcher import evaluate`
 
 
@@ -21,9 +24,12 @@ if __name__ == "__main__":
     ap.add_argument("--progress", type=float, default=0.3)
     ap.add_argument("--device", default="cuda")
     a = ap.parse_args()
-    ck = torch.load(a.model, map_location=a.device)
-    cfg = MatcherConfig(**ck["config"])
+    ck = read_checkpoint(a.model)
+    try:
+        cfg = MatcherConfig(**ck["config"])
+    except TypeError as exc:
+        raise ModelFormatError("matcher checkpoint has invalid configuration fields") from exc
     model = AIRRMatch(cfg)
-    model.load_state_dict(ck["model"])
+    restore_model_state(model, ck["model"], source=a.model)
     acc = evaluate(model, _resolve(a.config), cfg, n=a.n, progress=a.progress, device=a.device)
     print("set-aware allele accuracy:", {g: round(v, 3) for g, v in acc.items()})

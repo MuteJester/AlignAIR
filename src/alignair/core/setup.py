@@ -121,9 +121,9 @@ class ModelSetup:
     def validate(self) -> None:
         """Check label sizes and input semantics before allocating a model."""
         _spaces(self.input_space, self.label_space)
-        validate_reference_binding(self.reference, self.config, protein_reference=self.protein_reference)
         if (self.config.input_space, self.config.label_space) != (self.input_space, self.label_space):
             raise ConfigurationError('model configuration disagrees with its setup input/label spaces')
+        validate_reference_binding(self.reference, self.config, protein_reference=self.protein_reference)
 
     def build_model(self) -> AlignAIR:
         """Allocate the shared model after preflight; architecture registration selects components."""

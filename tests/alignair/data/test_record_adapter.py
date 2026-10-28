@@ -1,7 +1,24 @@
 import pytest
 from alignair.data.record_adapter import RecordAdapter
+from alignair.errors import TrainingDataError
 
 pytestmark = pytest.mark.component
+
+
+@pytest.mark.parametrize('updates', [{'v_sequence_start': 'invalid'}, {'mutation_rate': None}])
+def test_malformed_annotations_have_domain_errors_and_causes(updates):
+    with pytest.raises(TrainingDataError) as caught:
+        RecordAdapter(False).adapt(_row(**updates), 0)
+    assert caught.value.__cause__ is not None
+    assert caught.value.context['stage'] == 'record_adaptation'
+
+
+def test_missing_annotation_identifies_the_field():
+    row = _row()
+    del row['j_sequence_end']
+    with pytest.raises(TrainingDataError) as caught:
+        RecordAdapter(False).adapt(row, 0)
+    assert caught.value.context['field'] == 'j_sequence_end'
 
 
 def _row(**over):

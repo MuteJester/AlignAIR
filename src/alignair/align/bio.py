@@ -1,6 +1,7 @@
 from __future__ import annotations
 from .backend import AlignResult
 from .parasail import _ops
+from ..errors import InputError
 
 _ALIGNER = None
 
@@ -52,8 +53,11 @@ class BioAligner:
         aligner = _bio_aligner()
         try:
             alignment = aligner.align(target, query)[0]  # (target=germline, query=read)
-        except Exception:
+        except IndexError:
             return None
+        except ValueError as exc:
+            raise InputError("Biopython could not score the alignment inputs",
+                             context={"backend": "biopython"}) from exc
         r = str(alignment[0])  # germline (target), gapped
         q = str(alignment[1])  # read (query), gapped
         cols = [i for i, c in enumerate(q) if c != "-"]

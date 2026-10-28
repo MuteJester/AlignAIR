@@ -1,5 +1,6 @@
 """Adapt a raw CSV row (+ pad offset) into a canonical per-sample record."""
 from ast import literal_eval
+from ..errors import TrainingDataError, error_context
 
 
 def _to_float_bool(v) -> float:
@@ -26,7 +27,7 @@ def _indel_count(item) -> float:
         try:
             parsed = literal_eval(item)
             return float(len(parsed)) if isinstance(parsed, (dict, list, tuple)) else 0.0
-        except Exception:
+        except (SyntaxError, ValueError):
             return 0.0
     return 0.0
 
@@ -37,12 +38,17 @@ class RecordAdapter:
         self.genes = ["v", "j"] + (["d"] if has_d else [])
 
     def adapt(self, row: dict, pad_left: int) -> dict:
-        rec: dict = {}
-        for g in self.genes:
-            rec[f"{g}_start"] = float(int(row[f"{g}_sequence_start"]) + pad_left)
-            rec[f"{g}_end"] = float(int(row[f"{g}_sequence_end"]) + pad_left)
-            rec[f"{g}_call_set"] = set(str(row[f"{g}_call"]).split(","))
-        rec["mutation_rate"] = float(row["mutation_rate"])
-        rec["indel_count"] = _indel_count(row.get("indels", ""))
-        rec["productive"] = _to_float_bool(row.get("productive", 1.0))
-        return rec
+        with error_context(stage="record_adaptation"):
+            try:
+                rec: dict = {}
+                for g in self.genes:
+                    rec[f"{g}_start"] = float(int(row[f"{g}_sequence_start"]) + pad_left)
+                    rec[f"{g}_end"] = float(int(row[f"{g}_sequence_end"]) + pad_left)
+                    rec[f"{g}_call_set"] = set(str(row[f"{g}_call"]).split(","))
+                rec["mutation_rate"] = float(row["mutation_rate"])
+                rec["indel_count"] = _indel_count(row.get("indels", ""))
+                rec["productive"] = _to_float_bool(row.get("productive", 1.0))
+                return rec
+            except (KeyError, TypeError, ValueError, OverflowError) as exc:
+                raise TrainingDataError("record annotations do not satisfy the training schema",
+                                        context={"field": exc.args[0] if isinstance(exc, KeyError) else None}) from exc

@@ -22,6 +22,7 @@ from alignair.matcher.loss import selection_ce_batch
 from alignair.matcher.evaluate import evaluate
 from alignair.matcher.checkpoint import save_checkpoint, load_checkpoint
 from alignair.train.gym.curriculum import Curriculum
+from alignair.xray.network import global_grad_norm
 
 
 def _resolve(name):
@@ -42,14 +43,6 @@ def _to_device(batch, device):
     for g, gb in batch["genes"].items():
         out["genes"][g] = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in gb.items()}
     return out
-
-
-def _grad_norm(model):
-    sq = 0.0
-    for p in model.parameters():
-        if p.grad is not None:
-            sq += float(p.grad.detach().norm()) ** 2
-    return sq ** 0.5
 
 
 def _fmt_acc(d):
@@ -73,7 +66,7 @@ def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
     model = AIRRMatch(cfg).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     start_step = 0
-    if resume_path:                                    # seamless: weights + optimizer + step
+    if resume_path:                                    # weights + optimizer + step; fresh source stream
         start_step = load_checkpoint(resume_path, model, opt, device=device)
         print(f"RESUMED from {resume_path} at step {start_step} (optimizer state restored)", flush=True)
     elif init_path:                                    # warm-start weights only
@@ -109,7 +102,7 @@ def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
             loss = model._reduce_loss(gs)
         opt.zero_grad()
         loss.backward()
-        gn = _grad_norm(model)
+        gn = global_grad_norm(model.parameters())
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         seen += batch["read_ids"].shape[0]
@@ -129,11 +122,9 @@ def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
                   flush=True)
 
         if eval_every and step % eval_every == 0:
-            model.eval()
             id_acc = evaluate(model, id_cfg, cfg, n=eval_n, progress=progress, seed=99, device=device)
             ho = {name: evaluate(model, dc, cfg, n=eval_n, progress=progress, seed=99, device=device)
                   for name, dc in heldout_cfgs}
-            model.train()
             emit({"t": "eval", "step": step, "in_dist": {id_name: id_acc}, "held_out": ho})
             print(f"  [eval @ {step}] IN-DIST {id_name}: {_fmt_acc(id_acc)}", flush=True)
             for name, acc in ho.items():

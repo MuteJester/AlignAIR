@@ -112,6 +112,9 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Matcher artifacts use atomic publication, data-only decoding and shared strict restoration;
+  evaluation preserves module modes. CSV annotation failures carry source context, and unexpected
+  alignment failures propagate instead of silently becoming missing alignments.
 - Guard sampling uses the versioned `training.sampling.GuardBatchSampler`, fills the requested
   batch size, rotates remainder slots across roles, and enforces the OE cap. Train/OE records that
   tensor preparation would drop are rejected before model allocation. New manifests, results and

@@ -39,3 +39,17 @@ def test_get_aligner_falls_back_to_biopython_with_no_optional_backend(monkeypatc
     # and it actually aligns
     res = al.align("ACGTACGTACGT", "TTTACGTACGTACGTTTT")
     assert res is not None and res.q_start == 0 and res.q_end == 12
+@pytest.mark.parametrize('failure', [IndexError, ValueError, RuntimeError])
+def test_backend_does_not_hide_unexpected_alignment_failures(monkeypatch, failure):
+    from types import SimpleNamespace
+    from alignair.align import bio
+    from alignair.errors import InputError
+    def fail(*args):
+        raise failure('injected')
+    monkeypatch.setattr(bio, '_bio_aligner', lambda: SimpleNamespace(align=fail))
+    if failure is IndexError:
+        assert bio.BioAligner().align('AC', 'AC') is None
+    else:
+        with pytest.raises(InputError if failure is ValueError else RuntimeError):
+            bio.BioAligner().align('AC', 'AC')
+
