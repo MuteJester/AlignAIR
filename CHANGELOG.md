@@ -6,6 +6,10 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `read_model_state` decodes main-model weights, configuration and checked reference bindings without
+  source architecture factories or model allocation; warm starts use the same reader.
+- Architecture contract checks for factory outputs, replacement towers and registered inspection
+  points, plus nucleotide/protein replacement-architecture training, reload and resume tests.
 - Shared exact binomial intervals with explicit per-tail alpha, used by coverage and guard studies;
   benchmark scoring rejects unpaired record counts and conflicting record IDs.
 - Model architecture guide covering forward and task-gradient paths, controlled component ablations,
@@ -425,6 +429,14 @@ All notable changes to AlignAIR are documented here. The format follows
   and the unused website widget. Documentation no longer cites the retired comparison.
 
 ### Fixed
+- Reference-bound multilabel training enables the legacy Short-D penalty only when the final D
+  label is the `Short-D` sentinel, avoiding an unintended penalty on a real allele. The saved
+  `short_d_penalty` setting preserves historical inference/count-only contracts; continuation
+  rejects a changed or unknown legacy loss contract and requires a weights-only warm start.
+- Safe warm-start reads no longer construct a discarded source model or advance initialization RNG.
+- Models snapshot caller-supplied configurations, including nested values, so sibling experiments
+  cannot change one another through a reused configuration. Loaded configuration accessors retain
+  the authoritative model configuration.
 - Diagnostic probes preserve every module's mode, freeze BatchNorm during evaluation callbacks,
   remove hooks after registration/forward failures, and snapshot captured CPU buffers independently.
 - Frozen convergence selection validates complete metric requests before applying its gates,

@@ -12,7 +12,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..errors import ConfigurationError
+from ..errors import ConfigurationError, error_context
 from ..neural.heads.state import PerPositionStateBranch
 from .config import AlignAIRConfig, GeneSpec, _SEG_KERNELS
 from .gene_branch import GeneBranch, MetaHead, build_tower
@@ -70,6 +70,16 @@ class ModelComponents:
 
 
 _ARCHITECTURES = {"conv-v1": ModelComponents()}
+
+
+def _build_component(factory, *arguments, component):
+    """Validate a factory result at its construction boundary without running a dummy forward."""
+    with error_context(stage="model_construction", component=component):
+        module = factory(*arguments)
+        if not isinstance(module, nn.Module):
+            raise ConfigurationError("component factory must return a torch module",
+                                     context={"returned_type": type(module).__name__})
+        return module
 
 
 def register_architecture(name: str, components: ModelComponents) -> None:

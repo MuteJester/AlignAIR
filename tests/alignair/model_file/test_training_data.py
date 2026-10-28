@@ -73,6 +73,9 @@ def test_decode_preserves_all_state_without_model_construction_or_rng_consumptio
     def forbidden(*args, **kwargs):
         raise AssertionError('checkpoint decoding constructed a temporary model')
     monkeypatch.setattr(AlignAIR, '__init__', forbidden)
+    decoded = model_file.read_model_state(path)
+    assert decoded.config == setup.config
+    _equal(decoded.model_state, model.state_dict())
     for data in (model_file.read_training_state(path), load_training_checkpoint(path)):
         assert data.config == setup.config and data.step == 1
         _equal(data.model_state, model.state_dict())
@@ -94,6 +97,7 @@ def test_existing_model_bearing_api_still_restores_an_evaluation_model(checkpoin
     assert isinstance(restored, model_file.TrainingState)
     assert isinstance(restored.model, AlignAIR) and not restored.model.training
     assert restored.model is not model and restored.config == setup.config
+    assert restored.config is restored.model.cfg and restored.config is not setup.config
     _equal(restored.model.state_dict(), model.state_dict())
     _equal(restored.optimizer_state, optimizer.state_dict())
     _equal(restored.scheduler_state, scheduler.state_dict())

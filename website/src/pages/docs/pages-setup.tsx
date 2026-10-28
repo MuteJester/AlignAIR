@@ -203,6 +203,20 @@ restored_setup = setup_from_schema(protein_reference, config, saved_schema)`} />
         translation policy; this compatibility path does not establish missing historical label provenance.
       </p>
       <H2 id="checkpoint-data">Read checkpoint data without constructing a model</H2>
+      <CodeBlock lang="python" code={`from alignair.model_file import read_model_state
+
+data = read_model_state("candidate.alignair")
+print(data.config.architecture, data.model_state.keys())
+reference = data.reference
+metadata = data.metadata`} />
+      <p>
+        <code>read_model_state</code> returns <code>ModelStateData</code>: CPU tensors, configuration,
+        metadata and a verified reference/label binding. It supports inference-only containers and
+        does not read optimizer or RNG sections. Safe reference JSON is the default; an older reference
+        stored as Python pickle requires <code>trust_pickle=True</code>. Architecture factories are
+        unnecessary for decoding, and reading does not consume model-initialization randomness.
+        Strict architecture-specific key and shape checks occur when restoring a model.
+      </p>
       <CodeBlock lang="python" code={`from alignair.model_file import read_training_state
 
 data = read_training_state("resume.alignair", device="cpu")

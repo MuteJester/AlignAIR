@@ -156,6 +156,30 @@ def test_retention_failure_reports_the_problem_but_keeps_a_valid_new_checkpoint(
     assert 'cannot delete old file' in caplog.text
 
 
+@pytest.mark.parametrize('mapping', [False, True])
+def test_trusted_legacy_reader_retains_explicit_configuration_and_label_contract(tmp_path, mapping):
+    from dataclasses import asdict
+    from alignair.core import AlignAIRConfig
+    cfg = AlignAIRConfig(1, 1, 1, has_d=True, short_d_penalty=False)
+    schema = {'genes': {'v': ['V1'], 'd': ['D1'], 'j': ['J1']}}
+    path = tmp_path / 'legacy.pt'
+    torch.save({'model': {}, 'logvars': {}, 'optimizer': {}, 'config': asdict(cfg) if mapping else cfg,
+                'label_schema': schema}, path)
+    state = checkpoints.load_training_checkpoint(path, trust_pickle=True)
+    assert state.config == cfg and state.label_schema == schema
+    checkpoints.validate_continuation(state, cfg, schema)
+
+
+@pytest.mark.parametrize('config', [17, {}, {'v_allele_count': 1, 'j_allele_count': 1, 'short_d_penalty': 'true'}])
+def test_malformed_legacy_configuration_is_not_discarded(tmp_path, config):
+    from alignair.errors import ModelError
+    path = tmp_path / 'legacy.pt'
+    torch.save({'model': {}, 'logvars': {}, 'config': config}, path)
+    with pytest.raises(ModelError) as caught:
+        checkpoints.load_training_checkpoint(path, trust_pickle=True)
+    assert caught.value.context['field'] == 'config'
+
+
 def test_research_resume_reproduces_the_next_dropout_step_and_optimizer_moments(tmp_path):
     model = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.Dropout(.2))
     optimizer = torch.optim.AdamW(model.parameters(), lr=.001)

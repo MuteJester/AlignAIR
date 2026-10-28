@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..core.setup import ModelSetup
+from ..core.config import _reference_short_d_penalty
 from ..errors import ConfigurationError, TrainingDataError
 from .adapters import CategoricalBatchAdapter, NucleotideBatchAdapter, ProteinAlleleBatchAdapter
 from .sampling.protein import ProteinSampleBuilder, ProteinSamplePolicy
@@ -56,6 +57,12 @@ class TrainingDataSetup:
 def prepare_training_data(setup: ModelSetup, *, device='cpu', augmentation=None) -> TrainingDataSetup:
     setup.validate()
     config = setup.config
+    if config.short_d_penalty and not _reference_short_d_penalty(setup.reference,
+            has_d=config.has_d, classification_mode=config.classification_mode):
+        raise ConfigurationError('Short-D penalty requires the final D label to be Short-D',
+                                 context={'field': 'short_d_penalty'},
+                                 hint='Prepare a reference-bound configuration with short_d_penalty=False; '
+                                      'use a weights-only warm start when changing a historical loss contract.')
     if augmentation is not None:
         if not isinstance(augmentation, (ProteinSubstitutionPolicy, ProteinCropPolicy)):
             raise ConfigurationError('augmentation must be a ProteinSubstitutionPolicy, ProteinCropPolicy or None')

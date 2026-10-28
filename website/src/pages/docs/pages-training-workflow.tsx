@@ -66,6 +66,25 @@ print(predictor.label_schema["genes"]["v"][0])  # alleles represented by class 0
         must be registered before constructing or reloading their models.
       </p>
       <p>
+        Warm-start weights from a <code>.alignair</code> source are decoded without constructing its
+        model, so source factories are unnecessary and initialization RNG state is preserved.
+        Transfer still matches names and shapes, including equal-width class heads; it does not map
+        labels between references. Fresh architecture comparisons should start with fresh training
+        unless this partial transfer is intentional. Removing the unused source construction changes
+        RNG consumption relative to earlier warm-start runs, so those old training trajectories are
+        not an exact baseline for the corrected path.
+      </p>
+      <p>
+        Reference-bound multilabel training derives <code>short_d_penalty</code> from D-label identity.
+        The legacy penalty is valid only with a final <code>Short-D</code> sentinel; it is disabled for
+        real-allele panels such as HUMAN_IGH_OGRDB, whose last D label is an actual germline allele.
+        Raw count-only configurations keep the historical default for CSV vocabularies that include
+        that sentinel. Historical artifacts without the setting retain their old value and remain
+        loadable for inference. Resume into the corrected objective is rejected before restoration;
+        use a weights-only warm start or fresh training. Legacy checkpoints missing their configuration
+        cannot establish compatibility with the corrected loss and are also refused for continuation.
+      </p>
+      <p>
         The allele presets use their existing nucleotide/protein adapters. Protein-class training uses
         <code>ProteinSampleBuilder</code> with <code>require_productive=False</code> and
         <code>allow_stops=True</code>. Unusable translations, unknown V/J classes, unavailable

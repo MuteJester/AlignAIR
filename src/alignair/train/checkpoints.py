@@ -13,6 +13,7 @@ import shutil
 import torch
 
 from ..errors import ConfigurationError, error_context
+from ..core.config import AlignAIRConfig
 from ..io.atomic import atomic_write
 from .random_state import capture_rng_state
 
@@ -49,9 +50,15 @@ class ResumeState:
 
 def validate_continuation(state, config, label_schema, *, augmentation=None, schedule=None, lr=None):
     """Reject incompatible continuation before mutating model, optimizer or process RNG state."""
+    if (isinstance(config, AlignAIRConfig) and config.has_d and config.classification_mode == 'multilabel'
+            and getattr(state.config, 'short_d_penalty', True) != config.short_d_penalty):
+        raise ConfigurationError('resume Short-D loss contract differs from the requested training objective',
+                                 context={'field': 'short_d_penalty'},
+                                 hint='Use init_from for a weights-only warm start under the corrected label contract.')
     if (state.config is not None and state.config != config
             or state.label_schema is not None and state.label_schema != label_schema):
-        raise ConfigurationError('resume configuration or label identity differs from the requested model setup')
+        raise ConfigurationError('resume configuration or label identity differs from the requested model setup',
+                                 hint='Use init_from for a weights-only warm start when changing model, label or loss settings.')
     if state.augmentation != augmentation:
         raise ConfigurationError('resume augmentation policy differs from the requested training data',
                                  hint='Use init_from for a weights-only warm start when changing the augmentation policy.')
@@ -83,8 +90,18 @@ def load_training_checkpoint(path, *, device="cpu", trust_pickle=False) -> Resum
         state = torch.load(path, map_location=device, weights_only=False)
         if 'logvars' not in state:
             return _research_training_state(state)
+        config = state.get('config')
+        if isinstance(config, dict):
+            try:
+                config = AlignAIRConfig(**config)
+            except (TypeError, ValueError) as exc:
+                raise ModelError('legacy training configuration is malformed', context={'field': 'config'}) from exc
+        elif config is not None and not isinstance(config, AlignAIRConfig):
+            raise ModelError('legacy training configuration must be an AlignAIRConfig or mapping',
+                             context={'field': 'config'})
         return ResumeState(state["model"], state["logvars"], state.get("optimizer"),
-                           int(state.get("step", 0)), state.get("rng") or {})
+                           int(state.get("step", 0)), state.get("rng") or {}, config=config,
+                           label_schema=state.get('label_schema'))
 
 
 def validate_research_resume(checkpoint):

@@ -11,14 +11,15 @@ Every configuration follows the same per-gene segmentation and soft-cutout class
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 
 import torch
 import torch.nn as nn
 
 from .config import AlignAIRConfig
 from .boundaries import boundary_masks
-from .components import architecture_components
-from ..errors import InputError
+from .components import _build_component, architecture_components
+from ..errors import ConfigurationError, InputError, error_context
 from .runtime import restore_model_state
 from ..neural.heads.orientation import apply_orientation
 
@@ -26,14 +27,37 @@ from ..neural.heads.orientation import apply_orientation
 class AlignAIR(nn.Module):
     def __init__(self, cfg: AlignAIRConfig):
         super().__init__()
-        self.cfg = cfg
+        if not isinstance(cfg, AlignAIRConfig):
+            raise ConfigurationError("model construction requires an AlignAIRConfig", context={"field": "config"})
+        cfg = self.cfg = deepcopy(cfg)
         components = architecture_components(cfg.architecture)
-        self.embedding = components.embedding(cfg)
-        self.orientation_head = components.orientation_head(cfg) if cfg.use_orientation else None
-        self.meta_tower = components.meta_tower(cfg) if cfg.use_meta_heads else None
-        self.branches = nn.ModuleDict({s.name: components.gene_branch(s, cfg) for s in cfg.gene_specs})
-        self.meta_heads = nn.ModuleDict(components.meta_heads(cfg) if cfg.use_meta_heads else {})
-        self.state_branch = components.state_head(cfg) if cfg.state_head else None
+        self.embedding = _build_component(components.embedding, cfg, component="embedding")
+        self.orientation_head = (_build_component(components.orientation_head, cfg, component="orientation_head")
+                                 if cfg.use_orientation else None)
+        self.meta_tower = (_build_component(components.meta_tower, cfg, component="meta_tower")
+                           if cfg.use_meta_heads else None)
+        branches = {}
+        for spec in cfg.gene_specs:
+            name = f"branches.{spec.name}"
+            branch = _build_component(components.gene_branch, spec, cfg, component=name)
+            missing = [method for method in ("segment", "classify", "component_modules")
+                       if not callable(getattr(branch, method, None))]
+            if missing:
+                raise ConfigurationError("gene branch does not implement the component contract",
+                                         context={"stage": "model_construction", "component": name, "methods": missing})
+            branches[spec.name] = branch
+        self.branches = nn.ModuleDict(branches)
+        with error_context(stage="model_construction", component="meta_heads"):
+            heads = components.meta_heads(cfg) if cfg.use_meta_heads else {}
+            if (not isinstance(heads, (Mapping, nn.ModuleDict))
+                    or any(not isinstance(head, nn.Module) for head in heads.values())):
+                raise ConfigurationError("meta-head factory must return a mapping of torch modules")
+            try:
+                self.meta_heads = nn.ModuleDict(heads)
+            except (KeyError, TypeError) as exc:
+                raise ConfigurationError("meta-head names must be valid module registration names") from exc
+        self.state_branch = (_build_component(components.state_head, cfg, component="state_branch")
+                             if cfg.state_head else None)
 
     @classmethod
     def from_state_dict(cls, cfg: AlignAIRConfig, state_dict: Mapping[str, object], *,
@@ -110,8 +134,18 @@ class AlignAIR(nn.Module):
             if module is not None:
                 modules[name] = module
         modules.update({f"meta_heads.{name}": head for name, head in self.meta_heads.items()})
+        owned = {id(module) for module in self.modules()}
         for gene, branch in self.branches.items():
-            modules.update({f"{gene}.{name}": module for name, module in branch.component_modules().items()})
+            with error_context(stage="component_inspection", component=f"branches.{gene}"):
+                points = branch.component_modules()
+                if not isinstance(points, Mapping):
+                    raise ConfigurationError("inspection points must name registered model modules")
+                for name, module in points.items():
+                    if (not isinstance(name, str) or not name or not isinstance(module, nn.Module)
+                            or id(module) not in owned):
+                        raise ConfigurationError("inspection points must name registered model modules",
+                                                 context={"field": name})
+                    modules[f"{gene}.{name}"] = module
         return modules
 
     @torch.no_grad()

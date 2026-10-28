@@ -40,8 +40,7 @@ def test_resume_below_checkpoint_step_is_rejected(tmp_path):
     import GenAIRR.data as gd
     from alignair.reference.reference_set import ReferenceSet
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    cfg = AlignAIRConfig(max_seq_length=576, has_d=True, v_allele_count=len(ref.gene("V")),
-                         j_allele_count=len(ref.gene("J")), d_allele_count=len(ref.gene("D")))
+    cfg = AlignAIRConfig.from_reference(ref, max_seq_length=576)
     torch.manual_seed(0)
     out = str(tmp_path / "m.alignair")
     train(AlignAIR(cfg), ref, [gd.HUMAN_IGH_OGRDB], cfg, make_loss_weights(cfg), steps=4, batch_size=4,
@@ -56,9 +55,7 @@ def test_train_saves_best_and_resumes(tmp_path):
     import GenAIRR.data as gd
     from alignair.reference.reference_set import ReferenceSet
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    cfg = AlignAIRConfig(max_seq_length=576, has_d=True,
-                         v_allele_count=len(ref.gene("V")), j_allele_count=len(ref.gene("J")),
-                         d_allele_count=len(ref.gene("D")))
+    cfg = AlignAIRConfig.from_reference(ref, max_seq_length=576)
     torch.manual_seed(0)
     model, logvars = AlignAIR(cfg), make_loss_weights(cfg)
     out = str(tmp_path / "m.alignair")

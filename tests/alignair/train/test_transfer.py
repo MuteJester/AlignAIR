@@ -3,7 +3,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from alignair.train.transfer import summarize, transfer_compatible_weights
+from alignair.train.transfer import summarize, transfer_compatible_weights, load_source_state_dict
 
 pytestmark = pytest.mark.integration
 
@@ -42,3 +42,36 @@ def test_transfer_ignores_extra_source_keys():
 def test_summarize_reports_percentage():
     s = summarize(["a.w", "a.b"], ["c.w"])
     assert "2/3" in s and "67%" in s
+
+
+def test_safe_warm_start_decodes_weights_without_source_factories_or_rng_use(tmp_path, monkeypatch):
+    import GenAIRR.data as gd
+    from alignair import model_file
+    from alignair.core import AlignAIR, prepare_model
+    from alignair.core import components
+    from alignair.reference import ReferenceSet
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), embed_dim=4, filters=4, block_out=8)
+    model = setup.build_model()
+    path = tmp_path / 'source.alignair'
+    model_file.save_model(path, model, dataconfigs=[gd.HUMAN_IGH_OGRDB], training={},
+                          label_schema=setup.label_schema(), include_trusted_pickle=False)
+    expected = {key: value.clone() for key, value in model.state_dict().items()}
+    monkeypatch.setattr(components, '_ARCHITECTURES', {})
+    def forbidden(*args, **kwargs):
+        pytest.fail('warm start constructed the source model')
+    monkeypatch.setattr(AlignAIR, '__init__', forbidden)
+    rng = torch.get_rng_state().clone()
+    actual = load_source_state_dict(path)
+    assert all(torch.equal(value, expected[key]) for key, value in actual.items())
+    assert torch.equal(torch.get_rng_state(), rng)
+
+
+def test_legacy_warm_start_keeps_explicit_pickle_consent(tmp_path):
+    from alignair.errors import ModelError
+    path = tmp_path / 'source.pt'
+    weights = _Net(3).state_dict()
+    torch.save({'model': weights}, path)
+    with pytest.raises(ModelError, match='trust_pickle'):
+        load_source_state_dict(path)
+    actual = load_source_state_dict(path, trust_pickle=True)
+    assert all(torch.equal(value, weights[key]) for key, value in actual.items())

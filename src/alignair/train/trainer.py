@@ -50,7 +50,12 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
           augmentation=None, schedule=None, study=None, start_step=0):
     from .guards import validate_training_request
-    tasks = build_tasks(cfg) if tasks is None else tasks
+    model_config = getattr(model, 'cfg', cfg)
+    if model_config != cfg:
+        raise ConfigurationError('training configuration differs from the constructed model',
+                                 context={'field': 'config'},
+                                 hint='Construct a new model with the intended configuration before training.')
+    tasks = build_tasks(model_config) if tasks is None else tasks
     dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
     # preflight: fail fast on a bad request rather than after a long run
     validate_training_request(steps=steps, batch_size=batch_size, lr=lr,

@@ -211,7 +211,7 @@ def test_default_tasks_are_selected_from_the_shared_model_configuration():
     cfg=AlignAIRConfig(2,2,has_d=False,max_seq_length=128,embed_dim=4,filters=4,block_out=8).with_amino_acid_heads()
     model=AlignAIR(cfg)
     engine=build_training_engine(model)
-    assert engine.tasks.config is cfg and len(engine.weights)==0
+    assert engine.tasks.config is model.cfg and engine.tasks.config == cfg and len(engine.weights)==0
 
 
 def test_device_transfer_cannot_silently_split_shared_parameter_aliases():

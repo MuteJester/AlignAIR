@@ -26,7 +26,7 @@ def test_restoration_preserves_weights_and_outputs_across_model_policies(input_s
     cfg = _config(input_space, label_space, has_d)
     original = AlignAIR(cfg).eval()
     restored = AlignAIR.from_state_dict(cfg, original.state_dict())
-    assert restored.cfg is cfg
+    assert restored.cfg == cfg and restored.cfg is not cfg
     assert all(not module.training for module in restored.modules())
     assert all(parameter.requires_grad for parameter in restored.parameters())
     for name, weights in original.state_dict().items():

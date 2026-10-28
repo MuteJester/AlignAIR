@@ -9,7 +9,7 @@ from ..errors import ConfigurationError, error_context
 from ..reference.protein import ProteinReference, build_protein_reference
 from ..reference.labels import build_equivalence_classes
 from ..reference.reference_set import ReferenceSet
-from .config import AlignAIRConfig
+from .config import AlignAIRConfig, _reference_short_d_penalty
 from .model import AlignAIR
 
 InputSpace = Literal['nucleotide', 'protein']
@@ -282,4 +282,7 @@ def prepare_model(reference: ReferenceSet | ProteinReference, *, input_space: In
     config = build_model_config(counts['V'], counts['J'], counts.get('D', 0), input_space=input_space,
         label_space=label_space, has_d=selected_d, num_chain_types=max(1, len(source.loci)),
         max_seq_length=max_seq_length, **config_options)
+    if 'short_d_penalty' not in config_options:
+        config = replace(config, short_d_penalty=_reference_short_d_penalty(source,
+            has_d=config.has_d, classification_mode=config.classification_mode))
     return ModelSetup(source, config, input_space, label_space, view)

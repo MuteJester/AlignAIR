@@ -22,6 +22,16 @@ _VJ_CLS_KERNELS = (3, 3, 3, 2, 2, 2, 5)  # V/J classification towers (N=6)
 _D_CLS_KERNELS = (3, 3, 2, 2, 5)         # D classification tower (shallower, N=4)
 
 
+def _reference_short_d_penalty(reference, *, has_d, classification_mode):
+    """Only a final Short-D label supports this legacy multilabel objective.
+
+    Keep the legacy value for configurations where the objective is inactive, preserving
+    continuation of historical non-D and categorical checkpoints.
+    """
+    return (not has_d or classification_mode != "multilabel"
+            or bool(reference.gene("D").names) and reference.gene("D").names[-1] == "Short-D")
+
+
 @dataclass(frozen=True)
 class GeneSpec:
     """Everything that makes one gene (V/D/J) what it is, in one place: allele count, conv-tower
@@ -80,8 +90,13 @@ class AlignAIRConfig:
     reject_empty_sequences: bool = False
     input_space: Literal["nucleotide", "protein"] = "nucleotide"
     label_space: Literal["alleles", "protein_classes"] = "alleles"
+    # Historical count-only/CSV configurations assign the last D column to Short-D. Reference-
+    # bound constructors derive this setting from label identity; old serialized configs retain True.
+    short_d_penalty: bool = True
 
     def __post_init__(self):
+        if type(self.short_d_penalty) is not bool:
+            raise ConfigurationError("short_d_penalty must be a boolean", context={"field": "short_d_penalty"})
         for name, choices in (("classification_mode", ("multilabel", "categorical")),
                               ("boundary_mode", ("residue", "half_open")),
                               ("input_space", ("nucleotide", "protein")),
@@ -111,7 +126,7 @@ class AlignAIRConfig:
         specs = [GeneSpec("v", self.v_allele_count, latent_size=self.v_allele_latent_size)]
         if self.has_d:
             specs.append(GeneSpec("d", self.d_allele_count, cls_kernels=_D_CLS_KERNELS,
-                                  latent_size=self.d_allele_latent_size, short_d_penalty=True))
+                                  latent_size=self.d_allele_latent_size, short_d_penalty=self.short_d_penalty))
         specs.append(GeneSpec("j", self.j_allele_count, latent_size=self.j_allele_latent_size))
         return tuple(specs)
 
@@ -157,6 +172,8 @@ class AlignAIRConfig:
     def from_reference(cls, reference_set, *, num_chain_types: int = 1,
                        max_seq_length: int = 576, **kwargs) -> "AlignAIRConfig":
         """Build from an already-constructed :class:`ReferenceSet` (allele counts come from it)."""
+        kwargs.setdefault("short_d_penalty", _reference_short_d_penalty(reference_set,
+            has_d=reference_set.has_d, classification_mode=kwargs.get("classification_mode", "multilabel")))
         return cls(
             v_allele_count=len(reference_set.gene("V")),
             j_allele_count=len(reference_set.gene("J")),

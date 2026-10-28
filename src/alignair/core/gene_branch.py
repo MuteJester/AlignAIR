@@ -17,6 +17,7 @@ import torch.nn.functional as F
 
 from .config import AlignAIRConfig, GeneSpec
 from .layers import ConvResidualFeatureExtractionBlock, SoftCutoutLayer
+from ..errors import ConfigurationError
 
 
 def build_tower(cfg: AlignAIRConfig, kernels: tuple, filters: int | None = None,
@@ -39,6 +40,9 @@ class GeneBranch(nn.Module):
                  segmentation_tower: nn.Module | None = None,
                  classification_tower: nn.Module | None = None):
         super().__init__()
+        for name, tower in (("segmentation_tower", segmentation_tower), ("classification_tower", classification_tower)):
+            if tower is not None and not isinstance(tower, nn.Module):
+                raise ConfigurationError("replacement tower must be a torch module", context={"field": name})
         self.classification_mode = cfg.classification_mode
         L = cfg.max_seq_length
         # allele-discrimination sizing: legacy fixed dims, or auto-scaled to this gene's allele count

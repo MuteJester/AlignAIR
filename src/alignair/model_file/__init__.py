@@ -21,7 +21,7 @@ from ..reference.reference_set import ReferenceSet
 from . import container, serialize
 
 __all__ = ["save_model", "read_metadata", "update_card", "load_model", "load_training_state",
-           "read_training_state", "read_dataconfig", "read_reference", "LoadedModel",
+           "read_training_state", "read_model_state", "read_dataconfig", "read_reference", "LoadedModel", "ModelStateData",
            "TrainingState", "TrainingStateData", "container"]
 
 _DEFAULT_CODECS = {"config": "zlib", "weights": "none", "logvars": "none",
@@ -218,7 +218,22 @@ def _verify_reference_integrity(reference, md) -> None:
         raise ModelIntegrityError("reference_fasta_sha256 mismatch: the embedded reference differs from the card.")
 
 
-def _read_model_state(path, *, trust_pickle=False):
+@dataclass
+class ModelStateData:
+    """Decoded CPU weights and checked bindings, without allocating architecture modules."""
+    metadata: dict
+    config: AlignAIRConfig
+    model_state: dict
+    reference: ReferenceSet
+
+
+def read_model_state(path, *, trust_pickle=False) -> ModelStateData:
+    """Decode weights and verify reference/label bindings without model construction or RNG use.
+
+    Safe reference JSON and safetensors are the default. Historical reference pickle requires
+    explicit consent. This does not decode training state, require architecture factories, or
+    check architecture-specific weight keys/shapes; restoration owns those checks.
+    """
     md = container.read_header(path)
     cfg = serialize.config_from_bytes(container.read_section(path, "config"))
     if "reference_json" in md["sections"]:                       # safe, no-pickle path (default)
@@ -245,13 +260,13 @@ def _read_model_state(path, *, trust_pickle=False):
                                                **exc.context}, hint=exc.hint) from exc
     model_state = serialize.state_dict_from_bytes(container.read_section(path, "weights"))
     md.pop("_sections_base", None)
-    return md, cfg, model_state, reference
+    return ModelStateData(md, cfg, model_state, reference)
 
 
 def load_model(path, *, device="cpu", trust_pickle=False) -> LoadedModel:
-    md, cfg, model_state, reference = _read_model_state(path, trust_pickle=trust_pickle)
-    model = AlignAIR.from_state_dict(cfg, model_state, device=device, source=path)
-    return LoadedModel(model=model, reference=reference, config=cfg, metadata=md)
+    data = read_model_state(path, trust_pickle=trust_pickle)
+    model = AlignAIR.from_state_dict(data.config, data.model_state, device=device, source=path)
+    return LoadedModel(model=model, reference=data.reference, config=model.cfg, metadata=data.metadata)
 
 
 @dataclass
@@ -292,7 +307,8 @@ def read_training_state(path, *, device="cpu") -> TrainingStateData:
     ``load_training_state``, this is a trusted resume flow that decodes pickle training sections.
     """
     with error_context(stage="training_checkpoint_load", path=path):
-        md, cfg, model_state, reference = _read_model_state(path, trust_pickle=True)
+        data = read_model_state(path, trust_pickle=True)
+        md, cfg, model_state, reference = data.metadata, data.config, data.model_state, data.reference
         if "train_state" not in md["sections"]:
             raise ModelError("no train_state section; this model file cannot resume training")
         st = serialize.train_state_from_bytes(container.read_section(path, "train_state"))
@@ -310,7 +326,7 @@ def load_training_state(path, *, device="cpu") -> TrainingState:
     """Decode a trusted checkpoint and restore its model, retaining the existing model-bearing API."""
     data = read_training_state(path)
     model = AlignAIR.from_state_dict(data.config, data.model_state, device=device, source=path)
-    return TrainingState(model=model, reference=data.reference, config=data.config,
+    return TrainingState(model=model, reference=data.reference, config=model.cfg,
                          logvars_state=data.logvars_state, optimizer_state=data.optimizer_state,
                          step=data.step, rng=data.rng, train_args=data.train_args,
                          metadata=data.metadata, scheduler_state=data.scheduler_state)

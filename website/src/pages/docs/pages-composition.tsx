@@ -62,6 +62,15 @@ protein_model = AlignAIR(protein_config)`} />
         <code> AlignAIR</code> class. Its constructor uses the supplied configuration without replacing
         head choices.
       </p>
+      <p>
+        Each model owns a deep copy of its construction configuration, including nested calibration
+        values. Reusing or editing the caller’s configuration cannot change an existing model or a
+        sibling experiment. Loaded-model configuration accessors refer to the model’s own configuration.
+        Treat structural settings as construction inputs: use <code>dataclasses.replace</code> and build
+        a new model when changing dimensions, score semantics, boundary modes, or architecture.
+        <code> model.cfg</code> remains mutable for existing runtime calibration APIs; editing it does
+        not rebuild layers or validate an architecture change.
+      </p>
       <H2 id="migration">Migrate former protein model imports</H2>
       <p>
         The <code>aa.model</code> and <code>aa.config</code> facades have been removed. Select
@@ -88,6 +97,7 @@ protein_model = AlignAIR(protein_config)`} />
         [<code>use_meta_heads</code>, "Enables the auxiliary tower and its mutation, indel, productivity, and optional locus predictions."],
         [<code>state_head</code>, "Enables per-position edit-state logits independently of auxiliary heads."],
         [<code>reject_empty_sequences</code>, "Rejects all-padding rows with a structured input error."],
+        [<code>short_d_penalty</code>, "Legacy multilabel objective for a final Short-D sentinel. Reference-bound constructors derive it from labels; real D alleles must not be treated as this sentinel."],
       ]} />
       <p>
         Each active gene also returns start/end logits of shape <code>(batch, window)</code> and decoded
@@ -183,6 +193,14 @@ model = AlignAIR(replace(protein_config, architecture="token-only-v1"))`} />
         <code>(batch, window, embed_dim)</code>. Factories must construct fresh modules for each model.
       </p>
       <p>
+        Assembly checks that enabled factories return PyTorch modules, gene branches provide the
+        three required methods, and auxiliary heads form a mapping with valid registration names.
+        Replacement segmentation and classification towers must also be PyTorch modules. Malformed
+        results raise <code>ConfigurationError</code> at construction with component context. Disabled
+        capabilities do not call their factories. Construction does not execute a dummy forward;
+        test output dimensions and gradient paths on representative inputs for each new architecture.
+      </p>
+      <p>
         These factories replace stages within the current segmentation-then-classification flow.
         A shared encoder across genes or a joint boundary decoder needs an explicit change to model
         assembly and its contracts. Keep that extension in the shared model interface, with a new
@@ -201,7 +219,9 @@ segmentation_tower = points["v.seg_tower"]`} />
       <p>
         Inspection points reference the actual registered modules and add no parameter copies. Optional
         components are omitted when disabled. ModelXRay and the assay profiler consume these points;
-        custom branches can extend their own inspection dictionary.
+        custom branches can extend their own inspection dictionary. Names are aliases, but their
+        values must belong to the constructed model. Invalid mappings, names, or foreign modules
+        raise <code>ConfigurationError</code> with branch and field context.
       </p>
       <p>
         Use the <DocLink to="training-tasks">training task API</DocLink> to select matching losses and
@@ -210,6 +230,41 @@ segmentation_tower = points["v.seg_tower"]`} />
         pipelines also retain their nucleotide AIRR and protein-class output contracts; model composition
         does not make those pipelines interchangeable. See the <DocLink to="python-api">Python API</DocLink>
         for end-to-end prediction.
+      </p>
+      <H2 id="architecture-development">Develop and verify an architecture variant</H2>
+      <p>
+        Keep alphabet and label policies in the shared configuration. Register stateless factories
+        under a new architecture name, then use <DocLink to="model-setup">reference-bound setup</DocLink>
+        and the <DocLink to="training-workflow">training workflow</DocLink>. For manual optimization,
+        <code>build_training_engine</code> checks complete model/task parameter ownership and scheduler
+        binding. A direct <code>TrainingEngine</code> remains a lower-level interface whose caller owns
+        optimizer construction.
+      </p>
+      <p>
+        Verify a representative variant for both nucleotide and protein inputs: forward shapes and
+        score semantics, backward paths through replaced stages, independent configurations and
+        parameters between model instances, safe save/reload with the factories registered, feature
+        inspection without state changes, and checkpoint continuation. The repository’s executable
+        example replaces the convolutional towers with projected mean features and exercises this
+        full workflow. It is a contract fixture, not an accuracy recommendation.
+      </p>
+      <CodeBlock lang="bash" code={`python -m pytest \\
+  tests/alignair/core/models/test_component_contracts.py \\
+  tests/alignair/train/test_architecture_workflow.py`} />
+      <p>
+        Start architecture comparisons with fresh training and a fixed held-out cohort. Resume checks
+        configuration and ordered label identity, but source and augmentation streams are reseeded;
+        continuation is not exact replay of the next uninterrupted batch. A warm start matches tensor
+        names and shapes, including class heads when their widths match. It does not align class labels
+        or establish compatibility between different architectures. See the
+        <DocLink to="training-workflow">training request contracts</DocLink> when selecting initialization.
+      </p>
+      <p>
+        Establish an unchanged-architecture baseline under the corrected Short-D label contract before
+        comparing new layers. Keep that loss setting, input/label policies, source distribution, seeds,
+        held-out cohort and update budget matched between baseline and candidate. An older checkpoint
+        trained with another objective can remain a historical comparison, but gains against it do not
+        isolate an architecture effect.
       </p>
       <H2 id="boundary-experiment">Compare predicted and known boundaries</H2>
       <p>

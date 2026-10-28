@@ -131,7 +131,7 @@ def test_prepared_restoration_preserves_weights_and_predictions(space, labels):
     setup = _setup(space, labels)
     original = setup.build_model().eval()
     restored = setup.restore_model(original.state_dict(), device='cpu')
-    assert restored is not original and restored.cfg is setup.config
+    assert restored is not original and restored.cfg == setup.config and restored.cfg is not setup.config
     assert all(not module.training for module in restored.modules())
     tokens = torch.ones(2, 128, dtype=torch.long)
     with torch.no_grad():
