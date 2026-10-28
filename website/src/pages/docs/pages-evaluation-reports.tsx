@@ -287,6 +287,50 @@ assert fingerprint == cohort_fingerprint(cohort)`} />
         Recompute it after edits, and retain separate model, configuration and reference bindings when
         comparing results. Fingerprinting alone does not validate scientific eligibility or freeze data.
       </p>
+      <H2 id="convergence-scoring">Checkpoint scoring and preflight</H2>
+      <CodeBlock lang="python" code={`from alignair.aa.convergence.evaluator import evaluate_checkpoint
+
+# Bind the model, config, label maps and D vocabulary to the same checkpoint/reference.
+metrics = evaluate_checkpoint(
+    model, model.cfg, class_maps, metadata, cohort,
+    device="cpu", alpha=0.05, freq_edges=(0.0, 0.02, 0.05, 1.0),
+)`} />
+      <p>
+        This study scorer requires a categorical protein-class configuration with half-open
+        boundaries, valid V/J equivalence maps matching the configured widths, and a contiguous
+        D allele index when D is enabled. Models exposing <code>cfg</code> must agree with the
+        supplied configuration. Custom PyTorch modules without <code>cfg</code> are supported;
+        the caller owns their output-column identity. Width checks alone cannot establish label
+        identity, so retain the checkpoint/reference bindings.
+      </p>
+      <p>
+        Before model placement or inference, preflight checks all consumed truth calls and protein
+        sequences across every stratum and the calibration slice, and prepares boundary samples
+        through the shared sample builder. Rows must be indexable sequences of mappings; protein
+        input retains the uppercase alphabet and no-truncation policy. Scoring preserves the existing
+        first-call truth convention. Clean rows require known V/J labels; other strata and calibration
+        require known V labels. Inverted and unknown D truth remains excluded from D metrics.
+        A model without D needs neither D metadata nor D row annotations.
+      </p>
+      <p>
+        Missing or ineligible clean source records retain the existing informational null boundary
+        result. An eligible boundary source must agree with its clean row’s protein and V/J truth.
+        Malformed source annotations raise their shared preparation errors before any forward pass.
+        <code>alpha</code> must satisfy the conformal API even when calibration is empty. Frequency
+        edges must be a finite, strictly increasing numeric vector within [0, 1]; partial ranges
+        remain allowed and omit observations outside those ranges. Model output widths are checked
+        before label-based scoring, including the calibration pass.
+      </p>
+      <p>
+        Scoring disables gradients and restores every module’s previous training/evaluation flag
+        on success and on placement, forward or calibration failures. Explicit placement on
+        <code>device</code> persists; the evaluator does not move the model back afterward.
+        Ordinary scoring does not update weights or records. Invalid requests raise contextual
+        <code> ConfigurationError</code>, <code>InputError</code> or the shared label/sample error;
+        output-width mismatches raise <code>InferenceError</code>. Context identifies the stage,
+        stratum, gene and source position where applicable. Unexpected model exceptions retain
+        their original type while runtime state is restored.
+      </p>
       <H2 id="ownership">Study integration</H2>
       <p>
         Numerical intervals live in <code>evaluate.statistics</code>; class and boundary summaries

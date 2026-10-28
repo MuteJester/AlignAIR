@@ -8,12 +8,13 @@ from __future__ import annotations
 import numpy as np
 
 from ...calibration import Conformal
-from ...data.sampling import ProteinSampleBuilder
+from ...core.runtime import evaluation_mode
+from ...errors import InferenceError, error_context
 from ...data.adapters import CategoricalBatchAdapter
 from ...evaluate import evaluate_categorical_cohort
 from ...predict.probabilities import protein_class_probabilities
-from ...data.tokenizer import AAProteinTokenizer
 from .cohort import _first
+from .validation import prepare_evaluation
 from .metrics import brier_score, macro_accuracy, per_frequency_bins, softmax_nll
 
 _DEFAULT_FREQ_EDGES = (0.0, 0.02, 0.05, 1.0)
@@ -35,22 +36,8 @@ def _freq_for(rows: list, gene_key: str, allele_class: dict, dc_name: str) -> np
     return np.full(len(names), 1.0 / n_alleles, dtype=float)
 
 
-def _boundary_mae(model, cfg, class_maps, clean_rows: list, device: str) -> dict:
-    """Boundary MAE (V/J start+end) on the clean stratum through shared categorical evaluation
-    end-to-end (the model's soft-argmax boundary heads vs the record's projected AA-space germline
-    coordinates via the shared sample builder). Best-effort/informational: returns nulls with a note
-    if no clean-stratum record survives its stricter filters (productive,
-    no-stop-codon, exact translation length)."""
-    tok = AAProteinTokenizer()
-    builder = ProteinSampleBuilder(class_maps, tok, cfg.max_seq_length)
-    samples = []
-    for row in clean_rows:
-        rec = row.get("record")
-        if rec is None:
-            continue
-        sample = builder(rec).sample
-        if sample is not None:
-            samples.append(sample)
+def _boundary_mae(model, cfg, samples, device: str) -> dict:
+    """Score shared preflight-prepared boundary samples, retaining informational nulls."""
     if not samples:
         return {"v": None, "j": None,
                 "note": "deferred: no clean-stratum record survived record_to_sample filtering"}
@@ -71,7 +58,7 @@ def _conformal_v(model, cfg, device: str, class_maps, calibration_rows: list, cl
                 "note": "insufficient rows for conformal fit"}
     vclass = class_maps["V"].allele_class
     y_cal = np.array([vclass[_first(r["v_call"])] for r in calibration_rows])
-    p_cal = protein_class_probabilities(model, [r["aa"] for r in calibration_rows], cfg, device,
+    p_cal = _class_probabilities(model, [r["aa"] for r in calibration_rows], cfg, device,
                                         ("v_class_logits",))["v_class_logits"]
     conf = Conformal(alpha=alpha, seed=seed).fit(p_cal, y_cal)
 
@@ -88,22 +75,18 @@ def _conformal_v(model, cfg, device: str, class_maps, calibration_rows: list, cl
             "set_mean": float(sizes.mean()), "set_p95": float(np.percentile(sizes, 95))}
 
 
-def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "cpu",
+def _evaluate_checkpoint(model, cfg, class_maps, meta, cohort, boundary_samples, *, device: str = "cpu",
                         alpha: float = 0.05, freq_edges=_DEFAULT_FREQ_EDGES) -> dict:
     """Evaluate a prepared model and its class maps/D indices over a frozen cohort.
 
     Results depend on model weights and cohort; the cohort is not mutated.
     """
-    model.to(device).eval()
     vclass, jclass = class_maps["V"].allele_class, class_maps["J"].allele_class
-    d_index = meta["d_index"]
+    d_index = meta["d_index"] if cfg.has_d else {}
     d_name = {i: n for n, i in d_index.items()}
 
     by_stratum_rows = cohort["by_stratum"]
     calibration_rows = cohort["calibration"]
-
-    if not by_stratum_rows.get("clean"):
-        raise ValueError("evaluate_checkpoint: cohort has no 'clean' stratum rows")
 
     # ---- per-stratum V accuracy (selection-critical: "clean" feeds clean_v_acc/v_macro below) ----
     by_stratum: dict = {}
@@ -115,7 +98,8 @@ def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "
         y_v = np.array([vclass[_first(r["v_call"])] for r in rows])
         keys = (("v_class_logits", "j_class_logits") + (("d_class_logits",) if cfg.has_d else ())
                 if name == "clean" else ("v_class_logits",))
-        probabilities = protein_class_probabilities(model, seqs, cfg, device, keys)
+        with error_context(stratum=name):
+            probabilities = _class_probabilities(model, seqs, cfg, device, keys)
         pv = probabilities["v_class_logits"]
         pred_v = pv.argmax(-1)
         by_stratum[name] = {"n": len(rows), "v_acc": float((pred_v == y_v).mean())}
@@ -162,9 +146,11 @@ def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "
                                 _freq_for(clean_rows, "J", jclass, cohort["dc_name"]), freq_edges),
     }
 
-    boundary_mae = _boundary_mae(model, cfg, class_maps, clean_rows, device)
-    conformal = _conformal_v(model, cfg, device, class_maps, calibration_rows, clean_rows, alpha,
-                              test_probabilities=pv_clean)
+    with error_context(stratum="clean"):
+        boundary_mae = _boundary_mae(model, cfg, boundary_samples, device)
+    with error_context(stratum="__calibration__"):
+        conformal = _conformal_v(model, cfg, device, class_maps, calibration_rows, clean_rows, alpha,
+                                  test_probabilities=pv_clean)
 
     return {
         "clean_v_acc": clean_v_acc, "clean_j_acc": clean_j_acc,
@@ -176,3 +162,28 @@ def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "
         "nll": nll, "brier": brier,
         "conformal": conformal,
     }
+
+
+def _class_probabilities(model, sequences, config, device, keys):
+    probabilities = protein_class_probabilities(model, sequences, config, device, keys)
+    for key, values in probabilities.items():
+        gene = key.removesuffix("_class_logits")
+        expected = getattr(config, f"{gene}_allele_count")
+        if values.shape[1] != expected:
+            raise InferenceError("categorical output width differs from its scoring vocabulary",
+                                 context={"field": key, "expected_width": expected, "actual_width": values.shape[1]})
+    return probabilities
+
+
+def evaluate_checkpoint(model, cfg, class_maps, meta, cohort, *, device: str = "cpu",
+                        alpha: float = 0.05, freq_edges=_DEFAULT_FREQ_EDGES) -> dict:
+    """Preflight all consumed inputs, then score while restoring every caller module mode.
+
+    Model placement on the requested device remains explicit and persistent. Modes/gradient state
+    are restored on success/failure; weights and cohort records are not updated by scoring.
+    """
+    samples = prepare_evaluation(model, cfg, class_maps, meta, cohort, device, alpha, freq_edges)
+    with error_context(stage="convergence_evaluation"), evaluation_mode(model):
+        model.to(device)
+        return _evaluate_checkpoint(model, cfg, class_maps, meta, cohort, samples, device=device,
+                                    alpha=alpha, freq_edges=freq_edges)

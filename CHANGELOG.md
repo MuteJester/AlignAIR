@@ -352,6 +352,10 @@ All notable changes to AlignAIR are documented here. The format follows
   and the unused website widget. Documentation no longer cites the retired comparison.
 
 ### Fixed
+- Convergence checkpoint scoring validates its configuration, vocabularies, consumed cohort inputs
+  and report options before model placement or inference. Shared runtime contexts restore mixed
+  module modes on success/failure; output-width checks prevent scoring against mismatched columns.
+  Boundary samples are prepared once, and D-free models no longer require unused D metadata.
 - Temperature calibration now rejects invalid parameters, avoids integer-output truncation, handles
   empty cohorts, and excludes whitespace-only truth calls. Documentation qualifies clipping ties
   and threshold-based call changes rather than promising unchanged calls after scaling.
