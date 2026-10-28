@@ -54,11 +54,9 @@ class AlignAIRConfig:
     d_allele_latent_size: Optional[int] = None
     j_allele_latent_size: Optional[int] = None
     # Allele-discrimination auto-scaling: size the per-gene classification path (feature tower + the
-    # prototype/latent dim) to that gene's allele count A. None -> legacy fixed dims (block_out/filters,
-    # latent = A*latent_size_factor). A float (e.g. 2.0) enables scaling. Math: at convergence the A
-    # class prototypes collapse to a simplex equiangular tight frame, which only exists in dimension
-    # d >= A-1; so multiplier >= 1 lets the prototypes reach that maximally-separated configuration, and
-    # >1 buys angular margin for SNP-similar sibling alleles.
+    # latent dim) to that gene's allele count A. None -> legacy fixed dims (block_out/filters,
+    # latent = A*latent_size_factor). A float (e.g. 2.0) enables a bounded width heuristic.
+    # Width alone does not guarantee feature rank, class separation or improved accuracy.
     cls_scale_multiplier: Optional[float] = None
     cls_dim_min: int = 256         # floor: small loci keep a sane discrimination space
     cls_dim_max: int = 1024        # cap: bound the O(A^2) classification params for large unions
@@ -127,10 +125,10 @@ class AlignAIRConfig:
 
         Legacy (``cls_scale_multiplier is None``): the fixed ``block_out`` / ``filters`` and
         ``latent = A * latent_size_factor`` (byte-identical to pre-scaling checkpoints). Scaled: a
-        discrimination width ``d = clamp(round(mult*A), cls_dim_min, cls_dim_max)`` sized so the A allele
-        prototypes can reach the simplex-ETF configuration (``d >= A-1``); the tower's width is raised so
-        it can actually emit ``d`` independent features (``filters * l_final >= d``), floored at the
-        default ``filters`` and capped at ``cls_filter_cap``."""
+        width ``d = clamp(round(mult*A), cls_dim_min, cls_dim_max)`` sets both projected and latent
+        dimensions. Tower channels are raised toward ``ceil(d / l_final)``, floored at the default
+        ``filters`` and capped at ``cls_filter_cap``. These bounds can limit available dimensions;
+        the setting budgets parameters without guaranteeing independent features or class separation."""
         A = spec.allele_count
         if self.cls_scale_multiplier is None:
             return self.block_out, self.filters, spec.latent(self.latent_size_factor)

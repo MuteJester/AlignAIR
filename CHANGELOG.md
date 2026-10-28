@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Model architecture guide covering forward and task-gradient paths, controlled component ablations,
+  and known-boundary classification diagnostics, with gradient-routing tests for both alphabets.
 - Shared prediction-output collection for raw and categorical APIs, with checked batch keys,
   row counts, trailing shapes and NumPy dtypes, contextual errors and independent array snapshots.
 - Protein product inference now uses shared prediction batching, with `batch_size` / `--batch-size`
