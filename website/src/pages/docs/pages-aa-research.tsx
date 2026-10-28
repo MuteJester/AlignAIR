@@ -128,6 +128,15 @@ python -m alignair.aa.guard.training loco --help`} />
         or open challenge data. Existing manifest files cannot be replaced.
       </p>
       <p>
+        Manifests and study execution share
+        <code> alignair.data.partitioning.partition_by_parent_lineage</code>, using the existing
+        seed 42 and 0.2 development fraction. Valid assignments, row order and partition hashes are
+        preserved. Duplicate IDs and malformed lineage identities are rejected before feature
+        preparation or training. The former <code>aa.guard.train_data</code> module and its unused
+        <code> build_training_stream</code> sampler are removed. The active engine retains its own
+        checkpointed sampler; manifest preparation retains the fresh-sequence exclusion check.
+      </p>
+      <p>
         Training commands accept <code>--device</code> and an optional <code>--checkpoints</code> override.
         The feature cache is a JSON file for sweeps and a directory for LOCO folds. Checkpoints bind configuration,
         data, and feature identities; legacy unbound checkpoints are refused. Choose a new checkpoint directory

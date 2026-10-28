@@ -190,6 +190,39 @@ labels = loaded.label_schema["genes"]["v"]`} />
         member lists. Loading validates schema shape and source membership. Resume also checks the
         exact schema, preventing the same-sized heads from being continued with different label IDs.
       </p>
+      <H2 id="lineage-partition">Split record collections by parent lineage</H2>
+      <CodeBlock lang="python" code={`from alignair.data.partitioning import partition_by_parent_lineage
+
+records = [
+    {"id": "parent", "lineage_key": "family-1"},
+    {"id": "crop", "lineage_key": "crop-1", "parent_lineage": "family-1"},
+    {"id": "other", "lineage_key": "family-2"},
+    {"id": "third", "lineage_key": "family-3"},
+]
+train, development, assignment_sha256 = partition_by_parent_lineage(
+    records, seed=42, dev_frac=0.2,
+)`} />
+      <p>
+        This shared utility accepts nucleotide, protein or identity-only record collections. Every
+        record needs a unique nonempty text <code>id</code> and a nonempty
+        <code> parent_lineage</code> or fallback <code>lineage_key</code>. A null or empty parent
+        field uses the fallback. Supplied parent identities keep related records together; callers
+        establish those relationships. Sequence contents are preserved and do not affect assignment.
+      </p>
+      <p>
+        Groups are ordered by SHA-256 of <code>seed:key</code>. The first
+        <code> round(group_count * dev_frac)</code> groups go to development, using Python’s
+        ties-to-even rounding. The fraction counts families; within-family input order and record
+        objects are retained. The digest covers the sorted record-ID-to-partition mapping. Persist
+        separate content and reference identities when freezing a study.
+      </p>
+      <p>
+        Seed must be an integer, including negative integers. The development fraction must be a
+        finite number in [0, 1]. Booleans are rejected. Empty input and endpoint fractions are supported;
+        study preparation enforces nonempty partitions when required. Invalid options raise
+        <code> ConfigurationError</code> before consuming input. Malformed or duplicate record
+        identities raise <code>DataContractError</code> with stage, record position and field context.
+      </p>
       <H2 id="rng-state">Capture and restore process RNG state</H2>
       <CodeBlock lang="python" code={`from alignair.train.random_state import capture_rng_state, restore_rng_state
 

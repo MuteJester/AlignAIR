@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from alignair.aa.guard.train_data import partition_by_parent_lineage
+from alignair.data.partitioning import partition_by_parent_lineage
 from alignair.aa.guard.loco import LOCO_FOLDS, masked_profiles_for
 from alignair.aa.guard.training import cli, manifests
 from alignair.errors import ArtifactIntegrityError, ConfigurationError, DataContractError, InputError

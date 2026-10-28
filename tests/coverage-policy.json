@@ -8,6 +8,7 @@
     "src/alignair/calibration/alleles.py": {"statements": 98, "branches": 95},
     "src/alignair/data/inputs.py": {"statements": 98, "branches": 95},
     "src/alignair/data/identity.py": {"statements": 100, "branches": 100},
+    "src/alignair/data/partitioning.py": {"statements": 98, "branches": 95},
     "src/alignair/data/inference.py": {"statements": 98, "branches": 95},
     "src/alignair/predict/forward.py": {"statements": 98, "branches": 95},
     "src/alignair/predict/probabilities.py": {"statements": 98, "branches": 95},

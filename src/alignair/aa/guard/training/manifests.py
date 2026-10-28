@@ -9,7 +9,7 @@ from pathlib import Path
 from alignair.aa.guard.classes import CLASS_MAP_HASH
 from alignair.aa.guard.features import FEATURE_NAMES
 from alignair.aa.guard.loco import LOCO_FOLDS, LOCO_MASK_HASH, masked_profiles_for
-from alignair.aa.guard.train_data import partition_by_parent_lineage
+from alignair.data.partitioning import partition_by_parent_lineage
 from alignair.errors import ArtifactIntegrityError, ConfigurationError, DataContractError
 from .seeds import choose_production_seed
 
@@ -53,15 +53,13 @@ def _settings(settings):
 
 
 def _records(records):
+    """Validate corpus annotations; the shared splitter owns IDs and parent identities."""
     records = list(records)
     for index, record in enumerate(records):
         if (not isinstance(record, dict) or
-                any(not isinstance(record.get(key), str) or not record[key] for key in ("id", "aa", "lineage_key")) or
-                (record.get("parent_lineage") is not None and not isinstance(record["parent_lineage"], str))):
-            raise DataContractError("Training records require text id, aa, and lineage fields.",
+                any(not isinstance(record.get(key), str) or not record[key] for key in ("aa", "lineage_key"))):
+            raise DataContractError("Training records require text aa and lineage fields.",
                                     context={"record_index": index})
-    if len({record["id"] for record in records}) != len(records):
-        raise DataContractError("Training record IDs must be unique when binding a partition.")
     return records
 
 

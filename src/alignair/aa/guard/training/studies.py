@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from alignair.aa.guard.loco import LOCO_FOLDS, LOCO_MASK_HASH, masked_profiles_for
-from alignair.aa.guard.train_data import partition_by_parent_lineage
+from alignair.data.partitioning import partition_by_parent_lineage
 from alignair.errors import ArtifactIntegrityError
 from alignair.io.atomic import atomic_write_json
 from .data import make_oe, source_setup

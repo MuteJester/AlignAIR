@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from alignair.aa.guard.loco import LOCO_FOLDS, LOCO_MASK_HASH, masked_profiles_for
-from alignair.aa.guard.train_data import partition_by_parent_lineage
+from alignair.data.partitioning import partition_by_parent_lineage
 from alignair.aa.guard.training import cli, studies
 from alignair.aa.guard.training.data import source_setup
 from alignair.errors import ArtifactIntegrityError
@@ -160,3 +160,18 @@ def test_progress_replacement_failure_keeps_last_complete_results_and_stops_the_
     assert (out/name).read_bytes() == previous[0] and caught.value.context['path'] == str(out/name)
     assert caught.value.context['stage'] == 'guard_training_progress' and not list(out.glob('*.tmp'))
     assert not (out/'STAGE4_RESULT.md').exists() and not (out/'STAGE5_LOCO_TRAINING.md').exists()
+
+
+@pytest.mark.parametrize('kind', ['sweep', 'loco'])
+def test_duplicate_ids_stop_direct_study_calls_before_features_training_or_outputs(study, tmp_path, kind):
+    from alignair.errors import DataContractError
+    records = copy.deepcopy(study.records)
+    records.append(copy.deepcopy(records[0]))
+    with pytest.raises(DataContractError, match='unique') as caught:
+        if kind == 'sweep':
+            studies.run_sweep(study.manifest, records, study.bank, artifact_dir=tmp_path/'out', cache_path=tmp_path/'cache')
+        else:
+            studies.run_loco(study.manifest, study.loco, records, study.bank,
+                             artifact_dir=tmp_path/'out', cache_dir=tmp_path/'cache')
+    assert caught.value.context['stage'] == 'lineage_partition'
+    assert not study.calls and not study.features and not (tmp_path/'out').exists()

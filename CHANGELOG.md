@@ -85,6 +85,9 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Parent-lineage partitioning now lives in shared `alignair.data.partitioning`. Guard manifests and
+  studies use the same owner, preserving valid assignments, record order, rounding and hashes.
+  Invalid split options, duplicate IDs and malformed consumed lineage identities raise contextual errors.
 - Guard feature caching now lives in `aa.guard.feature_cache`, returning a read-only mapping with
   bank/order/profile-mask identity and validated finite vectors. Valid version-1 files remain usable;
   extensions publish atomically. Tensor assembly consumes prepared features instead of rerunning HMM
@@ -267,6 +270,8 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Unused guard `build_training_stream` sampler and its private role helper. The old
+  `aa.guard.train_data` module is removed; live partition imports use `data.partitioning`.
 - Unused `aa.convergence.paired` bootstrap/McNemar helpers and six dedicated tests. Active shared
   statistics, benchmark/assay comparisons and their study-specific resampling/decision policies
   retain their existing implementations; no replacement aliases are introduced.
