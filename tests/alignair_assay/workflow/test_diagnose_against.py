@@ -367,3 +367,32 @@ def test_the_released_checkpoint_against_itself(built, tmp_path, device):
         summary = result.against["summary"]["suites"]["S1"]
         assert set(summary["deltas"].values()) <= {0.0, None} and summary["significant"] == []
         assert summary["reads"] == {"heads": {"fixed": 0, "broken": 0}, "baseline": {"fixed": 0, "broken": 0}}
+
+
+@pytest.mark.skipif(not MODEL, reason="set ALIGNAIR_ASSAY_MODEL to a .alignair model file")
+def test_the_released_checkpoint_with_its_j_end_head_zeroed_is_seen_getting_worse(built, tmp_path):
+    # The audit's positive control through the real files: the perturbed model is diagnosed against the released one
+    # on the same reads, under its own model key and per-case file, and the comparison sees its J end get worse. On
+    # the soft-argmax J end the released model is almost never exact (it stops short of a J that runs to the read
+    # end), so a broken head cannot make that metric worse: the control reads the logits' argmax, where it is right.
+    from alignair_assay.workflow import audit
+
+    layout = _copy(built, tmp_path)
+    device = "cuda" if os.environ.get("ALIGNAIR_ASSAY_GPU") == "1" else "cpu"
+    cfg = audit.AuditConfig(sim_run=str(tmp_path / "sim"), real_run=str(tmp_path / "real"),
+                            data_root=str(tmp_path / "data"), checkpoint=str(Path(MODEL).expanduser()), device=device,
+                            seed=5, null_suites=("S1",), null_scale=SCALE, diagnose_suites=("S1",), batch_size=64,
+                            diagnose_variants=("baseline",))
+    found = audit.positive_diagnose(cfg, layout, RunLayout(tmp_path / "positive"))
+    evidence = found["evidence"]
+    assert found["status"] == "pass", found["reason"]
+    assert evidence["model_key"] != evidence["baseline"]
+    assert evidence["rates"]["baseline"] > 0.5 and evidence["rates"]["this"] < evidence["rates"]["baseline"]
+    # the zeroed head reached the replay: the J end's signed error differs on every read with a scored J end, in the
+    # two per-case files, and the control rests on all of those reads
+    mine = read_case_scores(layout, evidence["model_key"], "S1")
+    base = read_case_scores(layout, evidence["baseline"], "S1")
+    metric = "head.j.end_err.soft"
+    errors = [(base[case]["head"][metric], mine[case]["head"][metric]) for case in mine
+              if base[case]["head"] and metric in base[case]["head"]]
+    assert found["n"] == len(errors) > 90 and all(was != now for was, now in errors)

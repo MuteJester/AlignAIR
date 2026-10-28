@@ -49,7 +49,9 @@ since what was not checked may have failed, and an audit that checked nothing ne
   (``diagnostics.perturb.zero_module``, written to ``layout.audit_scratch("positive")``) diagnosed against the
   checkpoint on the first suite both null surfaces share (S1): the perturbed head metric ``POSITIVE_METRIC`` must be
   worse (Δ < 0, the verdict "baseline better"), with reads broken and fewer fixed, and the suite detail must render
-  that direction: a comparison that cannot see a broken head, or reads it backwards, is no instrument.
+  that direction: a comparison that cannot see a broken head, or reads it backwards, is no instrument. The metric's
+  rate on the paired reads, the checkpoint's and the perturbed model's, is in the evidence: the room it had to get
+  worse (a metric the checkpoint almost never gets right cannot show a broken head, and the check then fails).
 - Cross-surface agreement, ``agreement.all_vs_diagnose``: on that suite's one build, ``all``'s per-case end-to-end
   scores of ``alignair-local@b`` must equal ``diagnose``'s per-case baseline scores of the same checkpoint (its file's
   model key), case by case, on every metric both score: the CLI's AIRR output and the in-process replay are one
@@ -1045,6 +1047,8 @@ def positive_diagnose(cfg: AuditConfig, layout: RunLayout, scratch: RunLayout) -
     change = ((heads.get("changes") or {}).get("metrics") or {}).get(POSITIVE_METRIC) or {}
     delta, verdict, n = (entry or {}).get("delta"), (entry or {}).get("verdict"), (entry or {}).get("n_paired") or 0
     fixed, broken = change.get("fixed") or 0, change.get("broken") or 0
+    # the metric's rate on the paired reads: the baseline's is the room the perturbed model had to get worse
+    rates = {"baseline": (entry or {}).get("mean_a_paired"), "this": (entry or {}).get("mean_b_paired")}
     if entry is None or not n:
         problems.append(f"{POSITIVE_METRIC} was not compared on any read")
     else:
@@ -1069,13 +1073,14 @@ def positive_diagnose(cfg: AuditConfig, layout: RunLayout, scratch: RunLayout) -
     rendered = AGAINST_VERDICTS["a_better"]
     if not rows or not rows[0].rstrip(" |").endswith(rendered):
         problems.append(f"the suite detail's {POSITIVE_METRIC} row does not read {rendered!r} ({detail.name})")
-    evidence = {"summary": f"{POSITIVE_MODULE} zeroed: {POSITIVE_METRIC} Δ {_signed(delta)} on {n} reads, "
+    evidence = {"summary": f"{POSITIVE_MODULE} zeroed: {POSITIVE_METRIC} {_percent(rates['baseline'])} → "
+                           f"{_percent(rates['this'])}, Δ {_signed(delta)} on {n} reads, "
                            f"{AGAINST_VERDICTS.get(verdict, verdict)}, {fixed} fixed / {broken} broken ({suite}, "
                            f"perturbed {result.model_key} against {against['baseline']})",
                 "suite": suite, "module": POSITIVE_MODULE, "zeroed": zeroed, "metric": POSITIVE_METRIC,
                 "model_key": result.model_key, "baseline": against["baseline"], "delta": delta, "verdict": verdict,
-                "ci95": (entry or {}).get("ci95"), "fixed": fixed, "broken": broken, "detail": str(detail),
-                "problems": problems}
+                "ci95": (entry or {}).get("ci95"), "rates": rates, "fixed": fixed, "broken": broken,
+                "detail": str(detail), "problems": problems}
     if problems:
         return check(name, "fail", n, evidence, f"the positive control did not see the perturbed head get worse "
                                                 f"({'; '.join(problems[:3])}): the comparison is blind or backwards")

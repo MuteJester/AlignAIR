@@ -316,8 +316,10 @@ After a re-freeze, audit again before comparing anything.
     rewritten, so the copy is the same bytes every time) is diagnosed against the checkpoint on the shared S1 build:
     `head.j.end_exact.argmax` must be worse (Δ < 0, verdict "baseline better"), with reads broken and fewer fixed,
     the summary must carry that Δ and verdict, and the suite detail must render the row as "baseline better". `n` is
-    the reads the metric pairs. The argmax J end, because the released model gets it right on most reads while its
-    soft-argmax J end is almost never exact (the decoder's bias): a broken head cannot make that metric worse;
+    the reads the metric pairs, and the evidence holds the metric's rate on them, the checkpoint's then the
+    perturbed model's (the room it had to get worse). The argmax J end, because the released model gets it right on
+    most reads while its soft-argmax J end is almost never exact (it stops short of a J that runs to the read end):
+    a broken head cannot make that metric worse, and on it the control fails (a tie), never passes;
   - cross-surface agreement (`agreement.all_vs_diagnose`): on the shared S1 build, `all`'s per-case end-to-end
     scores of `alignair-local@b` (the CLI's AIRR output) must equal `diagnose`'s per-case baseline scores of the same
     checkpoint (the in-process replay, under the file's model key), case by case on every metric both score, with the

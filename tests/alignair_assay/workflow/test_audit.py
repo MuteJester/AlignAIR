@@ -1017,7 +1017,9 @@ def test_the_positive_control_sees_the_perturbed_head_get_worse(tmp_path, monkey
     evidence = found["evidence"]
     assert evidence["delta"] == pytest.approx(-0.6) and evidence["verdict"] == "a_better"
     assert (evidence["fixed"], evidence["broken"]) == (0, 12)
-    assert "baseline better" in evidence["summary"]
+    # the metric's rate on the paired reads, the baseline's then the perturbed model's: the room it had to get worse
+    assert evidence["rates"] == {"baseline": pytest.approx(1.0), "this": pytest.approx(0.4)}
+    assert "baseline better" in evidence["summary"] and "100.0% → 40.0%" in evidence["summary"]
 
 
 @pytest.mark.parametrize("fault, expected", [
