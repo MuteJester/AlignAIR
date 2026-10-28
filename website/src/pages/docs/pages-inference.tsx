@@ -15,6 +15,51 @@ const modelInference: DocPage = {
         See <DocLink to="model-setup">model setup</DocLink> for input and label configuration and
         <DocLink to="evaluation-reports">evaluation reports</DocLink> for labelled cohort scoring.
       </p>
+      <H2 id="model-resolution">Resolve and load model artifacts</H2>
+      <p>
+        <code>Aligner.from_pretrained</code> and <code>load_aa_model</code> use
+        <code> alignair.registry.resolve_model</code> for local files, catalog IDs, verified caches,
+        and Hugging Face repositories. Each loader then validates its artifact format. Protein
+        product bundles retain their class-map, integrity, and calibration-to-model binding checks.
+      </p>
+      <CodeBlock lang="python" code={`from alignair import Aligner, load_aa_model
+from alignair.registry import resolve_model
+
+aligner = Aligner.from_pretrained("models/nucleotide.alignair", device="cpu")
+protein = load_aa_model("models/protein.alignair", device="cpu")
+results = protein.predict(["EVQLVESGGG"])
+
+# A catalog you maintain can supply either artifact format.
+protein = load_aa_model(
+    "protein-candidate", registry=["file:///srv/alignair-models"],
+    revision="1.0.0", offline=True, device="cpu",
+)
+
+# Resolve without decoding when a caller needs the local artifact path.
+path = resolve_model("hf://your-org/your-model", revision="release-tag", offline=True)`} />
+      <DocTable head={["Option", "Behavior"]} rows={[
+        ["registry", "Ordered catalog sources; an empty list disables catalog sources. Without an argument, use ALIGNAIR_REGISTRY, then config.toml registries, then the built-in catalog."],
+        ["revision", "Catalog version when no inline @version is present. For Hub repositories, overrides the inline revision. Existing local paths ignore this option."],
+        ["offline", "Uses local files and caches. A file:// catalog also works offline; uncached remote artifacts fail."],
+        ["token", "Authenticates direct Hub downloads; also accepts HF_TOKEN or HUGGING_FACE_HUB_TOKEN. Do not include credentials in model specifications."],
+      ]} />
+      <p>
+        Pinned catalog artifacts already in the cache can load without contacting a registry;
+        recorded checksums are verified before reuse. Hugging Face specifications accept
+        <code> hf://org/repo</code>, <code>org/repo</code>, and an optional artifact subpath.
+        An explicitly local path that is missing or names a directory raises a model-resolution error.
+      </p>
+      <p>
+        The AA loader retains two historical checkout aliases for
+        <code> alignair-aa-igh-human</code> and <code>alignair-aa-igh-human@2.0.0</code>.
+        They apply only when the matching local experiment bundle exists and no registry is
+        supplied or configured. Other versions use normal catalog resolution. These aliases do
+        not establish availability of that model in a public catalog. Use <code>load_aa_model</code>
+        for explicit resolution options and reuse the returned predictor for multiple requests.
+      </p>
+      <CodeBlock lang="bash" code={`alignair predict-aa reads.fa --model protein-candidate \\
+  --registry file:///srv/alignair-models --revision 1.0.0 --offline \\
+  --device cpu --out predictions.jsonl`} />
       <H2 id="files">Read sequence files before validation</H2>
       <CodeBlock lang="python" code={`from contextlib import closing
 from alignair.io import iter_sequence_records

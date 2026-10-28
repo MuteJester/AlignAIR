@@ -18,17 +18,17 @@ must agree across the header, the loaded class maps, and the model's own classif
 calibration that does not carry a complete method/coverage record is rejected outright. Every check here
 RAISES (never warns) — a caller holding an `AAPredictor` has a verified guarantee, not a best-effort one.
 
-Everything is driven off the bundle's own sections; nothing here touches GenAIRR or the network, so a
-verified bundle loads to an identical `AAPredictor` anywhere, offline, forever.
+Model resolution uses the shared registry, cache and Hub support. Once resolved, decoding and
+validation use only the bundle's own sections, without GenAIRR or network access.
 """
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from ...errors import ModelError
+from ...registry import resolve_model
 
 from ...aligner import resolve_device
 from ...model_file import container, serialize
@@ -39,12 +39,11 @@ from ...data.tokenizer import AAProteinTokenizer
 from .bundle import canonical_json
 from .predictor import _predict
 
-# Hard-coded model-id -> local bundle path map. Task 8 replaces this with real registry resolution
-# (catalog ids resolved through `alignair.registry`, same as the nucleotide `Aligner.from_pretrained`);
-# for now a bare filesystem path is always used as-is, and these two aliases cover the Task-2 v2 bundle.
+# Historical checkout aliases, used only when the bundle exists and no registry is configured.
+# Resolution policy belongs to alignair.registry; this table contains compatibility data only.
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _V2_BUNDLE_PATH = _REPO_ROOT / "experiments" / "aa" / "product" / "alignair-aa-igh-human-2.0.0.alignair"
-_MODEL_MAP = {
+_LOCAL_MODEL_ALIASES = {
     "alignair-aa-igh-human@2.0.0": _V2_BUNDLE_PATH,
     "alignair-aa-igh-human": _V2_BUNDLE_PATH,
 }
@@ -78,15 +77,6 @@ class AAPredictor:
         inter_vj_aa + §7 calibrated conformal sets, one `AAPrediction`/`ErrorResult` per input record
         in original order — see `alignair.aa.product.predictor._predict` for the full contract."""
         return _predict(self, sequences, coverage_group=coverage_group, on_invalid=on_invalid)
-
-
-def _resolve_path(model) -> str:
-    if os.path.exists(str(model)):
-        return str(model)
-    mapped = _MODEL_MAP.get(str(model))
-    if mapped is not None:
-        return str(mapped)
-    raise ModelError(f"unknown AA model id or path: {model!r}", context={"model_id": model})
 
 
 def _require(cond: bool, message: str) -> None:
@@ -269,12 +259,18 @@ def _load_legacy_pickle(path: str, *, device: str) -> AAPredictor:
                        device=dev)
 
 
-def load_aa_model(model, *, device: str = "auto", trust_pickle: bool = False) -> AAPredictor:
-    """Resolve ``model`` (a filesystem path, or a hard-coded catalog id — see `_MODEL_MAP`) and load it
+def load_aa_model(model, *, device: str = "auto", trust_pickle: bool = False,
+                  revision: str | None = None, registry=None, offline: bool = False,
+                  token: str | None = None) -> AAPredictor:
+    """Resolve ``model`` (a path, catalog id or Hugging Face repo) through the shared registry and load it
     into a verified `AAPredictor`. Raises (never warns) on any integrity or calibration<->model binding
     failure. A legacy pickle ``.pt`` checkpoint is refused unless ``trust_pickle=True`` (a dev-only,
-    integrity-unverified convenience path — see `_load_legacy_pickle`)."""
-    path = _resolve_path(model)
+    integrity-unverified convenience path — see `_load_legacy_pickle`). ``registry``, ``revision``,
+    ``offline`` and ``token`` have the same meaning as in ``Aligner.from_pretrained``.
+    """
+    path = str(resolve_model(model, sources=list(registry) if registry is not None else None,
+                             revision=revision, offline=offline, token=token,
+                             local_aliases=_LOCAL_MODEL_ALIASES))
 
     if not container.is_alignair_file(path):
         if not trust_pickle:

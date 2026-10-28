@@ -20,7 +20,11 @@ def register(sub) -> None:
     p.add_argument("input", help="reads to predict (FASTA, FASTQ, CSV/TSV or text; "
                                  "'-' = stdin; '.gz' ok)")
     p.add_argument("--model", default="alignair-aa-igh-human@2.0.0",
-                   help="AA model id or .alignair path (default: alignair-aa-igh-human@2.0.0)")
+                   help="AA catalog id, Hub repo or .alignair path (default: alignair-aa-igh-human@2.0.0)")
+    p.add_argument("--registry", action="append", help="registry source (repeatable)")
+    p.add_argument("--revision", help="catalog version or Hub branch/tag/commit")
+    p.add_argument("--offline", action="store_true", help="use local artifacts and caches only")
+    p.add_argument("--token", help="Hugging Face access token (or set HF_TOKEN)")
     p.add_argument("--coverage-group", choices=["full", "trunc", "short"], default=None,
                    help="§7 Mondrian calibration group to apply to every record "
                         "(default: pooled fallback -- see §7)")
@@ -48,6 +52,7 @@ def _write_run_metadata(out: str, predictor, args, counts: dict) -> None:
         "command": {
             "input": args.input, "out": args.out, "model": args.model,
             "coverage_group": args.coverage_group, "on_invalid": args.on_invalid, "device": args.device,
+            "revision": args.revision, "offline": args.offline,
         },
         "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
@@ -61,7 +66,8 @@ def run(args) -> int:
         print(f"no sequences found in {args.input}")
         return 1
 
-    predictor = load_aa_model(args.model, device=args.device)
+    predictor = load_aa_model(args.model, device=args.device, registry=args.registry,
+                              revision=args.revision, offline=args.offline, token=args.token)
     # Pass through the on_invalid flag from the CLI (default: "skip" for batch-friendly mode).
     results = predictor.predict(records, coverage_group=args.coverage_group, on_invalid=args.on_invalid)
 

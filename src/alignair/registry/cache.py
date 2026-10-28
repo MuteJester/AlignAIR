@@ -12,9 +12,10 @@ from alignair.errors import ArtifactIntegrityError, ModelError, RegistryError
 import contextlib
 import hashlib
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
-from . import sources
+from . import sources as registry_sources
 
 
 class IntegrityError(ArtifactIntegrityError):
@@ -155,12 +156,12 @@ def _lock(path: Path):
 
 
 def _open_stream(source: str, relpath: str, offline: bool, revision: str = "main"):
-    url = sources.artifact_url(source, relpath, revision=revision)
-    local = sources._local_path(url)
+    url = registry_sources.artifact_url(source, relpath, revision=revision)
+    local = registry_sources._local_path(url)
     if local is not None:
         return open(local, "rb")
     if offline:
-        raise sources.OfflineError(f"offline: cannot fetch {url}")
+        raise registry_sources.OfflineError(f"offline: cannot fetch {url}")
     import urllib.request
     return urllib.request.urlopen(url, timeout=60)                 # nosec - user-configured registry
 
@@ -193,8 +194,9 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
     return dest
 
 
-def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool = False,
-                  token: str | None = None, revision: str | None = None) -> Path:
+def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = None,
+                  offline: bool = False, token: str | None = None, revision: str | None = None,
+                  local_aliases: Mapping[str, str | os.PathLike[str]] | None = None) -> Path:
     """Resolve a model spec to a local artifact path:
 
     * a filesystem path -> that path;
@@ -202,15 +204,44 @@ def resolve_model(spec: str, *, sources: list[str] | None = None, offline: bool 
       that repo via ``huggingface_hub`` (revision/token/offline honored — the one-repo-per-model path);
     * a catalog ``id`` / ``id@version`` -> the verified cached artifact from a registry source.
 
-    A pinned + already-cached version returns immediately (no network)."""
-    if os.path.exists(spec):
-        return Path(spec)
+    ``revision`` supplies a catalog version when no inline ``@version`` is present; for Hub repos
+    it overrides the inline revision. Local paths ignore it. Optional historical ``local_aliases``
+    apply only when no sources are explicitly supplied or configured, and their target file exists.
+    A pinned + already-cached version returns immediately (no network).
+    """
+    explicit_path = isinstance(spec, os.PathLike)
+    try:
+        spec = os.fspath(spec)
+    except TypeError as exc:
+        raise ModelError("model must be a path or non-empty model specification",
+                         context={"stage": "model_resolution"}) from exc
+    if not isinstance(spec, str) or not spec.strip():
+        raise ModelError("model must be a path or non-empty model specification",
+                         context={"stage": "model_resolution"})
+    local = Path(spec).expanduser()
+    if local.exists():
+        if not local.is_file():
+            raise ModelError("model path must be a file",
+                             context={"stage": "model_resolution", "path": local})
+        return local
+    if explicit_path or os.path.isabs(spec) or spec.startswith(("./", "../", "~")):
+        raise ModelError("model file does not exist",
+                         context={"stage": "model_resolution", "path": local})
     from . import hf
     if hf.is_hf_repo_spec(spec):  # direct one-repo-per-model HF loading
         return hf.download_from_hub(spec, revision=revision, token=token, offline=offline)
     model_id, _, version = spec.partition("@")
-    version = version or None
-    srcs = sources if sources is not None else _resolve_sources()
+    version = version or revision or None
+    if sources is None and local_aliases:
+        configured = registry_sources.resolve_sources(include_default=False)
+        alias = local_aliases.get(f"{model_id}@{version}" if version else model_id)
+        if not configured and alias is not None:
+            target = Path(alias).expanduser()
+            if target.is_file():
+                return target
+        srcs = configured or [registry_sources.DEFAULT_REGISTRY]
+    else:
+        srcs = sources if sources is not None else registry_sources.resolve_sources()
     if version:                                                    # pinned + cached -> no network
         cached = cache_path(model_id, version)
         # return a cached pinned version without the network ONLY if its integrity sidecar still checks
@@ -299,7 +330,7 @@ def verify_installed(srcs: list[str], *, offline: bool = False, model_id: str | 
         if model_id and mid != model_id:
             continue
         for ver in vers:
-            found = sources.find_model(mid, ver, srcs, offline=offline)
+            found = registry_sources.find_model(mid, ver, srcs, offline=offline)
             if not found:
                 out.append((mid, ver, None))
                 continue
@@ -309,19 +340,15 @@ def verify_installed(srcs: list[str], *, offline: bool = False, model_id: str | 
     return out
 
 
-def _resolve_sources() -> list[str]:
-    return sources.resolve_sources()
-
-
 def _find(model_id, version, srcs, offline):
-    return sources.find_model(model_id, version, srcs, offline=offline)
+    return registry_sources.find_model(model_id, version, srcs, offline=offline)
 
 
 def _known_ids(srcs, offline) -> list[str]:
     ids: list[str] = []
     for src in srcs:
         try:
-            ids += list(sources.load_registry(src, offline=offline).get("models", {}))
+            ids += list(registry_sources.load_registry(src, offline=offline).get("models", {}))
         except Exception:
             continue
     return sorted(set(ids))

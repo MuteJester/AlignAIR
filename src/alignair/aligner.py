@@ -108,14 +108,9 @@ class Aligner:
         HF branch/tag/commit (or catalog version); ``token`` authenticates a private/gated HF repo (or
         ``HF_TOKEN``). ``offline`` uses only local caches. ``device`` accepts ``"auto"`` (CUDA→MPS→CPU)."""
         from .api import load_model
-        from .registry import hf, resolve_model, sources as _sources
-        srcs = _sources.resolve_sources(list(registry) if registry else None)
-        if hf.is_hf_repo_spec(str(model)):
-            path = str(resolve_model(str(model), sources=srcs, offline=offline, token=token,
-                                     revision=revision))
-        else:                                  # catalog id: revision is the @version suffix
-            spec = f"{model}@{revision}" if revision and "@" not in str(model) else str(model)
-            path = str(resolve_model(spec, sources=srcs, offline=offline))
+        from .registry import hf, resolve_model
+        path = str(resolve_model(model, sources=list(registry) if registry is not None else None,
+                                 offline=offline, token=token, revision=revision))
         dev = resolve_device(device)
         m, ref = load_model(path, dataconfigs=dataconfigs, reference=reference, device=dev,
                             trust_pickle=trust_pickle)

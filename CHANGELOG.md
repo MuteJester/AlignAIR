@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared model resolution for the main and protein product loaders, including catalog version pins,
+  verified offline caches and Hub repositories. Protein loading and CLI accept registry, revision,
+  offline and token options; local filenames remain intact when a revision is supplied.
 - Shared categorical NLL, multiclass Brier and frequency-binned accuracy reports in
   `alignair.evaluate`, with categorical probability/target validation shared with calibration.
 - Shared sigmoid temperature scaling, binary top-1 fitting and ECE in `alignair.calibration`,
