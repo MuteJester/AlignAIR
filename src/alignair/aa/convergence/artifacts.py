@@ -1,9 +1,8 @@
 """Own fresh convergence output directories and publish finite report artifacts."""
-import json
 from pathlib import Path
 
-from ...errors import ConfigurationError, InputError, OperationIOError, error_context
-from ...io.atomic import atomic_write_text
+from ...errors import ConfigurationError, OperationIOError, error_context
+from ...io.atomic import atomic_write_json, atomic_write_text
 
 
 class StudyArtifacts:
@@ -48,11 +47,14 @@ class StudyArtifacts:
                                    context={"stage": "convergence_artifacts", "path": str(path)}) from exc
         self._created = True
 
-    def write_text(self, name, text):
+    def _path(self, name):
         if not self._created or not isinstance(name, str) or not name or Path(name).name != name or name in (".", ".."):
             raise ConfigurationError("publish a named artifact only after claiming study outputs",
                                      context={"stage": "convergence_artifacts"})
-        path = self.art_dir / name
+        return self.art_dir / name
+
+    def write_text(self, name, text):
+        path = self._path(name)
         try:
             atomic_write_text(path, text, stage="convergence_artifacts")
         except OSError as exc:
@@ -60,9 +62,6 @@ class StudyArtifacts:
                                    context={"stage": "convergence_artifacts", "path": str(path)}) from exc
 
     def write_json(self, name, value):
-        try:
-            text = json.dumps(value, indent=2, sort_keys=True, allow_nan=False)
-        except (TypeError, ValueError) as exc:
-            raise InputError("convergence artifacts require finite JSON values",
-                             context={"stage": "convergence_artifacts", "field": name}) from exc
-        self.write_text(name, text)
+        path = self._path(name)
+        with error_context(field=name):
+            atomic_write_json(path, value, stage="convergence_artifacts")

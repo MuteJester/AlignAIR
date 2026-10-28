@@ -71,6 +71,8 @@
     "src/alignair/aa/convergence/select.py": {"statements": 98, "branches": 95},
     "src/alignair/aa/convergence/evaluator.py": {"statements": 90, "branches": 80},
     "src/alignair/aa/guard/checkpoint.py": {"statements": 98, "branches": 95},
+    "src/alignair/aa/guard/training/budget.py": {"statements": 98, "branches": 95},
+    "src/alignair/aa/guard/training/reporting.py": {"statements": 98, "branches": 95},
     "src/alignair/aa/product/loader.py": {"statements": 98, "branches": 95}
   }
 }

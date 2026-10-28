@@ -236,3 +236,19 @@ def test_failed_publication_preserves_last_recovery_and_does_not_record_success(
     assert (config.checkpoint_dir/'C4.s7.pt').read_bytes() == previous[0]
     assert not (config.checkpoint_dir/'C4.s7.final.pt').exists() and not config.budget_path.exists()
     assert not list(config.checkpoint_dir.glob('*.tmp'))
+
+
+def test_failure_report_publication_keeps_original_training_diagnostic_and_previous_bytes(run_inputs, monkeypatch):
+    from alignair.io import atomic
+    from alignair.errors import OperationIOError
+    config = run_inputs['config']; config.checkpoint_dir.mkdir()
+    path = config.checkpoint_dir/'C4.s7.failure.json'; path.write_bytes(b'previous failure report')
+    monkeypatch.setattr(engine, '_forward_losses', lambda *args: (torch.tensor(float('nan')), {}, {}))
+    def fail(*args): raise OSError('cannot publish diagnostic')
+    monkeypatch.setattr(atomic.os, 'replace', fail)
+    with pytest.raises(OperationIOError) as caught: engine.train_one(**run_inputs)
+    assert caught.value.context['path'] == str(path)
+    assert caught.value.context['training_error']['code'] == 'ALIGNAIR_NUMERICAL_FAILURE'
+    assert caught.value.context['run_tag'] == 'C4.s7' and isinstance(caught.value.__cause__, OSError)
+    assert path.read_bytes() == b'previous failure report' and list(config.checkpoint_dir.iterdir()) == [path]
+    assert not config.budget_path.exists()

@@ -135,3 +135,28 @@ def test_package_cli_reports_missing_input_as_structured_io_error(tmp_path, caps
                        "--feature-cache", "absent.json"])
     assert status == 1
     assert json.loads(capsys.readouterr().err)["code"] == "ALIGNAIR_IO_FAILED"
+
+
+@pytest.mark.parametrize('kind', ['sweep', 'loco'])
+def test_progress_replacement_failure_keeps_last_complete_results_and_stops_the_study(study, tmp_path, monkeypatch, kind):
+    from pathlib import Path
+    from alignair.io import atomic
+    from alignair.errors import OperationIOError
+    out = tmp_path/'out'
+    name = 'stage4_runs.json' if kind == 'sweep' else 'loco_runs.json'
+    original = atomic.os.replace; previous = []
+    def replace(source, destination):
+        if Path(destination).name == name and Path(destination).exists():
+            previous.append(Path(destination).read_bytes())
+            raise OSError('progress replacement interrupted')
+        return original(source, destination)
+    monkeypatch.setattr(atomic.os, 'replace', replace)
+    with pytest.raises(OperationIOError) as caught:
+        if kind == 'sweep':
+            studies.run_sweep(study.manifest, study.records, study.bank, artifact_dir=out, cache_path=tmp_path/'cache')
+        else:
+            studies.run_loco(study.manifest, study.loco, study.records, study.bank, artifact_dir=out, cache_dir=tmp_path/'cache')
+    assert len(study.calls) == 2 and len(json.loads((out/name).read_text())) == 1
+    assert (out/name).read_bytes() == previous[0] and caught.value.context['path'] == str(out/name)
+    assert caught.value.context['stage'] == 'guard_training_progress' and not list(out.glob('*.tmp'))
+    assert not (out/'STAGE4_RESULT.md').exists() and not (out/'STAGE5_LOCO_TRAINING.md').exists()

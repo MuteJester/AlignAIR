@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from numbers import Integral, Real
 from pathlib import Path
+
+from alignair.errors import ArtifactIntegrityError, InputError, NumericalError, OperationIOError, error_context
+from alignair.io.atomic import atomic_write_json
 
 
 @dataclass
@@ -36,29 +41,83 @@ def plan(candidates: Sequence[str], seed_replicates: int, loco_folds: int) -> Es
     )
 
 
+def _validate_entry(entry, error_type):
+    if not isinstance(entry, dict):
+        raise error_type("Accounting run must be a mapping.")
+    for field in ("wall_s", "gpu_h"):
+        value = entry.get(field)
+        try:
+            valid = isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
+        except OverflowError:
+            valid = False
+        if not valid:
+            raise error_type("Accounting durations must be finite nonnegative numbers.", context={"field": field})
+    value = entry.get("params")
+    if not isinstance(value, Integral) or isinstance(value, bool) or value < 0:
+        raise error_type("Accounting parameter count must be a nonnegative integer.", context={"field": "params"})
+
+
+def _read_ledger(path):
+    def reject_constant(value):
+        raise ValueError(f"Nonfinite JSON constant: {value}")
+    def finite_float(value):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("JSON number exceeds finite numeric range")
+        return number
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_constant, parse_float=finite_float)
+    except FileNotFoundError:
+        return {"runs": {}}
+    except ValueError as exc:
+        raise ArtifactIntegrityError("Accounting ledger is not finite UTF-8 JSON.") from exc
+    except OSError as exc:
+        raise OperationIOError("Cannot read accounting ledger.") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("runs"), dict):
+        raise ArtifactIntegrityError("Accounting ledger requires a runs mapping.")
+    for model_id, entry in data["runs"].items():
+        with error_context(model_id=model_id):
+            if not model_id:
+                raise ArtifactIntegrityError("Accounting run ID must be nonempty.")
+            _validate_entry(entry, ArtifactIntegrityError)
+    return data
+
+
 def record(model_id: str, wall_s: float, gpu_h: float, params: int, *, path: str | Path) -> None:
     """Write one run's totals, replacing its previous entry when a run is resumed.
 
-    The caller owns the output directory. Existing ledger fields are preserved.
+    Existing ledger fields and other runs are preserved. Updates require one serialized writer;
+    per-file atomic publication does not lock a read-modify-write transaction.
     """
     path = Path(path)
-    data = json.loads(path.read_text()) if path.exists() else {"runs": {}}
-    data["runs"][model_id] = {
-        "wall_s": float(wall_s), "gpu_h": float(gpu_h), "params": int(params),
-    }
-    path.write_text(json.dumps(data, indent=2, sort_keys=True))
+    with error_context(stage="guard_training_budget", path=str(path), model_id=model_id):
+        if not isinstance(model_id, str) or not model_id:
+            raise InputError("Accounting run ID must be nonempty text.", context={"field": "model_id"})
+        entry = {"wall_s": wall_s, "gpu_h": gpu_h, "params": params}
+        _validate_entry(entry, InputError)
+        data = _read_ledger(path)
+        data["runs"][model_id] = {"wall_s": float(wall_s), "gpu_h": float(gpu_h), "params": int(params)}
+        atomic_write_json(path, data, stage="guard_training_budget")
 
 
 def total(*, path: str | Path) -> dict:
     """Sum recorded runs; a ledger that has not been created has zero totals."""
     path = Path(path)
-    data = json.loads(path.read_text()) if path.exists() else {"runs": {}}
-    runs = data["runs"].values()
-    return {
-        "wall_s": sum(r["wall_s"] for r in runs),
-        "gpu_h": sum(r["gpu_h"] for r in runs),
-        "n_runs": len(data["runs"]),
-    }
+    with error_context(stage="guard_training_budget", path=str(path)):
+        data = _read_ledger(path)
+        runs = data["runs"].values()
+        result = {
+            "wall_s": sum(r["wall_s"] for r in runs),
+            "gpu_h": sum(r["gpu_h"] for r in runs),
+            "n_runs": len(data["runs"]),
+        }
+        try:
+            finite = math.isfinite(result["wall_s"]) and math.isfinite(result["gpu_h"])
+        except OverflowError:
+            finite = False
+        if not finite:
+            raise NumericalError("Accounting totals exceed finite numeric range.")
+        return result
 
 
 def plan_dict(candidates: Sequence[str], seed_replicates: int, loco_folds: int) -> dict:

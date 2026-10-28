@@ -6,7 +6,17 @@ import statistics
 from pathlib import Path
 
 from alignair.aa.guard.loco import LOCO_MASK_HASH
+from alignair.errors import OperationIOError
+from alignair.io.atomic import atomic_write_text
 from . import budget
+
+
+def _write_report(path, lines):
+    try:
+        atomic_write_text(path, "\n".join(lines) + "\n", stage="guard_training_report")
+    except OSError as exc:
+        raise OperationIOError("Cannot publish guard training summary.",
+                               context={"stage": "guard_training_report", "path": str(path)}) from exc
 
 
 def write_sweep_report(results, frozen, *, artifact_dir, manifest, device):
@@ -46,7 +56,7 @@ def write_sweep_report(results, frozen, *, artifact_dir, manifest, device):
             lines.append(f"- `{r['tag']}`: {r.get('reason')}")
     lines += ["\n## Scope guard", "- Fresh selection, blind-LOCO, far-OOD, and the sealed test were NOT loaded.",
               "- No candidate chosen; no threshold selected. Next: Stage 5 LOCO (stop for review)."]
-    (artifact_dir / "STAGE4_RESULT.md").write_text("\n".join(lines) + "\n")
+    _write_report(artifact_dir / "STAGE4_RESULT.md", lines)
 
 
 def write_loco_report(results, *, artifact_dir, manifest, device):
@@ -91,4 +101,4 @@ def write_loco_report(results, *, artifact_dir, manifest, device):
     lines += ["\n## Scope audit", f"- files opened: {manifest['files_opened_audit']['opened']}",
               f"- NOT opened: {manifest['files_opened_audit']['NOT_opened']}",
               "- No eligibility judgment made. Next: Task 5.3 + fresh one-shot sequence (separate review)."]
-    (artifact_dir / "STAGE5_LOCO_TRAINING.md").write_text("\n".join(lines) + "\n")
+    _write_report(artifact_dir / "STAGE5_LOCO_TRAINING.md", lines)

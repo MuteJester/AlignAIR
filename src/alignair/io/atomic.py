@@ -1,9 +1,10 @@
 """Publish individual files through a temporary sibling and atomic replacement."""
 import os
+import json
 from pathlib import Path
 import tempfile
 
-from ..errors import error_context
+from ..errors import InputError, OperationIOError, error_context
 
 
 def atomic_write(path, writer, *, stage="artifact_write"):
@@ -34,3 +35,20 @@ def atomic_write_text(path, text, *, stage="artifact_write"):
         with open(temporary, "w", encoding="utf-8") as stream:
             stream.write(text)
     atomic_write(path, write, stage=stage)
+
+
+def atomic_write_json(path, value, *, sort_keys=True, stage="artifact_write"):
+    """Publish finite JSON, with contextual encoding and I/O errors and no partial replacement.
+
+    Encoding completes before any output is created. Formatting uses two-space indentation and
+    the standard JSON Unicode escaping policy. This shares atomic_write's per-file guarantees.
+    """
+    with error_context(stage=stage, path=str(path)):
+        try:
+            text = json.dumps(value, indent=2, sort_keys=sort_keys, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise InputError("artifact requires finite JSON values") from exc
+        try:
+            atomic_write_text(path, text, stage=stage)
+        except OSError as exc:
+            raise OperationIOError("cannot publish JSON artifact") from exc

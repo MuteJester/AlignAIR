@@ -10,6 +10,7 @@ from pathlib import Path
 from alignair.aa.guard.loco import LOCO_FOLDS, LOCO_MASK_HASH, masked_profiles_for
 from alignair.aa.guard.train_data import partition_by_parent_lineage
 from alignair.errors import ArtifactIntegrityError
+from alignair.io.atomic import atomic_write_json
 from .data import make_oe, precompute_features, source_setup
 from .engine import RunConfig, resolve_device, train_one
 from .reporting import write_loco_report, write_sweep_report
@@ -46,7 +47,7 @@ def run_sweep(manifest, records, bank, *, artifact_dir, cache_path, device="cpu"
                                config=config, bank=bank)
             results[result["tag"]] = result
             _LOG.info("%s: %s (development loss %s)", result["tag"], result["status"], result.get("dev_total_loss"))
-            (artifact_dir / "stage4_runs.json").write_text(json.dumps(results, indent=2, sort_keys=True))
+            atomic_write_json(artifact_dir / "stage4_runs.json", results, stage="guard_training_progress")
     frozen = {}
     for cid in manifest["candidates"]:
         losses = {r["seed"]: {"dev_loss": r["dev_total_loss"]} for r in results.values()
@@ -121,6 +122,6 @@ def run_loco(training_manifest, manifest, records, bank, *, artifact_dir, cache_
             result.setdefault("wall_s", round(time.time() - started, 1))
             results[tag] = result
             _LOG.info("%s: %s (development loss %s)", tag, result["status"], result.get("dev_total_loss"))
-            (artifact_dir / "loco_runs.json").write_text(json.dumps(results, indent=2, sort_keys=True))
+            atomic_write_json(artifact_dir / "loco_runs.json", results, stage="guard_training_progress")
     write_loco_report(results, artifact_dir=artifact_dir, manifest=manifest, device=device)
     return results

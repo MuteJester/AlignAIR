@@ -85,6 +85,10 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Guard accounting, progress snapshots, failure diagnostics and summaries publish atomically.
+  Accounting validates finite nonnegative durations, integer parameter counts and existing ledgers
+  before updates, preserving run replacement and metadata rules. Failed diagnostic publication retains
+  the original training error. Guard and convergence JSON reports share `io.atomic.atomic_write_json`.
 - Guard training uses the shared process-RNG capture/restoration owner, with explicit CUDA
   exclusion for CPU runs and a complete process-state requirement on resume. Local record-sampling
   state remains separate. Malformed and truncated generator state now raises contextual errors

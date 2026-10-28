@@ -3,6 +3,7 @@ import json
 import pytest
 
 from alignair.aa.guard.training import budget
+from alignair.errors import ArtifactIntegrityError, InputError, NumericalError, OperationIOError
 
 pytestmark = pytest.mark.component
 
@@ -41,6 +42,74 @@ def test_missing_ledger_has_zero_totals_without_creating_a_file(tmp_path):
 def test_malformed_ledger_is_not_overwritten(tmp_path):
     path = tmp_path / "budget.json"
     path.write_text("incomplete ledger")
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(ArtifactIntegrityError) as caught:
         budget.record("C1.s0", 1, 0.1, 100, path=path)
+    assert isinstance(caught.value.__cause__, json.JSONDecodeError)
     assert path.read_text() == "incomplete ledger"
+
+
+@pytest.mark.parametrize('changes', [{'model_id': ''}, {'model_id': 1}, {'wall_s': -.1},
+    {'wall_s': True}, {'wall_s': '1'}, {'wall_s': 2**10000}, {'wall_s': float('nan')},
+    {'gpu_h': float('inf')}, {'gpu_h': -1}, {'params': 1.9}, {'params': True}, {'params': -1}])
+def test_invalid_record_never_creates_or_replaces_a_ledger(tmp_path, changes):
+    path = tmp_path/'ledger.json'
+    values = dict(model_id='C1.s0', wall_s=1., gpu_h=.1, params=100, path=path); values.update(changes)
+    with pytest.raises(InputError): budget.record(**values)
+    assert not path.exists()
+    path.write_bytes(b'existing work')
+    with pytest.raises(InputError): budget.record(**values)
+    assert path.read_bytes() == b'existing work'
+
+
+@pytest.mark.parametrize('data', [[], {}, {'runs': []}, {'runs': {'': {}}}, {'runs': {'id': []}},
+    {'runs': {'id': {'wall_s': '1', 'gpu_h': 0, 'params': 1}}},
+    {'runs': {'id': {'wall_s': -1, 'gpu_h': 0, 'params': 1}}},
+    {'runs': {'id': {'wall_s': 1, 'gpu_h': 0, 'params': 1.5}}},
+    {'runs': {'id': {'wall_s': 1, 'params': 1}}},
+    {'runs': {}, 'metadata': float('nan')}])
+def test_malformed_existing_ledger_is_refused_by_both_read_and_update(tmp_path, data):
+    path = tmp_path/'ledger.json'; path.write_text(json.dumps(data)); previous = path.read_bytes()
+    for operation in (lambda: budget.total(path=path), lambda: budget.record('new', 1, .1, 100, path=path)):
+        with pytest.raises(ArtifactIntegrityError) as caught: operation()
+        assert caught.value.context['path'] == str(path)
+        assert path.read_bytes() == previous
+
+
+def test_invalid_utf8_ledger_is_not_replaced(tmp_path):
+    path = tmp_path/'ledger.json'; path.write_bytes(b'\xff')
+    with pytest.raises(ArtifactIntegrityError) as caught: budget.record('new', 1, 0, 1, path=path)
+    assert isinstance(caught.value.__cause__, UnicodeError) and path.read_bytes() == b'\xff'
+
+
+def test_json_exponent_overflow_in_existing_metadata_is_not_silently_rewritten(tmp_path):
+    path = tmp_path/'ledger.json'; path.write_text('{"runs": {}, "metadata": 1e999}')
+    previous = path.read_bytes()
+    with pytest.raises(ArtifactIntegrityError): budget.record('new', 1, 0, 1, path=path)
+    assert path.read_bytes() == previous
+
+
+def test_unreadable_ledger_reports_io_error_with_cause(tmp_path):
+    with pytest.raises(OperationIOError) as caught: budget.total(path=tmp_path)
+    assert caught.value.context['path'] == str(tmp_path) and isinstance(caught.value.__cause__, OSError)
+
+
+def test_atomic_ledger_replacement_failure_preserves_all_previous_runs(tmp_path, monkeypatch):
+    from alignair.io import atomic
+    path = tmp_path/'budget.json'; budget.record('first', 10, .5, 100, path=path); previous = path.read_bytes()
+    def fail(*args): raise OSError('disk unavailable')
+    monkeypatch.setattr(atomic.os, 'replace', fail)
+    with pytest.raises(OperationIOError): budget.record('second', 20, .5, 100, path=path)
+    assert path.read_bytes() == previous and list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize('value', [1e308, 10**308])
+def test_overflowing_aggregate_is_a_numerical_error(tmp_path, value):
+    path = tmp_path/'budget.json'
+    path.write_text(json.dumps({'runs': {str(i): {'wall_s': value, 'gpu_h': 0, 'params': 1} for i in range(2)}}))
+    with pytest.raises(NumericalError): budget.total(path=path)
+
+
+def test_nested_ledger_parent_is_created_for_a_valid_record(tmp_path):
+    path = tmp_path/'nested'/'budget.json'
+    budget.record('run', 1, 0, 1, path=path)
+    assert budget.total(path=path) == {'wall_s': 1., 'gpu_h': 0., 'n_runs': 1}

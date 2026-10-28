@@ -21,6 +21,7 @@ from alignair.aa.guard.model import GuardModel
 from alignair.aa.guard.tokenizer import MAX_LEN, AaTokenizer
 from alignair.errors import AlignAIRError, ArtifactIntegrityError, ConfigurationError, NumericalError, TrainingError, error_context
 from alignair.train.random_state import capture_rng_state, restore_rng_state
+from alignair.io.atomic import atomic_write_json
 from . import budget
 from .data import build_tensors
 from .metrics import binary_auroc
@@ -234,7 +235,9 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
             "Guard training run failed.", context={"run_tag": tag, "step": progress_step, "cause_type": type(e).__name__})
         failure = {"tag": tag, "cid": cid, "seed": seed, "status": "engineering_failure",
                    "reason": f"{type(e).__name__}: {str(e)[:120]}", "step": progress_step, "error": error.to_dict()}
-        (ckpt_dir / f"{tag}.failure.json").write_text(json.dumps(failure, indent=2))
+        with error_context(run_tag=tag, step=progress_step, training_error=error.to_dict()):
+            atomic_write_json(ckpt_dir / f"{tag}.failure.json", failure, sort_keys=False,
+                              stage="guard_training_failure")
         return failure
 
     if best_state is not None:

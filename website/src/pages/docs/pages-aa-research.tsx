@@ -170,6 +170,42 @@ python -m alignair.aa.guard.training loco --help`} />
         restore all CUDA generators. Record-sampling seeds and checkpoint field names are unchanged.
       </p>
 
+      <H2 id="reports">Reports and compute accounting</H2>
+      <CodeBlock lang="python" code={`from alignair.aa.guard.training.budget import record, total
+
+record("C1.s0", wall_s=120.0, gpu_h=0.0, params=45000,
+       path="study/results/budget.json")
+totals = total(path="study/results/budget.json")
+assert totals["n_runs"] >= 1`} />
+      <p>
+        Accounting stores one entry per run ID. Recording the same ID replaces its totals, so
+        reusing a completed checkpoint does not double-count the run. Other runs and additional
+        ledger metadata are preserved. Wall seconds and GPU hours must be finite nonnegative
+        numbers; parameter counts must be nonnegative integers. Strings and booleans are rejected.
+        A missing ledger has zero totals and is not created by <code>total</code>.
+      </p>
+      <p>
+        Both reads and updates validate existing ledgers. Malformed JSON, invalid run records or
+        nonfinite values raise <code>ArtifactIntegrityError</code> without replacing the file.
+        Invalid new entries raise <code>InputError</code>; read/write failures raise
+        <code> OperationIOError</code> with path and stage context. Updates assume one serialized
+        writer: atomic replacement prevents partial files, but does not lock concurrent ledger updates.
+      </p>
+      <DocTable head={["Artifact", "Publication"]} rows={[
+        [<code>budget.json</code>, "Updated after a completed run or verified checkpoint reuse."],
+        [<><code>stage4_runs.json</code> / <code>loco_runs.json</code></>, "Complete progress snapshot after each returned run result, including engineering failures."],
+        [<><code>STAGE4_RESULT.md</code> / <code>STAGE5_LOCO_TRAINING.md</code></>, "Summary after the study loop completes; does not choose eligibility or thresholds."],
+        [<code>&lt;run-tag&gt;.failure.json</code>, "Structured diagnostic for a training failure; no success accounting is recorded."],
+      ]} />
+      <p>
+        Reports and ledgers use the shared sibling-file, fsync and atomic-replacement lifecycle.
+        JSON reports use <code>alignair.io.atomic.atomic_write_json</code>, which encodes before
+        writing and rejects NaN, infinity and unsupported objects. A failed
+        replacement keeps the previous file and saved checkpoints. If publishing a failure diagnostic
+        also fails, the resulting error retains the original diagnostic in
+        <code> context.training_error</code> and chains the publication cause. Files are published
+        individually; a study’s files are not a single transaction.
+      </p>
       <H2 id="diagnostics">Diagnostics and release checks</H2>
       <p>
         Commands support <code>--debug</code> and <code>--error-format json</code>. For training and OAS commands,
