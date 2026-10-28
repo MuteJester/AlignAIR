@@ -15,9 +15,9 @@ from alignair.model_file import container, serialize
 
 
 def zero_module(checkpoint, out, module: str) -> dict:
-    """Write ``out`` as the module docstring says; returns ``module``, the zeroed ``parameters`` (in the weights'
-    order) and how many ``values`` they hold. ValueError, before anything is written, when the weights hold no
-    parameter of ``module``."""
+    """Write ``out`` as the module docstring says; returns ``module``, the zeroed ``parameters`` (sorted by name:
+    safetensors hands the weights back in no fixed order) and how many ``values`` they hold. ValueError, before
+    anything is written, when the weights hold no parameter of ``module``."""
     checkpoint, out = str(Path(checkpoint).expanduser()), Path(out)
     header = container.read_header(checkpoint)
     sections, formats = {}, {}
@@ -25,7 +25,7 @@ def zero_module(checkpoint, out, module: str) -> dict:
         sections[name] = (container.read_section(checkpoint, name), section["codec"])  # verifies the checksums
         formats[name] = section.get("format", "bytes")
     weights = serialize.state_dict_from_bytes(sections["weights"][0])
-    names = [name for name in weights if name.startswith(f"{module}.")]
+    names = sorted(name for name in weights if name.startswith(f"{module}."))
     if not names:
         raise ValueError(f"{checkpoint} has no parameter of module {module!r} to perturb")
     for name in names:
