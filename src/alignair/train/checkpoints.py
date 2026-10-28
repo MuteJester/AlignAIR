@@ -62,14 +62,18 @@ def validate_continuation(state, config, label_schema, *, augmentation=None, sch
 
 
 def load_training_checkpoint(path, *, device="cpu", trust_pickle=False) -> ResumeState:
-    """Normalize self-contained checkpoints and explicitly trusted historical NT .pt files."""
+    """Decode checkpoint state without allocating a model; restoration validates weight compatibility.
+
+    Self-contained .alignair checkpoints use the trusted resume reader. Historical .pt files still
+    require explicit pickle consent. Neither reading path applies the recorded process RNG state.
+    """
     from .. import model_file as mf
     from ..errors import ModelError
 
     with error_context(stage="training_checkpoint_load", path=str(path)):
         if mf.container.is_alignair_file(path):
-            state = mf.load_training_state(path, device=device)
-            return ResumeState(state.model.state_dict(), state.logvars_state, state.optimizer_state,
+            state = mf.read_training_state(path, device=device)
+            return ResumeState(state.model_state, state.logvars_state, state.optimizer_state,
                                state.step, state.rng, state.config, state.metadata.get('model', {}).get('label_schema'),
                                state.train_args.get('augmentation'), state.scheduler_state,
                                state.train_args.get('schedule'), state.train_args.get('lr'))

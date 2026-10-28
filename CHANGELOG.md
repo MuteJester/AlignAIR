@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `read_training_state` returns decoded checkpoint data without constructing a temporary model;
+  `load_training_state` retains its restored-model contract. Resume and fresh restoration share
+  contextual strict weight loading, preserving existing optimizer parameter bindings.
 - Prepared model restoration through `ModelSetup.restore_model`, with saved-schema rebinding that
   reuses explicit protein reference views. Convergence incumbents and candidates share restoration
   and reject incompatible input/label/D/window policies before cohort construction.

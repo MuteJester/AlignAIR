@@ -202,6 +202,37 @@ restored_setup = setup_from_schema(protein_reference, config, saved_schema)`} />
         order. Historical schema-less incumbents retain the study’s existing declared reference and
         translation policy; this compatibility path does not establish missing historical label provenance.
       </p>
+      <H2 id="checkpoint-data">Read checkpoint data without constructing a model</H2>
+      <CodeBlock lang="python" code={`from alignair.model_file import read_training_state
+
+data = read_training_state("resume.alignair", device="cpu")
+print(data.step, data.config, data.model_state.keys())
+optimizer_state = data.optimizer_state
+scheduler_state = data.scheduler_state`} />
+      <p>
+        <code>read_training_state</code> returns <code>TrainingStateData</code> with decoded model
+        tensors, reference, configuration, metadata, task weights, optimizer, scheduler and process
+        RNG state. It verifies section checksums and reference/label bindings without constructing
+        <code> AlignAIR</code>. Model tensors retain their stored dtype and are mapped to the requested
+        device; the other state fields retain their serialized values. Reading does not apply the
+        recorded RNG state or consume model-initialization randomness.
+      </p>
+      <p>
+        Architecture-specific key and shape validation occurs when restoring the decoded tensors.
+        Use <code>ModelSetup.restore_model</code> for a fresh reference-bound model, or
+        <code>restore_model_state(existing_model, data.model_state, source=...)</code> to apply them
+        strictly to an existing instance. In-place restoration retains module modes and parameter
+        objects, including optimizer bindings; it follows PyTorch copying semantics rather than
+        providing rollback after a failed load.
+      </p>
+      <p>
+        The existing <code>load_training_state(path, device=...)</code> API still returns a
+        <code> TrainingState</code> containing a restored evaluation model. The training checkpoint
+        reader uses the data-only path, and resume applies strict weights before optimizer, scheduler
+        and RNG continuation. Both model-file training-state APIs are trusted resume flows that
+        decode pickle sections. Historical raw <code>.pt</code> loading retains its explicit
+        <code> trust_pickle</code> requirement.
+      </p>
       <H2 id="counts">Count-only construction and existing callers</H2>
       <p>
         When only validated counts are available, <code>build_model_config(v_label_count,

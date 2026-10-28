@@ -21,7 +21,8 @@ from ..reference.reference_set import ReferenceSet
 from . import container, serialize
 
 __all__ = ["save_model", "read_metadata", "update_card", "load_model", "load_training_state",
-           "read_dataconfig", "read_reference", "LoadedModel", "TrainingState", "container"]
+           "read_training_state", "read_dataconfig", "read_reference", "LoadedModel",
+           "TrainingState", "TrainingStateData", "container"]
 
 _DEFAULT_CODECS = {"config": "zlib", "weights": "none", "logvars": "none",
                    "reference": "zlib", "train_state": "zstd", "dataconfig": "zstd"}
@@ -217,7 +218,7 @@ def _verify_reference_integrity(reference, md) -> None:
         raise ModelIntegrityError("reference_fasta_sha256 mismatch: the embedded reference differs from the card.")
 
 
-def _rebuild(path, device, *, trust_pickle=False):
+def _read_model_state(path, *, trust_pickle=False):
     md = container.read_header(path)
     cfg = serialize.config_from_bytes(container.read_section(path, "config"))
     if "reference_json" in md["sections"]:                       # safe, no-pickle path (default)
@@ -242,15 +243,14 @@ def _rebuild(path, device, *, trust_pickle=False):
             raise ModelIntegrityError(f'{message}: {exc}',
                                       context={'field': 'label_schema' if schema is not None else 'reference',
                                                **exc.context}, hint=exc.hint) from exc
-    model = AlignAIR.from_state_dict(
-        cfg, serialize.state_dict_from_bytes(container.read_section(path, "weights")),
-        device=device, source=path)
+    model_state = serialize.state_dict_from_bytes(container.read_section(path, "weights"))
     md.pop("_sections_base", None)
-    return md, cfg, model, reference
+    return md, cfg, model_state, reference
 
 
 def load_model(path, *, device="cpu", trust_pickle=False) -> LoadedModel:
-    md, cfg, model, reference = _rebuild(path, device, trust_pickle=trust_pickle)
+    md, cfg, model_state, reference = _read_model_state(path, trust_pickle=trust_pickle)
+    model = AlignAIR.from_state_dict(cfg, model_state, device=device, source=path)
     return LoadedModel(model=model, reference=reference, config=cfg, metadata=md)
 
 
@@ -268,17 +268,52 @@ class TrainingState:
     scheduler_state: dict | None = None
 
 
+@dataclass
+class TrainingStateData:
+    """Decoded checkpoint tensors and validated bindings, without an allocated model instance."""
+    model_state: dict
+    reference: ReferenceSet
+    config: AlignAIRConfig
+    logvars_state: dict | None
+    optimizer_state: dict | None
+    step: int
+    rng: dict
+    train_args: dict
+    metadata: dict
+    scheduler_state: dict | None = None
+
+
+def read_training_state(path, *, device="cpu") -> TrainingStateData:
+    """Decode a trusted .alignair training checkpoint without constructing a model.
+
+    Section checksums and reference/label bindings are checked here. Architecture-specific weight
+    keys/shapes are checked when restoring into a model. Model tensors are mapped to ``device``;
+    optimizer, scheduler, task-weight and RNG state retain their serialized values. Like
+    ``load_training_state``, this is a trusted resume flow that decodes pickle training sections.
+    """
+    with error_context(stage="training_checkpoint_load", path=path):
+        md, cfg, model_state, reference = _read_model_state(path, trust_pickle=True)
+        if "train_state" not in md["sections"]:
+            raise ModelError("no train_state section; this model file cannot resume training")
+        st = serialize.train_state_from_bytes(container.read_section(path, "train_state"))
+        logvars_state = (serialize.state_dict_from_bytes(container.read_section(path, "logvars"))
+                         if "logvars" in md["sections"] else None)
+        model_state = {name: value.to(device) for name, value in model_state.items()}
+        return TrainingStateData(model_state=model_state, reference=reference, config=cfg,
+                                 logvars_state=logvars_state, optimizer_state=st.get("optimizer"),
+                                 step=int(st.get("step", 0)), rng=st.get("rng", {}),
+                                 train_args=st.get("train_args", {}), metadata=md,
+                                 scheduler_state=st.get('scheduler'))
+
+
 def load_training_state(path, *, device="cpu") -> TrainingState:
-    md, cfg, model, reference = _rebuild(path, device, trust_pickle=True)   # resume is a trusted flow
-    if "train_state" not in md["sections"]:
-        raise ModelError("no train_state section; this model file cannot resume training")
-    st = serialize.train_state_from_bytes(container.read_section(path, "train_state"))
-    logvars_state = (serialize.state_dict_from_bytes(container.read_section(path, "logvars"))
-                     if "logvars" in md["sections"] else None)
-    return TrainingState(model=model, reference=reference, config=cfg, logvars_state=logvars_state,
-                         optimizer_state=st.get("optimizer"), step=int(st.get("step", 0)),
-                         rng=st.get("rng", {}), train_args=st.get("train_args", {}), metadata=md,
-                         scheduler_state=st.get('scheduler'))
+    """Decode a trusted checkpoint and restore its model, retaining the existing model-bearing API."""
+    data = read_training_state(path)
+    model = AlignAIR.from_state_dict(data.config, data.model_state, device=device, source=path)
+    return TrainingState(model=model, reference=data.reference, config=data.config,
+                         logvars_state=data.logvars_state, optimizer_state=data.optimizer_state,
+                         step=data.step, rng=data.rng, train_args=data.train_args,
+                         metadata=data.metadata, scheduler_state=data.scheduler_state)
 
 
 def read_dataconfig(path, index=None):

@@ -13,6 +13,7 @@ from ..errors import ConfigurationError, error_context
 from ..data.adapters import build_nucleotide_batch as build_batch
 from ..data.training import prepare_training_data
 from ..core.setup import ModelSetup
+from ..core.runtime import restore_model_state
 from ..reference.protein import build_protein_reference
 from ..tasks import TrainingTasks, build_tasks
 from .gym.streams import CurriculumStreamPolicy, training_records, effective_mutation_caps
@@ -97,7 +98,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     if resume_from:
         state = load_training_checkpoint(resume_from, device=device, trust_pickle=resume_trust_pickle)
         validate_continuation(state, cfg, schema, augmentation=augmentation_metadata, schedule=schedule_metadata, lr=lr)
-        model.load_state_dict(state.model_state)
+        restore_model_state(model, state.model_state, source=resume_from)
         if state.weight_state is not None:
             logvars.load_state_dict(state.weight_state)
         if state.optimizer_state is not None:

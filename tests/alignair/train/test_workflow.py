@@ -203,6 +203,31 @@ def test_label_schema_is_checked_during_load_instead_of_silently_reinterpreted(t
         load_model(bad)
 
 
+def test_resume_rejects_incompatible_weights_before_optimizer_or_rng_continuation(tmp_path, monkeypatch):
+    from alignair.model_file import serialize
+    from alignair.train import trainer
+
+    config = request('protein', 'protein_classes', steps=1)
+    run = run_training(config, output_dir=tmp_path / 'source')
+    header = container.read_header(run.model_path)
+    header.pop('_sections_base', None)
+    sections = {name: (container.read_section(run.model_path, name), info['codec'])
+                for name, info in header['sections'].items()}
+    state = serialize.state_dict_from_bytes(sections['weights'][0])
+    state.pop(next(iter(state)))
+    sections['weights'] = (serialize.state_dict_to_bytes(state), 'none')
+    bad = tmp_path / 'incompatible.alignair'
+    container.write_container(bad, header, sections)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('continuation state applied before strict model restoration')
+    monkeypatch.setattr(torch.optim.AdamW, 'load_state_dict', forbidden)
+    monkeypatch.setattr(trainer, '_restore_rng', forbidden)
+    with pytest.raises(ModelIntegrityError, match='Missing key') as caught:
+        run_training(config.with_(steps=2, resume_path=bad), output_dir=tmp_path / 'resumed')
+    assert caught.value.context['stage'] == 'model_restoration'
+    assert caught.value.context['path'] == str(bad)
+
+
 def test_raw_prediction_restores_mode_and_rejects_invalid_protein_inputs(tmp_path):
     predictor = run_training(request('protein', 'protein_classes'), output_dir=tmp_path).best_aligner(device='cpu')
     predictor.model.train()

@@ -18,7 +18,8 @@ import torch.nn as nn
 from .config import AlignAIRConfig
 from .boundaries import boundary_masks
 from .components import architecture_components
-from ..errors import InputError, ModelIntegrityError
+from ..errors import InputError
+from .runtime import restore_model_state
 from ..neural.heads.orientation import apply_orientation
 
 
@@ -46,14 +47,7 @@ class AlignAIR(nn.Module):
         """
         with torch.device("cpu"):
             model = cls(cfg)
-        try:
-            model.load_state_dict(state_dict, strict=True)
-        except (RuntimeError, TypeError) as exc:
-            raise ModelIntegrityError(
-                f"cannot restore model weights: {exc}",
-                context={"stage": "model_restoration", "path": source,
-                         "architecture": cfg.architecture},
-                hint="Use weights and configuration from the same model artifact.") from exc
+        restore_model_state(model, state_dict, source=source)
         return model.to(device).eval()
 
     def forward(self, batch: dict) -> dict:

@@ -4,7 +4,7 @@ from dataclasses import replace
 import pytest
 import torch
 
-from alignair.core import AlignAIR, build_model_config
+from alignair.core import AlignAIR, build_model_config, restore_model_state
 from alignair.errors import ConfigurationError, ModelIntegrityError
 
 pytestmark = pytest.mark.component
@@ -88,3 +88,30 @@ def test_device_failure_is_not_reported_as_weight_corruption():
     with pytest.raises(RuntimeError) as caught:
         AlignAIR.from_state_dict(cfg, AlignAIR(cfg).state_dict(), device="invalid-device")
     assert not isinstance(caught.value, ModelIntegrityError)
+
+
+def test_existing_instance_restoration_retains_modes_and_optimizer_parameter_bindings():
+    model = torch.nn.Sequential(torch.nn.Linear(2, 1), torch.nn.Dropout())
+    model.train()
+    model[0].eval()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=.01)
+    identities = [id(parameter) for parameter in model.parameters()]
+    modes = [module.training for module in model.modules()]
+    state = {name: torch.full_like(value, .25) for name, value in model.state_dict().items()}
+    restore_model_state(model, state)
+    assert [id(parameter) for parameter in model.parameters()] == identities
+    assert [id(parameter) for group in optimizer.param_groups for parameter in group['params']] == identities
+    assert [module.training for module in model.modules()] == modes
+    for name, value in model.state_dict().items():
+        assert torch.equal(value, state[name])
+    model[0](torch.ones(1, 2)).sum().backward()
+    optimizer.step()
+    assert not torch.equal(model[0].weight, state['0.weight'])
+
+
+def test_existing_instance_failure_uses_shared_diagnostics_without_requiring_alignair_config(tmp_path):
+    source = tmp_path / 'checkpoint.alignair'
+    with pytest.raises(ModelIntegrityError, match='Missing key') as caught:
+        restore_model_state(torch.nn.Linear(2, 1), {}, source=source)
+    assert caught.value.context == {'stage': 'model_restoration', 'path': str(source), 'architecture': None}
+    assert isinstance(caught.value.__cause__, RuntimeError)

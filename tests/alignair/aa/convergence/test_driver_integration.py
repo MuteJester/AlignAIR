@@ -94,6 +94,7 @@ def test_study_trains_real_candidates_and_evaluates_the_same_frozen_cohort(tmp_p
     from alignair.train.checkpoints import load_training_checkpoint, save_snapshot
     from alignair.aa.convergence import driver
     from tests.support.model_setup import protein_class_setup
+    from alignair.core import AlignAIR
     if full_state:
         config = TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', input_space='protein', label_space='protein_classes',
             steps=1, batch_size=2, lr=.0001, device='cpu', augmentation=ProteinCropPolicy(),
@@ -105,6 +106,12 @@ def test_study_trains_real_candidates_and_evaluates_the_same_frozen_cohort(tmp_p
         source = tmp_path/'historical.pt'
         save_snapshot(source, setup.build_model(), setup.config, 7)
         start = 7
+    allocations = []
+    original_init = AlignAIR.__init__
+    def construct(model, cfg):
+        allocations.append(cfg)
+        original_init(model, cfg)
+    monkeypatch.setattr(AlignAIR, '__init__', construct)
     cohort = {'frozen': object()}
     evaluations = []
     monkeypatch.setattr(driver, 'build_cohort', lambda *a, **kw: (cohort,'fixed-fingerprint'))
@@ -115,6 +122,7 @@ def test_study_trains_real_candidates_and_evaluates_the_same_frozen_cohort(tmp_p
     monkeypatch.setattr(driver, 'evaluate_checkpoint', evaluate)
     result = driver.run_study(str(source), budget=2, ckpt_steps=(1,2), device='cpu',
         art_dir=str(tmp_path/'artifacts'), ckpt_dir=str(tmp_path/'selected'), batch_size=2, val_every=1)
+    assert len(allocations) == 3  # incumbent + two fresh candidates; decoding/resume allocate no model
     assert [row['step'] for row in result['rows']] == [start,start+1,start+2]
     assert len(evaluations) == 5  # incumbent, two in-training evaluations, two fresh candidates
     assert any(not torch.equal(value, evaluations[-1][key]) for key,value in evaluations[0].items())
