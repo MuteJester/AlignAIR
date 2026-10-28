@@ -61,13 +61,13 @@ def check_inputs(cfg: AuditConfig, layout: RunLayout) -> None:
 
 
 def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
-    """Run every check (the ``workflow.audit`` docstring) and write ``layout.audit_json`` and
-    ``layout.audit_md``; returns the record: ``kind``, ``version``, the ``verdict``, the ``config``, the audited
-    ``checkpoint`` (path and SHA-256), the ``provenance`` (host, the assay's git state and ``audit_code_sha256``, the
-    digest of the whole ``alignair_assay`` package's sources, both taken before any check runs, so the record names the code it started with; the GenAIRR in use),
-    ``created_utc``, ``seconds`` and the ``checks`` in ``CHECKS`` order, each printed as it finishes. IgBLAST is timed
-    first, while the machine is quietest. A check that raises fails with its error as the reason (an
-    ``INFORMATIONAL`` one warns), and the others go on. Refusals (``check_inputs``) come before any work."""
+    """Run every check (the ``workflow.audit`` docstring) and write ``layout.audit_json`` and ``layout.audit_md``;
+    returns the record: ``kind``, ``version``, the ``verdict``, the ``config``, the audited ``checkpoint`` (path and
+    SHA-256), the ``provenance`` (host, the assay's git state and ``audit_code_sha256``, the digest of the whole
+    ``alignair_assay`` package's sources, both taken before any check runs, so the record names the code it started
+    with; the GenAIRR in use), ``created_utc``, ``seconds`` and the ``checks`` in ``CHECKS`` order, each printed as it
+    finishes. IgBLAST is timed first, while the machine is quietest. A check that raises fails with its error as the
+    reason (an ``INFORMATIONAL`` one warns), and the others go on. Refusals (``check_inputs``) come before any work."""
     start = time.monotonic()
     assay, code = git_state(_PACKAGE), tree_digest(_PACKAGE, suffixes=CODE_SUFFIXES)
     cfg = dataclasses.replace(cfg, sim_run=absolute_path(cfg.sim_run), real_run=absolute_path(cfg.real_run),

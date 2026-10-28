@@ -162,3 +162,19 @@ from alignair_assay.workflow.audit.nulls import (
     real_comparison_problems,
 )
 from alignair_assay.workflow.audit.run import check_inputs, run_audit
+
+# The package's API: the checks, the configuration and the records, from its modules.
+__all__ = [
+    "AGREEMENT_TOOL", "AUDIT_KIND", "AUDIT_VERSION", "AuditConfig", "CHECKPOINT_LABEL", "CHECKS", "CODE_FIELDS",
+    "DIAGNOSE_BATCH", "DIAGNOSE_SUITES", "GATING", "GROUPS", "HEAD_BOUNDARY_PREFIXES", "IGBLAST", "INFORMATIONAL",
+    "KNOWN_FLOOR", "KNOWN_METRICS", "NULL_LABELS", "NULL_SCALE", "NULL_SUITES", "POSITIVE_METRIC",
+    "POSITIVE_MODULE", "REAL_CAP", "REAL_DONOR", "REAL_HEADLINE", "REPRO_FILES", "REPRO_SCALE", "REPRO_SUITE",
+    "SIM_HEADLINE", "SPEED_BAND", "SPEED_LOAD", "SPEED_POLL_SECONDS", "SPEED_SCALE", "SPEED_SETTLE_SECONDS",
+    "SPEED_SUITE", "STATUSES", "VERDICTS", "V_TOP1_BAND", "V_TOP1_CURRENT_BAND", "V_TOP1_CURRENT_SCALE",
+    "V_TOP1_METRIC", "V_TOP1_SUITE", "V_TOP1_TARGET", "all_null", "all_vs_diagnose", "changes_problems", "check",
+    "check_inputs", "checkpoint_model_key", "compare_problems", "compare_records", "dev_donors", "diagnose_null",
+    "ensure_built", "genairr_digest", "genairr_identity", "igblast_speed", "igblast_v_top1_current",
+    "jsonl_content", "pairing", "positive_diagnose", "real_comparison_problems", "real_known_band", "real_null",
+    "real_oracle", "real_reproducible", "real_summary", "real_truth_health", "run_audit", "settle", "shared_suite",
+    "sim_oracle", "sim_reproducible", "sim_staleness", "sim_v_top1_band", "verdict", "wait_for_idle",
+]
