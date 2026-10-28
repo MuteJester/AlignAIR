@@ -415,6 +415,8 @@ All notable changes to AlignAIR are documented here. The format follows
   and the unused website widget. Documentation no longer cites the retired comparison.
 
 ### Fixed
+- Diagnostic probes preserve every module's mode, freeze BatchNorm during evaluation callbacks,
+  remove hooks after registration/forward failures, and snapshot captured CPU buffers independently.
 - Frozen convergence selection validates complete metric requests before applying its gates,
   rejecting non-finite evidence, malformed values and ambiguous candidate identifiers. Valid-input
   thresholds, arithmetic, tie-breaks, missing-value handling and result schema remain unchanged.

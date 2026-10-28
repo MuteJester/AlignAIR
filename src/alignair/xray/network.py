@@ -7,8 +7,11 @@ forward hooks), uncertainty-weight introspection, numerical guards, and a red-fl
 from __future__ import annotations
 
 import math
+from contextlib import ExitStack
 
 import torch
+
+from ..core.runtime import evaluation_mode
 
 
 # --------------------------------------------------------------------------- gradient health
@@ -73,7 +76,7 @@ def activation_stats(model, model_input, module_names=None, eps: float = 1e-6, s
     if module_names is None:
         module_names = default_hook_targets(model)
     named = _inspection_modules(model)
-    stats, handles = {}, []
+    stats = {}
 
     def make_hook(nm):
         def hook(_m, _inp, out):
@@ -87,18 +90,12 @@ def activation_stats(model, model_input, module_names=None, eps: float = 1e-6, s
                          "sat_frac": float((t.abs() > sat).float().mean()) if bounded else 0.0}
         return hook
 
-    for nm in module_names:
-        if nm in named:
-            handles.append(named[nm].register_forward_hook(make_hook(nm)))
-    was_training = model.training
-    model.eval()
-    try:
-        with torch.no_grad():
+    with ExitStack() as scope:
+        for nm in module_names:
+            if nm in named:
+                scope.callback(named[nm].register_forward_hook(make_hook(nm)).remove)
+        with evaluation_mode(model):
             model(model_input)
-    finally:
-        model.train(was_training)
-        for h in handles:
-            h.remove()
     return stats
 
 
@@ -108,27 +105,21 @@ def capture_activations(model, model_input, module_names=None, max_samples: int 
     if module_names is None:
         module_names = default_hook_targets(model)
     named = _inspection_modules(model)
-    caps, handles = {}, []
+    caps = {}
 
     def make_hook(nm):
         def hook(_m, _inp, out):
             t = out.detach() if isinstance(out, torch.Tensor) else out[0].detach()
             x = t.reshape(-1, t.shape[-1]).float()           # (samples, features)
-            caps[nm] = x[:max_samples].cpu()
+            caps[nm] = x[:max_samples].to(device="cpu", copy=True)
         return hook
 
-    for nm in module_names:
-        if nm in named:
-            handles.append(named[nm].register_forward_hook(make_hook(nm)))
-    was_training = model.training
-    model.eval()
-    try:
-        with torch.no_grad():
+    with ExitStack() as scope:
+        for nm in module_names:
+            if nm in named:
+                scope.callback(named[nm].register_forward_hook(make_hook(nm)).remove)
+        with evaluation_mode(model):
             model(model_input)
-    finally:
-        model.train(was_training)
-        for h in handles:
-            h.remove()
     return caps
 
 

@@ -15,6 +15,7 @@ from typing import Callable, Optional
 
 import torch
 
+from ..core.runtime import evaluation_mode
 from . import deep_probe, dynamics, geometry, network
 
 
@@ -73,7 +74,7 @@ class ModelXRay:
                 caps = network.capture_activations(self.model, probe_input, self.hook_targets)
                 rec["geometry"] = geometry.representation_geometry(caps)      # per-layer feature geometry
                 if self.task_eval is not None:
-                    with torch.no_grad():
+                    with evaluation_mode(self.model):
                         rec["eval"] = self.task_eval(self.model, probe_input)
                 if self.task_losses is not None:
                     rec["interference"] = self._conflict(probe_input)        # cross-task gradient conflict
@@ -83,12 +84,8 @@ class ModelXRay:
         return rec
 
     def _conflict(self, probe_input) -> dict:
-        was = self.model.training
-        self.model.eval()                          # BN frozen -> non-intrusive; grads still flow
-        try:
+        with evaluation_mode(self.model, gradients=True):
             return dynamics.gradient_conflict(self.task_losses(self.model, probe_input), self._shared)
-        finally:
-            self.model.train(was)
 
     def deep_report(self, probe_input=None, *, loss_closure=None, nc_features=None, nc_labels=None,
                     margin_logits=None, margin_labels=None, hessian_iters: int = 15) -> dict:
