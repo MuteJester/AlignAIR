@@ -10,7 +10,8 @@ from numbers import Integral, Real
 
 import numpy as np
 
-from ..errors import ConfigurationError, InputError, NumericalError
+from ..errors import ConfigurationError, InputError, NumericalError, error_context
+from ..core.probabilities import validate_categorical_probabilities, validate_categorical_targets
 
 
 def _failure(kind, message, field):
@@ -54,26 +55,6 @@ def _array(values, dimensions, field):
     return values
 
 
-def _probabilities(values, dimensions):
-    values = _array(values, dimensions, "probabilities")
-    epsilon = np.finfo(values.dtype).eps if values.dtype.kind == "f" else 0.
-    if (np.any(values < 0) or np.any(values > 1)
-            or not np.allclose(values.sum(axis=-1, dtype=np.float64), 1., rtol=0., atol=max(1e-6, 4 * epsilon))):
-        raise _failure(InputError, "class probabilities must lie in [0, 1] and sum to one", "probabilities")
-    return values
-
-
-def _labels(values, shape):
-    try:
-        values = np.asarray(values)
-    except (TypeError, ValueError) as exc:
-        raise _failure(InputError, "calibration truth must form an integer vector", "true") from exc
-    if (values.shape != (shape[0],) or values.dtype.kind not in "iu"
-            or np.any(values < 0) or np.any(values >= shape[1])):
-        raise _failure(InputError, "calibration truth must contain one valid integer class ID per row", "true")
-    return values
-
-
 def _groups(values, count):
     try:
         values = np.asarray(values)
@@ -106,8 +87,9 @@ def _aps_scores(probs, true, rng, lam, k_reg):
 
 def aps_scores(probs, true, rng, lam: float = 0.0, k_reg: int = 1) -> np.ndarray:
     """Randomized APS scores, optionally adding lambda times rank beyond k_reg (RAPS)."""
-    probs = _probabilities(probs, 2)
-    true = _labels(true, probs.shape)
+    with error_context(stage="conformal_calibration"):
+        probs = validate_categorical_probabilities(probs)
+        true = validate_categorical_targets(true, probs.shape)
     lam, k_reg = _real(lam, "lam"), _integer(k_reg, "k_reg", 0)
     if not isinstance(rng, np.random.Generator):
         raise _failure(ConfigurationError, "APS scoring requires a NumPy Generator", "rng")
@@ -123,7 +105,8 @@ def conformal_quantile(scores, alpha: float) -> float:
 
 
 def _prediction_set(prob_row, qhat, lam, k_reg, class_count=None):
-    prob_row = _probabilities(prob_row, 1)
+    with error_context(stage="conformal_calibration"):
+        prob_row = validate_categorical_probabilities(prob_row, 1)
     if class_count is not None and len(prob_row) != class_count:
         raise _failure(InputError, "prediction width differs from the fitted class vocabulary", "probabilities")
     qhat, lam, k_reg = _real(qhat, "qhat"), _real(lam, "lam"), _integer(k_reg, "k_reg", 0)
@@ -161,8 +144,9 @@ class Conformal:
         self.class_count = None
 
     def fit(self, probs, true, groups=None):
-        probs = _probabilities(probs, 2)
-        true = _labels(true, probs.shape)
+        with error_context(stage="conformal_calibration"):
+            probs = validate_categorical_probabilities(probs)
+            true = validate_categorical_targets(true, probs.shape)
         alpha, lam = _alpha(self.alpha), _real(self.lam, "lam")
         k_reg, min_group = _integer(self.k_reg, "k_reg", 0), _integer(self.min_group, "min_group", 1)
         grouped = None if groups is None else _groups(groups, len(probs))

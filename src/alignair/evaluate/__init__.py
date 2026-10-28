@@ -1,6 +1,7 @@
 """Shared evaluation statistics, cohort reports, and the model benchmark API."""
 from .reports import (boundary_error_report, classification_report, constant_median_mae,
                       macro_accuracy, majority_class_baseline)
+from .probabilities import categorical_nll, frequency_accuracy_report, multiclass_brier_score
 from .statistics import (bootstrap_competence_ci, bootstrap_mean_ci, paired_diff_ci,
                          wilson_interval)
 from .cohort import (BoundaryObservation, ClassificationObservation, CohortObservations,
@@ -15,7 +16,8 @@ __all__ = [*_BENCHMARK_EXPORTS, "boundary_error_report", "classification_report"
            "paired_diff_ci", "wilson_interval", "BoundaryObservation", "ClassificationObservation",
            "CohortObservations", "collect_alignment_observations", "PredictionSetObservation",
            "ScalarObservation", "evaluate_allele_cohort", "evaluate_categorical_cohort",
-           "ClassificationStratum", "protein_v_strata"]
+           "ClassificationStratum", "protein_v_strata", "categorical_nll",
+           "frequency_accuracy_report", "multiclass_brier_score"]
 
 
 def __getattr__(name):

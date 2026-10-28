@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared categorical NLL, multiclass Brier and frequency-binned accuracy reports in
+  `alignair.evaluate`, with categorical probability/target validation shared with calibration.
 - Shared sigmoid temperature scaling, binary top-1 fitting and ECE in `alignair.calibration`,
   with batched per-gene allele fitting for nucleotide/protein models and website API documentation.
 - Shared `alignair.calibration` APS/RAPS and frozen prediction-set APIs for either input alphabet,
@@ -244,6 +246,8 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Retired `aa.convergence.metrics` and its macro-accuracy alias. Active callers use shared
+  evaluation scores; study-specific frequency sources and selection rules retain their owners.
 - Unused `aa.phase1` learning-proof runner, its report-specific provenance/manifest/fingerprint
   helpers, fixed seed schedule and three dedicated tests. Shared capacity diagnostics, training,
   checkpoint provenance and categorical evaluation remain available; the historical report is retired.
@@ -352,6 +356,9 @@ All notable changes to AlignAIR are documented here. The format follows
   and the unused website widget. Documentation no longer cites the retired comparison.
 
 ### Fixed
+- Float16 categorical NLL uses float32 logarithms to keep clipped zero probabilities finite.
+  Multiclass Brier uses a private residual matrix instead of allocating a one-hot target matrix;
+  malformed/empty probability cohorts and invalid labels now receive contextual errors.
 - Convergence scoring releases non-clean probability matrices after each stratum's accuracy
   reduction instead of caching them until completion. Clean-head reuse, reports and inference
   counts retain their existing behavior.

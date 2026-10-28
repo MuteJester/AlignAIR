@@ -172,6 +172,56 @@ report = evaluate_categorical_cohort(
         different grouping policy when units, bins, or scientific questions differ. Convergence
         boundary-only summaries omit these diagnostic strata while retaining their V/J gene selection.
       </p>
+      <H2 id="probability-scores">Score categorical probabilities</H2>
+      <CodeBlock lang="python" code={`import numpy as np
+from alignair.evaluate import categorical_nll, multiclass_brier_score, frequency_accuracy_report
+
+probabilities = np.array([[0.8, 0.2], [0.1, 0.9]])
+truth = np.array([0, 0])
+print(categorical_nll(probabilities, truth))       # -log(0.8 * 0.1) / 2
+print(multiclass_brier_score(probabilities, truth))  # 0.85
+print(frequency_accuracy_report(
+    truth, probabilities.argmax(axis=1), [0.01, 0.9], edges=(0.0, 0.05, 1.0),
+))`} />
+      <p>
+        These NumPy functions apply to categorical heads for either input alphabet. Probability
+        matrices must be nonempty, finite, real and within [0, 1], with rows summing to one within
+        numerical precision. Truth must supply one observed integer class ID per row. Raw logits,
+        independent sigmoid outputs, unknown IDs and compatible-label sets require their own
+        conversion or scoring policy. Evaluation and conformal calibration use the same categorical
+        probability/target validator in <code>core.probabilities</code>, without copying or renormalizing
+        valid input arrays.
+      </p>
+      <p>
+        <code>categorical_nll</code> averages the negative logarithm of the supplied true-class
+        probability, clipped at 1e-12; it does not apply softmax. Float16 logarithms use float32 so
+        clipped zero probabilities remain finite. Float32 and float64 retain their established
+        arithmetic. <code>multiclass_brier_score</code> averages the sum of squared class residuals;
+        it does not divide by class count. It uses one private residual matrix and squares it in
+        place, avoiding a separate one-hot matrix. Both functions leave inputs unchanged, including
+        read-only arrays. Empty probability cohorts raise <code>InputError</code> rather than
+        returning a zero or undefined score.
+      </p>
+      <p>
+        <code>frequency_accuracy_report</code> groups aligned truth/prediction IDs by supplied
+        frequencies in [0, 1]. Frequencies are external metadata, not estimated from the evaluated
+        cohort. Edges must be finite, strictly increasing and within [0, 1]. Bins include the left
+        boundary; the final bin also includes its right boundary. Partial edge ranges omit observations
+        outside that range. Empty bins return <code>acc=None</code>, and an empty aligned cohort
+        returns zero counts. Bin labels preserve the caller’s edge formatting, and comparisons retain
+        frequency-array precision. Study preflight reuses <code>evaluate.probabilities.validate_frequency_edges</code>.
+      </p>
+      <p>
+        Import these scores from <code>alignair.evaluate</code> or <code>alignair.evaluate.probabilities</code>.
+        The former <code>aa.convergence.metrics</code> module is removed: <code>softmax_nll</code>
+        becomes <code>categorical_nll</code>, <code>brier_score</code> becomes
+        <code> multiclass_brier_score</code>, and <code>per_frequency_bins</code> becomes
+        <code> frequency_accuracy_report</code>. Macro accuracy remains in <code>evaluate.reports</code>.
+        Malformed observations raise <code>InputError</code>, invalid bin options raise
+        <code>ConfigurationError</code>, and non-finite categorical probabilities raise
+        <code>NumericalError</code>, with stage and field context. Frequency-source lookup and
+        study-specific selection thresholds retain their existing policies.
+      </p>
       <H2 id="classification">Report exact-class predictions</H2>
       <CodeBlock lang="python" code={`from alignair.evaluate import classification_report
 

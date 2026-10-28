@@ -13,6 +13,7 @@ from ...data.sampling import ProteinSampleBuilder
 from ...data.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT
 from ...errors import ConfigurationError, InputError, error_context
 from ...reference import EquivalenceClassMap
+from ...evaluate.probabilities import validate_frequency_edges
 from .cohort import _first
 
 
@@ -20,18 +21,6 @@ def _rows(value, field):
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise InputError("cohort rows must be frozen indexable sequences", context={"field": field})
     return value
-
-
-def _frequency_edges(edges):
-    try:
-        values = np.asarray(edges)
-    except (TypeError, ValueError) as exc:
-        raise ConfigurationError("frequency edges must form a numeric vector", context={"field": "freq_edges"}) from exc
-    if (values.ndim != 1 or len(values) < 2 or values.dtype.kind not in "iuf"
-            or not np.isfinite(values).all() or np.any(np.diff(values.astype(float)) <= 0)
-            or values[0] < 0 or values[-1] > 1):
-        raise ConfigurationError("frequency edges must be finite, strictly increasing and within [0, 1]",
-                                 context={"field": "freq_edges"})
 
 
 def prepare_evaluation(model, config, class_maps, meta, cohort, device, alpha, freq_edges):
@@ -53,7 +42,7 @@ def prepare_evaluation(model, config, class_maps, meta, cohort, device, alpha, f
             raise ConfigurationError("scoring configuration differs from the model configuration", context={"field": "config"})
         _input_config(config, "protein")
         Conformal(alpha=alpha)  # Reuse the calibration owner's parameter contract, even for an empty slice.
-        _frequency_edges(freq_edges)
+        validate_frequency_edges(freq_edges)
         if not isinstance(class_maps, Mapping):
             raise ConfigurationError("scoring requires V/J equivalence maps", context={"field": "class_maps"})
         for gene in ("V", "J"):

@@ -11,11 +11,11 @@ from ...calibration import Conformal
 from ...core.runtime import evaluation_mode
 from ...errors import InferenceError, error_context
 from ...data.adapters import CategoricalBatchAdapter
-from ...evaluate import evaluate_categorical_cohort
+from ...evaluate import (categorical_nll, evaluate_categorical_cohort, frequency_accuracy_report,
+                         macro_accuracy, multiclass_brier_score)
 from ...predict.probabilities import protein_class_probabilities
 from .cohort import _first
 from .validation import prepare_evaluation
-from .metrics import brier_score, macro_accuracy, per_frequency_bins, softmax_nll
 
 _DEFAULT_FREQ_EDGES = (0.0, 0.02, 0.05, 1.0)
 
@@ -139,18 +139,20 @@ def _evaluate_checkpoint(model, cfg, class_maps, meta, cohort, boundary_samples,
         true_gene = np.array([d_name[i].split("*")[0] for i in y_d])
         pred_gene = np.array([d_name[i].split("*")[0] for i in pred_d])
         d_gene_acc = float((pred_gene == true_gene).mean())
-        d_nll, d_brier = softmax_nll(pd_, y_d), brier_score(pd_, y_d)
+        d_nll, d_brier = categorical_nll(pd_, y_d), multiclass_brier_score(pd_, y_d)
     else:
         d_allele_acc = d_allele_macro = d_gene_acc = d_nll = d_brier = None
 
-    nll = {"v": softmax_nll(pv_clean, y_v_clean), "j": softmax_nll(pj_clean, y_j_clean), "d": d_nll}
-    brier = {"v": brier_score(pv_clean, y_v_clean), "j": brier_score(pj_clean, y_j_clean), "d": d_brier}
+    nll = {"v": categorical_nll(pv_clean, y_v_clean),
+           "j": categorical_nll(pj_clean, y_j_clean), "d": d_nll}
+    brier = {"v": multiclass_brier_score(pv_clean, y_v_clean),
+             "j": multiclass_brier_score(pj_clean, y_j_clean), "d": d_brier}
 
     freq_bins = {
-        "v": per_frequency_bins(y_v_clean, pred_v_clean,
-                                _freq_for(clean_rows, "V", vclass, cohort["dc_name"]), freq_edges),
-        "j": per_frequency_bins(y_j_clean, pred_j_clean,
-                                _freq_for(clean_rows, "J", jclass, cohort["dc_name"]), freq_edges),
+        "v": frequency_accuracy_report(
+            y_v_clean, pred_v_clean, _freq_for(clean_rows, "V", vclass, cohort["dc_name"]), freq_edges),
+        "j": frequency_accuracy_report(
+            y_j_clean, pred_j_clean, _freq_for(clean_rows, "J", jclass, cohort["dc_name"]), freq_edges),
     }
 
     with error_context(stratum="clean"):
