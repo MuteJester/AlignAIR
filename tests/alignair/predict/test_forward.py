@@ -8,9 +8,9 @@ import torch
 from alignair.core import evaluation_mode
 from alignair.data import SequenceInputAdapter
 from alignair.data.tokenizer import CenterPaddedTokenizer
-from alignair.errors import ConfigurationError, InferenceError, NumericalError, current_error_context
-from alignair.predict import forward_batch, prediction_batches
-from alignair.predict.forward import output_numpy, run_model
+from alignair.errors import ConfigurationError, InferenceError, InputError, NumericalError, current_error_context
+from alignair.predict import collect_prediction_outputs, forward_batch, prediction_batches
+from alignair.predict.forward import PredictionBatch, output_numpy, run_model
 
 pytestmark = pytest.mark.component
 
@@ -134,3 +134,63 @@ def test_nucleotide_forward_uses_shared_normalization_unknowns_and_cropping():
 def test_historical_evaluation_context_is_the_shared_core_runtime_owner():
     from alignair.train.engine import evaluation_mode as old
     assert old is evaluation_mode
+
+
+def test_collection_snapshots_reused_storage_and_keeps_tail_and_first_key_order():
+    buffer = torch.zeros(2, 3)
+    def batches():
+        yield PredictionBatch(0, 2, {'scores': buffer, 'positions': torch.tensor([4, 5])})
+        buffer.fill_(7)
+        yield PredictionBatch(2, 1, {'positions': torch.tensor([6]), 'scores': buffer[:1]})
+    result = collect_prediction_outputs(batches())
+    assert list(result) == ['scores', 'positions']
+    assert result['scores'].tolist() == [[0, 0, 0], [0, 0, 0], [7, 7, 7]]
+    assert result['positions'].tolist() == [4, 5, 6]
+
+
+@pytest.mark.parametrize('outputs', [{}, {'other': torch.ones(1, 3)},
+                                   {'scores': torch.ones(1, 3), 'extra': torch.ones(1)}])
+def test_collection_rejects_changed_heads_with_batch_context(outputs):
+    batches = [PredictionBatch(0, 2, {'scores': torch.ones(2, 3)}), PredictionBatch(2, 1, outputs)]
+    with pytest.raises(InferenceError, match='keys') as caught:
+        collect_prediction_outputs(batches)
+    assert caught.value.context['record_offset'] == 2
+    assert caught.value.context['batch_size'] == 1
+    assert caught.value.context['expected_keys'] == ['scores']
+    assert current_error_context() == {}
+
+
+@pytest.mark.parametrize('later', [torch.ones(1, 4), torch.ones(1, 3, 1),
+                                 torch.ones(1, 3, dtype=torch.float64)])
+def test_collection_rejects_changed_width_rank_or_dtype_and_restores_runtime(later):
+    model = Echo()
+    def adapter(rows):
+        return {'scores': torch.ones(2, 3) if len(rows) == 2 else later}
+    with pytest.raises(InferenceError, match='shape or dtype') as caught:
+        collect_prediction_outputs(prediction_batches(model, range(3), adapter, batch_size=2))
+    assert caught.value.context['record_offset'] == 2 and caught.value.context['field'] == 'scores'
+    assert model.training and not model.child.training and torch.is_grad_enabled()
+    assert current_error_context() == {}
+
+
+@pytest.mark.parametrize('transformed', [None, np.array(1.), np.ones((1, 3))])
+def test_collection_checks_transform_rows_and_array_contract(transformed):
+    with pytest.raises(InferenceError, match='one row per input') as caught:
+        collect_prediction_outputs([PredictionBatch(0, 2, {'scores': torch.ones(2, 3)})],
+                                   transform=lambda _: transformed)
+    assert caught.value.context['expected_rows'] == 2 and caught.value.context['field'] == 'scores'
+
+
+def test_collection_snapshots_transform_buffers_before_advancing():
+    buffer = np.zeros((1, 2))
+    def batches():
+        yield PredictionBatch(0, 1, {'scores': torch.ones(1, 2)})
+        buffer.fill(9)
+        yield PredictionBatch(1, 1, {'scores': torch.ones(1, 2)})
+    result = collect_prediction_outputs(batches(), transform=lambda _: buffer)
+    assert result['scores'].tolist() == [[0, 0], [9, 9]]
+
+
+def test_empty_collection_has_explicit_input_error():
+    with pytest.raises(InputError, match='nonempty'):
+        collect_prediction_outputs([])

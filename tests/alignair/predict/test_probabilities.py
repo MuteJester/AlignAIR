@@ -7,7 +7,7 @@ import torch
 
 from alignair.data import SequenceInputAdapter
 from alignair.data.tokenizer import AAProteinTokenizer
-from alignair.errors import InferenceError, InputError, NumericalError
+from alignair.errors import InferenceError, InputError, NumericalError, current_error_context
 from alignair.predict import class_probabilities
 from alignair.predict.probabilities import class_probs, protein_class_probabilities, softmax_probabilities
 
@@ -66,3 +66,49 @@ def test_research_protein_policy_is_strict_and_rejects_bad_late_rows_before_infe
 def test_single_head_research_probabilities_accept_unknown_and_stop_residues():
     result = class_probs(Heads(),['X*'],SimpleNamespace(max_seq_length=4),'cpu','v')
     assert result.shape == (1,2)
+
+
+def test_selected_probability_heads_ignore_changing_unselected_outputs():
+    model = Heads()
+    original = model.forward
+    def forward(inputs):
+        output = original(inputs)
+        if model.calls == 1:
+            output['unused'] = torch.full((len(inputs['tokenized_sequence']),), float('nan'))
+        return output
+    model.forward = forward
+    result = class_probabilities(model, ['AC', 'DE', 'FG'],
+                                SequenceInputAdapter(AAProteinTokenizer(), 4), keys=('v',), batch_size=2)
+    assert list(result) == ['v'] and np.allclose(result['v'], [[.25, .75]] * 3)
+
+
+def test_probability_width_changes_have_head_and_source_offset():
+    model = Heads()
+    original = model.forward
+    def forward(inputs):
+        output = original(inputs)
+        if model.calls > 1:
+            output['v'] = output['v'][:, :1]
+        return output
+    model.forward = forward
+    with pytest.raises(InferenceError, match='shape or dtype') as caught:
+        class_probabilities(model, ['AC', 'DE', 'FG'], SequenceInputAdapter(AAProteinTokenizer(), 4),
+                            keys=('v',), batch_size=2)
+    assert caught.value.context['record_offset'] == 2 and caught.value.context['field'] == 'v'
+    assert model.training and model.dropout.training and torch.is_grad_enabled()
+    assert current_error_context() == {}
+
+
+@pytest.mark.parametrize('device', ['cpu', None])
+def test_collection_preserves_per_batch_softmax_and_explicit_device(monkeypatch, device):
+    import alignair.predict.probabilities as probabilities
+    seen = []
+    original = probabilities.softmax_probabilities
+    def observe(logits, *, device):
+        seen.append((len(logits), device))
+        return original(logits, device=device)
+    monkeypatch.setattr(probabilities, 'softmax_probabilities', observe)
+    result = class_probabilities(Heads(), ['AC', 'DE', 'FG'], SequenceInputAdapter(AAProteinTokenizer(), 4),
+                                keys=('v', 'j'), batch_size=2, probability_device=device)
+    assert seen == [(2, device), (2, device), (1, device), (1, device)]
+    assert np.allclose(result['v'], [[.25, .75]] * 3)

@@ -327,6 +327,23 @@ for batch in prediction_batches(
         zero-based source offset, actual batch size, and detached outputs. Evaluation mode,
         gradient state, and operation context are restored before each result is yielded.
       </p>
+      <CodeBlock lang="python" code={`from alignair.predict import collect_prediction_outputs, prediction_batches
+
+arrays = collect_prediction_outputs(
+    prediction_batches(model, sequences, adapter, batch_size=128),
+)
+print(arrays["v_class_logits"].shape)`} />
+      <p>
+        <code>collect_prediction_outputs</code> collects an ordered batch stream into CPU NumPy arrays.
+        It requires the same output names, trailing shapes, and NumPy dtypes in every batch, and
+        checks one output row per input. Violations raise <code>InferenceError</code> with the batch
+        offset and, for array failures, the output field. Empty streams raise <code>InputError</code>.
+        Arrays are copied before advancing the stream to protect against reused buffers;
+        bfloat16 raw tensors are represented as float32. A <code>transform</code> callable can map each
+        tensor to an array before these checks. Both <code>Aligner.predict_raw</code> and
+        <code> class_probabilities</code> use this collector. Collection retains the full result in memory;
+        consume <code>prediction_batches</code> directly when processing outputs incrementally.
+      </p>
       <H2 id="protein-batches">Bound protein product forward batches</H2>
       <CodeBlock lang="python" code={`from alignair import load_aa_model, predict_aa
 

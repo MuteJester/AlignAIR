@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared prediction-output collection for raw and categorical APIs, with checked batch keys,
+  row counts, trailing shapes and NumPy dtypes, contextual errors and independent array snapshots.
 - Protein product inference now uses shared prediction batching, with `batch_size` / `--batch-size`
   defaulting to 64. Original input positions and calibrated-result ordering are retained across
   skipped records and batch boundaries; CLI run metadata records the execution batch size.

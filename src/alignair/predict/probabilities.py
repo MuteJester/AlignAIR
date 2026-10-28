@@ -7,7 +7,7 @@ import torch
 from ..data.inference import SequenceInputAdapter
 from ..data.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT
 from ..errors import InferenceError, InputError, NumericalError, error_context
-from .forward import _output_keys, output_numpy, prediction_batches
+from .forward import _output_keys, collect_prediction_outputs, output_numpy, prediction_batches
 
 
 def softmax_probabilities(logits, *, device=None) -> np.ndarray:
@@ -32,14 +32,9 @@ def class_probabilities(model, sequences, input_adapter, *, keys, batch_size=256
     keys = _output_keys(keys)
     if keys is None:
         raise InputError("select categorical output keys explicitly")
-    collected = {key: [] for key in keys}
-    for batch in prediction_batches(model, sequences, input_adapter, batch_size=batch_size, output_keys=keys):
-        for key in keys:
-            with error_context(field=key, record_offset=batch.record_offset):
-                collected[key].append(softmax_probabilities(batch.outputs[key], device=probability_device))
-    if not collected[keys[0]]:
-        raise InputError("class probabilities require a nonempty sequence batch")
-    return {key: np.concatenate(values, axis=0) for key, values in collected.items()}
+    batches = prediction_batches(model, sequences, input_adapter, batch_size=batch_size, output_keys=keys)
+    return collect_prediction_outputs(
+        batches, transform=lambda logits: softmax_probabilities(logits, device=probability_device))
 
 
 def protein_class_probabilities(model, seqs, cfg, device, keys, batch=256) -> dict:

@@ -6,13 +6,14 @@ from itertools import islice
 from operator import index
 from typing import NamedTuple
 
+import numpy as np
 import torch
 
 from ..core.runtime import evaluation_mode
 from ..data.inference import SequenceInputAdapter
 from ..data.inputs import prepare_nucleotide_inputs
 from ..data.tokenizer import CenterPaddedTokenizer
-from ..errors import ConfigurationError, InferenceError, NumericalError, error_context
+from ..errors import ConfigurationError, InferenceError, InputError, NumericalError, error_context
 
 
 def _positive(value, field):
@@ -89,6 +90,39 @@ def output_numpy(value: torch.Tensor):
     """Snapshot an output on CPU; float32 represents bfloat16 where NumPy has no native dtype."""
     value = value.detach().float() if value.dtype == torch.bfloat16 else value.detach()
     return value.to(device="cpu", copy=True).numpy()
+
+
+def collect_prediction_outputs(batches, *, transform=None) -> dict[str, np.ndarray]:
+    """Collect PredictionBatch outputs with stable keys, row counts, shapes and NumPy dtypes.
+
+    By default, snapshot raw tensors as NumPy arrays. An optional transform maps each tensor
+    to an array before collection (for example, per-batch categorical softmax).
+    Snapshot arrays before advancing the stream so reused model/transform buffers are safe.
+    Empty streams raise InputError. Model execution and device placement belong to the caller.
+    """
+    collected, signatures = {}, {}
+    for batch in batches:
+        with error_context(stage="output_collection", record_offset=batch.record_offset, batch_size=batch.size):
+            if not batch.outputs or (collected and batch.outputs.keys() != collected.keys()):
+                raise InferenceError("prediction output keys changed between batches or are empty",
+                                     context={"expected_keys": list(collected), "actual_keys": list(batch.outputs)})
+            for key, tensor in batch.outputs.items():
+                with error_context(field=key):
+                    value = output_numpy(tensor) if transform is None else transform(tensor)
+                    if not isinstance(value, np.ndarray) or value.ndim == 0 or value.shape[0] != batch.size:
+                        raise InferenceError("collected output must be an array with one row per input",
+                                             context={"expected_rows": batch.size})
+                    signature = (value.shape[1:], value.dtype)
+                    if key in signatures and signature != signatures[key]:
+                        shape, dtype = signatures[key]
+                        raise InferenceError("prediction output shape or dtype changed between batches",
+                                             context={"expected_shape": shape, "actual_shape": value.shape[1:],
+                                                      "expected_dtype": str(dtype), "actual_dtype": str(value.dtype)})
+                    signatures[key] = signature
+                    collected.setdefault(key, []).append(value if transform is None else value.copy())
+    if not collected:
+        raise InputError("prediction output collection requires a nonempty sequence batch")
+    return {key: np.concatenate(values, axis=0) for key, values in collected.items()}
 
 
 def run_model(model, sequences, cfg, device: str = "cpu") -> list:

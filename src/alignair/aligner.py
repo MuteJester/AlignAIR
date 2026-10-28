@@ -200,9 +200,8 @@ class Aligner:
         from .data import prepare_nucleotide_inputs, normalize_sequence_inputs, SequenceValidationPolicy, SequenceInputAdapter
         from .data.inputs import sequence_batch_iterator
         from .data.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT, CenterPaddedTokenizer
-        from .predict.forward import prediction_batches, output_numpy
+        from .predict.forward import collect_prediction_outputs, prediction_batches
         from .core.setup import _input_config
-        import numpy as np
         cfg = self.model.cfg
         _input_config(cfg, cfg.input_space)
         window = cfg.max_seq_length - int(cfg.boundary_mode == 'half_open')
@@ -217,11 +216,8 @@ class Aligner:
             values, _ = prepare_nucleotide_inputs(sequences, window)
             tokenizer = CenterPaddedTokenizer()
         adapter = SequenceInputAdapter(tokenizer, cfg.max_seq_length, self.device, vocab_size=cfg.vocab_size)
-        results = {}
-        for batch in prediction_batches(self.model, values, adapter, batch_size=batch_size):
-            for key, value in batch.outputs.items():
-                results.setdefault(key, []).append(output_numpy(value))
-        return {key: np.concatenate(parts, axis=0) for key, parts in results.items()}
+        return collect_prediction_outputs(
+            prediction_batches(self.model, values, adapter, batch_size=batch_size))
 
     def predict_iter(self, sequences: "Iterator[str]", *, batch_size="auto", chunk_size: int = 20000,
                      **kw) -> Iterator[dict]:
