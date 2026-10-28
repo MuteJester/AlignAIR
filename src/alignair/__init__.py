@@ -30,7 +30,7 @@ from .train.workflow import TrainingRun, run_training
 from .core import AlignAIR
 from .core.config import AlignAIRConfig
 from .predict import PredictConfig
-from .aa.product.loader import load_aa_model
+from alignair.predict.protein.loader import load_aa_model
 
 try:
     from importlib.metadata import version as _pkg_version
@@ -48,7 +48,7 @@ def predict_aa(sequences, *, model: str = "alignair-aa-igh-human@2.0.0", coverag
 
     ``sequences`` is a single AA sequence string, an iterable of strings, or an iterable of
     ``{"sequence_id", "sequence"}`` dicts — **sequences/records only, never a file path** (§9; file
-    parsing is the ``predict-aa`` CLI's job, see ``alignair.aa.product.cli``). ``model`` defaults to the
+    parsing is the ``predict-aa`` CLI's job, see ``alignair.predict.protein.cli``). ``model`` defaults to the
     current amino-acid model id and is resolved + verified via `load_aa_model` (cached per
     ``(model, device)`` at module scope). ``coverage_group``/``on_invalid`` are passed straight through
     to `AAPredictor.predict`. ``batch_size`` limits valid records per model forward (default 64).

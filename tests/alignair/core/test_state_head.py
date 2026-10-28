@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from alignair.core import AlignAIR
 from alignair.core.config import AlignAIRConfig
-from alignair.core.losses import make_logvars
+from alignair.tasks.losses import make_loss_weights
 
 pytestmark = pytest.mark.component
 
@@ -21,7 +21,7 @@ def test_state_head_off_by_default_no_logits():
     out = model({"tokenized_sequence": torch.randint(1, 6, (2, 128)),
                  "orientation": torch.zeros(2, dtype=torch.long)})
     assert "state_logits" not in out
-    assert "state" not in make_logvars(_cfg())
+    assert "state" not in make_loss_weights(_cfg())
 
 
 def test_state_head_emits_per_position_logits_when_enabled():
@@ -31,14 +31,14 @@ def test_state_head_emits_per_position_logits_when_enabled():
     out = model({"tokenized_sequence": torch.randint(1, 6, (2, 128)),
                  "orientation": torch.zeros(2, dtype=torch.long)})
     assert out["state_logits"].shape == (2, 128, 4)          # (B, L, |STATES|)
-    assert "state" in make_logvars(cfg)
+    assert "state" in make_loss_weights(cfg)
 
 
 def test_loss_adds_state_term_and_ignores_padding():
-    from alignair.core.losses import hierarchical_loss
+    from alignair.tasks.losses import hierarchical_loss
     cfg = _cfg(state_head=True)
     model = AlignAIR(cfg)
-    logvars = make_logvars(cfg)
+    logvars = make_loss_weights(cfg)
     B, L = 2, 128
     out = model({"tokenized_sequence": torch.randint(1, 6, (B, L)),
                  "orientation": torch.zeros(B, dtype=torch.long)})
@@ -85,7 +85,7 @@ def test_train_step_end_to_end_includes_state_loss():
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576, state_head=True)
     model = AlignAIR(cfg)
-    logvars = make_logvars(cfg)
+    logvars = make_loss_weights(cfg)
     recs = list(itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, dict(Curriculum().params(0.6)), 0), 4))
     batch_in, targets = build_batch(recs, ref, cfg)
     assert targets["state_labels"].shape == (4, cfg.max_seq_length)

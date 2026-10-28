@@ -3,7 +3,8 @@ import torch
 import pytest
 
 from alignair.core.config import AlignAIRConfig
-from alignair.core.losses import hierarchical_loss, make_logvars, soft_gaussian_target
+from alignair.tasks.losses import hierarchical_loss, make_loss_weights
+from alignair.tasks.functional import soft_gaussian_target
 from alignair.core import AlignAIR
 
 pytestmark = pytest.mark.component
@@ -32,7 +33,7 @@ def test_hierarchical_loss_assembles_and_backprops():
     cfg = AlignAIRConfig(max_seq_length=256, v_allele_count=10, d_allele_count=4,
                          j_allele_count=4, has_d=True)
     m = AlignAIR(cfg)
-    logvars = make_logvars(cfg)
+    logvars = make_loss_weights(cfg)
     B = 2
     out = m({"tokenized_sequence": torch.randint(0, 6, (B, 256))})
     total, parts = hierarchical_loss(out, _targets(B, cfg), cfg, logvars)
@@ -51,7 +52,7 @@ def test_absent_gene_predictions_do_not_contribute_to_loss(gene):
     out = model({"tokenized_sequence": torch.ones(2, 256, dtype=torch.long)})
     targets = _targets(2, cfg)
     targets[f"{gene}_supervise"] = torch.tensor([True, False])
-    logvars = make_logvars(cfg)
+    logvars = make_loss_weights(cfg)
     original, _ = hierarchical_loss(out, targets, cfg, logvars)
     changed = {key: value.clone() for key, value in out.items()}
     changed[f"{gene}_start"][1] = 200
@@ -70,7 +71,7 @@ def test_completely_absent_gene_has_zero_uncertainty_gradient():
     out = model({"tokenized_sequence": torch.ones(2, 256, dtype=torch.long)})
     targets = _targets(2, cfg)
     targets["j_supervise"] = torch.zeros(2, dtype=torch.bool)
-    logvars = make_logvars(cfg)
+    logvars = make_loss_weights(cfg)
     total, _ = hierarchical_loss(out, targets, cfg, logvars)
     assert torch.isfinite(total)
     total.backward()

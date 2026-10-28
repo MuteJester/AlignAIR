@@ -28,8 +28,10 @@ python -m pytest`} />
       <H2 id="layout">Suite responsibilities</H2>
       <DocTable head={["Location under tests/", "Coverage"]} rows={[
         [<code>alignair/</code>, "Main-package APIs and subsystems: CLI, I/O, reference, model files, prediction, training, genotype, registry, and errors."],
-        [<code>alignair/aa/</code>, "AA data, models, training, evaluation, alignment, inference, convergence, Phase-3 scoring, and the prediction product."],
-        [<code>alignair/aa/guard/</code>, "Source collection, cohort integrity, profiles, model components, training studies, and selection rules, each in a separate directory."],
+        [<code>alignair/predict/protein/</code>, "Protein bundles, calibrated prediction results, loading and CLI behavior."],
+        [<code>alignair/train/convergence/</code>, "Frozen-cohort training studies, checkpoint evaluation and selection."],
+        [<code>alignair/evaluate/coverage/</code>, "Family and gene coverage studies with explicit acceptance policies."],
+        [<code>alignair/applicability/</code>, "Source collection, cohort integrity, profiles, model components, training studies, and selection rules, each in a separate directory."],
         [<code>alignair_benchmark/</code>, "Core/artifact contracts, generation, I/O, evaluation, and CLI behavior. Shared case factories live in _support.py."],
         [<code>acceptance/</code>, "Fixed-reference guarantees, official AIRR validation, scientific release gates, and model-card claims tied to named tests."],
         [<code>robustness/</code>, "Malformed-input handling and mathematical invariants across package boundaries."],
@@ -63,7 +65,7 @@ python -m pytest tests -m "component and not slow and not model_validation" \\
 python -m pytest tests -m "component and not slow and not model_validation" -n 2
 
 # One subsystem
-python -m pytest tests/alignair/aa/guard/training
+python -m pytest tests/alignair/applicability/training
 python -m pytest tests/alignair_benchmark/evaluation
 
 # Acceptance and malformed-input contracts

@@ -308,7 +308,7 @@ print(report["paired_improvement"])`} />
         intervals and decision rules. Select the procedure that matches the study’s sampling unit.
       </p>
       <H2 id="convergence-cohort">Convergence study cohorts</H2>
-      <CodeBlock lang="python" code={`from alignair.aa.convergence.cohort import (
+      <CodeBlock lang="python" code={`from alignair.train.convergence.cohort import (
     COHORT_SCHEMA, build_cohort, cohort_fingerprint,
 )
 
@@ -342,13 +342,13 @@ assert fingerprint == cohort_fingerprint(cohort)`} />
       <p>
         These digests intentionally differ from the former sequence/call-only fingerprints.
         Historical artifacts are not rewritten. <code>build_cohort</code> and <code>STRATA_ORDER</code>
-        are now imported from <code>alignair.aa.convergence.cohort</code>, rather than the evaluator.
+        are now imported from <code>alignair.train.convergence.cohort</code>, rather than the evaluator.
         The returned dictionary remains mutable: a checksum describes its content at hashing time.
         Recompute it after edits, and retain separate model, configuration and reference bindings when
         comparing results. Fingerprinting alone does not validate scientific eligibility or freeze data.
       </p>
       <H2 id="convergence-scoring">Checkpoint scoring and preflight</H2>
-      <CodeBlock lang="python" code={`from alignair.aa.convergence.evaluator import evaluate_checkpoint
+      <CodeBlock lang="python" code={`from alignair.train.convergence.evaluator import evaluate_checkpoint
 
 # Bind the model, config, label maps and D vocabulary to the same checkpoint/reference.
 metrics = evaluate_checkpoint(
@@ -401,7 +401,7 @@ metrics = evaluate_checkpoint(
         their original type while runtime state is restored.
       </p>
       <H2 id="convergence-run">Run a convergence study</H2>
-      <CodeBlock lang="python" code={`from alignair.aa.convergence.driver import run_study
+      <CodeBlock lang="python" code={`from alignair.train.convergence.driver import run_study
 
 # Both output paths must be new, including when continuing a previous study.
 report = run_study(
@@ -439,7 +439,7 @@ report = run_study(
         a whole-run transaction or a directory-entry durability guarantee after power loss.
       </p>
       <H2 id="convergence-selection">Apply the frozen convergence selection rule</H2>
-      <CodeBlock lang="python" code={`from alignair.aa.convergence.select import select_checkpoint
+      <CodeBlock lang="python" code={`from alignair.train.convergence.select import select_checkpoint
 
 # Illustrative metrics; use the declared frozen cohort for an actual study.
 incumbent = {"v_macro": 0.95, "j_macro": 0.95, "d_allele_macro": 0.70}
@@ -489,6 +489,15 @@ print(decision["winner"], decision["per_candidate"][0]["weaknesses_improved"])`}
         establish well-formed evidence; cohort identity and scientific blinding remain study responsibilities.
       </p>
       <H2 id="ownership">Study integration</H2>
+      <p>
+        <code>clopper_pearson_interval(k, n, alpha=.05)</code>, exported by
+        <code> alignair.evaluate</code>, computes exact binomial bounds with alpha in each tail.
+        Each bound is a one-sided 95% bound at the default alpha; use <code>alpha=.025</code> for a
+        central 95% interval. Empty support returns <code>(0, 1)</code>. This estimator loads SciPy
+        only when needed. Coverage and applicability studies share its arithmetic while retaining
+        their own acceptance thresholds. Wilson intervals remain a separate estimator.
+        Benchmark scoring rejects unequal record counts and conflicting paired sequence IDs.
+      </p>
       <p>
         Numerical intervals live in <code>evaluate.statistics</code>; class and boundary summaries
         live in <code>evaluate.reports</code>. Convergence studies use the shared

@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from alignair import Aligner, load_aa_model
-from alignair.aa.product import loader as aa_loader
+from alignair.predict.protein import loader as aa_loader
 from alignair.cli.main import build_parser
 from alignair.errors import ModelError
 from alignair.registry import cache, hf

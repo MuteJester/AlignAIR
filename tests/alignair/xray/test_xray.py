@@ -57,9 +57,9 @@ def _model():
 
 
 def test_model_xray_observe_records_health():
-    from alignair.core.losses import make_logvars
+    from alignair.tasks.losses import make_loss_weights
     model, cfg = _model()
-    logvars = make_logvars(cfg)
+    logvars = make_loss_weights(cfg)
     xr = ModelXRay(model, lr=3e-4, deep_every=1, uncertainty=logvars)
     x = {"tokenized_sequence": torch.randint(1, 6, (2, 256))}
     model(x)["v_allele"].sum().backward()
@@ -70,9 +70,9 @@ def test_model_xray_observe_records_health():
 
 
 def test_model_xray_deep_pass_geometry_interference_and_report():
-    from alignair.core.losses import hierarchical_loss, make_logvars
+    from alignair.tasks.losses import hierarchical_loss, make_loss_weights
     model, cfg = _model()
-    logvars = make_logvars(cfg)
+    logvars = make_loss_weights(cfg)
     B = 4
     x = {"tokenized_sequence": torch.randint(1, 6, (B, 256)),
          "orientation": torch.zeros(B, dtype=torch.long)}

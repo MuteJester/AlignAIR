@@ -1,7 +1,7 @@
 """Generated protein bundles shared by loader and registry integration tests."""
 import GenAIRR as ga
 
-from alignair.aa.product.bundle import save_aa_bundle
+from alignair.predict.protein.bundle import save_aa_bundle
 from alignair.reference import asc_to_imgt_multi
 from tests.support.model_setup import protein_class_setup
 

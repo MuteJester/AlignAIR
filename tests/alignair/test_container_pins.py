@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.component
+
 ROOT = Path(__file__).resolve().parents[2]
 VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
 PIN = re.compile(r"(?:alignair/alignair|ghcr\.io/mutejester/alignair):(\d[\w.+-]*)")

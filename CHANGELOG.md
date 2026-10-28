@@ -112,6 +112,9 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Protein product inference now lives in `alignair.predict.protein`, applicability work in
+  `alignair.applicability`, convergence studies in `alignair.train.convergence`, and coverage studies
+  in `alignair.evaluate.coverage`. Tests and documentation follow the same capability structure.
 - Matcher artifacts use atomic publication, data-only decoding and shared strict restoration;
   evaluation preserves module modes. CSV annotation failures carry source context, and unexpected
   alignment failures propagate instead of silently becoming missing alignments.
@@ -305,6 +308,8 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Retired `alignair.aa`, `alignair.nn`, and `alignair.core.losses` import namespaces after caller
+  migration. Public `predict_aa` / `load_aa_model` APIs and persisted artifact schema identifiers remain.
 - Unused guard `build_training_stream` sampler and its private role helper. The old
   `aa.guard.train_data` module is removed; live partition imports use `data.partitioning`.
 - Unused `aa.convergence.paired` bootstrap/McNemar helpers and six dedicated tests. Active shared

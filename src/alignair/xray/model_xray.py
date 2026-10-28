@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 from typing import Callable, Optional
 
-import torch
 
 from ..core.runtime import evaluation_mode
 from . import deep_probe, dynamics, geometry, network

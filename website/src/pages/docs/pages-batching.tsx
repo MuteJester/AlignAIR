@@ -58,6 +58,16 @@ inputs, targets = batch`} />
       </p>
       <H2 id="windows">Window and coordinate rules</H2>
       <p>
+        CSV datasets and the direct simulator <code>SyntheticDataset</code> adapt flat annotations
+        through <code>RecordAdapter</code> and <code>build_xy</code>, then use the same
+        <code> collate_samples</code> contract through <code>align_collate</code>. Their historical
+        vocabulary includes a final <code>Short-D</code> label. Reference-bound training adapters
+        derive ordered labels and supervision from the bound reference instead. Keep those label
+        vocabularies explicit when preparing models; the source adapters are distinct because their
+        annotation contracts differ. Malformed flat annotations raise <code>TrainingDataError</code>,
+        with CSV path and row context when used through <code>AlignAIRDataset</code>.
+      </p>
+      <p>
         Record adapters default to <code>overflow="prefix"</code>, retaining the beginning of a read
         when it exceeds the configured window. They clip boundary targets and positional labels to that
         prefix. A gene entirely outside the prefix receives zero placeholder coordinates and allele labels,

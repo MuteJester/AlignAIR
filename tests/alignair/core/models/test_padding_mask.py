@@ -5,7 +5,7 @@ import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
-from alignair.core.losses import hierarchical_loss, make_logvars
+from alignair.tasks.losses import hierarchical_loss, make_loss_weights
 
 pytestmark = pytest.mark.component
 
@@ -56,7 +56,7 @@ def test_hierarchical_loss_finite_with_padding():
     for g, cnt in (("v", 8), ("j", 4), ("d", 4)):
         tg[f"{g}_start"] = torch.full((B, 1), 10.0); tg[f"{g}_end"] = torch.full((B, 1), 40.0)
         y = torch.zeros(B, cnt); y[:, 0] = 1.0; tg[f"{g}_allele"] = y
-    total, parts = hierarchical_loss(model(batch), tg, cfg, make_logvars(cfg))
+    total, parts = hierarchical_loss(model(batch), tg, cfg, make_loss_weights(cfg))
     assert torch.isfinite(total), parts
     total.backward()                                            # gradients must be finite too
     assert torch.isfinite(model.branches["v"].start_head.weight.grad).all()

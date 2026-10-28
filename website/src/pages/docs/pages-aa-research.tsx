@@ -16,7 +16,7 @@ const aaGuardResearch: DocPage = {
       </p>
 
       <H2 id="modules">Module responsibilities</H2>
-      <DocTable head={["Module under alignair.aa.guard", "Responsibility"]} rows={[
+      <DocTable head={["Module under alignair.applicability", "Responsibility"]} rows={[
         [<code>data_sources</code>, "Source-specific collection, exclusions, verified download caches, and optional independent domain numbering."],
         [<code>cohort.run_gate</code>, "Allocation, structural-negative generation, post-allocation deduplication, and the cohort audit."],
         [<code>disjoint</code>, "Reproduce the historical pre-split corpus digest and audit fresh-record overlaps without opening the sealed partition."],
@@ -38,11 +38,11 @@ const aaGuardResearch: DocPage = {
         <code>--census-dir</code> for source reports. Raw sequences and research artifacts belong in local study
         directories. ANARCII is loaded when domain numbering runs; profile building and loading require pyhmmer.
       </p>
-      <CodeBlock code={`python -m alignair.aa.guard.data_sources.oas --help
-python -m alignair.aa.guard.data_sources.genairr --help
-python -m alignair.aa.guard.data_sources.igsf --help
-python -m alignair.aa.guard.data_sources.sabdab --help
-python -m alignair.aa.guard.data_sources.tenx_tcr --help`} />
+      <CodeBlock code={`python -m alignair.applicability.data_sources.oas --help
+python -m alignair.applicability.data_sources.genairr --help
+python -m alignair.applicability.data_sources.igsf --help
+python -m alignair.applicability.data_sources.sabdab --help
+python -m alignair.applicability.data_sources.tenx_tcr --help`} />
       <DocTable head={["Collector", "Inputs and behavior"]} rows={[
         ["OAS", <><code>probe</code> builds a catalog; <code>unpaired</code> uses <code>--catalog</code>.
           The <code>paired</code> and <code>diverse</code> commands retain separate baseline and donor-diversity sampling policies.
@@ -63,11 +63,11 @@ python -m alignair.aa.guard.data_sources.tenx_tcr --help`} />
       </p>
 
       <H2 id="cohort">Audit and freeze a cohort</H2>
-      <CodeBlock code={`python -m alignair.aa.guard.cohort \\
+      <CodeBlock code={`python -m alignair.applicability.cohort \\
   --store study/sources --census-dir study/census \\
   --fingerprint inputs/split_fingerprint.json --out study/cohort
 
-python -m alignair.aa.guard.disjoint fresh.jsonl \\
+python -m alignair.applicability.disjoint fresh.jsonl \\
   --cleaned inputs/cleaned_cohort.jsonl \\
   --fingerprint inputs/split_fingerprint.json --phase3-gold inputs/gold_labels.tsv`} />
       <p>
@@ -83,7 +83,7 @@ python -m alignair.aa.guard.disjoint fresh.jsonl \\
       </p>
 
       <H2 id="profiles">Build a pinned profile bank</H2>
-      <CodeBlock code={`python -m alignair.aa.guard.profiles --sources sources.json --out study/profile-bank`} />
+      <CodeBlock code={`python -m alignair.applicability.profiles --sources sources.json --out study/profile-bank`} />
       <p>
         The source JSON must contain <code>imgt_gene_db</code>, <code>ogrdb_human_igh</code>,{" "}
         <code>ogrdb_human_igk</code>, <code>ogrdb_human_igl</code>, and <code>pfam_pf07686</code>.
@@ -101,14 +101,14 @@ python -m alignair.aa.guard.disjoint fresh.jsonl \\
         compressed Pfam PF07686 HMM as local files. The builder verifies every checksum, builds all required
         profiles, and writes HMMs, amino-acid alignments, and <code>profile_bank_manifest.json</code> into a new
         directory. Raw source files stay in place. Missing profiles and existing output directories are refused;
-        the builder does not download replacement inputs. Existing imports from <code>alignair.aa.guard.profiles</code> remain available.
+        the builder does not download replacement inputs. Existing imports from <code>alignair.applicability.profiles</code> remain available.
       </p>
 
       <H2 id="training">Prepare and run training studies</H2>
-      <CodeBlock code={`python -m alignair.aa.guard.training freeze-sweep --help
-python -m alignair.aa.guard.training freeze-loco --help
-python -m alignair.aa.guard.training sweep --help
-python -m alignair.aa.guard.training loco --help`} />
+      <CodeBlock code={`python -m alignair.applicability.training freeze-sweep --help
+python -m alignair.applicability.training freeze-loco --help
+python -m alignair.applicability.training sweep --help
+python -m alignair.applicability.training loco --help`} />
       <DocTable head={["Command", "Required inputs"]} rows={[
         [<code>freeze-sweep</code>, <><code>--settings --records --profile-manifest --fresh-sources --checkpoints --out</code></>],
         [<code>freeze-loco</code>, <><code>--training-manifest --runs --records --profile-manifest --checkpoints --out</code></>],
@@ -145,8 +145,8 @@ python -m alignair.aa.guard.training loco --help`} />
       </p>
 
       <H2 id="feature-cache">Prepare features before tensor assembly</H2>
-      <CodeBlock lang="python" code={`from alignair.aa.guard.profiles import load_bank
-from alignair.aa.guard.feature_cache import precompute_features, sequence_key
+      <CodeBlock lang="python" code={`from alignair.applicability.profiles import load_bank
+from alignair.applicability.feature_cache import precompute_features, sequence_key
 
 bank = load_bank("study/profile-bank")
 records = [{"aa": "QVQLVQSGAEVKKPGASVKVSCKASGYTF"}]
@@ -156,7 +156,7 @@ cache = precompute_features(
 )
 vector = cache[sequence_key(records[0]["aa"])]`} />
       <p>
-        Feature preparation lives in <code>alignair.aa.guard.feature_cache</code>, separate from
+        Feature preparation lives in <code>alignair.applicability.feature_cache</code>, separate from
         training targets. It verifies the supplied bank checksum before reuse or extraction, hashes
         exact sequence text, and computes each missing unique sequence once. It does not strip,
         change case or truncate inputs. All requested records are checked before extraction starts.
@@ -188,7 +188,7 @@ vector = cache[sequence_key(records[0]["aa"])]`} />
         and batch allocation.
       </p>
       <H2 id="sampling">Allocate complete training batches</H2>
-      <CodeBlock lang="python" code={`from alignair.aa.guard.training.sampling import GuardBatchSampler
+      <CodeBlock lang="python" code={`from alignair.applicability.training.sampling import GuardBatchSampler
 
 # Pools contain prepared records with aa and group annotations.
 sampler = GuardBatchSampler(
@@ -268,7 +268,7 @@ saved_sampling_state = sampler.state_dict()`} />
       </p>
 
       <H2 id="reports">Reports and compute accounting</H2>
-      <CodeBlock lang="python" code={`from alignair.aa.guard.training.budget import record, total
+      <CodeBlock lang="python" code={`from alignair.applicability.training.budget import record, total
 
 record("C1.s0", wall_s=120.0, gpu_h=0.0, params=45000,
        path="study/results/budget.json")
@@ -310,7 +310,7 @@ assert totals["n_runs"] >= 1`} />
         for diagnostic fields and exception handling.
       </p>
       <p>
-        Training smoke coverage exercises the package engine in <code>tests/alignair/aa/guard/training</code>.
+        Training smoke coverage exercises the package engine in <code>tests/alignair/applicability/training</code>.
         The <DocLink to="testing">testing guide</DocLink> covers selection and research dependencies.
         The separate <code>tests/packaging/release_smoke.sh</code> runs the public CLI’s version, environment check,
         tiny demo, AIRR validation, and comparison against an installed wheel or Docker image. It uses the

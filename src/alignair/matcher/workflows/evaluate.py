@@ -1,7 +1,6 @@
 """CLI: evaluate AIRRMatch set-aware allele accuracy on a (held-out) dataconfig."""
 import argparse
 
-import torch
 from alignair.core.runtime import restore_model_state
 from alignair.errors import ModelFormatError
 

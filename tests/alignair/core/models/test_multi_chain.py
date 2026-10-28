@@ -4,7 +4,7 @@ import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
-from alignair.core.losses import hierarchical_loss, make_logvars
+from alignair.tasks.losses import hierarchical_loss, make_loss_weights
 
 pytestmark = pytest.mark.component
 
@@ -54,7 +54,7 @@ def test_chain_type_gradient_flows_to_head():
 def test_loss_includes_chain_type_term():
     cfg = _cfg()
     model = AlignAIR(cfg)
-    logvars = make_logvars(cfg)
+    logvars = make_loss_weights(cfg)
     assert "chain_type" in logvars                            # multi-chain -> weight exists
     out = model(_batch(cfg))
     total, parts = hierarchical_loss(out, _targets(cfg), cfg, logvars)
@@ -77,4 +77,4 @@ def test_single_chain_emits_no_chain_type():
     model = AlignAIR(cfg)
     out = model(_batch(cfg))
     assert "chain_type_logits" not in out
-    assert "chain_type" not in make_logvars(cfg)
+    assert "chain_type" not in make_loss_weights(cfg)

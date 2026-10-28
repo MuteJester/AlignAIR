@@ -7,7 +7,7 @@ import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
-from alignair.core.losses import make_logvars
+from alignair.tasks.losses import make_loss_weights
 from alignair.train.guards import TrainingConfigError
 from alignair.train.trainer import train
 
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.integration
 def _tiny_model():
     cfg = AlignAIRConfig(max_seq_length=576, has_d=True,
                          v_allele_count=4, d_allele_count=3, j_allele_count=2)
-    return cfg, AlignAIR(cfg), make_logvars(cfg)
+    return cfg, AlignAIR(cfg), make_loss_weights(cfg)
 
 
 def test_train_rejects_bad_config_before_training():
@@ -44,10 +44,10 @@ def test_resume_below_checkpoint_step_is_rejected(tmp_path):
                          j_allele_count=len(ref.gene("J")), d_allele_count=len(ref.gene("D")))
     torch.manual_seed(0)
     out = str(tmp_path / "m.alignair")
-    train(AlignAIR(cfg), ref, [gd.HUMAN_IGH_OGRDB], cfg, make_logvars(cfg), steps=4, batch_size=4,
+    train(AlignAIR(cfg), ref, [gd.HUMAN_IGH_OGRDB], cfg, make_loss_weights(cfg), steps=4, batch_size=4,
           lr=1e-3, save_path=out, save_every=100, log_every=100)
     with pytest.raises(ValueError, match="not beyond the checkpoint"):   # steps <= checkpoint step
-        train(AlignAIR(cfg), ref, [gd.HUMAN_IGH_OGRDB], cfg, make_logvars(cfg), steps=2, batch_size=4,
+        train(AlignAIR(cfg), ref, [gd.HUMAN_IGH_OGRDB], cfg, make_loss_weights(cfg), steps=2, batch_size=4,
               lr=1e-3, save_path=out, resume_path=out, log_every=100)
 
 
@@ -60,14 +60,14 @@ def test_train_saves_best_and_resumes(tmp_path):
                          v_allele_count=len(ref.gene("V")), j_allele_count=len(ref.gene("J")),
                          d_allele_count=len(ref.gene("D")))
     torch.manual_seed(0)
-    model, logvars = AlignAIR(cfg), make_logvars(cfg)
+    model, logvars = AlignAIR(cfg), make_loss_weights(cfg)
     out = str(tmp_path / "m.alignair")
     train(model, ref, [gd.HUMAN_IGH_OGRDB], cfg, logvars, steps=6, batch_size=4, lr=1e-3,
           save_path=out, save_every=3, val_every=3, val_batches=1, grad_clip=1.0, log_every=100)
     # best-checkpoint selection wrote <stem>.best.alignair
     assert glob.glob(str(tmp_path / "m.best.alignair"))
     # resume continues from the saved step (exercises RNG restore + state load)
-    model2, logvars2 = AlignAIR(cfg), make_logvars(cfg)
+    model2, logvars2 = AlignAIR(cfg), make_loss_weights(cfg)
     train(model2, ref, [gd.HUMAN_IGH_OGRDB], cfg, logvars2, steps=9, batch_size=4, lr=1e-3,
           save_path=out, resume_path=out, save_every=3, log_every=100)
     assert glob.glob(str(tmp_path / "m.step9.alignair"))

@@ -10,7 +10,7 @@ import argparse
 from .. import __version__
 from ..errors import (AlignAIRError, InternalError, OperationCancelledError, OperationIOError,
                       error_context, error_reporting, report_error)
-from ..aa.product import cli as _predict_aa_cmd
+from alignair.predict.protein import cli as _predict_aa_cmd
 from . import analyze as _analyze_cmd
 from . import benchmark as _benchmark_cmd
 from . import compare as _compare_cmd

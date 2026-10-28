@@ -234,7 +234,7 @@ ordered_results = batch.restore_order(predictions)`} />
       ]} />
       <p>
         Protein product prediction selects its canonical-residue-plus-X policy through
-        <code>aa.product.validate.normalize_input_batch</code>. It normalizes once per request and
+        <code>alignair.predict.protein.validate.normalize_input_batch</code>. It normalizes once per request and
         uses the retained positions for calibration-group lists and output restoration. Duplicate IDs
         still share ID-based group lookups while retaining independent positional lookups. The
         historical <code>normalize_inputs</code> split-list interface and <code>Record/ErrorResult</code>

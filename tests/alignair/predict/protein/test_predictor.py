@@ -1,0 +1,484 @@
+"""Tests for `AAPredictor.predict` (Task 5): calls + §5 coordinates + inter_vj_aa, no calibration yet."""
+from __future__ import annotations
+import pytest
+
+import torch
+
+from alignair.calibration import FrozenConformal
+from alignair.reference.labels import EquivalenceClassMap
+from alignair.predict.protein.loader import AAPredictor, load_aa_model
+from alignair.predict.protein.schema import AAPrediction
+from alignair.predict.protein.validate import ErrorResult
+
+pytestmark = pytest.mark.component
+
+
+def test_product_forward_uses_the_supplied_tokenizer_once_for_all_heads():
+    from types import SimpleNamespace
+    import numpy as np
+    predictor = _fake_predictor()
+    encodes, forwards = [], []
+    def encode(sequence):
+        encodes.append(sequence)
+        return np.full(len(sequence),7,dtype=np.int64)
+    predictor.tokenizer = SimpleNamespace(encode=encode)
+    handle = predictor.model.register_forward_hook(lambda module,args,out: forwards.append(args[0]['tokenized_sequence'].clone()))
+    try:
+        predictor.predict(['EVQLVES'])
+    finally:
+        handle.remove()
+    assert encodes == ['EVQLVES'] and len(forwards) == 1
+    assert forwards[0][0,:7].tolist() == [7]*7
+    assert predictor.model.training
+
+
+def test_product_refuses_nonfinite_coordinates_and_restores_model_mode():
+    from alignair.errors import NumericalError
+    predictor = _fake_predictor()
+    predictor.model._out['v_start'].fill_(float('nan'))
+    with pytest.raises(NumericalError) as caught:
+        predictor.predict(['EVQLVES'])
+    assert caught.value.context['field'] == 'v_start'
+    assert predictor.model.training
+
+
+def test_all_invalid_inputs_do_not_run_model_or_resolve_unused_calibration_groups():
+    predictor = _fake_predictor()
+    def forbidden(_): pytest.fail('ran model for invalid inputs')
+    predictor.model.forward = forbidden
+    results = predictor.predict([None, {'sequence':'*'}, {'sequence':12}],on_invalid='skip',
+                                coverage_group='unused')
+    assert [result.error for result in results] == ['invalid_type','invalid_character','invalid_type']
+    assert [result.sequence_id for result in results] == ['seq_0','seq_1','seq_2']
+
+
+def test_prediction_cardinality_mismatch_is_not_silently_truncated(monkeypatch):
+    import alignair.predict.protein.predictor as implementation
+    from alignair.errors import DataContractError
+    monkeypatch.setattr(implementation,'_predict_valid',lambda *args: ['one'])
+    with pytest.raises(DataContractError) as caught:
+        _fake_predictor().predict(['EVQLVES','','EVQLVES'],on_invalid='skip')
+    assert caught.value.context == {'expected':2,'received':1}
+
+
+@pytest.mark.parametrize('batch_size,count,expected_sizes', [
+    (1, 5, [1, 1, 1, 1, 1]), (2, 5, [2, 2, 1]), (64, 5, [5]),
+    ('default', 130, [64, 64, 2]),
+])
+def test_product_uses_shared_bounded_batches_without_changing_results(batch_size, count, expected_sizes):
+    predictor = _fake_predictor()
+    records = [{'sequence_id': f'read-{i}', 'sequence': 'ACDEFGHIKL'} for i in range(count)]
+    expected = [result.to_dict() for result in predictor.predict(records, batch_size=count)]
+    sizes = []
+    handle = predictor.model.register_forward_pre_hook(
+        lambda model, args: sizes.append(args[0]['tokenized_sequence'].shape[0]))
+    try:
+        options = {} if batch_size == 'default' else {'batch_size': batch_size}
+        actual = predictor.predict((record for record in records), **options)
+    finally:
+        handle.remove()
+    assert sizes == expected_sizes
+    assert [result.to_dict() for result in actual] == expected
+    assert predictor.model.training and torch.is_grad_enabled()
+
+
+@pytest.mark.parametrize('batch_size', [0, -1, True, False, 1.5, None, '2'])
+def test_invalid_batch_sizes_fail_before_input_consumption(batch_size):
+    from alignair.errors import ConfigurationError
+    def records():
+        pytest.fail('consumed input before validating batch size')
+        yield 'EVQLVES'
+    with pytest.raises(ConfigurationError) as caught:
+        _fake_predictor().predict(records(), batch_size=batch_size)
+    assert caught.value.context['field'] == 'batch_size'
+
+
+def test_each_batch_checks_formatter_cardinality_before_the_next_forward(monkeypatch):
+    import alignair.predict.protein.predictor as implementation
+    from alignair.errors import DataContractError
+    calls = []
+    def wrong_count(predictor, records, indices, group, outputs):
+        calls.append(len(records))
+        return ['one'] if len(calls) == 1 else ['two', 'three', 'four']
+    monkeypatch.setattr(implementation, '_predict_valid', wrong_count)
+    with pytest.raises(DataContractError) as caught:
+        _fake_predictor().predict(['EVQLVES'] * 4, batch_size=2)
+    assert calls == [2]
+    assert caught.value.context == {'expected': 2, 'received': 1}
+
+
+def test_later_batch_forward_failure_keeps_offset_and_restores_mixed_modes():
+    from alignair.errors import NumericalError
+    predictor = _fake_predictor()
+    predictor.model.child = torch.nn.Dropout().eval()
+    calls = []
+    original = predictor.model.forward
+    def forward(inputs):
+        calls.append(inputs['tokenized_sequence'].shape[0])
+        outputs = original(inputs)
+        if len(calls) == 2:
+            outputs['v_start'] = torch.full_like(outputs['v_start'], float('nan'))
+        return outputs
+    predictor.model.forward = forward
+    with pytest.raises(NumericalError) as caught:
+        predictor.predict(['EVQLVES'] * 5, batch_size=2)
+    assert calls == [2, 2]
+    assert caught.value.context['record_offset'] == 2
+    assert caught.value.context['batch_size'] == 2 and caught.value.context['field'] == 'v_start'
+    assert predictor.model.training and not predictor.model.child.training and torch.is_grad_enabled()
+
+
+def test_real_model_chunking_preserves_calibrated_decisions_and_result_schema():
+    predictor = load_aa_model(_REAL_MODEL_ID, device='cpu')
+    sequences = [_VH_1, _VH_2, _VH_1]
+    expected = [result.to_dict() for result in predictor.predict(sequences, batch_size=3)]
+    actual = [result.to_dict() for result in predictor.predict(sequences, batch_size=1)]
+    def compare(left, right):
+        if isinstance(right, float):
+            assert left == pytest.approx(right, rel=1e-5, abs=1e-6)
+        elif isinstance(right, dict):
+            assert left.keys() == right.keys()
+            for key in right:
+                compare(left[key], right[key])
+        elif isinstance(right, list):
+            assert len(left) == len(right)
+            for a, b in zip(left, right):
+                compare(a, b)
+        else:
+            assert left == right
+    for observed, baseline in zip(actual, expected):
+        for gene in baseline['segments']:
+            left = observed['segments'][gene].pop('calibrated_classes')
+            right = baseline['segments'][gene].pop('calibrated_classes')
+            for ranked in (left, right):
+                assert ranked == sorted(ranked, key=lambda row: (-row['softmax_score'], row['class_id']))
+                assert [row['rank'] for row in ranked] == list(range(1, len(ranked) + 1))
+            by_id_left = {row['class_id']: {key: value for key, value in row.items() if key != 'rank'} for row in left}
+            by_id_right = {row['class_id']: {key: value for key, value in row.items() if key != 'rank'} for row in right}
+            compare(by_id_left, by_id_right)
+    compare(actual, expected)
+
+_REAL_MODEL_ID = "alignair-aa-igh-human@2.0.0"
+
+# Two real, full-length VH amino-acid reads (from Notes and Plans/docs/superpowers/artifacts/2026-07-21-aa-phase3/
+# hydrated_sequences.tsv — real antibody VH sequences used elsewhere in this repo's AA test suite).
+_VH_1 = ("EVQLVESGGGLVQPGGSLRLSCAASGFNIKDTYIHWVRQAPGKGLEWVARIYPTNGYTRYADSVKGRFTISADTSKNTAYLQMNSLRAEDTAV"
+        "YYCSRWGGDGFYAMDYWGQGTLVTVSS")
+_VH_2 = ("EVQLVESGGGLVQPGGSLRLSCAASGYTFTNYGMNWVRQAPGKGLEWVGWINTYTGEPTYAADFKRRFTFSLDTSKSTAYLQMNSLRAEDTAV"
+        "YYCAKYPHYYGSSHWYFDVWGQGTLVTVSS")
+
+
+# --------------------------------------------------------------------------------- real v2 bundle
+
+
+def test_predict_real_v2_bundle_returns_full_schema_for_two_vh_reads():
+    predictor = load_aa_model(_REAL_MODEL_ID)
+    results = predictor.predict([_VH_1, _VH_2])
+
+    assert len(results) == 2
+    for seq, result in zip((_VH_1, _VH_2), results):
+        assert isinstance(result, AAPrediction)
+        assert result.input_length == len(seq)
+        assert set(result.segments) == {"V", "D", "J"}
+
+        for gene in ("V", "D", "J"):
+            seg = result.segments[gene]
+            top_call = seg["top_call"]
+            assert isinstance(top_call["genes"], list) and len(top_call["genes"]) >= 1
+            assert isinstance(top_call["families"], list) and len(top_call["families"]) >= 1
+            assert isinstance(top_call["top_alleles"], list) and len(top_call["top_alleles"]) >= 1
+            assert 0.0 <= top_call["softmax_score"] <= 1.0
+
+            coords = seg["coordinates"]
+            if coords is not None:
+                assert isinstance(coords["start"], int) and isinstance(coords["end"], int)
+                assert 0 <= coords["start"] <= len(seq)
+                assert 0 <= coords["end"] <= len(seq)
+                assert coords["start"] <= coords["end"]
+
+            # §7 calibrated sets (Task 7) — see test_calibrated_sets.py for the full contract
+            # (parity, group selection, one-to-many expansion); here just the basic invariants.
+            assert isinstance(seg["calibrated_class_set"], list) and len(seg["calibrated_class_set"]) >= 1
+            assert isinstance(seg["calibrated_allele_set"], list) and len(seg["calibrated_allele_set"]) >= 1
+            assert isinstance(seg["calibrated_gene_set"], list) and len(seg["calibrated_gene_set"]) >= 1
+            assert isinstance(seg["calibrated_family_set"], list) and len(seg["calibrated_family_set"]) >= 1
+            assert seg["set_size"] == {
+                "classes": len(seg["calibrated_class_set"]),
+                "alleles": len(seg["calibrated_allele_set"]),
+                "genes": len(seg["calibrated_gene_set"]),
+            }
+            # APS always includes at least the top-ranked (argmax) class.
+            assert top_call["class_id"] in seg["calibrated_class_set"]
+
+        # D segment documents allele-head-index semantics: class_id indexes d_allele_order directly
+        d_call = result.segments["D"]["top_call"]
+        assert predictor.d_allele_order[d_call["class_id"]] == d_call["top_alleles"][0]
+        assert d_call["class_name"] == d_call["top_alleles"][0]
+
+        assert result.applied_calibration_group == {"group": "pooled", "source": "pooled_fallback"}
+
+        prov = result.provenance
+        assert prov["model_id"] == "alignair-aa-igh-human"
+        assert prov["model_version"] == "2.0.0"
+        assert prov["weights_sha256"]
+        assert prov["calibration_sha256"]
+        assert prov["class_map_db_hash"]
+        assert prov["alignair_version"]
+        assert "simulator" in prov["calibration_scope"].lower()
+
+        if result.inter_vj_aa is not None:
+            assert isinstance(result.inter_vj_aa, str)
+
+        d = result.to_dict()
+        assert d["sequence_id"] == result.sequence_id
+        assert d["segments"]["V"]["top_call"]["softmax_score"] == result.segments["V"]["top_call"]["softmax_score"]
+
+
+def test_predict_generates_sequential_ids_when_not_supplied():
+    predictor = load_aa_model(_REAL_MODEL_ID)
+    results = predictor.predict([_VH_1, _VH_2])
+    assert [r.sequence_id for r in results] == ["seq_0", "seq_1"]
+
+
+def test_predict_uses_supplied_sequence_id():
+    predictor = load_aa_model(_REAL_MODEL_ID)
+    [result] = predictor.predict([{"sequence_id": "my-read", "sequence": _VH_1}])
+    assert result.sequence_id == "my-read"
+
+
+def test_predict_on_invalid_skip_interleaves_errors_in_original_order():
+    predictor = load_aa_model(_REAL_MODEL_ID)
+    results = predictor.predict([_VH_1, "EV*QL", _VH_2], on_invalid="skip")
+    assert len(results) == 3
+    assert isinstance(results[0], AAPrediction) and results[0].sequence_id == "seq_0"
+    assert isinstance(results[1], ErrorResult) and results[1].sequence_id == "seq_1"
+    assert results[1].error == "invalid_character"
+    assert isinstance(results[2], AAPrediction) and results[2].sequence_id == "seq_2"
+
+
+def test_predict_on_invalid_error_raises_on_first_bad_record():
+    predictor = load_aa_model(_REAL_MODEL_ID)
+    try:
+        predictor.predict([_VH_1, "EV*QL"])
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "seq_1" in str(exc)
+
+
+# --------------------------------------------------------------------------------- crafted start>end coordinates
+
+
+def _minimal_class_map(gene: str, allele: str) -> EquivalenceClassMap:
+    return EquivalenceClassMap(gene=gene, db_hash="fakehash",
+                               allele_class={allele: 0}, class_members={0: [allele]})
+
+
+class _StubModel(torch.nn.Module):
+    """Ignores its input and always returns a fixed forward-pass output — used to force a
+    deterministic V start>end without needing real model weights."""
+
+    def __init__(self, out: dict):
+        super().__init__()
+        self._out = out
+
+    def forward(self, batch):
+        count = batch['tokenized_sequence'].shape[0]
+        return {key: value.expand(count, *value.shape[1:]) for key, value in self._out.items()}
+
+
+class _StubTokenizer:
+    def encode(self, sequence: str):
+        import numpy as np
+        return np.ones(len(sequence), dtype=np.int64)
+
+
+class _StubCfg:
+    max_seq_length = 32
+    has_d = True
+
+
+def _fake_predictor() -> AAPredictor:
+    out = {
+        "v_class_logits": torch.tensor([[2.0]]),
+        "j_class_logits": torch.tensor([[2.0]]),
+        "d_class_logits": torch.tensor([[2.0]]),
+        # V: start(8) > end(3) after rounding/clipping -> must be voided
+        "v_start": torch.tensor([[8.0]]), "v_end": torch.tensor([[3.0]]),
+        # J and D stay coherent and inside [0, 10]
+        "j_start": torch.tensor([[5.0]]), "j_end": torch.tensor([[9.0]]),
+        "d_start": torch.tensor([[4.0]]), "d_end": torch.tensor([[6.0]]),
+    }
+    return AAPredictor(
+        model=_StubModel(out),
+        cfg=_StubCfg(),
+        tokenizer=_StubTokenizer(),
+        class_maps={"V": _minimal_class_map("V", "IGHV1-1*01"),
+                   "J": _minimal_class_map("J", "IGHJ1*01")},
+        d_allele_order=["IGHD1-1*01"],
+        asc_multi={"IGHV1-1*01": ["IGHV1-1*01"], "IGHJ1*01": ["IGHJ1*01"]},
+        # Single-class logits above -> softmax==1.0 -> predict_set always == {0} regardless of qhat;
+        # these coordinate-focused stub tests don't exercise coverage_group, so no mondrian entries
+        # are needed (Task-7 calibrated-set *content* is covered by test_calibrated_sets.py).
+        conformal={g: {"pooled": FrozenConformal(0.99), "mondrian": {}} for g in ("V", "J", "D")},
+        card={"model_id": "fake-model", "model_version": "0.0.0-fake",
+             "alignair_version": "3.0.0-test", "calibration_scope": "TEST SIMULATOR SCOPE STRING",
+             "integrity": {"weights_sha256": "abc123", "calibration_sha256": "def456"},
+             "reference_provenance": {"class_map_db_hash": {"V": "vhash", "J": "jhash"}}},
+        device="cpu",
+    )
+
+
+def test_predict_voids_coordinates_and_warns_on_start_greater_than_end():
+    predictor = _fake_predictor()
+    [result] = predictor.predict(["ACDEFGHIKL"])            # length 10
+
+    assert result.segments["V"]["coordinates"] is None
+    assert "V: incoherent start>end" in result.warnings
+
+    # J and D were coherent and are untouched
+    assert result.segments["J"]["coordinates"] == {"start": 5, "end": 9}
+    assert result.segments["D"]["coordinates"] == {"start": 4, "end": 6}
+
+    # inter_vj_aa cannot be derived because V's coordinates were voided
+    assert result.inter_vj_aa is None
+
+
+def test_predict_cross_gene_overlap_warns_without_repair():
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[0.0]])
+    predictor.model._out["v_end"] = torch.tensor([[7.0]])     # V end (7) > J start (5) -> overlap
+    predictor.model._out["j_start"] = torch.tensor([[5.0]])
+    predictor.model._out["j_end"] = torch.tensor([[9.0]])
+
+    [result] = predictor.predict(["ACDEFGHIKL"])
+
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 7}
+    assert result.segments["J"]["coordinates"] == {"start": 5, "end": 9}
+    assert "segment coordinates overlap/out-of-order" in result.warnings
+    # not repaired: coordinates are reported exactly as produced
+    assert result.inter_vj_aa is None
+
+
+def test_predict_inter_vj_aa_is_the_v_end_to_j_start_substring():
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[0.0]])
+    predictor.model._out["v_end"] = torch.tensor([[4.0]])
+    predictor.model._out["j_start"] = torch.tensor([[7.0]])
+    predictor.model._out["j_end"] = torch.tensor([[10.0]])
+
+    seq = "ACDEFGHIKL"
+    [result] = predictor.predict([seq])
+
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 4}
+    assert result.segments["J"]["coordinates"] == {"start": 7, "end": 10}
+    assert result.inter_vj_aa == seq[4:7]
+
+
+# ---------------------------------------------------------------------------------
+# §5 coordinate CLIP boundary tests
+
+
+def test_predict_clips_negative_start_to_zero():
+    """§5: negative soft-argmax start is clipped to 0."""
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[-3.0]])    # negative start
+    predictor.model._out["v_end"] = torch.tensor([[5.0]])
+    predictor.model._out["j_start"] = torch.tensor([[6.0]])
+    predictor.model._out["j_end"] = torch.tensor([[10.0]])
+
+    seq = "ACDEFGHIKL"
+    [result] = predictor.predict([seq])
+
+    # V start of -3.0 -> rounds to -3 -> clips to max(0, -3) = 0
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 5}
+
+
+def test_predict_clips_end_beyond_sequence_length():
+    """§5: soft-argmax end beyond sequence length is clipped to seq_len."""
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[0.0]])
+    predictor.model._out["v_end"] = torch.tensor([[999.0]])     # end way beyond sequence
+    predictor.model._out["j_start"] = torch.tensor([[6.0]])
+    predictor.model._out["j_end"] = torch.tensor([[10.0]])
+
+    seq = "ACDEFGHIKL"  # length 10
+    [result] = predictor.predict([seq])
+
+    # V end of 999.0 -> rounds to 999 -> clips to min(10, 999) = 10
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 10}
+
+
+# ---------------------------------------------------------------------------------
+# D-out-of-range cross-gene overlap warning tests
+
+
+def test_predict_d_out_of_range_start_warns_without_repair():
+    """§5: D start < V end triggers cross-gene overlap warning."""
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[0.0]])
+    predictor.model._out["v_end"] = torch.tensor([[5.0]])
+    predictor.model._out["j_start"] = torch.tensor([[8.0]])
+    predictor.model._out["j_end"] = torch.tensor([[10.0]])
+    predictor.model._out["d_start"] = torch.tensor([[3.0]])     # D start < V end -> overlap
+    predictor.model._out["d_end"] = torch.tensor([[6.0]])
+
+    seq = "ACDEFGHIKL"
+    [result] = predictor.predict([seq])
+
+    # V and J are coherent, D is not
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 5}
+    assert result.segments["J"]["coordinates"] == {"start": 8, "end": 10}
+    assert result.segments["D"]["coordinates"] == {"start": 3, "end": 6}
+    # warning should be present
+    assert "segment coordinates overlap/out-of-order" in result.warnings
+    # coordinates are NOT repaired, reported as-is
+    # inter_vj_aa is still computed because V/J are coherent (warning is for D issue only)
+    assert result.inter_vj_aa == seq[5:8]
+
+
+def test_predict_d_out_of_range_end_warns_without_repair():
+    """§5: D end > J start triggers cross-gene overlap warning."""
+    predictor = _fake_predictor()
+    predictor.model._out["v_start"] = torch.tensor([[0.0]])
+    predictor.model._out["v_end"] = torch.tensor([[4.0]])
+    predictor.model._out["j_start"] = torch.tensor([[7.0]])
+    predictor.model._out["j_end"] = torch.tensor([[10.0]])
+    predictor.model._out["d_start"] = torch.tensor([[5.0]])
+    predictor.model._out["d_end"] = torch.tensor([[8.0]])       # D end > J start -> overlap
+
+    seq = "ACDEFGHIKL"
+    [result] = predictor.predict([seq])
+
+    assert result.segments["V"]["coordinates"] == {"start": 0, "end": 4}
+    assert result.segments["J"]["coordinates"] == {"start": 7, "end": 10}
+    assert result.segments["D"]["coordinates"] == {"start": 5, "end": 8}
+    assert "segment coordinates overlap/out-of-order" in result.warnings
+    # inter_vj is still computed correctly (V/J coherent)
+    assert result.inter_vj_aa == seq[4:7]
+
+
+# ---------------------------------------------------------------------------------
+# Tokenizer vocab equality parity test
+
+
+def test_predict_loaded_tokenizer_vocab_matches_fresh_aatokenizer():
+    """§3 parity: loaded v2 predictor's tokenizer vocabulary is identical to a fresh AAProteinTokenizer()."""
+    from alignair.data.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT
+
+    predictor = load_aa_model(_REAL_MODEL_ID)
+
+    # Fresh tokenizer with no arguments (uses default AA_TOKEN_DICT)
+    fresh_tokenizer = AAProteinTokenizer()
+
+    # Both should have identical token_dict
+    assert predictor.tokenizer.token_dict == fresh_tokenizer.token_dict
+
+    # Verify both match the module default exactly
+    assert predictor.tokenizer.token_dict == AA_TOKEN_DICT
+    assert fresh_tokenizer.token_dict == AA_TOKEN_DICT
+
+    # Encoding parity: a probe string should encode identically
+    probe = "ACDEFGHIKLMNPQRSTVWYX"
+    predicted_encoded = predictor.tokenizer.encode(probe)
+    fresh_encoded = fresh_tokenizer.encode(probe)
+    assert (predicted_encoded == fresh_encoded).all()

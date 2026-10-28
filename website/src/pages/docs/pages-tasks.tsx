@@ -104,7 +104,8 @@ selection_score = tasks.selection_score(metrics)`} />
       <p>
         The <DocLink to="training-engine">shared training engine</DocLink> works with either target contract. Existing gym and research runners
         retain their data preparation and study schedules. The historical <code>core.losses</code>
-        and batch-metric entry points delegate to this package.
+        facade has been removed. Import objective functions and <code>make_loss_weights</code> from
+        <code> alignair.tasks.losses</code>, and Gaussian targets from <code>alignair.tasks.functional</code>.
       </p>
       <H2 id="migration">Migrate former protein loss imports</H2>
       <p>

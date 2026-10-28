@@ -150,7 +150,7 @@ def test_empty_and_all_invalid_batches_need_no_predictions():
 
 
 def test_legacy_product_types_are_aliases_of_shared_record_types():
-    from alignair.aa.product.validate import Record,ErrorResult,normalize_inputs,normalize_input_batch
+    from alignair.predict.protein.validate import Record,ErrorResult,normalize_inputs,normalize_input_batch
     assert Record is SequenceRecord and ErrorResult is SequenceInputFailure
     records,errors = normalize_inputs([' ac ','*'],on_invalid='skip')
     batch = normalize_input_batch([' ac ','*'],on_invalid='skip')
@@ -163,7 +163,7 @@ def test_accepted_values_are_normalized_once_instead_of_revalidating_each_item()
         def strip(self):
             calls.append(self)
             return super().strip()
-    from alignair.aa.product.validate import normalize_input_batch
+    from alignair.predict.protein.validate import normalize_input_batch
     result = normalize_input_batch([Traced(' ac '),Traced(' de ')])
     assert [record.sequence for record in result.records] == ['AC','DE']
     assert calls == [' ac ',' de ']

@@ -85,7 +85,7 @@ def test_boundary_reports_reject_misaligned_nonfinite_or_negative_errors(targets
 
 
 def test_convergence_macro_accuracy_uses_shared_report_owner():
-    from alignair.aa.convergence import evaluator
+    from alignair.train.convergence import evaluator
     assert evaluator.macro_accuracy is macro_accuracy
 
 

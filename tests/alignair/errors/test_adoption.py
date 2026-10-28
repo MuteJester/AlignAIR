@@ -21,17 +21,17 @@ pytestmark = pytest.mark.component
     ("genotype.constraint", "NovelAlleleUnsupportedError", ValueError),
     ("data.tokenizer", "InvalidResidueError", ValueError),
     ("data.sampling.collection", "SampleBudgetExhausted", RuntimeError),
-    ("aa.guard.access", "AccessViolation", RuntimeError),
-    ("aa.guard.access", "ThresholdArtifactMissing", RuntimeError),
-    ("aa.guard.access", "HashMismatch", RuntimeError),
-    ("aa.guard.access", "NoAdmissibleThreshold", RuntimeError),
-    ("aa.guard.fusion", "FusionContractError", RuntimeError),
-    ("aa.guard.tokenizer", "InputTooLong", ValueError),
-    ("aa.guard.disjoint", "Gate3DigestMismatch", RuntimeError),
-    ("aa.guard.profiles", "NoPublishableProfileSource", Exception),
-    ("aa.product.applicability.cohort_loader", "LockedTestError", RuntimeError),
+    ("applicability.access", "AccessViolation", RuntimeError),
+    ("applicability.access", "ThresholdArtifactMissing", RuntimeError),
+    ("applicability.access", "HashMismatch", RuntimeError),
+    ("applicability.access", "NoAdmissibleThreshold", RuntimeError),
+    ("applicability.fusion", "FusionContractError", RuntimeError),
+    ("applicability.tokenizer", "InputTooLong", ValueError),
+    ("applicability.disjoint", "Gate3DigestMismatch", RuntimeError),
+    ("applicability.profiles", "NoPublishableProfileSource", Exception),
+    ("applicability.assessment.cohort_loader", "LockedTestError", RuntimeError),
 ])
-def test_existing_exceptions_keep_import_paths_and_builtin_catchability(module, name, builtin):
+def test_canonical_exceptions_preserve_builtin_catchability(module, name, builtin):
     cls = getattr(importlib.import_module("alignair." + module), name)
     assert issubclass(cls, AlignAIRError)
     assert issubclass(cls, builtin)

@@ -16,7 +16,27 @@ const composition: DocPage = {
       <p>
         Shared neural-network components live in <code>alignair.neural</code>, including prediction
         heads and learned uncertainty weights. This package serves both nucleotide and protein models.
-        Historical <code>alignair.nn</code> imports delegate to the same components.
+        The historical <code>alignair.nn</code> facade has been removed; import these components
+        directly from <code>alignair.neural</code>.
+      </p>
+      <H2 id="package-ownership">Package ownership and import migration</H2>
+      <DocTable head={["Responsibility", "Canonical package"]} rows={[
+        ["Nucleotide and protein model assembly", "alignair.core"],
+        ["Reusable neural heads and uncertainty weights", "alignair.neural"],
+        ["Alignment objectives and supervision", "alignair.tasks"],
+        ["Calibrated protein prediction and bundles", "alignair.predict.protein"],
+        ["Applicability models, data sources, profiles and studies", "alignair.applicability"],
+        ["Protein-product applicability assessment", "alignair.applicability.assessment"],
+        ["Convergence training and checkpoint selection", "alignair.train.convergence"],
+        ["Gene/family coverage studies", "alignair.evaluate.coverage"],
+      ]} />
+      <p>
+        The former <code>aa.product</code>, <code>aa.guard</code>, <code>aa.convergence</code> and
+        <code> aa.phase3</code> paths have moved to the corresponding packages above. The
+        <code> aa</code>, <code>nn</code> and <code>core.losses</code> import facades are removed.
+        Public <code>alignair.predict_aa</code> and <code>alignair.load_aa_model</code> entry points retain
+        their names. Stored bundle and equivalence-map schema identifiers retain their historical
+        values, so these package moves do not rename serialized formats or classification columns.
       </p>
       <H2 id="construction">Construct a model</H2>
       <p>
