@@ -4,6 +4,65 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
+def test_candidate_reload_preserves_saved_class_ids_and_reuses_the_prepared_view(tmp_path, monkeypatch):
+    import torch
+    from alignair.train.checkpoints import save_checkpoint
+    from alignair.aa.convergence import driver
+    from tests.support.model_setup import protein_class_setup
+
+    setup = protein_class_setup(embed_dim=4, filters=4, block_out=8)
+    schema = setup.label_schema()
+    schema['genes']['v'].reverse()
+    schema['genes']['j'].reverse()
+    original = setup.build_model().eval()
+    path = tmp_path / 'candidate.alignair'
+    save_checkpoint(path, setup.config, original, None, 7, dataconfigs=['HUMAN_IGH_OGRDB'],
+                    label_schema=schema)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('candidate retranslated the already prepared protein view')
+    monkeypatch.setattr('alignair.core.setup.build_protein_reference', forbidden)
+    loaded, rebound = driver._load_fresh_candidate(path, 'HUMAN_IGH_OGRDB', 192, 'cpu')
+    assert rebound.label_schema() == schema
+    assert all(not module.training for module in loaded.modules())
+    assert loaded is not original
+    for key, weights in original.state_dict().items():
+        assert torch.equal(loaded.state_dict()[key], weights)
+    tokens = torch.ones(1, 192, dtype=torch.long)
+    with torch.no_grad():
+        expected, actual = original({'tokenized_sequence': tokens}), loaded({'tokenized_sequence': tokens})
+    for key in expected:
+        torch.testing.assert_close(actual[key], expected[key], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize('has_schema', [False, True])
+@pytest.mark.parametrize('field,value', [('config', None), ('input_space', 'nucleotide'),
+    ('label_space', 'alleles'), ('has_d', False), ('max_seq_length', 128)])
+def test_incompatible_study_capabilities_fail_before_provider_cohort_or_outputs(
+        tmp_path, monkeypatch, field, value, has_schema):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from alignair.aa.convergence import driver
+    from alignair.core import build_model_config
+    from alignair.errors import ConfigurationError
+
+    cfg = build_model_config(2, 2, 1, input_space='protein', label_space='protein_classes', has_d=True)
+    cfg = None if field == 'config' else replace(cfg, **{field: value})
+    checkpoint = SimpleNamespace(config=cfg, label_schema={} if has_schema else None)
+    monkeypatch.setattr(driver, 'load_checkpoint', lambda *args, **kwargs: checkpoint)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('study proceeded before capability validation')
+    monkeypatch.setattr(driver, '_study_setup', forbidden)
+    monkeypatch.setattr(driver, 'build_cohort', forbidden)
+    source = tmp_path / 'source.alignair'
+    with pytest.raises(ConfigurationError, match='study') as caught:
+        driver.run_study(source, budget=1, ckpt_steps=(1,), device='cpu',
+                         art_dir=tmp_path/'artifacts', ckpt_dir=tmp_path/'selected')
+    assert caught.value.context['stage'] == 'convergence_study_preflight'
+    assert caught.value.context['field'] == field
+    assert caught.value.context['path'] == str(source)
+    assert not (tmp_path/'artifacts').exists() and not (tmp_path/'selected').exists()
+
+
 def test_candidate_reload_uses_shared_reference_bound_setup(tmp_path, monkeypatch):
     import torch
     from alignair.aa.convergence import driver

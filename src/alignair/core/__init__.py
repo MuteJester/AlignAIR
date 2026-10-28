@@ -2,8 +2,9 @@
 from .config import AlignAIRConfig, GeneSpec
 from .components import ModelComponents, register_architecture
 from .model import AlignAIR
-from .setup import ModelSetup, prepare_model, build_model_config, validate_reference_binding
+from .setup import ModelSetup, prepare_model, build_model_config, setup_from_schema, validate_reference_binding
 from .runtime import evaluation_mode
 
 __all__ = ["AlignAIR", "AlignAIRConfig", "GeneSpec", "ModelComponents", "register_architecture",
-           "ModelSetup", "prepare_model", "build_model_config", "validate_reference_binding", "evaluation_mode"]
+           "ModelSetup", "prepare_model", "build_model_config", "setup_from_schema",
+           "validate_reference_binding", "evaluation_mode"]

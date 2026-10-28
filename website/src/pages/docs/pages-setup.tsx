@@ -171,6 +171,37 @@ model = AlignAIR.from_state_dict(
         <DocLink to="model-inference"> public loading APIs</DocLink>; this factory accepts decoded
         state only and does not establish reference or calibration identity by itself.
       </p>
+      <H2 id="prepared-restoration">Restore through a prepared binding</H2>
+      <CodeBlock lang="python" code={`from alignair.core import setup_from_schema
+
+# Bind the saved column order before constructing a restored model.
+restored_setup = setup_from_schema(reference, config, saved_schema)
+model = restored_setup.restore_model(
+    state_dict, device="cpu", source="models/candidate.alignair",
+)
+
+# Reuse a protein view when its translation, anchors and hash scope are explicit.
+restored_setup = setup_from_schema(protein_reference, config, saved_schema)`} />
+      <p>
+        <code>ModelSetup.restore_model</code> revalidates the prepared reference and label binding
+        before allocation, then delegates strict weight loading and evaluation-mode device placement
+        to <code>AlignAIR.from_state_dict</code>. It returns a fresh model. Binding failures carry a
+        <code> model_binding</code> stage; weight failures retain the shared restoration diagnostics.
+        The method accepts decoded state and does not read the diagnostic source path.
+      </p>
+      <p>
+        <code>setup_from_schema</code> accepts a source <code>ReferenceSet</code> or an explicit
+        <code> ProteinReference</code>. For protein classes, it installs the saved class IDs on a
+        validated view. An existing view retains its translated germlines, anchor choices, and hash
+        scope; its original class maps remain unchanged. Allele models use the source reference directly.
+      </p>
+      <p>
+        Convergence studies use prepared restoration for incumbents and freshly loaded candidates.
+        Their configured alphabet, label space, D head and sequence window must match the declared
+        study before provider or cohort construction. Checkpoints with label schemas retain their saved
+        order. Historical schema-less incumbents retain the study’s existing declared reference and
+        translation policy; this compatibility path does not establish missing historical label provenance.
+      </p>
       <H2 id="counts">Count-only construction and existing callers</H2>
       <p>
         When only validated counts are available, <code>build_model_config(v_label_count,

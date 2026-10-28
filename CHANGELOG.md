@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Prepared model restoration through `ModelSetup.restore_model`, with saved-schema rebinding that
+  reuses explicit protein reference views. Convergence incumbents and candidates share restoration
+  and reject incompatible input/label/D/window policies before cohort construction.
 - Shared reference-binding preflight for model preparation, saving and loading, including older
   artifacts without label schemas. Invalid head/reference dimensions fail before load allocation or
   destination writes; protein-class models require explicit ordered labels.

@@ -17,10 +17,10 @@ from ...train.checkpoints import load_training_checkpoint as load_checkpoint, va
 from ...train.trainer import train
 from ...train import CosineSchedule, TrainingStudy
 from ...data.augmentation import ProteinCropPolicy
-from ...core import prepare_model
+from ...core import AlignAIRConfig, prepare_model
 from ...core.setup import ModelSetup, setup_from_schema
 from ...reference import build_protein_reference
-from ...errors import ConfigurationError
+from ...errors import ConfigurationError, error_context
 from .artifacts import StudyArtifacts
 from .cohort import COHORT_SCHEMA, build_cohort
 from .evaluator import evaluate_checkpoint
@@ -109,11 +109,23 @@ def _study_setup(dc_name, max_seq_length):
                          max_seq_length=max_seq_length, has_d=True)
 
 
-def _checkpoint_setup(checkpoint, dc_name, max_seq_length):
-    setup = _study_setup(dc_name, max_seq_length)
-    if checkpoint.label_schema is not None:
-        return setup_from_schema(setup.reference, checkpoint.config, checkpoint.label_schema)
-    return ModelSetup(setup.reference, checkpoint.config, 'protein', 'protein_classes', setup.protein_reference)
+def _checkpoint_setup(checkpoint, dc_name, max_seq_length, *, source=None):
+    with error_context(stage='convergence_study_preflight', path=source):
+        config = checkpoint.config
+        if not isinstance(config, AlignAIRConfig):
+            raise ConfigurationError('study checkpoint requires an AlignAIR configuration',
+                                     context={'field': 'config'})
+        for field, expected in (('input_space', 'protein'), ('label_space', 'protein_classes'),
+                                ('has_d', True), ('max_seq_length', max_seq_length)):
+            actual = getattr(config, field)
+            if actual != expected:
+                raise ConfigurationError('checkpoint configuration disagrees with the convergence study',
+                                         context={'field': field, 'expected': expected, 'actual': actual})
+        setup = _study_setup(dc_name, max_seq_length)
+        if checkpoint.label_schema is not None:
+            return setup_from_schema(setup.protein_reference, config, checkpoint.label_schema)
+        # Historical schema-less incumbents retain the study's declared reference/translation policy.
+        return ModelSetup(setup.reference, config, 'protein', 'protein_classes', setup.protein_reference)
 
 
 def _load_fresh_candidate(ckpt_path: str, dc_name: str, max_seq_length: int, device: str):
@@ -121,11 +133,8 @@ def _load_fresh_candidate(ckpt_path: str, dc_name: str, max_seq_length: int, dev
     (never reuses the in-training model instance, so a candidate's eval is never contaminated by
     optimizer-adjacent state or a stale ``.eval()``/``.train()`` mode from training)."""
     ck = load_checkpoint(ckpt_path, trust_pickle=True)
-    setup = _checkpoint_setup(ck, dc_name, max_seq_length)
-    model = setup.build_model()
-    model.load_state_dict(ck.model_state)
-    model.to(device).eval()
-    return model, setup
+    setup = _checkpoint_setup(ck, dc_name, max_seq_length, source=ckpt_path)
+    return setup.restore_model(ck.model_state, device=device, source=ckpt_path), setup
 
 
 def _fmt(v) -> str:
@@ -194,7 +203,7 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
                                  context={"stage": "convergence_study_preflight", "field": "resume_path"}) from exc
     art_dir, ckpt_dir = os.fspath(art_dir), os.fspath(ckpt_dir)
     ck = load_checkpoint(resume_path, trust_pickle=True)
-    setup = _checkpoint_setup(ck, dc_name, MAX_SEQ_LENGTH)
+    setup = _checkpoint_setup(ck, dc_name, MAX_SEQ_LENGTH, source=resume_path)
     schedule = (CosineSchedule(ck.schedule['total_steps'], ck.schedule['min_lr']) if ck.schedule is not None
                 else CosineSchedule(budget, lr_min))
     schedule.validate(base_lr)
@@ -202,9 +211,8 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
         validate_continuation(ck, setup.config, setup.label_schema(), augmentation=ProteinCropPolicy().to_dict(),
                               schedule=schedule.to_dict(), lr=base_lr)
     # ---- 1. model/cfg/class_maps/meta ----
-    model, cfg = setup.build_model(), setup.config
-    model.load_state_dict(ck.model_state)
-    model.to(device).eval()
+    cfg = setup.config
+    model = setup.restore_model(ck.model_state, device=device, source=resume_path)
     class_maps = setup.protein_reference.class_maps
     meta = {'d_index': dict(setup.reference.gene('D').index)}
 

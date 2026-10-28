@@ -5,7 +5,7 @@ from dataclasses import dataclass, fields, replace
 from operator import index
 from typing import Literal
 
-from ..errors import ConfigurationError
+from ..errors import ConfigurationError, error_context
 from ..reference.protein import ProteinReference, build_protein_reference
 from ..reference.labels import build_equivalence_classes
 from ..reference.reference_set import ReferenceSet
@@ -130,6 +130,16 @@ class ModelSetup:
         self.validate()
         return AlignAIR(self.config)
 
+    def restore_model(self, state_dict, *, device='cpu', source=None) -> AlignAIR:
+        """Revalidate this prepared binding, then restore a fresh model in evaluation mode.
+
+        Saved class IDs must already be bound to this setup (via ``setup_from_schema`` when
+        appropriate). Weight compatibility and device placement belong to the shared model factory.
+        """
+        with error_context(stage='model_binding', path=source):
+            self.validate()
+        return AlignAIR.from_state_dict(self.config, state_dict, device=device, source=source)
+
     def label_schema(self) -> dict:
         """Portable output-column identity; preserve class order instead of rebuilding it on reload."""
         self.validate()
@@ -220,10 +230,15 @@ def validate_reference_binding(reference, config, *, label_schema=None, protein_
 
 
 def setup_from_schema(reference, config, schema) -> ModelSetup:
-    """Rebind validation adapters to saved class IDs without inventing a new column order."""
+    """Rebind saved class IDs, reusing an explicit protein view's translation and reference policies."""
     from ..reference.labels import EquivalenceClassMap
-    validate_label_schema(schema, reference, config)
-    view = build_protein_reference(reference) if config.label_space == 'protein_classes' else None
+    view = reference if isinstance(reference, ProteinReference) else None
+    if view is not None and config.label_space != 'protein_classes':
+        raise ConfigurationError('pass ProteinReference.source for allele labels')
+    source = view.source if view is not None else reference
+    validate_label_schema(schema, source, config)
+    if config.label_space == 'protein_classes' and view is None:
+        view = build_protein_reference(source)
     if view is not None:
         maps = {}
         for gene in ('V', 'J'):
@@ -231,7 +246,7 @@ def setup_from_schema(reference, config, schema) -> ModelSetup:
             maps[gene] = EquivalenceClassMap(gene, view.db_hash,
                 {name: index for index, members in groups.items() for name in members}, groups)
         view = replace(view, class_maps=maps)
-    return ModelSetup(reference, config, config.input_space, config.label_space, view)
+    return ModelSetup(source, config, config.input_space, config.label_space, view)
 
 
 def prepare_model(reference: ReferenceSet | ProteinReference, *, input_space: InputSpace = 'nucleotide',
