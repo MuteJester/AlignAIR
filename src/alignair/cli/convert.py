@@ -13,6 +13,7 @@ from ..api import _build_reference, _remap_state_dict
 from ..core import AlignAIR, validate_reference_binding
 from ..core.config import AlignAIRConfig
 from ..model_file import container
+from ..reference import ReferenceSet, validate_reference_identity
 from ..errors import ConfigurationError, error_context, report_error
 
 
@@ -32,7 +33,9 @@ def _convert_legacy_alignair(src, dst) -> int:
     lm = mf.load_model(src, trust_pickle=True)                 # rebuild model + reference (pickle path)
     dcs = mf.read_dataconfig(src)                              # embedded dataconfig(s), pickle
     dcs = dcs if isinstance(dcs, list) else [dcs]
-    md = mf.read_metadata(src)
+    with error_context(path=src):
+        validate_reference_identity(ReferenceSet.from_dataconfigs(*dcs), lm.reference)
+    md = lm.metadata
     mf.save_model(dst, lm.model, dataconfigs=dcs, training=md.get("training", {"steps": 0, "batch_size": 0}),
                   include_trusted_pickle=False, model_id=md.get("model_id"),
                   model_version=md.get("model_version"), label_schema=md.get('model', {}).get('label_schema'))

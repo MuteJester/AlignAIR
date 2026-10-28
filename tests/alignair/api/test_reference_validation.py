@@ -1,53 +1,68 @@
-"""A fixed-head model's classification indices are tied to the embedded reference, so
-a caller-supplied reference must match it exactly — same alleles, same order, AND the same germline
-sequences / gapped / anchors (equal names with altered sequences must be rejected)."""
-from types import SimpleNamespace
+"""Public loading rejects overrides that change allele biology or locus interpretation."""
+from copy import deepcopy
 
+import GenAIRR.data as gd
 import pytest
 
-from alignair.api import _assert_reference_matches
+from alignair import load_model, model_file
+from alignair.core import prepare_model
+from alignair.errors import DataContractError, ModelError
+from alignair.reference import ReferenceSet
 
 pytestmark = pytest.mark.integration
 
 
-def _gene(names, seqs=None):
-    seqs = list(seqs) if seqs is not None else [f"ACGT{i}" for i in range(len(names))]
-    return SimpleNamespace(names=list(names), sequences=seqs, gapped=None, anchors=None)
+@pytest.fixture(scope='module')
+def artifact(tmp_path_factory):
+    configs = [gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB]
+    reference = ReferenceSet.from_dataconfigs(*configs)
+    setup = prepare_model(reference, max_seq_length=128, embed_dim=4, filters=4, block_out=8)
+    path = tmp_path_factory.mktemp('reference-identity') / 'model.alignair'
+    model_file.save_model(path, setup.build_model(), dataconfigs=configs, training={},
+                          include_trusted_pickle=False)
+    return path, reference
 
 
-def _ref(**genes):
-    """A minimal ReferenceSet-like stub. Each value is names, or a (names, sequences) tuple."""
-    g = {G: (_gene(*spec) if isinstance(spec, tuple) else _gene(spec)) for G, spec in genes.items()}
-    return SimpleNamespace(genes=g, gene=lambda G, _g=g: _g[G.upper()])
+def test_matching_override_is_returned_with_the_model(artifact):
+    path, expected = artifact
+    candidate = deepcopy(expected)
+    model, reference = load_model(path, reference=candidate)
+    assert reference is candidate and model.cfg.num_chain_types == 2
+    assert reference.locus_names() == ('IGK', 'IGL')
 
 
-def test_matching_reference_passes():
-    emb = _ref(V=["V1", "V2"], J=["J1"])
-    _assert_reference_matches(_ref(V=["V1", "V2"], J=["J1"]), emb)   # identical names + sequences -> ok
+@pytest.mark.parametrize('field', ['locus_order', 'locus_ranges', 'chain_type', 'sequences', 'anchors', 'gapped'])
+def test_same_sized_override_cannot_change_reference_meaning(artifact, field):
+    path, expected = artifact
+    candidate = deepcopy(expected)
+    if field == 'locus_order':
+        candidate.loci.reverse()
+    elif field == 'locus_ranges':
+        start, end = candidate.loci[0].ranges['V']
+        candidate.loci[0].ranges['V'] = (start, end - 1)
+    elif field == 'chain_type':
+        candidate.loci[0].chain_type = 'different'
+    elif field == 'sequences':
+        sequence = candidate.gene('V').sequences[0]
+        candidate.gene('V').sequences[0] = ('A' if sequence[0] != 'A' else 'T') + sequence[1:]
+    elif field == 'anchors':
+        name = next(iter(candidate.gene('V').anchors))
+        candidate.gene('V').anchors[name] += 1
+    else:
+        name = next(iter(candidate.gene('V').gapped))
+        candidate.gene('V').gapped[name] += '.'
+    with pytest.raises(ModelError) as caught:
+        load_model(path, reference=candidate)
+    assert caught.value.context['field'] == ('loci' if field.startswith('locus_') or field == 'chain_type' else field)
+    assert caught.value.context['stage'] == 'reference_identity'
+    assert caught.value.context['path'] == str(path)
 
 
-def test_reordered_reference_rejected():
-    emb = _ref(V=["V1", "V2"], J=["J1"])
-    with pytest.raises(ValueError, match="set/order differs|does not match"):
-        _assert_reference_matches(_ref(V=["V2", "V1"], J=["J1"]), emb)   # same set, different order
-
-
-def test_extra_or_missing_allele_rejected():
-    emb = _ref(V=["V1", "V2"], J=["J1"])
-    with pytest.raises(ValueError, match="does not match|differs"):
-        _assert_reference_matches(_ref(V=["V1", "V2", "V3"], J=["J1"]), emb)   # novel allele appended
-
-
-def test_mismatched_gene_set_rejected():
-    emb = _ref(V=["V1"], D=["D1"], J=["J1"])                        # heavy (has D)
-    with pytest.raises(ValueError, match="does not match|differs"):
-        _assert_reference_matches(_ref(V=["V1"], J=["J1"]), emb)    # light ref for a heavy head
-
-
-def test_same_names_but_different_sequences_rejected():
-    """The subtle case: identical allele names/order but ALTERED germline sequences must be rejected
-    (they would silently align/junction/score against the wrong biology)."""
-    emb = _ref(V=(["V1", "V2"], ["ACGTACGT", "TTTTGGGG"]), J=(["J1"], ["CCCC"]))
-    caller = _ref(V=(["V1", "V2"], ["ACGTACGT", "AAAACCCC"]), J=(["J1"], ["CCCC"]))   # V2 seq altered
-    with pytest.raises(ValueError, match="germline sequences|anchors differ"):
-        _assert_reference_matches(caller, emb)
+def test_override_cannot_supply_an_inconsistent_gene_index(artifact):
+    path, expected = artifact
+    candidate = deepcopy(expected)
+    candidate.gene('V').index[candidate.gene('V').names[0]] = 9
+    with pytest.raises(DataContractError) as caught:
+        load_model(path, reference=candidate)
+    assert caught.value.context['stage'] == 'reference_identity'
+    assert caught.value.context['path'] == str(path)

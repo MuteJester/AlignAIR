@@ -13,6 +13,9 @@ from alignair.core.config import AlignAIRConfig
 from alignair.model_file import container as C, serialize
 from alignair.errors import ConfigurationError
 from tests.support.model_setup import protein_class_setup
+from alignair.core import prepare_model
+from alignair.errors import ModelError
+from alignair.reference import ReferenceSet
 
 pytestmark = pytest.mark.integration
 
@@ -102,3 +105,60 @@ def test_convert_protein_class_pt_preserves_explicit_labels_or_rejects_missing_m
         assert loaded.metadata['model']['label_schema'] == payload['label_schema']
         for name, weights in model.state_dict().items():
             assert torch.equal(loaded.model.state_dict()[name], weights), name
+
+
+@pytest.mark.parametrize('field', ['sequences', 'allele_order', 'anchors', 'gapped', 'loci'])
+def test_conversion_rejects_conflicting_embedded_provider_reference_without_overwriting_output(tmp_path, field):
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    setup = prepare_model(reference, max_seq_length=128, embed_dim=4, filters=4, block_out=8)
+    src, dst = tmp_path / 'source.alignair', tmp_path / 'export.alignair'
+    mf.save_model(src, setup.build_model(), dataconfigs=[gd.HUMAN_IGH_OGRDB], training={})
+    # Change only the authoritative safe reference; trusted legacy provider sections retain the
+    # original panel. Recompute available hashes so generic artifact integrity is internally valid.
+    header = C.read_header(src)
+    header.pop('_sections_base', None)
+    sections = {name: (C.read_section(src, name), info['codec']) for name, info in header['sections'].items()}
+    rows = reference.gene('V')
+    if field == 'sequences':
+        sequence = rows.sequences[0]
+        rows.sequences[0] = ('A' if sequence[0] != 'A' else 'T') + sequence[1:]
+    elif field == 'allele_order':
+        rows.names.reverse()
+        rows.sequences.reverse()
+        rows.index = {name: i for i, name in enumerate(rows.names)}
+    elif field == 'anchors':
+        rows.anchors[next(iter(rows.anchors))] += 1
+    elif field == 'gapped':
+        rows.gapped[next(iter(rows.gapped))] += '.'
+    else:
+        start, end = reference.loci[0].ranges['V']
+        reference.loci[0].ranges['V'] = (start, end - 1)
+    sections['reference_json'] = (serialize.reference_to_json(reference), 'zlib')
+    header['reference']['allele_order_sha256'] = serialize.allele_order_sha256(reference)
+    header['reference']['reference_fasta_sha256'] = serialize.reference_fasta_sha256(reference)
+    C.write_container(src, header, sections)
+    # The model/reference binding is readable; conversion must still detect the provider conflict.
+    mf.load_model(src)
+    dst.write_bytes(b'previous completed export')
+    with pytest.raises(ModelError) as caught:
+        convert.run(Namespace(src=src, dst=dst, dataconfig=None, trust_pickle=True))
+    assert caught.value.context['field'] == field
+    assert caught.value.context['stage'] == 'reference_identity'
+    assert caught.value.context['path'] == str(src)
+    assert dst.read_bytes() == b'previous completed export'
+
+
+def test_conversion_preserves_matching_reference_and_model_identity(tmp_path):
+    configs = [gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB]
+    setup = prepare_model(ReferenceSet.from_dataconfigs(*configs), max_seq_length=128,
+                          embed_dim=4, filters=4, block_out=8)
+    original = setup.build_model()
+    src, dst = tmp_path / 'source.alignair', tmp_path / 'export.alignair'
+    mf.save_model(src, original, dataconfigs=configs, training={}, model_id='fixture', model_version='1')
+    assert convert.run(Namespace(src=src, dst=dst, dataconfig=None, trust_pickle=True)) == 0
+    exported = mf.load_model(dst)
+    assert exported.reference.to_serializable() == setup.reference.to_serializable()
+    assert exported.metadata['model_id'] == 'fixture' and exported.metadata['model_version'] == '1'
+    assert not any(key.startswith('dataconfig/') for key in exported.metadata['sections'])
+    for name, weights in original.state_dict().items():
+        assert torch.equal(exported.model.state_dict()[name], weights), name

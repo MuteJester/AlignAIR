@@ -1,5 +1,5 @@
 import { CodeBlock, Callout } from "../../components/ui";
-import { DocTable, DocLink, type DocPage } from "./doc-kit";
+import { DocTable, DocLink, H2, type DocPage } from "./doc-kit";
 
 const modelContract: DocPage = {
   slug: "model-contract",
@@ -42,6 +42,10 @@ const modelContract: DocPage = {
         <li>The embedded reference's allele-order and FASTA fingerprints are verified every time a model loads.</li>
         <li>Genotype constraints validate a non-empty allowed set per constrained gene and reject novel alleles.</li>
       </ul>
+      <p>
+        The <DocLink to="reference-identity">reference identity API</DocLink> defines the shared
+        comparison used by reference overrides and container conversion, including ordered locus mappings.
+      </p>
     </>
   ),
 };
@@ -154,4 +158,65 @@ const troubleshooting: DocPage = {
   ),
 };
 
-export const referencePages: DocPage[] = [modelContract, knownFailureModes, troubleshooting];
+const referenceIdentity: DocPage = {
+  slug: "reference-identity",
+  title: "Reference identity API",
+  section: "Reference",
+  lead: "Compare the reference bound to model outputs, including allele order, germline biology, and locus class IDs.",
+  body: () => (
+    <>
+      <H2 id="compare">Validate a supplied reference</H2>
+      <CodeBlock lang="python" code={`from alignair.model_file import load_model
+from alignair.reference import validate_reference_identity
+
+loaded = load_model("model.alignair")
+# candidate_reference is the reference supplied by your application.
+validate_reference_identity(candidate_reference, loaded.reference)`} />
+      <p>
+        <code>validate_reference_identity(candidate, expected)</code> returns <code>None</code>
+        when the decoded references match. It compares every declared gene and checks that each
+        gene’s names, sequences, and index mapping are internally consistent. It does not change
+        either object or reconstruct missing metadata.
+      </p>
+      <DocTable head={["Identity field", "Comparison"]} rows={[
+        ["Gene panel", "Same genes and allele names in the same output-column order."],
+        ["Ungapped sequences", "Case-insensitive DNA comparison, preserving the established loading contract."],
+        ["Gapped sequences", "Exact per-allele gapped strings; mapping insertion order is irrelevant."],
+        ["Junction anchors", "Same per-allele anchor coordinates."],
+        ["D availability", "Same declared reference D selection."],
+        ["Locus schema", "Same locus row order, labels, chain types, D flags, and per-gene index ranges."],
+      ]} />
+      <p>
+        Locus row order defines chain-class IDs. Keeping the same allele names while swapping locus
+        rows can change how a prediction is interpreted. Range bounds must be integral, ordered,
+        within the corresponding gene panel, and attached to a declared gene. Floating-point and
+        boolean bounds are rejected. Locus labels must be unique and their metadata well formed.
+      </p>
+      <H2 id="errors">Mismatch diagnostics</H2>
+      <p>
+        A different identity raises <code>ModelError</code> with stage
+        <code> reference_identity</code>, a <code>field</code>, and a <code>gene</code> when applicable.
+        Fields include <code>genes</code>, <code>allele_order</code>, <code>sequences</code>,
+        <code> gapped</code>, <code>anchors</code>, <code>has_d</code>, and <code>loci</code>.
+        Invalid reference objects raise <code>ConfigurationError</code>; inconsistent gene rows or
+        malformed locus metadata raise <code>DataContractError</code>. Diagnostics describe the
+        mismatched field without embedding germline sequence content.
+      </p>
+      <H2 id="loading-conversion">Loading and conversion</H2>
+      <p>
+        <code>alignair.load_model(..., reference=...)</code> uses this comparison before returning
+        a supplied reference. Matching overrides retain their object identity. Container conversion
+        compares the reference rebuilt from trusted embedded data configs with the reference loaded
+        from the source artifact. A mismatch is rejected before writing the destination, including
+        when both references have equal head dimensions and internally valid stored hashes.
+      </p>
+      <p>
+        Reference comparison does not infer historical label provenance. A subset used to constrain
+        calls follows the genotype mechanism described in the <DocLink to="model-contract">model
+        contract</DocLink>; it does not replace the reference bound to a fixed classifier.
+      </p>
+    </>
+  ),
+};
+
+export const referencePages: DocPage[] = [modelContract, referenceIdentity, knownFailureModes, troubleshooting];

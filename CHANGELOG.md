@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared reference identity validation for loading overrides and container conversion, covering
+  ordered alleles, germline biology and locus mappings. Conversion rejects conflicting embedded
+  provider references before writing; a dedicated website API guide documents the contract.
 - `read_training_state` returns decoded checkpoint data without constructing a temporary model;
   `load_training_state` retains its restored-model contract. Resume and fresh restoration share
   contextual strict weight loading, preserving existing optimizer parameter bindings.
