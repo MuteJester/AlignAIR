@@ -3,7 +3,7 @@ import json
 
 import GenAIRR as ga
 
-from alignair.aa.product.asc import asc_to_imgt_multi
+from alignair.reference import asc_to_imgt_multi
 from alignair.aa.product.bundle import canonical_json, complete_calibration, save_aa_bundle
 from tests.support.model_setup import protein_class_setup
 from alignair.model_file import container

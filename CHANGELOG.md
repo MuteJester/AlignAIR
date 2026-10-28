@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared reference nomenclature and lossless class-to-allele/gene/family expansion for product
+  prediction and study scoring. Explicit allele mappings preserve every ASC-to-IMGT origin.
 - Shared `evaluate_categorical_cohort` for either input alphabet, with configured gene selection,
   independent classification/boundary support and explicit `ClassificationStratum` policies.
   `protein_v_strata` preserves established protein-study coverage and ambiguity bins.
@@ -234,6 +236,10 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Duplicate `aa.taxonomy` and `aa.product.asc` implementations. Their active callers use
+  `reference.nomenclature`; unused representative-only ASC mapping and `ImgtView` helpers are removed.
+  Shared class expansions return sorted, unique lists; malformed naming/mapping requests raise
+  contextual `ConfigurationError` while absent valid class IDs retain `KeyError`.
 - Unused `aa.local_aligner` protein V-class baseline and duplicate `reference.protein.prototypes_by_class`
   helper. Prototype lookup uses `ProteinReference.prototype_sequences`; active nucleotide alignment
   backends and their optional dependencies retain their existing contracts.

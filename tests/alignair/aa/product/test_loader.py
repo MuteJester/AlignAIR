@@ -4,7 +4,7 @@ import GenAIRR as ga
 import pytest
 import torch
 
-from alignair.aa.product.asc import asc_to_imgt_multi
+from alignair.reference import asc_to_imgt_multi
 from alignair.aa.product.bundle import canonical_json, save_aa_bundle
 from alignair.aa.product.loader import AAPredictor, _MODEL_MAP, _resolve_path, load_aa_model
 from tests.support.model_setup import protein_class_setup

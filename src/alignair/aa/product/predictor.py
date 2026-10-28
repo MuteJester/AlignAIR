@@ -32,7 +32,7 @@ from ...data.inference import SequenceInputAdapter
 from ...predict.forward import forward_batch
 from ...predict.probabilities import softmax_probabilities
 
-from .asc import class_alleles, class_families, class_genes, family_of, gene_of
+from ...reference.nomenclature import class_alleles, class_families, class_genes, family_of, gene_of
 from .calibration_group import resolve_group
 from .schema import AAPrediction
 from .validate import normalize_input_batch

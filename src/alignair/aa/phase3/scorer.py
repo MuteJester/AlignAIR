@@ -3,7 +3,7 @@ Gold family endpoint never emits 'supported'. Concordance is alignment-derived, 
 from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
-from ..taxonomy import class_families, class_genes, catalogue_families
+from ...reference.nomenclature import class_alleles, class_families, class_genes, catalogue_families
 from .stats import clopper_pearson, coverage_decision
 
 @dataclass
@@ -20,33 +20,33 @@ def _check(rows, preds):
 def _is_rep(r):
     return str(r.lineage_representative).lower() == "true"
 
-def _set_family(p, cmap):
-    return set().union(*[class_families(c, cmap) for c in p.set_classes]) if p.set_classes else set()
+def _set_family(p, cmap, allele_mapping):
+    return set().union(*[class_families(c, cmap, allele_mapping) for c in p.set_classes]) if p.set_classes else set()
 
-def _set_gene(p, cmap):
-    return set().union(*[class_genes(c, cmap) for c in p.set_classes]) if p.set_classes else set()
+def _set_gene(p, cmap, allele_mapping):
+    return set().union(*[class_genes(c, cmap, allele_mapping) for c in p.set_classes]) if p.set_classes else set()
 
-def _sizes(preds, cmap):
+def _sizes(preds, cmap, allele_mapping):
     def stat(vals):
         a = np.asarray(vals, float)
         return {"mean": float(a.mean()), "median": float(np.median(a)), "p95": float(np.percentile(a, 95))}
     classes = [len(p.set_classes) for p in preds]
-    fams = [len(_set_family(p, cmap)) for p in preds]
-    genes = [len(_set_gene(p, cmap)) for p in preds]
-    alleles = [len(set().union(*[cmap.class_members[c] for c in p.set_classes]) if p.set_classes else set())
+    fams = [len(_set_family(p, cmap, allele_mapping)) for p in preds]
+    genes = [len(_set_gene(p, cmap, allele_mapping)) for p in preds]
+    alleles = [len(set().union(*[class_alleles(c, cmap, allele_mapping) for c in p.set_classes]) if p.set_classes else set())
                for p in preds]
     return {"classes": stat(classes), "families": stat(fams), "genes": stat(genes), "alleles": stat(alleles)}
 
-def score_gold(rows, preds, cmap, alpha, seed, n_boot: int = 2000) -> dict:
+def score_gold(rows, preds, cmap, alpha, seed, n_boot: int = 2000, *, allele_mapping=None) -> dict:
     _check(rows, preds)
-    cat_fams = catalogue_families(cmap)
+    cat_fams = catalogue_families(cmap, allele_mapping)
     # binding: representatives only
     ridx = [i for i, r in enumerate(rows) if _is_rep(r)]
     if not ridx:
         raise ValueError("cohort has no lineage-representative rows")
     lids = [rows[i].lineage_id for i in ridx]
-    top = {rows[i].lineage_id: (rows[i].true_v_family in class_families(preds[i].top_class, cmap)) for i in ridx}
-    cov = {rows[i].lineage_id: (rows[i].true_v_family in _set_family(preds[i], cmap)) for i in ridx}
+    top = {rows[i].lineage_id: (rows[i].true_v_family in class_families(preds[i].top_class, cmap, allele_mapping)) for i in ridx}
+    cov = {rows[i].lineage_id: (rows[i].true_v_family in _set_family(preds[i], cmap, allele_mapping)) for i in ridx}
     n = len(ridx); kt = sum(top.values()); kc = sum(cov.values())
     # lineage-cluster bootstrap of the binding top-class accuracy
     rng = np.random.default_rng(seed); uniq = list(dict.fromkeys(lids)); boot = []
@@ -54,10 +54,10 @@ def score_gold(rows, preds, cmap, alpha, seed, n_boot: int = 2000) -> dict:
         samp = rng.choice(len(uniq), len(uniq), replace=True)
         boot.append(np.mean([top[uniq[j]] for j in samp]))
     # descriptive: all deduplicated rows
-    all_hits = [r.true_v_family in class_families(p.top_class, cmap) for r, p in zip(rows, preds)]
+    all_hits = [r.true_v_family in class_families(p.top_class, cmap, allele_mapping) for r, p in zip(rows, preds)]
     # oov / in-catalog conditional accuracy
     non_oov = [(r, p) for r, p in zip(rows, preds) if r.true_v_family in cat_fams]
-    in_cat_hits = [r.true_v_family in class_families(p.top_class, cmap) for r, p in non_oov]
+    in_cat_hits = [r.true_v_family in class_families(p.top_class, cmap, allele_mapping) for r, p in non_oov]
     return {
         "binding": {
             "n_lineages": n,
@@ -77,16 +77,16 @@ def score_gold(rows, preds, cmap, alpha, seed, n_boot: int = 2000) -> dict:
             "in_catalog_accuracy": (float(np.mean(in_cat_hits)) if in_cat_hits else None),
             "end_to_end_accuracy": float(np.mean(all_hits)),
         },
-        "set_size": _sizes(preds, cmap),
+        "set_size": _sizes(preds, cmap, allele_mapping),
     }
 
-def score_concordance(rows, preds, cmap, alpha) -> dict:
+def score_concordance(rows, preds, cmap, alpha, *, allele_mapping=None) -> dict:
     _check(rows, preds)
     ridx = [i for i, r in enumerate(rows) if _is_rep(r)]
     if not ridx:
         raise ValueError("cohort has no lineage-representative rows")
-    agree = [rows[i].true_v_gene in class_genes(preds[i].top_class, cmap) for i in ridx]
-    cov = [rows[i].true_v_gene in _set_gene(preds[i], cmap) for i in ridx]
+    agree = [rows[i].true_v_gene in class_genes(preds[i].top_class, cmap, allele_mapping) for i in ridx]
+    cov = [rows[i].true_v_gene in _set_gene(preds[i], cmap, allele_mapping) for i in ridx]
     n = len(ridx); ka = sum(agree); kc = sum(cov)
     return {
         "label_kind": "alignment-derived (IMGT/ANARCI) — concordance, NOT ground truth",
@@ -95,5 +95,5 @@ def score_concordance(rows, preds, cmap, alpha) -> dict:
         "agreement_ci": list(clopper_pearson(ka, n, alpha)) if n else [0.0, 1.0],
         "gene_set_coverage": kc / n if n else 0.0,
         "gene_set_coverage_ci": list(clopper_pearson(kc, n, alpha)) if n else [0.0, 1.0],
-        "set_size": _sizes([preds[i] for i in ridx], cmap),
+        "set_size": _sizes([preds[i] for i in ridx], cmap, allele_mapping),
     }

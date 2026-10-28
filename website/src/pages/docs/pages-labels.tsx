@@ -112,6 +112,52 @@ prototype_sequences = [v_prototypes[class_id] for class_id in class_ids]`} />
         BLOSUM62 local protein-class caller. Parasail remains an optional dependency for active
         nucleotide alignment.
       </p>
+      <H2 id="nomenclature">Expand allele names without losing provenance</H2>
+      <CodeBlock lang="python" code={`from alignair.reference import (
+    asc_to_imgt_multi, class_alleles, class_genes, class_families,
+)
+
+# The original dataconfig owns ASC provenance; ReferenceSet owns model allele order.
+allele_mapping = asc_to_imgt_multi(ga.HUMAN_IGH_OGRDB)
+v_labels = protein.class_maps["V"]
+v_class = v_labels.class_of(allele_name)
+
+alleles = class_alleles(v_class, v_labels, allele_mapping)
+genes = class_genes(v_class, v_labels, allele_mapping)
+families = class_families(v_class, v_labels, allele_mapping)
+print(alleles, genes, families)`} />
+      <p>
+        <code>alignair.reference.nomenclature</code> owns allele-name parsing and class expansion
+        for either model input alphabet. Class helpers return sorted, unique lists. Omitting
+        <code> allele_mapping</code> preserves the class’s original names; an unmapped member also
+        retains its original name. Each mapped member expands to every recorded origin before
+        gene or family names are deduplicated. Multiple origins are retained even when they span
+        different genes or families. No representative allele is selected.
+      </p>
+      <p>
+        <code>asc_to_imgt_multi(dataconfig)</code> reads the authoritative
+        <code> asc_tables["V"]</code> rows and supports V-only ASC provenance. Additional ASC gene
+        tables require an explicit implementation rather than silently applying the V policy.
+        <code> gene_of(name)</code> removes the allele suffix while preserving the naming scheme.
+        <code> family_of(name)</code> currently recognizes numeric IMGT IGHV, IGHD and IGHJ family
+        prefixes; it does not interpret an ASC cluster ID as an IMGT family. Use an explicit
+        provenance mapping before family scoring. <code>catalogue_families(class_map, allele_mapping)</code>
+        applies the same policy across every class.
+      </p>
+      <p>
+        Invalid names, malformed mappings and invalid class-ID types raise
+        <code> ConfigurationError</code> with reference-nomenclature context. A valid integer ID
+        absent from the class map raises <code>KeyError</code>. New expanded lists can be modified
+        without changing the source class map or provenance table.
+      </p>
+      <p>
+        Product predictions use this shared expansion for top calls and calibrated class sets.
+        Phase-3 <code>score_gold</code> and <code>score_concordance</code> accept the same explicit
+        <code> allele_mapping</code> keyword; their default uses the supplied class names directly.
+        Bind the mapping to the study’s declared reference before comparing IMGT labels.
+        Lineage selection, confidence intervals, bootstrap sampling and endpoint decisions retain
+        their existing procedures.
+      </p>
       <H2 id="identity">Reference identity and hash scope</H2>
       <CodeBlock lang="python" code={`# Training class maps retain their historical V/J scope.
 training_reference = build_protein_reference(source)
@@ -150,6 +196,8 @@ audit_reference = build_protein_reference(source, hash_genes=("V", "D", "J"))`} 
         class-map schemas keep their existing contracts.
       </p>
       <DocTable head={["Former import", "Replacement"]} rows={[
+        ["aa.taxonomy.gene_of / family_of / class_genes / class_families / catalogue_families", "alignair.reference.nomenclature (same function names; class/catalogue helpers return sorted lists)"],
+        ["aa.product.asc functions", "alignair.reference.nomenclature (same function names)"],
         ["aa.reference.ANCHOR_AA", "alignair.reference.protein.DEFAULT_ANCHOR_RESIDUES"],
         ["aa.reference.AAGermline", "alignair.reference.ProteinGermline"],
         ["aa.reference.AAGermlineSet", "alignair.reference.ProteinGermlineSet"],
@@ -159,6 +207,12 @@ audit_reference = build_protein_reference(source, hash_genes=("V", "D", "J"))`} 
         ["aa.equivalence.build_equivalence_classes", "alignair.reference.build_equivalence_classes"],
         ["aa.equivalence.db_hash", "alignair.reference.labels.db_hash"],
       ]} />
+      <p>
+        The former <code>asc_to_imgt_map</code> and <code>ImgtView</code> representative-only helpers
+        have been removed. Use the complete mapping from <code>asc_to_imgt_multi</code> with shared
+        class expansion, or pass it explicitly to study scoring. Class IDs, stored class maps,
+        calibration bindings and product result fields retain their existing contracts.
+      </p>
     </>
   ),
 };

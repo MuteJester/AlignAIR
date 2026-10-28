@@ -66,3 +66,30 @@ def test_score_concordance_no_representatives_raises_valueerror():
     preds = [Prediction(0, {0}) for _ in rows]
     with pytest.raises(ValueError, match="no lineage-representative rows"):
         score_concordance(rows, preds, FakeMap(), 0.05)
+
+
+def test_explicit_asc_mapping_keeps_all_families_genes_and_alleles_in_study_reports():
+    cmap = SimpleNamespace(class_members={0: ['IGHVF1-G1*01']})
+    mapping = {'IGHVF1-G1*01': ['IGHV1-2*02', 'IGHV3-23*01']}
+    rows = [_r('one', 'one', 'IGHV1', 'true', gene='IGHV1-2'),
+            _r('three', 'three', 'IGHV3', 'true', gene='IGHV3-23')]
+    predictions = [Prediction(0, {0}), Prediction(0, {0})]
+    gold = score_gold(rows, predictions, cmap, .05, 0, n_boot=20, allele_mapping=mapping)
+    concordance = score_concordance(rows, predictions, cmap, .05, allele_mapping=mapping)
+    assert gold['binding']['top_class_family_accuracy'] == 1.
+    assert gold['binding']['family_set_coverage'] == 1.
+    assert gold['oov']['oov_rate'] == 0.
+    assert concordance['top_class_gene_agreement'] == concordance['gene_set_coverage'] == 1.
+    for report in (gold, concordance):
+        assert report['set_size']['alleles']['mean'] == 2.
+        assert report['set_size']['genes']['mean'] == 2.
+        assert report['set_size']['families']['mean'] == 2.
+    assert mapping == {'IGHVF1-G1*01': ['IGHV1-2*02', 'IGHV3-23*01']}
+
+
+def test_empty_prediction_sets_keep_zero_support_sizes():
+    rows = [_r('one', 'one', 'IGHV3', 'true', gene='IGHV3-23')]
+    predictions = [Prediction(0, set())]
+    for report in (score_gold(rows, predictions, FakeMap(), .05, 0, n_boot=20),
+                   score_concordance(rows, predictions, FakeMap(), .05)):
+        assert all(summary['mean'] == 0. for summary in report['set_size'].values())

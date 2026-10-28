@@ -39,6 +39,7 @@
     "src/alignair/core/setup.py": {"statements": 98, "branches": 95},
     "src/alignair/reference/protein.py": {"statements": 98, "branches": 95},
     "src/alignair/reference/labels.py": {"statements": 98, "branches": 95},
+    "src/alignair/reference/nomenclature.py": {"statements": 98, "branches": 95},
     "src/alignair/train/diagnostics.py": {"statements": 98, "branches": 95},
     "src/alignair/train/setup.py": {"statements": 98, "branches": 95},
     "src/alignair/train/config.py": {"statements": 98, "branches": 95},
