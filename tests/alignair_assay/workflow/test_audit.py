@@ -513,6 +513,27 @@ def test_scores_recomputed_by_moved_code_compare_by_content(tmp_path, stored_rea
     assert found["evidence"]["code_moved"] == ["genotype/alignair-api"]
 
 
+def test_a_records_content_is_its_rows_and_header_as_json_lines_reads_them(tmp_path):
+    # core.jsonl reads the file: a blank line or other whitespace is the same content, the code fields are not
+    # content, and a changed row is another content
+    import gzip
+
+    rows = [{"read_id": "r1", "v": "supported"}, {"read_id": "r2", "v": "unsupported"}]
+    header = {"kind": "scores", "code_sha256": "a" * 64, "fingerprint": "f", "inputs": {"truth": "t"}}
+    compact = tmp_path / "compact.jsonl.gz"
+    write_jsonl(compact, rows, header=header)
+    spaced = tmp_path / "spaced.jsonl.gz"
+    with gzip.open(spaced, "wt", encoding="utf-8") as handle:
+        handle.write(json.dumps({"header": {**header, "code_sha256": "b" * 64, "fingerprint": "g"}}) + "\n\n")
+        handle.write("\n".join(json.dumps(row, indent=None, separators=(", ", ": ")) for row in rows) + "\n")
+    one, two = audit.jsonl_content(compact), audit.jsonl_content(spaced)
+    assert one["file"] != two["file"] and (one["code"], two["code"]) == ("a" * 64, "b" * 64)
+    assert (one["header"], one["rows"], one["n"]) == (two["header"], two["rows"], 2)
+    changed = tmp_path / "changed.jsonl.gz"
+    write_jsonl(changed, [rows[0], {**rows[1], "v": "supported"}], header=header)
+    assert audit.jsonl_content(changed)["rows"] != one["rows"]
+
+
 @pytest.mark.parametrize("target", ["scores", "input", "truth", "self_check", "oracle_tsv", "missing_scores",
                                     "no_runs"])
 def test_a_stored_record_that_does_not_recompute_fails(tmp_path, stored_real, target):
@@ -813,8 +834,11 @@ def _fake_all(monkeypatch, *, nan=False, cases=10, excluded=0, n_paired=10, retu
         rows = {metric: dict(entry) for metric in metrics}
         info = {"v.set_size": {"a": {"mean": 1.0}, "b": {"mean": 2.0 if informational_differs else 1.0}}}
         slices = {"a": {"stratum": {"plain": 1.0}}, "b": {"stratum": {"plain": 0.5 if slices_differ else 1.0}}}
+        changes = {"metrics": {}, "reads": {"fixed": 0, "broken": 0, "fixed_examples": [], "broken_examples": [],
+                                            "groups": {}}, "a_only": 0, "b_only": 0}
         write_json(layout.comparison_json("S0", "shared"), {"a": cfg.tools[0], "b": cfg.tools[1], "comparison": rows,
-                                                            "informational": info, "by_slice": slices})
+                                                            "informational": info, "by_slice": slices,
+                                                            "changes": changes})
         write_json(layout.report_json, {"failed_runs": [], "suites": [{"name": "S0", "cases": cases,
                                                                        "excluded": excluded,
                                                                        "oracle": {"status": "perfect",
@@ -1228,6 +1252,7 @@ class FakeIgblast(OracleRunner):
 
     name = "igblast"
     wrong = 0
+    crash = False
     prepared: list = []
 
     def prepare(self, layout, reference):
@@ -1235,6 +1260,8 @@ class FakeIgblast(OracleRunner):
         return super().prepare(layout, reference)
 
     def run(self, fasta, out_tsv, **kwargs):
+        if FakeIgblast.crash:
+            raise RuntimeError("igblastn crashed")
         result = super().run(fasta, out_tsv, **kwargs)
         lines = Path(out_tsv).read_text().splitlines()
         column = lines[0].split("\t").index("v_call")
@@ -1248,14 +1275,17 @@ class FakeIgblast(OracleRunner):
 
 @pytest.fixture
 def fake_igblast(monkeypatch):
-    FakeIgblast.wrong, FakeIgblast.prepared = 0, []
+    """IgBLAST registered as ``FakeIgblast``, so ``all``'s own run-and-score path runs it."""
+    from alignair_assay.runners import RUNNERS
+
+    FakeIgblast.wrong, FakeIgblast.crash, FakeIgblast.prepared = 0, False, []
     seen = {}
 
-    def make(tool, options):
-        seen["options"] = (tool, options)
+    def make(options):
+        seen["options"] = ("igblast", options)
         return FakeIgblast()
 
-    monkeypatch.setattr(audit, "make_runner", make)
+    monkeypatch.setitem(RUNNERS, "igblast", make)
     return seen
 
 
@@ -1291,6 +1321,10 @@ def test_igblast_s1_v_top1_at_this_code_within_one_and_a_half_points_passes(tmp_
     assert found["status"] == "pass" and found["n"] == 100, found["reason"]
     assert found["evidence"]["mean"] == pytest.approx(0.98) and found["evidence"]["split"] == "dev"
     assert "S1 v.top1_in_set 98.00% (n=100)" in found["evidence"]["summary"]
+    # run and scored by all's own path: its scores, its comparison with the oracle and its report
+    own = RunLayout(tmp_path / "own")
+    assert own.tool_scores("S1", "shared", "igblast").is_file() and own.comparison_json("S1", "shared").is_file()
+    assert json.loads(own.report_json.read_text())["failed_runs"] == []
     # no S1 from the speed check: S1 built in its own scratch, on the dev split, at the given scale
     assert builds == [("S1", tmp_path / "own", 0.02, "dev")] and FakeIgblast.prepared == [tmp_path / "own"]
     tool, options = fake_igblast["options"]
@@ -1325,10 +1359,7 @@ def test_igblast_s1_v_top1_at_this_code_raises_or_is_skipped_without_igblast(tmp
     # leaves the audit incomplete
     sim = _speed_run(tmp_path)
 
-    def broken(*args, **kwargs):
-        raise RuntimeError("igblastn crashed")
-
-    monkeypatch.setattr(audit, "run_suite", broken)
+    FakeIgblast.crash = True
     with pytest.raises(RuntimeError, match="igblastn crashed"):
         audit.igblast_v_top1_current(_config(tmp_path), sim, _with_s1(s1_build, tmp_path / "speed"),
                                      RunLayout(tmp_path / "own"))

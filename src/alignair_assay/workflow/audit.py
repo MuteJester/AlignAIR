@@ -76,7 +76,6 @@ since what was not checked may have failed, and an audit that checked nothing ne
 from __future__ import annotations
 
 import dataclasses
-import gzip
 import hashlib
 import json
 import math
@@ -91,6 +90,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from alignair_assay.core.freeze import frozen_record
+from alignair_assay.core.jsonl import read_header, read_jsonl
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.provenance import CODE_SUFFIXES, genairr_provenance, git_state, sha256_file, tree_digest
 from alignair_assay.core.records import read_json, write_json, write_text
@@ -98,21 +98,24 @@ from alignair_assay.core.reference import DEFAULT_REFERENCE, Reference
 from alignair_assay.real.fetch import PILOT_SPLIT
 from alignair_assay.real.genotype import genotype_from_json, merge_identical
 from alignair_assay.report.audit import audit_markdown
-from alignair_assay.runners import make_runner
-from alignair_assay.runners.base import RunnerOptions, absolute_path, read_run_json, run_suite
-from alignair_assay.runners.reference import ensure_shared_reference
-from alignair_assay.scoring.pipeline import load_truth, read_scores, truth_reference
+from alignair_assay.runners.base import RunnerOptions, absolute_path, read_run_json
+from alignair_assay.scoring.pipeline import read_scores, truth_reference
 from alignair_assay.suites import get_suite
-from alignair_assay.suites.donors import read_genotypes
 from alignair_assay.suites.engine import DEFAULT_SEED
 from alignair_assay.truth.io import read_truth_header
 from alignair_assay.workflow import real_score, real_steps
 from alignair_assay.workflow.build import GENAIRR_IDENTITY, build_changes, build_suite
 from alignair_assay.workflow.orchestrate import RunConfig, read_run_config, run_all
-from alignair_assay.workflow.real import RealConfig, donor_scoring, run_real, scoring_inputs, self_check
-from alignair_assay.workflow.scoring import score_file
+from alignair_assay.workflow.real import (
+    CHECKPOINT_PAIR,
+    RealConfig,
+    donor_scoring,
+    run_real,
+    scoring_inputs,
+    self_check,
+)
 from alignair_assay.workflow.speed import run_speed
-from alignair_assay.workflow.summary import ORACLE, oracle_check
+from alignair_assay.workflow.summary import ORACLE, configured_settings, oracle_check
 
 AUDIT_KIND = "alignair_assay.audit"
 # 2: the provenance names the code audit_code_sha256, taken at the start; 3: the gating checks and the incomplete
@@ -510,11 +513,12 @@ def _igblast_speed(cfg: AuditConfig, sim: RunLayout, scratch: RunLayout, *, load
 def igblast_v_top1_current(cfg: AuditConfig, sim: RunLayout, speed: RunLayout, scratch: RunLayout) -> dict:
     """``band.sim_v_top1_current``, the gate on IgBLAST's numbers: IgBLAST run now, at this checkout's code, on a fresh
     dev S1 (the one ``band.speed`` built in ``speed`` when it built one, else S1 built at ``cfg.v_top1_scale`` in
-    ``scratch``) and scored as ``all`` scores it (against each read's donor genotype); ``pass`` when its
+    ``scratch``) through ``all``'s own path (``workflow.orchestrate.run_all`` with the oracle and IgBLAST, so it is
+    run and scored as ``all`` runs and scores it: against each read's donor genotype); ``pass`` when its
     ``v.top1_in_set`` is within ``V_TOP1_CURRENT_BAND`` of ``V_TOP1_TARGET``, ``fail`` outside it, ``skipped``
     without an IgBLAST release (the audit is then incomplete). ``band.sim_v_top1`` reads the stored test-split run's
-    number, computed by older code; this one is computed now, on the dev split. An error raises (``run_audit`` fails
-    the check with it)."""
+    number, computed by older code; this one is computed now, on the dev split. An error, a failed run or an
+    imperfect oracle raises (``run_audit`` fails the check with it)."""
     name = "band.sim_v_top1_current"
     igblast_dir = cfg.igblast_dir or read_run_config(sim).igblast_dir
     if not igblast_dir or not Path(igblast_dir).is_dir():
@@ -524,37 +528,32 @@ def igblast_v_top1_current(cfg: AuditConfig, sim: RunLayout, speed: RunLayout, s
     if layout is scratch:
         build_suite(V_TOP1_SUITE, scratch, reference_name=cfg.reference, split="dev", seed=cfg.seed,
                     scale=cfg.v_top1_scale, workers=cfg.workers)
-    reference = truth_reference(layout, [V_TOP1_SUITE])
-    ensure_shared_reference(layout, reference)
-    runner = make_runner(IGBLAST, RunnerOptions(igblast_dir=igblast_dir, threads=cfg.threads))
-    runner.prepare(layout, reference)
-    result = run_suite(runner, layout, V_TOP1_SUITE, arm="shared")
-    if result.returncode != 0:
-        raise RuntimeError(f"IgBLAST returned {result.returncode}: {result.provenance.get('error')}")
-    header, truths = load_truth(layout.truth(V_TOP1_SUITE), header_reference(layout), reference)
-    donors = layout.donors(V_TOP1_SUITE)
-    scored = score_file(IGBLAST, truths, result.predictions, reference,
-                        genotypes=read_genotypes(donors) if donors.is_file() else None)
-    values = [scores[V_TOP1_METRIC] for scores in scored.scores.values()
-              if math.isfinite(scores.get(V_TOP1_METRIC, math.nan))]
+    build = read_json(layout.build_json(V_TOP1_SUITE)) or {}
+    run_cfg = RunConfig(suites=(V_TOP1_SUITE,), tools=(ORACLE, IGBLAST), split="dev", reference=cfg.reference,
+                        seed=build.get("seed", cfg.seed), scale=build.get("scale", cfg.v_top1_scale),
+                        workers=cfg.workers, threads=cfg.threads, igblast_dir=igblast_dir)
+    returned = run_all(run_cfg, layout, force=True)
+    failed = (read_json(layout.report_json) or {}).get("failed_runs") or []
+    if returned != 0 or failed:
+        raise RuntimeError(f"all of IgBLAST on {V_TOP1_SUITE} returned {returned}: "
+                           + ("; ".join(f"{run['tool']} {run['status']}: {run.get('error')}" for run in failed)
+                              or "the oracle is not perfect"))
+    header = read_truth_header(layout.truth(V_TOP1_SUITE)) or {}
+    scores = read_scores(layout.tool_scores(V_TOP1_SUITE, "shared", IGBLAST))
+    values = [case[V_TOP1_METRIC] for case in scores.values() if math.isfinite(case.get(V_TOP1_METRIC, math.nan))]
     mean = math.fsum(values) / len(values) if values else None
     evidence = {"summary": f"IgBLAST S1 {V_TOP1_METRIC} {_percent(mean, 2)} (n={len(values)}) on a fresh dev S1 at "
                            f"scale {header.get('scale')}, this code; band {_percent(V_TOP1_TARGET)} ± "
                            f"{100 * V_TOP1_CURRENT_BAND:.1f} pp",
                 "mean": mean, "target": V_TOP1_TARGET, "band": V_TOP1_CURRENT_BAND, "split": header.get("split"),
-                "scale": header.get("scale"), "cases": len(truths), "settings": runner.fingerprint(),
-                "reused_speed_build": layout is speed}
+                "scale": header.get("scale"), "cases": len(scores),
+                "settings": configured_settings(layout).get(IGBLAST), "reused_speed_build": layout is speed}
     if mean is None or abs(mean - V_TOP1_TARGET) > V_TOP1_CURRENT_BAND + 1e-12:
         return check(name, "fail", len(values), evidence,
                      f"IgBLAST's S1 {V_TOP1_METRIC} {_percent(mean, 2)} at this code is outside "
                      f"{_percent(V_TOP1_TARGET)} ± {100 * V_TOP1_CURRENT_BAND:.1f} pp: the scoring or the truth "
                      "moved, or IgBLAST did")
     return check(name, "pass", len(values), evidence)
-
-
-def header_reference(layout: RunLayout) -> str | None:
-    """The reference name S1's truth header records."""
-    return (read_truth_header(layout.truth(V_TOP1_SUITE)) or {}).get("reference")
 
 
 def wait_for_idle(load: Callable[[], float], sleep: Callable[[float], None], *, limit: float = SPEED_LOAD,
@@ -644,21 +643,19 @@ def jsonl_content(path: Path, aliases: Mapping[str, str] | None = None) -> dict:
     """What a JSON-lines record file holds, by digest: ``file`` (its bytes' SHA-256), ``header`` (the header line's
     record without ``CODE_FIELDS``, each string value found in ``aliases`` replaced by its alias, digested; None
     without a header), ``code`` (the header's ``code_sha256``: the fingerprint also hashes the inputs, which the
-    header compares itself), ``rows`` (the other lines, digested) and their count ``n``. A ``.gz`` file is read
-    decompressed."""
-    opener = gzip.open if path.name.endswith(".gz") else open
-    with opener(path, "rt", encoding="utf-8") as handle:
-        lines = handle.read().splitlines()
-    header = None
-    if lines and lines[0].startswith('{"header"'):
-        header, lines = json.loads(lines[0])["header"], lines[1:]
+    header compares itself), ``rows`` (the other lines as ``core.jsonl`` reads them, digested) and their count
+    ``n``: whitespace and blank lines are not content."""
+    header, rows = read_header(path), read_jsonl(path)
     content = None if header is None else _aliased(
         {key: value for key, value in header.items() if key not in CODE_FIELDS}, aliases or {})
-    return {"file": sha256_file(path),
-            "header": None if content is None else hashlib.sha256(json.dumps(content, sort_keys=True)
-                                                                  .encode()).hexdigest(),
+    return {"file": sha256_file(path), "header": None if content is None else _content_digest(content),
             "code": None if header is None else header.get("code_sha256"),
-            "rows": hashlib.sha256("\n".join(lines).encode()).hexdigest(), "n": len(lines)}
+            "rows": _content_digest(rows), "n": len(rows)}
+
+
+def _content_digest(value) -> str:
+    """The SHA-256 of ``value`` as canonical JSON (keys sorted)."""
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
 def _aliased(value, aliases: Mapping[str, str]):
@@ -1194,7 +1191,7 @@ def real_null(cfg: AuditConfig, scratch: RunLayout) -> dict:
     comparisons = [(f"{cfg.real_donor}", entry) for entry in block.get("comparisons") or []]
     comparisons += [("pooled", entry) for entry in (summary.get("pooled") or {}).get("comparisons") or []]
     for where, entry in comparisons:
-        if entry.get("kind") != "checkpoint":
+        if entry.get("kind") != CHECKPOINT_PAIR:
             continue
         label = f"{where} {entry['arm']}"
         if entry.get("status") != "compared":

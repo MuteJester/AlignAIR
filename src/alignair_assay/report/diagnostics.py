@@ -931,7 +931,8 @@ def _changes_tables(suite: dict) -> list[str]:
                              ", ".join(change["broken_examples"]) or MISSING])
     lines.append(f"Reads changed on at least one metric: {'; '.join(totals) or MISSING}.")
     strata = [[FAMILY_LABELS[family], label, str(counts["fixed"]), str(counts["broken"])]
-              for family, found in families for label, counts in (found["changes"]["reads"].get("groups") or {}).items()]
+              for family, found in families
+              for label, counts in (found["changes"]["reads"].get("groups") or {}).items()]
     if strata:
         lines += ["", "Per stratum, the reads changed on at least one metric of the family:", "",
                   *markdown_table(["Family", "Stratum", "Fixed", "Broken"], strata)]
