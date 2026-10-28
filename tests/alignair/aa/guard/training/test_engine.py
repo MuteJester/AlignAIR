@@ -11,6 +11,7 @@ from alignair.aa.guard.checkpoint import CheckpointProvenance
 from alignair.aa.guard.features import FEATURE_NAMES
 from alignair.aa.guard.model import GuardModel
 from alignair.aa.guard.training import engine
+from alignair.aa.guard.training.sampling import SAMPLING_POLICY
 from alignair.errors import ArtifactIntegrityError, ConfigurationError
 
 pytestmark = pytest.mark.component
@@ -34,6 +35,7 @@ def run_inputs(tmp_path, monkeypatch):
     cache = {hashlib.sha256(r["aa"].encode()).hexdigest(): (np.arange(len(FEATURE_NAMES)) + i).tolist()
              for i, r in enumerate(records + oe)}
     manifest = {
+        "sampling_policy": SAMPLING_POLICY,
         "training": {"max_steps": 4, "batch_size": 4, "eval_every": 2, "early_stop_patience": 10,
                      "min_delta": 0, "grad_clip": 1, "amp": False},
         "optimizer": {"lr": 0.001, "weight_decay": 0.01}, "schedule": {"warmup_steps": 1},
@@ -66,6 +68,7 @@ def test_cpu_training_writes_reusable_checkpoint_and_accounting(run_inputs):
 
 def test_interrupted_resume_matches_uninterrupted_weights_and_metrics(run_inputs, tmp_path, monkeypatch):
     config = run_inputs["config"]
+    config.manifest['training']['eval_every'] = 1  # resume at an odd batch so remainder rotation matters
     reference = engine.RunConfig(config.manifest, tmp_path / "reference", tmp_path / "reference-budget.json")
     expected = engine.train_one(**{**run_inputs, "config": reference})
     save = engine.save_checkpoint
@@ -262,3 +265,68 @@ def test_training_rejects_bound_cache_identity_before_outputs_or_model_allocatio
     monkeypatch.setattr(engine, 'GuardModel', forbidden)
     with pytest.raises(ArtifactIntegrityError): engine.train_one(**{**run_inputs, 'feat_cache': cache})
     assert not run_inputs['config'].checkpoint_dir.exists() and not run_inputs['config'].budget_path.exists()
+
+
+def test_actual_training_batches_fill_four_slots_and_enforce_oe_cap(run_inputs, monkeypatch):
+    forward = engine._forward_losses; observed = []
+    def inspect(model, tensors, *args, **kwargs):
+        if model.training: observed.append((len(tensors['energy_out']), int(tensors['energy_out'].sum())))
+        return forward(model, tensors, *args, **kwargs)
+    monkeypatch.setattr(engine, '_forward_losses', inspect)
+    result = engine.train_one(**run_inputs)
+    assert observed == [(4, 1)] * 4
+    cfg = run_inputs['config']
+    state = torch.load(cfg.checkpoint_dir/'C4.s7.pt', weights_only=False)
+    assert state['sampling_rng']['batches_drawn'] == state['step'] == 4
+    assert state['sampling_plan'] == result['sampling_plan']
+    assert result['sampling_plan']['policy'] == SAMPLING_POLICY
+    assert result['training_manifest_sha256'] == cfg.manifest['manifest_sha256']
+
+
+@pytest.mark.parametrize('pool', ['train', 'oe'])
+def test_overlength_samples_are_refused_before_output_or_allocation(run_inputs, monkeypatch, pool):
+    from alignair.errors import DataContractError
+    run_inputs[pool][0]['aa'] = 'A'*193
+    def forbidden(*args, **kwargs): pytest.fail('length rejection must precede model allocation')
+    monkeypatch.setattr(engine, 'GuardModel', forbidden)
+    with pytest.raises(DataContractError): engine.train_one(**run_inputs)
+    assert not run_inputs['config'].checkpoint_dir.exists()
+
+
+@pytest.mark.parametrize('kind', ['resume', 'completed'])
+@pytest.mark.parametrize('change', ['missing_plan', 'old_policy', 'tampered_quota'])
+def test_checkpoint_plan_mismatch_is_rejected_before_model_restore_or_success_accounting(run_inputs, monkeypatch, kind, change):
+    engine.train_one(**run_inputs)
+    cfg = run_inputs['config']; path = cfg.checkpoint_dir/('C4.s7.pt' if kind == 'resume' else 'C4.s7.final.pt')
+    state = torch.load(path, weights_only=False)
+    if change == 'missing_plan': del state['sampling_plan']
+    elif change == 'old_policy': state['sampling_plan']['policy'] = 'legacy'
+    else: state['sampling_plan']['oe_per_batch'] = 0
+    torch.save(state, path)
+    if kind == 'resume': (cfg.checkpoint_dir/'C4.s7.final.pt').unlink()
+    cfg.budget_path.unlink(); previous = path.read_bytes()
+    def forbidden(*args, **kwargs): pytest.fail('policy mismatch must precede model restoration')
+    monkeypatch.setattr(GuardModel, 'load_state_dict', forbidden)
+    with pytest.raises(ArtifactIntegrityError) as caught: engine.train_one(**run_inputs)
+    assert caught.value.context['field'] == 'sampling_plan' and caught.value.context['path'] == str(path)
+    assert not cfg.budget_path.exists() and path.read_bytes() == previous
+
+
+@pytest.mark.parametrize('change', ['counter', 'step'])
+def test_resume_progress_and_sampling_state_must_agree(run_inputs, change):
+    from alignair.errors import TrainingError
+    engine.train_one(**run_inputs)
+    cfg = run_inputs['config']; path = cfg.checkpoint_dir/'C4.s7.pt'
+    state = torch.load(path, weights_only=False)
+    if change == 'counter': state['sampling_rng']['batches_drawn'] += 1
+    else: state['step'] = True
+    torch.save(state, path); (cfg.checkpoint_dir/'C4.s7.final.pt').unlink()
+    with pytest.raises(TrainingError): engine.train_one(**run_inputs)
+
+
+def test_unversioned_manifest_is_refused_before_checkpoints_are_loaded(run_inputs, monkeypatch):
+    run_inputs['config'].manifest.pop('sampling_policy')
+    def forbidden(*args, **kwargs): pytest.fail('legacy program must be refused before checkpoint loading')
+    monkeypatch.setattr(engine, 'load_checkpoint', forbidden)
+    with pytest.raises(ArtifactIntegrityError): engine.train_one(**run_inputs)
+    assert not run_inputs['config'].checkpoint_dir.exists()

@@ -7,6 +7,7 @@ import pytest
 from alignair.data.partitioning import partition_by_parent_lineage
 from alignair.aa.guard.loco import LOCO_FOLDS, masked_profiles_for
 from alignair.aa.guard.training import cli, manifests
+from alignair.aa.guard.training.sampling import SAMPLING_POLICY
 from alignair.errors import ArtifactIntegrityError, ConfigurationError, DataContractError, InputError
 
 pytestmark = pytest.mark.component
@@ -45,6 +46,7 @@ def test_sweep_binds_existing_parent_partition_and_copies_only_settings(inputs):
     body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
     assert manifest["manifest_sha256"] == hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
     assert manifest["forbidden_fresh_seqhashes_count"] == 1
+    assert manifest['sampling_policy'] == SAMPLING_POLICY
     inputs["settings"]["optimizer"]["lr"] = 99
     assert manifest["optimizer"]["lr"] == 0.001
 
@@ -132,7 +134,9 @@ def loco_inputs(inputs):
                 "group": group, "category": category, "lineage_key": f"{group}-{index}"}
                for offset, (group, category) in enumerate(groups) for index in range(12)]
     sweep = manifests.build_sweep_manifest(**{**inputs, "records": records})
-    results = {f"{cid}.{seed}": {"cid": cid, "seed": seed, "status": "ok", "dev_total_loss": loss}
+    results = {f"{cid}.{seed}": {"cid": cid, "seed": seed, "status": "ok", "dev_total_loss": loss,
+                              "sampling_plan": {"policy": SAMPLING_POLICY},
+                              "training_manifest_sha256": sweep['manifest_sha256']}
                for cid in sweep["candidates"] for seed, loss in ((7, 0.5), (0, 0.5))}
     return dict(records=records, training_manifest=sweep, run_results=results,
                 bank_checksum=inputs["bank_checksum"], checkpoint_dir="fold-models")
@@ -227,3 +231,22 @@ def test_loco_command_records_actual_input_paths_and_refuses_overwrite(loco_inpu
     diagnostic = capsys.readouterr()
     assert not diagnostic.out and json.loads(diagnostic.err)["code"] == ArtifactIntegrityError.code
     assert out.read_bytes() == content
+
+
+@pytest.mark.parametrize('change', ['missing_plan', 'wrong_policy', 'wrong_manifest'])
+def test_production_seeds_cannot_use_results_from_another_sampling_program(loco_inputs, change):
+    record = next(iter(loco_inputs['run_results'].values()))
+    if change == 'missing_plan': del record['sampling_plan']
+    elif change == 'wrong_policy': record['sampling_plan'] = {'policy': 'legacy'}
+    else: record['training_manifest_sha256'] = 'different-study'
+    with pytest.raises(ArtifactIntegrityError): manifests.build_loco_manifest(**loco_inputs)
+
+
+def test_historical_manifest_is_not_reinterpreted_by_loco_preparation(loco_inputs):
+    loco_inputs['training_manifest'].pop('sampling_policy')
+    with pytest.raises(ArtifactIntegrityError): manifests.build_loco_manifest(**loco_inputs)
+
+
+def test_explicit_unsupported_policy_cannot_be_frozen(inputs):
+    inputs['settings']['sampling_policy'] = 'legacy'
+    with pytest.raises(ConfigurationError): manifests.build_sweep_manifest(**inputs)

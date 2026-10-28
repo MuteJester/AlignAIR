@@ -74,6 +74,7 @@
     "src/alignair/aa/guard/checkpoint.py": {"statements": 98, "branches": 95},
     "src/alignair/aa/guard/feature_cache.py": {"statements": 98, "branches": 95},
     "src/alignair/aa/guard/training/data.py": {"statements": 98, "branches": 95},
+    "src/alignair/aa/guard/training/sampling.py": {"statements": 98, "branches": 95},
     "src/alignair/aa/guard/training/budget.py": {"statements": 98, "branches": 95},
     "src/alignair/aa/guard/training/reporting.py": {"statements": 98, "branches": 95},
     "src/alignair/aa/product/loader.py": {"statements": 98, "branches": 95}

@@ -9,6 +9,7 @@ from alignair.aa.guard.loco import LOCO_FOLDS, LOCO_MASK_HASH, masked_profiles_f
 from alignair.data.partitioning import partition_by_parent_lineage
 from alignair.aa.guard.training import cli, studies
 from alignair.aa.guard.training.data import source_setup
+from alignair.aa.guard.training.sampling import SAMPLING_POLICY
 from alignair.errors import ArtifactIntegrityError
 
 pytestmark = pytest.mark.component
@@ -25,7 +26,7 @@ def study(tmp_path, monkeypatch):
     records = [{"id": f"{group}-{i}", "aa": f"{group}-{i}", "group": group, "category": category,
                 "lineage_key": f"{group}-{i}"} for group, category in groups for i in range(12)]
     train, dev, partition = partition_by_parent_lineage(records, seed=42, dev_frac=0.2)
-    manifest = {"train_partition_hash": partition, "bank_checksum": "bank", "manifest_sha256": "training",
+    manifest = {"sampling_policy": SAMPLING_POLICY, "train_partition_hash": partition, "bank_checksum": "bank", "manifest_sha256": "training",
                 "checkpoint_dir": str(tmp_path / "models"), "candidates": ["C1", "C2"], "seeds": [0, 1],
                 "training": {"batch_size": 4}, "oe": {"cap_fraction": 0.25}}
     folds = {}
@@ -43,7 +44,7 @@ def study(tmp_path, monkeypatch):
             "excluded_seqhash_sha256": _hash(sorted(hashlib.sha256(r["aa"].encode()).hexdigest() for r in excluded)),
             "n_train_after_exclusion": len(fold_train), "n_excluded": len(excluded),
         }
-    loco = {"base_partition_hash": partition, "bank_checksum": "bank", "manifest_sha256": "loco",
+    loco = {"sampling_policy": SAMPLING_POLICY, "base_partition_hash": partition, "bank_checksum": "bank", "manifest_sha256": "loco",
             "checkpoint_dir": str(tmp_path / "fold-models"), "candidates": ["C1", "C2"],
             "frozen_seeds": {"C1": 0, "C2": 1}, "loco_mask_hash": LOCO_MASK_HASH,
             "stage4_manifest_sha256": "training", "folds": folds,
@@ -174,4 +175,16 @@ def test_duplicate_ids_stop_direct_study_calls_before_features_training_or_outpu
             studies.run_loco(study.manifest, study.loco, records, study.bank,
                              artifact_dir=tmp_path/'out', cache_dir=tmp_path/'cache')
     assert caught.value.context['stage'] == 'lineage_partition'
+    assert not study.calls and not study.features and not (tmp_path/'out').exists()
+
+
+@pytest.mark.parametrize('kind', ['sweep', 'loco'])
+def test_historical_program_cannot_run_under_corrected_policy(study, tmp_path, kind):
+    study.manifest.pop('sampling_policy')
+    with pytest.raises(ArtifactIntegrityError):
+        if kind == 'sweep':
+            studies.run_sweep(study.manifest, study.records, study.bank, artifact_dir=tmp_path/'out', cache_path=tmp_path/'cache')
+        else:
+            studies.run_loco(study.manifest, study.loco, study.records, study.bank,
+                             artifact_dir=tmp_path/'out', cache_dir=tmp_path/'cache')
     assert not study.calls and not study.features and not (tmp_path/'out').exists()

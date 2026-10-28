@@ -93,7 +93,7 @@ def _valid_identities(value):
             and all(isinstance(name, str) and name for name in order) and len(set(order)) == len(order))
 
 
-def load_checkpoint(path, *, training_contract, provenance, device="cpu"):
+def load_checkpoint(path, *, training_contract, provenance, device="cpu", sampling_plan=None):
     """Load a trusted local pickle and verify identities before the caller restores training state.
 
     Historical resume files without provenance require explicit migration or a new run. No
@@ -106,6 +106,10 @@ def load_checkpoint(path, *, training_contract, provenance, device="cpu"):
         if not isinstance(training_contract, str) or not training_contract:
             raise ConfigurationError("Guard checkpoint verification requires a training contract.")
         _current_identities(provenance)
+        try:
+            expected_plan = json.dumps(sampling_plan, sort_keys=True, allow_nan=False) if sampling_plan is not None else None
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError("Expected sampling plan must contain finite JSON values.") from exc
         try:
             saved = torch.load(path, map_location=device, weights_only=False)
         except OSError as exc:
@@ -124,6 +128,15 @@ def load_checkpoint(path, *, training_contract, provenance, device="cpu"):
                 hint="Use a new output directory for a different run. Legacy unbound checkpoints require explicit migration.",
             )
         verify_provenance(saved.get("provenance"), provenance)
+        if expected_plan is not None:
+            try:
+                actual_plan = json.dumps(saved.get("sampling_plan"), sort_keys=True, allow_nan=False)
+            except (TypeError, ValueError) as exc:
+                raise ArtifactIntegrityError("Guard checkpoint sampling plan is malformed.",
+                                             context={"field": "sampling_plan"}) from exc
+            if actual_plan != expected_plan:
+                raise ArtifactIntegrityError("Guard checkpoint sampling policy or allocation differs.",
+                                             context={"field": "sampling_plan"})
         return saved
 
 

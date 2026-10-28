@@ -25,6 +25,7 @@ const aaGuardResearch: DocPage = {
         [<code>feature_cache</code>, "Prepare and validate HMM features, retain cache identities in memory, and publish persistent caches atomically."],
         [<code>training.manifests</code>, "Bind explicit study settings to data, profile, partition, and fold identities."],
         [<code>training.studies</code>, "Run seed sweeps and leave-one-category-out training."],
+        [<code>training.sampling</code>, "Validate training pools, allocate complete batches, and checkpoint the sampling policy, RNG and rotation position."],
         [<code>checkpoint</code>, "Verify guard runtime identities and training contracts; load and atomically publish trusted local checkpoints."],
         [<code>training.budget</code>, "Compute accounting using a caller-supplied ledger path."],
         [<code>training.choose_production_seed</code>, "Choose the lowest development loss, breaking ties by the lowest seed; reject fresh-validation metrics."],
@@ -182,8 +183,50 @@ vector = cache[sequence_key(records[0]["aa"])]`} />
         <code> training.data</code> location is removed. <code>training.data.build_tensors</code>
         consumes prepared features and no longer accepts a <code>bank</code> argument or performs
         HMM searches. Prepare missing sequences first; a missing feature raises
-        <code> DataContractError</code>. Length filtering, labels, supervision masks, train-only
-        normalization and sampling rules retain their existing behavior.
+        <code> DataContractError</code>. Tensor labels, supervision masks and train-only normalization
+        retain their existing behavior. The sampling policy below defines training-pool eligibility
+        and batch allocation.
+      </p>
+      <H2 id="sampling">Allocate complete training batches</H2>
+      <CodeBlock lang="python" code={`from alignair.aa.guard.training.sampling import GuardBatchSampler
+
+# Pools contain prepared records with aa and group annotations.
+sampler = GuardBatchSampler(
+    training_records, outlier_records,
+    batch_size=32, oe_cap_fraction=0.15, seed=7,
+)
+main_records, outliers = sampler.draw()
+assert len(main_records) + len(outliers) == 32
+saved_sampling_state = sampler.state_dict()`} />
+      <p>
+        Policy <code>alignair.guard.balanced_sampling.v2</code> reserves the integer OE quota
+        within its declared cap, then fills every remaining batch slot from active positive,
+        biological-negative and structural roles. Role counts differ by at most one. Extra slots
+        rotate across roles after each batch; sampling within each pool uses replacement and a
+        local RNG seeded with <code>seed + 1000</code>. Main records retain role order and OE
+        records form a separate suffix during tensor assembly.
+      </p>
+      <p>
+        Batch size must be a positive integer, and the finite OE cap lies in [0, 0.5). An empty
+        OE pool reserves zero outliers. The batch must fit every active role after reserving its
+        quota. Unknown training groups, empty sequence text and overlength train/OE records are
+        rejected before model allocation; this prevents tensor filtering from changing batch size
+        or OE share. The recognized groups are positive_real/positive_sim;
+        vhh_nonhuman/igsf/igk_igl/tcr; and structural.
+      </p>
+      <p>
+        The sampler stores both RNG state and the number of batches drawn. Resume verifies the
+        allocation plan and requires the batch counter to match checkpoint progress. This preserves
+        remainder rotation across interruptions. Malformed state raises a contextual
+        <code> TrainingError</code> without partially changing the sampler.
+      </p>
+      <p>
+        New manifests declare <code>sampling_policy</code>; checkpoints and run results record the
+        complete <code>sampling_plan</code>. Training contracts use schema version 2 and bind that
+        plan. Freeze new manifests to new paths and use new checkpoint directories for corrected
+        runs. Historical unversioned programs and prior-policy checkpoints are refused for execution
+        or reuse. LOCO seed preparation also verifies that successful results belong to its declared
+        training manifest and current sampling policy. Historical artifacts are preserved.
       </p>
       <H2 id="checkpoints">Guard checkpoint compatibility</H2>
       <p>
@@ -214,12 +257,14 @@ vector = cache[sequence_key(records[0]["aa"])]`} />
       </p>
       <p>
         Guard checkpoints use the shared <code>train.random_state</code> implementation for process
-        generators and retain a separate <code>sampling_rng</code> state for choosing training records.
+        generators and retain a separate <code>sampling_rng</code> state for choosing training records
+        and rotating remainder slots.
         Resume requires Python, NumPy and PyTorch CPU states; missing or malformed state raises
         <code> TrainingError</code> with checkpoint and run context. The sampler is checked before
         model or process-state restoration. CPU guard runs exclude CUDA state on every host and
         preserve the explicit null <code>rng.cuda</code> checkpoint field. CUDA runs capture and
-        restore all CUDA generators. Record-sampling seeds and checkpoint field names are unchanged.
+        restore all CUDA generators. The sampler’s versioned state includes its allocation plan,
+        local RNG and batch counter.
       </p>
 
       <H2 id="reports">Reports and compute accounting</H2>

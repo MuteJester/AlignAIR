@@ -26,6 +26,7 @@ from alignair.io.atomic import atomic_write_json
 from . import budget
 from .data import build_tensors
 from .metrics import binary_auroc
+from .sampling import GuardBatchSampler, require_sampling_policy
 
 
 @dataclass(frozen=True)
@@ -54,11 +55,11 @@ def resolve_device(requested):
 
 
 def _run_contract(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sources, config,
-                  mask_groups, extra_provenance):
+                  mask_groups, extra_provenance, sampling_plan):
     """Bind completed and resumable checkpoints to their exact training inputs."""
     inputs = {"train": train, "dev": dev, "oe": oe, "features": dict(feat_cache.vectors)}
     contract = {
-        "schema_version": 1, "candidate": cid, "seed": int(seed),
+        "schema_version": 2, "candidate": cid, "seed": int(seed), "sampling_plan": sampling_plan,
         "manifest": config.manifest, "source_vocabulary": cat2id, "n_sources": n_sources,
         "eligible_domain_types": sorted(eligible_dt), "masked_profiles": sorted(mask_groups),
         "extra_provenance": extra_provenance or {},
@@ -98,6 +99,7 @@ def _forward_losses(model, T, W, margins, cfg, grl, device):
 def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sources, *,
               config: RunConfig, bank, mask_groups=frozenset(), ckpt_dir=None, extra_provenance=None, run_tag=None):
     manifest = config.manifest
+    require_sampling_policy(manifest)
     device = resolve_device(config.device)
     is_cuda = torch.device(device).type == "cuda"
     from alignair.aa.guard.model import CANDIDATE_CONFIG
@@ -105,6 +107,9 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
         raise ConfigurationError("Unknown guard training candidate.", context={"candidate": cid})
     if not train or not dev:
         raise ConfigurationError("Guard training requires nonempty training and development records.")
+    sampler = GuardBatchSampler(train, oe, batch_size=manifest["training"]["batch_size"],
+                               oe_cap_fraction=manifest["oe"]["cap_fraction"], seed=seed)
+    sampling_plan = sampler.plan()
     if bank.checksum() != manifest["bank_checksum"]:
         raise ArtifactIntegrityError("Profile bank differs from training manifest.")
     feat_cache = bind_feature_cache(feat_cache, bank_checksum=manifest["bank_checksum"], mask_groups=mask_groups)
@@ -113,7 +118,7 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
     tag = run_tag or f"{cid}.s{seed}"                  # LOCO passes e.g. C1.s2.igk_igl (no filename collision)
     final_path = ckpt_dir / f"{tag}.final.pt"
     contract = _run_contract(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sources,
-                             config, mask_groups, extra_provenance)
+                             config, mask_groups, extra_provenance, sampling_plan)
     tr = manifest["training"]; W = manifest["loss_weights"]; margins = manifest["energy_margins"]
     bank_checksum = manifest["bank_checksum"]
     fusion = fit_fusion(FEATURE_NAMES, [feature_vector(feat_cache, r["aa"])
@@ -125,9 +130,10 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
                             partition_hash=xp.get("partition_hash", manifest["train_partition_hash"]), seed=seed,
                             loss_mask_config={"candidate": cid, "weights": W, "margins": margins,
                                               "loco_mask_hash": xp.get("loco_mask_hash"), "fold": xp.get("fold"),
-                                              "norm_stats_sha256": xp["normalization_stats_sha256"]})
+                                              "norm_stats_sha256": xp["normalization_stats_sha256"],
+                                              "sampling_plan": sampling_plan})
     if final_path.exists():                            # already completed -> skip on resumable restart
-        saved = load_checkpoint(final_path, training_contract=contract, provenance=prov)
+        saved = load_checkpoint(final_path, training_contract=contract, provenance=prov, sampling_plan=sampling_plan)
         metrics = saved["metrics"]
         budget.record(tag, metrics["wall_s"], metrics["gpu_h"], metrics["params"], path=config.budget_path)
         return metrics
@@ -154,16 +160,13 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
         scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
     start_step, best_dev, patience, best_state = 0, float("inf"), 0, None
 
-    sampling_rng = random.Random(seed + 1000)
     resumed = None
     if ckpt_path.exists():                               # resume operationally
-        st = load_checkpoint(ckpt_path, training_contract=contract, provenance=prov, device=device)
-        try:
-            sampling_rng.setstate(st.get("sampling_rng"))
-        except (ValueError, TypeError, IndexError) as exc:
-            raise TrainingError("guard checkpoint sampling RNG state cannot be restored",
-                                context={"stage": "guard_training_resume_rng", "path": str(ckpt_path),
-                                         "run_tag": tag, "field": "sampling_rng"}) from exc
+        st = load_checkpoint(ckpt_path, training_contract=contract, provenance=prov, device=device, sampling_plan=sampling_plan)
+        with error_context(stage="guard_training_resume_rng", path=str(ckpt_path), run_tag=tag):
+            if isinstance(st.get("step"), bool) or not isinstance(st.get("step"), int) or st["step"] < 0:
+                raise TrainingError("Guard checkpoint progress must be a nonnegative integer.", context={"field": "step"})
+            sampler.load_state_dict(st.get("sampling_rng"), expected_batches=st["step"])
         model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"]); sched.load_state_dict(st["sched"])
         scaler.load_state_dict(st["scaler"]); start_step = st["step"]; best_dev = st["best_dev"]
         patience = st["patience"]; best_state = st.get("best_state")
@@ -173,14 +176,6 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
 
     if is_cuda:
         torch.cuda.reset_peak_memory_stats()
-    by_role = {"positive": [r for r in train if r["group"] in ("positive_real", "positive_sim")],
-               "biological_negative": [r for r in train if r["group"] in ("vhh_nonhuman", "igsf", "igk_igl", "tcr")],
-               "structural": [r for r in train if r["group"] == "structural"]}
-    roles = [k for k in by_role if by_role[k]]
-    if not roles:
-        raise ConfigurationError("Guard training requires records with recognized training roles.")
-    bs = tr["batch_size"]; n_oe = int(bs * manifest["oe"]["cap_fraction"]) if oe else 0
-    per_role = max(1, (bs - n_oe) // len(roles))
     t0 = time.time(); stop_step = resumed.get("best_step", start_step) if resumed else start_step
     train_loss_ema = resumed.get("train_loss_ema") if resumed else None
     progress_step = start_step
@@ -189,11 +184,11 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
         end_step = max_steps if patience < tr["early_stop_patience"] else start_step
         for step in range(start_step, end_step):
             progress_step = step
-            batch = [sampling_rng.choice(by_role[r]) for r in roles for _ in range(per_role)]
+            batch, outliers = sampler.draw()
             Tb = build_tensors(batch, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt,
                                mask_groups=mask_groups)
-            if oe and n_oe:
-                Toe = build_tensors([sampling_rng.choice(oe) for _ in range(n_oe)], feat_cache, fusion, tok,
+            if outliers:
+                Toe = build_tensors(outliers, feat_cache, fusion, tok,
                                     bank_checksum, cat2id, eligible_dt, is_oe=True, mask_groups=mask_groups)
                 for k in Tb:
                     Tb[k] = torch.cat([Tb[k], Toe[k]], dim=0)
@@ -227,8 +222,9 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
                             "scaler": scaler.state_dict(), "step": step + 1, "best_dev": best_dev,
                             "patience": patience, "best_state": best_state,
                             "rng": {"cuda": None, **capture_rng_state(include_cuda=is_cuda)},
-                            "sampling_rng": sampling_rng.getstate(), "train_loss_ema": train_loss_ema,
-                            "training_contract": contract, "best_step": stop_step, "provenance": prov.to_dict()})
+                            "sampling_rng": sampler.state_dict(), "train_loss_ema": train_loss_ema,
+                            "training_contract": contract, "best_step": stop_step, "provenance": prov.to_dict(),
+                            "sampling_plan": sampling_plan})
                 model.train()
                 if patience >= tr["early_stop_patience"]:
                     break
@@ -236,7 +232,8 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
         error = e if isinstance(e, AlignAIRError) else TrainingError(
             "Guard training run failed.", context={"run_tag": tag, "step": progress_step, "cause_type": type(e).__name__})
         failure = {"tag": tag, "cid": cid, "seed": seed, "status": "engineering_failure",
-                   "reason": f"{type(e).__name__}: {str(e)[:120]}", "step": progress_step, "error": error.to_dict()}
+                   "reason": f"{type(e).__name__}: {str(e)[:120]}", "step": progress_step, "error": error.to_dict(),
+                   "sampling_plan": sampling_plan}
         with error_context(run_tag=tag, step=progress_step, training_error=error.to_dict()):
             atomic_write_json(ckpt_dir / f"{tag}.failure.json", failure, sort_keys=False,
                               stage="guard_training_failure")
@@ -246,6 +243,7 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
         model.load_state_dict(best_state)
     metrics = _evaluate(model, T_dev, T_oe, cfg, W, margins, device)
     metrics.update({"tag": tag, "cid": cid, "seed": seed, "status": "ok", "stop_step": stop_step,
+                    "sampling_plan": sampling_plan, "training_manifest_sha256": prov.training_manifest_hash,
                     "dev_total_loss": best_dev, "train_loss_ema": round(train_loss_ema or 0.0, 4),
                     "train_dev_gap": round((train_loss_ema or 0.0) - best_dev, 4),
                     "wall_s": round(time.time() - t0, 1),
@@ -254,7 +252,7 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
                     "params": sum(p.numel() for p in model.parameters()),
                     "eligible_source_fraction": round(float(T_dev["source_m"].mean()), 4)})
     save_checkpoint(final_path, {"model": model.state_dict(), "provenance": prov.to_dict(), "metrics": metrics,
-                                "bound_extra": xp, "training_contract": contract})
+                                "bound_extra": xp, "training_contract": contract, "sampling_plan": sampling_plan})
     budget.record(tag, metrics["wall_s"], metrics["gpu_h"], metrics["params"], path=config.budget_path)
     return metrics
 

@@ -12,6 +12,7 @@ from alignair.aa.guard.loco import LOCO_FOLDS, LOCO_MASK_HASH, masked_profiles_f
 from alignair.data.partitioning import partition_by_parent_lineage
 from alignair.errors import ArtifactIntegrityError, ConfigurationError, DataContractError
 from .seeds import choose_production_seed
+from .sampling import SAMPLING_POLICY, require_sampling_policy
 
 # Settings can come from a previous study manifest; identities are always rebuilt.
 SWEEP_SETTING_FIELDS = (
@@ -31,6 +32,9 @@ def _settings(settings):
         raise ConfigurationError("Sweep settings must supply every training setting.",
                                  context={"required_fields": SWEEP_SETTING_FIELDS})
     values = copy.deepcopy({key: settings[key] for key in SWEEP_SETTING_FIELDS})
+    if settings.get("sampling_policy", SAMPLING_POLICY) != SAMPLING_POLICY:
+        raise ConfigurationError("Cannot freeze settings from a different sampling policy.")
+    values["sampling_policy"] = SAMPLING_POLICY
     candidates, seeds = values["candidates"], values["seeds"]
     if (not isinstance(candidates, list) or not candidates or
             any(cid not in ("C1", "C2", "C3", "C4") for cid in candidates) or
@@ -133,7 +137,7 @@ def _write_manifest(path, manifest):
     return manifest
 
 
-def _production_seeds(settings, run_results):
+def _production_seeds(settings, run_results, manifest_hash):
     if not isinstance(run_results, dict) or any(not isinstance(result, dict) for result in run_results.values()):
         raise DataContractError("Sweep results must be a mapping of run records.")
     losses = {cid: {} for cid in settings["candidates"]}
@@ -146,6 +150,11 @@ def _production_seeds(settings, run_results):
             raise ArtifactIntegrityError("Successful sweep result is outside the frozen candidate/seed program.")
         if seed in losses[cid]:
             raise DataContractError("Duplicate successful candidate/seed result.", context={"candidate": cid, "seed": seed})
+        plan = result.get("sampling_plan")
+        if (not isinstance(plan, dict) or plan.get("policy") != SAMPLING_POLICY
+                or result.get("training_manifest_sha256") != manifest_hash):
+            raise ArtifactIntegrityError("Sweep result sampling policy or training manifest differs.",
+                                         context={"candidate": cid, "seed": seed})
         # Preserve all fields so the shared selector can reject fresh-validation metrics.
         losses[cid][seed] = {**result, "dev_loss": result.get("dev_total_loss")}
     return {cid: choose_production_seed(results) for cid, results in losses.items()}
@@ -158,6 +167,7 @@ def build_loco_manifest(records, *, training_manifest, run_results, bank_checksu
     Inputs are supplied in memory. No model, fresh cohort, or challenge files are
     opened. ``input_files`` records paths read by the caller for audit provenance.
     """
+    require_sampling_policy(training_manifest)
     settings = _settings(training_manifest)
     body = {key: value for key, value in training_manifest.items() if key != "manifest_sha256"}
     if training_manifest.get("manifest_sha256") != _sha(body):
@@ -177,7 +187,7 @@ def build_loco_manifest(records, *, training_manifest, run_results, bank_checksu
     for key, expected in identities.items():
         if training_manifest.get(key) != expected:
             raise ArtifactIntegrityError("Development partition differs from the frozen sweep.", context={"field": key})
-    seeds = _production_seeds(settings, run_results)
+    seeds = _production_seeds(settings, run_results, training_manifest["manifest_sha256"])
     from .data import source_setup
 
     folds = {}
@@ -205,6 +215,7 @@ def build_loco_manifest(records, *, training_manifest, run_results, bank_checksu
         "candidates", "seeds", "production_seed_rule")}
     manifest = {
         "artifact": "loco_run_manifest", "immutable": True, "candidates": settings["candidates"],
+        "sampling_policy": SAMPLING_POLICY,
         "frozen_seeds": seeds, "hyperparameters": "inherited unchanged from stage4_run_manifest.json",
         "stage4_manifest_sha256": training_manifest["manifest_sha256"], **inherited,
         "partition_policy": "RESTRICT the frozen Stage-4 parent-lineage partition after excluding fold g; "

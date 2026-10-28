@@ -156,6 +156,19 @@ def test_save_preserves_cuda_out_of_memory_and_the_previous_file(tmp_path, monke
     assert caught.value is error and path.read_bytes() == b'previous' and list(tmp_path.iterdir()) == [path]
 
 
+def test_sampling_plan_is_checked_independently_of_the_supplied_run_hash(tmp_path):
+    path = tmp_path/'checkpoint.pt'; p = _prov(); plan = {'policy': 'v2', 'batch_size': 4}
+    save_checkpoint(path, {'training_contract': 'run', 'provenance': p.to_dict(), 'sampling_plan': plan})
+    assert load_checkpoint(path, training_contract='run', provenance=p, sampling_plan=plan)['sampling_plan'] == plan
+    with pytest.raises(ArtifactIntegrityError):
+        load_checkpoint(path, training_contract='run', provenance=p, sampling_plan={**plan, 'batch_size': 3})
+    with pytest.raises(ConfigurationError):
+        load_checkpoint(path, training_contract='run', provenance=p, sampling_plan={'unsupported': object()})
+    save_checkpoint(path, {'training_contract': 'run', 'provenance': p.to_dict(), 'sampling_plan': object()})
+    with pytest.raises(ArtifactIntegrityError):
+        load_checkpoint(path, training_contract='run', provenance=p, sampling_plan=plan)
+
+
 @pytest.mark.parametrize('data', [b'', b'not a torch checkpoint'])
 def test_corruption_is_a_chained_format_error(tmp_path, data):
     path = tmp_path/'broken.pt'; path.write_bytes(data)

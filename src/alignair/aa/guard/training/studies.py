@@ -16,6 +16,7 @@ from alignair.aa.guard.feature_cache import precompute_features
 from .engine import RunConfig, resolve_device, train_one
 from .reporting import write_loco_report, write_sweep_report
 from .seeds import choose_production_seed
+from .sampling import require_sampling_policy
 
 _LOG = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ def run_sweep(manifest, records, bank, *, artifact_dir, cache_path, device="cpu"
     Inputs are supplied in memory. Output files contain diagnostics and hashes;
     this function does not discover or open validation or challenge datasets.
     """
+    require_sampling_policy(manifest)
     device = resolve_device(device)
     train, dev, partition_hash = partition_by_parent_lineage(records, seed=42, dev_frac=0.2)
     _require_equal(partition_hash, manifest["train_partition_hash"], "Partition drift versus training manifest.")
@@ -65,6 +67,8 @@ def run_loco(training_manifest, manifest, records, bank, *, artifact_dir, cache_
     Fold membership restricts the original partition without reshuffling. Feature
     masking, normalization, and source eligibility are recomputed for each fold.
     """
+    require_sampling_policy(training_manifest)
+    require_sampling_policy(manifest)
     device = resolve_device(device)
     train, dev, partition_hash = partition_by_parent_lineage(records, seed=42, dev_frac=0.2)
     _require_equal(partition_hash, manifest["base_partition_hash"], "Partition drift versus LOCO manifest.")

@@ -85,6 +85,11 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Guard sampling uses the versioned `training.sampling.GuardBatchSampler`, fills the requested
+  batch size, rotates remainder slots across roles, and enforces the OE cap. Train/OE records that
+  tensor preparation would drop are rejected before model allocation. New manifests, results and
+  schema-2 checkpoint contracts bind the policy/allocation; older programs/checkpoints require new
+  runs, and LOCO seed preparation rejects results from another policy or training manifest.
 - Parent-lineage partitioning now lives in shared `alignair.data.partitioning`. Guard manifests and
   studies use the same owner, preserving valid assignments, record order, rounding and hashes.
   Invalid split options, duplicate IDs and malformed consumed lineage identities raise contextual errors.
