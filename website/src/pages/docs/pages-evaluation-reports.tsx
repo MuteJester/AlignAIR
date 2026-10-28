@@ -297,6 +297,16 @@ print(report["paired_improvement"])`} />
         Empty vectors preserve historical zero-valued results. Retain the evaluator’s observation
         counts when interpreting them. Relative reduction is zero when its constant baseline is zero.
       </p>
+      <p>
+        The experimental <code>alignair.aa.convergence.paired</code> module and its
+        <code> paired_bootstrap_diff_ci</code>, <code>mcnemar</code> and
+        <code> class_stratified_bootstrap_macro_diff</code> helpers have been retired.
+        Shared <code>paired_diff_ci</code> continues to accept per-observation differences under
+        its own input, resampling and result-schema contract. The retired class-resampling and
+        McNemar imports have no replacement in the installed package. The source-only benchmark
+        and assay comparison tools retain their existing case/read/cluster procedures, confidence
+        intervals and decision rules. Select the procedure that matches the study’s sampling unit.
+      </p>
       <H2 id="convergence-cohort">Convergence study cohorts</H2>
       <CodeBlock lang="python" code={`from alignair.aa.convergence.cohort import (
     COHORT_SCHEMA, build_cohort, cohort_fingerprint,

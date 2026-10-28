@@ -246,6 +246,9 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Unused `aa.convergence.paired` bootstrap/McNemar helpers and six dedicated tests. Active shared
+  statistics, benchmark/assay comparisons and their study-specific resampling/decision policies
+  retain their existing implementations; no replacement aliases are introduced.
 - Retired `aa.convergence.metrics` and its macro-accuracy alias. Active callers use shared
   evaluation scores; study-specific frequency sources and selection rules retain their owners.
 - Unused `aa.phase1` learning-proof runner, its report-specific provenance/manifest/fingerprint
