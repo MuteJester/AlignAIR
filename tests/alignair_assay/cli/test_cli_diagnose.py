@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from alignair_assay.cli.diagnose import _print_against
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.report.diagnostics import against_summary
+from alignair_assay.report.diagnostics_against import against_summary
 
 pytestmark = pytest.mark.integration
 

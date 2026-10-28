@@ -7,14 +7,11 @@ import math
 import pytest
 
 from alignair_assay.report.diagnostics import (
-    AGAINST_SECTION,
-    AGAINST_SECTIONS,
     DIAGNOSTICS_KIND,
     HOLM_NOTE,
     MAX_FLAGS,
     SUITE_SECTIONS,
     SUMMARY_SECTIONS,
-    against_markdown,
     build_diagnostics_report,
     diagnostics_markdown,
     diagnostics_scalars,
@@ -22,6 +19,7 @@ from alignair_assay.report.diagnostics import (
     profile_markdown,
     suite_markdown,
 )
+from alignair_assay.report.diagnostics_against import AGAINST_SECTION, AGAINST_SECTIONS, against_markdown
 
 pytestmark = pytest.mark.component
 

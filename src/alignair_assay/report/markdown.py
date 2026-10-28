@@ -246,3 +246,18 @@ def to_markdown(report: dict, headline: Sequence[str] = HEADLINE) -> str:
     else:
         raise ValueError(f"unknown report kind: {kind!r}")
     return "\n".join(lines) + "\n"
+
+
+def format_ci(name: str, ci) -> str:
+    """A 95% CI ``[low, high]`` of metric ``name`` as a Δ (``format_value``); ``MISSING`` without one."""
+    if not ci:
+        return MISSING
+    return f"[{format_value(name, ci[0], delta=True)}, {format_value(name, ci[1], delta=True)}]"
+
+
+def format_clusters(clusters: dict) -> str:
+    """A suite's ``clusters`` record as its detail table shows it: ``none`` without a cluster of two or more reads
+    (``workflow.diagnose.cluster_counts`` counts only those), else the count with its keys and reads."""
+    if not clusters.get("clusters"):
+        return "none"
+    return f"{clusters['clusters']} ({'/'.join(clusters['keys'])}; {clusters['cases']} reads)"

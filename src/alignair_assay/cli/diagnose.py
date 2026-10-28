@@ -7,7 +7,7 @@ from pathlib import Path
 
 from alignair_assay.cli.common import comma_list, tool_path
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.report.diagnostics import (
+from alignair_assay.report.diagnostics_against import (
     AGAINST_FAMILIES,
     AGAINST_HEADLINE,
     AGAINST_VERDICTS,

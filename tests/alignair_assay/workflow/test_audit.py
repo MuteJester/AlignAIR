@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -304,7 +305,7 @@ def test_two_builds_on_one_genairr_must_be_byte_identical(tmp_path, monkeypatch)
                 handle.write(">extra\nACGT\n")
         return built
 
-    monkeypatch.setattr(audit, "build_suite", drifting)
+    monkeypatch.setattr(audit.reproducible, "build_suite", drifting)
     found = audit.sim_reproducible(cfg, RunLayout(tmp_path / "three"), RunLayout(tmp_path / "four"))
     assert found["status"] == "fail" and "reads" in found["reason"] and "cases" not in found["reason"]
 
@@ -323,7 +324,7 @@ def test_two_builds_without_their_cases_truth_and_reads_fail(tmp_path, monkeypat
                 getattr(layout, label)(name).unlink()
         return built
 
-    monkeypatch.setattr(audit, "build_suite", losing)
+    monkeypatch.setattr(audit.reproducible, "build_suite", losing)
     found = audit.sim_reproducible(_config(tmp_path), RunLayout(tmp_path / "one"), RunLayout(tmp_path / "two"))
     assert found["status"] == "fail" and all(label in found["reason"] for label in lost), found["reason"]
     assert "missing" in found["reason"]
@@ -331,7 +332,7 @@ def test_two_builds_without_their_cases_truth_and_reads_fail(tmp_path, monkeypat
 
 def test_a_genairr_that_moved_during_the_builds_skips_the_comparison(tmp_path, monkeypatch):
     digests = iter(["one", "one", "two"])  # edited between the second build and the last look
-    monkeypatch.setattr(audit, "genairr_digest", lambda: next(digests))
+    monkeypatch.setattr(audit.reproducible, "genairr_digest", lambda: next(digests))
     found = audit.sim_reproducible(_config(tmp_path), RunLayout(tmp_path / "one"), RunLayout(tmp_path / "two"))
     assert found["status"] == "skipped" and found["reason"].startswith("skipped (GenAIRR moved)")
     assert "files" not in found["evidence"] and found["n"] == 0
@@ -648,10 +649,10 @@ def test_all_is_run_again_when_genairr_moves_during_it(tmp_path, oracle_variants
     # GenAIRR edited (or committed) while all ran makes its builds stale before they are scored: all is run again
     # once, and skipped when GenAIRR moves again (never a failure of the comparison)
     runs = []
-    original = audit.run_all
-    monkeypatch.setattr(audit, "run_all", lambda cfg, layout: runs.append(cfg) or original(cfg, layout))
+    original = audit.nulls.run_all
+    monkeypatch.setattr(audit.nulls, "run_all", lambda cfg, layout: runs.append(cfg) or original(cfg, layout))
     looks = iter(["one", "two", "two", "two"])
-    monkeypatch.setattr(audit, "genairr_identity", lambda: next(looks))
+    monkeypatch.setattr(audit.nulls, "genairr_identity", lambda: next(looks))
     null, oracle = audit.all_null(_config(tmp_path), RunLayout(tmp_path / "moved_once"))
     assert len(runs) == 2 and null["status"] == "pass" and oracle["status"] == "pass"
     assert null["evidence"]["genairr_moved"] == 1
@@ -704,9 +705,9 @@ def _fake_diagnosis(monkeypatch, *, same=False, wrong=(), uncovered=(), both_unc
     from alignair_assay.workflow import diagnose
 
     calls = {}
-    monkeypatch.setattr(audit, "build_suite", lambda name, layout, **kwargs: calls.setdefault("built", []).append(
+    monkeypatch.setattr(audit.nulls, "build_suite", lambda name, layout, **kwargs: calls.setdefault("built", []).append(
         name))
-    monkeypatch.setattr(audit, "truth_reference", lambda layout, names: "reference")
+    monkeypatch.setattr(audit.nulls, "truth_reference", lambda layout, names: "reference")
     monkeypatch.setattr(replay, "load_model_checked", lambda checkpoint, reference, device: ("model", "set"))
 
     def evaluate(checkpoint, layout, names, **kwargs):
@@ -766,7 +767,7 @@ def test_diagnose_of_one_model_key_or_with_changed_reads_fails(tmp_path, monkeyp
 
 def test_null_comparisons_that_pair_nothing_fail(tmp_path, monkeypatch):
     # every score NaN on both sides: every Δ is None and nothing differs, but nothing was compared
-    monkeypatch.setattr(audit, "_EXAMPLES", 100)  # the evidence keeps every problem, not only the first few
+    monkeypatch.setattr(audit.nulls, "_EXAMPLES", 100)  # the evidence keeps every problem, not only the first few
     _fake_diagnosis(monkeypatch, nan=True)
     found = audit.diagnose_null(_config(tmp_path), RunLayout(tmp_path / "diagnose"))
     assert found["status"] == "fail" and found["n"] == 0
@@ -853,7 +854,7 @@ def _fake_all(monkeypatch, *, nan=False, cases=10, excluded=0, n_paired=10, retu
                            layout.run_json(tool, "S0", "shared"))
         return 0
 
-    monkeypatch.setattr(audit, "run_all", run_all)
+    monkeypatch.setattr(audit.nulls, "run_all", run_all)
 
 
 _TIE = "tie_or_inconclusive"
@@ -957,7 +958,7 @@ def _fake_real(monkeypatch, *, wrong=(), arms=("shared", "genotype"), stopped=Fa
                                                       "oracle_self_check": {"status": "passed"}}},
                 "pooled": {"comparisons": [{**entry, "donors": [DONOR]} for entry in comparisons]}}
 
-    monkeypatch.setattr(audit, "run_real", run_real)
+    monkeypatch.setattr(audit.nulls, "run_real", run_real)
     return seen
 
 
@@ -1009,13 +1010,14 @@ def _fake_positive(monkeypatch, layout: RunLayout, *, effect="worse", row=None, 
     import types
 
     from alignair_assay.diagnostics import perturb
-    from alignair_assay.report.diagnostics import AGAINST_VERDICTS, against_summary
+    from alignair_assay.report.diagnostics_against import AGAINST_VERDICTS, against_summary
     from alignair_assay.workflow import diagnose
 
     seen = {}
     monkeypatch.setattr(perturb, "zero_module", lambda source, out, module: seen.update(
         perturbed=(source, Path(out), module)) or {"module": module, "parameters": ["w", "b"], "values": 10})
-    monkeypatch.setattr(audit, "build_suite", lambda name, layout, **kwargs: seen.setdefault("built", []).append(name))
+    monkeypatch.setattr(audit.nulls, "build_suite",
+                        lambda name, layout, **kwargs: seen.setdefault("built", []).append(name))
 
     def evaluate(checkpoint, run, names, **kwargs):
         seen["evaluate"] = (checkpoint, run.root, list(names), kwargs)
@@ -1105,7 +1107,7 @@ def surfaces(tmp_path, monkeypatch):
     write_scores(scores, layout.tool_scores("S0", "shared", "alignair-local@b"))
     _diagnosed(layout, "kb", "S0", {**{case: {**value, "head.extra": 1.0} for case, value in scores.items()},
                                     "S0:9": None})
-    monkeypatch.setattr(audit, "checkpoint_model_key", lambda checkpoint: "kb")
+    monkeypatch.setattr(audit.nulls, "checkpoint_model_key", lambda checkpoint: "kb")
     return layout
 
 
@@ -1161,8 +1163,9 @@ STORED_SPEED = {"results": {
 def _fake_speed(monkeypatch, rates: dict):
     """Stand-ins for the S1 build and ``run_speed``, which measures ``rates`` (config -> reads/s, or an error)."""
     seen = {}
-    monkeypatch.setattr(audit, "build_suite", lambda name, layout, **kwargs: seen.setdefault("built", (name, kwargs)))
-    monkeypatch.setattr(audit, "truth_reference", lambda layout, names: "reference")
+    monkeypatch.setattr(audit.igblast, "build_suite",
+                        lambda name, layout, **kwargs: seen.setdefault("built", (name, kwargs)))
+    monkeypatch.setattr(audit.igblast, "truth_reference", lambda layout, names: "reference")
 
     def run_speed(cfg, layout, reference, *, names=None, **kwargs):
         seen["run"] = (cfg, list(names))
@@ -1171,7 +1174,7 @@ def _fake_speed(monkeypatch, rates: dict):
                    for name, rate in rates.items()}
         return {"n_full": 4000, "repeats": 3, "results": results}
 
-    monkeypatch.setattr(audit, "run_speed", run_speed)
+    monkeypatch.setattr(audit.igblast, "run_speed", run_speed)
     return seen
 
 
@@ -1226,7 +1229,7 @@ def test_an_error_while_timing_igblast_warns(tmp_path, monkeypatch):
     def broken(*args, **kwargs):
         raise RuntimeError("makeblastdb failed")
 
-    monkeypatch.setattr(audit, "run_speed", broken)
+    monkeypatch.setattr(audit.igblast, "run_speed", broken)
     found = audit.igblast_speed(_config(tmp_path), _speed_run(tmp_path), RunLayout(tmp_path / "speed"),
                                 load=lambda: 0.4, sleep=lambda seconds: None)
     assert found["status"] == "warn" and "RuntimeError: makeblastdb failed" in found["reason"]
@@ -1314,7 +1317,7 @@ def test_igblast_s1_v_top1_at_this_code_within_one_and_a_half_points_passes(tmp_
         builds.append((name, layout.root, kwargs["scale"], kwargs["split"]))
         _with_s1(s1_build, layout.root)
 
-    monkeypatch.setattr(audit, "build_suite", build)
+    monkeypatch.setattr(audit.igblast, "build_suite", build)
     FakeIgblast.wrong = 2  # 98 of 100 right
     cfg = _config(tmp_path, v_top1_scale=0.02)
     found = audit.igblast_v_top1_current(cfg, sim, RunLayout(tmp_path / "speed"), RunLayout(tmp_path / "own"))
@@ -1346,7 +1349,7 @@ def test_igblast_s1_v_top1_at_this_code_reuses_the_speed_checks_s1(tmp_path, fak
     sim = _speed_run(tmp_path)
     speed = _with_s1(s1_build, tmp_path / "speed")
     builds = []
-    monkeypatch.setattr(audit, "build_suite", lambda *args, **kwargs: builds.append(args))
+    monkeypatch.setattr(audit.igblast, "build_suite", lambda *args, **kwargs: builds.append(args))
     FakeIgblast.wrong = 2
     found = audit.igblast_v_top1_current(_config(tmp_path), sim, speed, RunLayout(tmp_path / "own"))
     assert found["status"] == "pass" and builds == [] and FakeIgblast.prepared == [speed.root]
@@ -1413,7 +1416,7 @@ def _fake_checks(monkeypatch, *, raising: str | None = None, statuses: dict | No
                             ("all_null", ("null.all", "self_check.sim_oracle_current")),
                             ("diagnose_null", ("null.diagnose",)), ("positive_diagnose", ("positive.diagnose",)),
                             ("all_vs_diagnose", ("agreement.all_vs_diagnose",)), ("real_null", ("null.real",))):
-        monkeypatch.setattr(audit, function, fake(*names))
+        monkeypatch.setattr(sys.modules[getattr(audit, function).__module__], function, fake(*names))
     return roots
 
 
@@ -1447,7 +1450,7 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch,
         "null.all", "null.diagnose", "positive.diagnose", "agreement.all_vs_diagnose")}
     assert {tuple(roots) for roots in given.values()} == {(layout.audit_scratch("null_sim"),)}
     # the record names the assay code it ran (its sources' digest), and the markdown shows it
-    package = Path(audit.__file__).resolve().parents[1]
+    package = Path(audit.__file__).resolve().parents[2]  # workflow/audit/__init__.py -> alignair_assay
     code = tree_digest(package, suffixes=CODE_SUFFIXES)
     assert record["provenance"]["audit_code_sha256"] == code and f"`{code[:12]}`" in layout.audit_md.read_text()
     # the GenAIRR it ran: the frozen copy's digest, and what was frozen (the tests run a frozen copy)
@@ -1476,7 +1479,7 @@ def test_the_audit_names_the_code_it_started_with(tmp_path, monkeypatch):
     # a name of its own: diagnose's assay_code_sha256 digests other files
     cfg = _stored_runs(tmp_path)
     roots = _fake_checks(monkeypatch)
-    monkeypatch.setattr(audit, "tree_digest", lambda *args, **kwargs: "after a check" if roots else "before")
+    monkeypatch.setattr(audit.run, "tree_digest", lambda *args, **kwargs: "after a check" if roots else "before")
     record = audit.run_audit(cfg, RunLayout(tmp_path / "out"))
     assert record["provenance"]["audit_code_sha256"] == "before"
     assert "assay_code_sha256" not in record["provenance"]

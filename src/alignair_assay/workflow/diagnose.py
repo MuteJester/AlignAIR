@@ -114,13 +114,13 @@ from alignair_assay.diagnostics.profile import profile_model
 from alignair_assay.diagnostics.replay import load_model_checked, model_device, replay, unwrap_model
 from alignair_assay.metrics import is_informational, lower_is_better
 from alignair_assay.report.diagnostics import (
-    against_markdown,
     build_diagnostics_report,
     diagnostics_markdown,
     diagnostics_scalars,
     profile_markdown,
     suite_markdown,
 )
+from alignair_assay.report.diagnostics_against import against_markdown
 from alignair_assay.scoring.clusters import CLUSTER_KEYS, cluster_ids
 from alignair_assay.scoring.pipeline import load_truth, truth_reference
 from alignair_assay.stats import compare, read_changes, summarize, to_dict

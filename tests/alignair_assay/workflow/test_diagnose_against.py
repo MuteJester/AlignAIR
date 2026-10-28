@@ -31,7 +31,8 @@ from alignair_assay.core.records import write_json, write_jsonl  # noqa: E402
 from alignair_assay.diagnostics.identity import alignair_code  # noqa: E402
 from alignair_assay.diagnostics.replay import load_model_checked  # noqa: E402
 from alignair_assay.metrics import is_informational, lower_is_better  # noqa: E402
-from alignair_assay.report.diagnostics import AGAINST_SECTIONS, SUMMARY_SECTIONS  # noqa: E402
+from alignair_assay.report.diagnostics import SUMMARY_SECTIONS  # noqa: E402
+from alignair_assay.report.diagnostics_against import AGAINST_SECTIONS  # noqa: E402
 from alignair_assay.scoring.pipeline import truth_reference  # noqa: E402
 from alignair_assay.stats import summarize, to_dict  # noqa: E402
 from alignair_assay.stats.compare import sample  # noqa: E402
