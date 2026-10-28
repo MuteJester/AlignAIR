@@ -1571,6 +1571,20 @@ def test_a_check_that_raises_fails_and_the_others_go_on(tmp_path, monkeypatch):
                                                                                       "null.all"]
 
 
+def test_a_gating_check_that_returns_no_result_is_skipped_and_named(tmp_path, monkeypatch):
+    # null.all's step returns its own result but not the current oracle's: what was not checked may have failed
+    cfg = _stored_runs(tmp_path)
+    _fake_checks(monkeypatch)
+    monkeypatch.setattr(audit.nulls, "all_null", lambda *args: [check("null.all", "pass", 10, {"summary": "ok"})])
+    record = audit.run_audit(cfg, RunLayout(tmp_path / "out"))
+    found = {entry["name"]: entry for entry in record["checks"]}
+    assert len(found) == len(CHECKS)
+    missing = found["self_check.sim_oracle_current"]
+    assert missing["status"] == "skipped" and "self_check.sim_oracle_current" in missing["reason"]
+    assert record["verdict"]["status"] == "incomplete"
+    assert record["verdict"]["skipped_gating"] == ["self_check.sim_oracle_current"]
+
+
 def test_an_informational_check_that_raises_warns(tmp_path, monkeypatch):
     # speed is informational: whatever goes wrong while timing IgBLAST, it never fails the audit
     cfg = _stored_runs(tmp_path)

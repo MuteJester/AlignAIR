@@ -67,7 +67,8 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
     ``alignair_assay`` package's sources, both taken before any check runs, so the record names the code it started
     with; the GenAIRR in use), ``created_utc``, ``seconds`` and the ``checks`` in ``CHECKS`` order, each printed as it
     finishes. IgBLAST is timed first, while the machine is quietest. A check that raises fails with its error as the
-    reason (an ``INFORMATIONAL`` one warns), and the others go on. Refusals (``check_inputs``) come before any work."""
+    reason (an ``INFORMATIONAL`` one warns), and the others go on; a ``GATING`` check no step returned is skipped,
+    named in its reason (the verdict is then incomplete). Refusals (``check_inputs``) come before any work."""
     start = time.monotonic()
     assay, code = git_state(_PACKAGE), tree_digest(_PACKAGE, suffixes=CODE_SUFFIXES)
     cfg = dataclasses.replace(cfg, sim_run=absolute_path(cfg.sim_run), real_run=absolute_path(cfg.real_run),
@@ -120,6 +121,11 @@ def run_audit(cfg: AuditConfig, layout: RunLayout) -> dict:
             print(f"audit {result['name']}: {result['status']} (n={result['n']}) "
                   f"{result['evidence'].get('summary') or ''}" + (f"; {result['reason']}" if result["reason"] and
                                                                   result["status"] != "pass" else ""), flush=True)
+    for name in GATING:
+        if name not in found:  # a gating check no step returned was not checked, so it may have failed
+            found[name] = check(name, "skipped", 0, {"summary": "no result"},
+                                f"skipped: no step of the audit returned a result for {name}")
+            print(f"audit {name}: skipped (n=0) {found[name]['reason']}", flush=True)
     checks = [found[name] for name in CHECKS if name in found]
     genairr = genairr_provenance()
     record = {"kind": AUDIT_KIND, "version": AUDIT_VERSION, "verdict": verdict(checks),
