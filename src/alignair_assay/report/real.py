@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from alignair_assay.report.build import clean
 from alignair_assay.report.markdown import MISSING, alignair_code_text
+from alignair_assay.stats.compare import sample
 from alignair_assay.report.real_detail import DETAIL_SECTIONS, detail_markdown  # noqa: F401 (the sections)
 from alignair_assay.report.real_format import (
     ARMS,
@@ -312,9 +313,13 @@ def _checkpoint_comparison(summary: dict, scopes: list[dict]) -> list[str]:
             reads = ((_find(lead, a, b, arm) or {}).get("changes") or {}).get("reads") or {}
             for side, tool_did in (("fixed", "fixed"), ("broken", "broken")):
                 if reads.get(side):
-                    named = ", ".join(reads.get(f"{side}_examples", [])[:CHECKPOINT_EXAMPLES])
+                    named = ", ".join(sample(reads.get(f"{side}_examples", []), CHECKPOINT_EXAMPLES))
                     lines.append(f"- Reads {tool_did} by {_label(b)} ({lead['words']}, {arm} arm): "
                                  f"{_int(reads[side])}, e.g. {named}.")
+            if reads.get("groups"):
+                lines.append(f"- Reads fixed / broken per donor and protocol ({lead['words']}, {arm} arm): "
+                             + ", ".join(f"{label} {_int(counts['fixed'])} / {_int(counts['broken'])}"
+                                         for label, counts in reads["groups"].items()) + ".")
     return lines
 
 

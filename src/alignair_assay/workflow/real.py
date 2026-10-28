@@ -541,7 +541,7 @@ def _comparisons(cfg: RealConfig, data: real_score.DonorScoring, layout: RunLayo
         entry.update(status="compared", **real_score.comparison(
             real_score.pair_scores(data, (a, arm), (b, arm)), sensitivity=genes,
             gene_support=real_score.pair_scores(data, (a, arm), (b, arm), variant="gene_support"),
-            clusterings=True, changes=is_checkpoint_pair(a, b)))
+            clusterings=True, changes=is_checkpoint_pair(a, b), donor=data.donor))
         real_score.write_comparison(layout.real_comparison_json(data.donor, arm, f"{a}_vs_{b}"), entry)
         comparisons.append(entry)
     for tool in genotype_tools(cfg.tools):

@@ -666,7 +666,8 @@ def compare_models(layout: RunLayout, reference: Reference, names: Sequence[str]
                 found[family] = None  # e.g. the end-to-end baseline when no variant ran
                 continue
             low = {metric for metric in metrics if lower_is_better(metric)}
-            changes = read_changes(a, b, metrics, lower_is_better=low, examples=CHANGE_EXAMPLES)
+            changes = read_changes(a, b, metrics, lower_is_better=low, examples=CHANGE_EXAMPLES,
+                                   groups={truth.case_id: truth.stratum for truth in truths})
             if changes["a_only"] or changes["b_only"]:
                 shown = ", ".join([*changes["a_only_examples"], *changes["b_only_examples"]][:3])
                 raise ValueError(f"suite {name}: {changes['b_only']} reads have {family} scores only for this model "

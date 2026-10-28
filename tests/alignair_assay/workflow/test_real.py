@@ -1094,7 +1094,8 @@ def test_two_labels_of_one_checkpoint_compare_to_zero(tmp_path, fakes, monkeypat
         assert all(entry["delta"] in (0, None) and entry["verdict"] == "tie_or_inconclusive"
                    for entry in pair["overall"].values())
         assert pair["overall"]["real.v.unsupported"]["ci95"] == [0, 0]
-        assert pair["changes"]["reads"] == {"fixed": 0, "broken": 0, "fixed_examples": [], "broken_examples": []}
+        assert pair["changes"]["reads"] == {"fixed": 0, "broken": 0, "fixed_examples": [], "broken_examples": [],
+                                            "groups": {}}
         assert layout.real_comparison_json("W-97", arm, f"{a}_vs_{b}").is_file()
     assert {delta["tool"] for delta in donor["arm_deltas"]} == {"igblast", a, b}
     pooled = {(c["a"], c["b"], c["arm"]): c for c in summary["pooled"]["comparisons"]}
@@ -1126,8 +1127,14 @@ def test_a_candidate_checkpoint_counts_the_reads_it_fixes_and_breaks(tmp_path, f
     assert (r1["fixed"], r1["broken"], r1["broken_examples"]) == (0, 6, wrong)
     assert pair["changes"]["reads"]["broken"] >= 6 and pair["changes"]["reads"]["fixed"] == 0
     assert pair["overall"]["real.v.unsupported"]["delta"] == pytest.approx(0.2)
+    # the reads changed per donor and protocol, in the donor's comparison and the pool's
+    broken = pair["changes"]["reads"]["broken"]
+    assert pair["changes"]["reads"]["groups"] == {"W-97/multiplex": {"fixed": 0, "broken": broken}}
+    (pooled,) = [c for c in summary["pooled"]["comparisons"] if c["arm"] == "shared"]
+    assert pooled["changes"]["reads"]["groups"] == {"W-97/multiplex": {"fixed": 0, "broken": broken}}
     report = layout.real_report_md().read_text(encoding="utf-8")
     assert "Reads broken" in report and wrong[0] in report
+    assert f"Reads fixed / broken per donor and protocol (W-97, shared arm): W-97/multiplex 0 / {broken}." in report
     # without igblast the headline has no pair of its own and points to the checkpoint comparison
     assert "No AlignAIR tool was compared with igblast" in report and "| Scope |\n" not in report
 

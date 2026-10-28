@@ -34,6 +34,7 @@ from alignair_assay.metrics import is_informational, lower_is_better  # noqa: E4
 from alignair_assay.report.diagnostics import AGAINST_SECTIONS, SUMMARY_SECTIONS  # noqa: E402
 from alignair_assay.scoring.pipeline import truth_reference  # noqa: E402
 from alignair_assay.stats import summarize, to_dict  # noqa: E402
+from alignair_assay.stats.compare import sample  # noqa: E402
 from alignair_assay.workflow import diagnose as diagnose_module  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 from alignair_assay.workflow.diagnose import evaluate, read_case_scores, select_cases  # noqa: E402
@@ -183,7 +184,8 @@ def test_the_same_model_under_two_inputs_compares_to_zero(built, tmp_path, save_
                 assert entry["delta"] in (0.0, None) and entry["verdict"] == "tie_or_inconclusive", metric
                 assert entry["wins"] == entry["losses"] == 0
             changes = found["changes"]
-            assert changes["reads"] == {"fixed": 0, "broken": 0, "fixed_examples": [], "broken_examples": []}
+            assert changes["reads"] == {"fixed": 0, "broken": 0, "fixed_examples": [], "broken_examples": [],
+                                        "groups": {}}
             assert (changes["a_only"], changes["b_only"]) == (0, 0)
             assert all(m["fixed"] == m["broken"] == 0 for m in changes["metrics"].values())
     s1 = against["suites"]["S1"]
@@ -246,12 +248,19 @@ def test_a_perturbed_model_changes_reads_and_they_are_counted(built, tmp_path, m
             fixed = sorted(case for case, was, now in pairs if (was, now) == (wrong, right))
             broken = sorted(case for case, was, now in pairs if (was, now) == (right, wrong))
             assert (found["n_paired"], found["fixed"], found["broken"]) == (len(pairs), len(fixed), len(broken))
-            assert (found["fixed_examples"], found["broken_examples"]) == (fixed[:10], broken[:10])
+            # up to 10 examples, evenly spaced over the sorted ids (not the first strata's)
+            assert (found["fixed_examples"], found["broken_examples"]) == (sample(fixed, 10), sample(broken, 10))
             changed += len(fixed) + len(broken)
             assert result.scalars()[f"S1/against/{metric}.fixed"] == len(fixed)
             assert result.scalars()[f"S1/against/{metric}.broken"] == len(broken)
     orientation = suite["heads"]["changes"]["metrics"]["head.orientation.correct"]
     assert orientation["fixed"] > 0 and orientation["broken"] > 0 and changed > 0
+    # the reads changed, counted per stratum
+    for family in ("heads", "baseline"):
+        reads = suite[family]["changes"]["reads"]
+        assert set(reads["groups"]) <= {case.split(":")[1] for case in mine}
+        assert sum(counts["fixed"] for counts in reads["groups"].values()) == reads["fixed"]
+        assert sum(counts["broken"] for counts in reads["groups"].values()) == reads["broken"]
     entry = suite["heads"]["comparison"]["head.orientation.correct"]
     values = [(base[case]["head"]["head.orientation.correct"], mine[case]["head"]["head.orientation.correct"])
               for case in mine if mine[case]["head"]]

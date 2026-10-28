@@ -330,6 +330,24 @@ def test_read_changes_counts_the_reads_b_fixes_and_breaks():
     json.dumps(found)
 
 
+def test_read_changes_examples_are_evenly_spaced_and_counted_per_group():
+    # 25 reads fixed (c00..c24) and 5 broken (c30..c34): the examples are spread over the sorted ids, not the first
+    # ones (a suite lists its cases stratum by stratum), and with groups each group's reads fixed and broken count
+    a = {f"c{i:02d}": {"hit": 0.0 if i < 25 else 1.0} for i in range(35)}
+    b = {f"c{i:02d}": {"hit": 1.0 if i < 30 else 0.0} for i in range(35)}
+    groups = {case: "s1" if int(case[1:]) < 20 else "s2" for case in a}
+    found = read_changes(a, b, ["hit"], lower_is_better=set(), examples=5, groups=groups)
+    fixed = [f"c{i:02d}" for i in range(25)]
+    assert found["metrics"]["hit"]["fixed_examples"] == [fixed[i * 25 // 5] for i in range(5)]
+    assert found["metrics"]["hit"]["fixed_examples"] == ["c00", "c05", "c10", "c15", "c20"]
+    assert found["reads"]["fixed_examples"] == ["c00", "c05", "c10", "c15", "c20"]
+    assert found["reads"]["broken_examples"] == ["c30", "c31", "c32", "c33", "c34"]  # five of five
+    assert found["reads"]["groups"] == {"s1": {"fixed": 20, "broken": 0}, "s2": {"fixed": 5, "broken": 5}}
+    # without groups the reads carry no per-group counts
+    assert "groups" not in read_changes(a, b, ["hit"], lower_is_better=set())["reads"]
+    json.dumps(found)
+
+
 def test_read_changes_counts_the_cases_of_one_side_only():
     # r5 is only in a and r6, r7 only in b: they are not paired, and not silently dropped either (a NaN is a paired
     # case's missing value, not a missing case)

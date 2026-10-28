@@ -280,8 +280,19 @@ def one_sided(data: DonorScoring, mine: Mapping[str, dict], other: Mapping[str, 
             "documented_wrong": wrong}
 
 
+def change_groups(pair: PairScores, donor: str | None = None) -> dict[str, str]:
+    """Each read's donor and protocol, ``<donor>/<protocol>`` (the protocol is its stratum's first part): the
+    ``donor`` given for one donor's pair, else (a pool, ``pool``) the donor its read id is prefixed with."""
+    groups = {}
+    for read_id in pair.a:
+        owner = donor if donor is not None else read_id.partition("/")[0]
+        groups[read_id] = f"{owner}/{pair.strata.get(read_id, 'unknown').partition('/')[0]}"
+    return groups
+
+
 def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[str] | None = None,
-               gene_support: PairScores | None = None, clusterings: bool = False, changes: bool = False) -> dict:
+               gene_support: PairScores | None = None, clusterings: bool = False, changes: bool = False,
+               donor: str | None = None) -> dict:
     """The pair's comparison (the module docstring): ``n_reads``, ``n_clusters`` and ``multi_read_clusters`` of its
     reads, the reads ``excluded`` per segment, the ``overall`` comparison, the ``informational`` metrics' summaries,
     and with ``strata`` its ``strata``. ``sensitivity`` holds ``sd3`` with ``sensitivity`` (the SD3-only genes left
@@ -290,7 +301,7 @@ def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[s
     ``CLUSTERED`` metrics' comparison under each clustering, with its cluster count (the module docstring). With
     ``changes`` (two checkpoints of one tool), ``changes`` holds the reads ``b`` fixes and breaks against ``a`` on
     each 0/1 metric of the overall comparison, with examples (``stats.read_changes``; read ids carry the donor in a
-    pool)."""
+    pool) and the reads changed per donor and protocol (``change_groups``, ``donor`` naming one donor's pair's)."""
     members = Counter(pair.clusters.get(read_id, read_id) for read_id in pair.a)
     result = {"n_reads": len(pair.a), "n_clusters": len(members),
               "multi_read_clusters": sum(count > 1 for count in members.values()), "excluded": dict(pair.excluded),
@@ -312,7 +323,8 @@ def comparison(pair: PairScores, *, strata: bool = True, sensitivity: Iterable[s
     if changes:
         family = sorted(result["overall"])
         result["changes"] = read_changes(pair.a, pair.b, family,
-                                         lower_is_better={name for name in family if lower_is_better(name)})
+                                         lower_is_better={name for name in family if lower_is_better(name)},
+                                         groups=change_groups(pair, donor))
     if gene_support is not None:
         result.setdefault("sensitivity", {})["gene_support"] = {
             "thresholds": {"min_clonotypes": MIN_CLONOTYPES, "min_naive_clonotypes": MIN_NAIVE_CLONOTYPES},

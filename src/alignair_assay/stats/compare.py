@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from statistics import NormalDist
 
+from alignair_assay.core.cases import evenly_spaced
 from alignair_assay.metrics import CaseScores
 from alignair_assay.stats.aggregate import summarize
 
@@ -155,15 +156,17 @@ def compare(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[st
 
 
 def read_changes(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: list[str], *,
-                 lower_is_better: set[str], examples: int = 10) -> dict:
+                 lower_is_better: set[str], examples: int = 10, groups: Mapping[str, str] | None = None) -> dict:
     """The cases ``b`` fixes and breaks against ``a``, per 0/1 metric of ``metrics``: over a metric's paired cases
     (both values finite, as ``compare`` pairs them), a case is ``fixed`` when ``a`` is wrong and ``b`` right there
     (0 -> 1, or 1 -> 0 for a ``lower_is_better`` metric) and ``broken`` the other way. A metric with no paired case,
     or any paired value other than 0 and 1, has no entry. Per metric: ``n_paired``, the ``fixed`` and ``broken``
-    counts and the first ``examples`` case ids of each (sorted); ``reads``: the cases fixed, and broken, on at least
-    one metric, with their first ``examples``; ``a_only`` and ``b_only``: how many cases only ``a``, or only ``b``,
-    has (never paired, so a caller that compares the same reads must check both are 0), with their first
-    ``examples`` (``a_only_examples``, ``b_only_examples``). JSON-ready."""
+    counts and ``examples`` case ids of each (``sample``: evenly spaced over the sorted ids, since a suite lists its
+    cases stratum by stratum); ``reads``: the cases fixed, and broken, on at least one metric, with ``examples`` of
+    each and, with ``groups`` (case -> a label: its stratum, or its donor and protocol), the ``groups``' counts
+    (label -> ``fixed``, ``broken``; a case without a label counts under ``"unlabelled"``); ``a_only`` and
+    ``b_only``: how many cases only ``a``, or only ``b``, has (never paired, so a caller that compares the same reads
+    must check both are 0), with ``examples`` of each (``a_only_examples``, ``b_only_examples``). JSON-ready."""
     a_only, b_only = sorted(case for case in a if case not in b), sorted(case for case in b if case not in a)
     found, fixed_any, broken_any = {}, set(), set()
     for name in metrics:
@@ -175,14 +178,26 @@ def read_changes(a: dict[str, CaseScores], b: dict[str, CaseScores], metrics: li
         fixed = sorted(case for case, x, y in pairs if sign * (y - x) > 0)
         broken = sorted(case for case, x, y in pairs if sign * (y - x) < 0)
         found[name] = {"n_paired": len(pairs), "fixed": len(fixed), "broken": len(broken),
-                       "fixed_examples": fixed[:examples], "broken_examples": broken[:examples]}
+                       "fixed_examples": sample(fixed, examples), "broken_examples": sample(broken, examples)}
         fixed_any.update(fixed)
         broken_any.update(broken)
-    return {"metrics": found, "reads": {"fixed": len(fixed_any), "broken": len(broken_any),
-                                        "fixed_examples": sorted(fixed_any)[:examples],
-                                        "broken_examples": sorted(broken_any)[:examples]},
-            "a_only": len(a_only), "b_only": len(b_only),
-            "a_only_examples": a_only[:examples], "b_only_examples": b_only[:examples]}
+    reads = {"fixed": len(fixed_any), "broken": len(broken_any),
+             "fixed_examples": sample(sorted(fixed_any), examples),
+             "broken_examples": sample(sorted(broken_any), examples)}
+    if groups is not None:
+        counts: dict[str, dict[str, int]] = {}
+        for kind, cases in (("fixed", fixed_any), ("broken", broken_any)):
+            for case in cases:
+                label = groups.get(case, "unlabelled")
+                counts.setdefault(label, {"fixed": 0, "broken": 0})[kind] += 1
+        reads["groups"] = dict(sorted(counts.items()))
+    return {"metrics": found, "reads": reads, "a_only": len(a_only), "b_only": len(b_only),
+            "a_only_examples": sample(a_only, examples), "b_only_examples": sample(b_only, examples)}
+
+
+def sample(ids: list[str], n: int) -> list[str]:
+    """``ids`` when there are at most ``n``, else ``n`` of them evenly spaced (``core.cases.evenly_spaced``)."""
+    return list(ids) if len(ids) <= n else evenly_spaced(ids, n)
 
 
 def _cluster_sums(cases: list[str], raw: list[float], clusters: Mapping[str, str]) -> list[tuple[float, int]]:

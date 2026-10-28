@@ -493,6 +493,18 @@ def test_the_comparison_detail_of_a_suite():
     assert "No variant was run" in _section(heads_only, AGAINST_SECTIONS[0])
 
 
+def test_the_comparison_detail_counts_the_reads_fixed_and_broken_per_stratum():
+    against = _against()
+    against["suites"]["S1"]["baseline"]["changes"]["reads"]["groups"] = {"fr1_igm": {"fixed": 1, "broken": 0},
+                                                                         "full_igm": {"fixed": 0, "broken": 2}}
+    changes = _section(against_markdown(_report({"S1": _suite()}, against=against), "S1"), AGAINST_SECTIONS[2])
+    assert "| Family | Stratum | Fixed | Broken |" in changes
+    assert "| end-to-end | fr1_igm | 1 | 0 |" in changes and "| end-to-end | full_igm | 0 | 2 |" in changes
+    # heads without per-stratum counts (an older record) add no row
+    table = changes.split("| Family | Stratum | Fixed | Broken |")[1].split("\n\n")[0]
+    assert [line.split(" | ")[0] for line in table.strip().splitlines()[1:]] == ["| end-to-end", "| end-to-end"]
+
+
 def test_rendering_does_not_change_the_report():
     report = _report(against=None)
     compared = _report({"S1": _suite()}, against=_against())
