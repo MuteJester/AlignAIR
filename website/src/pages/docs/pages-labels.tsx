@@ -163,8 +163,9 @@ print(alleles, genes, families)`} />
 training_reference = build_protein_reference(source)
 assert training_reference.hash_genes == ("V", "J")
 
-# The Phase-0 audit retains its historical V/D/J scope.
-audit_reference = build_protein_reference(source, hash_genes=("V", "D", "J"))`} />
+# Include D when the reference identity must also bind the D catalogue.
+vdj_reference = build_protein_reference(source, hash_genes=("V", "D", "J"))
+assert vdj_reference.hash_genes == ("V", "D", "J")`} />
       <p>
         The identity includes the source nucleotide allele names and sequences for the selected scope,
         including quarantined rows. The scope must include every projected gene. An absent D gene
@@ -186,8 +187,15 @@ audit_reference = build_protein_reference(source, hash_genes=("V", "D", "J"))`} 
         The implementations live in <code>alignair.reference.protein</code> and
         <code> alignair.reference.labels</code>. Import <code>build_class_maps</code>
         directly from <code>alignair.reference.protein</code>.
-        Phase-0, training setup, convergence evaluation, and product loading use the shared owners.
+        Training setup, convergence evaluation, and product loading use the shared owners.
         Study-specific read filtering remains in the sample-preparation layer.
+      </p>
+      <p>
+        The exploratory <code>alignair.aa.phase0</code>, <code>aa.audit</code> and
+        <code> aa.report</code> APIs have been retired. Their simulation report and fixed-window
+        summaries have no replacement entry point. Reference inspection uses the shared
+        <code> ProteinReference.metadata()</code> and <code>EquivalenceClassMap</code> APIs above;
+        codon projection remains in <code>alignair.data.projection</code>.
       </p>
       <H2 id="migration">Migrate former protein reference imports</H2>
       <p>

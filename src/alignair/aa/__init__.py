@@ -1,1 +1,1 @@
-"""Amino-acid AlignAIR — experimental subpackage (Phase 0: audit + semantic prototype)."""
+"""Protein studies and product workflows built on shared AlignAIR components."""

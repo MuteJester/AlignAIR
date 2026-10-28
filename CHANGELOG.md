@@ -240,6 +240,9 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Unused exploratory `aa.phase0` simulation report and its dedicated `aa.audit`/`aa.report`
+  helpers and tests. Shared reference labels, codon projection and active study/product workflows
+  retain their existing owners; the historical report has no replacement entry point.
 - Retired `alignair.predict.calibrate`; shared temperature APIs now live in `alignair.calibration`.
 - Protein-only `aa.conformal` module. Product and study callers use `calibration.conformal`;
   calibration tests and their hand-computed fixture live under `tests/alignair/calibration`.
