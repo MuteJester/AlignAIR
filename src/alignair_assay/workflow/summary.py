@@ -151,16 +151,15 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
     manifest's settings record them).
     ``failed_runs`` lists every expected run whose status (``run_statuses``) is not ``ok``, then ``scoring_errors``
     (runs that succeeded but could not be scored). ``suites`` has, per suite: ``name``, ``title``, ``purpose``,
-    ``primary``, ``cases``, ``excluded`` (from ``build.json``), the ``oracle`` check (``status`` perfect, imperfect or not scored; ``cases``,
-    ``problems`` and the first ``examples`` as ``[case id, metric, value]``), the ``truth`` summary
-    (``truth_counts``) and per arm whether the two tools were ``compared``, the ``link`` to the arm's
+    ``primary``, ``cases``, ``excluded`` (from ``build.json``), the ``oracle`` check (``status`` perfect, imperfect or
+    not scored; ``cases``, ``problems`` and the first ``examples`` as ``[case id, metric, value]``), the ``truth``
+    summary (``truth_counts``) and per arm whether the two tools were ``compared``, the ``link`` to the arm's
     ``comparison.md`` (relative to the run directory), the primary-metric ``rows`` of ``comparison.json`` and their
-    ``verdicts`` counts. ``oracle_failures`` repeats the suites whose oracle is not perfect (with the ``reason`` when
-    it was not scored, from the oracle's failed run: an unchecked truth, not a defect), and ``truth_warnings``
-    (``suite``, ``unscorable`` per gene, cases with ``warnings``, the ``build_json`` path) the suites with unscorable
-    segments, which are not scored. ``s10_vs_s1``, ``s11_parity`` and ``speed`` (``speed_summary``) are None
-    without their data, and ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see
-    the functions below).
+    ``verdicts`` counts. ``oracle_failures`` repeats the suites whose oracle is not perfect (with the ``reason`` when it
+    was not scored, from the oracle's failed run: an unchecked truth, not a defect), and ``truth_warnings`` (``suite``,
+    ``unscorable`` per gene, cases with ``warnings``, the ``build_json`` path) the suites with unscorable segments,
+    which are not scored. ``s10_vs_s1``, ``s11_parity`` and ``speed`` (``speed_summary``) are None without their data,
+    and ``genotype_arms`` and ``excess_alleles`` are empty without a genotype arm or donors (see the functions below).
     """
     a, b = cfg.tools
     failed = [status for status in run_statuses(layout, cfg).values() if status["status"] != "ok"]

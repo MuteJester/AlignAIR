@@ -49,13 +49,17 @@ PYTHONPATH=FROZEN:src python -m alignair_assay diagnose --run-dir .private/assay
     --checkpoint CAND.alignair --against BASE.alignair --device cuda
 ```
 
-**2. Simulated dev suites, end to end** (`all`: the AlignAIR CLI's AIRR output; it builds its own suites):
+**2. Simulated dev suites, end to end** (`all`: the AlignAIR CLI's AIRR output; it builds its own suites, at the
+scale of step 1's, so they are the same build):
 
 ```
 PYTHONPATH=FROZEN:src python -m alignair_assay all --run-dir .private/assay/iter_sim --split dev --suites S1,S3 \
-    --tools alignair-local@base,alignair-local@cand --checkpoint base=BASE.alignair \
+    --scale 0.1 --tools alignair-local@base,alignair-local@cand --checkpoint base=BASE.alignair \
     --checkpoint cand=CAND.alignair --device cuda
 ```
+
+The next candidate in the same run directory is another configuration: give its file as `--checkpoint cand=...` and
+add `--force`. Only the candidate's runs are redone; the builds and the base's runs are kept.
 
 **3. Real dev donors** (`real`, with Docker running; each checkpoint is also compared with IgBLAST):
 
@@ -362,13 +366,13 @@ After a re-freeze, audit again before comparing anything.
   `band.speed`) gates: it can fail the audit, and `audit.md`'s "Gates" column says which. The audit exits 0
   (`AUDIT PASS`) only when no check failed, no gating check was skipped and one passed; 2 (`AUDIT FAIL`) when a check
   failed or nothing passed; 3 (`AUDIT INCOMPLETE`) when a gating check was skipped (GenAIRR moved during a build, no
-  IgBLAST release), since what was not checked may have failed: never a pass. A check that passes on nothing (n 0), or raises, fails
-  (an informational one warns). Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on
-  each audit; `--out` may not overlap a stored run. The stored runs are never written; `null.real` runs `real`, whose
-  fetch step updates its download bookkeeping under `--data-root` (the fetch records and manifest beside the
-  downloads, outside both stored runs). The record names the code it started with, taken before any check runs:
-  the assay's git state and `audit_code_sha256`, the digest of all of `src/alignair_assay`'s sources (`diagnose`'s
-  `assay_code_sha256` digests fewer).
+  IgBLAST release), since what was not checked may have failed: never a pass. A check that passes on nothing (n 0), or
+  raises, fails (an informational one warns). Everything re-run goes into `OUT/audit/scratch/<check>/`, replaced on each
+  audit; `--out` may not overlap a stored run. The stored runs are never written; `null.real` runs `real`, whose fetch
+  step updates its download bookkeeping under `--data-root` (the fetch records and manifest beside the downloads,
+  outside both stored runs). The record names the code it started with, taken before any check runs: the assay's git
+  state and `audit_code_sha256`, the digest of all of `src/alignair_assay`'s sources (`diagnose`'s `assay_code_sha256`
+  digests fewer).
 
 ## Layers and dependency rule
 
@@ -795,8 +799,8 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   import torch: `diagnose` imports the diagnostics layer when it runs. With `--against` (the baseline: an existing
   file is a checkpoint, made absolute; otherwise a model key), the baseline is diagnosed first (or read by its key),
   and one more line per suite gives the headline Δ (this model − the baseline), the significant metrics, the reads
-  fixed (the baseline wrong, this model right) and broken and the detail file; a missing checkpoint, a model key without current diagnostics, or diagnostics that differ in
-  anything but the model exit with status 2 (see Model diagnostics).
+  fixed (the baseline wrong, this model right) and broken and the detail file; a missing checkpoint, a model key without
+  current diagnostics, or diagnostics that differ in anything but the model exit with status 2 (see Model diagnostics).
 - `real` runs `workflow.real.run_real`: each pilot donor's raw reads fetched, its genomic genotype captured, its reads
   preprocessed and capped, their truth computed, the tools run on the shared and genotype arms, R1 scored and the
   pairs compared cluster-aware, per donor and pooled, into `real/real_summary.json`, rendered as
@@ -1713,9 +1717,9 @@ threads, the batch size and the SHA-256 of the profiled reads. `diagnostics.json
 (`report.diagnostics.build_diagnostics_report`: `model`, `config`, `suites`, `profile`, `against`, `summary`), the
 summary `diagnostics.md` (`diagnostics_markdown`), each diagnosed suite's `<S>/report.md` (`suite_markdown`) and,
 with a comparison, `<S>/against_<other key>.md` (`against_markdown`), and with a profile, `profile.md`
-(`profile_markdown`) are rewritten on every call; the comparison itself is computed afresh from the per-case scores. Every file is written through a temporary
-file of its own in the same directory (`tempfile.NamedTemporaryFile`) and renamed into place, so a half-written
-one is never read, even with two writers.
+(`profile_markdown`) are rewritten on every call; the comparison itself is computed afresh from the per-case scores.
+Every file is written through a temporary file of its own in the same directory (`tempfile.NamedTemporaryFile`) and
+renamed into place, so a half-written one is never read, even with two writers.
 
 The tests (`tests/alignair_assay/workflow/test_diagnose.py`) run end to end on S0 and S1 at scale 0.02 with the
 small random-init model, and pin the cache: a second call reuses every suite, and a new checkpoint, another code
@@ -2175,11 +2179,11 @@ carried gene with 10 clonotypes of them or more), failed runs and refusals, and 
   not across the report.
 - **Exclusions** come from the call's own genes and tool-neutral truth alone, never from whether the call is right:
   a right call and a wrong call to the same genes are excluded alike; a call into an excluded gene still takes the
-  read out of R1 for both tools (see R1 per read above). The reasons: `not_captured`, `uncalled`, `novel_gene`, `nonfunctional` (Mikelov et al. 2024 leave
-  nonfunctional alleles out), `beyond_318` (no comparison through IMGT 318 is possible; Peres et al. 2023),
-  `half_resolved`, `dropped_truth` and the `unmapped` guard. Each run's counts per reason are shown, so steering
-  reads into excluded genes stays visible, and a table names, per donor, where its genomic truth stops: its uncalled
-  genes with what a contig holds there, its absent genes and its half-resolved genes.
+  read out of R1 for both tools (see R1 per read above). The reasons: `not_captured`, `uncalled`, `novel_gene`,
+  `nonfunctional` (Mikelov et al. 2024 leave nonfunctional alleles out), `beyond_318` (no comparison through IMGT 318 is
+  possible; Peres et al. 2023), `half_resolved`, `dropped_truth` and the `unmapped` guard. Each run's counts per reason
+  are shown, so steering reads into excluded genes stays visible, and a table names, per donor, where its genomic truth
+  stops: its uncalled genes with what a contig holds there, its absent genes and its half-resolved genes.
 - **Two sensitivity variants** sit beside the primary: R1 without the reads called, by either tool, to an SD3-only
   gene (21 genes: those of the 33 of the paper's 137 novel alleles that no subject of the VDJbase genomic cohort
   carries), and R1 with Mikelov et al. 2024's gene-support thresholds (at least 10 clonotypes and 3 naive clonotypes
