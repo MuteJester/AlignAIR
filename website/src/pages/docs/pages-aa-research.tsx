@@ -22,6 +22,7 @@ const aaGuardResearch: DocPage = {
         [<code>disjoint</code>, "Reproduce the historical pre-split corpus digest and audit fresh-record overlaps without opening the sealed partition."],
         [<code>profiles.alignment</code>, "Germline allele selection, translation, protein deduplication, and alignment."],
         [<code>profiles.builder.build_profile_bank</code>, "Build a complete HMM bank from checksum-pinned local sources."],
+        [<code>feature_cache</code>, "Prepare and validate HMM features, retain cache identities in memory, and publish persistent caches atomically."],
         [<code>training.manifests</code>, "Bind explicit study settings to data, profile, partition, and fold identities."],
         [<code>training.studies</code>, "Run seed sweeps and leave-one-category-out training."],
         [<code>checkpoint</code>, "Verify guard runtime identities and training contracts; load and atomically publish trusted local checkpoints."],
@@ -133,6 +134,48 @@ python -m alignair.aa.guard.training loco --help`} />
         for a new run. Research artifacts are not migrated automatically.
       </p>
 
+      <H2 id="feature-cache">Prepare features before tensor assembly</H2>
+      <CodeBlock lang="python" code={`from alignair.aa.guard.profiles import load_bank
+from alignair.aa.guard.feature_cache import precompute_features, sequence_key
+
+bank = load_bank("study/profile-bank")
+records = [{"aa": "QVQLVQSGAEVKKPGASVKVSCKASGYTF"}]
+cache = precompute_features(
+    records, bank, bank_checksum=bank.checksum(),
+    cache_path="study/features.json", mask_groups=frozenset(),
+)
+vector = cache[sequence_key(records[0]["aa"])]`} />
+      <p>
+        Feature preparation lives in <code>alignair.aa.guard.feature_cache</code>, separate from
+        training targets. It verifies the supplied bank checksum before reuse or extraction, hashes
+        exact sequence text, and computes each missing unique sequence once. It does not strip,
+        change case or truncate inputs. All requested records are checked before extraction starts.
+        Cached vectors require the current feature width and finite numeric values; strings and
+        booleans are rejected. Errors include the cache path, record index or sequence digest where applicable.
+      </p>
+      <p>
+        The returned <code>FeatureCache</code> is a read-only mapping retaining the bank checksum,
+        ordered feature names and masked profile groups. Indexing returns a list copy;
+        <code> dict(cache)</code> gives a JSON-compatible vector mapping. Training and tensor assembly
+        reject a bound cache from another bank or fold. Plain in-memory mappings remain supported
+        through explicit binding and vector validation; the caller owns their declared identities.
+        These checks establish compatibility and shape, not authenticity of feature values.
+      </p>
+      <p>
+        Valid version-1 cache files remain reusable without rewriting or recomputing their features.
+        Legacy unbound files and mismatched bank/order/mask identities are rebuilt. Malformed files
+        and invalid vectors under a matching identity are refused without replacement. Extensions
+        publish atomically after all extraction succeeds. Cache files and checkpoints retain their
+        existing logical schemas; vector-only checkpoint hashes preserve native integer/float encodings.
+      </p>
+      <p>
+        Import <code>precompute_features</code> from the cache module; its former
+        <code> training.data</code> location is removed. <code>training.data.build_tensors</code>
+        consumes prepared features and no longer accepts a <code>bank</code> argument or performs
+        HMM searches. Prepare missing sequences first; a missing feature raises
+        <code> DataContractError</code>. Length filtering, labels, supervision masks, train-only
+        normalization and sampling rules retain their existing behavior.
+      </p>
       <H2 id="checkpoints">Guard checkpoint compatibility</H2>
       <p>
         <code>checkpoint.load_checkpoint</code> requires the expected <code>training_contract</code>

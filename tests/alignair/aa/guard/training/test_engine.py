@@ -252,3 +252,13 @@ def test_failure_report_publication_keeps_original_training_diagnostic_and_previ
     assert caught.value.context['run_tag'] == 'C4.s7' and isinstance(caught.value.__cause__, OSError)
     assert path.read_bytes() == b'previous failure report' and list(config.checkpoint_dir.iterdir()) == [path]
     assert not config.budget_path.exists()
+
+
+@pytest.mark.parametrize('identity', [{'bank_checksum': 'other'}, {'bank_checksum': 'bank', 'mask_groups': {'human_igk'}}])
+def test_training_rejects_bound_cache_identity_before_outputs_or_model_allocation(run_inputs, monkeypatch, identity):
+    from alignair.aa.guard.feature_cache import FeatureCache
+    cache = FeatureCache(run_inputs['feat_cache'], **identity)
+    def forbidden(*args, **kwargs): pytest.fail('incompatible cache must fail before model allocation')
+    monkeypatch.setattr(engine, 'GuardModel', forbidden)
+    with pytest.raises(ArtifactIntegrityError): engine.train_one(**{**run_inputs, 'feat_cache': cache})
+    assert not run_inputs['config'].checkpoint_dir.exists() and not run_inputs['config'].budget_path.exists()

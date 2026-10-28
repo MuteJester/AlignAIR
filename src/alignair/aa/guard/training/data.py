@@ -1,55 +1,18 @@
 """Feature preparation and target masks for guard training."""
 from __future__ import annotations
 
-import hashlib
-import json
 import random
-from pathlib import Path
 
 import torch
 
 from alignair.aa.guard.classes import COMPLETENESS_INDEX, DOMAIN_TYPE_INDEX
-from alignair.aa.guard.features import FEATURE_NAMES, hmm_features
+from alignair.aa.guard.features import FEATURE_NAMES
+from alignair.aa.guard.feature_cache import bind_feature_cache, feature_vector
 from alignair.aa.guard.tokenizer import enforce_length_contract
 from alignair.errors import DataContractError
 
 COMPLETE_MAP = {"cdr3_only": "too_short", "j_only": "missing_v_anchor", "v_only": "missing_j_anchor",
                 "leader_vh": "contaminated", "vh_constant": "contaminated"}
-
-
-def precompute_features(records, bank, *, bank_checksum, cache_path, mask_groups=frozenset()):
-    """Cache features bound to the bank, feature ordering, and excluded profiles.
-
-    Legacy unbound caches or caches from a different bank/fold are rebuilt.
-    Malformed JSON is reported rather than overwritten.
-    """
-    path = Path(cache_path)
-    identity = {
-        "schema_version": 1, "bank_checksum": bank_checksum,
-        "feature_names": list(FEATURE_NAMES), "mask_groups": sorted(mask_groups),
-    }
-    stored = {}
-    if path.exists():
-        try:
-            stored = json.loads(path.read_text())
-        except json.JSONDecodeError as exc:
-            raise DataContractError("Invalid guard feature cache JSON.", context={"path": path}) from exc
-        if not isinstance(stored, dict):
-            raise DataContractError("Guard feature cache must be a mapping.", context={"path": path})
-    matched = all(stored.get(key) == value for key, value in identity.items())
-    cache = stored.get("vectors", {}) if matched else {}
-    if not isinstance(cache, dict):
-        raise DataContractError("Guard feature cache vectors must be a mapping.", context={"path": path})
-    changed = not matched
-    for record in records:
-        key = hashlib.sha256(record["aa"].encode()).hexdigest()
-        if key not in cache:
-            cache[key] = hmm_features(bank, record["aa"], mask_groups=mask_groups).to_vector().tolist()
-            changed = True
-    if changed:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({**identity, "vectors": cache}))
-    return cache
 
 
 def domain_type(rec):
@@ -101,15 +64,15 @@ def source_setup(train):
 
 
 def build_tensors(records, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, is_oe=False,
-                  mask_groups=frozenset(), *, bank):
-    """Build tensors with objective-specific masks and an explicitly supplied HMM bank."""
+                  mask_groups=frozenset()):
+    """Build tensors from prepared features with objective-specific targets and masks."""
+    feat_cache = bind_feature_cache(feat_cache, bank_checksum=bank_checksum, mask_groups=mask_groups)
     ids_l, mask_l, hmm_l = [], [], []
     dt_t, dt_m, cp_t, cp_m, app_t, en_out, en_m, src_t, src_m, ct_t, ct_m = ([] for _ in range(11))
     for r in records:
         if not enforce_length_contract(r["aa"]).ok:
             continue
-        h = hashlib.sha256(r["aa"].encode()).hexdigest()
-        vec = feat_cache.get(h) or hmm_features(bank, r["aa"], mask_groups=mask_groups).to_vector().tolist()
+        vec = feature_vector(feat_cache, r["aa"])
         hmm_l.append(fusion.normalize(vec, feature_names=FEATURE_NAMES, bank_checksum=bank_checksum))
         i, m = tok.encode(r["aa"]); ids_l.append(i); mask_l.append(m)
         if is_oe:

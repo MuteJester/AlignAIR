@@ -11,7 +11,8 @@ from alignair.aa.guard.loco import LOCO_FOLDS, LOCO_MASK_HASH, masked_profiles_f
 from alignair.aa.guard.train_data import partition_by_parent_lineage
 from alignair.errors import ArtifactIntegrityError
 from alignair.io.atomic import atomic_write_json
-from .data import make_oe, precompute_features, source_setup
+from .data import make_oe, source_setup
+from alignair.aa.guard.feature_cache import precompute_features
 from .engine import RunConfig, resolve_device, train_one
 from .reporting import write_loco_report, write_sweep_report
 from .seeds import choose_production_seed

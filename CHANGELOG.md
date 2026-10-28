@@ -85,6 +85,10 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Guard feature caching now lives in `aa.guard.feature_cache`, returning a read-only mapping with
+  bank/order/profile-mask identity and validated finite vectors. Valid version-1 files remain usable;
+  extensions publish atomically. Tensor assembly consumes prepared features instead of rerunning HMM
+  searches and no longer accepts `bank`; the old `training.data.precompute_features` import is removed.
 - Guard accounting, progress snapshots, failure diagnostics and summaries publish atomically.
   Accounting validates finite nonnegative durations, integer parameter counts and existing ledgers
   before updates, preserving run replacement and metadata rules. Failed diagnostic publication retains

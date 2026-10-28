@@ -15,6 +15,7 @@ import torch.nn.functional as F
 
 from alignair.aa.guard.checkpoint import build_provenance, load_checkpoint, save_checkpoint
 from alignair.aa.guard.features import FEATURE_NAMES
+from alignair.aa.guard.feature_cache import bind_feature_cache, feature_vector
 from alignair.aa.guard.fusion import fit_fusion
 from alignair.aa.guard.losses import energy_margin_loss, supcon_loss
 from alignair.aa.guard.model import GuardModel
@@ -55,7 +56,7 @@ def resolve_device(requested):
 def _run_contract(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sources, config,
                   mask_groups, extra_provenance):
     """Bind completed and resumable checkpoints to their exact training inputs."""
-    inputs = {"train": train, "dev": dev, "oe": oe, "features": feat_cache}
+    inputs = {"train": train, "dev": dev, "oe": oe, "features": dict(feat_cache.vectors)}
     contract = {
         "schema_version": 1, "candidate": cid, "seed": int(seed),
         "manifest": config.manifest, "source_vocabulary": cat2id, "n_sources": n_sources,
@@ -106,6 +107,7 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
         raise ConfigurationError("Guard training requires nonempty training and development records.")
     if bank.checksum() != manifest["bank_checksum"]:
         raise ArtifactIntegrityError("Profile bank differs from training manifest.")
+    feat_cache = bind_feature_cache(feat_cache, bank_checksum=manifest["bank_checksum"], mask_groups=mask_groups)
     ckpt_dir = Path(ckpt_dir) if ckpt_dir else Path(config.checkpoint_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     tag = run_tag or f"{cid}.s{seed}"                  # LOCO passes e.g. C1.s2.igk_igl (no filename collision)
@@ -114,7 +116,7 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
                              config, mask_groups, extra_provenance)
     tr = manifest["training"]; W = manifest["loss_weights"]; margins = manifest["energy_margins"]
     bank_checksum = manifest["bank_checksum"]
-    fusion = fit_fusion(FEATURE_NAMES, [feat_cache[hashlib.sha256(r["aa"].encode()).hexdigest()]
+    fusion = fit_fusion(FEATURE_NAMES, [feature_vector(feat_cache, r["aa"])
                                         for r in train], bank_checksum)   # TRAIN-only normalization
     xp = dict(extra_provenance or {})
     xp["normalization_stats_sha256"] = hashlib.sha256(fusion.mean.tobytes() + fusion.std.tobytes()).hexdigest()
@@ -133,9 +135,9 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
     cfg = CANDIDATE_CONFIG[cid]                         # static config (no throwaway model / no source_head)
     torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
     tok = AaTokenizer(max_len=MAX_LEN)
-    T_dev = build_tensors(dev, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, mask_groups=mask_groups, bank=bank)
+    T_dev = build_tensors(dev, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, mask_groups=mask_groups)
     T_oe = build_tensors(oe, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, is_oe=True,
-                         mask_groups=mask_groups, bank=bank) if oe else None
+                         mask_groups=mask_groups) if oe else None
 
     model = GuardModel(cid, hmm_dim=len(FEATURE_NAMES), n_sources=n_sources).to(device)   # size source_head to data
     opt = torch.optim.AdamW(model.parameters(), lr=manifest["optimizer"]["lr"],
@@ -189,10 +191,10 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
             progress_step = step
             batch = [sampling_rng.choice(by_role[r]) for r in roles for _ in range(per_role)]
             Tb = build_tensors(batch, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt,
-                               mask_groups=mask_groups, bank=bank)
+                               mask_groups=mask_groups)
             if oe and n_oe:
                 Toe = build_tensors([sampling_rng.choice(oe) for _ in range(n_oe)], feat_cache, fusion, tok,
-                                    bank_checksum, cat2id, eligible_dt, is_oe=True, mask_groups=mask_groups, bank=bank)
+                                    bank_checksum, cat2id, eligible_dt, is_oe=True, mask_groups=mask_groups)
                 for k in Tb:
                     Tb[k] = torch.cat([Tb[k], Toe[k]], dim=0)
             opt.zero_grad()

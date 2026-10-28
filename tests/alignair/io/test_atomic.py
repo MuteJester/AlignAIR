@@ -54,12 +54,13 @@ def test_domain_error_inherits_requested_stage_and_final_destination(tmp_path):
 
 
 @pytest.mark.parametrize('sort_keys', [False, True])
-def test_json_formatting_preserves_standard_escaping_and_requested_key_order(tmp_path, sort_keys):
+@pytest.mark.parametrize('indent', [None, 2])
+def test_json_formatting_preserves_standard_escaping_and_requested_key_order(tmp_path, sort_keys, indent):
     import json
     path = tmp_path/'nested'/'report.json'
     value = {'z': '§5', 'a': [None, .5]}
-    atomic.atomic_write_json(path, value, sort_keys=sort_keys)
-    assert path.read_bytes() == json.dumps(value, indent=2, sort_keys=sort_keys).encode('utf-8')
+    atomic.atomic_write_json(path, value, sort_keys=sort_keys, indent=indent)
+    assert path.read_bytes() == json.dumps(value, indent=indent, sort_keys=sort_keys).encode('utf-8')
 
 
 @pytest.mark.parametrize('value', [float('nan'), float('inf'), object()])

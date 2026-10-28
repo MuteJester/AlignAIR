@@ -37,15 +37,16 @@ def atomic_write_text(path, text, *, stage="artifact_write"):
     atomic_write(path, write, stage=stage)
 
 
-def atomic_write_json(path, value, *, sort_keys=True, stage="artifact_write"):
+def atomic_write_json(path, value, *, sort_keys=True, indent=2, stage="artifact_write"):
     """Publish finite JSON, with contextual encoding and I/O errors and no partial replacement.
 
-    Encoding completes before any output is created. Formatting uses two-space indentation and
-    the standard JSON Unicode escaping policy. This shares atomic_write's per-file guarantees.
+    Encoding completes before any output is created. Formatting defaults to two-space indentation;
+    use indent=None for compact artifacts. Standard JSON Unicode escaping is retained. This shares
+    atomic_write's per-file guarantees.
     """
     with error_context(stage=stage, path=str(path)):
         try:
-            text = json.dumps(value, indent=2, sort_keys=sort_keys, allow_nan=False)
+            text = json.dumps(value, indent=indent, sort_keys=sort_keys, allow_nan=False)
         except (TypeError, ValueError) as exc:
             raise InputError("artifact requires finite JSON values") from exc
         try:
