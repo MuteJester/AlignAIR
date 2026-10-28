@@ -10,13 +10,15 @@ Every configuration follows the same per-gene segmentation and soft-cutout class
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import torch
 import torch.nn as nn
 
 from .config import AlignAIRConfig
 from .boundaries import boundary_masks
 from .components import architecture_components
-from ..errors import InputError
+from ..errors import InputError, ModelIntegrityError
 from ..neural.heads.orientation import apply_orientation
 
 
@@ -31,6 +33,28 @@ class AlignAIR(nn.Module):
         self.branches = nn.ModuleDict({s.name: components.gene_branch(s, cfg) for s in cfg.gene_specs})
         self.meta_heads = nn.ModuleDict(components.meta_heads(cfg) if cfg.use_meta_heads else {})
         self.state_branch = components.state_head(cfg) if cfg.state_head else None
+
+    @classmethod
+    def from_state_dict(cls, cfg: AlignAIRConfig, state_dict: Mapping[str, object], *,
+                        device: str | torch.device = "cpu", source=None) -> "AlignAIR":
+        """Restore decoded weights strictly, then place the model in evaluation mode.
+
+        Construction uses the configured architecture on CPU before device placement. Artifact
+        decoders own configuration migrations, reference/label checks, and calibration binding;
+        this factory neither reads files nor relaxes key/shape matching. ``source`` supplies a
+        diagnostic path only. Parameters retain gradients for subsequent fine-tuning.
+        """
+        with torch.device("cpu"):
+            model = cls(cfg)
+        try:
+            model.load_state_dict(state_dict, strict=True)
+        except (RuntimeError, TypeError) as exc:
+            raise ModelIntegrityError(
+                f"cannot restore model weights: {exc}",
+                context={"stage": "model_restoration", "path": source,
+                         "architecture": cfg.architecture},
+                hint="Use weights and configuration from the same model artifact.") from exc
+        return model.to(device).eval()
 
     def forward(self, batch: dict) -> dict:
         tokens = batch["tokenized_sequence"]

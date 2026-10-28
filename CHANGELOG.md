@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared `AlignAIR.from_state_dict` restoration for safe and trusted legacy loaders, with strict
+  weight diagnostics, CPU construction and explicit device placement. Main artifact loading checks
+  embedded reference and label bindings before allocating model parameters.
 - Shared model resolution for the main and protein product loaders, including catalog version pins,
   verified offline caches and Hub repositories. Protein loading and CLI accept registry, revision,
   offline and token options; local filenames remain intact when a revision is supplied.

@@ -102,6 +102,35 @@ assert setup.protein_reference is protein_reference`} />
         raises <code>DataContractError</code>. Component-specific shape constraints still apply during
         model construction.
       </p>
+      <H2 id="restore">Restore decoded model weights</H2>
+      <CodeBlock lang="python" code={`from alignair.core import AlignAIR
+
+# config and state_dict have already been decoded and their artifact bindings checked.
+model = AlignAIR.from_state_dict(
+    config, state_dict, device="cpu", source="models/candidate.alignair",
+)`} />
+      <p>
+        <code>AlignAIR.from_state_dict</code> constructs the configured architecture on CPU, loads
+        its state with strict key and shape checks, then moves the model to the
+        requested device and selects evaluation mode. Parameters retain gradients for fine-tuning.
+        Construction uses the registered components described by
+        <code> config.architecture</code>; the factory does not infer an architecture from weight keys.
+      </p>
+      <p>
+        Missing or unexpected keys, incompatible shapes, and parameter entries PyTorch cannot load raise
+        <code> ModelIntegrityError</code> with a <code>model_restoration</code> stage, architecture,
+        and diagnostic source path. The original PyTorch error remains the exception cause.
+        Architecture registration and device-placement errors retain their original error types.
+      </p>
+      <p>
+        Artifact loaders use this factory after decoding and their format-specific preflight.
+        The safe main format has its embedded reference hashes and optional label schema verified
+        before allocating model parameters. Protein product loading retains integrity, class-map, head-count, and
+        calibration binding checks, including historical configuration normalization. Legacy pickle
+        decoding still requires explicit trust. For normal inference, use the
+        <DocLink to="model-inference"> public loading APIs</DocLink>; this factory accepts decoded
+        state only and does not establish reference or calibration identity by itself.
+      </p>
       <H2 id="counts">Count-only construction and existing callers</H2>
       <p>
         When only validated counts are available, <code>build_model_config(v_label_count,

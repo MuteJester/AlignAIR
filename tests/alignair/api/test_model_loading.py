@@ -1,9 +1,13 @@
 import pytest
 import GenAIRR.data as gd
+import torch
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair import model_file as mf
 from alignair.api import load_model as api_load
+from alignair.core import prepare_model
+from alignair.errors import ConfigurationError, ModelError
+from alignair.reference import ReferenceSet
 
 pytestmark = pytest.mark.integration
 
@@ -16,3 +20,44 @@ def test_api_load_model_reads_alignair_without_dataconfig(tmp_path):
     model, reference = api_load(str(p))                 # NO dataconfigs= needed
     assert reference.gene("V").names[0].startswith("IGH")
     assert model.cfg.v_allele_count == cfg.v_allele_count
+
+
+@pytest.fixture
+def legacy_checkpoint(tmp_path):
+    reference = ReferenceSet.from_genotype({"V": {"V1": "ATGTGTAAA"}, "J": {"J1": "TGGAAA"}})
+    setup = prepare_model(reference, max_seq_length=128, embed_dim=4, filters=4, block_out=8)
+    original = setup.build_model().eval()
+    # A historical key layout still belongs to the legacy decoder, before strict restoration.
+    state = {name.replace("branches.v.cls_head.", "cls_head.v."): value
+             for name, value in original.state_dict().items()}
+    path = tmp_path / "legacy.pt"
+    torch.save({"config": setup.config.__dict__, "model": state}, path)
+    return path, reference, original
+
+
+def test_legacy_restoration_keeps_trust_gate_key_migration_and_reference(legacy_checkpoint, monkeypatch):
+    path, reference, original = legacy_checkpoint
+    original_load = torch.load
+    calls = []
+    def tracked_load(*args, **kwargs):
+        calls.append(kwargs)
+        return original_load(*args, **kwargs)
+    monkeypatch.setattr(torch, "load", tracked_load)
+    with pytest.raises(ModelError, match="trust_pickle"):
+        api_load(path, reference=reference)
+    assert calls == []
+    model, bound_reference = api_load(path, reference=reference, trust_pickle=True)
+    assert bound_reference is reference
+    assert all(not module.training for module in model.modules())
+    assert calls == [{"map_location": "cpu", "weights_only": False}]
+    for name, weights in original.state_dict().items():
+        assert torch.equal(model.state_dict()[name], weights), name
+
+
+def test_legacy_missing_reference_fails_before_model_allocation(legacy_checkpoint, monkeypatch):
+    path, _, _ = legacy_checkpoint
+    def forbidden(*args, **kwargs):
+        raise AssertionError("model allocated before reference preflight")
+    monkeypatch.setattr(AlignAIR, "__init__", forbidden)
+    with pytest.raises(ConfigurationError, match="reference"):
+        api_load(path, trust_pickle=True)

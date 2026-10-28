@@ -45,8 +45,7 @@ def _convert_pt(src, dst, dataconfig) -> int:
             "--dataconfig is required to convert a legacy .pt (the reference the model was trained on)"))
     ck = torch.load(src, map_location="cpu", weights_only=False)   # pickle (trusted via --trust-pickle)
     cfg = AlignAIRConfig(**ck["config"])
-    model = AlignAIR(cfg)
-    model.load_state_dict(_remap_state_dict(ck["model"]), strict=True)
+    model = AlignAIR.from_state_dict(cfg, _remap_state_dict(ck["model"]), source=src)
     mf.save_model(dst, model, dataconfigs=dataconfig, include_trusted_pickle=False,
                   training={"steps": int(ck.get("step", 0)), "batch_size": 0})
     return 0

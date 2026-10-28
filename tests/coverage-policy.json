@@ -1,6 +1,8 @@
 {
   "schema": "alignair.coverage-policy.v1",
   "files": {
+    "src/alignair/core/model.py": {"statements": 95, "branches": 95},
+    "src/alignair/model_file/__init__.py": {"statements": 95, "branches": 90},
     "src/alignair/core/runtime.py": {"statements": 100, "branches": 100},
     "src/alignair/core/probabilities.py": {"statements": 98, "branches": 95},
     "src/alignair/calibration/conformal.py": {"statements": 98, "branches": 95},

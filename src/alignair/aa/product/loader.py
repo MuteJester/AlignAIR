@@ -249,10 +249,8 @@ def _load_legacy_pickle(path: str, *, device: str) -> AAPredictor:
     dev = resolve_device(device)
     # Historical protein artifacts predate explicit head metadata; normalize at the format boundary.
     cfg = cfg.with_amino_acid_heads()
-    model = AlignAIR(cfg)
+    model = AlignAIR.from_state_dict(cfg, ck["model"], device=dev, source=path)
     cfg = model.cfg
-    model.load_state_dict(ck["model"], strict=True)
-    model.to(dev).eval()
     return AAPredictor(model=model, cfg=cfg, tokenizer=AAProteinTokenizer(), class_maps={},
                        d_allele_order=[], asc_multi={}, conformal={},
                        card={"artifact_type": "legacy-pt-dev-load", "trust_pickle": True, "path": path},
@@ -304,10 +302,9 @@ def load_aa_model(model, *, device: str = "auto", trust_pickle: bool = False,
 
     dev = resolve_device(device)
     cfg = cfg.with_amino_acid_heads()
-    model_obj = AlignAIR(cfg)
+    model_obj = AlignAIR.from_state_dict(cfg, serialize.state_dict_from_bytes(weights_bytes),
+                                         device=dev, source=path)
     cfg = model_obj.cfg
-    model_obj.load_state_dict(serialize.state_dict_from_bytes(weights_bytes), strict=True)
-    model_obj.to(dev).eval()
 
     genes = _check_binding(header, calibration, class_maps=class_maps, d_allele_order=d_allele_order,
                            cfg=cfg, model=model_obj)

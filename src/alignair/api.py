@@ -116,11 +116,12 @@ def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSe
             f"{checkpoint_path} is a legacy .pt checkpoint; loading it runs torch.load "
             "(arbitrary-code pickle). Pass trust_pickle=True only for a local file you trust, or "
             "convert it once: `alignair convert x.pt x.alignair --dataconfig … --trust-pickle`.")
-    ck = torch.load(checkpoint_path, map_location=device, weights_only=False)   # legacy .pt (trusted)
+    ck = torch.load(checkpoint_path, map_location="cpu", weights_only=False)   # legacy .pt (trusted)
     cfg = AlignAIRConfig(**ck["config"])
-    model = AlignAIR(cfg).to(device).eval()
-    model.load_state_dict(_remap_state_dict(ck["model"]), strict=True)
-    return model, _build_reference(dataconfigs, reference)
+    bound_reference = _build_reference(dataconfigs, reference)
+    model = AlignAIR.from_state_dict(cfg, _remap_state_dict(ck["model"]),
+                                     device=device, source=checkpoint_path)
+    return model, bound_reference
 
 
 def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Sequence[str], *,

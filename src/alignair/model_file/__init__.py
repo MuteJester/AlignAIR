@@ -219,8 +219,6 @@ def _verify_reference_integrity(reference, md) -> None:
 def _rebuild(path, device, *, trust_pickle=False):
     md = container.read_header(path)
     cfg = serialize.config_from_bytes(container.read_section(path, "config"))
-    model = AlignAIR(cfg).to(device).eval()
-    model.load_state_dict(serialize.state_dict_from_bytes(container.read_section(path, "weights")), strict=True)
     if "reference_json" in md["sections"]:                       # safe, no-pickle path (default)
         reference = serialize.reference_from_json(container.read_section(path, "reference_json"))
         _verify_reference_integrity(reference, md)
@@ -242,6 +240,9 @@ def _rebuild(path, device, *, trust_pickle=False):
         except ConfigurationError as exc:
             raise ModelIntegrityError('stored label schema disagrees with the model/reference',
                                       context={'field': 'label_schema'}) from exc
+    model = AlignAIR.from_state_dict(
+        cfg, serialize.state_dict_from_bytes(container.read_section(path, "weights")),
+        device=device, source=path)
     md.pop("_sections_base", None)
     return md, cfg, model, reference
 
