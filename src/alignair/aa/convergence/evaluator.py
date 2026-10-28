@@ -1,161 +1,22 @@
-"""Unified checkpoint evaluator over a frozen, hash-fingerprinted simulator cohort.
+"""Checkpoint metrics over the declared convergence cohort.
 
-``build_cohort`` freezes a strata cohort (clean-pool + AA-native augmentation strata +
-native-indel buckets + a J-anchored short stratum)
-plus a disjoint calibration slice, all from ONE seeded ``stream_benchmark`` pass so the whole thing
-is reproducible from ``(dc_name, n_per_stratum, seed)`` alone. It is fingerprinted with SHA-256 so
-every checkpoint scored in a convergence sweep is compared against byte-identical data.
-
-``evaluate_checkpoint`` runs one checkpoint's V/J/D heads over that frozen cohort (via the shared
-hardened inference path ``alignair.predict.probabilities.protein_class_probabilities``) and reports the metric set used to gate
-checkpoint selection: clean-stratum V/J accuracy (micro + macro), D allele/gene accuracy, per-stratum
-V accuracy, softmax NLL + Brier, allele-frequency-binned accuracy, boundary MAE (reusing
-``evaluate.evaluate_categorical_cohort``), and a per-checkpoint conformal (APS) coverage/set-size summary.
+Cohort construction and content identity live in .cohort; selection thresholds remain in .select.
+Scoring uses shared inference, categorical evaluation and calibration implementations.
 """
 from __future__ import annotations
 
-import hashlib
-from collections import defaultdict
-
 import numpy as np
 
-from alignair_benchmark import default_igh_spec, stream_benchmark
-
-from ...data.augmentation.protein import aa_indel, aa_substitute, aa_truncate, il_ambiguity
 from ...calibration import Conformal
 from ...data.sampling import ProteinSampleBuilder
-from ...reference import build_protein_reference
 from ...data.adapters import CategoricalBatchAdapter
 from ...evaluate import evaluate_categorical_cohort
-from ...data.projection import translated_record_usable as aa_usable
 from ...predict.probabilities import protein_class_probabilities
 from ...data.tokenizer import AAProteinTokenizer
+from .cohort import _first
 from .metrics import brier_score, macro_accuracy, per_frequency_bins, softmax_nll
 
-# Fixed stratum order for cohort fingerprints and checkpoint comparisons.
-STRATA_ORDER = ("clean", "moderate_full", "aa_subs_7pct", "aa_single_indel", "aa_il_ambiguity",
-                "aa_truncate_50_80", "short_janchor", "dj_indel", "v_indel_1", "v_indel_multi")
-
 _DEFAULT_FREQ_EDGES = (0.0, 0.02, 0.05, 1.0)
-
-
-def _first(call) -> str:
-    return str(call or "").split(",")[0].strip()
-
-
-def build_cohort(dc_name: str = "HUMAN_IGH_OGRDB", n_per_stratum: int = 200,
-                 seed: int = 20250722, *, cal_frac: float = 0.3):
-    """Build a FROZEN simulator eval cohort + a disjoint calibration slice from one seeded stream.
-
-    Constructs the declared evaluation strata: a clean pool
-    from ``stream_benchmark(default_igh_spec(...))`` (AA-usable, orientation 0, known V+J allele,
-    ``n_indels==0``, stratum == ``clean_full`` ONLY -- this matches the frozen baseline/§5 gates,
-    which were computed against ``clean_full`` alone), AA-native augmentation strata built from
-    that pool (``aa_substitute``/``aa_indel``/``il_ambiguity``/``aa_truncate``), plus native-indel
-    buckets (``v_indel_1``/``v_indel_multi``/``dj_indel``) and a J-anchored short stratum
-    (``short_janchor``, from the ``amplicon_janchor`` stratum). ``n_indels==0`` rows from the
-    ``moderate_full`` stratum are collected SEPARATELY into their own ``moderate_full`` bucket
-    (scored like any other stratum in ``by_stratum`` -- not pooled into ``clean``).
-
-    A fixed ``cal_frac`` slice of the clean (``clean_full``-only) pool is carved off as
-    ``calibration`` (never scored as ``"clean"``) so conformal calibration in
-    ``evaluate_checkpoint`` never touches the accuracy-eval rows. The pool is deterministically
-    shuffled (seeded on ``seed``) before the calibration/eval split, since the underlying stream
-    is not randomly ordered (front-of-stream rows skew easier) -- both halves must be
-    representative, not just disjoint.
-
-    Returns ``(cohort, fingerprint_sha256)``:
-    - ``cohort = {"by_stratum": {name: [row, ...]}, "calibration": [row, ...], "dc_name": ...,
-      "seed": ..., "n_per_stratum": ...}``; every ``row`` is ``{"aa", "v_call", "j_call", "d_call",
-      "d_inverted", "record"}`` (``record`` is the raw GenAIRR record, unaugmented, used only for
-      boundary-MAE projection on the ``clean`` stratum).
-    - ``fingerprint_sha256``: SHA-256 hex digest over the ordered ``(aa, v_call, j_call, d_call)``
-      tuples of every row (strata in ``STRATA_ORDER``, then ``calibration``) — deterministic for a
-      fixed ``(dc_name, n_per_stratum, seed)``.
-    """
-    import GenAIRR as ga
-
-    dc = getattr(ga, dc_name)
-    class_maps = build_protein_reference(dc_name).class_maps
-    vclass, jclass = class_maps["V"].allele_class, class_maps["J"].allele_class
-
-    rng = np.random.default_rng(seed)
-    spec = default_igh_spec(n_per_stratum=n_per_stratum, seed=seed)
-
-    def _row(r, aa):
-        return {
-            "aa": aa,
-            "v_call": str(r.get("v_call") or ""),
-            "j_call": str(r.get("j_call") or ""),
-            "d_call": str(r.get("d_call") or ""),
-            "d_inverted": bool(r.get("d_inverted", False)),
-            "record": r,
-        }
-
-    buckets: dict = defaultdict(list)
-    clean_pool = []
-    for c in stream_benchmark(spec, dataconfig=dc):
-        r = c.record
-        if c.orientation_id != 0 or not aa_usable(r):
-            continue
-        vc, jc = _first(r["v_call"]), _first(r["j_call"])
-        if vc not in vclass or jc not in jclass:
-            continue
-        row = _row(r, r["sequence_aa"])
-        n_indels, n_v_indels = int(r.get("n_indels", 0)), int(r.get("n_v_indels", 0))
-        if n_indels == 0 and c.stratum == "clean_full":
-            clean_pool.append(row)
-        elif n_indels == 0 and c.stratum == "moderate_full":
-            buckets["moderate_full"].append(row)
-        elif n_v_indels == 1:
-            buckets["v_indel_1"].append(row)
-        elif n_v_indels >= 2:
-            buckets["v_indel_multi"].append(row)
-        elif n_indels > 0 and n_v_indels == 0:
-            buckets["dj_indel"].append(row)
-        if c.stratum == "amplicon_janchor":
-            buckets["short_janchor"].append(row)
-
-    # Disjoint split of the clean (clean_full-only) pool: a calibration slice (never scored as
-    # "clean") + the eval/augmentation source. The underlying stream is NOT randomly ordered
-    # (progress-ramped generation skews front-of-stream rows easier), so a deterministically
-    # seeded shuffle runs before the index split -- otherwise both the calibration slice and the
-    # "clean" eval slice would be systematically biased by their position in the stream.
-    shuffle_rng = np.random.default_rng(seed)
-    order = shuffle_rng.permutation(len(clean_pool)) if clean_pool else np.array([], dtype=int)
-    clean_pool = [clean_pool[i] for i in order]
-    n_cal = max(1, int(round(cal_frac * len(clean_pool)))) if clean_pool else 0
-    calibration = clean_pool[:n_cal]
-    eval_source = clean_pool[n_cal:]
-    buckets["clean"] = list(eval_source)
-
-    for row in eval_source:
-        aa = row["aa"]
-        for name, aug in (
-            ("aa_subs_7pct", aa_substitute(aa, 0.07, rng)),
-            ("aa_single_indel", aa_indel(aa, rng)),
-            ("aa_il_ambiguity", il_ambiguity(aa)),
-            ("aa_truncate_50_80", aa_truncate(aa, 0.5, 0.8, rng)),
-        ):
-            # v_call/j_call/d_call truth carries over (the augmentation corrupts the AA string,
-            # not the germline truth); "record" is dropped -- it no longer matches the corrupted
-            # AA string, so it must not be fed to boundary-MAE projection.
-            buckets[name].append({k: v for k, v in row.items() if k != "record"} | {"aa": aug})
-
-    by_stratum = {name: buckets[name] for name in STRATA_ORDER if buckets.get(name)}
-
-    h = hashlib.sha256()
-    for name in STRATA_ORDER:
-        for row in by_stratum.get(name, []):
-            for field in (name, row["aa"], row["v_call"], row["j_call"], row["d_call"]):
-                h.update(field.encode()); h.update(b"\0")
-    for row in calibration:
-        for field in ("__calibration__", row["aa"], row["v_call"], row["j_call"], row["d_call"]):
-            h.update(field.encode()); h.update(b"\0")
-
-    cohort = {"by_stratum": by_stratum, "calibration": calibration,
-              "dc_name": dc_name, "seed": seed, "n_per_stratum": n_per_stratum}
-    return cohort, h.hexdigest()
 
 
 def _freq_for(rows: list, gene_key: str, allele_class: dict, dc_name: str) -> np.ndarray:

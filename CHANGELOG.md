@@ -83,6 +83,10 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Convergence cohort construction now lives in `aa.convergence.cohort`, separate from checkpoint
+  scoring, with validated split requests and lazy loading of the source-only benchmark generator.
+  The versioned cohort digest now includes complete records, D inversion and split/reference metadata;
+  existing sequence/call-only digests are intentionally different and historical artifacts stay unchanged.
 - Removed the separate partial-protein training runner. The convergence study uses the common
   trainer and records newly written self-contained candidate checkpoints.
 - Removed the independent strategic protein training module. Protein-class substitution experiments

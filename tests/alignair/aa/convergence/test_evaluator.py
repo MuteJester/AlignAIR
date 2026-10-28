@@ -18,23 +18,6 @@ pytestmark = pytest.mark.component
 REQUIRED_STRATA = ("clean", "aa_truncate_50_80", "short_janchor", "moderate_full")
 
 
-def test_protein_cohort_excludes_non_forward_cases_even_when_translation_is_available(
-        monkeypatch, evaluation_inputs):
-    from alignair.aa.convergence import evaluator
-    from alignair.data.projection import translated_record_usable
-    _, _, maps, _, inputs = evaluation_inputs
-    record = inputs['by_stratum']['clean'][0]['record']
-    assert translated_record_usable(record)
-    cases = [SimpleNamespace(stratum='clean_full', orientation_id=orientation,
-                              record={**record, 'sequence_id': identifier})
-             for identifier, orientation in (('forward_one', 0), ('reverse', 1), ('forward_two', 0))]
-    monkeypatch.setattr(evaluator, 'stream_benchmark', lambda *args, **kwargs: iter(cases))
-    monkeypatch.setattr(evaluator, 'build_protein_reference', lambda *args: SimpleNamespace(class_maps=maps))
-    cohort, _ = evaluator.build_cohort(n_per_stratum=3, seed=1)
-    source_rows = cohort['by_stratum']['clean'] + cohort['calibration']
-    assert {row['record']['sequence_id'] for row in source_rows} == {'forward_one', 'forward_two'}
-
-
 def test_clean_heads_and_conformal_test_probabilities_share_one_forward(evaluation_inputs):
     model, cfg, maps, meta, cohort = evaluation_inputs
     calls = []
@@ -164,3 +147,40 @@ def test_evaluator_metrics_match_hand_calculated_predictions(evaluation_inputs):
         assert result["brier"][gene] == pytest.approx(0.625)
     assert result["boundary_mae"] == {"v": {"start": 0.0, "end": 0.0},
                                       "j": {"start": 0.0, "end": 0.0}, "n": 2}
+
+
+def test_no_clean_rows_fail_before_any_forward(evaluation_inputs):
+    model, cfg, maps, meta, cohort = evaluation_inputs
+    cohort["by_stratum"]["clean"] = []
+    calls = []
+    handle = model.register_forward_hook(lambda *_: calls.append(1))
+    try:
+        with pytest.raises(ValueError, match="no 'clean' stratum"):
+            evaluate_checkpoint(model, cfg, maps, meta, cohort)
+    finally:
+        handle.remove()
+    assert not calls
+
+
+@pytest.mark.parametrize("source", ["absent", "ineligible"])
+def test_unavailable_boundary_truth_and_calibration_are_reported_without_invented_metrics(evaluation_inputs, source):
+    model, cfg, maps, meta, cohort = evaluation_inputs
+    cohort["calibration"] = []
+    for row in cohort["by_stratum"]["clean"]:
+        if source == "absent":
+            row.pop("record")
+        else:
+            row["record"]["productive"] = False
+    result = evaluate_checkpoint(model, cfg, maps, meta, cohort)
+    assert result["boundary_mae"]["v"] is result["boundary_mae"]["j"] is None
+    assert "note" in result["boundary_mae"]
+    assert result["conformal"]["coverage"] is None and "note" in result["conformal"]
+    assert result["clean_v_acc"] is not None and result["clean_j_acc"] is not None
+
+
+def test_reference_frequency_table_is_used_when_available(monkeypatch):
+    import GenAIRR as ga
+    from alignair.aa.convergence.evaluator import _freq_for
+    monkeypatch.setattr(ga, "FREQUENCY_FIXTURE", SimpleNamespace(gene_use_dict={"V": {"V0": .3, "V1": .7}}), raising=False)
+    rows = [{"v_call": name} for name in ("V0", "V1", "V2")]
+    np.testing.assert_array_equal(_freq_for(rows, "V", {"V0": 0, "V1": 1}, "FREQUENCY_FIXTURE"), [.3, .7, 0.])

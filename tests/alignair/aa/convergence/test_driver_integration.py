@@ -64,6 +64,7 @@ def test_study_trains_real_candidates_and_evaluates_the_same_frozen_cohort(tmp_p
     assert final.label_schema['label_space'] == 'protein_classes'
     stored = json.loads((tmp_path/'artifacts'/'checkpoints_metrics.json').read_text())
     assert stored['rows'] == result['rows'] and stored['cohort_fingerprint']['fingerprint'] == 'fixed-fingerprint'
+    assert stored['cohort_fingerprint']['schema'] == 'alignair.convergence.cohort.v2'
     assert (tmp_path/'artifacts'/'predeclaration.md').read_text() == driver.PREDECLARATION_TEXT
 
 

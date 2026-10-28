@@ -21,7 +21,8 @@ from ...data.augmentation import ProteinCropPolicy
 from ...core import prepare_model
 from ...core.setup import ModelSetup, setup_from_schema
 from ...reference import build_protein_reference
-from .evaluator import build_cohort, evaluate_checkpoint
+from .cohort import COHORT_SCHEMA, build_cohort
+from .evaluator import evaluate_checkpoint
 
 DC_NAME = "HUMAN_IGH_OGRDB"
 MAX_SEQ_LENGTH = 192
@@ -195,7 +196,7 @@ def run_study(resume_path: str, budget: int, ckpt_steps, device: str, art_dir: s
 
     # ---- 2. frozen evaluator cohort + predeclaration copy ----
     cohort, fingerprint = build_cohort(dc_name, n_per_stratum=n_per_stratum, seed=cohort_seed)
-    cohort_fp = {"fingerprint": fingerprint, "seed": cohort_seed,
+    cohort_fp = {"schema": COHORT_SCHEMA, "fingerprint": fingerprint, "seed": cohort_seed,
                 "n_per_stratum": n_per_stratum, "dc_name": dc_name}
     _write_json(os.path.join(art_dir, "cohort_fingerprint.json"), cohort_fp)
     with open(os.path.join(art_dir, "predeclaration.md"), "w") as f:

@@ -1,6 +1,6 @@
 """Live GenAIRR integration contracts for convergence cohort construction."""
 import pytest
-from alignair.aa.convergence.evaluator import STRATA_ORDER, build_cohort
+from alignair.aa.convergence.cohort import STRATA_ORDER, build_cohort, cohort_fingerprint
 
 pytestmark = pytest.mark.integration
 
@@ -18,6 +18,7 @@ def test_build_cohort_fingerprint_is_deterministic():
     coh_b, fp_b = build_cohort(DC_NAME, n_per_stratum=N_PER_STRATUM, seed=SEED)
     assert fp_a == fp_b
     assert isinstance(fp_a, str) and len(fp_a) == 64          # sha256 hex digest
+    assert fp_a == cohort_fingerprint(coh_a)
 
     for name in REQUIRED_STRATA:
         assert coh_a["by_stratum"].get(name), f"missing/empty required stratum: {name}"

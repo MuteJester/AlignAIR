@@ -247,6 +247,46 @@ print(report["paired_improvement"])`} />
         Empty vectors preserve historical zero-valued results. Retain the evaluator’s observation
         counts when interpreting them. Relative reduction is zero when its constant baseline is zero.
       </p>
+      <H2 id="convergence-cohort">Convergence study cohorts</H2>
+      <CodeBlock lang="python" code={`from alignair.aa.convergence.cohort import (
+    COHORT_SCHEMA, build_cohort, cohort_fingerprint,
+)
+
+# Generation requires the source checkout's alignair_benchmark package.
+cohort, fingerprint = build_cohort(n_per_stratum=40, seed=20250722, cal_frac=0.3)
+assert cohort["schema"] == COHORT_SCHEMA
+assert fingerprint == cohort_fingerprint(cohort)`} />
+      <p>
+        <code>convergence.cohort</code> owns this study’s declared strata, filtering, deterministic
+        shuffle, calibration split and protein augmentations. Checkpoint scoring lives separately in
+        <code> convergence.evaluator</code>; importing it does not require the source-only benchmark
+        generator. Generation reports a contextual <code>MissingDependencyError</code> when that
+        package is absent.
+      </p>
+      <p>
+        <code>n_per_stratum</code> must be a positive integer, <code>seed</code> a nonnegative integer,
+        and <code>cal_frac</code> a finite number strictly between zero and one. At least two eligible
+        clean records are required. The shuffled split uses the rounded calibration count, bounded
+        to leave at least one record in each slice. Calibration rows are excluded from the evaluation
+        augmentation source. This is a record split; it does not deduplicate identical sequences.
+        The existing clean/moderate separation, augmentation order and selection thresholds are retained.
+      </p>
+      <p>
+        The <code>alignair.convergence.cohort.v2</code> fingerprint hashes canonical finite JSON for
+        the complete returned cohort: ordered rows and declared strata, sequences, calls, D inversion,
+        source records used for boundary projection, split parameters and the protein reference hash.
+        Mapping insertion order is irrelevant. JSON encoding is streamed into SHA-256 without
+        retaining a second serialized cohort. The driver records the schema beside the digest in
+        <code> cohort_fingerprint.json</code> and the metrics artifact.
+      </p>
+      <p>
+        These digests intentionally differ from the former sequence/call-only fingerprints.
+        Historical artifacts are not rewritten. <code>build_cohort</code> and <code>STRATA_ORDER</code>
+        are now imported from <code>alignair.aa.convergence.cohort</code>, rather than the evaluator.
+        The returned dictionary remains mutable: a checksum describes its content at hashing time.
+        Recompute it after edits, and retain separate model, configuration and reference bindings when
+        comparing results. Fingerprinting alone does not validate scientific eligibility or freeze data.
+      </p>
       <H2 id="ownership">Study integration</H2>
       <p>
         Numerical intervals live in <code>evaluate.statistics</code>; class and boundary summaries
