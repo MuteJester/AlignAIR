@@ -155,6 +155,16 @@ def _suites(summary: dict) -> list[str]:
             table = headline_table({"a": summary["a"], "b": summary["b"], "comparison": data["rows"]},
                                    headline=suite["primary"])
             lines += ["", f"**{arm} arm** ([comparison]({data['link']}))", "", table.rstrip("\n")]
+            changes = data.get("changes")
+            if changes:
+                text = (f"Reads {summary['b']} fixes / breaks against {summary['a']}: {changes['fixed']} / "
+                        f"{changes['broken']}")
+                named = [f"{side} e.g. {', '.join(changes[f'{side}_examples'])}" for side in ("fixed", "broken")
+                         if changes.get(f"{side}_examples")]
+                groups = ", ".join(f"{label} {n['fixed']} / {n['broken']}"
+                                   for label, n in (changes.get("groups") or {}).items())
+                lines += ["", text + (f" ({'; '.join(named)})" if named else "")
+                          + (f"; per stratum: {groups}" if groups else "") + "."]
     return lines
 
 

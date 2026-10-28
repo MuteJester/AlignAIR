@@ -35,10 +35,14 @@ def build_score_report(tool: str, summary, slices, provenance: dict, *, excess_a
 
 
 def build_comparison_report(a_name: str, b_name: str, comparison, slices_a, slices_b, provenance: dict, *,
-                            informational: dict | None = None) -> dict:
+                            informational: dict | None = None, changes: dict | None = None) -> dict:
     """Report for a paired comparison of tool ``a`` against tool ``b``: the tested ``comparison`` and, as
     ``informational``, the metrics reported but not compared (name -> ``{"a": summary, "b": summary}``, each tool's
-    own mean with n and coverage, None when it has none)."""
-    return {"kind": COMPARISON_KIND, "version": VERSION, "a": a_name, "b": b_name,
-            "comparison": clean(comparison), "informational": clean(informational or {}),
-            "by_slice": {"a": clean(slices_a), "b": clean(slices_b)}, "provenance": clean(provenance)}
+    own mean with n and coverage, None when it has none); with ``changes`` (``stats.read_changes``, for two
+    checkpoints), the reads ``b`` fixes and breaks."""
+    report = {"kind": COMPARISON_KIND, "version": VERSION, "a": a_name, "b": b_name,
+              "comparison": clean(comparison), "informational": clean(informational or {}),
+              "by_slice": {"a": clean(slices_a), "b": clean(slices_b)}, "provenance": clean(provenance)}
+    if changes is not None:
+        report["changes"] = clean(changes)
+    return report

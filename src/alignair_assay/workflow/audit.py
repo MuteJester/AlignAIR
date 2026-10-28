@@ -875,6 +875,7 @@ def all_null(cfg: AuditConfig, scratch: RunLayout) -> list[dict]:
                 continue
             rows = found.get("comparison") or {}
             problems += compare_problems(rows, f"{name}/{arm}")
+            problems += changes_problems(found.get("changes"), f"{name}/{arm}")
             n, short = pairing(rows, SIM_HEADLINE, f"{name}/{arm}", offered=offered)
             problems += short
             problems += [f"{name}/{arm} {metric}: the informational summaries differ"

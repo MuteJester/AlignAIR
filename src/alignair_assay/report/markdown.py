@@ -198,6 +198,8 @@ def _comparison_md(report: dict, headline: Sequence[str]) -> list[str]:
         lines += ["", "## Informational (not compared)", "",
                   "Reported for each tool over its own cases (n, coverage), but not tested: these metrics are "
                   "outside the Holm family (`metrics.INFORMATIONAL`).", "", *markdown_table(["Metric", a, b], rows)]
+    if report.get("changes"):
+        lines += ["", *_changes_md(a, b, report["changes"])]
     sa, sb = report["by_slice"]["a"], report["by_slice"]["b"]
     for dim in sorted(set(sa) | set(sb)):
         la, lb = sa.get(dim, {}), sb.get(dim, {})
@@ -207,6 +209,29 @@ def _comparison_md(report: dict, headline: Sequence[str]) -> list[str]:
         rows = [[n] + [f"{format_cell(n, la.get(lab, {}).get(n))} / {format_cell(n, lb.get(lab, {}).get(n))}"
                        for lab in labels] for n in names]
         lines += markdown_table(["Metric"] + labels, rows)
+    return lines
+
+
+def _changes_md(a: str, b: str, changes: dict) -> list[str]:
+    """The reads ``b`` fixes (``a`` wrong, ``b`` right) and breaks on at least one 0/1 metric, with examples, per
+    stratum and per metric (``stats.read_changes``)."""
+    reads = changes["reads"]
+    lines = ["## Reads fixed and broken", "",
+             f"{b} fixes {reads['fixed']} reads {a} gets wrong and breaks {reads['broken']} it gets right, on at "
+             "least one 0/1 metric (examples evenly spaced over the sorted ids)."]
+    for side in ("fixed", "broken"):
+        if reads.get(f"{side}_examples"):
+            lines.append(f"- {side.capitalize()}, e.g. {', '.join(reads[f'{side}_examples'])}.")
+    groups = reads.get("groups") or {}
+    if groups:
+        lines += ["", *markdown_table(["Stratum", "Fixed", "Broken"],
+                                      [[label, str(n["fixed"]), str(n["broken"])] for label, n in groups.items()])]
+    rows = [[metric, str(found["n_paired"]), str(found["fixed"]), str(found["broken"]),
+             ", ".join(found["fixed_examples"]) or MISSING, ", ".join(found["broken_examples"]) or MISSING]
+            for metric, found in changes["metrics"].items() if found["fixed"] or found["broken"]]
+    if rows:
+        lines += ["", *markdown_table(["Metric", "n paired", "Fixed", "Broken", "Fixed (examples)",
+                                       "Broken (examples)"], rows)]
     return lines
 
 

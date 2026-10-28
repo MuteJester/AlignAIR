@@ -22,10 +22,12 @@ from alignair_assay.report import build_comparison_report, build_score_report, t
 from alignair_assay.scoring.clusters import CLUSTER_KEYS, cluster_ids
 from alignair_assay.scoring.pipeline import load_predictions, score_predictions
 from alignair_assay.scoring.slices import slices
-from alignair_assay.stats import compare, summarize
+from alignair_assay.stats import compare, read_changes, summarize
 from alignair_assay.truth.model import ObservableTruth
 from alignair_assay.truth.summary import simulator_calls
 
+# Case ids named for the reads fixed and broken of a comparison of two checkpoints, per metric and overall.
+CHANGE_EXAMPLES = 10
 STATISTICAL_TESTS = ("exact McNemar for 0/1 metrics, paired z-test otherwise, p = 1 below 10 pairs; reads grouped "
                      "by clone or pair (cluster_keys) are compared by cluster: the clustered McNemar (0/1 metrics) "
                      "or clustered z score test on per-cluster sums, p = 1 below 10 clusters (too_few_clusters), "
@@ -82,11 +84,13 @@ def score_report(scored: ToolScores, truths: list[ObservableTruth], header: dict
 
 
 def comparison_report(a: ToolScores, b: ToolScores, truths: list[ObservableTruth], header: dict, *, command: str,
-                      inputs: dict, reference_name: str, alpha: float = 0.05) -> dict:
+                      inputs: dict, reference_name: str, alpha: float = 0.05, changes: bool = False) -> dict:
     """The paired comparison report of tool ``a`` against tool ``b``. The family is every non-informational metric
     either tool produced, Holm-corrected at ``alpha``; every informational one either tool produced is reported
     beside it, each tool's own summary, untested. Reads of one clone or one orientation pair are compared as a
-    cluster (``scoring.clusters.cluster_ids``, recorded as ``cluster_keys``). The provenance is as in
+    cluster (``scoring.clusters.cluster_ids``, recorded as ``cluster_keys``). With ``changes`` (two checkpoints),
+    ``changes`` holds the reads ``b`` fixes and breaks against ``a`` on each 0/1 metric of the family, with
+    ``CHANGE_EXAMPLES`` examples and the counts per stratum (``stats.read_changes``). The provenance is as in
     ``score_report``. ValueError when the two tools have the same name (their files would collide)."""
     if a.tool == b.tool:
         raise ValueError(f"the two compared tools must differ, both are {a.tool!r}")
@@ -102,8 +106,13 @@ def comparison_report(a: ToolScores, b: ToolScores, truths: list[ObservableTruth
                       reference_digest=header["reference_digest"], truth_header=header, alpha=alpha,
                       tests=STATISTICAL_TESTS, cluster_keys=list(CLUSTER_KEYS), family_size=len(family),
                       matching={"a": a.matching, "b": b.matching}, simulator_calls=simulator_calls(truths))
+    changed = None
+    if changes:
+        changed = read_changes(a.scores, b.scores, family, examples=CHANGE_EXAMPLES,
+                               lower_is_better={name for name in family if lower_is_better(name)},
+                               groups={truth.case_id: truth.stratum for truth in truths})
     return build_comparison_report(a.tool, b.tool, comparison, slices(a.scores, truths), slices(b.scores, truths),
-                                   prov, informational=informational)
+                                   prov, informational=informational, changes=changed)
 
 
 def write_report(report: dict, json_path: Path, md_path: Path, *, headline: Sequence[str] = HEADLINE) -> None:

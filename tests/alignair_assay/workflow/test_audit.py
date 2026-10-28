@@ -613,6 +613,16 @@ def test_all_with_a_read_called_otherwise_is_not_null(tmp_path, oracle_variants)
     assert oracle["status"] == "pass"  # the oracle is not the perturbed tool
 
 
+def test_all_without_its_reads_fixed_and_broken_is_not_null(tmp_path, oracle_variants, monkeypatch):
+    # two checkpoints' comparison counts the reads the second fixes and breaks; one that did not is not null
+    from alignair_assay.workflow import orchestrate
+
+    monkeypatch.setattr(orchestrate, "checkpoint_pair", lambda a, b: False)
+    null, _ = audit.all_null(_config(tmp_path), RunLayout(tmp_path / "null_all"))
+    assert null["status"] == "fail"
+    assert null["evidence"]["problems"] == ["S0/shared: no reads fixed and broken were counted"]
+
+
 def test_all_is_run_again_when_genairr_moves_during_it(tmp_path, oracle_variants, monkeypatch):
     # GenAIRR edited (or committed) while all ran makes its builds stale before they are scored: all is run again
     # once, and skipped when GenAIRR moves again (never a failure of the comparison)

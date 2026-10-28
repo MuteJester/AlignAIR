@@ -416,15 +416,16 @@ def _suite_summary(layout: RunLayout, cfg: RunConfig, name: str) -> dict:
 
 
 def _arm_summary(layout: RunLayout, cfg: RunConfig, name: str, arm: str, primary) -> dict:
-    """The primary-metric rows of the arm's comparison of the run's two tools; not ``compared`` when there is no
-    comparison of exactly those tools."""
+    """The primary-metric rows of the arm's comparison of the run's two tools and, for two checkpoints, the reads
+    the second fixes and breaks (``changes``: the comparison's ``reads`` counts, examples and strata; None
+    otherwise); not ``compared`` when there is no comparison of exactly those tools."""
     report = read_json(layout.comparison_json(name, arm))
     if report is None or (report.get("a"), report.get("b")) != tuple(cfg.tools):
-        return {"compared": False, "link": None, "rows": {}, "verdicts": None}
+        return {"compared": False, "link": None, "rows": {}, "verdicts": None, "changes": None}
     rows = {metric: report["comparison"][metric] for metric in primary if metric in report["comparison"]}
     verdicts = {verdict: sum(row["verdict"] == verdict for row in rows.values()) for verdict in VERDICTS}
     return {"compared": True, "link": relative(layout, layout.comparison_md(name, arm)), "rows": rows,
-            "verdicts": verdicts}
+            "verdicts": verdicts, "changes": (report.get("changes") or {}).get("reads")}
 
 
 def _entry(entries: dict | None, metric: str) -> dict | None:

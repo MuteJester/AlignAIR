@@ -99,6 +99,12 @@ def test_one_checkpoint_under_two_labels_compares_to_zero(null_run):
     assert rows and all(row["delta"] in (0, None) for row in rows.values())
     assert all(row["wins"] == row["losses"] == 0 for row in rows.values())
     assert {row["verdict"] for row in rows.values()} == {"tie_or_inconclusive"}
+    # two checkpoints: the reads the second fixes and breaks are counted (none), per stratum too
+    assert comparison["changes"]["reads"] == {"fixed": 0, "broken": 0, "fixed_examples": [], "broken_examples": [],
+                                              "groups": {}}
+    assert all(found["fixed"] == found["broken"] == 0 for found in comparison["changes"]["metrics"].values())
+    assert ("alignair-local@b fixes 0 reads alignair-local@a gets wrong and breaks 0 it gets right"
+            in layout.comparison_md("S0", "shared").read_text())
     report = json.loads(layout.report_json.read_text())
     assert (report["a"], report["b"]) == TOOLS
     assert report["checkpoints"] == {tool: {"label": label, "path": checkpoints[label], "sha256": digest,
@@ -106,6 +112,8 @@ def test_one_checkpoint_under_two_labels_compares_to_zero(null_run):
                                      for tool, label in zip(TOOLS, "ab")}
     md = layout.report_md.read_text()
     assert md.startswith("# AlignAIR assay run: alignair-local@a vs alignair-local@b")
+    assert report["suites"][0]["arms"]["shared"]["changes"]["fixed"] == 0
+    assert "Reads alignair-local@b fixes / breaks against alignair-local@a: 0 / 0." in md
     # both checkpoints ran under the AlignAIR code of this checkout: the report says which
     assert (f"Checkpoints: alignair-local@a `{digest[:12]}` ({checkpoints['a']}), alignair-local@b "
             f"`{digest[:12]}` ({checkpoints['b']}); both ran under AlignAIR code `{'c' * 12}`.") in md

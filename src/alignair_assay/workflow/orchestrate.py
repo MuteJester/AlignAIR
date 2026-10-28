@@ -28,6 +28,7 @@ from alignair_assay.runners.alignair import DEFAULT_IMAGE, DEFAULT_MODEL
 from alignair_assay.runners.arms import run_genotype_arm
 from alignair_assay.runners.base import Runner, RunnerOptions, RunResult, absolute_path, run_suite
 from alignair_assay.runners.reference import ensure_shared_reference
+from alignair_assay.runners.variants import parse_tool
 from alignair_assay.scoring.pipeline import load_truth, write_scores
 from alignair_assay.suites import get_suite
 from alignair_assay.suites.donors import read_genotypes
@@ -74,6 +75,12 @@ class RunConfig:
     device: str = "cpu"
     speed: bool = False
     checkpoints: Mapping[str, str] = field(default_factory=dict, hash=False)
+
+
+def checkpoint_pair(a: str, b: str) -> bool:
+    """Whether tools ``a`` and ``b`` are both AlignAIR checkpoint variants (``<base>@<label>``), whose comparison
+    also counts the reads the second fixes and breaks (``workflow.scoring.comparison_report``'s ``changes``)."""
+    return parse_tool(a)[1] is not None and parse_tool(b)[1] is not None
 
 
 def runner_options(cfg: RunConfig, layout: RunLayout | None = None) -> RunnerOptions:
@@ -414,7 +421,8 @@ def _score(cfg: RunConfig, layout: RunLayout, reference: Reference, *, command: 
                 report = comparison_report(scored[a], scored[b], truths, header, command=command,
                                            inputs={"truth": layout.truth(name), "a": layout.predictions(a, name, arm),
                                                    "b": layout.predictions(b, name, arm), **extra_inputs},
-                                           reference_name=cfg.reference, alpha=ALPHA)
+                                           reference_name=cfg.reference, alpha=ALPHA,
+                                           changes=checkpoint_pair(a, b))
                 write_report(report, layout.comparison_json(name, arm), layout.comparison_md(name, arm),
                              headline=suite.primary)
             print(f"score {name}/{arm}: scored {', '.join(scored) or 'nothing'}; "
