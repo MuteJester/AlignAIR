@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared reference-binding preflight for model preparation, saving and loading, including older
+  artifacts without label schemas. Invalid head/reference dimensions fail before load allocation or
+  destination writes; protein-class models require explicit ordered labels.
 - Shared `AlignAIR.from_state_dict` restoration for safe and trusted legacy loaders, with strict
   weight diagnostics, CPU construction and explicit device placement. Main artifact loading checks
   embedded reference and label bindings before allocating model parameters.

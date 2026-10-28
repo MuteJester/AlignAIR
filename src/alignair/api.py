@@ -16,10 +16,10 @@ from typing import Sequence
 
 import torch
 
-from .errors import ConfigurationError, ModelError
+from .errors import ConfigurationError, ModelError, error_context
 
 from .core.config import AlignAIRConfig
-from .core import AlignAIR
+from .core import AlignAIR, validate_reference_binding
 from .predict import PredictConfig, predict as _predict
 from .reference.reference_set import ReferenceSet
 
@@ -119,6 +119,8 @@ def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSe
     ck = torch.load(checkpoint_path, map_location="cpu", weights_only=False)   # legacy .pt (trusted)
     cfg = AlignAIRConfig(**ck["config"])
     bound_reference = _build_reference(dataconfigs, reference)
+    with error_context(stage='model_binding', path=checkpoint_path):
+        validate_reference_binding(bound_reference, cfg, label_schema=ck.get('label_schema'))
     model = AlignAIR.from_state_dict(cfg, _remap_state_dict(ck["model"]),
                                      device=device, source=checkpoint_path)
     return model, bound_reference

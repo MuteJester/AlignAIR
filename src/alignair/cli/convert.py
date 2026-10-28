@@ -9,11 +9,11 @@ from __future__ import annotations
 import torch
 
 from .. import model_file as mf
-from ..api import _remap_state_dict
-from ..core import AlignAIR
+from ..api import _build_reference, _remap_state_dict
+from ..core import AlignAIR, validate_reference_binding
 from ..core.config import AlignAIRConfig
 from ..model_file import container
-from ..errors import ConfigurationError, report_error
+from ..errors import ConfigurationError, error_context, report_error
 
 
 def register(sub) -> None:
@@ -45,9 +45,13 @@ def _convert_pt(src, dst, dataconfig) -> int:
             "--dataconfig is required to convert a legacy .pt (the reference the model was trained on)"))
     ck = torch.load(src, map_location="cpu", weights_only=False)   # pickle (trusted via --trust-pickle)
     cfg = AlignAIRConfig(**ck["config"])
+    with error_context(stage='model_binding', path=src):
+        validate_reference_binding(_build_reference(dataconfig, None), cfg,
+                                   label_schema=ck.get('label_schema'))
     model = AlignAIR.from_state_dict(cfg, _remap_state_dict(ck["model"]), source=src)
     mf.save_model(dst, model, dataconfigs=dataconfig, include_trusted_pickle=False,
-                  training={"steps": int(ck.get("step", 0)), "batch_size": 0})
+                  training={"steps": int(ck.get("step", 0)), "batch_size": 0},
+                  label_schema=ck.get('label_schema'))
     return 0
 
 

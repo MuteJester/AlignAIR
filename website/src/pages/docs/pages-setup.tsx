@@ -102,6 +102,46 @@ assert setup.protein_reference is protein_reference`} />
         raises <code>DataContractError</code>. Component-specific shape constraints still apply during
         model construction.
       </p>
+      <H2 id="binding">Validate a reference binding</H2>
+      <CodeBlock lang="python" code={`from alignair.core import validate_reference_binding
+
+# Allele heads can be checked against the ordered reference without a label schema.
+validate_reference_binding(reference, config)
+
+# Protein-class heads require the saved class order or an explicit protein reference view.
+validate_reference_binding(reference, class_config, label_schema=saved_schema)
+validate_reference_binding(
+    setup.reference, setup.config, protein_reference=setup.protein_reference,
+)`} />
+      <p>
+        This preflight checks every enabled head’s label count, D availability, zero labels for an
+        omitted D head, locus count, input vocabulary, orientation policy, and sequence-window size.
+        It also checks the reference’s names, sequence counts, and index ordering. A model may omit
+        a D head even when its source reference contains D alleles. Preparation, main-format saving,
+        and main-format loading share these checks.
+      </p>
+      <p>
+        Protein-class V/J labels come from an ordered <code>label_schema</code> or a validated
+        <code> ProteinReference</code>; D labels remain source alleles. If both are supplied, their
+        ordered class memberships must agree. Loading a saved schema preserves its class IDs without
+        translating the nucleotide reference again. Missing class metadata is rejected even when
+        class widths happen to equal allele counts. AA product bundles continue to use their own
+        embedded class maps and calibration bindings.
+      </p>
+      <p>
+        Invalid prepared or caller-supplied bindings raise <code>ConfigurationError</code>, or
+        <code> DataContractError</code> for an inconsistent reference. Invalid bindings embedded in
+        a main-format artifact raise <code>ModelIntegrityError</code> with the original cause,
+        <code> model_binding</code> stage, source path, and relevant gene or field. Stored reference
+        hashes are verified for safe and explicitly trusted legacy containers. Validation precedes
+        model allocation on load and destination writes on save.
+      </p>
+      <p>
+        Older allele artifacts without a label schema remain supported when their dimensions match.
+        This establishes dimensional compatibility; historical label identity still depends on the
+        supplied or embedded reference and any stored integrity hashes. The validator does not invent
+        missing provenance or class ordering.
+      </p>
       <H2 id="restore">Restore decoded model weights</H2>
       <CodeBlock lang="python" code={`from alignair.core import AlignAIR
 

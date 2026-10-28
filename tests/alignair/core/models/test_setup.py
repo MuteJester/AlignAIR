@@ -183,6 +183,7 @@ def test_a_protein_view_cannot_be_attached_to_an_allele_or_different_source_setu
     cfg = build_model_config(3, 2)
     with pytest.raises(ConfigurationError, match='source ReferenceSet'):
         ModelSetup(view.source, cfg, 'nucleotide', 'alleles', view)
+    cfg = build_model_config(2, 2, input_space='protein', label_space='protein_classes')
     with pytest.raises(ConfigurationError, match='same reference'):
         ModelSetup(_reference(), cfg, 'protein', 'protein_classes', view)
 

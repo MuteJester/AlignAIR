@@ -78,7 +78,7 @@ def test_study_callbacks_restore_mode_and_selected_checkpoints_survive_rotation(
     import GenAIRR.data as gd
     for step in (5,6,7,8):
         save_rotating(tmp_path/'model.alignair', predictor.model.cfg, predictor.model, None, step, None,
-                      dataconfigs=[gd.HUMAN_IGH_OGRDB], keep=1)
+                      dataconfigs=[gd.HUMAN_IGH_OGRDB], label_schema=predictor.label_schema, keep=1)
     assert all(container.is_alignair_file(path) for path in run.checkpoints.values())
 
 

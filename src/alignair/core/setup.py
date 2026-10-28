@@ -121,28 +121,9 @@ class ModelSetup:
     def validate(self) -> None:
         """Check label sizes and input semantics before allocating a model."""
         _spaces(self.input_space, self.label_space)
-        if not isinstance(self.reference, ReferenceSet) or not isinstance(self.config, AlignAIRConfig):
-            raise ConfigurationError('model setup requires a ReferenceSet and AlignAIRConfig')
-        if type(self.config.has_d) is not bool or self.config.has_d and not self.reference.has_d:
-            raise ConfigurationError('model D selection disagrees with the reference', context={'field': 'has_d'})
-        self.reference.validate(genes=tuple(spec.name.upper() for spec in self.config.gene_specs))
-        if self.label_space == 'protein_classes':
-            _protein_labels(self.protein_reference, self.reference)
-        elif self.protein_reference is not None:
-            raise ConfigurationError('allele setups must use the source ReferenceSet directly')
+        validate_reference_binding(self.reference, self.config, protein_reference=self.protein_reference)
         if (self.config.input_space, self.config.label_space) != (self.input_space, self.label_space):
             raise ConfigurationError('model configuration disagrees with its setup input/label spaces')
-        for spec in self.config.gene_specs:
-            expected = _count(self.label_counts[spec.name], f'{spec.name}_label_count')
-            if _count(spec.allele_count, f'{spec.name}_allele_count') != expected:
-                raise ConfigurationError('model head size disagrees with its reference labels',
-                                         context={'gene': spec.name, 'expected': expected})
-        if not self.config.has_d and self.config.d_allele_count != 0:
-            raise ConfigurationError('a disabled D head must have zero labels', context={'field': 'd_allele_count'})
-        _count(self.config.max_seq_length, 'max_seq_length')
-        if _count(self.config.num_chain_types, 'num_chain_types') != max(1, len(self.reference.loci)):
-            raise ConfigurationError('chain count disagrees with the reference locus schema', context={'field': 'num_chain_types'})
-        _input_config(self.config, self.input_space)
 
     def build_model(self) -> AlignAIR:
         """Allocate the shared model after preflight; architecture registration selects components."""
@@ -184,6 +165,58 @@ def validate_label_schema(schema, reference, config) -> None:
                 raise ConfigurationError('class label members must be unique source alleles', context={'gene': spec.name})
         elif labels != names:
             raise ConfigurationError('allele label order disagrees with the source reference', context={'gene': spec.name})
+
+
+def validate_reference_binding(reference, config, *, label_schema=None, protein_reference=None) -> None:
+    """Check a reference/configuration binding without allocating model parameters.
+
+    Allele heads use the reference's ordered panel. Protein-class V/J heads require either an
+    explicit ordered schema or a validated protein view; D retains source allele labels. A missing
+    schema never causes class IDs to be inferred. Artifact readers still own reference hashes and
+    calibration binding, and translate invalid embedded bindings to integrity errors.
+    """
+    if not isinstance(reference, ReferenceSet) or not isinstance(config, AlignAIRConfig):
+        raise ConfigurationError('model binding requires a ReferenceSet and AlignAIRConfig')
+    _spaces(config.input_space, config.label_space)
+    if type(config.has_d) is not bool or config.has_d and not reference.has_d:
+        raise ConfigurationError('model D selection disagrees with the reference', context={'field': 'has_d'})
+    reference.validate(genes=tuple(spec.name.upper() for spec in config.gene_specs))
+    if label_schema is not None:
+        validate_label_schema(label_schema, reference, config)
+    if config.label_space == 'protein_classes':
+        if protein_reference is not None:
+            _protein_labels(protein_reference, reference)
+        elif label_schema is None:
+            raise ConfigurationError('protein-class models require ordered class labels',
+                                     context={'field': 'label_schema'},
+                                     hint='Supply the saved label schema or protein reference; do not infer class IDs.')
+    elif protein_reference is not None:
+        raise ConfigurationError('allele setups must use the source ReferenceSet directly')
+    for spec in config.gene_specs:
+        if config.label_space == 'protein_classes' and spec.name != 'd':
+            if protein_reference is not None:
+                labels = protein_reference.class_maps[spec.name.upper()]
+                expected = labels.n_classes()
+                if label_schema is not None and (len(label_schema['genes'][spec.name]) != expected or any(
+                        set(group) != set(labels.class_members[i])
+                        for i, group in enumerate(label_schema['genes'][spec.name]))):
+                    raise ConfigurationError('label schema class order disagrees with the protein reference',
+                                             context={'gene': spec.name, 'field': 'label_schema'})
+            else:
+                expected = len(label_schema['genes'][spec.name])
+        else:
+            expected = len(reference.gene(spec.name.upper()))
+        expected = _count(expected, f'{spec.name}_label_count')
+        actual = _count(spec.allele_count, f'{spec.name}_allele_count')
+        if actual != expected:
+            raise ConfigurationError('model head size disagrees with its reference labels',
+                                     context={'gene': spec.name, 'expected': expected, 'actual': actual})
+    if not config.has_d and _count(config.d_allele_count, 'd_allele_count', 0) != 0:
+        raise ConfigurationError('a disabled D head must have zero labels', context={'field': 'd_allele_count'})
+    _count(config.max_seq_length, 'max_seq_length')
+    if _count(config.num_chain_types, 'num_chain_types') != max(1, len(reference.loci)):
+        raise ConfigurationError('chain count disagrees with the reference locus schema', context={'field': 'num_chain_types'})
+    _input_config(config, config.input_space)
 
 
 def setup_from_schema(reference, config, schema) -> ModelSetup:

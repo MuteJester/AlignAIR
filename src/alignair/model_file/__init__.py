@@ -13,9 +13,9 @@ from datetime import datetime, timezone
 
 import GenAIRR.data as gd
 
-from ..errors import ModelError, ModelIntegrityError
+from ..errors import ConfigurationError, DataContractError, ModelError, ModelIntegrityError, error_context
 
-from ..core import AlignAIR
+from ..core import AlignAIR, validate_reference_binding
 from ..core.config import AlignAIRConfig
 from ..reference.reference_set import ReferenceSet
 from . import container, serialize
@@ -86,13 +86,14 @@ def save_model(path, model, *, dataconfigs, training, inference=None, logvars=No
     ``dataconfig``/``train_state`` sections (a resumable training checkpoint). Set it to ``False`` for
     a **publish/inference artifact**: weights + config + safe ``reference_json`` + ``reference`` FASTA
     + model card, and ZERO pickle sections. ``card`` supplies descriptive AIRR fields (species/locus/
-    intended_use/…) merged into the header."""
+    intended_use/…) merged into the header. Protein-class models require their ordered
+    ``label_schema``; allele models may omit it. Binding validation precedes destination writes.
+    """
     cfg = model.cfg
     resolved = _resolve_dataconfigs(dataconfigs)
     reference = ReferenceSet.from_dataconfigs(*[dc for _, dc in resolved])
-    if label_schema is not None:
-        from ..core.setup import validate_label_schema
-        validate_label_schema(label_schema, reference, cfg)
+    with error_context(stage='model_binding', path=path):
+        validate_reference_binding(reference, cfg, label_schema=label_schema)
 
     sections, formats = {}, {}
 
@@ -221,7 +222,6 @@ def _rebuild(path, device, *, trust_pickle=False):
     cfg = serialize.config_from_bytes(container.read_section(path, "config"))
     if "reference_json" in md["sections"]:                       # safe, no-pickle path (default)
         reference = serialize.reference_from_json(container.read_section(path, "reference_json"))
-        _verify_reference_integrity(reference, md)
     elif trust_pickle and any(k.startswith("dataconfig/") for k in md["sections"]):
         n = len(md["reference"]["dataconfigs"])                  # legacy trusted path (explicit consent)
         dcs = [serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{i}")) for i in range(n)]
@@ -232,14 +232,16 @@ def _rebuild(path, device, *, trust_pickle=False):
             "Upgrade it: `alignair convert <old>.alignair <new>.alignair --trust-pickle`, or pass "
             "trust_pickle=True for a local file you trust (it will unpickle the embedded dataconfig).")
     schema = md.get('model', {}).get('label_schema')
-    if schema is not None:
-        from ..core.setup import validate_label_schema
-        from ..errors import ConfigurationError
+    with error_context(stage='model_binding', path=path):
+        _verify_reference_integrity(reference, md)
         try:
-            validate_label_schema(schema, reference, cfg)
-        except ConfigurationError as exc:
-            raise ModelIntegrityError('stored label schema disagrees with the model/reference',
-                                      context={'field': 'label_schema'}) from exc
+            validate_reference_binding(reference, cfg, label_schema=schema)
+        except (ConfigurationError, DataContractError) as exc:
+            message = ('stored label schema disagrees with the model/reference' if schema is not None
+                       else 'stored model/reference binding is invalid')
+            raise ModelIntegrityError(f'{message}: {exc}',
+                                      context={'field': 'label_schema' if schema is not None else 'reference',
+                                               **exc.context}, hint=exc.hint) from exc
     model = AlignAIR.from_state_dict(
         cfg, serialize.state_dict_from_bytes(container.read_section(path, "weights")),
         device=device, source=path)
