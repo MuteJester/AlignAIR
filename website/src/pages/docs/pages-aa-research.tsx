@@ -24,6 +24,7 @@ const aaGuardResearch: DocPage = {
         [<code>profiles.builder.build_profile_bank</code>, "Build a complete HMM bank from checksum-pinned local sources."],
         [<code>training.manifests</code>, "Bind explicit study settings to data, profile, partition, and fold identities."],
         [<code>training.studies</code>, "Run seed sweeps and leave-one-category-out training."],
+        [<code>checkpoint</code>, "Verify guard runtime identities and training contracts; load and atomically publish trusted local checkpoints."],
         [<code>training.budget</code>, "Compute accounting using a caller-supplied ledger path."],
         [<code>training.choose_production_seed</code>, "Choose the lowest development loss, breaking ties by the lowest seed; reject fresh-validation metrics."],
       ]} />
@@ -130,6 +131,34 @@ python -m alignair.aa.guard.training loco --help`} />
         The feature cache is a JSON file for sweeps and a directory for LOCO folds. Checkpoints bind configuration,
         data, and feature identities; legacy unbound checkpoints are refused. Choose a new checkpoint directory
         for a new run. Research artifacts are not migrated automatically.
+      </p>
+
+      <H2 id="checkpoints">Guard checkpoint compatibility</H2>
+      <p>
+        <code>checkpoint.load_checkpoint</code> requires the expected <code>training_contract</code>
+        and current <code>CheckpointProvenance</code>. Training uses it both to resume interrupted
+        optimization and to reuse completed results. Before restoring state or recording success, it
+        checks the run hash and the five runtime identities: tokenizer, profile-bank checksum, ordered
+        feature names, class-map hash and partition hash. Missing or changed identities raise a contextual
+        integrity error with the checkpoint path and mismatched fields. Malformed expected identities
+        raise <code>ConfigurationError</code> before deserialization.
+      </p>
+      <p>
+        Seed, manifest, loss settings and software versions remain in provenance for auditing. The run
+        hash independently binds settings and data; software versions are not strict runtime pins.
+        Version discovery reads installed package metadata without importing pyhmmer or ANARCII;
+        unavailable distributions are recorded as <code>n/a</code>.
+        Model and optimizer state shapes are checked by their PyTorch loaders. These APIs use trusted
+        local pickle files and do not authenticate their origin. Do not load untrusted checkpoints.
+      </p>
+      <p>
+        Both periodic and final saves use <code>alignair.io.atomic</code>, preserving the previous
+        checkpoint if serialization or replacement fails. Periodic checkpoints now include provenance;
+        older periodic files without it require explicit migration using verified identities or a new
+        run. Existing completed checkpoints remain reusable when their run and runtime bindings match.
+        Read/write failures retain their causes in the shared error hierarchy, and CUDA allocation
+        failures keep their original exception type. Publication is atomic per file, without a whole-run
+        transaction or a power-loss guarantee for directory entries.
       </p>
 
       <H2 id="diagnostics">Diagnostics and release checks</H2>

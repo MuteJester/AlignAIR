@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from alignair.aa.guard.checkpoint import build_provenance
+from alignair.aa.guard.checkpoint import build_provenance, load_checkpoint, save_checkpoint
 from alignair.aa.guard.features import FEATURE_NAMES
 from alignair.aa.guard.fusion import fit_fusion
 from alignair.aa.guard.losses import energy_margin_loss, supcon_loss
@@ -62,15 +62,6 @@ def _run_contract(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_
         "inputs_sha256": hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest(),
     }
     return hashlib.sha256(json.dumps(contract, sort_keys=True).encode()).hexdigest()
-
-
-def _verify_contract(saved, expected, path):
-    if saved.get("training_contract") != expected:
-        raise ArtifactIntegrityError(
-            "Guard checkpoint does not match the requested training run.",
-            context={"path": path},
-            hint="Use a new output directory for a different run. Legacy unbound checkpoints require explicit migration.",
-        )
 
 
 def _forward_losses(model, T, W, margins, cfg, grl, device):
@@ -124,20 +115,26 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
     final_path = ckpt_dir / f"{tag}.final.pt"
     contract = _run_contract(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sources,
                              config, mask_groups, extra_provenance)
+    tr = manifest["training"]; W = manifest["loss_weights"]; margins = manifest["energy_margins"]
+    bank_checksum = manifest["bank_checksum"]
+    fusion = fit_fusion(FEATURE_NAMES, [feat_cache[hashlib.sha256(r["aa"].encode()).hexdigest()]
+                                        for r in train], bank_checksum)   # TRAIN-only normalization
+    xp = dict(extra_provenance or {})
+    xp["normalization_stats_sha256"] = hashlib.sha256(fusion.mean.tobytes() + fusion.std.tobytes()).hexdigest()
+    prov = build_provenance(bank_checksum=bank_checksum,
+                            training_manifest_hash=xp.get("training_manifest_hash", manifest["manifest_sha256"]),
+                            partition_hash=xp.get("partition_hash", manifest["train_partition_hash"]), seed=seed,
+                            loss_mask_config={"candidate": cid, "weights": W, "margins": margins,
+                                              "loco_mask_hash": xp.get("loco_mask_hash"), "fold": xp.get("fold"),
+                                              "norm_stats_sha256": xp["normalization_stats_sha256"]})
     if final_path.exists():                            # already completed -> skip on resumable restart
-        saved = torch.load(final_path, map_location="cpu", weights_only=False)
-        _verify_contract(saved, contract, final_path)
+        saved = load_checkpoint(final_path, training_contract=contract, provenance=prov)
         metrics = saved["metrics"]
         budget.record(tag, metrics["wall_s"], metrics["gpu_h"], metrics["params"], path=config.budget_path)
         return metrics
     ckpt_path = ckpt_dir / f"{tag}.pt"
     cfg = CANDIDATE_CONFIG[cid]                         # static config (no throwaway model / no source_head)
     torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
-    tr = manifest["training"]; W = manifest["loss_weights"]; margins = manifest["energy_margins"]
-    bank_checksum = manifest["bank_checksum"]
-
-    fusion = fit_fusion(FEATURE_NAMES, [feat_cache[hashlib.sha256(r["aa"].encode()).hexdigest()]
-                                        for r in train], bank_checksum)   # TRAIN-only normalization
     tok = AaTokenizer(max_len=MAX_LEN)
     T_dev = build_tensors(dev, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, mask_groups=mask_groups, bank=bank)
     T_oe = build_tensors(oe, feat_cache, fusion, tok, bank_checksum, cat2id, eligible_dt, is_oe=True,
@@ -160,8 +157,7 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
 
     resumed = None
     if ckpt_path.exists():                               # resume operationally
-        st = torch.load(ckpt_path, map_location=device, weights_only=False)
-        _verify_contract(st, contract, ckpt_path)
+        st = load_checkpoint(ckpt_path, training_contract=contract, provenance=prov, device=device)
         model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"]); sched.load_state_dict(st["sched"])
         scaler.load_state_dict(st["scaler"]); start_step = st["step"]; best_dev = st["best_dev"]
         patience = st["patience"]; best_state = st.get("best_state")
@@ -226,11 +222,11 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
                     best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
                 else:
                     patience += 1
-                torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),
+                save_checkpoint(ckpt_path, {"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),
                             "scaler": scaler.state_dict(), "step": step + 1, "best_dev": best_dev,
                             "patience": patience, "best_state": best_state, "rng": _rng_state(device),
                             "sampling_rng": rng.getstate(), "train_loss_ema": train_loss_ema,
-                            "training_contract": contract, "best_step": stop_step}, ckpt_path)
+                            "training_contract": contract, "best_step": stop_step, "provenance": prov.to_dict()})
                 model.train()
                 if patience >= tr["early_stop_patience"]:
                     break
@@ -253,17 +249,8 @@ def train_one(cid, seed, train, dev, oe, feat_cache, cat2id, eligible_dt, n_sour
                     "peak_vram_mb": round(torch.cuda.max_memory_allocated() / 1e6, 1) if is_cuda else 0,
                     "params": sum(p.numel() for p in model.parameters()),
                     "eligible_source_fraction": round(float(T_dev["source_m"].mean()), 4)})
-    xp = dict(extra_provenance or {})
-    xp["normalization_stats_sha256"] = hashlib.sha256(fusion.mean.tobytes() + fusion.std.tobytes()).hexdigest()
-    prov = build_provenance(bank_checksum=bank_checksum,
-                            training_manifest_hash=xp.get("training_manifest_hash", manifest["manifest_sha256"]),
-                            partition_hash=xp.get("partition_hash", manifest["train_partition_hash"]), seed=seed,
-                            loss_mask_config={"candidate": cid, "weights": W, "margins": margins,
-                                              "loco_mask_hash": xp.get("loco_mask_hash"), "fold": xp.get("fold"),
-                                              "norm_stats_sha256": xp["normalization_stats_sha256"]})
-    torch.save({"model": model.state_dict(), "provenance": prov.to_dict(), "metrics": metrics,
-                "bound_extra": xp, "training_contract": contract},
-               final_path)
+    save_checkpoint(final_path, {"model": model.state_dict(), "provenance": prov.to_dict(), "metrics": metrics,
+                                "bound_extra": xp, "training_contract": contract})
     budget.record(tag, metrics["wall_s"], metrics["gpu_h"], metrics["params"], path=config.budget_path)
     return metrics
 

@@ -66,15 +66,15 @@ def test_interrupted_resume_matches_uninterrupted_weights_and_metrics(run_inputs
     config = run_inputs["config"]
     reference = engine.RunConfig(config.manifest, tmp_path / "reference", tmp_path / "reference-budget.json")
     expected = engine.train_one(**{**run_inputs, "config": reference})
-    save = torch.save
+    save = engine.save_checkpoint
 
-    def interrupt_after_checkpoint(value, path, *args, **kwargs):
-        save(value, path, *args, **kwargs)
+    def interrupt_after_checkpoint(path, value):
+        save(path, value)
         if path.name == "C4.s7.pt":
             raise KeyboardInterrupt
 
     with monkeypatch.context() as patch:
-        patch.setattr(torch, "save", interrupt_after_checkpoint)
+        patch.setattr(engine, "save_checkpoint", interrupt_after_checkpoint)
         with pytest.raises(KeyboardInterrupt):
             engine.train_one(**run_inputs)
     actual = engine.train_one(**run_inputs)
@@ -126,3 +126,58 @@ def test_device_errors_are_configuration_failures(monkeypatch):
     assert engine.resolve_device("auto") == "cpu"
     with pytest.raises(ConfigurationError, match="unavailable"):
         engine.resolve_device("cuda")
+
+
+@pytest.mark.parametrize('field,value', [('tokenizer', 'different-tokenizer'), ('bank_checksum', 'different-bank'),
+    ('feature_order', ['different-feature']), ('class_map_hash', 'different-classes'), ('partition_hash', 'different-partition')])
+@pytest.mark.parametrize('kind', ['resume', 'completed'])
+def test_live_checkpoint_reuse_checks_provenance_before_model_state_or_accounting(run_inputs, monkeypatch, field, value, kind):
+    engine.train_one(**run_inputs)
+    config = run_inputs['config']
+    path = config.checkpoint_dir / ('C4.s7.pt' if kind == 'resume' else 'C4.s7.final.pt')
+    state = torch.load(path, weights_only=False)
+    state['provenance'][field] = value
+    torch.save(state, path)
+    if kind == 'resume': (config.checkpoint_dir/'C4.s7.final.pt').unlink()
+    config.budget_path.unlink()
+    before = path.read_bytes()
+    def forbidden(*args, **kwargs): pytest.fail('identity validation must precede state restoration')
+    monkeypatch.setattr(GuardModel, 'load_state_dict', forbidden)
+    with pytest.raises(ArtifactIntegrityError) as caught: engine.train_one(**run_inputs)
+    assert caught.value.context['fields'] == [field] and caught.value.context['path'] == str(path)
+    assert path.read_bytes() == before and not config.budget_path.exists()
+
+
+def test_older_resume_without_runtime_identity_requires_explicit_migration(run_inputs):
+    engine.train_one(**run_inputs)
+    config = run_inputs['config']; path = config.checkpoint_dir/'C4.s7.pt'
+    state = torch.load(path, weights_only=False); state.pop('provenance'); torch.save(state, path)
+    (config.checkpoint_dir/'C4.s7.final.pt').unlink()
+    before = path.read_bytes()
+    with pytest.raises(ArtifactIntegrityError, match='provenance'): engine.train_one(**run_inputs)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('kind', ['resume', 'completed'])
+def test_failed_publication_preserves_last_recovery_and_does_not_record_success(run_inputs, monkeypatch, kind):
+    from pathlib import Path
+    from alignair.errors import OperationIOError
+    save = torch.save
+    previous = []
+    def write(state, temporary):
+        if kind == 'resume' and state.get('step') == 4 or kind == 'completed' and 'metrics' in state:
+            path = run_inputs['config'].checkpoint_dir / 'C4.s7.pt'
+            previous.append(path.read_bytes())
+            Path(temporary).write_bytes(b'partial new checkpoint')
+            raise OSError('disk full')
+        return save(state, temporary)
+    monkeypatch.setattr(torch, 'save', write)
+    if kind == 'resume':
+        result = engine.train_one(**run_inputs)
+        assert result['status'] == 'engineering_failure' and result['error']['code'] == 'ALIGNAIR_IO_FAILED'
+    else:
+        with pytest.raises(OperationIOError): engine.train_one(**run_inputs)
+    config = run_inputs['config']
+    assert (config.checkpoint_dir/'C4.s7.pt').read_bytes() == previous[0]
+    assert not (config.checkpoint_dir/'C4.s7.final.pt').exists() and not config.budget_path.exists()
+    assert not list(config.checkpoint_dir.glob('*.tmp'))

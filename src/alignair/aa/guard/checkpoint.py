@@ -1,17 +1,23 @@
-"""Stage-4 checkpoint provenance — every trained checkpoint BINDS the identities that make it reproducible
-and safe to load: tokenizer, HMM bank checksum, feature order, class maps, loss/mask config, training-manifest
-hash, partition hash, seed, and software versions. Loading verifies these and HARD-FAILS on any mismatch, so
-a checkpoint can never be paired with a different bank / feature order / class map / tokenizer.
+"""Guard checkpoint identity checks and publication for trusted local training artifacts.
 
-Safeguard 6 note: HMM normalization statistics are fit on the TRAIN partition only (and, later, per LOCO
-fold) — never on the internal dev partition or the whole burned cohort. The bound ``partition_hash`` records
-exactly which partition the stats belong to.
+The training contract binds run inputs/settings. Provenance additionally checks runtime tokenizer,
+profile bank, feature ordering, class map and partition identities. Other provenance fields remain
+audit metadata. These checks do not authenticate pickle files or validate arbitrary model states.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import pickle
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from importlib.metadata import PackageNotFoundError, version
+
+from alignair.errors import (
+    ArtifactIntegrityError, ConfigurationError, ModelError, ModelFormatError, ModelIntegrityError,
+    OperationIOError, error_context,
+)
+from alignair.io.atomic import atomic_write
 
 
 @dataclass(frozen=True)
@@ -41,18 +47,18 @@ def build_provenance(*, bank_checksum, training_manifest_hash, partition_hash, s
     from alignair.aa.guard.tokenizer import MAX_LEN, VOCAB_SIZE
     import torch
 
-    import pyhmmer
-    try:
-        import anarcii
-        av = getattr(anarcii, "__version__", "installed")
-    except Exception:  # noqa: BLE001
-        av = "n/a"
+    versions = {"torch": torch.__version__}
+    for package in ("pyhmmer", "anarcii"):
+        try:
+            versions[package] = version(package)
+        except PackageNotFoundError:
+            versions[package] = "n/a"
     return CheckpointProvenance(
         tokenizer=f"AaTokenizer(max_len={MAX_LEN},vocab={VOCAB_SIZE})",
         bank_checksum=bank_checksum, feature_order=tuple(FEATURE_NAMES), class_map_hash=CLASS_MAP_HASH,
         loss_mask_config=loss_mask_config, training_manifest_hash=training_manifest_hash,
         partition_hash=partition_hash, seed=seed,
-        software_versions={"torch": torch.__version__, "pyhmmer": pyhmmer.__version__, "anarcii": av})
+        software_versions=versions)
 
 
 # Identities that MUST match at load time (silent drift here = wrong features into wrong positions / wrong labels).
@@ -60,9 +66,75 @@ _BOUND = ("tokenizer", "bank_checksum", "feature_order", "class_map_hash", "part
 
 
 def verify_provenance(saved: dict, current: CheckpointProvenance):
-    """Raise if any bound identity differs between a saved checkpoint and the current environment."""
-    cur = current.to_dict()
-    mismatch = [k for k in _BOUND if saved.get(k) != cur.get(k)]
-    if mismatch:
-        raise ValueError(f"checkpoint provenance mismatch (cannot load): {mismatch}")
+    """Verify the five runtime identities; mismatch errors also remain catchable as ValueError."""
+    with error_context(stage="guard_checkpoint"):
+        cur = _current_identities(current)
+        if not isinstance(saved, Mapping) or not _valid_identities(saved):
+            raise ModelIntegrityError("Guard checkpoint provenance is missing or malformed.",
+                                      context={"field": "provenance"},
+                                      hint="Use a new run directory or explicitly migrate the checkpoint using verified runtime identities.")
+        mismatch = [k for k in _BOUND if saved[k] != cur[k]]
+        if mismatch:
+            raise ModelIntegrityError(f"checkpoint provenance mismatch (cannot load): {mismatch}",
+                                      context={"fields": mismatch})
     return True
+
+
+def _current_identities(current):
+    if not isinstance(current, CheckpointProvenance) or not _valid_identities(current.to_dict()):
+        raise ConfigurationError("Guard checkpoint verification requires valid current identities.")
+    return current.to_dict()
+
+
+def _valid_identities(value):
+    order = value.get("feature_order")
+    return (all(isinstance(value.get(key), str) and value[key] for key in _BOUND if key != "feature_order")
+            and isinstance(order, (list, tuple)) and bool(order)
+            and all(isinstance(name, str) and name for name in order) and len(set(order)) == len(order))
+
+
+def load_checkpoint(path, *, training_contract, provenance, device="cpu"):
+    """Load a trusted local pickle and verify identities before the caller restores training state.
+
+    Historical resume files without provenance require explicit migration or a new run. No
+    fallback invents their runtime identities. Model/optimizer payload validation remains with
+    the corresponding PyTorch state loaders.
+    """
+    import torch
+
+    with error_context(stage="guard_checkpoint_load", path=str(path)):
+        if not isinstance(training_contract, str) or not training_contract:
+            raise ConfigurationError("Guard checkpoint verification requires a training contract.")
+        _current_identities(provenance)
+        try:
+            saved = torch.load(path, map_location=device, weights_only=False)
+        except OSError as exc:
+            raise OperationIOError("Cannot read guard checkpoint.") from exc
+        except (EOFError, pickle.UnpicklingError, ValueError) as exc:
+            raise ModelFormatError("Cannot deserialize guard checkpoint.") from exc
+        except torch.cuda.OutOfMemoryError:
+            raise
+        except RuntimeError as exc:
+            raise ModelError("Cannot load guard checkpoint on the requested device.", context={"device": str(device)}) from exc
+        if not isinstance(saved, Mapping):
+            raise ModelFormatError("Guard checkpoint must contain a state mapping.")
+        if not isinstance(saved.get("training_contract"), str) or saved["training_contract"] != training_contract:
+            raise ArtifactIntegrityError(
+                "Guard checkpoint does not match the requested training run.",
+                hint="Use a new output directory for a different run. Legacy unbound checkpoints require explicit migration.",
+            )
+        verify_provenance(saved.get("provenance"), provenance)
+        return saved
+
+
+def save_checkpoint(path, state):
+    """Atomically publish a guard state without replacing a completed predecessor on failure."""
+    import torch
+
+    with error_context(stage="guard_checkpoint_save", path=str(path)):
+        try:
+            atomic_write(path, lambda temporary: torch.save(state, temporary), stage="guard_checkpoint_save")
+        except torch.cuda.OutOfMemoryError:
+            raise
+        except (OSError, RuntimeError) as exc:
+            raise OperationIOError("Cannot publish guard checkpoint.") from exc

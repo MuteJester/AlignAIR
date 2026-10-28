@@ -85,6 +85,11 @@ All notable changes to AlignAIR are documented here. The format follows
 - Contributor guidance for raising, chaining, reporting, and extending domain errors.
 
 ### Changed
+- Guard periodic and final checkpoints share atomic publication and one loader for run/runtime
+  identity verification. Reuse and resume now check tokenizer, profile bank, feature order, class map
+  and partition provenance before restoring state or accounting success. Older periodic checkpoints
+  without provenance require explicit migration or a new run; compatible completed files remain usable.
+  Software-version recording reads package metadata without importing pyhmmer or ANARCII.
 - Convergence studies validate run requests before loading checkpoints and require fresh, distinct,
   nonoverlapping output directories. Fractional checkpoint offsets are rejected instead of truncated.
   Reports and training checkpoints share `alignair.io.atomic`; finite metrics JSON is published last,
