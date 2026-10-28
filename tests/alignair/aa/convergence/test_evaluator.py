@@ -2,6 +2,7 @@
 import math
 from dataclasses import replace
 from copy import deepcopy
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -15,6 +16,23 @@ from alignair.aa.convergence.evaluator import evaluate_checkpoint
 pytestmark = pytest.mark.component
 
 REQUIRED_STRATA = ("clean", "aa_truncate_50_80", "short_janchor", "moderate_full")
+
+
+def test_protein_cohort_excludes_non_forward_cases_even_when_translation_is_available(
+        monkeypatch, evaluation_inputs):
+    from alignair.aa.convergence import evaluator
+    from alignair.data.projection import translated_record_usable
+    _, _, maps, _, inputs = evaluation_inputs
+    record = inputs['by_stratum']['clean'][0]['record']
+    assert translated_record_usable(record)
+    cases = [SimpleNamespace(stratum='clean_full', orientation_id=orientation,
+                              record={**record, 'sequence_id': identifier})
+             for identifier, orientation in (('forward_one', 0), ('reverse', 1), ('forward_two', 0))]
+    monkeypatch.setattr(evaluator, 'stream_benchmark', lambda *args, **kwargs: iter(cases))
+    monkeypatch.setattr(evaluator, 'build_protein_reference', lambda *args: SimpleNamespace(class_maps=maps))
+    cohort, _ = evaluator.build_cohort(n_per_stratum=3, seed=1)
+    source_rows = cohort['by_stratum']['clean'] + cohort['calibration']
+    assert {row['record']['sequence_id'] for row in source_rows} == {'forward_one', 'forward_two'}
 
 
 def test_clean_heads_and_conformal_test_probabilities_share_one_forward(evaluation_inputs):

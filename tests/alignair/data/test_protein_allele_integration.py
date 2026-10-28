@@ -36,3 +36,22 @@ def test_real_gym_protein_allele_batch_backpropagates_through_shared_model_and_t
     assert torch.isfinite(total)
     total.backward()
     assert model.branches['v'].cls_head.weight.grad is not None
+
+
+@pytest.fixture(scope='module')
+def native_benchmark_cases():
+    from alignair_benchmark import default_igh_spec, stream_benchmark
+    return list(stream_benchmark(default_igh_spec(n_per_stratum=10, seed=1)))
+
+
+@pytest.mark.parametrize('stratum,minimum,maximum', [
+    ('clean_full', 9, 10), ('amplicon_fr1', 0, 1),
+    ('amplicon_fr2', 0, 1), ('amplicon_janchor', 8, 10),
+])
+def test_native_benchmark_translation_availability_matches_read_layout(
+        native_benchmark_cases, stratum, minimum, maximum):
+    """Junction-retaining short reads remain translatable; FR crops lose that frame anchor."""
+    records = [case.record for case in native_benchmark_cases if case.stratum == stratum]
+    assert len(records) == 10
+    usable = sum(translated_record_usable(record) for record in records)
+    assert minimum <= usable <= maximum

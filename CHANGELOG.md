@@ -113,12 +113,12 @@ All notable changes to AlignAIR are documented here. The format follows
   keeps its verified tokenizer and device-local softmax; research keeps CPU softmax arithmetic.
 - Checkpoint evaluation reuses clean-cohort V/J/D probabilities and conformal test probabilities,
   reducing redundant model passes and supporting configurations without a D head.
-- Protein allele evaluation and stratified benchmarking use shared observation collection and allele counters;
+- Protein allele evaluation uses shared observation collection and allele counters;
   duplicate inference/counting loops and dummy-tensor counter initialization have been removed.
 - Unmapped alleles no longer form a false equivalence class. Class accuracy and within-class error
   fractions use explicit mapped-comparison support. Boundary/scalar errors use their observed row counts.
-- Empty allele cohorts report zero records; disabled metadata heads report null metrics. Stratified
-  protein benchmarking now restores caller module modes after inference.
+- Empty allele cohorts report zero records; disabled metadata heads report null metrics. Cohort
+  evaluation restores caller module modes after inference.
 - Frozen protein-cohort evaluation delegates prediction collection to the shared owner, excludes
   unobserved classes without dropping observed boundaries, and reports explicit per-field support.
 - Categorical batch adaptation preserves gene-level supervision masks alongside class-only masks.
@@ -234,6 +234,10 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Unused `aa.benchmark.run_aa_benchmark` runner for the historical protein-input allele-head
+  experiment. Shared case generation, allele/categorical cohort evaluation and cross-tool benchmark
+  scoring remain their respective owners; the runner's legacy JSON report has no drop-in replacement.
+  Native translation-availability checks now live with the shared data integration tests.
 - Protein-only `aa.evaluate` and `aa.eval_gym` entry points. Phase-1 and convergence callers now use
   shared cohort evaluators; categorical report tests live under `tests/alignair/evaluate`.
 - Obsolete `aa.infer` probability wrapper and unused report/statistic/counter aliases in the
@@ -263,7 +267,7 @@ All notable changes to AlignAIR are documented here. The format follows
 - Historical `train_eval_aa_igh.py` allele-head experiment runner and held-out sampling recipe.
   Training uses the shared workflow; evaluation uses the shared cohort API with an explicit batch adapter.
 - Redundant `benchmark_aa_igh.py` wrapper for the historical allele-head checkpoint.
-  The package benchmark implementation and shared allele-recovery metrics remain unchanged.
+  Shared case generation and allele-recovery metrics remain available through their canonical APIs.
 - Historical `eval_baseline_complete.py` report runner and study-specific junction-masking analysis.
   Shared inference, metrics, coordinate projection, and alignment code remain unchanged.
 - Historical `eval_strategic.py` comparison runner and its duplicate batching/cohort setup.

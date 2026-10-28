@@ -117,9 +117,8 @@ print(report["support"])`} />
       <p>
         Reusable counters and normalization live in <code>evaluate.alleles</code>. Select
         <code> ProteinAlleleBatchAdapter(reference, config, device)</code> for translated reads;
-        the former <code>aa.eval_gym</code> adapter has been removed. The stratified protein benchmark
-        uses the same collector and counters while retaining its source strata and translated-read
-        eligibility rules. Both paths restore caller module modes. Boundary and scalar totals accumulate detached per-row
+        the former <code>aa.eval_gym</code> adapter has been removed. Cohort evaluation restores
+        caller module modes. Boundary and scalar totals accumulate detached per-row
         errors, so older float32 batch reductions can differ by floating-point roundoff.
       </p>
       <H2 id="categorical-cohorts">Evaluate categorical cohorts with explicit strata</H2>
@@ -260,6 +259,29 @@ print(report["paired_improvement"])`} />
         aggregation imports its preserved estimator directly; the historical
         <code> train.gym.instrument.stats.bootstrap_ci</code> alias remains available.
         The existing <code>alignair.evaluate</code> benchmark exports load on demand.
+      </p>
+      <H2 id="benchmark-contracts">Benchmark generation and model evaluation</H2>
+      <p>
+        The source-only <code>alignair_benchmark</code> package owns simulator case generation,
+        source strata, orientation transforms, and cross-tool prediction scoring. Its predictor
+        runners consume nucleotide case sequences and prediction dictionaries in the declared
+        coordinate frame. The installed <code>alignair benchmark</code> command provides the
+        separate four-stratum product self-check described in the
+        <DocLink to="benchmarks"> benchmark guide</DocLink>.
+      </p>
+      <p>
+        For raw model experiments, select an allele or categorical cohort evaluator above and
+        supply the matching batch adapter. Protein studies retain forward-oriented cases whose
+        records pass <code>alignair.data.projection.translated_record_usable</code>. Translation
+        availability alone does not establish orientation eligibility, productivity, or full gene
+        observability; apply the study’s declared cohort policy before evaluation.
+      </p>
+      <p>
+        The unused <code>aa.benchmark.run_aa_benchmark</code> experiment runner has been removed.
+        Its historical per-stratum <code>n_aa</code>/<code>no_aa_rate</code> JSON report has no
+        drop-in replacement. Shared cohort reports describe observed classification, boundary,
+        and scalar support; cross-tool benchmark reports use their own schema. Keep these
+        denominators and coordinate contracts explicit when comparing results.
       </p>
       <H2 id="migration">Import shared evaluation utilities directly</H2>
       <p>
