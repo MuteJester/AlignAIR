@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared exact binomial intervals with explicit per-tail alpha, used by coverage and guard studies;
+  benchmark scoring rejects unpaired record counts and conflicting record IDs.
 - Model architecture guide covering forward and task-gradient paths, controlled component ablations,
   and known-boundary classification diagnostics, with gradient-routing tests for both alphabets.
 - Shared prediction-output collection for raw and categorical APIs, with checked batch keys,

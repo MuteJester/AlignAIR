@@ -4,10 +4,40 @@ import numpy as np
 from alignair.errors import ConfigurationError, InputError
 from alignair.evaluate import (
     bootstrap_mean_ci, paired_diff_ci,
-    wilson_interval, bootstrap_competence_ci,
+    wilson_interval, bootstrap_competence_ci, clopper_pearson_interval,
 )
 
 pytestmark = pytest.mark.component
+
+
+def test_exact_binomial_tail_convention_and_empty_support():
+    assert clopper_pearson_interval(0, 0) == (0., 1.)
+    assert clopper_pearson_interval(0, 100)[1] == pytest.approx(1 - .05 ** .01)
+    assert clopper_pearson_interval(100, 100)[0] == pytest.approx(.05 ** .01)
+    lo, hi = clopper_pearson_interval(9, 10)
+    assert lo < .9 < hi
+    wider = clopper_pearson_interval(9, 10, .025)
+    assert wider[0] < lo and wider[1] > hi
+
+
+@pytest.mark.parametrize('k,n,alpha', [(True, 1, .05), (-1, 1, .05), (2, 1, .05),
+                                    (0, -1, .05), (0, 1, True), (0, 1, 0), (0, 1, float('nan'))])
+def test_exact_binomial_rejects_invalid_counts_and_tail_options(k, n, alpha):
+    with pytest.raises((InputError, ConfigurationError)):
+        clopper_pearson_interval(k, n, alpha)
+
+
+def test_exact_estimator_classifies_missing_optional_dependency(monkeypatch):
+    import builtins
+    from alignair.errors import MissingDependencyError
+    original = builtins.__import__
+    def importing(name, *args, **kwargs):
+        if name == 'scipy.stats':
+            raise ImportError('injected')
+        return original(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, '__import__', importing)
+    with pytest.raises(MissingDependencyError):
+        clopper_pearson_interval(1, 2)
 
 
 def test_wilson_interval_brackets_the_point_estimate():

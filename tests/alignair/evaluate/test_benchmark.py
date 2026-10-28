@@ -4,8 +4,16 @@ import math
 import pytest
 
 from alignair.evaluate import default_strata, format_text, score
+from alignair.errors import DataContractError
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.mark.parametrize('truth,predictions', [([{}], []), ([], [{}]),
+    ([{'sequence_id': 'one'}], [{'sequence_id': 'two'}]), ([None], [{}]), ([{}], [None])])
+def test_scoring_rejects_unpaired_records(truth, predictions):
+    with pytest.raises(DataContractError):
+        score(truth, predictions)
 
 
 def _truth():

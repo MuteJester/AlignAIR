@@ -7,7 +7,7 @@ import random
 
 import numpy as np
 
-from ..errors import ConfigurationError, InputError
+from ..errors import ConfigurationError, InputError, MissingDependencyError
 
 DEFAULT_MAX_RESAMPLE_ELEMENTS = 1_000_000
 
@@ -53,6 +53,28 @@ def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     centre = (p + z * z / (2 * n)) / d
     half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
     return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+def clopper_pearson_interval(k: int, n: int, alpha: float = 0.05) -> tuple[float, float]:
+    """Exact binomial bounds with alpha in EACH tail; empty support gives (0, 1).
+
+    Each bound is a one-sided 1-alpha bound. The pair has nominal coverage 1-2*alpha;
+    pass alpha=.025 for a central 95% interval. SciPy is loaded only for this estimator.
+    """
+    k, n = _integer(k, "k", 0), _integer(n, "n", 0)
+    if k > n:
+        raise InputError("successes cannot exceed the observation count", context={"k": k, "n": n})
+    if isinstance(alpha, bool) or not isinstance(alpha, (int, float)) or not 0 < alpha < 1:
+        raise ConfigurationError("alpha must be between zero and one", context={"field": "alpha"})
+    if n == 0:
+        return 0.0, 1.0
+    try:
+        from scipy.stats import beta
+    except ImportError as exc:
+        raise MissingDependencyError("exact binomial intervals require scipy") from exc
+    lower = 0.0 if k == 0 else float(beta.ppf(alpha, k, n - k + 1))
+    upper = 1.0 if k == n else float(beta.ppf(1 - alpha, k + 1, n - k))
+    return lower, upper
 
 
 def bootstrap_mean_ci(values, n_boot: int = 1000, seed: int = 0, *, alpha: float = 0.05,

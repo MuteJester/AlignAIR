@@ -4,8 +4,10 @@ from __future__ import annotations
 import itertools
 import math
 import statistics
+from collections.abc import Mapping
 
 from ..api import predict_sequences
+from ..errors import DataContractError
 
 
 def default_strata() -> dict:
@@ -53,6 +55,16 @@ def _mean(xs):
 
 def score(truth: list[dict], preds: list[dict]) -> dict:
     """Per-metric scores of ``preds`` against ``truth`` (aligned lists)."""
+    if len(truth) != len(preds):
+        raise DataContractError("benchmark truth and predictions have different record counts",
+                                context={"expected_rows": len(truth), "actual_rows": len(preds)})
+    for offset, (target, predicted) in enumerate(zip(truth, preds)):
+        if not isinstance(target, Mapping) or not isinstance(predicted, Mapping):
+            raise DataContractError("benchmark rows must be record mappings", context={"record_offset": offset})
+        if ('sequence_id' in target and 'sequence_id' in predicted
+                and target['sequence_id'] != predicted['sequence_id']):
+            raise DataContractError("benchmark truth and prediction IDs are misaligned",
+                                    context={"record_offset": offset})
     m: dict = {}
     for g in ("v", "d", "j"):
         pairs = [(t, p) for t, p in zip(truth, preds) if t.get(f"{g}_call")]

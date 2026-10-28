@@ -10,7 +10,7 @@ the selector and the tests share one source of truth.
 """
 from __future__ import annotations
 
-from scipy.stats import beta
+from alignair.evaluate.statistics import clopper_pearson_interval
 
 FAR_LIMIT_5PCT = 0.04         # winner's-curse guardband upper-bound ceilings
 FAR_LIMIT_10PCT = 0.08
@@ -19,11 +19,7 @@ FRR_LIMIT = 0.08
 
 def clopper_pearson_upper(k: int, n: int, alpha: float = 0.05) -> float:
     """One-sided exact (Clopper-Pearson) upper bound on a binomial rate given k failures in n trials."""
-    if n == 0:
-        return 1.0
-    if k >= n:
-        return 1.0
-    return float(beta.ppf(1 - alpha, k + 1, n - k))
+    return clopper_pearson_interval(k, n, alpha)[1]
 
 
 def far_limit(gate_kind: str) -> float:
