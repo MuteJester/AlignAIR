@@ -27,9 +27,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ...data.inputs import SequenceRecord
+from ...data.inputs import NormalizedSequenceBatch, SequenceRecord
 from ...data.inference import SequenceInputAdapter
-from ...predict.forward import forward_batch
+from ...predict.forward import _positive, prediction_batches
 from ...predict.probabilities import softmax_probabilities
 
 from ...reference.nomenclature import class_alleles, class_families, class_genes, family_of, gene_of
@@ -38,13 +38,6 @@ from .schema import AAPrediction
 from .validate import normalize_input_batch
 
 _OVERLAP_WARNING = "segment coordinates overlap/out-of-order"
-
-
-def _forward(predictor, sequences: list) -> dict:
-    """Use the bundle's verified tokenizer and one shared forward for all heads and coordinates."""
-    adapter = SequenceInputAdapter(predictor.tokenizer, predictor.cfg.max_seq_length, predictor.device,
-                                    vocab_size=getattr(predictor.cfg, "vocab_size", None))
-    return forward_batch(predictor.model, adapter(sequences), expected_rows=len(sequences))
 
 
 def _select_conformal(predictor, genes: tuple, group: str):
@@ -188,14 +181,12 @@ def _top_call_d(class_id: int, softmax_score: float, predictor) -> dict:
     }
 
 
-def _predict_valid(predictor, records: Sequence[SequenceRecord], indices: Sequence[int], coverage_group) -> list:
-    """Run the model once on ``records`` (already-validated ``Record``s, in order) and build one
-    `AAPrediction` per record. ``indices[i]`` is record ``i``'s position in the CALLER's original
+def _predict_valid(predictor, records: Sequence[SequenceRecord], indices: Sequence[int], coverage_group, out) -> list:
+    """Build one `AAPrediction` per valid record using an already-executed model batch.
+    ``indices[i]`` is record ``i``'s position in the CALLER's original
     input batch (not its position among only the valid records) — required so a per-sequence
     ``coverage_group`` list/dict (§7) resolves against the same index space the caller supplied it
     in, even when ``on_invalid="skip"`` has dropped some earlier items."""
-    sequences = [r.sequence for r in records]
-    out = _forward(predictor, sequences)
     genes = ("V", "J", "D") if getattr(predictor.cfg, "has_d", False) else ("V", "J")
 
     probs = {g: softmax_probabilities(out[f"{g.lower()}_class_logits"]) for g in genes}
@@ -265,11 +256,22 @@ def _predict_valid(predictor, records: Sequence[SequenceRecord], indices: Sequen
     return results
 
 
-def _predict(predictor, sequences, *, coverage_group=None, on_invalid="error") -> list:
-    """Normalize once and preserve original indices for calibration lookup and result ordering."""
+def _predict(predictor, sequences, *, coverage_group=None, on_invalid="error", batch_size=64) -> list:
+    """Normalize once, predict bounded batches, and retain source positions for calibration/results."""
+    batch_size = _positive(batch_size, 'batch_size')
     batch = normalize_input_batch(sequences, on_invalid=on_invalid,
                                    max_len=getattr(predictor.cfg, "max_seq_length", 192))
     records = batch.records
-    predictions = (_predict_valid(predictor, records, batch.valid_indices, coverage_group)
-                   if records else ())
+    predictions = []
+    if records:
+        indices = batch.valid_indices
+        adapter = SequenceInputAdapter(predictor.tokenizer, predictor.cfg.max_seq_length, predictor.device,
+                                        vocab_size=getattr(predictor.cfg, 'vocab_size', None))
+        for forwarded in prediction_batches(predictor.model, (record.sequence for record in records),
+                                             adapter, batch_size=batch_size):
+            start, end = forwarded.record_offset, forwarded.record_offset + forwarded.size
+            valid_batch = NormalizedSequenceBatch(records[start:end])
+            results = _predict_valid(predictor, valid_batch.records, indices[start:end],
+                                     coverage_group, forwarded.outputs)
+            predictions.extend(valid_batch.restore_order(results))
     return batch.restore_order(predictions)

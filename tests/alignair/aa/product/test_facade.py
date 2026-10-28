@@ -8,6 +8,25 @@ from alignair.aa.product.loader import AAPredictor
 
 pytestmark = pytest.mark.component
 
+
+def test_batch_size_is_forwarded_without_changing_predictor_cache_identity(monkeypatch):
+    from types import SimpleNamespace
+    loads, requests = [], []
+    def predict(sequences, **options):
+        requests.append(options)
+        return [SimpleNamespace(to_dict=lambda: {'result': 'predicted'})]
+    predictor = SimpleNamespace(predict=predict)
+    def load(model, *, device):
+        loads.append((model, device))
+        return predictor
+    monkeypatch.setattr(alignair, '_AA_PREDICTOR_CACHE', {})
+    monkeypatch.setattr(alignair, 'load_aa_model', load)
+    for batch_size in (1, 3):
+        assert alignair.predict_aa(['EVQLVES'], model='fixture', device='cpu',
+                                   batch_size=batch_size) == [{'result': 'predicted'}]
+    assert loads == [('fixture', 'cpu')]
+    assert [request['batch_size'] for request in requests] == [1, 3]
+
 # A real, full-length VH amino-acid read (same fixture used in test_predictor.py, sourced from
 # Notes and Plans/docs/superpowers/artifacts/2026-07-21-aa-phase3/hydrated_sequences.tsv).
 _VH_1 = ("EVQLVESGGGLVQPGGSLRLSCAASGFNIKDTYIHWVRQAPGKGLEWVARIYPTNGYTRYADSVKGRFTISADTSKNTAYLQMNSLRAEDTAV"

@@ -206,24 +206,26 @@ def test_supplied_group_present_uses_group_not_pooled():
 # ----------------------------------------------------------------- original-index regression (skip)
 
 
-def test_predict_skip_coverage_group_list_aligns_by_original_batch_index(predictor):
+@pytest.mark.parametrize('batch_size', [1, 2, 64])
+def test_predict_skip_coverage_group_list_aligns_by_original_batch_index(predictor, batch_size):
     """`coverage_group` given as a per-sequence list is aligned to the ORIGINAL input batch
     positions, not to the position among only the valid (post-skip) records — regression guard for
     the invalid-record-dropping `on_invalid="skip"` path."""
     results = predictor.predict([_VH_1, "EV*QL", _VH_2], on_invalid="skip",
-                                coverage_group=["full", "trunc", "short"])
+                                coverage_group=["full", "trunc", "short"], batch_size=batch_size)
     v1, err, v2 = results
     assert v1.applied_calibration_group["group"] == "full"
     assert err.error == "invalid_character"
     assert v2.applied_calibration_group["group"] == "short"
 
 
-def test_duplicate_ids_and_generator_input_keep_independent_original_group_positions(predictor):
+@pytest.mark.parametrize('batch_size', [1, 2, 64])
+def test_duplicate_ids_and_generator_input_keep_independent_original_group_positions(predictor, batch_size):
     inputs = [None, {'sequence_id':'same','sequence':_VH_1},
               {'sequence_id':'same','sequence':'EV*QL'},
               {'sequence_id':'same','sequence':_VH_2}, {'sequence':' '}]
     results = predictor.predict((item for item in inputs),on_invalid='skip',
-                                coverage_group=['unused','full','unused','short','unused'])
+                                coverage_group=['unused','full','unused','short','unused'], batch_size=batch_size)
     assert len(results) == 5
     assert [result.sequence_id for result in results] == ['seq_0','same','same','same','seq_4']
     assert results[0].error == 'invalid_type'
@@ -232,9 +234,10 @@ def test_duplicate_ids_and_generator_input_keep_independent_original_group_posit
     assert results[3].applied_calibration_group['group'] == 'short'
 
 
-def test_duplicate_ids_retain_id_based_calibration_lookup(predictor):
+@pytest.mark.parametrize('batch_size', [1, 2, 64])
+def test_duplicate_ids_retain_id_based_calibration_lookup(predictor, batch_size):
     inputs = [{'sequence_id':'same','sequence':_VH_1}, '', {'sequence_id':'same','sequence':_VH_2}]
-    results = predictor.predict(inputs,on_invalid='skip',coverage_group={'same':'trunc'})
+    results = predictor.predict(inputs,on_invalid='skip',coverage_group={'same':'trunc'}, batch_size=batch_size)
     assert results[0].applied_calibration_group['group'] == results[2].applied_calibration_group['group'] == 'trunc'
     assert results[1].sequence_id == 'seq_1' and results[1].error == 'empty'
 

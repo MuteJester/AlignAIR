@@ -60,6 +60,104 @@ def test_prediction_cardinality_mismatch_is_not_silently_truncated(monkeypatch):
         _fake_predictor().predict(['EVQLVES','','EVQLVES'],on_invalid='skip')
     assert caught.value.context == {'expected':2,'received':1}
 
+
+@pytest.mark.parametrize('batch_size,count,expected_sizes', [
+    (1, 5, [1, 1, 1, 1, 1]), (2, 5, [2, 2, 1]), (64, 5, [5]),
+    ('default', 130, [64, 64, 2]),
+])
+def test_product_uses_shared_bounded_batches_without_changing_results(batch_size, count, expected_sizes):
+    predictor = _fake_predictor()
+    records = [{'sequence_id': f'read-{i}', 'sequence': 'ACDEFGHIKL'} for i in range(count)]
+    expected = [result.to_dict() for result in predictor.predict(records, batch_size=count)]
+    sizes = []
+    handle = predictor.model.register_forward_pre_hook(
+        lambda model, args: sizes.append(args[0]['tokenized_sequence'].shape[0]))
+    try:
+        options = {} if batch_size == 'default' else {'batch_size': batch_size}
+        actual = predictor.predict((record for record in records), **options)
+    finally:
+        handle.remove()
+    assert sizes == expected_sizes
+    assert [result.to_dict() for result in actual] == expected
+    assert predictor.model.training and torch.is_grad_enabled()
+
+
+@pytest.mark.parametrize('batch_size', [0, -1, True, False, 1.5, None, '2'])
+def test_invalid_batch_sizes_fail_before_input_consumption(batch_size):
+    from alignair.errors import ConfigurationError
+    def records():
+        pytest.fail('consumed input before validating batch size')
+        yield 'EVQLVES'
+    with pytest.raises(ConfigurationError) as caught:
+        _fake_predictor().predict(records(), batch_size=batch_size)
+    assert caught.value.context['field'] == 'batch_size'
+
+
+def test_each_batch_checks_formatter_cardinality_before_the_next_forward(monkeypatch):
+    import alignair.aa.product.predictor as implementation
+    from alignair.errors import DataContractError
+    calls = []
+    def wrong_count(predictor, records, indices, group, outputs):
+        calls.append(len(records))
+        return ['one'] if len(calls) == 1 else ['two', 'three', 'four']
+    monkeypatch.setattr(implementation, '_predict_valid', wrong_count)
+    with pytest.raises(DataContractError) as caught:
+        _fake_predictor().predict(['EVQLVES'] * 4, batch_size=2)
+    assert calls == [2]
+    assert caught.value.context == {'expected': 2, 'received': 1}
+
+
+def test_later_batch_forward_failure_keeps_offset_and_restores_mixed_modes():
+    from alignair.errors import NumericalError
+    predictor = _fake_predictor()
+    predictor.model.child = torch.nn.Dropout().eval()
+    calls = []
+    original = predictor.model.forward
+    def forward(inputs):
+        calls.append(inputs['tokenized_sequence'].shape[0])
+        outputs = original(inputs)
+        if len(calls) == 2:
+            outputs['v_start'] = torch.full_like(outputs['v_start'], float('nan'))
+        return outputs
+    predictor.model.forward = forward
+    with pytest.raises(NumericalError) as caught:
+        predictor.predict(['EVQLVES'] * 5, batch_size=2)
+    assert calls == [2, 2]
+    assert caught.value.context['record_offset'] == 2
+    assert caught.value.context['batch_size'] == 2 and caught.value.context['field'] == 'v_start'
+    assert predictor.model.training and not predictor.model.child.training and torch.is_grad_enabled()
+
+
+def test_real_model_chunking_preserves_calibrated_decisions_and_result_schema():
+    predictor = load_aa_model(_REAL_MODEL_ID, device='cpu')
+    sequences = [_VH_1, _VH_2, _VH_1]
+    expected = [result.to_dict() for result in predictor.predict(sequences, batch_size=3)]
+    actual = [result.to_dict() for result in predictor.predict(sequences, batch_size=1)]
+    def compare(left, right):
+        if isinstance(right, float):
+            assert left == pytest.approx(right, rel=1e-5, abs=1e-6)
+        elif isinstance(right, dict):
+            assert left.keys() == right.keys()
+            for key in right:
+                compare(left[key], right[key])
+        elif isinstance(right, list):
+            assert len(left) == len(right)
+            for a, b in zip(left, right):
+                compare(a, b)
+        else:
+            assert left == right
+    for observed, baseline in zip(actual, expected):
+        for gene in baseline['segments']:
+            left = observed['segments'][gene].pop('calibrated_classes')
+            right = baseline['segments'][gene].pop('calibrated_classes')
+            for ranked in (left, right):
+                assert ranked == sorted(ranked, key=lambda row: (-row['softmax_score'], row['class_id']))
+                assert [row['rank'] for row in ranked] == list(range(1, len(ranked) + 1))
+            by_id_left = {row['class_id']: {key: value for key, value in row.items() if key != 'rank'} for row in left}
+            by_id_right = {row['class_id']: {key: value for key, value in row.items() if key != 'rank'} for row in right}
+            compare(by_id_left, by_id_right)
+    compare(actual, expected)
+
 _REAL_MODEL_ID = "alignair-aa-igh-human@2.0.0"
 
 # Two real, full-length VH amino-acid reads (from Notes and Plans/docs/superpowers/artifacts/2026-07-21-aa-phase3/
@@ -184,7 +282,8 @@ class _StubModel(torch.nn.Module):
         self._out = out
 
     def forward(self, batch):
-        return self._out
+        count = batch['tokenized_sequence'].shape[0]
+        return {key: value.expand(count, *value.shape[1:]) for key, value in self._out.items()}
 
 
 class _StubTokenizer:

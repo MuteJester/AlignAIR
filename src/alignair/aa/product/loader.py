@@ -72,11 +72,13 @@ class AAPredictor:
     card: dict                  # the verified header (== container.read_header, sans "_sections_base")
     device: str
 
-    def predict(self, sequences, *, coverage_group=None, on_invalid="error") -> list:
-        """§9 ``predict_aa`` core (Task 5 + Task 7): validated V/D/J calls + §5 coordinates +
-        inter_vj_aa + §7 calibrated conformal sets, one `AAPrediction`/`ErrorResult` per input record
-        in original order — see `alignair.aa.product.predictor._predict` for the full contract."""
-        return _predict(self, sequences, coverage_group=coverage_group, on_invalid=on_invalid)
+    def predict(self, sequences, *, coverage_group=None, on_invalid="error", batch_size=64) -> list:
+        """Predict calibrated protein calls and amino-acid coordinates from sequences or records.
+        Return one prediction or structured input failure per source record, in original order.
+        ``batch_size`` limits valid records per model forward (default 64).
+        See `alignair.aa.product.predictor._predict` for the execution contract."""
+        return _predict(self, sequences, coverage_group=coverage_group, on_invalid=on_invalid,
+                        batch_size=batch_size)
 
 
 def _require(cond: bool, message: str) -> None:

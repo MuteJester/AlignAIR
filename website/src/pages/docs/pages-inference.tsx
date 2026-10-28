@@ -327,6 +327,36 @@ for batch in prediction_batches(
         zero-based source offset, actual batch size, and detached outputs. Evaluation mode,
         gradient state, and operation context are restored before each result is yielded.
       </p>
+      <H2 id="protein-batches">Bound protein product forward batches</H2>
+      <CodeBlock lang="python" code={`from alignair import load_aa_model, predict_aa
+
+predictor = load_aa_model("models/protein.alignair", device="cpu")
+results = predictor.predict(records, batch_size=64, on_invalid="skip")
+
+# The convenience API uses the same request-scoped execution option.
+rows = predict_aa(records, model="models/protein.alignair", batch_size=32)`} />
+      <CodeBlock lang="bash" code={`alignair predict-aa reads.fa --model models/protein.alignair \\
+  --batch-size 64 --out predictions.jsonl`} />
+      <p>
+        <code>AAPredictor.predict</code>, <code>predict_aa</code>, and <code>predict-aa</code> accept
+        a positive integer <code>batch_size</code>, defaulting to 64. It limits accepted records per
+        model forward through the same <code>prediction_batches</code> engine used by raw model
+        inference. Tokenization uses the bundle’s verified tokenizer, and softmax stays on each
+        output’s existing device. Changing batch size does not reload a cached predictor.
+      </p>
+      <p>
+        Normalization runs once for the request. Calibration-group lists retain original input
+        positions across skipped records and batch boundaries; ID-based group lookups retain their
+        existing behavior for duplicate IDs. Results return in original order, and each forwarded
+        batch must produce one prediction per accepted record. All-invalid input skips model execution
+        and unused calibration lookup. Coordinate and calibration rules remain unchanged.
+      </p>
+      <p>
+        This bounds model-forward memory. Inputs and returned predictions are still collected for the
+        full request. The CLI records batch size in its run metadata. Floating-point scores can vary
+        slightly with execution batch size, and nearly tied class rankings can change; keep batch size
+        fixed when comparing runs that depend on those rankings.
+      </p>
       <H2 id="probabilities">Read several categorical heads in one pass</H2>
       <CodeBlock lang="python" code={`from alignair.predict import class_probabilities
 
@@ -348,7 +378,7 @@ print(probabilities["v_class_logits"].shape)`} />
         <code>predict.probabilities.protein_class_probabilities</code> binds the research protein
         policy: uppercase canonical residues plus X and stop, nonempty reads, and no truncation.
         It validates the input list before model execution. Product prediction retains its separate normalized
-        input policy, verified tokenizer, single all-head forward, and device-local softmax.
+        input policy, verified tokenizer, one all-head forward per bounded batch, and device-local softmax.
         The <DocLink to="prediction-calibration">prediction-set calibration API</DocLink> fits and
         applies shared APS/RAPS thresholds to these categorical probabilities.
       </p>

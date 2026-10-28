@@ -38,24 +38,20 @@ try:
 except Exception:                       # not pip-installed (e.g. run from a source tree)
     __version__ = "0+unknown"
 
-# module-level (model, device) -> AAPredictor cache for `predict_aa`, so repeated calls in one process
-# (or one long-running session) don't re-verify + re-load the bundle every time. Deliberately separate
-# from any nt-side model cache — the AA and nt inference stacks are kept fully distinct (§9).
+# Cache verified product predictors by model/device. Request batch size does not change model identity.
 _AA_PREDICTOR_CACHE: dict = {}
 
 
 def predict_aa(sequences, *, model: str = "alignair-aa-igh-human@2.0.0", coverage_group=None,
-               device: str = "auto", on_invalid: str = "error") -> list:
-    """Amino-acid inference product façade (design spec §9) — DISTINCT from the nucleotide
-    `predict_sequences`/`Aligner` surface above (different model family, different §6 result schema:
-    no CIGAR, no productivity calls, no nucleotide coordinates).
+               device: str = "auto", on_invalid: str = "error", batch_size: int = 64) -> list:
+    """Predict protein records as calibrated product results with amino-acid coordinates.
 
     ``sequences`` is a single AA sequence string, an iterable of strings, or an iterable of
     ``{"sequence_id", "sequence"}`` dicts — **sequences/records only, never a file path** (§9; file
     parsing is the ``predict-aa`` CLI's job, see ``alignair.aa.product.cli``). ``model`` defaults to the
     current amino-acid model id and is resolved + verified via `load_aa_model` (cached per
     ``(model, device)`` at module scope). ``coverage_group``/``on_invalid`` are passed straight through
-    to `AAPredictor.predict` (§7 / §9.1).
+    to `AAPredictor.predict`. ``batch_size`` limits valid records per model forward (default 64).
 
     Returns a plain ``list[dict]`` (already ``AAPrediction.to_dict()`` / ``ErrorResult.to_dict()``), one
     per input record in original order — JSON-serializable as-is.
@@ -65,7 +61,8 @@ def predict_aa(sequences, *, model: str = "alignair-aa-igh-human@2.0.0", coverag
     if predictor is None:
         predictor = load_aa_model(model, device=device)
         _AA_PREDICTOR_CACHE[key] = predictor
-    results = predictor.predict(sequences, coverage_group=coverage_group, on_invalid=on_invalid)
+    results = predictor.predict(sequences, coverage_group=coverage_group, on_invalid=on_invalid,
+                                batch_size=batch_size)
     return [r.to_dict() for r in results]
 
 

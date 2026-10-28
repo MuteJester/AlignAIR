@@ -106,6 +106,7 @@ def test_predict_aa_parser_registered():
     assert args.model == "alignair-aa-igh-human@2.0.0"
     assert args.coverage_group is None
     assert args.device == "auto"
+    assert args.batch_size == 64
 
 
 def test_cli_writes_jsonl_and_run_metadata_sidecar(tmp_path, capsys):
@@ -113,7 +114,7 @@ def test_cli_writes_jsonl_and_run_metadata_sidecar(tmp_path, capsys):
     _write_fasta(fasta, [("read-1", _VH_1), ("read-2", _VH_2)])
     out = tmp_path / "out.jsonl"
 
-    args = _parse_args(["predict-aa", str(fasta), "--out", str(out)])
+    args = _parse_args(["predict-aa", str(fasta), "--out", str(out), "--batch-size", "1"])
     rc = run(args)
     assert rc == 0
 
@@ -141,6 +142,7 @@ def test_cli_writes_jsonl_and_run_metadata_sidecar(tmp_path, capsys):
     assert meta["n_errors"] == 0
     assert meta["command"]["input"] == str(fasta)
     assert meta["command"]["out"] == str(out)
+    assert meta["command"]["batch_size"] == 1
 
     captured = capsys.readouterr()
     assert "predicted 2 sequences" in captured.out

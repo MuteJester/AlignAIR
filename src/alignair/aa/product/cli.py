@@ -31,6 +31,8 @@ def register(sub) -> None:
     p.add_argument("--on-invalid", choices=["error", "skip"], default="skip",
                    help="error = fail fast on invalid sequence; skip = emit per-record error (default: skip)")
     p.add_argument("--device", default="auto", help="cpu / cuda / auto (default: auto)")
+    p.add_argument("--batch-size", type=int, default=64,
+                   help="maximum valid records per model forward (default: %(default)s)")
     p.add_argument("--out", required=True, help="output path: one §6 AAPrediction JSON object per line")
     p.add_argument("--no-run-metadata", action="store_true",
                    help="do not write the <out>.run.json provenance sidecar")
@@ -53,6 +55,7 @@ def _write_run_metadata(out: str, predictor, args, counts: dict) -> None:
             "input": args.input, "out": args.out, "model": args.model,
             "coverage_group": args.coverage_group, "on_invalid": args.on_invalid, "device": args.device,
             "revision": args.revision, "offline": args.offline,
+            "batch_size": args.batch_size,
         },
         "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
@@ -69,7 +72,8 @@ def run(args) -> int:
     predictor = load_aa_model(args.model, device=args.device, registry=args.registry,
                               revision=args.revision, offline=args.offline, token=args.token)
     # Pass through the on_invalid flag from the CLI (default: "skip" for batch-friendly mode).
-    results = predictor.predict(records, coverage_group=args.coverage_group, on_invalid=args.on_invalid)
+    results = predictor.predict(records, coverage_group=args.coverage_group, on_invalid=args.on_invalid,
+                                 batch_size=args.batch_size)
 
     n_errors = 0
     with open(args.out, "w") as f:

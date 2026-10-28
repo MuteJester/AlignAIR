@@ -6,6 +6,9 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Protein product inference now uses shared prediction batching, with `batch_size` / `--batch-size`
+  defaulting to 64. Original input positions and calibrated-result ordering are retained across
+  skipped records and batch boundaries; CLI run metadata records the execution batch size.
 - Shared reference identity validation for loading overrides and container conversion, covering
   ordered alleles, germline biology and locus mappings. Conversion rejects conflicting embedded
   provider references before writing; a dedicated website API guide documents the contract.
