@@ -7,21 +7,29 @@ imported only by a test that asks for one).
 root is put first on ``sys.path`` and on ``PYTHONPATH``, so this process, its build workers and the subprocesses it
 starts all run one copy while the live checkout is edited. ``ALIGNAIR_ASSAY_GENAIRR_LIVE=1`` runs the live GenAIRR.
 The tests that build suites carry the ``genairr_build`` marker. The freeze takes only when nothing imported GenAIRR
-before this conftest: true of ``pytest tests/alignair_assay`` (the repository's own plugins import ``alignair`` lazily),
-not of a whole-repository session, whose product conftests import ``alignair`` (and so GenAIRR) first; that session
-runs the GenAIRR they imported, with a warning (``PREIMPORTED`` names it).
+before this conftest: true of ``pytest tests/alignair_assay`` (the repository's own plugins import ``alignair``
+lazily), not of a whole-repository session, whose product conftests import ``alignair`` (and so GenAIRR) first; that
+session runs the GenAIRR they imported, with a warning (``PREIMPORTED`` names it).
+
+**Network.** The repository's isolation fixture forbids every external connection in every test. A test gated by
+``ALIGNAIR_ASSAY_NETWORK=1``, which downloads pinned files, asks for ``network``: the real socket functions, taken
+when this conftest is imported (outside any test), for that test only.
 """
 from __future__ import annotations
 
 import os
+import socket
 import sys
 import warnings
 from pathlib import Path
 
 from alignair_assay.core import freeze
 
+# The socket functions the repository's isolation fixture replaces in every test, as they are outside one.
+_GETADDRINFO, _CONNECT = socket.getaddrinfo, socket.socket.connect
+
 REPO = Path(__file__).resolve().parents[2]
-# The GenAIRR ``__init__`` imported before the freeze, from somewhere other than the frozen copy (None: the freeze took).
+# The GenAIRR ``__init__`` imported before the freeze from anywhere but the frozen copy (None: the freeze took).
 PREIMPORTED = None
 if os.environ.get(freeze.LIVE_ENV) != "1":
     FROZEN = freeze.freeze_genairr(REPO / freeze.DEFAULT_DEST)
@@ -54,6 +62,16 @@ def pytest_configure(config):
 def genairr():
     """The GenAIRR package; a test that needs it, directly or through ``reference``, is skipped when it is missing."""
     return pytest.importorskip("GenAIRR")
+
+
+@pytest.fixture
+def network(monkeypatch):
+    """Real network access for this test (it is gated by ``ALIGNAIR_ASSAY_NETWORK=1``): the socket functions the
+    repository's isolation fixture replaces, restored until the test ends."""
+    if os.environ.get("ALIGNAIR_ASSAY_NETWORK") != "1":
+        pytest.skip("set ALIGNAIR_ASSAY_NETWORK=1 to download")
+    monkeypatch.setattr(socket, "getaddrinfo", _GETADDRINFO)
+    monkeypatch.setattr(socket.socket, "connect", _CONNECT)
 
 
 @pytest.fixture(scope="session")

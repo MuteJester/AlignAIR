@@ -902,7 +902,7 @@ def test_the_cohort_files_are_the_pinned_ones(tmp_path, monkeypatch):
 
 
 @needs_network
-def test_the_cohort_files_download_from_their_pinned_urls(tmp_path):
+def test_the_cohort_files_download_from_their_pinned_urls(tmp_path, network):
     records = fetch.cohort_files(tmp_path)
     for key, record in records.items():
         assert record.md5 == fetch.COHORT_FILES[key].md5 and not record.detail["reused"]
@@ -920,7 +920,7 @@ def test_the_ena_fastqs_are_the_pinned_ones(tmp_path):
 
 @needs_data
 @needs_network
-def test_the_igenotyper_gene_coords_at_the_pinned_commit():
+def test_the_igenotyper_gene_coords_at_the_pinned_commit(network):
     records = fetch_genotype_files("W-97", DATA)
     coords = records["gene_coords"]
     assert coords.path == Path(DATA) / "genotypes/igenotyper/gene_coords.bed"
@@ -935,7 +935,7 @@ def test_the_igenotyper_gene_coords_at_the_pinned_commit():
 @needs_data
 @needs_network
 @needs_docker
-def test_w97_odp_reads_are_full_quality(tmp_path):
+def test_w97_odp_reads_are_full_quality(tmp_path, network):
     """The recon's deferred check: W-97's ODP object (34 MB), downloaded and converted in the pinned container into
     a temporary root, has full qualities (else the record says ODP is Lite and the reads are ENA's). The real root's
     ENA FASTQs of W-97 are linked in, so the conversion is compared with them."""
