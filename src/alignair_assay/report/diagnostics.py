@@ -38,6 +38,7 @@ from alignair_assay.report.markdown import (
     format_paired,
     format_value,
     is_clustered,
+    labelled,
     markdown_table,
 )
 
@@ -149,8 +150,8 @@ def diagnostics_summary(report: dict) -> dict:
     missing value is None."""
     model, config, suites = report["model"], report["config"], report["suites"]
     summary = {
-        "model_key": model["model_key"], "source": model.get("source"), "device": config.get("device"),
-        "batch_size": config.get("batch_size"), "split": "dev",
+        "model_key": model["model_key"], "source": model.get("source"), "label": model.get("label"),
+        "device": config.get("device"), "batch_size": config.get("batch_size"), "split": "dev",
         "reads": {name: suite["reads"]["diagnosed"] for name, suite in suites.items()},
         "computed": [name for name, suite in suites.items() if not suite.get("reused")],
         "reused": [name for name, suite in suites.items() if suite.get("reused")],
@@ -381,7 +382,8 @@ def _header(report: dict, summary: dict) -> list[str]:
     seconds = summary.get("seconds")
     clustered = summary["clustered"]
     parts = [
-        f"- Model `{summary['model_key']}` ({summary['source']}) on {summary['device']}, batch size "
+        f"- Model `{summary['model_key']}`{labelled(summary.get('label'))} ({summary['source']}) on "
+        f"{summary['device']}, batch size "
         f"{summary['batch_size']}: {len(reads)} suites × {sum(reads.values())} reads on the {summary['split']} split "
         f"({', '.join(f'{name} {n}' for name, n in reads.items())}; max cases {max_cases or 'all'}).",
         f"- Computed {', '.join(summary['computed']) or 'none'}; reused {', '.join(summary['reused']) or 'none'}"

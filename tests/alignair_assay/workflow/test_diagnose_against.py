@@ -400,6 +400,24 @@ def test_diagnose_command_compares_against_a_checkpoint_or_a_model_key(built, tm
     assert "no diagnostics of suite S0" in capsys.readouterr().err
 
 
+def test_diagnose_takes_a_labelled_checkpoint(built, tmp_path, save_checkpoint, capsys):
+    layout = _copy(built, tmp_path)
+    mine, theirs = save_checkpoint(tmp_path / "a.alignair", seed=0), save_checkpoint(tmp_path / "b.alignair", seed=1)
+    base = ["diagnose", "--run-dir", str(layout.root), "--suites", "S0", "--device", "cpu", "--variants", "baseline",
+            "--no-profile"]
+    assert main([*base, "--checkpoint", f"cand={mine}", "--against", str(theirs)]) == 0
+    capsys.readouterr()
+    # the label names the model in the report; the model key is the file's (a label is not part of its identity)
+    summary = layout.diagnostics_md(_key(mine)).read_text()
+    assert f"- Model `{_key(mine)}`, labelled `cand` ({mine})" in summary
+    assert f"This model: `{_key(mine)}`, labelled `cand` ({mine})" in layout.diagnostics_against_md(
+        _key(mine), "S0", _key(theirs)).read_text()
+    # a path that holds = and names a file is a path; an unlabelled path has no label
+    odd = save_checkpoint(tmp_path / "x=y.alignair", seed=0)
+    assert main([*base, "--checkpoint", str(odd)]) == 0
+    assert ", labelled `" not in layout.diagnostics_md(_key(odd)).read_text()
+
+
 # --- the released checkpoint ------------------------------------------------------------------------------------
 
 @pytest.mark.skipif(not MODEL, reason="set ALIGNAIR_ASSAY_MODEL to a .alignair model file")

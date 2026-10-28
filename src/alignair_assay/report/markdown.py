@@ -248,6 +248,12 @@ def to_markdown(report: dict, headline: Sequence[str] = HEADLINE) -> str:
     return "\n".join(lines) + "\n"
 
 
+def labelled(label: str | None) -> str:
+    """``, labelled `<label>``` after a model's key when it was given a label (``diagnose --checkpoint LABEL=PATH``);
+    nothing otherwise."""
+    return f", labelled `{label}`" if label else ""
+
+
 def format_ci(name: str, ci) -> str:
     """A 95% CI ``[low, high]`` of metric ``name`` as a Δ (``format_value``); ``MISSING`` without one."""
     if not ci:

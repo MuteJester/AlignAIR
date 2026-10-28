@@ -21,6 +21,7 @@ from alignair_assay.report.markdown import (
     format_clusters,
     format_paired,
     format_value,
+    labelled,
     markdown_table,
 )
 
@@ -208,9 +209,10 @@ def against_markdown(report: dict, name: str) -> str:
     key = against["baseline"]
     clusters = suite.get("clusters") or {}
     lines = [f"# AlignAIR diagnostics: model {model['model_key']} against {key}, suite {name}", "",
-             f"Back to the [summary](../diagnostics.md). This model: `{model['model_key']}` ({model['source']}); "
-             f"the baseline: `{key}` ({against.get('source') or 'source not recorded'}). {suite['cases']} diagnosed "
-             f"reads, the same for both; clusters: {format_clusters(clusters)}. {_AGAINST_NOTE}", "",
+             f"Back to the [summary](../diagnostics.md). This model: `{model['model_key']}`"
+             f"{labelled(model.get('label'))} ({model['source']}); the baseline: `{key}` "
+             f"({against.get('source') or 'source not recorded'}). {suite['cases']} diagnosed reads, the same for "
+             f"both; clusters: {format_clusters(clusters)}. {_AGAINST_NOTE}", "",
              code_text(report["summary"]["against"]["code"])]
     if against.get("same_model"):
         lines += ["", "Both are the same model key: one record compared with itself."]

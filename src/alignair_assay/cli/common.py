@@ -43,6 +43,21 @@ def checkpoint_spec(value: str) -> tuple[str, str]:
     return label, absolute_path(path)
 
 
+def labelled_path(value: str) -> tuple[str | None, str]:
+    """A model file given as ``PATH`` or ``LABEL=PATH``: ``(label, path)``, the path made absolute (``~`` expanded)
+    and the label None for a plain path. A value naming an existing file is a path even when it holds ``=``; else
+    a valid checkpoint label (``runners.variants.LABEL``) before the first ``=`` is a label."""
+    if Path(value).expanduser().is_file():
+        return None, absolute_path(value)
+    label, equals, path = value.partition("=")
+    if equals and path:
+        try:
+            return check_label(label), absolute_path(path)
+        except ValueError:
+            pass
+    return None, absolute_path(value)
+
+
 def add_checkpoint_option(parser: argparse.ArgumentParser, tools: str) -> None:
     """Add ``--checkpoint LABEL=PATH``, repeatable, as ``args.checkpoints`` (a list of ``checkpoint_spec`` pairs;
     ``checkpoint_map`` makes it the label -> path mapping); ``tools`` names the variants it serves."""

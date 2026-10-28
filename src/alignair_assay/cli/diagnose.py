@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from alignair_assay.cli.common import comma_list, tool_path
+from alignair_assay.cli.common import comma_list, labelled_path, tool_path
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.report.diagnostics_against import (
     AGAINST_FAMILIES,
@@ -26,7 +26,8 @@ def register(sub) -> None:
     p = sub.add_parser("diagnose", help="diagnose an AlignAIR checkpoint in process on built dev suites: head "
                                         "metrics, stage contributions, calibration, speed profile")
     p.add_argument("--run-dir", required=True, help="a run directory with the suites built on the dev split")
-    p.add_argument("--checkpoint", required=True, help="AlignAIR .alignair model file")
+    p.add_argument("--checkpoint", required=True, type=labelled_path, metavar="[LABEL=]PATH",
+                   help="AlignAIR .alignair model file, or LABEL=PATH to name it LABEL in the report")
     p.add_argument("--suites", required=True, help="comma-separated built suite names, e.g. S1,S3")
     p.add_argument("--device", default=DEFAULT_DEVICE, help=f"torch device (default {DEFAULT_DEVICE})")
     p.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="reads per forward batch")
@@ -73,7 +74,8 @@ def run(args) -> int:
     against = args.against
     if against is not None and (Path(against).expanduser().exists() or not MODEL_KEY.fullmatch(against)):
         against = tool_path(against)
-    result = evaluate(tool_path(args.checkpoint), layout, names, device=device, batch_size=args.batch_size,
+    label, checkpoint = args.checkpoint
+    result = evaluate(checkpoint, layout, names, device=device, batch_size=args.batch_size, label=label,
                       variants=DEFAULT_VARIANTS if args.variants is None else args.variants,
                       profile=not args.no_profile, max_cases=args.max_cases,
                       allow_unverified_replay=args.allow_unverified_replay, against=against)

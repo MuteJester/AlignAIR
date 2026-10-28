@@ -267,6 +267,8 @@ result.scalars()["S1/against/junction.nt_exact.delta"]                         #
 - **The baseline** is a checkpoint (diagnosed first, through the same cache, with the same device, batch size,
   variants and `max_cases`, without a profile), an in-memory `(model, reference_set)` pair (likewise), or the model
   key of one already diagnosed in the run directory. A string naming an existing file is a checkpoint.
+- **A label.** `--checkpoint cand=CAND.alignair` (`LABEL=PATH`, as `all` and `real` take it) names the model `cand`
+  on the summary page and the comparison details; the model key, and so the cache, stay the file's.
 - **The same reads, or nothing.** The two models' records must have the same suite build (`suite.identity`,
   `suite.cases_sha256`, ...), assay code, variants, `max_cases`, device and batch size: anything else is refused
   naming each field that differs (a model key's records before any work). Their per-case scores must be of the same
@@ -716,7 +718,7 @@ python -m alignair_assay run --run-dir RUN --tool igblast|alignair|alignair-loca
 python -m alignair_assay speed --run-dir RUN [--tools igblast,alignair] [--threads 8] [--configs NAME,...] \
     [--n-tiny 50] [--n-full 4000] [--repeats 3] [--igblast-dir DIR] [--alignair-image IMAGE] \
     [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
-python -m alignair_assay diagnose --run-dir RUN --checkpoint MODEL.alignair --suites S1,S3 [--device cuda] \
+python -m alignair_assay diagnose --run-dir RUN --checkpoint [LABEL=]MODEL.alignair --suites S1,S3 [--device cuda] \
     [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] [--max-cases N] \
     [--allow-unverified-replay] [--against OTHER.alignair | --against MODEL_KEY]
 python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97 [--split dev] [--cap 50000] \

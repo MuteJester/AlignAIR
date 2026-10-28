@@ -200,7 +200,7 @@ class DiagnosticsResult:
 def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, device: str | None = None,
              batch_size: int = 256, variants: Sequence[str] = DEFAULT_VARIANTS, profile: bool | None = None,
              max_cases: int | None = None, allow_unverified_replay: bool = False,
-             against=None) -> DiagnosticsResult:
+             against=None, label: str | None = None) -> DiagnosticsResult:
     """Diagnose a model on ``suites`` (suite names, or one name), built on the dev split in ``layout``, as the module
     docstring describes; reuses each cached suite result whose key matches in full.
 
@@ -241,7 +241,10 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     ``allow_unverified_replay``, without a profile. A model key's records are checked before any work. The result's
     ``against`` holds the comparison: this model − the baseline. FileNotFoundError for a missing checkpoint (before
     any work); ValueError for a model key without a current record of every suite, or records that differ in anything
-    but the model."""
+    but the model.
+
+    ``label`` names the model in the report (``diagnose --checkpoint LABEL=PATH``); it is not part of its identity:
+    the model key and the cache are the same with or without it."""
     start = time.perf_counter()
     names = list(dict.fromkeys([suites] if isinstance(suites, str) else suites))
     if not names:
@@ -296,7 +299,7 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
         return _evaluate(model, reference_set, reference, layout, names, weights=weights, variants=variants,
                          device=device, batch_size=batch_size, profile=profile, max_cases=max_cases,
                          source=_source(model_or_checkpoint), replay_state=replay_state, replay_changes=changes,
-                         stale=stale, start=start, against=other)
+                         stale=stale, start=start, against=other, label=label)
     finally:
         if own is not None:
             own.to(own_device)
@@ -347,7 +350,7 @@ def stale_builds(layout: RunLayout, names: Sequence[str]) -> dict[str, list[str]
 def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, names: list[str], *, weights: str,
               variants: tuple[str, ...], device: str, batch_size: int, profile: bool, max_cases: int | None,
               source: str, replay_state: dict, replay_changes: dict[str, str], stale: dict[str, list[str]],
-              start: float, against: tuple | None = None) -> DiagnosticsResult:
+              start: float, against: tuple | None = None, label: str | None = None) -> DiagnosticsResult:
     """``evaluate`` on a checked model already on ``device``; ``replay_state`` (``verified`` and the product code's
     ``sha256``) goes into every suite's cache key, ``stale`` (``stale_builds``) and the wall time since ``start``
     into the report. ``against`` is ``("diagnosed", model_key, source)`` for another model ``evaluate`` has just
@@ -383,8 +386,8 @@ def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, nam
     measured = (_profile(model, reference_set, layout, key_name, identity, names, max_cases=max_cases, device=device,
                          batch_size=batch_size) if profile else None)
     report = build_diagnostics_report(
-        model={"model_key": key_name, "source": source, **identity, "alignair_source": str(ALIGNAIR_DIR),
-               "assay_code_sha256": assay_code_sha256()},
+        model={"model_key": key_name, "source": source, "label": label, **identity,
+               "alignair_source": str(ALIGNAIR_DIR), "assay_code_sha256": assay_code_sha256()},
         config={"run_dir": str(layout.root), "suites": names, **config, "profile": bool(profile), **stamp,
                 "stale_builds": stale, "seconds": round(time.perf_counter() - start, 3)},
         suites=results, profile=measured, against=comparison)
