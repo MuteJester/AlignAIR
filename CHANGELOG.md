@@ -234,6 +234,9 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Unused `aa.forensics` anchor-identity diagnostic and its helper-specific tests. Reference order,
+  protein equivalence classes and model feature inspection retain their shared owners and tests.
+  The former diagnostic's allele selection and unsupported information-ceiling claim are retired.
 - Unused `aa.benchmark.run_aa_benchmark` runner for the historical protein-input allele-head
   experiment. Shared case generation, allele/categorical cohort evaluation and cross-tool benchmark
   scoring remain their respective owners; the runner's legacy JSON report has no drop-in replacement.
@@ -272,12 +275,12 @@ All notable changes to AlignAIR are documented here. The format follows
   Shared inference, metrics, coordinate projection, and alignment code remain unchanged.
 - Historical `eval_strategic.py` comparison runner and its duplicate batching/cohort setup.
   Shared inference and checkpoint evaluation remain; evaluator documentation describes its own policy.
-- Historical `error_forensics.py` allele-head diagnostic runner. Shared nearest-germline
-  calculations and their regression tests remain in the existing forensic module.
+- Historical `error_forensics.py` allele-head diagnostic runner. Reference ambiguity and model
+  feature analysis use the shared reference, observation-collection and feature-inspection APIs.
 - Historical `derisk_local_aligner.py` comparison runner, its duplicate augmentation functions,
   and study-specific decision rule. Shared local alignment and augmentation remain in the package.
 - Unused `mask_recovery.py` simulator-truth diagnostic for the historical allele-head model.
-  Translation, forensic, and local-alignment implementations remain unchanged.
+  Shared translation and reference APIs remain available; local alignment is unchanged.
 - Unused `diagnose_ambiguity.py` diagnostic for the historical allele-head checkpoint,
   including its import-time model loading. Protein-equivalence and allele-expansion APIs remain.
 - Redundant `phase1_proof.py` experiment wrapper and console summary. The package learning-proof

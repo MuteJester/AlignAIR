@@ -70,6 +70,29 @@ print(protein.germlines.quarantined)`} />
         whichever residue happens to appear. Anchor checking retains the existing scope; sample policies
         decide how to handle stop-containing or nonproductive reads.
       </p>
+      <H2 id="analysis">Analyze protein-class ambiguity</H2>
+      <CodeBlock lang="python" code={`# Inspect ambiguous V classes in the reference constructed above.
+ambiguous_v = {
+    class_id: members
+    for class_id, members in protein.class_maps["V"].class_members.items()
+    if len(members) > 1
+}
+print(ambiguous_v)`} />
+      <p>
+        Equivalence classes record equality of complete reference protein translations. Keep all
+        member alleles when interpreting a class prediction. Choosing the first member introduces
+        an allele-order tie break; it does not establish which nucleotide allele generated the read.
+        This reference relationship does not bound predictive accuracy on mutated, partial, or
+        indel-affected observations.
+      </p>
+      <p>
+        Use the <DocLink to="evaluation-reports">observation collector</DocLink> to compare supervised
+        truth with model predictions and the <DocLink to="model-inference">feature-inspection API</DocLink>
+        to examine named component inputs. Preserve the reference label mapping and observation support
+        when joining these analyses. The unused <code>aa.forensics</code> module has been removed;
+        its anchor-aligned identity heuristic is not provided as an information-ceiling estimator
+        or a replacement allele caller.
+      </p>
       <H2 id="identity">Reference identity and hash scope</H2>
       <CodeBlock lang="python" code={`# Training class maps retain their historical V/J scope.
 training_reference = build_protein_reference(source)
