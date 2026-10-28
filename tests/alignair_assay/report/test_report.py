@@ -154,3 +154,13 @@ def test_pipes_escaped_and_missing_verdict():
                                 "delta": None, "ci95": None, "verdict": None, "coverage_a": 0.0, "coverage_b": 0.0}}
     md = to_markdown(build_comparison_report("A", "B", comp, {}, {}, {}))
     assert "| clone_key.exact | — | — | 0 | — | — | — | — | — |" in md
+
+
+def test_the_alignair_code_two_checkpoints_ran_under():
+    from alignair_assay.report.markdown import alignair_code_text
+
+    one, other = "a" * 64, "b" * 64
+    assert alignair_code_text({"x@a": one, "x@b": one}) == f"both ran under AlignAIR code `{'a' * 12}`"
+    assert alignair_code_text({"x@a": one, "x@b": other}) == (
+        f"different AlignAIR code: x@a `{'a' * 12}`, x@b `{'b' * 12}`")
+    assert alignair_code_text({"x@a": one, "x@b": None}) == "AlignAIR code not recorded"

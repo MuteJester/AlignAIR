@@ -7,7 +7,13 @@ from pathlib import Path
 
 from alignair_assay.cli.common import comma_list, tool_path
 from alignair_assay.core.layout import RunLayout
-from alignair_assay.report.diagnostics import AGAINST_FAMILIES, AGAINST_HEADLINE, AGAINST_VERDICTS, FAMILY_LABELS
+from alignair_assay.report.diagnostics import (
+    AGAINST_FAMILIES,
+    AGAINST_HEADLINE,
+    AGAINST_VERDICTS,
+    FAMILY_LABELS,
+    code_text,
+)
 from alignair_assay.report.markdown import format_value
 from alignair_assay.runners.base import absolute_path
 
@@ -98,7 +104,8 @@ def run(args) -> int:
 
 
 def _print_against(result, layout: RunLayout) -> None:
-    """The comparison with the baseline: which model, then per suite the headline deltas (this − baseline), the
+    """The comparison with the baseline: which model and the AlignAIR code each ran under (flagging a different
+    code), then per suite the headline deltas (this − baseline), the
     significant metrics with their direction (this better, baseline better), the reads fixed and broken and the
     detail file."""
     summary = result.against["summary"]
@@ -107,6 +114,7 @@ def _print_against(result, layout: RunLayout) -> None:
     print(f"against the baseline {other} ({summary['source'] or 'source not recorded'}){same}: Δ = this model − the "
           "baseline; fixed = reads the baseline gets wrong and this model right, broken = the baseline right and "
           "this model wrong")
+    print(code_text(summary["code"]).replace("**", ""))
     for name, suite in summary["suites"].items():
         deltas = ", ".join(f"{metric} {format_value(metric, entry['delta'], delta=True)}"
                            for metric in AGAINST_HEADLINE if (entry := suite["headline"].get(metric)))

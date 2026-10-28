@@ -22,6 +22,17 @@ CLUSTER_NOTE = ("n paired (K clusters): the reads of one clone, or the two stran
 MISSING = "—"
 
 
+def alignair_code_text(codes: dict) -> str:
+    """The AlignAIR code two checkpoint variants ran under (tool -> its fingerprint's ``code_sha256``, None when not
+    recorded): ``both ran under AlignAIR code `<first 12>``` for one code, each tool's otherwise, flagged."""
+    digests = list(codes.values())
+    if not digests or None in digests:
+        return "AlignAIR code not recorded"
+    if len(set(digests)) == 1:
+        return f"both ran under AlignAIR code `{digests[0][:12]}`"
+    return "different AlignAIR code: " + ", ".join(f"{tool} `{code[:12]}`" for tool, code in codes.items())
+
+
 def _is_error(name: str) -> bool:
     """True for a metric shown as a raw number: errors and counts (not rates)."""
     return "_err" in name or "_errors" in name or "set_size" in name or "n_above_threshold" in name

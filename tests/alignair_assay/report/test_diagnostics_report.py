@@ -128,10 +128,13 @@ def _changes(metrics: dict, fixed: list, broken: list) -> dict:
             "a_only": 0, "b_only": 0, "a_only_examples": [], "b_only_examples": []}
 
 
-def _against(*, same=False, baseline=True) -> dict:
-    """``workflow.diagnose.compare_models``' result for S1 against the baseline ``OTHER``: the head boundaries (this
-    model better at the V start) and an abs. error, and the junction (the baseline better) and the clone key (too
-    few clusters)."""
+CODE = "fedcba987654" + "1" * 52
+
+
+def _against(*, same=False, baseline=True, code=CODE) -> dict:
+    """``workflow.diagnose.compare_models``' result for S1 against the baseline ``OTHER`` (diagnosed under the
+    AlignAIR code ``code``): the head boundaries (this model better at the V start) and an abs. error, and the
+    junction (the baseline better) and the clone key (too few clusters)."""
     heads = {"metrics": ["head.v.start_exact.soft", "head.v.start_exact.argmax", "head.v.start_abs_err.soft"],
              "comparison": {"head.v.start_exact.soft": _paired(0.90, 0.95, "b_better", p=0.001),
                             "head.v.start_exact.argmax": _paired(0.97, 0.97),
@@ -144,6 +147,7 @@ def _against(*, same=False, baseline=True) -> dict:
                   "changes": _changes({"junction.nt_exact": _changed(["S1:3"], ["S1:1", "S1:2"]),
                                        "clone_key.exact": _changed([], [])}, ["S1:3"], ["S1:1", "S1:2"])}
     return {"baseline": OTHER, "source": "/models/b.alignair", "same_model": same, "replay_verified": True,
+            "code": {"this": CODE, "baseline": code},
             "suites": {"S1": {"cases": 100, "clusters": {"keys": ["clone"], "clusters": 40, "cases": 80},
                               "heads": heads, "baseline": end_to_end if baseline else None}}}
 
@@ -413,6 +417,28 @@ def test_the_comparison_leads_the_summary_page():
     assert "same model key" in same
     heads_only = diagnostics_markdown(_report({"S1": _suite()}, against=_against(baseline=False)))
     assert "No end-to-end metric was compared" in _section(heads_only, AGAINST_SECTION)
+
+
+def test_the_comparison_names_each_models_alignair_code():
+    # one code: said once; another code for the baseline (diagnosed before an AlignAIR edit): both, flagged
+    report = _report({"S1": _suite()}, against=_against())
+    assert report["summary"]["against"]["code"] == {"this": CODE, "baseline": CODE, "same": True}
+    section = _section(diagnostics_markdown(report), AGAINST_SECTION)
+    detail = against_markdown(report, "S1")
+    for md in (section, detail):
+        assert "Both ran under AlignAIR code `fedcba987654`." in md and "different AlignAIR code" not in md
+    other = "0badc0de0000" + "2" * 52
+    report = _report({"S1": _suite()}, against=_against(code=other))
+    assert report["summary"]["against"]["code"] == {"this": CODE, "baseline": other, "same": False}
+    for md in (_section(diagnostics_markdown(report), AGAINST_SECTION), against_markdown(report, "S1")):
+        assert ("**Different AlignAIR code**: this model ran under `fedcba987654`, the baseline under "
+                "`0badc0de0000`, so every Δ holds the code change as well as the weights'.") in md
+    # a comparison recorded without its code says so
+    unrecorded = _against()
+    del unrecorded["code"]
+    report = _report({"S1": _suite()}, against=unrecorded)
+    assert report["summary"]["against"]["code"] == {"this": None, "baseline": None, "same": None}
+    assert "AlignAIR code not recorded." in _section(diagnostics_markdown(report), AGAINST_SECTION)
 
 
 def _unpaired(a, b):

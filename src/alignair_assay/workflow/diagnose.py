@@ -638,7 +638,9 @@ def compare_models(layout: RunLayout, reference: Reference, names: Sequence[str]
     their stored per-case scores (see the module docstring's Comparison): ``stats.compare(baseline, this)``, so a is
     the baseline, b this model and Δ = this − baseline, and ``stats.read_changes(baseline, this)``, so a read is
     fixed when the baseline gets it wrong and this model right. ``keys`` (suite -> this model's suite key) checks the
-    baseline's records (``other_records``); ``source`` names the baseline. ValueError when the two models' per-case
+    baseline's records (``other_records``); ``source`` names the baseline. The result's ``code`` holds the AlignAIR
+    code digest each model was diagnosed under (``this``, ``baseline``: their records' ``model.code_sha256``), which
+    differ for a baseline kept by its model key from before an AlignAIR edit. ValueError when the two models' per-case
     scores are of other case ids, or score other cases of a family (``stats.read_changes``' ``a_only`` and
     ``b_only``): a comparison never pairs a subset."""
     baselines = other_records(layout, baseline_key, keys)
@@ -673,8 +675,11 @@ def compare_models(layout: RunLayout, reference: Reference, names: Sequence[str]
             compared = compare(a, b, metrics, lower_is_better=low, clusters=clusters)
             found[family] = {"metrics": metrics, "comparison": to_dict(compared), "changes": changes}
         suites[name] = found
+    first = names[0]
     return {"baseline": baseline_key, "source": source, "same_model": this_key == baseline_key,
             "replay_verified": all(record.get("replay_verified") is not False for record in baselines.values()),
+            "code": {"this": keys[first]["model"].get("code_sha256"),
+                     "baseline": ((baselines[first].get("key") or {}).get("model") or {}).get("code_sha256")},
             "suites": suites}
 
 

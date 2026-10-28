@@ -1042,6 +1042,10 @@ def test_the_cli_runs_and_refuses(tmp_path, fakes, capsys):
 
 # --- checkpoint variants ------------------------------------------------------------------------------------------
 
+# The AlignAIR code digest a variant's fingerprint names (the checkout's ``src/alignair``).
+ALIGNAIR_CODE = "c0de" * 16
+
+
 class FakeVariant(FakeTool):
     """``alignair-api@<label>``: the fake tool under the variant's name, its fingerprint the label and checkpoint
     digest a variant's holds."""
@@ -1053,7 +1057,7 @@ class FakeVariant(FakeTool):
     def fingerprint(self) -> dict:
         checkpoint = self.options.checkpoints[self.label]
         return {**super().fingerprint(), "checkpoint": checkpoint, "checkpoint_sha256": sha256_file(checkpoint),
-                "label": self.label}
+                "label": self.label, "code_sha256": ALIGNAIR_CODE}
 
 
 def _variants(tmp_path: Path, monkeypatch, *labels: str, tools=None) -> RealConfig:
@@ -1103,7 +1107,8 @@ def test_two_labels_of_one_checkpoint_compare_to_zero(tmp_path, fakes, monkeypat
     block = report[report.index("\n## Checkpoint comparison\n"):report.index("\n## Genotype arm\n")]
     assert f"### {b} − {a}" in block and "no variation" in block and "| 0 / 0 |" in block
     digest = summary["provenance"]["tools"][a]["checkpoint_sha256"][:12]
-    assert f"{a} `{digest}`" in block and f"{b} `{digest}`" in block
+    assert (f"Checkpoints: {a} `{digest}`, {b} `{digest}`; both ran under AlignAIR code `{ALIGNAIR_CODE[:12]}`."
+            in block)
     # the headline compares igblast with each AlignAIR tool, not the two checkpoints
     headline = report[report.index("\n## R1 headline (shared arm)\n"):report.index("\n## Checkpoint comparison\n")]
     assert f"{b} − {a}" not in headline and f"{a} − igblast" in headline

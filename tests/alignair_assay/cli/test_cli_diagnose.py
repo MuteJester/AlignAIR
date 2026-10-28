@@ -1,4 +1,5 @@
-"""``diagnose --against``'s printed comparison: each significant metric with its direction."""
+"""``diagnose --against``'s printed comparison: each model's AlignAIR code and each significant metric with its
+direction."""
 
 import pytest
 from types import SimpleNamespace
@@ -26,6 +27,7 @@ def _family(comparison: dict) -> dict:
 
 def test_the_significant_metrics_are_printed_with_their_direction(tmp_path, capsys):
     against = {"baseline": BASELINE, "source": "/models/b.alignair", "same_model": False, "replay_verified": True,
+               "code": {"this": "fedcba987654" + "1" * 52, "baseline": "0badc0de0000" + "2" * 52},
                "suites": {"S1": {"cases": 100, "clusters": {"clusters": 0},
                                  "baseline": _family({"junction.nt_exact": _entry(0.6, 0.55, "a_better"),
                                                       "v.top1_in_set": _entry(0.9, 0.9, "tie_or_inconclusive")}),
@@ -36,6 +38,9 @@ def test_the_significant_metrics_are_printed_with_their_direction(tmp_path, caps
     result = SimpleNamespace(model_key=THIS, against={**against, "summary": against_summary(against)})
     _print_against(result, RunLayout(tmp_path))
     out = capsys.readouterr().out
+    # each model's AlignAIR code, a different one flagged (in plain text)
+    assert out.splitlines()[1] == ("Different AlignAIR code: this model ran under `fedcba987654`, the baseline under "
+                                   "`0badc0de0000`, so every Δ holds the code change as well as the weights'."), out
     assert ("significant: junction.nt_exact (baseline better), head.v.start_exact.soft (this better);"
-            in out.splitlines()[1]), out
-    assert "S3 against" in out.splitlines()[2] and "significant: none;" in out.splitlines()[2]
+            in out.splitlines()[2]), out
+    assert "S3 against" in out.splitlines()[3] and "significant: none;" in out.splitlines()[3]

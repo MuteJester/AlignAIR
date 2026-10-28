@@ -78,6 +78,18 @@ tool − the first). A read *fixed* is one BASE gets wrong and CAND right; *brok
    (`real.v.unsupported`, lower is better) per protocol (race, multiplex) on the shared arm, read with the
    `known_top1` and `ref_known_top1` Δ beside it; every other verdict is exploratory.
 
+**A weights change or a code change.** Both checkpoints of `all` and `real` run under this checkout's AlignAIR code
+(their reports say "both ran under AlignAIR code `<digest>`"), so those surfaces compare weights under one code: for
+a weights-only change, use any of them. For an AlignAIR **code** change (decoder, post-processing, architecture),
+diagnose BASE *before* the edit and keep its model key (`<weights>-<code>`, the code being that digest's first 12
+characters): after the edit, `diagnose --checkpoint CAND --against <BASE model key>` compares with the stored
+results, and the report names each model key's code and flags "different AlignAIR code". End to end, keep the
+pre-edit `all` run directory, run `all` after the edit into another one on the same build (suites, split, seed,
+scale), and compare the two runs' `runs/<tool>/<S>/<arm>/predictions.tsv` with `compare --truth
+<run>/suites/<S>/truth.jsonl.gz`. An edit of the predict orchestration the replay is pinned to makes `diagnose`
+refuse until the replay is updated and re-pinned (`diagnostics/pin.py`, see The pin under Replay), or until
+`--allow-unverified-replay` is passed (its results are then marked unverified).
+
 **The test split is locked for claims.** Never iterate on it. Score it once, at the end (`all --split test`, and
 `real --split test` on the test donors), on the frozen copy (`PYTHONPATH=FROZEN:src`), preferably frozen while
 GenAIRR's checkout is at a clean commit. The copy has no git state of its own: its `freeze.json` records the commit
@@ -262,7 +274,9 @@ result.scalars()["S1/against/junction.nt_exact.delta"]                         #
   means, Δ, 95% CI, verdict ("this better", "baseline better", "tie") and reads fixed / broken of `clone_key.exact`,
   `junction.nt_exact` and V / D / J top-1 in set; each boundary's exact rate Δ under the soft-argmax and the argmax
   decoders; and the reads fixed / broken per family with their totals. Each suite's full tables and examples are in
-  `<S>/against_<baseline key>.md`.
+  `<S>/against_<baseline key>.md`. The page and the command name the AlignAIR code each model was diagnosed under
+  (its records' code digest, the model key's second half) and flag "different AlignAIR code" when the baseline was
+  diagnosed before an AlignAIR edit: every Δ then holds the code change as well as the weights'.
 - **The null comparison.** A checkpoint against itself in memory (two model keys, diagnosed twice) must give Δ 0 on
   every metric and no read fixed or broken; a checkpoint file against itself is one model key, one record compared
   with itself.

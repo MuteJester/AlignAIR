@@ -146,7 +146,8 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
 
     It holds ``kind``, ``version``, the compared tools ``a`` and ``b``, the ``config`` (suites, tools, split,
     reference, seed, scale), the manifest's ``config_hash`` and, per checkpoint variant among the tools, its
-    ``checkpoints`` entry (``label``, ``path``, ``sha256``, as the manifest's settings record them).
+    ``checkpoints`` entry (``label``, ``path``, ``sha256`` and the AlignAIR ``code_sha256`` it ran under, as the
+    manifest's settings record them).
     ``failed_runs`` lists every expected run whose status (``run_statuses``) is not ``ok``, then ``scoring_errors``
     (runs that succeeded but could not be scored). ``suites`` has, per suite: ``name``, ``title``, ``purpose``,
     ``primary``, ``cases``, ``excluded`` (from ``build.json``), the ``oracle`` check (``status`` perfect, imperfect or not scored; ``cases``,
@@ -172,7 +173,8 @@ def collect_run_summary(layout: RunLayout, cfg: RunConfig, *, scoring_errors: li
                    "reference": cfg.reference, "seed": cfg.seed, "scale": cfg.scale},
         "config_hash": manifest.get("config_hash"),
         "checkpoints": {tool: {"label": settings[tool]["label"], "path": settings[tool].get("checkpoint"),
-                               "sha256": settings[tool].get("checkpoint_sha256")}
+                               "sha256": settings[tool].get("checkpoint_sha256"),
+                               "code_sha256": settings[tool].get("code_sha256")}
                         for tool in cfg.tools if "label" in (settings.get(tool) or {})},
         "failed_runs": failed,
         "oracle_failures": [_oracle_failure(suite, failed) for suite in suites

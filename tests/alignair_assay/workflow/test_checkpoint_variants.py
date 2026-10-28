@@ -101,12 +101,14 @@ def test_one_checkpoint_under_two_labels_compares_to_zero(null_run):
     assert {row["verdict"] for row in rows.values()} == {"tie_or_inconclusive"}
     report = json.loads(layout.report_json.read_text())
     assert (report["a"], report["b"]) == TOOLS
-    assert report["checkpoints"] == {tool: {"label": label, "path": checkpoints[label], "sha256": digest}
+    assert report["checkpoints"] == {tool: {"label": label, "path": checkpoints[label], "sha256": digest,
+                                            "code_sha256": CODE["code_sha256"]}
                                      for tool, label in zip(TOOLS, "ab")}
     md = layout.report_md.read_text()
     assert md.startswith("# AlignAIR assay run: alignair-local@a vs alignair-local@b")
+    # both checkpoints ran under the AlignAIR code of this checkout: the report says which
     assert (f"Checkpoints: alignair-local@a `{digest[:12]}` ({checkpoints['a']}), alignair-local@b "
-            f"`{digest[:12]}` ({checkpoints['b']}).") in md
+            f"`{digest[:12]}` ({checkpoints['b']}); both ran under AlignAIR code `{'c' * 12}`.") in md
 
 
 def test_a_changed_checkpoint_is_another_configuration_and_a_stale_run(null_run, tmp_path, capsys):

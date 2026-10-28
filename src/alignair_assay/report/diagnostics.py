@@ -203,7 +203,9 @@ def diagnostics_summary(report: dict) -> dict:
 
 def against_summary(against: dict | None) -> dict | None:
     """The one-page summary of a comparison with a baseline model (``workflow.diagnose.compare_models``; None for
-    None): the ``baseline``'s model key, its ``source``, ``same_model`` and ``replay_verified``; per suite
+    None): the ``baseline``'s model key, its ``source``, ``same_model``, ``replay_verified`` and the AlignAIR
+    ``code`` each model was diagnosed under (``this``, ``baseline``: their code digests, None when not recorded, and
+    ``same``: whether they are one code, None when either is unknown); per suite
     (``suites``) the ``cases``, the ``clusters`` of two or more reads, how many metrics each family ``compared``, the
     ``headline`` (each metric of ``AGAINST_HEADLINE`` and ``AGAINST_BOUNDARIES`` compared -> its ``family``, the
     paired means ``mean_baseline`` and ``mean_this``, ``delta`` (this − baseline), ``ci95``, ``verdict``, ``test``,
@@ -245,9 +247,13 @@ def against_summary(against: dict | None) -> dict | None:
     totals = {family: {kind: sum(suite["reads"][family][kind] for suite in suites.values() if family in suite["reads"])
                        for kind in ("fixed", "broken")}
               for family in AGAINST_FAMILIES if any(family in suite["reads"] for suite in suites.values())}
+    code = against.get("code") or {}
+    this, baseline = code.get("this"), code.get("baseline")
+    same = None if None in (this, baseline) else this == baseline
     return {"baseline": against["baseline"], "source": against.get("source"),
             "same_model": bool(against.get("same_model")),
-            "replay_verified": against.get("replay_verified") is not False, "suites": suites, "totals": totals}
+            "replay_verified": against.get("replay_verified") is not False,
+            "code": {"this": this, "baseline": baseline, "same": same}, "suites": suites, "totals": totals}
 
 
 def diagnostics_scalars(summary: dict) -> dict[str, float]:
@@ -455,7 +461,8 @@ def diagnostics_markdown(report: dict) -> str:
 def _against_section(summary: dict) -> list[str]:
     against = summary["against"]
     key = against["baseline"]
-    lines = [f"Against the baseline `{key}` ({against['source'] or 'source not recorded'}). {_AGAINST_NOTE}"]
+    lines = [f"Against the baseline `{key}` ({against['source'] or 'source not recorded'}). {_AGAINST_NOTE}", "",
+             code_text(against.get("code"))]
     if against["same_model"]:
         lines += ["", "Both are the same model key, so this compares one record with itself: every Δ is 0. Compare "
                       "with the model in memory, or another file of the same weights (other bytes), to diagnose it "
@@ -488,6 +495,18 @@ def _against_section(summary: dict) -> list[str]:
     lines += ["", f"Reads fixed / broken on at least one metric of the family: {per_suite}. "
                   f"Total: {totals or MISSING}.", "", f"Per-suite detail: {links}."]
     return lines
+
+
+def code_text(code: dict | None) -> str:
+    """The AlignAIR code each model of a comparison was diagnosed under (``against_summary``'s ``code``), as one line
+    that flags a different code: every Δ then holds the code change too."""
+    code = code or {}
+    if code.get("same") is None:
+        return "AlignAIR code not recorded."
+    if code["same"]:
+        return f"Both ran under AlignAIR code `{code['this'][:12]}`."
+    return (f"**Different AlignAIR code**: this model ran under `{code['this'][:12]}`, the baseline under "
+            f"`{code['baseline'][:12]}`, so every Δ holds the code change as well as the weights'.")
 
 
 def _against_verdict(entry: dict) -> str:
@@ -862,7 +881,8 @@ def against_markdown(report: dict, name: str) -> str:
     lines = [f"# AlignAIR diagnostics: model {model['model_key']} against {key}, suite {name}", "",
              f"Back to the [summary](../diagnostics.md). This model: `{model['model_key']}` ({model['source']}); "
              f"the baseline: `{key}` ({against.get('source') or 'source not recorded'}). {suite['cases']} diagnosed "
-             f"reads, the same for both; clusters: {_clusters_text(clusters)}. {_AGAINST_NOTE}"]
+             f"reads, the same for both; clusters: {_clusters_text(clusters)}. {_AGAINST_NOTE}", "",
+             code_text(report["summary"]["against"]["code"])]
     if against.get("same_model"):
         lines += ["", "Both are the same model key: one record compared with itself."]
     if clusters.get("clusters"):

@@ -34,7 +34,7 @@ of ``real``.
 from __future__ import annotations
 
 from alignair_assay.report.build import clean
-from alignair_assay.report.markdown import MISSING
+from alignair_assay.report.markdown import MISSING, alignair_code_text
 from alignair_assay.report.real_detail import DETAIL_SECTIONS, detail_markdown  # noqa: F401 (the sections)
 from alignair_assay.report.real_format import (
     ARMS,
@@ -300,6 +300,7 @@ def _checkpoint_comparison(summary: dict, scopes: list[dict]) -> list[str]:
     lines = [CHECKPOINT_LEAD]
     for a, b in pairs:
         digests = ", ".join(f"{tool} `{_short((tools.get(tool) or {}).get('checkpoint_sha256'))}`" for tool in (a, b))
+        digests += "; " + alignair_code_text({tool: (tools.get(tool) or {}).get("code_sha256") for tool in (a, b)})
         rows = [[scope["label"], arm, *(_pair_cell(comparison, metric, means=True)
                                         for metric in (HEADLINE, KNOWN[0], REF_KNOWN)),
                  _every_metric(comparison), _fixed_broken(comparison)]

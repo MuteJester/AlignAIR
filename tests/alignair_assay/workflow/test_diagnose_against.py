@@ -294,6 +294,28 @@ def test_the_other_model_is_diagnosed_first_with_the_same_settings(built, tmp_pa
     assert len(replays) == 4
 
 
+def test_each_models_alignair_code_is_named_and_another_code_flagged(built, tmp_path, small_model,
+                                                                     make_small_model):
+    layout = _copy(built, tmp_path)
+    code = alignair_code()["code_sha256"]
+    base = evaluate(make_small_model(REFERENCE, seed=9), layout, ["S0"], **FAST).model_key
+    result = evaluate(small_model, layout, ["S0"], **FAST, against=base)
+    assert result.against["code"] == {"this": code, "baseline": code}
+    assert result.against["summary"]["code"] == {"this": code, "baseline": code, "same": True}
+    assert f"Both ran under AlignAIR code `{code[:12]}`." in result.report_md
+    # The baseline diagnosed before an AlignAIR edit, kept by its model key: its records name the other code.
+    before = f"{base.split('-')[0]}-{'0' * 12}"
+    shutil.copytree(layout.diagnostics_dir(base), layout.diagnostics_dir(before))
+    record = json.loads(layout.diagnostics_suite_json(before, "S0").read_text())
+    record["key"]["model"]["code_sha256"] = "0" * 64
+    write_json(layout.diagnostics_suite_json(before, "S0"), record)
+    result = evaluate(small_model, layout, ["S0"], **FAST, against=before)
+    assert result.against["summary"]["code"] == {"this": code, "baseline": "0" * 64, "same": False}
+    assert (f"**Different AlignAIR code**: this model ran under `{code[:12]}`, the baseline under `{'0' * 12}`"
+            in result.report_md)
+    assert "Different AlignAIR code" in layout.diagnostics_against_md(result.model_key, "S0", before).read_text()
+
+
 def test_a_comparison_of_other_reads_or_settings_is_refused(built, tmp_path, small_model, make_small_model,
                                                             replays):
     layout = _copy(built, tmp_path)
@@ -338,6 +360,7 @@ def test_diagnose_command_compares_against_a_checkpoint_or_a_model_key(built, tm
     out = capsys.readouterr().out
     other = _key(theirs)
     assert f"against the baseline {other}" in out and "Δ = this model − the baseline" in out
+    assert f"Both ran under AlignAIR code `{alignair_code()['code_sha256'][:12]}`." in out
     assert f"S1 against {other}" in out and "fixed" in out and "broken" in out
     assert str(layout.diagnostics_against_md(_key(mine), "S1", other)) in out
     # by its model key: read from the run directory

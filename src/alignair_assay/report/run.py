@@ -11,6 +11,7 @@ from alignair_assay.core.prediction import GENES
 from alignair_assay.report.markdown import (
     CLUSTER_NOTE,
     MISSING,
+    alignair_code_text,
     excess_note,
     format_cell,
     format_excess,
@@ -49,7 +50,8 @@ def _configuration(summary: dict) -> str:
     if checkpoints:
         text += " Checkpoints: " + ", ".join(
             f"{tool} `{(entry.get('sha256') or MISSING)[:12]}` ({entry.get('path') or MISSING})"
-            for tool, entry in checkpoints.items()) + "."
+            for tool, entry in checkpoints.items()) + "; " + alignair_code_text(
+            {tool: entry.get("code_sha256") for tool, entry in checkpoints.items()}) + "."
     return text
 
 
