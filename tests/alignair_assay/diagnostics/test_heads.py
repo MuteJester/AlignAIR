@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("GenAIRR")
 
-from alignair.predict.calibrate import ece  # noqa: E402
+from alignair.calibration import ece  # noqa: E402
 from alignair.predict.state import Predictions  # noqa: E402
 
 from alignair_assay.core.cases import read_cases, read_fasta  # noqa: E402

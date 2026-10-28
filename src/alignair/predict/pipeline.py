@@ -103,7 +103,7 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     _validate_predictions(preds)  # raw outputs must be finite before any use
     allowed = None
     if cfg.allele_temperatures:                    # post-hoc allele-confidence calibration
-        from .calibrate import apply_temperature
+        from ..calibration import apply_temperature
         for g, T in cfg.allele_temperatures.items():
             if g in preds.allele:
                 preds.allele[g] = apply_temperature(preds.allele[g], T)

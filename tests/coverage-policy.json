@@ -3,6 +3,8 @@
   "files": {
     "src/alignair/core/runtime.py": {"statements": 100, "branches": 100},
     "src/alignair/calibration/conformal.py": {"statements": 98, "branches": 95},
+    "src/alignair/calibration/temperature.py": {"statements": 98, "branches": 95},
+    "src/alignair/calibration/alleles.py": {"statements": 98, "branches": 95},
     "src/alignair/data/inputs.py": {"statements": 98, "branches": 95},
     "src/alignair/data/identity.py": {"statements": 100, "branches": 100},
     "src/alignair/data/inference.py": {"statements": 98, "branches": 95},

@@ -60,7 +60,7 @@ from alignair.data.tokenizer import CenterPaddedTokenizer
 from alignair.neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.predict import PredictConfig, forward, pipeline
 from alignair.predict.airr import build_airr
-from alignair.predict.calibrate import apply_temperature
+from alignair.calibration import apply_temperature
 from alignair.predict.state import Segments
 
 from alignair_assay.core.reference import Reference

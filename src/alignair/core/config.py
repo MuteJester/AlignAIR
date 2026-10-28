@@ -70,7 +70,8 @@ class AlignAIRConfig:
     # byte-identical.
     use_orientation: bool = True
     # post-hoc allele-confidence calibration: per-gene temperature {"v":T,...} applied to the sigmoid
-    # allele probabilities at inference (sigmoid(logit(p)/T)); fitted post-training, argmax-preserving.
+    # allele probabilities at inference (sigmoid(logit(p)/T)); fitted post-training. Clipping and
+    # finite precision can merge scores into ties; downstream set rules retain their own semantics.
     allele_temperatures: Optional[dict] = None
     # Serialized construction choices shared by nucleotide and protein models. Architecture names
     # resolve through core.components; loading never imports arbitrary code from a model file.

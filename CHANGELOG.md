@@ -6,6 +6,8 @@ All notable changes to AlignAIR are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Shared sigmoid temperature scaling, binary top-1 fitting and ECE in `alignair.calibration`,
+  with batched per-gene allele fitting for nucleotide/protein models and website API documentation.
 - Shared `alignair.calibration` APS/RAPS and frozen prediction-set APIs for either input alphabet,
   with contextual input validation, fitted vocabulary-width checks and a dedicated website guide.
 - Shared reference nomenclature and lossless class-to-allele/gene/family expansion for product
@@ -238,6 +240,7 @@ All notable changes to AlignAIR are documented here. The format follows
   inferring replacement coordinates.
 
 ### Removed
+- Retired `alignair.predict.calibrate`; shared temperature APIs now live in `alignair.calibration`.
 - Protein-only `aa.conformal` module. Product and study callers use `calibration.conformal`;
   calibration tests and their hand-computed fixture live under `tests/alignair/calibration`.
 - Duplicate `aa.taxonomy` and `aa.product.asc` implementations. Their active callers use
@@ -339,6 +342,9 @@ All notable changes to AlignAIR are documented here. The format follows
   and the unused website widget. Documentation no longer cites the retired comparison.
 
 ### Fixed
+- Temperature calibration now rejects invalid parameters, avoids integer-output truncation, handles
+  empty cohorts, and excludes whitespace-only truth calls. Documentation qualifies clipping ties
+  and threshold-based call changes rather than promising unchanged calls after scaling.
 - Refitting conformal calibration replaces all group thresholds, preventing a former group's
   stale threshold from surviving a pooled-only or differently grouped fit. Invalid fit inputs
   are rejected before consuming calibration randomness or replacing fitted thresholds.

@@ -3,20 +3,91 @@ import { DocLink, DocTable, H2, type DocPage } from "./doc-kit";
 
 const calibration: DocPage = {
   slug: "prediction-calibration",
-  title: "Prediction-set calibration API",
+  title: "Calibration API",
   section: "Design",
-  lead: "Fit and apply APS/RAPS class prediction sets through one calibration interface for nucleotide and protein models.",
+  lead: "Calibrate sigmoid allele confidence and categorical prediction sets through shared APIs for nucleotide and protein models.",
   body: () => (
     <>
       <p>
-        <code>alignair.calibration</code> consumes categorical probability arrays and integer class
-        labels. It does not select a model, tokenizer, cohort, or reference. Obtain probabilities
-        through the <DocLink to="model-inference">shared inference API</DocLink> and retain their
-        class-column order from the <DocLink to="reference-labels">reference label schema</DocLink>.
-        Sigmoid temperature scaling remains in <code>predict.calibrate</code>; genotype threshold
-        tuning remains in <code>genotype.calibrate</code>.
+        <code>alignair.calibration</code> provides sigmoid temperature scaling and APS/RAPS class
+        prediction sets. Choose the method that matches the model’s output semantics. Obtain raw
+        probabilities through the <DocLink to="model-inference">shared inference API</DocLink> and
+        retain their class-column order from the <DocLink to="reference-labels">reference label schema</DocLink>.
+        Genotype threshold tuning remains a separate workflow in <code>alignair.genotype.calibrate</code>.
       </p>
-      <H2 id="fit">Fit on a separate calibration cohort</H2>
+      <DocTable head={["Method", "Inputs and purpose"]} rows={[
+        ["Sigmoid temperature", "Independent allele probabilities in [0, 1], without a row-sum requirement. Fit binary top-1 correctness confidence, then transform sigmoid probabilities."],
+        ["APS/RAPS", "Normalized categorical class probabilities and integer truth IDs. Fit a threshold for deterministic class prediction sets."],
+      ]} />
+      <H2 id="temperature">Sigmoid temperature scaling</H2>
+      <CodeBlock lang="python" code={`import numpy as np
+from alignair.calibration import apply_temperature, ece, fit_temperature
+
+# Illustrative held-out top-1 confidences and binary correctness labels.
+confidence = np.array([0.8, 0.8, 0.6, 0.6])
+correct = np.array([1, 1, 1, 0])
+temperature = fit_temperature(confidence, correct)
+scaled = apply_temperature(confidence, temperature)
+print(temperature, ece(confidence, correct), ece(scaled, correct))`} />
+      <p>
+        <code>apply_temperature(probs, temperature)</code> computes
+        <code> sigmoid(logit(p) / temperature)</code>, clipping probabilities to [1e-6, 1 - 1e-6]
+        before taking log odds. A finite positive temperature below one sharpens scores above 0.5
+        and lowers scores below 0.5; a temperature above one moves scores toward 0.5.
+        <code> None</code> or <code>1</code> returns the original input after validation. Transformed
+        floating arrays keep their dtype; transformed integer arrays produce float64 probabilities.
+      </p>
+      <p>
+        <code>fit_temperature(top1_probs, correct, lo=0.2, hi=3.0, n=120)</code> minimizes binary
+        correctness NLL over a log-spaced grid, choosing the first temperature on a tie. It uses
+        the same log-odds clipping and clips NLL probabilities to [1e-7, 1 - 1e-7]. Inputs are aligned,
+        nonempty one-dimensional confidence and binary correctness vectors. This objective calibrates
+        raw top-1 confidence; it does not optimize a multiclass softmax likelihood.
+        <code> ece(top1_probs, correct, n_bins=10)</code> uses equal-width bins: the first includes
+        both endpoints, and subsequent bins exclude the left endpoint and include the right.
+        Empty aligned vectors return zero ECE.
+      </p>
+      <p>
+        Clipping and finite precision can merge scores into ties. Fixed thresholds and relative-score
+        set rules can also select different alleles after scaling. Check the downstream prediction
+        policy; scaling does not guarantee unchanged calls or accuracy.
+      </p>
+      <H2 id="allele-fit">Fit per-gene allele temperatures</H2>
+      <CodeBlock lang="python" code={`from alignair.calibration import calibrate_allele_temperatures
+
+# model, reference and validation_records are supplied by the caller.
+temperatures, report = calibrate_allele_temperatures(
+    model, reference, validation_records,
+    genes=("v", "j"), batch_size=128, min_samples=50, device="cpu",
+)
+print(temperatures)  # {gene: temperature}
+print(report)        # {gene: {T, ece_before, ece_after, acc, n}}`} />
+      <p>
+        This workflow supports sigmoid allele heads for either input alphabet. Records supply
+        <code> sequence</code> for nucleotide models or <code>sequence_aa</code> for protein models,
+        plus comma-separated <code>v_call</code>, <code>d_call</code> or <code>j_call</code> truth.
+        The raw top-1 prediction is correct when its reference name belongs to that truth set.
+        Missing, empty and whitespace-only calls provide no observation; unmatched names count as
+        incorrect. No boundary or mutation annotations are required.
+      </p>
+      <p>
+        By default all configured genes are selected. An explicit selection must be a nonempty,
+        unique subset, with ordered reference names matching each head’s width. Nucleotide inputs
+        use the standard uppercase/unknown-base normalization and prefix crop. Protein inputs must
+        be uppercase, use the supported amino-acid alphabet including X and *, and fit the model
+        window without truncation. The complete cohort is validated before forwarding. Inference
+        preserves module training modes and retains only top-1 confidence/correctness per gene,
+        rather than full-cohort allele matrices.
+      </p>
+      <p>
+        Genes with fewer than <code>min_samples</code> observed calls are omitted. An empty cohort
+        returns two empty dictionaries. Report metrics are rounded to four decimals; returned
+        temperatures retain full precision. <code>acc</code> describes raw top-1 correctness, and
+        <code>n</code> counts that gene’s observed calls. The function does not change the model,
+        its configuration or records, apply the fitted temperatures, or save artifacts. The caller
+        owns held-out cohort selection, model/reference identity, evaluation and persistence.
+      </p>
+      <H2 id="fit">Fit APS/RAPS on a separate calibration cohort</H2>
       <CodeBlock lang="python" code={`import numpy as np
 from alignair.calibration import Conformal, FrozenConformal
 
@@ -92,17 +163,28 @@ print(sorted(frozen.predict_set(prediction)))`} />
       </p>
       <H2 id="errors">Errors and migration</H2>
       <DocTable head={["Error", "Meaning"]} rows={[
-        ["ConfigurationError", "Invalid calibration parameters, seed, or a request to predict before fitting."],
-        ["InputError", "Invalid probability shape/range/normalization, truth IDs, groups, or fitted class width."],
+        ["ConfigurationError", "Invalid calibration parameters, model profile, gene/reference binding, seed, or a request to predict before fitting."],
+        ["InputError", "Invalid probabilities, observations, records, sequences, groups, or fitted class width. Normalization is required only by APS/RAPS."],
         ["NumericalError", "Non-finite probability or score values."],
+        ["InferenceError", "Allele output width differs from the fitting reference; shared inference also checks output contracts."],
       ]} />
       <p>
-        Errors carry <code>stage="conformal_calibration"</code> and the relevant field. The former
+        Numerical helpers attach <code>stage="temperature_calibration"</code> or
+        <code> stage="conformal_calibration"</code> and the relevant field. Allele-fitting record and
+        output checks attach stage, gene and source-position context where applicable. The former
         <code> alignair.aa.conformal</code> module has been removed. Import <code>Conformal</code>,
         <code> FrozenConformal</code>, <code>aps_scores</code>, <code>aps_set</code> and
         <code> conformal_quantile</code> from <code>alignair.calibration</code> or
         <code> alignair.calibration.conformal</code>. Existing JSON field names and valid single-fit
         numerical conventions are retained. The refit fix deliberately discards stale group thresholds.
+      </p>
+      <p>
+        The former <code>alignair.predict.calibrate</code> module has also been removed. Import
+        <code> apply_temperature</code>, <code>fit_temperature</code>, <code>ece</code> and
+        <code> calibrate_allele_temperatures</code> from <code>alignair.calibration</code>.
+        The scaling keyword is now <code>temperature</code>. Zero, negative and non-finite
+        temperatures raise errors; use <code>None</code> or <code>1</code> for identity scaling.
+        Existing valid floating-point arithmetic, default fitting grid and report keys are retained.
       </p>
     </>
   ),

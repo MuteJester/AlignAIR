@@ -17,7 +17,7 @@ import torch  # noqa: E402
 from alignair import api  # noqa: E402
 from alignair.model_file import save_model  # noqa: E402
 from alignair.predict import forward, pipeline  # noqa: E402
-from alignair.predict.calibrate import apply_temperature  # noqa: E402
+from alignair.calibration import apply_temperature  # noqa: E402
 from alignair.predict.state import GeneCall, GermlineAlignment  # noqa: E402
 
 from alignair_assay.core.cases import read_fasta  # noqa: E402
