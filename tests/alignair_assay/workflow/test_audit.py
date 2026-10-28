@@ -1084,9 +1084,10 @@ def test_a_positive_control_that_sees_no_damage_or_the_wrong_direction_fails(tmp
     assert any(expected in problem for problem in found["evidence"]["problems"]), found["evidence"]["problems"]
 
 
-def _diagnosed(layout: RunLayout, key: str, suite: str, baseline: dict) -> None:
+def _diagnosed(layout: RunLayout, key: str, suite: str, baseline: dict, weights: str | None = None) -> None:
     """A diagnose record of ``suite`` for model ``key`` in ``layout``: its per-case scores (``baseline`` per case,
-    None for an excluded case) and the record naming them and the suite's build files."""
+    None for an excluded case) and the record naming them, the suite's build files and the model's ``weights``
+    digest."""
     from alignair_assay.core.provenance import sha256_file
     from alignair_assay.workflow.diagnose import CASES_KIND
 
@@ -1099,16 +1100,33 @@ def _diagnosed(layout: RunLayout, key: str, suite: str, baseline: dict) -> None:
                         for case, scores in baseline.items()], header={"kind": CASES_KIND})
     write_json(layout.diagnostics_suite_json(key, suite),
                {"key": {"suite": {"name": suite, "cases_sha256": sha256_file(layout.cases(suite)),
-                                  "truth_sha256": sha256_file(layout.truth(suite))}},
+                                  "truth_sha256": sha256_file(layout.truth(suite))},
+                        "model": {"weights_sha256": weights}},
                 "case_scores": {"sha256": sha256_file(cases)}})
+
+
+def _all_run(layout: RunLayout, suite: str, checkpoint_sha256: str | None) -> None:
+    """``all``'s run record of ``audit.AGREEMENT_TOOL`` on ``suite``, its settings naming ``checkpoint_sha256``."""
+    from alignair_assay.runners.base import RunResult, write_run_json
+
+    path = layout.run_json(audit.AGREEMENT_TOOL, suite, "shared")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    settings = {"label": "b"} if checkpoint_sha256 is None else {"label": "b", "checkpoint_sha256": checkpoint_sha256}
+    write_run_json(RunResult(tool=audit.AGREEMENT_TOOL, suite=suite, arm="shared", predictions="p.tsv", n_reads=6,
+                             wall_seconds=0.1, peak_rss_kb=None, returncode=0, commands=[],
+                             provenance={"settings": settings}), path)
 
 
 @pytest.fixture
 def surfaces(tmp_path, monkeypatch):
     """One S0 build's per-case scores on both surfaces: all's alignair-local@b and diagnose's baseline for the
-    checkpoint's model key (``kb``), equal on 6 cases (one excluded on both, one NaN on both)."""
+    checkpoint's model key (``kb``), equal on 6 cases (one excluded on both, one NaN on both), both run on the
+    audited checkpoint (its digest in all's run record and in diagnose's)."""
     import math
 
+    from alignair_assay.core.provenance import sha256_file
+
+    weights = sha256_file(_config(tmp_path).checkpoint)
     layout = RunLayout(tmp_path / "null_sim")
     layout.suite_dir("S0").mkdir(parents=True)
     layout.cases("S0").write_text("cases\n")
@@ -1117,8 +1135,8 @@ def surfaces(tmp_path, monkeypatch):
               for k in range(6)}
     layout.scores_dir("S0", "shared").mkdir(parents=True)
     write_scores(scores, layout.tool_scores("S0", "shared", "alignair-local@b"))
-    _diagnosed(layout, "kb", "S0", {**{case: {**value, "head.extra": 1.0} for case, value in scores.items()},
-                                    "S0:9": None})
+    _all_run(layout, "S0", weights)
+    _diagnosed(layout, "kb", "S0", {**scores, "S0:9": None}, weights)
     monkeypatch.setattr(audit.nulls, "checkpoint_model_key", lambda checkpoint: "kb")
     return layout
 
@@ -1129,6 +1147,49 @@ def test_all_and_diagnose_score_the_checkpoint_alike_case_by_case(tmp_path, surf
     evidence = found["evidence"]
     assert evidence["metrics"] == ["junction.nt_exact", "v.top1_in_set"] and evidence["model_key"] == "kb"
     assert evidence["tool"] == "alignair-local@b" and evidence["suite"] == "S0" and evidence["differing"] == 0
+
+
+@pytest.mark.parametrize("side", ["all", "diagnose"])
+def test_a_metric_one_surface_scores_and_the_other_does_not_fails(tmp_path, surfaces, side):
+    # every metric is scored by both surfaces: one only all or only diagnose scores is named, never dropped
+    from alignair_assay.scoring.pipeline import read_scores
+
+    path = surfaces.tool_scores("S0", "shared", "alignair-local@b")
+    scores = read_scores(path)
+    weights = audit.nulls.sha256_file(_config(tmp_path).checkpoint)
+    if side == "all":
+        write_scores({case: {**value, "airr.extra": 1.0} for case, value in scores.items()}, path)
+    else:
+        _diagnosed(surfaces, "kb", "S0", {**{case: {**value, "head.extra": 1.0} for case, value in scores.items()},
+                                          "S0:9": None}, weights)
+    found = audit.all_vs_diagnose(_config(tmp_path), surfaces)
+    assert found["status"] == "fail"
+    one_sided = "airr.extra" if side == "all" else "head.extra"
+    assert found["evidence"][f"metrics_only_{side}"] == [one_sided]
+    assert f"metrics only {side} scores: {one_sided}" in found["reason"]
+
+
+@pytest.mark.parametrize("fault, expected", [
+    ("all_other", "all's alignair-local@b ran the checkpoint 0000000000000000"),
+    ("all_missing", "all's alignair-local@b run records no checkpoint digest"),
+    ("diagnose_other", "diagnose's record of S0 is of the weights 0000000000000000"),
+], ids=["all_other", "all_missing", "diagnose_other"])
+def test_surfaces_that_ran_another_checkpoint_fail(tmp_path, surfaces, fault, expected):
+    # the agreement is of the audited checkpoint: all's run and diagnose's record must both be of its weights
+    weights = audit.nulls.sha256_file(_config(tmp_path).checkpoint)
+    from alignair_assay.scoring.pipeline import read_scores
+
+    scores = read_scores(surfaces.tool_scores("S0", "shared", "alignair-local@b"))
+    if fault == "all_other":
+        _all_run(surfaces, "S0", "0" * 64)
+    elif fault == "all_missing":
+        _all_run(surfaces, "S0", None)
+    else:
+        _diagnosed(surfaces, "kb", "S0", {**scores, "S0:9": None}, "0" * 64)
+    found = audit.all_vs_diagnose(_config(tmp_path), surfaces)
+    assert found["status"] == "fail"
+    assert any(expected in problem for problem in found["evidence"]["problems"]), found["evidence"]["problems"]
+    assert found["evidence"]["checkpoint_sha256"]["audited"] == weights
 
 
 @pytest.mark.parametrize("fault, expected", [
@@ -1152,7 +1213,8 @@ def test_all_and_diagnose_that_disagree_fail(tmp_path, surfaces, fault, expected
         scores["S0:4"]["junction.nt_exact"] = math.nan
         write_scores(scores, path)
     elif fault == "case":
-        _diagnosed(surfaces, "kb", "S0", {case: value for case, value in scores.items() if case != "S0:5"})
+        _diagnosed(surfaces, "kb", "S0", {case: value for case, value in scores.items() if case != "S0:5"},
+                   audit.nulls.sha256_file(_config(tmp_path).checkpoint))
     elif fault == "build":
         surfaces.cases("S0").write_text("rebuilt\n")
     else:

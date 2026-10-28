@@ -55,8 +55,8 @@ since what was not checked may have failed, and an audit that checked nothing ne
   worse (a metric the checkpoint almost never gets right cannot show a broken head, and the check then fails).
 - Cross-surface agreement, ``agreement.all_vs_diagnose``: on that suite's one build, ``all``'s per-case end-to-end
   scores of ``alignair-local@b`` must equal ``diagnose``'s per-case baseline scores of the same checkpoint (its file's
-  model key), case by case, on every metric both score: the CLI's AIRR output and the in-process replay are one
-  pipeline.
+  model key; both records must name the audited checkpoint's digest), case by case, on the same metrics (one only
+  either surface scores fails): the CLI's AIRR output and the in-process replay are one pipeline.
 - IgBLAST bands:
   - ``band.real_known``: IgBLAST's ``real.v.known_top1`` and ``real.v.ref_known_top1`` on the shared arm at least
     ``KNOWN_FLOOR`` on every dev donor of the stored ``real`` run;

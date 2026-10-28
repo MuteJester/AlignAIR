@@ -373,9 +373,12 @@ def all_vs_diagnose(cfg: AuditConfig, layout: RunLayout) -> dict:
     """``agreement.all_vs_diagnose``: on the shared suite's one build in ``layout`` (``shared_suite``), ``all``'s
     per-case end-to-end scores of ``AGREEMENT_TOOL`` (``layout.tool_scores``) against ``diagnose``'s per-case
     baseline scores of the same checkpoint (``workflow.diagnose.read_case_scores`` under ``checkpoint_model_key``),
-    whose record must be of this build (its cases' and truth's digests). The same cases must be scored (an excluded
-    case by neither) and every metric both surfaces score must have the same value on every case (NaN on both, or
-    absent from both, is the same). ``n`` is the cases compared; the evidence names the first differing ones."""
+    whose record must be of this build (its cases' and truth's digests). Both must be of the audited checkpoint
+    (``_same_checkpoint``: all's run settings and diagnose's record name its digest). The same cases must be scored
+    (an excluded case by neither), the same metrics (one only either surface scores fails, named:
+    ``metrics_only_all``, ``metrics_only_diagnose``), and every metric must have the same value on every case (NaN on
+    both, or absent from both, is the same). ``n`` is the cases compared; the evidence names the first differing
+    ones."""
     from alignair_assay.workflow.diagnose import read_case_scores
 
     name, suite = "agreement.all_vs_diagnose", shared_suite(cfg)
@@ -397,6 +400,7 @@ def all_vs_diagnose(cfg: AuditConfig, layout: RunLayout) -> dict:
         files = {"cases_sha256": layout.cases(suite), "truth_sha256": layout.truth(suite)}
         if any(not file.is_file() or build.get(field) != sha256_file(file) for field, file in files.items()):
             problems.append(f"diagnosed on another build of {suite} than the one all scored")
+    problems += _same_checkpoint(cfg, layout, suite, record, evidence)
     if problems:
         evidence.update(summary="; ".join(problems), problems=problems)
         return check(name, "fail", 0, evidence, "; ".join(problems))
@@ -406,19 +410,25 @@ def all_vs_diagnose(cfg: AuditConfig, layout: RunLayout) -> dict:
     only_all = [case for case in ends if case not in replayed]
     only_diagnose = [case for case in replayed if case not in ends]
     common = [case for case in ends if case in replayed]
-    metrics = sorted({metric for scores in ends.values() for metric in scores}
-                     & {metric for scores in replayed.values() for metric in scores})
+    scored_all = {metric for scores in ends.values() for metric in scores}
+    scored_diagnose = {metric for scores in replayed.values() for metric in scores}
+    metrics = sorted(scored_all & scored_diagnose)
+    metrics_only_all, metrics_only_diagnose = sorted(scored_all - scored_diagnose), sorted(scored_diagnose - scored_all)
     differ = [(case, metric, ends[case].get(metric), replayed[case].get(metric))
               for case in common for metric in metrics
               if not _same_score(ends[case].get(metric), replayed[case].get(metric))]
     cases_differing = list(dict.fromkeys(case for case, *_ in differ))
+    # a metric one surface scores and the other does not is a difference too, never left out of the comparison
+    problems += [f"metrics only all scores: {', '.join(metrics_only_all)}"] if metrics_only_all else []
+    problems += [f"metrics only diagnose scores: {', '.join(metrics_only_diagnose)}"] if metrics_only_diagnose else []
     problems += [f"cases only all scores: {len(only_all)} (e.g. {', '.join(only_all[:3])})"] if only_all else []
     problems += ([f"cases only diagnose scores: {len(only_diagnose)} (e.g. {', '.join(only_diagnose[:3])})"]
                  if only_diagnose else [])
     problems += [] if metrics else ["no metric is scored by both surfaces"]
     problems += [f"{case} {metric}: all {_score_text(a)}, diagnose {_score_text(b)}" for case, metric, a, b in
                  differ[:_EXAMPLES]]
-    evidence.update(metrics=metrics, cases=len(common), only_all=len(only_all), only_diagnose=len(only_diagnose),
+    evidence.update(metrics=metrics, metrics_only_all=metrics_only_all, metrics_only_diagnose=metrics_only_diagnose,
+                    cases=len(common), only_all=len(only_all), only_diagnose=len(only_diagnose),
                     differing=len(cases_differing), differing_values=len(differ),
                     first_differing=cases_differing[:_EXAMPLES], problems=problems,
                     summary=(f"{suite}: {AGREEMENT_TOOL}'s scores in all and the checkpoint's ({key}) in diagnose, "
@@ -432,6 +442,31 @@ def all_vs_diagnose(cfg: AuditConfig, layout: RunLayout) -> dict:
                      f"all and diagnose score the checkpoint differently ({'; '.join(problems[:3])}): the CLI's AIRR "
                      "output and the in-process replay are not one pipeline, or did not run on one build")
     return check(name, "pass", len(common), evidence)
+
+
+def _same_checkpoint(cfg: AuditConfig, layout: RunLayout, suite: str, record: dict | None,
+                     evidence: dict) -> list[str]:
+    """Whether both surfaces ran the audited checkpoint: the ``checkpoint_sha256`` in the settings of ``all``'s
+    ``AGREEMENT_TOOL`` run on ``suite`` and the ``model.weights_sha256`` of diagnose's ``record`` must both be the
+    SHA-256 of ``cfg.checkpoint``'s bytes (a missing digest is a problem too). Records the three in
+    ``evidence["checkpoint_sha256"]``; returns the problems."""
+    audited = sha256_file(cfg.checkpoint)
+    run_json = layout.run_json(AGREEMENT_TOOL, suite, "shared")
+    try:
+        ran = (read_run_json(run_json).provenance.get("settings") or {}).get("checkpoint_sha256")
+    except (OSError, ValueError, TypeError):
+        ran = None
+    diagnosed = (((record or {}).get("key") or {}).get("model") or {}).get("weights_sha256")
+    evidence["checkpoint_sha256"] = {"audited": audited, "all": ran, "diagnose": diagnosed}
+    problems = []
+    if not ran:
+        problems.append(f"all's {AGREEMENT_TOOL} run records no checkpoint digest ({run_json})")
+    elif ran != audited:
+        problems.append(f"all's {AGREEMENT_TOOL} ran the checkpoint {ran[:16]}, not the audited {audited[:16]}")
+    if record is not None and diagnosed != audited:
+        problems.append(f"diagnose's record of {suite} is of the weights {(diagnosed or 'none')[:16]}, not the "
+                        f"audited checkpoint's {audited[:16]}")
+    return problems
 
 
 def _same_score(a, b) -> bool:

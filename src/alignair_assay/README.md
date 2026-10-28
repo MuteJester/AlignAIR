@@ -349,9 +349,10 @@ After a re-freeze, audit again before comparing anything.
     a broken head cannot make that metric worse, and on it the control fails (a tie), never passes;
   - cross-surface agreement (`agreement.all_vs_diagnose`): on the shared S1 build, `all`'s per-case end-to-end
     scores of `alignair-local@b` (the CLI's AIRR output) must equal `diagnose`'s per-case baseline scores of the same
-    checkpoint (the in-process replay, under the file's model key), case by case on every metric both score, with the
-    same cases scored; the record must be of that build. `n` is the cases compared, and the evidence names the first
-    differing ones;
+    checkpoint (the in-process replay, under the file's model key), case by case, with the same cases and the same
+    metrics scored (a metric only one surface scores fails, named); the record must be of that build, and `all`'s run
+    settings and `diagnose`'s record must both name the audited checkpoint's SHA-256. `n` is the cases compared, and
+    the evidence names the first differing ones;
   - IgBLAST bands: `known_top1` and `ref_known_top1` at least 99% on every dev donor (shared arm); S1
     `v.top1_in_set` at this code within 97.9% ± 1.5 pp (`band.sim_v_top1_current`, the gate: IgBLAST run now on the
     fresh dev S1 the speed check built, or on S1 built at scale 0.2 when it built none; skipped without an IgBLAST
