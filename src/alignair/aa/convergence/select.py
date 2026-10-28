@@ -20,6 +20,12 @@ from ``evaluator.evaluate_checkpoint`` + derived strata/gap fields)::
 """
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
+from numbers import Integral, Real
+
+from ...errors import InputError, NumericalError, error_context
+
 # ---------------------------------------------------------------------------
 # §5 frozen constants -- do not retune.
 # ---------------------------------------------------------------------------
@@ -39,6 +45,65 @@ SET_SIZE_WEAKNESS_KEYS = ("conf_set_mean", "conf_set_p95")
 
 ACCURACY_IMPROVEMENT_THRESHOLD = 0.01       # ">= 1.0 pt" absolute
 SET_SIZE_RELATIVE_REDUCTION = 0.05          # ">= 5%" relative reduction
+
+
+def _metric(value, field, lower, upper=None, *, required=False):
+    """Validate observed values without coercion or changing the rule's arithmetic."""
+    if value is None:
+        if required:
+            raise InputError("required selection metric is missing", context={"field": field})
+        return
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise InputError("selection metrics must be real numbers or explicitly unavailable", context={"field": field})
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:
+        finite = False
+    if not finite:
+        raise NumericalError("non-finite selection metric", context={"field": field})
+    if value < lower or upper is not None and value > upper:
+        raise InputError("selection metric is outside its valid range", context={"field": field})
+
+
+def _validate_row(row, *, candidate):
+    if not isinstance(row, Mapping):
+        raise InputError("selection rows must be metric mappings")
+    required = ("clean_v_acc", "clean_j_acc", "v_macro", "j_macro") if candidate else ("v_macro", "j_macro")
+    for field in required:
+        _metric(row.get(field), field, 0., 1., required=True)
+    for field in ACCURACY_WEAKNESS_KEYS:
+        _metric(row.get(field), field, -1. if field == "macro_minus_micro" else 0., 1.)
+    for field in SET_SIZE_WEAKNESS_KEYS:
+        _metric(row.get(field), field, 0.)
+    if candidate:
+        conformal = row.get("conformal")
+        if conformal is not None and not isinstance(conformal, Mapping):
+            raise InputError("conformal metrics must be a mapping or unavailable", context={"field": "conformal"})
+        _metric((conformal or {}).get("coverage"), "conformal.coverage", 0., 1.)
+
+
+def _selection_inputs(incumbent, candidates):
+    with error_context(stage="convergence_selection"):
+        with error_context(role="incumbent"):
+            _validate_row(incumbent, candidate=False)
+        if isinstance(candidates, (str, bytes, Mapping)):
+            raise InputError("candidates must be an ordered iterable of metric mappings", context={"field": "candidates"})
+        try:
+            candidates = tuple(candidates)
+        except TypeError as exc:
+            raise InputError("candidates must be iterable", context={"field": "candidates"}) from exc
+        names = set()
+        for index, candidate in enumerate(candidates):
+            with error_context(role="candidate", candidate_index=index):
+                _validate_row(candidate, candidate=True)
+                name, step = candidate.get("name"), candidate.get("step")
+                if not isinstance(name, str) or not name.strip() or name == "incumbent" or name in names:
+                    raise InputError("candidate names must be unique, nonempty and distinct from 'incumbent'",
+                                     context={"field": "name"})
+                if isinstance(step, bool) or not isinstance(step, Integral) or step < 0:
+                    raise InputError("candidate steps must be nonnegative integers", context={"field": "step"})
+                names.add(name)
+        return candidates
 
 
 def _check_gates(incumbent: dict, candidate: dict) -> list[str]:
@@ -109,6 +174,7 @@ def select_checkpoint(incumbent: dict, candidates: list[dict]) -> dict:
     "per_candidate": [ {name, step, gates_passed, gate_failures, weaknesses_improved,
     objective_count, gain, d_allele_macro_gain, trunc_v_acc_gain, combined_gain}, ... ]}``.
     """
+    candidates = _selection_inputs(incumbent, candidates)
     per_candidate = []
     for cand in candidates:
         gate_failures = _check_gates(incumbent, cand)

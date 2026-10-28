@@ -359,6 +359,9 @@ All notable changes to AlignAIR are documented here. The format follows
   and the unused website widget. Documentation no longer cites the retired comparison.
 
 ### Fixed
+- Frozen convergence selection validates complete metric requests before applying its gates,
+  rejecting non-finite evidence, malformed values and ambiguous candidate identifiers. Valid-input
+  thresholds, arithmetic, tie-breaks, missing-value handling and result schema remain unchanged.
 - Float16 categorical NLL uses float32 logarithms to keep clipped zero probabilities finite.
   Multiclass Brier uses a private residual matrix instead of allocating a one-hot target matrix;
   malformed/empty probability cohorts and invalid labels now receive contextual errors.

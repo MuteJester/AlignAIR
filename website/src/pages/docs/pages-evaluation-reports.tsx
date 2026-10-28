@@ -400,6 +400,56 @@ metrics = evaluate_checkpoint(
         stratum, gene and source position where applicable. Unexpected model exceptions retain
         their original type while runtime state is restored.
       </p>
+      <H2 id="convergence-selection">Apply the frozen convergence selection rule</H2>
+      <CodeBlock lang="python" code={`from alignair.aa.convergence.select import select_checkpoint
+
+# Illustrative metrics; use the declared frozen cohort for an actual study.
+incumbent = {"v_macro": 0.95, "j_macro": 0.95, "d_allele_macro": 0.70}
+candidate = {
+    "name": "candidate-step-25000", "step": 25000,
+    "clean_v_acc": 0.986, "clean_j_acc": 0.992,
+    "v_macro": 0.95, "j_macro": 0.95,
+    "conformal": {"coverage": 0.95}, "d_allele_macro": 0.75,
+}
+decision = select_checkpoint(incumbent, [candidate])
+print(decision["winner"], decision["per_candidate"][0]["weaknesses_improved"])`} />
+      <p>
+        This API applies the existing study policy to supplied metric mappings. The training driver
+        writes metrics and the predeclaration separately; it does not invoke selection. Keep selection
+        isolated from training and use the declared cohort, reference and checkpoint bindings. The
+        function performs no training, inference, artifact loading or random sampling.
+      </p>
+      <DocTable head={["Gate", "Frozen requirement"]} rows={[
+        ["Clean V / J class accuracy", "At least 0.980 / 0.988, respectively."],
+        ["V / J macro accuracy", "Neither may regress by more than 0.005 from the incumbent."],
+        ["Conformal coverage", "At least 0.94. Missing or None coverage fails this gate."],
+      ]} />
+      <p>
+        Eligible candidates pass every gate and improve at least one declared weakness: D allele-macro,
+        D gene accuracy, truncated-V accuracy, short-read accuracy, macro-minus-micro gap, or mean/p95
+        confidence-set size. Accuracy improvements use the existing inclusive 0.01 threshold; set sizes
+        use the inclusive multiplicative 5% reduction rule. Selection maximizes the count of improved
+        weaknesses, then combined D-allele-macro and truncated-V gain, then prefers the earliest step.
+        Fully tied rows retain input order. With no eligible candidate, <code>winner="incumbent"</code>
+        and the existing null-result rationale are returned. Threshold arithmetic is not rounded or retuned.
+      </p>
+      <p>
+        Preflight validates the complete request before any gate is evaluated. Candidate names must
+        be unique nonempty strings distinct from the reserved <code>incumbent</code> result token;
+        steps must be nonnegative integers. Clean V/J and macro gate metrics are required for every
+        candidate. The incumbent requires V/J macro metrics. Rates and coverage lie in [0, 1], the
+        macro-minus-micro gap in [-1, 1], and set sizes are nonnegative. Missing or None weakness
+        metrics remain unpaired and are skipped. A missing conformal mapping/coverage remains a gate
+        failure; malformed containers, booleans, non-numeric or out-of-range values raise
+        <code> InputError</code>, and NaN/infinite metrics raise <code>NumericalError</code>.
+        Errors identify the selection stage, incumbent/candidate role, candidate index and metric field.
+      </p>
+      <p>
+        Ordered candidate iterables are consumed once and validated without mutating input mappings
+        or coercing metric precision. Results retain <code>winner</code>, <code>rationale</code> and
+        <code>per_candidate</code>, including gates, gains and ranking details. These input checks
+        establish well-formed evidence; cohort identity and scientific blinding remain study responsibilities.
+      </p>
       <H2 id="ownership">Study integration</H2>
       <p>
         Numerical intervals live in <code>evaluate.statistics</code>; class and boundary summaries
