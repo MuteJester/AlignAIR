@@ -352,6 +352,9 @@ All notable changes to AlignAIR are documented here. The format follows
   and the unused website widget. Documentation no longer cites the retired comparison.
 
 ### Fixed
+- Convergence scoring releases non-clean probability matrices after each stratum's accuracy
+  reduction instead of caching them until completion. Clean-head reuse, reports and inference
+  counts retain their existing behavior.
 - Convergence checkpoint scoring validates its configuration, vocabularies, consumed cohort inputs
   and report options before model placement or inference. Shared runtime contexts restore mixed
   module modes on success/failure; output-width checks prevent scoring against mismatched columns.

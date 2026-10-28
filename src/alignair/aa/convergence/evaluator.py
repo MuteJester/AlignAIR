@@ -75,6 +75,18 @@ def _conformal_v(model, cfg, device: str, class_maps, calibration_rows: list, cl
             "set_mean": float(sizes.mean()), "set_p95": float(np.percentile(sizes, 95))}
 
 
+def _score_stratum(model, cfg, vclass, rows, device, *, is_clean):
+    """Reduce V accuracy locally; only clean heads and truth survive this call."""
+    sequences = [row["aa"] for row in rows]
+    truth = np.array([vclass[_first(row["v_call"])] for row in rows])
+    keys = (("v_class_logits", "j_class_logits") + (("d_class_logits",) if cfg.has_d else ())
+            if is_clean else ("v_class_logits",))
+    probabilities = _class_probabilities(model, sequences, cfg, device, keys)
+    prediction = probabilities["v_class_logits"].argmax(-1)
+    summary = {"n": len(rows), "v_acc": float((prediction == truth).mean())}
+    return summary, (probabilities, truth) if is_clean else None
+
+
 def _evaluate_checkpoint(model, cfg, class_maps, meta, cohort, boundary_samples, *, device: str = "cpu",
                         alpha: float = 0.05, freq_edges=_DEFAULT_FREQ_EDGES) -> dict:
     """Evaluate a prepared model and its class maps/D indices over a frozen cohort.
@@ -90,28 +102,23 @@ def _evaluate_checkpoint(model, cfg, class_maps, meta, cohort, boundary_samples,
 
     # ---- per-stratum V accuracy (selection-critical: "clean" feeds clean_v_acc/v_macro below) ----
     by_stratum: dict = {}
-    v_probs_cache: dict = {}
+    clean_predictions = None
     for name, rows in by_stratum_rows.items():
         if not rows:
             continue
-        seqs = [r["aa"] for r in rows]
-        y_v = np.array([vclass[_first(r["v_call"])] for r in rows])
-        keys = (("v_class_logits", "j_class_logits") + (("d_class_logits",) if cfg.has_d else ())
-                if name == "clean" else ("v_class_logits",))
         with error_context(stratum=name):
-            probabilities = _class_probabilities(model, seqs, cfg, device, keys)
-        pv = probabilities["v_class_logits"]
-        pred_v = pv.argmax(-1)
-        by_stratum[name] = {"n": len(rows), "v_acc": float((pred_v == y_v).mean())}
-        v_probs_cache[name] = {"probs": pv, "y": y_v, "heads": probabilities}
+            summary, retained = _score_stratum(model, cfg, vclass, rows, device, is_clean=name == "clean")
+        by_stratum[name] = summary
+        if retained is not None:
+            clean_predictions = retained
 
     clean_rows = by_stratum_rows["clean"]
-    pv_clean = v_probs_cache["clean"]["probs"]
-    y_v_clean = v_probs_cache["clean"]["y"]
+    clean_heads, y_v_clean = clean_predictions
+    pv_clean = clean_heads["v_class_logits"]
     pred_v_clean = pv_clean.argmax(-1)
 
     y_j_clean = np.array([jclass[_first(r["j_call"])] for r in clean_rows])
-    pj_clean = v_probs_cache["clean"]["heads"]["j_class_logits"]
+    pj_clean = clean_heads["j_class_logits"]
     pred_j_clean = pj_clean.argmax(-1)
 
     clean_v_acc = float((pred_v_clean == y_v_clean).mean())
@@ -125,7 +132,7 @@ def _evaluate_checkpoint(model, cfg, class_maps, meta, cohort, boundary_samples,
     d_rows = [clean_rows[i] for i in d_indices]
     if d_rows:
         y_d = np.array([d_index[_first(r["d_call"])] for r in d_rows])
-        pd_ = v_probs_cache["clean"]["heads"]["d_class_logits"][d_indices]
+        pd_ = clean_heads["d_class_logits"][d_indices]
         pred_d = pd_.argmax(-1)
         d_allele_acc = float((pred_d == y_d).mean())
         d_allele_macro = macro_accuracy(y_d, pred_d)

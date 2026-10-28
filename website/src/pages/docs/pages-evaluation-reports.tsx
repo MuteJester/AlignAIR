@@ -322,6 +322,15 @@ metrics = evaluate_checkpoint(
         before label-based scoring, including the calibration pass.
       </p>
       <p>
+        Each non-clean stratum is reduced to its count and V accuracy, then its probability arrays
+        are released before the next inference call. Only the clean V/J and optional D matrices are
+        retained for the detailed reports and reuse of clean V probabilities during conformal
+        evaluation. Cross-stratum probability storage does not accumulate with the number of strata.
+        Inference still materializes each active stratum’s probabilities, and conformal fitting retains
+        its calibration matrix; this is not a fully streaming evaluator. Forward-pass counts, softmax
+        placement, row order and metric arithmetic retain their existing conventions.
+      </p>
+      <p>
         Scoring disables gradients and restores every module’s previous training/evaluation flag
         on success and on placement, forward or calibration failures. Explicit placement on
         <code>device</code> persists; the evaluator does not move the model back afterward.
