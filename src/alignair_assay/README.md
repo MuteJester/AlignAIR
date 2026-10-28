@@ -317,11 +317,12 @@ After a re-freeze, audit again before comparing anything.
     reads, genotype and predictions, equal the stored ones in content: every row, and every input (a stored file
     written before JSON-lines gzip was reproducible carries a time, so its bytes are reported, not required);
   - null comparisons, the checkpoint under labels `a` and `b`: `all --tools alignair-local@a,alignair-local@b` on S1
-    and `diagnose` (the file against itself in memory: two model keys) on S1 and S3, on one shared dev build at
-    scale 0.05 (`OUT/audit/scratch/null_sim/`: `diagnose` builds only what `all` did not), with `diagnose` replaying
-    at the alignair-local runner's batch size (64), and `real --tools alignair-api@a,alignair-api@b --cap 2000` on
-    W-97, each with every Δ 0, no significant verdict, no read fixed or broken, each side's own scores equal and
-    every read either side scores paired. A comparison must
+    and S7 (its genotype arm too: the genotype path with checkpoint variants, each donor's reads run against its
+    genotype) and `diagnose` (the file against itself in memory: two model keys) on S1 and S3, on one shared dev
+    build at scale 0.05 (`OUT/audit/scratch/null_sim/`: `diagnose` builds only what `all` did not), with `diagnose`
+    replaying at the alignair-local runner's batch size (64), and `real --tools alignair-api@a,alignair-api@b --cap
+    2000` on W-97, each with every Δ 0, no significant verdict, no read fixed or broken, each side's own scores equal
+    and every read either side scores paired. A comparison must
     pair something and hold everything expected of it, since what is missing is never null: per suite and family
     (`diagnose`) and per arm (`all`, `real`) some metric pairs a read and every end-to-end headline metric is
     compared and pairs at least one (`clone_key.exact`, `junction.nt_exact`, V/D/J top-1 in set; real:

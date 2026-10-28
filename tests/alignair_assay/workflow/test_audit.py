@@ -18,6 +18,7 @@ from alignair_assay.cli import main
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.records import write_json, write_jsonl
 from alignair_assay.report.audit import audit_markdown
+from alignair_assay.suites import get_suite
 from alignair_assay.workflow import audit
 from alignair_assay.workflow.audit import CHECKS, GROUPS, AuditConfig, check, settle, verdict
 
@@ -622,6 +623,17 @@ def test_all_with_one_checkpoint_under_two_labels_must_compare_to_zero(tmp_path,
     assert shared["metrics"] > 5 and shared["predictions_identical"] and shared["n"] == shared["offered"] == 10
     assert null["evidence"]["tools"] == ["alignair-local@a", "alignair-local@b"]
     assert oracle["name"] == "self_check.sim_oracle_current" and oracle["status"] == "pass" and oracle["n"] == 10
+
+
+def test_the_null_all_holds_s7s_genotype_arm(tmp_path, oracle_variants):
+    # the genotype path of all with checkpoint variants is gated: S7 (novel alleles, with donors) on both arms
+    assert "S7" in audit.NULL_SUITES and "genotype" in get_suite("S7").arms
+    null, _ = audit.all_null(_config(tmp_path, null_suites=("S7",), null_scale=0.01), RunLayout(tmp_path / "s7"))
+    assert null["status"] == "pass", null["reason"]
+    suites = null["evidence"]["suites"]
+    assert set(suites) == {"S7/shared", "S7/genotype"}
+    assert all(entry["predictions_identical"] and 0 < entry["n"] <= entry["offered"] for entry in suites.values())
+    assert null["evidence"]["runs"]["alignair-local@b S7/genotype"] == 0
 
 
 def test_all_with_a_read_called_otherwise_is_not_null(tmp_path, oracle_variants):

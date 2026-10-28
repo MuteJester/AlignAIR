@@ -34,9 +34,10 @@ NULL_LABELS = ("a", "b")
 # Reproducibility: the suite built twice, its scale, and the files both builds must hold (donors.json only with donors).
 REPRO_SUITE, REPRO_SCALE = "S1", 0.02
 REPRO_FILES = ("cases", "truth", "reads")
-# The null ``all`` comparison's suites, ``diagnose``'s, the scale of their one shared build, and the batch size
+# The null ``all`` comparison's suites (S1, and S7 for its genotype arm: the genotype path of ``all`` with checkpoint
+# variants, about 150 reads at this scale), ``diagnose``'s, the scale of their one shared build, and the batch size
 # ``diagnose`` replays with (the alignair-local runner's, so the two surfaces compute alike); ``real``'s donor and cap.
-NULL_SUITES, DIAGNOSE_SUITES, NULL_SCALE = ("S1",), ("S1", "S3"), 0.05
+NULL_SUITES, DIAGNOSE_SUITES, NULL_SCALE = ("S1", "S7"), ("S1", "S3"), 0.05
 DIAGNOSE_BATCH = RunnerOptions().batch_size
 REAL_DONOR, REAL_CAP = "W-97", 2000
 # The positive control: the module zeroed in a copy of the checkpoint, and the head metric that must get worse. The

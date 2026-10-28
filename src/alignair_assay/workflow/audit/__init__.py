@@ -41,7 +41,8 @@ since what was not checked may have failed, and an audit that checked nothing ne
   (``SIM_HEADLINE``, ``REAL_HEADLINE``) on every suite and arm, and in ``diagnose`` every suite diagnosed, each with
   its head family (one metric per ``HEAD_BOUNDARY_PREFIXES`` at least) and its scored reads. Its ``n`` is the fewest
   reads a headline metric pairs:
-  - ``null.all``: ``all --tools alignair-local@a,alignair-local@b`` on ``NULL_SUITES``;
+  - ``null.all``: ``all --tools alignair-local@a,alignair-local@b`` on ``NULL_SUITES`` (S7's genotype arm among
+    them: the genotype path of ``all`` with checkpoint variants);
   - ``null.diagnose``: the checkpoint file against itself loaded in memory (two model keys, each diagnosed) on
     ``DIAGNOSE_SUITES``, built where ``all`` did not already build them;
   - ``null.real``: ``real --tools alignair-api@a,alignair-api@b --cap REAL_CAP`` on ``REAL_DONOR``.
