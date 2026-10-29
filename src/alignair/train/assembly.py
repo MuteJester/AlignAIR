@@ -21,7 +21,6 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from itertools import islice
-import pickle
 
 import numpy as np
 import torch
@@ -83,10 +82,9 @@ def assemble_batches(payload, inputs, link):
                 link.send(0, ('end', batch_records))
                 return
             batch = stream.data.batch_adapter(batch_records)
-        # Plain bytes, not torch's shared-memory tensors: those make this process serve a file
-        # descriptor per tensor while its batch adapter holds the GIL, stalling the trainer.
-        message = pickle.dumps((batch_records, batch, capture_rng_state(include_cuda=False)), pickle.HIGHEST_PROTOCOL)
-        if not link.send(0, ('batch', message)):
+        # Channels carry plain pickles, so tensors travel as bytes rather than as torch shared memory,
+        # whose per-tensor descriptor handoff would wait on this process's GIL and stall the trainer.
+        if not link.send(0, ('batch', (batch_records, batch, capture_rng_state(include_cuda=False)))):
             return
 
 
@@ -134,7 +132,7 @@ class AssembledBatches:
         plan = component_plan(stream.dataconfigs, policy=stream.policy, seed=stream.seed)
         self._group = WorkerGroup()
         channels = start_record_workers(self._group, plan, **self._options)
-        self._batches = self._group.queue(self._queue_batches)
+        self._batches = self._group.channel(self._queue_batches)
         self._expected = capture_rng_state(include_cuda=False)
         self._group.start(assemble_batches, (stream, plan_signature(plan), self._batch_size, self._expected),
                           outputs=[self._batches], inputs=channels, name='alignair-batches')
@@ -142,10 +140,10 @@ class AssembledBatches:
     def _receive(self):
         if self._group is None:
             self._start()
-        kind, payload = receive(self._batches, self._group.check)
+        kind, payload = receive(self._batches.receiver, self._group.check)
         if kind == 'batch':
-            self._pending = pickle.loads(payload)
-            self._records.extend(self._pending[0])
+            self._pending = payload
+            self._records.extend(payload[0])
         else:
             self._ended = True
             if kind == 'error':

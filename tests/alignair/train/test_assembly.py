@@ -2,14 +2,16 @@
 import gc
 from itertools import islice
 import multiprocessing
+import os
+import signal
+import time
 
 import pytest
 import torch
 
 from alignair.data.training import TrainingDataSetup
-from alignair.errors import TrainingDataError, TrainingError
+from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
 from alignair.train.assembly import AssembledBatches, LocalAssembly, TrainingStream, parallel_training_data
-from alignair.errors import ConfigurationError
 from alignair.train.gym.streams import CurriculumStreamPolicy
 from tests.support import record_workers
 from tests.support.training_streams import RecordingEngine, assert_same_runs, run, serial_records
@@ -93,6 +95,19 @@ def test_a_cpu_random_draw_inside_the_step_is_refused_rather_than_silently_diver
                                    engine=RecordingEngine(draw=True))
     assert len(iterations) == 1 and isinstance(error, TrainingError)
     assert 'random' in str(error) and error.context['step'] == 2
+
+
+def test_an_assembler_killed_while_sending_a_batch_is_reported_not_waited_for():
+    before = children()
+    batches = AssembledBatches(synthetic(), batch_size=64, workers=1, device='cpu', provider=record_workers.bulky)
+    next(batches.records)
+    (assembler,) = [process for process in children() - before if process.name == 'alignair-batches']
+    time.sleep(2)                       # the assembler runs ahead until a 1.3 MB batch fills its pipe mid-message
+    os.kill(assembler.pid, signal.SIGKILL)
+    blocked, outcome = record_workers.consume_within(batches.records, 15)
+    batches.close()
+    assert not blocked and isinstance(outcome.get('error'), TrainingError)
+    assert children() == before
 
 
 def test_the_adapter_only_accepts_the_records_it_assembled():

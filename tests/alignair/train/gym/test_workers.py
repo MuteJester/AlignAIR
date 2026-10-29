@@ -3,6 +3,7 @@ import gc
 from itertools import islice
 import multiprocessing
 import os
+import signal
 import sys
 import time
 from types import ModuleType, SimpleNamespace
@@ -100,6 +101,20 @@ def test_a_crashed_worker_is_reported_instead_of_waited_for():
         list(islice(records, 500))
     assert caught.value.context['exitcode'] == 7 and caught.value.context['stage'] == 'training_record_worker'
     records.close()
+    assert children() == before
+
+
+def test_a_worker_killed_while_sending_a_large_message_is_reported_not_waited_for():
+    before = children()
+    records = parallel_records((reference(),), policy=RECIPE, seed=0, workers=1, provider=record_workers.bulky)
+    next(records)
+    (worker,) = children() - before
+    time.sleep(1.5)                     # the worker runs ahead until a 1.3 MB chunk fills its pipe mid-message
+    os.kill(worker.pid, signal.SIGKILL)
+    blocked, outcome = record_workers.consume_within(records, 15)
+    records.close()
+    assert not blocked and isinstance(outcome.get('error'), TrainingError)
+    assert outcome['error'].context['stage'] == 'training_record_worker'
     assert children() == before
 
 

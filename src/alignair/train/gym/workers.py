@@ -6,10 +6,15 @@ run in its own process while the consuming process zips the component streams ex
 serial stream does: the same records in the same order, and the same errors at the same records.
 
 Topology: ``min(workers, components)`` spawned daemon processes. Worker ``w`` serves components
-``w, w + W, ...`` round-robin, one chunk at a time, into one bounded queue per component; the
-consumer reads each queue in the order the zip asks for records. Processes start at the first
-record, ignore SIGINT, and exit only when their group stops them (close, garbage collection or
-interpreter exit) or when the process that started them has died.
+``w, w + W, ...`` round-robin, one chunk at a time, into one channel per component; the consumer
+reads each channel in the order the zip asks for records. Processes start at the first record,
+ignore SIGINT, and exit only when their group stops them (close, garbage collection or interpreter
+exit) or when the process that started them has died.
+
+A channel is a one-way pipe whose two ends each have a single holder: the parent closes its copies
+once the processes that use them have started. A reader therefore sees end-of-file as soon as its
+writer dies, even halfway through a message, and a writer sees a broken pipe once its reader is
+gone; no wait is unbounded. Writers hold back up to ``depth`` messages while a thread writes them.
 
 A failure inside a worker travels as data: the exception keeps its type, message and AlignAIR
 context, and its cause is a ``WorkerTraceback`` holding the worker's traceback and scoped context.
@@ -22,11 +27,13 @@ from dataclasses import dataclass
 from itertools import islice, repeat
 import multiprocessing
 from multiprocessing import util as process_util
+from multiprocessing.connection import wait as wait_for
 import os
 import pickle
 import queue as queues
 import signal
 import sys
+import threading
 import time
 import traceback
 
@@ -36,12 +43,15 @@ from .streams import CurriculumStreamPolicy, RecordSource, _integer, stream_reco
 
 # Measured on the 1.0.0 recipe (7 components, batch 64): the data side delivers 27-28.5 batches/s for
 # any chunk size from 8 to 256 records and any depth from 1 to 8 messages, about twice what the GPU
-# update consumes. 64 records keeps the message count low; 4 messages bound the records in flight
-# at 1,792 (about 6 MB) for the 7 components.
+# update consumes. 64 records keeps the message count low; 4 held-back messages, plus the one being
+# written, bound the records in flight at 2,240 (about 7.5 MB) for the 7 components.
 CHUNK_SIZE = 64          # records per message
-QUEUE_CHUNKS = 4         # messages in flight per component: the memory bound
+QUEUE_CHUNKS = 4         # messages a worker holds back per component: the memory bound
 _POLL_SECONDS = 0.25     # how often a waiting process checks that its peers are alive
 _STOP_SECONDS = 5.0      # how long a stopping process may take before it is terminated
+_EXIT_HINT = ('Check the worker for memory exhaustion or a native crash; '
+              'data_workers=0 generates records in this process.')
+
 
 
 @dataclass(frozen=True)
@@ -99,43 +109,73 @@ class WorkerStopped(Exception):
     """The worker group is stopping; the task unwinds without reporting a failure."""
 
 
+@dataclass(frozen=True)
+class Channel:
+    """A one-way pipe between two processes, and how many messages its writer may hold back."""
+    receiver: object
+    sender: object
+    depth: int
+
+
+class _Outbox:
+    """A writer's end of a channel: up to ``depth`` pickled messages wait while a thread writes them."""
+
+    def __init__(self, sender, depth):
+        self._sender, self._buffer, self.broken = sender, queues.Queue(depth), False
+        threading.Thread(target=self._write, daemon=True).start()
+
+    def _write(self):
+        while True:
+            data = self._buffer.get()
+            try:
+                self._sender.send_bytes(data)
+            except OSError:                              # the reader is gone
+                self.broken = True
+                return
+
+    def put(self, data, timeout):
+        self._buffer.put(data, timeout=timeout)
+
+
 class WorkerLink:
-    """A worker's stop-aware view of its output queues."""
+    """A worker's stop-aware view of its output channels."""
 
     def __init__(self, outputs, stop):
-        self._outputs, self._stop = outputs, stop
+        self._outputs = [_Outbox(sender, depth) for sender, depth in outputs]
+        self._stop = stop
         self._parent = multiprocessing.parent_process()
 
     def running(self) -> bool:
         return not self._stop.is_set() and (self._parent is None or self._parent.is_alive())
 
-    def check(self):
+    def check(self, *, ended=False):
+        """Unwind once the group stops; a channel that ended otherwise lost its writer."""
         if not self.running():
             raise WorkerStopped
+        if ended:
+            raise TrainingError('a training data worker exited unexpectedly',
+                                context={'stage': 'training_record_worker'}, hint=_EXIT_HINT)
 
-    def send(self, index: int, message) -> bool:
-        """Put a message, waiting for space while the group runs; False once it stops."""
-        while self.running():
+    def send(self, position: int, message) -> bool:
+        """Queue a message, waiting for space while the group runs; False once it stops or the reader is gone."""
+        data = pickle.dumps(message, pickle.HIGHEST_PROTOCOL)
+        outbox = self._outputs[position]
+        while self.running() and not outbox.broken:
             try:
-                self._outputs[index].put(message, timeout=_POLL_SECONDS)
+                outbox.put(data, _POLL_SECONDS)
                 return True
             except queues.Full:
                 pass
         return False
 
     def broadcast(self, message):
-        for index in range(len(self._outputs)):
-            if not self.send(index, message):
+        for position in range(len(self._outputs)):
+            if not self.send(position, message):
                 return
 
     def wait(self):
         while self.running():
             self._stop.wait(_POLL_SECONDS)
-
-    def release(self):
-        # The consumer has stopped reading: exiting must not wait to flush undelivered messages.
-        for output in self._outputs:
-            output.cancel_join_thread()
 
 
 def _genairr_origin():
@@ -161,18 +201,28 @@ def _run(task, inbox, outputs, inputs, stop, genairr):
     link = WorkerLink(outputs, stop)
     try:
         _check_genairr(genairr)
-        task(pickle.loads(receive(inbox, link.check)), inputs, link)
+        task(receive(inbox, link.check), inputs, link)
     except WorkerStopped:
         pass
     except Exception as exc:
         link.broadcast(('error', pack_failure(exc)))
     finally:
         link.wait()
-        link.release()
 
 
-def _stop_group(stop, processes, owned_queues):
+def _deliver(sender, data):
+    try:
+        sender.send_bytes(data)
+    except OSError:                                      # the worker died before reading its payload
+        pass
+    finally:
+        sender.close()
+
+
+def _stop_group(stop, processes, channels):
     stop.set()
+    for channel in channels:                             # a writer blocked on a pipe this process reads
+        channel.receiver.close()                         # now finds it broken
     deadline = time.monotonic() + _STOP_SECONDS
     for process in processes:
         if process.pid is not None:
@@ -184,9 +234,6 @@ def _stop_group(stop, processes, owned_queues):
         if process.is_alive():
             process.kill()
             process.join()
-    for owned in owned_queues:
-        owned.cancel_join_thread()               # an undelivered payload must not hold up exit
-        owned.close()
 
 
 class WorkerGroup:
@@ -199,45 +246,54 @@ class WorkerGroup:
     def __init__(self):
         self._context = multiprocessing.get_context('spawn')
         self._stop = self._context.Event()
-        self._processes, self._queues = [], []
-        self._finalizer = process_util.Finalize(self, _stop_group, args=(self._stop, self._processes, self._queues),
+        self._processes, self._channels = [], []
+        self._finalizer = process_util.Finalize(self, _stop_group, args=(self._stop, self._processes, self._channels),
                                                 exitpriority=10)
 
     @property
     def processes(self) -> tuple:
         return tuple(self._processes)
 
-    def queue(self, maxsize: int):
-        owned = self._context.Queue(maxsize)
-        self._queues.append(owned)
-        return owned
+    def channel(self, depth: int) -> Channel:
+        """A one-way pipe whose writer may hold back ``depth`` messages."""
+        receiver, sender = self._context.Pipe(duplex=False)
+        channel = Channel(receiver, sender, _integer(depth, 'depth', 1))
+        self._channels.append(channel)
+        return channel
 
     def start(self, task, payload, *, outputs, inputs=(), name):
-        """Run ``task(payload, inputs, link)`` in a new process; the payload is unpickled there.
+        """Run ``task(payload, inputs, link)`` in a new process that writes ``outputs`` and reads ``inputs``.
 
-        The payload travels through the process's inbox queue, not its start arguments: a large
-        start argument would hold ``start()`` until the child had imported the task's modules.
+        The payload is pickled here, before the process starts, and a thread delivers it: a large
+        start argument would hold ``start()`` until the child had imported the task's modules. The
+        new process becomes the only holder of its channel ends.
         """
-        inbox = self.queue(1)
+        data = pickle.dumps(payload, pickle.HIGHEST_PROTOCOL)
+        inbox = self.channel(1)
         process = self._context.Process(target=_run, name=name, daemon=True,
-                                        args=(task, inbox, tuple(outputs), tuple(inputs), self._stop,
-                                              _genairr_origin()))
+                                        args=(task, inbox.receiver, tuple((c.sender, c.depth) for c in outputs),
+                                              tuple(c.receiver for c in inputs), self._stop, _genairr_origin()))
         self._processes.append(process)
         process.start()
-        inbox.put(pickle.dumps(payload))
+        for end in (inbox.receiver, *(c.sender for c in outputs), *(c.receiver for c in inputs)):
+            end.close()
+        threading.Thread(target=_deliver, args=(inbox.sender, data), daemon=True).start()
 
-    def check(self):
+    def check(self, *, ended=False):
         """Raise once the group is stopped, or if a process has exited: workers leave only when stopped,
-        so any other exit is a crash."""
+        so any other exit is a crash. After a channel ended, wait briefly for its writer's exit code."""
         if self._stop.is_set():
             raise TrainingError('the training data workers were stopped', context={'stage': 'training_record_worker'})
+        if ended:
+            wait_for([process.sentinel for process in self._processes if process.pid is not None], _STOP_SECONDS)
         for process in self._processes:
             if process.exitcode is not None:
                 raise TrainingError('a training data worker exited unexpectedly',
                                     context={'stage': 'training_record_worker', 'process': process.name,
-                                             'exitcode': process.exitcode},
-                                    hint='Check the worker for memory exhaustion or a native crash; '
-                                         'data_workers=0 generates records in this process.')
+                                             'exitcode': process.exitcode}, hint=_EXIT_HINT)
+        if ended:
+            raise TrainingError('a training data channel ended unexpectedly',
+                                context={'stage': 'training_record_worker'}, hint=_EXIT_HINT)
 
     def close(self):
         self._finalizer()
@@ -279,8 +335,8 @@ def worker_options(*, workers, provider, chunk_size, queue_chunks) -> dict:
 
 def start_record_workers(group: WorkerGroup, plan, *, provider: RecordSource, workers: int,
                          chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS) -> tuple:
-    """Start ``min(workers, components)`` processes for a plan; return one queue per component."""
-    channels = tuple(group.queue(queue_chunks) for _ in plan)
+    """Start ``min(workers, components)`` processes for a plan; return one channel per component."""
+    channels = tuple(group.channel(queue_chunks) for _ in plan)
     count = min(workers, len(plan))
     for worker in range(count):
         slots = range(worker, len(plan), count)
@@ -294,30 +350,34 @@ def plan_signature(plan) -> tuple:
     return tuple((component.seed, component.parameters) for component in plan)
 
 
-def receive(channel, check):
-    """Wait for the next message, calling ``check`` while none arrives."""
+def receive(receiver, check):
+    """Wait for the next message on a channel, calling ``check`` while none arrives.
+
+    Every wait is bounded: a writer that dies, even mid-message, ends its pipe, and so does this
+    process closing the pipe on stopping; ``check(ended=True)`` then raises.
+    """
     while True:
         try:
-            return channel.get(timeout=_POLL_SECONDS)
-        except queues.Empty:
-            check()
-        except ValueError:                           # a stopped group closes its queues: say so
-            check()
+            if receiver.poll(_POLL_SECONDS):
+                return pickle.loads(receiver.recv_bytes())
+        except (EOFError, OSError):
+            check(ended=True)
             raise
+        check()
 
 
 class _ComponentRecords(Iterator):
     """One component's records, read from its queue as the zip asks for them."""
 
-    def __init__(self, channel, check):
-        self._channel, self._check = channel, check
+    def __init__(self, receiver, check):
+        self._receiver, self._check = receiver, check
         self._records, self._done = deque(), False
 
     def __next__(self):
         while not self._records:
             if self._done:
                 raise StopIteration
-            kind, payload = receive(self._channel, self._check)
+            kind, payload = receive(self._receiver, self._check)
             if kind == 'records':
                 self._records.extend(payload)
             else:
@@ -328,10 +388,10 @@ class _ComponentRecords(Iterator):
 
 
 class ComponentChannels:
-    """A record source answering ``training_records``' provider calls from planned component queues."""
+    """A record source answering ``training_records``' provider calls from planned component channels."""
 
-    def __init__(self, signature, channels, check):
-        self._signature, self._channels, self._check = signature, channels, check
+    def __init__(self, signature, receivers, check):
+        self._signature, self._receivers, self._check = signature, receivers, check
         self._position = 0
 
     def __call__(self, reference, parameters, seed):
@@ -340,7 +400,7 @@ class ComponentChannels:
             raise TrainingError('the record stream requested a component outside the worker plan',
                                 context={'stage': 'training_record_worker', 'component': position, 'seed': seed})
         self._position += 1
-        return _ComponentRecords(self._channels[position], self._check)
+        return _ComponentRecords(self._receivers[position], self._check)
 
 
 class RecordWorkers:
@@ -364,7 +424,8 @@ class RecordWorkers:
             plan = component_plan(dataconfigs, policy=policy, seed=base_seed)
             self.group = WorkerGroup()
             channels = start_record_workers(self.group, plan, **self._options)
-            self._channels = ComponentChannels(plan_signature(plan), channels, self.group.check)
+            self._channels = ComponentChannels(plan_signature(plan), [channel.receiver for channel in channels],
+                                               self.group.check)
         return self._channels(reference, parameters, seed)
 
     def close(self):

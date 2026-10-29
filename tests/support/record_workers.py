@@ -1,5 +1,6 @@
 """Spawn-safe record providers for worker-process tests: a spawned worker imports them by module name."""
 import os
+import threading
 
 from alignair.errors import TrainingDataError, error_context
 
@@ -10,6 +11,12 @@ def counted(dataconfig, parameters, seed):
     while True:
         yield {'panel': dataconfig.name, 'seed': seed, 'ordinal': ordinal, 'rate': parameters['mutation_rate']}
         ordinal += 1
+
+
+def bulky(dataconfig, parameters, seed):
+    """``counted`` records padded to 20 kB, so a chunk of them outgrows a pipe's 64 kB buffer."""
+    for record in counted(dataconfig, parameters, seed):
+        yield {**record, 'padding': 'N' * 20_000}
 
 
 def finite(dataconfig, parameters, seed):
@@ -67,3 +74,18 @@ def strict_batch(records):
             if record['ordinal'] == 50:
                 raise TrainingDataError('record 50 is malformed')
     return ordinal_batch(records)
+
+
+def consume_within(records, seconds, count=100_000):
+    """Read up to ``count`` records in a daemon thread; return whether it is still blocked, and its outcome."""
+    outcome = {}
+
+    def consume():
+        try:
+            outcome['records'] = sum(1 for _ in zip(range(count), records))
+        except BaseException as exc:            # the outcome under test may be any exception
+            outcome['error'] = exc
+    thread = threading.Thread(target=consume, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    return thread.is_alive(), outcome
