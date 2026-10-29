@@ -57,6 +57,7 @@ def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_s
     assert record['model_options'] == SMALL and record['suites'] == ['S0'] and record['variants'] == ['baseline']
     assert record['baseline']['milestone'] == str(rig.milestones / 'model.step2.alignair')
     assert record['cache']['path'] == str(rig.cache.resolve()) and record['cache']['steps'] == 2
+    assert sorted(path.name for path in (screen / 'train').iterdir()) == ['model.alignair']   # no rotation copies
     metadata = read_metadata(screen / 'train' / 'model.alignair')
     assert metadata['training']['train_args']['data_workers'] == 1
     assert metadata['training']['train_args']['steps'] == 2

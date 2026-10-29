@@ -14,7 +14,8 @@ with the baseline's milestone at the same step. A yes or no on a candidate in un
    the end-to-end baseline; truth-substitution ``variants`` only when asked for), so any assay refusal comes before
    training.
 4. Imports the candidates (``architectures``), then trains ``recipe.training_config`` from the cache with
-   ``data_workers`` into ``<screen>/train`` (the trainer's log in ``<screen>/train.log``; a progress line here).
+   ``data_workers`` into ``<screen>/train`` (the trainer's log in ``<screen>/train.log``; a progress line here). Only
+   the final ``model.alignair`` is kept: the trainer's rotating step checkpoints are removed once it finishes.
 5. Diagnoses the candidate against the milestone, reusing the milestone's records, and writes the headline
    (``headline.render_headline``, with the report path and the wall time) to ``<screen>/headline.txt``.
 
@@ -229,7 +230,10 @@ def _train(config, screen: Path, source: CachedRecordSource, *, echo: Callable[[
             echo(f"step {iteration.step}/{config.steps}, {rate:.1f} steps/s, {_minutes(left)} left")
 
     with open(screen / "train.log", "w", buffering=1, encoding="utf-8") as log, contextlib.redirect_stdout(log):
-        return run_training(config, output_dir=screen / "train", record_source=source, on_iteration=progress)
+        trained = run_training(config, output_dir=screen / "train", record_source=source, on_iteration=progress)
+    for rotated in (screen / "train").glob("model.step*.alignair"):    # model.alignair holds the last step
+        rotated.unlink()
+    return trained
 
 
 def _release_device(device: str) -> None:
