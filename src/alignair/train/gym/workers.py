@@ -30,7 +30,8 @@ import sys
 import time
 import traceback
 
-from ...errors import ConfigurationError, TrainingError, current_error_context, error_context
+from ...errors import AlignAIRError, ConfigurationError, TrainingError, current_error_context, error_context
+from ...errors.context import snapshot
 from .streams import CurriculumStreamPolicy, RecordSource, _integer, stream_records, training_records
 
 CHUNK_SIZE = 64          # records per message
@@ -80,9 +81,16 @@ def pack_failure(error: BaseException) -> bytes:
 
 
 def raise_failure(failure: bytes):
-    """Raise a worker failure in this process, caused by the worker's traceback."""
+    """Raise a worker failure here, caused by the worker's traceback.
+
+    An AlignAIR error also gains this process's scoped context beneath its own, as if it had been
+    raised through these scopes: the serial stream reports the same context for the same failure.
+    """
     payload, text, context = pickle.loads(failure)
-    raise pickle.loads(payload) from WorkerTraceback(text, context)
+    error = pickle.loads(payload)
+    if isinstance(error, AlignAIRError):
+        error._context = snapshot({**current_error_context(), **error._context})
+    raise error from WorkerTraceback(text, context)
 
 
 class WorkerStopped(Exception):
@@ -151,7 +159,7 @@ def _run(task, inbox, outputs, inputs, stop, genairr):
     link = WorkerLink(outputs, stop)
     try:
         _check_genairr(genairr)
-        task(pickle.loads(_receive(inbox, link.check)), inputs, link)
+        task(pickle.loads(receive(inbox, link.check)), inputs, link)
     except WorkerStopped:
         pass
     except Exception as exc:
@@ -256,6 +264,14 @@ def serve_components(payload, inputs, link: WorkerLink):
                     return
 
 
+def worker_options(*, workers, provider, chunk_size, queue_chunks) -> dict:
+    """Validate a record-worker request before any process starts."""
+    if not callable(provider):
+        raise ConfigurationError('provider must be a callable record source', context={'field': 'provider'})
+    return {'workers': _integer(workers, 'workers', 1), 'provider': provider,
+            'chunk_size': _integer(chunk_size, 'chunk_size', 1), 'queue_chunks': _integer(queue_chunks, 'queue_chunks', 1)}
+
+
 def start_record_workers(group: WorkerGroup, plan, *, provider: RecordSource, workers: int,
                          chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS) -> tuple:
     """Start ``min(workers, components)`` processes for a plan; return one queue per component."""
@@ -273,8 +289,8 @@ def plan_signature(plan) -> tuple:
     return tuple((component.seed, component.parameters) for component in plan)
 
 
-def _receive(channel, check):
-    """Wait for the next message, checking on the sender while none arrives."""
+def receive(channel, check):
+    """Wait for the next message, calling ``check`` while none arrives."""
     while True:
         try:
             return channel.get(timeout=_POLL_SECONDS)
@@ -293,7 +309,7 @@ class _ComponentRecords(Iterator):
         while not self._records:
             if self._done:
                 raise StopIteration
-            kind, payload = _receive(self._channel, self._check)
+            kind, payload = receive(self._channel, self._check)
             if kind == 'records':
                 self._records.extend(payload)
             else:
@@ -319,13 +335,16 @@ class ComponentChannels:
         return _ComponentRecords(self._channels[position], self._check)
 
 
-class _WorkerSource:
-    """A record source that plans the components and starts their workers at its first call."""
+class RecordWorkers:
+    """A record source for ``training_records`` that plans its components and starts their workers at its
+    first call. Pass the same references, policy and seed to both; ``close`` stops the workers."""
 
-    def __init__(self, dataconfigs, policy, seed, provider, workers, chunk_size, queue_chunks):
+    def __init__(self, dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, workers: int,
+                 provider: RecordSource = stream_records, chunk_size: int = CHUNK_SIZE,
+                 queue_chunks: int = QUEUE_CHUNKS):
         self._request = dataconfigs, policy, seed
-        self._options = {'provider': provider, 'workers': workers, 'chunk_size': chunk_size,
-                         'queue_chunks': queue_chunks}
+        self._options = worker_options(workers=workers, provider=provider, chunk_size=chunk_size,
+                                       queue_chunks=queue_chunks)
         self.group = self._channels = None
 
     def __call__(self, reference, parameters, seed):
@@ -348,17 +367,13 @@ class ParallelRecords(Iterator):
     def __init__(self, dataconfigs, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
                  translated_only: bool = False, workers: int, provider: RecordSource = stream_records,
                  chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS):
-        workers = _integer(workers, 'workers', 1)
-        chunk_size = _integer(chunk_size, 'chunk_size', 1)
-        queue_chunks = _integer(queue_chunks, 'queue_chunks', 1)
-        if not callable(provider):
-            raise ConfigurationError('provider must be a callable record source', context={'field': 'provider'})
         if not isinstance(dataconfigs, (str, bytes)):
             try:
                 dataconfigs = tuple(dataconfigs)
             except TypeError:
                 pass                                     # training_records reports the request
-        self._source = _WorkerSource(dataconfigs, policy, seed, provider, workers, chunk_size, queue_chunks)
+        self._source = RecordWorkers(dataconfigs, policy=policy, seed=seed, workers=workers, provider=provider,
+                                     chunk_size=chunk_size, queue_chunks=queue_chunks)
         self._records = training_records(dataconfigs, policy=policy, seed=seed, translated_only=translated_only,
                                          record_source=self._source)
 

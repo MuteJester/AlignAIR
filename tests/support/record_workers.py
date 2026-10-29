@@ -50,3 +50,20 @@ def genairr_origin(dataconfig, parameters, seed):
 
 def idle(payload, inputs, link):
     """A worker task that only receives its payload, then waits to be stopped."""
+
+
+def ordinal_batch(records):
+    """A batch adapter for synthetic records that, like the nucleotide adapter, draws from torch's CPU generator."""
+    import torch
+    from alignair.data.batching import TrainingBatch
+    tokens = torch.tensor([[record['ordinal'] + 1, record['seed'] + 1] for record in records])
+    return TrainingBatch({'tokenized_sequence': tokens}, {'orientation': torch.randint(0, 4, (len(records),))})
+
+
+def strict_batch(records):
+    """``ordinal_batch`` that rejects the 50th record of any component."""
+    for index, record in enumerate(records):
+        with error_context(stage='batch_adaptation', record_index=index):
+            if record['ordinal'] == 50:
+                raise TrainingDataError('record 50 is malformed')
+    return ordinal_batch(records)
