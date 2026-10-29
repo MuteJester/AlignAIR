@@ -187,6 +187,13 @@ def test_no_benchmark_import():
     assert not found, found
 
 
+def test_no_lab_import():
+    """The lab (``alignair_lab``) runs experiments with the assay; the assay never depends on it."""
+    found = [f"{rel}:{line}" for _, rel, tree in _modules() for line, name in _imports(rel, tree)
+             if name.split(".")[0] == "alignair_lab"]
+    assert not found, found
+
+
 def _alignair_importers(modules):
     return {str(rel) for _, rel, tree in modules for _, name in _imports(rel, tree)
             if name.split(".")[0] == "alignair"}

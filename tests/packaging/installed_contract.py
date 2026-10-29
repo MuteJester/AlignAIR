@@ -80,6 +80,7 @@ def main():
         # The research harness is intentionally source-only. The runtime's
         # shipped self-evaluator must work without importing that harness.
         assert importlib.util.find_spec("alignair_benchmark") is None
+        assert importlib.util.find_spec("alignair_lab") is None
         from alignair.evaluate import run_benchmark
         evaluation = run_benchmark(restored, reference, gd.HUMAN_IGH_OGRDB,
                                    n=2, seed=101, strata_names=["clean"], device="cpu", batch_size=2)

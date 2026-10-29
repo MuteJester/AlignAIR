@@ -114,9 +114,10 @@ alignair = "alignair.cli.main:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 # `alignair_benchmark` and `alignair_assay` are dev/research harnesses (GenAIRR benchmark generation +
-# evaluation), not part of the runtime product — keep them out of the installed wheel. They stay
-# importable from a source checkout (PYTHONPATH=src) for development and CI.
-exclude = ["alignair_benchmark*", "alignair_assay*"]
+# evaluation), and `alignair_lab` runs architecture experiments with them; none is part of the runtime
+# product — keep them out of the installed wheel. They stay importable from a source checkout
+# (PYTHONPATH=src) for development and CI.
+exclude = ["alignair_benchmark*", "alignair_assay*", "alignair_lab*"]
 
 # ship the Cython source so an sdist can (re)build the optional germline-CIGAR kernel
 [tool.setuptools.package-data]
