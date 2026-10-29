@@ -28,6 +28,7 @@ from itertools import islice, repeat
 import multiprocessing
 from multiprocessing import util as process_util
 from multiprocessing.connection import wait as wait_for
+from operator import index
 import os
 import pickle
 import queue as queues
@@ -39,7 +40,7 @@ import traceback
 
 from ...errors import AlignAIRError, ConfigurationError, TrainingError, current_error_context, error_context
 from ...errors.base import rescoped
-from .streams import CurriculumStreamPolicy, RecordSource, _integer, stream_records, training_records
+from .streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
 
 # Measured on the 1.0.0 recipe (7 components, batch 64): the data side delivers 27-28.5 batches/s for
 # any chunk size from 8 to 256 records and any depth from 1 to 8 messages, about twice what the GPU
@@ -53,6 +54,17 @@ _EXIT_HINT = ('A worker exits early when it runs out of memory or crashes native
               'script has no `if __name__ == "__main__":` guard: workers are spawned and import the main '
               'module. data_workers=0 generates training data in the training process.')
 
+
+def _count(value, field, minimum=1):
+    try:
+        if isinstance(value, bool):
+            raise ValueError
+        value = index(value)
+        if value < minimum:
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(f'{field} must be an integer >= {minimum}', context={'field': field}) from exc
+    return value
 
 
 @dataclass(frozen=True)
@@ -258,7 +270,7 @@ class WorkerGroup:
     def channel(self, depth: int) -> Channel:
         """A one-way pipe whose writer may hold back ``depth`` messages."""
         receiver, sender = self._context.Pipe(duplex=False)
-        channel = Channel(receiver, sender, _integer(depth, 'depth', 1))
+        channel = Channel(receiver, sender, _count(depth, 'depth'))
         self._channels.append(channel)
         return channel
 
@@ -341,8 +353,8 @@ def worker_options(*, workers, provider, chunk_size, queue_chunks) -> dict:
     except Exception as exc:
         raise ConfigurationError('a worker process cannot receive this provider', context={'field': 'provider'},
                                  hint='Worker processes are spawned: pass a module-level function.') from exc
-    return {'workers': _integer(workers, 'workers', 1), 'provider': provider,
-            'chunk_size': _integer(chunk_size, 'chunk_size', 1), 'queue_chunks': _integer(queue_chunks, 'queue_chunks', 1)}
+    return {'workers': _count(workers, 'workers'), 'provider': provider,
+            'chunk_size': _count(chunk_size, 'chunk_size'), 'queue_chunks': _count(queue_chunks, 'queue_chunks')}
 
 
 def start_record_workers(group: WorkerGroup, plan, *, provider: RecordSource, workers: int,

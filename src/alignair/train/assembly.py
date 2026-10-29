@@ -21,13 +21,14 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from itertools import islice
+from operator import index
 
 import numpy as np
 import torch
 
 from ..data.training import TrainingDataSetup
 from ..errors import ConfigurationError, TrainingError, error_context
-from .gym.streams import CurriculumStreamPolicy, RecordSource, _integer, stream_records, training_records
+from .gym.streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
 from .gym.workers import (CHUNK_SIZE, QUEUE_CHUNKS, ComponentChannels, RecordWorkers, WorkerGroup, component_plan,
                           plan_signature, raise_failure, receive, start_record_workers, worker_options)
 from .random_state import capture_rng_state, restore_rng_state
@@ -52,6 +53,15 @@ class TrainingStream:
                                    translated_only=self.data.translated_only, record_source=record_source)
         return self.data.prepare_records(records, augment=self.augment, seed=self.prepare_seed,
                                          start_step=self.start_step)
+
+
+def _count(value, field):
+    try:
+        if isinstance(value, bool) or index(value) < 1:
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(f'{field} must be a positive integer', context={'field': field}) from exc
+    return index(value)
 
 
 def _device(value) -> torch.device:
@@ -102,8 +112,8 @@ class AssembledBatches:
             raise ConfigurationError('batch assembly requires a TrainingStream', context={'field': 'stream'})
         self._options = worker_options(workers=workers, provider=provider, chunk_size=chunk_size,
                                        queue_chunks=queue_chunks)
-        self._batch_size = _integer(batch_size, 'batch_size', 1)
-        self._queue_batches = _integer(queue_batches, 'queue_batches', 1)
+        self._batch_size = _count(batch_size, 'batch_size')
+        self._queue_batches = _count(queue_batches, 'queue_batches')
         self._stream, self._device = stream, _device(device)
         stream.records()                               # rejects a bad request now; nothing runs until iterated
         self._group = self._batches = self._pending = self._expected = None
