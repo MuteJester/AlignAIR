@@ -163,11 +163,13 @@ def test_a_cache_of_another_generator_is_refused(cache, tmp_path, field, problem
 def test_require_checks_a_whole_stream_before_any_record(cache):
     source = CachedRecordSource(cache)
     source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=RECORDS)
-    with pytest.raises(ConfigurationError, match='holds 366 records') as caught:
-        source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=RECORDS + 7)
-    assert caught.value.context['needed'] == COMPONENT_RECORDS + 1
+    with pytest.raises(ConfigurationError, match='serves 2560 records') as caught:
+        source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=RECORDS + 1)
+    assert caught.value.context['needed'] == RECORDS + 1
     with pytest.raises(ConfigurationError, match='other parameters'):
         source.require(DATACONFIGS, policy=CurriculumStreamPolicy(heavy_shm=0.3), seed=SEED, records=7)
+    with pytest.raises(ConfigurationError, match='another stream'):         # 6 of the 7 cached components
+        source.require(DATACONFIGS, policy=CurriculumStreamPolicy(heavy_shm=0.), seed=SEED, records=7)
 
 
 def test_an_existing_cache_or_an_unfinished_one_is_not_a_cache(cache, tmp_path):

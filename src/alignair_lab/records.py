@@ -301,16 +301,21 @@ class CachedRecordSource:
 
     def require(self, dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, records: int) -> dict:
         """Check before any record is drawn that this cache serves the first ``records`` records of
-        ``training_records(dataconfigs, policy=policy, seed=seed)``: each planned component passes ``component`` and
-        holds at least the records the stream draws from it (ConfigurationError otherwise). Returns the manifest."""
+        ``training_records(dataconfigs, policy=policy, seed=seed)`` (ConfigurationError otherwise): each planned
+        component passes ``component``, the plan is the cache's whole component list, and ``records`` is at most the
+        records the cache was written for (each component then holds what that many records draw from it). Returns
+        the manifest."""
+        records = _count(records, "records")
         plan = component_plan(dataconfigs, policy=policy, seed=seed)
-        counts = component_counts(dataconfigs, policy=policy, seed=seed, records=records)
-        for planned, needed in zip(plan, counts):
-            entry = self.component(planned.reference, planned.parameters, planned.seed)
-            if entry["records"] < needed:
-                raise ConfigurationError(f"the record cache's component of seed {planned.seed} holds "
-                                         f"{entry['records']} records; {records} records of the stream draw "
-                                         f"{needed} from it",
-                                         context={"stage": "record_cache", "cache": self.path, "seed": planned.seed,
-                                                  "needed": needed, "records": entry["records"]}, hint=_HINT)
-        return self.manifest
+        for planned in plan:
+            self.component(planned.reference, planned.parameters, planned.seed)
+        manifest, context = self.manifest, {"stage": "record_cache", "cache": self.path}
+        if len(plan) != len(manifest["components"]):
+            raise ConfigurationError(f"the record cache was written for another stream: {len(manifest['components'])} "
+                                     f"components, not {len(plan)}", context=context, hint=_HINT)
+        if records > manifest["records"]:
+            raise ConfigurationError(f"the record cache serves {manifest['records']} records ({manifest['steps']} "
+                                     f"steps of {manifest['batch_size']}); {records} were asked for",
+                                     context={**context, "needed": records, "records": manifest["records"]},
+                                     hint=_HINT)
+        return manifest
