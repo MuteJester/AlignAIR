@@ -33,7 +33,7 @@ from .gym.workers import (CHUNK_SIZE, QUEUE_CHUNKS, ComponentChannels, RecordWor
                           plan_signature, raise_failure, receive, start_record_workers, worker_options)
 from .random_state import capture_rng_state, restore_rng_state
 
-QUEUE_BATCHES = 4        # assembled batches in flight: the assembler's lead over the training step
+QUEUE_BATCHES = 4        # assembled batches in flight (about 1 MB each at batch 64): the assembler's lead
 
 
 @dataclass(frozen=True)

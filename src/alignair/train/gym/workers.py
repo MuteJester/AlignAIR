@@ -34,6 +34,10 @@ from ...errors import AlignAIRError, ConfigurationError, TrainingError, current_
 from ...errors.context import snapshot
 from .streams import CurriculumStreamPolicy, RecordSource, _integer, stream_records, training_records
 
+# Measured on the 1.0.0 recipe (7 components, batch 64): the data side delivers 27-28.5 batches/s for
+# any chunk size from 8 to 256 records and any depth from 1 to 8 messages, about twice what the GPU
+# update consumes. 64 records keeps the message count low; 4 messages bound the records in flight
+# at 1,792 (about 6 MB) for the 7 components.
 CHUNK_SIZE = 64          # records per message
 QUEUE_CHUNKS = 4         # messages in flight per component: the memory bound
 _POLL_SECONDS = 0.25     # how often a waiting process checks that its peers are alive
