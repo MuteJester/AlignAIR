@@ -31,7 +31,7 @@ import time
 import traceback
 
 from ...errors import AlignAIRError, ConfigurationError, TrainingError, current_error_context, error_context
-from ...errors.context import snapshot
+from ...errors.base import rescoped
 from .streams import CurriculumStreamPolicy, RecordSource, _integer, stream_records, training_records
 
 # Measured on the 1.0.0 recipe (7 components, batch 64): the data side delivers 27-28.5 batches/s for
@@ -92,9 +92,7 @@ def raise_failure(failure: bytes):
     """
     payload, text, context = pickle.loads(failure)
     error = pickle.loads(payload)
-    if isinstance(error, AlignAIRError):
-        error._context = snapshot({**current_error_context(), **error._context})
-    raise error from WorkerTraceback(text, context)
+    raise (rescoped(error) if isinstance(error, AlignAIRError) else error) from WorkerTraceback(text, context)
 
 
 class WorkerStopped(Exception):

@@ -25,6 +25,15 @@ def _restore_error(cls, args, state):
     return error
 
 
+def rescoped(error: AlignAIRError) -> AlignAIRError:
+    """Place the receiving process's current context beneath an error received from a worker process.
+
+    The error's own context keeps precedence, as if it had been raised through the receiver's scopes.
+    """
+    error._context = snapshot({**current_error_context(), **error._context})
+    return error
+
+
 class AlignAIRError(Exception):
     """Base for classified AlignAIR failures; built-in compatibility is added by subclasses.
 

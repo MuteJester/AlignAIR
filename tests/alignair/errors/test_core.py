@@ -132,6 +132,15 @@ def test_pickling_retains_worker_diagnostics(kind):
     assert restored.to_dict() == error.to_dict()
 
 
+def test_an_error_received_from_a_worker_takes_the_receivers_scope_beneath_its_own():
+    from alignair.errors.base import rescoped
+    received = pickle.loads(pickle.dumps(InputError("problem", context={"stage": "worker", "seed": 3})))
+    with error_context(stage="consumer", step=7):
+        assert rescoped(received) is received
+    assert received.context == {"stage": "worker", "seed": 3, "step": 7}
+    assert rescoped(received).context == received.context        # outside any scope: unchanged
+
+
 def test_legacy_constructor_can_be_pickled():
     from alignair.predict.airr.builder import AirrAssemblyError
     error = AirrAssemblyError("read-1", KeyError("d"))
