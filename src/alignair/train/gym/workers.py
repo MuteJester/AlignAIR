@@ -264,11 +264,17 @@ class WorkerGroup:
     def start(self, task, payload, *, outputs, inputs=(), name):
         """Run ``task(payload, inputs, link)`` in a new process that writes ``outputs`` and reads ``inputs``.
 
-        The payload is pickled here, before the process starts, and a thread delivers it: a large
+        The payload is pickled here, before any process starts, and a thread delivers it: a large
         start argument would hold ``start()`` until the child had imported the task's modules. The
         new process becomes the only holder of its channel ends.
         """
-        data = pickle.dumps(payload, pickle.HIGHEST_PROTOCOL)
+        try:
+            data = pickle.dumps(payload, pickle.HIGHEST_PROTOCOL)
+        except Exception as exc:
+            raise ConfigurationError('a training data task cannot be sent to a worker process',
+                                     context={'field': 'payload', 'process': name},
+                                     hint='Worker processes are spawned: use module-level providers and '
+                                          'picklable references.') from exc
         inbox = self.channel(1)
         process = self._context.Process(target=_run, name=name, daemon=True,
                                         args=(task, inbox.receiver, tuple((c.sender, c.depth) for c in outputs),
@@ -329,6 +335,11 @@ def worker_options(*, workers, provider, chunk_size, queue_chunks) -> dict:
     """Validate a record-worker request before any process starts."""
     if not callable(provider):
         raise ConfigurationError('provider must be a callable record source', context={'field': 'provider'})
+    try:
+        pickle.dumps(provider)
+    except Exception as exc:
+        raise ConfigurationError('a worker process cannot receive this provider', context={'field': 'provider'},
+                                 hint='Worker processes are spawned: pass a module-level function.') from exc
     return {'workers': _integer(workers, 'workers', 1), 'provider': provider,
             'chunk_size': _integer(chunk_size, 'chunk_size', 1), 'queue_chunks': _integer(queue_chunks, 'queue_chunks', 1)}
 

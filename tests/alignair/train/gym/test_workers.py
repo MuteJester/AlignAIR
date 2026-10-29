@@ -197,6 +197,19 @@ def test_invalid_worker_requests_are_rejected_before_any_process_starts(options)
     assert children() == before
 
 
+def test_a_task_a_worker_cannot_receive_is_refused_before_its_process_starts():
+    before = children()
+    with pytest.raises(ConfigurationError) as caught:
+        parallel_records((reference(),), policy=RECIPE, workers=2, provider=lambda *args: iter(()))
+    assert caught.value.context['field'] == 'provider'
+    group = WorkerGroup()
+    with pytest.raises(ConfigurationError) as caught:
+        group.start(record_workers.idle, {'unpicklable': lambda: None}, outputs=(), name='refused')
+    group.close()
+    assert caught.value.context == {'field': 'payload', 'process': 'refused'}
+    assert group.processes == () and children() == before
+
+
 def test_genairr_records_are_identical_to_the_serial_stream():
     import GenAIRR.data as gd
     sources = (gd.HUMAN_IGH_OGRDB,)
