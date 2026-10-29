@@ -190,6 +190,9 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
                   for position, (component, count) in enumerate(zip(plan, counts))]
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = Path(tempfile.mkdtemp(prefix=f".{path.name}.partial-", dir=path.parent))
+    umask = os.umask(0)
+    os.umask(umask)
+    partial.chmod(0o777 & ~umask)                      # a new directory's permissions, not mkdtemp's private ones
     try:
         tasks = [(str(partial), entry["directory"], component.reference, component.parameters, component.seed,
                   entry["records"], chunk_records, genairr["genairr_source_sha256"])

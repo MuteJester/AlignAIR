@@ -94,6 +94,11 @@ def test_the_manifest_records_genairr_the_recipe_and_each_components_records(cac
                for component in manifest['components'])
 
 
+def test_a_cache_directory_has_a_new_directorys_permissions(cache, tmp_path):
+    (tmp_path / 'plain').mkdir()
+    assert cache.stat().st_mode & 0o777 == (tmp_path / 'plain').stat().st_mode & 0o777
+
+
 def test_the_cache_replays_the_live_stream_record_for_record(cache):
     assert live(record_source=CachedRecordSource(cache)) == live()
 
