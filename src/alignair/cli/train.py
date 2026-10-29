@@ -32,6 +32,9 @@ def register(sub) -> None:
     p.add_argument("--grad-clip", type=float, default=None, help="clip the global gradient norm")
     p.add_argument("--val-every", type=int, default=None, help="override the preset's validation interval")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--data-workers", type=int, default=0,
+                   help="generate training data in this many worker processes (at most one per curriculum "
+                        "component); the batches are identical to --data-workers 0 (default: 0)")
     p.add_argument("--plan", action="store_true",
                    help="validate the reference/config and print the plan WITHOUT training")
     p.add_argument("--device", default=None, help="cpu / cuda (default: auto)")
@@ -51,7 +54,7 @@ def run(args) -> int:
 
     from ..train.config import TrainingConfig
     from ..train.workflow import run_training
-    overrides = {"lr": args.lr, "grad_clip": args.grad_clip, "seed": args.seed}
+    overrides = {"lr": args.lr, "grad_clip": args.grad_clip, "seed": args.seed, "data_workers": args.data_workers}
     if args.steps is not None:
         overrides["steps"] = args.steps
     if args.batch_size is not None:

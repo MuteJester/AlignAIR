@@ -28,6 +28,12 @@ def validate_grad_clip(grad_clip) -> None:
                                  context={"field": "grad_clip"})
 
 
+def validate_data_workers(data_workers) -> None:
+    """The training-data worker count: a non-negative integer, where 0 keeps data in the training process."""
+    if isinstance(data_workers, bool) or not isinstance(data_workers, int) or data_workers < 0:
+        raise ConfigurationError("data_workers must be a non-negative integer", context={"field": "data_workers"})
+
+
 def validate_training_request(*, steps, batch_size, lr, max_seq_length, reference, progresses=(0.3,),
                               heavy_shm=0.0, short_boost=1, grad_clip=None) -> None:
     """Validate hyperparameters/config/reference up front. Raises :class:`TrainingConfigError` on the

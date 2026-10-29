@@ -10,6 +10,7 @@ from ..data.augmentation.protein import ProteinSubstitutionPolicy
 from ..data.augmentation.partial import ProteinCropPolicy
 from .schedules import CosineSchedule
 from .study import TrainingStudy
+from .guards import validate_data_workers
 
 _PRESETS = {
     'quick': {'steps': 300, 'batch_size': 16, 'val_every': 100},
@@ -24,6 +25,8 @@ class TrainingConfig:
 
     Model options are copied on construction and validated by reference-bound model setup.
     Label counts and input vocabulary are derived from the reference and selected spaces.
+    ``data_workers`` > 0 generates training data in that many worker processes (one per curriculum
+    component at most); the batches are those of ``data_workers=0``, so it is not part of model identity.
     """
     dataconfigs: tuple
     steps: int = 100_000
@@ -45,10 +48,12 @@ class TrainingConfig:
     study: TrainingStudy | None = None
     init_from: str | None = None
     trust_pickle: bool = False
+    data_workers: int = 0
 
     def __post_init__(self):
         if self.init_from and self.resume_path or type(self.trust_pickle) is not bool:
             raise ConfigurationError('choose init_from or resume_path; trust_pickle must be a boolean')
+        validate_data_workers(self.data_workers)
         if self.augmentation is not None and not isinstance(self.augmentation, (ProteinSubstitutionPolicy, ProteinCropPolicy)):
             raise ConfigurationError('augmentation must be a ProteinSubstitutionPolicy, ProteinCropPolicy or None')
         if self.schedule is not None:

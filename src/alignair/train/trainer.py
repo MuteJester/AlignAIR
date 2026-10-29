@@ -48,13 +48,14 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
           monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
-          augmentation=None, schedule=None, study=None, start_step=0):
-    from .guards import validate_training_request
+          augmentation=None, schedule=None, study=None, start_step=0, data_workers=0):
+    from .guards import validate_data_workers, validate_training_request
     model_config = getattr(model, 'cfg', cfg)
     if model_config != cfg:
         raise ConfigurationError('training configuration differs from the constructed model',
                                  context={'field': 'config'},
                                  hint='Construct a new model with the intended configuration before training.')
+    validate_data_workers(data_workers)
     tasks = build_tasks(model_config) if tasks is None else tasks
     dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
     # preflight: fail fast on a bad request rather than after a long run
@@ -135,7 +136,9 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
                    "augmentation": augmentation_metadata,
                    "schedule": schedule_metadata, "study": study.to_dict() if study is not None else None,
-                   "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap)}
+                   "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),
+                   # provenance only: worker processes reproduce the serial batches exactly
+                   "data_workers": data_workers}
     _dcs = dataconfigs
     source_checkpoint = resume_from or init_from
     if source_checkpoint:
@@ -180,35 +183,49 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     best_path = None
 
     completed = start                              # last successful update, including early exhaustion
-    stream = _build_stream(seed + start, augment=True, start_step=start)
-    batch_adapter = data.batch_adapter
-    for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
-                                         stop_step=steps, batch_size=batch_size):
-        step = completed = iteration.step
-        total, parts, grad_norm = iteration.result
-        if on_iteration is not None:
-            on_iteration(iteration)
-        if observation is not None:
-            observation.observe(iteration)
-        if log_every and step % log_every == 0:
-            line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
-                    + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
-            if xray is not None:                   # reads this step's grads (pre next zero_grad)
-                rec = xray.observe(step, total, parts, probe_input=probe_input)
-                line += "  " + xray.summary_line(rec)
-            print(line, flush=True)
-        if val_set and step % val_every == 0:      # validation + best-checkpoint selection
-            vmetrics, vscore = engine.validate(val_set)
-            print(f"[{step}/{steps}] VAL score {vscore:.4f}  "
-                  + " ".join(f"{k}={v:.3f}" for k, v in vmetrics.items()), flush=True)
-            if save_path and vscore == vscore and vscore > best_score:   # not NaN and improved
-                best_score = vscore
-                stem, ext = _stem(save_path), _ext(save_path)
-                best_path = f"{stem}.best{ext}"
-                _checkpoint(best_path, step, val_score=vscore)
-        if save_path and save_every and step % save_every == 0:
-            save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args,
-                          label_schema=schema, scheduler=engine.scheduler)
+    workers = None
+    if data_workers:                               # the same batches, generated in worker processes
+        from .assembly import TrainingStream, parallel_training_data
+        workers = parallel_training_data(
+            TrainingStream(tuple(dataconfigs), source_policy, seed + start,
+                           prepare_training_data(setup, device='cpu', augmentation=augmentation),
+                           augment=True, prepare_seed=seed, start_step=start),
+            batch_size=batch_size, workers=data_workers, device=device)
+        stream, batch_adapter = workers.records, workers.batch_adapter
+    else:
+        stream = _build_stream(seed + start, augment=True, start_step=start)
+        batch_adapter = data.batch_adapter
+    try:
+        for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
+                                             stop_step=steps, batch_size=batch_size):
+            step = completed = iteration.step
+            total, parts, grad_norm = iteration.result
+            if on_iteration is not None:
+                on_iteration(iteration)
+            if observation is not None:
+                observation.observe(iteration)
+            if log_every and step % log_every == 0:
+                line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
+                        + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
+                if xray is not None:               # reads this step's grads (pre next zero_grad)
+                    rec = xray.observe(step, total, parts, probe_input=probe_input)
+                    line += "  " + xray.summary_line(rec)
+                print(line, flush=True)
+            if val_set and step % val_every == 0:  # validation + best-checkpoint selection
+                vmetrics, vscore = engine.validate(val_set)
+                print(f"[{step}/{steps}] VAL score {vscore:.4f}  "
+                      + " ".join(f"{k}={v:.3f}" for k, v in vmetrics.items()), flush=True)
+                if save_path and vscore == vscore and vscore > best_score:   # not NaN and improved
+                    best_score = vscore
+                    stem, ext = _stem(save_path), _ext(save_path)
+                    best_path = f"{stem}.best{ext}"
+                    _checkpoint(best_path, step, val_score=vscore)
+            if save_path and save_every and step % save_every == 0:
+                save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args,
+                              label_schema=schema, scheduler=engine.scheduler)
+    finally:
+        if workers is not None:                    # finished, failed or interrupted: no worker outlives the run
+            workers.close()
     if save_path:                                  # save the ACTUAL completed step, not the requested one
         save_rotating(save_path, cfg, model, logvars, completed, opt, dataconfigs=_dcs, train_args=_train_args,
                       label_schema=schema, scheduler=engine.scheduler)
