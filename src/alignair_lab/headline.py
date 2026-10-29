@@ -13,6 +13,12 @@ per suite and a tally row (suites where the candidate is better / worse / tied):
 Verdicts are the assay's (Holm within each suite's family, cluster-aware where a suite has clusters): ``+`` the
 candidate better, ``-`` the baseline better, ``=`` a tie, ``?`` a tie with too few clusters to test. ``not paired``:
 no read pairs; ``n/a``: the suite does not compare the metric. Plain text, no IO.
+
+The verdicts treat both checkpoints as fixed and resample reads only. Training is not reproducible on the GPU (cuDNN's
+default kernels are not deterministic), and at a constant learning rate two runs of one architecture on the same
+records drift apart: a 20k-step screen of ``lab-null-v1`` against the conv-v1 milestone showed junction Δs of +6 and
++13 pp judged significant, and boundary Δs up to 23 pp. The legend says so; a null screen at the same step is the
+yardstick for a candidate's Δs.
 """
 from __future__ import annotations
 
@@ -25,7 +31,9 @@ DECODERS = (("soft", "Boundary exact rates, the product's soft-argmax decoder:")
             ("argmax", "Boundary exact rates, the position logits' argmax decoder:"))
 MARKS = {"b_better": "+", "a_better": "-", "tie_or_inconclusive": "="}
 LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ candidate better, - baseline better, = tie, ? too few "
-          "clusters),", "reads fixed/broken (fixed: the baseline wrong, the candidate right); n/a: not compared.")
+          "clusters),", "reads fixed/broken (fixed: the baseline wrong, the candidate right); n/a: not compared.",
+          "CIs and verdicts resample the reads of two fixed checkpoints, so run-to-run training noise is not in them:",
+          "read a candidate's Δs against a null screen (lab-null-v1) at the same step.")
 TALLY = "+/-/="
 _SEPARATOR = "  "
 

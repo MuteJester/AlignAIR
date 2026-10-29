@@ -60,6 +60,12 @@ def test_boundaries_show_both_decoders_and_each_column_tallies_its_verdicts():
     assert tallies[1].split()[1:] == ["0/12/0"] * 6 and tallies[2].split()[1:] == ["12/0/0"] * 6
 
 
+def test_the_headline_says_its_verdicts_leave_out_training_noise():
+    """Two GPU runs of one architecture on the same records differ at 20k steps by more than the read CIs."""
+    text = render_headline(comparison())
+    assert "run-to-run training noise" in text and "lab-null-v1" in text
+
+
 def test_a_different_alignair_code_or_the_same_model_is_flagged():
     found = comparison()
     found["code"] = {"this": "c" * 64, "baseline": "d" * 64, "same": False}
