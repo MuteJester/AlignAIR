@@ -23,13 +23,15 @@ class TrainingRun:
         return Aligner.from_pretrained(self.best_model_path or self.model_path, device=device)
 
 
-def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_iteration=None) -> TrainingRun:
+def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_iteration=None,
+                 record_source=None) -> TrainingRun:
     """Build, train and checkpoint a model for ``config`` into ``output_dir`` or ``out_path``.
 
     With ``config.data_workers`` > 0, worker processes are spawned: call this under an
     ``if __name__ == "__main__":`` guard. On an accelerator, the step, ``on_iteration`` and a study
     evaluator must not draw from the CPU random generators: such a draw raises TrainingError, and
-    ``data_workers=0`` is the setting for them (see ``TrainingConfig``).
+    ``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``record_source`` replaces the
+    GenAIRR provider of the run's curriculum records (see ``trainer.train``).
     """
     from ..aligner import resolve_device
     from ..core import prepare_model
@@ -74,5 +76,5 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
           model_setup=setup, on_iteration=on_iteration, resume_path=config.resume_path,
           augmentation=config.augmentation, schedule=config.schedule, study=config.study,
           init_from=config.init_from, init_trust_pickle=config.trust_pickle, resume_trust_pickle=config.trust_pickle,
-          data_workers=config.data_workers)
+          data_workers=config.data_workers, record_source=record_source)
     return TrainingRun(path, outcome.best_model_path, outcome.steps, outcome.checkpoints, outcome.validations)

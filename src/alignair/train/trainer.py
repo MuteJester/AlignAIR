@@ -48,7 +48,14 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
           monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
-          augmentation=None, schedule=None, study=None, start_step=0, data_workers=0):
+          augmentation=None, schedule=None, study=None, start_step=0, data_workers=0, record_source=None):
+    """Train ``model`` on the curriculum stream of ``dataconfigs``.
+
+    ``record_source`` (``gym.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
+    GenAIRR provider of every curriculum stream of the run: training, validation and the X-ray probe. With
+    ``data_workers`` > 0 it runs in the worker processes, so it must be picklable (a module-level function or a
+    picklable object). None generates the records with GenAIRR.
+    """
     from .guards import validate_data_workers, validate_training_request
     model_config = getattr(model, 'cfg', cfg)
     if model_config != cfg:
@@ -56,6 +63,8 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                                  context={'field': 'config'},
                                  hint='Construct a new model with the intended configuration before training.')
     validate_data_workers(data_workers)
+    if record_source is not None and not callable(record_source):
+        raise ConfigurationError('record_source must be callable or None', context={'field': 'record_source'})
     tasks = build_tasks(model_config) if tasks is None else tasks
     dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
     # preflight: fail fast on a bad request rather than after a long run
@@ -88,7 +97,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
 
     def _build_stream(seed_value, *, augment=False, start_step=0):
         records = training_records(dataconfigs, policy=source_policy, seed=seed_value,
-                                   translated_only=data.translated_only)
+                                   translated_only=data.translated_only, record_source=record_source)
         return data.prepare_records(records, augment=augment, seed=seed if augment else seed_value,
                                     start_step=start_step)
 
@@ -186,11 +195,13 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     workers = None
     if data_workers:                               # the same batches, generated in worker processes
         from .assembly import TrainingStream, parallel_training_data
+        from .gym.streams import stream_records
         workers = parallel_training_data(
             TrainingStream(tuple(dataconfigs), source_policy, seed + start,
                            prepare_training_data(setup, device='cpu', augmentation=augmentation),
                            augment=True, prepare_seed=seed, start_step=start),
-            batch_size=batch_size, workers=data_workers, device=device)
+            batch_size=batch_size, workers=data_workers, device=device,
+            provider=stream_records if record_source is None else record_source)
         stream, batch_adapter = workers.records, workers.batch_adapter
     else:
         stream = _build_stream(seed + start, augment=True, start_step=start)

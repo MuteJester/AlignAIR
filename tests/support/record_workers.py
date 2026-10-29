@@ -89,3 +89,9 @@ def consume_within(records, seconds, count=100_000):
     thread.start()
     thread.join(seconds)
     return thread.is_alive(), outcome
+
+
+def shifted(dataconfig, parameters, seed):
+    """Real GenAIRR component records, of seed + 1000: other records than the default provider's."""
+    from alignair.train.gym.streams import stream_records
+    yield from stream_records(dataconfig, parameters, seed + 1000)
