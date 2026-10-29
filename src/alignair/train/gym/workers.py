@@ -49,8 +49,9 @@ CHUNK_SIZE = 64          # records per message
 QUEUE_CHUNKS = 4         # messages a worker holds back per component: the memory bound
 _POLL_SECONDS = 0.25     # how often a waiting process checks that its peers are alive
 _STOP_SECONDS = 5.0      # how long a stopping process may take before it is terminated
-_EXIT_HINT = ('Check the worker for memory exhaustion or a native crash; '
-              'data_workers=0 generates records in this process.')
+_EXIT_HINT = ('A worker exits early when it runs out of memory or crashes natively, or when the training '
+              'script has no `if __name__ == "__main__":` guard: workers are spawned and import the main '
+              'module. data_workers=0 generates training data in the training process.')
 
 
 

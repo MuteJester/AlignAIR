@@ -100,6 +100,7 @@ def test_a_crashed_worker_is_reported_instead_of_waited_for():
     with pytest.raises(TrainingError, match='exited unexpectedly') as caught:
         list(islice(records, 500))
     assert caught.value.context['exitcode'] == 7 and caught.value.context['stage'] == 'training_record_worker'
+    assert '__main__' in caught.value.hint and 'data_workers=0' in caught.value.hint
     records.close()
     assert children() == before
 
