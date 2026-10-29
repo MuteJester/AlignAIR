@@ -229,7 +229,10 @@ class WorkerGroup:
         inbox.put(pickle.dumps(payload))
 
     def check(self):
-        """Raise if a process has exited: workers leave only when stopped, so an exit is a crash."""
+        """Raise once the group is stopped, or if a process has exited: workers leave only when stopped,
+        so any other exit is a crash."""
+        if self._stop.is_set():
+            raise TrainingError('the training data workers were stopped', context={'stage': 'training_record_worker'})
         for process in self._processes:
             if process.exitcode is not None:
                 raise TrainingError('a training data worker exited unexpectedly',
@@ -300,6 +303,9 @@ def receive(channel, check):
             return channel.get(timeout=_POLL_SECONDS)
         except queues.Empty:
             check()
+        except ValueError:                           # a stopped group closes its queues: say so
+            check()
+            raise
 
 
 class _ComponentRecords(Iterator):
@@ -350,8 +356,11 @@ class RecordWorkers:
         self._options = worker_options(workers=workers, provider=provider, chunk_size=chunk_size,
                                        queue_chunks=queue_chunks)
         self.group = self._channels = None
+        self._closed = False
 
     def __call__(self, reference, parameters, seed):
+        if self._closed:
+            raise TrainingError('the record workers are closed', context={'stage': 'training_record_worker'})
         if self._channels is None:
             dataconfigs, policy, base_seed = self._request
             plan = component_plan(dataconfigs, policy=policy, seed=base_seed)
@@ -361,6 +370,8 @@ class RecordWorkers:
         return self._channels(reference, parameters, seed)
 
     def close(self):
+        """Stop the workers; a closed source never starts them again. Idempotent."""
+        self._closed = True
         if self.group is not None:
             self.group.close()
 

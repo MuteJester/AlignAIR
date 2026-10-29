@@ -11,7 +11,7 @@ import pytest
 
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
 from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
-from alignair.train.gym.workers import WorkerGroup, component_plan, parallel_records
+from alignair.train.gym.workers import RecordWorkers, WorkerGroup, component_plan, parallel_records
 from tests.support import record_workers
 
 pytestmark = pytest.mark.integration
@@ -121,6 +121,23 @@ def test_closing_or_collecting_the_stream_stops_every_worker():
     del records
     gc.collect()
     assert len(started) == 3 and stopped(started)
+
+
+def test_closed_workers_never_restart_and_say_they_were_stopped():
+    before = children()
+    source = RecordWorkers((reference(),), policy=RECIPE, seed=0, workers=2, provider=record_workers.counted)
+    source.close()
+    with pytest.raises(TrainingError, match='closed'):
+        next(training_records((reference(),), policy=RECIPE, seed=0, record_source=source))
+    assert children() == before
+
+    source = RecordWorkers((reference(),), policy=RECIPE, seed=0, workers=2, provider=record_workers.counted)
+    records = training_records((reference(),), policy=RECIPE, seed=0, record_source=source)
+    next(records)
+    source.close()
+    with pytest.raises(TrainingError, match='stopped'):
+        list(islice(records, 1000))
+    assert children() == before
 
 
 def test_workers_import_the_parents_genairr():
