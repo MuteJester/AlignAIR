@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from itertools import islice
+import pickle
 
 import numpy as np
 import torch
@@ -82,7 +83,10 @@ def assemble_batches(payload, inputs, link):
                 link.send(0, ('end', batch_records))
                 return
             batch = stream.data.batch_adapter(batch_records)
-        if not link.send(0, ('batch', (batch_records, batch, capture_rng_state(include_cuda=False)))):
+        # Plain bytes, not torch's shared-memory tensors: those make this process serve a file
+        # descriptor per tensor while its batch adapter holds the GIL, stalling the trainer.
+        message = pickle.dumps((batch_records, batch, capture_rng_state(include_cuda=False)), pickle.HIGHEST_PROTOCOL)
+        if not link.send(0, ('batch', message)):
             return
 
 
@@ -140,8 +144,8 @@ class AssembledBatches:
             self._start()
         kind, payload = receive(self._batches, self._group.check)
         if kind == 'batch':
-            self._pending = payload
-            self._records.extend(payload[0])
+            self._pending = pickle.loads(payload)
+            self._records.extend(self._pending[0])
         else:
             self._ended = True
             if kind == 'error':
