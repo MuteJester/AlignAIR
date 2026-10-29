@@ -172,6 +172,16 @@ def test_require_checks_a_whole_stream_before_any_record(cache):
         source.require(DATACONFIGS, policy=CurriculumStreamPolicy(heavy_shm=0.), seed=SEED, records=7)
 
 
+def test_the_cache_command_writes_the_recipes_cache(tmp_path, capsys):
+    from alignair_lab.cli import main
+    assert main(['cache', '--out', str(tmp_path / 'one'), '--steps', '1', '--workers', '2']) == 0
+    manifest = CachedRecordSource(tmp_path / 'one').require(DATACONFIGS, policy=POLICY, seed=SEED, records=BATCH_SIZE)
+    assert (manifest['steps'], manifest['batch_size'], manifest['workers']) == (1, BATCH_SIZE, 2)
+    assert f"wrote {tmp_path / 'one'}: 64 records" in capsys.readouterr().out
+    assert main(['cache', '--out', str(tmp_path / 'one'), '--steps', '1']) == 2
+    assert 'exists' in capsys.readouterr().err
+
+
 def test_an_existing_cache_or_an_unfinished_one_is_not_a_cache(cache, tmp_path):
     with pytest.raises(FileExistsError):
         write_record_cache(cache, dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=1, batch_size=1)
