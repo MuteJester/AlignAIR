@@ -9,24 +9,29 @@ it with baseline screens of several init seeds, compared pair by pair. Per metri
 - ``pooled``: a comparison's Δ (candidate − baseline) pooled over its suites, each weighted by its paired reads.
 - ``null_band``: the largest |pooled Δ| of the pairs of baseline screens.
 - ``decide``: a candidate's pooled Δ is ``beyond noise`` when it exceeds the null band and at least 2/3 of the suites
-  have a Δ of its sign, counting the suites where the assay reports a CI for the metric (every suite that compares it
-  when none does); otherwise ``within noise``; ``uncalibrated`` without a band for the metric.
+  have a Δ of its sign, counting the suites with enough clusters for the assay's verdict on the metric (its test is not
+  ``too_few_clusters``: fewer than ``stats.compare.MIN_CLUSTERS``), or every suite that compares it when none has
+  them (the ``basis``: ``clusters`` or ``all``); otherwise ``within noise``; ``uncalibrated`` without a band for the
+  metric, and ``uncalibrated: band 0`` when its band is 0: baseline screens that never differed on it bound nothing.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
 BEYOND, WITHIN, UNCALIBRATED = "beyond noise", "within noise", "uncalibrated"
+ZERO_BAND = "uncalibrated: band 0"
+FEW_CLUSTERS = "too_few_clusters"         # the assay's test when a metric's pairs fall in too few clusters for a verdict
 
 
 def suite_deltas(comparison: Mapping, metric: str) -> dict[str, dict]:
-    """Each suite that compares ``metric`` on paired reads -> its ``delta``, ``n_paired`` and ``ci``: whether the
-    assay reports a 95% CI for it there."""
+    """Each suite that compares ``metric`` on paired reads -> its ``delta``, ``n_paired`` and ``clustered``: whether
+    its pairs fall in enough clusters for the assay's verdict (its test is not ``too_few_clusters``)."""
     found = {}
     for name, suite in comparison["suites"].items():
         entry = (suite.get("headline") or {}).get(metric)
         if entry and entry.get("delta") is not None and entry.get("n_paired"):
-            found[name] = {"delta": entry["delta"], "n_paired": entry["n_paired"], "ci": entry.get("ci95") is not None}
+            found[name] = {"delta": entry["delta"], "n_paired": entry["n_paired"],
+                           "clustered": entry.get("test") != FEW_CLUSTERS}
     return found
 
 
@@ -64,21 +69,24 @@ def null_band(pairs: Sequence[Mapping]) -> dict[str, float]:
 
 def decide(comparison: Mapping, band: Mapping[str, float] | None, metrics: Sequence[str]) -> dict[str, dict]:
     """Each of ``metrics`` -> its ``pooled`` Δ, its ``band`` (None without one), the suites counted for the sign rule
-    (``suites``: those with a CI, or every suite that compares the metric when none has one) and how many of them
-    ``agree`` in sign with the pooled Δ, and the ``decision`` (see the module docstring; None when no suite compares
-    the metric)."""
+    (``suites``: those with enough clusters for a verdict, ``basis`` ``clusters``, or every suite that compares the
+    metric when none has them, ``all``) and how many of them ``agree`` in sign with the pooled Δ, and the ``decision``
+    (see the module docstring; None, and no basis, when no suite compares the metric)."""
     decisions = {}
     for metric in metrics:
         delta, limit = pooled(comparison, metric), (band or {}).get(metric)
         found = suite_deltas(comparison, metric)
-        counted = [suite for suite in found.values() if suite["ci"]] or list(found.values())
+        clustered = [suite for suite in found.values() if suite["clustered"]]
+        counted, basis = (clustered, "clusters") if clustered else (list(found.values()), "all" if found else None)
         agree = sum(suite["delta"] * delta > 0 for suite in counted) if delta else 0
         if delta is None:
             decision = None
         elif limit is None:
             decision = UNCALIBRATED
+        elif limit == 0:
+            decision = ZERO_BAND
         else:
             decision = BEYOND if abs(delta) > limit and 3 * agree >= 2 * len(counted) else WITHIN
-        decisions[metric] = {"pooled": delta, "band": limit, "agree": agree, "suites": len(counted),
+        decisions[metric] = {"pooled": delta, "band": limit, "agree": agree, "suites": len(counted), "basis": basis,
                              "decision": decision}
     return decisions

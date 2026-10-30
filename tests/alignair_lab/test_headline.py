@@ -83,13 +83,26 @@ def cells(row):
 
 def test_each_headline_metric_weighs_its_pooled_delta_against_the_null_band():
     """The pooled Δ is read-weighted over the suites that compare the metric (clone_key.exact: S1 +12.3 and eleven
-    suites +1.2, 500 reads each), set beside the null band and the suites, of those with a CI, whose Δ has its sign;
-    beyond noise only above the band with at least 2/3 of the signs."""
+    suites +1.2, 500 reads each), set beside the null band and the suites, of those with enough clusters for a
+    verdict (J top-1: not S9), whose Δ has its sign; beyond noise only above the band with at least 2/3 of the signs."""
     found = rows(render_headline(comparison(), null_band=BAND))
     assert cells(found["pooled"]) == ["+2.1 / 1.0, 12/12 agree", "+1.2 / 5.0, 11/11 agree",
                                              "+1.2 / 0.5, 12/12 agree", "+1.2 / 2.0, 11/11 agree",
-                                             "+1.3 / 3.0, 12/12 agree"]
+                                             "+1.3 / 3.0, 11/11 agree"]
     assert cells(found["noise"]) == ["beyond noise", "within noise", "beyond noise", "within noise", "within noise"]
+
+
+def test_signs_counted_over_every_suite_for_want_of_clusters_are_marked():
+    found = comparison()
+    for suite in found["suites"].values():
+        suite["headline"]["v.top1_in_set"] = entry(0.012, test="too_few_clusters")
+    pooled = cells(rows(render_headline(found, null_band=BAND))["pooled"])
+    assert pooled[2] == "+1.2 / 0.5, 12/12 agree*" and not pooled[0].endswith("*")
+
+
+def test_a_band_of_zero_marks_nothing():
+    noise = cells(rows(render_headline(comparison(), null_band={**BAND, "v.top1_in_set": 0.}))["noise"])
+    assert noise[2] == "uncalibrated: band 0" and noise[0] == "beyond noise"
 
 
 def test_without_a_null_band_the_headline_is_uncalibrated_and_marks_nothing():

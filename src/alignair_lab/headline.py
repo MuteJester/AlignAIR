@@ -7,8 +7,9 @@ per suite and a tally row (suites where the candidate is better / worse / tied):
 1. ``HEADLINE``: ``clone_key.exact``, ``junction.nt_exact`` and V / D / J top-1 in set, each as the Δ (candidate −
    baseline, percentage points), its 95% CI, the verdict and the reads fixed / broken; then two rows that weigh
    the metric against run-to-run training noise (``noise.decide``): its pooled Δ (read-weighted over the suites) /
-   its null band, with the suites whose Δ has the pooled Δ's sign, and the decision: beyond noise, within noise,
-   or uncalibrated without a null band;
+   its null band, with the suites whose Δ has the pooled Δ's sign, of those with enough clusters for a verdict
+   (marked ``*`` when none has, so every suite counts), and the decision: beyond noise, within noise, or
+   uncalibrated without a null band;
 2. and 3. ``BOUNDARIES``: each boundary's exact rate under the product's soft-argmax decoder, then under the
    position logits' argmax, as the Δ, the verdict and the reads fixed / broken. Their CIs are in the assay's
    per-suite detail (``<S>/against_<baseline key>.md``), as on the assay's own summary page.
@@ -40,11 +41,11 @@ LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ candidate bette
           "reads fixed/broken (fixed: the baseline wrong, the candidate right); n/a: not compared. CIs and verdicts "
           "resample the",
           "reads of two fixed checkpoints and leave out run-to-run training noise, which the last two rows weigh: the "
-          "pooled Δ",
-          "(read-weighted over the suites) / the null band (the largest such Δ between lab-null-v1 baseline screens of "
-          "other init",
-          "seeds), the suites (with a CI) whose Δ has its sign, and beyond noise: above the band, with at least 2/3 of "
-          "the signs.")
+          "pooled Δ (read-",
+          "weighted) / the null band (the largest such Δ between lab-null-v1 baseline screens of other init seeds), the "
+          "suites whose Δ",
+          "has its sign, of those with enough clusters for a verdict (*: none has, so all); beyond noise: above the band "
+          "and 2/3 agreeing.")
 TALLY = "+/-/="
 POOLED, NOISE = "pooled", "noise"
 _SEPARATOR = "  "
@@ -88,7 +89,8 @@ def _noise_rows(comparison: dict, metrics: Sequence[tuple[str, str]], band: Mapp
             marks.append("n/a")
             continue
         limit = "none" if found["band"] is None else f"{100 * found['band']:.1f}"
-        pooled.append(f"{100 * found['pooled']:+.1f} / {limit}, {found['agree']}/{found['suites']} agree")
+        every = "*" if found["basis"] == "all" else ""
+        pooled.append(f"{100 * found['pooled']:+.1f} / {limit}, {found['agree']}/{found['suites']} agree{every}")
         marks.append(found["decision"] or UNCALIBRATED)
     return [(POOLED, pooled), (NOISE, marks)]
 
