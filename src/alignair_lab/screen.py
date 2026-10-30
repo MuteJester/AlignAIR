@@ -16,7 +16,7 @@ that replicate runs end close to each other, and draws its initial weights from 
 ``run_screen(name, steps=..., ...)``:
 
 1. **Refuses** before anything is written (FileNotFoundError, FileExistsError or ValueError, ConfigurationError
-   among them): a name that is not one path component; an unknown schedule or an init seed that is not a uint32; a
+   among them): a name that is not one path component; an unknown schedule or an init seed neither a uint32 nor None; a
    baseline that is not the recipe's at that step under that schedule, or that continued another checkpoint, clipped
    its gradients or ran on another GenAIRR than the cache's (``baselines.check_baseline``, ``same_genairr``: a
    baseline is trusted by its checkpoint's contents, not its file name or its screen's record): a milestone, a

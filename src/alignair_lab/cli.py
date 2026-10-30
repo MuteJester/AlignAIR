@@ -1,7 +1,7 @@
 """``python -m alignair_lab``: architecture experiments.
 
   python -m alignair_lab screen --name NAME [--steps 20000] [--architecture ARCH] [--model-option KEY=VALUE ...]
-      [--schedule cosine|constant] [--init-seed 0] [--against-screen NAME | --against-milestone [DIR]]
+      [--schedule cosine|constant] [--init-seed K|none] [--against-screen NAME | --against-milestone [DIR]]
       [--baseline-model-option KEY=VALUE ...] [--suites S1,S3] [--max-cases N] [--variants baseline,true_spans,...]
       [--device cuda] [--data-workers 2] [--eval-batch-size 256] [--cache DIR] [--dev-build DIR] [--out-root DIR]
   python -m alignair_lab calibrate [--steps 20000] [--init-seeds 0,1,2] [--parallel 1] [--model-option KEY=VALUE ...]
