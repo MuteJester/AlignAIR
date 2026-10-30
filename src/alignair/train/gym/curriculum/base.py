@@ -7,7 +7,8 @@ from ....errors import ConfigurationError
 # Polymerase-slippage indels are rare in real reads (GenAIRR: under 1% per read at standard fidelity), so the
 # curriculum gives them only the share of reads the indel head needs to learn from: the share of reads with at
 # least one indel ramps linearly from INDEL_FRACTION[0] at p=0 to INDEL_FRACTION[1] at p=1. Over the default
-# training mix (``streams.CurriculumStreamPolicy``) about 85% of reads carry no indel (84.4% of 7,000 records).
+# training mix (``streams.CurriculumStreamPolicy``) about 85% of reads carry no indel (84.4% of the first 7,000
+# records at seed 0).
 INDEL_FRACTION = (0.05, 0.25)
 # Among reads with indels: one indel dominates, then two, rarely three.
 INDEL_COUNT_WEIGHTS = ((1, 0.75), (2, 0.20), (3, 0.05))
