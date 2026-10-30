@@ -9,7 +9,7 @@ from alignair.core import evaluation_mode
 from alignair.data import SequenceInputAdapter
 from alignair.data.tokenizer import CenterPaddedTokenizer
 from alignair.errors import ConfigurationError, InferenceError, InputError, NumericalError, current_error_context
-from alignair.predict import collect_prediction_outputs, forward_batch, prediction_batches
+from alignair.predict import PredictConfig, collect_prediction_outputs, forward_batch, prediction_batches
 from alignair.predict.forward import PredictionBatch, output_numpy, run_model
 
 pytestmark = pytest.mark.component
@@ -125,7 +125,7 @@ def test_numpy_snapshots_are_independent_and_bfloat16_is_representable():
 
 def test_nucleotide_forward_uses_shared_normalization_unknowns_and_cropping():
     model = Echo()
-    batches = run_model(model,['acgtn?','a?p','nn'],SimpleNamespace(max_seq_length=4,batch_size=2))
+    batches = run_model(model,['acgtn?','a?p','nn'],PredictConfig(max_seq_length=4,batch_size=2))
     assert batches[0]['tokenized_sequence'].tolist() == [[1,4,3,2],[1,5,5,0]]
     assert batches[1]['tokenized_sequence'].tolist() == [[5,5,0,0]]
     assert model.training
