@@ -82,6 +82,19 @@ def test_a_milestone_comparison_is_not_weighed_against_a_null_band(rig, tmp_path
     assert noise.split()[1:] == ['uncalibrated'] * 5
 
 
+def test_a_screen_may_draw_its_initial_weights_from_its_data_seed_and_says_so_against_a_milestone(rig, tmp_path):
+    """--init-seed none trains as the product does by default, to reproduce a milestone of a product run; against
+    a milestone of another init seed, the headline says their initial weights and batches differ."""
+    root = tmp_path / 'screens'
+    assert main([*arguments(rig, 'unseeded'), '--init-seed', 'none', '--out-root', str(root)]) == 0
+    record = json.loads((root / 'unseeded' / 'screen.json').read_text())
+    assert record['init_seed'] is None and record['baseline']['init_seed'] == 0
+    assert read_metadata(root / 'unseeded' / 'train' / 'model.alignair')['training']['train_args']['init_seed'] is None
+    headline = (root / 'unseeded' / 'headline.txt').read_text()
+    assert ('Note: the milestone drew its initial weights from init seed 0, this screen from none (its data seed)'
+            in headline)
+
+
 def test_the_baseline_records_the_recipes_train_args(rig):
     train_args = read_metadata(rig.milestones / 'model.step2.alignair')['training']['train_args']
     assert {key: train_args.get(key) for key in recipe_train_args()} == recipe_train_args()

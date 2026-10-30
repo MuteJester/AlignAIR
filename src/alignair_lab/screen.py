@@ -155,7 +155,7 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
                          f"got {name!r}")
     if against_screen is not None and against_milestone is not None:
         raise ValueError("compare with a baseline screen or with a milestone, not both")
-    init_seed = check_init_seed(init_seed)
+    init_seed = None if init_seed is None else check_init_seed(init_seed)
     learning = learning_schedule(schedule, steps)
     model_options, baseline_options = dict(model_options or {}), dict(baseline_options or {})
     role = ("baseline" if architecture == NULL_ARCHITECTURE and against_screen is None and against_milestone is None
@@ -316,19 +316,27 @@ def _release_device(device: str) -> None:
         torch.cuda.empty_cache()
 
 
+def _seed(init_seed) -> str:
+    return "none (its data seed)" if init_seed is None else str(init_seed)
+
+
 def _training_text(record: dict) -> str:
     options = f" with {json.dumps(record['model_options'])}" if record["model_options"] else ""
     return (f"{record['architecture']}{options}, {record['steps']} steps ({record['schedule']} schedule, init seed "
-            f"{record['init_seed']})")
+            f"{_seed(record['init_seed'])})")
 
 
 def _title(record: dict, result, baseline_key: str, code: str | None) -> list[str]:
     baseline = record["baseline"]
-    against = (f"the baseline screen {baseline['name']} ({NULL_ARCHITECTURE}, init seed {baseline['init_seed']})"
+    what = "baseline screen" if baseline["kind"] == "screen" else "milestone"
+    against = (f"the baseline screen {baseline['name']} ({NULL_ARCHITECTURE}, init seed {_seed(baseline['init_seed'])})"
                if baseline["kind"] == "screen" else f"the baseline {BASELINE_ARCHITECTURE}'s milestone")
+    seeds = ([f"Note: the {what} drew its initial weights from init seed {_seed(baseline['init_seed'])}, this screen "
+              f"from {_seed(record['init_seed'])}: their initial weights differ, and so do their batches' orientation "
+              "draws."] if baseline["init_seed"] != record["init_seed"] else [])
     return [f"Screen {record['name']}: {_training_text(record)}, against {against} at step {record['steps']}.",
             f"Candidate {result.model_key} ({record['candidate']['model_path']}); baseline {baseline_key} "
-            f"({baseline['checkpoint']}).", _provenance_line(baseline), _cache_line(record["cache"]),
+            f"({baseline['checkpoint']}).", _provenance_line(baseline), *seeds, _cache_line(record["cache"]),
             *_band_lines(record, code), ""]
 
 

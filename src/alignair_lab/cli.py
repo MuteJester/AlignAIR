@@ -58,8 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model-option", action="append", default=[], metavar="KEY=VALUE",
                      help="a model configuration field (repeatable)")
     add_protocol_arguments(run)
-    run.add_argument("--init-seed", type=int, default=screen.DEFAULT_INIT_SEED,
-                     help="the seed of the model's initial weights, apart from the data seed (default %(default)s)")
+    run.add_argument("--init-seed", type=init_seed, default=screen.DEFAULT_INIT_SEED, metavar="K|none",
+                     help="the seed of the model's initial weights, apart from the data seed; none draws them from "
+                          "the data seed, as a product run does by default (default %(default)s)")
     against = run.add_mutually_exclusive_group()
     against.add_argument("--against-screen", metavar="NAME",
                          help="the baseline screen to compare with (default: the registered baseline screen of the "
@@ -126,6 +127,11 @@ def add_protocol_arguments(command) -> None:
                          help="the assay's dev build (default %(default)s)")
     command.add_argument("--out-root", default=str(screen.SCREENS),
                          help="where screens are written (default %(default)s)")
+
+
+def init_seed(text: str) -> int | None:
+    """``--init-seed``: an integer, or ``none``."""
+    return None if text.lower() == "none" else int(text)
 
 
 def model_options(pairs) -> dict:
