@@ -71,8 +71,8 @@ BASELINE_CONFIG_FIELDS = ("architecture", "input_space", "label_space", "has_d",
                           "boundary_mode", "use_meta_heads", "use_orientation", "state_head", "productive_unknown",
                           "short_d_penalty", "reject_empty_sequences")
 CAPACITY_FIELDS = ("embed_dim", "filters", "block_out")
-_V3_HINT = ("Its training records were drawn otherwise (other seeds, no selection, the uniform indel form), so it is no "
-            "baseline for a candidate trained from a v3 record cache: screen against the milestones of a conv-v1 "
+_V3_HINT = ("Its training records were drawn otherwise (other seeds, no selection, the uniform indel form), so it is "
+            "no baseline for a candidate trained from a v3 record cache: screen against the milestones of a conv-v1 "
             "baseline trained with recipe v3 (--milestones).")
 
 

@@ -177,14 +177,15 @@ def component_counts(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, 
     return tuple(counts)
 
 
-_RECORDS_WRITTEN = None                                 # a writer process's share of the progress counter
-PROGRESS_RECORDS = 256                                  # records a writer generates between progress counts
+# A writer process's view of the shared progress: each stream's records written and the time its writing started.
+_PROGRESS = None
+PROGRESS_RECORDS = 256         # records a writer generates between progress counts
 
 
-def _start_writer(counter):
+def _start_writer(written, started):
     signal.signal(signal.SIGINT, signal.SIG_IGN)       # the writing process stops its workers
-    global _RECORDS_WRITTEN
-    _RECORDS_WRITTEN = counter
+    global _PROGRESS
+    _PROGRESS = written, started
 
 
 def _write_component(item):
@@ -196,6 +197,8 @@ def _write_component(item):
                                  context={"stage": "record_cache", "seed": seed},
                                  hint="Put the intended GenAIRR first on PYTHONPATH.")
     (Path(root) / name).mkdir()
+    if _PROGRESS is not None:
+        _PROGRESS[1][position] = time.time()
     records = iter(stream_records(reference, parameters, seed))
     chunks, written = [], 0
     while written < count:
@@ -207,9 +210,8 @@ def _write_component(item):
                                         context={"stage": "record_cache", "seed": seed,
                                                  "records": written + len(chunk)})
             chunk.extend(part)
-            if _RECORDS_WRITTEN is not None:
-                with _RECORDS_WRITTEN.get_lock():
-                    _RECORDS_WRITTEN.value += len(part)
+            if _PROGRESS is not None:
+                _PROGRESS[0][position] += len(part)             # only this process writes this stream's count
         data = zlib.compress(pickle.dumps(chunk, pickle.HIGHEST_PROTOCOL), COMPRESSION_LEVEL)
         file = f"{name}/chunk-{len(chunks):06d}.pkl.zlib"
         (Path(root) / file).write_bytes(data)
@@ -239,11 +241,44 @@ def _duration(seconds: float) -> str:
     return f"{int(seconds // 3600)} h {int(seconds % 3600 // 60)} min"
 
 
-def _progress_line(done: int, total: int, finished: int, streams: int, elapsed: float) -> str:
-    rate = done / elapsed if elapsed > 0 else 0.
-    eta = _duration((total - done) / rate) if rate > 0 else "unknown"
+def seconds_left(*, done, totals, running, selected, finished, workers) -> tuple[float | None, bool]:
+    """The writer's time left, per stream: ``done`` of ``totals`` records after ``running`` seconds, ``selected`` or
+    not, ``finished`` or not. Each unfinished stream's remaining records take their time at its own rate, or, before
+    it has written any, at the mean rate of the streams of its kind that have; that work is shared among ``workers``
+    (at most one per unfinished stream), and the time left is never less than the slowest running stream's own.
+    Returns ``(seconds, complete)``: a stream of a kind no stream has measured yet is left out, ``complete`` is then
+    False and the seconds a lower bound; ``(None, False)`` before anything is measured."""
+    rates = [count / seconds if count > 0 and seconds > 0 else None for count, seconds in zip(done, running)]
+    kinds = {}
+    for rate, kind in zip(rates, selected):
+        if rate is not None:
+            kinds.setdefault(kind, []).append(rate)
+    unfinished = [index for index, over in enumerate(finished) if not over and totals[index] > done[index]]
+    if not unfinished:
+        return 0., True
+    work, slowest, complete = 0., 0., True
+    for index in unfinished:
+        own = rates[index]
+        rate = own if own is not None else (sum(kinds[selected[index]]) / len(kinds[selected[index]])
+                                            if selected[index] in kinds else None)
+        if rate is None:
+            complete = False
+            continue
+        left = (totals[index] - done[index]) / rate
+        work += left
+        if own is not None:
+            slowest = max(slowest, left)
+    if work == 0 and not complete:
+        return None, False
+    return max(work / min(workers, len(unfinished)), slowest), complete
+
+
+def _progress_line(done: int, total: int, finished: int, streams: int, elapsed: float,
+                   left: tuple[float | None, bool]) -> str:
+    seconds, complete = left
+    eta = "unknown" if seconds is None else (_duration(seconds) if complete else f"at least {_duration(seconds)}")
     return (f"{done}/{total} records ({100 * done // max(total, 1)}%), {finished} of {streams} streams done, "
-            f"{rate:.1f} records/s, ETA {eta}")
+            f"{done / elapsed if elapsed > 0 else 0.:.1f} records/s, ETA {eta}")
 
 
 def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, seed: int, steps: int, batch_size: int,
@@ -255,7 +290,7 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
     Each stream is generated in a spawned process of its own, at most ``workers`` at a time (default
     ``default_writers``), the selected streams first (``writing_order``). Every ``progress_seconds`` and once at the
     end, ``progress`` (when given) receives a line with the records written, the streams done, the records per second
-    and the time left at that rate. The cache is written into a sibling directory and renamed to ``path`` once its
+    and the time left (``seconds_left``). The cache is written into a sibling directory and renamed to ``path`` once its
     manifest is written, so an interrupted writer leaves no cache behind; it cannot resume one: an interrupted write
     starts again. FileExistsError when ``path`` exists.
     """
@@ -278,7 +313,8 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
         raise ConfigurationError("progress_seconds must be a positive number", context={"field": "progress_seconds"})
     genairr = genairr_provenance()
     if genairr["genairr_source_sha256"] != imported_genairr():
-        raise ConfigurationError("GenAIRR changed while the cache was being prepared", context={"stage": "record_cache"})
+        raise ConfigurationError("GenAIRR changed while the cache was being prepared",
+                                 context={"stage": "record_cache"})
     components = [{"seed": component.seed, "reference": dataconfig_name(component.reference),
                    "reference_sha256": reference_sha256(component.reference),
                    "parameters": encode_parameters(component.parameters), "records": count,
@@ -292,10 +328,23 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
         tasks = [(str(partial), entry["directory"], component.reference, component.parameters, component.seed,
                   entry["records"], chunk_records, genairr["genairr_source_sha256"])
                  for entry, component in zip(components, plan)]
-        total = sum(entry["records"] for entry in components)
+        totals = [entry["records"] for entry in components]
+        selected = [bool(component.parameters.get("productive_only")) for component in plan]
         context = multiprocessing.get_context("spawn")
-        counter = context.Value("q", 0)
-        with context.Pool(processes, initializer=_start_writer, initargs=(counter,)) as pool:
+        written, started = context.Array("q", len(plan)), context.Array("d", len(plan))
+        writing = time.perf_counter()
+
+        def report():
+            now, done = time.time(), list(written)
+            running = [entry["seconds"] if "seconds" in entry else (now - begun if begun else 0.)
+                       for entry, begun in zip(components, started)]
+            finished = ["seconds" in entry for entry in components]
+            left = seconds_left(done=done, totals=totals, running=running, selected=selected, finished=finished,
+                                workers=processes)
+            progress(_progress_line(sum(done), sum(totals), sum(finished), len(plan),
+                                    time.perf_counter() - writing, left))
+
+        with context.Pool(processes, initializer=_start_writer, initargs=(written, started)) as pool:
             pending = {position: pool.apply_async(_write_component, ((position, tasks[position]),))
                        for position in writing_order(plan)}
             reported = time.monotonic()
@@ -305,10 +354,9 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
                     components[position].update(pending.pop(position).get()[1])   # a writer's error is raised here
                 if progress is not None and time.monotonic() - reported >= progress_seconds and pending:
                     reported = time.monotonic()
-                    progress(_progress_line(counter.value, total, len(plan) - len(pending), len(plan),
-                                            time.perf_counter() - start))
+                    report()
         if progress is not None:
-            progress(_progress_line(total, total, len(plan), len(plan), time.perf_counter() - start))
+            report()
         manifest = {
             "kind": KIND, "version": VERSION,
             "recipe": RECIPE, "dataconfigs": dataconfig_names(dataconfigs), "policy": policy_fields(policy),
