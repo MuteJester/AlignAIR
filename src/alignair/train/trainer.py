@@ -7,7 +7,7 @@ log-var clamps) after ``optimizer.step()``.
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ..errors import ConfigurationError, error_context
 from ..data.adapters import build_nucleotide_batch as build_batch
@@ -17,7 +17,8 @@ from ..core.runtime import restore_model_state
 from ..reference.protein import build_protein_reference
 from ..tasks import TrainingTasks, build_tasks
 from .gym.curriculum.base import INDEL_FRACTION
-from .gym.streams import SELECTED_FRACTION, CurriculumStreamPolicy, training_records, effective_mutation_caps
+from .gym.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, dataconfig_name, effective_mutation_caps,
+                          selection_supported, training_records)
 from .engine import train_step, validate
 from .setup import build_training_engine
 from .loop import training_iterations
@@ -63,7 +64,9 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     ``indel_fraction`` ``(low, high)`` at progress 0 and 1, or the historical ``"uniform"`` form of the 1.0.0
     recipe. ``selected_fraction`` of each selectable component's records are drawn under GenAIRR's
     ``productive_only()``. The run records them in ``train_args`` with its ``recipe`` (``RECIPE``) and each
-    component's selected share.
+    component's selected share. When GenAIRR cannot draw productive records from one of ``dataconfigs``
+    (``gym.streams.selection_supported``), the run draws no selected records, says so, and lists those references
+    in ``train_args["selection_unavailable"]``.
 
     ``record_source`` (``gym.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
     GenAIRR provider of every curriculum stream of the run: training, validation and the X-ray probe. With
@@ -106,10 +109,18 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     augmentation_metadata = augmentation.to_dict() if augmentation is not None else None
     schedule_metadata = schedule.to_dict() if schedule is not None else None
     schema = setup.label_schema()
-    source_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
-                                           mode='amplicon' if cfg.input_space == 'protein' else 'auto',
-                                           indel_fraction=indel_fraction, indel_form=indel_form,
-                                           selected_fraction=selected_fraction)
+    requested_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
+                                              mode='amplicon' if cfg.input_space == 'protein' else 'auto',
+                                              indel_fraction=indel_fraction, indel_form=indel_form,
+                                              selected_fraction=selected_fraction)
+    # A reference GenAIRR cannot draw productive records from (an incompletely annotated custom reference) trains
+    # unselected: the whole run then draws no selected records, says so, and records it in train_args.
+    unselectable = ([dataconfig_name(dataconfig) for dataconfig in dataconfigs if not selection_supported(dataconfig)]
+                    if requested_policy.selected_fraction else [])
+    source_policy = replace(requested_policy, selected_fraction=0) if unselectable else requested_policy
+    if unselectable:
+        print(f"selection unavailable for {', '.join(unselectable)}: GenAIRR cannot draw productive records from "
+              "it, so the run draws no selected records", flush=True)
 
     def _build_stream(purpose, *, augment=False, start_step=0):
         # every stream draws its own seed blocks: training (a resume from (seed, step)), validation and the probe
@@ -162,8 +173,9 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
                    "recipe": RECIPE,
                    "indel_form": source_policy.indel_form, "indel_fraction": list(source_policy.indel_fraction),
-                   "selected_fraction": source_policy.selected_fraction,
+                   "selected_fraction": requested_policy.selected_fraction,
                    "selected_shares": list(source_policy.selected_shares(force_mixture=len(dataconfigs) > 1)),
+                   "selection_unavailable": unselectable,
                    "augmentation": augmentation_metadata,
                    "schedule": schedule_metadata, "study": study.to_dict() if study is not None else None,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),

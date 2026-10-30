@@ -243,6 +243,24 @@ def stream_records(dataconfig, parameters: Mapping, seed: int) -> Iterator[Mappi
     yield from _scoped_records(records, seed=seed, stage='curriculum_component')
 
 
+def selection_supported(dataconfig) -> bool:
+    """Whether GenAIRR can draw productive records from a reference (a GenAIRR DataConfig or its name).
+
+    ``productive_only()`` needs coding landmarks and a stop-free coding sequence for some allele of each gene: an
+    incompletely annotated custom reference may have none, and GenAIRR then refuses to compile the experiment
+    ("no productive completion"). The reference's experiment without selection must compile; its errors propagate.
+    """
+    reference = _resolve_reference(dataconfig)
+    parameters = {**Curriculum().params(0.), 'invert_d_prob': 0.}
+    with error_context(stage='selection_support'):
+        build_experiment(reference, parameters, allow_curatable=True)
+        try:
+            build_experiment(reference, {**parameters, 'productive_only': True}, allow_curatable=True)
+        except ValueError:
+            return False
+    return True
+
+
 def _resolve_reference(value):
     if isinstance(value, str):
         import GenAIRR as ga
