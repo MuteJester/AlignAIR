@@ -236,6 +236,15 @@ def test_cohort_productive_accuracy_counts_only_rows_whose_productivity_is_super
     assert report['support']['scalars']['productive'] == 2
 
 
+def test_a_cohort_of_a_model_with_anchor_heads_reports_no_learned_productivity():
+    """A model with anchor heads has no productive head (its productivity is derived from the anchors), so its
+    cohort report has no productive accuracy and needs no productive output."""
+    cfg, outputs, _, ref, adapter = runner_fixture()
+    del outputs['productive']
+    report = evaluate_allele_cohort(Echo(), range(3), adapter, replace(cfg, anchor_heads=True), ref)
+    assert report['productive_acc'] is None and report['mutation_mae'] is not None
+
+
 @pytest.mark.parametrize('policy,rows', [('masked', [1, 2]), ('negative', [0, 1, 2])])
 def test_record_cohorts_leave_unknown_productivity_out_under_the_masked_objective(policy, rows):
     from alignair.core import AlignAIR

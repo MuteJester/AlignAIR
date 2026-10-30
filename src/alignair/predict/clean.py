@@ -1,14 +1,19 @@
 """Merge per-batch raw model outputs into a single :class:`Predictions` bundle.
 
 A boundary is the argmax of the model's masked position logits (``decode``); outputs without logits keep the
-model's soft-argmax expectation. ``productive`` is thresholded at 0.5.
+model's soft-argmax expectation. ``productive`` is thresholded at 0.5. A model with anchor heads gives its V and J
+anchors, decoded by argmax over the read's positions and the null slot (``decode.decoded_anchors``), and no learned
+productive output: its productivity is derived from the anchors later (``predict.junction``).
 """
 from __future__ import annotations
 
 import numpy as np
 
-from .decode import decoded_boundaries
+from .decode import decoded_anchors, decoded_boundaries
 from .state import Predictions
+
+# Predictions' marker of an anchor that is not observed.
+NOT_OBSERVED = -1
 
 
 def _stack(batches, key):
@@ -27,15 +32,33 @@ def _boundaries(batches, gene):
     return (np.concatenate([d[0].numpy() for d in decoded]), np.concatenate([d[1].numpy() for d in decoded]))
 
 
+def _anchors(batches) -> dict[str, np.ndarray] | None:
+    """The decoded V and J anchors over all batches (``NOT_OBSERVED`` for the null slot), or None without anchor
+    logits."""
+    decoded = [decoded_anchors(b) for b in batches]
+    if not decoded or any(d is None for d in decoded):
+        return None
+    anchors = {}
+    for gene in ("v", "j"):
+        null = np.asarray(batches[0][f"{gene}_anchor_logits"]).shape[-1] - 1
+        positions = np.concatenate([d[gene].numpy() for d in decoded])
+        anchors[gene] = np.where(positions == null, NOT_OBSERVED, positions)
+    return anchors
+
+
 def clean(raw_batches: list, genes) -> Predictions:
     allele, start, end = {}, {}, {}
     for g in genes:
         allele[g] = np.vstack([np.asarray(b[f"{g}_allele"]) for b in raw_batches])
         start[g], end[g] = _boundaries(raw_batches, g)
-    productive = _flat(raw_batches, "productive") > 0.5
+    anchors = _anchors(raw_batches)
+    # the learned head is required unless the model predicts its anchors (then productivity is derived from them)
+    productive = (_flat(raw_batches, "productive") > 0.5
+                  if anchors is None or all("productive" in b for b in raw_batches) else None)
+    rows = len(allele[genes[0]])
     orientation = (_flat(raw_batches, "orientation").astype(int)
                    if all("orientation" in b for b in raw_batches)
-                   else np.zeros(len(productive), dtype=int))
+                   else np.zeros(rows, dtype=int))
     chain_type = (np.vstack([np.asarray(b["chain_type_logits"]) for b in raw_batches]).argmax(-1)
                   if all("chain_type_logits" in b for b in raw_batches) else None)
     state_logits = (np.concatenate([np.asarray(b["state_logits"]) for b in raw_batches], axis=0)
@@ -45,5 +68,5 @@ def clean(raw_batches: list, genes) -> Predictions:
         mutation_rate=_flat(raw_batches, "mutation_rate"),
         indel_count=_flat(raw_batches, "indel_count"),
         productive=productive, orientation=orientation, chain_type=chain_type,
-        state_logits=state_logits,
+        state_logits=state_logits, anchors=anchors,
     )

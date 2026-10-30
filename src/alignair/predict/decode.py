@@ -30,6 +30,23 @@ def _masked_argmax(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     return torch.where(logits == logits.max(-1, keepdim=True).values, positions, logits.shape[-1]).min(-1).values
 
 
+def decode_anchors(logits: torch.Tensor, read: torch.Tensor) -> torch.Tensor:
+    """Per read, an anchor's position (long): the argmax of its logits (B, L + 1) over the read's positions ``read``
+    (B, L) and the null slot L, which means the anchor is not observed. A tie takes the first slot; a non-finite logit
+    on an allowed slot is a NumericalError."""
+    read = _bool(read)
+    return _masked_argmax(torch.as_tensor(logits), torch.cat([read, read.new_ones(read.shape[0], 1)], dim=-1))
+
+
+def decoded_anchors(outputs: Mapping) -> dict[str, torch.Tensor] | None:
+    """The V and J anchors of a model's outputs (``decode_anchors``; L for not observed) as ``{"v": ..., "j": ...}``,
+    or None when the outputs carry no anchor logits. The read is the start slots: an anchor is a codon start."""
+    if not all(f"{gene}_anchor_logits" in outputs for gene in ("v", "j")):
+        return None
+    read, _ = boundary_slots(outputs)
+    return {gene: decode_anchors(outputs[f"{gene}_anchor_logits"], read) for gene in ("v", "j")}
+
+
 def boundary_slots(outputs: Mapping) -> tuple[torch.Tensor, torch.Tensor]:
     """The (start, end) slot masks of a model's outputs. A half-open model gives both. A residue model gives the read's
     bases for the start, and for the end-exclusive end those bases plus the slot after the last one, where a segment

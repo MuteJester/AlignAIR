@@ -11,10 +11,11 @@ from ..data.inputs import prepare_nucleotide_inputs
 
 import numpy as np
 
-from .clean import clean
+from .clean import NOT_OBSERVED, clean
 from .config import PredictConfig
 from .forward import run_model
 from .germline import align_germline
+from .junction import derive_junction
 from .segment import correct_segments
 from .threshold import select_alleles
 
@@ -143,16 +144,29 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     return records
 
 
+def _anchor(position) -> int | None:
+    """A decoded anchor as a record holds it: the read position, or None when it is not observed."""
+    return None if position == NOT_OBSERVED else int(position)
+
+
 def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, low_quality=None,
                 was_cropped=None, input_sequences=None) -> list:
     orientation = preds.orientation
+    anchors = getattr(preds, "anchors", None)
     records = []
     for i, seq in enumerate(sequences):
         oid = int(orientation[i]) if orientation is not None else 0
         rec = {"sequence": seq, "orientation_id": oid,
                "mutation_rate": float(preds.mutation_rate[i]),
                "indel_count": float(preds.indel_count[i]),
-               "productive": bool(preds.productive[i])}
+               "productive": bool(preds.productive[i]) if anchors is None else None}
+        if anchors is not None:
+            # a model with anchor heads: its record carries the anchors (forward frame, like `seq`) and the
+            # productivity they give over the read's V start and J end (predict.junction), not a learned call
+            rec["v_anchor"], rec["j_anchor"] = (_anchor(anchors[g][i]) for g in ("v", "j"))
+            v, j = alignments["v"][i], alignments["j"][i]
+            rec["productive"] = derive_junction(seq, rec["v_anchor"], rec["j_anchor"], coding_span=(
+                None if v is None else v.seq_start, None if j is None else j.seq_end)).productive
         if input_sequences is not None:
             # the post-crop, pre-orientation read (== `seq` when the read was already forward). The AIRR
             # writer uses THIS as the emitted `sequence` for a reverse-complement read, so `RC(sequence)`

@@ -152,7 +152,8 @@ def evaluate_allele_cohort(model, records, batch_adapter, config, reference_set,
             raise ConfigurationError("reference vocabulary size disagrees with the configured model head",
                                      context={"gene": spec.name})
         _vocabulary(names[spec.name], class_maps.get(spec.name.upper()))
-    heads = ("mutation_rate", "productive") if config.use_meta_heads else ()
+    heads = (("mutation_rate",) + (() if getattr(config, "anchor_heads", False) else ("productive",))
+             if config.use_meta_heads else ())         # anchor heads: productivity is derived, no head learns it
     observed = collect_alignment_observations(model, records, batch_adapter, config, batch_size=batch_size,
                                               prediction_set_threshold=threshold, scalar_heads=heads)
     alleles = {}

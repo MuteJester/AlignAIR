@@ -6,6 +6,11 @@ the (indel-blind) gapped ``sequence_alignment`` — exact on reads without a V/J
 2nd-Cys (column 309) and the J anchor through the reader's CIGAR, so a V/J indel between the V start
 and the junction no longer shifts the anchor. The builder uses the CIGAR path only when the read
 carries an indel (see :func:`cigar_has_indel`), leaving indel-free reads byte-identical.
+
+A model with anchor heads predicts the anchors themselves; :func:`anchor_junction_fields` gives its junction in read
+coordinates (``predict.junction.derive_junction``) with the same fields as the CIGAR path. Every path's CDR3 positions
+are read coordinates, 0-based and end-exclusive in the record (:func:`cdr3_in_read` moves the IMGT-column path's
+there); the AIRR writer emits them 1-based and closed.
 """
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ from typing import Dict, Optional
 
 from GenAIRR.utilities import translate
 
+from ...data.projection import translate_nt
 from .constants import IMGT_REGIONS
 
 _CIGAR = re.compile(r"(\d+)([MIDNS=X])")
@@ -144,8 +150,21 @@ def compute_junction_cigar(seq, v_ref_gapped, v_germ_start, v_seq_start, v_seq_e
     je = map_germline_to_read(j_anchor, j_germ_start or 0, j_seq_start, j_seq_end, j_cigar) + 3
     if je <= js or je > len(seq):
         return None
+    return read_junction_fields(seq, js, je, j_seq_end, translate)
+
+
+# The fields a read-coordinate junction sets (``read_junction_fields``).
+READ_JUNCTION_KEYS = ("junction", "junction_aa", "junction_length", "junction_aa_length", "junction_start",
+                      "junction_end", "cdr3", "cdr3_aa", "cdr3_start", "cdr3_end", "fwr4", "fwr4_aa", "fwr4_start",
+                      "fwr4_end")
+
+
+def read_junction_fields(seq: str, js: int, je: int, j_seq_end: Optional[int], translate_fn) -> dict:
+    """The junction ``seq[js:je]`` (read coordinates, 0-based, end-exclusive) and what follows from it: its
+    translation (``translate_fn``), the CDR3 (the junction without its two anchor codons) and FWR4 (from the
+    junction's end to the J end ``j_seq_end``), all in read coordinates."""
     junction_nt = seq[js:je].upper()
-    junction_aa = translate(junction_nt)
+    junction_aa = translate_fn(junction_nt)
     cdr3_start, cdr3_end = js + 3, je - 3
     fwr4 = seq[je:j_seq_end].upper() if (j_seq_end is not None and j_seq_end >= je) else ""
     return {
@@ -155,6 +174,17 @@ def compute_junction_cigar(seq, v_ref_gapped, v_germ_start, v_seq_start, v_seq_e
         "cdr3": seq[cdr3_start:cdr3_end].upper(),
         "cdr3_aa": junction_aa[1:-1] if len(junction_aa) > 2 else "",
         "cdr3_start": cdr3_start, "cdr3_end": cdr3_end,
-        "fwr4": fwr4, "fwr4_aa": translate(fwr4) if fwr4 else "",
+        "fwr4": fwr4, "fwr4_aa": translate_fn(fwr4) if fwr4 else "",
         "fwr4_start": je, "fwr4_end": j_seq_end,
     }
+
+
+def anchor_junction_fields(seq: str, call, j_seq_end: Optional[int]) -> dict:
+    """The AIRR junction fields of a junction derived from the predicted anchors (``predict.junction.JunctionCall``):
+    ``read_junction_fields`` with GenAIRR's translation convention (full codons from the junction's start, a partial
+    last codon dropped, X for a codon with an N), and the frame, stop codon and productivity of the call. Every field
+    is None when the junction is unknown."""
+    flags = {"vj_in_frame": call.vj_in_frame, "stop_codon": call.stop_codon, "productive": call.productive}
+    if call.junction_start is None:
+        return {**dict.fromkeys(READ_JUNCTION_KEYS), **flags}
+    return {**read_junction_fields(seq, call.junction_start, call.junction_end, j_seq_end, translate_nt), **flags}
