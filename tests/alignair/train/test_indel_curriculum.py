@@ -17,6 +17,7 @@ pytestmark = pytest.mark.integration
 RECIPE = CurriculumStreamPolicy(progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1)
 
 
+@pytest.mark.slow                                 # 2,100 records, most of them selected: about 45 s
 def test_the_recipe_stream_is_about_85_percent_indel_free_and_deterministic_per_seed():
     import GenAIRR.data as gd
     records = list(islice(training_records((gd.HUMAN_IGH_OGRDB,), policy=RECIPE, seed=0), 2100))
@@ -43,6 +44,7 @@ def test_a_run_draws_its_components_from_its_indel_form_and_fraction_and_records
           model_setup=setup, save_path=str(path), log_every=0, indel_fraction=(0.1, 0.2), record_source=watched,
           **options)
     curriculum = Curriculum(indel_form=form, indel_fraction=(0.1, 0.2))
-    assert seen[:3] == [curriculum.indel_count(progress) for progress in (0.3, 0.6, 0.9)]
+    period = len(CurriculumStreamPolicy().selection_pattern)          # the streams of one component
+    assert seen[::period][:3] == [curriculum.indel_count(progress) for progress in (0.3, 0.6, 0.9)]
     train_args = read_metadata(path)['training']['train_args']
     assert train_args['indel_form'] == form and train_args['indel_fraction'] == [0.1, 0.2]

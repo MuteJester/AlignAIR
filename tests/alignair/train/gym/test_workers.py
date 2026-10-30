@@ -17,7 +17,7 @@ from tests.support import record_workers
 
 pytestmark = pytest.mark.integration
 
-RECIPE = CurriculumStreamPolicy((0.3, 0.6, 0.9), 0.25, 1)      # the 1.0.0 recipe: 7 components per panel
+RECIPE = CurriculumStreamPolicy((0.3, 0.6, 0.9), 0.25, 1)      # the 1.0.0 recipe: 7 components of 4 streams
 
 
 def reference(name='IGH', chain_type='BCR_HEAVY'):
@@ -38,15 +38,18 @@ def stopped(processes):
 
 def test_component_plan_lists_every_provider_call_in_order():
     panels = (reference(), reference('TRA', 'TCR_ALPHA'))
-    plan = component_plan(panels, policy=CurriculumStreamPolicy((.3,), 0.), seed=17)
-    assert [component.seed for component in plan] == [seed_block(17, 'training', 0, panel, component)
+    policy = CurriculumStreamPolicy((.3,), 0., selected_fraction=0)
+    plan = component_plan(panels, policy=policy, seed=17)
+    assert [component.seed for component in plan] == [seed_block(17, 'training', 0, panel, component, 'unselected-0')
                                                       for panel in range(2) for component in range(4)]
-    resumed = component_plan(panels, policy=CurriculumStreamPolicy((.3,), 0.), seed=17, start_step=40)
-    assert [component.seed for component in resumed] == [seed_block(17, 'training', 40, panel, component)
-                                                         for panel in range(2) for component in range(4)]
+    resumed = component_plan(panels, policy=policy, seed=17, start_step=40)
+    assert [component.seed for component in resumed] == [
+        seed_block(17, 'training', 40, panel, component, 'unselected-0') for panel in range(2) for component in range(4)]
     assert [component.reference.name for component in plan] == ['IGH'] * 4 + ['TRA'] * 4
     assert plan[4].parameters['mutation_rate'] == 0.
-    assert len(component_plan((reference(),), policy=RECIPE, seed=0)) == 7
+    recipe = component_plan((reference(),), policy=RECIPE, seed=0)
+    assert len(recipe) == 28 and [component.parameters.get('productive_only', False) for component in recipe[:4]] == [
+        True, True, True, False]
 
 
 def test_fewer_workers_than_components_keep_the_serial_order_across_panels():
@@ -77,11 +80,12 @@ def test_worker_failure_reaches_the_consumer_at_the_serial_position_with_type_an
             for record in records:
                 seen.append(record)
         return seen, caught.value
-    failing = record_workers.Failing(component_plan(panels, policy=RECIPE, seed=0)[3].seed)
+    plan = component_plan(panels, policy=RECIPE, seed=0)
+    failing = record_workers.Failing(plan[3].seed)            # the unselected stream of the first component
     serial, expected = consume(training_records(panels, policy=RECIPE, seed=0, record_source=failing))
     with parallel_records(panels, policy=RECIPE, seed=0, workers=2, provider=failing, chunk_size=16) as records:
         seen, error = consume(records)
-    assert seen == serial and len(seen) > 7 * 70 // 2
+    assert seen == serial and len(seen) == len(plan) * 70     # 70 complete periods of every component
     assert type(error) is type(expected) and str(error) == str(expected) == 'simulated provider failure'
     assert error.context['stage'] == 'curriculum_component' and error.context['seed'] == failing.seed
     assert error.context['ordinal'] == 70
@@ -157,7 +161,7 @@ def test_closed_workers_never_restart_and_say_they_were_stopped():
     next(records)
     source.close()
     with pytest.raises(TrainingError, match='stopped'):
-        list(islice(records, 1000))
+        list(islice(records, 5000))                    # past the first chunk of each of the 28 streams
     assert children() == before
 
 

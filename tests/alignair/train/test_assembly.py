@@ -58,7 +58,8 @@ def test_parallel_batches_equal_the_serial_trainer_batches(igh, start, in_worker
 @pytest.mark.parametrize('in_worker', [True, False])
 def test_a_record_failure_stops_training_at_the_serial_step_with_its_type_and_context(in_worker):
     stream = synthetic()
-    failing = record_workers.Failing(component_plan(stream.dataconfigs, policy=stream.policy, seed=stream.seed)[3].seed)
+    plan = component_plan(stream.dataconfigs, policy=stream.policy, seed=stream.seed)
+    failing = record_workers.Failing(plan[3].seed)
     serial = run(serial_records_with(stream, failing), stream.data.batch_adapter,
                  start_step=0, steps=200, batch_size=16)
     with parallel_training_data(stream, batch_size=16, workers=2, device='cpu', assemble_in_worker=in_worker,
@@ -66,7 +67,7 @@ def test_a_record_failure_stops_training_at_the_serial_step_with_its_type_and_co
         parallel = run(batches.records, batches.batch_adapter, start_step=0, steps=200, batch_size=16)
     assert_same_runs(serial, parallel, steps=200)
     error = parallel[2]
-    assert isinstance(error, TrainingDataError) and len(parallel[0]) == 7 * 70 // 16
+    assert isinstance(error, TrainingDataError) and len(parallel[0]) == len(plan) * 70 // 16
     assert error.context['stage'] == 'curriculum_component' and error.context['seed'] == failing.seed
     assert error.context['step'] == len(parallel[0]) + 1
 
@@ -75,12 +76,13 @@ def test_a_record_failure_stops_training_at_the_serial_step_with_its_type_and_co
 def test_a_batch_failure_carries_the_serial_stage_and_step(in_worker):
     stream = synthetic(record_workers.strict_batch)
     serial = run(serial_records_with(stream, record_workers.counted), stream.data.batch_adapter,
-                 start_step=0, steps=40, batch_size=16)
+                 start_step=0, steps=100, batch_size=16)
     with parallel_training_data(stream, batch_size=16, workers=2, device='cpu', assemble_in_worker=in_worker,
                                 provider=record_workers.counted) as batches:
-        parallel = run(batches.records, batches.batch_adapter, start_step=0, steps=40, batch_size=16)
-    assert_same_runs(serial, parallel, steps=40)
-    assert parallel[2].context == {'stage': 'batch_adaptation', 'step': 22, 'record_index': 14}
+        parallel = run(batches.records, batches.batch_adapter, start_step=0, steps=100, batch_size=16)
+    assert_same_runs(serial, parallel, steps=100)
+    first = 50 * len(component_plan(stream.dataconfigs, policy=stream.policy, seed=stream.seed))  # a 50th record
+    assert parallel[2].context == {'stage': 'batch_adaptation', 'step': first // 16 + 1, 'record_index': first % 16}
 
 
 def serial_records_with(stream, provider):

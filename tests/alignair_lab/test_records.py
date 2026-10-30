@@ -1,7 +1,8 @@
 """The record cache replays the live curriculum stream record for record, and refuses any other stream.
 
-One small cache of the 1.0.0 recipe (40 steps of 64: 2,560 records, 366 per component) is written per module; the
-tests that alter a cache work on a copy of it.
+One small cache of the 1.0.0 recipe (40 steps of 64: 2,560 records) is written per module; the tests that alter a
+cache work on a copy of it. Each of the recipe's 7 components interleaves 4 streams (3 selected, 1 unselected), so the
+cache holds 28 streams.
 """
 import json
 import pickle
@@ -22,7 +23,9 @@ pytestmark = pytest.mark.integration
 
 STEPS = 40
 RECORDS = STEPS * BATCH_SIZE                       # 2,560 records of the zipped stream
-COMPONENT_RECORDS = 366                            # the 366th round of 7 components holds records 2,556 to 2,562
+STREAMS = 28
+STREAM_RECORDS = 92                                # the 366th round of 7 components needs the 92nd period of 4 streams
+COMPONENT_RECORDS = 4 * STREAM_RECORDS             # what each component serves before a stream is exhausted
 
 
 @pytest.fixture(scope='module')
@@ -72,9 +75,9 @@ def test_the_recipe_is_the_curriculum_run_training_trains_on():
 
 
 def test_component_counts_are_what_the_zipped_stream_draws():
-    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=RECORDS) == (COMPONENT_RECORDS,) * 7
-    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=7) == (1,) * 7
-    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=8) == (2,) * 7
+    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=RECORDS) == (STREAM_RECORDS,) * STREAMS
+    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=28) == (1,) * STREAMS
+    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=29) == (2,) * STREAMS
 
 
 def test_the_manifest_records_genairr_the_recipe_and_each_components_records(cache):
@@ -88,9 +91,9 @@ def test_the_manifest_records_genairr_the_recipe_and_each_components_records(cac
     assert (manifest['seed'], manifest['steps'], manifest['batch_size'], manifest['records']) == (0, 40, 64, RECORDS)
     plan = component_plan(DATACONFIGS, policy=POLICY, seed=SEED)
     assert [component['seed'] for component in manifest['components']] == [component.seed for component in plan]
-    assert all(component['records'] == COMPONENT_RECORDS and component['reference'] == 'HUMAN_IGH_OGRDB'
+    assert all(component['records'] == STREAM_RECORDS and component['reference'] == 'HUMAN_IGH_OGRDB'
                for component in manifest['components'])
-    assert all(sum(chunk['records'] for chunk in component['chunks']) == COMPONENT_RECORDS
+    assert all(sum(chunk['records'] for chunk in component['chunks']) == STREAM_RECORDS
                for component in manifest['components'])
 
 
@@ -133,7 +136,7 @@ def test_a_cache_read_to_its_end_raises_and_never_wraps_around(cache):
     assert served == live(7 * COMPONENT_RECORDS)
     with pytest.raises(TrainingDataError, match='exhausted') as caught:
         next(records)
-    assert caught.value.context['records'] == COMPONENT_RECORDS
+    assert caught.value.context['records'] == STREAM_RECORDS
 
 
 def test_exhaustion_in_a_data_worker_reaches_the_training_process(cache):
@@ -174,7 +177,7 @@ def test_require_checks_a_whole_stream_before_any_record(cache):
     assert caught.value.context['needed'] == RECORDS + 1
     with pytest.raises(ConfigurationError, match='other parameters'):
         source.require(DATACONFIGS, policy=CurriculumStreamPolicy(heavy_shm=0.3), seed=SEED, records=7)
-    with pytest.raises(ConfigurationError, match='another stream'):         # 6 of the 7 cached components
+    with pytest.raises(ConfigurationError, match='another stream'):         # 24 of the 28 cached streams
         source.require(DATACONFIGS, policy=CurriculumStreamPolicy(heavy_shm=0.), seed=SEED, records=7)
 
 

@@ -8,8 +8,9 @@ import pytest
 from alignair.errors import ConfigurationError, TrainingDataError, current_error_context
 from alignair.train.gym import streams
 from alignair.train.gym.curriculum.base import INDEL_FRACTION
-from alignair.train.gym.streams import (SEED_BLOCK_RECORDS, CurriculumStreamPolicy, dataconfig_name,
-                                       effective_mutation_caps, seed_block, training_records, stream_records)
+from alignair.train.gym.streams import (SEED_BLOCK_RECORDS, SELECTED_FRACTION, CurriculumStreamPolicy,
+                                       dataconfig_name, effective_mutation_caps, seed_block, training_records,
+                                       stream_records)
 
 pytestmark = pytest.mark.component
 
@@ -46,6 +47,9 @@ def test_default_mix_repeats_profiles_independently_and_caps_each_reference():
     assert max(row['mutation_rate'] for row in policy.parameters_for(reference())) == .1
 
 
+UNSELECTED = CurriculumStreamPolicy((.3,), 0., mode='amplicon', selected_fraction=0)   # one stream per component
+
+
 def seeds_of(references=(reference(),), policy=CurriculumStreamPolicy((.3,),0.,mode='amplicon'), **options):
     """The GenAIRR seed of every provider call of one stream, in call order."""
     calls = []
@@ -56,36 +60,84 @@ def seeds_of(references=(reference(),), policy=CurriculumStreamPolicy((.3,),0.,m
     return calls
 
 
+def blocks_of(policy, seed, *, panel=0, purpose='training', start_step=0, force_mixture=False):
+    """The seed blocks of each component's streams, in their interleaving order."""
+    return [[seed_block(seed, purpose, start_step, panel, component, name) for name, _ in streams]
+            for component, streams in enumerate(policy.substreams_for(reference(), force_mixture=force_mixture))]
+
+
 def test_components_use_their_own_seed_blocks_and_round_robin_order_without_eager_reads():
     calls = []
     def observed(dc, params, seed):
         calls.append(seed)
         yield from provider(dc,params,seed)
-    records = training_records((reference(),), policy=CurriculumStreamPolicy((.3,),0.,mode='amplicon'),
-                               seed=17,record_source=observed)
+    records = training_records((reference(),), policy=UNSELECTED, seed=17, record_source=observed)
     assert calls == []
     first = next(records)
-    blocks = [seed_block(17, 'training', 0, 0, component) for component in range(4)]
+    blocks = [streams[0] for streams in blocks_of(UNSELECTED, 17)]
     assert calls == blocks and first['seed'] == blocks[0]
     rest = list(records)
     assert [(row['seed'],row['ordinal']) for row in [first,*rest]] == [
         (seed,ordinal) for ordinal in range(3) for seed in blocks]
 
 
+def test_a_component_interleaves_three_selected_streams_with_one_unselected_stream():
+    calls = []
+    def observed(dc, params, seed):
+        calls.append((seed, params.get('productive_only', False)))
+        yield from provider(dc, params, seed)
+    policy = CurriculumStreamPolicy((.3,), 0., mode='amplicon')   # p=.3, V-anchored, J-anchored, fragment amplicons
+    assert policy.selected_fraction == SELECTED_FRACTION == .75
+    assert policy.selection_pattern == (True, True, True, False)
+    rows = list(training_records((reference(),), policy=policy, seed=17, record_source=observed))
+    blocks = blocks_of(policy, 17)
+    assert [seed for seed, _ in calls] == [block for streams in blocks for block in streams]
+    assert len({seed for seed, _ in calls}) == 16
+    assert [selected for _, selected in calls] == [True, True, True, False, *[False] * 4,
+                                                   True, True, True, False, *[False] * 4]
+    # record k of a component comes from its stream k % 4; the components take turns record by record
+    assert [(row['seed'], row['ordinal']) for row in rows] == [
+        (blocks[component][k % 4], k // 4) for k in range(12) for component in range(4)]
+
+
+def test_v_anchored_and_fragment_amplicons_stay_unselected():
+    policy = CurriculumStreamPolicy()                              # the 1.0.0 mix
+    assert policy.selected_shares() == (.75, .75, .75, 0., .75, 0., .75)
+    assert CurriculumStreamPolicy(short_boost=2, selected_fraction=.5).selected_shares() == (
+        .5, .5, .5, 0., .5, 0., 0., .5, 0., .5)
+    components = policy.parameters_for(reference())
+    streams = policy.substreams_for(reference())
+    assert [name for name, _ in streams[0]] == ['selected-0', 'selected-1', 'selected-2', 'unselected-0']
+    assert [name for name, _ in streams[3]] == [name for name, _ in streams[5]] == [
+        'unselected-0', 'unselected-1', 'unselected-2', 'unselected-3']
+    for component, substreams in zip(components, streams):
+        for name, parameters in substreams:
+            assert parameters == ({**component, 'productive_only': True} if name.startswith('selected') else component)
+
+
+@pytest.mark.parametrize('fraction,pattern', [
+    (0, (False,)), (1, (True,)), (.5, (True, False)), (.75, (True, True, True, False)),
+    (.4, (True, False, True, False, False)), (1 / 3, (True, False, False)),
+    (.7, (True, True, True, False, True, True, False, True, True, False))])
+def test_selected_records_are_spread_evenly_over_each_period(fraction, pattern):
+    policy = CurriculumStreamPolicy(selected_fraction=fraction)
+    assert policy.selection_pattern == pattern and sum(pattern) / len(pattern) == pytest.approx(fraction)
+
+
 def test_a_streams_seed_block_is_a_reserved_sha256_derived_block_of_2_32_records():
     import hashlib, json
-    key = json.dumps(['alignair.training_records', 0, 'training', 0, 0, 0]).encode()
+    key = json.dumps(['alignair.training_records', 0, 'training', 0, 0, 0, 'selected-0']).encode()
     index = int.from_bytes(hashlib.sha256(key).digest()[:8], 'big') % 2**28
     assert SEED_BLOCK_RECORDS == 2**32
-    assert seed_block(0, 'training', 0, 0, 0) == 2**62 + index * 2**32
+    assert seed_block(0, 'training', 0, 0, 0, 'selected-0') == 2**62 + index * 2**32
     for purpose in ('training', 'validation', 'probe'):
-        block = seed_block(5, purpose, 3, 1, 2)
+        block = seed_block(5, purpose, 3, 1, 2, 'unselected-0')
         assert 2**62 <= block and block + SEED_BLOCK_RECORDS <= 2**63 and block % SEED_BLOCK_RECORDS == 0
-        assert block == seed_block(5, purpose, 3, 1, 2)
+        assert block == seed_block(5, purpose, 3, 1, 2, 'unselected-0')
 
 
 def test_streams_of_a_run_never_share_a_block_or_reach_the_assays_seeds():
-    policy = CurriculumStreamPolicy((.3, .6, .9), .25, 1)       # the 1.0.0 mix: 7 components per panel
+    policy = CurriculumStreamPolicy((.3, .6, .9), .25, 1)       # the 1.0.0 mix: 7 components of 4 streams per panel
     panels = (reference(), reference('TRA', 'TCR_ALPHA'))
     for seed in range(20):
         training = seeds_of(panels, policy, seed=seed)
@@ -93,7 +145,7 @@ def test_streams_of_a_run_never_share_a_block_or_reach_the_assays_seeds():
         validation = seeds_of(panels, policy, seed=seed, purpose='validation')
         probe = seeds_of(panels, policy, seed=seed, purpose='probe')
         blocks = [*training, *resumed, *validation, *probe]
-        assert len(training) == 14 and len(set(blocks)) == len(blocks)
+        assert len(training) == 56 and len(set(blocks)) == len(blocks)
         assert all(block >= 2**62 and block % SEED_BLOCK_RECORDS == 0 for block in blocks)   # far above [0, 2**31)
     assert not set(seeds_of(seed=0)) & set(seeds_of(seed=1))
     regions = {purpose: {block >> 60 for seed in range(50) for block in seeds_of(seed=seed, purpose=purpose)}
@@ -110,24 +162,36 @@ def test_two_streams_drawing_the_same_block_are_refused(monkeypatch):
 
 def test_finite_components_emit_complete_rounds_with_the_historical_partial_round_consumption():
     pulled = []
-    short = seed_block(0, 'training', 0, 0, 1)
+    blocks = [streams[0] for streams in blocks_of(UNSELECTED, 0)]
     def finite(dc,params,seed):
-        for ordinal in range(1 if seed==short else 2):
+        for ordinal in range(1 if seed==blocks[1] else 2):
             pulled.append((seed,ordinal))
             yield {'seed':seed,'ordinal':ordinal}
-    rows=list(training_records((reference(),),policy=CurriculumStreamPolicy((.3,),0.,mode='amplicon'),
-                               record_source=finite))
-    blocks = [seed_block(0, 'training', 0, 0, component) for component in range(4)]
+    rows=list(training_records((reference(),),policy=UNSELECTED, record_source=finite))
     assert len(rows)==4
     assert pulled==[(blocks[0],0),(blocks[1],0),(blocks[2],0),(blocks[3],0),(blocks[0],1)]
 
 
+def test_a_component_ends_with_its_last_complete_period():
+    pulled = []
+    policy = CurriculumStreamPolicy((.3,), 0.)                    # one component of 4 streams
+    blocks = blocks_of(policy, 0)[0]
+    def finite(dc, params, seed):
+        for ordinal in range(1 if seed == blocks[2] else 3):
+            pulled.append((seed, ordinal))
+            yield {'seed': seed, 'ordinal': ordinal}
+    rows = list(training_records((reference(),), policy=policy, record_source=finite))
+    assert [(row['seed'], row['ordinal']) for row in rows] == [(block, 0) for block in blocks]
+    assert pulled == [*((block, 0) for block in blocks), (blocks[0], 1), (blocks[1], 1)]
+
+
 def test_multiple_panels_use_independent_seed_blocks_and_distinct_locus_class_ids():
+    policy = CurriculumStreamPolicy((.3,), 0., selected_fraction=0)
     rows=list(islice(training_records((reference(),reference('TRA','TCR_ALPHA'),reference('IGH2')),
-        policy=CurriculumStreamPolicy((.3,),0.),seed=17,record_source=provider),12))
+        policy=policy,seed=17,record_source=provider),12))
     assert [row['chain_type'] for row in rows]==[0,1,0]*4
-    assert [row['seed'] for row in rows]==[seed_block(17, 'training', 0, panel, component)
-                                           for component in range(4) for panel in range(3)]
+    blocks = [blocks_of(policy, 17, panel=panel, force_mixture=True) for panel in range(3)]
+    assert [row['seed'] for row in rows]==[blocks[panel][component][0] for component in range(4) for panel in range(3)]
     assert {row['rate'] for row in rows if row['panel']=='TRA'}=={0.}
     assert all(row['rate']>0 for row in rows if row['panel']!='TRA')
 
@@ -145,7 +209,7 @@ def test_translation_filter_only_checks_translation_eligibility():
     rows=[{'sequence':'ATG','sequence_aa':aa,'junction_start':frame,'productive':False}
           for aa,frame in [('',0),('M',None),('MM',0),('M',0),('*',0)]]
     def source(*args):return iter(rows)
-    actual=list(training_records((reference(),),policy=CurriculumStreamPolicy((.3,),0.),
+    actual=list(training_records((reference(),),policy=CurriculumStreamPolicy((.3,),0.,selected_fraction=0),
                                   translated_only=True,record_source=source))
     assert [row['sequence_aa'] for row in actual]==['M','*']
     assert all(not row['productive'] for row in actual)
@@ -235,6 +299,9 @@ def test_materialized_provider_names_and_custom_name_collisions_are_preserved(mo
     ({'short_boost':1.5},'short_boost'),({'mutation_cap':-.1},'mutation_cap'),
     ({'indel_fraction':None},'indel_fraction'),({'indel_fraction':(.3,.1)},'indel_fraction'),
     ({'indel_form':'realistic'},'indel_form'),({'indel_form':None},'indel_form'),
+    ({'selected_fraction':1.1},'selected_fraction'),({'selected_fraction':-.25},'selected_fraction'),
+    ({'selected_fraction':True},'selected_fraction'),({'selected_fraction':float('nan')},'selected_fraction'),
+    ({'selected_fraction':'0.75'},'selected_fraction'),({'selected_fraction':.123},'selected_fraction'),
 ])
 def test_invalid_policy_is_rejected_before_source_construction(options,field):
     with pytest.raises(ConfigurationError) as caught:CurriculumStreamPolicy(**options)
