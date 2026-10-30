@@ -8,7 +8,7 @@ from torch.nn import functional as F
 from ..core.config import AlignAIRConfig
 from ..neural.heads.state import STATE_CLASS_WEIGHTS
 from ..neural.weighting import UncertaintyWeight
-from .supervision import supervised_rows, categorical_rows
+from .supervision import supervised_rows, categorical_rows, productive_rows
 from .functional import (_kendall, _mean_rows, _soft_ce, soft_gaussian_target,
                          soft_cross_entropy_rows as _soft_ce_per_sample)
 
@@ -48,10 +48,12 @@ def auxiliary_losses(out, targets, cfg, logvars):
     if cfg.use_meta_heads:
         mut = F.l1_loss(out["mutation_rate"], targets["mutation_rate"])
         ind = F.l1_loss(out["indel_count"], targets["indel_count"])
-        prod = F.binary_cross_entropy(out["productive"].clamp(1e-7, 1 - 1e-7), targets["productive"])
+        known = productive_rows(targets, out["productive"])        # unknown productivity is masked out
+        prod = _mean_rows(F.binary_cross_entropy(out["productive"].clamp(1e-7, 1 - 1e-7), targets["productive"],
+                                                 reduction="none"), known)
         parts["mutation"] = _kendall(logvars["mutation"], mut)
         parts["indel"] = _kendall(logvars["indel"], ind)
-        parts["productive"] = _kendall(logvars["productive"], prod)
+        parts["productive"] = _kendall(logvars["productive"], prod, known)
 
     # ---- per-position edit state: masked, class-weighted CE (germline/sub/insertion/deletion) ----
     if "state_logits" in out and "state_labels" in targets and "state" in logvars:

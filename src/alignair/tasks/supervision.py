@@ -23,6 +23,11 @@ def supervised_rows(targets: dict, gene: str, reference: torch.Tensor) -> torch.
             & _row_mask(targets, f"{gene}_valid", reference))
 
 
+def productive_rows(targets: dict, reference: torch.Tensor) -> torch.Tensor:
+    """Rows whose productivity label is supervised: ``productive_supervise`` when present, else every row."""
+    return _row_mask(targets, "productive_supervise", reference)
+
+
 def categorical_rows(targets: dict, gene: str, logits: torch.Tensor) -> torch.Tensor:
     """Rows with a class label or a nonempty compatible set; -1 means no class supervision."""
     valid = supervised_rows(targets, gene, logits) & _row_mask(targets, f"{gene}_class_supervise", logits)

@@ -92,6 +92,38 @@ def test_auxiliary_and_state_objectives_work_for_both_score_families(task_batch,
     assert all(weight.log_var.grad is not None for weight in weights.values())
 
 
+@pytest.mark.parametrize("protein", [False, True])
+def test_productive_objective_leaves_out_rows_whose_productivity_is_unsupervised(task_batch, protein):
+    cfg, out, targets = task_batch(protein=protein, batch_size=3, auxiliary=True)
+    out["productive"] = torch.tensor([[.9], [.2], [.6]], requires_grad=True)
+    targets["productive"] = torch.tensor([[1.], [0.], [0.]])
+    targets["productive_supervise"] = torch.tensor([True, True, False])
+    tasks = build_tasks(cfg)
+    weights = tasks.make_weights()
+    _, parts = tasks.loss(out, targets, weights)
+    _, kept_out, kept = task_batch(protein=protein, batch_size=2, auxiliary=True)
+    kept_out["productive"] = torch.tensor([[.9], [.2]])
+    kept["productive"] = torch.tensor([[1.], [0.]])
+    torch.testing.assert_close(parts["productive"], tasks.loss(kept_out, kept, weights)[1]["productive"])
+    expected = -(math.log(.9) + math.log(.8)) / 2
+    torch.testing.assert_close(parts["productive"].detach(),
+                               (expected * weights["productive"]() + weights["productive"].penalty()).detach())
+    parts["productive"].backward()
+    assert out["productive"].grad[2].item() == 0 and out["productive"].grad[:2].abs().min() > 0
+
+
+def test_productive_objective_without_a_supervised_row_is_zero_with_zero_weight_gradient(task_batch):
+    cfg, out, targets = task_batch(auxiliary=True)
+    targets["productive_supervise"] = torch.zeros(2, dtype=torch.bool)
+    tasks = build_tasks(cfg)
+    weights = tasks.make_weights()
+    total, parts = tasks.loss(out, targets, weights)
+    assert parts["productive"].item() == 0
+    total.backward()
+    assert weights["productive"].log_var.grad.item() == 0
+    torch.testing.assert_close(out["productive"].grad, torch.zeros_like(out["productive"]))
+
+
 def test_state_head_without_any_label_has_zero_loss_and_weight_gradient(task_batch):
     cfg, out, targets = task_batch(auxiliary=True)
     targets["state_labels"].fill_(-100)

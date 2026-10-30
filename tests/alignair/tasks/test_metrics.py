@@ -43,6 +43,19 @@ def test_auxiliary_metrics_omit_a_prediction_without_observed_truth(task_batch):
     assert "mutation_mae" in metrics
 
 
+def test_productive_accuracy_counts_only_rows_whose_productivity_is_supervised(task_batch):
+    cfg, out, targets = task_batch(batch_size=3, auxiliary=True)
+    out["productive"] = torch.tensor([[.9], [.2], [.6]])
+    targets["productive"] = torch.tensor([[1.], [0.], [0.]])
+    tasks = build_tasks(cfg)
+    assert tasks.metrics(out, targets)["productive_acc"] == pytest.approx(2 / 3)
+    targets["productive_supervise"] = torch.tensor([True, True, False])
+    report = tasks.metric_report(out, targets)
+    assert report.means()["productive_acc"] == 1 and report.counts["productive_acc"] == 2
+    targets["productive_supervise"] = torch.zeros(3, dtype=torch.bool)
+    assert "productive_acc" not in tasks.metrics(out, targets)
+
+
 def test_unlabeled_classes_keep_boundary_metrics_without_fabricating_accuracy(task_batch):
     cfg, out, targets = task_batch()
     targets["v_class"].fill_(-1)

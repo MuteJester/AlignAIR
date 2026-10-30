@@ -6,7 +6,7 @@ import math
 
 import torch
 
-from .supervision import categorical_rows, supervised_rows
+from .supervision import categorical_rows, productive_rows, supervised_rows
 
 
 @dataclass
@@ -88,7 +88,8 @@ def _auxiliary_metrics(report, out, targets):
         if key in out and key in targets:
             report.add(name, (out[key] - targets[key]).abs())
     if "productive" in out and "productive" in targets:
-        report.add("productive_acc", (out["productive"] > 0.5) == (targets["productive"] > 0.5))
+        report.add("productive_acc", (out["productive"] > 0.5) == (targets["productive"] > 0.5),
+                   productive_rows(targets, out["productive"]))
     if "state_logits" in out and "state_labels" in targets:
         prediction, labels = out["state_logits"].argmax(-1), targets["state_labels"]
         valid = labels != -100
