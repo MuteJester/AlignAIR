@@ -36,19 +36,21 @@ def test_selected_records_are_productive_and_the_unselected_amplicons_keep_their
             yield {**record, 'call': call}
 
     records = list(islice(training_records((gd.HUMAN_IGH_OGRDB,), policy=RECIPE, seed=0, record_source=tagged),
-                          COMPONENTS * 32))
+                          COMPONENTS * 64))
     assert len(selected) == 28 and RECIPE.selected_shares() == (.75, .75, .75, 0., 0., 0., .75)
     for component, share in enumerate(RECIPE.selected_shares()):
         rows = records[component::COMPONENTS]
         picked = [row for row in rows if selected[row['call']]]
         assert len(picked) == share * len(rows) and all(row['productive'] is True for row in picked)
     # The amplicons (V-anchored, J-anchored, fragment) keep the reads selection drops. GenAIRR's productive_only()
-    # draws no read of unknown productivity (one that misses an anchor) and no J-anchored read under 60 nt, where
-    # unselected amplicons draw about half and a fifth of them: drawn from three selected streams of four, as the
-    # amplicons were before, they would hold about an eighth and a twentieth.
+    # draws no read of unknown productivity (one that misses an anchor) and no J-anchored read under 60 nt. Unselected,
+    # the amplicons draw about half their reads of unknown productivity, the J-anchored one a quarter, and a fifth of
+    # its reads under 60 nt; drawn from three selected streams of four, as the amplicons were before, they would hold
+    # a quarter of that. Here the J-anchored reads hold 18 and 12 of 64, where the selected design drew 5 and 5.
     amplicons = [row for amplicon in (3, 4, 5) for row in records[amplicon::COMPONENTS]]
     assert sum(row['productive'] is None for row in amplicons) >= len(amplicons) / 4
     anchored = records[4::COMPONENTS]
+    assert sum(row['productive'] is None for row in anchored) >= len(anchored) / 6
     assert sum(len(row['sequence']) < 60 for row in anchored) >= len(anchored) / 8
 
 
