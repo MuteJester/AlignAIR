@@ -10,8 +10,8 @@ per suite and a tally row (suites where the candidate is better / worse / tied):
    its null band, with the suites whose Δ has the pooled Δ's sign, of those with enough clusters for a verdict
    (marked ``*`` when none has, so every suite counts), and the decision: beyond noise, within noise, or
    uncalibrated without a null band;
-2. and 3. ``BOUNDARIES``: each boundary's exact rate under the product's soft-argmax decoder, then under the
-   position logits' argmax, as the Δ, the verdict and the reads fixed / broken. Their CIs are in the assay's
+2. and 3. ``BOUNDARIES``: each boundary's exact rate under the soft-argmax decoder, then under the
+   position logits' argmax (the product's decoder), as the Δ, the verdict and the reads fixed / broken. Their CIs are in the assay's
    per-suite detail (``<S>/against_<baseline key>.md``), as on the assay's own summary page.
 
 Verdicts are the assay's (Holm within each suite's family, cluster-aware where a suite has clusters): ``+`` the
@@ -33,8 +33,8 @@ from alignair_lab.noise import UNCALIBRATED, decide
 HEADLINE = (("clone_key.exact", "clone_key.exact"), ("junction.nt_exact", "junction.nt_exact"), ("v.top1_in_set", "V top-1"),
             ("d.top1_in_set", "D top-1"), ("j.top1_in_set", "J top-1"))
 BOUNDARIES = tuple((f"head.{gene}.{edge}_exact", f"{gene.upper()} {edge}") for gene in "vdj" for edge in ("start", "end"))
-DECODERS = (("soft", "Boundary exact rates, the product's soft-argmax decoder:"),
-            ("argmax", "Boundary exact rates, the position logits' argmax decoder:"))
+DECODERS = (("soft", "Boundary exact rates, the soft-argmax decoder:"),
+            ("argmax", "Boundary exact rates, the position logits' argmax decoder (the product's):"))
 MARKS = {"b_better": "+", "a_better": "-", "tie_or_inconclusive": "="}
 LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ candidate better, - baseline better, = tie, ? too few "
           "clusters),",

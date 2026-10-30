@@ -239,7 +239,7 @@ def test_flags():
     assert "Stale builds" in text and "S3 (truth_source)" in text
     assert "Baseline coverage below 95%: S1 junction.nt_exact 90.0%." in text
     assert "S1 spans.d.unobserved 10.0% (true_spans)" in text  # 5 of 50 diagnosed reads
-    assert "S1 baseline → soft_decoder v.top1_in_set -5.0 pp" in text  # significantly worse
+    assert "S1 baseline → soft_decoder v.top1_in_set" not in text  # the old decoder is expected to be worse
     assert "Too few clusters" in text and "S1 (1 comparisons, 5 clusters)" in text
     assert "S1 3 cropped" in text
     # A clean report flags only the Holm-family note.

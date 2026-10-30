@@ -48,8 +48,8 @@ _AGAINST_NOTE = ("This model against the baseline (`--against`), on the same rea
                  "with its 95% CI; fixed: reads the baseline gets wrong and this model right (a 0/1 metric), broken: "
                  "reads the baseline gets right and this model wrong. Verdicts: Holm within each suite's end-to-end "
                  "and head families, cluster-aware where a suite has clusters.")
-_AGAINST_BOUNDARIES_NOTE = ("Boundary exact rates (head metrics): Δ (this − baseline) under the product's soft-argmax "
-                            "decoder / the position logits' argmax, in pp; bold: significant. Their CIs are in the "
+_AGAINST_BOUNDARIES_NOTE = ("Boundary exact rates (head metrics): Δ (this − baseline) under the soft-argmax "
+                            "decoder / the position logits' argmax (the product's decoder), in pp; bold: significant. Their CIs are in the "
                             "suite detail.")
 _AGAINST_DETAIL_NOTE = ("Each model's own mean over its own reads (n, coverage), then the paired means over the reads "
                         "both score, whose difference is Δ (this − baseline), its 95% CI, p and the Holm-corrected "

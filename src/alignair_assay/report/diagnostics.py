@@ -329,9 +329,10 @@ def _flags(report: dict, summary: dict) -> list[str]:
              f"{format_value(metric, entry['delta'], delta=True)}"
              for name, suite in suites.items()
              for comparison in [*(suite.get("contributions") or []), *(suite.get("swaps") or [])]
+             if comparison["to"] != "soft_decoder"   # the old decoder is expected to be worse
              for metric, entry in comparison["metrics"].items() if entry.get("verdict") == "from_better"]
     if worse:
-        flags.append(_listed("Significantly worse with the truth fed in, or with the swap", worse))
+        flags.append(_listed("Significantly worse with the truth fed in, or with the swap (not soft_decoder, the old decoder)", worse))
     few = []
     for name, suite in suites.items():
         entries = [entry for comparison in [*(suite.get("contributions") or []), *(suite.get("swaps") or [])]
