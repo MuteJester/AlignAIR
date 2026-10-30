@@ -12,9 +12,10 @@ from ..errors import DataContractError
 
 def default_strata() -> dict:
     """Named GenAIRR generation params: clean, moderate corruption, heavy-SHM, and a J-anchored short
-    amplicon. (The full 22-stratum head-to-head lives in the ``alignair_benchmark`` package.)"""
+    amplicon. (The full 22-stratum head-to-head lives in the ``alignair_benchmark`` package.) The strata are
+    pinned to the curriculum's historical uniform indel form, so they keep generating the same data."""
     from ..train.gym import Curriculum
-    cur = Curriculum()
+    cur = Curriculum(indel_form="uniform")
     return {
         "clean": dict(cur.params(0.1)),
         "moderate": dict(cur.params(0.6)),

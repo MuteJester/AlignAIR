@@ -72,7 +72,7 @@ def train(train_names, heldout_names, cfg, steps, lr, batch_size, out_path,
     elif init_path:                                    # warm-start weights only
         load_checkpoint(init_path, model, opt=None, device=device)
         print(f"warm-started (weights only) from {init_path}", flush=True)
-    params = dict(Curriculum().params(progress))
+    params = dict(Curriculum(indel_form="uniform").params(progress))   # the matcher's historical indel counts
     stream = _round_robin(train_cfgs, cfg, params, batch_size, seed + start_step)
 
     best_path = out_path[:-3] + ".best.pt" if out_path.endswith(".pt") else out_path + ".best"

@@ -17,7 +17,7 @@ def evaluate(model, dataconfig, cfg: MatcherConfig, n=200, progress=0.3, seed=0,
     present = [g for g in GENES if g in ref.genes]
     hit = {g: 0 for g in present}
     tot = {g: 0 for g in present}
-    params = dict(Curriculum().params(progress))
+    params = dict(Curriculum(indel_form="uniform").params(progress))   # pinned: the eval data never drifts
     params["invert_d_prob"] = 0.0
     exp = build_experiment(dataconfig, params, allow_curatable=True)
     model = model.to(device)

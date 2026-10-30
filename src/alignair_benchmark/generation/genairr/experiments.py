@@ -31,9 +31,12 @@ def resolve_stratum_params(
     stratum: StratumSpec,
     curriculum: Curriculum | None = None,
 ) -> dict[str, Any]:
-    """Resolve benchmark curriculum parameters plus stratum overrides."""
+    """Resolve benchmark curriculum parameters plus stratum overrides.
 
-    curriculum = curriculum or Curriculum()
+    The default curriculum is pinned to the historical uniform indel form: a spec's name, version and seed must
+    keep generating the same data."""
+
+    curriculum = curriculum or Curriculum(indel_form="uniform")
     params = dict(curriculum.params(stratum.progress))
     params.update(stratum.param_overrides)
     return params

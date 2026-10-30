@@ -60,6 +60,11 @@ def test_default_strata_are_named_param_dicts():
     assert isinstance(strata["clean"], dict)
 
 
+def test_default_strata_keep_the_historical_uniform_indel_counts():
+    assert {name: params["indel_count"] for name, params in default_strata().items()} == {
+        "clean": (0, 0), "moderate": (0, 3), "high_shm": (0, 2), "short_janchor": (0, 3)}
+
+
 def test_format_text_renders_per_stratum():
     results = {"clean": {"n": 100, "v_call_acc": 0.99, "junction_nt_exact": 0.85},
                "high_shm": {"n": 100, "v_call_acc": 0.80, "junction_nt_exact": 0.60}}

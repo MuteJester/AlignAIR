@@ -107,7 +107,7 @@ def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_s
         data = prepare_training_data(setup_from_schema(ref, model.cfg, schema))
     agg: dict = {}
     for i, dc in enumerate(dcs):
-        params = dict(Curriculum().params(0.3))
+        params = dict(Curriculum(indel_form="uniform").params(0.3))   # pinned: the eval data never drifts
         if is_tcr(dc):                            # TCR loci do not undergo SHM (GenAIRR forbids mutate())
             params["mutation_rate"] = 0.0
         exp = build_experiment(dc, params, allow_curatable=True)
