@@ -29,7 +29,7 @@ from .schedules import CosineSchedule
 from .study import TrainingStudy, StudySession
 
 # How a run's curriculum records are built, recorded as ``train_args["recipe"]``: "v3" draws every stream from its
-# own reserved seed block and a selected fraction of each selectable component under productive_only(). The options
+# own reserved seed block and a selected fraction of each full-length component under productive_only(). The options
 # recorded beside it (indel form and fraction, selected fraction) are the recipe's parameters.
 RECIPE = 'v3'
 
@@ -62,7 +62,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     ``indel_form`` and ``indel_fraction`` select the curriculum's polymerase-indel counts
     (``gym.streams.CurriculumStreamPolicy``): ``"weighted"``, whose weight of reads with an indel is
     ``indel_fraction`` ``(low, high)`` at progress 0 and 1, or the historical ``"uniform"`` form of the 1.0.0
-    recipe. ``selected_fraction`` of each selectable component's records are drawn under GenAIRR's
+    recipe. ``selected_fraction`` of each full-length component's records are drawn under GenAIRR's
     ``productive_only()``. The run records them in ``train_args`` with its ``recipe`` (``RECIPE``) and each
     component's selected share. When GenAIRR cannot draw productive records from one of ``dataconfigs``
     (``gym.streams.selection_supported``), the run draws no selected records, says so, and lists those references

@@ -93,22 +93,21 @@ def test_a_component_interleaves_three_selected_streams_with_one_unselected_stre
     blocks = blocks_of(policy, 17)
     assert [seed for seed, _ in calls] == [block for streams in blocks for block in streams]
     assert len({seed for seed, _ in calls}) == 16
-    assert [selected for _, selected in calls] == [True, True, True, False, *[False] * 4,
-                                                   True, True, True, False, *[False] * 4]
+    assert [selected for _, selected in calls] == [True, True, True, False, *[False] * 12]
     # record k of a component comes from its stream k % 4; the components take turns record by record
     assert [(row['seed'], row['ordinal']) for row in rows] == [
         (blocks[component][k % 4], k // 4) for k in range(12) for component in range(4)]
 
 
-def test_v_anchored_and_fragment_amplicons_stay_unselected():
+def test_only_full_length_components_are_selected_and_every_amplicon_stays_unselected():
     policy = CurriculumStreamPolicy()                              # the 1.0.0 mix
-    assert policy.selected_shares() == (.75, .75, .75, 0., .75, 0., .75)
+    assert policy.selected_shares() == (.75, .75, .75, 0., 0., 0., .75)
     assert CurriculumStreamPolicy(short_boost=2, selected_fraction=.5).selected_shares() == (
-        .5, .5, .5, 0., .5, 0., 0., .5, 0., .5)
+        .5, .5, .5, 0., 0., 0., 0., 0., 0., .5)
     components = policy.parameters_for(reference())
     streams = policy.substreams_for(reference())
     assert [name for name, _ in streams[0]] == ['selected-0', 'selected-1', 'selected-2', 'unselected-0']
-    assert [name for name, _ in streams[3]] == [name for name, _ in streams[5]] == [
+    assert [name for name, _ in streams[3]] == [name for name, _ in streams[4]] == [name for name, _ in streams[5]] == [
         'unselected-0', 'unselected-1', 'unselected-2', 'unselected-3']
     for component, substreams in zip(components, streams):
         for name, parameters in substreams:

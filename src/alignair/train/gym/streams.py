@@ -101,7 +101,7 @@ def effective_mutation_caps(dataconfigs, mutation_cap) -> dict:
 
 
 # Selection. GenAIRR simulates unselected recombination: most junctions are out of frame or carry a stop codon, so few
-# reads are productive, while real B-cell repertoires are mostly productive. A selectable component therefore draws
+# reads are productive, while real B-cell repertoires are mostly productive. A full-length component therefore draws
 # SELECTED_FRACTION of its records from its experiment under GenAIRR's productive_only(). The fraction is k/n with a
 # short period n (at most MAX_SELECTION_PERIOD): a component has n streams, each with its own seed block, and each
 # period of n of its records takes one record from each, k of them selected (0.75: three selected streams, then one
@@ -109,13 +109,14 @@ def effective_mutation_caps(dataconfigs, mutation_cap) -> dict:
 # 10 to 25 times slower to simulate (HUMAN_IGH_OGRDB), come from k streams that can be generated in parallel.
 SELECTED_FRACTION = 0.75
 MAX_SELECTION_PERIOD = 10
-# The read-length amplicons of the mix, (5' end loss, 3' end loss) over the curriculum at progress 0.6, and whether
-# their records may be selected. productive_only() keeps the J Trp/Phe landmark observed, so it suppresses a 3' end loss
-# that would remove it: selected V-anchored reads come out full length and selected fragments J-anchored (on
-# HUMAN_IGH_OGRDB, median 342 and 228 nt, against 130 and 139 unselected). Those two amplicons stay unselected.
-_AMPLICONS = (((0, 15), (150, 350), False),        # V-anchored: the 3' end is lost
-              ((150, 350), (0, 15), True),         # J-anchored: the 5' end is lost
-              ((70, 175), (70, 175), False))       # fragment: both ends are lost
+# The read-length amplicons of the mix, (5' end loss, 3' end loss) over the curriculum at progress 0.6. They all stay
+# unselected. productive_only() keeps the V Cys and J Trp/Phe landmarks observed, so it narrows any end loss that would
+# remove one (on HUMAN_IGH_OGRDB): selected V-anchored reads come out full length (median 342 nt against 130),
+# selected fragments J-anchored (228 against 139), and selected J-anchored reads lose those that miss their V anchor
+# (5th percentile 75 nt against 29). Those truncated reads, missing an anchor, are what the amplicons exist for.
+_AMPLICONS = (((0, 15), (150, 350)),               # V-anchored: the 3' end is lost
+              ((150, 350), (0, 15)),               # J-anchored: the 5' end is lost
+              ((70, 175), (70, 175)))              # fragment: both ends are lost
 
 
 def _selected_fraction(value) -> float:
@@ -131,8 +132,9 @@ class CurriculumStreamPolicy:
     """The training mix of curriculum components. ``indel_form`` is the curriculum's indel form (``Curriculum``):
     ``"weighted"`` by default, whose weight of reads with a polymerase indel is ``indel_fraction`` ``(low, high)`` at
     curriculum progress 0 and 1, giving about 85% indel-free reads over the default mix; ``"uniform"`` is the
-    historical form of the 1.0.0 recipe. ``selected_fraction`` (``SELECTED_FRACTION``) of each selectable component's
-    records are drawn under GenAIRR's ``productive_only()`` (``substreams_for``)."""
+    historical form of the 1.0.0 recipe. ``selected_fraction`` (``SELECTED_FRACTION``) of each full-length
+    component's records are drawn under GenAIRR's ``productive_only()`` (``substreams_for``); amplicon records never
+    are."""
     progresses: tuple[float, ...] = (.3, .6, .9)
     heavy_shm: float = .25
     short_boost: int = 1
@@ -164,7 +166,7 @@ class CurriculumStreamPolicy:
 
     @property
     def selection_pattern(self) -> tuple[bool, ...]:
-        """Whether each of a selectable component's streams, in interleaving order, is selected: ``selected_fraction``
+        """Whether each of a full-length component's streams, in interleaving order, is selected: ``selected_fraction``
         k/n as k selected among n streams, spread evenly and starting with a selected one."""
         share = Fraction(self.selected_fraction).limit_denominator(MAX_SELECTION_PERIOD)
         k, n = share.numerator, share.denominator
@@ -178,8 +180,8 @@ class CurriculumStreamPolicy:
                  or self.heavy_shm > 0 or self.short_boost > 1)
         if mixed:
             background = dict(curriculum.params(.6))
-            components.extend(({**background, 'end_loss_5': end_loss_5, 'end_loss_3': end_loss_3}, selectable)
-                              for _ in range(self.short_boost) for end_loss_5, end_loss_3, selectable in _AMPLICONS)
+            components.extend(({**background, 'end_loss_5': end_loss_5, 'end_loss_3': end_loss_3}, False)
+                              for _ in range(self.short_boost) for end_loss_5, end_loss_3 in _AMPLICONS)
             if self.heavy_shm > 0:
                 components.append(({**curriculum.params(.3), 'mutation_rate': self.heavy_shm}, True))
         return components
@@ -197,14 +199,14 @@ class CurriculumStreamPolicy:
         return [parameters for parameters, _ in self._capped(dataconfig, force_mixture)]
 
     def selected_shares(self, *, force_mixture=False) -> tuple[float, ...]:
-        """The share of each component's records drawn under ``productive_only()``: ``selected_fraction``, or 0 for
-        the V-anchored and fragment amplicons."""
+        """The share of each component's records drawn under ``productive_only()``: ``selected_fraction`` for the
+        full-length components (the curriculum progresses and heavy SHM), 0 for every amplicon."""
         return tuple(self.selected_fraction if selectable else 0. for _, selectable in self._components(force_mixture))
 
     def substreams_for(self, dataconfig, *, force_mixture=False) -> list[tuple[tuple[str, dict], ...]]:
         """Each component's streams in interleaving order, as ``(name, parameters)``: a ``selected-i`` stream draws
         from the component's experiment under ``productive_only()`` (``"productive_only": True``), an
-        ``unselected-i`` stream from the experiment itself. An unselectable component has as many streams, all
+        ``unselected-i`` stream from the experiment itself. An amplicon component has as many streams, all
         unselected."""
         pattern = self.selection_pattern
         streams = []

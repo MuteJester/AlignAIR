@@ -1,7 +1,7 @@
-"""A selected repertoire: three quarters of a selectable curriculum component's records come from GenAIRR's
-``productive_only()`` experiment. The V-anchored and fragment amplicons stay unselected: selection keeps the J
-landmark observed, so it would suppress their 3' end loss and their short reads with it. A reference GenAIRR cannot
-draw productive records from trains unselected, and the run records it."""
+"""A selected repertoire: three quarters of a full-length curriculum component's records come from GenAIRR's
+``productive_only()`` experiment. Every amplicon component stays unselected: selection keeps the V and J landmarks
+observed, so it would drop the truncated reads that miss an anchor, which the amplicons exist for. A reference GenAIRR
+cannot draw productive records from trains unselected, and the run records it."""
 from itertools import islice
 import os
 from statistics import median
@@ -38,13 +38,15 @@ def test_selected_records_are_productive_and_the_unselected_amplicons_keep_their
 
     records = list(islice(training_records((gd.HUMAN_IGH_OGRDB,), policy=RECIPE, seed=0, record_source=tagged),
                           COMPONENTS * 32))
-    assert len(selected) == 28 and RECIPE.selected_shares() == (.75, .75, .75, 0., .75, 0., .75)
+    assert len(selected) == 28 and RECIPE.selected_shares() == (.75, .75, .75, 0., 0., 0., .75)
     for component, share in enumerate(RECIPE.selected_shares()):
         rows = records[component::COMPONENTS]
         picked = [row for row in rows if selected[row['call']]]
         assert len(picked) == share * len(rows) and all(row['productive'] is True for row in picked)
-    for amplicon in (3, 5):                        # V-anchored and fragment reads: unselected, still short
+    for amplicon in (3, 4, 5):                     # V-anchored, J-anchored and fragment reads: unselected, still short
         assert median(len(row['sequence']) for row in records[amplicon::COMPONENTS]) < 200
+    # J-anchored reads that lost their V anchor (productivity unknown) remain: selection would have dropped them
+    assert any(row['productive'] is None for row in records[4::COMPONENTS])
 
 
 @pytest.mark.parametrize('options,fraction', [({}, 0.75), ({'selected_fraction': 0.5}, 0.5)])

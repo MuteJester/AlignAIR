@@ -153,9 +153,9 @@ def test_the_slow_selected_streams_are_written_first():
     plan = component_plan(DATACONFIGS, policy=POLICY, seed=SEED)
     order = writing_order(plan)
     assert sorted(order) == list(range(RECIPE_STREAMS))
-    count = 3 * sum(share > 0 for share in POLICY.selected_shares())  # 3 of 4 streams of the 5 selectable components
+    count = 3 * sum(share > 0 for share in POLICY.selected_shares())  # 3 of 4 streams of the 4 selected components
     selected = [position for position in order if plan[position].parameters.get('productive_only', False)]
-    assert count == 15 and len(selected) == count and order[:count] == selected
+    assert count == 12 and len(selected) == count and order[:count] == selected
     assert selected == sorted(selected) and order[count:] == sorted(order[count:])  # each group in plan order
 
 
