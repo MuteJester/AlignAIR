@@ -108,7 +108,8 @@ def _table(suites: dict, metrics: Sequence[tuple[str, str]], *, ci: bool, extra=
     return [line("Suite", columns), *(line(name, cells) for name, cells in rows)]
 
 
-def render_headline(comparison: dict, *, title: Sequence[str] = (), null_band: Mapping[str, float] | None = None) -> str:
+def render_headline(comparison: dict, *, title: Sequence[str] = (),
+                    null_band: Mapping[str, float] | None = None) -> str:
     """The headline of a comparison summary (see the module docstring), after the lines of ``title``. ``null_band``:
     each metric's null band (``noise.null_band``, Δs as fractions); None: uncalibrated, nothing marked."""
     lines = [*title, *LEGEND]

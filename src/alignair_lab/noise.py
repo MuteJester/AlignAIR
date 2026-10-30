@@ -38,7 +38,8 @@ def pooled(comparison: Mapping, metric: str) -> float | None:
 
 
 def _metrics(comparison: Mapping) -> list[str]:
-    return list(dict.fromkeys(metric for suite in comparison["suites"].values() for metric in suite.get("headline") or {}))
+    return list(dict.fromkeys(metric for suite in comparison["suites"].values()
+                              for metric in suite.get("headline") or {}))
 
 
 def pair(comparison: Mapping) -> dict:

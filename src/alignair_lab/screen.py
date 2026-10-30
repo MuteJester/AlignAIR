@@ -6,14 +6,14 @@ is a baseline screen: one replicate of the baseline, of its ``init_seed``. A scr
 must share with it (``protocol``): the recipe id, the record cache's content identity (``cache_identity``), the steps
 and the schedule. A screen of another architecture compares with the *registered baseline screen* of its protocol:
 the finished screen of lab-null-v1, of the baseline's options (``baseline_options``) and of init seed
-``BASELINE_INIT_SEED`` (0) in the screens directory (``registered_baselines``), or with the baseline screen it names
+``BASELINE_INIT_SEED`` (0) in the screens directory (``baseline_screen``), or with the baseline screen it names
 (``against_screen``). Several baseline screens of other init seeds measure the run-to-run noise (``calibrate``), whose
 null band (``null_band``) the candidate's headline weighs its Δs against. A screen compares with a milestone of the
 baseline's own run instead when told one (``against_milestone``, Tier 2): the milestone's run kept a constant rate.
 
 By default a screen cools its learning rate down (``recipe.schedule``: cosine to a hundredth of it over its steps), so
-that replicate runs end close to each other, and draws its initial weights from init seed 0 (``TrainingConfig
-.init_seed``): every screen's batches are then the same, whatever its architecture draws when its model is built.
+that replicate runs end close to each other, and draws its initial weights from init seed 0
+(``TrainingConfig.init_seed``): every screen's batches are then the same, whatever its model's build draws.
 
 ``run_screen(name, steps=..., ...)``:
 
@@ -494,7 +494,8 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
     record = {"name": name, "status": "preparing", "started": now(), "role": role, "steps": steps,
               "architecture": architecture, "model_options": model_options, "init_seed": init_seed,
               "schedule": schedule, "protocol": wanted, "suites": names, "variants": list(variants),
-              "max_cases": max_cases, "device": device, "data_workers": data_workers, "eval_batch_size": eval_batch_size,
+              "max_cases": max_cases, "device": device, "data_workers": data_workers,
+              "eval_batch_size": eval_batch_size,
               "recipe": {"id": RECIPE, "dataconfigs": list(DATACONFIGS), "batch_size": BATCH_SIZE, "lr": config.lr,
                          "seed": SEED},
               "cache": {"path": source.path, "identity": wanted["cache"], "steps": manifest["steps"],

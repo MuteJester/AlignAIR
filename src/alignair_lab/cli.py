@@ -16,10 +16,10 @@ any other compares with the registered baseline screen of its protocol (or the o
 with the baseline's milestone (``--against-milestone``, Tier 2; its directory defaults to the conv-v1 baseline's).
 ``calibrate`` trains the baseline screens of several init seeds (reusing those of the protocol already finished) and
 writes the null band of their protocol, which the headlines of its screens weigh their Δs against
-(``calibrate.run_calibration``). ``cache`` writes the recipe's record cache (``records.write_record_cache``). A ``--model-option`` value is read as
-JSON when it parses (``64``, ``true``,
-``[3, 5]``), else as a string. Run under the frozen GenAIRR the cache was written with (``PYTHONPATH=FROZEN:src``).
-A refused request or a failed run prints ``error: ...`` (and its hint) and returns 2.
+(``calibrate.run_calibration``). ``cache`` writes the recipe's record cache (``records.write_record_cache``). A
+``--model-option`` value is read as JSON when it parses (``64``, ``true``, ``[3, 5]``), else as a string. Run under
+the frozen GenAIRR the cache was written with (``PYTHONPATH=FROZEN:src``). A refused request or a failed run prints
+``error: ...`` (and its hint) and returns 2.
 """
 from __future__ import annotations
 

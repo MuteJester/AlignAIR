@@ -1,6 +1,6 @@
-"""``python -m alignair_lab calibrate``: baseline screens of several init seeds, the registered one reused and the others
-trained two at once, compared pair by pair into the null band of their protocol, which a candidate's headline then
-weighs its Δs against. On the rig (``rig``)."""
+"""``python -m alignair_lab calibrate``: baseline screens of several init seeds, the registered one reused and the
+others trained two at once, compared pair by pair into the null band of their protocol, which a candidate's headline
+then weighs its Δs against. On the rig (``rig``)."""
 import datetime
 import json
 import shutil

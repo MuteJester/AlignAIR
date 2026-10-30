@@ -1,4 +1,5 @@
-"""Calibration: the run-to-run training noise of a screen protocol, measured with baseline screens of several init seeds.
+"""Calibration: the run-to-run training noise of a screen protocol, measured with baseline screens of several init
+seeds.
 
 A candidate's Δ against the registered baseline screen holds training noise beside the candidate's effect. Baseline
 screens of other init seeds, trained on the same records, differ by that noise alone, so their pairwise Δs bound it:
@@ -35,6 +36,7 @@ from collections.abc import Callable, Mapping, Sequence
 from itertools import combinations
 from pathlib import Path
 
+from alignair.errors import ConfigurationError
 from alignair_lab.headline import HEADLINE
 from alignair_lab.noise import null_band, pair
 from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED, schedule as learning_schedule, training_config
@@ -85,7 +87,8 @@ def _seeds(init_seeds: Sequence[int]) -> list[int]:
 
 def _command(name: str, seed: int, *, steps: int, schedule: str, model_options: Mapping, device: str,
              data_workers: int, cache: str, out_root: Path) -> list[str]:
-    options = [part for key, value in model_options.items() for part in ("--model-option", f"{key}={json.dumps(value)}")]
+    options = [part for key, value in model_options.items()
+               for part in ("--model-option", f"{key}={json.dumps(value)}")]
     return [sys.executable, "-m", "alignair_lab", "screen", "--name", name, "--steps", str(steps), "--architecture",
             NULL_ARCHITECTURE, "--init-seed", str(seed), "--schedule", schedule, *options, "--device", device,
             "--data-workers", str(data_workers), "--cache", cache, "--out-root", str(out_root)]
@@ -168,8 +171,10 @@ def run_calibration(*, steps: int = DEFAULT_STEPS, init_seeds: Sequence[int] = D
         done = [(found, record) for found, record in baseline_screens(out_root, wanted, model_options, seed)
                 if record.get("status") == "done"]
         if len(done) > 1:
-            raise ValueError(f"{len(done)} baseline screens of init seed {seed} and this protocol in {out_root}: "
-                             f"{', '.join(found.name for found, _ in done)}; keep one")
+            raise ConfigurationError(f"{len(done)} baseline screens of init seed {seed} and this protocol in "
+                                     f"{out_root}: {', '.join(found.name for found, _ in done)}",
+                                     context={"field": "init_seeds", "path": str(out_root)},
+                                     hint="Keep one baseline screen of each init seed: move the others away.")
         if done:
             screens[str(seed)] = {"name": done[0][0].name, "reused": True}
             continue
