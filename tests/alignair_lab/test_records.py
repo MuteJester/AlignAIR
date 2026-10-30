@@ -145,9 +145,10 @@ def test_exhaustion_in_a_data_worker_reaches_the_training_process(cache):
     assert caught.value.context['stage'] == 'record_cache'
 
 
-@pytest.mark.parametrize('seed,problem', [(100, 'no component of seed 100'), (1, 'other parameters')])
-def test_another_seed_is_refused(cache, seed, problem):
-    with pytest.raises(ConfigurationError, match=problem):
+@pytest.mark.parametrize('seed', [100, 1])
+def test_another_seed_is_refused(cache, seed):
+    first = component_plan(DATACONFIGS, policy=POLICY, seed=seed)[0].seed
+    with pytest.raises(ConfigurationError, match=f'no component of seed {first}'):
         live(1, seed=seed, record_source=CachedRecordSource(cache))
 
 

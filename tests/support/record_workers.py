@@ -1,4 +1,8 @@
-"""Spawn-safe record providers for worker-process tests: a spawned worker imports them by module name."""
+"""Spawn-safe record providers for worker-process tests: a spawned worker imports them by module name.
+
+A component is known by its seed: a test names the component a provider singles out by its planned seed
+(``gym.workers.component_plan``)."""
+from dataclasses import dataclass
 import os
 import threading
 
@@ -25,27 +29,40 @@ def finite(dataconfig, parameters, seed):
         yield {'seed': seed, 'ordinal': ordinal}
 
 
-def failing(dataconfig, parameters, seed):
-    """Component seed 3 fails after 70 records, inside its component context like the GenAIRR provider."""
-    for ordinal in range(70 if seed == 3 else 10**9):
-        yield {'seed': seed, 'ordinal': ordinal}
-    with error_context(stage='curriculum_component', seed=seed):
-        raise TrainingDataError('simulated provider failure', context={'ordinal': 70})
+@dataclass(frozen=True)
+class Failing:
+    """The component of seed ``seed`` fails after 70 records, inside its component context like the GenAIRR provider."""
+    seed: int
+
+    def __call__(self, dataconfig, parameters, seed):
+        for ordinal in range(70 if seed == self.seed else 10**9):
+            yield {'seed': seed, 'ordinal': ordinal}
+        with error_context(stage='curriculum_component', seed=seed):
+            raise TrainingDataError('simulated provider failure', context={'ordinal': 70})
 
 
-def failing_plainly(dataconfig, parameters, seed):
-    """A third-party failure: a built-in exception that carries no AlignAIR context."""
-    if seed == 1:
-        raise ValueError(f'unsupported parameters for seed {seed}')
-    yield from counted(dataconfig, parameters, seed)
+@dataclass(frozen=True)
+class FailingPlainly:
+    """A third-party failure of the component of seed ``seed``: a built-in exception that carries no AlignAIR context."""
+    seed: int
+
+    def __call__(self, dataconfig, parameters, seed):
+        if seed == self.seed:
+            raise ValueError(f'unsupported parameters for seed {seed}')
+        yield from counted(dataconfig, parameters, seed)
 
 
-def crashing(dataconfig, parameters, seed):
-    """The process dies without raising, as after a native crash or an out-of-memory kill."""
-    yield {'seed': seed, 'ordinal': 0}
-    if seed == 2:
-        os._exit(7)
-    yield from counted(dataconfig, parameters, seed)
+@dataclass(frozen=True)
+class Crashing:
+    """The process serving the component of seed ``seed`` dies without raising, as after a native crash or an
+    out-of-memory kill."""
+    seed: int
+
+    def __call__(self, dataconfig, parameters, seed):
+        yield {'seed': seed, 'ordinal': 0}
+        if seed == self.seed:
+            os._exit(7)
+        yield from counted(dataconfig, parameters, seed)
 
 
 def genairr_origin(dataconfig, parameters, seed):

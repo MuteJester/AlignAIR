@@ -7,6 +7,7 @@ import pytest
 from alignair import TrainingConfig, run_training
 from alignair.errors import ConfigurationError
 from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records, training_records
+from alignair.train.gym.workers import component_plan
 from tests.support.record_workers import shifted
 
 pytestmark = pytest.mark.integration
@@ -44,9 +45,10 @@ def test_validation_records_come_from_the_record_source_too(tmp_path):
 
     import GenAIRR.data as gd
     run_training(request(val_every=2), out_path=str(tmp_path / 'model.alignair'), record_source=watched)
-    components = len(CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB))
-    assert sorted(seeds) == sorted([*range(SEED, SEED + components),
-                                    *range(SEED + 424242, SEED + 424242 + components)])
+    training, validation = (component_plan((gd.HUMAN_IGH_OGRDB,), policy=CurriculumStreamPolicy(), seed=SEED,
+                                           purpose=purpose) for purpose in ('training', 'validation'))
+    assert sorted(seeds) == sorted(component.seed for component in (*training, *validation))
+    assert not {component.seed for component in training} & {component.seed for component in validation}
 
 
 @pytest.mark.parametrize('workers,provider,problem', [

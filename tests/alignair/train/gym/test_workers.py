@@ -11,7 +11,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
-from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
+from alignair.train.gym.streams import CurriculumStreamPolicy, seed_block, training_records
 from alignair.train.gym.workers import RecordWorkers, WorkerGroup, component_plan, parallel_records
 from tests.support import record_workers
 
@@ -39,7 +39,11 @@ def stopped(processes):
 def test_component_plan_lists_every_provider_call_in_order():
     panels = (reference(), reference('TRA', 'TCR_ALPHA'))
     plan = component_plan(panels, policy=CurriculumStreamPolicy((.3,), 0.), seed=17)
-    assert [component.seed for component in plan] == [17, 18, 19, 20, 1030, 1031, 1032, 1033]
+    assert [component.seed for component in plan] == [seed_block(17, 'training', 0, panel, component)
+                                                      for panel in range(2) for component in range(4)]
+    resumed = component_plan(panels, policy=CurriculumStreamPolicy((.3,), 0.), seed=17, start_step=40)
+    assert [component.seed for component in resumed] == [seed_block(17, 'training', 40, panel, component)
+                                                         for panel in range(2) for component in range(4)]
     assert [component.reference.name for component in plan] == ['IGH'] * 4 + ['TRA'] * 4
     assert plan[4].parameters['mutation_rate'] == 0.
     assert len(component_plan((reference(),), policy=RECIPE, seed=0)) == 7
@@ -73,30 +77,31 @@ def test_worker_failure_reaches_the_consumer_at_the_serial_position_with_type_an
             for record in records:
                 seen.append(record)
         return seen, caught.value
-    serial, expected = consume(training_records(panels, policy=RECIPE, seed=0, record_source=record_workers.failing))
-    with parallel_records(panels, policy=RECIPE, seed=0, workers=2, provider=record_workers.failing,
-                          chunk_size=16) as records:
+    failing = record_workers.Failing(component_plan(panels, policy=RECIPE, seed=0)[3].seed)
+    serial, expected = consume(training_records(panels, policy=RECIPE, seed=0, record_source=failing))
+    with parallel_records(panels, policy=RECIPE, seed=0, workers=2, provider=failing, chunk_size=16) as records:
         seen, error = consume(records)
     assert seen == serial and len(seen) > 7 * 70 // 2
     assert type(error) is type(expected) and str(error) == str(expected) == 'simulated provider failure'
-    assert error.context['stage'] == 'curriculum_component' and error.context['seed'] == 3
+    assert error.context['stage'] == 'curriculum_component' and error.context['seed'] == failing.seed
     assert error.context['ordinal'] == 70
     assert 'simulated provider failure' in str(error.__cause__)          # the worker's traceback
-    assert error.__cause__.context == {'stage': 'curriculum_component', 'seed': 3}
+    assert error.__cause__.context == {'stage': 'curriculum_component', 'seed': failing.seed}
 
 
 def test_a_third_party_exception_keeps_its_type_and_message():
-    with parallel_records((reference(),), policy=RECIPE, seed=0, workers=2,
-                          provider=record_workers.failing_plainly) as records:
-        with pytest.raises(ValueError, match='unsupported parameters for seed 1') as caught:
+    failing = record_workers.FailingPlainly(component_plan((reference(),), policy=RECIPE, seed=0)[1].seed)
+    with parallel_records((reference(),), policy=RECIPE, seed=0, workers=2, provider=failing) as records:
+        with pytest.raises(ValueError, match=f'unsupported parameters for seed {failing.seed}') as caught:
             list(islice(records, 50))
     assert caught.type is ValueError
-    assert caught.value.__cause__.context == {'stage': 'curriculum_component', 'seed': 1}
+    assert caught.value.__cause__.context == {'stage': 'curriculum_component', 'seed': failing.seed}
 
 
 def test_a_crashed_worker_is_reported_instead_of_waited_for():
     before = children()
-    records = parallel_records((reference(),), policy=RECIPE, seed=0, workers=7, provider=record_workers.crashing)
+    crashing = record_workers.Crashing(component_plan((reference(),), policy=RECIPE, seed=0)[2].seed)
+    records = parallel_records((reference(),), policy=RECIPE, seed=0, workers=7, provider=crashing)
     with pytest.raises(TrainingError, match='exited unexpectedly') as caught:
         list(islice(records, 500))
     assert caught.value.context['exitcode'] == 7 and caught.value.context['stage'] == 'training_record_worker'

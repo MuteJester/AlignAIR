@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from itertools import chain
+import json
 import math
 from numbers import Real
 from operator import index
@@ -20,6 +22,28 @@ from .experiment import build_experiment
 class RecordSource(Protocol):
     """Produce fresh record mappings for one reference, parameter set, and component seed."""
     def __call__(self, dataconfig, parameters: Mapping, seed: int) -> Iterable[Mapping]: ...
+
+
+# GenAIRR draws record k of the stream of seed s from seed s + k, so streams whose seeds lie close together repeat each
+# other's draws a few records apart (and the same seed under other parameters repeats the V/D/J draw). Every record
+# stream of a training run therefore draws from a reserved block of SEED_BLOCK_RECORDS consecutive seeds. The block is
+# placed by a SHA-256 of what the stream is for (``seed_block``), in [2**62, 2**63): far above the assay's suite seeds
+# ([0, 2**31)) and below GenAIRR's limit (2**63 + 1 works, 2**64 - 1 overflows). Blocks are aligned, so two blocks
+# either coincide or are disjoint; each purpose has its own quarter of the range, and the streams of one call of
+# ``training_records`` are checked to draw distinct blocks.
+STREAM_PURPOSES = ('training', 'validation', 'probe')
+SEED_BLOCK_RECORDS = 2 ** 32
+_FIRST_BLOCK_SEED = 2 ** 62
+_BLOCKS_PER_PURPOSE = 2 ** 28              # 4 quarters of 2**28 blocks of 2**32 seeds: [2**62, 2**63)
+
+
+def seed_block(seed: int, purpose: str, start_step: int, panel: int, component: int) -> int:
+    """The first GenAIRR seed of the reserved block of one record stream: run ``seed``, stream ``purpose``
+    (``STREAM_PURPOSES``), the step ``start_step`` a training stream starts at (a resumed run's stream), and the
+    stream's reference ``panel`` and curriculum ``component`` positions."""
+    key = json.dumps(['alignair.training_records', seed, purpose, start_step, panel, component]).encode()
+    position = int.from_bytes(hashlib.sha256(key).digest()[:8], 'big') % _BLOCKS_PER_PURPOSE
+    return _FIRST_BLOCK_SEED + (STREAM_PURPOSES.index(purpose) * _BLOCKS_PER_PURPOSE + position) * SEED_BLOCK_RECORDS
 
 
 def _integer(value, field, minimum):
@@ -168,16 +192,22 @@ def _resolve_reference(value):
 
 
 def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
-                     translated_only: bool = False, record_source: RecordSource | None = None) -> Iterator[Mapping]:
+                     translated_only: bool = False, record_source: RecordSource | None = None,
+                     purpose: str = 'training', start_step: int = 0) -> Iterator[Mapping]:
     """Build lazy, deterministic curriculum records; reference panels and components use complete rounds.
 
-    Component i uses seed+i. Reference panel j uses seed+1013*j and gets the class ID of its
-    distinct normalized locus. Multiple panels always use the amplicon mixture. Translation
-    filtering checks exported length/frame only; sample acceptance remains the builder's policy.
+    Component i of reference panel j draws the seed block ``seed_block(seed, purpose, start_step, j, i)``: the
+    ``purpose`` is ``"training"``, ``"validation"`` or ``"probe"`` (the X-ray probe), and a training stream that
+    starts at ``start_step`` (a resumed run) draws blocks of its own. Panel j gets the class ID of its distinct
+    normalized locus. Multiple panels always use the amplicon mixture. Translation filtering checks exported
+    length/frame only; sample acceptance remains the builder's policy.
     """
     if not isinstance(policy, CurriculumStreamPolicy):
         raise ConfigurationError('supply a CurriculumStreamPolicy')
     seed = _integer(seed, 'seed', 0)
+    start_step = _integer(start_step, 'start_step', 0)
+    if not isinstance(purpose, str) or purpose not in STREAM_PURPOSES:
+        raise ConfigurationError(f'purpose must be one of {STREAM_PURPOSES}', context={'field': 'purpose'})
     if type(translated_only) is not bool:
         raise ConfigurationError('translated_only must be a boolean', context={'field': 'translated_only'})
     if record_source is not None and not callable(record_source):
@@ -195,17 +225,23 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
         resolved = tuple(_resolve_reference(value) for value in references)
         loci = list(dict.fromkeys(_locus_of(reference.metadata.chain_type) for reference in resolved))
         provider = stream_records if record_source is None else record_source
+        plans = [[(parameters, seed_block(seed, purpose, start_step, position, component))
+                  for component, parameters in enumerate(policy.parameters_for(reference,
+                                                                               force_mixture=len(resolved) > 1))]
+                 for position, reference in enumerate(resolved)]
+        blocks = [block for plan in plans for _, block in plan]
+        if len(set(blocks)) != len(blocks):
+            raise ConfigurationError('two record streams of this run drew the same seed block',
+                                     context={'purpose': purpose, 'start_step': start_step})
 
-        def panel_records(reference, position):
-            panel_seed = seed + 1013 * position
-            parameters = policy.parameters_for(reference, force_mixture=len(resolved) > 1)
+        def panel_records(reference, plan):
             # zip preserves complete rounds, including the historical finite-source tail policy.
-            components = [iter(provider(reference, params, panel_seed + i)) for i, params in enumerate(parameters)]
+            components = [iter(provider(reference, params, block)) for params, block in plan]
             locus_class = loci.index(_locus_of(reference.metadata.chain_type))
             for record in chain.from_iterable(zip(*components)):
                 yield {**record, 'chain_type': locus_class} if len(resolved) > 1 else record
 
-        panels = [panel_records(reference, i) for i, reference in enumerate(resolved)]
+        panels = [panel_records(reference, plan) for reference, plan in zip(resolved, plans)]
         yield from chain.from_iterable(zip(*panels))
 
     return _scoped_records(generate(), seed=seed, stage='curriculum_source', translated_only=translated_only)

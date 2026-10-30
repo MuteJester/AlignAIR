@@ -134,14 +134,14 @@ def test_resume_reseeds_corpus_and_crop_rng_from_seed_and_step(tmp_path, monkeyp
     original = trainer.training_records
     seeds, rows = [], []
     def source(*args, **kw):
-        seeds.append(kw['seed'])
+        seeds.append((kw['seed'], kw['start_step'], kw['purpose']))
         return original(*args, **kw)
     monkeypatch.setattr(trainer, 'training_records', source)
     config = request(steps=3, resume_path=first.model_path)
     for name in ('one','two'):
         run_training(config, output_dir=tmp_path/name,
                      on_iteration=lambda item: rows.append([row['tokens'].copy() for row in item.records]))
-    assert seeds == [3,3]
+    assert seeds == [(1, 2, 'training'), (1, 2, 'training')]
     assert all(np.array_equal(first,second) for first,second in zip(rows[0],rows[1]))
 
 

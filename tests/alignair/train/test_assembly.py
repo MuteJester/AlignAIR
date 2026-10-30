@@ -13,6 +13,7 @@ from alignair.data.training import TrainingDataSetup
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
 from alignair.train.assembly import AssembledBatches, LocalAssembly, TrainingStream, parallel_training_data
 from alignair.train.gym.streams import CurriculumStreamPolicy
+from alignair.train.gym.workers import component_plan
 from tests.support import record_workers
 from tests.support.training_streams import RecordingEngine, assert_same_runs, run, serial_records
 
@@ -36,7 +37,7 @@ def synthetic(adapter=record_workers.ordinal_batch, start=0):
     from types import SimpleNamespace
     data = TrainingDataSetup(adapter, adapter, False)
     panel = SimpleNamespace(name='IGH', metadata=SimpleNamespace(chain_type='BCR_HEAVY'))
-    return TrainingStream((panel,), RECIPE, start, data, augment=True, prepare_seed=0, start_step=start)
+    return TrainingStream((panel,), RECIPE, 0, data, augment=True, prepare_seed=0, start_step=start)
 
 
 def children():
@@ -47,7 +48,7 @@ def children():
 @pytest.mark.parametrize('in_worker', [True, False])
 def test_parallel_batches_equal_the_serial_trainer_batches(igh, start, in_worker):
     dataconfig, data = igh
-    stream = TrainingStream((dataconfig,), RECIPE, start, data, augment=True, prepare_seed=0, start_step=start)
+    stream = TrainingStream((dataconfig,), RECIPE, 0, data, augment=True, prepare_seed=0, start_step=start)
     serial = run(serial_records(stream), data.batch_adapter, start_step=start, steps=4, batch_size=16)
     with parallel_training_data(stream, batch_size=16, workers=3, device='cpu', assemble_in_worker=in_worker) as batches:
         parallel = run(batches.records, batches.batch_adapter, start_step=start, steps=4, batch_size=16)
@@ -57,15 +58,16 @@ def test_parallel_batches_equal_the_serial_trainer_batches(igh, start, in_worker
 @pytest.mark.parametrize('in_worker', [True, False])
 def test_a_record_failure_stops_training_at_the_serial_step_with_its_type_and_context(in_worker):
     stream = synthetic()
-    serial = run(serial_records_with(stream, record_workers.failing), stream.data.batch_adapter,
+    failing = record_workers.Failing(component_plan(stream.dataconfigs, policy=stream.policy, seed=stream.seed)[3].seed)
+    serial = run(serial_records_with(stream, failing), stream.data.batch_adapter,
                  start_step=0, steps=200, batch_size=16)
     with parallel_training_data(stream, batch_size=16, workers=2, device='cpu', assemble_in_worker=in_worker,
-                                provider=record_workers.failing) as batches:
+                                provider=failing) as batches:
         parallel = run(batches.records, batches.batch_adapter, start_step=0, steps=200, batch_size=16)
     assert_same_runs(serial, parallel, steps=200)
     error = parallel[2]
     assert isinstance(error, TrainingDataError) and len(parallel[0]) == 7 * 70 // 16
-    assert error.context['stage'] == 'curriculum_component' and error.context['seed'] == 3
+    assert error.context['stage'] == 'curriculum_component' and error.context['seed'] == failing.seed
     assert error.context['step'] == len(parallel[0]) + 1
 
 
@@ -83,7 +85,8 @@ def test_a_batch_failure_carries_the_serial_stage_and_step(in_worker):
 
 def serial_records_with(stream, provider):
     from alignair.train.gym.streams import training_records
-    records = training_records(stream.dataconfigs, policy=stream.policy, seed=stream.seed, record_source=provider)
+    records = training_records(stream.dataconfigs, policy=stream.policy, seed=stream.seed,
+                               start_step=stream.start_step, record_source=provider)
     return stream.data.prepare_records(records, augment=stream.augment, seed=stream.prepare_seed,
                                        start_step=stream.start_step)
 

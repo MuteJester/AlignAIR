@@ -103,11 +103,12 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                                            mode='amplicon' if cfg.input_space == 'protein' else 'auto',
                                            indel_fraction=indel_fraction, indel_form=indel_form)
 
-    def _build_stream(seed_value, *, augment=False, start_step=0):
-        records = training_records(dataconfigs, policy=source_policy, seed=seed_value,
-                                   translated_only=data.translated_only, record_source=record_source)
-        return data.prepare_records(records, augment=augment, seed=seed if augment else seed_value,
-                                    start_step=start_step)
+    def _build_stream(purpose, *, augment=False, start_step=0):
+        # every stream draws its own seed blocks: training (a resume from (seed, step)), validation and the probe
+        records = training_records(dataconfigs, policy=source_policy, seed=seed, purpose=purpose,
+                                   start_step=start_step, translated_only=data.translated_only,
+                                   record_source=record_source)
+        return data.prepare_records(records, augment=augment, seed=seed, start_step=start_step)
 
     engine = build_training_engine(model, tasks=tasks, weights=logvars, device=device,
                                    lr=lr, grad_clip=grad_clip,
@@ -174,7 +175,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     xray = probe_input = None
     if monitor_log:
         from ..xray import ModelXRay
-        ev = list(itertools.islice(_build_stream(seed + 99991), batch_size))
+        ev = list(itertools.islice(_build_stream('probe'), batch_size))
         probe_input, probe_targets = data.validation_adapter(ev)
 
         def task_eval(m, inp, _tg=probe_targets):
@@ -190,7 +191,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     # fixed-seed, immutable validation batches for best-checkpoint selection
     val_set = []
     if val_every and val_every > 0:
-        vstream = _build_stream(seed + 424242)         # a held-out seed, disjoint from training
+        vstream = _build_stream('validation')          # held-out seed blocks, disjoint from training
         for _ in range(max(1, int(val_batches))):
             vr = list(itertools.islice(vstream, batch_size))
             if len(vr) < batch_size:
@@ -206,14 +207,14 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         from .assembly import TrainingStream, parallel_training_data
         from .gym.streams import stream_records
         workers = parallel_training_data(
-            TrainingStream(tuple(dataconfigs), source_policy, seed + start,
+            TrainingStream(tuple(dataconfigs), source_policy, seed,
                            prepare_training_data(setup, device='cpu', augmentation=augmentation),
                            augment=True, prepare_seed=seed, start_step=start),
             batch_size=batch_size, workers=data_workers, device=device,
             provider=stream_records if record_source is None else record_source)
         stream, batch_adapter = workers.records, workers.batch_adapter
     else:
-        stream = _build_stream(seed + start, augment=True, start_step=start)
+        stream = _build_stream('training', augment=True, start_step=start)
         batch_adapter = data.batch_adapter
     try:
         for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,

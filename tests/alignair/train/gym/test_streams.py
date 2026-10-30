@@ -8,8 +8,8 @@ import pytest
 from alignair.errors import ConfigurationError, TrainingDataError, current_error_context
 from alignair.train.gym import streams
 from alignair.train.gym.curriculum.base import INDEL_FRACTION
-from alignair.train.gym.streams import (CurriculumStreamPolicy, dataconfig_name, effective_mutation_caps,
-                                       training_records, stream_records)
+from alignair.train.gym.streams import (SEED_BLOCK_RECORDS, CurriculumStreamPolicy, dataconfig_name,
+                                       effective_mutation_caps, seed_block, training_records, stream_records)
 
 pytestmark = pytest.mark.component
 
@@ -46,7 +46,17 @@ def test_default_mix_repeats_profiles_independently_and_caps_each_reference():
     assert max(row['mutation_rate'] for row in policy.parameters_for(reference())) == .1
 
 
-def test_components_use_consecutive_seeds_and_round_robin_order_without_eager_reads():
+def seeds_of(references=(reference(),), policy=CurriculumStreamPolicy((.3,),0.,mode='amplicon'), **options):
+    """The GenAIRR seed of every provider call of one stream, in call order."""
+    calls = []
+    def observed(dc, params, seed):
+        calls.append(seed)
+        return provider(dc, params, seed)
+    next(training_records(references, policy=policy, record_source=observed, **options))
+    return calls
+
+
+def test_components_use_their_own_seed_blocks_and_round_robin_order_without_eager_reads():
     calls = []
     def observed(dc, params, seed):
         calls.append(seed)
@@ -55,29 +65,69 @@ def test_components_use_consecutive_seeds_and_round_robin_order_without_eager_re
                                seed=17,record_source=observed)
     assert calls == []
     first = next(records)
-    assert calls == [17,18,19,20] and first['seed'] == 17
+    blocks = [seed_block(17, 'training', 0, 0, component) for component in range(4)]
+    assert calls == blocks and first['seed'] == blocks[0]
     rest = list(records)
     assert [(row['seed'],row['ordinal']) for row in [first,*rest]] == [
-        (seed,ordinal) for ordinal in range(3) for seed in (17,18,19,20)]
+        (seed,ordinal) for ordinal in range(3) for seed in blocks]
+
+
+def test_a_streams_seed_block_is_a_reserved_sha256_derived_block_of_2_32_records():
+    import hashlib, json
+    key = json.dumps(['alignair.training_records', 0, 'training', 0, 0, 0]).encode()
+    index = int.from_bytes(hashlib.sha256(key).digest()[:8], 'big') % 2**28
+    assert SEED_BLOCK_RECORDS == 2**32
+    assert seed_block(0, 'training', 0, 0, 0) == 2**62 + index * 2**32
+    for purpose in ('training', 'validation', 'probe'):
+        block = seed_block(5, purpose, 3, 1, 2)
+        assert 2**62 <= block and block + SEED_BLOCK_RECORDS <= 2**63 and block % SEED_BLOCK_RECORDS == 0
+        assert block == seed_block(5, purpose, 3, 1, 2)
+
+
+def test_streams_of_a_run_never_share_a_block_or_reach_the_assays_seeds():
+    policy = CurriculumStreamPolicy((.3, .6, .9), .25, 1)       # the 1.0.0 mix: 7 components per panel
+    panels = (reference(), reference('TRA', 'TCR_ALPHA'))
+    for seed in range(20):
+        training = seeds_of(panels, policy, seed=seed)
+        resumed = seeds_of(panels, policy, seed=seed, start_step=1000)
+        validation = seeds_of(panels, policy, seed=seed, purpose='validation')
+        probe = seeds_of(panels, policy, seed=seed, purpose='probe')
+        blocks = [*training, *resumed, *validation, *probe]
+        assert len(training) == 14 and len(set(blocks)) == len(blocks)
+        assert all(block >= 2**62 and block % SEED_BLOCK_RECORDS == 0 for block in blocks)   # far above [0, 2**31)
+    assert not set(seeds_of(seed=0)) & set(seeds_of(seed=1))
+    regions = {purpose: {block >> 60 for seed in range(50) for block in seeds_of(seed=seed, purpose=purpose)}
+               for purpose in ('training', 'validation', 'probe')}
+    assert regions == {'training': {4}, 'validation': {5}, 'probe': {6}}   # each purpose its own range of blocks
+
+
+def test_two_streams_drawing_the_same_block_are_refused(monkeypatch):
+    monkeypatch.setattr(streams, 'seed_block', lambda *key: 2**62)
+    with pytest.raises(ConfigurationError, match='same seed block'):
+        next(training_records((reference(),), policy=CurriculumStreamPolicy((.3,),0.,mode='amplicon'),
+                              record_source=provider))
 
 
 def test_finite_components_emit_complete_rounds_with_the_historical_partial_round_consumption():
     pulled = []
+    short = seed_block(0, 'training', 0, 0, 1)
     def finite(dc,params,seed):
-        for ordinal in range(1 if seed==1 else 2):
+        for ordinal in range(1 if seed==short else 2):
             pulled.append((seed,ordinal))
             yield {'seed':seed,'ordinal':ordinal}
     rows=list(training_records((reference(),),policy=CurriculumStreamPolicy((.3,),0.,mode='amplicon'),
                                record_source=finite))
+    blocks = [seed_block(0, 'training', 0, 0, component) for component in range(4)]
     assert len(rows)==4
-    assert pulled==[(0,0),(1,0),(2,0),(3,0),(0,1)]
+    assert pulled==[(blocks[0],0),(blocks[1],0),(blocks[2],0),(blocks[3],0),(blocks[0],1)]
 
 
 def test_multiple_panels_use_independent_seed_blocks_and_distinct_locus_class_ids():
     rows=list(islice(training_records((reference(),reference('TRA','TCR_ALPHA'),reference('IGH2')),
         policy=CurriculumStreamPolicy((.3,),0.),seed=17,record_source=provider),12))
     assert [row['chain_type'] for row in rows]==[0,1,0]*4
-    assert [row['seed'] for row in rows]==[17,1030,2043,18,1031,2044,19,1032,2045,20,1033,2046]
+    assert [row['seed'] for row in rows]==[seed_block(17, 'training', 0, panel, component)
+                                           for component in range(4) for panel in range(3)]
     assert {row['rate'] for row in rows if row['panel']=='TRA'}=={0.}
     assert all(row['rate']>0 for row in rows if row['panel']!='TRA')
 
@@ -214,6 +264,8 @@ def test_every_component_draws_indels_from_the_policys_indel_fraction_ramp():
     ((),{}),('KNOWN',{}),(None,{}),((reference(),),{'policy':None}),
     ((reference(),),{'seed':-1}),((reference(),),{'seed':True}),
     ((reference(),),{'translated_only':1}),((reference(),),{'record_source':1}),
+    ((reference(),),{'purpose':'testing'}),((reference(),),{'purpose':None}),
+    ((reference(),),{'start_step':-1}),((reference(),),{'start_step':1.5}),
 ])
 def test_invalid_source_request_is_rejected_eagerly(references,options):
     with pytest.raises(ConfigurationError):training_records(references,**options)

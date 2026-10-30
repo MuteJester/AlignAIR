@@ -38,7 +38,8 @@ QUEUE_BATCHES = 4        # assembled batches in flight (about 1 MB each at batch
 
 @dataclass(frozen=True)
 class TrainingStream:
-    """The trainer's serial training stream as data, so that a worker process can rebuild it exactly."""
+    """The trainer's serial training stream as data, so that a worker process can rebuild it exactly: the run
+    ``seed``'s training records from ``start_step`` on (a resumed run draws its own seed blocks)."""
     dataconfigs: tuple
     policy: CurriculumStreamPolicy
     seed: int
@@ -49,7 +50,7 @@ class TrainingStream:
 
     def records(self, record_source: RecordSource | None = None):
         """Curriculum records prepared for the model, built as ``train`` builds its training stream."""
-        records = training_records(self.dataconfigs, policy=self.policy, seed=self.seed,
+        records = training_records(self.dataconfigs, policy=self.policy, seed=self.seed, start_step=self.start_step,
                                    translated_only=self.data.translated_only, record_source=record_source)
         return self.data.prepare_records(records, augment=self.augment, seed=self.prepare_seed,
                                          start_step=self.start_step)
@@ -139,7 +140,7 @@ class AssembledBatches:
 
     def _start(self):
         stream = self._stream
-        plan = component_plan(stream.dataconfigs, policy=stream.policy, seed=stream.seed)
+        plan = component_plan(stream.dataconfigs, policy=stream.policy, seed=stream.seed, start_step=stream.start_step)
         self._group = WorkerGroup()
         channels = start_record_workers(self._group, plan, **self._options)
         self._batches = self._group.channel(self._queue_batches)
@@ -199,7 +200,8 @@ class LocalAssembly:
         if not isinstance(stream, TrainingStream):
             raise ConfigurationError('batch assembly requires a TrainingStream', context={'field': 'stream'})
         self._workers = RecordWorkers(stream.dataconfigs, policy=stream.policy, seed=stream.seed, workers=workers,
-                                      provider=provider, chunk_size=chunk_size, queue_chunks=queue_chunks)
+                                      provider=provider, chunk_size=chunk_size, queue_chunks=queue_chunks,
+                                      start_step=stream.start_step)
         self._adapter, self._device = stream.data.batch_adapter, _device(device)
         self.records = stream.records(record_source=self._workers)
 

@@ -75,7 +75,8 @@ class Component:
     seed: int
 
 
-def component_plan(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int) -> tuple[Component, ...]:
+def component_plan(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, start_step: int = 0,
+                   purpose: str = 'training') -> tuple[Component, ...]:
     """The provider calls ``training_records`` makes, in order, found by asking it for one record."""
     calls = []
 
@@ -83,7 +84,8 @@ def component_plan(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int) ->
         calls.append(Component(reference, dict(parameters), component_seed))
         return repeat({})
 
-    next(training_records(dataconfigs, policy=policy, seed=seed, record_source=record))
+    next(training_records(dataconfigs, policy=policy, seed=seed, start_step=start_step, purpose=purpose,
+                          record_source=record))
     return tuple(calls)
 
 
@@ -429,12 +431,12 @@ class ComponentChannels:
 
 class RecordWorkers:
     """A record source for ``training_records`` that plans its components and starts their workers at its
-    first call. Pass the same references, policy and seed to both; ``close`` stops the workers."""
+    first call. Pass the same references, policy, seed and start step to both; ``close`` stops the workers."""
 
     def __init__(self, dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, workers: int,
                  provider: RecordSource = stream_records, chunk_size: int = CHUNK_SIZE,
-                 queue_chunks: int = QUEUE_CHUNKS):
-        self._request = dataconfigs, policy, seed
+                 queue_chunks: int = QUEUE_CHUNKS, start_step: int = 0):
+        self._request = dataconfigs, policy, seed, start_step
         self._options = worker_options(workers=workers, provider=provider, chunk_size=chunk_size,
                                        queue_chunks=queue_chunks)
         self.group = self._channels = None
@@ -444,8 +446,8 @@ class RecordWorkers:
         if self._closed:
             raise TrainingError('the record workers are closed', context={'stage': 'training_record_worker'})
         if self._channels is None:
-            dataconfigs, policy, base_seed = self._request
-            plan = component_plan(dataconfigs, policy=policy, seed=base_seed)
+            dataconfigs, policy, base_seed, start_step = self._request
+            plan = component_plan(dataconfigs, policy=policy, seed=base_seed, start_step=start_step)
             self.group = WorkerGroup()
             channels = start_record_workers(self.group, plan, **self._options)
             self._channels = ComponentChannels(plan_signature(plan), [channel.receiver for channel in channels],
@@ -464,16 +466,16 @@ class ParallelRecords(Iterator):
 
     def __init__(self, dataconfigs, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
                  translated_only: bool = False, workers: int, provider: RecordSource = stream_records,
-                 chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS):
+                 chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS, start_step: int = 0):
         if not isinstance(dataconfigs, (str, bytes)):
             try:
                 dataconfigs = tuple(dataconfigs)
             except TypeError:
                 pass                                     # training_records reports the request
         self._source = RecordWorkers(dataconfigs, policy=policy, seed=seed, workers=workers, provider=provider,
-                                     chunk_size=chunk_size, queue_chunks=queue_chunks)
+                                     chunk_size=chunk_size, queue_chunks=queue_chunks, start_step=start_step)
         self._records = training_records(dataconfigs, policy=policy, seed=seed, translated_only=translated_only,
-                                         record_source=self._source)
+                                         record_source=self._source, start_step=start_step)
 
     def __next__(self):
         if self._records is None:
@@ -494,7 +496,8 @@ class ParallelRecords(Iterator):
 
 def parallel_records(dataconfigs, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
                      translated_only: bool = False, workers: int, provider: RecordSource = stream_records,
-                     chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS) -> ParallelRecords:
+                     chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS,
+                     start_step: int = 0) -> ParallelRecords:
     """The ``training_records`` stream, with its component providers running in worker processes."""
     return ParallelRecords(dataconfigs, policy=policy, seed=seed, translated_only=translated_only, workers=workers,
-                           provider=provider, chunk_size=chunk_size, queue_chunks=queue_chunks)
+                           provider=provider, chunk_size=chunk_size, queue_chunks=queue_chunks, start_step=start_step)

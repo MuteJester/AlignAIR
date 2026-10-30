@@ -36,7 +36,7 @@ def test_two_thousand_records_are_the_serial_records(igh, workers):
 @pytest.mark.parametrize('in_worker', [True, False])
 def test_thirty_two_batches_of_64_are_the_serial_batches_from_the_start_and_from_a_resume(igh, start, in_worker):
     dataconfig, data = igh
-    stream = TrainingStream((dataconfig,), RECIPE, start, data, augment=True, prepare_seed=0, start_step=start)
+    stream = TrainingStream((dataconfig,), RECIPE, 0, data, augment=True, prepare_seed=0, start_step=start)
     serial = run(serial_records(stream), data.batch_adapter, start_step=start, steps=32, batch_size=64)
     with parallel_training_data(stream, batch_size=64, workers=7, device='cpu', assemble_in_worker=in_worker) as batches:
         parallel = run(batches.records, batches.batch_adapter, start_step=start, steps=32, batch_size=64)
