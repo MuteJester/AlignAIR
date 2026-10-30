@@ -7,9 +7,10 @@ recipe's settings under the product's record recipe v3 (``alignair.train.trainer
 - Optimization: batch 64 at a constant learning rate of 3e-4 (no schedule), seed 0.
 - Records (``POLICY``, the trainer's defaults): curriculum progresses 0.3, 0.6 and 0.9, heavy SHM 0.25 and short boost
   1, which make 7 components; polymerase indels in the weighted form, with 0.05 to 0.25 of reads carrying one; and
-  0.75 of each selectable component's records drawn under GenAIRR's ``productive_only()``. Each component interleaves
-  4 record streams (3 selected and 1 unselected, or 4 unselected for the V-anchored and fragment amplicons): 28
-  streams, each drawing its own reserved seed block.
+  0.75 of each full-length component's records drawn under GenAIRR's ``productive_only()``. Each component interleaves
+  4 record streams: 3 selected and 1 unselected for the 4 full-length components (the three progresses and heavy SHM),
+  4 unselected for each of the 3 amplicons (V-anchored, J-anchored, fragment). That is 28 streams, 12 selected and 16
+  unselected, each drawing its own reserved seed block.
 
 ``training_config`` is this recipe's ``TrainingConfig``, without validation (``val_every=0``) and with the worker count
 asked for: a run of the recipe may validate and use any number of data workers, and neither changes its training
