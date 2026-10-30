@@ -9,6 +9,10 @@ IGNORE = -100  # CrossEntropyLoss ignore_index for padded per-position labels
 
 
 def gym_collate(batch, reference_set, has_d: bool):
+    """The raw gym view of ``build_targets`` bundles. Its supervision masks come from what each read shows: a
+    gene the read lacks, an inverted D, and productivity the read leaves unknown (``productive_supervise`` False,
+    the masked productive objective; this view has no model configuration, so a consumer training the
+    historical objective must supervise every row instead)."""
     if not batch:
         raise TrainingDataError("cannot collate an empty gym batch")
     tokens = pad_vectors([sample["tokens"] for sample in batch])
@@ -70,4 +74,5 @@ def gym_collate(batch, reference_set, has_d: bool):
 
     for key in ("noise_count", "mutation_rate", "indel_count", "productive"):
         out[key] = torch.tensor([[s[key]] for s in batch], dtype=torch.float32)
+    out["productive_supervise"] = torch.tensor([bool(s["productive_known"]) for s in batch], dtype=torch.bool)
     return out

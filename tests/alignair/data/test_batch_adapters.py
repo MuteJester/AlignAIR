@@ -275,6 +275,18 @@ def test_raw_gym_view_retains_separate_teacher_and_germline_metadata():
         gym_collate([], reference, True)
 
 
+def test_raw_gym_view_marks_unknown_productivity_unsupervised():
+    from alignair.data.targets import build_targets
+    from alignair.train.gym.collate import gym_collate
+
+    reference = _reference()
+    bundles = [build_targets({**_record(), "productive": value}, reference, True) for value in (None, True, False)]
+    raw = gym_collate(bundles, reference, True)
+    assert raw["productive"].tolist() == [[0.], [1.], [0.]]
+    assert raw["productive_supervise"].dtype == torch.bool
+    assert raw["productive_supervise"].tolist() == [False, True, True]
+
+
 def test_historical_imports_use_the_shared_implementations():
     from alignair.train.gym.targets import build_targets as old_targets
     from alignair.train.trainer import build_batch
