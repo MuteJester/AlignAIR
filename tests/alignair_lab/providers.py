@@ -25,6 +25,13 @@ def renamed(dataconfig, parameters, seed):
         yield {'sequence_id': f'read-{k}', 'value': seed + k}
 
 
+def joins_only(dataconfig, parameters, seed):
+    """Records that depend on seed + k at every fourth record only: a stream cut into segments of 4 joins, but a record
+    inside a segment is not the one its own seed draws first."""
+    for k in count():
+        yield {'sequence_id': f'seq{k}', 'value': seed + k if k % 4 == 0 else [seed, k]}
+
+
 def killed(dataconfig, parameters, seed):
     """Shiftable records until its third, when the process drawing them is killed outright, as the kernel's
     out-of-memory killer kills one: no exception, no result."""

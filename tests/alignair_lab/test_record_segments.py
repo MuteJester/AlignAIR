@@ -5,8 +5,8 @@ import os
 
 import pytest
 
-from alignair_lab.records import (MIN_SEGMENT_RECORDS, SEGMENTS_PER_WRITER, Segment, default_writers, physical_cores,
-                                   segment_plan)
+from alignair_lab.records import (MIN_SEGMENT_RECORDS, SEGMENTS_PER_WRITER, Segment, default_writers,
+                                   interior_records, physical_cores, segment_plan)
 
 pytestmark = pytest.mark.component
 
@@ -51,3 +51,16 @@ def test_the_default_is_a_writer_per_physical_core():
 def test_without_a_selected_stream_every_stream_is_written_whole():
     assert segment_plan([10, 7], [False, False], workers=4, chunk_records=4) == [
         Segment(0, 0, 10, 0, True, False), Segment(1, 0, 7, 0, True, False)]
+
+
+def test_the_records_drawn_alone_lie_inside_evenly_spaced_segments_of_each_split_stream():
+    """Up to three segments of two records or more of each split stream, its first, middle and last, at their middle
+    record; a stream written whole has none (its records are drawn by one process from its own seed)."""
+    plan = segment_plan([41, 9, 9], [True, True, False], workers=1, chunk_records=4, segment_records=None)
+    by_stream = {}
+    for index, record in interior_records(plan):
+        by_stream.setdefault(plan[index].stream, []).append(record)
+        assert plan[index].start < record < plan[index].stop
+    sizes = {segment.stream: segment.stop - segment.start for segment in plan if segment.start == 0}
+    assert set(by_stream) == {0, 1} and sizes[0] == sizes[1] == 4
+    assert by_stream[0] == [2, 18, 38] and by_stream[1] == [2, 6]        # each last segment holds 1 record

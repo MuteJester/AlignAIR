@@ -186,6 +186,7 @@ def test_segments_of_a_shiftable_provider_are_its_serial_stream(tmp_path):
     manifest = write_record_cache(split, dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED, steps=1,
                                   batch_size=BATCH_SIZE, segment_records=4, provider=shiftable)
     assert manifest['boundaries_checked'] == sum(stream['segments'] - 1 for stream in manifest['components']) > 0
+    assert manifest['interiors_checked'] >= len(manifest['components'])     # a record inside each split stream
     source = CachedRecordSource(split)
     for planned in component_plan(DATACONFIGS, policy=UNSELECTED, seed=SEED):
         entry = source.component(planned.reference, planned.parameters, planned.seed)
@@ -193,7 +194,8 @@ def test_segments_of_a_shiftable_provider_are_its_serial_stream(tmp_path):
             list(islice(shiftable(None, None, planned.seed), entry['records']))
 
 
-@pytest.mark.parametrize('provider,problem', [('unshiftable', 'not shiftable'), ('renamed', 'seq<k>')])
+@pytest.mark.parametrize('provider,problem', [('unshiftable', 'not shiftable'), ('renamed', 'seq<k>'),
+                                              ('joins_only', 'not shiftable: record 2 of')])
 def test_a_stream_that_cannot_be_drawn_in_segments_fails_the_write(tmp_path, provider, problem):
     from tests.alignair_lab import providers
     with pytest.raises(ConfigurationError, match=problem):

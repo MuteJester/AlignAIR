@@ -6,7 +6,8 @@ each a "component"). ``write_record_cache`` runs each planned stream through the
 (``gym.streams.stream_records``) for as many records as ``steps * batch_size`` records of the zipped training stream
 (run seed, start step 0) draw from it (``component_counts``), and writes them in compressed chunks. GenAIRR draws
 record k of the stream of seed s from seed s + k, so a stream is written in segments, each drawn by a process of its
-own from seed s + its start (``segment_plan``); every join between two segments is checked as it is written.
+own from seed s + its start (``segment_plan``); every join between two segments is checked as it is written, and a
+few records inside each split stream's segments are drawn alone from their own seeds and compared.
 ``CachedRecordSource`` is a record provider (``training_records``' and ``train``'s ``record_source``) that replays the
 stream it is asked for: the stream it gives is the live stream, record for record, up to ``steps * batch_size``
 records.
@@ -192,6 +193,9 @@ PROGRESS_RECORDS = 256         # records a writer generates between progress cou
 # How long a segment's writer may be gone, its result not in, before the write fails: a result sent just before its
 # writer died is in within this.
 LOST_WRITER_SECONDS = 5.
+# Records inside each split stream's segments that the writing process draws alone, each from the stream's seed + its
+# index, and compares with the record written: about 0.4 s each for a selected stream.
+INTERIOR_PROBES = 3
 # Selected streams are cut into segments of about 1 / SEGMENTS_PER_WRITER of a writer's share of their records, at
 # least MIN_SEGMENT_RECORDS (each segment compiles its stream's experiment again) and at most one chunk.
 SEGMENTS_PER_WRITER = 6
@@ -352,6 +356,46 @@ def _check_boundaries(segments: list[Segment], results: dict, plan) -> int:
     return checked
 
 
+def interior_records(segments: list[Segment]) -> list[tuple[int, int]]:
+    """``(segment, record)`` of the records ``_check_interiors`` draws: for each split stream, up to
+    ``INTERIOR_PROBES`` of its segments of two records or more, evenly spaced along it, and the record in the middle of
+    each, never a segment's first (the joins check those)."""
+    streams = {}
+    for index, segment in enumerate(segments):
+        if segment.split and segment.stop - segment.start > 1:
+            streams.setdefault(segment.stream, []).append(index)
+    probes = []
+    for indices in streams.values():
+        indices.sort(key=lambda index: segments[index].start)
+        count = min(INTERIOR_PROBES, len(indices))
+        chosen = dict.fromkeys(indices[round(k * (len(indices) - 1) / max(count - 1, 1))] for k in range(count))
+        probes += [(index, segments[index].start + (segments[index].stop - segments[index].start) // 2)
+                   for index in chosen]
+    return probes
+
+
+def _check_interiors(segments: list[Segment], results: dict, plan, root: Path, chunk_records: int,
+                     provider: RecordSource) -> int:
+    """Draw each record of ``interior_records`` alone, from its stream's seed + its index, named as the stream's, and
+    compare it with the record written under ``root``: ConfigurationError at the first that differs. GenAIRR is then
+    not drawing record k of seed s from seed s + k inside a segment, though its joins agree. Returns the records
+    compared."""
+    probes = interior_records(segments)
+    for index, record in probes:
+        segment, component = segments[index], plan[segments[index].stream]
+        offset = record - segment.start
+        chunk = results[index]["chunks"][offset // chunk_records]
+        written = pickle.loads(zlib.decompress((root / chunk["file"]).read_bytes()))[offset % chunk_records]
+        drawn = next(iter(provider(component.reference, component.parameters, component.seed + record)), None)
+        if drawn is None or {**drawn, "sequence_id": f"seq{record}"} != written:
+            raise ConfigurationError(
+                f"GenAIRR's records are not shiftable: record {record} of the stream of seed {component.seed}, drawn "
+                f"from seed {component.seed + segment.start}, is not record 0 drawn from seed "
+                f"{component.seed + record}, so the stream cannot be written in segments",
+                context={"stage": "record_cache", "seed": component.seed, "record": record}, hint=_SPLIT_HINT)
+    return len(probes)
+
+
 def physical_cores(cpuinfo: str | None = None) -> int:
     """The machine's physical CPU cores, counted from ``/proc/cpuinfo`` (or the text ``cpuinfo``) by socket and core
     id; the logical CPU count where no core ids are listed."""
@@ -435,8 +479,9 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
     The streams are written in segments (``segment_plan``: the selected streams cut so that the writers stay busy, or
     every stream cut into ``segment_records``), each drawn from its own seed by a spawned process, at most ``workers``
     at a time (default ``default_writers``: one per physical core), the selected streams' first. A split stream's
-    records are renamed as the serial stream names them, and every join between two of its segments is checked
-    (``_check_boundaries``): a GenAIRR whose records are not shiftable fails the write. ``provider`` draws each
+    records are renamed as the serial stream names them, every join between two of its segments is checked
+    (``_check_boundaries``), and a few records inside its segments are drawn alone in this process and compared
+    (``_check_interiors``): a GenAIRR whose records are not shiftable fails the write. ``provider`` draws each
     stream's records (default the GenAIRR provider ``require`` compares with). Every ``progress_seconds`` and once at
     the end, ``progress`` (when given) receives a line with the records written, the streams done, the records per
     second and the time left (``seconds_left``). The cache is written into a sibling directory and renamed to
@@ -519,6 +564,7 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
         if progress is not None:
             report()
         joins = _check_boundaries(segments, results, plan)
+        interiors = _check_interiors(segments, results, plan, partial, chunk_records, provider)
         for index, segment in sorted(enumerate(segments), key=lambda item: (item[1].stream, item[1].start)):
             entry = components[segment.stream]
             entry.setdefault("chunks", []).extend(results[index]["chunks"])
@@ -532,6 +578,7 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
             "genairr": genairr, "code": producing_code(),
             "chunk_records": chunk_records, "compression": f"zlib-{COMPRESSION_LEVEL}",
             "segment_records": segment_records, "segments": len(segments), "boundaries_checked": joins,
+            "interiors_checked": interiors,
             "bytes": sum(chunk["bytes"] for entry in components for chunk in entry["chunks"]),
             "workers": processes, "seconds": round(time.perf_counter() - start, 3),
             "created": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
