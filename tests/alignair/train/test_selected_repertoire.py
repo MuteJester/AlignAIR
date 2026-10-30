@@ -49,32 +49,9 @@ def test_selected_records_are_productive_and_the_unselected_amplicons_keep_their
     assert any(row['productive'] is None for row in records[4::COMPONENTS])
 
 
-@pytest.mark.parametrize('options,fraction', [({}, 0.75), ({'selected_fraction': 0.5}, 0.5)])
-def test_a_run_draws_its_selected_fraction_and_records_its_recipe(tmp_path, options, fraction):
-    import GenAIRR.data as gd
-    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    setup = prepare_model(reference, embed_dim=4, filters=4, block_out=8)
-    seen = []
-
-    def watched(dataconfig, parameters, seed):
-        seen.append(bool(parameters.get('productive_only')))
-        return stream_records(dataconfig, parameters, seed)
-
-    path = tmp_path / 'model.alignair'
-    train(setup.build_model(), reference, [gd.HUMAN_IGH_OGRDB], setup.config, steps=1, batch_size=2,
-          model_setup=setup, save_path=str(path), log_every=0, record_source=watched, **options)
-    policy = CurriculumStreamPolicy(selected_fraction=fraction)
-    assert seen == [name.startswith('selected') for streams in policy.substreams_for(gd.HUMAN_IGH_OGRDB)
-                    for name, _ in streams]
-    train_args = read_metadata(path)['training']['train_args']
-    assert train_args['recipe'] == 'v3' and train_args['selected_fraction'] == fraction
-    assert train_args['selected_shares'] == list(policy.selected_shares())
-    assert train_args['selection_unavailable'] == []
-
-
-def watched_run(tmp_path, dataconfig):
-    """Train one step on ``dataconfig``; return whether each stream drew under productive_only(), and the run's
-    train_args."""
+def watched_run(tmp_path, dataconfig, **options):
+    """Train one step on ``dataconfig`` with ``train`` ``options``; return whether each stream drew under
+    productive_only(), and the run's train_args."""
     reference = ReferenceSet.from_dataconfigs(dataconfig)
     setup = prepare_model(reference, embed_dim=4, filters=4, block_out=8)
     seen = []
@@ -85,8 +62,20 @@ def watched_run(tmp_path, dataconfig):
 
     path = tmp_path / 'model.alignair'
     train(setup.build_model(), reference, [dataconfig], setup.config, steps=1, batch_size=2, model_setup=setup,
-          save_path=str(path), log_every=0, record_source=watched)
+          save_path=str(path), log_every=0, record_source=watched, **options)
     return seen, read_metadata(path)['training']['train_args']
+
+
+@pytest.mark.parametrize('options,fraction', [({}, 0.75), ({'selected_fraction': 0.5}, 0.5)])
+def test_a_run_draws_its_selected_fraction_and_records_its_recipe(tmp_path, options, fraction):
+    import GenAIRR.data as gd
+    seen, train_args = watched_run(tmp_path, gd.HUMAN_IGH_OGRDB, **options)
+    policy = CurriculumStreamPolicy(selected_fraction=fraction)
+    assert seen == [name.startswith('selected') for streams in policy.substreams_for(gd.HUMAN_IGH_OGRDB)
+                    for name, _ in streams]
+    assert train_args['recipe'] == 'v3' and train_args['selected_fraction'] == fraction
+    assert train_args['selected_shares'] == list(policy.selected_shares())
+    assert train_args['selection_unavailable'] == []
 
 
 @pytest.mark.skipif(not all(os.path.exists(path) for path in CUSTOM.values()), reason='example FASTAs not present')
