@@ -19,7 +19,7 @@ from itertools import islice
 
 import pytest
 
-from alignair.errors import ConfigurationError, TrainingDataError
+from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
 from alignair.train.assembly import TrainingStream, parallel_training_data
 from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
 from alignair.train.gym.workers import component_plan, parallel_records
@@ -199,6 +199,16 @@ def test_a_stream_that_cannot_be_drawn_in_segments_fails_the_write(tmp_path, pro
     with pytest.raises(ConfigurationError, match=problem):
         write_record_cache(tmp_path / 'split', dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED, steps=1,
                            batch_size=BATCH_SIZE, segment_records=4, provider=getattr(providers, provider))
+    assert list(tmp_path.iterdir()) == []                                 # no cache, no partial directory
+
+
+@pytest.mark.timeout(120)
+def test_a_writer_killed_outright_fails_the_write_instead_of_hanging(tmp_path):
+    """A pool replaces a worker killed outright (the out-of-memory killer, kill -9) but never finishes its task."""
+    from tests.alignair_lab.providers import killed
+    with pytest.raises(TrainingError, match='died before it finished'):
+        write_record_cache(tmp_path / 'cache', dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED, steps=1,
+                           batch_size=BATCH_SIZE, workers=2, provider=killed)
     assert list(tmp_path.iterdir()) == []                                 # no cache, no partial directory
 
 

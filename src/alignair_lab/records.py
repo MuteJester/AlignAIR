@@ -55,7 +55,7 @@ from operator import index
 from pathlib import Path
 
 import alignair
-from alignair.errors import ConfigurationError, TrainingDataError, error_context
+from alignair.errors import ConfigurationError, TrainingDataError, TrainingError, error_context
 from alignair.train.gym.streams import (CurriculumStreamPolicy, RecordSource, dataconfig_name, stream_records,
                                         training_records)
 from alignair.train.gym.workers import component_plan
@@ -185,9 +185,13 @@ def component_counts(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, 
     return tuple(counts)
 
 
-# A writer process's view of the shared progress: each segment's records written and the time its writing started.
+# A writer process's view of the shared progress: each segment's records written, the time its writing started and
+# the process writing it.
 _PROGRESS = None
 PROGRESS_RECORDS = 256         # records a writer generates between progress counts
+# How long a segment's writer may be gone, its result not in, before the write fails: a result sent just before its
+# writer died is in within this.
+LOST_WRITER_SECONDS = 5.
 # Selected streams are cut into segments of about 1 / SEGMENTS_PER_WRITER of a writer's share of their records, at
 # least MIN_SEGMENT_RECORDS (each segment compiles its stream's experiment again) and at most one chunk.
 SEGMENTS_PER_WRITER = 6
@@ -238,10 +242,39 @@ def segment_plan(totals, selected, *, workers: int, chunk_records: int,
     return segments
 
 
-def _start_writer(written, started):
+def _start_writer(written, started, writers):
     signal.signal(signal.SIGINT, signal.SIG_IGN)       # the writing process stops its workers
     global _PROGRESS
-    _PROGRESS = written, started
+    _PROGRESS = written, started, writers
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:                             # another user's: the pid was reused, so the writer is gone
+        return False
+    return True
+
+
+def _check_writers(pending, writers, lost: dict, segments: list[Segment], plan) -> None:
+    """Fail the write (TrainingError) when a pending segment's writer process has been gone ``LOST_WRITER_SECONDS``
+    without its result: a pool replaces a worker killed outright (the out-of-memory killer, kill -9) but never
+    finishes its task, so the write would otherwise wait for it forever. ``lost``: segment -> when its writer was
+    first found gone."""
+    clock = time.monotonic()
+    for index in pending:
+        pid = writers[index]
+        if not pid or _alive(pid):
+            lost.pop(index, None)
+        elif clock - lost.setdefault(index, clock) >= LOST_WRITER_SECONDS:
+            segment = segments[index]
+            seed = plan[segment.stream].seed
+            raise TrainingError(f"the writer process {pid} of records {segment.start} to {segment.stop} of the stream "
+                                f"of seed {seed} died before it finished: killed outright, as the out-of-memory "
+                                "killer kills", context={"stage": "record_cache", "seed": seed, "process": pid},
+                                hint="Write the cache again, with fewer --workers if memory ran out.")
 
 
 def _numbered(records, segment: Segment, seed: int):
@@ -268,6 +301,7 @@ def _write_segment(item):
                                  hint="Put the intended GenAIRR first on PYTHONPATH.")
     if _PROGRESS is not None:
         _PROGRESS[1][index] = time.time()
+        _PROGRESS[2][index] = os.getpid()
     records = iter(provider(reference, parameters, seed + segment.start))
     if segment.split:
         records = _numbered(records, segment, seed)
@@ -407,7 +441,9 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
     the end, ``progress`` (when given) receives a line with the records written, the streams done, the records per
     second and the time left (``seconds_left``). The cache is written into a sibling directory and renamed to
     ``path`` once its manifest is written, so an interrupted writer leaves no cache behind; it cannot resume one: an
-    interrupted write starts again. FileExistsError when ``path`` exists.
+    interrupted write starts again. A writer process killed outright (the out-of-memory killer) fails the write
+    (TrainingError, ``_check_writers``) rather than leaving it waiting for a result that never comes.
+    FileExistsError when ``path`` exists.
     """
     path = Path(path).expanduser()
     if path.exists():
@@ -455,7 +491,8 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
         kinds = [selected[segment.stream] for segment in segments]
         context = multiprocessing.get_context("spawn")
         written, started = context.Array("q", len(segments)), context.Array("d", len(segments))
-        results, writing = {}, time.perf_counter()
+        writers = context.Array("q", len(segments))
+        results, writing, lost = {}, time.perf_counter(), {}
 
         def report():
             now, done = time.time(), list(written)
@@ -468,13 +505,14 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
             progress(_progress_line(sum(done), sum(totals), len(plan) - len(remaining), len(plan),
                                     time.perf_counter() - writing, left))
 
-        with context.Pool(processes, initializer=_start_writer, initargs=(written, started)) as pool:
+        with context.Pool(processes, initializer=_start_writer, initargs=(written, started, writers)) as pool:
             pending = {index: pool.apply_async(_write_segment, ((index, task),)) for index, task in enumerate(tasks)}
             reported = time.monotonic()
             while pending:
                 next(iter(pending.values())).wait(min(1., progress_seconds))
                 for index in [index for index, result in pending.items() if result.ready()]:
                     results[index] = pending.pop(index).get()[1]   # a writer's error is raised here
+                _check_writers(pending, writers, lost, segments, plan)
                 if progress is not None and time.monotonic() - reported >= progress_seconds and pending:
                     reported = time.monotonic()
                     report()
