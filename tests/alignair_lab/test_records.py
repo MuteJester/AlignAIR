@@ -13,6 +13,7 @@ The tests that alter a cache work on a copy of it.
 import dataclasses
 import json
 import pickle
+import re
 import shutil
 from itertools import islice
 
@@ -23,7 +24,8 @@ from alignair.train.assembly import TrainingStream, parallel_training_data
 from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
 from alignair.train.gym.workers import component_plan, parallel_records
 from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED
-from alignair_lab.records import CachedRecordSource, component_counts, genairr_digest, write_record_cache
+from alignair_lab.records import (CachedRecordSource, component_counts, genairr_digest, write_record_cache,
+                                   writing_order)
 from tests.support.training_streams import assert_same_runs, run, serial_records
 
 pytestmark = pytest.mark.integration
@@ -139,6 +141,34 @@ def test_the_manifest_records_genairr_the_recipe_and_each_streams_records(recipe
                for stream in manifest['components'])
     assert all(sum(chunk['records'] for chunk in stream['chunks']) == RECIPE_STREAM_RECORDS
                for stream in manifest['components'])
+
+
+def test_the_writer_runs_a_process_per_stream_up_to_the_cpu_count(recipe_cache):
+    import os
+    manifest = json.loads((recipe_cache / 'manifest.json').read_text())
+    assert manifest['workers'] == min(os.cpu_count(), RECIPE_STREAMS)
+
+
+def test_the_slow_selected_streams_are_written_first():
+    plan = component_plan(DATACONFIGS, policy=POLICY, seed=SEED)
+    order = writing_order(plan)
+    assert sorted(order) == list(range(RECIPE_STREAMS))
+    count = 3 * sum(share > 0 for share in POLICY.selected_shares())  # 3 of 4 streams of the 5 selectable components
+    selected = [position for position in order if plan[position].parameters.get('productive_only', False)]
+    assert count == 15 and len(selected) == count and order[:count] == selected
+    assert selected == sorted(selected) and order[count:] == sorted(order[count:])  # each group in plan order
+
+
+def test_the_writer_reports_records_per_second_and_its_eta(tmp_path):
+    lines = []
+    manifest = write_record_cache(tmp_path / 'watched', dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED,
+                                  steps=8, batch_size=BATCH_SIZE, workers=2, progress=lines.append,
+                                  progress_seconds=0.05)
+    total = sum(stream['records'] for stream in manifest['components'])
+    assert len(lines) >= 2
+    assert all(re.search(r'\d+/\d+ records \(\d+%\), \d+ of 7 streams done, [\d.]+ records/s, ETA ', line)
+               for line in lines), lines
+    assert lines[-1].startswith(f'{total}/{total} records (100%), 7 of 7 streams done')
 
 
 def test_a_cache_directory_has_a_new_directorys_permissions(cache, tmp_path):
@@ -279,10 +309,12 @@ def test_require_draws_the_first_records_of_every_stream_live_and_compares_them(
 
 def test_the_cache_command_writes_the_recipes_cache(tmp_path, capsys):
     from alignair_lab.cli import main
-    assert main(['cache', '--out', str(tmp_path / 'one'), '--steps', '1', '--workers', '2']) == 0
+    assert main(['cache', '--out', str(tmp_path / 'one'), '--steps', '1', '--workers', '2',
+                 '--progress-seconds', '0.05']) == 0
     manifest = CachedRecordSource(tmp_path / 'one').require(DATACONFIGS, policy=POLICY, seed=SEED, records=BATCH_SIZE)
     assert (manifest['steps'], manifest['batch_size'], manifest['workers']) == (1, BATCH_SIZE, 2)
-    assert f"wrote {tmp_path / 'one'}: 64 records" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert f"wrote {tmp_path / 'one'}: 64 records" in printed and 'records/s, ETA' in printed
     assert main(['cache', '--out', str(tmp_path / 'one'), '--steps', '1']) == 2
     assert 'exists' in capsys.readouterr().err
 

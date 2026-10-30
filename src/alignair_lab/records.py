@@ -37,17 +37,17 @@ import dataclasses
 import datetime
 import functools
 import hashlib
-import math
 import json
+import math
 import multiprocessing
 import os
 import pickle
+import secrets
 import shutil
 import signal
-import tempfile
 import time
 import zlib
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from itertools import islice, repeat
 from operator import index
 from pathlib import Path
@@ -177,12 +177,18 @@ def component_counts(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, 
     return tuple(counts)
 
 
-def _ignore_interrupts():
+_RECORDS_WRITTEN = None                                 # a writer process's share of the progress counter
+PROGRESS_RECORDS = 256                                  # records a writer generates between progress counts
+
+
+def _start_writer(counter):
     signal.signal(signal.SIGINT, signal.SIG_IGN)       # the writing process stops its workers
+    global _RECORDS_WRITTEN
+    _RECORDS_WRITTEN = counter
 
 
 def _write_component(item):
-    """A writer process: generate one component's records with the default provider and write its chunks."""
+    """A writer process: generate one stream's records with the default provider and write its chunks."""
     position, (root, name, reference, parameters, seed, count, chunk_records, genairr) = item
     start = time.perf_counter()
     if imported_genairr() != genairr:
@@ -193,10 +199,17 @@ def _write_component(item):
     records = iter(stream_records(reference, parameters, seed))
     chunks, written = [], 0
     while written < count:
-        chunk = list(islice(records, min(chunk_records, count - written)))
-        if not chunk:
-            raise TrainingDataError("a component stream ended before the cache was full",
-                                    context={"stage": "record_cache", "seed": seed, "records": written})
+        chunk, size = [], min(chunk_records, count - written)
+        while len(chunk) < size:
+            part = list(islice(records, min(PROGRESS_RECORDS, size - len(chunk))))
+            if not part:
+                raise TrainingDataError("a record stream ended before the cache was full",
+                                        context={"stage": "record_cache", "seed": seed,
+                                                 "records": written + len(chunk)})
+            chunk.extend(part)
+            if _RECORDS_WRITTEN is not None:
+                with _RECORDS_WRITTEN.get_lock():
+                    _RECORDS_WRITTEN.value += len(part)
         data = zlib.compress(pickle.dumps(chunk, pickle.HIGHEST_PROTOCOL), COMPRESSION_LEVEL)
         file = f"{name}/chunk-{len(chunks):06d}.pkl.zlib"
         (Path(root) / file).write_bytes(data)
@@ -206,14 +219,45 @@ def _write_component(item):
     return position, {"chunks": chunks, "seconds": round(time.perf_counter() - start, 3)}
 
 
+def default_writers(streams: int) -> int:
+    """The writer processes used when none is asked for: one per CPU, at most one per stream."""
+    return max(1, min(os.cpu_count() or 1, streams))
+
+
+def writing_order(plan) -> list[int]:
+    """The order streams are handed to writer processes: the selected streams (``productive_only``), whose records
+    take about 20 times longer to simulate, first, so the slowest work starts first; each group in plan order."""
+    selected = [position for position, stream in enumerate(plan) if stream.parameters.get("productive_only")]
+    return selected + [position for position in range(len(plan)) if position not in set(selected)]
+
+
+def _duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.0f} s"
+    if seconds < 3600:
+        return f"{seconds / 60:.0f} min"
+    return f"{int(seconds // 3600)} h {int(seconds % 3600 // 60)} min"
+
+
+def _progress_line(done: int, total: int, finished: int, streams: int, elapsed: float) -> str:
+    rate = done / elapsed if elapsed > 0 else 0.
+    eta = _duration((total - done) / rate) if rate > 0 else "unknown"
+    return (f"{done}/{total} records ({100 * done // max(total, 1)}%), {finished} of {streams} streams done, "
+            f"{rate:.1f} records/s, ETA {eta}")
+
+
 def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, seed: int, steps: int, batch_size: int,
-                       workers: int | None = None, chunk_records: int = CHUNK_RECORDS) -> dict:
+                       workers: int | None = None, chunk_records: int = CHUNK_RECORDS,
+                       progress: Callable[[str], None] | None = None, progress_seconds: float = 60.) -> dict:
     """Write the records ``steps`` steps of ``batch_size`` draw from ``training_records(dataconfigs, policy=policy,
     seed=seed)`` to the new directory ``path``; return the manifest.
 
-    Each component is generated in a spawned process of its own, at most ``workers`` at a time (default: one per
-    component). The cache is written into a sibling directory and renamed to ``path`` once its manifest is written, so
-    an interrupted writer leaves no cache behind. FileExistsError when ``path`` exists.
+    Each stream is generated in a spawned process of its own, at most ``workers`` at a time (default
+    ``default_writers``), the selected streams first (``writing_order``). Every ``progress_seconds`` and once at the
+    end, ``progress`` (when given) receives a line with the records written, the streams done, the records per second
+    and the time left at that rate. The cache is written into a sibling directory and renamed to ``path`` once its
+    manifest is written, so an interrupted writer leaves no cache behind; it cannot resume one: an interrupted write
+    starts again. FileExistsError when ``path`` exists.
     """
     path = Path(path).expanduser()
     if path.exists():
@@ -229,7 +273,9 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
     start = time.perf_counter()
     plan = component_plan(dataconfigs, policy=policy, seed=seed)
     counts = component_counts(dataconfigs, policy=policy, seed=seed, records=steps * batch_size)
-    processes = len(plan) if workers is None else min(_count(workers, "workers"), len(plan))
+    processes = default_writers(len(plan)) if workers is None else min(_count(workers, "workers"), len(plan))
+    if isinstance(progress_seconds, bool) or not isinstance(progress_seconds, (int, float)) or progress_seconds <= 0:
+        raise ConfigurationError("progress_seconds must be a positive number", context={"field": "progress_seconds"})
     genairr = genairr_provenance()
     if genairr["genairr_source_sha256"] != imported_genairr():
         raise ConfigurationError("GenAIRR changed while the cache was being prepared", context={"stage": "record_cache"})
@@ -239,17 +285,30 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
                    "directory": f"{position:03d}-seed{component.seed}"}
                   for position, (component, count) in enumerate(zip(plan, counts))]
     path.parent.mkdir(parents=True, exist_ok=True)
-    partial = Path(tempfile.mkdtemp(prefix=f".{path.name}.partial-", dir=path.parent))
-    umask = os.umask(0)
-    os.umask(umask)
-    partial.chmod(0o777 & ~umask)                      # a new directory's permissions, not mkdtemp's private ones
+    # A plain mkdir gives the directory the permissions of any new one; the random suffix keeps writers apart.
+    partial = path.parent / f".{path.name}.partial-{os.getpid()}-{secrets.token_hex(4)}"
+    partial.mkdir()
     try:
         tasks = [(str(partial), entry["directory"], component.reference, component.parameters, component.seed,
                   entry["records"], chunk_records, genairr["genairr_source_sha256"])
                  for entry, component in zip(components, plan)]
-        with multiprocessing.get_context("spawn").Pool(processes, initializer=_ignore_interrupts) as pool:
-            for position, written in pool.imap_unordered(_write_component, enumerate(tasks)):
-                components[position].update(written)
+        total = sum(entry["records"] for entry in components)
+        context = multiprocessing.get_context("spawn")
+        counter = context.Value("q", 0)
+        with context.Pool(processes, initializer=_start_writer, initargs=(counter,)) as pool:
+            pending = {position: pool.apply_async(_write_component, ((position, tasks[position]),))
+                       for position in writing_order(plan)}
+            reported = time.monotonic()
+            while pending:
+                next(iter(pending.values())).wait(min(1., progress_seconds))
+                for position in [position for position, result in pending.items() if result.ready()]:
+                    components[position].update(pending.pop(position).get()[1])   # a writer's error is raised here
+                if progress is not None and time.monotonic() - reported >= progress_seconds and pending:
+                    reported = time.monotonic()
+                    progress(_progress_line(counter.value, total, len(plan) - len(pending), len(plan),
+                                            time.perf_counter() - start))
+        if progress is not None:
+            progress(_progress_line(total, total, len(plan), len(plan), time.perf_counter() - start))
         manifest = {
             "kind": KIND, "version": VERSION,
             "recipe": RECIPE, "dataconfigs": dataconfig_names(dataconfigs), "policy": policy_fields(policy),

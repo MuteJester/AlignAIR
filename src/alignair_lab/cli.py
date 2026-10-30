@@ -3,7 +3,7 @@
   python -m alignair_lab screen --name NAME [--steps 20000] [--architecture ARCH] [--model-option KEY=VALUE ...]
       [--suites S1,S3] [--max-cases N] [--variants baseline,true_spans,...] [--device cuda] [--data-workers 2]
       [--eval-batch-size 256] [--cache DIR] [--dev-build DIR] [--milestones DIR] [--out-root DIR]
-  python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N]
+  python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
 
 ``screen`` trains a candidate with the 1.0.0 recipe from the record cache and compares it with the baseline's
 milestone at the same step (``screen.run_screen``); ``cache`` writes the recipe's record cache
@@ -64,11 +64,15 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--out-root", default=str(screen.SCREENS), help="where screens are written (default %(default)s)")
     run.set_defaults(func=run_screen)
 
-    cache = commands.add_parser("cache", help="write the 1.0.0 recipe's record cache")
+    cache = commands.add_parser("cache", help="write the recipe's record cache")
     cache.add_argument("--out", default=str(screen.CACHE), help="the new cache directory (default %(default)s)")
     cache.add_argument("--steps", type=int, default=CACHE_STEPS,
                        help=f"steps of {BATCH_SIZE} records the cache serves (default %(default)s)")
-    cache.add_argument("--workers", type=int, help="writer processes (default: one per curriculum component)")
+    cache.add_argument("--workers", type=int,
+                       help="writer processes, one per record stream at most (28 for the recipe: 7 components of 4 "
+                            "streams); default: one per CPU, at most one per stream")
+    cache.add_argument("--progress-seconds", type=float, default=60.,
+                       help="seconds between progress lines (default %(default)s)")
     cache.set_defaults(func=run_cache)
     return parser
 
@@ -103,8 +107,10 @@ def run_screen(args) -> int:
 def run_cache(args) -> int:
     from alignair_lab.records import write_record_cache
     manifest = write_record_cache(args.out, dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=args.steps,
-                                  batch_size=BATCH_SIZE, workers=args.workers)
+                                  batch_size=BATCH_SIZE, workers=args.workers,
+                                  progress=lambda line: print(f"[cache] {line}", flush=True),
+                                  progress_seconds=args.progress_seconds)
     print(f"wrote {args.out}: {manifest['records']} records ({manifest['steps']} steps of {manifest['batch_size']}) "
-          f"in {len(manifest['components'])} components, {manifest['bytes'] / 1e9:.2f} GB, in "
+          f"in {len(manifest['components'])} streams, {manifest['bytes'] / 1e9:.2f} GB, in "
           f"{manifest['seconds'] / 60:.1f} min with {manifest['workers']} workers")
     return 0
