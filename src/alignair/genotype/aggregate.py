@@ -49,7 +49,7 @@ def align_repertoire(model, reference, sequences, *, device: str = "cpu", batch_
     from ..predict.config import PredictConfig
     from ..predict.forward import run_model
     cfg = PredictConfig(max_seq_length=model.cfg.max_seq_length, has_d=model.cfg.has_d, batch_size=batch_size,
-                        boundary_mode=model.cfg.boundary_mode)
+                        boundary_mode=getattr(model.cfg, "boundary_mode", "residue"))
     source = tuple(sequence_batch_iterator(sequences))
     prepared, _ = prepare_nucleotide_inputs(source, cfg.window)
     genes = ("v", "d", "j") if cfg.has_d else ("v", "j")

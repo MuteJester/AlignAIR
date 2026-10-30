@@ -72,7 +72,7 @@ def calibrate_allele_temperatures(model, reference, val_records, genes=None, dev
                 truth[gene].append({name.strip() for name in (call or "").split(",") if name.strip()})
     if input_space == "nucleotide":
         sequences, _ = prepare_nucleotide_inputs(sequences,
-                                                   config.max_seq_length - int(config.boundary_mode == "half_open"))
+                                                   config.max_seq_length - int(getattr(config, "boundary_mode", "residue") == "half_open"))
         adapter = SequenceInputAdapter(CenterPaddedTokenizer(), config.max_seq_length, device, vocab_size=6)
     else:
         adapter = SequenceInputAdapter(AAProteinTokenizer(), config.max_seq_length, device,
