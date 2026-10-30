@@ -290,8 +290,7 @@ def test_shared_raw_prediction_reserves_half_open_endpoint_for_nucleotide_models
     predictor = run_training(config, output_dir=tmp_path).best_aligner(device='cpu')
     outputs = predictor.predict_raw(['A' * 600])
     assert int(outputs['start_mask'].sum()) == 575
-    with pytest.raises(ConfigurationError, match='predict_raw'):
-        predictor.predict(['ACGT'])
+    assert len(predictor.predict(['A' * 600, 'ACGT'] )) == 2   # AIRR prediction crops to the same window
 
 
 def test_label_schema_is_checked_during_load_instead_of_silently_reinterpreted(tmp_path):

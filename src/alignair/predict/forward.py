@@ -127,7 +127,7 @@ def collect_prediction_outputs(batches, *, transform=None) -> dict[str, np.ndarr
 
 def run_model(model, sequences, cfg, device: str = "cpu") -> list:
     """Nucleotide forward inputs use the same content/window policy as prediction and reporting."""
-    records, _ = prepare_nucleotide_inputs(sequences, cfg.max_seq_length)
+    records, _ = prepare_nucleotide_inputs(sequences, cfg.window)
     adapter = SequenceInputAdapter(CenterPaddedTokenizer(), cfg.max_seq_length, device,
                                     vocab_size=6)
     return [{key: output_numpy(value) for key, value in batch.outputs.items()}

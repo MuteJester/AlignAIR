@@ -107,6 +107,7 @@ def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Seque
     chain_types = reference.locus_names() or None if hasattr(reference, "locus_names") else None
     predict_overrides.setdefault("chain_types", chain_types)
     pcfg = PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size,
+                         boundary_mode=cfg.boundary_mode,
                          allele_temperatures=getattr(cfg, "allele_temperatures", None), **predict_overrides)
     return _predict(model, sequences, reference, pcfg, device=device)
 

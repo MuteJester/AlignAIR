@@ -93,12 +93,11 @@ def _canonicalize(seq: str, orientation_id: int) -> str:
 def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu", aligner=None):
     model_config = getattr(model, 'cfg', None)
     if (getattr(model_config, 'input_space', 'nucleotide') != 'nucleotide'
-            or getattr(model_config, 'classification_mode', 'multilabel') != 'multilabel'
-            or getattr(model_config, 'boundary_mode', 'residue') != 'residue'):
-        raise ConfigurationError('AIRR prediction requires the nucleotide allele/residue-boundary profile; use Aligner.predict_raw for shared model outputs')
+            or getattr(model_config, 'classification_mode', 'multilabel') != 'multilabel'):
+        raise ConfigurationError('AIRR prediction requires the nucleotide multilabel allele profile; use Aligner.predict_raw for shared model outputs')
     genes = _genes(cfg)
     # Tokenization, orientation, alignment and reported coordinates share the same normalized read.
-    sequences, was_cropped = prepare_nucleotide_inputs(sequences, cfg.max_seq_length)
+    sequences, was_cropped = prepare_nucleotide_inputs(sequences, cfg.window)
     preds = clean(run_model(model, sequences, cfg, device), genes)
     _validate_predictions(preds)  # raw outputs must be finite before any use
     allowed = None
