@@ -29,8 +29,10 @@ DILATIONS = (1, 2, 4, 8, 16, 32, 1, 2, 4, 8, 16, 32)
 
 
 class _ResidualBlock(nn.Module):
-    """``x + Dropout(GELU(Conv1d_dilated(LayerNorm(x))))`` on (B, L, C), keeping the length. LayerNorm normalizes
-    each position over its channels, so no statistic is shared between positions or reads."""
+    """``x + Dropout(GELU(Conv1d_dilated(LayerNorm(x) * keep)))`` on (B, L, C), keeping the length. LayerNorm
+    normalizes each position over its channels, so no statistic is shared between positions or reads; ``keep``
+    (B, L, 1) zeroes the normalized pad positions, where LayerNorm would leave its bias, before the convolution reads
+    them."""
 
     def __init__(self, channels: int, kernel: int, dilation: int, dropout: float):
         super().__init__()
@@ -38,16 +40,18 @@ class _ResidualBlock(nn.Module):
         self.conv = nn.Conv1d(channels, channels, kernel, dilation=dilation, padding="same")
         self.drop = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = self.conv(self.norm(x).transpose(1, 2)).transpose(1, 2)
+    def forward(self, x: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
+        h = self.conv((self.norm(x) * keep).transpose(1, 2)).transpose(1, 2)
         return x + self.drop(F.gelu(h))
 
 
 class DilatedTrunk(nn.Module):
     """``(emb (B, L, E), mask (B, L)) -> (B, L, channels)``: a 1x1 input projection, then pre-norm residual blocks of
-    same-padded dilated convolutions. Pad positions (``mask`` False) are zeroed after the projection and after every
-    block, so a read's features never depend on what its padding holds. Each position sees
-    ``receptive_field = 1 + (kernel - 1) * sum(dilations)`` positions around it, clipped to the read."""
+    same-padded dilated convolutions. Pad positions (``mask`` False) are zeroed after the projection, after each
+    block's normalization and after every block, so a convolution reads a pad position as it reads the zero padding
+    past the window: a read's features depend neither on what its padding holds nor on how much padding there is.
+    Each position sees ``receptive_field = 1 + (kernel - 1) * sum(dilations)`` positions around it, clipped to the
+    read."""
 
     def __init__(self, in_channels: int, channels: int = TRUNK_CHANNELS, kernel: int = 5,
                  dilations: tuple[int, ...] = DILATIONS, dropout: float = 0.1):
@@ -60,7 +64,7 @@ class DilatedTrunk(nn.Module):
         keep = mask.unsqueeze(-1).to(emb.dtype)
         x = self.project(emb.transpose(1, 2)).transpose(1, 2) * keep
         for block in self.blocks:
-            x = block(x) * keep
+            x = block(x, keep) * keep
         return x
 
 

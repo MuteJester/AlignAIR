@@ -75,6 +75,32 @@ def test_the_trunk_keeps_length_and_zeroes_padding():
 
 
 @pytest.mark.component
+def test_a_reads_features_do_not_depend_on_the_padding_around_it():
+    """With LayerNorm's bias non-zero, a read of n > L - 64 positions (fewer pads after it than a dilation-32 tap
+    reaches across) has the same features whether it fills its window or is followed by L - n or L + 64 - n pads,
+    or has pads on both sides: a convolution reads a pad position as it reads the zero padding past the window."""
+    torch.manual_seed(0)
+    trunk = DilatedTrunk(8).eval()
+    with torch.no_grad():
+        for block in trunk.blocks:
+            block.norm.bias.fill_(1.0)
+    n = LENGTH - 36
+    read = torch.randn(1, n, 8)
+
+    def features(width, before=0):
+        emb = torch.randn(1, width, 8)                                      # other values on the pads
+        emb[:, before:before + n] = read
+        mask = torch.zeros(1, width, dtype=torch.bool)
+        mask[:, before:before + n] = True
+        with torch.no_grad():
+            return trunk(emb, mask)[0, before:before + n]
+
+    alone = features(n)
+    for width, before in ((LENGTH, 0), (LENGTH + 64, 0), (LENGTH + 64, 32)):
+        assert torch.allclose(features(width, before), alone, rtol=1e-5, atol=1e-5), (width, before)
+
+
+@pytest.mark.component
 def test_the_trunk_sees_505_positions():
     """One input position moved changes the outputs of 505 positions around it (1 + 4 x 126), clipped to the read."""
     torch.manual_seed(0)
