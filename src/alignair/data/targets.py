@@ -5,13 +5,13 @@ import numpy as np
 from ..errors import AlignAIRError, TrainingDataError, error_context
 
 from .tokenizer import TOKEN_DICT
+from ..core.anchors import ANCHOR_GENES, CODON
 from ..neural.heads.region import REGION_INDEX
 from ..neural.heads.state import STATE_INDEX
 from .coordinates import segment_spans
 from .alignment import parse_cigar, query_reference_map
 
 _GENES = ("v", "d", "j")
-CODON = 3
 
 
 def read_anchors(record: dict, reference_set) -> dict[str, int | None]:
@@ -20,7 +20,7 @@ def read_anchors(record: dict, reference_set) -> dict[str, int | None]:
     with error_context(stage="build_targets", record_id=record.get("sequence_id")):
         coords, germ = segment_spans(record)
         length = len(str(record["sequence"]))
-        return {gene: _anchor(record, gene, reference_set, coords, germ, length) for gene in ("v", "j")}
+        return {gene: _anchor(record, gene, reference_set, coords, germ, length) for gene in ANCHOR_GENES}
 
 
 def _anchor(record, gene: str, reference_set, coords, germ, length: int) -> int | None:

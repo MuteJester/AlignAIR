@@ -6,6 +6,7 @@ assembly (sequence_alignment, junction, regions, quality).
 """
 from __future__ import annotations
 
+from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS
 from ..errors import ConfigurationError, NumericalError
 from ..data.inputs import prepare_nucleotide_inputs
 
@@ -163,9 +164,9 @@ def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, lo
         if anchors is not None:
             # a model with anchor heads: its record carries the anchors (forward frame, like `seq`) and the
             # productivity they give over the read's V start and J end (predict.junction), not a learned call
-            rec["v_anchor"], rec["j_anchor"] = (_anchor(anchors[g][i]) for g in ("v", "j"))
+            rec.update({ANCHOR_KEYS[g]: _anchor(anchors[g][i]) for g in ANCHOR_GENES})
             v, j = alignments["v"][i], alignments["j"][i]
-            rec["productive"] = derive_junction(seq, rec["v_anchor"], rec["j_anchor"], coding_span=(
+            rec["productive"] = derive_junction(seq, *(rec[ANCHOR_KEYS[g]] for g in ANCHOR_GENES), coding_span=(
                 None if v is None else v.seq_start, None if j is None else j.seq_end)).productive
         if input_sequences is not None:
             # the post-crop, pre-orientation read (== `seq` when the read was already forward). The AIRR

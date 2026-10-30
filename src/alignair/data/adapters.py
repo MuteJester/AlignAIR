@@ -13,6 +13,7 @@ import torch
 from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error_context
 from ..neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 from ..neural.heads.region import READ_REGIONS, REGION_INDEX
+from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, CODON
 from ..core.boundaries import read_window
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .encoders import encode_allele_sets
@@ -22,11 +23,6 @@ from .tokenizer import AAProteinTokenizer
 
 if TYPE_CHECKING:
     from ..core.config import AlignAIRConfig
-
-
-# The anchor targets (the V Cys and J Trp/Phe codon starts) and the length of the codon each one starts.
-ANCHOR_TARGETS = ("v_anchor", "j_anchor")
-CODON = 3
 
 
 def _genes(config):
@@ -69,7 +65,7 @@ def _window(sample, width, genes, null_slot=None):
     for key, value in targets.items():
         if isinstance(value, PositionLabels):
             targets[key] = PositionLabels(value.values[:width], value.padding)
-    for key in ANCHOR_TARGETS:
+    for key in ANCHOR_KEYS.values():
         if key in targets and targets[key].item() + CODON > width:
             targets[key] = torch.tensor(null_slot, dtype=torch.long)
     for gene in genes:
@@ -98,8 +94,8 @@ def _anchor_targets(anchors, config) -> dict:
     """``v_anchor``/``j_anchor``: each anchor's read position (forward frame, like the boundaries), or the null slot
     ``max_seq_length`` when it is not observed."""
     null = config.max_seq_length
-    return {f"{gene}_anchor": torch.tensor(null if anchors[gene] is None else anchors[gene], dtype=torch.long)
-            for gene in ("v", "j")}
+    return {ANCHOR_KEYS[gene]: torch.tensor(null if anchors[gene] is None else anchors[gene], dtype=torch.long)
+            for gene in ANCHOR_GENES}
 
 
 @dataclass(frozen=True)

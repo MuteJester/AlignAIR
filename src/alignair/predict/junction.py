@@ -38,10 +38,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from operator import index
 
+from ..core.anchors import ANCHOR_KEYS, CODON
 from ..errors import InputError
 
 STOP_CODONS = frozenset({"TAA", "TAG", "TGA"})
-CODON = 3
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def derive_junction(sequence: str, v_anchor: int | None, j_anchor: int | None, *
                     coding_span: tuple[int | None, int | None] | None) -> JunctionCall:
     """The junction, frame, stop codon and productivity of ``sequence`` given its anchors and its coding span
     ``(v_start, j_end)`` (see the module docstring for the rule). An anchor is None when it is not observed."""
-    v_anchor, j_anchor = _anchor(v_anchor, "v_anchor"), _anchor(j_anchor, "j_anchor")
+    v_anchor, j_anchor = _anchor(v_anchor, ANCHOR_KEYS["v"]), _anchor(j_anchor, ANCHOR_KEYS["j"])
     n = len(sequence)
     if v_anchor is None or j_anchor is None or not (_codon_in(v_anchor, n) and _codon_in(j_anchor, n)):
         return UNKNOWN

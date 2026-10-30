@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
 from .decode import decoded_anchors, decoded_boundaries
 from .state import Predictions
 
@@ -39,8 +40,8 @@ def _anchors(batches) -> dict[str, np.ndarray] | None:
     if not decoded or any(d is None for d in decoded):
         return None
     anchors = {}
-    for gene in ("v", "j"):
-        null = np.asarray(batches[0][f"{gene}_anchor_logits"]).shape[-1] - 1
+    for gene in ANCHOR_GENES:
+        null = np.asarray(batches[0][ANCHOR_LOGITS[gene]]).shape[-1] - 1
         positions = np.concatenate([d[gene].numpy() for d in decoded])
         anchors[gene] = np.where(positions == null, NOT_OBSERVED, positions)
     return anchors

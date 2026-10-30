@@ -33,6 +33,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from alignair.core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
 from alignair.core.components import ModelComponents, architecture_components
 from alignair.core.config import AlignAIRConfig, GeneSpec
 from alignair.core.gene_branch import GeneBranch, build_tower
@@ -233,7 +234,7 @@ def build_trunk_heads(cfg: AlignAIRConfig) -> dict[str, nn.Module]:
     if cfg.region_head:
         heads["region_logits"] = RegionHead()
     if cfg.anchor_heads:
-        heads["v_anchor_logits"], heads["j_anchor_logits"] = AnchorHead(), AnchorHead()
+        heads.update({ANCHOR_LOGITS[gene]: AnchorHead() for gene in ANCHOR_GENES})       # V first, then J
     return heads
 
 

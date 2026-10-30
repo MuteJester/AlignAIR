@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
 from ..core.config import AlignAIRConfig
 from ..neural.heads.state import STATE_CLASS_WEIGHTS
 from ..neural.weighting import UncertaintyWeight
@@ -13,9 +14,7 @@ from .functional import (_kendall, _mean_rows, _soft_ce, soft_gaussian_target,
                          soft_cross_entropy_rows as _soft_ce_per_sample)
 
 _IGNORE = -100                     # the padding of the per-position labels (PositionLabels): a position no term reads
-# The anchor targets and outputs (``AlignAIRConfig.anchor_heads``), and the spread of an observed anchor's soft target.
-ANCHORS = ("v_anchor", "j_anchor")
-ANCHOR_SIGMA = 1.0
+ANCHOR_SIGMA = 1.0                 # the spread of an observed anchor's soft target (``AlignAIRConfig.anchor_heads``)
 
 
 def genes_of(cfg: AlignAIRConfig) -> list[str]:
@@ -40,7 +39,7 @@ def loss_weight_names(cfg: AlignAIRConfig) -> tuple[str, ...]:
     if getattr(cfg, "region_head", False):                     # per-position recombination-region head
         keys.append("regions")
     if anchors:                                                # the V and J anchor heads
-        keys += list(ANCHORS)
+        keys += [ANCHOR_KEYS[gene] for gene in ANCHOR_GENES]
     return tuple(keys)
 
 
@@ -91,8 +90,9 @@ def auxiliary_losses(out, targets, cfg, logvars):
     if getattr(cfg, "anchor_heads", False):
         read = out["position_mask"] if "position_mask" in out else out["start_mask"]   # an anchor is a codon start
         slots = torch.cat([read, read.new_ones(read.shape[0], 1)], dim=-1)             # + the null slot
-        for key in ANCHORS:
-            ce = _mean_rows(_soft_ce_per_sample(out[f"{key}_logits"], anchor_target(targets[key], read), slots))
+        for gene in ANCHOR_GENES:
+            key = ANCHOR_KEYS[gene]
+            ce = _mean_rows(_soft_ce_per_sample(out[ANCHOR_LOGITS[gene]], anchor_target(targets[key], read), slots))
             parts[key] = _kendall(logvars[key], ce)
 
     # ---- orientation (supervised only when the batch carries an orientation label) ----

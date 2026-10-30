@@ -11,6 +11,7 @@ from collections.abc import Mapping
 
 import torch
 
+from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
 from ..errors import NumericalError
 
 
@@ -41,10 +42,10 @@ def decode_anchors(logits: torch.Tensor, read: torch.Tensor) -> torch.Tensor:
 def decoded_anchors(outputs: Mapping) -> dict[str, torch.Tensor] | None:
     """The V and J anchors of a model's outputs (``decode_anchors``; L for not observed) as ``{"v": ..., "j": ...}``,
     or None when the outputs carry no anchor logits. The read is the start slots: an anchor is a codon start."""
-    if not all(f"{gene}_anchor_logits" in outputs for gene in ("v", "j")):
+    if not all(ANCHOR_LOGITS[gene] in outputs for gene in ANCHOR_GENES):
         return None
     read, _ = boundary_slots(outputs)
-    return {gene: decode_anchors(outputs[f"{gene}_anchor_logits"], read) for gene in ("v", "j")}
+    return {gene: decode_anchors(outputs[ANCHOR_LOGITS[gene]], read) for gene in ANCHOR_GENES}
 
 
 def boundary_slots(outputs: Mapping) -> tuple[torch.Tensor, torch.Tensor]:

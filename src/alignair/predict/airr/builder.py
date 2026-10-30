@@ -16,6 +16,7 @@ from . import quality
 from .alignment import (build_germline_alignment, build_sequence_alignment,
                         compute_alignment_positions, compute_np_regions,
                         extract_segment_alignments, translate_alignment)
+from ...core.anchors import ANCHOR_GENES, ANCHOR_KEYS
 from ..junction import derive_junction
 from .regions import (anchor_junction_fields, cdr3_in_read, cigar_has_indel, compute_junction, compute_junction_cigar,
                       extract_regions)
@@ -88,12 +89,12 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     seq = rec["sequence"]
     out = dict(rec)                    # preserve the light record (calls/coords/cigar/orientation/likelihoods)
     out.setdefault("locus", "IGH")
-    anchored = "v_anchor" in rec and "j_anchor" in rec
+    anchored = all(key in rec for key in ANCHOR_KEYS.values())
     if anchored:
         # a model with anchor heads: the junction, frame, stop codon and productivity come from its predicted V and J
         # anchors over the read's V start and J end (predict.junction), not from the alignment below. No head learned
         # productivity, so `productive_prediction` is the same derived call, and the gate below reads it.
-        call = derive_junction(seq, rec["v_anchor"], rec["j_anchor"],
+        call = derive_junction(seq, *(rec[ANCHOR_KEYS[g]] for g in ANCHOR_GENES),
                                coding_span=(rec.get("v_sequence_start"), rec.get("j_sequence_end")))
         out.update(anchor_junction_fields(seq, call, rec.get("j_sequence_end")))
         out["productive_prediction"] = call.productive
