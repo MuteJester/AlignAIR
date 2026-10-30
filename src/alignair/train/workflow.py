@@ -23,6 +23,10 @@ class TrainingRun:
         return Aligner.from_pretrained(self.best_model_path or self.model_path, device=device)
 
 
+def _uint32(value) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int) and 0 <= value < 2**32
+
+
 def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_iteration=None,
                  record_source=None) -> TrainingRun:
     """Build, train and checkpoint a model for ``config`` into ``output_dir`` or ``out_path``.
@@ -59,19 +63,27 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     validate_training_request(steps=config.steps, batch_size=config.batch_size, lr=config.lr,
                               max_seq_length=setup.config.max_seq_length, reference=reference,
                               short_boost=config.short_boost, grad_clip=config.grad_clip)
-    if (isinstance(config.seed, bool) or not isinstance(config.seed, int) or not 0 <= config.seed < 2**32
+    if (not _uint32(config.seed) or config.init_seed is not None and not _uint32(config.init_seed)
             or isinstance(config.val_every, bool) or not isinstance(config.val_every, int) or config.val_every < 0
             or on_iteration is not None and not callable(on_iteration)):
-        raise ConfigurationError('seed must be a uint32; val_every nonnegative; on_iteration callable or None')
+        raise ConfigurationError('seed must be a uint32 and init_seed a uint32 or None; val_every nonnegative; '
+                                 'on_iteration callable or None')
     random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
-    model = setup.build_model()
+    if config.init_seed is None:
+        model = setup.build_model()
+    else:
+        # The CPU generator, which the batch adapter draws from, is restored after the build: the batches do not
+        # depend on the init seed or on what the build draws. An accelerator's generators keep the init seed.
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(config.init_seed)
+            model = setup.build_model()
     path = os.fspath(out_path or os.path.join(output_dir, 'model.alignair'))
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
     outcome = train(model, reference, sources, setup.config, steps=config.steps, batch_size=config.batch_size,
-          lr=config.lr, short_boost=config.short_boost, seed=config.seed, device=device,
+          lr=config.lr, short_boost=config.short_boost, seed=config.seed, init_seed=config.init_seed, device=device,
           save_path=path, grad_clip=config.grad_clip, val_every=config.val_every,
           model_setup=setup, on_iteration=on_iteration, resume_path=config.resume_path,
           augmentation=config.augmentation, schedule=config.schedule, study=config.study,

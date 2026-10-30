@@ -6,8 +6,11 @@ log-var clamps) after ``optimizer.step()``.
 """
 from __future__ import annotations
 
+import functools
+import hashlib
 import itertools
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 from ..errors import ConfigurationError, error_context
 from ..data.adapters import build_nucleotide_batch as build_batch
@@ -34,6 +37,29 @@ from .study import TrainingStudy, StudySession
 RECIPE = 'v3'
 
 
+@functools.lru_cache(maxsize=None)
+def _tree_sha256(directory: str) -> str:
+    """SHA-256 over every file under ``directory`` but ``__pycache__`` and ``.pyc``: in the sorted order of their
+    POSIX paths relative to it, each path, its byte length and its bytes. Computed once per process."""
+    root = Path(directory)
+    names = sorted(path.relative_to(root).as_posix() for path in root.rglob('*')
+                   if path.is_file() and '__pycache__' not in path.relative_to(root).parts and path.suffix != '.pyc')
+    digest = hashlib.sha256()
+    for name in names:
+        data = (root / name).read_bytes()
+        digest.update(f'{name}\0{len(data)}\0'.encode())
+        digest.update(data)
+    return digest.hexdigest()
+
+
+def genairr_source_sha256() -> str:
+    """The content digest of the GenAIRR package this process imports (its sources, compiled engine and data), as
+    ``train_args["genairr_source_sha256"]`` records it: the method of the assay's GenAIRR provenance
+    (``tree_digest`` of the package directory), so the two compare. About 0.5 s, once per process."""
+    import GenAIRR
+    return _tree_sha256(str(Path(GenAIRR.__file__).resolve().parent))
+
+
 def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     """Compatibility entry for the shared alignment task metrics."""
     return build_tasks(cfg).metrics(out, targets)
@@ -50,7 +76,7 @@ class TrainingOutcome:
 
 
 def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, batch_size=32,
-          lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, device="cpu",
+          lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, init_seed=None, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
           monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
@@ -72,6 +98,12 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     GenAIRR provider of every curriculum stream of the run: training, validation and the X-ray probe. With
     ``data_workers`` > 0 it runs in the worker processes, so it must be picklable (a module-level function or a
     picklable object). None generates the records with GenAIRR.
+
+    ``train_args`` also record the run's provenance: ``init_seed``, the seed the caller drew the model's initial
+    weights from (``TrainingConfig.init_seed``; None: from ``seed``), ``grad_clip``, ``started_from`` (None for a
+    run from its initial weights, ``"resume"`` or ``"init_from"``; either of these also records the
+    ``source_checkpoint_sha256``) and the ``genairr_source_sha256`` of the GenAIRR it imports
+    (``genairr_source_sha256``).
     """
     from .guards import validate_data_workers, validate_training_request
     model_config = getattr(model, 'cfg', cfg)
@@ -180,11 +212,13 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    "schedule": schedule_metadata, "study": study.to_dict() if study is not None else None,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),
                    # provenance only: worker processes reproduce the serial batches exactly
-                   "data_workers": data_workers}
+                   "data_workers": data_workers,
+                   "init_seed": init_seed, "grad_clip": grad_clip,
+                   "started_from": "resume" if resume_from else "init_from" if init_from else None,
+                   "genairr_source_sha256": genairr_source_sha256()}
     _dcs = dataconfigs
     source_checkpoint = resume_from or init_from
     if source_checkpoint:
-        import hashlib
         with open(source_checkpoint, 'rb') as source:
             _train_args['source_checkpoint_sha256'] = hashlib.file_digest(source, 'sha256').hexdigest()
 

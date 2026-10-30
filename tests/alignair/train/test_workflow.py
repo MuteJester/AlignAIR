@@ -112,8 +112,76 @@ def test_source_collection_is_explicit(sources):
         TrainingConfig(dataconfigs=sources)
 
 
+def test_an_init_seed_changes_the_initial_weights_and_leaves_the_training_batches_alone(tmp_path, monkeypatch):
+    """Replicate runs of one data seed: the init seed draws the initial weights, and the process generators the batch
+    adapter draws from (orientation augmentation) start where the data seed leaves them, whatever the model's build
+    draws. On the CPU the training step draws from them too, so equal states at every step mean equal batches."""
+    from alignair.core import ModelSetup
+    original = ModelSetup.build_model
+    built = []
+
+    def build(setup):
+        model = original(setup)
+        built.append({key: value.clone() for key, value in model.state_dict().items()})
+        return model
+
+    monkeypatch.setattr(ModelSetup, 'build_model', build)
+
+    def watched(init_seed):
+        seen = []
+        run = run_training(request(seed=5, init_seed=init_seed), output_dir=tmp_path / str(init_seed),
+                           on_iteration=lambda iteration: seen.append((iteration.records, torch.get_rng_state())))
+        return seen, read_metadata(run.model_path)['training']['train_args']
+
+    (first, first_args), (second, second_args) = watched(0), watched(1)
+    assert any(not torch.equal(value, built[1][key]) for key, value in built[0].items())
+    assert len(first) == len(second) == 2
+    for (records, state), (other_records, other_state) in zip(first, second):
+        assert records == other_records and torch.equal(state, other_state)
+    assert (first_args['init_seed'], second_args['init_seed'], first_args['seed']) == (0, 1, 5)
+
+
+def test_without_an_init_seed_the_data_seed_draws_the_initial_weights(tmp_path, monkeypatch):
+    import GenAIRR.data as gd
+    from alignair.core import ModelSetup, prepare_model
+    from alignair.reference.reference_set import ReferenceSet
+    original = ModelSetup.build_model
+    built = []
+
+    def build(setup):
+        model = original(setup)
+        built.append({key: value.clone() for key, value in model.state_dict().items()})
+        return model
+
+    monkeypatch.setattr(ModelSetup, 'build_model', build)
+    run = run_training(request(seed=5, steps=1), output_dir=tmp_path)
+    torch.manual_seed(5)
+    expected = original(prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), embed_dim=4, filters=4,
+                                      block_out=8)).state_dict()
+    assert all(torch.equal(value, expected[key]) for key, value in built[0].items())
+    assert read_metadata(run.model_path)['training']['train_args']['init_seed'] is None
+
+
+def test_a_run_records_its_gradient_clip_how_it_started_and_its_genairr_source(tmp_path):
+    from alignair.train.trainer import genairr_source_sha256
+    scratch = run_training(request(steps=1, grad_clip=.5), output_dir=tmp_path / 'scratch')
+    resumed = run_training(request(steps=2, grad_clip=.5, resume_path=scratch.model_path),
+                           output_dir=tmp_path / 'resumed')
+    warm = run_training(request(steps=1, grad_clip=None, init_from=scratch.model_path), output_dir=tmp_path / 'warm')
+    found = {name: read_metadata(run.model_path)['training']['train_args']
+             for name, run in (('scratch', scratch), ('resumed', resumed), ('warm', warm))}
+    assert [found[name]['grad_clip'] for name in found] == [.5, .5, None]
+    assert [found[name]['started_from'] for name in found] == [None, 'resume', 'init_from']
+    assert 'source_checkpoint_sha256' not in found['scratch']
+    assert len(found['resumed']['source_checkpoint_sha256']) == len(found['warm']['source_checkpoint_sha256']) == 64
+    digest = genairr_source_sha256()
+    assert len(digest) == 64 and all(args['genairr_source_sha256'] == digest for args in found.values())
+
+
 @pytest.mark.parametrize('options', [{'model_options': {'classification_mode': 'categorical'}},
-                                    {'seed': -1}, {'seed': True}, {'val_every': -1}, {'lr': float('nan')}])
+                                    {'seed': -1}, {'seed': True}, {'val_every': -1}, {'lr': float('nan')},
+                                    {'init_seed': -1}, {'init_seed': True}, {'init_seed': 2**32},
+                                    {'init_seed': 1.0}, {'init_seed': '1'}])
 def test_invalid_workflow_fails_before_model_or_directory_creation(options, tmp_path, monkeypatch):
     import alignair.core.setup as module
     monkeypatch.setattr(module.ModelSetup, 'build_model', lambda self: pytest.fail('allocated invalid model'))
