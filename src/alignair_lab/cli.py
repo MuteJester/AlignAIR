@@ -5,7 +5,7 @@
       [--eval-batch-size 256] [--cache DIR] [--dev-build DIR] [--milestones DIR] [--out-root DIR]
   python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
 
-``screen`` trains a candidate with the 1.0.0 recipe from the record cache and compares it with the baseline's
+``screen`` trains a candidate with the recipe (``recipe``) from the record cache and compares it with the baseline's
 milestone at the same step (``screen.run_screen``); ``cache`` writes the recipe's record cache
 (``records.write_record_cache``). A ``--model-option`` value is read as JSON when it parses (``64``, ``true``,
 ``[3, 5]``), else as a string. Run under the frozen GenAIRR the cache was written with (``PYTHONPATH=FROZEN:src``).

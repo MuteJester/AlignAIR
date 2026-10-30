@@ -5,7 +5,7 @@ A development package, excluded from the wheel like ``alignair_assay``. The lab 
 and the assay (``alignair_assay``); neither imports the lab. Its modules, each importing only those before it in this
 list (``tests/alignair_lab/test_layering.py``):
 
-- ``recipe``: the 1.0.0 training recipe every screen and record cache uses.
+- ``recipe``: the training recipe every screen and record cache uses (the 1.0.0 settings under record recipe v3).
 - ``records``: the record cache, the recipe's curriculum records written once and replayed by any number of runs.
 - ``headline``: a screen's one-page headline, rendered from the assay's comparison summary.
 - ``architectures``: candidate architectures, registered with ``alignair.core.components`` when imported; product

@@ -62,8 +62,8 @@ from alignair_assay.core.provenance import files_digest, genairr_provenance, tre
 KIND = "alignair_lab.record_cache"
 VERSION = 2
 MANIFEST = "manifest.json"
-# Records per chunk file. At about 600 bytes a record compressed (3.7 kB pickled), a chunk is about 2.5 MB and one
-# component of a 40k-step cache of the 1.0.0 recipe is about 90 chunks.
+# Records per chunk file. At about 600 bytes a record compressed (3.7 kB pickled), a chunk is about 2.5 MB; each of the
+# 28 streams of a 40k-step cache of the recipe holds about 91,000 records, 23 chunks.
 CHUNK_RECORDS = 4096
 COMPRESSION_LEVEL = 6
 # The product code, besides GenAIRR, that turns a stream's parameters and seed into records (paths under the alignair
