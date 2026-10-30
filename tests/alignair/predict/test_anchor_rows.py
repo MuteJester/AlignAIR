@@ -28,26 +28,31 @@ def golden():
 
 
 @pytest.mark.component
-def test_anchors_decode_by_argmax_over_the_read_and_the_null_slot():
-    """Pad slots never win, the null slot (L) can; a tie takes the first slot; the result is a long position, L
-    for the null slot."""
-    read = torch.zeros(4, 6, dtype=torch.bool)
-    read[:, :4] = True
-    logits = torch.full((4, 7), -5.0)
-    logits[0, 2] = 3.0                       # a read position
-    logits[1, 5] = 9.0                       # a pad: never decoded
+def test_anchors_decode_by_argmax_over_the_codon_starts_and_the_null_slot():
+    """A 6-base read in a window of 8: an anchor is a codon start, 0..3. The last two read positions (4, 5), where no
+    whole codon fits, and the pads never win; the null slot (L) can; a tie takes the first slot; the result is a long
+    position, L for the null slot."""
+    read = torch.zeros(5, 8, dtype=torch.bool)
+    read[:, :6] = True
+    logits = torch.full((5, 9), -5.0)
+    logits[0, 2] = 3.0                       # a codon start
+    logits[1, 7] = 9.0                       # a pad: never decoded
     logits[1, 1] = 1.0
-    logits[2, 6] = 4.0                       # the null slot
+    logits[2, 8] = 4.0                       # the null slot
     logits[3, [1, 3]] = 2.0                  # a tie
-    assert decode_anchors(logits, read).tolist() == [2, 1, 6, 1]
+    logits[4, [4, 5]] = 9.0                  # read positions too near the end for a codon: never decoded
+    logits[4, 0] = 1.0
+    assert decode_anchors(logits, read).tolist() == [2, 1, 8, 1, 0]
 
 
 @pytest.mark.component
 def test_anchors_refuse_a_non_finite_logit_on_an_allowed_slot():
+    """A NaN on a codon start is refused; one where no codon fits (the read's last two positions) is never read."""
     from alignair.errors import NumericalError
-    read = torch.ones(1, 3, dtype=torch.bool)
+    read = torch.ones(1, 5, dtype=torch.bool)
     with pytest.raises(NumericalError):
-        decode_anchors(torch.tensor([[0.0, float("nan"), 0.0, 0.0]]), read)
+        decode_anchors(torch.tensor([[0.0, float("nan"), 0.0, 0.0, 0.0, 0.0]]), read)
+    assert decode_anchors(torch.tensor([[0.0, 1.0, 0.0, float("nan"), float("nan"), 0.0]]), read).tolist() == [1]
 
 
 @pytest.mark.integration

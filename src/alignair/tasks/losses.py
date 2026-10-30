@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
+from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS, codon_starts
 from ..core.config import AlignAIRConfig
 from ..neural.heads.state import STATE_CLASS_WEIGHTS
 from ..neural.weighting import UncertaintyWeight
@@ -86,13 +86,14 @@ def auxiliary_losses(out, targets, cfg, logvars):
         else:
             parts["regions"] = rl.reshape(-1)[:0].sum() + logvars["regions"].log_var * 0
 
-    # ---- V/J anchors: soft-label CE over the read's positions plus the null slot ("not observed") ----
+    # ---- V/J anchors: soft-label CE over the read's codon starts plus the null slot ("not observed") ----
     if getattr(cfg, "anchor_heads", False):
-        read = out["position_mask"] if "position_mask" in out else out["start_mask"]   # an anchor is a codon start
-        slots = torch.cat([read, read.new_ones(read.shape[0], 1)], dim=-1)             # + the null slot
+        read = out["position_mask"] if "position_mask" in out else out["start_mask"]
+        starts = codon_starts(read)                                          # an anchor is a whole codon's start
+        slots = torch.cat([starts, starts.new_ones(starts.shape[0], 1)], dim=-1)     # + the null slot
         for gene in ANCHOR_GENES:
             key = ANCHOR_KEYS[gene]
-            ce = _mean_rows(_soft_ce_per_sample(out[ANCHOR_LOGITS[gene]], anchor_target(targets[key], read), slots))
+            ce = _mean_rows(_soft_ce_per_sample(out[ANCHOR_LOGITS[gene]], anchor_target(targets[key], starts), slots))
             parts[key] = _kendall(logvars[key], ce)
 
     # ---- orientation (supervised only when the batch carries an orientation label) ----
@@ -179,13 +180,13 @@ def masked_soft_gaussian(gt: torch.Tensor, length: int, slot_mask: torch.Tensor,
     return t / t.sum(-1, keepdim=True).clamp_min(1e-8)
 
 
-def anchor_target(anchor: torch.Tensor, read: torch.Tensor, sigma: float = ANCHOR_SIGMA) -> torch.Tensor:
-    """The soft target (B, L + 1) of anchors (B,) over the read's positions ``read`` (B, L) plus the null slot L: an
-    observed anchor (a position below L) is a Gaussian around it over the read's positions, renormalised, with no
-    weight on the null slot; an anchor at the null slot is a one-hot on it."""
-    length = read.shape[-1]
+def anchor_target(anchor: torch.Tensor, slots: torch.Tensor, sigma: float = ANCHOR_SIGMA) -> torch.Tensor:
+    """The soft target (B, L + 1) of anchors (B,) over the slots an anchor can take ``slots`` (B, L: the read's codon
+    starts) plus the null slot L: an observed anchor (a position below L) is a Gaussian around it over those slots,
+    renormalised, with no weight on the null slot; an anchor at the null slot is a one-hot on it."""
+    length = slots.shape[-1]
     observed = (anchor < length).reshape(-1, 1)
-    gaussian = masked_soft_gaussian(anchor.float().clamp(max=length - 1), length, read, sigma=sigma)
+    gaussian = masked_soft_gaussian(anchor.float().clamp(max=length - 1), length, slots, sigma=sigma)
     return torch.cat([gaussian * observed, (~observed).to(gaussian.dtype)], dim=-1)
 
 

@@ -22,6 +22,15 @@ def test_the_anchors_are_defined_once():
     assert anchors.ANCHOR_LOGITS == {"v": "v_anchor_logits", "j": "j_anchor_logits"}
 
 
+def test_an_anchor_can_start_only_where_a_whole_codon_fits_in_the_read():
+    """Reads of 5, 3 and 2 bases in a window of 6: codon starts 0..2, 0, and none."""
+    import torch
+    read = torch.tensor([[1, 1, 1, 1, 1, 0], [1, 1, 1, 0, 0, 0], [1, 1, 0, 0, 0, 0]], dtype=torch.bool)
+    assert anchors.codon_starts(read).tolist() == [[True, True, True, False, False, False],
+                                                   [True, False, False, False, False, False], [False] * 6]
+    assert read.tolist()[0] == [True] * 5 + [False]                  # the read mask itself is left as it was
+
+
 def test_no_other_module_defines_the_codon_or_spells_an_anchor_key():
     found = []
     for path in sorted([*(SRC / "alignair").rglob("*.py"), *(SRC / "alignair_lab").rglob("*.py")]):

@@ -372,8 +372,9 @@ def test_the_anchor_heads_score_every_position_and_a_null_slot_from_the_trunks_f
 @pytest.mark.slow
 def test_lab_trunk_v2_with_anchors_learns_one_batch(reference):
     """Updated 200 times on one batch of 8 GenAIRR reads (6 full-length, 2 that miss their V Cys), its anchors
-    decoded as the product decodes them (the argmax over the read's positions and the null slot) are right for more
-    than 90% of the 16 anchors, null ones included."""
+    decoded as the product decodes them (``decode_anchors``: the argmax over the codon starts and the null slot) are
+    right for more than 90% of the 16 anchors, null ones included."""
+    from alignair.predict.decode import decode_anchors
     from alignair.train import overfit_one_batch
     from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
     from alignair.train.trainer import build_batch
@@ -387,8 +388,7 @@ def test_lab_trunk_v2_with_anchors_learns_one_batch(reference):
     def accuracy():
         with torch.no_grad():
             out = model.eval()(batch)
-        slots = torch.cat([out['start_mask'], out['start_mask'].new_ones(8, 1)], -1)
-        right = [(out[f'{key}_logits'].masked_fill(~slots, float('-inf')).argmax(-1) == targets[key]).float()
+        right = [(decode_anchors(out[f'{key}_logits'], out['start_mask']) == targets[key]).float()
                  for key in ('v_anchor', 'j_anchor')]
         return float(torch.cat(right).mean())
 

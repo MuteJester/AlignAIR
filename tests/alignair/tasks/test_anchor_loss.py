@@ -1,7 +1,8 @@
 """The anchor objective (``AlignAIRConfig.anchor_heads``): for each of the V and J anchors, a soft-label cross entropy
-over the read's positions plus the null slot L. An observed anchor's target is a Gaussian (sigma 1) over the read's
-positions around it, renormalised, with no weight on the null slot; an anchor that is not observed is a one-hot on
-the null slot. Pad positions are left out. Each anchor has its own Kendall weight (``v_anchor``, ``j_anchor``). The
+over the read's codon starts (the positions where a whole codon fits in the read, the slots an anchor can take) plus
+the null slot L. An observed anchor's target is a Gaussian (sigma 1) over the codon starts around it, renormalised,
+with no weight on the null slot; an anchor that is not observed is a one-hot on the null slot. The read's last two
+positions and the pads are left out. Each anchor has its own Kendall weight (``v_anchor``, ``j_anchor``). The
 productive head and its term are dropped: productivity is derived from the anchors."""
 from dataclasses import replace
 import math
@@ -18,18 +19,19 @@ from alignair.tasks.losses import loss_weight_names
 pytestmark = pytest.mark.component
 
 READ, WIDTH = 8, 16              # the task batch's reads fill the first 8 of its 16 positions; the null slot is 16
-ANCHORS = {"v_anchor": torch.tensor([3, WIDTH]), "j_anchor": torch.tensor([6, 7])}
+STARTS = READ - 2                # a whole codon fits at the read positions 0..5
+ANCHORS = {"v_anchor": torch.tensor([3, WIDTH]), "j_anchor": torch.tensor([4, 5])}
 
 
 def expected_target(anchor):
-    """The target a reader can check by hand: exp(-(k - a)^2 / 2) on read positions k, renormalised, 0 on the null
+    """The target a reader can check by hand: exp(-(k - a)^2 / 2) on the codon starts k, renormalised, 0 on the null
     slot; a one-hot on the null slot when the anchor is the null slot."""
     target = torch.zeros(WIDTH + 1)
     if anchor == WIDTH:
         target[WIDTH] = 1.
         return target
-    positions = torch.arange(READ, dtype=torch.float32)
-    target[:READ] = torch.exp(-0.5 * (positions - anchor) ** 2)
+    positions = torch.arange(STARTS, dtype=torch.float32)
+    target[:STARTS] = torch.exp(-0.5 * (positions - anchor) ** 2)
     return target / target.sum()
 
 
@@ -73,24 +75,25 @@ def test_perfect_anchor_logits_cost_almost_nothing(task_batch):
 
 
 def test_the_anchor_terms_are_two_kendall_weighted_cross_entropies(task_batch):
-    """Uniform logits cost log(9) a read (its 8 positions and the null slot), whatever the target; at log-variance
-    s the term is log(9) e^-s + s / 2, with each anchor's own s."""
+    """Uniform logits cost log(7) a read (its 6 codon starts and the null slot), whatever the target; at log-variance
+    s the term is log(7) e^-s + s / 2, with each anchor's own s."""
     cfg, out, targets = anchor_task(task_batch)
     assert loss_weight_names(cfg)[-2:] == ("v_anchor", "j_anchor")
     _, parts = anchor_terms(cfg, out, targets, log_vars={"v_anchor": 1.0, "j_anchor": -0.5})
-    assert parts["v_anchor"].item() == pytest.approx(math.log(READ + 1) * math.exp(-1) + 0.5)
-    assert parts["j_anchor"].item() == pytest.approx(math.log(READ + 1) * math.exp(0.5) - 0.25)
+    assert parts["v_anchor"].item() == pytest.approx(math.log(STARTS + 1) * math.exp(-1) + 0.5)
+    assert parts["j_anchor"].item() == pytest.approx(math.log(STARTS + 1) * math.exp(0.5) - 0.25)
 
 
 @pytest.mark.parametrize("boundary_mode", ["residue", "half_open"])
 def test_padding_positions_carry_no_anchor_loss(task_batch, boundary_mode):
-    """Whatever the pad positions' logits hold, the terms are those of the read's positions and the null slot, and no
-    gradient reaches a pad logit (the read is the position mask, or the half-open start mask)."""
+    """Whatever the logits of the pads and of the read's last two positions hold, the terms are those of the codon
+    starts and the null slot, and no gradient reaches the others (the read is the position mask, or the half-open
+    start mask)."""
     generator = torch.Generator().manual_seed(0)
     logits = {key: torch.randn(2, WIDTH + 1, generator=generator) for key in ANCHORS}
     noisy = {key: value.clone() for key, value in logits.items()}
     for value in noisy.values():
-        value[:, READ:WIDTH] = 50.0
+        value[:, STARTS:WIDTH] = 50.0
     cfg, out, targets = anchor_task(task_batch, logits, boundary_mode=boundary_mode)
     total, parts = anchor_terms(cfg, out, targets)
     _, noisy_parts = anchor_terms(*anchor_task(task_batch, noisy, boundary_mode=boundary_mode))
@@ -99,7 +102,7 @@ def test_padding_positions_carry_no_anchor_loss(task_batch, boundary_mode):
     total.backward()
     for key in ANCHORS:
         gradient = out[f"{key}_logits"].grad
-        assert not gradient[:, READ:WIDTH].any() and gradient[:, :READ].any() and gradient[:, WIDTH].any(), key
+        assert not gradient[:, STARTS:WIDTH].any() and gradient[:, :STARTS].any() and gradient[:, WIDTH].any(), key
 
 
 def test_anchor_heads_drop_the_productive_head_and_term(task_batch):

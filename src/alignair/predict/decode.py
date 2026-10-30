@@ -11,7 +11,7 @@ from collections.abc import Mapping
 
 import torch
 
-from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
+from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS, codon_starts
 from ..errors import NumericalError
 
 
@@ -32,11 +32,12 @@ def _masked_argmax(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 
 
 def decode_anchors(logits: torch.Tensor, read: torch.Tensor) -> torch.Tensor:
-    """Per read, an anchor's position (long): the argmax of its logits (B, L + 1) over the read's positions ``read``
-    (B, L) and the null slot L, which means the anchor is not observed. A tie takes the first slot; a non-finite logit
-    on an allowed slot is a NumericalError."""
-    read = _bool(read)
-    return _masked_argmax(torch.as_tensor(logits), torch.cat([read, read.new_ones(read.shape[0], 1)], dim=-1))
+    """Per read, an anchor's position (long): the argmax of its logits (B, L + 1) over the codon starts of the read's
+    positions ``read`` (B, L; ``core.anchors.codon_starts``: where a whole codon fits, as the anchor loss trains) and
+    the null slot L, which means the anchor is not observed. A tie takes the first slot; a non-finite logit on an
+    allowed slot is a NumericalError."""
+    starts = codon_starts(_bool(read))
+    return _masked_argmax(torch.as_tensor(logits), torch.cat([starts, starts.new_ones(starts.shape[0], 1)], dim=-1))
 
 
 def decoded_anchors(outputs: Mapping) -> dict[str, torch.Tensor] | None:
