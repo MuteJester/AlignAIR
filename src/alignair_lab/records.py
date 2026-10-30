@@ -32,6 +32,7 @@ from __future__ import annotations
 import datetime
 import functools
 import hashlib
+import math
 import json
 import multiprocessing
 import os
@@ -53,7 +54,7 @@ from alignair.train.gym.workers import component_plan
 from alignair_assay.core.provenance import genairr_provenance, tree_digest
 
 KIND = "alignair_lab.record_cache"
-VERSION = 1
+VERSION = 2
 MANIFEST = "manifest.json"
 # Records per chunk file. At about 600 bytes a record compressed (3.7 kB pickled), a chunk is about 2.5 MB and one
 # component of a 40k-step cache of the 1.0.0 recipe is about 90 chunks.
@@ -96,13 +97,34 @@ def reference_sha256(reference) -> str | None:
     return checksum() if callable(checksum) else None
 
 
-def canonical_parameters(parameters: Mapping) -> dict:
-    """Component parameters as the manifest stores them (JSON values; tuples become lists)."""
-    try:
-        return json.loads(json.dumps(dict(parameters), sort_keys=True, allow_nan=False))
-    except (TypeError, ValueError) as exc:
-        raise ConfigurationError("component parameters must be JSON values to be cached",
-                                 context={"field": "parameters"}) from exc
+_TUPLE = "__tuple__"
+
+
+def encode_parameters(value):
+    """Stream parameters as the manifest stores them, losslessly: JSON keeps ints, floats and booleans apart (1, 1.0
+    and true); a tuple becomes ``{"__tuple__": [...]}``, so it stays apart from a list. ConfigurationError for a value
+    JSON cannot hold exactly (NaN, infinities, other types, non-string keys, a ``__tuple__`` key)."""
+    if isinstance(value, Mapping):
+        if not all(isinstance(key, str) and key != _TUPLE for key in value):
+            raise ConfigurationError("cached parameters need string keys other than '__tuple__'",
+                                     context={"field": "parameters"})
+        return {key: encode_parameters(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return {_TUPLE: [encode_parameters(item) for item in value]}
+    if isinstance(value, list):
+        return [encode_parameters(item) for item in value]
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    raise ConfigurationError(f"cached parameters must be finite JSON values, tuples or mappings; got {value!r}",
+                             context={"field": "parameters"})
+
+
+def canonical_parameters(parameters, *, encoded: bool = False) -> str:
+    """One string per distinct value of ``parameters`` (``encode_parameters``; ``encoded``: already encoded, as the
+    manifest holds them): equal strings mean equal parameters, ints, floats, booleans, tuples and lists apart."""
+    return json.dumps(parameters if encoded else encode_parameters(parameters), sort_keys=True, allow_nan=False)
 
 
 def component_counts(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, records: int) -> tuple[int, ...]:
@@ -185,7 +207,7 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
         raise ConfigurationError("GenAIRR changed while the cache was being prepared", context={"stage": "record_cache"})
     components = [{"seed": component.seed, "reference": dataconfig_name(component.reference),
                    "reference_sha256": reference_sha256(component.reference),
-                   "parameters": canonical_parameters(component.parameters), "records": count,
+                   "parameters": encode_parameters(component.parameters), "records": count,
                    "directory": f"{position:03d}-seed{component.seed}"}
                   for position, (component, count) in enumerate(zip(plan, counts))]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -282,10 +304,12 @@ class CachedRecordSource:
         if reference_sha256(reference) != entry["reference_sha256"]:
             raise ConfigurationError(f"the record cache's component of seed {seed} is of another reference "
                                      f"({entry['reference']})", context=context, hint=_HINT)
-        requested = canonical_parameters(parameters)
-        if requested != entry["parameters"]:
-            fields = sorted(field for field in requested.keys() | entry["parameters"].keys()
-                            if requested.get(field) != entry["parameters"].get(field))
+        requested, cached = encode_parameters(parameters), entry["parameters"]
+        if canonical_parameters(requested, encoded=True) != canonical_parameters(cached, encoded=True):
+            fields = sorted(field for field in requested.keys() | cached.keys()
+                            if field not in requested or field not in cached
+                            or canonical_parameters(requested[field], encoded=True)
+                            != canonical_parameters(cached[field], encoded=True))
             raise ConfigurationError(f"the record cache's component of seed {seed} was generated with other parameters",
                                      context={**context, "fields": fields}, hint=_HINT)
         return entry
