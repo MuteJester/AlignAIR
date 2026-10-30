@@ -318,7 +318,12 @@ class CachedRecordSource:
         root = Path(self.path)
         for chunk in entry["chunks"]:
             with error_context(stage="record_cache", cache=self.path, seed=entry["seed"], chunk=chunk["file"]):
-                records = pickle.loads(zlib.decompress((root / chunk["file"]).read_bytes()))
+                data = (root / chunk["file"]).read_bytes()
+                if hashlib.sha256(data).hexdigest() != chunk["sha256"]:
+                    raise ConfigurationError(f"chunk {chunk['file']} of the record cache is not the chunk it was "
+                                             "written as: its SHA-256 differs from the manifest's",
+                                             context={"stage": "record_cache", "chunk": chunk["file"]}, hint=_HINT)
+                records = pickle.loads(zlib.decompress(data))
             yield from records
         raise TrainingDataError(f"the record cache is exhausted: its component of seed {entry['seed']} holds "
                                 f"{entry['records']} records",

@@ -186,6 +186,21 @@ def test_exhaustion_in_a_data_worker_reaches_the_training_process(cache):
     assert caught.value.context['stage'] == 'record_cache'
 
 
+def test_a_chunk_whose_bytes_changed_is_refused_when_read(cache, tmp_path, expected):
+    copy = tmp_path / 'corrupt'
+    shutil.copytree(cache, copy)
+    stream = json.loads((copy / 'manifest.json').read_text())['components'][3]
+    chunk = copy / stream['chunks'][1]['file']
+    data = bytearray(chunk.read_bytes())
+    data[-1] ^= 1
+    chunk.write_bytes(bytes(data))
+    records = training_records(DATACONFIGS, policy=UNSELECTED, seed=SEED, record_source=CachedRecordSource(copy))
+    assert list(islice(records, 7 * CHUNK)) == expected[:7 * CHUNK]        # every stream's first chunk
+    with pytest.raises(ConfigurationError, match='SHA-256') as caught:
+        list(islice(records, 7 * CHUNK))
+    assert caught.value.context['chunk'] == stream['chunks'][1]['file']
+
+
 @pytest.mark.parametrize('seed', [100, 1])
 def test_another_seed_is_refused(cache, seed):
     first = component_plan(DATACONFIGS, policy=UNSELECTED, seed=seed)[0].seed
