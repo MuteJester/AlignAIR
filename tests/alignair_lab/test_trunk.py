@@ -338,7 +338,8 @@ def test_the_replay_of_lab_trunk_v1_is_its_forward_pass(reference, monkeypatch):
 
 @pytest.mark.integration
 def test_a_screen_of_lab_trunk_v1_compares_with_the_baseline_screen(rig, baseline):
-    """The screen trains the candidate, then the assay diagnoses its model file in the screen's process."""
+    """The screen trains the candidate, then the assay diagnoses its model file in the screen's process. Its record and
+    headline give both models' sizes: the candidate's with its trunk, the baseline's without."""
     from alignair.model_file import read_model_state
     from alignair_lab.cli import main
     assert main(candidate_arguments(rig, 'trunk', architecture='lab-trunk-v1')) == 0
@@ -346,3 +347,9 @@ def test_a_screen_of_lab_trunk_v1_compares_with_the_baseline_screen(rig, baselin
     assert (record['status'], record['architecture'], record['baseline']['name']) == ('done', 'lab-trunk-v1', 'base0')
     assert read_model_state(record['candidate']['model_path']).config.architecture == 'lab-trunk-v1'
     assert set(record['comparison']['suites']) == {'S0'} and record['candidate']['model_key']
+    candidate, base = record['candidate']['size'], record['baseline']['size']
+    assert (candidate['architecture'], base['architecture']) == ('lab-trunk-v1', 'lab-null-v1')
+    assert candidate['components']['trunk']['parameters'] > 0 and 'trunk' not in base['components']
+    assert candidate['conv1d'] < base['conv1d']
+    headline = (rig.screens / 'trunk' / 'headline.txt').read_text()
+    assert 'Size of the candidate (lab-trunk-v1): ' in headline and 'Size of the baseline (lab-null-v1): ' in headline

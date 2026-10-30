@@ -14,6 +14,7 @@ import pytest
 from alignair.model_file import read_metadata
 from alignair_lab.cli import main
 from alignair_lab.recipe import MIN_LR
+from alignair_lab.sizes import checkpoint_size, size_line
 from tests.alignair_lab.rig import REMOVED, SMALL, candidate_arguments, copy_card, write_null_band
 
 pytestmark = pytest.mark.integration
@@ -33,7 +34,10 @@ def test_a_baseline_screen_cools_its_rate_down_and_compares_with_nothing(baselin
     state = load_training_checkpoint(checkpoint)
     assert state.scheduler_state['last_epoch'] == 2
     assert state.optimizer_state['param_groups'][0]['lr'] == pytest.approx(MIN_LR)      # cooled down to its end
-    assert 'Baseline screen base0' in (baseline / 'headline.txt').read_text()
+    headline = (baseline / 'headline.txt').read_text()
+    assert 'Baseline screen base0' in headline
+    assert record['candidate']['size'] == checkpoint_size(checkpoint)                   # its model's size
+    assert size_line('model', record['candidate']['size'], record['candidate']['steps_per_second']) in headline
 
 
 def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protocol(rig, baseline):
@@ -55,6 +59,13 @@ def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protoco
     assert (f"python -m alignair_lab calibrate --steps 2 --init-seeds 0,1,2 --schedule cosine --cache "
             f"{rig.cache.resolve()} --out-root {rig.screens.resolve()} --dev-build {rig.dev.resolve()} --suites S0 "
             "--model-option embed_dim=4 --model-option filters=4 --model-option block_out=8)") in headline
+    # both models' sizes, and each one's training rate: the baseline's from its baseline screen
+    base_rate = json.loads((baseline / 'screen.json').read_text())['candidate']['steps_per_second']
+    assert reference['steps_per_second'] == base_rate
+    assert reference['size'] == checkpoint_size(reference['checkpoint'])
+    assert record['candidate']['size'] == checkpoint_size(record['candidate']['model_path'])
+    assert size_line('candidate', record['candidate']['size'], record['candidate']['steps_per_second']) in headline
+    assert size_line('baseline', reference['size'], base_rate) in headline
 
 
 def screens_with(tmp_path, baseline, *names, changes=None):

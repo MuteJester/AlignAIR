@@ -13,6 +13,7 @@ from alignair.model_file import read_metadata
 from alignair.train.trainer import RECIPE
 from alignair_lab.cli import main
 from alignair_lab.recipe import DATACONFIGS, recipe_train_args
+from alignair_lab.sizes import checkpoint_size, size_line
 from tests.alignair_lab.rig import REMOVED, SMALL, arguments, copy_card
 
 pytestmark = pytest.mark.integration
@@ -51,6 +52,11 @@ def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_s
     assert 'initial weights' not in headline                                # the milestone's init seed, 0, is its own
     assert '[screen smoke] step 2/2' in printed                             # progress, past the trainer's log
     assert not (rig.dev / 'diagnostics').exists()                  # the dev build is only read
+    # both models' sizes; a milestone records no training rate
+    assert baseline['steps_per_second'] is None
+    assert baseline['size'] == checkpoint_size(rig.milestones / 'model.step2.alignair')
+    assert size_line('baseline', baseline['size'], None) in headline and 'steps/s not recorded.' in headline
+    assert size_line('candidate', record['candidate']['size'], record['candidate']['steps_per_second']) in headline
 
 
 def test_the_null_candidate_reproduces_the_baselines_weights_on_the_cpu(rig):

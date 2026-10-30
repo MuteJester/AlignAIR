@@ -42,7 +42,10 @@ that replicate runs end close to each other, and draws its initial weights from 
 ``schedule`` and ``protocol``), the cache and the baseline used (its kind, ``screen`` or ``milestone``, step, recipe,
 git commit and GenAIRR identity, also on the headline), the null band used, the status (updated at each stage; a
 failure is recorded before it is raised), the model keys, the report path, the times, the comparison summary and the
-noise ``decisions``. Screens running at once share only inputs they read: the record cache, the dev build, the
+noise ``decisions``. It also holds each model's size (``sizes.checkpoint_size``: its parameters and Conv1d layers,
+in total and per component) and training steps/s: the candidate's under ``candidate``, the baseline's under
+``baseline`` (the steps/s its baseline screen recorded; None for a milestone). The headline gives each model's on one
+line (``sizes.size_line``). Screens running at once share only inputs they read: the record cache, the dev build, the
 baselines and the null bands.
 """
 from __future__ import annotations
@@ -84,6 +87,7 @@ from alignair_lab.recipe import (
     training_config,
 )
 from alignair_lab.records import CachedRecordSource
+from alignair_lab.sizes import checkpoint_size, size_line
 
 ARCH_ROOT = Path("/media/thomas/NVMe_Data/alignair_arch")
 SCREENS = ARCH_ROOT / "screens"
@@ -215,6 +219,8 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
     try:
         times = {}
         if provenance is not None:
+            record["baseline"].update(size=checkpoint_size(provenance["checkpoint"]),
+                                      steps_per_second=_baseline_rate(provenance))
             layout = assay_layout(screen / "assay", Path(dev_build), names)
             options = {"device": device, "batch_size": eval_batch_size, "variants": tuple(variants), "profile": False,
                        "max_cases": max_cases}
@@ -231,7 +237,8 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
         trained = _train(config, screen, source, echo=lambda line: echo(f"[screen {name}] {line}"))
         times["training"] = time.perf_counter() - clock
         record["candidate"] = {"model_path": trained.model_path, "steps": trained.steps,
-                               "steps_per_second": round(trained.steps / times["training"], 2)}
+                               "steps_per_second": round(trained.steps / times["training"], 2),
+                               "size": checkpoint_size(trained.model_path)}
         _release_device(device)
 
         if provenance is None:
@@ -384,9 +391,21 @@ def _band_lines(record: dict, code: str | None) -> list[str]:
     return lines
 
 
+def _baseline_rate(provenance: Mapping) -> float | None:
+    """The baseline's training steps/s: its baseline screen's, which the screen's record holds; None for a milestone,
+    whose run records none."""
+    if provenance["kind"] != "screen":
+        return None
+    record = json.loads((Path(provenance["screen_dir"]) / SCREEN_RECORD).read_text(encoding="utf-8"))
+    return (record.get("candidate") or {}).get("steps_per_second")
+
+
 def _footer(report: Path, layout, key: str, baseline_key: str, times: dict, record: dict) -> list[str]:
     detail = layout.diagnostics_dir(key) / "<S>" / f"against_{baseline_key}.md"
+    candidate, baseline = record["candidate"], record["baseline"]
     return [f"Report: {report}", f"Per-suite detail: {detail}",
+            size_line("candidate", candidate["size"], candidate["steps_per_second"]),
+            size_line("baseline", baseline["size"], baseline["steps_per_second"]),
             f"Wall time: {_minutes(times['total'])} (baseline diagnosis {_minutes(times['baseline_diagnosis'])}, "
             f"training {_minutes(times['training'])} at {record['candidate']['steps_per_second']} steps/s, "
             f"candidate diagnosis {_minutes(times['candidate_diagnosis'])})."]
@@ -397,5 +416,6 @@ def _baseline_headline(record: dict, times: dict) -> list[str]:
             f"{record['cache']['path']}.", f"Model: {record['candidate']['model_path']}.", _cache_line(record["cache"]),
             f"Screens of other architectures of this protocol compare with the baseline screen of init seed "
             f"{BASELINE_INIT_SEED}; calibrate compares those of several init seeds.",
+            size_line("model", record["candidate"]["size"], record["candidate"]["steps_per_second"]),
             f"Wall time: {_minutes(times['total'])} (training {_minutes(times['training'])} at "
             f"{record['candidate']['steps_per_second']} steps/s)."]
