@@ -222,7 +222,10 @@ def baseline_milestone(milestones: Path, steps: int, options: Mapping | None = N
 
 def same_genairr(baseline: Mapping, manifest: Mapping) -> None:
     """Refuse (ConfigurationError) a baseline trained on another GenAIRR than the record cache's: by the GenAIRR
-    source digest its checkpoint records, or, for a checkpoint that predates it, by the cache's GenAIRR version."""
+    source digest its checkpoint records, or, for a checkpoint that predates it, by the version this process's
+    GenAIRR reports (``GenAIRR.__version__``, as checkpoints record it), which is the cache's: a cache is replayed
+    only by the GenAIRR it was written with (``records.CachedRecordSource``)."""
+    import GenAIRR
     digest, cached = baseline.get("genairr_source_sha256"), manifest["genairr"]["genairr_source_sha256"]
     if digest is not None:
         if digest != cached:
@@ -233,11 +236,11 @@ def same_genairr(baseline: Mapping, manifest: Mapping) -> None:
                                      hint="Compare a candidate trained from this cache with a baseline trained under "
                                           "the same GenAIRR.")
         return
-    version = manifest["genairr"].get("genairr_version")
+    version = getattr(GenAIRR, "__version__", None)
     if baseline.get("genairr_version") != version:
         raise ConfigurationError(f"the baseline {baseline['checkpoint']} and the record cache come from different "
                                  f"GenAIRR versions: genairr_version {baseline.get('genairr_version')!r}, not "
-                                 f"{version!r} (the record cache's)",
+                                 f"{version!r} (the GenAIRR this process imports, which wrote the record cache)",
                                  context={"field": "genairr_version", "path": baseline["checkpoint"]},
                                  hint="Compare a candidate trained from this cache with a baseline trained under the "
                                       "same GenAIRR.")

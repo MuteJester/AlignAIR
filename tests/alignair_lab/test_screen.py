@@ -109,6 +109,27 @@ def test_a_milestone_without_a_genairr_source_digest_is_refused_on_another_genai
     assert not (rig.screens / 'other-genairr').exists()
 
 
+def test_a_baseline_without_a_digest_is_compared_with_the_version_of_the_genairr_imported(rig):
+    """A cache records the version the installed distribution's metadata names, which need not be the version of the
+    GenAIRR on the path (a frozen copy); a checkpoint records the imported package's own."""
+    import GenAIRR
+    from alignair.errors import ConfigurationError
+    from alignair_lab.records import CachedRecordSource
+    from alignair_lab.screen import same_genairr
+    manifest = CachedRecordSource(rig.cache).manifest
+    manifest = {**manifest, 'genairr': {**manifest['genairr'], 'genairr_version': '9.9.9'}}   # an upgraded install
+    same_genairr({'checkpoint': 'a milestone', 'genairr_version': GenAIRR.__version__}, manifest)
+    with pytest.raises(ConfigurationError, match=f"genairr_version '9.9.9', not '{GenAIRR.__version__}'"):
+        same_genairr({'checkpoint': 'a milestone', 'genairr_version': '9.9.9'}, manifest)
+
+
+def test_a_milestone_of_another_capacity_is_refused_unless_the_screen_is_told_its_options(rig, capsys):
+    assert main(arguments(rig, 'other-capacity', baseline_options=False)) == 2
+    error = capsys.readouterr().err
+    assert 'embed_dim 4, not 32' in error and 'filters 4, not 128' in error and 'block_out 8, not 576' in error
+    assert not (rig.screens / 'other-capacity').exists()
+
+
 COSINE = {'policy': 'cosine-v1', 'total_steps': 2, 'min_lr': 3e-4 / 100}
 
 
