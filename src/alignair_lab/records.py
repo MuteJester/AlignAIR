@@ -318,9 +318,29 @@ def _check_boundaries(segments: list[Segment], results: dict, plan) -> int:
     return checked
 
 
+def physical_cores(cpuinfo: str | None = None) -> int:
+    """The machine's physical CPU cores, counted from ``/proc/cpuinfo`` (or the text ``cpuinfo``) by socket and core
+    id; the logical CPU count where no core ids are listed."""
+    if cpuinfo is None:
+        try:
+            cpuinfo = Path("/proc/cpuinfo").read_text(encoding="utf-8")
+        except OSError:
+            cpuinfo = ""
+    cores, socket = set(), None
+    for line in cpuinfo.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() == "physical id":
+            socket = value.strip()
+        elif key.strip() == "core id":
+            cores.add((socket, value.strip()))
+    return len(cores) or os.cpu_count() or 1
+
+
 def default_writers(tasks: int) -> int:
-    """The writer processes used when none is asked for: one per CPU, at most one per segment to write."""
-    return max(1, min(os.cpu_count() or 1, tasks))
+    """The writer processes used when none is asked for: one per physical core, at most one per segment to write.
+    GenAIRR's simulation gains nothing from a core's second hardware thread: a 1,000-step v3 cache took 2.9 min with
+    8 writers on 8 cores, 4.4 min with 16 on their 16 threads."""
+    return max(1, min(physical_cores(), tasks))
 
 
 def _duration(seconds: float) -> str:
@@ -380,8 +400,8 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
 
     The streams are written in segments (``segment_plan``: the selected streams cut so that the writers stay busy, or
     every stream cut into ``segment_records``), each drawn from its own seed by a spawned process, at most ``workers``
-    at a time (default ``default_writers``: one per CPU), the selected streams' first. A split stream's records are
-    renamed as the serial stream names them, and every join between two of its segments is checked
+    at a time (default ``default_writers``: one per physical core), the selected streams' first. A split stream's
+    records are renamed as the serial stream names them, and every join between two of its segments is checked
     (``_check_boundaries``): a GenAIRR whose records are not shiftable fails the write. ``provider`` draws each
     stream's records (default the GenAIRR provider ``require`` compares with). Every ``progress_seconds`` and once at
     the end, ``progress`` (when given) receives a line with the records written, the streams done, the records per
@@ -404,7 +424,7 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
     plan = component_plan(dataconfigs, policy=policy, seed=seed)
     counts = component_counts(dataconfigs, policy=policy, seed=seed, records=steps * batch_size)
     selected = [bool(component.parameters.get("productive_only")) for component in plan]
-    requested = (os.cpu_count() or 1) if workers is None else _count(workers, "workers")
+    requested = physical_cores() if workers is None else _count(workers, "workers")
     segments = segment_plan(counts, selected, workers=requested, chunk_records=chunk_records,
                             segment_records=segment_records)
     processes = default_writers(len(segments)) if workers is None else min(requested, len(segments))

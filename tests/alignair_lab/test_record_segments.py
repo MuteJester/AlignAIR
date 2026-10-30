@@ -1,9 +1,12 @@
 """How the cache writer cuts streams into segments, each a range of records drawn from its own seed: the slow selected
 streams are cut so that every writer stays busy to the end, the fast unselected ones are written whole, chunk numbers
 run on across a stream's segments, and the selected segments are handed out first."""
+import os
+
 import pytest
 
-from alignair_lab.records import MIN_SEGMENT_RECORDS, SEGMENTS_PER_WRITER, Segment, segment_plan
+from alignair_lab.records import (MIN_SEGMENT_RECORDS, SEGMENTS_PER_WRITER, Segment, default_writers, physical_cores,
+                                   segment_plan)
 
 pytestmark = pytest.mark.component
 
@@ -31,6 +34,18 @@ def test_segments_are_at_least_the_minimum_and_at_most_a_chunk():
                                                                      (2 * MIN_SEGMENT_RECORDS, 300)]
     large = segment_plan([100_000], [True], workers=1, chunk_records=4096)
     assert {segment.stop - segment.start for segment in large[:-1]} == {4096}
+
+
+CPUINFO = ''.join(f'processor\t: {n}\nphysical id\t: {socket}\ncore id\t\t: {core}\n\n'
+                  for n, (socket, core) in enumerate((s, c) for s in (0, 1) for c in (0, 1, 0, 1)))
+
+
+def test_the_default_is_a_writer_per_physical_core():
+    """Two sockets of two cores of two hardware threads: 4 writers. GenAIRR's simulation gains nothing from a core's
+    second thread (a 1,000-step v3 cache: 2.9 min with 8 writers on 8 cores, 4.4 min with 16 on their 16 threads)."""
+    assert physical_cores(CPUINFO) == 4
+    assert physical_cores('') == (os.cpu_count() or 1)                  # no core ids: every logical CPU
+    assert default_writers(100) == physical_cores() and default_writers(1) == 1
 
 
 def test_without_a_selected_stream_every_stream_is_written_whole():

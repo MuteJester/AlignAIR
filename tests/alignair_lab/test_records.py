@@ -142,10 +142,10 @@ def test_the_manifest_records_genairr_the_recipe_and_each_streams_records(recipe
                for stream in manifest['components'])
 
 
-def test_the_writer_runs_a_process_per_stream_up_to_the_cpu_count(recipe_cache):
-    import os
+def test_the_writer_runs_a_process_per_physical_core_by_default(recipe_cache):
+    from alignair_lab.records import physical_cores
     manifest = json.loads((recipe_cache / 'manifest.json').read_text())
-    assert manifest['workers'] == min(os.cpu_count(), RECIPE_STREAMS)
+    assert manifest['workers'] == min(physical_cores(), manifest['segments'])
 
 
 def test_the_writer_reports_records_per_second_and_its_eta(tmp_path):

@@ -74,8 +74,9 @@ def build_parser() -> argparse.ArgumentParser:
     cache.add_argument("--steps", type=int, default=CACHE_STEPS,
                        help=f"steps of {BATCH_SIZE} records the cache serves (default %(default)s)")
     cache.add_argument("--workers", type=int,
-                       help="writer processes, one per record stream at most (28 for the recipe: 7 components of 4 "
-                            "streams); default: one per CPU, at most one per stream")
+                       help="writer processes, at most one per segment written (the recipe's 12 selected streams are "
+                            "cut into segments; its 16 unselected ones are written whole); default: one per physical "
+                            "core, as GenAIRR gains nothing from a core's second hardware thread")
     cache.add_argument("--progress-seconds", type=float, default=60.,
                        help="seconds between progress lines (default %(default)s)")
     cache.add_argument("--segment-records", type=int,
