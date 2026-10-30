@@ -87,3 +87,19 @@ def test_clean_reports_the_argmax_and_keeps_the_expectation_without_logits():
     preds = clean([batch], genes=("v", "j"))
     assert preds.start["v"].tolist() == [10] and preds.end["v"].tolist() == [10]
     assert preds.start["j"].tolist() == [8.0]
+
+
+def test_a_non_finite_logit_on_an_allowed_slot_is_refused():
+    from alignair.errors import NumericalError
+    mask = torch.ones(1, 6, dtype=torch.bool)
+    for bad in (float("nan"), float("inf")):
+        logits = torch.zeros(1, 6)
+        logits[0, 2] = bad
+        with pytest.raises(NumericalError):
+            decode_boundaries(logits, torch.zeros(1, 6), mask, mask)
+    # a non-finite logit on a pad slot is never decoded
+    logits = torch.zeros(1, 6)
+    logits[0, 5] = float("nan")
+    short = mask.clone()
+    short[0, 5] = False
+    assert decode_boundaries(logits, logits, short, short)[0].tolist() == [0]

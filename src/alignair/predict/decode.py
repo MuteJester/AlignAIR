@@ -11,15 +11,20 @@ from collections.abc import Mapping
 
 import torch
 
+from ..errors import NumericalError
+
 
 def decode_boundaries(start_logits: torch.Tensor, end_logits: torch.Tensor, start_mask: torch.Tensor,
                       end_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Per read, ``(start, end)`` as long positions: the argmax of each logit row over its allowed slots.
-    A tie takes the first position, on every device. A row with no allowed slot decodes to 0."""
+    A tie takes the first position, on every device. A row with no allowed slot decodes to 0. A non-finite logit on
+    an allowed slot is a NumericalError; one on a slot that is not allowed is never decoded."""
     return _masked_argmax(start_logits, start_mask), _masked_argmax(end_logits, end_mask)
 
 
 def _masked_argmax(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    if not torch.isfinite(logits[mask]).all():
+        raise NumericalError("non-finite boundary logit on an allowed slot")
     logits = logits.masked_fill(~mask, float("-inf"))
     positions = torch.arange(logits.shape[-1], device=logits.device).expand_as(logits)
     return torch.where(logits == logits.max(-1, keepdim=True).values, positions, logits.shape[-1]).min(-1).values
@@ -28,7 +33,9 @@ def _masked_argmax(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 def boundary_slots(outputs: Mapping) -> tuple[torch.Tensor, torch.Tensor]:
     """The (start, end) slot masks of a model's outputs. A half-open model gives both. A residue model gives the read's
     bases for the start, and for the end-exclusive end those bases plus the slot after the last one, where a segment
-    that runs to the read end stops."""
+    that runs to the read end stops. That slot is unsupervised in residue mode: the end cross-entropy masks it
+    (``tasks/losses.py``, ``tasks/functional.py``), so its logit there is extrapolated from the neighbouring slots,
+    not trained. A half-open model supervises its end slot n."""
     if "start_mask" in outputs and "end_mask" in outputs:
         return _bool(outputs["start_mask"]), _bool(outputs["end_mask"])
     valid = _bool(outputs["position_mask"])
