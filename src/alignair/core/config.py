@@ -81,9 +81,6 @@ class AlignAIRConfig:
     cls_dim_max: int = 1024        # cap: bound the O(A^2) classification params for large unions
     cls_filter_cap: int = 256      # cap on the auto-raised classification-tower width
     state_head: bool = False       # add the per-position edit-state head (germline/sub/ins/del)
-    # add the per-position recombination-region head (pre/V/N1/D/N2/J/post), read from the trunk's features: only an
-    # architecture with a trunk builds it (``core.model.TRUNK_HEAD_FLAGS``)
-    region_head: bool = False
     # in-model orientation (reverse-complement detect/correct/re-embed). Nucleotide default. Set
     # False for alphabets with no reverse complement (amino acids) — the RC path is both undefined
     # and its complement table is nucleotide-only. Kept True by default so nt checkpoints are
@@ -110,9 +107,17 @@ class AlignAIRConfig:
     # trained it as non-productive. Reference-bound constructors select "masked" when the metadata
     # heads are on; serialized configs without the field keep "negative".
     productive_unknown: Literal["negative", "masked"] = "negative"
+    # The heads read from a trunk's per-position features: only an architecture with a trunk builds them
+    # (``core.model.TRUNK_HEAD_FLAGS``). New ones are appended here, so positional construction never shifts.
+    # The per-position recombination-region head (pre/V/N1/D/N2/J/post).
+    region_head: bool = False
+    # The V and J anchor heads (the V Cys and J Trp/Phe codon starts, or "not observed"). The junction, frame, stop
+    # codon and productivity are then derived from them (``predict.junction``), and the learned productive head and
+    # its loss term are left out.
+    anchor_heads: bool = False
 
     def __post_init__(self):
-        for name in ("short_d_penalty", "region_head"):
+        for name in ("short_d_penalty", "region_head", "anchor_heads"):
             if type(getattr(self, name)) is not bool:
                 raise ConfigurationError(f"{name} must be a boolean", context={"field": name})
         for name, choices in (("classification_mode", ("multilabel", "categorical")),
