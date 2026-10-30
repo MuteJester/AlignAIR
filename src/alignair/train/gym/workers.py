@@ -51,13 +51,13 @@ from .streams import CurriculumStreamPolicy, RecordSource, stream_records, train
 # 27-28.5 batches/s for any chunk size from 8 to 256 records and any depth from 1 to 8 messages, about
 # twice what the GPU update consumes. 64 records keeps the message count low; 4 held-back messages,
 # plus the one being written, bound the records in flight at 320 per stream (8,960, about 30 MB, for
-# the 28 streams of the selected mix). With selection (recipe v3) the selected streams, each simulated
-# serially, bound the data side at about 4 batches/s on 8 cores, whatever the worker count above 14.
+# the 28 streams of the selected mix). With selection (recipe v3) the 12 selected streams, each simulated
+# serially, bound the data side: about 5.8 batches/s with 7 workers on 8 cores, and 14 workers are no faster.
 CHUNK_SIZE = 64          # records per message
 QUEUE_CHUNKS = 4         # messages a worker holds back per component: the memory bound
 _POLL_SECONDS = 0.25     # how often a waiting process checks that its peers are alive
 _STOP_SECONDS = 5.0      # how long a stopping process may take before it is terminated
-_REAP_SECONDS = 1.0      # how long a process that closed its sentinel may take to give its exit code
+_REAP_SECONDS = 1.0      # join timeout for a process whose sentinel is ready: it bounds no wait (see check)
 _EXIT_HINT = ('A worker exits early when it runs out of memory or crashes natively, or when the training '
               'script has no `if __name__ == "__main__":` guard: workers are spawned and import the main '
               'module. data_workers=0 generates training data in the training process.')
@@ -313,8 +313,12 @@ class WorkerGroup:
         so any other exit is a crash. After a channel ended, wait briefly for its writer's exit code.
 
         A process's sentinel is ready once the process has closed its files, which can be before it can be
-        reaped; its exit code is then still unknown. Each process whose sentinel is ready is therefore joined,
-        for at most ``_REAP_SECONDS``, before the exit codes are read; a live process is not waited on."""
+        reaped; its exit code is then still unknown. Each process whose sentinel is ready is therefore joined
+        before the exit codes are read. The join's timeout (``_REAP_SECONDS``) bounds only its wait for the
+        sentinel, which is already ready, so the join then blocks in ``waitpid`` until the process is reaped:
+        not long for a process that has closed its files, but not bounded here either. The check waits at most
+        ``_STOP_SECONDS`` for any sentinel to be ready; a process whose sentinel is not ready then is not
+        joined."""
         if self._stop.is_set():
             raise TrainingError('the training data workers were stopped', context={'stage': 'training_record_worker'})
         if ended:
