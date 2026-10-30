@@ -72,6 +72,11 @@ COMPRESSION_LEVEL = 6
 PRODUCING_CODE = ("train/gym/streams.py", "train/gym/experiment.py", "train/gym/curriculum")
 # Records of every stream ``require`` draws live and compares with the cache, at most what the cache holds per stream.
 VERIFY_RECORDS = 2
+# Records of every unselected and every selected stream ``require`` also compares when the producing code is not the
+# code the cache was written by: enough to catch a change to a rare event in the fast unselected streams (a D
+# inversion of a few percent shows in every stream's first 256 records), and a few of each slow selected stream.
+DEEP_UNSELECTED = 256
+DEEP_SELECTED = 4
 _HINT = "Write a cache for this stream: python -m alignair_lab cache --out PATH --steps N."
 
 
@@ -385,12 +390,13 @@ class CachedRecordSource:
     def __init__(self, path):
         self.path = os.fspath(Path(path).expanduser().resolve())
         self._manifest = None
+        self.verification = None                       # what ``require`` last checked
 
     def __getstate__(self):
         return {"path": self.path}
 
     def __setstate__(self, state):
-        self.path, self._manifest = state["path"], None
+        self.path, self._manifest, self.verification = state["path"], None, None
 
     @property
     def manifest(self) -> dict:
@@ -472,7 +478,13 @@ class CachedRecordSource:
         2. each planned stream passes ``component`` and the plan is the cache's whole stream list;
         3. ``records`` is at most the records the cache was written for (each stream then holds what that many
            records draw from it);
-        4. the first ``verify`` records of every stream (at most what each holds), drawn live, are the cache's.
+        4. the first ``verify`` records of every stream (at most what each holds), drawn live, are the cache's;
+        5. when the producing code (``producing_code``) is not the code the cache was written by, a deep check: the
+           first ``DEEP_UNSELECTED`` records of every unselected stream and ``DEEP_SELECTED`` of every selected one
+           (at most what each holds), drawn live stream by stream, are the cache's. Two records a stream miss a rare
+           change, such as a D inversion of a few percent.
+
+        What was checked is left in ``verification``: ``code_changed``, ``deep`` and the ``records`` compared.
         """
         records = _count(records, "records")
         manifest, context = self.manifest, {"stage": "record_cache", "cache": self.path}
@@ -502,7 +514,38 @@ class CachedRecordSource:
         per_stream = min([verify, *(entry["records"] for entry in manifest["components"])])
         if per_stream > 0:
             self._verify_live(dataconfigs, policy, seed, per_stream * len(plan))
+        checked = per_stream * len(plan)
+        changed = manifest["code"]["sha256"] != producing_code()["sha256"]
+        if changed:
+            checked += self._verify_deep(plan)
+        self.verification = {"code_changed": changed, "deep": changed, "records": checked}
         return manifest
+
+    def _verify_deep(self, plan) -> int:
+        """Compare the first records of every stream, drawn live through the provider ``training_records`` uses, with
+        the cache's (see ``require``); refuse at the first that differs, naming its stream's seed and its index in
+        that stream. Returns the records compared."""
+        from alignair.train.gym import streams as live_streams
+        compared = 0
+        for planned in plan:
+            entry = self.component(planned.reference, planned.parameters, planned.seed)
+            count = min(DEEP_SELECTED if planned.parameters.get("productive_only") else DEEP_UNSELECTED,
+                        entry["records"])
+            live = live_streams.stream_records(planned.reference, planned.parameters, planned.seed)
+            for index, (expected, cached) in enumerate(zip(islice(live, count), self._replay(entry))):
+                if expected != cached:
+                    fields = sorted(field for field in expected.keys() | cached.keys()
+                                    if field not in expected or field not in cached
+                                    or expected[field] != cached[field])
+                    raise ConfigurationError(
+                        f"the record cache does not reproduce the live stream: record {index} of the stream of seed "
+                        f"{planned.seed} differs in {', '.join(fields[:8])}; the code that produces the records has "
+                        "changed since the cache was written",
+                        context={"stage": "record_cache", "cache": self.path, "record": index, "seed": planned.seed,
+                                 "fields": fields, "deep": True},
+                        hint="Rewrite the cache under this code. " + _HINT)
+            compared += count
+        return compared
 
     def _verify_live(self, dataconfigs, policy, seed, count):
         """Draw the first ``count`` records of the training stream live and from this cache, and refuse the cache at

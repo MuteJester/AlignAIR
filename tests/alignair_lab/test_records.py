@@ -289,6 +289,37 @@ def test_require_refuses_a_cache_of_another_recipe_or_format(cache, tmp_path, ch
         altered(cache, tmp_path, **change).require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=7)
 
 
+def rare_change(monkeypatch, **parameters):
+    """The live provider with ``parameters`` set in every stream: a change to the producing code that leaves the
+    manifest as it was."""
+    from alignair.train.gym import streams
+    original = streams.stream_records
+
+    def changed(dataconfig, stream_parameters, seed):
+        return original(dataconfig, {**stream_parameters, **parameters}, seed)
+
+    monkeypatch.setattr(streams, 'stream_records', changed)
+
+
+def test_a_rare_change_passes_two_records_a_stream_and_fails_the_deep_check(cache, tmp_path, monkeypatch):
+    rare_change(monkeypatch, invert_d_prob=0.03)                                     # first alters record 2
+    source = CachedRecordSource(cache)
+    source.require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=RECORDS)      # the first 2 records unchanged
+    assert source.verification == {'code_changed': False, 'deep': False, 'records': 14}
+    changed = altered(cache, tmp_path, **{'code.sha256': '0' * 64})                 # written by other producing code
+    with pytest.raises(ConfigurationError, match='does not reproduce the live stream') as caught:
+        changed.require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=RECORDS)
+    assert caught.value.context['deep'] and caught.value.context['record'] >= 2
+    assert caught.value.context['seed'] in [stream.seed for stream in component_plan(DATACONFIGS, policy=UNSELECTED,
+                                                                                     seed=SEED)]
+
+
+def test_the_deep_check_accepts_a_cache_whose_records_are_the_live_ones(cache, tmp_path):
+    source = altered(cache, tmp_path, **{'code.sha256': '0' * 64})
+    source.require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=RECORDS)
+    assert source.verification == {'code_changed': True, 'deep': True, 'records': 14 + 7 * 256}
+
+
 def test_require_draws_the_first_records_of_every_stream_live_and_compares_them(recipe_cache, monkeypatch):
     """A change to the code that produces the records (here the provider; equally the seed blocks, the interleave or
     the curriculum) leaves the manifest as it was: only drawing the stream again shows it."""
