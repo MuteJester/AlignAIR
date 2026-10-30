@@ -31,9 +31,9 @@ def test_crop_training_learns_with_partial_class_targets_and_checkpoint_reload(t
         reasons.extend(row['v_class_reason'] for row in item.records)
     run = run_training(request(steps=40, batch_size=16, schedule=CosineSchedule(40)),
                        output_dir=tmp_path, on_iteration=observe)
-    # learning, not one batch's luck: the last steps' mean loss is below the first steps'
+    # learning, not one batch's luck: the last ten steps' mean loss is below the first ten steps'
     assert run.steps == len(history) == 40 and np.isfinite(history).all()
-    assert np.mean(history[-5:]) < np.mean(history[:5])
+    assert np.mean(history[-10:]) < np.mean(history[:10])
     assert 'source_label' in reasons and 'reference_fragments' in reasons
     predictor = run.best_aligner(device='cpu')
     assert predictor.model.cfg.label_space == 'protein_classes'
