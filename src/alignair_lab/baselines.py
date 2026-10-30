@@ -213,12 +213,19 @@ def _screen_records(out_root: Path):
             yield path.parent, record
 
 
+def is_baseline_screen(record: Mapping) -> bool:
+    """Whether a screen record is a baseline screen's: of ``NULL_ARCHITECTURE`` and compared with nothing (its role
+    ``baseline``). A lab-null-v1 screen that compared with a baseline, a sanity check or Tier 2, is a candidate."""
+    role = record.get("role", "baseline" if record.get("baseline") is None else "candidate")
+    return record.get("architecture") == NULL_ARCHITECTURE and role == "baseline"
+
+
 def baseline_screens(out_root: Path, wanted: Mapping, options: Mapping, init_seed: int) -> list[tuple[Path, dict]]:
-    """The screens of ``NULL_ARCHITECTURE`` under ``out_root`` of the protocol ``wanted``, the model options
+    """The baseline screens (``is_baseline_screen``) under ``out_root`` of the protocol ``wanted``, the model options
     ``options`` and ``init_seed``, finished or not: ``(directory, record)``."""
     wanted, options = _canonical(wanted), _canonical(dict(options))
     return [(directory, record) for directory, record in _screen_records(out_root)
-            if record.get("architecture") == NULL_ARCHITECTURE and record.get("protocol") == wanted
+            if is_baseline_screen(record) and record.get("protocol") == wanted
             and record.get("model_options") == options and record.get("init_seed") == init_seed]
 
 
@@ -227,12 +234,13 @@ def screen_name(cache, steps: int, schedule: str, init_seed: int) -> str:
     return f"baseline-{Path(cache).name}-s{steps}-{schedule}-init{init_seed}"
 
 
-def _option_arguments(options: Mapping) -> str:
+def option_arguments(options: Mapping) -> str:
+    """``options`` as the command line's ``--model-option KEY=VALUE`` arguments, each after a space."""
     return "".join(f" --model-option {key}={json.dumps(value)}" for key, value in options.items())
 
 
 def _making_hint(cache, out_root, steps: int, schedule: str, options: Mapping) -> str:
-    where = f"--cache {cache} --out-root {out_root}{_option_arguments(options)}"
+    where = f"--cache {cache} --out-root {out_root}{option_arguments(options)}"
     return (f"Make one: python -m alignair_lab screen --name {screen_name(cache, steps, schedule, BASELINE_INIT_SEED)} "
             f"--architecture {NULL_ARCHITECTURE} --init-seed {BASELINE_INIT_SEED} --steps {steps} --schedule "
             f"{schedule} {where}; or calibrate, which trains it beside the baseline screens of init seeds 1 and 2 and "
@@ -259,10 +267,11 @@ def baseline_screen(out_root: Path, wanted: Mapping, options: Mapping, *, name: 
             record = json.loads((directory / SCREEN_RECORD).read_text(encoding="utf-8"))
         except FileNotFoundError:
             raise FileNotFoundError(f"no screen named {name} in {out_root}") from None
-        if record.get("architecture") != NULL_ARCHITECTURE:
-            raise ConfigurationError(f"the screen {name} is not a baseline screen: architecture "
-                                     f"{record.get('architecture')!r}, not {NULL_ARCHITECTURE!r}",
-                                     context={"field": "against_screen", "path": str(directory)})
+        if not is_baseline_screen(record):
+            raise ConfigurationError(f"the screen {name} is not a baseline screen: a screen of {NULL_ARCHITECTURE} "
+                                     f"compared with nothing; it is of {record.get('architecture')!r}, role "
+                                     f"{record.get('role')!r}", context={"field": "against_screen",
+                                                                          "path": str(directory)})
         if record.get("status") != "done":
             raise ConfigurationError(f"the baseline screen {name} has not finished (status {record.get('status')!r})",
                                      context={"field": "against_screen", "path": str(directory)})
@@ -303,11 +312,13 @@ def _schedule_of(wanted: Mapping):
     return None if found is None else CosineSchedule(total_steps=found["total_steps"], min_lr=found["min_lr"])
 
 
-def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequence[str],
-              max_cases: int | None) -> dict | None:
+def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequence[str], max_cases: int | None,
+              builds: Mapping[str, str]) -> dict | None:
     """The null band of the protocol ``wanted`` under ``out_root`` (``calibrate``'s ``<dir>/null_band.json``): of
-    baseline screens of the model options ``options``, compared on ``suites`` and ``max_cases``. Its ``path``,
-    ``init_seeds`` and ``band``; None when there is none; ConfigurationError, naming them, for several."""
+    baseline screens of the model options ``options``, compared on ``suites``, of the builds ``builds`` (suite -> the
+    SHA-256 of its ``build.json``: another build of same-named suites holds other reads), and ``max_cases``. Its
+    ``path``, ``init_seeds``, ``band`` and the AlignAIR ``code_sha256`` it was measured under; None when there is
+    none; ConfigurationError, naming them, for several."""
     wanted, options = _canonical(wanted), _canonical(dict(options))
     found = []
     root = Path(out_root)
@@ -319,7 +330,7 @@ def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequenc
         if (isinstance(record, dict) and record.get("kind") == NULL_BAND_KIND
                 and record.get("version") == NULL_BAND_VERSION and record.get("protocol") == wanted
                 and record.get("options") == options and record.get("suites") == list(suites)
-                and record.get("max_cases") == max_cases):
+                and record.get("suite_builds") == dict(builds) and record.get("max_cases") == max_cases):
             found.append((path, record))
     if len(found) > 1:
         raise ConfigurationError(f"{len(found)} null bands of this protocol in {out_root}: "
@@ -329,7 +340,8 @@ def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequenc
     if not found:
         return None
     path, record = found[0]
-    return {"path": str(path), "init_seeds": record["init_seeds"], "band": record["band"]}
+    return {"path": str(path), "init_seeds": record["init_seeds"], "band": record["band"],
+            "code_sha256": record.get("code_sha256")}
 
 
 def check_init_seed(init_seed) -> int:

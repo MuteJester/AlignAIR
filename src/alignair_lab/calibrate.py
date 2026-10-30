@@ -18,10 +18,11 @@ the null band (``noise.null_band``) a candidate's headline weighs its Δs agains
    (``baselines.baseline_screens``), or trains one with ``python -m alignair_lab screen`` under the GenAIRR and the code
    this process imports, at most ``parallel`` at once, each one's output in ``<calibration>/<screen>.log``. A failed
    run fails the calibration once the runs under way have finished: those finished are reused by the next.
-4. Checks every baseline screen's checkpoint (``baselines.check_baseline``, ``baselines.same_genairr``), then compares each
-   pair of them, the later init seed's against the earlier's, with the assay in its own run directory,
+4. Checks every baseline screen's checkpoint (``baselines.check_baseline``, ``baselines.same_genairr``), then compares
+   each pair of them, the later init seed's against the earlier's, with the assay in its own run directory,
    ``<calibration>/assay``, in this process: under one AlignAIR code.
-5. Writes ``<calibration>/null_band.json``: the protocol, the model options, the suites and cases compared, the
+5. Writes ``<calibration>/null_band.json``: the protocol, the model options, the suites, their builds (the SHA-256 of
+   each ``build.json``) and the cases compared, the
    screens, each pair's pooled Δs and each suite's (``noise.pair``) and the null band; and prints the band of each
    headline metric.
 """
@@ -67,6 +68,7 @@ from alignair_lab.screen import (
     assay_layout,
     built_suites,
     prepare_candidate,
+    suite_builds,
 )
 
 DEFAULT_INIT_SEEDS = (0, 1, 2)
@@ -192,6 +194,7 @@ def run_calibration(*, steps: int = DEFAULT_STEPS, init_seeds: Sequence[int] = D
                                       schedule=learning))
     manifest = source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=steps * BATCH_SIZE)
     names = built_suites(Path(dev_build), suites)
+    builds = suite_builds(Path(dev_build), names)
     out_root.mkdir(parents=True, exist_ok=True)
     try:
         directory.mkdir()
@@ -199,7 +202,8 @@ def run_calibration(*, steps: int = DEFAULT_STEPS, init_seeds: Sequence[int] = D
         raise FileExistsError(f"a calibration named {name!r} exists ({directory}); choose another --name") from None
 
     record = {"kind": NULL_BAND_KIND, "version": NULL_BAND_VERSION, "name": name, "status": "preparing",
-              "started": now(), "protocol": wanted, "options": model_options, "suites": names, "max_cases": max_cases,
+              "started": now(), "protocol": wanted, "options": model_options, "suites": names,
+              "suite_builds": builds, "max_cases": max_cases,
               "variants": list(VARIANTS), "device": device, "eval_batch_size": eval_batch_size, "init_seeds": seeds,
               "cache": {"path": source.path, "identity": wanted["cache"]}, "screens": screens}
 

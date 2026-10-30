@@ -48,6 +48,7 @@ def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_s
     assert record['cache']['verification'] == {'code_changed': False, 'deep': False, 'records': 56}
     assert 'Record cache: producing code unchanged since the write; verified 56 records live' in headline
     assert 'Wall time' in headline and (screen / 'train.log').is_file()     # the trainer logs every 50 steps
+    assert 'initial weights' not in headline                                # the milestone's init seed, 0, is its own
     assert '[screen smoke] step 2/2' in printed                             # progress, past the trainer's log
     assert not (rig.dev / 'diagnostics').exists()                  # the dev build is only read
 
@@ -63,6 +64,22 @@ def test_the_null_candidate_reproduces_the_baselines_weights_on_the_cpu(rig):
     baseline = load_model(rig.milestones / 'model.step2.alignair').model.state_dict()
     assert candidate.keys() == baseline.keys()
     assert all(torch.equal(value, baseline[key]) for key, value in candidate.items())
+
+
+def test_a_milestone_comparison_is_not_weighed_against_a_null_band(rig, tmp_path):
+    """A null band measures baseline screens of a protocol; a long run's milestone is another regime of noise."""
+    from alignair_lab.baselines import protocol
+    from alignair_lab.records import CachedRecordSource
+    from tests.alignair_lab.rig import write_null_band
+    root = tmp_path / 'screens'
+    write_null_band(rig, root, protocol(CachedRecordSource(rig.cache).manifest, 2, None))   # Tier 2's: constant
+    assert main([*arguments(rig, 'tier2'), '--out-root', str(root)]) == 0
+    record = json.loads((root / 'tier2' / 'screen.json').read_text())
+    assert record['null_band'] is None
+    headline = (root / 'tier2' / 'headline.txt').read_text()
+    assert 'uncalibrated (Tier 2: milestone)' in headline
+    noise = next(line for line in headline.splitlines() if line.startswith('noise '))
+    assert noise.split()[1:] == ['uncalibrated'] * 5
 
 
 def test_the_baseline_records_the_recipes_train_args(rig):

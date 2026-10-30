@@ -48,6 +48,7 @@ baselines and the null bands.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import shutil
 import sys
@@ -66,6 +67,7 @@ from alignair_lab.baselines import (
     check_init_seed,
     now,
     null_band,
+    option_arguments,
     protocol,
     same_genairr,
     write_json,
@@ -96,6 +98,12 @@ DEFAULT_INIT_SEED = 0
 PROGRESS_LINES = 20                       # progress lines printed over a training run
 
 
+
+
+def suite_builds(dev_build: Path, suites: Sequence[str]) -> dict[str, str]:
+    """Each of ``suites`` -> the SHA-256 of its ``build.json`` in ``dev_build``: a null band is of one build."""
+    return {suite: hashlib.sha256((Path(dev_build) / "suites" / suite / "build.json").read_bytes()).hexdigest()
+            for suite in suites}
 
 
 def built_suites(dev_build: Path, suites: Sequence[str] | None) -> list[str]:
@@ -164,11 +172,13 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
         provenance = baseline_screen(Path(out_root), wanted, baseline_options, name=against_screen, cache=source.path,
                                      schedule=schedule)
     manifest = source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=steps * BATCH_SIZE)
-    names = band = None
+    names = builds = band = None
     if provenance is not None:
         same_genairr(provenance, manifest)
         names = built_suites(Path(dev_build), suites)
-        band = null_band(Path(out_root), wanted, baseline_options, names, max_cases)
+        builds = suite_builds(Path(dev_build), names)
+    if provenance is not None and provenance["kind"] == "screen":       # a milestone's run is another regime of noise
+        band = null_band(Path(out_root), wanted, baseline_options, names, max_cases, builds)
     config = training_config(steps=steps, architecture=architecture, model_options=model_options, device=device,
                              data_workers=data_workers, schedule=learning, init_seed=init_seed)
     prepare_candidate(config)
@@ -181,7 +191,8 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
 
     record = {"name": name, "status": "preparing", "started": now(), "role": role, "steps": steps,
               "architecture": architecture, "model_options": model_options, "init_seed": init_seed,
-              "schedule": schedule, "protocol": wanted, "suites": names, "variants": list(variants),
+              "schedule": schedule, "protocol": wanted, "suites": names, "suite_builds": builds,
+              "variants": list(variants),
               "max_cases": max_cases, "device": device, "data_workers": data_workers,
               "eval_batch_size": eval_batch_size,
               "recipe": {"id": RECIPE, "dataconfigs": list(DATACONFIGS), "batch_size": BATCH_SIZE, "lr": config.lr,
@@ -193,7 +204,8 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
                         "code_sha256": manifest["code"]["sha256"], "created": manifest["created"],
                         "verification": source.verification},
               "baseline": provenance, "null_band": band,
-              "dev_build": str(Path(dev_build).resolve()), "screen_dir": str(screen.resolve())}
+              "dev_build": str(Path(dev_build).resolve()), "out_root": str(Path(out_root).resolve()),
+              "screen_dir": str(screen.resolve())}
 
     def stage(status: str, **fields):
         record.update(status=status, **fields)
@@ -235,7 +247,8 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
             summary = result.against["summary"]
             report = layout.diagnostics_md(result.model_key)
             limits = None if band is None else band["band"]
-            headline = render_headline(summary, title=_title(record, result, base.model_key), null_band=limits)
+            title = _title(record, result, base.model_key, summary["code"]["this"])
+            headline = render_headline(summary, title=title, null_band=limits)
             headline += "\n\n" + "\n".join(_footer(report, layout, result.model_key, base.model_key, times, record))
             record["candidate"]["model_key"] = result.model_key
             record.update(report=str(report), comparison=summary,
@@ -309,14 +322,14 @@ def _training_text(record: dict) -> str:
             f"{record['init_seed']})")
 
 
-def _title(record: dict, result, baseline_key: str) -> list[str]:
+def _title(record: dict, result, baseline_key: str, code: str | None) -> list[str]:
     baseline = record["baseline"]
     against = (f"the baseline screen {baseline['name']} ({NULL_ARCHITECTURE}, init seed {baseline['init_seed']})"
                if baseline["kind"] == "screen" else f"the baseline {BASELINE_ARCHITECTURE}'s milestone")
     return [f"Screen {record['name']}: {_training_text(record)}, against {against} at step {record['steps']}.",
             f"Candidate {result.model_key} ({record['candidate']['model_path']}); baseline {baseline_key} "
             f"({baseline['checkpoint']}).", _provenance_line(baseline), _cache_line(record["cache"]),
-            _band_line(record), ""]
+            *_band_lines(record, code), ""]
 
 
 def _provenance_line(baseline: dict) -> str:
@@ -341,15 +354,26 @@ def _cache_line(cache: dict) -> str:
             "records live.")
 
 
-def _band_line(record: dict) -> str:
+def _band_lines(record: dict, code: str | None) -> list[str]:
+    """The null band's line: its path, or why there is none (with the calibration that makes the band this screen
+    would use); and a warning when it was measured under other AlignAIR code than this comparison."""
     band = record["null_band"]
-    if band is not None:
-        return (f"Null band: {band['path']} (baseline screens of init seeds "
-                f"{', '.join(map(str, band['init_seeds']))}).")
-    cases = "" if record["max_cases"] is None else f" --max-cases {record['max_cases']}"
-    return (f"Null band: none of this protocol, these suites and cases, so uncalibrated (python -m alignair_lab "
-            f"calibrate --steps {record['steps']} --init-seeds 0,1,2 --schedule {record['schedule']} --suites "
-            f"{','.join(record['suites'])}{cases}).")
+    if record["baseline"]["kind"] == "milestone":
+        return ["Null band: none applies, so uncalibrated (Tier 2: milestone): a null band measures the baseline "
+                "screens of a protocol, not a long run's milestone."]
+    if band is None:
+        cases = "" if record["max_cases"] is None else f" --max-cases {record['max_cases']}"
+        return [f"Null band: none of this protocol, options, suite build and cases, so uncalibrated (python -m "
+                f"alignair_lab calibrate --steps {record['steps']} --init-seeds 0,1,2 --schedule {record['schedule']} "
+                f"--cache {record['cache']['path']} --out-root {record['out_root']} --dev-build "
+                f"{record['dev_build']} --suites {','.join(record['suites'])}{cases}"
+                f"{option_arguments(record['baseline']['options'])})."]
+    lines = [f"Null band: {band['path']} (baseline screens of init seeds {', '.join(map(str, band['init_seeds']))})."]
+    if band.get("code_sha256") != code:
+        measured = (band.get("code_sha256") or "unrecorded")[:12]
+        lines.append(f"Warning: the null band was measured under other AlignAIR code ({measured}) than this "
+                     f"comparison ({(code or 'unknown')[:12]}): the noise it bounds may have changed with the code.")
+    return lines
 
 
 def _footer(report: Path, layout, key: str, baseline_key: str, times: dict, record: dict) -> list[str]:

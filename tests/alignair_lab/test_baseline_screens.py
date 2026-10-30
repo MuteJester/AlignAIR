@@ -14,7 +14,7 @@ import pytest
 from alignair.model_file import read_metadata
 from alignair_lab.cli import main
 from alignair_lab.recipe import MIN_LR
-from tests.alignair_lab.rig import REMOVED, SMALL, candidate_arguments, copy_card
+from tests.alignair_lab.rig import REMOVED, SMALL, candidate_arguments, copy_card, write_null_band
 
 pytestmark = pytest.mark.integration
 
@@ -51,6 +51,10 @@ def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protoco
     assert 'against the baseline screen base0 (lab-null-v1, init seed 0) at step 2' in headline
     noise = next(line for line in headline.splitlines() if line.startswith('noise '))
     assert 'Null band: none' in headline and noise.split()[1:] == ['uncalibrated'] * 5
+    # the calibration it suggests makes a band this screen would use: of its protocol, options, build and cases
+    assert (f"python -m alignair_lab calibrate --steps 2 --init-seeds 0,1,2 --schedule cosine --cache "
+            f"{rig.cache.resolve()} --out-root {rig.screens.resolve()} --dev-build {rig.dev.resolve()} --suites S0 "
+            "--model-option embed_dim=4 --model-option filters=4 --model-option block_out=8)") in headline
 
 
 def screens_with(tmp_path, baseline, *names, changes=None):
@@ -86,6 +90,7 @@ def test_without_a_registered_baseline_screen_a_candidate_is_refused_with_the_co
 
 
 @pytest.mark.parametrize('changes', [{'init_seed': 1}, {'status': 'failed'}, {'architecture': 'conv-v1'},
+                                     {'role': 'candidate'}, {'role': REMOVED, 'baseline': {'kind': 'milestone'}},
                                      {'model_options': {}}, {'protocol.steps': 3}, {'protocol.schedule': None},
                                      {'protocol.cache': '0' * 64}, {'protocol.recipe': 'v2'}, {'protocol': REMOVED}])
 def test_a_screen_of_another_protocol_seed_or_model_is_not_the_registered_baseline(rig, baseline, tmp_path, capsys,
@@ -94,6 +99,16 @@ def test_a_screen_of_another_protocol_seed_or_model_is_not_the_registered_baseli
     assert main(candidate_arguments(rig, 'orphan', out_root=root)) == 2
     assert 'no baseline screen' in capsys.readouterr().err
     assert not (root / 'orphan').exists()
+
+
+def test_a_null_screen_that_compared_with_a_baseline_is_not_one(rig, baseline, tmp_path):
+    """A lab-null-v1 screen run against a baseline (a sanity check, or Tier 2 against a milestone) is a candidate:
+    the registered baseline screen stays the one baseline screen of the protocol."""
+    from alignair_lab.baselines import baseline_screen
+    root = screens_with(tmp_path, baseline, 'base0')
+    screens_with(tmp_path, baseline, 'null-check', changes={'role': 'candidate', 'baseline': {'kind': 'screen'}})
+    protocol = json.loads((baseline / 'screen.json').read_text())['protocol']
+    assert baseline_screen(root, protocol, SMALL, schedule='cosine')['name'] == 'base0'
 
 
 def test_two_registered_baseline_screens_are_refused_unless_the_candidate_names_one(rig, baseline, tmp_path, capsys):
@@ -134,36 +149,36 @@ def test_a_baseline_screen_is_trusted_by_its_checkpoint_not_its_record(rig, base
     assert not (root / 'distrusted').exists()
 
 
-def null_band(root, protocol, *, name='calibration', **fields):
-    """A null band of ``protocol`` for the rig's suites, every band 0 (any pooled Δ but 0 beyond it)."""
-    record = {'kind': 'alignair_lab.null_band', 'version': 1, 'protocol': protocol, 'options': SMALL,
-              'suites': ['S0'], 'max_cases': None, 'init_seeds': [0, 1, 2], 'pairs': [],
-              'band': {metric: 0. for metric in ('clone_key.exact', 'junction.nt_exact', 'v.top1_in_set',
-                                                 'd.top1_in_set', 'j.top1_in_set')}, **fields}
-    (root / name).mkdir(parents=True)
-    (root / name / 'null_band.json').write_text(json.dumps(record))
-    return root / name / 'null_band.json'
-
-
 def test_the_null_band_of_the_protocol_weighs_the_candidates_deltas(rig, baseline, tmp_path):
     root = screens_with(tmp_path, baseline, 'base0')
     protocol = json.loads((baseline / 'screen.json').read_text())['protocol']
-    null_band(root, protocol, name='other-cases', max_cases=1)                # another protocol's: not this one
-    path = null_band(root, protocol)
+    write_null_band(rig, root, protocol, name='other-cases', max_cases=1)               # other cases: not this one
+    write_null_band(rig, root, protocol, name='other-build', suite_builds={'S0': '0' * 64})   # another build of S0
+    path = write_null_band(rig, root, protocol)
     assert main(candidate_arguments(rig, 'weighed', out_root=root)) == 0
     record = json.loads((root / 'weighed' / 'screen.json').read_text())
     assert record['null_band']['path'] == str(path) and record['null_band']['init_seeds'] == [0, 1, 2]
     decisions = [found['decision'] for found in record['decisions'].values() if found['pooled'] is not None]
     assert decisions and all(decision in ('beyond noise', 'within noise') for decision in decisions)
     headline = (root / 'weighed' / 'headline.txt').read_text()
-    assert f'Null band: {path}' in headline and 'uncalibrated' not in headline
+    assert f'Null band: {path}' in headline and 'uncalibrated' not in headline and 'other AlignAIR code' not in headline
+
+
+def test_a_null_band_measured_under_other_code_is_applied_with_a_warning(rig, baseline, tmp_path):
+    root = screens_with(tmp_path, baseline, 'base0')
+    protocol = json.loads((baseline / 'screen.json').read_text())['protocol']
+    path = write_null_band(rig, root, protocol, code_sha256='0' * 64)
+    assert main(candidate_arguments(rig, 'recoded', out_root=root)) == 0
+    assert json.loads((root / 'recoded' / 'screen.json').read_text())['null_band']['path'] == str(path)
+    headline = (root / 'recoded' / 'headline.txt').read_text()
+    assert 'Warning: the null band was measured under other AlignAIR code (000000000000)' in headline
 
 
 def test_two_null_bands_of_one_protocol_are_refused(rig, baseline, tmp_path, capsys):
     root = screens_with(tmp_path, baseline, 'base0')
     protocol = json.loads((baseline / 'screen.json').read_text())['protocol']
-    null_band(root, protocol, name='first')
-    null_band(root, protocol, name='second')
+    write_null_band(rig, root, protocol, name='first')
+    write_null_band(rig, root, protocol, name='second')
     assert main(candidate_arguments(rig, 'doubled', out_root=root)) == 2
     error = capsys.readouterr().err
     assert 'first/null_band.json' in error and 'second/null_band.json' in error

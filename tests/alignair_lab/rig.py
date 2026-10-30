@@ -64,6 +64,26 @@ def candidate_arguments(rig, name, *extra, out_root=None, architecture='conv-v1'
             *options('--baseline-model-option'), *common(rig, out_root), *extra]
 
 
+def suite_build(rig, suite='S0') -> str:
+    """The SHA-256 of a suite's ``build.json`` in the rig's dev build."""
+    import hashlib
+    return hashlib.sha256((rig.dev / 'suites' / suite / 'build.json').read_bytes()).hexdigest()
+
+
+def write_null_band(rig, root: Path, protocol, *, name='calibration', band=.005, **fields) -> Path:
+    """A null band of ``protocol`` for baseline screens of ``SMALL``, compared on the rig's build of S0 under this
+    process's AlignAIR code, ``band`` for every headline metric, with ``fields`` changed; its path."""
+    from alignair_assay.diagnostics.identity import alignair_code
+    record = {'kind': 'alignair_lab.null_band', 'version': 1, 'protocol': protocol, 'options': SMALL, 'suites': ['S0'],
+              'suite_builds': {'S0': suite_build(rig)}, 'max_cases': None, 'init_seeds': [0, 1, 2], 'pairs': [],
+              'band': {metric: band for metric in ('clone_key.exact', 'junction.nt_exact', 'v.top1_in_set',
+                                                   'd.top1_in_set', 'j.top1_in_set')},
+              'code_sha256': alignair_code()['code_sha256'], **fields}
+    (root / name).mkdir(parents=True)
+    (root / name / 'null_band.json').write_text(json.dumps(record))
+    return root / name / 'null_band.json'
+
+
 def copy_card(source: Path, target: Path, *, header=None, saved_step=None, **changes):
     """A copy of the model file ``source`` at ``target``, its train_args changed by ``changes`` (``REMOVED`` removes
     one), the step its header says it was saved at by ``saved_step`` and its header's other fields by ``header``."""
