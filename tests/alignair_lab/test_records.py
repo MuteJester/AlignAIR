@@ -1,9 +1,16 @@
 """The record cache replays the live curriculum stream record for record, and refuses any other stream.
 
-One small cache of the 1.0.0 recipe (40 steps of 64: 2,560 records) is written per module; the tests that alter a
-cache work on a copy of it. Each of the recipe's 7 components interleaves 4 streams (3 selected, 1 unselected), so the
-cache holds 28 streams.
+Two caches are written per module, and the live streams they are compared with are drawn once per module:
+
+- ``unselected``: the recipe's 7 components without selection (one fast GenAIRR stream each), 40 steps of 64 records
+  (366 per stream) in chunks of 100 records, so every long replay crosses chunk boundaries. It carries the tests
+  that need thousands of records.
+- ``recipe``: the recipe itself, whose 7 components interleave 4 streams each (3 under GenAIRR's productive_only(),
+  about 20 times slower to simulate), for one step of 64 records: 3 records per stream, 84 records in all.
+
+The tests that alter a cache work on a copy of it.
 """
+import dataclasses
 import json
 import pickle
 import shutil
@@ -21,19 +28,36 @@ from tests.support.training_streams import assert_same_runs, run, serial_records
 
 pytestmark = pytest.mark.integration
 
+UNSELECTED = dataclasses.replace(POLICY, selected_fraction=0)
 STEPS = 40
 RECORDS = STEPS * BATCH_SIZE                       # 2,560 records of the zipped stream
-STREAMS = 28
-STREAM_RECORDS = 92                                # the 366th round of 7 components needs the 92nd period of 4 streams
-COMPONENT_RECORDS = 4 * STREAM_RECORDS             # what each component serves before a stream is exhausted
+STREAM_RECORDS = 366                               # its 366th round of 7 streams holds records 2,556 to 2,562
+SERVED = 7 * STREAM_RECORDS                        # what the unselected cache serves before a stream is exhausted
+CHUNK = 100
+RECIPE_STREAMS = 28
+RECIPE_STREAM_RECORDS = 3                          # 64 records need 10 of each component's: 3 periods of 4 streams
+RECIPE_SERVED = RECIPE_STREAMS * RECIPE_STREAM_RECORDS
 
 
 @pytest.fixture(scope='module')
 def cache(tmp_path_factory):
-    path = tmp_path_factory.mktemp('records') / 'igh'
-    write_record_cache(path, dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=STEPS, batch_size=BATCH_SIZE,
-                       workers=7)
+    path = tmp_path_factory.mktemp('records') / 'unselected'
+    write_record_cache(path, dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED, steps=STEPS,
+                       batch_size=BATCH_SIZE, workers=7, chunk_records=CHUNK)
     return path
+
+
+@pytest.fixture(scope='module')
+def recipe_cache(tmp_path_factory):
+    path = tmp_path_factory.mktemp('records') / 'recipe'
+    write_record_cache(path, dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=1, batch_size=BATCH_SIZE)
+    return path
+
+
+@pytest.fixture(scope='module')
+def expected():
+    """The live unselected stream, as far as the unselected cache serves it."""
+    return live(SERVED)
 
 
 @pytest.fixture(scope='module')
@@ -47,7 +71,14 @@ def data():
     return prepare_training_data(setup, device='cpu')
 
 
-def live(records=RECORDS, *, policy=POLICY, seed=SEED, record_source=None):
+@pytest.fixture(scope='module')
+def serial_run(data):
+    """The trainer's serial run of 20 steps over the live unselected stream."""
+    stream = TrainingStream(DATACONFIGS, UNSELECTED, SEED, data, augment=True, prepare_seed=SEED)
+    return stream, run(serial_records(stream), data.batch_adapter, start_step=0, steps=20, batch_size=BATCH_SIZE)
+
+
+def live(records, *, policy=UNSELECTED, seed=SEED, record_source=None):
     return list(islice(training_records(DATACONFIGS, policy=policy, seed=seed, record_source=record_source), records))
 
 
@@ -70,31 +101,33 @@ def test_the_recipe_is_the_curriculum_run_training_trains_on():
     import inspect
     from alignair.train.trainer import train
     defaults = {name: parameter.default for name, parameter in inspect.signature(train).parameters.items()}
-    assert POLICY == CurriculumStreamPolicy(defaults['progresses'], defaults['heavy_shm'], 1, defaults['mutation_cap'])
+    assert POLICY == CurriculumStreamPolicy(defaults['progresses'], defaults['heavy_shm'], 1, defaults['mutation_cap'],
+                                            indel_fraction=defaults['indel_fraction'],
+                                            indel_form=defaults['indel_form'],
+                                            selected_fraction=defaults['selected_fraction'])
     assert DATACONFIGS == ('HUMAN_IGH_OGRDB',) and (SEED, BATCH_SIZE) == (0, 64)
 
 
 def test_component_counts_are_what_the_zipped_stream_draws():
-    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=RECORDS) == (STREAM_RECORDS,) * STREAMS
-    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=28) == (1,) * STREAMS
-    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=29) == (2,) * STREAMS
+    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=BATCH_SIZE) == (3,) * RECIPE_STREAMS
+    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=28) == (1,) * RECIPE_STREAMS
+    assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=29) == (2,) * RECIPE_STREAMS
+    assert component_counts(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=RECORDS) == (STREAM_RECORDS,) * 7
 
 
-def test_the_manifest_records_genairr_the_recipe_and_each_components_records(cache):
+def test_the_manifest_records_genairr_the_recipe_and_each_streams_records(recipe_cache):
     import GenAIRR
     from pathlib import Path
-    manifest = json.loads((cache / 'manifest.json').read_text())
+    manifest = json.loads((recipe_cache / 'manifest.json').read_text())
     assert manifest['genairr']['genairr_source_sha256'] == genairr_digest(str(Path(GenAIRR.__file__).parent))
     assert manifest['dataconfigs'] == ['HUMAN_IGH_OGRDB']
-    assert manifest['policy'] == {'progresses': [0.3, 0.6, 0.9], 'heavy_shm': 0.25, 'short_boost': 1,
-                                  'mutation_cap': None, 'mode': 'auto'}
-    assert (manifest['seed'], manifest['steps'], manifest['batch_size'], manifest['records']) == (0, 40, 64, RECORDS)
+    assert (manifest['seed'], manifest['steps'], manifest['batch_size'], manifest['records']) == (0, 1, 64, 64)
     plan = component_plan(DATACONFIGS, policy=POLICY, seed=SEED)
-    assert [component['seed'] for component in manifest['components']] == [component.seed for component in plan]
-    assert all(component['records'] == STREAM_RECORDS and component['reference'] == 'HUMAN_IGH_OGRDB'
-               for component in manifest['components'])
-    assert all(sum(chunk['records'] for chunk in component['chunks']) == STREAM_RECORDS
-               for component in manifest['components'])
+    assert [stream['seed'] for stream in manifest['components']] == [stream.seed for stream in plan]
+    assert all(stream['records'] == RECIPE_STREAM_RECORDS and stream['reference'] == 'HUMAN_IGH_OGRDB'
+               for stream in manifest['components'])
+    assert all(sum(chunk['records'] for chunk in stream['chunks']) == RECIPE_STREAM_RECORDS
+               for stream in manifest['components'])
 
 
 def test_a_cache_directory_has_a_new_directorys_permissions(cache, tmp_path):
@@ -102,23 +135,29 @@ def test_a_cache_directory_has_a_new_directorys_permissions(cache, tmp_path):
     assert cache.stat().st_mode & 0o777 == (tmp_path / 'plain').stat().st_mode & 0o777
 
 
-def test_the_cache_replays_the_live_stream_record_for_record(cache):
-    assert live(record_source=CachedRecordSource(cache)) == live()
+def test_the_cache_replays_the_live_stream_record_for_record_across_its_chunks(cache, expected):
+    streams = json.loads((cache / 'manifest.json').read_text())['components']
+    assert all([chunk['records'] for chunk in stream['chunks']] == [CHUNK] * 3 + [66] for stream in streams)
+    assert live(SERVED, record_source=CachedRecordSource(cache)) == expected
 
 
-def test_a_source_crosses_processes_as_its_path(cache):
+def test_the_recipes_cache_replays_its_selected_and_unselected_streams(recipe_cache):
+    assert live(RECIPE_SERVED, policy=POLICY, record_source=CachedRecordSource(recipe_cache)) == \
+        live(RECIPE_SERVED, policy=POLICY)
+
+
+def test_a_source_crosses_processes_as_its_path(cache, expected):
     source = CachedRecordSource(cache)
     source.manifest                                # loaded here; a copy loads its own
     copy = pickle.loads(pickle.dumps(source))
     assert copy.path == source.path and len(pickle.dumps(source)) < 500
-    with parallel_records(DATACONFIGS, policy=POLICY, seed=SEED, workers=3, provider=copy) as records:
-        assert list(islice(records, 2048)) == live(2048)
+    with parallel_records(DATACONFIGS, policy=UNSELECTED, seed=SEED, workers=3, provider=copy) as records:
+        assert list(islice(records, 2048)) == expected[:2048]
 
 
 @pytest.mark.parametrize('in_worker', [None, False, True])
-def test_batches_from_the_cache_are_the_live_batches(cache, data, in_worker):
-    stream = TrainingStream(DATACONFIGS, POLICY, SEED, data, augment=True, prepare_seed=SEED)
-    expected = run(serial_records(stream), data.batch_adapter, start_step=0, steps=20, batch_size=BATCH_SIZE)
+def test_batches_from_the_cache_are_the_live_batches(cache, data, serial_run, in_worker):
+    stream, expected_run = serial_run
     source = CachedRecordSource(cache)
     if in_worker is None:                          # the trainer's serial path, with the cache as its provider
         actual = run(stream.records(record_source=source), data.batch_adapter, start_step=0, steps=20,
@@ -127,22 +166,21 @@ def test_batches_from_the_cache_are_the_live_batches(cache, data, in_worker):
         with parallel_training_data(stream, batch_size=BATCH_SIZE, workers=2, device='cpu',
                                     assemble_in_worker=in_worker, provider=source) as batches:
             actual = run(batches.records, batches.batch_adapter, start_step=0, steps=20, batch_size=BATCH_SIZE)
-    assert_same_runs(expected, actual, steps=20)
+    assert_same_runs(expected_run, actual, steps=20)
 
 
-def test_a_cache_read_to_its_end_raises_and_never_wraps_around(cache):
-    records = training_records(DATACONFIGS, policy=POLICY, seed=SEED, record_source=CachedRecordSource(cache))
-    served = list(islice(records, 7 * COMPONENT_RECORDS))
-    assert served == live(7 * COMPONENT_RECORDS)
+def test_a_cache_read_to_its_end_raises_and_never_wraps_around(cache, expected):
+    records = training_records(DATACONFIGS, policy=UNSELECTED, seed=SEED, record_source=CachedRecordSource(cache))
+    assert list(islice(records, SERVED)) == expected
     with pytest.raises(TrainingDataError, match='exhausted') as caught:
         next(records)
     assert caught.value.context['records'] == STREAM_RECORDS
 
 
 def test_exhaustion_in_a_data_worker_reaches_the_training_process(cache):
-    with parallel_records(DATACONFIGS, policy=POLICY, seed=SEED, workers=2, provider=CachedRecordSource(cache)) \
-            as records:
-        assert len(list(islice(records, 7 * COMPONENT_RECORDS))) == 7 * COMPONENT_RECORDS
+    with parallel_records(DATACONFIGS, policy=UNSELECTED, seed=SEED, workers=2,
+                          provider=CachedRecordSource(cache)) as records:
+        assert len(list(islice(records, SERVED))) == SERVED
         with pytest.raises(TrainingDataError, match='exhausted') as caught:
             next(records)
     assert caught.value.context['stage'] == 'record_cache'
@@ -150,14 +188,14 @@ def test_exhaustion_in_a_data_worker_reaches_the_training_process(cache):
 
 @pytest.mark.parametrize('seed', [100, 1])
 def test_another_seed_is_refused(cache, seed):
-    first = component_plan(DATACONFIGS, policy=POLICY, seed=seed)[0].seed
+    first = component_plan(DATACONFIGS, policy=UNSELECTED, seed=seed)[0].seed
     with pytest.raises(ConfigurationError, match=f'no component of seed {first}'):
         live(1, seed=seed, record_source=CachedRecordSource(cache))
 
 
 def test_other_parameters_are_refused(cache):
     with pytest.raises(ConfigurationError, match='other parameters') as caught:
-        live(1, policy=CurriculumStreamPolicy(heavy_shm=0.3), record_source=CachedRecordSource(cache))
+        live(1, policy=dataclasses.replace(UNSELECTED, heavy_shm=0.3), record_source=CachedRecordSource(cache))
     assert caught.value.context['fields'] == ['mutation_rate']
 
 
@@ -171,14 +209,14 @@ def test_a_cache_of_another_generator_is_refused(cache, tmp_path, field, problem
 
 def test_require_checks_a_whole_stream_before_any_record(cache):
     source = CachedRecordSource(cache)
-    source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=RECORDS)
+    source.require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=RECORDS)
     with pytest.raises(ConfigurationError, match='serves 2560 records') as caught:
-        source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=RECORDS + 1)
+        source.require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=RECORDS + 1)
     assert caught.value.context['needed'] == RECORDS + 1
     with pytest.raises(ConfigurationError, match='other parameters'):
-        source.require(DATACONFIGS, policy=CurriculumStreamPolicy(heavy_shm=0.3), seed=SEED, records=7)
-    with pytest.raises(ConfigurationError, match='another stream'):         # 24 of the 28 cached streams
-        source.require(DATACONFIGS, policy=CurriculumStreamPolicy(heavy_shm=0.), seed=SEED, records=7)
+        source.require(DATACONFIGS, policy=dataclasses.replace(UNSELECTED, heavy_shm=0.3), seed=SEED, records=7)
+    with pytest.raises(ConfigurationError, match='another stream'):         # 6 of the 7 cached streams
+        source.require(DATACONFIGS, policy=dataclasses.replace(UNSELECTED, heavy_shm=0.), seed=SEED, records=7)
 
 
 def test_the_cache_command_writes_the_recipes_cache(tmp_path, capsys):
@@ -193,7 +231,7 @@ def test_the_cache_command_writes_the_recipes_cache(tmp_path, capsys):
 
 def test_an_existing_cache_or_an_unfinished_one_is_not_a_cache(cache, tmp_path):
     with pytest.raises(FileExistsError):
-        write_record_cache(cache, dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=1, batch_size=1)
+        write_record_cache(cache, dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED, steps=1, batch_size=1)
     (tmp_path / 'partial').mkdir()
     with pytest.raises(ConfigurationError, match='not a complete record cache'):
         CachedRecordSource(tmp_path / 'partial').manifest
