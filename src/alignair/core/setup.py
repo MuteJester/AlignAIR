@@ -9,7 +9,7 @@ from ..errors import ConfigurationError, error_context
 from ..reference.protein import ProteinReference, build_protein_reference
 from ..reference.labels import build_equivalence_classes
 from ..reference.reference_set import ReferenceSet
-from .config import AlignAIRConfig, _reference_short_d_penalty
+from .config import AlignAIRConfig, _reference_productive_unknown, _reference_short_d_penalty
 from .model import AlignAIR
 
 InputSpace = Literal['nucleotide', 'protein']
@@ -285,4 +285,6 @@ def prepare_model(reference: ReferenceSet | ProteinReference, *, input_space: In
     if 'short_d_penalty' not in config_options:
         config = replace(config, short_d_penalty=_reference_short_d_penalty(source,
             has_d=config.has_d, classification_mode=config.classification_mode))
+    if 'productive_unknown' not in config_options:
+        config = replace(config, productive_unknown=_reference_productive_unknown(use_meta_heads=config.use_meta_heads))
     return ModelSetup(source, config, input_space, label_space, view)

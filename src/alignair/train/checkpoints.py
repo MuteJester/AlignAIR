@@ -55,6 +55,14 @@ def validate_continuation(state, config, label_schema, *, augmentation=None, sch
         raise ConfigurationError('resume Short-D loss contract differs from the requested training objective',
                                  context={'field': 'short_d_penalty'},
                                  hint='Use init_from for a weights-only warm start under the corrected label contract.')
+    if (isinstance(config, AlignAIRConfig) and config.use_meta_heads
+            and getattr(state.config, 'productive_unknown', 'negative') != config.productive_unknown):
+        raise ConfigurationError('resume productive-label contract differs from the requested training objective: '
+                                 'the checkpoint treats unknown productivity as '
+                                 f"{getattr(state.config, 'productive_unknown', 'negative')!r}, "
+                                 f'this run as {config.productive_unknown!r}',
+                                 context={'field': 'productive_unknown'},
+                                 hint='Use init_from for a weights-only warm start under the masked productive objective.')
     if (state.config is not None and state.config != config
             or state.label_schema is not None and state.label_schema != label_schema):
         raise ConfigurationError('resume configuration or label identity differs from the requested model setup',

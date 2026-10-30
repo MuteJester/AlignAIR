@@ -32,6 +32,15 @@ def _reference_short_d_penalty(reference, *, has_d, classification_mode):
             or bool(reference.gene("D").names) and reference.gene("D").names[-1] == "Short-D")
 
 
+def _reference_productive_unknown(*, use_meta_heads):
+    """Reference-bound models leave unknown productivity out of the productive objective.
+
+    Keep the historical value where the objective is inactive (no metadata heads), preserving
+    continuation of historical checkpoints without those heads.
+    """
+    return "masked" if use_meta_heads else "negative"
+
+
 @dataclass(frozen=True)
 class GeneSpec:
     """Everything that makes one gene (V/D/J) what it is, in one place: allele count, conv-tower
@@ -93,6 +102,11 @@ class AlignAIRConfig:
     # Historical count-only/CSV configurations assign the last D column to Short-D. Reference-
     # bound constructors derive this setting from label identity; old serialized configs retain True.
     short_d_penalty: bool = True
+    # How the productive objective treats a record whose productivity is unknown (None): "masked"
+    # leaves it out of the productive loss and metric; "negative" is the historical objective, which
+    # trained it as non-productive. Reference-bound constructors select "masked" when the metadata
+    # heads are on; serialized configs without the field keep "negative".
+    productive_unknown: Literal["negative", "masked"] = "negative"
 
     def __post_init__(self):
         if type(self.short_d_penalty) is not bool:
@@ -100,7 +114,8 @@ class AlignAIRConfig:
         for name, choices in (("classification_mode", ("multilabel", "categorical")),
                               ("boundary_mode", ("residue", "half_open")),
                               ("input_space", ("nucleotide", "protein")),
-                              ("label_space", ("alleles", "protein_classes"))):
+                              ("label_space", ("alleles", "protein_classes")),
+                              ("productive_unknown", ("negative", "masked"))):
             if getattr(self, name) not in choices:
                 raise ConfigurationError(f"unsupported {name}: {getattr(self, name)!r}",
                                          context={"field": name, "allowed": choices})
@@ -174,6 +189,8 @@ class AlignAIRConfig:
         """Build from an already-constructed :class:`ReferenceSet` (allele counts come from it)."""
         kwargs.setdefault("short_d_penalty", _reference_short_d_penalty(reference_set,
             has_d=reference_set.has_d, classification_mode=kwargs.get("classification_mode", "multilabel")))
+        kwargs.setdefault("productive_unknown",
+                          _reference_productive_unknown(use_meta_heads=kwargs.get("use_meta_heads", True)))
         return cls(
             v_allele_count=len(reference_set.gene("V")),
             j_allele_count=len(reference_set.gene("J")),
