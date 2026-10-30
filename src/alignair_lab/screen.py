@@ -141,7 +141,8 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
               "recipe": {"dataconfigs": list(DATACONFIGS), "batch_size": BATCH_SIZE, "lr": config.lr, "seed": SEED},
               "cache": {"path": source.path, "steps": manifest["steps"], "records": manifest["records"],
                         "genairr_source_sha256": manifest["genairr"]["genairr_source_sha256"],
-                        "experiment_sha256": manifest["experiment_sha256"], "created": manifest["created"]},
+                        "recipe": manifest["recipe"], "code_sha256": manifest["code"]["sha256"],
+                        "created": manifest["created"]},
               "baseline": {"architecture": BASELINE_ARCHITECTURE, "milestone": str(baseline)},
               "dev_build": str(Path(dev_build).resolve()), "screen_dir": str(screen.resolve())}
 

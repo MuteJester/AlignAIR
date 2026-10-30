@@ -1,34 +1,39 @@
 """The record cache: a recipe's curriculum records generated once, written to disk, and replayed by any number of runs.
 
-``training_records`` zips independent component streams, and each component is one provider call
-``(reference, parameters, seed)``, listed in order by ``gym.workers.component_plan``. ``write_record_cache`` runs
-each planned component's own stream through the default GenAIRR provider (``gym.streams.stream_records``), one
-process per component at most, for as many records as ``steps * batch_size`` records of the zipped stream draw from
-it (``component_counts``), and writes them in compressed chunks. ``CachedRecordSource`` is a record provider
-(``training_records``' and ``train``'s ``record_source``) that replays the component it is asked for: the stream it
-gives is the live stream, record for record, up to ``steps * batch_size`` records.
+``training_records`` zips independent record streams (a curriculum component interleaves several), and each stream
+is one provider call ``(reference, parameters, seed)``, listed in order by ``gym.workers.component_plan`` (which calls
+each a "component"). ``write_record_cache`` runs each planned stream through the default GenAIRR provider
+(``gym.streams.stream_records``), one process per stream, for as many records as ``steps * batch_size`` records of
+the zipped training stream (run seed, start step 0) draw from it (``component_counts``), and writes them in
+compressed chunks. ``CachedRecordSource`` is a record provider (``training_records``' and ``train``'s
+``record_source``) that replays the stream it is asked for: the stream it gives is the live stream, record for
+record, up to ``steps * batch_size`` records.
 
 Layout::
 
     PATH/manifest.json                     written last: a directory without it is not a cache
-    PATH/<n>-seed<s>/chunk-<k>.pkl.zlib    component n (seed s): CHUNK_RECORDS of its records per chunk, in order
+    PATH/<n>-seed<s>/chunk-<k>.pkl.zlib    stream n (seed s): CHUNK_RECORDS of its records per chunk, in order
 
 The manifest records the GenAIRR the records come from (``genairr``: the assay's provenance, whose
-``genairr_source_sha256`` is ``alignair_assay.core.provenance.tree_digest`` of the package directory), the SHA-256 of
-the experiment builder (``gym/experiment.py``), the dataconfig names, the policy, the seed, the steps and batch size
-the cache serves, and per component its seed, reference (name and DataConfig checksum), parameters, record count
-and chunks (file, records, bytes, SHA-256).
+``genairr_source_sha256`` is ``alignair_assay.core.provenance.tree_digest`` of the package directory), the product's
+training ``recipe`` id, the dataconfig names, every field of the stream policy (``policy``), the seed, purpose and
+start step, the steps and batch size the cache serves, the code that produced the records (``code``:
+``PRODUCING_CODE``, provenance only), and per stream its seed, reference (name and DataConfig checksum), parameters
+(``encode_parameters``), record count and chunks (file, records, bytes, SHA-256).
 
-**Refused**, at the provider call and in whichever process makes it (ConfigurationError): a process importing
-another GenAIRR or another experiment builder than the cache's, a seed the cache has no component of, and another
-reference or other parameters than the cached component's of that seed. A component read to its end raises
+**Refused** (ConfigurationError), at the provider call and in whichever process makes it: a process importing another
+GenAIRR than the cache's, a seed the cache has no stream of, another reference or other parameters than the cached
+stream's of that seed, and a chunk whose bytes are not those it was written as. A stream read to its end raises
 TrainingDataError: the stream never wraps around. ``CachedRecordSource.require`` checks a whole stream before any
-record is drawn.
+record is drawn, the recipe and every policy field named, and then draws the first records of every stream live:
+a change to the code that produces the records (the provider, the seed blocks, the interleave, the curriculum) leaves
+the manifest as it was, so only drawing the stream again shows it.
 
 The chunks are pickles: a cache is trusted local data, written by this module.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import functools
 import hashlib
@@ -43,15 +48,16 @@ import tempfile
 import time
 import zlib
 from collections.abc import Iterator, Mapping
-from itertools import islice
+from itertools import islice, repeat
 from operator import index
 from pathlib import Path
 
+import alignair
 from alignair.errors import ConfigurationError, TrainingDataError, error_context
-from alignair.train.gym import experiment
 from alignair.train.gym.streams import CurriculumStreamPolicy, dataconfig_name, stream_records, training_records
 from alignair.train.gym.workers import component_plan
-from alignair_assay.core.provenance import genairr_provenance, tree_digest
+from alignair.train.trainer import RECIPE
+from alignair_assay.core.provenance import files_digest, genairr_provenance, tree_digest
 
 KIND = "alignair_lab.record_cache"
 VERSION = 2
@@ -60,6 +66,12 @@ MANIFEST = "manifest.json"
 # component of a 40k-step cache of the 1.0.0 recipe is about 90 chunks.
 CHUNK_RECORDS = 4096
 COMPRESSION_LEVEL = 6
+# The product code, besides GenAIRR, that turns a stream's parameters and seed into records (paths under the alignair
+# package; a directory stands for its Python files): the provider and its scoping, the seed blocks and the interleave,
+# the experiment builder and the curriculum. Recorded as provenance; ``require``'s live draw is the guard.
+PRODUCING_CODE = ("train/gym/streams.py", "train/gym/experiment.py", "train/gym/curriculum")
+# Records of every stream ``require`` draws live and compares with the cache, at most what the cache holds per stream.
+VERIFY_RECORDS = 2
 _HINT = "Write a cache for this stream: python -m alignair_lab cache --out PATH --steps N."
 
 
@@ -85,10 +97,26 @@ def imported_genairr() -> str:
     return genairr_digest(str(Path(GenAIRR.__file__).resolve().parent))
 
 
-@functools.lru_cache(maxsize=None)
-def experiment_sha256() -> str:
-    """SHA-256 of the experiment builder the default provider compiles each component's GenAIRR experiment with."""
-    return hashlib.sha256(Path(experiment.__file__).read_bytes()).hexdigest()
+def producing_code() -> dict:
+    """The ``PRODUCING_CODE`` files as they are now: each one's SHA-256 (``files``, by path under the alignair package)
+    and their ``files_digest`` (``sha256``)."""
+    root = Path(alignair.__file__).resolve().parent
+    paths = sorted({path for name in PRODUCING_CODE for path in
+                    ((root / name).rglob("*.py") if (root / name).is_dir() else [root / name])
+                    if "__pycache__" not in path.parts})
+    return {"files": {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                      for path in paths},
+            "sha256": files_digest(root, paths)}
+
+
+def dataconfig_names(dataconfigs) -> list[str]:
+    """The names the manifest records for ``dataconfigs``: a name as given, else ``dataconfig_name``."""
+    return [value if isinstance(value, str) else dataconfig_name(value) for value in dataconfigs]
+
+
+def policy_fields(policy: CurriculumStreamPolicy) -> dict:
+    """Every field of a stream policy, encoded as the manifest stores it (``encode_parameters``)."""
+    return encode_parameters({field.name: getattr(policy, field.name) for field in dataclasses.fields(policy)})
 
 
 def reference_sha256(reference) -> str | None:
@@ -224,11 +252,10 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
                 components[position].update(written)
         manifest = {
             "kind": KIND, "version": VERSION,
-            "dataconfigs": [value if isinstance(value, str) else dataconfig_name(value) for value in dataconfigs],
-            "policy": {"progresses": list(policy.progresses), "heavy_shm": policy.heavy_shm,
-                       "short_boost": policy.short_boost, "mutation_cap": policy.mutation_cap, "mode": policy.mode},
-            "seed": seed, "steps": steps, "batch_size": batch_size, "records": steps * batch_size,
-            "genairr": genairr, "experiment_sha256": experiment_sha256(),
+            "recipe": RECIPE, "dataconfigs": dataconfig_names(dataconfigs), "policy": policy_fields(policy),
+            "seed": seed, "purpose": "training", "start_step": 0,
+            "steps": steps, "batch_size": batch_size, "records": steps * batch_size,
+            "genairr": genairr, "code": producing_code(),
             "chunk_records": chunk_records, "compression": f"zlib-{COMPRESSION_LEVEL}",
             "bytes": sum(chunk["bytes"] for entry in components for chunk in entry["chunks"]),
             "workers": processes, "seconds": round(time.perf_counter() - start, 3),
@@ -279,8 +306,8 @@ class CachedRecordSource:
         return self._replay(self.component(reference, parameters, seed))
 
     def component(self, reference, parameters: Mapping, seed: int) -> dict:
-        """The manifest's entry of the component this provider call asks for; refused (ConfigurationError) unless it
-        was generated by this process's GenAIRR and experiment builder, from the same reference and parameters."""
+        """The manifest's entry of the stream this provider call asks for; refused (ConfigurationError) unless it was
+        generated by this process's GenAIRR, from the same reference and parameters."""
         manifest = self.manifest
         context = {"stage": "record_cache", "cache": self.path, "seed": seed}
         imported, cached = imported_genairr(), manifest["genairr"]["genairr_source_sha256"]
@@ -288,18 +315,14 @@ class CachedRecordSource:
             raise ConfigurationError("the record cache was generated by another GenAIRR than this process imports",
                                      context={**context, "cache_genairr": cached, "imported_genairr": imported},
                                      hint="Put the GenAIRR the cache was written with first on PYTHONPATH. " + _HINT)
-        if experiment_sha256() != manifest["experiment_sha256"]:
-            raise ConfigurationError("the record cache was generated by another experiment builder "
-                                     "(alignair/train/gym/experiment.py) than this process imports",
-                                     context=context, hint=_HINT)
         found = [entry for entry in manifest["components"] if entry["seed"] == seed]
         if not found:
             raise ConfigurationError(f"the record cache has no component of seed {seed}",
                                      context={**context, "cached_seeds": [entry["seed"] for entry in
                                                                           manifest["components"]]},
-                                     hint=f"The cache holds the components of the run seed {manifest['seed']}; "
-                                          "another seed, or a resume (whose stream starts at seed + step), draws "
-                                          "other components. " + _HINT)
+                                     hint=f"The cache holds the training streams of run seed {manifest['seed']} from "
+                                          "step 0; another run seed, stream purpose (validation, probe) or start "
+                                          "step (a resumed run) draws other seed blocks. " + _HINT)
         entry = found[0]
         if reference_sha256(reference) != entry["reference_sha256"]:
             raise ConfigurationError(f"the record cache's component of seed {seed} is of another reference "
@@ -331,23 +354,66 @@ class CachedRecordSource:
                                          "records": entry["records"]},
                                 hint="Train fewer steps, or write a cache for more. " + _HINT)
 
-    def require(self, dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, records: int) -> dict:
-        """Check before any record is drawn that this cache serves the first ``records`` records of
-        ``training_records(dataconfigs, policy=policy, seed=seed)`` (ConfigurationError otherwise): each planned
-        component passes ``component``, the plan is the cache's whole component list, and ``records`` is at most the
-        records the cache was written for (each component then holds what that many records draw from it). Returns
-        the manifest."""
+    def require(self, dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, records: int,
+                verify: int = VERIFY_RECORDS) -> dict:
+        """Check before any record is drawn that this cache serves the first ``records`` records of the training
+        stream ``training_records(dataconfigs, policy=policy, seed=seed)`` (ConfigurationError otherwise), and return
+        the manifest:
+
+        1. the cache's ``recipe`` is the product's, and its dataconfigs, seed and every policy field are the
+           request's (refused naming the ``field``);
+        2. each planned stream passes ``component`` and the plan is the cache's whole stream list;
+        3. ``records`` is at most the records the cache was written for (each stream then holds what that many
+           records draw from it);
+        4. the first ``verify`` records of every stream (at most what each holds), drawn live, are the cache's.
+        """
         records = _count(records, "records")
+        manifest, context = self.manifest, {"stage": "record_cache", "cache": self.path}
+        requested = {"recipe": RECIPE, "dataconfigs": dataconfig_names(dataconfigs), "seed": seed,
+                     **policy_fields(policy)}
+        cached = {"recipe": manifest.get("recipe"), "dataconfigs": manifest.get("dataconfigs"),
+                  "seed": manifest.get("seed"), **manifest.get("policy", {})}
+        differing = [field for field in requested if field not in cached
+                     or canonical_parameters(requested[field], encoded=True)
+                     != canonical_parameters(cached[field], encoded=True)]
+        if differing:
+            field = differing[0]
+            raise ConfigurationError(f"the record cache was written for another {field}: {cached.get(field)!r}, not "
+                                     f"{requested[field]!r}",
+                                     context={**context, "field": field, "fields": differing}, hint=_HINT)
         plan = component_plan(dataconfigs, policy=policy, seed=seed)
         for planned in plan:
             self.component(planned.reference, planned.parameters, planned.seed)
-        manifest, context = self.manifest, {"stage": "record_cache", "cache": self.path}
         if len(plan) != len(manifest["components"]):
             raise ConfigurationError(f"the record cache was written for another stream: {len(manifest['components'])} "
-                                     f"components, not {len(plan)}", context=context, hint=_HINT)
+                                     f"streams, not {len(plan)}", context=context, hint=_HINT)
         if records > manifest["records"]:
             raise ConfigurationError(f"the record cache serves {manifest['records']} records ({manifest['steps']} "
                                      f"steps of {manifest['batch_size']}); {records} were asked for",
                                      context={**context, "needed": records, "records": manifest["records"]},
                                      hint=_HINT)
+        per_stream = min([verify, *(entry["records"] for entry in manifest["components"])])
+        if per_stream > 0:
+            self._verify_live(dataconfigs, policy, seed, per_stream * len(plan))
         return manifest
+
+    def _verify_live(self, dataconfigs, policy, seed, count):
+        """Draw the first ``count`` records of the training stream live and from this cache, and refuse the cache at
+        the first record that differs, naming the seed of the stream it comes from. Every stream is drawn at the same
+        rate, so ``count`` records hold the same number of every stream's."""
+        def draw(record_source):
+            return islice(training_records(dataconfigs, policy=policy, seed=seed, record_source=record_source), count)
+
+        def origin(reference, parameters, stream_seed):
+            return repeat({"seed": stream_seed})
+
+        for position, (live, cached, source) in enumerate(zip(draw(None), draw(self), draw(origin))):
+            if live != cached:
+                fields = sorted(field for field in live.keys() | cached.keys()
+                                if field not in live or field not in cached or live[field] != cached[field])
+                raise ConfigurationError(
+                    f"the record cache does not reproduce the live stream: record {position}, of the stream of seed "
+                    f"{source['seed']}, differs in {', '.join(fields[:8])}; the code that produces the records has "
+                    "changed since the cache was written",
+                    context={"stage": "record_cache", "cache": self.path, "record": position, "seed": source["seed"],
+                             "fields": fields}, hint=_HINT)

@@ -116,11 +116,22 @@ def test_component_counts_are_what_the_zipped_stream_draws():
 
 
 def test_the_manifest_records_genairr_the_recipe_and_each_streams_records(recipe_cache):
+    import hashlib
     import GenAIRR
     from pathlib import Path
+    import alignair
+    from alignair.train.trainer import RECIPE
     manifest = json.loads((recipe_cache / 'manifest.json').read_text())
     assert manifest['genairr']['genairr_source_sha256'] == genairr_digest(str(Path(GenAIRR.__file__).parent))
     assert manifest['dataconfigs'] == ['HUMAN_IGH_OGRDB']
+    assert (manifest['recipe'], manifest['purpose'], manifest['start_step']) == (RECIPE, 'training', 0)
+    assert manifest['policy'] == {'progresses': {'__tuple__': [0.3, 0.6, 0.9]}, 'heavy_shm': 0.25, 'short_boost': 1,
+                                  'mutation_cap': None, 'mode': 'auto', 'indel_fraction': {'__tuple__': [0.05, 0.25]},
+                                  'indel_form': 'weighted', 'selected_fraction': 0.75}
+    files = manifest['code']['files']           # provenance: the code that produced the records
+    assert {'train/gym/streams.py', 'train/gym/experiment.py', 'train/gym/curriculum/base.py'} <= set(files)
+    root = Path(alignair.__file__).parent
+    assert all(digest == hashlib.sha256((root / name).read_bytes()).hexdigest() for name, digest in files.items())
     assert (manifest['seed'], manifest['steps'], manifest['batch_size'], manifest['records']) == (0, 1, 64, 64)
     plan = component_plan(DATACONFIGS, policy=POLICY, seed=SEED)
     assert [stream['seed'] for stream in manifest['components']] == [stream.seed for stream in plan]
@@ -214,11 +225,9 @@ def test_other_parameters_are_refused(cache):
     assert caught.value.context['fields'] == ['mutation_rate']
 
 
-@pytest.mark.parametrize('field,problem', [('genairr.genairr_source_sha256', 'another GenAIRR'),
-                                           ('experiment_sha256', 'another experiment builder')])
-def test_a_cache_of_another_generator_is_refused(cache, tmp_path, field, problem):
-    source = altered(cache, tmp_path, **{field: '0' * 64})
-    with pytest.raises(ConfigurationError, match=problem):
+def test_a_cache_of_another_genairr_is_refused(cache, tmp_path):
+    source = altered(cache, tmp_path, **{'genairr.genairr_source_sha256': '0' * 64})
+    with pytest.raises(ConfigurationError, match='another GenAIRR'):
         live(1, record_source=source)
 
 
@@ -228,10 +237,44 @@ def test_require_checks_a_whole_stream_before_any_record(cache):
     with pytest.raises(ConfigurationError, match='serves 2560 records') as caught:
         source.require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=RECORDS + 1)
     assert caught.value.context['needed'] == RECORDS + 1
-    with pytest.raises(ConfigurationError, match='other parameters'):
-        source.require(DATACONFIGS, policy=dataclasses.replace(UNSELECTED, heavy_shm=0.3), seed=SEED, records=7)
-    with pytest.raises(ConfigurationError, match='another stream'):         # 6 of the 7 cached streams
-        source.require(DATACONFIGS, policy=dataclasses.replace(UNSELECTED, heavy_shm=0.), seed=SEED, records=7)
+
+
+@pytest.mark.parametrize('field,request_', [
+    ('selected_fraction', {'policy': dataclasses.replace(UNSELECTED, selected_fraction=0.5)}),
+    ('indel_form', {'policy': dataclasses.replace(UNSELECTED, indel_form='uniform')}),
+    ('indel_fraction', {'policy': dataclasses.replace(UNSELECTED, indel_fraction=(0.1, 0.3))}),
+    ('heavy_shm', {'policy': dataclasses.replace(UNSELECTED, heavy_shm=0.3)}),
+    ('seed', {'seed': 1}),
+    ('dataconfigs', {'dataconfigs': ('HUMAN_IGH_OGRDB', 'HUMAN_IGK_OGRDB')})])
+def test_require_refuses_another_stream_naming_the_field(cache, field, request_):
+    options = {'dataconfigs': DATACONFIGS, 'policy': UNSELECTED, 'seed': SEED, **request_}
+    with pytest.raises(ConfigurationError, match=field) as caught:
+        CachedRecordSource(cache).require(options.pop('dataconfigs'), records=7, **options)
+    assert caught.value.context['field'] == field
+
+
+@pytest.mark.parametrize('change,problem', [({'recipe': 'v2'}, 'recipe'), ({'version': 1}, 'not a version 2')])
+def test_require_refuses_a_cache_of_another_recipe_or_format(cache, tmp_path, change, problem):
+    with pytest.raises(ConfigurationError, match=problem):
+        altered(cache, tmp_path, **change).require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=7)
+
+
+def test_require_draws_the_first_records_of_every_stream_live_and_compares_them(recipe_cache, monkeypatch):
+    """A change to the code that produces the records (here the provider; equally the seed blocks, the interleave or
+    the curriculum) leaves the manifest as it was: only drawing the stream again shows it."""
+    from alignair.train.gym import streams
+    source = CachedRecordSource(recipe_cache)
+    source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=BATCH_SIZE)
+    original = streams.stream_records
+
+    def changed(dataconfig, parameters, seed):
+        return original(dataconfig, {**parameters, 'seq_error_rate': 0.5}, seed)
+
+    monkeypatch.setattr(streams, 'stream_records', changed)
+    with pytest.raises(ConfigurationError, match='does not reproduce the live stream') as caught:
+        source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=BATCH_SIZE)
+    assert caught.value.context['record'] == 0
+    assert caught.value.context['seed'] == component_plan(DATACONFIGS, policy=POLICY, seed=SEED)[0].seed
 
 
 def test_the_cache_command_writes_the_recipes_cache(tmp_path, capsys):
