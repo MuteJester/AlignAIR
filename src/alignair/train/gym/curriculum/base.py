@@ -30,7 +30,7 @@ def indel_form_name(value) -> str:
 
 
 def indel_fraction_range(value) -> tuple:
-    """Validate the ``(low, high)`` share of reads with an indel: finite, ``0 <= low <= high <= 1``."""
+    """Validate the ``(low, high)`` weight of reads with an indel: finite, ``0 <= low <= high <= 1``."""
     try:
         if isinstance(value, (str, bytes)):
             raise TypeError
