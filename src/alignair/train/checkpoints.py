@@ -48,6 +48,10 @@ class ResumeState:
     initial_lr: float | None = None
 
 
+_PRODUCTIVE_OBJECTIVES = {'masked': 'the masked productive objective',
+                          'negative': 'the historical productive objective'}
+
+
 def validate_continuation(state, config, label_schema, *, augmentation=None, schedule=None, lr=None):
     """Reject incompatible continuation before mutating model, optimizer or process RNG state."""
     if (isinstance(config, AlignAIRConfig) and config.has_d and config.classification_mode == 'multilabel'
@@ -61,7 +65,8 @@ def validate_continuation(state, config, label_schema, *, augmentation=None, sch
                                  f'the checkpoint trains unknown productivity as {saved!r}, '
                                  f'this run as {config.productive_unknown!r}',
                                  context={'field': 'productive_unknown'},
-                                 hint='Use init_from for a weights-only warm start under the masked productive objective.')
+                                 hint='Use init_from for a weights-only warm start under '
+                                      f'{_PRODUCTIVE_OBJECTIVES[config.productive_unknown]}.')
     if (state.config is not None and state.config != config
             or state.label_schema is not None and state.label_schema != label_schema):
         raise ConfigurationError('resume configuration or label identity differs from the requested model setup',

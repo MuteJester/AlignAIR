@@ -69,3 +69,15 @@ def test_historical_model_loads_for_inference_but_cannot_continue_into_the_maske
         assert caught.value.context['field'] == 'productive_unknown'
         assert 'init_from' in caught.value.hint
     validate_continuation(replace(state, config=masked.config), masked.config, masked.label_schema())
+
+
+@pytest.mark.parametrize('saved,requested,objective', [
+    ('negative', 'masked', 'the masked productive objective'),
+    ('masked', 'negative', 'the historical productive objective')])
+def test_the_refusal_names_the_requested_objective_in_either_direction(saved, requested, objective):
+    setup = prepare_model(reference(), max_seq_length=128, embed_dim=4, filters=4, block_out=8)
+    state = ResumeState({}, {}, {}, 2, {}, config=replace(setup.config, productive_unknown=saved),
+                        label_schema=setup.label_schema())
+    with pytest.raises(ConfigurationError, match=f"as '{saved}', this run as '{requested}'") as caught:
+        validate_continuation(state, replace(setup.config, productive_unknown=requested), setup.label_schema())
+    assert caught.value.hint == f'Use init_from for a weights-only warm start under {objective}.'
