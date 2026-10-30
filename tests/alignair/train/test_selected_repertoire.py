@@ -6,7 +6,11 @@ from statistics import median
 
 import pytest
 
+from alignair.core import prepare_model
+from alignair.model_file import read_metadata
+from alignair.reference.reference_set import ReferenceSet
 from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records, training_records
+from alignair.train.trainer import train
 
 pytestmark = pytest.mark.integration
 
@@ -34,3 +38,25 @@ def test_selected_records_are_productive_and_the_unselected_amplicons_keep_their
         assert len(picked) == share * len(rows) and all(row['productive'] is True for row in picked)
     for amplicon in (3, 5):                        # V-anchored and fragment reads: unselected, still short
         assert median(len(row['sequence']) for row in records[amplicon::COMPONENTS]) < 200
+
+
+@pytest.mark.parametrize('options,fraction', [({}, 0.75), ({'selected_fraction': 0.5}, 0.5)])
+def test_a_run_draws_its_selected_fraction_and_records_its_recipe(tmp_path, options, fraction):
+    import GenAIRR.data as gd
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    setup = prepare_model(reference, embed_dim=4, filters=4, block_out=8)
+    seen = []
+
+    def watched(dataconfig, parameters, seed):
+        seen.append(bool(parameters.get('productive_only')))
+        return stream_records(dataconfig, parameters, seed)
+
+    path = tmp_path / 'model.alignair'
+    train(setup.build_model(), reference, [gd.HUMAN_IGH_OGRDB], setup.config, steps=1, batch_size=2,
+          model_setup=setup, save_path=str(path), log_every=0, record_source=watched, **options)
+    policy = CurriculumStreamPolicy(selected_fraction=fraction)
+    assert seen == [name.startswith('selected') for streams in policy.substreams_for(gd.HUMAN_IGH_OGRDB)
+                    for name, _ in streams]
+    train_args = read_metadata(path)['training']['train_args']
+    assert train_args['recipe'] == 'v3' and train_args['selected_fraction'] == fraction
+    assert train_args['selected_shares'] == list(policy.selected_shares())

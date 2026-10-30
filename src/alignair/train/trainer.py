@@ -17,7 +17,7 @@ from ..core.runtime import restore_model_state
 from ..reference.protein import build_protein_reference
 from ..tasks import TrainingTasks, build_tasks
 from .gym.curriculum.base import INDEL_FRACTION
-from .gym.streams import CurriculumStreamPolicy, training_records, effective_mutation_caps
+from .gym.streams import SELECTED_FRACTION, CurriculumStreamPolicy, training_records, effective_mutation_caps
 from .engine import train_step, validate
 from .setup import build_training_engine
 from .loop import training_iterations
@@ -26,6 +26,11 @@ from .checkpoints import (save_checkpoint, save_rotating, latest_checkpoint, loa
 from .random_state import restore_rng_state as _restore_rng
 from .schedules import CosineSchedule
 from .study import TrainingStudy, StudySession
+
+# How a run's curriculum records are built, recorded as ``train_args["recipe"]``: "v3" draws every stream from its
+# own reserved seed block and a selected fraction of each selectable component under productive_only(). The options
+# recorded beside it (indel form and fraction, selected fraction) are the recipe's parameters.
+RECIPE = 'v3'
 
 
 def eval_metrics(out: dict, targets: dict, cfg) -> dict:
@@ -50,13 +55,15 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
           augmentation=None, schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
-          indel_fraction=INDEL_FRACTION, indel_form='weighted'):
+          indel_fraction=INDEL_FRACTION, indel_form='weighted', selected_fraction=SELECTED_FRACTION):
     """Train ``model`` on the curriculum stream of ``dataconfigs``.
 
     ``indel_form`` and ``indel_fraction`` select the curriculum's polymerase-indel counts
     (``gym.streams.CurriculumStreamPolicy``): ``"weighted"``, whose weight of reads with an indel is
     ``indel_fraction`` ``(low, high)`` at progress 0 and 1, or the historical ``"uniform"`` form of the 1.0.0
-    recipe. The run records both in ``train_args``.
+    recipe. ``selected_fraction`` of each selectable component's records are drawn under GenAIRR's
+    ``productive_only()``. The run records them in ``train_args`` with its ``recipe`` (``RECIPE``) and each
+    component's selected share.
 
     ``record_source`` (``gym.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
     GenAIRR provider of every curriculum stream of the run: training, validation and the X-ray probe. With
@@ -101,7 +108,8 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     schema = setup.label_schema()
     source_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
                                            mode='amplicon' if cfg.input_space == 'protein' else 'auto',
-                                           indel_fraction=indel_fraction, indel_form=indel_form)
+                                           indel_fraction=indel_fraction, indel_form=indel_form,
+                                           selected_fraction=selected_fraction)
 
     def _build_stream(purpose, *, augment=False, start_step=0):
         # every stream draws its own seed blocks: training (a resume from (seed, step)), validation and the probe
@@ -152,7 +160,10 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
                    "input_space": cfg.input_space, "label_space": cfg.label_space,
                    "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
+                   "recipe": RECIPE,
                    "indel_form": source_policy.indel_form, "indel_fraction": list(source_policy.indel_fraction),
+                   "selected_fraction": source_policy.selected_fraction,
+                   "selected_shares": list(source_policy.selected_shares(force_mixture=len(dataconfigs) > 1)),
                    "augmentation": augmentation_metadata,
                    "schedule": schedule_metadata, "study": study.to_dict() if study is not None else None,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),
