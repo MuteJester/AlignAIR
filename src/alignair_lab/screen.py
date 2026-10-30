@@ -417,11 +417,11 @@ def check_init_seed(init_seed) -> int:
     return init_seed
 
 
-def _now() -> str:
+def now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
 
-def _write_json(path: Path, record: dict) -> None:
+def write_json(path: Path, record: dict) -> None:
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(json.dumps(record, indent=1, default=str) + "\n", encoding="utf-8")
     os.replace(temporary, path)
@@ -483,7 +483,7 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
         band = null_band(Path(out_root), wanted, baseline_options, names, max_cases)
     config = training_config(steps=steps, architecture=architecture, model_options=model_options, device=device,
                              data_workers=data_workers, schedule=learning, init_seed=init_seed)
-    _prepare_candidate(config)
+    prepare_candidate(config)
     screen = Path(out_root) / name
     Path(out_root).mkdir(parents=True, exist_ok=True)
     try:
@@ -491,7 +491,7 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
     except FileExistsError:
         raise FileExistsError(f"a screen named {name!r} exists ({screen}); choose another --name") from None
 
-    record = {"name": name, "status": "preparing", "started": _now(), "role": role, "steps": steps,
+    record = {"name": name, "status": "preparing", "started": now(), "role": role, "steps": steps,
               "architecture": architecture, "model_options": model_options, "init_seed": init_seed,
               "schedule": schedule, "protocol": wanted, "suites": names, "variants": list(variants),
               "max_cases": max_cases, "device": device, "data_workers": data_workers, "eval_batch_size": eval_batch_size,
@@ -508,13 +508,13 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
 
     def stage(status: str, **fields):
         record.update(status=status, **fields)
-        _write_json(screen / SCREEN_RECORD, record)
+        write_json(screen / SCREEN_RECORD, record)
         echo(f"[screen {name}] {status}")
 
     try:
         times = {}
         if provenance is not None:
-            layout = _assay_layout(screen / "assay", Path(dev_build), names)
+            layout = assay_layout(screen / "assay", Path(dev_build), names)
             options = {"device": device, "batch_size": eval_batch_size, "variants": tuple(variants), "profile": False,
                        "max_cases": max_cases}
             stage(f"diagnosing the baseline {provenance['kind']}")
@@ -552,18 +552,18 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
             record.update(report=str(report), comparison=summary,
                           decisions=decide(summary, limits, [metric for metric, _ in HEADLINE]))
         (screen / "headline.txt").write_text(headline + "\n", encoding="utf-8")
-        record.update(seconds={key: round(value, 1) for key, value in times.items()}, finished=_now())
+        record.update(seconds={key: round(value, 1) for key, value in times.items()}, finished=now())
         stage("done")
         echo("")
         echo(headline)
         return {**record, "headline": headline}
     except BaseException as error:
-        record.update(error=f"{type(error).__name__}: {error}", finished=_now())
+        record.update(error=f"{type(error).__name__}: {error}", finished=now())
         stage("failed")
         raise
 
 
-def _prepare_candidate(config) -> None:
+def prepare_candidate(config) -> None:
     """Import the candidates and prepare the candidate's model setup (no weights): an unknown architecture or model
     option is refused here, before anything is written."""
     import alignair_lab.architectures  # noqa: F401  (registers every candidate in this process)
@@ -577,7 +577,7 @@ def _prepare_candidate(config) -> None:
                   label_space=config.label_space, **config.model_options)
 
 
-def _assay_layout(root: Path, dev_build: Path, suites: Sequence[str]):
+def assay_layout(root: Path, dev_build: Path, suites: Sequence[str]):
     """An assay run directory at ``root``, holding copies of the dev build's ``suites``."""
     from alignair_assay.core.layout import RunLayout
     layout = RunLayout(root)

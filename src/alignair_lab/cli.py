@@ -4,6 +4,9 @@
       [--schedule cosine|constant] [--init-seed 0] [--against-screen NAME | --against-milestone [DIR]]
       [--baseline-model-option KEY=VALUE ...] [--suites S1,S3] [--max-cases N] [--variants baseline,true_spans,...]
       [--device cuda] [--data-workers 2] [--eval-batch-size 256] [--cache DIR] [--dev-build DIR] [--out-root DIR]
+  python -m alignair_lab calibrate [--steps 20000] [--init-seeds 0,1,2] [--parallel 1] [--model-option KEY=VALUE ...]
+      [--name NAME] [--schedule cosine|constant] [--suites S1,S3] [--max-cases N] [--device cuda] [--data-workers 2]
+      [--eval-batch-size 256] [--cache DIR] [--dev-build DIR] [--out-root DIR]
   python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
       [--segment-records N]
 
@@ -11,7 +14,9 @@
 at the same step (``screen.run_screen``): a screen of lab-null-v1 is a baseline screen, which compares with nothing;
 any other compares with the registered baseline screen of its protocol (or the one ``--against-screen`` names), or
 with the baseline's milestone (``--against-milestone``, Tier 2; its directory defaults to the conv-v1 baseline's).
-``cache`` writes the recipe's record cache (``records.write_record_cache``). A ``--model-option`` value is read as
+``calibrate`` trains the baseline screens of several init seeds (reusing those of the protocol already finished) and
+writes the null band of their protocol, which the headlines of its screens weigh their Δs against
+(``calibrate.run_calibration``). ``cache`` writes the recipe's record cache (``records.write_record_cache``). A ``--model-option`` value is read as
 JSON when it parses (``64``, ``true``,
 ``[3, 5]``), else as a string. Run under the frozen GenAIRR the cache was written with (``PYTHONPATH=FROZEN:src``).
 A refused request or a failed run prints ``error: ...`` (and its hint) and returns 2.
@@ -22,7 +27,7 @@ import argparse
 import json
 import sys
 
-from alignair_lab import screen
+from alignair_lab import calibrate, screen
 from alignair_lab.recipe import BASELINE_ARCHITECTURE, BATCH_SIZE, DATACONFIGS, POLICY, SCHEDULES, SEED
 
 CACHE_STEPS = 40_000
@@ -69,6 +74,22 @@ def build_parser() -> argparse.ArgumentParser:
                      help="the assay's variants: baseline (head and end-to-end metrics, the default) and any "
                           "truth-substitution variant, e.g. baseline,true_spans")
     run.set_defaults(func=run_screen)
+
+    calibration = commands.add_parser("calibrate", help="train baseline screens of several init seeds and write the "
+                                                        "null band of their protocol")
+    calibration.add_argument("--steps", type=int, default=screen.DEFAULT_STEPS,
+                             help="training steps (default %(default)s)")
+    calibration.add_argument("--init-seeds", default=",".join(map(str, calibrate.DEFAULT_INIT_SEEDS)),
+                             help="comma-separated init seeds of the baseline screens, two or more (default "
+                                  "%(default)s); the registered baseline screen is init seed 0's")
+    calibration.add_argument("--parallel", type=int, default=1,
+                             help="baseline screens trained at once (default %(default)s)")
+    calibration.add_argument("--model-option", action="append", default=[], metavar="KEY=VALUE",
+                             help="a model configuration field of the baseline screens (repeatable)")
+    calibration.add_argument("--name", help="the calibration's directory under --out-root (default "
+                                            "calibration-<cache>-s<steps>-<schedule>)")
+    add_protocol_arguments(calibration)
+    calibration.set_defaults(func=run_calibrate)
 
     cache = commands.add_parser("cache", help="write the recipe's record cache")
     cache.add_argument("--out", default=str(screen.CACHE), help="the new cache directory (default %(default)s)")
@@ -134,6 +155,19 @@ def run_screen(args) -> int:
                       init_seed=args.init_seed, against_screen=args.against_screen,
                       against_milestone=args.against_milestone,
                       baseline_options=model_options(args.baseline_model_option))
+    return 0
+
+
+def run_calibrate(args) -> int:
+    try:
+        seeds = [int(seed) for seed in _names(args.init_seeds)]
+    except ValueError:
+        raise ValueError(f"--init-seeds takes comma-separated integers, got {args.init_seeds!r}") from None
+    calibrate.run_calibration(steps=args.steps, init_seeds=seeds, parallel=args.parallel, schedule=args.schedule,
+                              model_options=model_options(args.model_option), suites=_names(args.suites),
+                              max_cases=args.max_cases, device=args.device, data_workers=args.data_workers,
+                              eval_batch_size=args.eval_batch_size, cache=args.cache, dev_build=args.dev_build,
+                              out_root=args.out_root, name=args.name)
     return 0
 
 
