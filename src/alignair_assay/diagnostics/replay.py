@@ -208,6 +208,7 @@ def predict_config(model, reference_set, *, batch_size: int, **overrides) -> Pre
     chain_types = (reference_set.locus_names() or None) if hasattr(reference_set, "locus_names") else None
     overrides.setdefault("chain_types", chain_types)
     return PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size,
+                         boundary_mode=cfg.boundary_mode,
                          allele_temperatures=getattr(cfg, "allele_temperatures", None), **overrides)
 
 
@@ -233,7 +234,7 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
     seconds: dict[str, float] = {}
 
     with _timed(seconds, "input_policy"):
-        reads, was_cropped = prepare_nucleotide_inputs(sequences, cfg.max_seq_length)
+        reads, was_cropped = prepare_nucleotide_inputs(sequences, cfg.window)
     _check_spans(subs.spans, [len(read) for read in reads])  # orientation keeps a read's length
     with _timed(seconds, "forward"):
         batches = _forward(model, reads, cfg, device, orientation=subs.orientation,

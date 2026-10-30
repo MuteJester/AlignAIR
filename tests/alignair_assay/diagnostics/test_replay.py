@@ -99,6 +99,19 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
         assert not any(row.get("d_call") for row in out.airr_rows)
 
 
+def test_replay_equals_product_pipeline_for_a_half_open_model(make_small_model, s0_reads):
+    from dataclasses import replace
+    from alignair.core import AlignAIR
+    model, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=0)
+    torch.manual_seed(0)
+    model = AlignAIR(replace(model.cfg, boundary_mode="half_open")).eval()
+    ids, seqs = _inputs(s0_reads)
+    seqs[-3] = seqs[0] * 3   # longer than the window: cropped to leave the terminal slot
+    out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH)
+    assert max(len(read) for read in out.canonical) == model.cfg.max_seq_length - 1
+
+
 def test_replay_and_product_share_unknown_base_whitespace_and_crop_normalization(small_model):
     from alignair.data import prepare_nucleotide_inputs
     model, reference_set = small_model
