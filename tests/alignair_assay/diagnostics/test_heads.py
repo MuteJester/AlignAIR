@@ -597,8 +597,9 @@ def test_head_metrics_of_the_released_checkpoint_agree_with_the_product(referenc
         # Saturated calibrated probabilities can tie: the ranking still starts with the selector's call.
         for ranking, call in zip(allele_ranking(out, g), out.calls[g]):
             assert out.allele_names[g][ranking[0]] == call.names[0]
-    # V comes first in the ordering repair, so the soft decoder gives the product's V wherever the span is not empty.
-    starts, ends = decode_boundaries(out, "v", "soft")
+    # V comes first in the ordering repair, and the product decodes by argmax, so the argmax decoder gives the
+    # product's V wherever the span is not empty.
+    starts, ends = decode_boundaries(out, "v", "argmax")
     kept = ends > starts
     assert kept.mean() > 0.9
     assert np.array_equal(starts[kept], out.segments.start["v"][kept])
