@@ -13,7 +13,7 @@ from ...errors import ConfigurationError, error_context
 from ...data.projection import translated_record_usable
 from ...reference.reference_set import _locus_of, is_tcr
 from .curriculum import Curriculum
-from .curriculum.base import INDEL_FRACTION, indel_fraction_range
+from .curriculum.base import INDEL_FRACTION, indel_form_name, indel_fraction_range
 from .experiment import build_experiment
 
 
@@ -76,15 +76,17 @@ def effective_mutation_caps(dataconfigs, mutation_cap) -> dict:
 
 @dataclass(frozen=True)
 class CurriculumStreamPolicy:
-    """The training mix of curriculum components. ``indel_fraction`` is the ``(low, high)`` share of reads with a
-    polymerase indel at curriculum progress 0 and 1 (``Curriculum``); the default gives about 85% indel-free reads
-    over the default mix."""
+    """The training mix of curriculum components. ``indel_form`` is the curriculum's indel form (``Curriculum``):
+    ``"weighted"`` by default, whose weight of reads with a polymerase indel is ``indel_fraction`` ``(low, high)`` at
+    curriculum progress 0 and 1, giving about 85% indel-free reads over the default mix; ``"uniform"`` is the
+    historical form of the 1.0.0 recipe."""
     progresses: tuple[float, ...] = (.3, .6, .9)
     heavy_shm: float = .25
     short_boost: int = 1
     mutation_cap: float | None = None
     mode: Literal['auto', 'amplicon'] = 'auto'
     indel_fraction: tuple[float, float] = INDEL_FRACTION
+    indel_form: Literal['uniform', 'weighted'] = 'weighted'
 
     def __post_init__(self):
         if self.mode not in ('auto', 'amplicon'):
@@ -103,10 +105,11 @@ class CurriculumStreamPolicy:
         if self.mutation_cap is not None:
             object.__setattr__(self, 'mutation_cap', _probability(self.mutation_cap, 'mutation_cap'))
         object.__setattr__(self, 'indel_fraction', indel_fraction_range(self.indel_fraction))
+        indel_form_name(self.indel_form)
 
     def parameters_for(self, dataconfig, *, force_mixture=False) -> list[dict]:
         """Return independent component dictionaries with this reference's mutation cap applied."""
-        curriculum = Curriculum(indel_fraction=self.indel_fraction)
+        curriculum = Curriculum(indel_form=self.indel_form, indel_fraction=self.indel_fraction)
         parameters = [dict(curriculum.params(progress)) for progress in self.progresses]
         mixed = (force_mixture or self.mode == 'amplicon' or len(self.progresses) > 1
                  or self.heavy_shm > 0 or self.short_boost > 1)
