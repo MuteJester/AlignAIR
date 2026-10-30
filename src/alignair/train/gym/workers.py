@@ -6,8 +6,9 @@ stream, one provider call, depends only on its reference, its parameters and its
 consuming process zips the component streams exactly as the serial stream does: the same records in
 the same order, and the same errors at the same records.
 
-Topology: ``min(workers, components)`` spawned daemon processes. Worker ``w`` serves components
-``w, w + W, ...`` round-robin, one chunk at a time, into one channel per component; the consumer
+Topology: ``min(workers, components)`` spawned daemon processes. Each worker serves the components
+``worker_slots`` deals it (the slow selected ones spread evenly) round-robin, one chunk at a time,
+into one channel per component; the consumer
 reads each channel in the order the zip asks for records. This relies on ``training_records``
 drawing every component at the same rate: a worker that wrote ahead on a component drawn more
 slowly than another it serves would wait on that full channel while the consumer waits on the
@@ -365,13 +366,36 @@ def worker_options(*, workers, provider, chunk_size, queue_chunks) -> dict:
             'chunk_size': _count(chunk_size, 'chunk_size'), 'queue_chunks': _count(queue_chunks, 'queue_chunks')}
 
 
+def worker_slots(plan, workers: int) -> tuple[tuple[int, ...], ...]:
+    """The plan positions each of ``min(workers, components)`` workers serves, each in plan order.
+
+    Every component is drawn at the same rate, so a worker keeps pace only if the records of all its components
+    together are not much slower to simulate than another worker's. A selected component (``productive_only``)
+    is 10 to 25 times slower per record than an unselected one, and slower the more it mutates. The components are
+    therefore dealt slowest first (selected, then by mutation rate, then in plan order) in a snake over the workers:
+    0 to W-1, then W-1 to 0, and so on. Each worker gets as many selected components as any other, within one, and
+    the W most mutated selected components (the heavy-SHM ones first) go to different workers.
+    """
+    count = min(workers, len(plan))
+
+    def slowest_first(position):
+        parameters = plan[position].parameters
+        return (not parameters.get('productive_only', False), -float(parameters.get('mutation_rate') or 0.),
+                position)
+
+    served = [[] for _ in range(count)]
+    for rank, position in enumerate(sorted(range(len(plan)), key=slowest_first)):
+        lap, offset = divmod(rank, count)
+        served[offset if lap % 2 == 0 else count - 1 - offset].append(position)
+    return tuple(tuple(sorted(slots)) for slots in served)
+
+
 def start_record_workers(group: WorkerGroup, plan, *, provider: RecordSource, workers: int,
                          chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS) -> tuple:
-    """Start ``min(workers, components)`` processes for a plan; return one channel per component."""
+    """Start ``min(workers, components)`` processes for a plan, serving the components ``worker_slots`` deals
+    them; return one channel per component."""
     channels = tuple(group.channel(queue_chunks) for _ in plan)
-    count = min(workers, len(plan))
-    for worker in range(count):
-        slots = range(worker, len(plan), count)
+    for worker, slots in enumerate(worker_slots(plan, workers)):
         group.start(serve_components, (provider, tuple(plan[slot] for slot in slots), chunk_size),
                     outputs=[channels[slot] for slot in slots], name=f'alignair-records-{worker}')
     return channels
