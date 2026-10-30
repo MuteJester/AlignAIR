@@ -161,8 +161,9 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
     pre-orientation read the pipeline stores) so it is crop-consistent and identical for the Python API
     and the CLI; the ``seq`` argument is only a fallback for records that predate that field.
 
-    Applies the AIRR conventions: 1-based sequence/germline starts, ``rev_comp`` set only for a true
-    reverse-complement (id 1), and
+    Applies the AIRR conventions: 1-based sequence/germline starts and CDR3 start (the record's 0-based,
+    end-exclusive read coordinates; an end-exclusive end is already AIRR's closed end), ``rev_comp`` set only for a
+    true reverse-complement (id 1), and
     coordinate-derived CIGAR / sequence_alignment fallbacks for records that skipped ``build_airr``."""
     row = dict(p)                                  # pass through all AIRR fields (junction/regions/...)
     # `canonical` is the frame every coordinate / alignment / CIGAR is computed in (the model's forward
@@ -201,6 +202,9 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
                 "segmentation_low_quality", "length_cropped"):
         if row.get(_lf) is not None and row.get(_lf) != "":
             row[_lf] = _airr_bool(row[_lf])
+    if p.get("cdr3_start") is not None:
+        # 0-based -> 1-based; the record's end-exclusive cdr3_end is already AIRR's closed end
+        row["cdr3_start"] = _airr_start(p["cdr3_start"])
     isc = p.get("is_contaminant")
     row["is_contaminant"] = ("T" if isc else "F") if isc is not None else None
     if not row.get("sequence_alignment"):          # fallback when build_airr was not run

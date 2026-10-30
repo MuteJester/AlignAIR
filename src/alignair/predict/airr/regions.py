@@ -69,6 +69,26 @@ def compute_junction(seq_alignment, seq_alignment_aa, j_call, j_anchor_dict,
     }
 
 
+def read_position(seq_alignment: str, v_seq_start: int, column: int) -> int:
+    """The read position (0-based) of the first read base at or after ``column`` of a gapped ``sequence_alignment``
+    (``build_sequence_alignment``), or the end of its read bases when none follows. The alignment's read bases are
+    the read's from ``v_seq_start`` on, in order; its dots (IMGT gaps, and germline the read does not cover) hold
+    none. Exact for a V alignment without an indel, the only kind the IMGT-column junction is computed on."""
+    column = max(0, min(column, len(seq_alignment)))
+    return v_seq_start + column - seq_alignment.count(".", 0, column)
+
+
+def cdr3_in_read(junction: dict, seq_alignment: Optional[str], v_seq_start: int) -> dict:
+    """``compute_junction``'s fields with ``cdr3_start``/``cdr3_end`` moved from columns of the gapped
+    ``sequence_alignment`` to read coordinates (0-based, end-exclusive, like every read coordinate of a record),
+    since AIRR places the CDR3 in the query sequence. The AIRR writer emits them 1-based and closed."""
+    if seq_alignment is None or junction.get("cdr3_start") is None or junction.get("cdr3_end") is None:
+        return junction
+    start = read_position(seq_alignment, v_seq_start, junction["cdr3_start"])
+    end = max(start, read_position(seq_alignment, v_seq_start, junction["cdr3_end"]))
+    return {**junction, "cdr3_start": start, "cdr3_end": end}
+
+
 def cigar_has_indel(cigar: Optional[str]) -> bool:
     """True iff the CIGAR contains an insertion or deletion op (I/D)."""
     return any(op in "ID" for _, op in _CIGAR.findall(cigar or ""))

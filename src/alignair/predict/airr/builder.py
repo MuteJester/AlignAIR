@@ -12,7 +12,7 @@ from . import quality
 from .alignment import (build_germline_alignment, build_sequence_alignment,
                         compute_alignment_positions, compute_np_regions,
                         extract_segment_alignments, translate_alignment)
-from .regions import cigar_has_indel, compute_junction, compute_junction_cigar, extract_regions
+from .regions import cdr3_in_read, cigar_has_indel, compute_junction, compute_junction_cigar, extract_regions
 
 # Exceptions edge-case *data* can legitimately raise inside assembly (bad coords, missing anchors,
 # out-of-range slices). These are tagged as per-record assembly failures and tracked; anything else is
@@ -130,6 +130,7 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
                                     jss, vss, jgs, positions.get("j_alignment_end"))
         vj_in_frame = quality.vj_in_frame(junction.get("cdr3_start"), junction.get("cdr3_end"),
                                           positions.get("v_alignment_start"))
+        junction = cdr3_in_read(junction, seq_alignment, vss)    # AIRR's CDR3 positions are in the read
 
     out.update({"sequence_alignment": seq_alignment, "germline_alignment": germ_alignment,
                 "sequence_alignment_aa": seq_aa, "germline_alignment_aa": germ_aa,
