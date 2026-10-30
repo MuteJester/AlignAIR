@@ -1,7 +1,10 @@
 """lab-trunk-v1: one shared, fully convolutional, length-preserving trunk scores every read position once, and each
 gene's start and end logits are a 1x1 convolution of it. The classifiers and the meta tower are conv-v1's, on the
 embedding, so the candidate changes segmentation only. It keeps conv-v1's outputs, learns, round-trips through a model
-file, replays in the assay as its own forward pass and is screened against a baseline screen."""
+file, replays in the assay as its own forward pass and is screened against a baseline screen.
+
+lab-trunk-v2 is lab-trunk-v1 for half-open boundaries: its end slot k reads the features of base k - 1, so a segment
+ending at the read's last base is supervised at slot n from that base's features."""
 import itertools
 import json
 
@@ -186,20 +189,103 @@ def test_lab_trunk_v1_learns_one_batch(reference):
     assert boundary_loss() <= before / 2
 
 
+# --- lab-trunk-v2: half-open boundaries ---------------------------------------------------------------------------
+
+def half_open(reference, seed=0):
+    return build(reference, 'lab-trunk-v2', seed=seed, boundary_mode='half_open', **SMALL)
+
+
+@pytest.mark.component
+def test_lab_trunk_v2_reads_each_end_slot_from_the_segments_last_base(reference):
+    """A start logit at slot k is the head on the features of base k, as in lab-trunk-v1. An end logit at slot k (the
+    half-open end of a segment whose last base is k - 1) is the head on the features of base k - 1, where lab-trunk-v1
+    reads base k. Slot 0, never an end, holds one finite constant."""
+    from alignair.core.boundaries import boundary_masks
+    ours = half_open(reference).branches['j']
+    v1 = build(reference, 'lab-trunk-v1', **SMALL).branches['j']
+    v1.load_state_dict(ours.state_dict())
+    start_mask, end_mask = boundary_masks(tokens((LENGTH - 1, 380, 250))['tokenized_sequence'], 'half_open')
+    features = torch.randn(3, LENGTH, TRUNK_CHANNELS)
+    with torch.no_grad():
+        heads = features @ ours.boundary.weight[:, :, 0].T + ours.boundary.bias      # (B, L, 2): both heads per base
+        s_log, e_log, s_exp, e_exp = ours.segment(None, start_mask, end_mask, features=features)
+        residue = v1.segment(None, start_mask, start_mask, features=features)[1]
+    assert torch.allclose(s_log, heads[..., 0], atol=1e-5)
+    assert torch.allclose(e_log[:, 1:], heads[:, :-1, 1], atol=1e-5)
+    assert torch.allclose(residue, heads[..., 1], atol=1e-5)
+    assert torch.isfinite(e_log).all() and (e_log[:, 0] == e_log[0, 0]).all()
+    assert torch.isfinite(s_exp).all() and torch.isfinite(e_exp).all()
+
+
+@pytest.mark.component
+def test_lab_trunk_v2_refuses_residue_boundaries(reference):
+    from alignair.errors import ConfigurationError
+    with pytest.raises(ConfigurationError, match='residue') as caught:
+        build(reference, 'lab-trunk-v2', **SMALL)
+    assert caught.value.context['field'] == 'boundary_mode'
+
+
+@pytest.mark.integration
+def test_lab_trunk_v2_supervises_an_end_at_the_reads_last_base(reference):
+    """A GenAIRR read whose J ends at its last base has its J end target at slot n. The loss is finite, and the J end
+    cross entropy's gradient reaches the trunk's features of base n - 1, which only slot n reads."""
+    from alignair.tasks import build_tasks
+    from alignair.tasks.losses import masked_soft_gaussian
+    from alignair.train.trainer import build_batch
+    record = next(record for record in records(8) if record['j_sequence_end'] == len(record['sequence']))
+    n = len(record['sequence'])
+    model = half_open(reference)
+    batch, targets = build_batch([record], reference, model.cfg)
+    assert targets['j_end'].item() == n
+    trunk_outputs = []
+
+    def keep_gradient(module, inputs, output):
+        output.retain_grad()
+        trunk_outputs.append(output)
+    model.trunk.register_forward_hook(keep_gradient)
+    out = model(batch)
+    tasks = build_tasks(model.cfg)
+    assert torch.isfinite(tasks.loss(out, targets, tasks.make_weights())[0])
+    target = masked_soft_gaussian(targets['j_end'], LENGTH, out['end_mask'])
+    soft_cross_entropy_rows(out['j_end_logits'], target, out['end_mask']).sum().backward()
+    gradient = trunk_outputs[0].grad[0].abs().sum(-1)
+    assert gradient[n - 1] > 0 and not gradient[n:].any()
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_lab_trunk_v2_learns_the_j_ends_of_one_batch(reference):
+    """Updated 200 times on one batch of 8 GenAIRR reads, its J end decoded as the product decodes it (the argmax of
+    the allowed end slots) is exact on more than 90% of them."""
+    from alignair.predict.decode import decoded_boundaries
+    from alignair.train import overfit_one_batch
+    from alignair.train.trainer import build_batch
+    model = half_open(reference)
+    batch, targets = build_batch(records(8), reference, model.cfg)
+    overfit_one_batch(model, batch, targets, steps=200, lr=1e-3)
+    with torch.no_grad():
+        out = model.eval()(batch)
+    _, ends = decoded_boundaries(out, 'j')
+    assert (ends == targets['j_end'].reshape(-1).round().long()).float().mean() > 0.9
+
+
 # --- the model file, the replay and the screen -------------------------------------------------------------------
 
 @pytest.mark.integration
-def test_a_lab_trunk_v1_model_file_round_trips(reference, tmp_path, monkeypatch):
+@pytest.mark.parametrize('architecture,options', [('lab-trunk-v1', {}),
+                                                  ('lab-trunk-v2', {'boundary_mode': 'half_open'})])
+def test_a_lab_trunk_model_file_round_trips(reference, tmp_path, monkeypatch, architecture, options):
     """Written as a training run writes its model.alignair, it loads back (in a process that registered the lab's
     candidates) and predicts what it predicted; a process that did not is refused, naming the architecture."""
     from alignair.core import components
     from alignair.errors import ConfigurationError
     from alignair.train.checkpoints import save_checkpoint
-    model = build(reference, 'lab-trunk-v1', **SMALL)
+    model = build(reference, architecture, **SMALL, **options)
     path = tmp_path / 'model.alignair'
     save_checkpoint(path, model.cfg, model, None, 7, dataconfigs=[gd.HUMAN_IGH_OGRDB])
     loaded, loaded_reference = api.load_model(str(path))
-    assert loaded.cfg == model.cfg and loaded.cfg.architecture == 'lab-trunk-v1'
+    assert loaded.cfg == model.cfg and loaded.cfg.architecture == architecture
+    assert loaded.cfg.boundary_mode == options.get('boundary_mode', 'residue')
     assert list(loaded.state_dict()) == list(model.state_dict())
     with torch.no_grad():
         first, second = model(tokens()), loaded(tokens())
@@ -208,8 +294,8 @@ def test_a_lab_trunk_v1_model_file_round_trips(reference, tmp_path, monkeypatch)
     assert api.predict_sequences(loaded, loaded_reference, sequences, device='cpu') == \
            api.predict_sequences(model, reference, sequences, device='cpu')
     monkeypatch.setattr(components, '_ARCHITECTURES',
-                        {name: value for name, value in components._ARCHITECTURES.items() if name != 'lab-trunk-v1'})
-    with pytest.raises(ConfigurationError, match='lab-trunk-v1'):
+                        {name: value for name, value in components._ARCHITECTURES.items() if name != architecture})
+    with pytest.raises(ConfigurationError, match=architecture):
         api.load_model(str(path))
 
 

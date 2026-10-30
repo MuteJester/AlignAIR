@@ -22,11 +22,22 @@ from alignair_lab.recipe import BATCH_SIZE, POLICY, SEED, training_config
 pytestmark = pytest.mark.integration
 
 SMALL = {'embed_dim': 4, 'filters': 4, 'block_out': 8}
-# Candidates for nucleotide models only: they refuse the half-open boundaries of the protein models.
-NUCLEOTIDE_ONLY = ('lab-trunk-v1',)
 SPACES = (('nucleotide', 'alleles'), ('protein', 'protein_classes'))
+# Candidates of one boundary mode, which refuse the other. A protein model's boundaries are half-open; a nucleotide
+# model's are residue unless its options say half_open, as a half-open candidate's do.
+BOUNDARY_MODES = {'lab-trunk-v1': 'residue', 'lab-trunk-v2': 'half_open'}
 CONTRACTS = [(name, space, labels) for name in architectures.registered() for space, labels in SPACES
-             if space == 'nucleotide' or name not in NUCLEOTIDE_ONLY]
+             if space == 'nucleotide' or BOUNDARY_MODES.get(name) != 'residue']
+# (candidate, space, labels, what its refusal names) for a space whose boundaries the candidate refuses
+REFUSED = (('lab-trunk-v1', 'protein', 'protein_classes', 'half-open'),
+           ('lab-trunk-v2', 'nucleotide', 'alleles', 'residue'))
+
+
+def candidate_options(name: str, space: str) -> dict:
+    """The model options a candidate is trained with on ``space``: half-open boundaries for a half-open candidate's
+    nucleotide model."""
+    half_open = space == 'nucleotide' and BOUNDARY_MODES.get(name) == 'half_open'
+    return {'architecture': name, **SMALL, **({'boundary_mode': 'half_open'} if half_open else {})}
 
 
 @pytest.fixture
@@ -57,7 +68,7 @@ def test_an_unversioned_name_is_refused(scratch_registry, name):
 def test_a_candidate_trains_reloads_exposes_features_and_resumes(name, space, labels, tmp_path):
     request = TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', input_space=space, label_space=labels, steps=2,
                                           batch_size=2, device='cpu', seed=31, val_every=1,
-                                          model_options={'architecture': name, **SMALL})
+                                          model_options=candidate_options(name, space))
     losses = []
     run = run_training(request, output_dir=tmp_path / 'first', on_iteration=lambda item: losses.append(item.result.total))
     assert len(losses) == 2 and np.isfinite(losses).all()
@@ -78,12 +89,12 @@ def test_a_candidate_trains_reloads_exposes_features_and_resumes(name, space, la
     assert steps == [3] and read_training_state(resumed.model_path).step == 3
 
 
-@pytest.mark.parametrize('name', NUCLEOTIDE_ONLY)
-def test_a_nucleotide_candidate_refuses_a_protein_models_half_open_boundaries(name, tmp_path):
-    request = TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', input_space='protein', label_space='protein_classes',
-                                          steps=2, batch_size=2, device='cpu', seed=31,
+@pytest.mark.parametrize('name,space,labels,refused', REFUSED)
+def test_a_candidate_of_one_boundary_mode_refuses_the_other(name, space, labels, refused, tmp_path):
+    request = TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', input_space=space, label_space=labels, steps=2,
+                                          batch_size=2, device='cpu', seed=31,
                                           model_options={'architecture': name, **SMALL})
-    with pytest.raises(ConfigurationError, match='half-open') as caught:
+    with pytest.raises(ConfigurationError, match=refused) as caught:
         run_training(request, output_dir=tmp_path)
     assert caught.value.context['field'] == 'boundary_mode'
 

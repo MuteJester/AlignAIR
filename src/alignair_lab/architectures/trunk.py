@@ -8,6 +8,12 @@ start and end logits are a 1x1 convolution of it (``TrunkGeneBranch.boundary``).
 decodes them (the read-masked soft-argmax). The classifiers and the meta tower are conv-v1's, on the embedding:
 ``TrunkGeneBranch.classify`` and ``EmbeddingMetaTower`` take the trunk's features and do not read them yet.
 
+``lab-trunk-v1`` segments residue boundaries: its end slot k is read from base k, and the slot past a read's last
+base, a zeroed pad, is never supervised (the residue end mask leaves it out). ``lab-trunk-v2`` segments half-open
+boundaries (the model option ``boundary_mode=half_open``): its end slot k is read from base k - 1, the segment's last
+base, so a segment that runs to the read's end has a supervised end slot read from real features
+(``TrunkGeneBranchV2``). Everything else is lab-trunk-v1's.
+
 Shapes: B = batch, L = ``cfg.max_seq_length``, E = ``cfg.embed_dim``, C = ``TRUNK_CHANNELS``.
 """
 from __future__ import annotations
@@ -81,11 +87,7 @@ class TrunkGeneBranch(nn.Module):
 
     def __init__(self, spec: GeneSpec, cfg: AlignAIRConfig):
         super().__init__()
-        if cfg.boundary_mode == "half_open":
-            raise ConfigurationError(
-                "lab-trunk-v1 is a nucleotide candidate and cannot segment half-open boundaries: the end slot past a "
-                "read's last residue is a pad position, which the trunk zeroes", context={"field": "boundary_mode"},
-                hint="Use residue boundaries (a nucleotide model).")
+        self._check_boundary_mode(cfg)
         self.classification_mode = cfg.classification_mode
         L = cfg.max_seq_length
         cls_out, cls_filters, latent = cfg.cls_spec(spec)
@@ -100,10 +102,23 @@ class TrunkGeneBranch(nn.Module):
     _soft_argmax = GeneBranch._soft_argmax
     classification_features = GeneBranch.classification_features
 
+    @staticmethod
+    def _check_boundary_mode(cfg: AlignAIRConfig) -> None:
+        if cfg.boundary_mode == "half_open":
+            raise ConfigurationError(
+                "lab-trunk-v1 is a nucleotide candidate and cannot segment half-open boundaries: the end slot past a "
+                "read's last residue is a pad position, which the trunk zeroes", context={"field": "boundary_mode"},
+                hint="Use residue boundaries (a nucleotide model).")
+
+    def _end_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """The end logits (B, L) from the boundary convolution's (B, 2, L): slot k's from the features of base k."""
+        return logits[:, 1]
+
     def segment(self, emb: torch.Tensor, mask: torch.Tensor | None = None, end_mask: torch.Tensor | None = None, *,
                 features: torch.Tensor):
         """features (B, L, C) -> (start_logits, end_logits, start_exp, end_exp); ``emb`` is not read."""
-        s_log, e_log = self.boundary(features.transpose(1, 2)).unbind(1)
+        logits = self.boundary(features.transpose(1, 2))
+        s_log, e_log = logits[:, 0], self._end_logits(logits)
         s_dec, e_dec = s_log, e_log
         if mask is not None:
             neg = torch.finfo(s_log.dtype).min
@@ -118,6 +133,30 @@ class TrunkGeneBranch(nn.Module):
 
     def component_modules(self) -> dict[str, nn.Module]:
         return {name: getattr(self, name) for name in ("boundary", "cutout", "cls_tower", "cls_mid", "cls_head")}
+
+
+class TrunkGeneBranchV2(TrunkGeneBranch):
+    """lab-trunk-v2's branch: lab-trunk-v1's, for half-open boundaries. Half-open end slot k ends a segment whose last
+    base is k - 1, so its logit is the end head on the features of base k - 1. The slot after a read's last base,
+    where a segment running to the read's end stops (J in nearly every full-length read), so reads that base's
+    features, not a zeroed pad's. Slot 0 ends no segment (a half-open model never allows it) and holds 0. The start
+    logits, the decoding, the classifier and the parameters are lab-trunk-v1's.
+
+    Residue boundaries are refused: their end slot is a segment's last base itself, and their slot past the read's
+    last base is never supervised."""
+
+    @staticmethod
+    def _check_boundary_mode(cfg: AlignAIRConfig) -> None:
+        if cfg.boundary_mode != "half_open":
+            raise ConfigurationError(
+                f"lab-trunk-v2 segments half-open boundaries only, not {cfg.boundary_mode!r} ones: it reads end slot "
+                "k from the features of base k - 1, the last base of a half-open segment, while a residue end slot "
+                "is that base itself", context={"field": "boundary_mode"},
+                hint="Set the model option boundary_mode=half_open, or use lab-trunk-v1 for residue boundaries.")
+
+    def _end_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """Slot k's from the features of base k - 1; slot 0's is 0."""
+        return F.pad(logits[:, 1, :-1], (1, 0))
 
 
 class EmbeddingMetaTower(nn.Module):
@@ -141,9 +180,11 @@ def build_trunk(cfg: AlignAIRConfig) -> DilatedTrunk:
 
 
 def build_trunk_heads(cfg: AlignAIRConfig) -> dict[str, nn.Module]:
-    """The heads read from the trunk's features: none in lab-trunk-v1."""
+    """The heads read from the trunk's features: none in lab-trunk-v1 or lab-trunk-v2."""
     return {}
 
 
 register("lab-trunk-v1", ModelComponents(trunk=build_trunk, gene_branch=TrunkGeneBranch,
+                                         meta_tower=embedding_meta_tower, trunk_heads=build_trunk_heads))
+register("lab-trunk-v2", ModelComponents(trunk=build_trunk, gene_branch=TrunkGeneBranchV2,
                                          meta_tower=embedding_meta_tower, trunk_heads=build_trunk_heads))
