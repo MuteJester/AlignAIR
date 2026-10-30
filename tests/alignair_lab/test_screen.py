@@ -109,6 +109,19 @@ def test_a_milestone_without_a_genairr_source_digest_is_refused_on_another_genai
     assert not (rig.screens / 'other-genairr').exists()
 
 
+def test_a_checkpoints_genairr_digest_is_computed_as_the_caches(rig):
+    """The product records the GenAIRR source digest by the assay's method, so a baseline's and a cache's compare."""
+    import GenAIRR
+    from alignair.train.trainer import genairr_source_sha256
+    from alignair_assay.core.provenance import tree_digest
+    from alignair_lab.records import CachedRecordSource
+    digest = genairr_source_sha256()
+    assert digest == tree_digest(Path(GenAIRR.__file__).resolve().parent)
+    assert digest == CachedRecordSource(rig.cache).manifest['genairr']['genairr_source_sha256']
+    train_args = read_metadata(rig.milestones / 'model.step2.alignair')['training']['train_args']
+    assert train_args['genairr_source_sha256'] == digest
+
+
 def test_a_baseline_without_a_digest_is_compared_with_the_version_of_the_genairr_imported(rig):
     """A cache records the version the installed distribution's metadata names, which need not be the version of the
     GenAIRR on the path (a frozen copy); a checkpoint records the imported package's own."""
