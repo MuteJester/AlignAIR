@@ -228,6 +228,39 @@ def test_runner_preflight_and_productivity_failures_are_classified(failure):
     assert model.training and not model.child.training
 
 
+def test_cohort_productive_accuracy_counts_only_rows_whose_productivity_is_supervised():
+    cfg, _, targets, ref, adapter = runner_fixture()
+    targets['productive_supervise'] = torch.tensor([True, True, False])
+    report = evaluate_allele_cohort(Echo(), range(3), adapter, cfg, ref)
+    assert report['productive_acc'] == pytest.approx(1/2)
+    assert report['support']['scalars']['productive'] == 2
+
+
+@pytest.mark.parametrize('policy,rows', [('masked', [1, 2]), ('negative', [0, 1, 2])])
+def test_record_cohorts_leave_unknown_productivity_out_under_the_masked_objective(policy, rows):
+    from alignair.core import AlignAIR
+    from alignair.data import NucleotideBatchAdapter
+    from alignair.reference.reference_set import GeneReference, ReferenceSet
+    sequence = 'CAGGTGCAGCTGTGCTGGGGCCAG'
+    spans = {'v': (0, 12), 'd': (12, 15), 'j': (15, 24)}
+    reference = ReferenceSet({gene.upper(): GeneReference([gene.upper() + '*01'], [sequence[start:end]],
+                                                         {gene.upper() + '*01': 0})
+                              for gene, (start, end) in spans.items()}, has_d=True)
+    record = {'sequence': sequence, 'mutation_rate': .05, 'n_indels': 0, 'n_quality_errors': 0}
+    for gene, (start, end) in spans.items():
+        record.update({f'{gene}_call': gene.upper() + '*01', f'{gene}_sequence_start': start,
+                       f'{gene}_sequence_end': end, f'{gene}_germline_start': 0,
+                       f'{gene}_germline_end': end - start, f'{gene}_cigar': f'{end - start}M'})
+    records = [{**record, 'productive': value, 'sequence_id': str(i)} for i, value in enumerate((None, True, False))]
+    cfg = AlignAIRConfig(1, 1, 1, has_d=True, max_seq_length=128, embed_dim=4, filters=4, block_out=8,
+                         use_orientation=False, productive_unknown=policy)
+    adapter = NucleotideBatchAdapter(reference, cfg)
+    observed = collect_alignment_observations(AlignAIR(cfg), records, lambda chunk: tuple(adapter(chunk)), cfg,
+                                              scalar_heads=('productive',))
+    assert [row.record_index for row in observed.scalars['productive']] == rows
+    assert [row.truth for row in observed.scalars['productive']] == [0., 1., 0.][-len(rows):]
+
+
 def test_default_collector_retains_no_optional_payload():
     cfg, _, _, _, adapter = runner_fixture()
     observed = collect_alignment_observations(Echo(), range(3), adapter, cfg)

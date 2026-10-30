@@ -192,7 +192,9 @@ def collect_alignment_observations(model, records, batch_adapter: BatchAdapter, 
     sets separately govern classification. Truth sets remain sets; no canonical label is guessed.
     Only native Python observations are retained, never model outputs or gradient graphs. Source
     freezing, task-specific reports, and strata belong to the caller. Thresholded allele sets and
-    named scalar heads are opt-in, so default collection retains no extra output data.
+    named scalar heads are opt-in, so default collection retains no extra output data. A scalar
+    head observes the rows its ``<head>_supervise`` and ``<head>_valid`` masks select, so the
+    adapters' ``productive_supervise`` leaves unknown productivity out under the masked objective.
     """
     batch_size = _integer(batch_size, "batch_size", 1)
     if not isinstance(model, torch.nn.Module) or not isinstance(config, AlignAIRConfig):
