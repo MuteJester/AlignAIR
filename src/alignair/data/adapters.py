@@ -17,7 +17,7 @@ from ..core.boundaries import read_window
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .encoders import encode_allele_sets
 from .projection import frame_offset_of, project_codons, projection_segments, translated_record_usable
-from .targets import build_targets
+from .targets import build_targets, read_anchors
 from .tokenizer import AAProteinTokenizer
 
 if TYPE_CHECKING:
@@ -138,7 +138,7 @@ class NucleotideBatchAdapter:
                     # forward frame, like the boundaries; the head's classes are READ_REGIONS (no pad label)
                     targets["region_labels"] = PositionLabels(bundle["region_labels"] - REGION_INDEX[READ_REGIONS[0]])
                 if getattr(self.config, "anchor_heads", False):
-                    targets.update(_anchor_targets(bundle["anchors"], self.config))     # forward frame
+                    targets.update(_anchor_targets(read_anchors(record, self.reference), self.config))   # forward frame
                 sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
         batch = collate_samples(samples, max_length=self.config.max_seq_length,

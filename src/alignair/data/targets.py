@@ -8,18 +8,45 @@ from .tokenizer import TOKEN_DICT
 from ..neural.heads.region import REGION_INDEX
 from ..neural.heads.state import STATE_INDEX
 from .coordinates import segment_spans
-from .alignment import parse_cigar
+from .alignment import parse_cigar, query_reference_map
 
 _GENES = ("v", "d", "j")
 CODON = 3
 
 
-def _codon_in_read(position, length: int) -> int | None:
-    """``position`` when the codon starting there lies wholly inside a read of ``length`` bases, else None."""
-    if position is None:
+def read_anchors(record: dict, reference_set) -> dict[str, int | None]:
+    """``{"v": ..., "j": ...}``: the read position of each anchor codon's first base, None when the read does not show
+    it (``_anchor``). Only a model with anchor heads needs them, so ``build_targets`` does not compute them."""
+    with error_context(stage="build_targets", record_id=record.get("sequence_id")):
+        coords, germ = segment_spans(record)
+        length = len(str(record["sequence"]))
+        return {gene: _anchor(record, gene, reference_set, coords, germ, length) for gene in ("v", "j")}
+
+
+def _anchor(record, gene: str, reference_set, coords, germ, length: int) -> int | None:
+    """The read position of the first base of ``gene``'s conserved anchor codon (V Cys, J Trp/Phe), or None when the
+    read does not show it.
+
+    The anchor is the read's primary allele's annotated germline anchor (``GeneReference.anchors``, the annotation the
+    AIRR assembly reads), mapped to the read through the segment's alignment (``query_reference_map``: its CIGAR, read
+    and germline spans), so an indel before the anchor moves it with the read. It is observed when the segment is in
+    the read, the codon's defining base is an aligned base (not deleted, not trimmed away), and the codon lies wholly
+    inside the read. The defining base is the V codon's first base and the J codon's last, as the assay's truth defines
+    the junction (``[V anchor, J codon's last base + 1)``), so a codon a recombination trim cut keeps its anchor where
+    GenAIRR places the junction. Each anchor is found whether or not the other is."""
+    if gene not in coords:
         return None
-    position = int(position)
-    return position if 0 <= position and position + CODON <= length else None
+    allele = str(record[f"{gene}_call"]).split(",")[0]          # the allele the germline coordinates belong to
+    anchor = (reference_set.gene(gene.upper()).anchors or {}).get(allele)
+    if anchor is None:
+        return None
+    path = query_reference_map(record.get(f"{gene}_cigar"), coords[gene], germ[gene])
+    defining = anchor if gene == "v" else anchor + CODON - 1
+    for offset, germline in enumerate(path.positions):          # empty when the alignment is unavailable
+        if germline == defining:
+            position = path.query_start + offset - (0 if gene == "v" else CODON - 1)
+            return position if 0 <= position and position + CODON <= length else None
+    return None
 
 
 def _tok(seq: str) -> np.ndarray:
@@ -114,12 +141,6 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         cigar = record.get(f"{g}_cigar")
         _label_segment_states(state, seq, ss, ref.sequences[idx], gs, cigar)
 
-    # ---- V/J anchors: the first base of the V Cys codon (GenAIRR's junction_start) and of the J Trp/Phe codon
-    # (junction_end - 3), read coordinates; None when GenAIRR gives no junction or the codon is not wholly in the read
-    junction_start, junction_end = record.get("junction_start"), record.get("junction_end")
-    anchors = {"v": _codon_in_read(junction_start, L),
-               "j": _codon_in_read(None if junction_end is None else junction_end - CODON, L)}
-
     calls = {g.upper(): set(str(record[f"{g}_call"]).split(","))
              for g in _GENES if record.get(f"{g}_call")}
     # the allele the germline coordinates actually belong to (GenAIRR lists it
@@ -134,7 +155,6 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         "state_labels": state,
         "germline": germ,
         "inseq": coords,
-        "anchors": anchors,
         "calls": calls,
         "primary": primary,
         # inverted-D reads contain RC(germline) at the D locus; we cannot yet
