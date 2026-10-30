@@ -29,8 +29,13 @@ def comparison(suites=12):
             "suites": found, "totals": {"baseline": {"fixed": 1, "broken": 2}}}
 
 
+# A null band per headline metric (Δs, as fractions): clone_key.exact and V top-1 are beyond it, the others within.
+BAND = {"clone_key.exact": .01, "junction.nt_exact": .05, "v.top1_in_set": .005, "d.top1_in_set": .02,
+        "j.top1_in_set": .03}
+
+
 def test_twelve_suites_fit_one_screen():
-    text = render_headline(comparison(), title=["Screen wide: lab-wide-v1 at 20000 steps."])
+    text = render_headline(comparison(), title=["Screen wide: lab-wide-v1 at 20000 steps."], null_band=BAND)
     lines = text.splitlines()
     assert lines[0] == "Screen wide: lab-wide-v1 at 20000 steps."
     assert len(lines) <= 55 and max(map(len, lines)) <= 132, (len(lines), max(map(len, lines)))
@@ -64,6 +69,33 @@ def test_the_headline_says_its_verdicts_leave_out_training_noise():
     """Two GPU runs of one architecture on the same records differ at 20k steps by more than the read CIs."""
     text = render_headline(comparison())
     assert "run-to-run training noise" in text and "lab-null-v1" in text
+
+
+def rows(text):
+    """The headline metrics' table, by row label."""
+    table = text[:text.index("soft-argmax")]
+    return {line.split("  ")[0].strip(): line for line in table.splitlines()}
+
+
+def cells(row):
+    return [cell.strip() for cell in row.split("  ")[1:] if cell.strip()]
+
+
+def test_each_headline_metric_weighs_its_pooled_delta_against_the_null_band():
+    """The pooled Δ is read-weighted over the suites that compare the metric (clone_key.exact: S1 +12.3 and eleven
+    suites +1.2, 500 reads each), set beside the null band and the suites, of those with a CI, whose Δ has its sign;
+    beyond noise only above the band with at least 2/3 of the signs."""
+    found = rows(render_headline(comparison(), null_band=BAND))
+    assert cells(found["pooled"]) == ["+2.1 / 1.0, 12/12 agree", "+1.2 / 5.0, 11/11 agree",
+                                             "+1.2 / 0.5, 12/12 agree", "+1.2 / 2.0, 11/11 agree",
+                                             "+1.3 / 3.0, 12/12 agree"]
+    assert cells(found["noise"]) == ["beyond noise", "within noise", "beyond noise", "within noise", "within noise"]
+
+
+def test_without_a_null_band_the_headline_is_uncalibrated_and_marks_nothing():
+    found = rows(render_headline(comparison()))
+    assert cells(found["pooled"])[0] == "+2.1 / none, 12/12 agree"
+    assert cells(found["noise"]) == ["uncalibrated"] * 5
 
 
 def test_a_different_alignair_code_or_the_same_model_is_flagged():
