@@ -60,6 +60,16 @@ def genairr_source_sha256() -> str:
     return _tree_sha256(str(Path(GenAIRR.__file__).resolve().parent))
 
 
+def _recorded_genairr_source() -> str | None:
+    """``genairr_source_sha256()``, or None, said on one line, when a file of the package cannot be read: the digest
+    is provenance, and never fails a run."""
+    try:
+        return genairr_source_sha256()
+    except OSError as error:
+        print(f"GenAIRR source digest not recorded: {error}", flush=True)
+        return None
+
+
 def eval_metrics(out: dict, targets: dict, cfg) -> dict:
     """Compatibility entry for the shared alignment task metrics."""
     return build_tasks(cfg).metrics(out, targets)
@@ -103,7 +113,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     weights from (``TrainingConfig.init_seed``; None: from ``seed``), ``grad_clip``, ``started_from`` (None for a
     run from its initial weights, ``"resume"`` or ``"init_from"``; either of these also records the
     ``source_checkpoint_sha256``) and the ``genairr_source_sha256`` of the GenAIRR it imports
-    (``genairr_source_sha256``).
+    (``genairr_source_sha256``; None when a file of the package cannot be read).
     """
     from .guards import validate_data_workers, validate_training_request
     model_config = getattr(model, 'cfg', cfg)
@@ -215,7 +225,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    "data_workers": data_workers,
                    "init_seed": init_seed, "grad_clip": grad_clip,
                    "started_from": "resume" if resume_from else "init_from" if init_from else None,
-                   "genairr_source_sha256": genairr_source_sha256()}
+                   "genairr_source_sha256": _recorded_genairr_source()}
     _dcs = dataconfigs
     source_checkpoint = resume_from or init_from
     if source_checkpoint:

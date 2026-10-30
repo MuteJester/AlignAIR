@@ -74,11 +74,15 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     if config.init_seed is None:
         model = setup.build_model()
     else:
-        # The CPU generator, which the batch adapter draws from, is restored after the build: the batches do not
-        # depend on the init seed or on what the build draws. An accelerator's generators keep the init seed.
+        # Every process generator the batches may draw from (torch's CPU one, for the batch adapter, and Python's and
+        # NumPy's) is restored after the build: the batches do not depend on the init seed or on what the build
+        # draws. An accelerator's generators keep the init seed.
+        python, numpy_state = random.getstate(), np.random.get_state()
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(config.init_seed)
             model = setup.build_model()
+        random.setstate(python)
+        np.random.set_state(numpy_state)
     path = os.fspath(out_path or os.path.join(output_dir, 'model.alignair'))
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)

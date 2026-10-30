@@ -29,8 +29,8 @@ class TrainingConfig:
     stream at most: 28 for the default mix, 7 components of 4 streams); the batches are those of
     ``data_workers=0``, so it is not part of model identity.
     ``init_seed`` None seeds the model's initial weights from ``seed``, as every run before it did. An int
-    draws them from its own seed instead, and leaves the process generators the training batches draw from
-    where ``seed`` left them: replicate runs of one ``seed`` then differ in their initial weights (and an
+    draws them from its own seed instead, and leaves the process generators (torch's CPU one, Python's and
+    NumPy's) where ``seed`` left them: replicate runs of one ``seed`` then differ in their initial weights (and an
     accelerator's random draws, such as its dropout) while training on the same batches.
     Workers are spawned, so a script that trains with them needs an ``if __name__ == "__main__":``
     guard. On an accelerator, batches are assembled ahead from the CPU random state, so a CPU random

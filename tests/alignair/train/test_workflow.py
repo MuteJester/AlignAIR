@@ -141,6 +141,41 @@ def test_an_init_seed_changes_the_initial_weights_and_leaves_the_training_batche
     assert (first_args['init_seed'], second_args['init_seed'], first_args['seed']) == (0, 1, 5)
 
 
+def test_an_init_seeded_build_leaves_every_process_generator_as_the_data_seed_left_it(tmp_path, monkeypatch):
+    """Python's and NumPy's generators too, should a model's build draw from them."""
+    import random
+    from alignair.core import ModelSetup
+    original = ModelSetup.build_model
+
+    def drawing(setup):
+        random.random()
+        np.random.random()
+        return original(setup)
+
+    def states(build, name):
+        monkeypatch.setattr(ModelSetup, 'build_model', build)
+        seen = []
+        run_training(request(seed=5, init_seed=3, steps=1), output_dir=tmp_path / name,
+                     on_iteration=lambda iteration: seen.append((random.getstate(), np.random.get_state()[1].copy())))
+        return seen[0]
+
+    (python, numpy), (python_drawn, numpy_drawn) = states(original, 'plain'), states(drawing, 'drawing')
+    assert python == python_drawn and np.array_equal(numpy, numpy_drawn)
+
+
+def test_a_genairr_source_that_cannot_be_read_is_recorded_as_unknown(tmp_path, monkeypatch, capsys):
+    """The digest is provenance: an unreadable file of the GenAIRR package never fails a training run."""
+    from alignair.train import trainer
+
+    def unreadable():
+        raise PermissionError(13, 'Permission denied', 'GenAIRR/data/x.pkl')
+
+    monkeypatch.setattr(trainer, 'genairr_source_sha256', unreadable)
+    run = run_training(request(steps=1), output_dir=tmp_path)
+    assert read_metadata(run.model_path)['training']['train_args']['genairr_source_sha256'] is None
+    assert capsys.readouterr().out.count('GenAIRR source digest not recorded') == 1
+
+
 def test_without_an_init_seed_the_data_seed_draws_the_initial_weights(tmp_path, monkeypatch):
     import GenAIRR.data as gd
     from alignair.core import ModelSetup, prepare_model
