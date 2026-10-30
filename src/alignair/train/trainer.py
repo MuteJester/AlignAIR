@@ -16,6 +16,7 @@ from ..core.setup import ModelSetup
 from ..core.runtime import restore_model_state
 from ..reference.protein import build_protein_reference
 from ..tasks import TrainingTasks, build_tasks
+from .gym.curriculum.base import INDEL_FRACTION
 from .gym.streams import CurriculumStreamPolicy, training_records, effective_mutation_caps
 from .engine import train_step, validate
 from .setup import build_training_engine
@@ -48,8 +49,12 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
           monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
-          augmentation=None, schedule=None, study=None, start_step=0, data_workers=0, record_source=None):
+          augmentation=None, schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
+          indel_fraction=INDEL_FRACTION):
     """Train ``model`` on the curriculum stream of ``dataconfigs``.
+
+    ``indel_fraction`` is the curriculum's ``(low, high)`` share of reads with a polymerase indel at progress 0
+    and 1 (``gym.streams.CurriculumStreamPolicy``); the run records it in ``train_args``.
 
     ``record_source`` (``gym.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
     GenAIRR provider of every curriculum stream of the run: training, validation and the X-ray probe. With
@@ -93,7 +98,8 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     schedule_metadata = schedule.to_dict() if schedule is not None else None
     schema = setup.label_schema()
     source_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
-                                           mode='amplicon' if cfg.input_space == 'protein' else 'auto')
+                                           mode='amplicon' if cfg.input_space == 'protein' else 'auto',
+                                           indel_fraction=indel_fraction)
 
     def _build_stream(seed_value, *, augment=False, start_step=0):
         records = training_records(dataconfigs, policy=source_policy, seed=seed_value,
@@ -143,6 +149,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
                    "input_space": cfg.input_space, "label_space": cfg.label_space,
                    "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
+                   "indel_fraction": list(source_policy.indel_fraction),
                    "augmentation": augmentation_metadata,
                    "schedule": schedule_metadata, "study": study.to_dict() if study is not None else None,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),

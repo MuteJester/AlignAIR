@@ -7,6 +7,7 @@ import pytest
 
 from alignair.errors import ConfigurationError, TrainingDataError, current_error_context
 from alignair.train.gym import streams
+from alignair.train.gym.curriculum.base import INDEL_FRACTION
 from alignair.train.gym.streams import (CurriculumStreamPolicy, dataconfig_name, effective_mutation_caps,
                                        training_records, stream_records)
 
@@ -182,10 +183,22 @@ def test_materialized_provider_names_and_custom_name_collisions_are_preserved(mo
     ({'heavy_shm':True},'heavy_shm'),({'heavy_shm':1.1},'heavy_shm'),
     ({'short_boost':0},'short_boost'),({'short_boost':False},'short_boost'),
     ({'short_boost':1.5},'short_boost'),({'mutation_cap':-.1},'mutation_cap'),
+    ({'indel_fraction':None},'indel_fraction'),({'indel_fraction':(.3,.1)},'indel_fraction'),
 ])
 def test_invalid_policy_is_rejected_before_source_construction(options,field):
     with pytest.raises(ConfigurationError) as caught:CurriculumStreamPolicy(**options)
     assert caught.value.context['field']==field
+
+
+def test_every_component_draws_indels_from_the_policys_indel_fraction_ramp():
+    assert CurriculumStreamPolicy().indel_fraction == INDEL_FRACTION
+    policy = CurriculumStreamPolicy(indel_fraction=[0, 1])
+    assert policy.indel_fraction == (0., 1.)
+    # progresses .3/.6/.9, then the three amplicon profiles at .6 and heavy SHM at .3
+    shares = [1 - dict(component['indel_count'])[0] for component in policy.parameters_for(reference())]
+    assert shares == pytest.approx([.3, .6, .9, .6, .6, .6, .3])
+    for component in policy.parameters_for(reference()):
+        assert [count for count, _ in component['indel_count']] == [0, 1, 2, 3]
 
 
 @pytest.mark.parametrize('references,options',[
