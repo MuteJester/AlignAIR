@@ -278,28 +278,11 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
                         allele_names=names, allowed=allowed)
 
 
-def argmax_boundaries(start_logits, end_logits, lengths) -> tuple[np.ndarray, np.ndarray]:
-    """The argmax decoder (the product's ``alignair.predict.decode``): per read, ``(starts, ends)`` (0-based, end-exclusive) as the argmax of the position logits
-    over the read's coordinates. A start lies on a read base (``0..n-1``); an end-exclusive end on ``0..n``, where
-    position ``n`` (one past the last base) exists when the read is shorter than the logits window, so a segment that
-    runs to the read end can be decoded. Logits past the read are never decoded. The model's own soft-argmax is
-    masked to ``0..n-1`` for both."""
-    lengths = np.asarray(lengths)
-    return _masked_argmax(start_logits, lengths), _masked_argmax(end_logits, lengths + 1)
-
-
 @contextmanager
 def _timed(seconds: dict[str, float], stage: str):
     start = time.perf_counter()
     yield
     seconds[stage] = time.perf_counter() - start
-
-
-def _masked_argmax(logits, limits: np.ndarray) -> np.ndarray:
-    """Per row, the argmax over positions ``0..limit-1``."""
-    logits = np.asarray(logits)
-    positions = np.arange(logits.shape[1])
-    return np.where(positions[None, :] < limits[:, None], logits, -np.inf).argmax(axis=1)
 
 
 @torch.no_grad()
@@ -338,7 +321,7 @@ def _classify(model, tokens: torch.Tensor, orientation: torch.Tensor, out: dict,
     soft-argmax expectations for a None entry), on the read re-embedded in the frame of ``orientation``, as
     ``AlignAIR.forward`` embeds it for its own classifier call. A model with a trunk gets the trunk's features of
     that embedding (``features=``), computed as ``AlignAIR.forward`` computes them."""
-    mask = out["position_mask"]
+    mask = out["position_mask"] if "position_mask" in out else out["start_mask"]   # the forward pass's `mask`
     emb = model.embedding(apply_orientation(tokens, mask, orientation))
     extra = {} if model.trunk is None else {"features": model.trunk(emb, mask)}
     for g, (starts, ends) in spans.items():

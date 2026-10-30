@@ -38,7 +38,6 @@ from alignair_assay.diagnostics.replay import (  # noqa: E402
     STAGES,
     StageOutputs,
     Substitutions,
-    argmax_boundaries,
     load_model_checked,
     model_device,
     predict_config,
@@ -110,6 +109,29 @@ def test_replay_equals_product_pipeline_for_a_half_open_model(make_small_model, 
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH)
     assert max(len(read) for read in out.canonical) == model.cfg.max_seq_length - 1
+
+
+def _half_open(make_small_model):
+    from dataclasses import replace
+    from alignair.core import AlignAIR
+    model, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=0)
+    torch.manual_seed(0)
+    return AlignAIR(replace(model.cfg, boundary_mode="half_open")).eval(), reference_set
+
+
+def test_classifier_spans_run_on_a_half_open_model(make_small_model, s0_reads):
+    # a half-open model outputs start_mask/end_mask, not position_mask
+    model, reference_set = _half_open(make_small_model)
+    ids, seqs = _inputs(s0_reads)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    none = [None] * len(seqs)
+    same = _sub(model, reference_set, seqs, ids, spans={g: (none, none) for g in GENES}, classifier_spans=True)
+    assert same.airr_rows == base.airr_rows and _same_raw(same, base)
+    n = len(seqs)
+    spans = {"v": ([100 if i % 2 == 0 else None for i in range(n)], [250 if i % 2 == 0 else None for i in range(n)])}
+    given = _sub(model, reference_set, seqs, ids, spans=spans, classifier_spans=True, segment_spans=False)
+    assert not np.allclose(given.raw["v_allele"][::2], base.raw["v_allele"][::2])
+    assert np.array_equal(given.raw["v_allele"][1::2], base.raw["v_allele"][1::2])
 
 
 def test_replay_and_product_share_unknown_base_whitespace_and_crop_normalization(small_model):
@@ -459,11 +481,8 @@ def test_the_product_decodes_by_argmax_and_the_soft_decoder_substitutes_the_expe
     base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     soft = _sub(model, reference_set, seqs, ids, decoder="soft")
     lengths = np.array([len(read) for read in base.canonical])
-    decoded = {g: argmax_boundaries(base.raw[f"{g}_start_logits"], base.raw[f"{g}_end_logits"], lengths)
-               for g in GENES}
+    decoded = {g: decode_boundaries(base, g, "argmax") for g in GENES}
     # the replay's baseline is the product: the heads' argmax decoder is the same implementation
-    for g in GENES:
-        assert all(np.array_equal(a, b) for a, b in zip(decoded[g], decode_boundaries(base, g, "argmax")))
     expected = pipeline.correct_segments({g: decoded[g][0] for g in GENES}, {g: decoded[g][1] for g in GENES},
                                          lengths, 576, "right")
     expectation = pipeline.correct_segments({g: base.raw[f"{g}_start"].reshape(-1) for g in GENES},
@@ -476,15 +495,6 @@ def test_the_product_decodes_by_argmax_and_the_soft_decoder_substitutes_the_expe
     assert np.array_equal(soft.segments.low_quality, expectation.low_quality)
     assert any(not np.array_equal(soft.segments.start[g], base.segments.start[g]) for g in GENES)
     assert soft.calls == base.calls and _same_raw(soft, base)
-
-
-def test_argmax_boundaries_range():
-    logits = np.zeros((2, 8))
-    logits[:, 7] = 5.0  # a peak past both reads
-    logits[0, 4] = 3.0
-    starts, ends = argmax_boundaries(logits, logits, np.array([5, 7]))
-    # starts on a read base (0..n-1), end-exclusive ends on 0..n
-    assert list(starts) == [4, 0] and list(ends) == [4, 7]
 
 
 # --- the reference check --------------------------------------------------------------------------------------

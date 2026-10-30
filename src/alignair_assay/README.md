@@ -1471,8 +1471,9 @@ like `correct_segments`.
 
 - `soft`: the floor of the head's soft-argmax expectation, clipped to the read. This is `correct_segments`'
   per-segment step, without its min-span and ordering repair.
-- `argmax`: the argmax of the position logits over the read's coordinates. A start lies on a read base (`0..n-1`).
-  An end-exclusive end lies on `0..n`; position `n` exists when the read is shorter than the window. A segment that
+- `argmax`: the product's decoder (`alignair.predict.decode`) over the model's own boundary slots, so assay and
+  product cannot diverge. A start lies on a read base (`0..n-1`). An end-exclusive end lies on `0..n` (`1..n` for a
+  half-open model); position `n` exists when the read is shorter than the window. A segment that
   runs to the read end has end `n`. The model's soft-argmax is masked to `0..n-1`, so it can never reach that end.
 - `exact`: the decoded edge is inside the truth equivalence interval. `abs_err` (lower is better): the distance to
   the interval. `err` (informational): the signed distance, negative before the interval.

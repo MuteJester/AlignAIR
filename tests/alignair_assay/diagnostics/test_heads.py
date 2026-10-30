@@ -356,6 +356,40 @@ def test_cropped_reads_score_only_the_edges_the_model_saw():
     assert [scores[c]["head.cropped"] for c in ("fwd", "rev", "plain")] == [1.0, 1.0, 0.0]
 
 
+# --- half-open models -------------------------------------------------------------------------------------------
+def _half_open(truths, width=WIDTH):
+    """Blank outputs of a half-open model with a ``width`` window: its reads are cropped to ``width - 1`` bases and its
+    end slots are 1..n."""
+    out = _blank(truths, width=width)
+    out.canonical[:] = [_window(t, width - 1)[1] for t in truths]
+    out.raw["start_mask"] = np.zeros((len(truths), width), bool)
+    out.raw["end_mask"] = np.zeros((len(truths), width), bool)
+    for i, read in enumerate(out.canonical):
+        out.raw["start_mask"][i, :len(read)] = True
+        out.raw["end_mask"][i, 1:len(read) + 1] = True
+    return out
+
+
+def test_a_half_open_model_is_diagnosed_on_a_read_of_the_window_length_and_a_longer_one():
+    exact = _truth("exact", WIDTH, {"v": _seg(0, 30, "V1*01")})
+    longer = _truth("longer", WIDTH + 40, {"v": _seg(0, 30, "V1*01")})
+    short = _truth("short", 50, {"v": _seg(0, 30, "V1*01")})
+    out = _half_open([exact, longer, short])
+    scores = head_scores(out, [exact, longer, short])
+    # the model saw 59 bases of each long read, so both were cropped
+    assert [scores[c]["head.cropped"] for c in ("exact", "longer", "short")] == [1.0, 1.0, 0.0]
+
+
+def test_the_argmax_decoder_of_a_half_open_model_never_picks_end_slot_zero():
+    truth = _truth("r", 40, {"v": _seg(0, 30, "V1*01")})
+    out = _half_open([truth])
+    out.raw["v_end_logits"][0, 0] = 10.0     # slot 0 is not an allowed end of a half-open model
+    out.raw["v_end_logits"][0, 5] = 4.0
+    out.raw["v_start_logits"][0, 3] = 4.0
+    starts, ends = decode_boundaries(out, "v", "argmax")
+    assert starts.tolist() == [3] and ends.tolist() == [5]
+
+
 # --- misoriented reads ------------------------------------------------------------------------------------------
 
 def test_a_misoriented_read_has_no_boundary_score_and_is_counted():

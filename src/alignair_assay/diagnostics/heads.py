@@ -31,8 +31,9 @@ still scored on its alleles, and the mutation rate and indel count still count t
 
 - ``soft``: the floor of the head's soft-argmax expectation (``{g}_start``/``{g}_end``), clipped to the read: the
   per-segment step of ``correct_segments`` without its min-span and ordering repair.
-- ``argmax``: the argmax of the logits over the read's coordinates: a start lies on a read base (``0..n-1``), an
-  end-exclusive end on ``0..n`` (position ``n`` exists when the read is shorter than the window). A segment that runs
+- ``argmax``: the product's decoder (``alignair.predict.decode``) over the model's own boundary slots: a start lies on
+  a read base (``0..n-1``), an end-exclusive end on ``0..n`` (position ``n`` exists when the read is shorter than the
+  window; a half-open model's ends lie on ``1..n``). A segment that runs
   to the read end has end ``n``, which the model's soft-argmax, masked to ``0..n-1``, cannot reach.
 - ``exact``: 1.0 when the decoded edge is inside the truth equivalence interval; ``abs_err``: its distance to the
   interval; ``err`` (informational): the signed distance (negative before the interval).
@@ -62,10 +63,13 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 import numpy as np
+import torch
+from alignair.core.boundaries import read_window as model_window
 from alignair.predict.airr.constants import SHORT_D_SENTINEL
+from alignair.predict.decode import boundary_slots, decode_boundaries as product_decode
 
 from alignair_assay.core.cigar import parse_cigar
-from alignair_assay.diagnostics.replay import DECODERS, StageOutputs, argmax_boundaries
+from alignair_assay.diagnostics.replay import DECODERS, StageOutputs
 from alignair_assay.metrics import CaseScores
 from alignair_assay.metrics.boundaries import signed_interval_distance
 from alignair_assay.metrics.case import MIN_OBSERVED
@@ -100,7 +104,10 @@ def decode_boundaries(outputs: StageOutputs, gene: str, decoder: str) -> tuple[n
         starts, ends = (np.clip(np.floor(_flat(outputs.raw[f"{gene}_{edge}"])).astype(int), 0, lengths)
                         for edge in EDGES)
         return starts, ends
-    return argmax_boundaries(outputs.raw[f"{gene}_start_logits"], outputs.raw[f"{gene}_end_logits"], lengths)
+    start_slots, end_slots = _slots(outputs)
+    starts, ends = product_decode(torch.as_tensor(outputs.raw[f"{gene}_start_logits"]),
+                                  torch.as_tensor(outputs.raw[f"{gene}_end_logits"]), start_slots, end_slots)
+    return starts.numpy(), ends.numpy()
 
 
 def allele_ranking(outputs: StageOutputs, gene: str) -> list[np.ndarray]:
@@ -231,9 +238,21 @@ def _flat(values) -> np.ndarray:
     return np.asarray(values).reshape(-1)
 
 
+def _slots(outputs: StageOutputs) -> tuple[torch.Tensor, torch.Tensor]:
+    """The product's boundary slots of every read (``alignair.predict.decode.boundary_slots``) from the model's own
+    masks in ``raw``; for outputs without masks, a residue model's, from the length of each replayed read."""
+    raw = outputs.raw
+    if "position_mask" in raw or "end_mask" in raw:
+        return boundary_slots(raw)
+    width = int(np.asarray(raw["v_start_logits"]).shape[1])
+    lengths = torch.tensor([len(read) for read in outputs.canonical])
+    return boundary_slots({"position_mask": torch.arange(width)[None, :] < lengths[:, None]})
+
+
 def _width(outputs: StageOutputs) -> int:
-    """The model's window: the length of its position logits."""
-    return int(np.asarray(outputs.raw["v_start_logits"]).shape[1])
+    """The window the model saw: the length of its position logits, less the terminal slot of a half-open model."""
+    return model_window(int(np.asarray(outputs.raw["v_start_logits"]).shape[1]),
+                       "half_open" if "end_mask" in outputs.raw else "residue")
 
 
 def _pairs(outputs: StageOutputs, truths: list[ObservableTruth]) -> list[tuple[ObservableTruth, int]]:
