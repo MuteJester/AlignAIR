@@ -57,6 +57,7 @@ CHUNK_SIZE = 64          # records per message
 QUEUE_CHUNKS = 4         # messages a worker holds back per component: the memory bound
 _POLL_SECONDS = 0.25     # how often a waiting process checks that its peers are alive
 _STOP_SECONDS = 5.0      # how long a stopping process may take before it is terminated
+_REAP_SECONDS = 1.0      # how long a process that closed its sentinel may take to give its exit code
 _EXIT_HINT = ('A worker exits early when it runs out of memory or crashes natively, or when the training '
               'script has no `if __name__ == "__main__":` guard: workers are spawned and import the main '
               'module. data_workers=0 generates training data in the training process.')
@@ -309,11 +310,19 @@ class WorkerGroup:
 
     def check(self, *, ended=False):
         """Raise once the group is stopped, or if a process has exited: workers leave only when stopped,
-        so any other exit is a crash. After a channel ended, wait briefly for its writer's exit code."""
+        so any other exit is a crash. After a channel ended, wait briefly for its writer's exit code.
+
+        A process's sentinel is ready once the process has closed its files, which can be before it can be
+        reaped; its exit code is then still unknown. Each process whose sentinel is ready is therefore joined,
+        for at most ``_REAP_SECONDS``, before the exit codes are read; a live process is not waited on."""
         if self._stop.is_set():
             raise TrainingError('the training data workers were stopped', context={'stage': 'training_record_worker'})
         if ended:
-            wait_for([process.sentinel for process in self._processes if process.pid is not None], _STOP_SECONDS)
+            started = [process for process in self._processes if process.pid is not None]
+            ready = set(wait_for([process.sentinel for process in started], _STOP_SECONDS))
+            for process in started:
+                if process.sentinel in ready:
+                    process.join(_REAP_SECONDS)
         for process in self._processes:
             if process.exitcode is not None:
                 raise TrainingError('a training data worker exited unexpectedly',
