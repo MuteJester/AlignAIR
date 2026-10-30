@@ -14,7 +14,10 @@ donors' genotypes when given).
    segment, in place of the germline matcher.
 
 What still differs from the oracle after ``true_germline`` comes from the metadata heads (the productive and indel
-predictions that gate the assembly) and the AIRR assembly itself. The single swaps (``SINGLE_SWAPS``) change one
+predictions that gate the assembly) and the AIRR assembly itself. A model with anchor heads takes its junction and
+flags from its anchors instead: only ``true_orientation`` moves them (the anchors are recomputed in the true frame),
+the later steps move only the coding span the stop is searched over, and what differs after ``true_germline`` is the
+anchor heads' error (the README's "Truth-substitution ablations" has the detail). The single swaps (``SINGLE_SWAPS``) change one
 thing on the baseline: ``soft_decoder`` (segments from the soft-argmax expectations, the decoder the product used before it decoded
 by argmax; the classifier unchanged) and ``true_classifier_spans`` (truth spans into the classifier only; the segments stay the model's).
 

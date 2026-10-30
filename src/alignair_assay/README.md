@@ -1503,7 +1503,9 @@ with ties going to the lower index. They apply to the same segments as the bound
   target. It applies only when `cases` are given.
 - `head.indel_count_abs_err`: against the inserted plus deleted bases of the truth's observed V, D and J CIGARs
   (GenAIRR's indels are single bases). It applies when every gene's truth was built.
-- `head.productive.correct`: the head's probability >= 0.5 matches the truth, where the truth defines it.
+- `head.productive.correct`: the head's probability >= 0.5 matches the truth, where the truth defines it. A model with
+  anchor heads has no productive head and is not scored here; its derived productivity is scored on the AIRR row
+  (`productive.correct`).
 - `head.orientation.correct`: the orientation logits' argmax is the truth orientation (0 or 1).
 - `head.cropped` (informational): 1.0 for a read longer than the window. Its sum counts the crops.
 - `head.misoriented` (informational): 1.0 for a read in another frame than the truth's, whose boundaries are not
@@ -1606,8 +1608,20 @@ baseline error. Two consequences:
   alignment does not.
 - What still differs from the oracle after `true_germline` belongs to the metadata heads (the productive and indel
   predictions that gate the assembly) and to the AIRR assembly itself. The tests show that, given the true germline
-  alignment, the assembly writes the V germline coordinates in IMGT-gapped numbering. It also writes the CDR3
-  coordinates, from which the junction coordinates are read, as columns of the gapped sequence alignment.
+  alignment, the assembly writes the V germline coordinates in IMGT-gapped numbering. Its CDR3 coordinates, from
+  which the junction coordinates are read, are AIRR's (1-based, in the read), so the junction coordinates equal the
+  oracle's.
+- **A model with anchor heads** (`anchor_heads`) takes its junction, frame, stop codon and productivity from its
+  predicted V and J anchors (`alignair.predict.junction`), not from the segments, calls and germline alignment.
+  - `true_orientation` teacher-forces the orientation, so the anchors are recomputed in the true frame: this step
+    carries the orientation's share of the junction and flag error.
+  - `true_spans`, `true_calls` and `true_germline` leave the junction as it was. They move only the coding span the
+    stop codon is searched over (the row's V start and J end), so the stop and productivity can still change a
+    little; the clone key changes with the calls as for any model.
+  - What still differs from the oracle after `true_germline` is then the anchor heads' error, plus the reads with a
+    V or J frameshift, which the truth calls unproductive and the anchor rule cannot see.
+  - The assembly's non-productive gate reads the derived productivity, and `soft_decoder` and
+    `true_classifier_spans` leave the anchors as they are.
 
 ### Speed profile
 
