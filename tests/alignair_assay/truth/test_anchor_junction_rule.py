@@ -65,9 +65,9 @@ def test_the_true_anchors_give_genairrs_junction_on_every_component(records):
 
 def test_the_flags_agree_with_the_assays_truth_given_the_true_anchors_and_spans(records, reference):
     """(b) With the true anchors and the true coding span (the observed V start and J end), the rule's frame, stop
-    and productivity agree with the assay's truth on at least 99.5% of the cases the assay scores (the frame and
-    productivity where the truth's junction exists; the stop on frame-unambiguous reads), and are all None where
-    the truth's junction is None.
+    and productivity agree with the assay's truth on at least 99.5% of the reads where the truth's junction exists,
+    and are all None where it is None. The stop is compared on every such read, though the assay scores it only on
+    the frame-unambiguous ones (512 of them here).
 
     The true anchors are the ends of the truth's junction. They are GenAIRR's on every record but 2, where an indel
     deleted an anchor's own base (a V CIGAR ``246M1D9M``, a J CIGAR ``16M1D22M``): GenAIRR still places a junction,
@@ -75,14 +75,14 @@ def test_the_flags_agree_with_the_assays_truth_given_the_true_anchors_and_spans(
 
     The residue is one kind of read. The assay's truth calls a read with a V or J frameshift (a net indel that is not
     a multiple of 3) unproductive. The anchors cannot see an indel, so the rule calls such a read productive when
-    its junction is in frame and stop-free. On these records the frame and the stop agree on every case (1446 of
-    1446, 512 of 512) and the productivity on 1442 of 1446 (99.72%). The 4 others are frameshift reads:
+    its junction is in frame and stop-free. On these records the frame and the stop agree on every read (1446 of
+    1446 each) and the productivity on 1442 of 1446 (99.72%). The 4 others are frameshift reads:
     ``0:unselected-0:129``, ``0:unselected-0:288`` and ``4:unselected-0:1444`` (V), ``4:unselected-0:1298`` (V and
     J)."""
     from alignair.predict.junction import derive_junction
     scored = {flag: 0 for flag in FLAGS}
     agree = {flag: 0 for flag in FLAGS}
-    residue = []
+    residue, frame_unambiguous = [], 0
     for k, (component, name, record) in enumerate(records):
         truth = truth_from_genairr_record(record, reference, case_id=f"{component}:{name}:{k}", stratum=name)
         segments = truth.segments
@@ -95,18 +95,45 @@ def test_the_flags_agree_with_the_assays_truth_given_the_true_anchors_and_spans(
             assert call.vj_in_frame is call.stop_codon is call.productive is None, truth.case_id
             continue
         assert (call.junction_start, call.junction_end) == (junction.start, junction.end)
+        frame_unambiguous += truth.frame_unambiguous
         for flag in FLAGS:
-            if flag == "stop_codon" and not truth.frame_unambiguous:
-                continue
             scored[flag] += 1
             agree[flag] += getattr(call, flag) == getattr(truth, flag)
             if getattr(call, flag) != getattr(truth, flag):
                 residue.append((truth.case_id, flag, truth.v_frameshift, truth.j_frameshift,
                                 getattr(call, flag), getattr(truth, flag)))
-    assert scored == {"vj_in_frame": 1446, "stop_codon": 512, "productive": 1446}
+    assert scored == {"vj_in_frame": 1446, "stop_codon": 1446, "productive": 1446} and frame_unambiguous == 512
+    assert agree["vj_in_frame"] == agree["stop_codon"] == 1446
     assert len(residue) == 4
     for flag in FLAGS:
         assert agree[flag] / scored[flag] >= 0.995, (flag, agree[flag], scored[flag], residue)
     # every disagreement is a frameshift read the rule calls productive and the truth does not
     assert residue and all(flag == "productive" and (v_shift or j_shift) and derived is True and want is False
                            for _, flag, v_shift, j_shift, derived, want in residue), residue
+
+
+def test_the_anchor_targets_give_the_assays_truth_junction(records, reference):
+    """(c) The anchor targets a model with anchor heads trains on (``alignair.data.targets.read_anchors``: each
+    anchor through its own segment's alignment) give the truth's junction: where the truth has one, the anchors are its
+    start and end - 3; where it has none, at most one anchor is observed, so the derived junction is None too.
+
+    That includes the 2 records where GenAIRR places a junction but an indel deleted an anchor's own base (a V CIGAR
+    ``246M1D9M``, a J CIGAR ``16M1D22M``): the truth has no junction there, and the deleted anchor is null."""
+    import GenAIRR.data as gd
+    from alignair.data.targets import read_anchors
+    from alignair.reference.reference_set import ReferenceSet
+    reference_set = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    with_junction = deleted = 0
+    for k, (component, name, record) in enumerate(records):
+        truth = truth_from_genairr_record(record, reference, case_id=f"{component}:{name}:{k}", stratum=name)
+        anchors = read_anchors(record, reference_set)
+        if truth.junction is not None:
+            with_junction += 1
+            assert (anchors["v"], anchors["j"]) == (truth.junction.start, truth.junction.end - 3), truth.case_id
+            continue
+        assert anchors["v"] is None or anchors["j"] is None, truth.case_id
+        if record["junction_start"] is not None:                 # GenAIRR's junction, which the truth refuses
+            deleted += 1
+            null = "v" if anchors["v"] is None else "j"
+            assert "D" in record[f"{null}_cigar"], (truth.case_id, record[f"{null}_cigar"])
+    assert (with_junction, deleted) == (1446, 2)
