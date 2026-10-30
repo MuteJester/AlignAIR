@@ -64,13 +64,11 @@ DEFAULT_DATA_WORKERS = 2
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _MILESTONE = re.compile(r"model\.step(\d+)\.alignair")
 PROGRESS_LINES = 20                       # progress lines printed over a training run
-# The model configuration a baseline milestone shares with the recipe's conv-v1: its family and every field that sets
-# its task or objective. Its capacity (CAPACITY_FIELDS) is recorded, not compared.
-BASELINE_CONFIG_FIELDS = ("architecture", "input_space", "label_space", "has_d", "num_chain_types", "v_allele_count",
-                          "d_allele_count", "j_allele_count", "max_seq_length", "vocab_size", "classification_mode",
-                          "boundary_mode", "use_meta_heads", "use_orientation", "state_head", "productive_unknown",
-                          "short_d_penalty", "reject_empty_sequences")
-CAPACITY_FIELDS = ("embed_dim", "filters", "block_out")
+# The width fields of a model configuration, recorded with a baseline milestone's provenance; every configuration field,
+# these among them, is compared with the recipe's conv-v1.
+CAPACITY_FIELDS = ("embed_dim", "filters", "block_out", "latent_size_factor", "v_allele_latent_size",
+                   "d_allele_latent_size", "j_allele_latent_size", "cls_scale_multiplier", "cls_dim_min", "cls_dim_max",
+                   "cls_filter_cap")
 _V3_HINT = ("Its training records were drawn otherwise (other seeds, no selection, the uniform indel form), so it is "
             "no baseline for a candidate trained from a v3 record cache: screen against the milestones of a conv-v1 "
             "baseline trained with recipe v3 (--milestones).")
@@ -98,15 +96,17 @@ def _refuse(path: Path, what: str, found: Mapping, expected: Mapping, differing:
                              context={"field": differing[0], "fields": differing, "path": str(path)}, **options)
 
 
-def baseline_milestone(milestones: Path, steps: int) -> dict:
+def baseline_milestone(milestones: Path, steps: int, options: Mapping | None = None) -> dict:
     """The baseline's milestone at ``steps``, trusted by its contents, not its file name; its provenance.
 
     ConfigurationError, naming each difference, unless its header says it was saved at ``steps``, its ``train_args``
     hold the recipe's (``recipe.recipe_train_args``: recipe id, optimization, stream policy and spaces; a checkpoint
     without a ``recipe`` predates recipe v3 and is refused with a hint), it was trained on the recipe's references
-    (their DataConfig ``schema_sha256``), and its configuration is the recipe's conv-v1 in every
-    ``BASELINE_CONFIG_FIELDS`` field. The provenance: the path, step, recipe, git commit, GenAIRR version and reference
-    checksums the checkpoint records, when it was saved, and its capacity."""
+    (their DataConfig ``schema_sha256``), and its configuration is, field for field, the recipe's conv-v1 with its
+    default options, or with ``options`` when they are given (a baseline of another width, say). The provenance: the
+    path, step, recipe, git commit, GenAIRR version and reference checksums the checkpoint records, when it was
+    saved, the baseline ``options`` the screen was told and the milestone's capacity (``CAPACITY_FIELDS``)."""
+    import dataclasses
     import GenAIRR.data as gd
     from alignair.core import prepare_model
     from alignair.model_file import read_metadata, read_model_state
@@ -133,18 +133,26 @@ def baseline_milestone(milestones: Path, steps: int) -> dict:
     wanted = {"dataconfigs": [getattr(source, "schema_sha256", None) for source in sources]}
     if references != wanted:
         _refuse(path, "was trained on other references", references, wanted, ["dataconfigs"])
+    options = dict(options or {})
+    if "architecture" in options:
+        raise ConfigurationError(f"the baseline is {BASELINE_ARCHITECTURE}: its options cannot name another "
+                                 "architecture", context={"field": "baseline_options"})
     config = read_model_state(path).config
-    recipe_config = prepare_model(ReferenceSet.from_dataconfigs(*sources)).config
-    found = {field: getattr(config, field) for field in BASELINE_CONFIG_FIELDS}
-    expected = {field: getattr(recipe_config, field) for field in BASELINE_CONFIG_FIELDS}
-    differing = _differences(found, expected, BASELINE_CONFIG_FIELDS)
+    recipe_config = prepare_model(ReferenceSet.from_dataconfigs(*sources), **options).config
+    fields = [field.name for field in dataclasses.fields(recipe_config)]
+    found = {field: getattr(config, field) for field in fields}
+    expected = {field: getattr(recipe_config, field) for field in fields}
+    differing = _differences(found, expected, fields)
     if differing:
-        _refuse(path, f"is not the recipe's {BASELINE_ARCHITECTURE}", found, expected, differing)
+        _refuse(path, f"is not the recipe's {BASELINE_ARCHITECTURE}" + (f" with {options}" if options else ""),
+                found, expected, differing,
+                hint="A baseline of other options than conv-v1's defaults is compared when the screen is told them "
+                     "(--baseline-model-option KEY=VALUE).")
     return {"milestone": str(path), "step": steps, "recipe": train_args["recipe"], "architecture": config.architecture,
             "git_commit": (metadata.get("provenance") or {}).get("git_commit"),
             "genairr_version": metadata.get("genairr_version"),
             "reference_schema_sha256": references["dataconfigs"], "saved": metadata.get("created"),
-            "capacity": {field: getattr(config, field) for field in CAPACITY_FIELDS}}
+            "options": options, "capacity": {field: getattr(config, field) for field in CAPACITY_FIELDS}}
 
 
 def built_suites(dev_build: Path, suites: Sequence[str] | None) -> list[str]:
@@ -180,11 +188,13 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
                model_options: Mapping | None = None, suites: Sequence[str] | None = None,
                max_cases: int | None = None, variants: Sequence[str] = DEFAULT_VARIANTS, device: str = "cuda",
                data_workers: int = DEFAULT_DATA_WORKERS, eval_batch_size: int = 256, cache=CACHE,
-               dev_build=DEV_BUILD, milestones=MILESTONES, out_root=SCREENS,
+               dev_build=DEV_BUILD, milestones=MILESTONES, out_root=SCREENS, baseline_options: Mapping | None = None,
                echo: Callable[[str], None] | None = None) -> dict:
     """Screen ``architecture`` with ``model_options`` for ``steps`` steps against the baseline milestone at that step
     (see the module docstring); returns the screen record (``screen.json``) with its printed ``headline``.
 
+    The baseline is the recipe's conv-v1 with its default options, or with ``baseline_options`` (recorded in
+    ``screen.json`` and on the headline). Its milestone and the record cache must come from one GenAIRR version.
     ``echo`` receives the progress lines and the headline; by default they are printed to the standard output in
     effect at the call, which the trainer's redirected output does not reach."""
     start = time.perf_counter()
@@ -197,10 +207,17 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
         raise ValueError(f"a screen name is 1 to 64 letters, digits, '.', '_' or '-', starting with a letter or digit; "
                          f"got {name!r}")
     model_options = dict(model_options or {})
-    provenance = baseline_milestone(Path(milestones), steps)
+    provenance = baseline_milestone(Path(milestones), steps, baseline_options)
     baseline = provenance["milestone"]
     source = CachedRecordSource(cache)
     manifest = source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=steps * BATCH_SIZE)
+    version = manifest["genairr"].get("genairr_version")
+    if provenance["genairr_version"] != version:
+        raise ConfigurationError(f"the baseline milestone {baseline} and the record cache come from different GenAIRR "
+                                 f"versions: genairr_version {provenance['genairr_version']!r}, not {version!r} (the "
+                                 "record cache's)", context={"field": "genairr_version", "path": baseline},
+                                 hint="Compare a candidate trained from this cache with a baseline trained under the "
+                                      "same GenAIRR.")
     names = built_suites(Path(dev_build), suites)
     config = training_config(steps=steps, architecture=architecture, model_options=model_options, device=device,
                              data_workers=data_workers)
@@ -218,8 +235,9 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
               "recipe": {"dataconfigs": list(DATACONFIGS), "batch_size": BATCH_SIZE, "lr": config.lr, "seed": SEED},
               "cache": {"path": source.path, "steps": manifest["steps"], "records": manifest["records"],
                         "genairr_source_sha256": manifest["genairr"]["genairr_source_sha256"],
-                        "recipe": manifest["recipe"], "code_sha256": manifest["code"]["sha256"],
-                        "created": manifest["created"]},
+                        "genairr_version": version, "recipe": manifest["recipe"],
+                        "code_sha256": manifest["code"]["sha256"], "created": manifest["created"],
+                        "verification": source.verification},
               "baseline": provenance,
               "dev_build": str(Path(dev_build).resolve()), "screen_dir": str(screen.resolve())}
 
@@ -326,15 +344,27 @@ def _title(record: dict, result, baseline_key: str) -> list[str]:
     return [f"Screen {record['name']}: {record['architecture']}{options}, {record['steps']} steps, against the "
             f"baseline {BASELINE_ARCHITECTURE} at step {record['steps']}.",
             f"Candidate {result.model_key} ({record['candidate']['model_path']}); baseline {baseline_key} "
-            f"({record['baseline']['milestone']}).", _provenance_line(record["baseline"]), ""]
+            f"({record['baseline']['milestone']}).", _provenance_line(record["baseline"]), _cache_line(record["cache"]),
+            ""]
 
 
 def _provenance_line(baseline: dict) -> str:
     commit = (baseline.get("git_commit") or "unknown")[:12]
     references = ", ".join((schema or "unknown")[:12] for schema in baseline["reference_schema_sha256"])
+    options = (f"; baseline options {json.dumps(baseline['options'])}" if baseline.get("options")
+               else "; conv-v1's default options")
     return (f"Baseline milestone: saved at step {baseline['step']} by recipe {baseline['recipe']}, at git {commit}, "
             f"with GenAIRR {baseline.get('genairr_version') or 'unknown'} (reference {references}), on "
-            f"{baseline.get('saved') or 'an unrecorded date'}.")
+            f"{baseline.get('saved') or 'an unrecorded date'}{options}.")
+
+
+def _cache_line(cache: dict) -> str:
+    verification = cache.get("verification") or {}
+    if verification.get("code_changed"):
+        return (f"Record cache: producing code changed since the write; deep-verified {verification['records']} "
+                "records live.")
+    return (f"Record cache: producing code unchanged since the write; verified {verification.get('records', 0)} "
+            "records live.")
 
 
 def _footer(report: Path, layout, key: str, baseline_key: str, times: dict, record: dict) -> list[str]:

@@ -42,8 +42,11 @@ def rig(tmp_path_factory):
                            screens=root / 'screens')
 
 
-def arguments(rig, name, *extra, steps=2):
+def arguments(rig, name, *extra, steps=2, baseline_options=True):
+    """A screen of the small lab-null-v1 against the rig's small baseline, whose options the screen is told."""
     options = [option for key, value in SMALL.items() for option in ('--model-option', f'{key}={value}')]
+    if baseline_options:
+        options += [option for key, value in SMALL.items() for option in ('--baseline-model-option', f'{key}={value}')]
     return ['screen', '--name', name, '--steps', str(steps), '--architecture', 'lab-null-v1', *options,
             '--device', 'cpu', '--data-workers', '1', '--eval-batch-size', '16', '--cache', str(rig.cache),
             '--dev-build', str(rig.dev), '--milestones', str(rig.milestones), '--out-root', str(rig.screens), *extra]
@@ -74,6 +77,9 @@ def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_s
     headline = (screen / 'headline.txt').read_text()
     assert headline.strip() in printed and 'clone_key.exact' in headline and record['report'] in headline
     assert f"git {baseline['git_commit'][:12]}" in headline and f"GenAIRR {baseline['genairr_version']}" in headline
+    assert baseline['options'] == SMALL and f"baseline options {json.dumps(SMALL)}" in headline
+    assert record['cache']['verification'] == {'code_changed': False, 'deep': False, 'records': 56}
+    assert 'Record cache: producing code unchanged since the write; verified 56 records live' in headline
     assert 'Wall time' in headline and (screen / 'train.log').is_file()     # the trainer logs every 50 steps
     assert '[screen smoke] step 2/2' in printed                             # progress, past the trainer's log
     assert not (rig.dev / 'diagnostics').exists()                  # the dev build is only read
@@ -100,9 +106,10 @@ def test_the_baseline_records_the_recipes_train_args(rig):
 REMOVED = object()
 
 
-def milestone_copy(rig, tmp_path, *, step=2, saved_step=2, **changes):
+def milestone_copy(rig, tmp_path, *, step=2, saved_step=2, header=None, **changes):
     """A milestones directory holding a copy of the rig's baseline as ``model.step<step>.alignair``, its header saying
-    it was saved at ``saved_step`` with ``changes`` to its train_args (``REMOVED`` removes one)."""
+    it was saved at ``saved_step`` with ``changes`` to its train_args (``REMOVED`` removes one) and ``header``'s other
+    fields."""
     from alignair.model_file import update_card
     source = rig.milestones / 'model.step2.alignair'
     training = read_metadata(source)['training']
@@ -111,8 +118,37 @@ def milestone_copy(rig, tmp_path, *, step=2, saved_step=2, **changes):
     milestones = tmp_path / 'milestones'
     milestones.mkdir()
     update_card(source, milestones / f'model.step{step}.alignair',
-                {'training': {**training, 'steps': saved_step, 'train_args': train_args}})
+                {'training': {**training, 'steps': saved_step, 'train_args': train_args}, **(header or {})})
     return milestones
+
+
+def test_a_cache_written_by_other_producing_code_is_deep_verified_and_says_so(rig, tmp_path):
+    cache = tmp_path / 'cache'
+    shutil.copytree(rig.cache, cache)
+    manifest = json.loads((cache / 'manifest.json').read_text())
+    manifest['code']['sha256'] = '0' * 64
+    (cache / 'manifest.json').write_text(json.dumps(manifest))
+    assert main([*arguments(rig, 'deep'), '--cache', str(cache)]) == 0
+    record = json.loads((rig.screens / 'deep' / 'screen.json').read_text())
+    verification = record['cache']['verification']
+    assert verification['code_changed'] and verification['deep'] and verification['records'] > 56
+    assert (f"Record cache: producing code changed since the write; deep-verified {verification['records']} "
+            "records live") in (rig.screens / 'deep' / 'headline.txt').read_text()
+
+
+def test_a_milestone_of_another_genairr_version_than_the_caches_is_refused(rig, tmp_path, capsys):
+    milestones = milestone_copy(rig, tmp_path, header={'genairr_version': '2.1.0'})
+    assert main([*arguments(rig, 'other-genairr'), '--milestones', str(milestones)]) == 2
+    error = capsys.readouterr().err
+    assert "genairr_version '2.1.0', not '2.2.0'" in error and 'record cache' in error
+    assert not (rig.screens / 'other-genairr').exists()
+
+
+def test_a_milestone_of_another_capacity_is_refused_unless_the_screen_is_told_its_options(rig, capsys):
+    assert main(arguments(rig, 'other-capacity', baseline_options=False)) == 2
+    error = capsys.readouterr().err
+    assert 'embed_dim 4, not 32' in error and 'filters 4, not 128' in error and 'block_out 8, not 576' in error
+    assert not (rig.screens / 'other-capacity').exists()
 
 
 @pytest.mark.parametrize('copy,problem', [

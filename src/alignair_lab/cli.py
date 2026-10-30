@@ -3,6 +3,7 @@
   python -m alignair_lab screen --name NAME [--steps 20000] [--architecture ARCH] [--model-option KEY=VALUE ...]
       [--suites S1,S3] [--max-cases N] [--variants baseline,true_spans,...] [--device cuda] [--data-workers 2]
       [--eval-batch-size 256] [--cache DIR] [--dev-build DIR] [--milestones DIR] [--out-root DIR]
+      [--baseline-model-option KEY=VALUE ...]
   python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
 
 ``screen`` trains a candidate with the recipe (``recipe``) from the record cache and compares it with the baseline's
@@ -48,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
                           "(default %(default)s)")
     run.add_argument("--model-option", action="append", default=[], metavar="KEY=VALUE",
                      help="a model configuration field (repeatable)")
+    run.add_argument("--baseline-model-option", action="append", default=[], metavar="KEY=VALUE",
+                     help="a model configuration field of the baseline milestone, when it is not conv-v1's default "
+                          "(repeatable; recorded in screen.json and on the headline)")
     run.add_argument("--suites", help="comma-separated dev suites (default: every suite built in --dev-build)")
     run.add_argument("--max-cases", type=int, help="reads per suite, evenly spaced (default: all)")
     run.add_argument("--variants", default=",".join(screen.DEFAULT_VARIANTS),
@@ -100,7 +104,8 @@ def run_screen(args) -> int:
                       model_options=model_options(args.model_option), suites=_names(args.suites),
                       max_cases=args.max_cases, variants=_names(args.variants), device=args.device,
                       data_workers=args.data_workers, eval_batch_size=args.eval_batch_size, cache=args.cache,
-                      dev_build=args.dev_build, milestones=args.milestones, out_root=args.out_root)
+                      dev_build=args.dev_build, milestones=args.milestones, out_root=args.out_root,
+                      baseline_options=model_options(args.baseline_model_option))
     return 0
 
 
