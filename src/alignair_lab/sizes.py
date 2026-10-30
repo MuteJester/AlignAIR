@@ -8,7 +8,7 @@
 - per gene ``<g>.segmentation`` (its ``SEGMENTATION`` points: a segmentation tower and two boundary heads, or a
   boundary convolution) and ``<g>.classification`` (its ``CLASSIFICATION`` points: the soft cutout, the
   classification tower, its mid layer and head); a branch's other inspection point keeps its own name, ``<g>.<point>``;
-- ``unattributed``: the parameters no inspection point holds, when there are any.
+- ``unattributed``: the parameters and Conv1d layers no inspection point holds, when there are any.
 
 A parameter or layer shared between components is counted once, in the first that holds it. The components are
 summed into ``GROUPS``: segmentation (the genes'), trunk (the trunk and its heads), classification (the genes'), meta
@@ -50,14 +50,15 @@ def model_size(model: nn.Module) -> dict:
         seen_layers.update(id(m) for m in layers)
         components[name] = {"parameters": sum(p.numel() for p in parameters), "conv1d": len(layers)}
     total = sum(p.numel() for p in model.parameters())
-    rest = total - sum(component["parameters"] for component in components.values())
-    if rest:
-        components["unattributed"] = {"parameters": rest, "conv1d": 0}
+    conv1d = sum(isinstance(m, nn.Conv1d) for m in model.modules())
+    rest = {"parameters": total - sum(component["parameters"] for component in components.values()),
+            "conv1d": conv1d - sum(component["conv1d"] for component in components.values())}
+    if any(rest.values()):
+        components["unattributed"] = rest
     groups = dict.fromkeys(GROUPS, 0)
     for name, component in components.items():
         groups[_group(name)] += component["parameters"]
-    return {"parameters": total, "conv1d": sum(isinstance(m, nn.Conv1d) for m in model.modules()),
-            "groups": groups, "components": components}
+    return {"parameters": total, "conv1d": conv1d, "groups": groups, "components": components}
 
 
 def _group(component: str) -> str:

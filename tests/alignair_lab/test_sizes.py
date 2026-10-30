@@ -56,6 +56,22 @@ def test_lab_trunk_v1s_size_by_component(reference):
     assert sum(groups.values()) == size['parameters']
 
 
+def test_the_layers_no_inspection_point_holds_are_unattributed(reference):
+    """lab-trunk-v2's components hold all of its parameters and Conv1d layers; a Conv1d attached outside every
+    inspection point is counted as unattributed, its parameters and its layer, so the components still add up to
+    the model's totals."""
+    import alignair_lab.architectures  # noqa: F401  (registers lab-trunk-v2)
+    model = build(reference, 'lab-trunk-v2', boundary_mode='half_open')
+    size = model_size(model)
+    assert 'unattributed' not in size['components']
+    assert sum(component['conv1d'] for component in size['components'].values()) == size['conv1d'] == 81
+    model.stray = torch.nn.Conv1d(4, 2, 3)
+    size = model_size(model)
+    assert size['components']['unattributed'] == {'parameters': 4 * 2 * 3 + 2, 'conv1d': 1}
+    assert sum(component['conv1d'] for component in size['components'].values()) == size['conv1d'] == 82
+    assert sum(component['parameters'] for component in size['components'].values()) == size['parameters']
+
+
 def test_a_model_file_is_sized_as_its_model(reference, tmp_path):
     from alignair.train.checkpoints import save_checkpoint
     model = build(reference, 'conv-v1', embed_dim=4, filters=4, block_out=8)
