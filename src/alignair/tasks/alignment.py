@@ -48,6 +48,9 @@ class AlignmentTasks:
         if self.config.use_meta_heads:
             required_out += ["mutation_rate", "indel_count", "productive"]
             required_target += ["mutation_rate", "indel_count", "productive"]
+        if getattr(self.config, "region_head", False):
+            required_out.append("region_logits")
+            required_target.append("region_labels")
         for mapping, required, kind in ((outputs, required_out, "output"), (targets, required_target, "target")):
             missing = [key for key in required if key not in mapping]
             if missing:

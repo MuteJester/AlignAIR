@@ -14,6 +14,11 @@ boundaries (the model option ``boundary_mode=half_open``): its end slot k is rea
 base, so a segment that runs to the read's end has a supervised end slot read from real features
 (``TrunkGeneBranchV2``). Everything else is lab-trunk-v1's.
 
+The model option ``region_head=true`` gives either architecture a region head (``RegionHead``, built by
+``build_trunk_heads``): every position's recombination region (pre, V, N1, D, N2, J, post) as a 1x1 convolution of the
+trunk's features, trained by the product's ``regions`` term. It is built after every other module, so the rest of the
+model is as it is with the flag off.
+
 Shapes: B = batch, L = ``cfg.max_seq_length``, E = ``cfg.embed_dim``, C = ``TRUNK_CHANNELS``.
 """
 from __future__ import annotations
@@ -27,6 +32,7 @@ from alignair.core.config import AlignAIRConfig, GeneSpec
 from alignair.core.gene_branch import GeneBranch, build_tower
 from alignair.core.layers import SoftCutoutLayer
 from alignair.errors import ConfigurationError
+from alignair.neural.heads.region import READ_REGIONS
 
 from . import register
 
@@ -179,9 +185,26 @@ def build_trunk(cfg: AlignAIRConfig) -> DilatedTrunk:
     return DilatedTrunk(cfg.embed_dim, TRUNK_CHANNELS)
 
 
+class RegionHead(nn.Module):
+    """The recombination region of every position: ``(features (B, L, C), mask) -> logits (B, L, 7)`` over
+    ``READ_REGIONS`` (pre, V, N1, D, N2, J, post), one 1x1 convolution of the trunk's features. A pad position's
+    logits are the bias (its features are zero); the region term reads the read's positions only."""
+
+    def __init__(self, channels: int = TRUNK_CHANNELS):
+        super().__init__()
+        self.conv = nn.Conv1d(channels, len(READ_REGIONS), 1)
+
+    def forward(self, features: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        return self.conv(features.transpose(1, 2)).transpose(1, 2)
+
+
 def build_trunk_heads(cfg: AlignAIRConfig) -> dict[str, nn.Module]:
-    """The heads read from the trunk's features: none in lab-trunk-v1 or lab-trunk-v2."""
-    return {}
+    """The heads read from the trunk's features, each built only when its flag is on: ``region_logits``
+    (``RegionHead``) with ``region_head``. With every flag off, lab-trunk-v1 and lab-trunk-v2 have none."""
+    heads = {}
+    if cfg.region_head:
+        heads["region_logits"] = RegionHead()
+    return heads
 
 
 register("lab-trunk-v1", ModelComponents(trunk=build_trunk, gene_branch=TrunkGeneBranch,

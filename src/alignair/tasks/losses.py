@@ -12,7 +12,7 @@ from .supervision import supervised_rows, categorical_rows, productive_rows
 from .functional import (_kendall, _mean_rows, _soft_ce, soft_gaussian_target,
                          soft_cross_entropy_rows as _soft_ce_per_sample)
 
-_STATE_IGNORE = -100
+_IGNORE = -100                     # the padding of the per-position labels (PositionLabels): a position no term reads
 
 
 def genes_of(cfg: AlignAIRConfig) -> list[str]:
@@ -33,6 +33,8 @@ def loss_weight_names(cfg: AlignAIRConfig) -> tuple[str, ...]:
         keys.append("chain_type")
     if getattr(cfg, "state_head", False):                      # per-position edit-state head
         keys.append("state")
+    if getattr(cfg, "region_head", False):                     # per-position recombination-region head
+        keys.append("regions")
     return tuple(keys)
 
 
@@ -60,12 +62,23 @@ def auxiliary_losses(out, targets, cfg, logvars):
         sl = out["state_logits"]                                    # (B, L, S)
         w = sl.new_tensor(STATE_CLASS_WEIGHTS)
         labels = targets["state_labels"].reshape(-1)
-        if (labels != _STATE_IGNORE).any():
+        if (labels != _IGNORE).any():
             st_ce = F.cross_entropy(sl.reshape(-1, sl.shape[-1]), labels,
-                                    weight=w, ignore_index=_STATE_IGNORE)
+                                    weight=w, ignore_index=_IGNORE)
             parts["state"] = _kendall(logvars["state"], st_ce)
         else:
             parts["state"] = sl.reshape(-1)[:0].sum() + logvars["state"].log_var * 0
+
+    # ---- per-position recombination region (pre/V/N1/D/N2/J/post): CE over the read's positions only ----
+    if getattr(cfg, "region_head", False):
+        rl = out["region_logits"]                                   # (B, L, R)
+        read = out["position_mask"] if "position_mask" in out else out["start_mask"]   # a read position is a start slot
+        labels = targets["region_labels"].masked_fill(~read, _IGNORE).reshape(-1)
+        if (labels != _IGNORE).any():
+            region_ce = F.cross_entropy(rl.reshape(-1, rl.shape[-1]), labels, ignore_index=_IGNORE)
+            parts["regions"] = _kendall(logvars["regions"], region_ce)
+        else:
+            parts["regions"] = rl.reshape(-1)[:0].sum() + logvars["regions"].log_var * 0
 
     # ---- orientation (supervised only when the batch carries an orientation label) ----
     if "orientation" in targets and "orientation_logits" in out:

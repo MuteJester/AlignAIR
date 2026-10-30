@@ -12,6 +12,7 @@ import torch
 
 from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error_context
 from ..neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+from ..neural.heads.region import READ_REGIONS, REGION_INDEX
 from ..core.boundaries import read_window
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .encoders import encode_allele_sets
@@ -116,6 +117,9 @@ class NucleotideBatchAdapter:
                 if getattr(self.config, "num_chain_types", 1) > 1:
                     targets["chain_type"] = torch.tensor(bundle["chain_type"], dtype=torch.long)
                 targets["state_labels"] = PositionLabels(bundle["state_labels"])
+                if getattr(self.config, "region_head", False):
+                    # forward frame, like the boundaries; the head's classes are READ_REGIONS (no pad label)
+                    targets["region_labels"] = PositionLabels(bundle["region_labels"] - REGION_INDEX[READ_REGIONS[0]])
                 sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
         batch = collate_samples(samples, max_length=self.config.max_seq_length,

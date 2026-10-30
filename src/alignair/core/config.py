@@ -81,6 +81,9 @@ class AlignAIRConfig:
     cls_dim_max: int = 1024        # cap: bound the O(A^2) classification params for large unions
     cls_filter_cap: int = 256      # cap on the auto-raised classification-tower width
     state_head: bool = False       # add the per-position edit-state head (germline/sub/ins/del)
+    # add the per-position recombination-region head (pre/V/N1/D/N2/J/post), read from the trunk's features: only an
+    # architecture with a trunk builds it (``core.model.TRUNK_HEAD_FLAGS``)
+    region_head: bool = False
     # in-model orientation (reverse-complement detect/correct/re-embed). Nucleotide default. Set
     # False for alphabets with no reverse complement (amino acids) — the RC path is both undefined
     # and its complement table is nucleotide-only. Kept True by default so nt checkpoints are
@@ -109,8 +112,9 @@ class AlignAIRConfig:
     productive_unknown: Literal["negative", "masked"] = "negative"
 
     def __post_init__(self):
-        if type(self.short_d_penalty) is not bool:
-            raise ConfigurationError("short_d_penalty must be a boolean", context={"field": "short_d_penalty"})
+        for name in ("short_d_penalty", "region_head"):
+            if type(getattr(self, name)) is not bool:
+                raise ConfigurationError(f"{name} must be a boolean", context={"field": name})
         for name, choices in (("classification_mode", ("multilabel", "categorical")),
                               ("boundary_mode", ("residue", "half_open")),
                               ("input_space", ("nucleotide", "protein")),

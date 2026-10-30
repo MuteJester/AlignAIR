@@ -4,7 +4,10 @@ embedding, so the candidate changes segmentation only. It keeps conv-v1's output
 file, replays in the assay as its own forward pass and is screened against a baseline screen.
 
 lab-trunk-v2 is lab-trunk-v1 for half-open boundaries: its end slot k reads the features of base k - 1, so a segment
-ending at the read's last base is supervised at slot n from that base's features."""
+ending at the read's last base is supervised at slot n from that base's features.
+
+With the model option region_head=true, either also labels every read position with its recombination region from the
+trunk's features, and learns to."""
 import itertools
 import json
 
@@ -267,6 +270,59 @@ def test_lab_trunk_v2_learns_the_j_ends_of_one_batch(reference):
         out = model.eval()(batch)
     _, ends = decoded_boundaries(out, 'j')
     assert (ends == targets['j_end'].reshape(-1).round().long()).float().mean() > 0.9
+
+
+# --- the region head (region_head=true) --------------------------------------------------------------------------
+
+@pytest.mark.component
+@pytest.mark.parametrize('architecture,options', [('lab-trunk-v1', {}),
+                                                  ('lab-trunk-v2', {'boundary_mode': 'half_open'})])
+def test_the_region_head_is_one_1x1_convolution_of_the_trunks_features(reference, architecture, options):
+    """With region_head on, a trunk architecture gives region logits (B, L, 7) over pre, V, N1, D, N2, J and post: one
+    1x1 convolution (903 parameters) of the trunk's features. Built after every other module, it leaves the rest of the
+    model, its initial weights and its outputs, as they are with the flag off."""
+    from alignair.neural.heads.region import READ_REGIONS
+    off = build(reference, architecture, **SMALL, **options)
+    on = build(reference, architecture, **SMALL, **options, region_head=True)
+    head = on.trunk_heads['region_logits']
+    assert set(build_trunk_heads(on.cfg)) == {'region_logits'} and build_trunk_heads(off.cfg) == {}
+    assert count(head) == TRUNK_CHANNELS * len(READ_REGIONS) + len(READ_REGIONS) == 903
+    assert on.component_modules()['trunk_heads.region_logits'] is head
+    assert set(on.state_dict()) - set(off.state_dict()) == {f'trunk_heads.region_logits.{key}'
+                                                            for key in head.state_dict()}
+    assert all(torch.equal(value, on.state_dict()[key]) for key, value in off.state_dict().items())
+    features = []
+    on.trunk.register_forward_hook(lambda module, inputs, output: features.append(output))
+    with torch.no_grad():
+        expected, out = off(tokens()), on(tokens())
+    assert set(out) - set(expected) == {'region_logits'}
+    assert all(torch.equal(out[key], expected[key]) for key in expected)
+    assert out['region_logits'].shape == (3, LENGTH, len(READ_REGIONS))
+    weight, bias = head.conv.weight[:, :, 0], head.conv.bias
+    assert torch.allclose(out['region_logits'], features[0] @ weight.T + bias, atol=1e-5)
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_lab_trunk_v1_with_regions_learns_one_batch(reference):
+    """Updated 200 times on one batch of 4 GenAIRR reads, its region head (in eval mode) labels more than 90% of the
+    reads' positions with their region."""
+    from alignair.train import overfit_one_batch
+    from alignair.train.trainer import build_batch
+    model = build(reference, 'lab-trunk-v1', **SMALL, region_head=True)
+    batch, targets = build_batch(records(4), reference, model.cfg)
+    labels = targets['region_labels']
+
+    def accuracy():
+        with torch.no_grad():
+            predicted = model.eval()(batch)['region_logits'].argmax(-1)
+        read = labels != -100
+        return float((predicted[read] == labels[read]).float().mean())
+
+    before = accuracy()
+    result = overfit_one_batch(model, batch, targets, steps=200, lr=1e-3)
+    assert 'regions' in result['history'][0]
+    assert accuracy() > 0.9 > before
 
 
 # --- the model file, the replay and the screen -------------------------------------------------------------------

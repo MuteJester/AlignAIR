@@ -23,6 +23,10 @@ from ..errors import ConfigurationError, InputError, error_context
 from .runtime import restore_model_state
 from ..neural.heads.orientation import apply_orientation
 
+# The configuration flags whose heads read the trunk's per-position features (``ModelComponents.trunk_heads``): an
+# architecture without a trunk refuses each of them.
+TRUNK_HEAD_FLAGS = ("region_head",)
+
 
 class AlignAIR(nn.Module):
     def __init__(self, cfg: AlignAIRConfig):
@@ -31,6 +35,13 @@ class AlignAIR(nn.Module):
             raise ConfigurationError("model construction requires an AlignAIRConfig", context={"field": "config"})
         cfg = self.cfg = deepcopy(cfg)
         components = architecture_components(cfg.architecture)
+        flagged = [flag for flag in TRUNK_HEAD_FLAGS if getattr(cfg, flag)]
+        if flagged and components.trunk is None:
+            raise ConfigurationError(f"{', '.join(flagged)} needs an architecture with a trunk: the head reads the "
+                                     "trunk's per-position features",
+                                     context={"stage": "model_construction", "component": "trunk_heads",
+                                              "architecture": cfg.architecture, "fields": flagged},
+                                     hint="Select an architecture with a trunk, or leave the flag off.")
         self.embedding = _build_component(components.embedding, cfg, component="embedding")
         self.orientation_head = (_build_component(components.orientation_head, cfg, component="orientation_head")
                                  if cfg.use_orientation else None)
