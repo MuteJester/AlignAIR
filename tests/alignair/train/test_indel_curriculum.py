@@ -27,7 +27,8 @@ def test_the_recipe_stream_is_about_85_percent_indel_free_and_deterministic_per_
     assert again == records[:140]
 
 
-def test_a_run_draws_its_components_from_its_indel_fraction_and_records_it(tmp_path):
+@pytest.mark.parametrize('options,form', [({}, 'weighted'), ({'indel_form': 'uniform'}, 'uniform')])
+def test_a_run_draws_its_components_from_its_indel_form_and_fraction_and_records_them(tmp_path, options, form):
     import GenAIRR.data as gd
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     setup = prepare_model(reference, embed_dim=4, filters=4, block_out=8)
@@ -39,7 +40,9 @@ def test_a_run_draws_its_components_from_its_indel_fraction_and_records_it(tmp_p
 
     path = tmp_path / 'model.alignair'
     train(setup.build_model(), reference, [gd.HUMAN_IGH_OGRDB], setup.config, steps=1, batch_size=2,
-          model_setup=setup, save_path=str(path), log_every=0, indel_fraction=(0.1, 0.2), record_source=watched)
-    curriculum = Curriculum(indel_fraction=(0.1, 0.2))
+          model_setup=setup, save_path=str(path), log_every=0, indel_fraction=(0.1, 0.2), record_source=watched,
+          **options)
+    curriculum = Curriculum(indel_form=form, indel_fraction=(0.1, 0.2))
     assert seen[:3] == [curriculum.indel_count(progress) for progress in (0.3, 0.6, 0.9)]
-    assert read_metadata(path)['training']['train_args']['indel_fraction'] == [0.1, 0.2]
+    train_args = read_metadata(path)['training']['train_args']
+    assert train_args['indel_form'] == form and train_args['indel_fraction'] == [0.1, 0.2]
