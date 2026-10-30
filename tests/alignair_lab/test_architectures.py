@@ -22,6 +22,11 @@ from alignair_lab.recipe import BATCH_SIZE, POLICY, SEED, training_config
 pytestmark = pytest.mark.integration
 
 SMALL = {'embed_dim': 4, 'filters': 4, 'block_out': 8}
+# Candidates for nucleotide models only: they refuse the half-open boundaries of the protein models.
+NUCLEOTIDE_ONLY = ('lab-trunk-v1',)
+SPACES = (('nucleotide', 'alleles'), ('protein', 'protein_classes'))
+CONTRACTS = [(name, space, labels) for name in architectures.registered() for space, labels in SPACES
+             if space == 'nucleotide' or name not in NUCLEOTIDE_ONLY]
 
 
 @pytest.fixture
@@ -48,8 +53,7 @@ def test_an_unversioned_name_is_refused(scratch_registry, name):
         architectures.register(name, ModelComponents())
 
 
-@pytest.mark.parametrize('space,labels', [('nucleotide', 'alleles'), ('protein', 'protein_classes')])
-@pytest.mark.parametrize('name', architectures.registered())
+@pytest.mark.parametrize('name,space,labels', CONTRACTS)
 def test_a_candidate_trains_reloads_exposes_features_and_resumes(name, space, labels, tmp_path):
     request = TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', input_space=space, label_space=labels, steps=2,
                                           batch_size=2, device='cpu', seed=31, val_every=1,
@@ -72,6 +76,16 @@ def test_a_candidate_trains_reloads_exposes_features_and_resumes(name, space, la
     resumed = run_training(request.with_(steps=3, resume_path=run.model_path), output_dir=tmp_path / 'resumed',
                            on_iteration=lambda item: steps.append(item.step))
     assert steps == [3] and read_training_state(resumed.model_path).step == 3
+
+
+@pytest.mark.parametrize('name', NUCLEOTIDE_ONLY)
+def test_a_nucleotide_candidate_refuses_a_protein_models_half_open_boundaries(name, tmp_path):
+    request = TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', input_space='protein', label_space='protein_classes',
+                                          steps=2, batch_size=2, device='cpu', seed=31,
+                                          model_options={'architecture': name, **SMALL})
+    with pytest.raises(ConfigurationError, match='half-open') as caught:
+        run_training(request, output_dir=tmp_path)
+    assert caught.value.context['field'] == 'boundary_mode'
 
 
 def test_data_workers_never_build_a_model(scratch_registry, tmp_path):

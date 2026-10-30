@@ -20,6 +20,7 @@ from alignair.core.components import ModelComponents, architecture_components
 from alignair.core.config import AlignAIRConfig, GeneSpec
 from alignair.core.gene_branch import GeneBranch, build_tower
 from alignair.core.layers import SoftCutoutLayer
+from alignair.errors import ConfigurationError
 
 from . import register
 
@@ -72,10 +73,19 @@ class TrunkGeneBranch(nn.Module):
     """One gene's branch on the trunk. ``segment`` reads its start and end logits (B, L) from the trunk's features
     with one 1x1 convolution (``boundary``) and decodes them as ``GeneBranch.segment`` does: the raw logits, and the
     soft-argmax expectation (B, 1) over the read's positions (the end over ``end_mask`` when given). ``classify`` is
-    conv-v1's classifier, built with conv-v1's calls and computed by ``GeneBranch``'s own code on the embedding."""
+    conv-v1's classifier, built with conv-v1's calls and computed by ``GeneBranch``'s own code on the embedding.
+
+    For nucleotide models only: half-open boundaries (the protein models') are refused, since their end slot past a
+    read's last residue is a pad position, whose trunk features are zero, so its end logit would be the boundary's
+    bias for every read."""
 
     def __init__(self, spec: GeneSpec, cfg: AlignAIRConfig):
         super().__init__()
+        if cfg.boundary_mode == "half_open":
+            raise ConfigurationError(
+                "lab-trunk-v1 is a nucleotide candidate and cannot segment half-open boundaries: the end slot past a "
+                "read's last residue is a pad position, which the trunk zeroes", context={"field": "boundary_mode"},
+                hint="Use residue boundaries (a nucleotide model).")
         self.classification_mode = cfg.classification_mode
         L = cfg.max_seq_length
         cls_out, cls_filters, latent = cfg.cls_spec(spec)
