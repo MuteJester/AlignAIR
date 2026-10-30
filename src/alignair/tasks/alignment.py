@@ -10,7 +10,8 @@ from torch import nn
 
 from ..core.config import AlignAIRConfig
 from ..errors import ConfigurationError, TrainingDataError
-from .losses import auxiliary_losses, categorical_loss, hierarchical_loss, loss_weight_names, make_loss_weights
+from .losses import (ANCHORS, auxiliary_losses, categorical_loss, hierarchical_loss, loss_weight_names,
+                     make_loss_weights)
 from .metrics import MetricReport, alignment_metrics
 
 LossResult = tuple[torch.Tensor, dict[str, torch.Tensor]]
@@ -45,12 +46,17 @@ class AlignmentTasks:
                 required_target.append(f"{gene}_allele")
             elif f"{gene}_compatible" not in targets:
                 required_target.append(f"{gene}_class")
+        anchors = getattr(self.config, "anchor_heads", False)
         if self.config.use_meta_heads:
-            required_out += ["mutation_rate", "indel_count", "productive"]
-            required_target += ["mutation_rate", "indel_count", "productive"]
+            meta = ["mutation_rate", "indel_count"] + ([] if anchors else ["productive"])   # anchors: derived
+            required_out += meta
+            required_target += meta
         if getattr(self.config, "region_head", False):
             required_out.append("region_logits")
             required_target.append("region_labels")
+        if anchors:
+            required_out += [f"{key}_logits" for key in ANCHORS]
+            required_target += list(ANCHORS)
         for mapping, required, kind in ((outputs, required_out, "output"), (targets, required_target, "target")):
             missing = [key for key in required if key not in mapping]
             if missing:

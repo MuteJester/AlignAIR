@@ -325,6 +325,79 @@ def test_lab_trunk_v1_with_regions_learns_one_batch(reference):
     assert accuracy() > 0.9 > before
 
 
+# --- the anchor heads (anchor_heads=true) -------------------------------------------------------------------------
+
+ANCHOR_KEYS = ('v_anchor_logits', 'j_anchor_logits')
+
+
+@pytest.mark.component
+@pytest.mark.parametrize('architecture,options', [('lab-trunk-v1', {}),
+                                                  ('lab-trunk-v2', {'boundary_mode': 'half_open'})])
+def test_the_anchor_heads_score_every_position_and_a_null_slot_from_the_trunks_features(reference, architecture,
+                                                                                         options):
+    """With anchor_heads on, a trunk architecture gives V and J anchor logits (B, L + 1): slot k < L is a 1x1
+    convolution of position k's trunk features, slot L ("not observed") a linear map of the read's masked mean and max
+    features; 386 parameters a head. The learned productive head is not built. Given the flag-off model's shared
+    weights, every other output is the flag-off model's."""
+    off = build(reference, architecture, **SMALL, **options)
+    on = build(reference, architecture, **SMALL, **options, anchor_heads=True)
+    assert set(build_trunk_heads(on.cfg)) == set(ANCHOR_KEYS) and build_trunk_heads(off.cfg) == {}
+    assert 'productive' in off.meta_heads and 'productive' not in on.meta_heads
+    for key in ANCHOR_KEYS:
+        assert count(on.trunk_heads[key]) == (TRUNK_CHANNELS + 1) + (2 * TRUNK_CHANNELS + 1) == 386
+        assert on.component_modules()[f'trunk_heads.{key}'] is on.trunk_heads[key]
+    productive = {key for key in off.state_dict() if key.startswith('meta_heads.productive.')}
+    anchors = {key for key in on.state_dict() if key.startswith('trunk_heads.')}
+    assert productive and set(on.state_dict()) == set(off.state_dict()) - productive | anchors
+    on.load_state_dict({**off.state_dict(), **{key: on.state_dict()[key] for key in anchors}}, strict=False)
+    features = []
+    on.trunk.register_forward_hook(lambda module, inputs, output: features.append(output))
+    batch = tokens()
+    with torch.no_grad():
+        expected, out = off(batch), on(batch)
+    assert set(expected) - set(out) == {'productive'} and set(out) - set(expected) == set(ANCHOR_KEYS)
+    assert all(torch.equal(out[key], expected[key]) for key in out if key in expected)
+    mask = batch['tokenized_sequence'] != 0
+    feats, keep = features[0], mask.unsqueeze(-1)
+    pooled = torch.cat([(feats * keep).sum(1) / keep.sum(1), feats.masked_fill(~keep, float('-inf')).amax(1)], -1)
+    for key in ANCHOR_KEYS:
+        head, logits = on.trunk_heads[key], out[key]
+        assert logits.shape == (3, LENGTH + 1)
+        position = feats @ head.position.weight[0, :, 0] + head.position.bias
+        assert torch.allclose(logits[:, :LENGTH], position, atol=1e-5)
+        assert torch.allclose(logits[:, LENGTH], head.null(pooled)[:, 0], atol=1e-5)
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_lab_trunk_v2_with_anchors_learns_one_batch(reference):
+    """Updated 200 times on one batch of 8 GenAIRR reads (6 full-length, 2 that miss their V Cys), its anchors
+    decoded as the product decodes them (the argmax over the read's positions and the null slot) are right for more
+    than 90% of the 16 anchors, null ones included."""
+    from alignair.train import overfit_one_batch
+    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.trainer import build_batch
+    j_anchored = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)[4]
+    lost = [record for record in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, j_anchored, 5), 40)
+            if record['junction_start'] is None][:2]
+    model = build(reference, 'lab-trunk-v2', boundary_mode='half_open', **SMALL, anchor_heads=True)
+    batch, targets = build_batch(records(6) + lost, reference, model.cfg)
+    assert (targets['v_anchor'] == LENGTH).sum() >= 2 and (targets['v_anchor'] < LENGTH).sum() >= 5
+
+    def accuracy():
+        with torch.no_grad():
+            out = model.eval()(batch)
+        slots = torch.cat([out['start_mask'], out['start_mask'].new_ones(8, 1)], -1)
+        right = [(out[f'{key}_logits'].masked_fill(~slots, float('-inf')).argmax(-1) == targets[key]).float()
+                 for key in ('v_anchor', 'j_anchor')]
+        return float(torch.cat(right).mean())
+
+    before = accuracy()
+    result = overfit_one_batch(model, batch, targets, steps=200, lr=1e-3)
+    assert {'v_anchor', 'j_anchor'} <= set(result['history'][0]) and 'productive' not in result['history'][0]
+    assert accuracy() > 0.9 > before
+
+
 # --- the model file, the replay and the screen -------------------------------------------------------------------
 
 @pytest.mark.integration

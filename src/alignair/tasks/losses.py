@@ -13,6 +13,9 @@ from .functional import (_kendall, _mean_rows, _soft_ce, soft_gaussian_target,
                          soft_cross_entropy_rows as _soft_ce_per_sample)
 
 _IGNORE = -100                     # the padding of the per-position labels (PositionLabels): a position no term reads
+# The anchor targets and outputs (``AlignAIRConfig.anchor_heads``), and the spread of an observed anchor's soft target.
+ANCHORS = ("v_anchor", "j_anchor")
+ANCHOR_SIGMA = 1.0
 
 
 def genes_of(cfg: AlignAIRConfig) -> list[str]:
@@ -25,8 +28,9 @@ def loss_weight_names(cfg: AlignAIRConfig) -> tuple[str, ...]:
     if cfg.classification_mode == "multilabel":
         for g in genes_of(cfg):
             keys += [f"{g}_start", f"{g}_end", f"{g}_classification"]
+    anchors = getattr(cfg, "anchor_heads", False)
     if cfg.use_meta_heads:
-        keys += ["mutation", "indel", "productive"]
+        keys += ["mutation", "indel"] + ([] if anchors else ["productive"])   # anchors: productivity is derived
     if cfg.use_orientation:
         keys.append("orientation")
     if cfg.use_meta_heads and getattr(cfg, "num_chain_types", 1) > 1:                  # multi-chain: chain_type (locus) head
@@ -35,6 +39,8 @@ def loss_weight_names(cfg: AlignAIRConfig) -> tuple[str, ...]:
         keys.append("state")
     if getattr(cfg, "region_head", False):                     # per-position recombination-region head
         keys.append("regions")
+    if anchors:                                                # the V and J anchor heads
+        keys += list(ANCHORS)
     return tuple(keys)
 
 
@@ -50,12 +56,13 @@ def auxiliary_losses(out, targets, cfg, logvars):
     if cfg.use_meta_heads:
         mut = F.l1_loss(out["mutation_rate"], targets["mutation_rate"])
         ind = F.l1_loss(out["indel_count"], targets["indel_count"])
-        known = productive_rows(targets, out["productive"])        # unknown productivity is masked out
-        prod = _mean_rows(F.binary_cross_entropy(out["productive"].clamp(1e-7, 1 - 1e-7), targets["productive"],
-                                                 reduction="none"), known)
         parts["mutation"] = _kendall(logvars["mutation"], mut)
         parts["indel"] = _kendall(logvars["indel"], ind)
-        parts["productive"] = _kendall(logvars["productive"], prod, known)
+        if not getattr(cfg, "anchor_heads", False):                # with anchors, productivity is derived, not learned
+            known = productive_rows(targets, out["productive"])    # unknown productivity is masked out
+            prod = _mean_rows(F.binary_cross_entropy(out["productive"].clamp(1e-7, 1 - 1e-7), targets["productive"],
+                                                     reduction="none"), known)
+            parts["productive"] = _kendall(logvars["productive"], prod, known)
 
     # ---- per-position edit state: masked, class-weighted CE (germline/sub/insertion/deletion) ----
     if "state_logits" in out and "state_labels" in targets and "state" in logvars:
@@ -79,6 +86,14 @@ def auxiliary_losses(out, targets, cfg, logvars):
             parts["regions"] = _kendall(logvars["regions"], region_ce)
         else:
             parts["regions"] = rl.reshape(-1)[:0].sum() + logvars["regions"].log_var * 0
+
+    # ---- V/J anchors: soft-label CE over the read's positions plus the null slot ("not observed") ----
+    if getattr(cfg, "anchor_heads", False):
+        read = out["position_mask"] if "position_mask" in out else out["start_mask"]   # an anchor is a codon start
+        slots = torch.cat([read, read.new_ones(read.shape[0], 1)], dim=-1)             # + the null slot
+        for key in ANCHORS:
+            ce = _mean_rows(_soft_ce_per_sample(out[f"{key}_logits"], anchor_target(targets[key], read), slots))
+            parts[key] = _kendall(logvars[key], ce)
 
     # ---- orientation (supervised only when the batch carries an orientation label) ----
     if "orientation" in targets and "orientation_logits" in out:
@@ -162,6 +177,16 @@ def masked_soft_gaussian(gt: torch.Tensor, length: int, slot_mask: torch.Tensor,
     silently loses mass and is under-penalized (at the terminal slot, ~35-40% of it)."""
     t = soft_gaussian_target(gt, length, sigma=sigma) * slot_mask
     return t / t.sum(-1, keepdim=True).clamp_min(1e-8)
+
+
+def anchor_target(anchor: torch.Tensor, read: torch.Tensor, sigma: float = ANCHOR_SIGMA) -> torch.Tensor:
+    """The soft target (B, L + 1) of anchors (B,) over the read's positions ``read`` (B, L) plus the null slot L: an
+    observed anchor (a position below L) is a Gaussian around it over the read's positions, renormalised, with no
+    weight on the null slot; an anchor at the null slot is a one-hot on it."""
+    length = read.shape[-1]
+    observed = (anchor < length).reshape(-1, 1)
+    gaussian = masked_soft_gaussian(anchor.float().clamp(max=length - 1), length, read, sigma=sigma)
+    return torch.cat([gaussian * observed, (~observed).to(gaussian.dtype)], dim=-1)
 
 
 

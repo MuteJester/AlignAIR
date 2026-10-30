@@ -37,12 +37,15 @@ def _state(cfg):
 
 
 def build_meta_heads(cfg: AlignAIRConfig) -> dict[str, nn.Module]:
+    """The metadata heads on the meta tower's vector. With ``anchor_heads`` there is no productive head: productivity
+    is derived from the predicted anchors (``predict.junction``)."""
     length = cfg.max_seq_length
     heads = {
         "mutation_rate": MetaHead(cfg.block_out, 1, mid_dim=length, out_act=F.relu, clamp=(0.0, 1.0)),
         "indel_count": MetaHead(cfg.block_out, 1, mid_dim=length, out_act=F.relu, clamp=(0.0, 50.0)),
-        "productive": MetaHead(cfg.block_out, 1, out_act=torch.sigmoid),
     }
+    if not getattr(cfg, "anchor_heads", False):
+        heads["productive"] = MetaHead(cfg.block_out, 1, out_act=torch.sigmoid)
     if cfg.num_chain_types > 1:
         heads["chain_type_logits"] = MetaHead(cfg.block_out, cfg.num_chain_types, mid_dim=length)
     return heads
