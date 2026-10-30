@@ -29,6 +29,7 @@ from collections.abc import Sequence
 
 from alignair.data.inputs import NormalizedSequenceBatch, SequenceRecord
 from alignair.data.inference import SequenceInputAdapter
+from alignair.predict.decode import decoded_boundaries
 from alignair.predict.forward import _positive, prediction_batches
 from alignair.predict.probabilities import softmax_probabilities
 
@@ -190,8 +191,14 @@ def _predict_valid(predictor, records: Sequence[SequenceRecord], indices: Sequen
     genes = ("V", "J", "D") if getattr(predictor.cfg, "has_d", False) else ("V", "J")
 
     probs = {g: softmax_probabilities(out[f"{g.lower()}_class_logits"]) for g in genes}
-    starts = {g: out[f"{g.lower()}_start"].detach().cpu().numpy()[:, 0] for g in genes}
-    ends = {g: out[f"{g.lower()}_end"].detach().cpu().numpy()[:, 0] for g in genes}
+    starts, ends = {}, {}
+    for g in genes:
+        decoded = decoded_boundaries(out, g.lower())
+        if decoded is None:   # outputs without logits keep the soft-argmax expectation
+            starts[g] = out[f"{g.lower()}_start"].detach().cpu().numpy()[:, 0]
+            ends[g] = out[f"{g.lower()}_end"].detach().cpu().numpy()[:, 0]
+        else:
+            starts[g], ends[g] = (d.cpu().numpy() for d in decoded)
 
     provenance = _provenance(predictor.card)
     results = []
