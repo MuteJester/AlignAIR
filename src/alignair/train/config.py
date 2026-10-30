@@ -26,7 +26,8 @@ class TrainingConfig:
     Model options are copied on construction and validated by reference-bound model setup.
     Label counts and input vocabulary are derived from the reference and selected spaces.
     ``data_workers`` > 0 generates training data in that many worker processes (one per curriculum
-    component at most); the batches are those of ``data_workers=0``, so it is not part of model identity.
+    stream at most: 28 for the default mix, 7 components of 4 streams); the batches are those of
+    ``data_workers=0``, so it is not part of model identity.
     Workers are spawned, so a script that trains with them needs an ``if __name__ == "__main__":``
     guard. On an accelerator, batches are assembled ahead from the CPU random state, so a CPU random
     draw in the training step, an ``on_iteration`` callback or a study evaluator raises TrainingError;

@@ -1,13 +1,17 @@
 """Worker processes for curriculum components: the serial record stream, generated in parallel.
 
-``training_records`` zips independent component streams, and component ``i`` of a reference panel
-depends only on that panel's reference, its parameters and its seed. Each provider can therefore
-run in its own process while the consuming process zips the component streams exactly as the
-serial stream does: the same records in the same order, and the same errors at the same records.
+``training_records`` zips independent streams (a curriculum component interleaves several), and each
+stream, one provider call, depends only on its reference, its parameters and its seed. Here a
+"component" is one such provider call. Each provider can therefore run in its own process while the
+consuming process zips the component streams exactly as the serial stream does: the same records in
+the same order, and the same errors at the same records.
 
 Topology: ``min(workers, components)`` spawned daemon processes. Worker ``w`` serves components
 ``w, w + W, ...`` round-robin, one chunk at a time, into one channel per component; the consumer
-reads each channel in the order the zip asks for records. Processes start at the first record,
+reads each channel in the order the zip asks for records. This relies on ``training_records``
+drawing every component at the same rate: a worker that wrote ahead on a component drawn more
+slowly than another it serves would wait on that full channel while the consumer waits on the
+other. Processes start at the first record,
 ignore SIGINT, and exit only when their group stops them (close, garbage collection or interpreter
 exit) or when the process that started them has died.
 
@@ -42,10 +46,12 @@ from ...errors import AlignAIRError, ConfigurationError, TrainingError, current_
 from ...errors.base import rescoped
 from .streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
 
-# Measured on the 1.0.0 recipe (7 components, batch 64): the data side delivers 27-28.5 batches/s for
-# any chunk size from 8 to 256 records and any depth from 1 to 8 messages, about twice what the GPU
-# update consumes. 64 records keeps the message count low; 4 held-back messages, plus the one being
-# written, bound the records in flight at 2,240 (about 7.5 MB) for the 7 components.
+# Measured on the 1.0.0 recipe's mix before selection (7 streams, batch 64): the data side delivers
+# 27-28.5 batches/s for any chunk size from 8 to 256 records and any depth from 1 to 8 messages, about
+# twice what the GPU update consumes. 64 records keeps the message count low; 4 held-back messages,
+# plus the one being written, bound the records in flight at 320 per stream (8,960, about 30 MB, for
+# the 28 streams of the selected mix). With selection (recipe v3) the selected streams, each simulated
+# serially, bound the data side at about 4 batches/s on 8 cores, whatever the worker count above 14.
 CHUNK_SIZE = 64          # records per message
 QUEUE_CHUNKS = 4         # messages a worker holds back per component: the memory bound
 _POLL_SECONDS = 0.25     # how often a waiting process checks that its peers are alive
