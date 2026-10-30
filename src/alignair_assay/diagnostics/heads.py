@@ -53,7 +53,8 @@ model has none): P(Short-D) >= 0.5 exactly when the read's D is absent or shorte
 with ``cases``): against the GenAIRR record's ``mutation_rate``, the training target. ``head.indel_count_abs_err``:
 against the inserted plus deleted bases of the truth's observed V, D and J CIGARs (GenAIRR's indels are single
 bases), when every gene's truth was built. ``head.productive.correct``: probability >= 0.5 matches the truth, where
-it is defined. ``head.orientation.correct``: the orientation logits' argmax is the truth orientation (0 or 1).
+it is defined (not for a model with anchor heads, which has no productive head: its productivity is derived from the
+anchors and scored on the AIRR row as ``productive.correct``). ``head.orientation.correct``: the orientation logits' argmax is the truth orientation (0 or 1).
 ``head.cropped`` (informational): 1.0 for a read longer than the window, so its sum counts the crops;
 ``head.misoriented`` (informational): 1.0 for a read in another frame than the truth's, whose boundaries are not
 scored.
@@ -136,7 +137,8 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
     pairs = _pairs(outputs, truths)
     records = _records(cases, pairs)
     width = _width(outputs)
-    raw = {key: _flat(outputs.raw[key]) for key in ("mutation_rate", "indel_count", "productive")}
+    raw = {key: _flat(outputs.raw[key]) for key in ("mutation_rate", "indel_count", "productive")
+           if key in outputs.raw}                       # a model with anchor heads has no productive head
     genes = [g for g in GENES if f"{g}_start_logits" in outputs.raw]
     decoded = {g: {decoder: decode_boundaries(outputs, g, decoder) for decoder in DECODERS} for g in genes}
     alleles = [g for g in genes if g in outputs.allele_names]
@@ -173,7 +175,7 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
             indels = sum(n for seg in truth.segments.values() for n, op in parse_cigar(seg.observed.cigar)
                          if op in "ID")
             case["head.indel_count_abs_err"] = abs(float(raw["indel_count"][i]) - indels)
-        if truth.productive is not None:
+        if truth.productive is not None and "productive" in raw:
             case["head.productive.correct"] = float((float(raw["productive"][i]) >= THRESHOLD) == truth.productive)
         orientation = int(np.argmax(outputs.raw["orientation_logits"][i]))
         case["head.orientation.correct"] = float(orientation == truth.orientation)

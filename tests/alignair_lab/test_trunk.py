@@ -401,11 +401,14 @@ def test_lab_trunk_v2_with_anchors_learns_one_batch(reference):
 # --- the model file, the replay and the screen -------------------------------------------------------------------
 
 @pytest.mark.integration
-@pytest.mark.parametrize('architecture,options', [('lab-trunk-v1', {}),
-                                                  ('lab-trunk-v2', {'boundary_mode': 'half_open'})])
+@pytest.mark.parametrize('architecture,options', [
+    ('lab-trunk-v1', {}), ('lab-trunk-v2', {'boundary_mode': 'half_open'}),
+    ('lab-trunk-v2', {'boundary_mode': 'half_open', 'region_head': True, 'anchor_heads': True})],
+    ids=['v1', 'v2', 'v2-regions-anchors'])
 def test_a_lab_trunk_model_file_round_trips(reference, tmp_path, monkeypatch, architecture, options):
     """Written as a training run writes its model.alignair, it loads back (in a process that registered the lab's
-    candidates) and predicts what it predicted; a process that did not is refused, naming the architecture."""
+    candidates) and predicts what it predicted, the junction fields included (from the anchors, with anchor heads);
+    a process that did not is refused, naming the architecture."""
     from alignair.core import components
     from alignair.errors import ConfigurationError
     from alignair.train.checkpoints import save_checkpoint
@@ -420,12 +423,50 @@ def test_a_lab_trunk_model_file_round_trips(reference, tmp_path, monkeypatch, ar
         first, second = model(tokens()), loaded(tokens())
     assert all(torch.equal(first[key], second[key]) for key in first)
     sequences = [record['sequence'] for record in records(3, seed=11)]
-    assert api.predict_sequences(loaded, loaded_reference, sequences, device='cpu') == \
-           api.predict_sequences(model, reference, sequences, device='cpu')
+    rows = api.predict_sequences(model, reference, sequences, device='cpu')
+    assert api.predict_sequences(loaded, loaded_reference, sequences, device='cpu') == rows
+    assert loaded.cfg.anchor_heads == options.get('anchor_heads', False)
+    assert all(('v_anchor' in row) == loaded.cfg.anchor_heads for row in rows)
+    assert all('junction' in row and 'productive' in row for row in rows)
     monkeypatch.setattr(components, '_ARCHITECTURES',
                         {name: value for name, value in components._ARCHITECTURES.items() if name != architecture})
     with pytest.raises(ConfigurationError, match=architecture):
         api.load_model(str(path))
+
+
+@pytest.mark.integration
+def test_the_assay_scores_an_anchor_model_from_its_anchors(reference):
+    """On a model with anchor heads the assay's replay is the product's prediction, its head metrics run without a
+    productive head (head.productive.correct is not scored), and every ablation variant runs: each row's junction and
+    flags are the anchors' derivation over the row's own V start and J end, and the flags are scored."""
+    from alignair.predict.junction import derive_junction
+    from alignair_assay.core.reference import Reference
+    from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS, run_variants
+    from alignair_assay.diagnostics.heads import head_scores
+    from alignair_assay.diagnostics.replay import replay
+    from alignair_assay.truth.build import truth_from_genairr_record
+    model = build(reference, 'lab-trunk-v2', boundary_mode='half_open', **SMALL, anchor_heads=True)
+    truth_reference = Reference.from_dataconfig('HUMAN_IGH_OGRDB')
+    found = records(4, seed=13)
+    cases = [{'case_id': f'c{k}', 'sequence': record['sequence'].upper()} for k, record in enumerate(found)]
+    truths = [truth_from_genairr_record(record, truth_reference, case_id=case['case_id'], stratum='s')
+              for record, case in zip(found, cases)]
+    sequences, ids = [case['sequence'] for case in cases], [case['case_id'] for case in cases]
+    outputs = replay(model, reference, sequences, ids, device='cpu', batch_size=2)
+    assert outputs.airr_rows == api.predict_sequences(model, reference, sequences, device='cpu', batch_size=2)
+    heads = head_scores(outputs, truths)
+    assert heads and all('head.productive.correct' not in case and 'head.orientation.correct' in case
+                         for case in heads.values())
+    results = run_variants(model, reference, cases, truths, reference=truth_reference, device='cpu', batch_size=2,
+                           variants=DEFAULT_VARIANTS)
+    assert list(results) == list(DEFAULT_VARIANTS)
+    for result in results.values():
+        for row in result.rows:
+            call = derive_junction(row['sequence'], row['v_anchor'], row['j_anchor'],
+                                   coding_span=(row.get('v_sequence_start'), row.get('j_sequence_end')))
+            assert (row['junction_start'], row['productive'], row['productive_prediction']) == (
+                call.junction_start, call.productive, call.productive)
+        assert all('productive.correct' in case for case in result.scores.values())
 
 
 @pytest.mark.integration
