@@ -214,6 +214,38 @@ def test_a_writer_killed_outright_fails_the_write_instead_of_hanging(tmp_path):
     assert list(tmp_path.iterdir()) == []                                 # no cache, no partial directory
 
 
+@pytest.mark.timeout(120)
+def test_a_write_whose_writers_cannot_be_signalled_is_not_failed(tmp_path, monkeypatch):
+    """A sandbox may refuse kill(pid, 0) for a live process: the writers are judged by the pool's own children."""
+    import os
+    from tests.alignair_lab.providers import slow
+    signal = os.kill
+
+    def refused(pid, number):
+        if number == 0:
+            raise PermissionError(1, 'Operation not permitted')
+        return signal(pid, number)
+
+    monkeypatch.setattr(os, 'kill', refused)
+    manifest = write_record_cache(tmp_path / 'cache', dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED,
+                                  steps=1, batch_size=BATCH_SIZE, workers=7, provider=slow)
+    assert manifest['segments'] == 7 and (tmp_path / 'cache' / 'manifest.json').is_file()
+
+
+def test_a_writer_names_its_process_before_it_checks_its_genairr(tmp_path, monkeypatch):
+    """A writer killed before its first record must still be found gone: it names its process first of all."""
+    import os
+    from alignair_lab import records
+    from alignair_lab.records import Segment, _write_segment
+    from tests.alignair_lab.providers import shiftable
+    writers = [0]
+    monkeypatch.setattr(records, '_PROGRESS', ([0], [0.], writers))
+    with pytest.raises(ConfigurationError, match='another GenAIRR'):
+        _write_segment((0, (str(tmp_path), 'stream', None, {}, 0, Segment(0, 0, 4, 0, True, False), 4, 'other',
+                            shiftable)))
+    assert writers == [os.getpid()]
+
+
 def test_a_cache_directory_has_a_new_directorys_permissions(cache, tmp_path):
     (tmp_path / 'plain').mkdir()
     assert cache.stat().st_mode & 0o777 == (tmp_path / 'plain').stat().st_mode & 0o777

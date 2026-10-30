@@ -252,25 +252,17 @@ def _start_writer(written, started, writers):
     _PROGRESS = written, started, writers
 
 
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:                             # another user's: the pid was reused, so the writer is gone
-        return False
-    return True
-
-
 def _check_writers(pending, writers, lost: dict, segments: list[Segment], plan) -> None:
     """Fail the write (TrainingError) when a pending segment's writer process has been gone ``LOST_WRITER_SECONDS``
     without its result: a pool replaces a worker killed outright (the out-of-memory killer, kill -9) but never
-    finishes its task, so the write would otherwise wait for it forever. ``lost``: segment -> when its writer was
-    first found gone."""
+    finishes its task, so the write would otherwise wait for it forever. A writer is gone when it is no longer among
+    this process's live children (the pool's workers): neither a refused signal nor a reused pid is mistaken for one.
+    ``lost``: segment -> when its writer was first found gone."""
     clock = time.monotonic()
+    alive = {child.pid for child in multiprocessing.active_children()}
     for index in pending:
         pid = writers[index]
-        if not pid or _alive(pid):
+        if not pid or pid in alive:
             lost.pop(index, None)
         elif clock - lost.setdefault(index, clock) >= LOST_WRITER_SECONDS:
             segment = segments[index]
@@ -299,13 +291,13 @@ def _write_segment(item):
     (``next``), both named as the stream's, so that the writing process can check every boundary."""
     index, (root, name, reference, parameters, seed, segment, chunk_records, genairr, provider) = item
     begun = time.perf_counter()
+    if _PROGRESS is not None:                   # first of all: a writer that dies from here on is found gone
+        _PROGRESS[2][index] = os.getpid()
+        _PROGRESS[1][index] = time.time()
     if imported_genairr() != genairr:
         raise ConfigurationError("a cache writer process imported another GenAIRR than the process that started it",
                                  context={"stage": "record_cache", "seed": seed},
                                  hint="Put the intended GenAIRR first on PYTHONPATH.")
-    if _PROGRESS is not None:
-        _PROGRESS[1][index] = time.time()
-        _PROGRESS[2][index] = os.getpid()
     records = iter(provider(reference, parameters, seed + segment.start))
     if segment.split:
         records = _numbered(records, segment, seed)

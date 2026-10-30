@@ -32,6 +32,14 @@ def joins_only(dataconfig, parameters, seed):
         yield {'sequence_id': f'seq{k}', 'value': seed + k if k % 4 == 0 else [seed, k]}
 
 
+def slow(dataconfig, parameters, seed):
+    """Shiftable records, each after 0.8 s: a segment of ten takes its writer longer than a lost writer is waited for."""
+    import time
+    for k in count():
+        time.sleep(.8)
+        yield {'sequence_id': f'seq{k}', 'value': seed + k}
+
+
 def killed(dataconfig, parameters, seed):
     """Shiftable records until its third, when the process drawing them is killed outright, as the kernel's
     out-of-memory killer kills one: no exception, no result."""
