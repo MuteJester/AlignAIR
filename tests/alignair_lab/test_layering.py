@@ -14,10 +14,10 @@ import alignair_lab
 pytestmark = pytest.mark.component
 
 PACKAGE = Path(alignair_lab.__file__).resolve().parent
-MODULES = ("recipe", "records", "headline", "architectures", "screen", "cli")
-ALLOWED = {"recipe": {"recipe"}, "records": {"records"}, "headline": {"headline"},
+MODULES = ("recipe", "records", "noise", "headline", "architectures", "screen", "cli")
+ALLOWED = {"recipe": {"recipe"}, "records": {"records"}, "noise": {"noise"}, "headline": {"headline", "noise"},
            "architectures": {"architectures"},
-           "screen": {"recipe", "records", "headline", "architectures", "screen"},
+           "screen": {"recipe", "records", "noise", "headline", "architectures", "screen"},
            "cli": set(MODULES), "__main__": {"cli"}, "__init__": set()}
 
 

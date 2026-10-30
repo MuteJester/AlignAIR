@@ -7,6 +7,8 @@ list (``tests/alignair_lab/test_layering.py``):
 
 - ``recipe``: the training recipe every screen and record cache uses (the 1.0.0 settings under record recipe v3).
 - ``records``: the record cache, the recipe's curriculum records written once and replayed by any number of runs.
+- ``noise``: run-to-run training noise: a comparison's pooled Δ, the null band of baseline screens and the decision
+  rule; pure.
 - ``headline``: a screen's one-page headline, rendered from the assay's comparison summary.
 - ``architectures``: candidate architectures, registered with ``alignair.core.components`` when imported; product
   code in shape, so it imports neither the assay nor the rest of the lab.
