@@ -113,7 +113,6 @@ def test_the_trunk_sees_505_positions():
         with torch.no_grad():
             changed = (trunk(moved, mask) != trunk(emb, mask)).any(-1)[0].nonzero().flatten().tolist()
         assert changed == list(range(seen[0], seen[1] + 1)), (valid, probe)
-    assert len(range(288 - 252, 288 + 253)) == 505
 
 
 # --- lab-trunk-v1 -----------------------------------------------------------------------------------------------
