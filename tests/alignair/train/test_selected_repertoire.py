@@ -4,7 +4,6 @@ observed, so it would drop the truncated reads that miss an anchor, which the am
 cannot draw productive records from trains unselected, and the run records it."""
 from itertools import islice
 import os
-from statistics import median
 
 import pytest
 
@@ -43,10 +42,14 @@ def test_selected_records_are_productive_and_the_unselected_amplicons_keep_their
         rows = records[component::COMPONENTS]
         picked = [row for row in rows if selected[row['call']]]
         assert len(picked) == share * len(rows) and all(row['productive'] is True for row in picked)
-    for amplicon in (3, 4, 5):                     # V-anchored, J-anchored and fragment reads: unselected, still short
-        assert median(len(row['sequence']) for row in records[amplicon::COMPONENTS]) < 200
-    # J-anchored reads that lost their V anchor (productivity unknown) remain: selection would have dropped them
-    assert any(row['productive'] is None for row in records[4::COMPONENTS])
+    # The amplicons (V-anchored, J-anchored, fragment) keep the reads selection drops. GenAIRR's productive_only()
+    # draws no read of unknown productivity (one that misses an anchor) and no J-anchored read under 60 nt, where
+    # unselected amplicons draw about half and a fifth of them: drawn from three selected streams of four, as the
+    # amplicons were before, they would hold about an eighth and a twentieth.
+    amplicons = [row for amplicon in (3, 4, 5) for row in records[amplicon::COMPONENTS]]
+    assert sum(row['productive'] is None for row in amplicons) >= len(amplicons) / 4
+    anchored = records[4::COMPONENTS]
+    assert sum(len(row['sequence']) < 60 for row in anchored) >= len(anchored) / 8
 
 
 def watched_run(tmp_path, dataconfig, **options):
