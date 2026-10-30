@@ -5,6 +5,7 @@
       [--eval-batch-size 256] [--cache DIR] [--dev-build DIR] [--milestones DIR] [--out-root DIR]
       [--baseline-model-option KEY=VALUE ...]
   python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
+      [--segment-records N]
 
 ``screen`` trains a candidate with the recipe (``recipe``) from the record cache and compares it with the baseline's
 milestone at the same step (``screen.run_screen``); ``cache`` writes the recipe's record cache
@@ -77,6 +78,10 @@ def build_parser() -> argparse.ArgumentParser:
                             "streams); default: one per CPU, at most one per stream")
     cache.add_argument("--progress-seconds", type=float, default=60.,
                        help="seconds between progress lines (default %(default)s)")
+    cache.add_argument("--segment-records", type=int,
+                       help="write every stream in segments of this many records, each drawn from its own seed "
+                            "(default: the selected streams only, sized to keep every writer busy; a size larger "
+                            "than any stream writes each whole)")
     cache.set_defaults(func=run_cache)
     return parser
 
@@ -112,7 +117,7 @@ def run_screen(args) -> int:
 def run_cache(args) -> int:
     from alignair_lab.records import write_record_cache
     manifest = write_record_cache(args.out, dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=args.steps,
-                                  batch_size=BATCH_SIZE, workers=args.workers,
+                                  batch_size=BATCH_SIZE, workers=args.workers, segment_records=args.segment_records,
                                   progress=lambda line: print(f"[cache] {line}", flush=True),
                                   progress_seconds=args.progress_seconds)
     print(f"wrote {args.out}: {manifest['records']} records ({manifest['steps']} steps of {manifest['batch_size']}) "

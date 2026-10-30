@@ -3,11 +3,13 @@
 ``training_records`` zips independent record streams (a curriculum component interleaves several), and each stream
 is one provider call ``(reference, parameters, seed)``, listed in order by ``gym.workers.component_plan`` (which calls
 each a "component"). ``write_record_cache`` runs each planned stream through the default GenAIRR provider
-(``gym.streams.stream_records``), one process per stream, for as many records as ``steps * batch_size`` records of
-the zipped training stream (run seed, start step 0) draw from it (``component_counts``), and writes them in
-compressed chunks. ``CachedRecordSource`` is a record provider (``training_records``' and ``train``'s
-``record_source``) that replays the stream it is asked for: the stream it gives is the live stream, record for
-record, up to ``steps * batch_size`` records.
+(``gym.streams.stream_records``) for as many records as ``steps * batch_size`` records of the zipped training stream
+(run seed, start step 0) draw from it (``component_counts``), and writes them in compressed chunks. GenAIRR draws
+record k of the stream of seed s from seed s + k, so a stream is written in segments, each drawn by a process of its
+own from seed s + its start (``segment_plan``); every join between two segments is checked as it is written.
+``CachedRecordSource`` is a record provider (``training_records``' and ``train``'s ``record_source``) that replays the
+stream it is asked for: the stream it gives is the live stream, record for record, up to ``steps * batch_size``
+records.
 
 Layout::
 
@@ -54,7 +56,8 @@ from pathlib import Path
 
 import alignair
 from alignair.errors import ConfigurationError, TrainingDataError, error_context
-from alignair.train.gym.streams import CurriculumStreamPolicy, dataconfig_name, stream_records, training_records
+from alignair.train.gym.streams import (CurriculumStreamPolicy, RecordSource, dataconfig_name, stream_records,
+                                        training_records)
 from alignair.train.gym.workers import component_plan
 from alignair.train.trainer import RECIPE
 from alignair_assay.core.provenance import files_digest, genairr_provenance, tree_digest
@@ -182,9 +185,57 @@ def component_counts(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, 
     return tuple(counts)
 
 
-# A writer process's view of the shared progress: each stream's records written and the time its writing started.
+# A writer process's view of the shared progress: each segment's records written and the time its writing started.
 _PROGRESS = None
 PROGRESS_RECORDS = 256         # records a writer generates between progress counts
+# Selected streams are cut into segments of about 1 / SEGMENTS_PER_WRITER of a writer's share of their records, at
+# least MIN_SEGMENT_RECORDS (each segment compiles its stream's experiment again) and at most one chunk.
+SEGMENTS_PER_WRITER = 6
+MIN_SEGMENT_RECORDS = 128
+_SPLIT_HINT = ("Write the cache without splitting its streams: python -m alignair_lab cache --segment-records N, N "
+               "larger than any stream's records.")
+
+
+@dataclasses.dataclass(frozen=True)
+class Segment:
+    """Records ``[start, stop)`` of the plan's stream ``stream``, drawn from the stream's seed + ``start``: its chunks
+    are numbered from ``first_chunk``; ``last``: the stream's last segment; ``split``: the stream has several."""
+    stream: int
+    start: int
+    stop: int
+    first_chunk: int
+    last: bool
+    split: bool
+
+
+def segment_plan(totals, selected, *, workers: int, chunk_records: int,
+                 segment_records: int | None = None) -> list[Segment]:
+    """The segments a cache of streams of ``totals`` records is written in, the ``selected`` streams' first.
+
+    GenAIRR draws record k of the stream of seed s from seed s + k, so records ``[a, b)`` of a stream can be drawn by
+    a process of their own from seed s + a. With ``segment_records``, every stream is cut into segments of that many
+    records. Without, only the selected streams, about 20 times slower to simulate, are cut: into segments of their
+    records over ``SEGMENTS_PER_WRITER * workers``, at least ``MIN_SEGMENT_RECORDS`` and at most ``chunk_records``,
+    so that every writer stays busy to the end; an unselected stream is one segment. Chunk numbers run on across a
+    stream's segments, each segment starting a chunk."""
+    if segment_records is None:
+        work = sum(total for total, chosen in zip(totals, selected) if chosen)
+        size = min(chunk_records, max(MIN_SEGMENT_RECORDS, -(-work // (SEGMENTS_PER_WRITER * workers)))) \
+            if work else None
+        sizes = [size if chosen else None for chosen in selected]
+    else:
+        sizes = [_count(segment_records, "segment_records")] * len(totals)
+    order = [stream for stream in range(len(totals)) if selected[stream]] + \
+            [stream for stream in range(len(totals)) if not selected[stream]]
+    segments = []
+    for stream in order:
+        total, size = totals[stream], sizes[stream] or totals[stream]
+        bounds = list(range(0, total, size)) + [total] if total else [0, 0]
+        chunk = 0
+        for start, stop in zip(bounds, bounds[1:]):
+            segments.append(Segment(stream, start, stop, chunk, stop == total, len(bounds) > 2))
+            chunk += -(-(stop - start) // chunk_records)
+    return segments
 
 
 def _start_writer(written, started):
@@ -193,19 +244,34 @@ def _start_writer(written, started):
     _PROGRESS = written, started
 
 
-def _write_component(item):
-    """A writer process: generate one stream's records with the default provider and write its chunks."""
-    position, (root, name, reference, parameters, seed, count, chunk_records, genairr) = item
-    start = time.perf_counter()
+def _numbered(records, segment: Segment, seed: int):
+    """A split stream's records drawn from seed + start, renamed as the stream's: GenAIRR names record k of a draw
+    ``seq<k>``, so record k of seed s + a is ``seq<a + k>`` of seed s. A record named otherwise is refused."""
+    for local, record in enumerate(records):
+        if record.get("sequence_id") != f"seq{local}":
+            raise ConfigurationError(f"a stream written in segments needs its records named seq<k> in draw order, as "
+                                     f"GenAIRR names them; record {local} of seed {seed + segment.start} is named "
+                                     f"{record.get('sequence_id')!r}",
+                                     context={"stage": "record_cache", "seed": seed}, hint=_SPLIT_HINT)
+        yield {**record, "sequence_id": f"seq{segment.start + local}"}
+
+
+def _write_segment(item):
+    """A writer process: draw one segment of a stream from its own seed and write its chunks. A segment of a split
+    stream also returns its first record (``head``) and, unless it is the stream's last, the record after its end
+    (``next``), both named as the stream's, so that the writing process can check every boundary."""
+    index, (root, name, reference, parameters, seed, segment, chunk_records, genairr, provider) = item
+    begun = time.perf_counter()
     if imported_genairr() != genairr:
         raise ConfigurationError("a cache writer process imported another GenAIRR than the process that started it",
                                  context={"stage": "record_cache", "seed": seed},
                                  hint="Put the intended GenAIRR first on PYTHONPATH.")
-    (Path(root) / name).mkdir()
     if _PROGRESS is not None:
-        _PROGRESS[1][position] = time.time()
-    records = iter(stream_records(reference, parameters, seed))
-    chunks, written = [], 0
+        _PROGRESS[1][index] = time.time()
+    records = iter(provider(reference, parameters, seed + segment.start))
+    if segment.split:
+        records = _numbered(records, segment, seed)
+    count, chunks, written, head = segment.stop - segment.start, [], 0, None
     while written < count:
         chunk, size = [], min(chunk_records, count - written)
         while len(chunk) < size:
@@ -213,29 +279,48 @@ def _write_component(item):
             if not part:
                 raise TrainingDataError("a record stream ended before the cache was full",
                                         context={"stage": "record_cache", "seed": seed,
-                                                 "records": written + len(chunk)})
+                                                 "records": segment.start + written + len(chunk)})
             chunk.extend(part)
             if _PROGRESS is not None:
-                _PROGRESS[0][position] += len(part)             # only this process writes this stream's count
+                _PROGRESS[0][index] += len(part)                # only this process writes this segment's count
+        if head is None:
+            head = chunk[0]
         data = zlib.compress(pickle.dumps(chunk, pickle.HIGHEST_PROTOCOL), COMPRESSION_LEVEL)
-        file = f"{name}/chunk-{len(chunks):06d}.pkl.zlib"
+        file = f"{name}/chunk-{segment.first_chunk + len(chunks):06d}.pkl.zlib"
         (Path(root) / file).write_bytes(data)
         chunks.append({"file": file, "records": len(chunk), "bytes": len(data),
                        "sha256": hashlib.sha256(data).hexdigest()})
         written += len(chunk)
-    return position, {"chunks": chunks, "seconds": round(time.perf_counter() - start, 3)}
+    following = next(records, None) if segment.split and not segment.last else None
+    return index, {"chunks": chunks, "seconds": round(time.perf_counter() - begun, 3),
+                   "head": head if segment.split else None, "next": following}
 
 
-def default_writers(streams: int) -> int:
-    """The writer processes used when none is asked for: one per CPU, at most one per stream."""
-    return max(1, min(os.cpu_count() or 1, streams))
+def _check_boundaries(segments: list[Segment], results: dict, plan) -> int:
+    """Check that each split stream's segments join: the record after a segment's end, drawn from its seed, is the
+    next segment's first, drawn from its own. ConfigurationError at the first that does not: GenAIRR is then not
+    drawing record k of seed s from seed s + k, and the cache would hold another stream. Returns the joins checked."""
+    checked = 0
+    by_stream = {}
+    for index, segment in enumerate(segments):
+        by_stream.setdefault(segment.stream, []).append((segment, results[index]))
+    for stream, parts in by_stream.items():
+        parts.sort(key=lambda part: part[0].start)
+        for (before, written), (after, following) in zip(parts, parts[1:]):
+            if written["next"] != following["head"]:
+                seed = plan[stream].seed
+                raise ConfigurationError(
+                    f"GenAIRR's records are not shiftable: record {after.start} of the stream of seed {seed}, drawn "
+                    f"from seed {seed + before.start}, is not record 0 drawn from seed {seed + after.start}, so the "
+                    "stream cannot be written in segments", context={"stage": "record_cache", "seed": seed,
+                                                                      "record": after.start}, hint=_SPLIT_HINT)
+            checked += 1
+    return checked
 
 
-def writing_order(plan) -> list[int]:
-    """The order streams are handed to writer processes: the selected streams (``productive_only``), whose records
-    take about 20 times longer to simulate, first, so the slowest work starts first; each group in plan order."""
-    selected = [position for position, stream in enumerate(plan) if stream.parameters.get("productive_only")]
-    return selected + [position for position in range(len(plan)) if position not in set(selected)]
+def default_writers(tasks: int) -> int:
+    """The writer processes used when none is asked for: one per CPU, at most one per segment to write."""
+    return max(1, min(os.cpu_count() or 1, tasks))
 
 
 def _duration(seconds: float) -> str:
@@ -288,16 +373,21 @@ def _progress_line(done: int, total: int, finished: int, streams: int, elapsed: 
 
 def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, seed: int, steps: int, batch_size: int,
                        workers: int | None = None, chunk_records: int = CHUNK_RECORDS,
+                       segment_records: int | None = None, provider: RecordSource = stream_records,
                        progress: Callable[[str], None] | None = None, progress_seconds: float = 60.) -> dict:
     """Write the records ``steps`` steps of ``batch_size`` draw from ``training_records(dataconfigs, policy=policy,
     seed=seed)`` to the new directory ``path``; return the manifest.
 
-    Each stream is generated in a spawned process of its own, at most ``workers`` at a time (default
-    ``default_writers``), the selected streams first (``writing_order``). Every ``progress_seconds`` and once at the
-    end, ``progress`` (when given) receives a line with the records written, the streams done, the records per second
-    and the time left (``seconds_left``). The cache is written into a sibling directory and renamed to ``path`` once its
-    manifest is written, so an interrupted writer leaves no cache behind; it cannot resume one: an interrupted write
-    starts again. FileExistsError when ``path`` exists.
+    The streams are written in segments (``segment_plan``: the selected streams cut so that the writers stay busy, or
+    every stream cut into ``segment_records``), each drawn from its own seed by a spawned process, at most ``workers``
+    at a time (default ``default_writers``: one per CPU), the selected streams' first. A split stream's records are
+    renamed as the serial stream names them, and every join between two of its segments is checked
+    (``_check_boundaries``): a GenAIRR whose records are not shiftable fails the write. ``provider`` draws each
+    stream's records (default the GenAIRR provider ``require`` compares with). Every ``progress_seconds`` and once at
+    the end, ``progress`` (when given) receives a line with the records written, the streams done, the records per
+    second and the time left (``seconds_left``). The cache is written into a sibling directory and renamed to
+    ``path`` once its manifest is written, so an interrupted writer leaves no cache behind; it cannot resume one: an
+    interrupted write starts again. FileExistsError when ``path`` exists.
     """
     path = Path(path).expanduser()
     if path.exists():
@@ -313,7 +403,13 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
     start = time.perf_counter()
     plan = component_plan(dataconfigs, policy=policy, seed=seed)
     counts = component_counts(dataconfigs, policy=policy, seed=seed, records=steps * batch_size)
-    processes = default_writers(len(plan)) if workers is None else min(_count(workers, "workers"), len(plan))
+    selected = [bool(component.parameters.get("productive_only")) for component in plan]
+    requested = (os.cpu_count() or 1) if workers is None else _count(workers, "workers")
+    segments = segment_plan(counts, selected, workers=requested, chunk_records=chunk_records,
+                            segment_records=segment_records)
+    processes = default_writers(len(segments)) if workers is None else min(requested, len(segments))
+    if not callable(provider):
+        raise ConfigurationError("provider must be a record source", context={"field": "provider"})
     if isinstance(progress_seconds, bool) or not isinstance(progress_seconds, (int, float)) or progress_seconds <= 0:
         raise ConfigurationError("progress_seconds must be a positive number", context={"field": "progress_seconds"})
     genairr = genairr_provenance()
@@ -330,38 +426,46 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
     partial = path.parent / f".{path.name}.partial-{os.getpid()}-{secrets.token_hex(4)}"
     partial.mkdir()
     try:
-        tasks = [(str(partial), entry["directory"], component.reference, component.parameters, component.seed,
-                  entry["records"], chunk_records, genairr["genairr_source_sha256"])
-                 for entry, component in zip(components, plan)]
-        totals = [entry["records"] for entry in components]
-        selected = [bool(component.parameters.get("productive_only")) for component in plan]
+        for entry in components:
+            (partial / entry["directory"]).mkdir()
+        tasks = [(str(partial), components[segment.stream]["directory"], plan[segment.stream].reference,
+                  plan[segment.stream].parameters, plan[segment.stream].seed, segment, chunk_records,
+                  genairr["genairr_source_sha256"], provider) for segment in segments]
+        totals = [segment.stop - segment.start for segment in segments]
+        kinds = [selected[segment.stream] for segment in segments]
         context = multiprocessing.get_context("spawn")
-        written, started = context.Array("q", len(plan)), context.Array("d", len(plan))
-        writing = time.perf_counter()
+        written, started = context.Array("q", len(segments)), context.Array("d", len(segments))
+        results, writing = {}, time.perf_counter()
 
         def report():
             now, done = time.time(), list(written)
-            running = [entry["seconds"] if "seconds" in entry else (now - begun if begun else 0.)
-                       for entry, begun in zip(components, started)]
-            finished = ["seconds" in entry for entry in components]
-            left = seconds_left(done=done, totals=totals, running=running, selected=selected, finished=finished,
+            running = [results[index]["seconds"] if index in results else (now - begun if begun else 0.)
+                       for index, begun in enumerate(started)]
+            finished = [index in results for index in range(len(segments))]
+            left = seconds_left(done=done, totals=totals, running=running, selected=kinds, finished=finished,
                                 workers=processes)
-            progress(_progress_line(sum(done), sum(totals), sum(finished), len(plan),
+            remaining = {segment.stream for index, segment in enumerate(segments) if index not in results}
+            progress(_progress_line(sum(done), sum(totals), len(plan) - len(remaining), len(plan),
                                     time.perf_counter() - writing, left))
 
         with context.Pool(processes, initializer=_start_writer, initargs=(written, started)) as pool:
-            pending = {position: pool.apply_async(_write_component, ((position, tasks[position]),))
-                       for position in writing_order(plan)}
+            pending = {index: pool.apply_async(_write_segment, ((index, task),)) for index, task in enumerate(tasks)}
             reported = time.monotonic()
             while pending:
                 next(iter(pending.values())).wait(min(1., progress_seconds))
-                for position in [position for position, result in pending.items() if result.ready()]:
-                    components[position].update(pending.pop(position).get()[1])   # a writer's error is raised here
+                for index in [index for index, result in pending.items() if result.ready()]:
+                    results[index] = pending.pop(index).get()[1]   # a writer's error is raised here
                 if progress is not None and time.monotonic() - reported >= progress_seconds and pending:
                     reported = time.monotonic()
                     report()
         if progress is not None:
             report()
+        joins = _check_boundaries(segments, results, plan)
+        for index, segment in sorted(enumerate(segments), key=lambda item: (item[1].stream, item[1].start)):
+            entry = components[segment.stream]
+            entry.setdefault("chunks", []).extend(results[index]["chunks"])
+            entry["segments"] = entry.get("segments", 0) + 1
+            entry["seconds"] = round(entry.get("seconds", 0.) + results[index]["seconds"], 3)
         manifest = {
             "kind": KIND, "version": VERSION,
             "recipe": RECIPE, "dataconfigs": dataconfig_names(dataconfigs), "policy": policy_fields(policy),
@@ -369,6 +473,7 @@ def write_record_cache(path, *, dataconfigs, policy: CurriculumStreamPolicy, see
             "steps": steps, "batch_size": batch_size, "records": steps * batch_size,
             "genairr": genairr, "code": producing_code(),
             "chunk_records": chunk_records, "compression": f"zlib-{COMPRESSION_LEVEL}",
+            "segment_records": segment_records, "segments": len(segments), "boundaries_checked": joins,
             "bytes": sum(chunk["bytes"] for entry in components for chunk in entry["chunks"]),
             "workers": processes, "seconds": round(time.perf_counter() - start, 3),
             "created": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),

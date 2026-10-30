@@ -24,8 +24,7 @@ from alignair.train.assembly import TrainingStream, parallel_training_data
 from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
 from alignair.train.gym.workers import component_plan, parallel_records
 from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED
-from alignair_lab.records import (CachedRecordSource, component_counts, genairr_digest, write_record_cache,
-                                   writing_order)
+from alignair_lab.records import CachedRecordSource, component_counts, genairr_digest, write_record_cache
 from tests.support.training_streams import assert_same_runs, run, serial_records
 
 pytestmark = pytest.mark.integration
@@ -149,16 +148,6 @@ def test_the_writer_runs_a_process_per_stream_up_to_the_cpu_count(recipe_cache):
     assert manifest['workers'] == min(os.cpu_count(), RECIPE_STREAMS)
 
 
-def test_the_slow_selected_streams_are_written_first():
-    plan = component_plan(DATACONFIGS, policy=POLICY, seed=SEED)
-    order = writing_order(plan)
-    assert sorted(order) == list(range(RECIPE_STREAMS))
-    count = 3 * sum(share > 0 for share in POLICY.selected_shares())  # 3 of 4 streams of the 4 selected components
-    selected = [position for position in order if plan[position].parameters.get('productive_only', False)]
-    assert count == 12 and len(selected) == count and order[:count] == selected
-    assert selected == sorted(selected) and order[count:] == sorted(order[count:])  # each group in plan order
-
-
 def test_the_writer_reports_records_per_second_and_its_eta(tmp_path):
     lines = []
     manifest = write_record_cache(tmp_path / 'watched', dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED,
@@ -169,6 +158,48 @@ def test_the_writer_reports_records_per_second_and_its_eta(tmp_path):
     assert all(re.search(r'\d+/\d+ records \(\d+%\), \d+ of 7 streams done, [\d.]+ records/s, ETA ', line)
                for line in lines), lines
     assert lines[-1].startswith(f'{total}/{total} records (100%), 7 of 7 streams done')
+
+
+def test_a_cache_written_in_segments_is_the_serial_stream(cache, tmp_path, expected):
+    split = tmp_path / 'split'
+    write_record_cache(split, dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED, steps=STEPS,
+                       batch_size=BATCH_SIZE, workers=7, chunk_records=CHUNK, segment_records=50)
+    streams = json.loads((split / 'manifest.json').read_text())['components']
+    assert all(stream['segments'] == 8 and [chunk['records'] for chunk in stream['chunks']] == [50] * 7 + [16]
+               for stream in streams)
+    assert live(SERVED, record_source=CachedRecordSource(split)) == expected
+
+
+def test_selected_streams_written_in_segments_are_the_serial_streams(tmp_path):
+    split = tmp_path / 'split'
+    write_record_cache(split, dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=1, batch_size=BATCH_SIZE,
+                       segment_records=1)                                 # each of a stream's 3 records alone
+    streams = json.loads((split / 'manifest.json').read_text())['components']
+    assert all(stream['segments'] == RECIPE_STREAM_RECORDS for stream in streams)
+    assert live(RECIPE_SERVED, policy=POLICY, record_source=CachedRecordSource(split)) == \
+        live(RECIPE_SERVED, policy=POLICY)
+
+
+def test_segments_of_a_shiftable_provider_are_its_serial_stream(tmp_path):
+    from tests.alignair_lab.providers import shiftable
+    split = tmp_path / 'split'
+    manifest = write_record_cache(split, dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED, steps=1,
+                                  batch_size=BATCH_SIZE, segment_records=4, provider=shiftable)
+    assert manifest['boundaries_checked'] == sum(stream['segments'] - 1 for stream in manifest['components']) > 0
+    source = CachedRecordSource(split)
+    for planned in component_plan(DATACONFIGS, policy=UNSELECTED, seed=SEED):
+        entry = source.component(planned.reference, planned.parameters, planned.seed)
+        assert list(islice(source(planned.reference, planned.parameters, planned.seed), entry['records'])) == \
+            list(islice(shiftable(None, None, planned.seed), entry['records']))
+
+
+@pytest.mark.parametrize('provider,problem', [('unshiftable', 'not shiftable'), ('renamed', 'seq<k>')])
+def test_a_stream_that_cannot_be_drawn_in_segments_fails_the_write(tmp_path, provider, problem):
+    from tests.alignair_lab import providers
+    with pytest.raises(ConfigurationError, match=problem):
+        write_record_cache(tmp_path / 'split', dataconfigs=DATACONFIGS, policy=UNSELECTED, seed=SEED, steps=1,
+                           batch_size=BATCH_SIZE, segment_records=4, provider=getattr(providers, provider))
+    assert list(tmp_path.iterdir()) == []                                 # no cache, no partial directory
 
 
 def test_a_cache_directory_has_a_new_directorys_permissions(cache, tmp_path):
@@ -341,9 +372,10 @@ def test_require_draws_the_first_records_of_every_stream_live_and_compares_them(
 def test_the_cache_command_writes_the_recipes_cache(tmp_path, capsys):
     from alignair_lab.cli import main
     assert main(['cache', '--out', str(tmp_path / 'one'), '--steps', '1', '--workers', '2',
-                 '--progress-seconds', '0.05']) == 0
+                 '--progress-seconds', '0.05', '--segment-records', '2']) == 0
     manifest = CachedRecordSource(tmp_path / 'one').require(DATACONFIGS, policy=POLICY, seed=SEED, records=BATCH_SIZE)
     assert (manifest['steps'], manifest['batch_size'], manifest['workers']) == (1, BATCH_SIZE, 2)
+    assert manifest['segment_records'] == 2 and manifest['segments'] == 2 * RECIPE_STREAMS    # 3 records: 2 + 1
     printed = capsys.readouterr().out
     assert f"wrote {tmp_path / 'one'}: 64 records" in printed and 'records/s, ETA' in printed
     assert main(['cache', '--out', str(tmp_path / 'one'), '--steps', '1']) == 2
