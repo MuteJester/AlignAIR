@@ -84,3 +84,11 @@ def test_a_logit_peak_on_slot_n_is_reported_as_the_end():
                "end_mask": torch.arange(64)[None] <= n}
     start, end = decoded_boundaries(outputs, "j")
     assert end.tolist() == [n]
+
+
+def test_a_prediction_config_that_disagrees_with_the_model_boundary_mode_is_refused():
+    from alignair.errors import ConfigurationError
+    from alignair.predict import PredictConfig, predict
+    model = AlignAIR(_config()).eval()
+    with pytest.raises(ConfigurationError, match="boundary_mode"):
+        predict(model, [READ], _reference(), PredictConfig(max_seq_length=128, has_d=True))

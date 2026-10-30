@@ -12,6 +12,7 @@ import torch
 
 from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error_context
 from ..neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+from ..core.boundaries import read_window
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .encoders import encode_allele_sets
 from .projection import frame_offset_of, project_codons, projection_segments, translated_record_usable
@@ -73,7 +74,7 @@ def _window(sample, width, genes):
 
 
 def _limit(sample, config, genes, overflow):
-    width = config.max_seq_length - int(getattr(config, "boundary_mode", "residue") == "half_open")
+    width = read_window(config.max_seq_length, getattr(config, "boundary_mode", "residue"))
     if overflow not in ("prefix", "error"):
         raise ConfigurationError("overflow must be 'prefix' or 'error'")
     if len(sample.tokens) > width and overflow == "error":

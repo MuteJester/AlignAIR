@@ -6,6 +6,12 @@ import torch
 from ..errors import ConfigurationError
 
 
+def read_window(max_seq_length: int, boundary_mode: str = "residue") -> int:
+    """The longest read a model sees: the padded width, less the terminal slot a half-open model reserves for a
+    segment end at the read's length."""
+    return max_seq_length - int(boundary_mode == "half_open")
+
+
 def boundary_masks(tokens: torch.Tensor, mode: str = "half_open") -> tuple[torch.Tensor, torch.Tensor]:
     """Return start/end masks, with True marking an allowed boundary slot.
 

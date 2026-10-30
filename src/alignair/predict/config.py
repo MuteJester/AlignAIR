@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from ..core.boundaries import read_window
+
 
 @dataclass
 class PredictConfig:
@@ -25,4 +27,4 @@ class PredictConfig:
     @property
     def window(self) -> int:
         """The longest read the model sees: the padded width, less the end slot a half-open model reserves."""
-        return self.max_seq_length - int(self.boundary_mode == "half_open")
+        return read_window(self.max_seq_length, self.boundary_mode)

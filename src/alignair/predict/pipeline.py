@@ -95,6 +95,10 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     if (getattr(model_config, 'input_space', 'nucleotide') != 'nucleotide'
             or getattr(model_config, 'classification_mode', 'multilabel') != 'multilabel'):
         raise ConfigurationError('AIRR prediction requires the nucleotide multilabel allele profile; use Aligner.predict_raw for shared model outputs')
+    if getattr(model_config, 'boundary_mode', 'residue') != cfg.boundary_mode:
+        raise ConfigurationError('the prediction config and the model disagree on boundary_mode',
+                                 context={'field': 'boundary_mode', 'model': getattr(model_config, 'boundary_mode', 'residue'),
+                                          'config': cfg.boundary_mode})
     genes = _genes(cfg)
     # Tokenization, orientation, alignment and reported coordinates share the same normalized read.
     sequences, was_cropped = prepare_nucleotide_inputs(sequences, cfg.window)

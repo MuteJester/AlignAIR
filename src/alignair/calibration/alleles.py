@@ -20,6 +20,7 @@ def calibrate_allele_temperatures(model, reference, val_records, genes=None, dev
     """
     from ..data.inference import SequenceInputAdapter
     from ..data.inputs import prepare_nucleotide_inputs
+    from ..core.boundaries import read_window
     from ..data.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT, CenterPaddedTokenizer
     from ..predict.forward import output_numpy, prediction_batches
 
@@ -71,8 +72,8 @@ def calibrate_allele_temperatures(model, reference, val_records, genes=None, dev
                     raise InputError("temperature truth calls must be strings or absent", context={"gene": gene})
                 truth[gene].append({name.strip() for name in (call or "").split(",") if name.strip()})
     if input_space == "nucleotide":
-        sequences, _ = prepare_nucleotide_inputs(sequences,
-                                                   config.max_seq_length - int(getattr(config, "boundary_mode", "residue") == "half_open"))
+        sequences, _ = prepare_nucleotide_inputs(
+            sequences, read_window(config.max_seq_length, getattr(config, "boundary_mode", "residue")))
         adapter = SequenceInputAdapter(CenterPaddedTokenizer(), config.max_seq_length, device, vocab_size=6)
     else:
         adapter = SequenceInputAdapter(AAProteinTokenizer(), config.max_seq_length, device,

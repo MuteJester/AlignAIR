@@ -199,12 +199,13 @@ class Aligner:
         """
         from .data import prepare_nucleotide_inputs, normalize_sequence_inputs, SequenceValidationPolicy, SequenceInputAdapter
         from .data.inputs import sequence_batch_iterator
+        from .core.boundaries import read_window
         from .data.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT, CenterPaddedTokenizer
         from .predict.forward import collect_prediction_outputs, prediction_batches
         from .core.setup import _input_config
         cfg = self.model.cfg
         _input_config(cfg, cfg.input_space)
-        window = cfg.max_seq_length - int(cfg.boundary_mode == 'half_open')
+        window = read_window(cfg.max_seq_length, cfg.boundary_mode)
         if cfg.input_space == 'protein':
             batch = normalize_sequence_inputs(sequence_batch_iterator(sequences),
                 SequenceValidationPolicy(frozenset(AA_TOKEN_DICT), window), allow_records=False)
