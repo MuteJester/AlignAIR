@@ -66,13 +66,13 @@ def _suite(name="S1", *, reused=False) -> dict:
                      "substituted": []},
         "true_spans": {"scores": {"junction.nt_exact": _cell(0.8)}, "fallbacks": {"spans.d.unobserved": 5},
                        "seconds": {"forward": 0.5}, "substituted": ["orientation", "spans", "classifier_spans"]},
-        "argmax_decoder": {"scores": {"junction.nt_exact": _cell(0.75)}, "fallbacks": {},
+        "soft_decoder": {"scores": {"junction.nt_exact": _cell(0.75)}, "fallbacks": {},
                            "seconds": {"forward": 0.5}, "substituted": ["decoder"]},
     }
     contributions = [{"from": "baseline", "to": "true_spans", "stages": ["orientation", "segmentation"],
                       "metrics": {"junction.nt_exact": _entry(0.6, 0.8, 0.602, 0.8, "to_better"),
                                   "v.top1_in_set": _entry(0.9, 0.9, 0.9, 0.9, "tie_or_inconclusive")}}]
-    swaps = [{"from": "baseline", "to": "argmax_decoder",
+    swaps = [{"from": "baseline", "to": "soft_decoder",
               "metrics": {"junction.nt_exact": _entry(0.6, 0.75, 0.6, 0.75, "to_better"),
                           "v.top1_in_set": _entry(0.9, 0.85, 0.9, 0.85, "from_better")}}]
     return {"suite": name, "key": {"version": "1"},
@@ -98,7 +98,7 @@ def _report(suites=None, profile=PROFILE, against=None) -> dict:
              "code_sha256": "fedcba987654" + "1" * 52, "alignair_source": "/src/alignair", "torch_version": "2.4.0",
              "assay_code_sha256": "2" * 64}
     config = {"run_dir": "/runs/iter", "suites": list(suites), "device": "cuda", "batch_size": 256,
-              "variants": ["baseline", "true_spans", "argmax_decoder"], "max_cases": 500,
+              "variants": ["baseline", "true_spans", "soft_decoder"], "max_cases": 500,
               "profile": profile is not None, "seconds": 41.5}
     return build_diagnostics_report(model=model, config=config, suites=suites, profile=profile, against=against)
 
@@ -189,7 +189,7 @@ def test_the_summary_page_renders_every_section_in_order():
 def test_where_the_error_comes_from():
     section = _section(diagnostics_markdown(_report()), "Where the end-to-end error comes from")
     assert ("| Suite | Baseline | Δ orientation | Δ segmentation | Δ calls | Δ germline | true_germline (gap) | "
-            "Δ argmax_decoder | n paired |") in section
+            "Δ soft_decoder | n paired |") in section
     # A step spanning two stages (true_orientation was not run) sits under its last stage and names both; bold is
     # significant.
     assert ("| S1 | 60.0% (n=10, 100%) | — | **+19.8 pp** (orientation + segmentation) | — | — | — | **+15.0 pp** "
@@ -239,7 +239,7 @@ def test_flags():
     assert "Stale builds" in text and "S3 (truth_source)" in text
     assert "Baseline coverage below 95%: S1 junction.nt_exact 90.0%." in text
     assert "S1 spans.d.unobserved 10.0% (true_spans)" in text  # 5 of 50 diagnosed reads
-    assert "S1 baseline → argmax_decoder v.top1_in_set -5.0 pp" in text  # significantly worse
+    assert "S1 baseline → soft_decoder v.top1_in_set -5.0 pp" in text  # significantly worse
     assert "Too few clusters" in text and "S1 (1 comparisons, 5 clusters)" in text
     assert "S1 3 cropped" in text
     # A clean report flags only the Holm-family note.
@@ -253,7 +253,7 @@ def test_scalars_flatten_the_summary():
     scalars = diagnostics_scalars(_report()["summary"])
     assert scalars["S1/baseline/junction.nt_exact"] == 0.6
     assert scalars["S1/delta/segmentation/junction.nt_exact"] == pytest.approx(0.198)
-    assert scalars["S1/delta/argmax_decoder/junction.nt_exact"] == pytest.approx(0.15)
+    assert scalars["S1/delta/soft_decoder/junction.nt_exact"] == pytest.approx(0.15)
     assert scalars["S1/heads/head.v.start_exact.soft"] == 0.907
     assert scalars["S1/heads/head.j.end_exact.argmax"] == 0.843
     assert scalars["S1/heads/head.orientation.correct"] == 0.997
@@ -330,7 +330,7 @@ def test_calibration_single_swaps_and_fallbacks():
     assert "| 0.0–0.1 |" not in calibration  # empty bins are left out
 
     swaps = _section(md, "Single-swap variants")
-    assert "### baseline → argmax_decoder" in swaps
+    assert "### baseline → soft_decoder" in swaps
     assert "| v.top1_in_set | 90.0% (n=10, 100%) | 85.0% (n=9, 90%) | 9 | 90.0% | 85.0% | -5.0 pp |" in swaps
     assert "| worse |" in swaps
 

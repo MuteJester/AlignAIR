@@ -346,7 +346,7 @@ def test_cached_diagnostics_are_never_served_stale(built, tmp_path, save_checkpo
 
     assert not computed()
     # Another variant set, case count, batch size or device: computed again.
-    for change in (dict(variants=("baseline", "argmax_decoder")), dict(max_cases=1), dict(batch_size=8),
+    for change in (dict(variants=("baseline", "soft_decoder")), dict(max_cases=1), dict(batch_size=8),
                    dict(device="cpu:0")):
         assert computed(**change) and not computed(**change), change
     assert computed() and not computed()
@@ -591,9 +591,9 @@ def test_max_cases_takes_an_evenly_spaced_subset(built, tmp_path, small_model, r
 
 def test_the_baseline_is_always_scored_with_another_variant(built, tmp_path, small_model):
     layout = _copy(built, tmp_path)
-    result = evaluate(small_model, layout, ["S0"], **{**FAST, "variants": ("argmax_decoder",)})
-    assert list(result.suites["S0"]["variants"]) == ["baseline", "argmax_decoder"]
-    assert [swap["to"] for swap in result.suites["S0"]["swaps"]] == ["argmax_decoder"]
+    result = evaluate(small_model, layout, ["S0"], **{**FAST, "variants": ("soft_decoder",)})
+    assert list(result.suites["S0"]["variants"]) == ["baseline", "soft_decoder"]
+    assert [swap["to"] for swap in result.suites["S0"]["swaps"]] == ["soft_decoder"]
     # No variant at all: the heads, the calibration and the profile only.
     result = evaluate(small_model, layout, ["S0"], **{**FAST, "variants": ()})
     suite = result.suites["S0"]
@@ -604,7 +604,7 @@ def test_comparisons_are_clustered_by_the_suites_groups(built, tmp_path, small_m
     # No built suite here has clones or pairs, so the S1 reads are clustered by donor: the evaluator must build the
     # clusters from the suite's truth once and pass them to every comparison.
     layout = _copy(built, tmp_path)
-    plain = evaluate(small_model, layout, ["S1"], **{**FAST, "variants": ("argmax_decoder",)})
+    plain = evaluate(small_model, layout, ["S1"], **{**FAST, "variants": ("soft_decoder",)})
     assert plain.suites["S1"]["clusters"] == {"keys": [], "clusters": 0, "cases": 0}
     entry = plain.suites["S1"]["swaps"][0]["metrics"]["v.top1_in_set"]
     assert entry["n_clusters"] == entry["n_paired"]
@@ -619,7 +619,7 @@ def test_comparisons_are_clustered_by_the_suites_groups(built, tmp_path, small_m
     monkeypatch.setattr(diagnose_module, "cluster_ids", by_donor)
     monkeypatch.setattr(diagnose_module, "CLUSTER_KEYS", ("subject",))
     result = evaluate(small_model, _copy(built, tmp_path / "again"), ["S1"],
-                      **{**FAST, "variants": ("true_orientation", "argmax_decoder")})
+                      **{**FAST, "variants": ("true_orientation", "soft_decoder")})
     assert seen == [100]
     suite = result.suites["S1"]
     donors = len({case["groups"]["subject"] for case in read_cases(built.cases("S1"))})
@@ -635,7 +635,7 @@ def test_a_suite_of_singleton_clusters_is_not_cluster_aware(built, tmp_path, sma
     monkeypatch.setattr(diagnose_module, "cluster_ids", lambda truths: {t.case_id: f"pair:{t.case_id}" for t in truths})
     monkeypatch.setattr(diagnose_module, "CLUSTER_KEYS", ("subject",))
     layout = _copy(built, tmp_path)
-    result = evaluate(small_model, layout, ["S1"], **{**FAST, "variants": ("argmax_decoder",)})
+    result = evaluate(small_model, layout, ["S1"], **{**FAST, "variants": ("soft_decoder",)})
     assert result.suites["S1"]["clusters"] == {"keys": [], "clusters": 0, "cases": 0}
     assert result.summary["clustered"] == {}
     assert "- Cluster-aware comparisons: none" in result.report_md
@@ -665,13 +665,13 @@ def test_diagnose_command_writes_the_report_and_reuses_it(built, tmp_path, save_
     layout = _copy(built, tmp_path)
     checkpoint = save_checkpoint(tmp_path / "model.alignair")
     argv = ["diagnose", "--run-dir", str(layout.root), "--checkpoint", str(checkpoint), "--suites", "S0",
-            "--device", "cpu", "--batch-size", "16", "--variants", "argmax_decoder", "--no-profile",
+            "--device", "cpu", "--batch-size", "16", "--variants", "soft_decoder", "--no-profile",
             "--max-cases", "2"]
     assert main(argv) == 0
     out = capsys.readouterr().out
     (key,) = [path.name for path in layout.diagnostics_root.iterdir()]
     report = json.loads(layout.diagnostics_json(key).read_text())
-    assert report["config"]["variants"] == ["baseline", "argmax_decoder"]
+    assert report["config"]["variants"] == ["baseline", "soft_decoder"]
     assert (report["config"]["max_cases"], report["config"]["batch_size"], report["profile"]) == (2, 16, None)
     assert layout.diagnostics_md(key).read_text().startswith(f"# AlignAIR diagnostics: model {key}")
     assert "S0: computed 2 reads (of 2)" in out and f"report: {layout.diagnostics_md(key)}" in out

@@ -100,7 +100,7 @@ def _key(checkpoint) -> str:
 
 def test_each_suite_record_stores_its_per_case_scores(built, tmp_path, small_model):
     layout = _copy(built, tmp_path)
-    result = evaluate(small_model, layout, ["S1"], **{**FAST, "variants": ("baseline", "argmax_decoder")},
+    result = evaluate(small_model, layout, ["S1"], **{**FAST, "variants": ("baseline", "soft_decoder")},
                       max_cases=40)
     suite = result.suites["S1"]
     path = layout.diagnostics_suite_cases(result.model_key, "S1")
@@ -109,7 +109,7 @@ def test_each_suite_record_stores_its_per_case_scores(built, tmp_path, small_mod
     assert [line["case_id"] for line in lines] == [
         case["case_id"] for case in select_cases(read_cases(layout.cases("S1")), 40)]
     assert all(set(line) == {"case_id", "head", "baseline", "variants"} for line in lines)
-    assert all(set(line["variants"]) == {"argmax_decoder"} for line in lines)
+    assert all(set(line["variants"]) == {"soft_decoder"} for line in lines)
     header = read_header(path)
     assert (header["model_key"], header["suite"]) == (result.model_key, "S1")
     # the record names the file by its digest
@@ -125,7 +125,7 @@ def test_each_suite_record_stores_its_per_case_scores(built, tmp_path, small_mod
 
     assert summary("head") == suite["heads"]
     assert summary("baseline") == suite["variants"]["baseline"]["scores"]
-    assert summary(None, "argmax_decoder") == suite["variants"]["argmax_decoder"]["scores"]
+    assert summary(None, "soft_decoder") == suite["variants"]["soft_decoder"]["scores"]
     for line in lines:
         read = scores[line["case_id"]]["baseline"] or {}
         for name, value in (line["baseline"] or {}).items():
@@ -282,7 +282,7 @@ def test_the_other_model_is_diagnosed_first_with_the_same_settings(built, tmp_pa
                                                                    replays):
     layout = _copy(built, tmp_path)
     checkpoint = save_checkpoint(tmp_path / "other.alignair", seed=2)
-    options = dict(device="cpu", batch_size=8, variants=("argmax_decoder",), profile=False, max_cases=7)
+    options = dict(device="cpu", batch_size=8, variants=("soft_decoder",), profile=False, max_cases=7)
     result = evaluate(small_model, layout, ["S0", "S1"], **options, against=str(checkpoint))
     other = result.against["baseline"]
     assert other == _key(checkpoint) and result.against["summary"]["source"] == str(checkpoint)
@@ -350,7 +350,7 @@ def test_a_comparison_of_other_reads_or_settings_is_refused(built, tmp_path, sma
     before = len(replays)
     # Other settings: refused before any work, naming the setting.
     for change, field in ((dict(max_cases=5), "max_cases"), (dict(batch_size=8), "batch_size"),
-                          (dict(variants=("argmax_decoder",)), "variants"), (dict(device="cpu:0"), "device")):
+                          (dict(variants=("soft_decoder",)), "variants"), (dict(device="cpu:0"), "device")):
         with pytest.raises(ValueError, match=rf"differ.*\b{field}\b"):
             evaluate(small_model, layout, ["S0"], **{**FAST, "max_cases": 10, **change}, against=other)
     # A model key with no diagnostics of a suite.

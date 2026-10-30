@@ -234,9 +234,9 @@ and reused, and the wall time; which comparisons are cluster-aware. Then:
 1. *Where the end-to-end error comes from*: one row per suite for `clone_key.exact` and for `junction.nt_exact`.
    The baseline (n, coverage); the Δ of each stage's truth in percentage points (orientation, segmentation, calls,
    germline), bold when significant and marked "(worse)" when significantly worse; `true_germline` with the gap
-   left to 100% (the metadata heads and the AIRR assembly); the `argmax_decoder` swap's Δ; n paired (K clusters).
+   left to 100% (the metadata heads and the AIRR assembly); the `soft_decoder` swap's Δ; n paired (K clusters).
 2. *Calls*: V / D / J top-1 in set at baseline, the true calls' Δ, the allele head's top-1 → top-3 and its ECE.
-3. *Boundaries: decoder vs network*: each edge's exact rate under the product's soft-argmax → the logits' argmax,
+3. *Boundaries: decoder vs network*: each edge's exact rate under the soft-argmax → the logits' argmax (the product's decoder),
    as "7→44". A large jump points at the decoder, not the network.
 4. *Metadata heads*: orientation and productive accuracy, mutation-rate and indel-count absolute error.
 5. *Speed*: reads per second, and the top three stages and modules with their shares.
@@ -1390,9 +1390,9 @@ read.
 
 - `orientation`: the ids are teacher-forced in the forward pass (`batch["orientation"]`) and replace the predicted
   orientation before `canonicalize`. The orientation head's own logits are unchanged.
-- `decoder="argmax"`: `correct_segments` receives `argmax_boundaries` of the position logits instead of the
-  soft-argmax expectations. This is the same decoder as the head metrics' `argmax`, with ends on `0..n`. The
-  classifier still reads the expectations.
+- `decoder="soft"`: `correct_segments` receives the soft-argmax expectations instead of the argmax of the position
+  logits that the product reports (`alignair.predict.decode`, the same decoder as the head metrics' `argmax`, with
+  ends on `0..n`). The classifier reads the expectations either way. The default is `"argmax"`: a pure replay.
 - `spans` (gene -> starts and ends, in the model's forward frame, 0-based and end-exclusive):
   - With `segment_spans` (the default), they replace the corrected `Segments`. `low_quality` keeps
     `correct_segments`' meaning (a V or J of zero length). A given span is never re-ordered against the model's
@@ -1535,7 +1535,8 @@ exactly as a tool's are.
 | `true_germline` | the truth germline alignment of each observed segment (allele, read and germline coordinates, CIGAR) in place of the matcher |
 
 The single swaps (`SINGLE_SWAPS`) each change one thing on the baseline:
-- `argmax_decoder`: segments from the argmax of the position logits; the classifier is unchanged.
+- `soft_decoder`: segments from the soft-argmax expectations (the decoder the product used before it decoded by
+  argmax); the classifier is unchanged.
 - `true_classifier_spans`: truth spans into the classifier only; the segments stay the model's.
 
 `DEFAULT_VARIANTS` is both lists.

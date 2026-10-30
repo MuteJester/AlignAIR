@@ -15,8 +15,8 @@ donors' genotypes when given).
 
 What still differs from the oracle after ``true_germline`` comes from the metadata heads (the productive and indel
 predictions that gate the assembly) and the AIRR assembly itself. The single swaps (``SINGLE_SWAPS``) change one
-thing on the baseline: ``argmax_decoder`` (segments from the argmax of the position logits, the classifier
-unchanged) and ``true_classifier_spans`` (truth spans into the classifier only; the segments stay the model's).
+thing on the baseline: ``soft_decoder`` (segments from the soft-argmax expectations, the decoder the product used before it decoded
+by argmax; the classifier unchanged) and ``true_classifier_spans`` (truth spans into the classifier only; the segments stay the model's).
 
 **Truth in AlignAIR's terms** (``substitutions_for``). AlignAIR works on the read it saw: the first 576 bases of the
 presented read (the canonical prefix of a forward read, the canonical suffix of a reverse-complemented one), in its
@@ -77,7 +77,7 @@ from alignair_assay.truth.model import ObservableTruth
 
 # The cumulative chain, in order, and the single swaps on the baseline.
 VARIANTS: tuple[str, ...] = ("baseline", "true_orientation", "true_spans", "true_calls", "true_germline")
-SINGLE_SWAPS: tuple[str, ...] = ("argmax_decoder", "true_classifier_spans")
+SINGLE_SWAPS: tuple[str, ...] = ("soft_decoder", "true_classifier_spans")
 DEFAULT_VARIANTS: tuple[str, ...] = VARIANTS + SINGLE_SWAPS
 # The stage whose truth each step of the chain adds.
 STAGE_OF = {"true_orientation": "orientation", "true_spans": "segmentation", "true_calls": "allele_calls",
@@ -86,7 +86,7 @@ STAGE_OF = {"true_orientation": "orientation", "true_spans": "segmentation", "tr
 _CHAIN = ({"orientation"}, {"spans", "classifier"}, {"calls"}, {"germline"})
 _FIELDS: dict[str, frozenset[str]] = {
     **{name: frozenset().union(*_CHAIN[:k]) for k, name in enumerate(VARIANTS)},
-    "argmax_decoder": frozenset({"decoder"}),
+    "soft_decoder": frozenset({"decoder"}),
     "true_classifier_spans": frozenset({"classifier"}),
 }
 # The likelihood written for a substituted (truth) call.
@@ -127,7 +127,7 @@ def substitutions_for(variant: str, truths: Sequence[ObservableTruth], outputs_b
     if variant not in _FIELDS:
         raise ValueError(f"unknown variant {variant!r}; known: {', '.join(DEFAULT_VARIANTS)}")
     fields = _FIELDS[variant]
-    decoder = "argmax" if "decoder" in fields else "soft"
+    decoder = "soft" if "decoder" in fields else "argmax"
     if not fields - {"decoder"}:
         return Substitutions(decoder=decoder), {}
     out = outputs_baseline

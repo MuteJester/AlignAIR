@@ -29,8 +29,9 @@ the product functions the replay mirrors.
   the network after the orientation head runs on the read in the given frame, and set as the predicted orientation
   before ``canonicalize`` (the orientation head's own output is unchanged), so the read, the coordinates and the
   records are in that frame.
-- ``decoder="argmax"``: the boundaries ``correct_segments`` receives are the argmax of the position logits
-  (``argmax_boundaries``) instead of the soft-argmax expectations. The classifier still reads the expectations.
+- ``decoder="soft"``: the boundaries ``correct_segments`` receives are the model's soft-argmax expectations (the
+  decoder the product used before it decoded by argmax) instead of the argmax of the position logits that
+  ``pipeline.clean`` reports. The classifier reads the expectations either way.
 - ``spans``: replace the corrected ``Segments`` of the given reads and genes (``segment_spans``), and with
   ``classifier_spans`` are fed to each gene's classifier (``model.branches[g].classify`` on the re-embedded read, the
   public seam of ``AlignAIR.forward``, with the trunk's features of that read for a model with a trunk) in place of
@@ -68,7 +69,7 @@ from alignair_assay.core.reference import Reference
 # The replayed stages, in pipeline order: the keys of ``StageOutputs.seconds``.
 STAGES = ("input_policy", "forward", "clean", "masks", "canonicalize", "segments", "alleles", "germline", "records",
           "airr")
-# "soft": the soft-argmax expectation the product decodes boundaries with; "argmax": the logits' argmax.
+# "argmax": the logits' argmax, which the product decodes boundaries with; "soft": the soft-argmax expectation.
 DECODERS = ("soft", "argmax")
 
 
@@ -124,7 +125,7 @@ class Substitutions:
     # gene -> alignair.predict.state.GermlineAlignment per read: forward-frame read coordinates, ungapped germline
     # coordinates of the read's top-1 call
     germline: dict[str, list] | None = None
-    decoder: str = "soft"
+    decoder: str = "argmax"
 
     def __post_init__(self) -> None:
         if self.decoder not in DECODERS:
@@ -141,7 +142,7 @@ class Substitutions:
                  and (name != "spans" or self.segment_spans)]
         if self.classifier_spans:
             names.append("classifier_spans")
-        if self.decoder != "soft":
+        if self.decoder != "argmax":
             names.append("decoder")
         return tuple(names)
 
@@ -253,10 +254,9 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
         seq_lens = np.array([len(s) for s in canonical])
     with _timed(seconds, "segments"):
         start, end = preds.start, preds.end
-        if subs.decoder == "argmax":
-            decoded = {g: argmax_boundaries(raw[f"{g}_start_logits"], raw[f"{g}_end_logits"], seq_lens)
-                       for g in genes}
-            start, end = {g: decoded[g][0] for g in genes}, {g: decoded[g][1] for g in genes}
+        if subs.decoder == "soft":
+            start = {g: raw[f"{g}_start"].reshape(-1) for g in genes}
+            end = {g: raw[f"{g}_end"].reshape(-1) for g in genes}
         segments = pipeline.correct_segments(start, end, seq_lens, cfg.max_seq_length, cfg.pad_mode)
         if subs.spans is not None and subs.segment_spans:
             segments = _substitute_spans(segments, subs.spans)
@@ -278,7 +278,7 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
 
 
 def argmax_boundaries(start_logits, end_logits, lengths) -> tuple[np.ndarray, np.ndarray]:
-    """The argmax decoder: per read, ``(starts, ends)`` (0-based, end-exclusive) as the argmax of the position logits
+    """The argmax decoder (the product's ``alignair.predict.decode``): per read, ``(starts, ends)`` (0-based, end-exclusive) as the argmax of the position logits
     over the read's coordinates. A start lies on a read base (``0..n-1``); an end-exclusive end on ``0..n``, where
     position ``n`` (one past the last base) exists when the read is shorter than the logits window, so a segment that
     runs to the read end can be decoded. Logits past the read are never decoded. The model's own soft-argmax is

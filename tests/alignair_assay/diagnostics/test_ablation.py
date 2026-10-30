@@ -116,7 +116,7 @@ def _standard():
 
 def test_variant_names():
     assert VARIANTS == ("baseline", "true_orientation", "true_spans", "true_calls", "true_germline")
-    assert SINGLE_SWAPS == ("argmax_decoder", "true_classifier_spans")
+    assert SINGLE_SWAPS == ("soft_decoder", "true_classifier_spans")
     assert DEFAULT_VARIANTS == VARIANTS + SINGLE_SWAPS
 
 
@@ -126,7 +126,7 @@ def test_true_germline_substitutions_in_the_model_frame():
     subs, fallbacks = substitutions_for("true_germline", truths, outputs)
 
     assert subs.active() == ("orientation", "spans", "calls", "germline", "classifier_spans")
-    assert subs.segment_spans and subs.decoder == "soft"
+    assert subs.segment_spans and subs.decoder == "argmax"
     # every scored read gets its truth orientation; the excluded case and the read without truth get the model's own
     # (so the replay needs no second forward pass for them)
     assert subs.orientation == [0, 1, 0, 0, 0, 0, 2, 0]
@@ -167,11 +167,11 @@ def test_cumulative_variants_add_one_stage_each():
                 "true_spans": ("orientation", "spans", "classifier_spans"),
                 "true_calls": ("orientation", "spans", "calls", "classifier_spans"),
                 "true_germline": ("orientation", "spans", "calls", "germline", "classifier_spans"),
-                "argmax_decoder": ("decoder",), "true_classifier_spans": ("classifier_spans",)}
+                "soft_decoder": ("decoder",), "true_classifier_spans": ("classifier_spans",)}
     found = {name: substitutions_for(name, truths, outputs) for name in DEFAULT_VARIANTS}
     assert {name: subs.active() for name, (subs, _) in found.items()} == expected
     assert found["baseline"] == (Substitutions(), {}) and found["true_orientation"][1] == {}
-    assert found["argmax_decoder"] == (Substitutions(decoder="argmax"), {})
+    assert found["soft_decoder"] == (Substitutions(decoder="soft"), {})
     assert set(found["true_spans"][1]) == {"spans.v.cropped", "spans.d.unobserved", "spans.j.unscorable"}
     assert found["true_spans"][0].spans == found["true_germline"][0].spans
 
@@ -288,11 +288,11 @@ def test_unobserved_segments_fall_back_to_the_model_and_are_counted(make_shaped_
         assert "d.spurious_call" in results["true_germline"].scores[case_id]
 
 
-def test_argmax_decoder_changes_only_coordinates(small_model, s0_cases, s0_truths, reference):
+def test_soft_decoder_changes_only_coordinates(small_model, s0_cases, s0_truths, reference):
     model, reference_set = small_model
     results = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
-                           batch_size=BATCH, variants=("baseline", "argmax_decoder"))
-    base, argmax = results["baseline"].rows, results["argmax_decoder"].rows
+                           batch_size=BATCH, variants=("baseline", "soft_decoder"))
+    base, argmax = results["baseline"].rows, results["soft_decoder"].rows
     for a, b in zip(base, argmax):
         for g in GENES:
             assert (a[f"{g}_call"], a[f"{g}_calls"], a[f"{g}_likelihoods"]) == \
@@ -300,6 +300,18 @@ def test_argmax_decoder_changes_only_coordinates(small_model, s0_cases, s0_truth
         assert a["mutation_rate"] == b["mutation_rate"] and a["productive_prediction"] == b["productive_prediction"]
     coordinates = [f"{g}_sequence_{edge}" for g in GENES for edge in ("start", "end")]
     assert any(a.get(key) != b.get(key) for a, b in zip(base, argmax) for key in coordinates)
+
+
+def test_the_assay_variant_still_compares_two_decoders(small_model, s0_cases, s0_truths, reference):
+    model, reference_set = small_model
+    truths, lengths = _standard()
+    outputs = _outputs(lengths, [0, 1, 0, 0, 0, 0, 2, 0])
+    # the baseline is the product's decoder (the argmax) and the swap is the one it replaced (the soft expectation)
+    assert substitutions_for("baseline", truths, outputs)[0].decoder == "argmax"
+    assert substitutions_for("soft_decoder", truths, outputs)[0].decoder == "soft"
+    results = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
+                           batch_size=BATCH, variants=("baseline", "soft_decoder"))
+    assert results["baseline"].rows != results["soft_decoder"].rows
 
 
 def test_run_variants_checks_its_inputs(small_model, s0_cases, s0_truths, reference):
@@ -341,15 +353,15 @@ def test_run_variants_reuses_a_given_baseline_replay(small_model, s0_cases, s0_t
     handle = model.orientation_head.register_forward_hook(lambda *_: calls.append(1))  # once per forward pass
     try:
         given = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
-                             batch_size=BATCH, variants=("baseline", "argmax_decoder"), _baseline=baseline)
+                             batch_size=BATCH, variants=("baseline", "soft_decoder"), _baseline=baseline)
         assert len(calls) == math.ceil(len(ids) / BATCH)  # the argmax variant's replay only
     finally:
         handle.remove()
     own = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
-                       batch_size=BATCH, variants=("baseline", "argmax_decoder"))
+                       batch_size=BATCH, variants=("baseline", "soft_decoder"))
     assert given["baseline"].rows == own["baseline"].rows == baseline.airr_rows
-    assert given["argmax_decoder"].rows == own["argmax_decoder"].rows
-    assert _same_scores(given["argmax_decoder"].scores, own["argmax_decoder"].scores)
+    assert given["soft_decoder"].rows == own["soft_decoder"].rows
+    assert _same_scores(given["soft_decoder"].scores, own["soft_decoder"].scores)
     with pytest.raises(ValueError, match="baseline replay is of other reads"):
         run_variants(model, reference_set, s0_cases[:4], s0_truths, reference=reference, device="cpu",
                      batch_size=BATCH, variants=("baseline",), _baseline=baseline)
@@ -369,7 +381,7 @@ def test_stage_contributions_pair_the_chain_in_order():
     spans["c0"]["m.abs_err"] = math.nan  # not covered
     del spans["c1"]["m.abs_err"]  # not applicable
     results = {"baseline": _result("baseline", base), "true_orientation": _result("true_orientation", orient),
-               "true_spans": _result("true_spans", spans), "argmax_decoder": _result("argmax_decoder", orient)}
+               "true_spans": _result("true_spans", spans), "soft_decoder": _result("soft_decoder", orient)}
     metrics = ["m.acc", "m.abs_err"]
     out = stage_contributions(results, metrics)
     assert [(e["from"], e["to"], e["stages"]) for e in out] == [
@@ -394,7 +406,7 @@ def test_stage_contributions_pair_the_chain_in_order():
         ("baseline", "true_spans", ["orientation", "segmentation"])]
     # Single swaps are each compared with the baseline.
     swaps = swap_effects(results, metrics)
-    assert [(e["from"], e["to"]) for e in swaps] == [("baseline", "argmax_decoder")]
+    assert [(e["from"], e["to"]) for e in swaps] == [("baseline", "soft_decoder")]
     assert swaps[0]["metrics"]["m.acc"]["delta"] == 0.75
 
 
@@ -410,7 +422,7 @@ def test_contributions_show_the_paired_means_beside_the_delta():
     assert entry["mean_from"] == pytest.approx((10.0 + 19 * 2.0) / 20)  # its own mean, over its 20 cases
     assert (entry["mean_from_paired"], entry["mean_to_paired"], entry["n_paired"]) == (2.0, 1.0, 19)
     assert entry["delta"] == entry["mean_to_paired"] - entry["mean_from_paired"] == -1.0
-    swap = swap_effects({"baseline": results["baseline"], "argmax_decoder": _result("argmax_decoder", orient)},
+    swap = swap_effects({"baseline": results["baseline"], "soft_decoder": _result("soft_decoder", orient)},
                         ["m.abs_err"])[0]["metrics"]["m.abs_err"]
     assert (swap["mean_from_paired"], swap["mean_to_paired"]) == (2.0, 1.0)
 
@@ -422,7 +434,7 @@ def test_comparisons_are_clustered_by_the_given_clusters():
     base = {c: {"m.acc": 0.0} for c in ids}
     fixed = {c: {"m.acc": float(i < 10)} for i, c in enumerate(ids)}
     results = {"baseline": _result("baseline", base), "true_orientation": _result("true_orientation", fixed),
-               "argmax_decoder": _result("argmax_decoder", fixed)}
+               "soft_decoder": _result("soft_decoder", fixed)}
     reads = stage_contributions(results, ["m.acc"])[0]["metrics"]["m.acc"]
     assert (reads["n_paired"], reads["n_clusters"], reads["test"], reads["verdict"]) == (40, 40, "mcnemar_exact",
                                                                                         "to_better")

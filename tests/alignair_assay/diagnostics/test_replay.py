@@ -266,7 +266,7 @@ def test_substitutions_name_what_they_substitute():
     spans = {"v": ([0], [10])}
     assert Substitutions().active() == ()
     assert Substitutions(orientation=[0], spans=spans, classifier_spans=True, calls={"v": [None]},
-                         germline={"v": [None]}, decoder="argmax").active() == (
+                         germline={"v": [None]}, decoder="soft").active() == (
         "orientation", "spans", "calls", "germline", "classifier_spans", "decoder")
     # spans fed into the classifier only: the segments keep the model's
     assert Substitutions(spans=spans, classifier_spans=True, segment_spans=False).active() == ("classifier_spans",)
@@ -440,25 +440,29 @@ def test_germline_alignments_replace_the_matcher(make_shaped_model, s0_reads, mo
         _sub(model, reference_set, seqs, ids, germline=outside)
 
 
-def test_argmax_decoder_segments_the_logits_argmax(small_model, s0_reads):
+def test_the_product_decodes_by_argmax_and_the_soft_decoder_substitutes_the_expectations(small_model, s0_reads):
     model, reference_set = small_model
     ids, seqs = _inputs(s0_reads)
     base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
-    out = _sub(model, reference_set, seqs, ids, decoder="argmax")
+    soft = _sub(model, reference_set, seqs, ids, decoder="soft")
     lengths = np.array([len(read) for read in base.canonical])
     decoded = {g: argmax_boundaries(base.raw[f"{g}_start_logits"], base.raw[f"{g}_end_logits"], lengths)
                for g in GENES}
-    # the heads' argmax decoder is the same implementation
+    # the replay's baseline is the product: the heads' argmax decoder is the same implementation
     for g in GENES:
         assert all(np.array_equal(a, b) for a, b in zip(decoded[g], decode_boundaries(base, g, "argmax")))
     expected = pipeline.correct_segments({g: decoded[g][0] for g in GENES}, {g: decoded[g][1] for g in GENES},
                                          lengths, 576, "right")
+    expectation = pipeline.correct_segments({g: base.raw[f"{g}_start"].reshape(-1) for g in GENES},
+                                            {g: base.raw[f"{g}_end"].reshape(-1) for g in GENES}, lengths, 576, "right")
     for g in GENES:
-        assert np.array_equal(out.segments.start[g], expected.start[g])
-        assert np.array_equal(out.segments.end[g], expected.end[g])
-    assert np.array_equal(out.segments.low_quality, expected.low_quality)
-    assert any(not np.array_equal(out.segments.start[g], base.segments.start[g]) for g in GENES)
-    assert out.calls == base.calls and _same_raw(out, base)
+        assert np.array_equal(base.segments.start[g], expected.start[g])
+        assert np.array_equal(base.segments.end[g], expected.end[g])
+        assert np.array_equal(soft.segments.start[g], expectation.start[g])
+        assert np.array_equal(soft.segments.end[g], expectation.end[g])
+    assert np.array_equal(soft.segments.low_quality, expectation.low_quality)
+    assert any(not np.array_equal(soft.segments.start[g], base.segments.start[g]) for g in GENES)
+    assert soft.calls == base.calls and _same_raw(soft, base)
 
 
 def test_argmax_boundaries_range():

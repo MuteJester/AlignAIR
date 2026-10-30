@@ -11,9 +11,9 @@ rendered by ``report.diagnostics_against``. Three renderings here:
   ``AGAINST_SECTION`` first (``report.diagnostics_against.against_section``). Then ``SUMMARY_SECTIONS``:
   1. **Where the end-to-end error comes from**: per suite, for ``clone_key.exact`` and ``junction.nt_exact``, the
      baseline, the Δ of each stage's truth (bold when significant, marked when worse), what is left after every
-     stage's truth, the argmax decoder's Δ and the paired count (with its clusters);
+     stage's truth, the soft decoder's Δ and the paired count (with its clusters);
   2. **Calls**: per suite and gene, the baseline top-1 in set, the true calls' Δ, the head's top-1 → top-3 and ECE;
-  3. **Boundaries: decoder vs network**: each edge's exact rate under the product's soft-argmax → the logits' argmax;
+  3. **Boundaries: decoder vs network**: each edge's exact rate under the soft-argmax → the logits' argmax, which the product decodes with;
   4. **Metadata heads**: orientation, productive, mutation rate and indel count;
   5. **Speed**: reads per second and the top stages and modules;
   6. **Flags**: at most ``MAX_FLAGS`` bullets on what qualifies the numbers above.
@@ -79,17 +79,17 @@ _READS = ("built", "diagnosed", "scored", "excluded", "cropped")
 _ERRORS_NOTE = ("Each Δ is the change when the truth of one more stage is fed in (in percentage points), given "
                 "perfect upstream stages; the steps need not add up. Bold: significant (Holm within the step); "
                 "(worse): significantly worse. true_germline: every stage's truth fed in, with the gap left to 100% "
-                "(the metadata heads and the AIRR assembly). argmax_decoder: the product's soft-argmax boundaries "
-                "replaced by the position logits' argmax, nothing else changed.")
+                "(the metadata heads and the AIRR assembly). soft_decoder: the product's argmax boundaries "
+                "replaced by the soft-argmax expectations, nothing else changed.")
 _CALLS_NOTE = ("Each cell is V / D / J. Top-1 in set: the product's call at baseline. Δ true calls: feeding the "
                "truth call after the truth orientation and spans (bold: significant). Head: the calibrated allele "
                "head's top-1 → top-3 in the truth set. ECE: the top-1 probability's expected calibration error.")
-_BOUNDARIES_NOTE = ("Exact-boundary rate (%) under the product's soft-argmax decoder → the position logits' argmax. "
+_BOUNDARIES_NOTE = ("Exact-boundary rate (%) under the soft-argmax decoder → the position logits' argmax, the product's decoder. "
                     "A large jump is the decoder, not the network.")
 _HEADS_NOTE = ("The raw head outputs of the product pipeline (the baseline replay), scored against observable "
                "truth before any post-processing. Boundaries are 0-based and end-exclusive. soft: the floor of the "
-               "soft-argmax expectation the product decodes with; argmax: the position logits' argmax, whose end "
-               "can reach the read end (the soft-argmax cannot). Exact: the edge is inside the truth interval; "
+               "soft-argmax expectation, the decoder before the argmax; argmax: the position logits' argmax, the "
+               "product's decoder, whose end can reach the read end (the soft-argmax cannot). Exact: the edge is inside the truth interval; "
                "errors are in nucleotides, a signed one negative before the interval. Columns marked "
                "informational are not tested.")
 _CONTRIBUTIONS_NOTE = ("The truth of one more stage is fed in at each step (baseline → true_orientation → "
@@ -103,8 +103,8 @@ _CONTRIBUTIONS_NOTE = ("The truth of one more stage is fed in at each step (base
 _CALIBRATION_NOTE = ("Reliability of each gene's top-1 calibrated allele probability against the top-1 being in the "
                      "scored truth set, in equal-width bins. ECE: the bins' read-weighted |accuracy − confidence|. "
                      "A bin's cell is reads: accuracy / mean confidence; empty bins are left out.")
-_SWAPS_NOTE = ("Each swap changes one thing on the baseline (argmax_decoder: the segments from the position "
-               "logits' argmax; true_classifier_spans: the truth spans into the classifier only, the segments "
+_SWAPS_NOTE = ("Each swap changes one thing on the baseline (soft_decoder: the segments from the soft-argmax "
+               "expectations; true_classifier_spans: the truth spans into the classifier only, the segments "
                "unchanged) and is compared with the baseline like a step above. better: the swap improves the "
                "metric significantly.")
 _PROFILE_NOTE = ("Stages: the replay's stages, with their share of the whole run. Modules: the network's leaf "
@@ -140,7 +140,7 @@ def diagnostics_summary(report: dict) -> dict:
     with a cluster of two or more reads, as the suite's ``clusters`` record counts them);
     ``errors`` (metric of ``SUMMARY_METRICS`` -> suite -> ``baseline`` summary entry, ``steps`` (stage of
     ``STAGES`` -> the step's ``delta``, ``verdict``, ``test``, ``n_paired``, ``n_clusters`` and the ``stages`` it
-    spans), ``true_germline`` (mean), ``gap`` (1 - that mean), ``argmax_decoder`` (the swap's comparison entry, the
+    spans), ``true_germline`` (mean), ``gap`` (1 - that mean), ``soft_decoder`` (the swap's comparison entry, the
     same fields), ``n_paired`` and ``n_clusters`` (``[min, max]`` over those comparisons)); ``calls`` (suite -> gene
     -> ``top1_in_set``, ``true_calls`` (the step's entry), ``head.allele_top1``, ``head.allele_top3``, ``ece``);
     ``boundaries`` (suite -> ``head.{g}.{edge}_exact`` -> ``soft`` and ``argmax`` rates); ``metadata`` (suite ->
@@ -175,7 +175,7 @@ def diagnostics_summary(report: dict) -> dict:
 
 def diagnostics_scalars(summary: dict) -> dict[str, float]:
     """The summary's numbers flattened for a training dashboard (TensorBoard, W&B), None values left out:
-    ``<S>/baseline/<metric>``, ``<S>/delta/<stage>/<metric>`` (the stages of ``STAGES`` and ``argmax_decoder``),
+    ``<S>/baseline/<metric>``, ``<S>/delta/<stage>/<metric>`` (the stages of ``STAGES`` and ``soft_decoder``),
     ``<S>/true_germline/<metric>``, ``<S>/heads/<head metric>`` (``head.{g}.{edge}_exact.{soft,argmax}``, the
     allele top-1/top-3 and the metadata heads), ``<S>/calibration/<g>.ece``, ``speed/reads_per_second`` and
     ``speed/{stages,modules}/<name>`` (shares); with a comparison, ``<S>/against/<metric>.delta`` for every compared
@@ -193,7 +193,7 @@ def diagnostics_scalars(summary: dict) -> dict[str, float]:
             for stage, step in row["steps"].items():
                 put(f"{suite}/delta/{stage}/{metric}", step["delta"])
             put(f"{suite}/true_germline/{metric}", row["true_germline"])
-            put(f"{suite}/delta/argmax_decoder/{metric}", (row["argmax_decoder"] or {}).get("delta"))
+            put(f"{suite}/delta/soft_decoder/{metric}", (row["soft_decoder"] or {}).get("delta"))
     for suite, genes in summary["calls"].items():
         for g, calls in genes.items():
             put(f"{suite}/baseline/{g}.top1_in_set", calls["top1_in_set"])
@@ -241,7 +241,7 @@ def _error_row(suite: dict, metric: str) -> dict | None:
     baseline = _scores(suite, "baseline").get(metric)
     steps = {step["stages"][-1]: _entry(step["metrics"][metric], step["stages"])
              for step in suite.get("contributions") or [] if metric in step["metrics"]}
-    swap = next((entry for comparison in suite.get("swaps") or [] if comparison["to"] == "argmax_decoder"
+    swap = next((entry for comparison in suite.get("swaps") or [] if comparison["to"] == "soft_decoder"
                  for name, entry in comparison["metrics"].items() if name == metric), None)
     true_germline = _mean(_scores(suite, "true_germline").get(metric))
     if baseline is None and not steps and swap is None:
@@ -251,7 +251,7 @@ def _error_row(suite: dict, metric: str) -> dict | None:
     n_clusters = [entry["n_clusters"] for entry in compared if entry.get("n_clusters") is not None]
     return {"baseline": baseline, "steps": steps, "true_germline": true_germline,
             "gap": None if true_germline is None else 1.0 - true_germline,
-            "argmax_decoder": None if swap is None else _entry(swap),
+            "soft_decoder": None if swap is None else _entry(swap),
             "n_paired": [min(n_paired), max(n_paired)] if n_paired else None,
             "n_clusters": [min(n_clusters), max(n_clusters)] if n_clusters else None}
 
@@ -413,9 +413,9 @@ def _errors_section(summary: dict) -> list[str]:
                 f"{format_value(metric, row['true_germline'])} (gap {100 * row['gap']:.1f} pp)")
             table.append([name, format_cell(metric, row["baseline"]),
                           *(_step_cell(metric, row["steps"].get(stage)) for stage in STAGES), gap,
-                          _step_cell(metric, row["argmax_decoder"]), _paired_span(row)])
+                          _step_cell(metric, row["soft_decoder"]), _paired_span(row)])
         lines += markdown_table(["Suite", "Baseline", *(f"Δ {STAGE_LABELS[stage]}" for stage in STAGES),
-                                 "true_germline (gap)", "Δ argmax_decoder", "n paired"], table)
+                                 "true_germline (gap)", "Δ soft_decoder", "n paired"], table)
     return lines
 
 
