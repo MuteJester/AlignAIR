@@ -6,6 +6,7 @@ its factories must be registered in a loading process too. Missing factories fai
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
+from collections.abc import Mapping
 from typing import Callable
 
 import torch
@@ -47,6 +48,10 @@ def build_meta_heads(cfg: AlignAIRConfig) -> dict[str, nn.Module]:
     return heads
 
 
+def no_trunk_heads(cfg: AlignAIRConfig) -> dict[str, nn.Module]:
+    return {}
+
+
 @dataclass(frozen=True)
 class ModelComponents:
     """Factories for one architecture, independent of its alphabet and enabled tasks.
@@ -54,6 +59,11 @@ class ModelComponents:
     Embeddings emit (batch, window, embed_dim). Gene branches implement segment, classify,
     and component_modules. Their boundary tensors are (batch, window)/(batch, 1), and class
     scores are (batch, labels). Auxiliary towers emit (batch, block_out).
+
+    An optional trunk maps (embedding, mask) to shared per-position features (batch, window, channels),
+    computed once per forward after orientation correction. When present, branches, the meta tower and
+    the trunk heads receive them (branches and the tower as ``features=``; a head is called
+    ``head(features, mask)`` and its result is written to the output under the head's name).
     """
     embedding: Callable[[AlignAIRConfig], nn.Module] = _embedding
     gene_branch: Callable[[GeneSpec, AlignAIRConfig], GeneBranch] = GeneBranch
@@ -61,9 +71,13 @@ class ModelComponents:
     meta_tower: Callable[[AlignAIRConfig], nn.Module] = _meta_tower
     meta_heads: Callable[[AlignAIRConfig], dict[str, nn.Module]] = build_meta_heads
     state_head: Callable[[AlignAIRConfig], nn.Module] = _state
+    trunk: Callable[[AlignAIRConfig], nn.Module] | None = None
+    trunk_heads: Callable[[AlignAIRConfig], Mapping[str, nn.Module]] = no_trunk_heads
 
     def __post_init__(self):
         for field in fields(self):
+            if field.name == "trunk" and self.trunk is None:
+                continue
             if not callable(getattr(self, field.name)):
                 raise ConfigurationError(f"component factory {field.name!r} must be callable",
                                          context={"component": field.name})

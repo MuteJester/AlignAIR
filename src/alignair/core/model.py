@@ -58,6 +58,19 @@ class AlignAIR(nn.Module):
                 raise ConfigurationError("meta-head names must be valid module registration names") from exc
         self.state_branch = (_build_component(components.state_head, cfg, component="state_branch")
                              if cfg.state_head else None)
+        self.trunk = (_build_component(components.trunk, cfg, component="trunk")
+                      if components.trunk is not None else None)
+        with error_context(stage="model_construction", component="trunk_heads"):
+            trunk_heads = components.trunk_heads(cfg)
+            if (not isinstance(trunk_heads, (Mapping, nn.ModuleDict))
+                    or any(not isinstance(head, nn.Module) for head in trunk_heads.values())):
+                raise ConfigurationError("trunk-head factory must return a mapping of torch modules")
+            if trunk_heads and self.trunk is None:
+                raise ConfigurationError("trunk heads require an architecture with a trunk")
+            try:
+                self.trunk_heads = nn.ModuleDict(trunk_heads)
+            except (KeyError, TypeError) as exc:
+                raise ConfigurationError("trunk-head names must be valid module registration names") from exc
 
     @classmethod
     def from_state_dict(cls, cfg: AlignAIRConfig, state_dict: Mapping[str, object], *,
@@ -94,7 +107,10 @@ class AlignAIR(nn.Module):
                        else orient_logits.argmax(-1).detach())          # self-corrected at inference
             emb = self.embedding(apply_orientation(tokens, mask, correct))
 
-        meta = self.meta_tower(emb) if self.meta_tower is not None else None
+        # shared per-position features: computed once from the corrected embedding when the architecture has a trunk
+        features = self.trunk(emb, mask) if self.trunk is not None else None
+        extra = {} if features is None else {"features": features}
+        meta = self.meta_tower(emb, **extra) if self.meta_tower is not None else None
         if self.cfg.boundary_mode == "half_open":
             out["start_mask"], out["end_mask"] = mask, end_mask
         else:
@@ -108,10 +124,13 @@ class AlignAIR(nn.Module):
         # per-gene segmentation (soft-argmax boundary expectations; masked to the read, not the pad)
         exp: dict = {}
         for name, branch in self.branches.items():
-            s_log, e_log, s_exp, e_exp = branch.segment(emb, mask, end_mask)
+            s_log, e_log, s_exp, e_exp = branch.segment(emb, mask, end_mask, **extra)
             out[f"{name}_start_logits"], out[f"{name}_end_logits"] = s_log, e_log
             out[f"{name}_start"], out[f"{name}_end"] = s_exp, e_exp
             exp[name] = (s_exp, e_exp)
+
+        for key, head in self.trunk_heads.items():
+            out[key] = head(features, mask)
 
         # meta-tower heads (mutation / indel / productivity / chain_type)
         for key, head in self.meta_heads.items():
@@ -119,7 +138,7 @@ class AlignAIR(nn.Module):
 
         # Per-gene scores retain their explicit probability/logit semantics in the output key.
         for name, branch in self.branches.items():
-            out[self.cfg.classification_key(name)] = branch.classify(emb, *exp[name])
+            out[self.cfg.classification_key(name)] = branch.classify(emb, *exp[name], **extra)
         return out
 
     def component_modules(self) -> dict[str, nn.Module]:
@@ -129,11 +148,12 @@ class AlignAIR(nn.Module):
         A custom gene branch declares its own inspection points through the same method.
         """
         modules = {"embedding": self.embedding}
-        for name in ("orientation_head", "meta_tower", "state_branch"):
+        for name in ("orientation_head", "meta_tower", "state_branch", "trunk"):
             module = getattr(self, name)
             if module is not None:
                 modules[name] = module
         modules.update({f"meta_heads.{name}": head for name, head in self.meta_heads.items()})
+        modules.update({f"trunk_heads.{name}": head for name, head in self.trunk_heads.items()})
         owned = {id(module) for module in self.modules()}
         for gene, branch in self.branches.items():
             with error_context(stage="component_inspection", component=f"branches.{gene}"):
