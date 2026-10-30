@@ -11,6 +11,15 @@ from .coordinates import segment_spans
 from .alignment import parse_cigar
 
 _GENES = ("v", "d", "j")
+CODON = 3
+
+
+def _codon_in_read(position, length: int) -> int | None:
+    """``position`` when the codon starting there lies wholly inside a read of ``length`` bases, else None."""
+    if position is None:
+        return None
+    position = int(position)
+    return position if 0 <= position and position + CODON <= length else None
 
 
 def _tok(seq: str) -> np.ndarray:
@@ -105,6 +114,12 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         cigar = record.get(f"{g}_cigar")
         _label_segment_states(state, seq, ss, ref.sequences[idx], gs, cigar)
 
+    # ---- V/J anchors: the first base of the V Cys codon (GenAIRR's junction_start) and of the J Trp/Phe codon
+    # (junction_end - 3), read coordinates; None when GenAIRR gives no junction or the codon is not wholly in the read
+    junction_start, junction_end = record.get("junction_start"), record.get("junction_end")
+    anchors = {"v": _codon_in_read(junction_start, L),
+               "j": _codon_in_read(None if junction_end is None else junction_end - CODON, L)}
+
     calls = {g.upper(): set(str(record[f"{g}_call"]).split(","))
              for g in _GENES if record.get(f"{g}_call")}
     # the allele the germline coordinates actually belong to (GenAIRR lists it
@@ -119,6 +134,7 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         "state_labels": state,
         "germline": germ,
         "inseq": coords,
+        "anchors": anchors,
         "calls": calls,
         "primary": primary,
         # inverted-D reads contain RC(germline) at the D locus; we cannot yet

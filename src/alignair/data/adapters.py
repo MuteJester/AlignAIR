@@ -24,6 +24,11 @@ if TYPE_CHECKING:
     from ..core.config import AlignAIRConfig
 
 
+# The anchor targets (the V Cys and J Trp/Phe codon starts) and the length of the codon each one starts.
+ANCHOR_TARGETS = ("v_anchor", "j_anchor")
+CODON = 3
+
+
 def _genes(config):
     return ("v", "j", "d") if config.has_d else ("v", "j")
 
@@ -55,14 +60,18 @@ def _productive_supervise(known, config):
     return torch.tensor(bool(known) or getattr(config, "productive_unknown", "negative") == "negative")
 
 
-def _window(sample, width, genes):
-    """Retain a prefix and intersect model targets with it; source records remain untouched."""
+def _window(sample, width, genes, null_slot=None):
+    """Retain a prefix and intersect model targets with it; source records remain untouched. An anchor target whose
+    codon the prefix cuts becomes ``null_slot`` (not observed)."""
     if len(sample.tokens) <= width:
         return sample
     targets = dict(sample.targets)
     for key, value in targets.items():
         if isinstance(value, PositionLabels):
             targets[key] = PositionLabels(value.values[:width], value.padding)
+    for key in ANCHOR_TARGETS:
+        if key in targets and targets[key].item() + CODON > width:
+            targets[key] = torch.tensor(null_slot, dtype=torch.long)
     for gene in genes:
         start, end = float(targets[f"{gene}_start"].item()), float(targets[f"{gene}_end"].item())
         visible = start < width and end > 0 and end > start
@@ -82,7 +91,15 @@ def _limit(sample, config, genes, overflow):
         raise TrainingDataError("training record exceeds the model window",
                                 context={"length": len(sample.tokens), "max_length": width},
                                 hint="Crop with matching annotations, or select the explicit prefix-window policy.")
-    return _window(sample, width, genes)
+    return _window(sample, width, genes, null_slot=config.max_seq_length)
+
+
+def _anchor_targets(anchors, config) -> dict:
+    """``v_anchor``/``j_anchor``: each anchor's read position (forward frame, like the boundaries), or the null slot
+    ``max_seq_length`` when it is not observed."""
+    null = config.max_seq_length
+    return {f"{gene}_anchor": torch.tensor(null if anchors[gene] is None else anchors[gene], dtype=torch.long)
+            for gene in ("v", "j")}
 
 
 @dataclass(frozen=True)
@@ -120,6 +137,8 @@ class NucleotideBatchAdapter:
                 if getattr(self.config, "region_head", False):
                     # forward frame, like the boundaries; the head's classes are READ_REGIONS (no pad label)
                     targets["region_labels"] = PositionLabels(bundle["region_labels"] - REGION_INDEX[READ_REGIONS[0]])
+                if getattr(self.config, "anchor_heads", False):
+                    targets.update(_anchor_targets(bundle["anchors"], self.config))     # forward frame
                 sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
         batch = collate_samples(samples, max_length=self.config.max_seq_length,
