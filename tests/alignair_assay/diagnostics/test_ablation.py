@@ -227,13 +227,14 @@ def test_baseline_rows_are_the_replay_and_score_like_the_product_tsv(make_shaped
 
 
 # The fields the AIRR assembly builds from the germline alignment, the calls and the orientation.
-FED = re.compile(r"(junction|clone_key)\.|[vdj]\.(seq|germ)_(start|end)_|[vdj]\.top1_in_set$|orientation\.")
-# Excluded from the equality check: the V germline coordinates and the junction coordinates. AlignAIR's AIRR assembly
-# (compute_alignment_positions) writes the V germline coordinates in IMGT-gapped numbering and the CDR3/junction
-# coordinates as columns of the gapped sequence alignment, whatever germline alignment it is given. That is tracked on
-# the AlignAIR fix-list; this test neither asserts nor depends on it. When the assembly writes them in read and
-# ungapped germline coordinates, drop this exclusion.
-REENCODED = re.compile(r"v\.germ_(start|end)_|junction\.(start|end)_")
+FED = re.compile(r"(junction|clone_key)\.|[vdj]\.(seq|germ)_(start|end)_|[vdj]\.top1_in_set$|orientation\.|"
+                 r"airr\.sequence_ok$")
+# Excluded from the equality check: the V germline coordinates. AlignAIR's AIRR assembly (compute_alignment_positions)
+# writes them in IMGT-gapped numbering, whatever germline alignment it is given. That is tracked on the AlignAIR
+# fix-list; this test neither asserts nor depends on it. When the assembly writes them in ungapped germline
+# coordinates, drop this exclusion. The junction coordinates are compared: the reader takes them from the row's
+# CDR3 positions, which AlignAIR writes 1-based in the read, as AIRR defines them.
+REENCODED = re.compile(r"v\.germ_(start|end)_")
 
 
 def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped_model, s0_cases, s0_truths,
