@@ -133,4 +133,7 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         "mutation_rate": float(record["mutation_rate"]),
         "indel_count": float(record["n_indels"]),
         "productive": 1.0 if record["productive"] else 0.0,
+        # GenAIRR leaves productivity unknown (None) when the read does not show it; the label above is
+        # then 0.0, and this flag lets the masked objective leave the read out of the productive loss.
+        "productive_known": record["productive"] is not None,
     }

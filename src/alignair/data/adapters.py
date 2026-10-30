@@ -47,6 +47,12 @@ def _alleles(reference, gene, calls):
             [[name.strip() for name in calls]], vocabulary.index, len(vocabulary.names), strict=True)[0])
 
 
+def _productive_supervise(known, config):
+    """A known productivity label is supervised; an unknown one (labelled 0) only under the historical objective,
+    which trains it as non-productive (``AlignAIRConfig.productive_unknown``)."""
+    return torch.tensor(bool(known) or getattr(config, "productive_unknown", "negative") == "negative")
+
+
 def _window(sample, width, genes):
     """Retain a prefix and intersect model targets with it; source records remain untouched."""
     if len(sample.tokens) <= width:
@@ -105,6 +111,7 @@ class NucleotideBatchAdapter:
                         self.reference, gene, bundle["calls"].get(gene.upper(), ()) if supervise else ())
                 for key in ("mutation_rate", "indel_count", "productive"):
                     targets[key] = torch.tensor([bundle[key]], dtype=torch.float32)
+                targets["productive_supervise"] = _productive_supervise(bundle["productive_known"], self.config)
                 if getattr(self.config, "num_chain_types", 1) > 1:
                     targets["chain_type"] = torch.tensor(bundle["chain_type"], dtype=torch.long)
                 targets["state_labels"] = PositionLabels(bundle["state_labels"])
@@ -167,6 +174,8 @@ class ProteinAlleleBatchAdapter:
                                    ("indel_count", record.get("n_indels", 0)),
                                    ("productive", float(bool(record.get("productive"))))):
                     targets[key] = torch.tensor([value], dtype=torch.float32)
+                targets["productive_supervise"] = _productive_supervise(record.get("productive") is not None,
+                                                                        self.config)
                 sample = TrainingSample(encoded, targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
         return collate_samples(samples, max_length=self.config.max_seq_length, device=self.device,

@@ -129,6 +129,21 @@ def test_protein_prefix_window_and_translation_mismatch_are_explicit():
     assert caught.value.context["record_id"] == "annotated-read"
 
 
+@pytest.mark.parametrize("productive,policy,label,supervised", [
+    (True, "masked", 1., True), (False, "masked", 0., True), (None, "masked", 0., False),
+    (None, "negative", 0., True)])
+@pytest.mark.parametrize("protein", [False, True])
+def test_unknown_productivity_is_kept_as_an_unsupervised_row_under_the_masked_objective(
+        productive, policy, label, supervised, protein):
+    unknown = {**_record(), "productive": productive}
+    cfg = _config(use_orientation=False, vocab_size=23 if protein else 6, productive_unknown=policy)
+    adapter = ProteinAlleleBatchAdapter(_reference(), cfg) if protein else NucleotideBatchAdapter(_reference(), cfg)
+    batch = adapter([unknown, _record()])
+    assert batch.targets["productive"].reshape(-1).tolist() == [label, 1.]
+    assert batch.targets["productive_supervise"].dtype == torch.bool
+    assert batch.targets["productive_supervise"].tolist() == [supervised, True]
+
+
 def _sample():
     return {"tokens": np.array([1, 2, 3]), "v_class": 0, "j_class": 1,
             "v_start": 0, "v_end": 1, "j_start": 1, "j_end": 3,
