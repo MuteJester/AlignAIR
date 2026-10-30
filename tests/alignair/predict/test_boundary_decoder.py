@@ -95,7 +95,7 @@ def test_a_non_finite_logit_on_an_allowed_slot_is_refused():
     for bad in (float("nan"), float("inf")):
         logits = torch.zeros(1, 6)
         logits[0, 2] = bad
-        with pytest.raises(NumericalError):
+        with pytest.raises(NumericalError, match="non-finite boundary logit"):
             decode_boundaries(logits, torch.zeros(1, 6), mask, mask)
     # a non-finite logit on a pad slot is never decoded
     logits = torch.zeros(1, 6)

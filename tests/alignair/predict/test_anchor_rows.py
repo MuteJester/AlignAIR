@@ -50,7 +50,7 @@ def test_anchors_refuse_a_non_finite_logit_on_an_allowed_slot():
     """A NaN on a codon start is refused; one where no codon fits (the read's last two positions) is never read."""
     from alignair.errors import NumericalError
     read = torch.ones(1, 5, dtype=torch.bool)
-    with pytest.raises(NumericalError):
+    with pytest.raises(NumericalError, match="non-finite anchor logit"):
         decode_anchors(torch.tensor([[0.0, float("nan"), 0.0, 0.0, 0.0, 0.0]]), read)
     assert decode_anchors(torch.tensor([[0.0, 1.0, 0.0, float("nan"), float("nan"), 0.0]]), read).tolist() == [1]
 
