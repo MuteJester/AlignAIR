@@ -1,55 +1,21 @@
-"""``python -m alignair_lab screen``: a candidate trained from the record cache and compared with the baseline's
-milestone at the same step, end to end on a tiny budget.
-
-The rig is built once per module in a temporary directory: a dev build of S0 (2 reads), a small conv-v1 baseline
-trained 2 steps and kept as its step-2 milestone, and a record cache of the recipe for 2 steps.
-"""
+"""``python -m alignair_lab screen --against-milestone``: a candidate trained from the record cache and compared with
+the baseline's milestone at the same step (Tier 2), end to end on a tiny budget, on the rig (``rig``)."""
 import json
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
-from alignair import run_training
 from alignair.model_file import read_metadata
 from alignair.train.trainer import RECIPE
 from alignair_lab.cli import main
-from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED, recipe_train_args, training_config
-from alignair_lab.records import write_record_cache
+from alignair_lab.recipe import DATACONFIGS, recipe_train_args
+from tests.alignair_lab.rig import REMOVED, SMALL, arguments, copy_card
 
 pytestmark = pytest.mark.integration
-
-SMALL = {'embed_dim': 4, 'filters': 4, 'block_out': 8}
-
-
-@pytest.fixture(scope='module')
-def rig(tmp_path_factory):
-    from alignair_assay.core.layout import RunLayout
-    from alignair_assay.workflow.build import build_suite
-    root = tmp_path_factory.mktemp('rig')
-    build_suite('S0', RunLayout(root / 'dev'), reference_name='HUMAN_IGH_OGRDB', split='dev', seed=5, scale=0.02,
-                workers=1)
-    baseline = run_training(training_config(steps=2, model_options=SMALL, device='cpu'), output_dir=root / 'baseline')
-    (root / 'milestones').mkdir()
-    shutil.copyfile(baseline.model_path, root / 'milestones' / 'model.step2.alignair')
-    write_record_cache(root / 'cache', dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=2,
-                       batch_size=BATCH_SIZE, workers=2)
-    return SimpleNamespace(root=root, dev=root / 'dev', milestones=root / 'milestones', cache=root / 'cache',
-                           screens=root / 'screens')
-
-
-def arguments(rig, name, *extra, steps=2, baseline_options=True):
-    """A screen of the small lab-null-v1 against the rig's small baseline, whose options the screen is told."""
-    options = [option for key, value in SMALL.items() for option in ('--model-option', f'{key}={value}')]
-    if baseline_options:
-        options += [option for key, value in SMALL.items() for option in ('--baseline-model-option', f'{key}={value}')]
-    return ['screen', '--name', name, '--steps', str(steps), '--architecture', 'lab-null-v1', *options,
-            '--device', 'cpu', '--data-workers', '1', '--eval-batch-size', '16', '--cache', str(rig.cache),
-            '--dev-build', str(rig.dev), '--milestones', str(rig.milestones), '--out-root', str(rig.screens), *extra]
 
 
 def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_step(rig, capsys):
@@ -59,9 +25,10 @@ def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_s
     record = json.loads((screen / 'screen.json').read_text())
     assert record['status'] == 'done' and record['steps'] == 2 and record['architecture'] == 'lab-null-v1'
     assert record['model_options'] == SMALL and record['suites'] == ['S0'] and record['variants'] == ['baseline']
+    assert (record['schedule'], record['init_seed'], record['role']) == ('constant', 0, 'candidate')
     milestone = read_metadata(rig.milestones / 'model.step2.alignair')
     baseline = record['baseline']
-    assert baseline['milestone'] == str(rig.milestones / 'model.step2.alignair')
+    assert baseline['kind'] == 'milestone' and baseline['checkpoint'] == str(rig.milestones / 'model.step2.alignair')
     assert (baseline['step'], baseline['recipe']) == (2, RECIPE)
     assert baseline['git_commit'] == milestone['provenance']['git_commit'] and baseline['git_commit']
     assert baseline['genairr_version'] == milestone['genairr_version']
@@ -87,7 +54,7 @@ def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_s
 
 def test_the_null_candidate_reproduces_the_baselines_weights_on_the_cpu(rig):
     """lab-null-v1 is conv-v1, trained from the cache with a data worker: on the CPU, the baseline trained serially
-    on live GenAIRR records, weight for weight."""
+    on live GenAIRR records from the same init seed, weight for weight."""
     import torch
     from alignair.model_file import load_model
     if not (rig.screens / 'smoke').exists():
@@ -103,23 +70,13 @@ def test_the_baseline_records_the_recipes_train_args(rig):
     assert {key: train_args.get(key) for key in recipe_train_args()} == recipe_train_args()
 
 
-REMOVED = object()
-
-
 def milestone_copy(rig, tmp_path, *, step=2, saved_step=2, header=None, **changes):
     """A milestones directory holding a copy of the rig's baseline as ``model.step<step>.alignair``, its header saying
     it was saved at ``saved_step`` with ``changes`` to its train_args (``REMOVED`` removes one) and ``header``'s other
     fields."""
-    from alignair.model_file import update_card
-    source = rig.milestones / 'model.step2.alignair'
-    training = read_metadata(source)['training']
-    train_args = {**training['train_args'], **changes}
-    train_args = {key: value for key, value in train_args.items() if value is not REMOVED}
-    milestones = tmp_path / 'milestones'
-    milestones.mkdir()
-    update_card(source, milestones / f'model.step{step}.alignair',
-                {'training': {**training, 'steps': saved_step, 'train_args': train_args}, **(header or {})})
-    return milestones
+    copy_card(rig.milestones / 'model.step2.alignair', tmp_path / 'milestones' / f'model.step{step}.alignair',
+              header=header, saved_step=saved_step, **changes)
+    return tmp_path / 'milestones'
 
 
 def test_a_cache_written_by_other_producing_code_is_deep_verified_and_says_so(rig, tmp_path):
@@ -136,19 +93,23 @@ def test_a_cache_written_by_other_producing_code_is_deep_verified_and_says_so(ri
             "records live") in (rig.screens / 'deep' / 'headline.txt').read_text()
 
 
-def test_a_milestone_of_another_genairr_version_than_the_caches_is_refused(rig, tmp_path, capsys):
-    milestones = milestone_copy(rig, tmp_path, header={'genairr_version': '2.1.0'})
-    assert main([*arguments(rig, 'other-genairr'), '--milestones', str(milestones)]) == 2
+def test_a_milestone_of_another_genairr_source_than_the_caches_is_refused(rig, tmp_path, capsys):
+    milestones = milestone_copy(rig, tmp_path, genairr_source_sha256='0' * 64)
+    assert main([*arguments(rig, 'other-source'), '--against-milestone', str(milestones)]) == 2
+    error = capsys.readouterr().err
+    assert 'genairr_source_sha256 000000000000' in error and 'record cache' in error
+    assert not (rig.screens / 'other-source').exists()
+
+
+def test_a_milestone_without_a_genairr_source_digest_is_refused_on_another_genairr_version(rig, tmp_path, capsys):
+    milestones = milestone_copy(rig, tmp_path, genairr_source_sha256=REMOVED, header={'genairr_version': '2.1.0'})
+    assert main([*arguments(rig, 'other-genairr'), '--against-milestone', str(milestones)]) == 2
     error = capsys.readouterr().err
     assert "genairr_version '2.1.0', not '2.2.0'" in error and 'record cache' in error
     assert not (rig.screens / 'other-genairr').exists()
 
 
-def test_a_milestone_of_another_capacity_is_refused_unless_the_screen_is_told_its_options(rig, capsys):
-    assert main(arguments(rig, 'other-capacity', baseline_options=False)) == 2
-    error = capsys.readouterr().err
-    assert 'embed_dim 4, not 32' in error and 'filters 4, not 128' in error and 'block_out 8, not 576' in error
-    assert not (rig.screens / 'other-capacity').exists()
+COSINE = {'policy': 'cosine-v1', 'total_steps': 2, 'min_lr': 3e-4 / 100}
 
 
 @pytest.mark.parametrize('copy,problem', [
@@ -157,12 +118,24 @@ def test_a_milestone_of_another_capacity_is_refused_unless_the_screen_is_told_it
     ({'indel_form': 'uniform'}, 'indel_form'),
     ({'selected_fraction': 0.5}, 'selected_fraction'),
     ({'seed': 1}, 'seed'),
-    ({'lr': 1e-3}, 'lr')])
+    ({'lr': 1e-3}, 'lr'),
+    ({'schedule': COSINE}, 'schedule'),
+    ({'grad_clip': 1.0}, 'gradient clipping (grad_clip 1.0)'),
+    ({'started_from': 'init_from', 'source_checkpoint_sha256': '0' * 64}, 'continued another checkpoint (init_from'),
+    ({'started_from': 'resume', 'source_checkpoint_sha256': '0' * 64}, 'continued another checkpoint (resume'),
+    ({'source_checkpoint_sha256': '0' * 64}, 'continued another checkpoint (source_checkpoint_sha256')])
 def test_a_milestone_of_another_run_is_refused_before_anything_runs(rig, tmp_path, capsys, copy, problem):
     milestones = milestone_copy(rig, tmp_path, **copy)
-    assert main([*arguments(rig, 'mismatched', steps=copy.get('step', 2)), '--milestones', str(milestones)]) == 2
+    assert main([*arguments(rig, 'mismatched', steps=copy.get('step', 2)), '--against-milestone', str(milestones)]) == 2
     assert problem in capsys.readouterr().err
     assert not (rig.screens / 'mismatched').exists()
+
+
+def test_a_cosine_screen_against_a_milestone_of_a_constant_rate_is_refused(rig, capsys):
+    assert main([*arguments(rig, 'cooled'), '--schedule', 'cosine']) == 2
+    error = capsys.readouterr().err
+    assert f"schedule None, not {COSINE!r}" in error and '--schedule constant' in error
+    assert not (rig.screens / 'cooled').exists()
 
 
 def test_a_milestone_of_another_model_family_is_refused_before_anything_runs(rig, tmp_path, capsys):
@@ -177,7 +150,7 @@ def test_a_milestone_of_another_model_family_is_refused_before_anything_runs(rig
     train_args = read_metadata(rig.milestones / 'model.step2.alignair')['training']['train_args']
     save_checkpoint(str(milestones / 'model.step2.alignair'), setup.config, setup.build_model(), None, 2,
                     dataconfigs=list(DATACONFIGS), train_args=train_args, label_schema=setup.label_schema())
-    assert main([*arguments(rig, 'other-family'), '--milestones', str(milestones)]) == 2
+    assert main([*arguments(rig, 'other-family'), '--against-milestone', str(milestones)]) == 2
     assert "architecture 'lab-null-v1', not 'conv-v1'" in capsys.readouterr().err
     assert not (rig.screens / 'other-family').exists()
 
@@ -191,7 +164,7 @@ def test_a_step_without_a_baseline_milestone_is_refused_before_anything_runs(rig
 
 def test_a_screen_the_cache_cannot_feed_is_refused_before_anything_runs(rig, tmp_path, capsys):
     milestones = milestone_copy(rig, tmp_path, step=3, saved_step=3)
-    assert main([*arguments(rig, 'hungry', steps=3), '--milestones', str(milestones)]) == 2
+    assert main([*arguments(rig, 'hungry', steps=3), '--against-milestone', str(milestones)]) == 2
     assert 'serves 128 records' in capsys.readouterr().err
     assert not (rig.screens / 'hungry').exists()
 
