@@ -12,6 +12,8 @@ list (``tests/alignair_lab/test_layering.py``):
 - ``headline``: a screen's one-page headline, rendered from the assay's comparison summary.
 - ``architectures``: candidate architectures, registered with ``alignair.core.components`` when imported; product
   code in shape, so it imports neither the assay nor the rest of the lab.
+- ``baselines``: what a screen is compared with: baseline checkpoints, trusted by their contents, the protocol a
+  baseline screen shares with its screens, the registered baseline screen and the null band of a protocol.
 - ``screen``: an architecture trained from the record cache and compared by the assay with a baseline at the same
   step: a baseline screen (lab-null-v1, an init seed's) or a milestone.
 - ``calibrate``: baseline screens of several init seeds compared pair by pair into the null band of their protocol.

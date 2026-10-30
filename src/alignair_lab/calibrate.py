@@ -3,22 +3,22 @@ seeds.
 
 A candidate's Δ against the registered baseline screen holds training noise beside the candidate's effect. Baseline
 screens of other init seeds, trained on the same records, differ by that noise alone, so their pairwise Δs bound it:
-the null band (``noise.null_band``) a candidate's headline weighs its Δs against (``screen.null_band``).
+the null band (``noise.null_band``) a candidate's headline weighs its Δs against (``baselines.null_band``).
 
 ``run_calibration(steps=..., init_seeds=(0, 1, 2), ...)``:
 
 1. **Refuses** before anything runs (ValueError, FileExistsError, ConfigurationError among them): fewer than two init
    seeds, one given twice or one that is not a uint32; a parallel count below 1; an unknown schedule; a calibration
    name that is not one path component, or in use; for an init seed, several finished baseline screens of the
-   protocol, or none and a screen in the way of the one to train (``screen.screen_name``); an unknown model option; a
+   protocol, or none and a screen in the way of the one to train (``baselines.screen_name``); an unknown model option; a
    cache that cannot feed the steps (``records.CachedRecordSource.require``); a suite not built in the dev build.
 2. Claims the calibration directory ``out_root/<name>`` (default ``calibration_name``) and records the request and
    its progress in its ``calibration.json`` (a failure is recorded before it is raised).
 3. For each init seed, reuses the finished baseline screen of the protocol, the model options and that seed
-   (``screen.baseline_screens``), or trains one with ``python -m alignair_lab screen`` under the GenAIRR and the code
+   (``baselines.baseline_screens``), or trains one with ``python -m alignair_lab screen`` under the GenAIRR and the code
    this process imports, at most ``parallel`` at once, each one's output in ``<calibration>/<screen>.log``. A failed
    run fails the calibration once the runs under way have finished: those finished are reused by the next.
-4. Checks every baseline screen's checkpoint (``screen.check_baseline``, ``screen.same_genairr``), then compares each
+4. Checks every baseline screen's checkpoint (``baselines.check_baseline``, ``baselines.same_genairr``), then compares each
    pair of them, the later init seed's against the earlier's, with the assay in its own run directory,
    ``<calibration>/assay``, in this process: under one AlignAIR code.
 5. Writes ``<calibration>/null_band.json``: the protocol, the model options, the suites and cases compared, the
@@ -41,30 +41,32 @@ from alignair_lab.headline import HEADLINE
 from alignair_lab.noise import null_band, pair
 from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED, schedule as learning_schedule, training_config
 from alignair_lab.records import CachedRecordSource
-from alignair_lab.screen import (
-    CACHE,
+from alignair_lab.baselines import (
     CHECKPOINT,
-    DEFAULT_DATA_WORKERS,
-    DEFAULT_SCHEDULE,
-    DEFAULT_STEPS,
-    DEV_BUILD,
     NAME,
     NULL_ARCHITECTURE,
     NULL_BAND,
     NULL_BAND_KIND,
     NULL_BAND_VERSION,
-    SCREENS,
-    assay_layout,
     baseline_screens,
-    built_suites,
     check_baseline,
     check_init_seed,
     now,
-    prepare_candidate,
     protocol,
     same_genairr,
     screen_name,
     write_json,
+)
+from alignair_lab.screen import (
+    CACHE,
+    DEFAULT_DATA_WORKERS,
+    DEFAULT_SCHEDULE,
+    DEFAULT_STEPS,
+    DEV_BUILD,
+    SCREENS,
+    assay_layout,
+    built_suites,
+    prepare_candidate,
 )
 
 DEFAULT_INIT_SEEDS = (0, 1, 2)
