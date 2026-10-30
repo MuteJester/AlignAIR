@@ -1398,8 +1398,8 @@ read.
     `correct_segments`' meaning (a V or J of zero length). A given span is never re-ordered against the model's
     span of another gene.
   - With `classifier_spans`, they go into each gene's classifier (`model.branches[g].classify` on the read
-    re-embedded in the forward pass's frame) in place of the expectations. The new probabilities then go through
-    the calibration, the masks and the selector.
+    re-embedded in the forward pass's frame, with the trunk's features of that read when the model has a trunk) in
+    place of the expectations. The new probabilities then go through the calibration, the masks and the selector.
 - `calls` (`GeneCall`s) replace the selector's calls before the germline alignment.
 - `germline` (`GermlineAlignment`s on the read's call) replace the matcher's alignments. The matcher runs only for
   reads that still have a gene left to it.

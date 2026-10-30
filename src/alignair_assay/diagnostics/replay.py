@@ -33,10 +33,10 @@ the product functions the replay mirrors.
   (``argmax_boundaries``) instead of the soft-argmax expectations. The classifier still reads the expectations.
 - ``spans``: replace the corrected ``Segments`` of the given reads and genes (``segment_spans``), and with
   ``classifier_spans`` are fed to each gene's classifier (``model.branches[g].classify`` on the re-embedded read, the
-  public seam of ``AlignAIR.forward``) in place of the soft-argmax expectations; the new allele probabilities then
-  go through the calibration, the masks and the selector. ``low_quality`` keeps ``correct_segments``' meaning: a V or
-  J of zero length. The given spans are not re-ordered against the model's spans of other genes, so a truth span is
-  never moved.
+  public seam of ``AlignAIR.forward``, with the trunk's features of that read for a model with a trunk) in place of
+  the soft-argmax expectations; the new allele probabilities then go through the calibration, the masks and the
+  selector. ``low_quality`` keeps ``correct_segments``' meaning: a V or J of zero length. The given spans are not
+  re-ordered against the model's spans of other genes, so a truth span is never moved.
 - ``calls``: replace the selector's calls, before the germline alignment.
 - ``germline``: replace the matcher's alignments; the matcher runs only for the reads with a gene left to it.
 
@@ -335,14 +335,17 @@ def _forced_orientation(model, tokens: torch.Tensor, given: list) -> torch.Tenso
 def _classify(model, tokens: torch.Tensor, orientation: torch.Tensor, out: dict, spans: dict, offset: int) -> None:
     """Replace the batch's ``{g}_allele`` with ``model.branches[g].classify`` on the given spans (the batch's
     soft-argmax expectations for a None entry), on the read re-embedded in the frame of ``orientation``, as
-    ``AlignAIR.forward`` embeds it for its own classifier call."""
-    emb = model.embedding(apply_orientation(tokens, out["position_mask"], orientation))
+    ``AlignAIR.forward`` embeds it for its own classifier call. A model with a trunk gets the trunk's features of
+    that embedding (``features=``), computed as ``AlignAIR.forward`` computes them."""
+    mask = out["position_mask"]
+    emb = model.embedding(apply_orientation(tokens, mask, orientation))
+    extra = {} if model.trunk is None else {"features": model.trunk(emb, mask)}
     for g, (starts, ends) in spans.items():
         s, e = out[f"{g}_start"].clone(), out[f"{g}_end"].clone()
         for k in range(tokens.shape[0]):
             if starts[offset + k] is not None:
                 s[k, 0], e[k, 0] = float(starts[offset + k]), float(ends[offset + k])
-        out[f"{g}_allele"] = model.branches[g].classify(emb, s, e)
+        out[f"{g}_allele"] = model.branches[g].classify(emb, s, e, **extra)
 
 
 def _check_substitutions(subs: Substitutions, n: int, genes, names: dict[str, list[str]]) -> None:

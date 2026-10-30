@@ -1,7 +1,7 @@
 """lab-trunk-v1: one shared, fully convolutional, length-preserving trunk scores every read position once, and each
 gene's start and end logits are a 1x1 convolution of it. The classifiers and the meta tower are conv-v1's, on the
 embedding, so the candidate changes segmentation only. It keeps conv-v1's outputs, learns, round-trips through a model
-file and is screened against a baseline screen."""
+file, replays in the assay as its own forward pass and is screened against a baseline screen."""
 import itertools
 import json
 
@@ -161,7 +161,7 @@ def test_lab_trunk_v1_learns_one_batch(reference):
     assert boundary_loss() <= before / 2
 
 
-# --- the model file and the screen -------------------------------------------------------------------
+# --- the model file, the replay and the screen -------------------------------------------------------------------
 
 @pytest.mark.integration
 def test_a_lab_trunk_v1_model_file_round_trips(reference, tmp_path, monkeypatch):
@@ -186,6 +186,43 @@ def test_a_lab_trunk_v1_model_file_round_trips(reference, tmp_path, monkeypatch)
                         {name: value for name, value in components._ARCHITECTURES.items() if name != 'lab-trunk-v1'})
     with pytest.raises(ConfigurationError, match='lab-trunk-v1'):
         api.load_model(str(path))
+
+
+@pytest.mark.integration
+def test_the_replay_of_lab_trunk_v1_is_its_forward_pass(reference, monkeypatch):
+    """The assay's replay gives what the product predicts; fed the model's own spans, its classifier call recomputes
+    the trunk's features from the re-embedded read, as the forward pass computes them, and gives the forward pass's
+    allele probabilities."""
+    from alignair_assay.diagnostics.replay import Substitutions, replay
+    model = build(reference, 'lab-trunk-v1', **SMALL)
+    sequences = [record['sequence'] for record in records(5, seed=11)]
+    ids = [f'read{k}' for k in range(len(sequences))]
+    base = replay(model, reference, sequences, ids, device='cpu', batch_size=2)
+    assert base.airr_rows == api.predict_sequences(model, reference, sequences, device='cpu', batch_size=2)
+
+    trunk_calls, classified = [], []
+    model.trunk.register_forward_hook(lambda module, inputs, output: trunk_calls.append((inputs, output)))
+    for g in GENES:
+        original = model.branches[g].classify
+
+        def spy(emb, starts, ends, *, features, original=original):
+            classified.append(features)
+            return original(emb, starts, ends, features=features)
+        monkeypatch.setattr(model.branches[g], 'classify', spy)
+    none = [None] * len(sequences)
+    out = replay(model, reference, sequences, ids, device='cpu', batch_size=2,
+                 substitutions=Substitutions(spans={g: (none, none) for g in GENES}, classifier_spans=True))
+    assert out.airr_rows == base.airr_rows
+    assert set(out.raw) == set(base.raw) and all((out.raw[key] == base.raw[key]).all() for key in base.raw)
+    batches = -(-len(sequences) // 2)
+    assert len(trunk_calls) == 2 * batches and len(classified) == 2 * len(GENES) * batches
+    for k in range(batches):
+        (forward_inputs, forward_features), (replay_inputs, replay_features) = trunk_calls[2 * k:2 * k + 2]
+        assert all(torch.equal(a, b) for a, b in zip(forward_inputs, replay_inputs))
+        assert torch.equal(forward_features, replay_features)
+        calls = classified[2 * len(GENES) * k:2 * len(GENES) * (k + 1)]
+        assert all(features is forward_features for features in calls[:len(GENES)])
+        assert all(features is replay_features for features in calls[len(GENES):])
 
 
 @pytest.mark.integration
