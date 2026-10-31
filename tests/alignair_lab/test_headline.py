@@ -9,6 +9,7 @@ from alignair_lab.headline import (
     HEADLINE,
     POOLED_HEADING,
     REGRESSIONS,
+    SECONDARY,
     SEEDS_HEADING,
     SUITES_HEADING,
     render_headline,
@@ -17,7 +18,7 @@ from alignair_lab.headline import (
 from alignair_lab.noise import decide
 
 pytestmark = pytest.mark.component
-METRICS = [metric for metric, _ in HEADLINE]
+METRICS = [metric for metric, _ in (*HEADLINE, *SECONDARY)]
 
 
 def entry(delta, ci=(-0.012, 0.031), verdict="tie_or_inconclusive", fixed=12, broken=3, n_paired=500, test="paired"):
@@ -51,7 +52,7 @@ SEEDS = (0., -.02, -.01, -.03, .01, -.01)
 def calibration(values=SEEDS, band=BAND):
     """A calibration as a screen's headline takes it: the band and each baseline seed's values
     (``noise.seed_values``)."""
-    metrics = [metric for metric, _ in HEADLINE]
+    metrics = [metric for metric, _ in (*HEADLINE, *SECONDARY)]
     seeds = {str(seed): {"pooled": dict.fromkeys(metrics, value),
                          "suites": {f"S{n}": dict.fromkeys(metrics, value) for n in range(1, 13)}}
              for seed, value in enumerate(values)}
@@ -90,7 +91,43 @@ def test_twelve_suites_fit_one_screen():
     text = single(comparison(), calibration(), title=["Screen wide: lab-wide-v1 at 20000 steps."])
     lines = text.splitlines()
     assert lines[0] == "Screen wide: lab-wide-v1 at 20000 steps."
-    assert len(lines) <= 57 and max(map(len, lines)) <= 132, (len(lines), max(map(len, lines)))
+    assert len(lines) <= 58 and max(map(len, lines)) <= 132, (len(lines), max(map(len, lines)))
+
+
+def with_short(found, delta=.05, suites=("S1", "S6")):
+    """``found`` with d_short.abstain_ok compared in ``suites`` (``secondary.cached_comparison``'s shape)."""
+    for name in suites:
+        found["suites"][name]["headline"]["d_short.abstain_ok"] = {"delta": delta, "n_paired": 40, "test": None,
+                                                                   "verdict": None}
+    return found
+
+
+def test_the_secondary_metric_is_weighed_beside_the_headline_metrics():
+    """d_short.abstain_ok +5 pp in S1 and S6 against six baseline seeds at −1.0±1.4: diff +6.0, z 3.9 at 5 df."""
+    line = next(line for line in single(with_short(comparison()), calibration()).splitlines()
+                if line.startswith("D short abstain"))
+    assert line == ("D short abstain (d_short.abstain_ok): pooled +5.0 / band none; seeds -1.0±1.4 n6; diff +6.0 "
+                    "z+3.9 2/2; beyond noise (better).")
+    assert "D short abstain (d_short.abstain_ok): not scored." in single(comparison(), calibration()).splitlines()
+    table = pooled_rows(pooled_text({seed: with_short(comparison()) for seed in (0, 1)}, calibration(),
+                                    boundaries=(0, "wide")), POOLED_HEADING)
+    assert table["D short abstain"][0] == "+5.0±0.0 k2" and table["D short abstain"][-1] == "beyond noise (better)"
+
+
+def test_a_calibration_without_the_secondary_metric_leaves_it_uncalibrated_and_says_so():
+    given = calibration()
+    for seed in given["seeds"].values():
+        del seed["pooled"]["d_short.abstain_ok"]
+        for suite in seed["suites"].values():
+            del suite["d_short.abstain_ok"]
+    note = ("D short abstain is uncalibrated: the calibration holds no d_short.abstain_ok values, neither in its pairs "
+            "nor in its cached scores.")
+    single_text = single(with_short(comparison()), given)
+    assert "uncalibrated." in next(line for line in single_text.splitlines() if line.startswith("D short abstain ("))
+    assert note in single_text.splitlines()
+    assert note in pooled_text({0: with_short(comparison())}, given, boundaries=(0, "wide")).splitlines()
+    assert note not in single(with_short(comparison()), calibration())                  # it holds them
+    assert note not in single(with_short(comparison()))                                 # nothing is calibrated
 
 
 # A screen's and a report's title lines as they are written, the longest over 132 columns.

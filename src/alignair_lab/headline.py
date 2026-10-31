@@ -37,6 +37,9 @@ from alignair_lab.noise import MIN_SEEDS, MIXED, UNCALIBRATED, pooled
 
 HEADLINE = (("clone_key.exact", "clone_key.exact"), ("junction.nt_exact", "junction.nt_exact"), ("v.top1_in_set", "V top-1"),
             ("d.top1_in_set", "D top-1"), ("j.top1_in_set", "J top-1"))
+# Metrics the headline metrics cannot see, weighed by the same rule from the assay's cached scores (``secondary``):
+# a D presence gate's benefit is abstention on a D too short to call, which can only lower D top-1 there.
+SECONDARY = (("d_short.abstain_ok", "D short abstain"),)
 BOUNDARIES = tuple((f"head.{gene}.{edge}_exact", f"{gene.upper()} {edge}") for gene in "vdj" for edge in ("start", "end"))
 DECODERS = (("soft", "Boundary exact rates, the soft-argmax decoder:"),
             ("argmax", "Boundary exact rates, the position logits' argmax decoder (the product's):"))
@@ -167,6 +170,33 @@ def regressions_line(decisions: Mapping[str, Mapping]) -> str:
     return line + (f" Spread unmeasured: {'; '.join(unmeasured)}." if unmeasured else "")
 
 
+def secondary_lines(decisions: Mapping[str, Mapping]) -> list[str]:
+    """One line per ``SECONDARY`` metric the decisions hold: its pooled Δ / band, the baseline seeds, the diff, z and
+    signs, and the verdict, as the noise rows give them; ``not scored`` when no suite compares it; then the
+    ``secondary_notes``."""
+    lines = []
+    for metric, label in SECONDARY:
+        found = decisions.get(metric)
+        if found is None:
+            continue
+        if found["pooled"] is None:
+            lines.append(f"{label} ({metric}): not scored.")
+            continue
+        lines.append(f"{label} ({metric}): pooled {100 * found['pooled']:+.1f} / band {band_text(found)}; seeds "
+                     f"{seeds_cell(found)}; diff {diff_cell(found)}; {verdict_text(found)}.")
+    return lines + secondary_notes(decisions)
+
+
+def secondary_notes(decisions: Mapping[str, Mapping]) -> list[str]:
+    """Why a ``SECONDARY`` metric is uncalibrated where the headline metrics are not: the calibration holds no values
+    of it (its pairs predate it, and its cached scores could not give them, ``baselines.calibration_seeds``)."""
+    calibrated = any(decisions[metric]["n"] >= MIN_SEEDS for metric, _ in HEADLINE if metric in decisions)
+    return [f"{label} is uncalibrated: the calibration holds no {metric} values, neither in its pairs nor in its "
+            "cached scores." for metric, label in SECONDARY
+            if calibrated and metric in decisions and decisions[metric]["pooled"] is not None
+            and not decisions[metric]["n"]]
+
+
 def _noise_rows(decisions: Mapping[str, Mapping], metrics: Sequence[tuple[str, str]]) -> list:
     rows = {POOLED: [], SEEDS: [], DIFF: [], NOISE: []}
     for metric, _ in metrics:
@@ -242,8 +272,9 @@ def render_pooled_headline(comparisons: Mapping[int, Mapping], *, decisions: Map
     (``suite_z_cell``); then the boundary tables of the screen of one seed, ``boundaries`` (its init seed and its
     name), labelled as that seed's alone."""
     seeds = list(comparisons)
+    weighed = [(metric, label) for metric, label in (*HEADLINE, *SECONDARY) if metric in decisions]
     rows = []
-    for metric, label in HEADLINE:
+    for metric, label in weighed:
         found = decisions[metric]
         if found["pooled"] is None:
             rows.append([label, *["n/a"] * 9])
@@ -253,12 +284,12 @@ def render_pooled_headline(comparisons: Mapping[int, Mapping], *, decisions: Map
         df = "n/a" if found["df"] is None else f"{found['df']:.1f}"
         rows.append([label, candidate_cell(found), seeds_cell(found), _percent(found["diff"]), z, df,
                      p_text(found["p"]), signs, band_text(found), verdict_text(found)])
-    per_seed = [[label, *(_percent(pooled(comparisons[seed], metric)) for seed in seeds)] for metric, label in HEADLINE]
+    per_seed = [[label, *(_percent(pooled(comparisons[seed], metric)) for seed in seeds)] for metric, label in weighed]
     seed, screen = boundaries
     lines = [*wrapped(title), *POOLED_LEGEND, "", POOLED_HEADING,
              *_grid(["Metric", "candidate", "baseline seeds", "diff", "z", "df", "p", "agree", "band", "noise"],
                     rows),
-             regressions_line(decisions), "", SEEDS_HEADING,
+             regressions_line(decisions), *secondary_notes(decisions), "", SEEDS_HEADING,
              *_grid(["Metric", *(f"init {found}" for found in seeds)], per_seed), "",
              *_suite_z_block(comparisons, decisions), "",
              f"Boundary exact rates of init seed {seed} alone ({screen}): one seed against the baseline screen, "
@@ -280,7 +311,7 @@ def render_headline(comparison: dict, *, decisions: Mapping[str, Mapping], title
         lines.append("Warning: different AlignAIR code for the two models, so every Δ holds the code change as well.")
     suites = comparison["suites"]
     lines += ["", *_table(suites, HEADLINE, ci=True, extra=_noise_rows(decisions, HEADLINE)),
-              regressions_line(decisions)]
+              regressions_line(decisions), *secondary_lines(decisions)]
     for decoder, heading in DECODERS:
         lines += ["", heading,
                   *_table(suites, [(f"{metric}.{decoder}", label) for metric, label in BOUNDARIES], ci=False)]
