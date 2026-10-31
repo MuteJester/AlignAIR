@@ -8,9 +8,10 @@ The bank is the chip's input, not its weights: the buffers are rebuilt from whic
 - ``cover_g`` (R, W): 1 where the row has a base.
 - ``row_allele_g`` (R,): the reference allele each row is. V and J have one row per allele; D has two, its forward
   rows first and then its reverse complements (``row_inverted_d``), so an inverted D finds its germline in the bank.
-- ``sequence_g`` (R, longest allele) and ``anchor_base_g`` (R,), V and J: each row's ungapped germline as tokens (0
-  past its end and for a non-A/C/G/T base), and the base its conserved codon starts at (V Cys, J W/F; -1 when none is
-  annotated): they line a read up with the row from the read's own anchor, gaps of the frame aside.
+- ``sequence_g`` (R, longest row): each row's ungapped germline as tokens (0 past its end and for a non-A/C/G/T
+  base), for the units that align a read to the rows base by base, gaps of the frame aside.
+- ``anchor_base_g`` (R,), V and J: the base each row's conserved codon starts at (V Cys, J W/F; -1 when none is
+  annotated), which lines a read up with the row from the read's own anchor.
 """
 from __future__ import annotations
 
@@ -45,21 +46,21 @@ class BankCompiler(nn.Module):
                     if base in BASES and columns[k] >= 0:
                         table[row, int(columns[k]) * len(BASES) + BASES.index(base)] = 1.
                         cover[row, int(columns[k])] = 1.
+            longest = max(len(sequence) for _, sequence, _ in rows)
+            sequence_tokens = torch.zeros(len(rows), longest, dtype=torch.long)
+            for row, (_, sequence, _) in enumerate(rows):
+                sequence_tokens[row, :len(sequence)] = torch.tensor(
+                    [BASES.index(base) + 1 if base in BASES else 0 for base in sequence.upper()])
             self.register_buffer(f"table_{gene}", table, persistent=False)
             self.register_buffer(f"cover_{gene}", cover, persistent=False)
+            self.register_buffer(f"sequence_{gene}", sequence_tokens, persistent=False)
             self.register_buffer(f"row_allele_{gene}", torch.tensor([index for index, _, _ in rows]), persistent=False)
             if gene == "d":
                 self.register_buffer("row_inverted_d", torch.arange(len(rows)) >= len(alleles), persistent=False)
             else:
                 anchors = alleles.anchors or {}
-                longest = max(len(sequence) for sequence in alleles.sequences)
-                sequence_tokens = torch.zeros(len(alleles), longest, dtype=torch.long)
-                for row, sequence in enumerate(alleles.sequences):
-                    sequence_tokens[row, :len(sequence)] = torch.tensor(
-                        [BASES.index(base) + 1 if base in BASES else 0 for base in sequence.upper()])
                 anchor_base = [anchors[name] if 0 <= anchors.get(name, -1) < len(sequence) else -1
                                for name, sequence in zip(alleles.names, alleles.sequences)]
-                self.register_buffer(f"sequence_{gene}", sequence_tokens, persistent=False)
                 self.register_buffer(f"anchor_base_{gene}", torch.tensor(anchor_base), persistent=False)
             self.genes.append(gene)
 

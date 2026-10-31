@@ -112,3 +112,17 @@ def test_the_chip_refines_its_v_end_and_j_start_with_its_bank(chip, monkeypatch)
     refined = model(batch.inputs)["v_end_logits"]
     assert seen == [(model.core.bank, True)]
     assert torch.allclose(refined - plain, torch.full_like(plain, 1000.))
+
+
+def test_the_chip_multiplies_its_d_scan_with_the_local_d_alignment(chip, monkeypatch):
+    model, batch, _ = chip
+    model.eval()
+    leaning = torch.tensor([[0., -50.]])                               # the local alignment's preference: D*01
+    monkeypatch.setattr(chip_core, "local_d_log_posterior",
+                        lambda out, tokens, mask, bank, alleles: torch.zeros(tokens.shape[0], alleles))
+    scan = model(batch.inputs)["d_log_posterior"]
+    monkeypatch.setattr(chip_core, "local_d_log_posterior",
+                        lambda out, tokens, mask, bank, alleles: leaning.expand(tokens.shape[0], alleles))
+    out = model(batch.inputs)
+    assert torch.allclose(out["d_log_posterior"], torch.log_softmax(scan + leaning, -1), atol=1e-5)
+    assert torch.allclose(out["d_allele"], torch.exp(out["d_log_posterior"] - out["d_log_posterior"].amax(-1, True)))

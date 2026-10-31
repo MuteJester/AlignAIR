@@ -9,7 +9,8 @@ weights each base by its soft region weight (through a gradient valve: the scans
 (``bind_reference``) that the batch's genotype (``bank_mask_{gene}``, every allele when absent) allows.
 
 Outputs, under the product's keys: the parser's boundary logits and their expectations, the V end and J start refined
-by the called alleles' germlines from the anchors (``refiner``, with the anchor heads); ``{gene}_allele``, the
+by the called alleles' germlines from the anchors (``refiner``, with the anchor heads); at inference, the D posterior
+times the junction's local alignment to every D row (``dlocal``); ``{gene}_allele``, the
 allele's likelihood relative to the best (1 for the best, 0 out of the bank) so the product's set thresholds keep
 near ties; the anchor logits; ``d_presence_logits`` from detached evidence (how much of the read the parser puts in
 D, how concentrated the D posterior is), so presence reads the evidence without reshaping it; ``mutation_rate`` and
@@ -32,6 +33,7 @@ from alignair.errors import ConfigurationError
 
 from ..trunk import TRUNK_CHANNELS, AnchorHead, DilatedTrunk
 from .bank import BankCompiler
+from .dlocal import local_d_log_posterior
 from .parser import GENES as STATE_OF, IMPOSSIBLE, Parser
 from .reader import ShmReader, top_coordinates
 from .refiner import refine_boundaries
@@ -157,6 +159,10 @@ class ChipCore(nn.Module):
         out["indel_count"] = (reading.inserted * in_vdj).sum(1, keepdim=True)
         if self.anchors is not None:                  # the V end and J start, counted along the bank from the anchors
             refine_boundaries(out, tokens, mask, end_mask, self.bank)
+        if "d" in self.genes and not self.training:   # the D call: the scan's times the junction's local alignment
+            local = local_d_log_posterior(out, tokens, mask, self.bank, self.counts["d"])
+            out["d_log_posterior"] = torch.log_softmax(out["d_log_posterior"] + local, -1)
+            out["d_allele"] = torch.exp(out["d_log_posterior"] - out["d_log_posterior"].amax(-1, keepdim=True))
 
         if chip_batch:
             out["chip_emissions"], out["chip_transitions"] = parsed.emissions, parsed.transitions

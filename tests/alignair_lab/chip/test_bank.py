@@ -59,3 +59,8 @@ def test_v_and_j_rows_also_hold_their_ungapped_germline_and_anchor_base():
     assert bank.sequence_j.tolist() == [[2, 2, 3, 3]]                    # TTGG
     assert bank.anchor_base_v.tolist() == [-1, -1]                       # no annotated anchor
     assert bank.anchor_base_j.tolist() == [1]
+
+
+def test_d_rows_hold_their_ungapped_germline_forward_then_reverse_complement():
+    bank = BankCompiler(_reference())
+    assert bank.sequence_d.tolist() == [[3, 3, 1, 2], [4, 4, 0, 0], [1, 2, 4, 4], [0, 3, 3, 0]]   # GGAT CCN ATCC NGG
