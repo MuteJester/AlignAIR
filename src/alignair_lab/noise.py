@@ -19,11 +19,11 @@ it with baseline screens of several init seeds, compared pair by pair. Per metri
   ``FAMILY_ALPHA`` over the metric's suites that have a p, finds its fall significant and the fall is
   ``MIN_REGRESSION`` (1 pp) or more. A limited suite, with too few pairs or clusters for the assay's verdict on the
   metric (``too_few_pairs``, ``too_few_clusters``) in some seed's comparison, is reported and flagged but stays out of
-  the family and never regresses. A suite whose z is undefined (its baseline seeds have no spread, or it has one
-  baseline value) is out of the family: its fall of ``MIN_REGRESSION`` or more regresses when the assay's own paired
-  verdict on the suite's reads is worse (``WORSE_READS``) in a majority of the candidate seeds' comparisons, and is
-  listed as unmeasured (``unmeasured``) otherwise. The p is t's, not the normal's: from 1–3 candidate seeds and 6
-  baseline seeds,
+  the family and never regresses. A suite whose baseline seeds have no spread there (an SD of 0, or one value) has
+  its spread unmeasured, whatever the candidate seeds' spread: the trigger is the baseline's. It has no z and is out
+  of the family: its fall of ``MIN_REGRESSION`` or more regresses when the assay's own paired verdict on the suite's
+  reads is worse (``WORSE_READS``) in a majority of the candidate seeds' comparisons, and is listed as unmeasured
+  (``unmeasured``) otherwise. The p is t's, not the normal's: from 1–3 candidate seeds and 6 baseline seeds,
   Welch's z has heavy tails, and the normal's p would let Holm call some suite of eleven a regression in about a
   quarter of the screens without one. The pooled z is read from Student's t at its df as well (``pooled_test``),
   two-sided at ``POOLED_ALPHA``: z ≥ 2 alone would call about 1 in 20 candidates without an effect better. The
@@ -58,6 +58,7 @@ MIN_REGRESSION = 0.01                     # the smallest fall of a suite that co
 # The assay's tests when a metric's pairs in a suite are too few, or fall in too few clusters, for a verdict.
 FEW_CLUSTERS, FEW_PAIRS = "too_few_clusters", "too_few_pairs"
 WORSE_READS = "a_better"                  # the assay's paired verdict on a suite's reads: the baseline (a) is better
+NO_SPREAD = 1e-9                          # a baseline seeds' SD at or below this is no spread (float noise of 0)
 
 
 def suite_deltas(comparison: Mapping, metric: str) -> dict[str, dict]:
@@ -274,11 +275,13 @@ def pooled_test(candidate: Sequence[float], baseline: Sequence[float]) -> dict:
 def suite_tests(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping], metric: str) -> dict[str, dict]:
     """Each suite the candidate's ``comparisons`` compare ``metric`` in -> its own ``welch`` test: the candidate seeds'
     Δs there against the ``baseline`` seeds' values there (``diff``, ``z``, ``df``, ``k``, ``n``; with one candidate
-    seed its spread is taken to be the baseline's), z None with fewer than two baseline values or no spread, and the
-    one-sided ``p`` of a fall (Student's t at df); whether it is ``limited`` (too few pairs or clusters for the assay's
-    verdict in some seed's comparison); whether it is ``significant`` by Holm's step-down at family α
+    seed its spread is taken to be the baseline's), and the one-sided ``p`` of a fall (Student's t at df); its spread is
+    unmeasured (``spread_unmeasured``: no z, df or p) when the baseline seeds there are fewer than two or have no
+    spread (``NO_SPREAD``), whatever the candidate seeds' spread; whether it is ``limited`` (too few pairs or clusters
+    for the assay's verdict in some seed's comparison); whether it is ``significant`` by Holm's step-down at family α
     ``FAMILY_ALPHA`` over the suites with a p that are not limited; and whether it ``regresses``: significant and down
-    by ``MIN_REGRESSION`` or more."""
+    by ``MIN_REGRESSION`` or more, or, with its spread unmeasured, down by that much with the assay's read-level
+    verdict worse in a majority of the seeds' comparisons (``unmeasured_fall`` otherwise)."""
     found: dict[str, list[dict]] = {}
     for comparison in comparisons:
         for name, suite in suite_deltas(comparison, metric).items():
@@ -290,13 +293,12 @@ def suite_tests(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping],
         test = {"diff": None, "z": None, "df": None, "p": None, "k": len(candidate), "n": len(values)}
         if values:
             test["diff"] = statistics.fmean(candidate) - statistics.fmean(values)
-        if len(values) >= 2:
+        unmeasured = bool(values) and (len(values) < 2 or statistics.stdev(values) <= NO_SPREAD)
+        if values and not unmeasured:
             numbers = welch(candidate, values)
-            test.update(diff=numbers["diff"], z=numbers["z"], df=numbers["df"])
-            if numbers["z"] is not None:
-                test["p"] = float(stats.t.cdf(numbers["z"], numbers["df"]))
+            test.update(diff=numbers["diff"], z=numbers["z"], df=numbers["df"],
+                        p=float(stats.t.cdf(numbers["z"], numbers["df"])))
         limited = not all(suite["clustered"] for suite in suites)
-        unmeasured = test["z"] is None and test["diff"] is not None
         falls = unmeasured and not limited and _falls(test["diff"])
         worse_reads = 2 * sum(suite["verdict"] == WORSE_READS for suite in suites) > len(suites)
         tests[name] = {**test, "limited": limited, "spread_unmeasured": unmeasured, "significant": False,

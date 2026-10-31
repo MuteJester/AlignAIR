@@ -323,13 +323,26 @@ def test_a_fall_where_the_baseline_seeds_have_no_spread_counts_on_the_assays_rea
     assert counted["regressions"] == ["S3"]
 
 
-def test_several_seeds_count_an_unmeasured_fall_on_a_majority_of_their_read_level_verdicts():
-    def seeds_with(*verdicts):
-        return decision(*[[entry(.12), entry(.06), entry(.06), entry(-.03, verdict=verdict)] for verdict in verdicts],
-                        baseline=unmeasured())
-    assert seeds_with(WORSE_READS, WORSE_READS, "tie_or_inconclusive")["regressions"] == ["S4"]
-    assert seeds_with(WORSE_READS, "tie_or_inconclusive", "tie_or_inconclusive")["unmeasured"] == ["S4"]
-    assert seeds_with(WORSE_READS, "tie_or_inconclusive")["regressions"] == []               # 1 of 2: no majority
+def test_several_seeds_count_a_fall_where_the_baseline_seeds_have_no_spread_on_their_read_level_verdicts():
+    """The trigger is the baseline's: its seeds have no spread in S4, so the suite's spread is unmeasured whatever the
+    candidate seeds' spread. It has no z and stays out of Holm's family; its fall counts when the assay's paired verdict
+    is worse in a majority of the seeds' comparisons, and is listed as unmeasured otherwise."""
+    tie = "tie_or_inconclusive"
+
+    def seeds_with(deltas, verdicts):
+        return decision(*[[entry(.12), entry(.06), entry(.06), entry(delta, verdict=verdict)]
+                          for delta, verdict in zip(deltas, verdicts)], baseline=unmeasured())
+    worse = seeds_with((-.08, -.10, -.12), (WORSE_READS,) * 3)
+    s4 = worse["suite_z"]["S4"]
+    assert (s4["k"], s4["z"], s4["df"], s4["p"], s4["spread_unmeasured"]) == (3, None, None, None, True)
+    assert s4["diff"] == pytest.approx(-.10) and (worse["regressions"], worse["unmeasured"]) == (["S4"], [])
+    wide = seeds_with((-.02, -.10, -.18), (WORSE_READS,) * 3)       # the candidate's own spread would give t p .08
+    assert (wide["regressions"], wide["unmeasured"]) == (["S4"], [])
+    assert seeds_with((-.08, -.10, -.12), (WORSE_READS, WORSE_READS, tie))["regressions"] == ["S4"]
+    tied = seeds_with((-.08, -.10, -.12), (WORSE_READS, tie, tie))  # the candidate's own spread would give t p .007
+    assert (tied["regressions"], tied["unmeasured"]) == ([], ["S4"])
+    two = seeds_with((-.08, -.12), (WORSE_READS, tie))              # 1 of 2: no majority
+    assert (two["regressions"], two["unmeasured"]) == ([], ["S4"])
 
 
 def test_the_signs_are_kept_as_information_over_the_suites_with_enough_clusters():
