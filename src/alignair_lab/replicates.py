@@ -30,7 +30,9 @@ calibration, so a report can be made where the cache, the dev build or the check
 
 The replicates must also compare the same suites on the same cases and paired reads (``check_pairing``), against the
 calibration's own seed-0 checkpoint (``check_calibration``), under the same lab and assay code (``code_digests`` of
-``screen``; those that record none are pooled with a warning, ``code_warning``).
+``screen``; those that record none are pooled with a warning, ``code_warning``). Replicates screened under other code
+than the process that pools them are pooled with a warning naming the digests that differ (``current_code_warning``):
+reuse under newer code is the normal case, and the report records its own code.
 
 A request is what the replicates share (``request_of``): the architecture and its model options, the steps and the
 schedule, the protocol (recipe, cache, steps, schedule), the suites and their builds, the cases, the variants and the
@@ -73,6 +75,7 @@ from alignair_lab.screen import (
     DEV_BUILD,
     SCREENS,
     built_suites,
+    code_digests,
     prepare_candidate,
     suite_builds,
 )
@@ -87,6 +90,7 @@ REQUEST_FIELDS = ("architecture", "model_options", "steps", "schedule", "protoco
                   "max_cases", "variants")
 BASELINE_FIELDS = ("kind", "checkpoint", "options")
 CODE_FIELDS = ("alignair_lab", "alignair_assay")      # the code digests replicates must share (``screen.code_digests``)
+DIGESTS = ("alignair", *CODE_FIELDS)                 # the code digests set against this process's (``screen.code_digests``)
 DECIDED = tuple(metric for metric, _ in HEADLINE)    # the metrics pooled over the replicates, paired alike in each
 
 
@@ -201,6 +205,34 @@ def code_warning(records: Mapping[int, Mapping]) -> str | None:
     records_them = "it records" if len(unknown) == 1 else "they record"
     return (f"Warning: code digest unknown for {', '.join(unknown)}: {records_them} no alignair_lab or alignair_assay "
             "code digest, so the lab's and the assay's code cannot be checked to be the same.")
+
+
+def _recorded_digest(record: Mapping, field: str) -> str | None:
+    """The code digest ``field`` a replicate was screened under: its record's (``screen.code_digests``), or for AlignAIR
+    in a record that keeps none, the code its comparison was diagnosed under; None when unrecorded."""
+    found = (record.get("code") or {}).get(field)
+    if not found and field == "alignair":
+        found = ((record.get("comparison") or {}).get("code") or {}).get("this")
+    return found or None
+
+
+def current_code_warning(records: Mapping[int, Mapping], current: Mapping[str, str]) -> str | None:
+    """The warning line naming each code digest of ``DIGESTS`` that differs between ``current`` (this process's code,
+    ``screen.code_digests``) and the code a replicate was screened under, with the replicates it differs for; None when
+    none differs. A digest a replicate does not record is not compared (``code_warning`` names it). Never a refusal:
+    pooling finished replicates under newer code is reuse's normal case, and their comparisons are the ones their
+    records hold."""
+    differing = []
+    for field in DIGESTS:
+        names = [record.get("name") or str(seed) for seed, record in records.items()
+                 if _recorded_digest(record, field) not in (None, current[field])]
+        if names:
+            differing.append(f"{field} differs for {', '.join(names)} (now {current[field][:12]})")
+    if not differing:
+        return None
+    return (f"Warning: this report runs under other code than its replicates were screened under: "
+            f"{'; '.join(differing)}. Their comparisons are the ones their records hold, not diagnosed again under "
+            "this code.")
 
 
 def secondary_of(record: Mapping) -> dict | None:
@@ -365,7 +397,8 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
               "started": now(), "init_seeds": seeds, "request": request,
               "screens": {str(seed): {"name": replicate_name(name, seed), "reused": seed in records} for seed in seeds},
               "baseline": {"name": provenance["name"], "init_seed": provenance["init_seed"],
-                           "checkpoint": provenance["checkpoint"]}, "from_records": from_records}
+                           "checkpoint": provenance["checkpoint"]}, "from_records": from_records,
+              "code": code_digests()}
 
     def stage(status: str, **fields):
         record.update(status=status, **fields)
@@ -386,7 +419,7 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
         metrics = [metric for metric, _ in (*HEADLINE, *SECONDARY)]
         decisions = decide(list(comparisons.values()), (calibration or {}).get("seeds"), metrics,
                            band=(calibration or {}).get("band"))
-        title = _title(name, request, seeds, records, provenance, band, calibration)
+        title = _title(name, request, seeds, records, provenance, band, calibration, record["code"])
         headline = render_pooled_headline(comparisons, decisions=decisions, title=title,
                                           boundaries=(seeds[0], replicate_name(name, seeds[0])))
         (directory / HEADLINE_FILE).write_text(headline + "\n", encoding="utf-8")
@@ -406,7 +439,7 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
 
 
 def _title(name: str, request: Mapping, seeds: Sequence[int], records: Mapping[int, Mapping], provenance: Mapping,
-           band: Mapping | None, calibration: Mapping | None) -> list[str]:
+           band: Mapping | None, calibration: Mapping | None, current: Mapping[str, str]) -> list[str]:
     options = f" with {json.dumps(request['model_options'])}" if request["model_options"] else ""
     rates = ", ".join(f"{records[seed]['name']} (init seed {seed}, "
                       f"{(records[seed].get('candidate') or {}).get('steps_per_second', 'unrecorded')} steps/s)"
@@ -435,7 +468,5 @@ def _title(name: str, request: Mapping, seeds: Sequence[int], records: Mapping[i
         lines.append(f"Warning: the calibration was measured under other AlignAIR code "
                      f"({(band.get('code_sha256') or 'unrecorded')[:12]}) than the replicates "
                      f"({(codes[0] or 'unknown')[:12]}).")
-    unknown = code_warning(records)
-    if unknown:
-        lines.append(unknown)
+    lines += [warning for warning in (code_warning(records), current_code_warning(records, current)) if warning]
     return [*lines, ""]

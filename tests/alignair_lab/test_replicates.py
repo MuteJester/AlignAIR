@@ -10,11 +10,13 @@ from alignair.errors import ConfigurationError
 from alignair_lab.cli import main
 from alignair_lab.headline import POOLED_HEADING
 from alignair_lab.noise import BETTER, MIXED, WITHIN, WORSE, pooled
+from alignair_lab.screen import code_digests
 from alignair_lab.secondary import METRIC, merged
 from alignair_lab.replicates import (
     check_pairing,
     check_replicates,
     code_warning,
+    current_code_warning,
     replicate_name,
     report_name,
     request_of,
@@ -86,6 +88,27 @@ def test_replicates_of_other_lab_or_assay_code_are_refused():
         with pytest.raises(ConfigurationError, match=f"code.{field}") as caught:
             check_replicates(records)
         assert "cand-init2" in str(caught.value)
+
+
+@pytest.mark.component
+def test_replicates_screened_under_other_code_than_this_process_are_pooled_with_a_warning_naming_the_digests():
+    """Pooling finished replicates under newer code is reuse's normal case: never refused, but each digest that differs
+    from this process's code is named, with the replicates it differs for."""
+    records = {seed: record(seed, code=dict(CODE)) for seed in (0, 1, 2)}
+    assert current_code_warning(records, CODE) is None
+    records[2]["code"]["alignair"] = "d" * 64
+    now = {**CODE, "alignair_lab": "e" * 64}
+    assert check_replicates(records) == request_of(records[0])              # the replicates' own code is checked alike
+    assert current_code_warning(records, now) == (
+        f"Warning: this report runs under other code than its replicates were screened under: alignair differs for "
+        f"cand-init2 (now {'a' * 12}); alignair_lab differs for cand, cand-init1, cand-init2 (now {'e' * 12}). "
+        "Their comparisons are the ones their records hold, not diagnosed again under this code.")
+    # a replicate that records no code digests is checked on the AlignAIR code its comparison was diagnosed under
+    old = {0: record(0, comparison={"code": {"this": "f" * 64}}), 1: record(1)}
+    assert current_code_warning(old, CODE) == (
+        f"Warning: this report runs under other code than its replicates were screened under: alignair differs for "
+        f"cand (now {'a' * 12}). Their comparisons are the ones their records hold, not diagnosed again under "
+        "this code.")
 
 
 @pytest.mark.component
@@ -194,6 +217,8 @@ def test_replicates_pool_finished_screens_into_a_report_without_training(rig, re
     assert headline.strip() in capsys.readouterr().out
     assert POOLED_HEADING in flat(headline) and "init seed 0 alone (rep)" in flat(headline)
     assert "Warning: code digest unknown for rep-init2:" in flat(headline)
+    assert "other code than its replicates" not in flat(headline)         # screened by the code that pools them
+    assert found["code"] == code_digests()                                 # the report's own code, by content
     assert sorted(path.name for path in replicate_root.iterdir()) == \
         ["base0", "calibration", "rep", "rep-init1", "rep-init2", "report-rep-seeds012"]          # nothing trained
     assert main(replicate_arguments(rig, replicate_root, "--reuse")) == 2                      # a report is kept
@@ -217,6 +242,25 @@ def test_finished_replicates_are_pooled_from_their_records_alone(rig, replicate_
     capsys.readouterr()
     assert main(["replicates", "--name", "rep", "--from-records", "--out-root", str(replicate_root)]) == 2
     assert "--reuse" in capsys.readouterr().err
+
+
+@pytest.mark.integration
+def test_replicates_screened_under_older_lab_code_are_pooled_with_a_warning_naming_it(rig, replicate_root, capsys):
+    """The lab changed since the replicates were screened: they are pooled, and the headline says which digest
+    differs."""
+    path = replicate_root / "rep" / "screen.json"
+    found = json.loads(path.read_text())
+    found["code"]["alignair_lab"] = "d" * 64
+    path.write_text(json.dumps(found))
+    copy_replicate(replicate_root, 1, .01)
+    copy_replicate(replicate_root, 2, -.02)
+    assert main(replicate_arguments(rig, replicate_root, "--reuse")) == 0
+    report = replicate_root / "report-rep-seeds012"
+    assert json.loads((report / "report.json").read_text())["status"] == "done"
+    headline = flat((report / "headline.txt").read_text())
+    assert (f"Warning: this report runs under other code than its replicates were screened under: alignair_lab differs "
+            f"for rep, rep-init1, rep-init2 (now {code_digests()['alignair_lab'][:12]}).") in headline
+    assert "alignair differs" not in headline and "alignair_assay differs" not in headline
 
 
 @pytest.mark.integration
