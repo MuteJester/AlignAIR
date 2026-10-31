@@ -15,6 +15,9 @@
       [--out-root DIR]
   python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
       [--segment-records N]
+  python -m alignair_lab igblast-dev [--run-dir DIR] [--suites S1,S3] [--igblast-dir DIR] [--dev-build DIR]
+  python -m alignair_lab against-igblast --name NAME --checkpoint FILE [--model-option KEY=VALUE ...]
+      [--igblast-run DIR] [--suites S1,S3] [--device cuda] [--dev-build DIR] [--out-root DIR]
 
 ``screen`` trains an architecture with the recipe (``recipe``) from the record cache and compares it with a baseline
 at the same step (``screen.run_screen``): a screen of lab-null-v1 is a baseline screen, which compares with nothing;
@@ -24,7 +27,9 @@ with the baseline's milestone (``--against-milestone``, Tier 2; its directory de
 writes the null band and the baseline seeds' values of their protocol, which the headlines of its screens weigh their
 Δs against (``calibrate.run_calibration``). ``replicates`` screens a candidate from several init seeds, reusing the
 finished screens, and pools them into one report against the baseline seeds (``replicates.run_replicates``; with
-``--reuse`` it trains nothing). ``cache`` writes the recipe's record cache (``records.write_record_cache``). A
+``--reuse`` it trains nothing). ``cache`` writes the recipe's record cache (``records.write_record_cache``).
+``igblast-dev`` runs IgBLAST on the dev build's reads, and ``against-igblast`` pairs a checkpoint with it read by read
+(``igblast``). A
 ``--model-option`` value is read as JSON when it parses (``64``, ``true``, ``[3, 5]``), else as a string. Run under
 the frozen GenAIRR the cache was written with (``PYTHONPATH=FROZEN:src``). A refused request or a failed run prints
 ``error: ...`` (and its hint) and returns 2.
@@ -35,7 +40,7 @@ import argparse
 import json
 import sys
 
-from alignair_lab import calibrate, replicates, screen
+from alignair_lab import calibrate, igblast, replicates, screen
 from alignair_lab.recipe import BASELINE_ARCHITECTURE, BATCH_SIZE, DATACONFIGS, POLICY, SCHEDULES, SEED
 
 CACHE_STEPS = 40_000
@@ -149,6 +154,30 @@ def build_parser() -> argparse.ArgumentParser:
                             "(default: the selected streams only, sized to keep every writer busy; a size larger "
                             "than any stream writes each whole)")
     cache.set_defaults(func=run_cache)
+
+    dev = commands.add_parser("igblast-dev", help="run IgBLAST with the assay on a copy of the dev build's suites")
+    dev.add_argument("--run-dir", default=str(igblast.IGBLAST_DEV), help="the assay run (default %(default)s)")
+    dev.add_argument("--suites", help="comma-separated dev suites (default: every suite built in --dev-build)")
+    dev.add_argument("--igblast-dir", default=str(igblast.IGBLAST_DIR),
+                     help="an unpacked IgBLAST release (default %(default)s)")
+    dev.add_argument("--dev-build", default=str(screen.DEV_BUILD), help="the assay's dev build (default %(default)s)")
+    dev.set_defaults(func=run_igblast_dev)
+
+    against = commands.add_parser("against-igblast", help="pair a checkpoint with IgBLAST on the dev suites, read by "
+                                                          "read, with its truth-substitution chain")
+    against.add_argument("--name", required=True, help="the report's directory under --out-root")
+    against.add_argument("--checkpoint", required=True, help="the .alignair model file")
+    against.add_argument("--model-option", action="append", default=[], metavar="KEY=VALUE",
+                         help="an option switched on over the checkpoint's config (no new weights), e.g. "
+                              "bank_orientation=true (repeatable)")
+    against.add_argument("--igblast-run", default=str(igblast.IGBLAST_DEV),
+                         help="the IgBLAST run igblast-dev wrote (default %(default)s)")
+    against.add_argument("--suites", help="comma-separated dev suites (default: every suite built in --dev-build)")
+    against.add_argument("--device", default="cuda")
+    against.add_argument("--dev-build", default=str(screen.DEV_BUILD),
+                         help="the assay's dev build (default %(default)s)")
+    against.add_argument("--out-root", default=str(igblast.REPORTS), help="where reports go (default %(default)s)")
+    against.set_defaults(func=run_against_igblast)
     return parser
 
 
@@ -248,4 +277,18 @@ def run_cache(args) -> int:
     print(f"wrote {args.out}: {manifest['records']} records ({manifest['steps']} steps of {manifest['batch_size']}) "
           f"in {len(manifest['components'])} streams, {manifest['bytes'] / 1e9:.2f} GB, in "
           f"{manifest['seconds'] / 60:.1f} min with {manifest['workers']} workers")
+    return 0
+
+
+def run_igblast_dev(args) -> int:
+    run_dir = igblast.run_igblast_dev(run_dir=args.run_dir, dev_build=args.dev_build, suites=_names(args.suites),
+                                      igblast_dir=args.igblast_dir)
+    print(f"IgBLAST scored the dev build's reads in {run_dir}")
+    return 0
+
+
+def run_against_igblast(args) -> int:
+    print(igblast.run_against_igblast(args.name, args.checkpoint, options=model_options(args.model_option),
+                                      igblast_run=args.igblast_run, dev_build=args.dev_build,
+                                      suites=_names(args.suites), device=args.device, out_root=args.out_root), end="")
     return 0
