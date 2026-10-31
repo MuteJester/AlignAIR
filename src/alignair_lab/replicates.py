@@ -7,8 +7,9 @@ screen like any other (``screen.run_screen``).
 ``run_replicates(name, init_seeds=(0, 1, 2), ...)``:
 
 1. **Refuses** before anything is written (ValueError, FileExistsError, FileNotFoundError, ConfigurationError among
-   them): no init seed, one given twice or one that is not a uint32; a parallel count outside 1 to ``MAX_PARALLEL``; a
-   name or report name that is not one path component; a report directory in use; a baseline that is no finished
+   them): no init seed, one given twice or one that is not a uint32, or two seeds (one, or three or more: ``_seeds``
+   says why); a parallel count outside 1 to ``MAX_PARALLEL``; a name or report name that is not one path component;
+   a report directory in use; a baseline that is no finished
    baseline screen of the protocol (``baselines.baseline_screen``, as a screen resolves it); a suite not built in the
    dev build; a replicate under way, or of another request than this one (``check_replicates``, naming the screen and
    what differs); a replicate's directory without a screen record; and with ``reuse``, a missing replicate.
@@ -312,9 +313,17 @@ def _command(name: str, seed: int, request: Mapping, *, against: str, device: st
 
 
 def _seeds(init_seeds: Sequence[int]) -> list[int]:
+    """The init seeds of a request, each once: one, or three or more. Two are refused: their spread is the SD of two
+    values, one degree of freedom, and the pooled test then calls a candidate without an effect better 3.2–4.4% of the
+    time in simulation, above the rule's 3.5% bound (one seed or three: about 2.5%)."""
     seeds = [check_init_seed(seed) for seed in init_seeds]
     if not seeds or len(set(seeds)) != len(seeds):
         raise ValueError(f"replicates need one init seed or more, each once; got {seeds}")
+    if len(seeds) == 2:
+        raise ValueError(f"replicates take one init seed or three or more, not two (got {seeds}): two seeds' spread "
+                         "is the SD of two values, one degree of freedom, and with it the pooled test called a "
+                         "candidate without an effect better 3.2–4.4% of the time in simulation, above the rule's 3.5% "
+                         "bound (one seed, its spread taken as the baseline's, or three: about 2.5%)")
     return seeds
 
 

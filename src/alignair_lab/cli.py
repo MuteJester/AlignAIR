@@ -106,7 +106,8 @@ def build_parser() -> argparse.ArgumentParser:
     replicate.add_argument("--name", required=True,
                            help="the replicates' name: init seed 0's screen; init seed k's is <name>-init<k>")
     replicate.add_argument("--init-seeds", default=",".join(map(str, replicates.DEFAULT_INIT_SEEDS)),
-                           help="comma-separated init seeds of the candidate's screens (default %(default)s)")
+                           help="comma-separated init seeds of the candidate's screens: one, or three or more "
+                                "(default %(default)s)")
     replicate.add_argument("--parallel", type=int, default=1,
                            help=f"replicates trained at once, at most {replicates.MAX_PARALLEL} (default %(default)s)")
     replicate.add_argument("--reuse", action="store_true",

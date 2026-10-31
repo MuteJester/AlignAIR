@@ -20,6 +20,7 @@ from alignair_lab.replicates import (
     replicate_name,
     report_name,
     request_of,
+    run_replicates,
 )
 from tests.alignair_lab.rig import candidate_arguments, common, flat, options, write_null_band
 
@@ -40,6 +41,17 @@ def record(seed, **changes):
             target = target[part]
         target[field] = value
     return found
+
+
+@pytest.mark.component
+def test_two_init_seeds_are_refused_saying_why(tmp_path):
+    """Two seeds' spread is an SD of two values: the pooled test calls a candidate without an effect better too often.
+    One seed, or three or more."""
+    with pytest.raises(ValueError, match="one init seed or three or more, not two") as caught:
+        run_replicates("cand", init_seeds=(0, 1), reuse=True, out_root=tmp_path / "screens", cache=tmp_path / "none",
+                       dev_build=tmp_path / "none")
+    assert "3.2–4.4%" in str(caught.value) and "3.5%" in str(caught.value)
+    assert not (tmp_path / "screens").exists()
 
 
 @pytest.mark.component
@@ -274,7 +286,7 @@ def test_a_missing_replicate_or_one_of_another_request_is_refused_before_anythin
     assert main(replicate_arguments(rig, replicate_root, "--reuse")) == 2
     error = capsys.readouterr().err
     assert "rep-init2" in error and "protocol" in error
-    assert main(replicate_arguments(rig, replicate_root, "--reuse", "--model-option", "embed_dim=8", seeds="0,1")) == 2
+    assert main(replicate_arguments(rig, replicate_root, "--reuse", "--model-option", "embed_dim=8")) == 2
     assert "model_options" in capsys.readouterr().err
     assert main(replicate_arguments(rig, replicate_root, "--parallel", "3")) == 2              # two at once at most
     assert "parallel" in capsys.readouterr().err
@@ -284,11 +296,12 @@ def test_a_missing_replicate_or_one_of_another_request_is_refused_before_anythin
 @pytest.mark.integration
 def test_replicates_against_another_seed_0_checkpoint_than_the_calibrations_are_refused(rig, replicate_root, capsys):
     copy_replicate(replicate_root, 1, 0.)
+    copy_replicate(replicate_root, 2, 0.)
     protocol = json.loads((replicate_root / "rep" / "screen.json").read_text())["protocol"]
     shutil.rmtree(replicate_root / "calibration")
     other = "0" * 12 + "-" + "c" * 12
     write_null_band(rig, replicate_root, protocol, screens={"0": {"name": "base0", "model_key": other}})
-    assert main(replicate_arguments(rig, replicate_root, "--reuse", seeds="0,1")) == 2
+    assert main(replicate_arguments(rig, replicate_root, "--reuse")) == 2
     error = capsys.readouterr().err
     assert "another checkpoint" in error and other in error
     assert not any(path.name.startswith("report-") for path in replicate_root.iterdir())
@@ -296,11 +309,12 @@ def test_replicates_against_another_seed_0_checkpoint_than_the_calibrations_are_
 
 @pytest.mark.integration
 def test_replicates_train_the_missing_seeds_and_reuse_the_finished(rig, replicate_root, capsys):
-    assert main(replicate_arguments(rig, replicate_root, "--parallel", "2", seeds="0,1")) == 0
-    report = replicate_root / "report-rep-seeds01"
+    copy_replicate(replicate_root, 2, .01)
+    assert main(replicate_arguments(rig, replicate_root, "--parallel", "2")) == 0
+    report = replicate_root / "report-rep-seeds012"
     found = json.loads((report / "report.json").read_text())
-    assert (found["screens"]["0"]["reused"], found["screens"]["1"]["reused"]) == (True, False)
+    assert [found["screens"][seed]["reused"] for seed in ("0", "1", "2")] == [True, False, True]
     trained = json.loads((replicate_root / "rep-init1" / "screen.json").read_text())
     assert (trained["status"], trained["init_seed"], trained["baseline"]["name"]) == ("done", 1, "base0")
     assert (report / "rep-init1.log").is_file() and "[replicates] trained rep-init1" in capsys.readouterr().out
-    assert all(entry["k"] == 2 for entry in found["decisions"].values() if entry["pooled"] is not None)
+    assert all(entry["k"] == 3 for entry in found["decisions"].values() if entry["pooled"] is not None)
