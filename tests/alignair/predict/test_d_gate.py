@@ -104,6 +104,19 @@ def test_a_short_d_row_abstains_and_keeps_its_span(golden):
     assert aligned >= 2
 
 
+def test_a_short_d_row_reports_no_statistic_of_a_d_germline_it_does_not_name(golden):
+    """A short D has no call, so its germline alignment is the read's own bases (the Short-D path): its identity and
+    germline alignment would describe the read against itself (identity 1.0). The row leaves them empty, and keeps the
+    D's read alignment."""
+    ungated, gated = _rows(golden, 1)
+    for before, row in zip(ungated, gated):
+        assert before["d_identity"] is not None and before["d_germline_alignment"]
+        assert row["d_identity"] is None
+        assert row["d_germline_alignment"] is None and row["d_germline_alignment_aa"] is None
+        assert row["d_sequence_alignment"] == before["d_sequence_alignment"]
+        assert row["v_identity"] == before["v_identity"] and row["j_identity"] == before["j_identity"]
+
+
 def test_a_callable_d_row_is_the_ungated_row(golden):
     ungated, gated = _rows(golden, 2)
     for before, row in zip(ungated, gated):

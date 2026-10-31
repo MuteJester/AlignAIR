@@ -175,6 +175,10 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
                                          seg.get(f"{g}_germline_alignment"))
         if ident is not None:
             out[f"{g}_identity"] = ident
+    if presence == D_CLASSES[SHORT]:
+        # the short D's germline alignment is the read's own bases (the Short-D path): no statistic of a germline it
+        # does not name, only its read alignment
+        out.update(d_identity=None, d_germline_alignment=None, d_germline_alignment_aa=None)
     derived = None if anchored else quality.airr_productive(vj_in_frame, out["stop_codon"])   # a derived fact
     if derived is not None:
         out["productive"] = derived
