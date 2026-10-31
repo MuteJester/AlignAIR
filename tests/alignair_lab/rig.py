@@ -76,6 +76,11 @@ HEADLINE_METRICS = ('clone_key.exact', 'junction.nt_exact', 'v.top1_in_set', 'd.
 PAIR_DELTAS = {(0, 1): -.01, (0, 2): .005, (1, 2): .015}
 
 
+def flat(text: str) -> str:
+    """``text`` with every run of whitespace one space: a headline's wrapped title lines read as written."""
+    return " ".join(text.split())
+
+
 def model_key(checkpoint: Path) -> str:
     """The assay's model key of a model file under this process's AlignAIR code."""
     from alignair_assay.diagnostics.identity import alignair_code, model_key as key, weights_sha256

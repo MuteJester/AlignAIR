@@ -10,6 +10,7 @@ from alignair.errors import ConfigurationError
 from alignair_lab.cli import main
 from alignair_lab.headline import POOLED_HEADING
 from alignair_lab.noise import BETTER, MIXED, WITHIN, WORSE, pooled
+from alignair_lab.secondary import METRIC, merged
 from alignair_lab.replicates import (
     check_pairing,
     check_replicates,
@@ -18,7 +19,7 @@ from alignair_lab.replicates import (
     report_name,
     request_of,
 )
-from tests.alignair_lab.rig import candidate_arguments, common, options, write_null_band
+from tests.alignair_lab.rig import candidate_arguments, common, flat, options, write_null_band
 
 
 def record(seed, **changes):
@@ -179,14 +180,20 @@ def test_replicates_pool_finished_screens_into_a_report_without_training(rig, re
                for name in ("rep", "rep-init1", "rep-init2")]
     assert found["baseline"]["name"] == "base0" and found["calibration"]["init_seeds"] == [0, 1, 2]
     decided = [(metric, entry) for metric, entry in found["decisions"].items() if entry["pooled"] is not None]
-    assert decided
+    assert decided and METRIC in found["decisions"]             # the secondary metric too, from the screens' records
     for metric, entry in decided:              # each seed's own pooled Δ, against the baseline seeds of the null band
-        assert entry["candidate"] == pytest.approx([pooled(screen["comparison"], metric) for screen in screens])
-        assert (entry["k"], entry["n"]) == (3, 3) and entry["decision"] in (BETTER, WORSE, MIXED, WITHIN)
+        assert entry["candidate"] == pytest.approx([pooled(merged(screen["comparison"], screen["secondary"]), metric)
+                                                    for screen in screens])
+        if metric == METRIC:               # the rig's calibration predates it, and has no cached scores to give it
+            assert (entry["k"], entry["n"], entry["decision"]) == (3, 0, "uncalibrated")
+        else:
+            assert (entry["k"], entry["n"]) == (3, 3) and entry["decision"] in (BETTER, WORSE, MIXED, WITHIN)
     headline = (report / "headline.txt").read_text()
+    if found["decisions"][METRIC]["pooled"] is not None:
+        assert "D short abstain is uncalibrated: the calibration holds no d_short.abstain_ok values" in flat(headline)
     assert headline.strip() in capsys.readouterr().out
-    assert POOLED_HEADING in headline and "init seed 0 alone (rep)" in headline
-    assert "Warning: code digest unknown for rep-init2:" in headline
+    assert POOLED_HEADING in flat(headline) and "init seed 0 alone (rep)" in flat(headline)
+    assert "Warning: code digest unknown for rep-init2:" in flat(headline)
     assert sorted(path.name for path in replicate_root.iterdir()) == \
         ["base0", "calibration", "rep", "rep-init1", "rep-init2", "report-rep-seeds012"]          # nothing trained
     assert main(replicate_arguments(rig, replicate_root, "--reuse")) == 2                      # a report is kept

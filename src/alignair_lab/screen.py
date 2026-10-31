@@ -49,8 +49,9 @@ noise ``decisions``. It also holds each model's size (``sizes.checkpoint_size``:
 in total and per component) and training steps/s: the candidate's under ``candidate``, the baseline's under
 ``baseline`` (the steps/s its baseline screen recorded; None for a milestone). The headline gives each model's on one
 line (``sizes.size_line``). ``code`` holds the digests of the code that screened (``code_digests``: alignair, the lab,
-the assay), which replicates of one request must share. Screens running at once share only inputs they read: the record cache, the dev build, the
-baselines and the null bands.
+the assay), which replicates of one request must share; ``secondary``, the secondary metric's comparison from the two
+models' cached scores (``secondary.cached_comparison``), weighed beside the headline metrics. Screens running at once
+share only inputs they read: the record cache, the dev build, the baselines and the null bands.
 """
 from __future__ import annotations
 
@@ -81,7 +82,7 @@ from alignair_lab.baselines import (
     same_genairr,
     write_json,
 )
-from alignair_lab.headline import HEADLINE, render_headline
+from alignair_lab.headline import HEADLINE, SECONDARY, render_headline
 from alignair_lab.noise import decide
 from alignair_lab.recipe import (
     BASELINE_ARCHITECTURE,
@@ -93,6 +94,7 @@ from alignair_lab.recipe import (
     training_config,
 )
 from alignair_lab.records import CachedRecordSource
+from alignair_lab.secondary import METRIC, cached_comparison, merged
 from alignair_lab.sizes import checkpoint_size, size_line
 
 ARCH_ROOT = Path("/media/thomas/NVMe_Data/alignair_arch")
@@ -267,7 +269,9 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
             if refused:
                 calibration = {**calibration, "seeds": None}
                 record["calibration_refused"] = refused
-            decisions = decide([summary], (calibration or {}).get("seeds"), [metric for metric, _ in HEADLINE],
+            record["secondary"] = cached_comparison(layout.diagnostics_root, result.model_key, base.model_key, METRIC)
+            decisions = decide([merged(summary, record["secondary"])], (calibration or {}).get("seeds"),
+                               [metric for metric, _ in (*HEADLINE, *SECONDARY)],
                                band=(calibration or {}).get("band"))
             title = _title(record, result, base.model_key, summary["code"]["this"])
             headline = render_headline(summary, title=title, decisions=decisions)

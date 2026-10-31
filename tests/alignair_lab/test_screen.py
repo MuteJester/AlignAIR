@@ -14,7 +14,7 @@ from alignair.train.trainer import RECIPE
 from alignair_lab.cli import main
 from alignair_lab.recipe import DATACONFIGS, recipe_train_args
 from alignair_lab.sizes import checkpoint_size, size_line
-from tests.alignair_lab.rig import REMOVED, SMALL, arguments, copy_card
+from tests.alignair_lab.rig import REMOVED, SMALL, arguments, copy_card, flat
 
 pytestmark = pytest.mark.integration
 
@@ -43,20 +43,22 @@ def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_s
     assert Path(record['report']).is_file() and Path(record['report']).is_relative_to(screen)
     assert set(record['comparison']['suites']) == {'S0'}
     headline = (screen / 'headline.txt').read_text()
-    assert headline.strip() in printed and 'clone_key.exact' in headline and record['report'] in headline
-    assert f"git {baseline['git_commit'][:12]}" in headline and f"GenAIRR {baseline['genairr_version']}" in headline
-    assert baseline['options'] == SMALL and f"baseline options {json.dumps(SMALL)}" in headline
+    assert headline.strip() in printed and 'clone_key.exact' in flat(headline) and record['report'] in flat(headline)
+    assert f"git {baseline['git_commit'][:12]}" in flat(headline)
+    assert f"GenAIRR {baseline['genairr_version']}" in flat(headline)
+    assert baseline['options'] == SMALL and f"baseline options {json.dumps(SMALL)}" in flat(headline)
     assert record['cache']['verification'] == {'code_changed': False, 'deep': False, 'records': 56}
-    assert 'Record cache: producing code unchanged since the write; verified 56 records live' in headline
-    assert 'Wall time' in headline and (screen / 'train.log').is_file()     # the trainer logs every 50 steps
-    assert 'initial weights' not in headline                                # the milestone's init seed, 0, is its own
+    assert 'Record cache: producing code unchanged since the write; verified 56 records live' in flat(headline)
+    assert 'Wall time' in flat(headline) and (screen / 'train.log').is_file()     # the trainer logs every 50 steps
+    assert 'initial weights' not in flat(headline)              # the milestone's init seed, 0, is its own
     assert '[screen smoke] step 2/2' in printed                             # progress, past the trainer's log
     assert not (rig.dev / 'diagnostics').exists()                  # the dev build is only read
     # both models' sizes; a milestone records no training rate
     assert baseline['steps_per_second'] is None
     assert baseline['size'] == checkpoint_size(rig.milestones / 'model.step2.alignair')
-    assert size_line('baseline', baseline['size'], None) in headline and 'steps/s not recorded.' in headline
-    assert size_line('candidate', record['candidate']['size'], record['candidate']['steps_per_second']) in headline
+    assert size_line('baseline', baseline['size'], None) in flat(headline) and 'steps/s not recorded.' in flat(headline)
+    assert size_line('candidate', record['candidate']['size'], record['candidate']['steps_per_second']) in \
+        flat(headline)
 
 
 def test_the_null_candidate_reproduces_the_baselines_weights_on_the_cpu(rig):
@@ -83,7 +85,7 @@ def test_a_milestone_comparison_is_not_weighed_against_a_null_band(rig, tmp_path
     record = json.loads((root / 'tier2' / 'screen.json').read_text())
     assert record['null_band'] is None
     headline = (root / 'tier2' / 'headline.txt').read_text()
-    assert 'uncalibrated (Tier 2: milestone)' in headline
+    assert 'uncalibrated (Tier 2: milestone)' in flat(headline)
     noise = next(line for line in headline.splitlines() if line.startswith('noise '))
     assert noise.split()[1:] == ['uncalibrated'] * 5
 
@@ -98,7 +100,7 @@ def test_a_screen_may_draw_its_initial_weights_from_its_data_seed_and_says_so_ag
     assert read_metadata(root / 'unseeded' / 'train' / 'model.alignair')['training']['train_args']['init_seed'] is None
     headline = (root / 'unseeded' / 'headline.txt').read_text()
     assert ('Note: the milestone drew its initial weights from init seed 0, this screen from none (its data seed)'
-            in headline)
+            in flat(headline))
 
 
 def test_the_baseline_records_the_recipes_train_args(rig):

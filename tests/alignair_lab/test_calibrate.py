@@ -47,6 +47,14 @@ def test_calibrate_trains_the_missing_baseline_screens_and_writes_the_null_band(
     assert record['seeds'] == json.loads(json.dumps(seed_values(record['pairs'], [0, 1, 2], relative_to=0)))
     assert record['baseline'] == json.loads(json.dumps(baseline_summary(record['seeds'])))
     assert record['seeds']['1']['pooled'] == record['pairs'][0]['pooled']
+    # each pair holds the secondary metric where the dev suites score it, from the two screens' cached scores
+    from alignair_lab.noise import pair
+    from alignair_lab.secondary import METRIC, cached_comparison
+    diagnostics = path.parent / 'assay' / 'diagnostics'
+    for found in record['pairs']:
+        cached = pair(cached_comparison(diagnostics, screens[str(found['b'])]['model_key'],
+                                        screens[str(found['a'])]['model_key'], METRIC))
+        assert found['pooled'].get(METRIC) == cached['pooled'].get(METRIC)
     assert 'the null band' in printed and str(path) in printed
     assert main(candidate_arguments(rig, 'calibrated', out_root=root)) == 0
     assert json.loads((root / 'calibrated' / 'screen.json').read_text())['null_band']['path'] == str(path)

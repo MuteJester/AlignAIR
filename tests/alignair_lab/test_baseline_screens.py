@@ -17,7 +17,7 @@ from alignair_lab.cli import main
 from alignair_lab.recipe import MIN_LR
 from alignair_lab.noise import BETTER, MIXED, WITHIN, WORSE
 from alignair_lab.sizes import checkpoint_size, size_line
-from tests.alignair_lab.rig import REMOVED, SMALL, candidate_arguments, copy_card, write_null_band
+from tests.alignair_lab.rig import REMOVED, SMALL, candidate_arguments, copy_card, flat, write_null_band
 
 pytestmark = pytest.mark.integration
 
@@ -37,9 +37,9 @@ def test_a_baseline_screen_cools_its_rate_down_and_compares_with_nothing(baselin
     assert state.scheduler_state['last_epoch'] == 2
     assert state.optimizer_state['param_groups'][0]['lr'] == pytest.approx(MIN_LR)      # cooled down to its end
     headline = (baseline / 'headline.txt').read_text()
-    assert 'Baseline screen base0' in headline
+    assert 'Baseline screen base0' in flat(headline)
     assert record['candidate']['size'] == checkpoint_size(checkpoint)                   # its model's size
-    assert size_line('model', record['candidate']['size'], record['candidate']['steps_per_second']) in headline
+    assert size_line('model', record['candidate']['size'], record['candidate']['steps_per_second']) in flat(headline)
 
 
 def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protocol(rig, baseline):
@@ -52,6 +52,13 @@ def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protoco
     assert record['protocol'] == json.loads((baseline / 'screen.json').read_text())['protocol']
     assert (record['role'], record['init_seed'], record['schedule']) == ('candidate', 0, 'cosine')
     assert record['comparison']['code']['same'] is True                     # one process, one AlignAIR code
+    # the secondary metric, from the two models' cached scores in the screen's assay run, weighed beside the others
+    from alignair_lab.secondary import METRIC, cached_comparison
+    diagnostics = screen / 'assay' / 'diagnostics'
+    assert record['secondary'] == cached_comparison(diagnostics, record['candidate']['model_key'],
+                                                    record['comparison']['baseline'], METRIC)
+    assert METRIC in record['decisions']
+    assert any(line.startswith('D short abstain') for line in (screen / 'headline.txt').read_text().splitlines())
     # the code of the product, the lab and the assay that screened it, by content
     import alignair_assay
     import alignair_lab
@@ -61,20 +68,21 @@ def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protoco
                               'alignair_assay': code_identity(Path(alignair_assay.__file__).parent)['code_sha256']}
     assert record['null_band'] is None and set(record['decisions']) >= {'clone_key.exact', 'junction.nt_exact'}
     headline = (screen / 'headline.txt').read_text()
-    assert 'against the baseline screen base0 (lab-null-v1, init seed 0) at step 2' in headline
+    assert 'against the baseline screen base0 (lab-null-v1, init seed 0) at step 2' in flat(headline)
     noise = next(line for line in headline.splitlines() if line.startswith('noise '))
-    assert 'Null band: none' in headline and noise.split()[1:] == ['uncalibrated'] * 5
+    assert 'Null band: none' in flat(headline) and noise.split()[1:] == ['uncalibrated'] * 5
     # the calibration it suggests makes a band this screen would use: of its protocol, options, build and cases
     assert (f"python -m alignair_lab calibrate --steps 2 --init-seeds 0,1,2 --schedule cosine --cache "
             f"{rig.cache.resolve()} --out-root {rig.screens.resolve()} --dev-build {rig.dev.resolve()} --suites S0 "
-            "--model-option embed_dim=4 --model-option filters=4 --model-option block_out=8)") in headline
+            "--model-option embed_dim=4 --model-option filters=4 --model-option block_out=8)") in flat(headline)
     # both models' sizes, and each one's training rate: the baseline's from its baseline screen
     base_rate = json.loads((baseline / 'screen.json').read_text())['candidate']['steps_per_second']
     assert reference['steps_per_second'] == base_rate
     assert reference['size'] == checkpoint_size(reference['checkpoint'])
     assert record['candidate']['size'] == checkpoint_size(record['candidate']['model_path'])
-    assert size_line('candidate', record['candidate']['size'], record['candidate']['steps_per_second']) in headline
-    assert size_line('baseline', reference['size'], base_rate) in headline
+    assert size_line('candidate', record['candidate']['size'], record['candidate']['steps_per_second']) in \
+        flat(headline)
+    assert size_line('baseline', reference['size'], base_rate) in flat(headline)
 
 
 def screens_with(tmp_path, baseline, *names, changes=None):
@@ -179,12 +187,15 @@ def test_the_null_band_of_the_protocol_weighs_the_candidates_deltas(rig, baselin
     record = json.loads((root / 'weighed' / 'screen.json').read_text())
     assert record['null_band']['path'] == str(path) and record['null_band']['init_seeds'] == [0, 1, 2]
     assert 'seeds' not in record['null_band']                        # in null_band.json; the decisions hold their sums
-    found = [entry for entry in record['decisions'].values() if entry['pooled'] is not None]
+    found = [entry for metric, entry in record['decisions'].items()
+             if entry['pooled'] is not None and metric != 'd_short.abstain_ok']         # the fixture's pairs predate it
     assert found and all(entry['decision'] in (BETTER, WORSE, MIXED, WITHIN) for entry in found)
     for entry in found:     # the baseline seeds against seed 0: 0, -1 and +0.5 pp, from the pairs with seed 0
         assert (entry['k'], entry['n'], entry['baseline_mean']) == (1, 3, pytest.approx(-.005 / 3))
     headline = (root / 'weighed' / 'headline.txt').read_text()
-    assert f'Null band: {path}' in headline and 'uncalibrated' not in headline and 'other AlignAIR code' not in headline
+    noise = next(line for line in headline.splitlines() if line.startswith('noise '))
+    assert f'Null band: {path}' in flat(headline) and 'uncalibrated' not in noise
+    assert 'other AlignAIR code' not in flat(headline)
     assert any(line.startswith('seeds ') and '-0.2±0.8 n3' in line for line in headline.splitlines())
 
 
@@ -202,7 +213,7 @@ def test_a_calibration_whose_seed_0_screen_is_another_checkpoint_leaves_the_scre
     assert found and all(entry['decision'] == 'uncalibrated' for entry in found)
     headline = (root / 'other-checkpoint' / 'headline.txt').read_text()
     assert (f"Uncalibrated: the calibration's seed-0 screen is another checkpoint: calibration {other}, this "
-            f"comparison's baseline {record['comparison']['baseline']}.") in headline
+            f"comparison's baseline {record['comparison']['baseline']}.") in flat(headline)
 
 
 def test_a_null_band_measured_under_other_code_is_applied_with_a_warning(rig, baseline, tmp_path):
@@ -212,7 +223,7 @@ def test_a_null_band_measured_under_other_code_is_applied_with_a_warning(rig, ba
     assert main(candidate_arguments(rig, 'recoded', out_root=root)) == 0
     assert json.loads((root / 'recoded' / 'screen.json').read_text())['null_band']['path'] == str(path)
     headline = (root / 'recoded' / 'headline.txt').read_text()
-    assert 'Warning: the null band was measured under other AlignAIR code (000000000000)' in headline
+    assert 'Warning: the null band was measured under other AlignAIR code (000000000000)' in flat(headline)
 
 
 def test_a_null_band_gives_each_baseline_seeds_values_and_an_older_one_derives_them_from_its_pairs(tmp_path):

@@ -59,8 +59,9 @@ from alignair_lab.baselines import (
     write_json,
 )
 from alignair_lab.calibrate import train_screens
-from alignair_lab.headline import HEADLINE, render_pooled_headline
+from alignair_lab.headline import HEADLINE, SECONDARY, render_pooled_headline
 from alignair_lab.noise import decide, pooled
+from alignair_lab.secondary import METRIC, cached_comparison, merged
 from alignair_lab.recipe import BASELINE_ARCHITECTURE, schedule as learning_schedule, training_config
 from alignair_lab.records import CachedRecordSource
 from alignair_lab.screen import (
@@ -200,6 +201,20 @@ def code_warning(records: Mapping[int, Mapping]) -> str | None:
     records_them = "it records" if len(unknown) == 1 else "they record"
     return (f"Warning: code digest unknown for {', '.join(unknown)}: {records_them} no alignair_lab or alignair_assay "
             "code digest, so the lab's and the assay's code cannot be checked to be the same.")
+
+
+def secondary_of(record: Mapping) -> dict | None:
+    """A replicate's secondary comparison (``secondary.cached_comparison``): the one its record holds, or, for a screen
+    recorded before it was kept, the one its own assay run's cached scores give (its candidate and its baseline, both
+    diagnosed there); None when neither is at hand."""
+    if record.get("secondary") is not None:
+        return record["secondary"]
+    candidate = (record.get("candidate") or {}).get("model_key")
+    if not record.get("screen_dir") or not candidate:
+        return None
+    found = cached_comparison(Path(record["screen_dir"]) / "assay" / "diagnostics", candidate,
+                              record["comparison"]["baseline"], METRIC)
+    return found if found["suites"] else None
 
 
 def _recorded_baseline(records: Mapping[int, Mapping]) -> dict:
@@ -367,8 +382,8 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
         check_pairing(records, DECIDED)
         check_calibration(records, band, provenance["init_seed"])
         calibration = against_calibration(band, provenance["init_seed"])
-        comparisons = {seed: records[seed]["comparison"] for seed in seeds}
-        metrics = [metric for metric, _ in HEADLINE]
+        comparisons = {seed: merged(records[seed]["comparison"], secondary_of(records[seed])) for seed in seeds}
+        metrics = [metric for metric, _ in (*HEADLINE, *SECONDARY)]
         decisions = decide(list(comparisons.values()), (calibration or {}).get("seeds"), metrics,
                            band=(calibration or {}).get("band"))
         title = _title(name, request, seeds, records, provenance, band, calibration)

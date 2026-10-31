@@ -23,7 +23,7 @@ from alignair.reference.reference_set import ReferenceSet
 from alignair.tasks.functional import soft_cross_entropy_rows, soft_gaussian_target
 from alignair_lab import architectures  # noqa: F401  (registers lab-trunk-v1)
 from alignair_lab.architectures.trunk import TRUNK_CHANNELS, DilatedTrunk, TrunkGeneBranch, build_trunk_heads
-from tests.alignair_lab.rig import SMALL, candidate_arguments
+from tests.alignair_lab.rig import SMALL, candidate_arguments, flat
 
 GENES = ('v', 'd', 'j')
 LENGTH = 576
@@ -616,4 +616,5 @@ def test_a_screen_of_lab_trunk_v1_compares_with_the_baseline_screen(rig, baselin
     assert candidate['components']['trunk']['parameters'] > 0 and 'trunk' not in base['components']
     assert candidate['conv1d'] < base['conv1d']
     headline = (rig.screens / 'trunk' / 'headline.txt').read_text()
-    assert 'Size of the candidate (lab-trunk-v1): ' in headline and 'Size of the baseline (lab-null-v1): ' in headline
+    assert 'Size of the candidate (lab-trunk-v1): ' in flat(headline)
+    assert 'Size of the baseline (lab-null-v1): ' in flat(headline)

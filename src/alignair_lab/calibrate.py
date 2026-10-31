@@ -43,6 +43,7 @@ from pathlib import Path
 from alignair.errors import ConfigurationError
 from alignair_lab.headline import HEADLINE
 from alignair_lab.noise import baseline_summary, null_band, pair, seed_values
+from alignair_lab.secondary import METRIC, cached_comparison, merged
 from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED, schedule as learning_schedule, training_config
 from alignair_lab.records import CachedRecordSource
 from alignair_lab.baselines import (
@@ -238,7 +239,8 @@ def run_calibration(*, steps: int = DEFAULT_STEPS, init_seeds: Sequence[int] = D
             summary = result.against["summary"]
             earlier["model_key"], later["model_key"] = summary["baseline"], result.model_key
             code = summary["code"]["this"]
-            pairs.append({"a": first, "b": second, **pair(summary)})
+            extra = cached_comparison(layout.diagnostics_root, result.model_key, summary["baseline"], METRIC)
+            pairs.append({"a": first, "b": second, **pair(merged(summary, extra))})
         band = null_band(pairs)
         relative_to = BASELINE_INIT_SEED if BASELINE_INIT_SEED in seeds else seeds[0]
         values = seed_values(pairs, seeds, relative_to=relative_to)
