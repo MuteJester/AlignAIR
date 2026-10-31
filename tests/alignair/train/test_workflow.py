@@ -341,3 +341,24 @@ def test_raw_prediction_restores_mode_and_rejects_invalid_protein_inputs(tmp_pat
     predictor.model.cfg.input_space = 'nucleotide'
     with pytest.raises(ConfigurationError, match='vocabulary'):
         predictor.predict_raw(['EVQL'])
+
+
+def test_a_flank_policy_trains_on_flanked_reads_and_is_recorded(tmp_path, monkeypatch):
+    """``TrainingConfig.flanks``: the run's curriculum puts library flanks around its reads and records the policy."""
+    from alignair.data.flanks import FlankPolicy
+    from alignair.train import trainer
+
+    flanks = FlankPolicy(p_prefix=1.0, prefix=(30, 30), p_mask=0.0, p_suffix=0.0)
+    seen = []
+    original = trainer.training_records
+
+    def observed(*args, **kwargs):
+        seen.append(kwargs['policy'].flanks)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(trainer, 'training_records', observed)
+    run = run_training(request(flanks=flanks), output_dir=tmp_path)
+    assert seen and all(policy == flanks for policy in seen)
+    assert read_metadata(run.model_path)['training']['train_args']['flanks'] == flanks.to_dict()
+    with pytest.raises(ConfigurationError, match='flanks'):
+        TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', flanks={'p_prefix': 1.0})

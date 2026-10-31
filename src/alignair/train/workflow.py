@@ -92,5 +92,5 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
           model_setup=setup, on_iteration=on_iteration, resume_path=config.resume_path,
           augmentation=config.augmentation, schedule=config.schedule, study=config.study,
           init_from=config.init_from, init_trust_pickle=config.trust_pickle, resume_trust_pickle=config.trust_pickle,
-          data_workers=config.data_workers, record_source=record_source)
+          data_workers=config.data_workers, record_source=record_source, flanks=config.flanks)
     return TrainingRun(path, outcome.best_model_path, outcome.steps, outcome.checkpoints, outcome.validations)

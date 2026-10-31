@@ -92,7 +92,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
           augmentation=None, schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
-          indel_fraction=INDEL_FRACTION, indel_form='weighted', selected_fraction=SELECTED_FRACTION):
+          indel_fraction=INDEL_FRACTION, indel_form='weighted', selected_fraction=SELECTED_FRACTION, flanks=None):
     """Train ``model`` on the curriculum stream of ``dataconfigs``.
 
     ``indel_form`` and ``indel_fraction`` select the curriculum's polymerase-indel counts
@@ -103,6 +103,9 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     component's selected share. When GenAIRR cannot draw productive records from one of ``dataconfigs``
     (``gym.streams.selection_supported``), the run draws no selected records, says so, and lists those references
     in ``train_args["selection_unavailable"]``.
+
+    ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks around every curriculum stream's reads
+    (``CurriculumStreamPolicy.flanks``): training, validation and the X-ray probe; ``train_args["flanks"]`` records it.
 
     ``record_source`` (``gym.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
     GenAIRR provider of every curriculum stream of the run: training, validation and the X-ray probe. With
@@ -154,7 +157,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     requested_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
                                               mode='amplicon' if cfg.input_space == 'protein' else 'auto',
                                               indel_fraction=indel_fraction, indel_form=indel_form,
-                                              selected_fraction=selected_fraction)
+                                              selected_fraction=selected_fraction, flanks=flanks)
     # A reference GenAIRR cannot draw productive records from (an incompletely annotated custom reference) trains
     # unselected: the whole run then draws no selected records, says so, and records it in train_args.
     unselectable = ([dataconfig_name(dataconfig) for dataconfig in dataconfigs if not selection_supported(dataconfig)]
@@ -219,6 +222,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    "selected_shares": list(source_policy.selected_shares(force_mixture=len(dataconfigs) > 1)),
                    "selection_unavailable": unselectable,
                    "augmentation": augmentation_metadata,
+                   "flanks": flanks.to_dict() if flanks is not None else None,
                    "schedule": schedule_metadata, "study": study.to_dict() if study is not None else None,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),
                    # provenance only: worker processes reproduce the serial batches exactly

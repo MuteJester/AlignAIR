@@ -346,3 +346,31 @@ def test_receptor_policy_uses_enum_values_and_matches_experiment_detection():
     assert is_tcr(reference(chain_type=Kind.BETA))
     assert not is_tcr(reference(chain_type=Kind.HEAVY))
     assert {row['mutation_rate'] for row in CurriculumStreamPolicy().parameters_for(reference(chain_type=Kind.BETA))}=={0.}
+
+
+def test_a_flank_policy_flanks_every_streams_records_from_the_streams_own_seed():
+    """``CurriculumStreamPolicy.flanks``: each stream's records get library flanks drawn from that stream's seed block,
+    whatever the provider (the provider's parameters do not carry the policy), so serial and worker-built batches agree."""
+    from alignair.data.flanks import FlankPolicy, flank_records
+
+    def bare(dataconfig, parameters, seed):
+        assert 'flanks' not in parameters
+        for ordinal in range(3):
+            yield {'seed': seed, 'ordinal': ordinal, 'sequence': 'ACGTACGTAC', 'v_sequence_start': 0,
+                   'v_sequence_end': 6, 'v_cigar': '6M', 'v_germline_start': 0}
+
+    flanks = FlankPolicy(p_prefix=1.0, prefix=(4, 8), p_mask=0.0, p_suffix=0.5, suffix=(1, 3))
+    policy = CurriculumStreamPolicy((.3,), 0., mode='amplicon', selected_fraction=0, flanks=flanks)
+    records = list(training_records((reference(),), policy=policy, seed=17, record_source=bare))
+    plain = list(training_records((reference(),), policy=UNSELECTED, seed=17, record_source=bare))
+    assert [(r['seed'], r['ordinal']) for r in records] == [(r['seed'], r['ordinal']) for r in plain]
+    assert all(4 <= r['flank_5_length'] <= 8 and r['v_sequence_start'] == r['flank_5_length'] for r in records)
+    for block in {r['seed'] for r in plain}:
+        own = [r for r in plain if r['seed'] == block]
+        assert [r['sequence'] for r in records if r['seed'] == block] == [
+            r['sequence'] for r in flank_records(own, flanks, block)]
+
+
+def test_a_flank_policy_must_be_a_flank_policy():
+    with pytest.raises(ConfigurationError):
+        CurriculumStreamPolicy(flanks={'p_prefix': 0.5})

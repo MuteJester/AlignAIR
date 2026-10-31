@@ -13,6 +13,7 @@ from typing import Literal, Protocol
 from collections.abc import Iterable, Iterator, Mapping
 
 from ...errors import ConfigurationError, error_context
+from ...data.flanks import FlankPolicy, flank_records
 from ...data.projection import translated_record_usable
 from ...reference.reference_set import _locus_of, is_tcr
 from .curriculum import Curriculum
@@ -136,7 +137,8 @@ class CurriculumStreamPolicy:
     curriculum progress 0 and 1, giving about 85% indel-free reads over the default mix; ``"uniform"`` is the
     historical form of the 1.0.0 recipe. ``selected_fraction`` (``SELECTED_FRACTION``) of each full-length
     component's records are drawn under GenAIRR's ``productive_only()`` (``substreams_for``); amplicon records never
-    are."""
+    are. ``flanks`` (a ``data.flanks.FlankPolicy``) puts library flanks around every stream's records, drawn from the
+    stream's own seed block after its provider (``training_records``); None leaves the simulated reads bare."""
     progresses: tuple[float, ...] = (.3, .6, .9)
     heavy_shm: float = .25
     short_boost: int = 1
@@ -145,6 +147,7 @@ class CurriculumStreamPolicy:
     indel_fraction: tuple[float, float] = INDEL_FRACTION
     indel_form: Literal['uniform', 'weighted'] = 'weighted'
     selected_fraction: float = SELECTED_FRACTION
+    flanks: FlankPolicy | None = None
 
     def __post_init__(self):
         if self.mode not in ('auto', 'amplicon'):
@@ -165,6 +168,8 @@ class CurriculumStreamPolicy:
         object.__setattr__(self, 'indel_fraction', indel_fraction_range(self.indel_fraction))
         indel_form_name(self.indel_form)
         object.__setattr__(self, 'selected_fraction', _selected_fraction(self.selected_fraction))
+        if self.flanks is not None and not isinstance(self.flanks, FlankPolicy):
+            raise ConfigurationError('flanks must be a FlankPolicy or None', context={'field': 'flanks'})
 
     @property
     def selection_pattern(self) -> tuple[bool, ...]:
@@ -322,9 +327,13 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
             raise ConfigurationError('two record streams of this run drew the same seed block',
                                      context={'purpose': purpose, 'start_step': start_step})
 
+        def flanked(records, block):
+            # after the provider, so a worker-built stream (whose provider runs elsewhere) is flanked alike
+            return records if policy.flanks is None else flank_records(records, policy.flanks, block)
+
         def panel_records(reference, plan):
             # zip preserves complete rounds and periods, including the historical finite-source tail policy.
-            components = [chain.from_iterable(zip(*[iter(provider(reference, params, block))
+            components = [chain.from_iterable(zip(*[iter(flanked(provider(reference, params, block), block))
                                                     for params, block in streams]))
                           for streams in plan]
             locus_class = loci.index(_locus_of(reference.metadata.chain_type))

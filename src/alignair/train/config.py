@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 from ..errors import ConfigurationError
 from ..data.augmentation.protein import ProteinSubstitutionPolicy
 from ..data.augmentation.partial import ProteinCropPolicy
+from ..data.flanks import FlankPolicy
 from .schedules import CosineSchedule
 from .study import TrainingStudy
 from .guards import validate_data_workers
@@ -36,6 +37,8 @@ class TrainingConfig:
     guard. On an accelerator, batches are assembled ahead from the CPU random state, so a CPU random
     draw in the training step, an ``on_iteration`` callback or a study evaluator raises TrainingError;
     use ``data_workers=0`` there.
+    ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks (a 5' leader, a masked primer, a 3' constant
+    region) around the curriculum's reads, which GenAIRR simulates bare; None trains on the bare reads.
     """
     dataconfigs: tuple
     steps: int = 100_000
@@ -59,6 +62,7 @@ class TrainingConfig:
     init_from: str | None = None
     trust_pickle: bool = False
     data_workers: int = 0
+    flanks: FlankPolicy | None = None
 
     def __post_init__(self):
         if self.init_from and self.resume_path or type(self.trust_pickle) is not bool:
@@ -66,6 +70,8 @@ class TrainingConfig:
         validate_data_workers(self.data_workers)
         if self.augmentation is not None and not isinstance(self.augmentation, (ProteinSubstitutionPolicy, ProteinCropPolicy)):
             raise ConfigurationError('augmentation must be a ProteinSubstitutionPolicy, ProteinCropPolicy or None')
+        if self.flanks is not None and not isinstance(self.flanks, FlankPolicy):
+            raise ConfigurationError('flanks must be a FlankPolicy or None', context={'field': 'flanks'})
         if self.schedule is not None:
             if not isinstance(self.schedule, CosineSchedule):
                 raise ConfigurationError('schedule must be a CosineSchedule or None')
