@@ -35,6 +35,16 @@ class AlignAIR(nn.Module):
             raise ConfigurationError("model construction requires an AlignAIRConfig", context={"field": "config"})
         cfg = self.cfg = deepcopy(cfg)
         components = architecture_components(cfg.architecture)
+        self.embedding = _build_component(components.embedding, cfg, component="embedding")
+        self.orientation_head = (_build_component(components.orientation_head, cfg, component="orientation_head")
+                                 if cfg.use_orientation else None)
+        if components.core is not None:
+            # the core replaces everything after orientation correction (and reads the trunk-head flags itself)
+            self.core = _build_component(components.core, cfg, component="core")
+            self.meta_tower = self.state_branch = self.trunk = None
+            self.branches, self.meta_heads, self.trunk_heads = nn.ModuleDict(), nn.ModuleDict(), nn.ModuleDict()
+            return
+        self.core = None
         flagged = [flag for flag in TRUNK_HEAD_FLAGS if getattr(cfg, flag)]
         if flagged and components.trunk is None:
             raise ConfigurationError(f"{', '.join(flagged)} needs an architecture with a trunk: the head reads the "
@@ -42,9 +52,6 @@ class AlignAIR(nn.Module):
                                      context={"stage": "model_construction", "component": "trunk_heads",
                                               "architecture": cfg.architecture, "fields": flagged},
                                      hint="Select an architecture with a trunk, or leave the flag off.")
-        self.embedding = _build_component(components.embedding, cfg, component="embedding")
-        self.orientation_head = (_build_component(components.orientation_head, cfg, component="orientation_head")
-                                 if cfg.use_orientation else None)
         self.meta_tower = (_build_component(components.meta_tower, cfg, component="meta_tower")
                            if cfg.use_meta_heads else None)
         branches = {}
@@ -110,13 +117,23 @@ class AlignAIR(nn.Module):
         # Disabled (orientation_head is None) for amino-acid models: reverse-complement is undefined
         # for protein and the complement table is nucleotide-only.
         emb = emb0 = self.embedding(tokens)
+        corrected = tokens
         if self.orientation_head is not None:
             orient_logits = self.orientation_head(emb0, mask)
             out["orientation_logits"] = orient_logits
             out["orientation"] = orient_logits.argmax(-1)
             correct = (batch["orientation"] if "orientation" in batch   # teacher-forced during training
                        else orient_logits.argmax(-1).detach())          # self-corrected at inference
-            emb = self.embedding(apply_orientation(tokens, mask, correct))
+            corrected = apply_orientation(tokens, mask, correct)
+            emb = self.embedding(corrected)
+
+        if self.core is not None:
+            if self.cfg.boundary_mode == "half_open":
+                out["start_mask"], out["end_mask"] = mask, end_mask
+            else:
+                out["position_mask"] = mask
+            out.update(self.core(emb, mask, end_mask, tokens=corrected, batch=batch))
+            return out
 
         # shared per-position features: computed once from the corrected embedding when the architecture has a trunk
         features = self.trunk(emb, mask) if self.trunk is not None else None
@@ -161,7 +178,7 @@ class AlignAIR(nn.Module):
         A custom gene branch declares its own inspection points through the same method.
         """
         modules = {"embedding": self.embedding}
-        for name in ("orientation_head", "meta_tower", "state_branch", "trunk"):
+        for name in ("orientation_head", "meta_tower", "state_branch", "trunk", "core"):
             module = getattr(self, name)
             if module is not None:
                 modules[name] = module
@@ -180,6 +197,12 @@ class AlignAIR(nn.Module):
                                                  context={"field": name})
                     modules[f"{gene}.{name}"] = module
         return modules
+
+    def bind_reference(self, reference) -> None:
+        """Give the core the reference it reads (a core's bank is an input, not weights); a no-op otherwise."""
+        bind = getattr(self.core, "bind_reference", None)
+        if bind is not None:
+            bind(reference)
 
     @torch.no_grad()
     def clamp_params(self) -> None:

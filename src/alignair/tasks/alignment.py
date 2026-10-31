@@ -10,6 +10,7 @@ from torch import nn
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
 from ..core.d_presence import D_PRESENCE, D_PRESENCE_LOGITS
+from ..core.components import architecture_components
 from ..core.config import AlignAIRConfig
 from ..errors import ConfigurationError, TrainingDataError
 from .losses import auxiliary_losses, categorical_loss, hierarchical_loss, loss_weight_names, make_loss_weights
@@ -96,7 +97,14 @@ class AlignmentTasks:
 
 
 def build_tasks(config: AlignAIRConfig, *, genes=None) -> AlignmentTasks:
-    """Select built-in objectives by score semantics, with explicit categorical gene subsets if needed."""
+    """Select built-in objectives by score semantics, with explicit categorical gene subsets if needed. An architecture
+    with its own objective (``ModelComponents.objective``) gets that one, which supervises its whole gene set."""
+    objective = architecture_components(config.architecture).objective
+    if objective is not None:
+        if genes is not None:
+            raise ConfigurationError("an architecture's own objective supervises its whole gene set",
+                                     context={"architecture": config.architecture})
+        return objective(config)
     canonical = tuple(spec.name for spec in config.gene_specs)
     selected = canonical if genes is None else tuple(genes)
     if not selected or len(set(selected)) != len(selected) or not set(selected) <= set(canonical):

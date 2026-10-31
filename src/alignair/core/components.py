@@ -67,6 +67,13 @@ class ModelComponents:
     computed once per forward after orientation correction. When present, branches, the meta tower and
     the trunk heads receive them (branches and the tower as ``features=``; a head is called
     ``head(features, mask)`` and its result is written to the output under the head's name).
+
+    An optional core replaces everything after orientation correction: the model then builds only its embedding,
+    orientation head and core, and calls ``core(emb, mask, end_mask, *, tokens, batch)`` with the corrected
+    embedding, the read and end masks, the corrected tokens and the raw input batch; the core's outputs are written to
+    the model's output. A core that needs the reference defines ``bind_reference(reference)``; the model's builders
+    and loaders call it. An optional objective (``objective(config) -> TrainingTasks``) is the architecture's training
+    objective, which ``tasks.build_tasks`` returns in place of the built-in one.
     """
     embedding: Callable[[AlignAIRConfig], nn.Module] = _embedding
     gene_branch: Callable[[GeneSpec, AlignAIRConfig], GeneBranch] = GeneBranch
@@ -76,10 +83,12 @@ class ModelComponents:
     state_head: Callable[[AlignAIRConfig], nn.Module] = _state
     trunk: Callable[[AlignAIRConfig], nn.Module] | None = None
     trunk_heads: Callable[[AlignAIRConfig], Mapping[str, nn.Module]] = no_trunk_heads
+    core: Callable[[AlignAIRConfig], nn.Module] | None = None
+    objective: Callable[[AlignAIRConfig], object] | None = None
 
     def __post_init__(self):
         for field in fields(self):
-            if field.name == "trunk" and self.trunk is None:
+            if field.name in ("trunk", "core", "objective") and getattr(self, field.name) is None:
                 continue
             if not callable(getattr(self, field.name)):
                 raise ConfigurationError(f"component factory {field.name!r} must be callable",

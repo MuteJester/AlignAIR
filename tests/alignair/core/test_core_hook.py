@@ -1,0 +1,105 @@
+"""Product core hooks: an architecture may supply its own network core and its own training objective."""
+from dataclasses import replace
+
+import pytest
+import torch
+from torch import nn
+
+import GenAIRR.data as gd
+
+from alignair.core import AlignAIR, ModelComponents, build_model_config, prepare_model, register_architecture
+from alignair.core import components
+from alignair.errors import ConfigurationError
+from alignair.neural.heads.orientation import apply_orientation
+from alignair.reference.reference_set import ReferenceSet
+from alignair.tasks.alignment import build_tasks
+
+pytestmark = pytest.mark.component
+
+
+class ToyCore(nn.Module):
+    """Records what it is given and returns one output."""
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.proj = nn.Linear(cfg.embed_dim, 1)
+        self.seen = {}
+        self.reference = None
+
+    def bind_reference(self, reference):
+        self.reference = reference
+
+    def forward(self, emb, mask, end_mask, *, tokens, batch):
+        self.seen = {"tokens": tokens, "mask": mask, "end_mask": end_mask, "batch": batch}
+        return {"toy": self.proj(emb)[..., 0] * mask}
+
+
+SENTINEL = object()
+
+
+@pytest.fixture
+def architecture(monkeypatch):
+    monkeypatch.setattr(components, "_ARCHITECTURES", dict(components._ARCHITECTURES))
+
+    def register(**factories):
+        name = "test-core-hooks-v1"
+        register_architecture(name, replace(ModelComponents(), **factories))
+        return name
+    return register
+
+
+def config(**options):
+    return build_model_config(3, 2, 2, has_d=True, max_seq_length=128, embed_dim=4, filters=4, block_out=8,
+                              boundary_mode="half_open", **options)
+
+
+def batch(orientation=0):
+    tokens = torch.zeros(2, 128, dtype=torch.long)
+    tokens[:, :30] = torch.randint(1, 5, (2, 30))
+    return {"tokenized_sequence": tokens, "orientation": torch.full((2,), orientation, dtype=torch.long)}
+
+
+def test_a_core_architecture_builds_only_embedding_orientation_and_core(architecture):
+    model = AlignAIR(config(architecture=architecture(core=ToyCore))).eval()
+    assert isinstance(model.core, ToyCore)
+    assert len(model.branches) == 0 and len(model.meta_heads) == 0 and len(model.trunk_heads) == 0
+    assert model.trunk is None and model.meta_tower is None and model.state_branch is None
+    with torch.no_grad():
+        out = model(batch())
+    assert {"toy", "start_mask", "end_mask", "orientation_logits"} <= set(out)
+    assert model.component_modules()["core"] is model.core
+
+
+def test_the_core_receives_orientation_corrected_tokens(architecture):
+    model = AlignAIR(config(architecture=architecture(core=ToyCore))).eval()
+    inputs = batch(orientation=1)
+    with torch.no_grad():
+        model(inputs)
+    tokens = inputs["tokenized_sequence"]
+    mask = tokens != 0
+    assert torch.equal(model.core.seen["tokens"], apply_orientation(tokens, mask, inputs["orientation"]))
+    assert model.core.seen["batch"] is inputs
+
+
+def test_build_tasks_returns_the_architecture_objective(architecture):
+    cfg = config(architecture=architecture(core=ToyCore, objective=lambda cfg: SENTINEL))
+    assert build_tasks(cfg) is SENTINEL
+    with pytest.raises(ConfigurationError):
+        build_tasks(cfg, genes=("v",))
+
+
+def test_anchor_and_d_presence_flags_are_allowed_with_a_core(architecture):
+    model = AlignAIR(config(architecture=architecture(core=ToyCore), anchor_heads=True, d_presence_head=True))
+    assert isinstance(model.core, ToyCore)
+
+
+def test_an_architecture_without_a_core_has_none_and_binds_nothing():
+    model = AlignAIR(config())
+    assert model.core is None
+    model.bind_reference(object())          # a no-op without a core
+
+
+def test_a_prepared_model_binds_its_reference_to_the_core(architecture):
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    model = prepare_model(reference, architecture=architecture(core=ToyCore)).build_model()
+    assert model.core.reference is reference

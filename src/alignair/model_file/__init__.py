@@ -266,6 +266,7 @@ def read_model_state(path, *, trust_pickle=False) -> ModelStateData:
 def load_model(path, *, device="cpu", trust_pickle=False) -> LoadedModel:
     data = read_model_state(path, trust_pickle=trust_pickle)
     model = AlignAIR.from_state_dict(data.config, data.model_state, device=device, source=path)
+    model.bind_reference(data.reference)
     return LoadedModel(model=model, reference=data.reference, config=model.cfg, metadata=data.metadata)
 
 
@@ -326,6 +327,7 @@ def load_training_state(path, *, device="cpu") -> TrainingState:
     """Decode a trusted checkpoint and restore its model, retaining the existing model-bearing API."""
     data = read_training_state(path)
     model = AlignAIR.from_state_dict(data.config, data.model_state, device=device, source=path)
+    model.bind_reference(data.reference)
     return TrainingState(model=model, reference=data.reference, config=model.cfg,
                          logvars_state=data.logvars_state, optimizer_state=data.optimizer_state,
                          step=data.step, rng=data.rng, train_args=data.train_args,

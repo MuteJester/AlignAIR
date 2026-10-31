@@ -129,7 +129,9 @@ class ModelSetup:
     def build_model(self) -> AlignAIR:
         """Allocate the shared model after preflight; architecture registration selects components."""
         self.validate()
-        return AlignAIR(self.config)
+        model = AlignAIR(self.config)
+        model.bind_reference(self.reference)
+        return model
 
     def restore_model(self, state_dict, *, device='cpu', source=None) -> AlignAIR:
         """Revalidate this prepared binding, then restore a fresh model in evaluation mode.
@@ -139,7 +141,9 @@ class ModelSetup:
         """
         with error_context(stage='model_binding', path=source):
             self.validate()
-        return AlignAIR.from_state_dict(self.config, state_dict, device=device, source=source)
+        model = AlignAIR.from_state_dict(self.config, state_dict, device=device, source=source)
+        model.bind_reference(self.reference)
+        return model
 
     def label_schema(self) -> dict:
         """Portable output-column identity; preserve class order instead of rebuilding it on reload."""
