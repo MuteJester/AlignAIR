@@ -29,13 +29,24 @@ def comparison(suites=12):
             "suites": found, "totals": {"baseline": {"fixed": 1, "broken": 2}}}
 
 
-# A null band per headline metric (Δs, as fractions): clone_key.exact and V top-1 are beyond it, the others within.
+# A null band per headline metric (Δs, as fractions), printed as a reference.
 BAND = {"clone_key.exact": .01, "junction.nt_exact": .05, "v.top1_in_set": .005, "d.top1_in_set": .02,
         "j.top1_in_set": .03}
+# Six baseline seeds' values against the baseline screen, the same on every metric and suite: mean −1.0, SD 1.4 pp.
+SEEDS = (0., -.02, -.01, -.03, .01, -.01)
+
+
+def calibration(values=SEEDS, band=BAND):
+    """A calibration as a screen's headline takes it: the band and each baseline seed's values (``noise.seed_values``)."""
+    metrics = [metric for metric, _ in HEADLINE]
+    seeds = {str(seed): {"pooled": dict.fromkeys(metrics, value),
+                         "suites": {f"S{n}": dict.fromkeys(metrics, value) for n in range(1, 13)}}
+             for seed, value in enumerate(values)}
+    return {"band": band, "seeds": seeds}
 
 
 def test_twelve_suites_fit_one_screen():
-    text = render_headline(comparison(), title=["Screen wide: lab-wide-v1 at 20000 steps."], null_band=BAND)
+    text = render_headline(comparison(), title=["Screen wide: lab-wide-v1 at 20000 steps."], calibration=calibration())
     lines = text.splitlines()
     assert lines[0] == "Screen wide: lab-wide-v1 at 20000 steps."
     assert len(lines) <= 55 and max(map(len, lines)) <= 132, (len(lines), max(map(len, lines)))
@@ -81,34 +92,40 @@ def cells(row):
     return [cell.strip() for cell in row.split("  ")[1:] if cell.strip()]
 
 
-def test_each_headline_metric_weighs_its_pooled_delta_against_the_null_band():
+def test_each_headline_metric_weighs_its_pooled_delta_against_the_baseline_seeds():
     """The pooled Δ is read-weighted over the suites that compare the metric (clone_key.exact: S1 +12.3 and eleven
-    suites +1.2, 500 reads each), set beside the null band and the suites, of those with enough clusters for a
-    verdict (J top-1: not S9), whose Δ has its sign; beyond noise only above the band with at least 2/3 of the signs."""
-    found = rows(render_headline(comparison(), null_band=BAND))
-    assert cells(found["pooled"]) == ["+2.1 / 1.0, 12/12 agree", "+1.2 / 5.0, 11/11 agree",
-                                             "+1.2 / 0.5, 12/12 agree", "+1.2 / 2.0, 11/11 agree",
-                                             "+1.3 / 3.0, 11/11 agree"]
-    assert cells(found["noise"]) == ["beyond noise", "within noise", "beyond noise", "within noise", "within noise"]
+    suites +1.2, 500 reads each), beside the null band as a reference. The baseline seeds' values against the same
+    baseline screen (mean −1.0, SD 1.4, n 6) give the diff (+3.1 for clone_key.exact) and Welch's z with the candidate's
+    spread the baseline's, with the suites, of those with enough clusters for a verdict (J top-1: not S9), whose diff
+    has its sign; beyond noise at |z| ≥ 2 with at least 2/3 of the signs."""
+    found = rows(render_headline(comparison(), calibration=calibration()))
+    assert cells(found["pooled"]) == ["+2.1 / 1.0", "+1.2 / 5.0", "+1.2 / 0.5", "+1.2 / 2.0", "+1.3 / 3.0"]
+    assert cells(found["seeds"]) == ["-1.0±1.4 n6"] * 5
+    assert cells(found["diff"]) == ["+3.1 z+2.0 12/12", "+2.2 z+1.4 11/11", "+2.2 z+1.4 12/12", "+2.2 z+1.4 11/11",
+                                    "+2.3 z+1.5 11/11"]
+    assert cells(found["noise"]) == ["beyond noise"] + ["within noise"] * 4
 
 
 def test_signs_counted_over_every_suite_for_want_of_clusters_are_marked():
     found = comparison()
     for suite in found["suites"].values():
         suite["headline"]["v.top1_in_set"] = entry(0.012, test="too_few_clusters")
-    pooled = cells(rows(render_headline(found, null_band=BAND))["pooled"])
-    assert pooled[2] == "+1.2 / 0.5, 12/12 agree*" and not pooled[0].endswith("*")
+    diff = cells(rows(render_headline(found, calibration=calibration()))["diff"])
+    assert diff[2] == "+2.2 z+1.4 12/12*" and not diff[0].endswith("*")
 
 
-def test_a_band_of_zero_marks_nothing():
-    noise = cells(rows(render_headline(comparison(), null_band={**BAND, "v.top1_in_set": 0.}))["noise"])
-    assert noise[2] == "uncalibrated: band 0" and noise[0] == "beyond noise"
+def test_baseline_seeds_that_never_differ_mark_nothing():
+    found = rows(render_headline(comparison(), calibration=calibration(values=(0., 0., 0.))))
+    assert cells(found["seeds"])[0] == "+0.0±0.0 n3" and cells(found["diff"])[0] == "+2.1 z n/a 12/12"
+    assert cells(found["noise"]) == ["uncalibrated: spread 0"] * 5
 
 
-def test_without_a_null_band_the_headline_is_uncalibrated_and_marks_nothing():
-    found = rows(render_headline(comparison()))
-    assert cells(found["pooled"])[0] == "+2.1 / none, 12/12 agree"
-    assert cells(found["noise"]) == ["uncalibrated"] * 5
+def test_without_three_baseline_seeds_the_headline_is_uncalibrated_and_marks_nothing():
+    for given, seeds in ((None, "none"), (calibration(values=(0., -.02)), "n2 < 3")):
+        found = rows(render_headline(comparison(), calibration=given))
+        assert cells(found["pooled"])[0] == ("+2.1 / none" if given is None else "+2.1 / 1.0")
+        assert cells(found["seeds"]) == [seeds] * 5 and cells(found["diff"])[0] == "n/a 12/12"
+        assert cells(found["noise"]) == ["uncalibrated"] * 5
 
 
 def test_a_different_alignair_code_or_the_same_model_is_flagged():

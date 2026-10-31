@@ -70,15 +70,22 @@ def suite_build(rig, suite='S0') -> str:
     return hashlib.sha256((rig.dev / 'suites' / suite / 'build.json').read_bytes()).hexdigest()
 
 
+HEADLINE_METRICS = ('clone_key.exact', 'junction.nt_exact', 'v.top1_in_set', 'd.top1_in_set', 'j.top1_in_set')
+# The Δ of each pair of baseline screens of init seeds 0, 1 and 2 on every headline metric, pooled and on S0: seed 1
+# sits 1 pp below seed 0 and seed 2 half a point above it.
+PAIR_DELTAS = {(0, 1): -.01, (0, 2): .005, (1, 2): .015}
+
+
 def write_null_band(rig, root: Path, protocol, *, name='calibration', band=.005, **fields) -> Path:
-    """A null band of ``protocol`` for baseline screens of ``SMALL``, compared on the rig's build of S0 under this
-    process's AlignAIR code, ``band`` for every headline metric, with ``fields`` changed; its path."""
+    """A null band of ``protocol`` for baseline screens of ``SMALL`` of init seeds 0, 1 and 2 (``PAIR_DELTAS``),
+    compared on the rig's build of S0 under this process's AlignAIR code, ``band`` for every headline metric, with
+    ``fields`` changed; its path. Written as a calibration before the per-seed values was: they come from its pairs."""
     from alignair_assay.diagnostics.identity import alignair_code
+    pairs = [{'a': a, 'b': b, 'pooled': dict.fromkeys(HEADLINE_METRICS, delta),
+              'suites': {'S0': dict.fromkeys(HEADLINE_METRICS, delta)}} for (a, b), delta in PAIR_DELTAS.items()]
     record = {'kind': 'alignair_lab.null_band', 'version': 1, 'protocol': protocol, 'options': SMALL, 'suites': ['S0'],
-              'suite_builds': {'S0': suite_build(rig)}, 'max_cases': None, 'init_seeds': [0, 1, 2], 'pairs': [],
-              'band': {metric: band for metric in ('clone_key.exact', 'junction.nt_exact', 'v.top1_in_set',
-                                                   'd.top1_in_set', 'j.top1_in_set')},
-              'code_sha256': alignair_code()['code_sha256'], **fields}
+              'suite_builds': {'S0': suite_build(rig)}, 'max_cases': None, 'init_seeds': [0, 1, 2], 'pairs': pairs,
+              'band': dict.fromkeys(HEADLINE_METRICS, band), 'code_sha256': alignair_code()['code_sha256'], **fields}
     (root / name).mkdir(parents=True)
     (root / name / 'null_band.json').write_text(json.dumps(record))
     return root / name / 'null_band.json'

@@ -5,11 +5,13 @@
 per suite and a tally row (suites where the candidate is better / worse / tied):
 
 1. ``HEADLINE``: ``clone_key.exact``, ``junction.nt_exact`` and V / D / J top-1 in set, each as the Δ (candidate −
-   baseline, percentage points), its 95% CI, the verdict and the reads fixed / broken; then two rows that weigh
-   the metric against run-to-run training noise (``noise.decide``): its pooled Δ (read-weighted over the suites) /
-   its null band, with the suites whose Δ has the pooled Δ's sign, of those with enough clusters for a verdict
-   (marked ``*`` when none has, so every suite counts), and the decision: beyond noise, within noise, or
-   uncalibrated without a null band;
+   baseline, percentage points), its 95% CI, the verdict and the reads fixed / broken; then four rows that weigh
+   the metric against run-to-run training noise (``noise.decide``): ``pooled``, its pooled Δ (read-weighted over the
+   suites) / its null band, printed as a reference; ``seeds``, the calibration's baseline seeds' Δs against the same
+   baseline screen (mean±SD n); ``diff``, the pooled Δ less their mean, Welch's z with the candidate's spread taken as
+   the baseline's, and the suites whose diff has its sign, of those with enough clusters for a verdict (marked ``*``
+   when none has, so every suite counts); and ``noise``, the decision: beyond noise, within noise, or uncalibrated
+   without three baseline seeds;
 2. and 3. ``BOUNDARIES``: each boundary's exact rate under the soft-argmax decoder, then under the
    position logits' argmax (the product's decoder), as the Δ, the verdict and the reads fixed / broken. Their CIs are in the assay's
    per-suite detail (``<S>/against_<baseline key>.md``), as on the assay's own summary page.
@@ -28,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from alignair_lab.noise import UNCALIBRATED, decide
+from alignair_lab.noise import MIN_SEEDS, UNCALIBRATED, decide
 
 HEADLINE = (("clone_key.exact", "clone_key.exact"), ("junction.nt_exact", "junction.nt_exact"), ("v.top1_in_set", "V top-1"),
             ("d.top1_in_set", "D top-1"), ("j.top1_in_set", "J top-1"))
@@ -36,18 +38,14 @@ BOUNDARIES = tuple((f"head.{gene}.{edge}_exact", f"{gene.upper()} {edge}") for g
 DECODERS = (("soft", "Boundary exact rates, the soft-argmax decoder:"),
             ("argmax", "Boundary exact rates, the position logits' argmax decoder (the product's):"))
 MARKS = {"b_better": "+", "a_better": "-", "tie_or_inconclusive": "="}
-LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ candidate better, - baseline better, = tie, ? too few "
-          "clusters),",
-          "reads fixed/broken (fixed: the baseline wrong, the candidate right); n/a: not compared. CIs and verdicts "
-          "resample the",
-          "reads of two fixed checkpoints and leave out run-to-run training noise, which the last two rows weigh: the "
-          "pooled Δ (read-",
-          "weighted) / the null band (the largest such Δ between lab-null-v1 baseline screens of other init seeds), the "
-          "suites whose Δ",
-          "has its sign, of those with enough clusters for a verdict (*: none has, so all); beyond noise: above the band "
-          "and 2/3 agreeing.")
+LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ candidate better, - worse, = tie, ? too few clusters), reads "
+          "fixed/broken.",
+          "CIs resample reads and leave out run-to-run training noise, weighed below: pooled Δ / null band (lab-null-v1 "
+          "screens; a reference);",
+          "seeds: baseline seeds' Δs, mean±SD n; diff: pooled − their mean, Welch z, suites agreeing (*: all). Beyond "
+          "noise: |z|>=2, 2/3 agree.")
 TALLY = "+/-/="
-POOLED, NOISE = "pooled", "noise"
+POOLED, SEEDS, DIFF, NOISE = "pooled", "seeds", "diff", "noise"
 _SEPARATOR = "  "
 
 
@@ -79,20 +77,42 @@ def _tally(entries: Sequence[dict | None]) -> str:
     return f"{counts['+']}/{counts['-']}/{counts['=']}"
 
 
-def _noise_rows(comparison: dict, metrics: Sequence[tuple[str, str]], band: Mapping | None) -> list:
-    decisions = decide(comparison, band, [metric for metric, _ in metrics])
-    pooled, marks = [], []
+def seeds_cell(found: Mapping) -> str:
+    """The baseline seeds of a decision (``noise.decide``): mean±SD n in pp, ``n<k> < 3`` with too few, or none."""
+    if found["baseline_mean"] is None:
+        return f"n{found['n']} < {MIN_SEEDS}" if found["n"] else "none"
+    return f"{100 * found['baseline_mean']:+.1f}±{100 * found['baseline_sd']:.1f} n{found['n']}"
+
+
+def diff_cell(found: Mapping) -> str:
+    """A decision's diff (pp) and z, with its suites agreeing in sign (``*``: counted over every suite)."""
+    signs = f"{found['agree']}/{found['suites']}{'*' if found['basis'] == 'all' else ''}"
+    if found["diff"] is None:
+        return f"n/a {signs}"
+    z = "z n/a" if found["z"] is None else f"z{found['z']:+.1f}"
+    return f"{100 * found['diff']:+.1f} {z} {signs}"
+
+
+def band_text(found: Mapping) -> str:
+    return "none" if found["band"] is None else f"{100 * found['band']:.1f}"
+
+
+def _noise_rows(comparison: dict, metrics: Sequence[tuple[str, str]], calibration: Mapping | None) -> list:
+    calibration = calibration or {}
+    decisions = decide([comparison], calibration.get("seeds"), [metric for metric, _ in metrics],
+                       band=calibration.get("band"))
+    rows = {POOLED: [], SEEDS: [], DIFF: [], NOISE: []}
     for metric, _ in metrics:
         found = decisions[metric]
         if found["pooled"] is None:
-            pooled.append("n/a")
-            marks.append("n/a")
+            for cells in rows.values():
+                cells.append("n/a")
             continue
-        limit = "none" if found["band"] is None else f"{100 * found['band']:.1f}"
-        every = "*" if found["basis"] == "all" else ""
-        pooled.append(f"{100 * found['pooled']:+.1f} / {limit}, {found['agree']}/{found['suites']} agree{every}")
-        marks.append(found["decision"] or UNCALIBRATED)
-    return [(POOLED, pooled), (NOISE, marks)]
+        rows[POOLED].append(f"{100 * found['pooled']:+.1f} / {band_text(found)}")
+        rows[SEEDS].append(seeds_cell(found))
+        rows[DIFF].append(diff_cell(found))
+        rows[NOISE].append(found["decision"] or UNCALIBRATED)
+    return list(rows.items())
 
 
 def _table(suites: dict, metrics: Sequence[tuple[str, str]], *, ci: bool, extra=()) -> list[str]:
@@ -110,17 +130,18 @@ def _table(suites: dict, metrics: Sequence[tuple[str, str]], *, ci: bool, extra=
     return [line("Suite", columns), *(line(name, cells) for name, cells in rows)]
 
 
-def render_headline(comparison: dict, *, title: Sequence[str] = (),
-                    null_band: Mapping[str, float] | None = None) -> str:
-    """The headline of a comparison summary (see the module docstring), after the lines of ``title``. ``null_band``:
-    each metric's null band (``noise.null_band``, Δs as fractions); None: uncalibrated, nothing marked."""
+def render_headline(comparison: dict, *, title: Sequence[str] = (), calibration: Mapping | None = None) -> str:
+    """The headline of a comparison summary (see the module docstring), after the lines of ``title``.
+    ``calibration``: the ``band`` (each metric's null band, ``noise.null_band``, Δs as fractions) and the ``seeds``
+    (each baseline seed's values against the comparison's baseline screen, ``noise.seed_values``); None: uncalibrated,
+    nothing marked."""
     lines = [*title, *LEGEND]
     if comparison.get("same_model"):
         lines.append("The candidate and the baseline are the same model: every Δ is 0.")
     if (comparison.get("code") or {}).get("same") is False:
         lines.append("Warning: different AlignAIR code for the two models, so every Δ holds the code change as well.")
     suites = comparison["suites"]
-    lines += ["", *_table(suites, HEADLINE, ci=True, extra=_noise_rows(comparison, HEADLINE, null_band))]
+    lines += ["", *_table(suites, HEADLINE, ci=True, extra=_noise_rows(comparison, HEADLINE, calibration))]
     for decoder, heading in DECODERS:
         lines += ["", heading,
                   *_table(suites, [(f"{metric}.{decoder}", label) for metric, label in BOUNDARIES], ci=False)]

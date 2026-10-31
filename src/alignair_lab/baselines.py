@@ -23,7 +23,7 @@ from pathlib import Path
 
 from alignair.errors import ConfigurationError
 from alignair.train.trainer import RECIPE
-from alignair_lab.noise import seed_values
+from alignair_lab.noise import recentred, seed_values
 from alignair_lab.recipe import BASELINE_ARCHITECTURE, DATACONFIGS, recipe_train_args
 
 NULL_ARCHITECTURE = "lab-null-v1"         # ``architectures.null``: its screens are the baseline screens
@@ -344,6 +344,18 @@ def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequenc
     relative_to, seeds = calibration_seeds(record)
     return {"path": str(path), "init_seeds": record["init_seeds"], "band": record["band"],
             "code_sha256": record.get("code_sha256"), "relative_to": relative_to, "seeds": seeds}
+
+
+def against_calibration(band: Mapping | None, init_seed: int | None) -> dict | None:
+    """What a comparison with the baseline screen of ``init_seed`` weighs its Δs with, from a null band
+    (``null_band``): its ``band``, a reference, and its baseline seeds' values made relative to that screen's seed
+    (``seeds``, ``noise.recentred``; None when the calibration has no baseline screen of that seed). None without a
+    null band."""
+    if band is None:
+        return None
+    seeds = band.get("seeds") or {}
+    found = recentred(seeds, init_seed) if init_seed is not None and str(init_seed) in seeds else None
+    return {"band": band["band"], "seeds": found}
 
 
 def calibration_seeds(record: Mapping) -> tuple[int, dict]:

@@ -7,20 +7,34 @@ effect, and the assay's CIs, which resample the reads of two fixed checkpoints, 
 it with baseline screens of several init seeds, compared pair by pair. Per metric:
 
 - ``pooled``: a comparison's Δ (candidate − baseline) pooled over its suites, each weighted by its paired reads.
-- ``null_band``: the largest |pooled Δ| of the pairs of baseline screens.
-- ``decide``: a candidate's pooled Δ is ``beyond noise`` when it exceeds the null band and at least 2/3 of the suites
-  have a Δ of its sign, counting the suites with enough clusters for the assay's verdict on the metric (its test is not
-  ``too_few_clusters``: fewer than ``stats.compare.MIN_CLUSTERS``), or every suite that compares it when none has
-  them (the ``basis``: ``clusters`` or ``all``); otherwise ``within noise``; ``uncalibrated`` without a band for the
-  metric, and ``uncalibrated: band 0`` when its band is 0: baseline screens that never differed on it bound nothing.
+- ``null_band``: the largest |pooled Δ| of the pairs of baseline screens, kept as a printed reference.
+- ``seed_values``: each baseline seed's pooled (and per-suite) value against the registered baseline screen, from its
+  pair with that screen's seed: the baseline's distribution, of which the registered screen is one draw.
+- ``decide``: the candidate's seeds against the baseline's. Each candidate seed's pooled Δ is against the baseline
+  screen, as each baseline seed's value is, so the two distributions compare on one scale: the diff (candidate mean −
+  baseline mean) over Welch's standard error, sqrt(sc²/k + sb²/n), is z (``welch``; with one candidate seed its
+  spread is taken to be the baseline's, sc = sb). The candidate is ``beyond noise`` when |z| ≥ ``Z_LIMIT`` and at
+  least 2/3 of the suites agree with the diff's sign: each suite's mean Δ over the candidate's seeds less the
+  baseline seeds' mean there, counting the suites with enough clusters for the assay's verdict on the metric (its test
+  is not ``too_few_clusters``: fewer than ``stats.compare.MIN_CLUSTERS``) in every seed's comparison, or every suite
+  that compares it when none has them (the ``basis``: ``clusters`` or ``all``); otherwise ``within noise``;
+  ``uncalibrated`` with fewer than ``MIN_SEEDS`` baseline seeds of the metric, and ``uncalibrated: spread 0`` when the
+  standard error is 0: baseline seeds that never differed on it bound nothing.
+
+Comparing with the registered baseline screen alone would weigh the candidate against one draw of the baseline's
+distribution: a calibration of six seeds found the registered one the best or near-best on every headline metric,
+so every candidate compared with it alone was biased down.
 """
 from __future__ import annotations
 
+import math
 import statistics
 from collections.abc import Mapping, Sequence
 
 BEYOND, WITHIN, UNCALIBRATED = "beyond noise", "within noise", "uncalibrated"
-ZERO_BAND = "uncalibrated: band 0"
+ZERO_SPREAD = "uncalibrated: spread 0"
+MIN_SEEDS = 3                             # baseline seeds a calibration needs for a decision
+Z_LIMIT = 2.0                             # |z| at or above which a diff is beyond noise (with the sign rule)
 FEW_CLUSTERS = "too_few_clusters"         # the assay's test when a metric's pairs fall in too few clusters for a verdict
 
 
@@ -131,26 +145,74 @@ def baseline_summary(values: Mapping[str, Mapping]) -> dict[str, dict]:
     return summary
 
 
-def decide(comparison: Mapping, band: Mapping[str, float] | None, metrics: Sequence[str]) -> dict[str, dict]:
-    """Each of ``metrics`` -> its ``pooled`` Δ, its ``band`` (None without one), the suites counted for the sign rule
-    (``suites``: those with enough clusters for a verdict, ``basis`` ``clusters``, or every suite that compares the
-    metric when none has them, ``all``) and how many of them ``agree`` in sign with the pooled Δ, and the ``decision``
-    (see the module docstring; None, and no basis, when no suite compares the metric)."""
+def welch(candidate: Sequence[float], baseline: Sequence[float]) -> dict:
+    """The candidate's values against the baseline's: their means and sample SDs, their numbers ``k`` and ``n``, the
+    ``diff`` (candidate mean − baseline mean), Welch's standard error ``se`` = sqrt(sc²/k + sb²/n) and ``z`` = diff /
+    se (None when se is 0). With one candidate value its spread is unmeasured (``candidate_sd`` None) and is taken to
+    be the baseline's: sc = sb. ValueError without a candidate value or with fewer than two baseline values."""
+    k, n = len(candidate), len(baseline)
+    if k < 1:
+        raise ValueError("Welch's comparison needs a candidate value")
+    if n < 2:
+        raise ValueError(f"Welch's comparison needs two baseline values or more, got {n}")
+    sb = statistics.stdev(baseline)
+    measured = statistics.stdev(candidate) if k > 1 else None
+    sc = sb if measured is None else measured
+    se = math.sqrt(sc ** 2 / k + sb ** 2 / n)
+    diff = statistics.fmean(candidate) - statistics.fmean(baseline)
+    return {"candidate_mean": statistics.fmean(candidate), "candidate_sd": measured,
+            "baseline_mean": statistics.fmean(baseline), "baseline_sd": sb, "k": k, "n": n, "diff": diff, "se": se,
+            "z": diff / se if se else None}
+
+
+def _suite_signs(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | None, metric: str,
+                 direction: float | None) -> tuple[int, int, str | None]:
+    """``(agree, counted, basis)`` of the sign rule: each suite's mean Δ over the comparisons that compare it, less the
+    baseline seeds' mean in that suite (0 without them), against ``direction``'s sign."""
+    found: dict[str, list[dict]] = {}
+    for comparison in comparisons:
+        for name, suite in suite_deltas(comparison, metric).items():
+            found.setdefault(name, []).append(suite)
+    clustered = {name for name, suites in found.items() if all(suite["clustered"] for suite in suites)}
+    counted, basis = (clustered, "clusters") if clustered else (set(found), "all" if found else None)
+    agree = 0
+    for name in counted:
+        shift = seed_distribution(baseline, metric, name) if baseline else []
+        delta = statistics.fmean(suite["delta"] for suite in found[name]) - (statistics.fmean(shift) if shift else 0.)
+        agree += bool(direction) and delta * direction > 0
+    return agree, len(counted), basis
+
+
+def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | None, metrics: Sequence[str], *,
+           band: Mapping[str, float] | None = None) -> dict[str, dict]:
+    """Each of ``metrics`` -> the candidate's pooled Δ of each of its init seeds' ``comparisons`` (``candidate``;
+    each against the baseline screen) and their mean (``pooled``), ``welch``'s numbers against the ``baseline``
+    seeds' pooled values (each seed's Δ against the same baseline screen, ``seed_values``; None without a
+    calibration), the reference ``band`` (None without one), the suites counted for the sign rule (``suites``, of
+    ``basis`` ``clusters`` or ``all``) and how many ``agree`` with the diff's sign, and the ``decision`` (see the module
+    docstring; None, and no basis, when no suite compares the metric)."""
     decisions = {}
     for metric in metrics:
-        delta, limit = pooled(comparison, metric), (band or {}).get(metric)
-        found = suite_deltas(comparison, metric)
-        clustered = [suite for suite in found.values() if suite["clustered"]]
-        counted, basis = (clustered, "clusters") if clustered else (list(found.values()), "all" if found else None)
-        agree = sum(suite["delta"] * delta > 0 for suite in counted) if delta else 0
-        if delta is None:
+        candidate = [value for value in (pooled(comparison, metric) for comparison in comparisons) if value is not None]
+        values = seed_distribution(baseline, metric) if baseline else []
+        found = {"candidate": candidate, "pooled": statistics.fmean(candidate) if candidate else None,
+                 "candidate_sd": None, "baseline_mean": None, "baseline_sd": None, "k": len(candidate),
+                 "n": len(values), "diff": None, "se": None, "z": None, "band": (band or {}).get(metric)}
+        calibrated = bool(candidate) and len(values) >= MIN_SEEDS
+        if calibrated:
+            found.update(welch(candidate, values))
+            del found["candidate_mean"]
+        direction = found["diff"] if calibrated else found["pooled"]
+        found["agree"], found["suites"], found["basis"] = _suite_signs(comparisons, baseline if calibrated else None,
+                                                                       metric, direction)
+        if not candidate:
             decision = None
-        elif limit is None:
+        elif not calibrated:
             decision = UNCALIBRATED
-        elif limit == 0:
-            decision = ZERO_BAND
+        elif found["z"] is None:
+            decision = ZERO_SPREAD
         else:
-            decision = BEYOND if abs(delta) > limit and 3 * agree >= 2 * len(counted) else WITHIN
-        decisions[metric] = {"pooled": delta, "band": limit, "agree": agree, "suites": len(counted), "basis": basis,
-                             "decision": decision}
+            decision = (BEYOND if abs(found["z"]) >= Z_LIMIT and 3 * found["agree"] >= 2 * found["suites"]
+                        else WITHIN)
+        decisions[metric] = {**found, "decision": decision}
     return decisions

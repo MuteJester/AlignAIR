@@ -169,10 +169,14 @@ def test_the_null_band_of_the_protocol_weighs_the_candidates_deltas(rig, baselin
     assert main(candidate_arguments(rig, 'weighed', out_root=root)) == 0
     record = json.loads((root / 'weighed' / 'screen.json').read_text())
     assert record['null_band']['path'] == str(path) and record['null_band']['init_seeds'] == [0, 1, 2]
-    decisions = [found['decision'] for found in record['decisions'].values() if found['pooled'] is not None]
-    assert decisions and all(decision in ('beyond noise', 'within noise') for decision in decisions)
+    assert 'seeds' not in record['null_band']                        # in null_band.json; the decisions hold their sums
+    found = [entry for entry in record['decisions'].values() if entry['pooled'] is not None]
+    assert found and all(entry['decision'] in ('beyond noise', 'within noise') for entry in found)
+    for entry in found:     # the baseline seeds against seed 0: 0, -1 and +0.5 pp, from the pairs with seed 0
+        assert (entry['k'], entry['n'], entry['baseline_mean']) == (1, 3, pytest.approx(-.005 / 3))
     headline = (root / 'weighed' / 'headline.txt').read_text()
     assert f'Null band: {path}' in headline and 'uncalibrated' not in headline and 'other AlignAIR code' not in headline
+    assert any(line.startswith('seeds ') and '-0.2±0.8 n3' in line for line in headline.splitlines())
 
 
 def test_a_null_band_measured_under_other_code_is_applied_with_a_warning(rig, baseline, tmp_path):
@@ -188,7 +192,7 @@ def test_a_null_band_measured_under_other_code_is_applied_with_a_warning(rig, ba
 def test_a_null_band_gives_each_baseline_seeds_values_and_an_older_one_derives_them_from_its_pairs(tmp_path):
     """A null band read for a screen holds each baseline seed's values relative to the registered seed: as written, or,
     from a calibration that predates them, derived from its pairs."""
-    from alignair_lab.baselines import null_band
+    from alignair_lab.baselines import against_calibration, null_band
     from alignair_lab.noise import seed_values
     metric = 'clone_key.exact'
     pairs = [{'a': a, 'b': b, 'pooled': {metric: delta}, 'suites': {'S0': {metric: delta}}}
@@ -208,6 +212,12 @@ def test_a_null_band_gives_each_baseline_seeds_values_and_an_older_one_derives_t
     stored = {seed: {'pooled': {metric: value}, 'suites': {'S0': {metric: value}}}
               for seed, value in (('0', 0.), ('1', .5), ('2', .25))}
     assert written(relative_to=0, seeds=stored)['seeds'] == stored
+    # a screen against the baseline screen of init seed 1 weighs its Δs with the seeds' values against seed 1's
+    against = against_calibration(written(relative_to=0, seeds=stored), 1)
+    assert against['band'] == {metric: .03}
+    assert {seed: found['pooled'][metric] for seed, found in against['seeds'].items()} == \
+        {'0': pytest.approx(-.5), '1': 0., '2': pytest.approx(-.25)}
+    assert against_calibration(older, 7)['seeds'] is None and against_calibration(None, 0) is None
 
 
 def test_two_null_bands_of_one_protocol_are_refused(rig, baseline, tmp_path, capsys):

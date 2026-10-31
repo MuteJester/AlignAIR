@@ -1,10 +1,12 @@
 """Run-to-run training noise: a comparison's Δ pooled over its suites by paired reads, the null band of a calibration's
-pairwise comparisons, and the decision rule a candidate's headline applies, on fixture comparison summaries."""
+pairwise comparisons, each baseline seed's values, and the decision rule a candidate's headline applies (its seeds
+against the baseline's, by Welch's z, and the suites' signs), on fixture comparison summaries."""
+import math
 import statistics
 
 import pytest
 
-from alignair_lab.noise import baseline_summary, decide, null_band, pair, pooled, recentred, seed_values
+from alignair_lab.noise import baseline_summary, decide, null_band, pair, pooled, recentred, seed_values, welch
 
 pytestmark = pytest.mark.component
 
@@ -77,51 +79,115 @@ def test_a_metric_no_suite_of_a_pair_compares_has_no_band_from_that_pair():
     assert null_band(pairs) == {METRIC: pytest.approx(.04)}
 
 
-def decision(*suites, band=.02):
-    return decide(comparison(*suites), None if band is None else {METRIC: band}, [METRIC])[METRIC]
+# Six baseline seeds' values of METRIC against the baseline screen (whose own seed is the first): mean −.01, SD .0141.
+BASE = (0., -.02, -.01, -.03, .01, -.01)
+SB = statistics.stdev(BASE)
 
 
-def test_beyond_noise_needs_a_pooled_delta_above_the_band_and_two_thirds_of_the_suites_signs():
-    found = decision(entry(.05), entry(.04), entry(-.01))
-    assert found == {"pooled": pytest.approx(.08 / 3), "band": .02, "agree": 2, "suites": 3, "basis": "clusters",
-                     "decision": "beyond noise"}
-    assert decision(entry(.05), entry(.04), entry(-.01), band=.03)["decision"] == "within noise"
-    assert decision(entry(.08), entry(-.01))["decision"] == "within noise"            # half the signs
-    assert decision(entry(-.06), entry(-.03), entry(.01))["decision"] == "beyond noise"   # either direction
+def seeds(values=BASE, suites=4):
+    """A calibration's baseline seeds (``noise.seed_values``), each with one value of METRIC, pooled and per suite."""
+    return {str(seed): {"pooled": {METRIC: value}, "suites": {f"S{n}": {METRIC: value} for n in range(1, suites + 1)}}
+            for seed, value in enumerate(values)}
 
 
-def test_a_pooled_delta_equal_to_the_band_is_within_noise():
-    assert decision(entry(.02), entry(.02))["decision"] == "within noise"
+CALIBRATED = object()
+
+
+def decision(*replicates, baseline=CALIBRATED, band=.05):
+    """``replicates``: per candidate init seed, its suites' entries, each against the baseline screen."""
+    found = decide([comparison(*suites) for suites in replicates], seeds() if baseline is CALIBRATED else baseline,
+                   [METRIC], band={METRIC: band})
+    return found[METRIC]
+
+
+def test_welch_compares_the_candidates_mean_with_the_baselines():
+    candidate = [.03, .01, .02]
+    sc = statistics.stdev(candidate)
+    se = math.sqrt(sc ** 2 / 3 + SB ** 2 / 6)
+    assert welch(candidate, BASE) == {"candidate_mean": pytest.approx(.02), "candidate_sd": pytest.approx(sc),
+                                      "baseline_mean": pytest.approx(-.01), "baseline_sd": pytest.approx(SB), "k": 3,
+                                      "n": 6, "diff": pytest.approx(.03), "se": pytest.approx(se),
+                                      "z": pytest.approx(.03 / se)}
+
+
+def test_one_candidate_seed_is_given_the_baselines_spread():
+    """With one seed the candidate's spread is unmeasured; it is taken to be the baseline's (sc = sb)."""
+    found = welch([.03], BASE)
+    assert found["candidate_sd"] is None and found["se"] == pytest.approx(SB * math.sqrt(1 + 1 / 6))
+    assert found["z"] == pytest.approx(.04 / (SB * math.sqrt(1 + 1 / 6)))
+
+
+def test_welch_needs_a_candidate_value_and_two_baseline_values_and_has_no_z_without_spread():
+    with pytest.raises(ValueError, match="two baseline"):
+        welch([.01], [0.])
+    with pytest.raises(ValueError, match="candidate"):
+        welch([], BASE)
+    assert welch([0.], [0., 0., 0.])["z"] is None
+
+
+def test_beyond_noise_needs_a_z_of_two_and_two_thirds_of_the_suites_signs_against_the_baseline_seeds():
+    """One candidate seed: its pooled Δ less the baseline seeds' mean, over Welch's standard error with the candidate's
+    spread the baseline's. Each suite's sign is its Δ less the baseline seeds' mean in that suite, so S4's −.5 pp
+    agrees: the baseline seeds sit 1 pp below the baseline screen there."""
+    found = decision([entry(.06), entry(.04), entry(.03), entry(-.005)])
+    se = SB * math.sqrt(1 + 1 / 6)
+    assert (found["k"], found["n"], found["agree"], found["suites"], found["basis"], found["decision"]) == \
+        (1, 6, 4, 4, "clusters", "beyond noise")
+    assert found["pooled"] == pytest.approx(.03125) and found["candidate"] == [pytest.approx(.03125)]
+    assert found["baseline_mean"] == pytest.approx(-.01) and found["baseline_sd"] == pytest.approx(SB)
+    assert found["diff"] == pytest.approx(.04125) and found["z"] == pytest.approx(.04125 / se)
+    assert found["band"] == .05                     # above the pooled Δ: the band is a reference, not the rule
+    assert decision([entry(.01)] * 4)["decision"] == "within noise"                         # diff .02: z 1.3
+    assert decision([entry(.15), entry(-.02), entry(-.02), entry(-.02)])["decision"] == "within noise"   # 1/4 signs
+    assert decision([entry(-.06)] * 4)["decision"] == "beyond noise"                        # either direction
+
+
+def test_several_candidate_seeds_are_compared_by_their_mean_and_spread():
+    found = decision([entry(.02)] * 4, [entry(.03)] * 4, [entry(.04)] * 4)
+    se = math.sqrt(.01 ** 2 / 3 + SB ** 2 / 6)
+    assert found["candidate"] == [pytest.approx(.02), pytest.approx(.03), pytest.approx(.04)] and found["k"] == 3
+    assert found["candidate_sd"] == pytest.approx(.01) and found["z"] == pytest.approx(.04 / se)
+    assert found["decision"] == "beyond noise"
+    # a suite's sign is its mean Δ over the candidate's seeds: each seed alone has a suite below the baseline seeds
+    split = decision([entry(.08), entry(-.04), entry(.04), entry(.04)], [entry(-.04), entry(.08), entry(.04), entry(.04)])
+    assert (split["agree"], split["suites"], split["decision"]) == (4, 4, "beyond noise")
 
 
 def test_the_signs_count_the_suites_with_enough_clusters_or_every_suite_when_none_has_them():
-    """Enough clusters is the assay's own threshold for a verdict (a CI needs only two clusters)."""
-    clustered = decision(entry(.06), entry(.06), entry(-.01, test=FEW), entry(-.01, test=FEW))
+    """Enough clusters is the assay's own threshold for a verdict, in every seed's comparison of the suite."""
+    clustered = decision([entry(.09), entry(.09), entry(-.03, test=FEW), entry(-.03, test=FEW)])
     assert (clustered["agree"], clustered["suites"], clustered["basis"], clustered["decision"]) == \
         (2, 2, "clusters", "beyond noise")
-    assert decision(entry(.06, ci=False), entry(-.01), entry(-.01))["suites"] == 3        # a CI is not the rule
-    fallback = decision(entry(.06, test=FEW), entry(-.01, test=FEW), entry(-.01, test=FEW))
+    fallback = decision([entry(.21, test=FEW), entry(-.03, test=FEW), entry(-.03, test=FEW), entry(-.03, test=FEW)])
     assert (fallback["agree"], fallback["suites"], fallback["basis"], fallback["decision"]) == \
-        (1, 3, "all", "within noise")
+        (1, 4, "all", "within noise")
+    either = decision([entry(.09), entry(.09), entry(.09), entry(.09, test=FEW)],
+                      [entry(.09), entry(.09), entry(.09, test=FEW), entry(.09, test=FEW)])
+    assert (either["suites"], either["basis"]) == (2, "clusters")
 
 
-def test_a_suite_with_no_change_does_not_agree():
-    found = decision(entry(.09), entry(0.), entry(0.))
-    assert (found["agree"], found["suites"], found["decision"]) == (1, 3, "within noise")
+def test_a_suite_with_no_change_against_the_baseline_seeds_does_not_agree():
+    found = decision([entry(.17), entry(-.01), entry(-.01), entry(-.01)])
+    assert (found["agree"], found["suites"]) == (1, 4)
 
 
-def test_without_a_band_nothing_is_marked():
-    found = decision(entry(.5), entry(.5), band=None)
-    assert (found["band"], found["decision"]) == (None, "uncalibrated")
-    assert decide(comparison(entry(.5)), {"other.metric": .01}, [METRIC])[METRIC]["decision"] == "uncalibrated"
+def test_without_three_baseline_seeds_the_headline_is_uncalibrated():
+    for baseline in (None, seeds(BASE[:2])):
+        found = decision([entry(.5)] * 4, baseline=baseline)
+        assert (found["decision"], found["z"], found["diff"], found["baseline_mean"]) == ("uncalibrated", None, None,
+                                                                                           None)
+        assert found["pooled"] == pytest.approx(.5) and (found["agree"], found["suites"]) == (4, 4)
+    other = decide([comparison(entry(.5))], {str(seed): {"pooled": {"other.metric": 0.}, "suites": {}}
+                                             for seed in range(3)}, [METRIC])
+    assert other[METRIC]["decision"] == "uncalibrated" and other[METRIC]["band"] is None
 
 
-def test_a_band_of_zero_marks_nothing():
-    """Baseline screens that never differed on a metric bound nothing: any Δ of agreeing signs would exceed 0."""
-    found = decision(entry(.5), entry(.5), band=0.)
-    assert (found["band"], found["decision"]) == (0., "uncalibrated: band 0")
+def test_baseline_seeds_that_never_differ_bound_nothing():
+    found = decision([entry(.5)] * 4, baseline=seeds((0., 0., 0.)))
+    assert (found["z"], found["decision"]) == (None, "uncalibrated: spread 0")
 
 
 def test_a_metric_no_suite_compares_has_no_decision():
-    assert decision(None, None) == {"pooled": None, "band": .02, "agree": 0, "suites": 0, "basis": None,
-                                    "decision": None}
+    found = decision([None, None])
+    assert (found["pooled"], found["candidate"], found["agree"], found["suites"], found["basis"], found["decision"]) \
+        == (None, [], 0, 0, None, None)

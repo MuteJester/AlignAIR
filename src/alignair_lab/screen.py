@@ -5,9 +5,11 @@ a baseline at the same step. A yes or no on a candidate in under half an hour, s
 with nothing is a baseline screen: one replicate of the baseline, of its ``init_seed``. A screen of another
 architecture compares with the registered baseline screen of its protocol (``baselines``: the recipe id, the record
 cache's content identity, the steps and the schedule), or with the baseline screen it names (``against_screen``).
-Several baseline screens of other init seeds measure the run-to-run noise (``calibrate``), whose null band the
-candidate's headline weighs its Δs against. A screen compares with a milestone of the baseline's own run instead when
-told one (``against_milestone``, Tier 2): the milestone's run kept a constant rate.
+Several baseline screens of other init seeds measure the run-to-run noise (``calibrate``): the candidate's headline
+sets its Δs against their distribution (``noise.decide``, its seed alone taken to spread as the baseline's), with
+their null band printed as a reference. A screen compares with a milestone
+of the baseline's own run instead when told one (``against_milestone``, Tier 2): the milestone's run kept a constant
+rate.
 
 By default a screen cools its learning rate down (``recipe.schedule``: cosine to a hundredth of it over its steps), so
 that replicate runs end close to each other, and draws its initial weights from init seed 0
@@ -35,7 +37,7 @@ that replicate runs end close to each other, and draws its initial weights from 
    ``data_workers`` into ``<screen>/train`` (the trainer's log in ``<screen>/train.log``; a progress line here). Only
    the final ``model.alignair`` is kept: the trainer's rotating step checkpoints are removed once it finishes.
 5. Diagnoses the candidate against the baseline, reusing the baseline's records, and writes the headline
-   (``headline.render_headline`` with the null band, the report path and the wall time) to ``<screen>/headline.txt``.
+   (``headline.render_headline`` with the calibration, the report path and the wall time) to ``<screen>/headline.txt``.
    A baseline screen diagnoses nothing: its headline names what it is.
 
 ``<screen>/screen.json`` holds the request (its ``role``: ``baseline`` or ``candidate``, its ``init_seed``,
@@ -65,6 +67,7 @@ from alignair_lab.baselines import (
     NULL_ARCHITECTURE,
     SCREEN_RECORD,
     NAME,
+    against_calibration,
     baseline_milestone,
     baseline_screen,
     check_init_seed,
@@ -207,7 +210,8 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
                         "genairr_version": manifest["genairr"].get("genairr_version"), "recipe": manifest["recipe"],
                         "code_sha256": manifest["code"]["sha256"], "created": manifest["created"],
                         "verification": source.verification},
-              "baseline": provenance, "null_band": band,
+              "baseline": provenance,
+              "null_band": None if band is None else {key: value for key, value in band.items() if key != "seeds"},
               "dev_build": str(Path(dev_build).resolve()), "out_root": str(Path(out_root).resolve()),
               "screen_dir": str(screen.resolve())}
 
@@ -253,13 +257,14 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
             times["total"] = time.perf_counter() - start
             summary = result.against["summary"]
             report = layout.diagnostics_md(result.model_key)
-            limits = None if band is None else band["band"]
+            calibration = against_calibration(band, provenance["init_seed"])
             title = _title(record, result, base.model_key, summary["code"]["this"])
-            headline = render_headline(summary, title=title, null_band=limits)
+            headline = render_headline(summary, title=title, calibration=calibration)
             headline += "\n\n" + "\n".join(_footer(report, layout, result.model_key, base.model_key, times, record))
             record["candidate"]["model_key"] = result.model_key
             record.update(report=str(report), comparison=summary,
-                          decisions=decide(summary, limits, [metric for metric, _ in HEADLINE]))
+                          decisions=decide([summary], (calibration or {}).get("seeds"),
+                                           [metric for metric, _ in HEADLINE], band=(calibration or {}).get("band")))
         (screen / "headline.txt").write_text(headline + "\n", encoding="utf-8")
         record.update(seconds={key: round(value, 1) for key, value in times.items()}, finished=now())
         stage("done")
@@ -384,6 +389,10 @@ def _band_lines(record: dict, code: str | None) -> list[str]:
                 f"{record['dev_build']} --suites {','.join(record['suites'])}{cases}"
                 f"{option_arguments(record['baseline']['options'])})."]
     lines = [f"Null band: {band['path']} (baseline screens of init seeds {', '.join(map(str, band['init_seeds']))})."]
+    seed = record["baseline"].get("init_seed")
+    if seed not in band["init_seeds"]:
+        lines.append(f"Uncalibrated: the calibration has no baseline screen of init seed {seed}, this baseline "
+                     "screen's, so its seeds' Δs cannot be set against this screen's.")
     if band.get("code_sha256") != code:
         measured = (band.get("code_sha256") or "unrecorded")[:12]
         lines.append(f"Warning: the null band was measured under other AlignAIR code ({measured}) than this "
