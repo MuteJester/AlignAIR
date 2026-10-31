@@ -8,7 +8,8 @@ donors' genotypes when given).
 
 1. ``baseline``: the product pipeline, nothing substituted.
 2. ``true_orientation``: the truth orientation, teacher-forced in the network and used to canonicalize the read.
-3. ``true_spans``: the truth read spans of the observed segments, as the segments and as the classifier's input.
+3. ``true_spans``: the truth read spans of the observed segments, as the segments and as the classifier's input (a
+   model with a core reads the whole read for its calls: only its segments change).
 4. ``true_calls``: the truth (primary) allele as each observed segment's call.
 5. ``true_germline``: the truth germline alignment (allele, read and germline coordinates, CIGAR) of each observed
    segment, in place of the germline matcher.

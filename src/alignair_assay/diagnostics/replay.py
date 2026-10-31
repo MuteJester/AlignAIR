@@ -320,7 +320,11 @@ def _classify(model, tokens: torch.Tensor, orientation: torch.Tensor, out: dict,
     """Replace the batch's ``{g}_allele`` with ``model.branches[g].classify`` on the given spans (the batch's
     soft-argmax expectations for a None entry), on the read re-embedded in the frame of ``orientation``, as
     ``AlignAIR.forward`` embeds it for its own classifier call. A model with a trunk gets the trunk's features of
-    that embedding (``features=``), computed as ``AlignAIR.forward`` computes them."""
+    that embedding (``features=``), computed as ``AlignAIR.forward`` computes them. A model with a core
+    (``ModelComponents.core``) reads the whole read for its calls and has no classifier to give spans: its
+    probabilities stay its own."""
+    if getattr(model, "core", None) is not None:
+        return
     mask = out["position_mask"] if "position_mask" in out else out["start_mask"]   # the forward pass's `mask`
     emb = model.embedding(apply_orientation(tokens, mask, orientation))
     extra = {} if model.trunk is None else {"features": model.trunk(emb, mask)}
