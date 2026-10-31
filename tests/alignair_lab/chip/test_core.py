@@ -126,3 +126,15 @@ def test_the_chip_multiplies_its_d_scan_with_the_local_d_alignment(chip, monkeyp
     out = model(batch.inputs)
     assert torch.allclose(out["d_log_posterior"], torch.log_softmax(scan + leaning, -1), atol=1e-5)
     assert torch.allclose(out["d_allele"], torch.exp(out["d_log_posterior"] - out["d_log_posterior"].amax(-1, True)))
+
+
+def test_the_chip_rescores_its_v_call_with_its_bank_at_inference_only(chip, monkeypatch):
+    model, batch, _ = chip
+    seen = []
+    monkeypatch.setattr(chip_core, "rescore_v", lambda out, tokens, bank: seen.append(bank))
+    model.train()
+    model(batch.inputs)
+    assert seen == []
+    model.eval()
+    model(batch.inputs)
+    assert seen == [model.core.bank]
