@@ -27,8 +27,11 @@ SPACES = (('nucleotide', 'alleles'), ('protein', 'protein_classes'))
 # model's are residue unless its options say half_open, as a half-open candidate's do.
 BOUNDARY_MODES = {'lab-trunk-v1': 'residue', 'lab-trunk-v2': 'half_open', 'lab-trunk-crop-v1': 'half_open',
                   'lab-trunk-meta-v1': 'half_open', 'lab-trunk-crop-meta-v1': 'half_open'}
+# Candidates with their own core and objective, checked end to end by their own tests: lab-chip-v1 is nucleotide-only,
+# trains on its chip inputs and has none of conv-v1's components (tests/alignair_lab/chip/test_end_to_end.py).
+OWN_CONTRACT = {'lab-chip-v1'}
 CONTRACTS = [(name, space, labels) for name in architectures.registered() for space, labels in SPACES
-             if space == 'nucleotide' or BOUNDARY_MODES.get(name) != 'residue']
+             if name not in OWN_CONTRACT and (space == 'nucleotide' or BOUNDARY_MODES.get(name) != 'residue')]
 # (candidate, space, labels, what its refusal names) for a space whose boundaries the candidate refuses
 REFUSED = (('lab-trunk-v1', 'protein', 'protein_classes', 'half-open'),
            ('lab-trunk-v2', 'nucleotide', 'alleles', 'residue'))
