@@ -16,7 +16,9 @@ from ..neural.heads.region import READ_REGIONS, REGION_INDEX
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, CODON
 from ..core.d_presence import ABSENT, D_PRESENCE
 from ..core.boundaries import read_window
+from ..reference.frames import gene_frames
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
+from .chip_inputs import chip_batch_inputs, chip_record_targets
 from .encoders import encode_allele_sets
 from .projection import frame_offset_of, project_codons, projection_segments, translated_record_usable
 from .targets import UNSCORABLE, build_targets, read_anchors, read_d_presence
@@ -125,6 +127,8 @@ class NucleotideBatchAdapter:
             raise ConfigurationError("nucleotide record adaptation requires multilabel targets")
         samples = []
         genes = _genes(self.config)
+        chip = getattr(self.config, "chip_inputs", False)
+        frames = gene_frames(self.reference) if chip else None
         for i, record in enumerate(records):
             with _record_context(i, record):
                 bundle = build_targets(record, self.reference, self.config.has_d)
@@ -151,11 +155,15 @@ class NucleotideBatchAdapter:
                     targets.update(_anchor_targets(read_anchors(record, self.reference), self.config))   # forward frame
                 if getattr(self.config, "d_presence_head", False):
                     targets.update(_d_presence_targets(record, self.config))
+                if chip:
+                    targets.update(chip_record_targets(record, self.reference, frames, bundle["region_labels"]))
                 sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
         batch = collate_samples(samples, max_length=self.config.max_seq_length,
                                 reserve_terminal_slot=getattr(self.config, "boundary_mode", "residue") == "half_open",
                                 reject_empty_sequences=self.config.reject_empty_sequences)
+        if chip:                                            # forward frame, like the targets
+            batch.inputs.update(chip_batch_inputs(batch.targets, self.reference))
         if getattr(self.config, "use_orientation", True):
             augment = True if self.augment_orientation is None else self.augment_orientation
             labels = (torch.randint(0, NUM_ORIENTATIONS, (len(samples),)) if augment

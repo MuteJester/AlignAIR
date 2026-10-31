@@ -118,15 +118,21 @@ class AlignAIRConfig:
     # The 3-state D presence head (absent / too short to call / callable, ``core.d_presence``), which gates the D call
     # at prediction. Only a heavy-chain configuration (``has_d``) has a D to gate.
     d_presence_head: bool = False
+    # The chip's training inputs (``data.chip_inputs``): per-base germline columns and identifiable regions, and per
+    # batch the bank masks and teacher inputs. The chip reads half-open boundaries.
+    chip_inputs: bool = False
 
     def __post_init__(self):
-        for name in ("short_d_penalty", "region_head", "anchor_heads", "d_presence_head"):
+        for name in ("short_d_penalty", "region_head", "anchor_heads", "d_presence_head", "chip_inputs"):
             if type(getattr(self, name)) is not bool:
                 raise ConfigurationError(f"{name} must be a boolean", context={"field": name})
         if self.d_presence_head and not self.has_d:
             raise ConfigurationError("d_presence_head needs a D: the configuration has none (has_d is False)",
                                      context={"field": "d_presence_head"},
                                      hint="Leave d_presence_head off for a light chain.")
+        if self.chip_inputs and self.boundary_mode != "half_open":
+            raise ConfigurationError("chip_inputs needs half-open boundaries", context={"field": "chip_inputs"},
+                                     hint="Set boundary_mode='half_open'.")
         for name, choices in (("classification_mode", ("multilabel", "categorical")),
                               ("boundary_mode", ("residue", "half_open")),
                               ("input_space", ("nucleotide", "protein")),
